@@ -1,0 +1,8 @@
+{
+    "llm_model": "claude-sonnet-4-5-20250514",
+    "port": 8765,
+    "texture_resolution": 512,
+    "texture_steps": 4,
+    "texture_cache_dir": "cache/textures",
+    "texture_lazy_load": true
+}

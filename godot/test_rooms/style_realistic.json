@@ -1,0 +1,89 @@
+{
+  "room_id": "style_realistic",
+  "room_description": "Sala de test - estilo realista",
+  "dimensions": {
+    "width": 10.0,
+    "height": 4.0,
+    "depth": 10.0
+  },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "photorealistic stone dungeon floor, weathered cracked flagstones, moss in crevices, 4K detail PBR",
+      "tiling": [
+        4,
+        4
+      ]
+    },
+    "ceiling": {
+      "texture_prompt": "photorealistic rough stone ceiling with wooden support beams, cobwebs, 4K detail PBR",
+      "tiling": [
+        4,
+        4
+      ]
+    },
+    "walls": [
+      {
+        "side": "north",
+        "texture_prompt": "photorealistic medieval stone brick wall, weathered mortar, damp patches, 4K detail PBR",
+        "tiling": [
+          4,
+          2
+        ]
+      },
+      {
+        "side": "east",
+        "texture_prompt": "photorealistic medieval stone brick wall, weathered mortar, damp patches, 4K detail PBR",
+        "tiling": [
+          4,
+          2
+        ]
+      },
+      {
+        "side": "south",
+        "texture_prompt": "photorealistic medieval stone brick wall, weathered mortar, damp patches, 4K detail PBR",
+        "tiling": [
+          4,
+          2
+        ]
+      },
+      {
+        "side": "west",
+        "texture_prompt": "photorealistic medieval stone brick wall, weathered mortar, damp patches, 4K detail PBR",
+        "tiling": [
+          4,
+          2
+        ]
+      }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": {
+      "color": [
+        0.15,
+        0.12,
+        0.1
+      ],
+      "intensity": 0.8
+    },
+    "lights": [
+      {
+        "type": "point",
+        "position": [
+          0,
+          3.5,
+          0
+        ],
+        "color": [
+          1.0,
+          0.9,
+          0.8
+        ],
+        "intensity": 3.0,
+        "range": 12.0
+      }
+    ]
+  },
+  "objects": [],
+  "npcs": []
+}

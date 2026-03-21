@@ -1,0 +1,49 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# AI models cache (large binary files)
+*.ckpt
+*.safetensors
+*.bin
+!ai_server/requirements.txt
+
+# Generated outputs
+test_outputs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.mcp.json
+.claude/
+.env
+
+# Obsolete / archived projects
+NEFan/
+archive/
+
+# Generated asset caches
+cache/
+godot/cache/
+
+# Godot 4 editor
+godot/.godot/
+*.import
+export_presets.cfg
+
+# Node.js
+narrative-mcp/node_modules/
+narrative-mcp/dist/
