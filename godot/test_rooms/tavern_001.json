@@ -1,0 +1,154 @@
+{
+  "room_id": "tavern_001",
+  "room_description": "Una taberna subterranea iluminada por antorchas. El aire calido huele a cerveza rancia y estofado. Bancos de madera rodean mesas tosca.",
+  "dimensions": { "width": 14.0, "height": 3.5, "depth": 10.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "worn wooden plank floor, dark stained, tavern, seamless tiling",
+      "tiling": [3, 2]
+    },
+    "ceiling": {
+      "texture_prompt": "low wooden beam ceiling, dark smoke stained, medieval tavern",
+      "tiling": [3, 2]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough plastered wall with mounted deer antlers, tavern", "tiling": [3, 1] },
+      { "side": "east",  "texture_prompt": "stone wall with wooden shelves, bottles and mugs", "tiling": [3, 1] },
+      { "side": "south", "texture_prompt": "wooden wall with iron-studded door frame", "tiling": [3, 1] },
+      { "side": "west",  "texture_prompt": "rough stone wall with faded wanted posters", "tiling": [3, 1] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [2.5, 2.8],
+      "description": "heavy oak door to the street",
+      "target_hint": "dungeon entrance"
+    },
+    {
+      "wall": "east",
+      "offset": -3.0,
+      "size": [1.5, 2.5],
+      "description": "narrow passage to the cellar",
+      "target_hint": "cellar storage"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.08, 0.05, 0.03], "intensity": 0.4 },
+    "lights": [
+      {
+        "type": "point",
+        "position": [-3, 3.0, 0],
+        "color": [1.0, 0.8, 0.4],
+        "intensity": 2.5,
+        "range": 7.0
+      },
+      {
+        "type": "point",
+        "position": [3, 3.0, 0],
+        "color": [1.0, 0.75, 0.35],
+        "intensity": 2.0,
+        "range": 6.0
+      },
+      {
+        "type": "point",
+        "position": [0, 2.0, -4],
+        "color": [1.0, 0.5, 0.1],
+        "intensity": 3.0,
+        "range": 4.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "table_01",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "rough hewn wooden tavern table, dark stained",
+      "position": [-3, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1.5, 0.75, 0.8],
+      "description": "mesa de madera tosca con marcas de cuchillo",
+      "category": "prop",
+      "state": "intact",
+      "mood": "neutral"
+    },
+    {
+      "id": "table_02",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "wooden tavern table with spilled drink stains",
+      "position": [3, 0, 1],
+      "rotation": [0, 15, 0],
+      "scale": [1.2, 0.75, 0.7],
+      "description": "mesa con manchas de bebida derramada",
+      "category": "prop",
+      "state": "intact",
+      "mood": "neutral"
+    },
+    {
+      "id": "bench_01",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "simple wooden bench, medieval tavern",
+      "position": [-3, 0, 1],
+      "rotation": [0, 0, 0],
+      "scale": [1.4, 0.45, 0.3],
+      "description": "banco de madera simple",
+      "category": "prop"
+    },
+    {
+      "id": "barrel_bar_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "large ale barrel on wooden stand, tavern",
+      "position": [5.5, 0, -3.5],
+      "rotation": [0, 0, 0],
+      "scale": [0.5, 0.8, 0.5],
+      "description": "barril grande de cerveza sobre soporte de madera",
+      "category": "prop",
+      "state": "intact",
+      "mood": "peaceful"
+    },
+    {
+      "id": "fireplace_01",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "stone fireplace with burning logs, medieval fantasy",
+      "position": [0, 0, -4.5],
+      "rotation": [0, 0, 0],
+      "scale": [1.5, 1.2, 0.6],
+      "description": "chimenea de piedra con lenos ardiendo",
+      "category": "building",
+      "state": "burning",
+      "mood": "peaceful",
+      "interactive": true
+    },
+    {
+      "id": "mug_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "position": [-2.5, 0.75, 0.2],
+      "rotation": [0, 30, 0],
+      "scale": [0.08, 0.12, 0.08],
+      "description": "jarra de cerveza medio llena",
+      "category": "item",
+      "state": "intact",
+      "mood": "neutral"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "barkeeper_01",
+      "name": "Greta",
+      "sprite_prompt": "stout female barkeeper, apron, braided hair, friendly face, dark fantasy, pixel art",
+      "position": [5, 0, -3],
+      "rotation": [0, -90, 0],
+      "scale": [0.6, 1.7, 0.6],
+      "description": "mujer robusta con delantal y trenzas, limpia un vaso con expresion cansada",
+      "dialogue_hint": "Conoce los rumores del pueblo y vende suministros basicos"
+    }
+  ],
+  "ambient_event": "El crepitar del fuego se mezcla con el murmullo de conversaciones lejanas."
+}

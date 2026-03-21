@@ -1,0 +1,147 @@
+{
+  "room_id": "crypt_001",
+  "room_description": "Una cripta abovedada con pilares de piedra agrietados. El aire huele a humedad y algo antiguo acecha en las sombras.",
+  "dimensions": { "width": 12.0, "height": 4.0, "depth": 10.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "cracked stone dungeon floor, dark, mossy, seamless tiling",
+      "tiling": [2, 2]
+    },
+    "ceiling": {
+      "texture_prompt": "vaulted stone ceiling with cobwebs, seamless tiling",
+      "tiling": [2, 2]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "damp stone wall with torch sconces, dark fantasy", "tiling": [3, 1] },
+      { "side": "east",  "texture_prompt": "crumbling brick wall with green fungus", "tiling": [2, 1] },
+      { "side": "south", "texture_prompt": "stone wall with rusty iron chains and scratches", "tiling": [3, 1] },
+      { "side": "west",  "texture_prompt": "mossy stone wall with faded arcane mural", "tiling": [2, 1] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "north",
+      "offset": 0.0,
+      "size": [2.0, 3.0],
+      "description": "iron door with rusted hinges",
+      "target_hint": "deeper corridor"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.05, 0.03, 0.02], "intensity": 0.3 },
+    "lights": [
+      {
+        "type": "point",
+        "position": [0, 3.5, 0],
+        "color": [1.0, 0.7, 0.3],
+        "intensity": 2.0,
+        "range": 8.0
+      },
+      {
+        "type": "point",
+        "position": [-4, 2.5, -3],
+        "color": [0.8, 0.4, 0.1],
+        "intensity": 1.0,
+        "range": 5.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "chest_01",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "ornate treasure chest, rusted iron bands, dark fantasy",
+      "position": [3, 0, 3],
+      "rotation": [0, 45, 0],
+      "scale": [0.6, 0.4, 0.5],
+      "description": "cofre ornamentado con bandas de hierro oxidado",
+      "category": "item",
+      "state": "locked",
+      "mood": "mysterious",
+      "interactive": true
+    },
+    {
+      "id": "barrel_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "old wooden barrel with iron hoops, dark stained",
+      "position": [-4, 0, 2],
+      "rotation": [0, 0, 0],
+      "scale": [0.4, 0.6, 0.4],
+      "description": "barril viejo manchado de oscuro",
+      "category": "prop",
+      "state": "intact",
+      "mood": "neutral"
+    },
+    {
+      "id": "barrel_02",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "broken wooden barrel, spilled dark liquid",
+      "position": [-3.5, 0, 3],
+      "rotation": [15, 20, 0],
+      "scale": [0.4, 0.55, 0.4],
+      "description": "barril roto con liquido oscuro derramado",
+      "category": "prop",
+      "state": "damaged",
+      "mood": "ominous"
+    },
+    {
+      "id": "pillar_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "cracked stone pillar, ancient carved runes",
+      "position": [-3, 0, -2],
+      "rotation": [0, 0, 0],
+      "scale": [0.5, 3.8, 0.5],
+      "description": "pilar de piedra agrietado con runas antiguas",
+      "category": "building",
+      "state": "damaged",
+      "mood": "mysterious"
+    },
+    {
+      "id": "pillar_02",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "stone pillar with moss and spider webs",
+      "position": [3, 0, -2],
+      "rotation": [0, 0, 0],
+      "scale": [0.5, 3.8, 0.5],
+      "description": "pilar de piedra cubierto de musgo y telaranas",
+      "category": "building",
+      "state": "intact",
+      "mood": "neutral"
+    },
+    {
+      "id": "skeleton_01",
+      "mesh": "capsule",
+      "position": [2, 0, -3],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "esqueleto guerrero con espada oxidada",
+      "combat": {
+        "health": 60,
+        "weapon_id": "short_sword",
+        "personality": {
+          "aggression": 0.7,
+          "preferred_attacks": ["quick", "medium"],
+          "reaction_time": 0.6
+        }
+      }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "merchant_01",
+      "name": "Elric",
+      "sprite_prompt": "hooded merchant, tattered robes, gaunt face, dark fantasy, pixel art",
+      "position": [0, 0, 3],
+      "rotation": [0, 180, 0],
+      "scale": [0.5, 1.8, 0.5],
+      "description": "figura encapuchada con ropas raidas y mirada penetrante",
+      "dialogue_hint": "Sabe sobre el artefacto en las profundidades"
+    }
+  ],
+  "ambient_event": "Goteo de agua resuena en el silencio. Una corriente de aire frio acaricia la nuca."
+}

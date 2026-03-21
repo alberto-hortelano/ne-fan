@@ -1,0 +1,12 @@
+# Server
+fastapi>=0.110.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9
+
+# Narrative engine
+anthropic>=0.50.0
+websocket-client>=1.7.0
+
+# Core
+Pillow>=10.0.0
+requests>=2.31.0
