@@ -50,6 +50,9 @@ func _on_attack_impacted(type_id: String, attacker: Node) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Skip local resolution when TS bridge is authoritative
+	if LogicBridge.is_connected_to_bridge():
+		return
 	_time_acc += delta
 	if _pending_impacts.is_empty():
 		return
