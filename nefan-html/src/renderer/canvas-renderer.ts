@@ -232,8 +232,8 @@ export class CanvasRenderer {
     const maxDist = params.optimal_distance + params.distance_tolerance;
     const areaRadius = params.area_radius;
 
-    // Forward angle (canvas Y axis is flipped relative to world Z)
-    const fwdAngle = Math.atan2(player.forward.x, player.forward.z);
+    // Forward angle (canvas Y down = world Z+, so flip)
+    const fwdAngle = Math.atan2(player.forward.x, player.forward.z) + Math.PI;
 
     // Half-angle of the arc: at optimal distance, area_radius defines the lateral extent
     // arctan(area_radius / optimal_distance) gives the half-angle
