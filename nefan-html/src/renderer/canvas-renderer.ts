@@ -215,6 +215,79 @@ export class CanvasRenderer {
     ctx.fillRect(x, cy, bw * fill, bh);
   }
 
+  /** Draw attack area visualization during wind-up or impact flash */
+  drawAttackArea(
+    player: { pos: Vec3; forward: Vec3 },
+    params: { optimal_distance: number; distance_tolerance: number; area_radius: number },
+    mode: "windup" | "impact",
+    opacity: number = 0.3,
+    impactQuality: number = 0,
+  ): void {
+    const ctx = this.ctx;
+    const [px, py] = this.toScreen(player.pos.x, player.pos.z);
+    const s = this.scale;
+
+    const minDist = params.optimal_distance - params.distance_tolerance;
+    const maxDist = params.optimal_distance + params.distance_tolerance;
+    const halfWidth = params.area_radius;
+
+    // Angle from forward vector
+    const angle = Math.atan2(player.forward.x, player.forward.z);
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-angle);
+
+    if (mode === "windup") {
+      // Draw gradient attack zone — rows from minDist to maxDist
+      const steps = 20;
+      const distStep = (maxDist - minDist) / steps;
+      const widthSteps = 10;
+
+      for (let di = 0; di < steps; di++) {
+        const dist = minDist + di * distStep;
+        const distMid = dist + distStep / 2;
+        const distFactor = 1.0 - Math.abs(distMid - params.optimal_distance) / params.distance_tolerance;
+
+        for (let wi = -widthSteps; wi < widthSteps; wi++) {
+          const offset = (wi + 0.5) * (halfWidth / widthSteps);
+          const precFactor = 1.0 - Math.abs(offset) / halfWidth;
+          const quality = Math.max(0, distFactor) * Math.max(0, precFactor);
+
+          if (quality <= 0) continue;
+
+          // Green = high quality, red = low
+          const r = Math.round((1 - quality) * 255);
+          const g = Math.round(quality * 255);
+          ctx.fillStyle = `rgba(${r},${g},40,${quality * opacity})`;
+
+          const sx = offset * s;
+          const sy = dist * s;
+          const sw = (halfWidth / widthSteps) * s;
+          const sh = distStep * s;
+          ctx.fillRect(sx - sw / 2, sy, sw, sh);
+        }
+      }
+    } else {
+      // Impact flash — uniform color based on quality
+      let r: number, g: number, b: number;
+      if (impactQuality > 0.7) { r = 80; g = 255; b = 80; }
+      else if (impactQuality > 0.3) { r = 255; g = 255; b = 60; }
+      else if (impactQuality > 0) { r = 255; g = 80; b = 60; }
+      else { r = 120; g = 120; b = 120; }
+
+      ctx.fillStyle = `rgba(${r},${g},${b},${opacity})`;
+      ctx.fillRect(
+        -halfWidth * s,
+        minDist * s,
+        halfWidth * 2 * s,
+        (maxDist - minDist) * s,
+      );
+    }
+
+    ctx.restore();
+  }
+
   /** Convert screen click to world XZ */
   screenToWorld(screenX: number, screenY: number): Vec3 {
     return {
