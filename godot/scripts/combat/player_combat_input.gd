@@ -19,6 +19,7 @@ var _combatant: Node  # Combatant
 var _config: Dictionary = {}
 var _attack_types: Dictionary = {}
 var _weapons: Dictionary = {}
+var _pending_attack: Dictionary = {}  # For bridge: {type: String}
 
 
 func _ready() -> void:
@@ -42,13 +43,24 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Execute attack (LMB)
 	if event.is_action_pressed("attack_execute"):
-		var c_weapon: String = _combatant.weapon_id
-		var weapon_data: Dictionary = _weapons.get(c_weapon, _weapons.get("unarmed", {}))
-		var wind_up: float = CombatDataRef.get_effective_wind_up(
-			_attack_types.get(selected_type, {}), weapon_data, selected_type
-		)
-		_combatant.start_attack(selected_type, wind_up)
+		if LogicBridge.is_connected_to_bridge():
+			# Bridge mode: queue attack, TS resolves it
+			_pending_attack = {"type": selected_type}
+		else:
+			# Local mode: resolve locally
+			var c_weapon: String = _combatant.weapon_id
+			var weapon_data: Dictionary = _weapons.get(c_weapon, _weapons.get("unarmed", {}))
+			var wind_up: float = CombatDataRef.get_effective_wind_up(
+				_attack_types.get(selected_type, {}), weapon_data, selected_type
+			)
+			_combatant.start_attack(selected_type, wind_up)
 		get_viewport().set_input_as_handled()
+
+
+func get_pending_attack() -> Dictionary:
+	var result := _pending_attack
+	_pending_attack = {}
+	return result
 
 
 func _physics_process(_delta: float) -> void:

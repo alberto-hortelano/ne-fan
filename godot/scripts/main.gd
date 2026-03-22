@@ -300,6 +300,27 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 		"enemies": enemies_state,
 	})
 
+	# Notify bridge of room change with enemy personalities
+	if LogicBridge.is_connected_to_bridge():
+		var bridge_enemies: Array = []
+		for child in _current_room.get_children():
+			var c = child.get_node_or_null("Combatant")
+			var ai = child.get_node_or_null("EnemyCombatAI")
+			if c and ai:
+				bridge_enemies.append({
+					"id": child.name,
+					"position": {"x": child.position.x, "y": child.position.y, "z": child.position.z},
+					"health": c.health,
+					"weaponId": c.weapon_id,
+					"personality": {
+						"aggression": ai.aggression,
+						"preferred_attacks": ai.preferred_attacks,
+						"reaction_time": ai.reaction_time,
+						"combat_range": ai.combat_range,
+					}
+				})
+		LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies)
+
 	# Update state
 	GameState.mark_room_visited(data.get("room_id", "unknown"), data)
 
