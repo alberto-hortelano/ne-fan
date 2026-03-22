@@ -167,7 +167,6 @@ export class CanvasRenderer {
     // Room description
     ctx.fillStyle = "#666";
     ctx.font = "11px monospace";
-    ctx.fillText(this.roomData.room_description, 8, this.canvas.height - 8);
   }
 
   private drawPlayer(player: { pos: Vec3; forward: Vec3; hp: number; maxHp: number }): void {
@@ -197,13 +196,6 @@ export class CanvasRenderer {
 
     ctx.fillStyle = e.color;
     ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
-
-    // Label
-    ctx.fillStyle = "#aaa";
-    ctx.font = "10px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(e.label, ex, ey + e.radius + 12);
-    ctx.textAlign = "start";
 
     // HP bar if applicable
     if (e.hp !== undefined && e.maxHp !== undefined) {
