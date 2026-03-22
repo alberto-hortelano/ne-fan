@@ -122,6 +122,13 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// Mouse tracking for player facing direction
+let mouseWorld: Vec3 | null = null;
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouseWorld = renderer.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+});
+
 // --- Game Loop ---
 let lastTime = performance.now();
 
@@ -141,7 +148,6 @@ function gameLoop(now: number): void {
     const len = Math.sqrt(dx * dx + dz * dz);
     playerPos.x += (dx / len) * speed * delta;
     playerPos.z += (dz / len) * speed * delta;
-    playerForward = normalized({ x: dx, y: 0, z: dz });
   }
 
   // Clamp to room bounds
@@ -150,13 +156,11 @@ function gameLoop(now: number): void {
   playerPos.x = Math.max(-halfW, Math.min(halfW, playerPos.x));
   playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
 
-  // Face nearest enemy if not moving
-  if (dx === 0 && dz === 0 && enemyEntities.length > 0) {
-    const nearest = enemyEntities.filter(e => e.alive)[0];
-    if (nearest) {
-      const dir = sub(nearest.pos, playerPos);
-      if (distance(playerPos, nearest.pos) > 0.1) {
-        playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
+  // Face toward mouse cursor
+  if (mouseWorld) {
+    const dir = sub(mouseWorld, playerPos);
+    if (dir.x !== 0 || dir.z !== 0) {
+      playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
       }
     }
   }
