@@ -110,7 +110,8 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		# Override animation if specified (for dev showcase rooms)
 		var forced_anim: String = data.get("animation", "")
 		if forced_anim != "":
-			# Defer so animator has time to load
+			# Lock in place + play forced animation (deferred so _ready completes first)
+			animator.call_deferred("lock_in_place")
 			animator.call_deferred("play", forced_anim)
 		else:
 			var sync = CombatAnimationSyncScript.new()
