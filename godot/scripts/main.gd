@@ -276,6 +276,26 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	_player.position = player_pos
 	_player.velocity = Vector3.ZERO
 
+	# Dispatch room change to store
+	var enemies_state: Array = []
+	for child in _current_room.get_children():
+		var c = child.get_node_or_null("Combatant")
+		if c:
+			enemies_state.append({
+				"id": child.name,
+				"pos": [child.position.x, child.position.y, child.position.z],
+				"hp": c.health,
+				"max_hp": c.max_health,
+				"weapon_id": c.weapon_id,
+				"combat_state": "idle",
+				"alive": true,
+			})
+	GameStore.dispatch("room_changed", {
+		"room_id": data.get("room_id", "unknown"),
+		"room_data": data,
+		"enemies": enemies_state,
+	})
+
 	# Update state
 	GameState.mark_room_visited(data.get("room_id", "unknown"), data)
 

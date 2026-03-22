@@ -97,6 +97,14 @@ func _handle(line: String) -> String:
 			return _cmd_look_at(json)
 		"wait":
 			return '{"ok":true}'
+		"record_start":
+			SessionRecorder.start_recording()
+			return '{"ok":true,"recording":true}'
+		"record_stop":
+			var rec_path: String = SessionRecorder.stop_recording()
+			return '{"ok":true,"path":"%s"}' % rec_path
+		"store_snapshot":
+			return JSON.stringify(GameStore.snapshot())
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 

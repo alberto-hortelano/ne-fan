@@ -39,11 +39,15 @@ archive/
 cache/
 godot/cache/
 
+# Session recordings
+godot/recordings/
+
 # Godot 4 editor
 godot/.godot/
 *.import
 export_presets.cfg
 
 # Node.js
-narrative-mcp/node_modules/
+node_modules/
 narrative-mcp/dist/
+nefan-core/dist/

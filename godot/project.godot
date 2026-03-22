@@ -85,11 +85,14 @@ attack_precise={
 
 [autoload]
 
+GameStore="*res://scripts/autoloads/game_store.gd"
 GameState="*res://scripts/autoloads/game_state.gd"
 AIClient="*res://scripts/autoloads/ai_client.gd"
 TextureCache="*res://scripts/autoloads/texture_cache.gd"
 SpriteCache="*res://scripts/autoloads/sprite_cache.gd"
 RemoteControl="*res://scripts/autoloads/remote_control.gd"
+SessionRecorder="*res://scripts/autoloads/session_recorder.gd"
+SessionPlayer="*res://scripts/autoloads/session_player.gd"
 
 [rendering]
 
