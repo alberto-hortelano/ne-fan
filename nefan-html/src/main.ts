@@ -136,18 +136,30 @@ function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
-  // Movement
-  let dx = 0, dz = 0;
-  if (input.state.up) dz -= 1;
-  if (input.state.down) dz += 1;
-  if (input.state.left) dx -= 1;
-  if (input.state.right) dx += 1;
+  // Face toward mouse cursor (compute before movement so WASD is relative)
+  if (mouseWorld) {
+    const dir = sub(mouseWorld, playerPos);
+    if (dir.x !== 0 || dir.z !== 0) {
+      playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
+    }
+  }
+
+  // Movement relative to facing direction (like 3D camera-relative)
+  let inputFwd = 0, inputRight = 0;
+  if (input.state.up) inputFwd += 1;
+  if (input.state.down) inputFwd -= 1;
+  if (input.state.right) inputRight += 1;
+  if (input.state.left) inputRight -= 1;
 
   const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
-  if (dx !== 0 || dz !== 0) {
-    const len = Math.sqrt(dx * dx + dz * dz);
-    playerPos.x += (dx / len) * speed * delta;
-    playerPos.z += (dz / len) * speed * delta;
+  if (inputFwd !== 0 || inputRight !== 0) {
+    const len = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
+    const fwd = playerForward;
+    const right = { x: -fwd.z, z: fwd.x }; // perpendicular
+    const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
+    const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
+    playerPos.x += moveX * speed * delta;
+    playerPos.z += moveZ * speed * delta;
   }
 
   // Clamp to room bounds
@@ -155,14 +167,6 @@ function gameLoop(now: number): void {
   const halfD = roomData.dimensions.depth / 2 - 0.3;
   playerPos.x = Math.max(-halfW, Math.min(halfW, playerPos.x));
   playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
-
-  // Face toward mouse cursor
-  if (mouseWorld) {
-    const dir = sub(mouseWorld, playerPos);
-    if (dir.x !== 0 || dir.z !== 0) {
-      playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
-    }
-  }
 
   // Update player combatant position
   player.position = { ...playerPos };
