@@ -215,7 +215,8 @@ export class CanvasRenderer {
     ctx.fillRect(x, cy, bw * fill, bh);
   }
 
-  /** Draw attack area visualization during wind-up or impact flash */
+  /** Draw attack area visualization during wind-up or impact flash.
+   *  Geometry matches combat-resolver: radial distance + perpendicular offset. */
   drawAttackArea(
     player: { pos: Vec3; forward: Vec3 },
     params: { optimal_distance: number; distance_tolerance: number; area_radius: number },
@@ -227,62 +228,71 @@ export class CanvasRenderer {
     const [px, py] = this.toScreen(player.pos.x, player.pos.z);
     const s = this.scale;
 
-    const minDist = params.optimal_distance - params.distance_tolerance;
+    const minDist = Math.max(0, params.optimal_distance - params.distance_tolerance);
     const maxDist = params.optimal_distance + params.distance_tolerance;
-    const halfWidth = params.area_radius;
+    const areaRadius = params.area_radius;
 
-    // Angle from forward vector
-    const angle = Math.atan2(player.forward.x, player.forward.z);
+    // Forward angle (canvas Y axis is flipped relative to world Z)
+    const fwdAngle = Math.atan2(player.forward.x, player.forward.z);
 
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(-angle);
+    // Half-angle of the arc: at optimal distance, area_radius defines the lateral extent
+    // arctan(area_radius / optimal_distance) gives the half-angle
+    const halfAngle = Math.atan2(areaRadius, params.optimal_distance);
 
     if (mode === "windup") {
-      // Draw gradient attack zone — rows from minDist to maxDist
-      const steps = 20;
-      const distStep = (maxDist - minDist) / steps;
-      const widthSteps = 10;
+      // Draw arc sectors with quality gradient using polar coordinates
+      const ringSteps = 16;
+      const angleSteps = 20;
+      const distRange = maxDist - minDist;
 
-      for (let di = 0; di < steps; di++) {
-        const dist = minDist + di * distStep;
-        const distMid = dist + distStep / 2;
-        const distFactor = 1.0 - Math.abs(distMid - params.optimal_distance) / params.distance_tolerance;
+      for (let ri = 0; ri < ringSteps; ri++) {
+        const r0 = minDist + (ri / ringSteps) * distRange;
+        const r1 = minDist + ((ri + 1) / ringSteps) * distRange;
+        const rMid = (r0 + r1) / 2;
+        const distFactor = 1.0 - Math.abs(rMid - params.optimal_distance) / params.distance_tolerance;
+        if (distFactor <= 0) continue;
 
-        for (let wi = -widthSteps; wi < widthSteps; wi++) {
-          const offset = (wi + 0.5) * (halfWidth / widthSteps);
-          const precFactor = 1.0 - Math.abs(offset) / halfWidth;
-          const quality = Math.max(0, distFactor) * Math.max(0, precFactor);
+        for (let ai = 0; ai < angleSteps; ai++) {
+          const a0 = -halfAngle + (ai / angleSteps) * halfAngle * 2;
+          const a1 = -halfAngle + ((ai + 1) / angleSteps) * halfAngle * 2;
+          const aMid = (a0 + a1) / 2;
 
-          if (quality <= 0) continue;
+          // Perpendicular offset at this angle and distance
+          const offset = Math.abs(Math.sin(aMid) * rMid);
+          const precFactor = 1.0 - Math.min(offset / areaRadius, 1.0);
+          const quality = distFactor * precFactor;
+          if (quality <= 0.01) continue;
 
-          // Green = high quality, red = low
           const r = Math.round((1 - quality) * 255);
           const g = Math.round(quality * 255);
           ctx.fillStyle = `rgba(${r},${g},40,${quality * opacity})`;
 
-          const sx = offset * s;
-          const sy = dist * s;
-          const sw = (halfWidth / widthSteps) * s;
-          const sh = distStep * s;
-          ctx.fillRect(sx - sw / 2, sy, sw, sh);
+          // Draw arc segment
+          const startAngle = -fwdAngle + a0 - Math.PI / 2;
+          const endAngle = -fwdAngle + a1 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.arc(px, py, r0 * s, startAngle, endAngle);
+          ctx.arc(px, py, r1 * s, endAngle, startAngle, true);
+          ctx.closePath();
+          ctx.fill();
         }
       }
     } else {
-      // Impact flash — uniform color based on quality
-      let r: number, g: number, b: number;
-      if (impactQuality > 0.7) { r = 80; g = 255; b = 80; }
-      else if (impactQuality > 0.3) { r = 255; g = 255; b = 60; }
-      else if (impactQuality > 0) { r = 255; g = 80; b = 60; }
-      else { r = 120; g = 120; b = 120; }
+      // Impact flash — arc shape with uniform color
+      let cr: number, cg: number, cb: number;
+      if (impactQuality > 0.7) { cr = 80; cg = 255; cb = 80; }
+      else if (impactQuality > 0.3) { cr = 255; cg = 255; cb = 60; }
+      else if (impactQuality > 0) { cr = 255; cg = 80; cb = 60; }
+      else { cr = 120; cg = 120; cb = 120; }
 
-      ctx.fillStyle = `rgba(${r},${g},${b},${opacity})`;
-      ctx.fillRect(
-        -halfWidth * s,
-        minDist * s,
-        halfWidth * 2 * s,
-        (maxDist - minDist) * s,
-      );
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${opacity})`;
+      const startAngle = -fwdAngle - halfAngle - Math.PI / 2;
+      const endAngle = -fwdAngle + halfAngle - Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(px, py, minDist * s, startAngle, endAngle);
+      ctx.arc(px, py, maxDist * s, endAngle, startAngle, true);
+      ctx.closePath();
+      ctx.fill();
     }
 
     ctx.restore();
