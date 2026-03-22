@@ -31,6 +31,7 @@ var _skeleton: Skeleton3D
 
 
 var _hips_idx: int = -1
+var _hips_rest_xz := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -39,14 +40,18 @@ func _ready() -> void:
 	play("idle")
 	if _skeleton:
 		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
+		if _hips_idx >= 0:
+			var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
+			_hips_rest_xz = Vector2(rest.origin.x, rest.origin.z)
 
 
 func _process(_delta: float) -> void:
-	# Prevent root motion drift: lock Hips bone XZ to origin each frame
+	# Prevent root motion drift: lock Hips XZ to rest position each frame
+	# Keeps Y free for bobbing, crouching, death falls
 	if _skeleton and _hips_idx >= 0:
 		var pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-		pos.x = 0.0
-		pos.z = 0.0
+		pos.x = _hips_rest_xz.x
+		pos.z = _hips_rest_xz.y
 		_skeleton.set_bone_pose_position(_hips_idx, pos)
 
 
