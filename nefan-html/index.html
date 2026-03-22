@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Never Ending Fantasy — 2D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      color: #ccc;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #hud {
+      display: flex;
+      gap: 20px;
+      padding: 8px 16px;
+      background: #1a1a1a;
+      width: 100%;
+      font-size: 14px;
+      z-index: 10;
+    }
+    #hud .hp-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #hud .hp-fill {
+      width: 120px;
+      height: 12px;
+      background: #333;
+      border: 1px solid #555;
+      position: relative;
+    }
+    #hud .hp-fill-inner {
+      height: 100%;
+      background: #c22;
+      transition: width 0.2s;
+    }
+    #hud .attack-selector span {
+      padding: 2px 6px;
+      margin: 0 2px;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    #hud .attack-selector span.active {
+      border-color: #fa0;
+      color: #fa0;
+    }
+    #combat-log {
+      position: fixed;
+      bottom: 8px;
+      left: 8px;
+      font-size: 11px;
+      color: #888;
+      max-height: 100px;
+      overflow: hidden;
+    }
+    canvas {
+      flex: 1;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="hp-bar">
+      <span>Player</span>
+      <div class="hp-fill"><div class="hp-fill-inner" id="player-hp" style="width:100%"></div></div>
+      <span id="player-hp-text">100</span>
+    </div>
+    <div class="hp-bar">
+      <span>Enemy</span>
+      <div class="hp-fill"><div class="hp-fill-inner" id="enemy-hp" style="width:100%;background:#a44"></div></div>
+      <span id="enemy-hp-text">--</span>
+    </div>
+    <div class="attack-selector">
+      <span data-type="quick" class="active">1:Quick</span>
+      <span data-type="heavy">2:Heavy</span>
+      <span data-type="medium">3:Medium</span>
+      <span data-type="defensive">4:Def</span>
+      <span data-type="precise">5:Precise</span>
+    </div>
+  </div>
+  <canvas id="game"></canvas>
+  <div id="combat-log"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
