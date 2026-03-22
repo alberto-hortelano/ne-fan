@@ -32,6 +32,12 @@ export function applyReducer(
       state.player.combat_state = "dead";
       break;
 
+    case "player_respawned":
+      state.player.hp = (payload.hp as number) ?? state.player.max_hp;
+      state.player.combat_state = "idle";
+      if (payload.pos) state.player.pos = payload.pos as number[];
+      break;
+
     case "attack_started": {
       const attackerId = payload.attacker_id as string;
       const attackType = payload.type as string;

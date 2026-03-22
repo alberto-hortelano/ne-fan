@@ -105,8 +105,22 @@ function log(msg: string): void {
 // Listen to store events for combat log
 store.on("player_damaged", (p) => log(`Player hit: -${(p.amount as number).toFixed(1)} HP`));
 store.on("enemy_damaged", (p) => log(`${p.enemy_id} hit: -${(p.amount as number).toFixed(1)} HP`));
-store.on("player_died", () => log("YOU DIED"));
+store.on("player_died", () => log("YOU DIED — press R to respawn"));
 store.on("enemy_died", (p) => log(`${p.enemy_id} killed!`));
+store.on("player_respawned", () => log("Respawned!"));
+
+// Respawn with R key
+window.addEventListener("keydown", (e) => {
+  if (e.key === "r" && player.health <= 0) {
+    sim.respawn({ x: 0, y: 0, z: 2 });
+    playerPos.x = 0; playerPos.z = 2;
+    // Sync enemy entities after respawn
+    for (const ee of enemyEntities) {
+      const c = sim.getCombatant(ee.id);
+      if (c) { ee.hp = c.health; ee.maxHp = c.maxHealth; ee.alive = true; }
+    }
+  }
+});
 
 // --- Game Loop ---
 let lastTime = performance.now();

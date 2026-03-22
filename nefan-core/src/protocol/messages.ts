@@ -28,11 +28,15 @@ export interface LoadRoomMessage {
   }[];
 }
 
+export interface RespawnMessage {
+  type: "respawn";
+}
+
 export interface PingMessage {
   type: "ping";
 }
 
-export type ClientMessage = InputMessage | LoadRoomMessage | PingMessage;
+export type ClientMessage = InputMessage | LoadRoomMessage | RespawnMessage | PingMessage;
 
 // ── Logic → Frontend ──
 

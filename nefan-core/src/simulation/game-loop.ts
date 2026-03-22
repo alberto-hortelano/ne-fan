@@ -135,6 +135,39 @@ export class GameSimulation {
     return { events: allEvents };
   }
 
+  respawn(spawnPos?: Vec3): CombatEvent[] {
+    const player = this.combatants.get("player");
+    if (!player) return [];
+
+    // Reset player
+    player.health = player.maxHealth;
+    player.state = "idle";
+    player.currentAttackType = "";
+    player.windUpTimer = 0;
+    player.position = spawnPos ?? { x: 0, y: 0, z: 4 };
+
+    // Reset all enemies
+    for (const [, c] of this.combatants) {
+      if (c.id !== "player") {
+        c.state = "idle";
+        c.currentAttackType = "";
+        c.windUpTimer = 0;
+        c.health = c.maxHealth;
+      }
+    }
+
+    // Clear pending combat
+    this.combatManager.reset();
+
+    // Notify store
+    this.store.dispatch("player_respawned", {
+      hp: player.maxHealth,
+      pos: [player.position.x, player.position.y, player.position.z],
+    });
+
+    return [{ type: "player_respawned", hp: player.maxHealth }];
+  }
+
   reset(): void {
     this.combatants.clear();
     this.enemyAIs.clear();

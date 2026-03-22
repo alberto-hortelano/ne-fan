@@ -96,6 +96,7 @@ func _ready() -> void:
 	# Room info display
 	GameState.room_entered.connect(_on_room_entered)
 
+
 	# Load initial room
 	_load_room_from_file(0)
 
@@ -106,6 +107,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1: _load_room_from_file(0)
 			KEY_F2: _load_room_from_file(1)
 			KEY_F3: _load_room_from_file(2)
+			KEY_R:
+				if _player_combatant.health <= 0.0:
+					if LogicBridge.is_connected_to_bridge():
+						LogicBridge.send_respawn()
+					else:
+						respawn_player()
 			KEY_F5:
 				if GameState.save_to_disk():
 					_hud.show_brief_message("Partida guardada")
@@ -157,6 +164,33 @@ func _on_player_damage_received(amount: float, _from: Node) -> void:
 
 func _on_room_entered(room_id: String, description: String, _ambient: String) -> void:
 	_hud.show_room_info(room_id, description)
+
+
+func respawn_player() -> void:
+	_combat_manager.clear_pending()
+	# Reset all enemy combatants to idle
+	if _current_room:
+		for child in _current_room.get_children():
+			var c = child.get_node_or_null("Combatant")
+			if c:
+				c.state = 0
+				c.current_attack_type = ""
+				c.health = c.max_health
+	_player_combatant.health = _player_combatant.max_health
+	_player_combatant.state = 0  # IDLE
+	_player_combatant.current_attack_type = ""
+	GameState.player_health = _player_combatant.max_health
+	GameStore.state.player.hp = _player_combatant.max_health
+	GameStore.state.player.combat_state = "idle"
+	_player.position = Vector3(0, 1, 4)
+	_player.velocity = Vector3.ZERO
+	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	if player_sync:
+		player_sync.reset()
+	var player_anim = _player.get_node_or_null("CombatAnimator")
+	if player_anim:
+		player_anim.play("idle")
+	_hud.show_brief_message("Respawn")
 
 
 # --- Room loading ---
@@ -267,14 +301,16 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 				_combat_hud.set_target(combatant)
 				first_enemy = false
 
-	# Reset player combat state on room change
-	_player_combatant.health = _player_combatant.max_health
-	_player_combatant.state = 0  # IDLE
-	_player_combatant.current_attack_type = ""
-	GameState.player_health = _player_combatant.max_health
-	var player_sync = _player.get_node_or_null("CombatAnimationSync")
-	if player_sync:
-		player_sync.reset()
+	# Sync player state from store (logic is the authority)
+	var stored_hp: float = GameStore.state.player.hp
+	if stored_hp > 0:
+		_player_combatant.health = stored_hp
+		_player_combatant.state = 0  # IDLE
+		_player_combatant.current_attack_type = ""
+		var player_sync = _player.get_node_or_null("CombatAnimationSync")
+		if player_sync:
+			player_sync.reset()
+	GameState.player_health = _player_combatant.health
 
 	# Position player
 	_player.position = player_pos
