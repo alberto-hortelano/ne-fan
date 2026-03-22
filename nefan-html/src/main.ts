@@ -5,8 +5,9 @@ import { GameSimulation } from "../../nefan-core/src/simulation/game-loop.js";
 import { createCombatant } from "../../nefan-core/src/combat/combatant.js";
 import { loadConfig } from "../../nefan-core/src/combat/combat-data.js";
 import { GameStore } from "../../nefan-core/src/store/game-store.js";
-import type { CombatConfig, Vec3, EnemyPersonality } from "../../nefan-core/src/types.js";
+import type { CombatConfig, Vec3, EnemyPersonality, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
+import { getEffectiveParams } from "../../nefan-core/src/combat/combat-data.js";
 import { CanvasRenderer } from "./renderer/canvas-renderer.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
 
@@ -123,6 +124,20 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// Attack area visualization state
+let attackVisual: {
+  active: boolean;
+  mode: "windup" | "impact";
+  params: EffectiveParams;
+  impactQuality: number;
+  fadeTimer: number;
+} | null = null;
+
+function getSelectedParams(): EffectiveParams {
+  const weaponData = config.weapons[player.weaponId] ?? config.weapons["unarmed"];
+  return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
+}
+
 // Mouse look — relative movement rotates player (like 3D camera)
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
@@ -184,6 +199,48 @@ function gameLoop(now: number): void {
     attackType: attackRequested ? input.state.selectedAttack : undefined,
   });
 
+  // Process combat events for attack visualization
+  for (const e of result.events) {
+    if (e.type === "attack_started" && e.combatantId === "player") {
+      attackVisual = {
+        active: true,
+        mode: "windup",
+        params: getSelectedParams(),
+        impactQuality: 0,
+        fadeTimer: 0,
+      };
+    } else if (e.type === "attack_impacted" && e.combatantId === "player") {
+      // Calculate actual quality against nearest enemy
+      let quality = 0;
+      for (const ee of enemyEntities) {
+        if (!ee.alive) continue;
+        const dist = distance(playerPos, ee.pos);
+        const params = attackVisual?.params ?? getSelectedParams();
+        const distFactor = Math.max(0, 1 - Math.abs(dist - params.optimal_distance) / params.distance_tolerance);
+        const dir = sub(ee.pos, playerPos);
+        const fwdXz = { x: playerForward.x, z: playerForward.z };
+        const perpDist = Math.abs(fwdXz.x * dir.z - fwdXz.z * dir.x);
+        const precFactor = Math.max(0, 1 - perpDist / params.area_radius);
+        quality = Math.max(quality, distFactor * precFactor);
+      }
+      attackVisual = {
+        active: true,
+        mode: "impact",
+        params: attackVisual?.params ?? getSelectedParams(),
+        impactQuality: quality,
+        fadeTimer: 0.3,
+      };
+    }
+  }
+
+  // Fade impact flash
+  if (attackVisual?.mode === "impact") {
+    attackVisual.fadeTimer -= delta;
+    if (attackVisual.fadeTimer <= 0) {
+      attackVisual = null;
+    }
+  }
+
   // Sync enemy entities from combatant states
   for (const ee of enemyEntities) {
     const c = sim.getCombatant(ee.id);
@@ -211,6 +268,20 @@ function gameLoop(now: number): void {
     enemyEntities,
     objectEntities,
   );
+
+  // Draw attack area overlay
+  if (attackVisual?.active) {
+    const opacity = attackVisual.mode === "impact"
+      ? attackVisual.fadeTimer / 0.3 * 0.5
+      : 0.3;
+    renderer.drawAttackArea(
+      { pos: playerPos, forward: playerForward },
+      attackVisual.params,
+      attackVisual.mode,
+      opacity,
+      attackVisual.impactQuality,
+    );
+  }
 
   requestAnimationFrame(gameLoop);
 }
