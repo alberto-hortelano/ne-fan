@@ -161,7 +161,6 @@ function gameLoop(now: number): void {
     const dir = sub(mouseWorld, playerPos);
     if (dir.x !== 0 || dir.z !== 0) {
       playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
-      }
     }
   }
 
