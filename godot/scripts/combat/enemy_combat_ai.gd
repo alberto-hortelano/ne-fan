@@ -28,6 +28,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	# Skip local AI when TS bridge handles decisions
+	if LogicBridge.is_connected_to_bridge():
+		return
 	if not _combatant or _combatant.health <= 0.0 or not target:
 		return
 	if target.health <= 0.0:
