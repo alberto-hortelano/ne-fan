@@ -106,7 +106,6 @@ func _load_animations() -> void:
 			for src_anim_name in src_lib.get_animation_list():
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
 				animation.loop_mode = Animation.LOOP_LINEAR
-				_fix_root_motion(animation)
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
 				lib.add_animation(anim_name, animation)
@@ -172,6 +171,17 @@ func apply_skin(texture_path: String) -> void:
 					mesh_inst.set_surface_override_material(surf_idx, new_mat)
 					count += 1
 	print("CombatAnimator: skin applied to %d surfaces" % count)
+
+
+func lock_in_place() -> void:
+	"""Fix all loaded animations to stay in place (for showcase/preview)."""
+	if not _anim_player:
+		return
+	if _anim_player.has_animation_library(""):
+		var lib: AnimationLibrary = _anim_player.get_animation_library("")
+		for anim_name in lib.get_animation_list():
+			var anim: Animation = lib.get_animation(anim_name)
+			_fix_root_motion(anim)
 
 
 func _fix_root_motion(anim: Animation) -> void:
