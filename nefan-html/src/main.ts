@@ -15,8 +15,8 @@ import combatConfigJson from "../../nefan-core/data/combat_config.json";
 // @ts-ignore
 import cryptRoomJson from "../../godot/test_rooms/crypt_001.json";
 
-const SPEED = 5.0;
-const SPRINT_SPEED = 8.0;
+const SPEED = 3.0;
+const SPRINT_SPEED = 5.5;
 
 // --- Init ---
 const config: CombatConfig = loadConfig(combatConfigJson);
