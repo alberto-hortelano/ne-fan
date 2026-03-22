@@ -1,0 +1,18 @@
+{
+  "name": "@nefan/core",
+  "version": "0.1.0",
+  "description": "Never Ending Fantasy — shared game logic (combat, AI, state)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test test/*.test.ts",
+    "dev": "tsx bridge/ws-server.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
