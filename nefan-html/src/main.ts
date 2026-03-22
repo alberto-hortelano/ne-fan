@@ -123,11 +123,18 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// Mouse tracking for player facing direction
-let mouseWorld: Vec3 | null = null;
-canvas.addEventListener("mousemove", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  mouseWorld = renderer.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+// Mouse look — relative movement rotates player (like 3D camera)
+const MOUSE_SENSITIVITY = 0.004;
+let playerYaw = Math.PI; // facing -Z initially
+
+canvas.addEventListener("click", () => {
+  canvas.requestPointerLock();
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (document.pointerLockElement !== canvas) return;
+  playerYaw -= e.movementX * MOUSE_SENSITIVITY;
+  playerForward = normalized({ x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) });
 });
 
 // --- Game Loop ---
@@ -137,15 +144,7 @@ function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
-  // Face toward mouse cursor (compute before movement so WASD is relative)
-  if (mouseWorld) {
-    const dir = sub(mouseWorld, playerPos);
-    if (dir.x !== 0 || dir.z !== 0) {
-      playerForward = normalized({ x: dir.x, y: 0, z: dir.z });
-    }
-  }
-
-  // Movement relative to facing direction (like 3D camera-relative)
+  // Movement relative to facing direction (mouse rotates, like 3D camera)
   let inputFwd = 0, inputRight = 0;
   if (input.state.up) inputFwd += 1;
   if (input.state.down) inputFwd -= 1;

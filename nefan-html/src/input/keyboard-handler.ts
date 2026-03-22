@@ -43,6 +43,9 @@ export class KeyboardHandler {
         this.state.selectedAttack = ATTACK_KEYS[e.key];
         this.onAttackTypeChanged?.(this.state.selectedAttack);
       }
+      if (e.key === "Escape") {
+        document.exitPointerLock();
+      }
     });
 
     window.addEventListener("keyup", (e) => {
@@ -55,9 +58,9 @@ export class KeyboardHandler {
       }
     });
 
-    // Click to attack
+    // Click to attack (only when pointer is locked)
     canvas.addEventListener("mousedown", (e) => {
-      if (e.button === 0) {
+      if (e.button === 0 && document.pointerLockElement === canvas) {
         this.state.attackRequested = true;
       }
     });
