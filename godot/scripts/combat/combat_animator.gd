@@ -107,7 +107,6 @@ func _load_animations() -> void:
 			for src_anim_name in src_lib.get_animation_list():
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
 				animation.loop_mode = Animation.LOOP_LINEAR
-				_strip_root_motion(animation)
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
 				lib.add_animation(anim_name, animation)
@@ -173,17 +172,6 @@ func apply_skin(texture_path: String) -> void:
 					mesh_inst.set_surface_override_material(surf_idx, new_mat)
 					count += 1
 	print("CombatAnimator: skin applied to %d surfaces" % count)
-
-
-func _strip_root_motion(anim: Animation) -> void:
-	# Remove Hips position track to prevent animation drift
-	var i: int = anim.get_track_count() - 1
-	while i >= 0:
-		if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
-			var path_str: String = str(anim.track_get_path(i))
-			if "Hips" in path_str:
-				anim.remove_track(i)
-		i -= 1
 
 
 func _clear_owner_recursive(node: Node) -> void:
