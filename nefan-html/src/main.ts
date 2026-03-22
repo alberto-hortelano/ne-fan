@@ -179,7 +179,7 @@ function gameLoop(now: number): void {
   const result = sim.tick(delta, {
     playerPosition: playerPos,
     playerForward: playerForward,
-    playerMoving: dx !== 0 || dz !== 0,
+    playerMoving: inputFwd !== 0 || inputRight !== 0,
     attackRequested,
     attackType: attackRequested ? input.state.selectedAttack : undefined,
   });
