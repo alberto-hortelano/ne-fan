@@ -46,13 +46,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# Prevent root motion drift: lock Hips XZ to rest position each frame
-	# Keeps Y free for bobbing, crouching, death falls
-	if _skeleton and _hips_idx >= 0:
-		var pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-		pos.x = _hips_rest_xz.x
-		pos.z = _hips_rest_xz.y
-		_skeleton.set_bone_pose_position(_hips_idx, pos)
+	pass
 
 
 func _load_model() -> void:
@@ -112,6 +106,7 @@ func _load_animations() -> void:
 			for src_anim_name in src_lib.get_animation_list():
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
 				animation.loop_mode = Animation.LOOP_LINEAR
+				_fix_root_motion(animation)
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
 				lib.add_animation(anim_name, animation)
@@ -177,6 +172,26 @@ func apply_skin(texture_path: String) -> void:
 					mesh_inst.set_surface_override_material(surf_idx, new_mat)
 					count += 1
 	print("CombatAnimator: skin applied to %d surfaces" % count)
+
+
+func _fix_root_motion(anim: Animation) -> void:
+	# Fix XZ drift on Hips position track while keeping Y (height) intact.
+	# Locks XZ to the first keyframe value so the character stays in place
+	# but can still bob up/down, crouch, fall on death, etc.
+	for i in range(anim.get_track_count()):
+		if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+			var path_str: String = str(anim.track_get_path(i))
+			if "Hips" in path_str:
+				var kc: int = anim.track_get_key_count(i)
+				if kc == 0:
+					continue
+				var base: Vector3 = anim.track_get_key_value(i, 0)
+				for k in range(kc):
+					var p: Vector3 = anim.track_get_key_value(i, k)
+					p.x = base.x
+					p.z = base.z
+					anim.track_set_key_value(i, k, p)
+				break
 
 
 func _clear_owner_recursive(node: Node) -> void:
