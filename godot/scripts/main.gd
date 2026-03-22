@@ -78,6 +78,10 @@ func _ready() -> void:
 	_combat_manager.combat_result.connect(_combat_hud.on_combat_result)
 	_player_combatant.damage_received.connect(_on_player_damage_received)
 
+	# Logic bridge (TS combat authority)
+	LogicBridge._player = _player
+	LogicBridge._player_combatant = _player_combatant
+
 	# AI client
 	AIClient.room_generated.connect(_on_room_generated)
 	AIClient.generation_failed.connect(_on_generation_failed)

@@ -113,6 +113,6 @@ function updateEnemy(
 ): void {
   const enemy = enemies.find((e) => e.id === enemyId);
   if (enemy) {
-    (enemy as Record<string, unknown>)[key] = value;
+    (enemy as unknown as Record<string, unknown>)[key] = value;
   }
 }
