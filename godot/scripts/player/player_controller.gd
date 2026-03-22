@@ -1,8 +1,7 @@
 extends CharacterBody3D
 
-const SPEED := 3.0
-const SPRINT_SPEED := 5.5
-const JUMP_VELOCITY := 4.5
+const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
+
 const MOUSE_SENSITIVITY := 0.003
 const MODEL_TURN_SPEED := 10.0
 const POS_THRESHOLD := 0.1
@@ -13,9 +12,18 @@ var _model: Node3D = null
 var _last_dispatched_pos := Vector3.ZERO
 var _last_dispatched_yaw := 0.0
 
+var _walk_speed := 3.0
+var _sprint_speed := 5.5
+var _jump_velocity := 4.5
+
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var config: Dictionary = CombatDataRef.load_config()
+	var player_cfg: Dictionary = config.get("player", {})
+	_walk_speed = player_cfg.get("walk_speed", 3.0)
+	_sprint_speed = player_cfg.get("sprint_speed", 5.5)
+	_jump_velocity = player_cfg.get("jump_velocity", 4.5)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -36,7 +44,7 @@ func _physics_process(delta: float) -> void:
 		velocity += get_gravity() * delta
 
 	if Input.is_action_just_pressed("jump") and is_on_floor():
-		velocity.y = JUMP_VELOCITY
+		velocity.y = _jump_velocity
 
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 
@@ -51,7 +59,7 @@ func _physics_process(delta: float) -> void:
 
 	var direction := (forward * -input_dir.y + right * input_dir.x).normalized()
 
-	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") else SPEED
+	var speed := _sprint_speed if Input.is_action_pressed("sprint") else _walk_speed
 
 	if direction:
 		velocity.x = direction.x * speed

@@ -3,15 +3,23 @@
 class_name CombatAnimationSync
 extends Node
 
+const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
+
 var _combatant: Node  # Combatant
 var _animator: Node  # CombatAnimator
 var _dead := false
 var _playing_action := false  # True while attack/hit/death animation plays
+var _run_threshold := 4.25  # midpoint between walk and sprint
 
 
 func _ready() -> void:
 	_combatant = get_parent().get_node_or_null("Combatant")
 	_animator = get_parent().get_node_or_null("CombatAnimator")
+	var config: Dictionary = CombatDataRef.load_config()
+	var pcfg: Dictionary = config.get("player", {})
+	var walk: float = pcfg.get("walk_speed", 3.0)
+	var sprint: float = pcfg.get("sprint_speed", 5.5)
+	_run_threshold = (walk + sprint) / 2.0
 
 	if _combatant:
 		_combatant.attack_started.connect(_on_attack_started)
@@ -46,8 +54,8 @@ func _process(_delta: float) -> void:
 		1:  # MOVING
 			var parent = get_parent()
 			if parent is CharacterBody3D:
-				var speed: float = Vector2(parent.velocity.x, parent.velocity.z).length()
-				if speed > 6.0:
+				var spd: float = Vector2(parent.velocity.x, parent.velocity.z).length()
+				if spd > _run_threshold:
 					_animator.play("run")
 				else:
 					_animator.play("walk")
