@@ -100,6 +100,12 @@ func send_room_loaded(room_id: String, enemies: Array) -> void:
 	_socket.send_text(JSON.stringify(msg))
 
 
+func send_respawn() -> void:
+	if not _connected:
+		return
+	_socket.send_text(JSON.stringify({"type": "respawn"}))
+
+
 func is_connected_to_bridge() -> bool:
 	return _connected
 
@@ -200,6 +206,21 @@ func _apply_state_update(msg: Dictionary) -> void:
 							c.current_attack_type = ""
 			"died":
 				print("Bridge: %s died" % event.get("combatantId", "?"))
+			"player_respawned":
+				print("Bridge: player respawned with HP %.0f" % event.get("hp", 100))
+				if _player_combatant:
+					_player_combatant.health = _player_combatant.max_health
+					_player_combatant.state = 0
+					_player_combatant.current_attack_type = ""
+				if _player:
+					_player.position = Vector3(0, 1, 4)
+					_player.velocity = Vector3.ZERO
+				var psync = _player.get_node_or_null("CombatAnimationSync") if _player else null
+				if psync:
+					psync.reset()
+				var panim = _player.get_node_or_null("CombatAnimator") if _player else null
+				if panim:
+					panim.play("idle")
 
 
 func _find_enemy_node(room: Node, enemy_id: String) -> Node:

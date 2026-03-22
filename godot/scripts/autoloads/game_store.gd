@@ -114,6 +114,9 @@ func _apply(event_name: String, payload: Dictionary) -> void:
 		"player_died":
 			state.player.hp = 0.0
 			state.player.combat_state = "dead"
+		"player_respawned":
+			state.player.hp = payload.get("hp", state.player.max_hp)
+			state.player.combat_state = "idle"
 		"attack_started":
 			var attacker_id: String = payload.get("attacker_id", "")
 			var attack_type: String = payload.get("type", "")

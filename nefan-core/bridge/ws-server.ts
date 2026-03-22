@@ -99,6 +99,19 @@ wss.on("connection", (ws: WebSocket) => {
         break;
       }
 
+      case "respawn": {
+        const events = sim.respawn();
+        const response: StateUpdateMessage = {
+          type: "state_update",
+          events,
+          playerHp: sim.getCombatant("player")?.health ?? 100,
+          enemies: getEnemyStates(),
+        };
+        ws.send(JSON.stringify(response));
+        console.log("Bridge: player respawned");
+        break;
+      }
+
       case "ping":
         ws.send(JSON.stringify({ type: "pong" }));
         break;

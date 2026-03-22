@@ -41,6 +41,10 @@ func unregister_combatant(c: Node) -> void:
 		c.died.disconnect(_on_combatant_died.bind(c))
 
 
+func clear_pending() -> void:
+	_pending_impacts.clear()
+
+
 func _on_attack_impacted(type_id: String, attacker: Node) -> void:
 	_pending_impacts.append({
 		"attacker": attacker,

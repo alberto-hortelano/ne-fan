@@ -105,6 +105,12 @@ func _handle(line: String) -> String:
 			return '{"ok":true,"path":"%s"}' % rec_path
 		"store_snapshot":
 			return JSON.stringify(GameStore.snapshot())
+		"respawn":
+			if LogicBridge.is_connected_to_bridge():
+				LogicBridge.send_respawn()
+			else:
+				get_tree().current_scene.respawn_player()
+			return '{"ok":true}'
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
