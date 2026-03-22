@@ -1,0 +1,43 @@
+{
+  "room_id": "anim_showcase",
+  "room_description": "Animation showcase — each character loops a different animation",
+  "dimensions": { "width": 20.0, "height": 4.0, "depth": 16.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "clean light grey stone floor, bright, seamless tiling", "tiling": [4, 4] },
+    "ceiling": { "texture_prompt": "clean white ceiling, bright, seamless tiling", "tiling": [4, 4] },
+    "walls": [
+      { "side": "north", "texture_prompt": "clean light stone wall, bright", "tiling": [4, 2] },
+      { "side": "east", "texture_prompt": "clean light stone wall, bright", "tiling": [4, 2] },
+      { "side": "south", "texture_prompt": "clean light stone wall, bright", "tiling": [4, 2] },
+      { "side": "west", "texture_prompt": "clean light stone wall, bright", "tiling": [4, 2] }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.4, 0.4, 0.4], "intensity": 1.0 },
+    "lights": [
+      { "type": "point", "position": [-5, 3.5, 0], "color": [1, 1, 1], "intensity": 3.0, "range": 15.0 },
+      { "type": "point", "position": [5, 3.5, 0], "color": [1, 1, 1], "intensity": 3.0, "range": 15.0 }
+    ]
+  },
+  "objects": [
+    { "id": "anim_idle", "mesh": "capsule", "position": [-6, 0, -5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "idle", "animation": "idle", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_walk", "mesh": "capsule", "position": [-2, 0, -5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "walk", "animation": "walk", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_run", "mesh": "capsule", "position": [2, 0, -5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "run", "animation": "run", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_turn", "mesh": "capsule", "position": [6, 0, -5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "turn", "animation": "turn", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+
+    { "id": "anim_quick", "mesh": "capsule", "position": [-8, 0, 0], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "quick (attack)", "animation": "quick", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_heavy", "mesh": "capsule", "position": [-4, 0, 0], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "heavy (slash)", "animation": "heavy", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_medium", "mesh": "capsule", "position": [0, 0, 0], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "medium (attack2)", "animation": "medium", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_defensive", "mesh": "capsule", "position": [4, 0, 0], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "defensive (block)", "animation": "defensive", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_precise", "mesh": "capsule", "position": [8, 0, 0], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "precise (slash3)", "animation": "precise", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+
+    { "id": "anim_kick", "mesh": "capsule", "position": [-8, 0, 5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "kick", "animation": "kick", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_casting", "mesh": "capsule", "position": [-4, 0, 5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "casting", "animation": "casting", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_hit", "mesh": "capsule", "position": [0, 0, 5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "hit (impact)", "animation": "hit", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_death", "mesh": "capsule", "position": [4, 0, 5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "death", "animation": "death", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } },
+    { "id": "anim_block_idle", "mesh": "capsule", "position": [8, 0, 5], "scale": [0.5, 1.8, 0.5], "category": "creature", "description": "block_idle", "animation": "block_idle", "combat": { "health": 999, "weapon_id": "unarmed", "personality": { "aggression": 0, "preferred_attacks": [], "reaction_time": 99 } } }
+  ],
+  "npcs": [],
+  "ambient_event": ""
+}
