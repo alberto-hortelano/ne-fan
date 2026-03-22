@@ -1,0 +1,14 @@
+{
+  "name": "@nefan/html",
+  "version": "0.1.0",
+  "description": "Never Ending Fantasy — 2D top-down HTML client",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "^5.4.0"
+  }
+}
