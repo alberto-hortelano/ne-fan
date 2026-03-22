@@ -1,0 +1,10 @@
+export * from "./types.js";
+export * from "./vec3.js";
+export * from "./combat/combat-resolver.js";
+export * from "./combat/combat-data.js";
+export * as Combatant from "./combat/combatant.js";
+export { CombatManager } from "./combat/combat-manager.js";
+export { EnemyAI, SeededRng } from "./combat/enemy-ai.js";
+export { GameStore, createInitialState } from "./store/game-store.js";
+export { GameSimulation } from "./simulation/game-loop.js";
+export type { FrameInputs, FrameResult } from "./simulation/game-loop.js";

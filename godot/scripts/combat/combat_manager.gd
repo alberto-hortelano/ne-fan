@@ -131,9 +131,22 @@ func _resolve_batch(batch: Array[Dictionary]) -> void:
 			var t_name: String = best_target.get_parent().name if best_target.get_parent() else "?"
 			var t_hp: float = best_target.health
 			print("Combat: %s -> %s: %.1f dmg (HP: %.0f)" % [a_name, t_name, best_damage, t_hp])
+			# Dispatch to store
+			var target_id: String = t_name
+			var attacker_id: String = a_name
+			var is_player_target: bool = best_target.get_parent() is CharacterBody3D
+			if is_player_target:
+				GameStore.dispatch("player_damaged", {"amount": best_damage, "from": attacker_id, "new_hp": t_hp})
+			else:
+				GameStore.dispatch("enemy_damaged", {"enemy_id": target_id, "amount": best_damage, "new_hp": t_hp})
 
 
 func _on_combatant_died(combatant: Node) -> void:
 	combatant_died.emit(combatant)
 	var c_name: String = combatant.get_parent().name if combatant.get_parent() else "?"
 	print("Combat: %s died" % c_name)
+	var is_player: bool = combatant.get_parent() is CharacterBody3D
+	if is_player:
+		GameStore.dispatch("player_died", {})
+	else:
+		GameStore.dispatch("enemy_died", {"enemy_id": c_name})

@@ -5,9 +5,13 @@ const SPRINT_SPEED := 8.0
 const JUMP_VELOCITY := 4.5
 const MOUSE_SENSITIVITY := 0.003
 const MODEL_TURN_SPEED := 10.0
+const POS_THRESHOLD := 0.1
+const YAW_THRESHOLD := 0.02
 
 @onready var _camera_pivot: Node3D = $CameraPivot
 var _model: Node3D = null
+var _last_dispatched_pos := Vector3.ZERO
+var _last_dispatched_yaw := 0.0
 
 
 func _ready() -> void:
@@ -57,6 +61,21 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, speed)
 
 	move_and_slide()
+
+	# Dispatch state changes (throttled)
+	if position.distance_to(_last_dispatched_pos) > POS_THRESHOLD:
+		_last_dispatched_pos = position
+		GameStore.dispatch("player_moved", {
+			"pos": [position.x, position.y, position.z],
+			"velocity": [velocity.x, velocity.y, velocity.z],
+		})
+	var yaw: float = _camera_pivot.rotation.y
+	if absf(yaw - _last_dispatched_yaw) > YAW_THRESHOLD:
+		_last_dispatched_yaw = yaw
+		GameStore.dispatch("camera_rotated", {
+			"yaw": yaw,
+			"pitch": _camera_pivot.rotation.x,
+		})
 
 	# Rotate model to face camera yaw
 	if not _model:
