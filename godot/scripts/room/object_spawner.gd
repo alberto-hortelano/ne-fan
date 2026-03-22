@@ -107,9 +107,15 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		animator.position.y = -sy / 2.0  # Body center is offset by sy/2, model origin at feet
 		body.add_child(animator)
 
-		var sync = CombatAnimationSyncScript.new()
-		sync.name = "CombatAnimationSync"
-		body.add_child(sync)
+		# Override animation if specified (for dev showcase rooms)
+		var forced_anim: String = data.get("animation", "")
+		if forced_anim != "":
+			# Defer so animator has time to load
+			animator.call_deferred("play", forced_anim)
+		else:
+			var sync = CombatAnimationSyncScript.new()
+			sync.name = "CombatAnimationSync"
+			body.add_child(sync)
 
 	return body
 

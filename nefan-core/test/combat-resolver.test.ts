@@ -83,9 +83,9 @@ describe("getEffectiveParams with combat_config.json", () => {
     const weapon = config.weapons["war_hammer"];
     const params = getEffectiveParams("heavy", config.attack_types, weapon);
 
-    // war_hammer: wind_up_modifier=1.2, heavy: wind_up_time=0.7
+    // war_hammer: wind_up_modifier=1.2, heavy: wind_up_time=1.4 (doubled for testing)
     // heavy mod: wind_up_multiplier=1.0
-    const expectedWindUp = 0.7 * 1.2 * 1.0;
+    const expectedWindUp = 1.4 * 1.2 * 1.0;
     assert.ok(Math.abs(params.wind_up_time - expectedWindUp) < 0.001);
   });
 });

@@ -11,18 +11,10 @@ const CombatantScript = preload("res://scripts/combat/combatant.gd")
 const PlayerCombatInputScript = preload("res://scripts/combat/player_combat_input.gd")
 const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
+const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
 
-const TEST_ROOMS: Array[String] = [
-	"res://test_rooms/crypt_001.json",
-	"res://test_rooms/tavern_001.json",
-	"res://test_rooms/corridor_001.json",
-	"res://test_rooms/style_anime.json",
-	"res://test_rooms/style_pixel.json",
-	"res://test_rooms/style_classic.json",
-	"res://test_rooms/style_realistic.json",
-	"res://test_rooms/style_watercolor.json",
-	"res://test_rooms/style_darksouls.json",
-]
+var _room_files: Array[String] = []
+var _dev_menu: CanvasLayer
 
 var _room_builder = RoomBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
@@ -96,6 +88,14 @@ func _ready() -> void:
 	# Room info display
 	GameState.room_entered.connect(_on_room_entered)
 
+	# Scan test rooms dynamically
+	_scan_rooms()
+
+	# Dev menu
+	_dev_menu = DevMenuScript.new()
+	_dev_menu.room_selected.connect(_on_dev_room_selected)
+	add_child(_dev_menu)
+	_dev_menu.call_deferred("set_rooms", _room_files)
 
 	# Load initial room
 	_load_room_from_file(0)
@@ -107,6 +107,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1: _load_room_from_file(0)
 			KEY_F2: _load_room_from_file(1)
 			KEY_F3: _load_room_from_file(2)
+			KEY_F12: _dev_menu.toggle()
 			KEY_R:
 				if _player_combatant.health <= 0.0:
 					if LogicBridge.is_connected_to_bridge():
@@ -193,19 +194,71 @@ func respawn_player() -> void:
 	_hud.show_brief_message("Respawn")
 
 
-# --- Room loading ---
+# --- Room scanning and loading ---
 
-func _load_room_from_file(index: int) -> void:
-	if index < 0 or index >= TEST_ROOMS.size():
+func _scan_rooms() -> void:
+	_room_files.clear()
+	var game: Array[String] = []
+	var style: Array[String] = []
+	var dev: Array[String] = []
+	_scan_room_dir("res://test_rooms", false)
+	# Separate into categories
+	var all := _room_files.duplicate()
+	_room_files.clear()
+	for f: String in all:
+		var fname: String = f.get_file()
+		if fname.begins_with("style_"):
+			style.append(f)
+		else:
+			game.append(f)
+	_scan_room_dir("res://test_rooms/dev", false)
+	for f: String in _room_files:
+		dev.append(f)
+	game.sort()
+	style.sort()
+	dev.sort()
+	_room_files = []
+	_room_files.append_array(game)
+	_room_files.append_array(style)
+	_room_files.append_array(dev)
+	print("Scanned %d rooms" % _room_files.size())
+
+
+func _scan_room_dir(dir_path: String, recurse: bool = false) -> void:
+	var dir := DirAccess.open(dir_path)
+	if not dir:
 		return
-	var file := FileAccess.open(TEST_ROOMS[index], FileAccess.READ)
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		var full := dir_path + "/" + fname
+		if dir.current_is_dir() and fname != "." and fname != ".." and recurse:
+			_scan_room_dir(full, true)
+		elif fname.ends_with(".json"):
+			_room_files.append(full)
+		fname = dir.get_next()
+
+
+func _on_dev_room_selected(file_path: String) -> void:
+	load_room_by_path(file_path)
+
+
+func load_room_by_path(file_path: String) -> void:
+	var file := FileAccess.open(file_path, FileAccess.READ)
 	if not file:
+		push_error("Cannot open room: %s" % file_path)
 		return
 	var data = JSON.parse_string(file.get_as_text())
 	file.close()
 	if data == null:
 		return
 	_apply_room(data, Vector3(0, 1, 0), false)
+
+
+func _load_room_from_file(index: int) -> void:
+	if index < 0 or index >= _room_files.size():
+		return
+	load_room_by_path(_room_files[index])
 
 
 # --- AI room generation (exit transitions) ---

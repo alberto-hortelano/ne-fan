@@ -8,3 +8,7 @@ export { EnemyAI, SeededRng } from "./combat/enemy-ai.js";
 export { GameStore, createInitialState } from "./store/game-store.js";
 export { GameSimulation } from "./simulation/game-loop.js";
 export type { FrameInputs, FrameResult } from "./simulation/game-loop.js";
+export { ROOMS, getRooms, getRoomsByCategory, getRoomEntry } from "./dev/room-registry.js";
+export type { RoomEntry } from "./dev/room-registry.js";
+export { createDevState } from "./dev/dev-state.js";
+export type { DevState } from "./dev/dev-state.js";

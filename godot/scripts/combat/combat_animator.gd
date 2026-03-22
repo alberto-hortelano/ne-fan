@@ -18,6 +18,11 @@ const ANIM_MAP := {
 	"hit": "sword and shield impact",
 	"death": "sword and shield death",
 	"turn": "sword and shield turn",
+	"kick": "sword and shield kick",
+	"casting": "sword and shield casting",
+	"block_idle": "sword and shield block idle",
+	"power_up": "sword and shield power up",
+	"jump": "sword and shield jump",
 }
 
 var _anim_player: AnimationPlayer
