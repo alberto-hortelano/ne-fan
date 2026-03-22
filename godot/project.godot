@@ -93,6 +93,7 @@ SpriteCache="*res://scripts/autoloads/sprite_cache.gd"
 RemoteControl="*res://scripts/autoloads/remote_control.gd"
 SessionRecorder="*res://scripts/autoloads/session_recorder.gd"
 SessionPlayer="*res://scripts/autoloads/session_player.gd"
+LogicBridge="*res://scripts/autoloads/logic_bridge.gd"
 
 [rendering]
 

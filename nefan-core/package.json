@@ -11,8 +11,12 @@
     "dev": "tsx bridge/ws-server.ts"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.7.0",
-    "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
   }
 }
