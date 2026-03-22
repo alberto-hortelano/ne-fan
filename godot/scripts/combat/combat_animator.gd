@@ -106,6 +106,7 @@ func _load_animations() -> void:
 			var src_lib: AnimationLibrary = src_player.get_animation_library("")
 			for src_anim_name in src_lib.get_animation_list():
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
+				animation.loop_mode = Animation.LOOP_LINEAR
 				_strip_root_motion(animation)
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
