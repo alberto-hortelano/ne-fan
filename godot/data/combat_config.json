@@ -2,7 +2,7 @@
   "attack_types": {
     "quick": {
       "display_name": "Rápido",
-      "wind_up_time": 0.15,
+      "wind_up_time": 0.3,
       "optimal_distance": 1.5,
       "distance_tolerance": 1.0,
       "area_radius": 1.2,
@@ -11,7 +11,7 @@
     },
     "heavy": {
       "display_name": "Fuerte",
-      "wind_up_time": 0.7,
+      "wind_up_time": 1.4,
       "optimal_distance": 2.0,
       "distance_tolerance": 1.5,
       "area_radius": 2.5,
@@ -20,7 +20,7 @@
     },
     "medium": {
       "display_name": "Medio",
-      "wind_up_time": 0.4,
+      "wind_up_time": 0.8,
       "optimal_distance": 1.8,
       "distance_tolerance": 1.2,
       "area_radius": 1.8,
@@ -29,7 +29,7 @@
     },
     "defensive": {
       "display_name": "Defensivo",
-      "wind_up_time": 0.3,
+      "wind_up_time": 0.6,
       "optimal_distance": 1.2,
       "distance_tolerance": 1.0,
       "area_radius": 1.5,
@@ -38,7 +38,7 @@
     },
     "precise": {
       "display_name": "Preciso",
-      "wind_up_time": 0.45,
+      "wind_up_time": 0.9,
       "optimal_distance": 1.6,
       "distance_tolerance": 0.8,
       "area_radius": 0.7,
