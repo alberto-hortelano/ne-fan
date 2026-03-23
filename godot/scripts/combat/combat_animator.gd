@@ -105,13 +105,19 @@ func _load_animations() -> void:
 		var src_player: AnimationPlayer = instance.get_node_or_null("AnimationPlayer")
 		if src_player and src_player.has_animation_library(""):
 			var src_lib: AnimationLibrary = src_player.get_animation_library("")
-			for src_anim_name in src_lib.get_animation_list():
+			# Prefer "mixamo_com" over "Take 001" (T-pose from individual downloads)
+			var src_anim_name: String = ""
+			if src_lib.has_animation("mixamo_com"):
+				src_anim_name = "mixamo_com"
+			elif src_lib.get_animation_list().size() > 0:
+				src_anim_name = src_lib.get_animation_list()[-1]
+			if src_anim_name != "":
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
 				animation.loop_mode = Animation.LOOP_LINEAR
+				_fix_root_motion(animation)
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
 				lib.add_animation(anim_name, animation)
-				break  # Only take first animation from each FBX
 		instance.queue_free()
 
 	print("CombatAnimator: loaded %d animations" % lib.get_animation_list().size())
