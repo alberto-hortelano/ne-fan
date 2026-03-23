@@ -69,6 +69,8 @@ func _process(_delta: float) -> void:
 		return
 
 	# Move parent body by root motion delta (model-local to world)
+	# The model is a child of the body, so it moves with it automatically.
+	# No compensation needed — camera follows the body independently.
 	var body := get_parent()
 	if body:
 		var model_yaw: float = rotation.y
@@ -78,10 +80,6 @@ func _process(_delta: float) -> void:
 		var world_dz: float = delta_xz.x * sin_y + delta_xz.y * cos_y
 		body.position.x += world_dx
 		body.position.z += world_dz
-
-		# Compensate: keep this Node3D centered on parent
-		position.x -= delta_xz.x
-		position.z -= delta_xz.y
 
 
 func _load_model() -> void:
