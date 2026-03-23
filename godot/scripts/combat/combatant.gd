@@ -38,9 +38,10 @@ func get_forward_direction() -> Vector3:
 	var parent_3d := get_parent() as Node3D
 	if parent_3d == null:
 		return Vector3.FORWARD
-	var pivot := parent_3d.get_node_or_null("CameraPivot") as Node3D
-	if pivot:
-		var fwd: Vector3 = -pivot.global_transform.basis.z
+	# For player: use model (CombatAnimator) forward direction
+	var model := parent_3d.get_node_or_null("CombatAnimator") as Node3D
+	if model:
+		var fwd: Vector3 = -model.global_transform.basis.z
 		return Vector3(fwd.x, 0, fwd.z).normalized()
 	var fwd: Vector3 = -parent_3d.global_transform.basis.z
 	return Vector3(fwd.x, 0, fwd.z).normalized()

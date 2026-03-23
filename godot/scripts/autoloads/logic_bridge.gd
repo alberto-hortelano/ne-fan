@@ -53,10 +53,10 @@ func _physics_process(delta: float) -> void:
 
 	# Collect inputs
 	var pos: Vector3 = _player.global_position
-	var pivot: Node3D = _player.get_node_or_null("CameraPivot")
+	var model: Node3D = _player.get_node_or_null("CombatAnimator")
 	var fwd := Vector3.FORWARD
-	if pivot:
-		fwd = -pivot.global_transform.basis.z
+	if model:
+		fwd = -model.global_transform.basis.z
 		fwd.y = 0
 		fwd = fwd.normalized()
 
