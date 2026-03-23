@@ -42,6 +42,8 @@ func _ready() -> void:
 	_load_animations()
 	play("idle")
 	_base_pos_y = position.y
+	# Run _process AFTER AnimationPlayer updates bones (higher priority = later)
+	process_priority = 100
 	if _skeleton:
 		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
 		if _hips_idx >= 0:
