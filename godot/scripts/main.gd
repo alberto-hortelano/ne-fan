@@ -94,8 +94,13 @@ func _ready() -> void:
 	# Dev menu
 	_dev_menu = DevMenuScript.new()
 	_dev_menu.room_selected.connect(_on_dev_room_selected)
+	_dev_menu.animation_selected.connect(_on_dev_animation_selected)
 	add_child(_dev_menu)
 	_dev_menu.call_deferred("set_rooms", _room_files)
+	_dev_menu.call_deferred("set_animations", CombatAnimatorScript.ANIM_MAP.keys())
+
+	# Make player collision capsule semi-visible for dev
+	_make_player_capsule_visible()
 
 	# Load initial room
 	_load_room_from_file(0)
@@ -241,6 +246,42 @@ func _scan_room_dir(dir_path: String, recurse: bool = false) -> void:
 
 func _on_dev_room_selected(file_path: String) -> void:
 	load_room_by_path(file_path)
+
+
+func _on_dev_animation_selected(anim_name: String) -> void:
+	var animator = _player.get_node_or_null("CombatAnimator")
+	if animator:
+		animator.play(anim_name)
+	# Disable combat animation sync while previewing
+	var sync = _player.get_node_or_null("CombatAnimationSync")
+	if sync:
+		sync.set_process(false)
+
+
+func _make_player_capsule_visible() -> void:
+	var col_shape: CollisionShape3D = _player.get_node_or_null("CollisionShape3D")
+	if not col_shape:
+		return
+	var shape: Shape3D = col_shape.shape
+	if not shape:
+		return
+	var mesh_inst := MeshInstance3D.new()
+	mesh_inst.name = "DebugCapsule"
+	if shape is CapsuleShape3D:
+		var capsule_mesh := CapsuleMesh.new()
+		capsule_mesh.radius = shape.radius
+		capsule_mesh.height = shape.height
+		mesh_inst.mesh = capsule_mesh
+	else:
+		var box_mesh := BoxMesh.new()
+		box_mesh.size = Vector3(0.6, 1.8, 0.6)
+		mesh_inst.mesh = box_mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.2, 0.8, 1.0, 0.25)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test = true
+	mesh_inst.material_override = mat
+	col_shape.add_child(mesh_inst)
 
 
 func load_room_by_path(file_path: String) -> void:
