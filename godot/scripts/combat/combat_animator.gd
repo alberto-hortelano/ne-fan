@@ -23,6 +23,8 @@ const ANIM_MAP := {
 	"block_idle": "sword and shield block idle",
 	"power_up": "sword and shield power up",
 	"jump": "sword and shield jump",
+	"draw_sword_1": "draw sword 1",
+	"draw_sword_2": "draw sword 2",
 }
 
 var _anim_player: AnimationPlayer
