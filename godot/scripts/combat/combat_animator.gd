@@ -32,9 +32,8 @@ var _current_anim: String = ""
 var _skeleton: Skeleton3D
 
 var _hips_idx: int = -1
-var _prev_hips_xz := Vector2.ZERO
 var _root_motion_enabled := true
-var _base_pos_y: float = 0.0  # original Y offset (set by spawner)
+var _base_pos_y: float = 0.0
 
 
 func _ready() -> void:
@@ -42,46 +41,8 @@ func _ready() -> void:
 	_load_animations()
 	play("idle")
 	_base_pos_y = position.y
-	# Run _process AFTER AnimationPlayer updates bones (higher priority = later)
-	process_priority = 100
 	if _skeleton:
 		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
-		if _hips_idx >= 0:
-			var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
-			_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
-
-
-func _process(_delta: float) -> void:
-	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
-		return
-
-	# Read current Hips XZ after animation update
-	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-	var current_xz := Vector2(hips_pos.x, hips_pos.z)
-	var delta_xz := current_xz - _prev_hips_xz
-
-	# Ignore large jumps (animation change / loop reset)
-	if delta_xz.length() > 0.3:
-		_prev_hips_xz = current_xz
-		return
-
-	_prev_hips_xz = current_xz
-
-	if delta_xz.length_squared() < 0.000001:
-		return
-
-	# Move parent body by root motion delta (model-local to world)
-	# The model is a child of the body, so it moves with it automatically.
-	# No compensation needed — camera follows the body independently.
-	var body := get_parent()
-	if body:
-		var model_yaw: float = rotation.y
-		var cos_y: float = cos(model_yaw)
-		var sin_y: float = sin(model_yaw)
-		var world_dx: float = delta_xz.x * cos_y - delta_xz.y * sin_y
-		var world_dz: float = delta_xz.x * sin_y + delta_xz.y * cos_y
-		body.position.x += world_dx
-		body.position.z += world_dz
 
 
 func _load_model() -> void:
