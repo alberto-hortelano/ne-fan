@@ -1,0 +1,27 @@
+{
+  "room_id": "root_motion_debug",
+  "room_description": "Root motion debug room — grid floor, no enemies",
+  "dimensions": { "width": 12.0, "height": 4.0, "depth": 12.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "white and grey checkerboard grid floor, 1 meter squares, clean bright, seamless tiling", "tiling": [12, 12] },
+    "ceiling": { "texture_prompt": "plain white ceiling, bright", "tiling": [2, 2] },
+    "walls": [
+      { "side": "north", "texture_prompt": "plain light grey wall with ruler marks", "tiling": [3, 1] },
+      { "side": "east", "texture_prompt": "plain light grey wall with ruler marks", "tiling": [3, 1] },
+      { "side": "south", "texture_prompt": "plain light grey wall with ruler marks", "tiling": [3, 1] },
+      { "side": "west", "texture_prompt": "plain light grey wall with ruler marks", "tiling": [3, 1] }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.5, 0.5, 0.5], "intensity": 1.2 },
+    "lights": [
+      { "type": "point", "position": [0, 3.5, 0], "color": [1, 1, 1], "intensity": 4.0, "range": 15.0 },
+      { "type": "point", "position": [-4, 3.5, -4], "color": [1, 1, 1], "intensity": 2.0, "range": 10.0 },
+      { "type": "point", "position": [4, 3.5, 4], "color": [1, 1, 1], "intensity": 2.0, "range": 10.0 }
+    ]
+  },
+  "objects": [],
+  "npcs": [],
+  "ambient_event": ""
+}

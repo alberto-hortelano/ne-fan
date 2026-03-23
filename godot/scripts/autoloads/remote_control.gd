@@ -111,6 +111,8 @@ func _handle(line: String) -> String:
 			else:
 				get_tree().current_scene.respawn_player()
 			return '{"ok":true}'
+		"play_anim":
+			return _cmd_play_anim(json)
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
@@ -224,3 +226,25 @@ func _cmd_status() -> String:
 		info["combat_state"] = player_combatant.get_current_action()
 		info["combat_weapon"] = player_combatant.weapon_id
 	return JSON.stringify(info)
+
+
+func _cmd_play_anim(args: Dictionary) -> String:
+	var anim_name: String = args.get("name", "")
+	if anim_name.is_empty():
+		return '{"error":"missing name"}'
+	var player := get_tree().current_scene.get_node_or_null("Player")
+	if not player:
+		return '{"error":"no player"}'
+	var animator = player.get_node_or_null("CombatAnimator")
+	if not animator:
+		return '{"error":"no animator"}'
+	# Disable combat sync while previewing
+	var sync = player.get_node_or_null("CombatAnimationSync")
+	if sync:
+		sync.set_process(false)
+	animator.play(anim_name)
+	# Get animation duration
+	var duration: float = 0.0
+	if animator._anim_player and animator._anim_player.has_animation(anim_name):
+		duration = animator._anim_player.get_animation(anim_name).length
+	return '{"ok":true,"name":"%s","duration":%.3f}' % [anim_name, duration]
