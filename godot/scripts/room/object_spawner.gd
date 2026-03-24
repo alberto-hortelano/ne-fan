@@ -100,6 +100,7 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		for child in body.get_children():
 			if child is MeshInstance3D:
 				child.visible = false
+				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 		# 3D animated model
 		var animator = CombatAnimatorScript.new()
