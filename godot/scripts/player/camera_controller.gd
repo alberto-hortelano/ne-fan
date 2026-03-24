@@ -40,8 +40,12 @@ func _physics_process(delta: float) -> void:
 	if not _target:
 		return
 
-	# Smooth follow target position
-	var target_pos: Vector3 = _target.global_position + Vector3(0, 1.5, 0)
+	# Follow the Hips bone if available (where the character actually is)
+	var follow_pos: Vector3 = _target.global_position
+	var animator = _target.get_node_or_null("CombatAnimator")
+	if animator and animator.has_method("get_hips_world_position"):
+		follow_pos = animator.get_hips_world_position()
+	var target_pos: Vector3 = follow_pos + Vector3(0, 0.5, 0)
 	global_position = global_position.lerp(target_pos, FOLLOW_SPEED * delta)
 
 	# Apply yaw and pitch rotation
