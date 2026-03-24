@@ -41,6 +41,11 @@ func _physics_process(delta: float) -> void:
 
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 
+	# Don't apply WASD movement during non-interruptible animations (attacks etc)
+	var sync = get_node_or_null("CombatAnimationSync")
+	if sync and not sync.is_interruptible():
+		input_dir = Vector2.ZERO
+
 	# Movement relative to camera facing direction
 	var direction := Vector3.ZERO
 	if _camera and input_dir.length() > 0.01:
@@ -70,7 +75,13 @@ func _physics_process(delta: float) -> void:
 		_model = get_node_or_null("CombatAnimator")
 	if _model and _move_direction.length() > 0.01:
 		var target_yaw: float = atan2(_move_direction.x, _move_direction.z)
-		_model.rotation.y = lerp_angle(_model.rotation.y, target_yaw, MODEL_TURN_SPEED * delta)
+		# Check if animation sync is in a non-interruptible state (attack etc)
+		var anim_sync = get_node_or_null("CombatAnimationSync")
+		if anim_sync and not anim_sync.is_interruptible():
+			# Don't rotate during attacks — animation controls orientation
+			pass
+		else:
+			_model.rotation.y = lerp_angle(_model.rotation.y, target_yaw, MODEL_TURN_SPEED * delta)
 
 	# Dispatch state changes (throttled)
 	if position.distance_to(_last_dispatched_pos) > POS_THRESHOLD:
