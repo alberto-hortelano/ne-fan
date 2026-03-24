@@ -102,5 +102,28 @@
     "walk_speed": 1.9,
     "sprint_speed": 3.8,
     "jump_velocity": 4.5
+  },
+  "animations": {
+    "idle":       { "duration": 3.67, "interruptible": true,  "loops": true,  "category": "locomotion" },
+    "walk":       { "duration": 1.10, "interruptible": true,  "loops": true,  "category": "locomotion" },
+    "run":        { "duration": 0.53, "interruptible": true,  "loops": true,  "category": "locomotion" },
+    "turn":       { "duration": 0.93, "interruptible": true,  "loops": false, "category": "locomotion" },
+    "quick":      { "duration": 2.33, "interruptible": false, "loops": false, "category": "combat" },
+    "heavy":      { "duration": 1.50, "interruptible": false, "loops": false, "category": "combat" },
+    "medium":     { "duration": 1.30, "interruptible": false, "loops": false, "category": "combat" },
+    "defensive":  { "duration": 0.57, "interruptible": false, "loops": false, "category": "combat" },
+    "precise":    { "duration": 1.67, "interruptible": false, "loops": false, "category": "combat" },
+    "kick":       { "duration": 1.20, "interruptible": false, "loops": false, "category": "combat" },
+    "hit":        { "duration": 0.77, "interruptible": false, "loops": false, "category": "reaction" },
+    "death":      { "duration": 2.30, "interruptible": false, "loops": false, "category": "reaction" },
+    "jump":       { "duration": 0.83, "interruptible": false, "loops": false, "category": "special" },
+    "casting":    { "duration": 2.97, "interruptible": false, "loops": false, "category": "special" },
+    "power_up":   { "duration": 2.37, "interruptible": false, "loops": false, "category": "special" },
+    "block_idle": { "duration": 1.40, "interruptible": true,  "loops": true,  "category": "combat" }
+  },
+  "transitions": {
+    "default_blend": 0.15,
+    "auto_return": "idle",
+    "turn_threshold_deg": 90
   }
 }
