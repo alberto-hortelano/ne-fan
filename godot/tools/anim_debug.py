@@ -33,10 +33,11 @@ ALL_ANIMS = [
 ]
 
 # Camera positions for each angle (x, y, z, yaw_deg, pitch_rad)
+# Camera looks TOWARD origin where the player is positioned
 CAMERA_VIEWS = {
-    "side":  {"x": 4, "y": 1.5, "z": 0, "yaw": -90, "pitch": -0.1},
-    "front": {"x": 0, "y": 1.5, "z": 4, "yaw": 180, "pitch": -0.1},
-    "top":   {"x": 0, "y": 6,   "z": 0, "yaw": 0,   "pitch": -1.4},
+    "side":  {"x": 5, "y": 1.2, "z": 0, "yaw": 90, "pitch": -0.1},
+    "front": {"x": 0, "y": 1.2, "z": 5, "yaw": 0,  "pitch": -0.1},
+    "top":   {"x": 0, "y": 8,   "z": 0.5, "yaw": 0, "pitch": -1.4},
 }
 
 
