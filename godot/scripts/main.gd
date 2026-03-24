@@ -291,17 +291,17 @@ func _make_player_capsule_visible() -> void:
 	mesh_inst.name = "DebugCapsule"
 	if shape is CapsuleShape3D:
 		var capsule_mesh := CapsuleMesh.new()
-		capsule_mesh.radius = shape.radius
+		capsule_mesh.radius = shape.radius + 0.02
 		capsule_mesh.height = shape.height
 		mesh_inst.mesh = capsule_mesh
 	else:
 		var box_mesh := BoxMesh.new()
-		box_mesh.size = Vector3(0.6, 1.8, 0.6)
+		box_mesh.size = Vector3(0.62, 1.82, 0.62)
 		mesh_inst.mesh = box_mesh
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.8, 1.0, 0.25)
+	mat.albedo_color = Color(0.1, 1.0, 0.2, 0.4)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.no_depth_test = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mesh_inst.material_override = mat
 	col_shape.add_child(mesh_inst)
 

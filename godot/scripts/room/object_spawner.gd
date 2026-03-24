@@ -117,7 +117,7 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 			sync.name = "CombatAnimationSync"
 			body.add_child(sync)
 
-	# Debug capsule overlay (semi-visible collision shape)
+	# Debug capsule overlay (visible collision shape)
 	if data.get("debug_capsule", false):
 		var col: CollisionShape3D = body.get_node_or_null("CollisionShape3D")
 		if col and col.shape:
@@ -125,17 +125,17 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 			dbg_mesh.name = "DebugCapsule"
 			if col.shape is CapsuleShape3D:
 				var cap := CapsuleMesh.new()
-				cap.radius = col.shape.radius
+				cap.radius = col.shape.radius + 0.02
 				cap.height = col.shape.height
 				dbg_mesh.mesh = cap
 			else:
-				var box := BoxMesh.new()
-				box.size = Vector3(0.6, 1.8, 0.6)
-				dbg_mesh.mesh = box
+				var bx := BoxMesh.new()
+				bx.size = Vector3(0.62, 1.82, 0.62)
+				dbg_mesh.mesh = bx
 			var dbg_mat := StandardMaterial3D.new()
-			dbg_mat.albedo_color = Color(0.2, 0.8, 1.0, 0.25)
+			dbg_mat.albedo_color = Color(0.1, 1.0, 0.2, 0.4)
 			dbg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			dbg_mat.no_depth_test = true
+			dbg_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			dbg_mesh.material_override = dbg_mat
 			col.add_child(dbg_mesh)
 
