@@ -72,22 +72,6 @@ func _physics_process(delta: float) -> void:
 		var target_yaw: float = atan2(_move_direction.x, _move_direction.z)
 		_model.rotation.y = lerp_angle(_model.rotation.y, target_yaw, MODEL_TURN_SPEED * delta)
 
-	# Sync body position to where animation moved the model (root motion)
-	# The Hips bone moves with the animation; we follow it.
-	if _model and _model._skeleton and _model._hips_idx >= 0:
-		var hips_global: Vector3 = _model._skeleton.global_position
-		var hips_bone_pos: Vector3 = _model._skeleton.get_bone_global_pose(_model._hips_idx).origin
-		var hips_world: Vector3 = _model._skeleton.global_transform * hips_bone_pos
-		# Move body XZ to match hips, keep body Y from physics
-		var offset_x: float = hips_world.x - global_position.x
-		var offset_z: float = hips_world.z - global_position.z
-		if absf(offset_x) > 0.01 or absf(offset_z) > 0.01:
-			position.x += offset_x
-			position.z += offset_z
-			# Compensate model so it doesn't double-move (body moved, model is child)
-			_model.position.x -= offset_x
-			_model.position.z -= offset_z
-
 	# Dispatch state changes (throttled)
 	if position.distance_to(_last_dispatched_pos) > POS_THRESHOLD:
 		_last_dispatched_pos = position
