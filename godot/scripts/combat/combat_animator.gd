@@ -52,26 +52,17 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
-		return
+	# No body movement — the animation moves the model freely.
+	# Camera follows the Hips bone position via get_hips_world_position().
+	pass
 
-	# Get Hips world position from the bone global pose
-	var hips_global_pose: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
-	var hips_local: Vector3 = hips_global_pose.origin
-	# Convert from skeleton-local to world space
-	var hips_world: Vector3 = _skeleton.global_transform * hips_local
 
-	# Move body XZ to where the hips are in world space
-	# Model is child of body, so it moves with it. No compensation needed
-	# because the animation moves the Hips bone relative to the skeleton,
-	# not the skeleton node itself.
-	var body := get_parent()
-	if body:
-		var offset_x: float = hips_world.x - body.global_position.x
-		var offset_z: float = hips_world.z - body.global_position.z
-		if absf(offset_x) > 0.005 or absf(offset_z) > 0.005:
-			body.position.x += offset_x
-			body.position.z += offset_z
+func get_hips_world_position() -> Vector3:
+	"""Returns the world position of the Hips bone (where the character actually is)."""
+	if _skeleton and _hips_idx >= 0:
+		var hips_pose: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
+		return _skeleton.global_transform * hips_pose.origin
+	return global_position
 
 
 func _load_model() -> void:
