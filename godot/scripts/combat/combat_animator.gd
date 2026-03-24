@@ -62,6 +62,9 @@ func _process(_delta: float) -> void:
 	var hips_world: Vector3 = _skeleton.global_transform * hips_local
 
 	# Move body XZ to where the hips are in world space
+	# Model is child of body, so it moves with it. No compensation needed
+	# because the animation moves the Hips bone relative to the skeleton,
+	# not the skeleton node itself.
 	var body := get_parent()
 	if body:
 		var offset_x: float = hips_world.x - body.global_position.x
@@ -69,9 +72,6 @@ func _process(_delta: float) -> void:
 		if absf(offset_x) > 0.005 or absf(offset_z) > 0.005:
 			body.position.x += offset_x
 			body.position.z += offset_z
-			# Compensate: move this node opposite so model doesn't double-move
-			position.x -= offset_x
-			position.z -= offset_z
 
 
 func _load_model() -> void:
