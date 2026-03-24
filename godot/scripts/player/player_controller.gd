@@ -38,6 +38,9 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = _jump_velocity
+		var sync_node = get_node_or_null("CombatAnimationSync")
+		if sync_node:
+			sync_node.request_action("jump")
 
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 

@@ -60,15 +60,22 @@ func _process(_delta: float) -> void:
 	var body := get_parent()
 	if not body:
 		return
-	# Keep model Y in sync with body (handles teleports, gravity, etc)
-	global_position.y = body.global_position.y
-	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
-		return
-	# With top_level=true, moving body doesn't move the model (no feedback loop).
-	# Sync body global XZ to Hips bone world XZ position.
-	var hips_world: Vector3 = get_hips_world_position()
-	body.global_position.x = hips_world.x
-	body.global_position.z = hips_world.z
+
+	# Check if current animation is non-interruptible (attack/jump/etc)
+	# Only then does root motion drive the body position
+	var sync = body.get_node_or_null("CombatAnimationSync")
+	var use_root_motion: bool = sync != null and not sync.is_interruptible()
+
+	if use_root_motion and _root_motion_enabled and _skeleton and _hips_idx >= 0:
+		# Root motion: animation drives body XZ position
+		var hips_world: Vector3 = get_hips_world_position()
+		body.global_position.x = hips_world.x
+		body.global_position.z = hips_world.z
+		# Model stays where animation puts it (top_level=true)
+		global_position.y = body.global_position.y
+	else:
+		# Locomotion: WASD drives body, model follows body
+		global_position = body.global_position
 
 
 func get_hips_world_position() -> Vector3:
