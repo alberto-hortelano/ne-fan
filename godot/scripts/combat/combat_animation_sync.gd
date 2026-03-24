@@ -42,15 +42,7 @@ func _process(_delta: float) -> void:
 	# 0=IDLE, 1=MOVING, 2=WINDING_UP, 3=ATTACKING
 	match state:
 		0:  # IDLE
-			var cam_pivot: Node3D = get_parent().get_node_or_null("CameraPivot")
-			if cam_pivot and _animator:
-				var yaw_diff: float = absf(wrapf(cam_pivot.rotation.y + PI - _animator.rotation.y, -PI, PI))
-				if yaw_diff > 0.5:
-					_animator.play("turn")
-				else:
-					_animator.play("idle")
-			else:
-				_animator.play("idle")
+			_animator.play("idle")
 		1:  # MOVING
 			var parent = get_parent()
 			if parent is CharacterBody3D:

@@ -12,9 +12,11 @@ const PlayerCombatInputScript = preload("res://scripts/combat/player_combat_inpu
 const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
 const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
+const CameraControllerScript = preload("res://scripts/player/camera_controller.gd")
 
 var _room_files: Array[String] = []
 var _dev_menu: CanvasLayer
+var _camera_controller: Node3D
 
 var _room_builder = RoomBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
@@ -70,6 +72,26 @@ func _ready() -> void:
 	_combat_manager.combat_result.connect(_combat_hud.on_combat_result)
 	_player_combatant.damage_received.connect(_on_player_damage_received)
 
+	# Independent camera (NOT child of player)
+	_camera_controller = CameraControllerScript.new()
+	_camera_controller.name = "CameraController"
+	add_child(_camera_controller)
+	_camera_controller.set_target(_player)
+	_player.set_camera(_camera_controller)
+
+	# SpringArm3D + Camera3D as children of camera controller
+	var spring_arm := SpringArm3D.new()
+	spring_arm.name = "SpringArm"
+	spring_arm.spring_length = 3.5
+	spring_arm.margin = 0.3
+	# Slight vertical offset so camera looks from above-behind
+	spring_arm.position = Vector3(0, 0.3, 0)
+	_camera_controller.add_child(spring_arm)
+
+	var camera := Camera3D.new()
+	camera.name = "Camera3D"
+	spring_arm.add_child(camera)
+
 	# Logic bridge (TS combat authority)
 	LogicBridge._player = _player
 	LogicBridge._player_combatant = _player_combatant
@@ -80,7 +102,7 @@ func _ready() -> void:
 	AIClient.check_server()
 
 	# Interaction system
-	var ray = _player.get_node_or_null("CameraPivot/Camera3D/InteractionRay")
+	var ray = _player.get_node_or_null("InteractionRay")
 	if ray:
 		ray.target_changed.connect(_on_target_changed)
 		ray.interacted.connect(_on_interacted)
@@ -269,17 +291,17 @@ func _make_player_capsule_visible() -> void:
 	mesh_inst.name = "DebugCapsule"
 	if shape is CapsuleShape3D:
 		var capsule_mesh := CapsuleMesh.new()
-		capsule_mesh.radius = shape.radius
+		capsule_mesh.radius = shape.radius + 0.02
 		capsule_mesh.height = shape.height
 		mesh_inst.mesh = capsule_mesh
 	else:
 		var box_mesh := BoxMesh.new()
-		box_mesh.size = Vector3(0.6, 1.8, 0.6)
+		box_mesh.size = Vector3(0.62, 1.82, 0.62)
 		mesh_inst.mesh = box_mesh
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.8, 1.0, 0.25)
+	mat.albedo_color = Color(0.1, 1.0, 0.2, 0.4)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.no_depth_test = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mesh_inst.material_override = mat
 	col_shape.add_child(mesh_inst)
 
