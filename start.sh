@@ -21,6 +21,13 @@ start_godot() {
     echo "Godot started"
 }
 
+start_godot_headless() {
+    pkill -f "Godot_v4.6" 2>/dev/null
+    sleep 1
+    xvfb-run --auto-servernum "$GODOT_BIN" --path "$PROJECT_DIR/godot" --rendering-method gl_compatibility &
+    echo "Godot started (headless via xvfb)"
+}
+
 start_html() {
     pkill -f "vite" 2>/dev/null
     sleep 1
@@ -45,7 +52,10 @@ case "$MODE" in
         start_godot
         start_html
         ;;
+    headless)
+        start_godot_headless
+        ;;
     *)
-        echo "Usage: ./start.sh [godot|bridge|html|all]"
+        echo "Usage: ./start.sh [godot|bridge|html|headless|all]"
         ;;
 esac
