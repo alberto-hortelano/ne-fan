@@ -113,6 +113,10 @@ func _handle(line: String) -> String:
 			return '{"ok":true}'
 		"play_anim":
 			return _cmd_play_anim(json)
+		"camera_detach":
+			return _cmd_camera_detach(json)
+		"camera_attach":
+			return _cmd_camera_attach()
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
@@ -248,3 +252,28 @@ func _cmd_play_anim(args: Dictionary) -> String:
 	if animator._anim_player and animator._anim_player.has_animation(anim_name):
 		duration = animator._anim_player.get_animation(anim_name).length
 	return '{"ok":true,"name":"%s","duration":%.3f}' % [anim_name, duration]
+
+
+func _cmd_camera_detach(args: Dictionary) -> String:
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
+	var pos := Vector3(
+		float(args.get("x", 0)),
+		float(args.get("y", 2)),
+		float(args.get("z", 5))
+	)
+	var yaw: float = deg_to_rad(float(args.get("yaw", 0)))
+	var pitch: float = float(args.get("pitch", -0.2))
+	cam.detach(pos, yaw, pitch)
+	return '{"ok":true}'
+
+
+func _cmd_camera_attach() -> String:
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
+	var player := get_tree().current_scene.get_node_or_null("Player")
+	if player:
+		cam.attach(player)
+	return '{"ok":true}'

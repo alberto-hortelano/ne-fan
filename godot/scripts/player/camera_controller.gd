@@ -49,6 +49,21 @@ func _physics_process(delta: float) -> void:
 	rotation.x = _pitch
 
 
+func detach(pos: Vector3, yaw: float, pitch: float) -> void:
+	"""Stop following target, position camera at absolute coordinates."""
+	_target = null
+	global_position = pos
+	_yaw = yaw
+	_pitch = pitch
+	rotation.y = _yaw
+	rotation.x = _pitch
+
+
+func attach(target: Node3D) -> void:
+	"""Resume following target."""
+	_target = target
+
+
 func get_camera_yaw() -> float:
 	return _yaw
 
