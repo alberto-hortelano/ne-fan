@@ -55,31 +55,23 @@ func _process(_delta: float) -> void:
 	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
 		return
 
-	# Read Hips XZ after animation applied this frame
-	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-	var current_xz := Vector2(hips_pos.x, hips_pos.z)
-	var delta_xz := current_xz - _prev_hips_xz
+	# Get Hips world position from the bone global pose
+	var hips_global_pose: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
+	var hips_local: Vector3 = hips_global_pose.origin
+	# Convert from skeleton-local to world space
+	var hips_world: Vector3 = _skeleton.global_transform * hips_local
 
-	# Ignore large jumps (anim change / loop reset)
-	if delta_xz.length() > 0.3:
-		_prev_hips_xz = current_xz
-		return
-
-	_prev_hips_xz = current_xz
-
-	if delta_xz.length_squared() < 0.000001:
-		return
-
-	# Move parent body by root motion delta
+	# Move body XZ to where the hips are in world space
 	var body := get_parent()
 	if body:
-		var model_yaw: float = rotation.y
-		var cos_y: float = cos(model_yaw)
-		var sin_y: float = sin(model_yaw)
-		var world_dx: float = delta_xz.x * cos_y - delta_xz.y * sin_y
-		var world_dz: float = delta_xz.x * sin_y + delta_xz.y * cos_y
-		body.position.x += world_dx
-		body.position.z += world_dz
+		var offset_x: float = hips_world.x - body.global_position.x
+		var offset_z: float = hips_world.z - body.global_position.z
+		if absf(offset_x) > 0.005 or absf(offset_z) > 0.005:
+			body.position.x += offset_x
+			body.position.z += offset_z
+			# Compensate: move this node opposite so model doesn't double-move
+			position.x -= offset_x
+			position.z -= offset_z
 
 
 func _load_model() -> void:
