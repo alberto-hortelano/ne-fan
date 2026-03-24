@@ -32,16 +32,23 @@ var _current_anim: String = ""
 var _skeleton: Skeleton3D
 
 var _hips_idx: int = -1
-var _prev_hips_xz := Vector2.ZERO
 var _root_motion_enabled := true
-var _base_pos_y: float = 0.0  # original Y offset (set by spawner)
+var _base_pos_y: float = 0.0
+var _prev_hips_xz := Vector2.ZERO
 
 
 func _ready() -> void:
 	_load_model()
 	_load_animations()
 	play("idle")
-	_base_pos_y = position.y
+	# Detach from parent transform so moving the body doesn't move the model
+	top_level = true
+	# Sync initial position to parent — model origin is at feet (y=0)
+	var body := get_parent()
+	if body:
+		global_position = body.global_position
+	# Run after AnimationPlayer so bones are updated
+	process_priority = 100
 	if _skeleton:
 		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
 		if _hips_idx >= 0:
@@ -50,38 +57,26 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var body := get_parent()
+	if not body:
+		return
+	# Keep model Y in sync with body (handles teleports, gravity, etc)
+	global_position.y = body.global_position.y
 	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
 		return
+	# With top_level=true, moving body doesn't move the model (no feedback loop).
+	# Sync body global XZ to Hips bone world XZ position.
+	var hips_world: Vector3 = get_hips_world_position()
+	body.global_position.x = hips_world.x
+	body.global_position.z = hips_world.z
 
-	# Read current Hips XZ after animation update
-	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-	var current_xz := Vector2(hips_pos.x, hips_pos.z)
-	var delta_xz := current_xz - _prev_hips_xz
 
-	# Ignore large jumps (animation change / loop reset)
-	if delta_xz.length() > 0.3:
-		_prev_hips_xz = current_xz
-		return
-
-	_prev_hips_xz = current_xz
-
-	if delta_xz.length_squared() < 0.000001:
-		return
-
-	# Move parent body by root motion delta (model-local to world)
-	var body := get_parent()
-	if body:
-		var model_yaw: float = rotation.y
-		var cos_y: float = cos(model_yaw)
-		var sin_y: float = sin(model_yaw)
-		var world_dx: float = delta_xz.x * cos_y - delta_xz.y * sin_y
-		var world_dz: float = delta_xz.x * sin_y + delta_xz.y * cos_y
-		body.position.x += world_dx
-		body.position.z += world_dz
-
-		# Compensate: keep this Node3D centered on parent
-		position.x -= delta_xz.x
-		position.z -= delta_xz.y
+func get_hips_world_position() -> Vector3:
+	"""Returns the world position of the Hips bone (where the character actually is)."""
+	if _skeleton and _hips_idx >= 0:
+		var hips_pose: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
+		return _skeleton.global_transform * hips_pose.origin
+	return global_position
 
 
 func _load_model() -> void:

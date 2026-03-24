@@ -111,6 +111,12 @@ func _handle(line: String) -> String:
 			else:
 				get_tree().current_scene.respawn_player()
 			return '{"ok":true}'
+		"play_anim":
+			return _cmd_play_anim(json)
+		"camera_detach":
+			return _cmd_camera_detach(json)
+		"camera_attach":
+			return _cmd_camera_attach()
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
@@ -153,12 +159,12 @@ func _cmd_mouse(args: Dictionary) -> String:
 	var player := get_tree().current_scene.get_node_or_null("Player")
 	if not player:
 		return '{"error":"no player"}'
-	var pivot := player.get_node_or_null("CameraPivot")
-	if not pivot:
-		return '{"error":"no pivot"}'
-	pivot.rotate_y(-dx * sensitivity)
-	pivot.rotate_x(-dy * sensitivity)
-	pivot.rotation.x = clampf(pivot.rotation.x, -PI / 3.0, PI / 4.0)
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
+	cam._yaw -= dx * sensitivity
+	cam._pitch -= dy * sensitivity
+	cam._pitch = clampf(cam._pitch, -PI / 3.0, PI / 4.0)
 	return '{"ok":true}'
 
 
@@ -184,15 +190,13 @@ func _cmd_teleport(args: Dictionary) -> String:
 
 
 func _cmd_look_at(args: Dictionary) -> String:
-	var player := get_tree().current_scene.get_node_or_null("Player")
-	if not player:
-		return '{"error":"no player"}'
-	var pivot := player.get_node_or_null("CameraPivot")
-	if not pivot:
-		return '{"error":"no pivot"}'
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
 	var yaw: float = args.get("yaw", 0.0)
 	var pitch: float = args.get("pitch", -0.2)
-	pivot.rotation = Vector3(pitch, deg_to_rad(yaw), 0)
+	cam._yaw = deg_to_rad(yaw)
+	cam._pitch = pitch
 	return '{"ok":true,"yaw":%.1f,"pitch":%.2f}' % [yaw, pitch]
 
 
@@ -205,11 +209,11 @@ func _cmd_status() -> String:
 		info["player_pos"] = [snappedf(player.position.x, 0.01),
 								snappedf(player.position.y, 0.01),
 								snappedf(player.position.z, 0.01)]
-	var pivot := main_scene.get_node_or_null("Player/CameraPivot")
-	if pivot:
-		info["camera_yaw"] = snappedf(rad_to_deg(pivot.rotation.y), 0.1)
-		info["camera_pitch"] = snappedf(pivot.rotation.x, 0.01)
-	var ray = main_scene.get_node_or_null("Player/CameraPivot/Camera3D/InteractionRay")
+	var cam := main_scene.get_node_or_null("CameraController")
+	if cam:
+		info["camera_yaw"] = snappedf(rad_to_deg(cam._yaw), 0.1)
+		info["camera_pitch"] = snappedf(cam._pitch, 0.01)
+	var ray = main_scene.get_node_or_null("Player/InteractionRay")
 	info["has_ray"] = ray != null
 	if ray and ray.is_colliding():
 		var col = ray.get_collider()
@@ -226,3 +230,50 @@ func _cmd_status() -> String:
 		info["combat_state"] = player_combatant.get_current_action()
 		info["combat_weapon"] = player_combatant.weapon_id
 	return JSON.stringify(info)
+
+
+func _cmd_play_anim(args: Dictionary) -> String:
+	var anim_name: String = args.get("name", "")
+	if anim_name.is_empty():
+		return '{"error":"missing name"}'
+	var player := get_tree().current_scene.get_node_or_null("Player")
+	if not player:
+		return '{"error":"no player"}'
+	var animator = player.get_node_or_null("CombatAnimator")
+	if not animator:
+		return '{"error":"no animator"}'
+	# Disable combat sync while previewing
+	var sync = player.get_node_or_null("CombatAnimationSync")
+	if sync:
+		sync.set_process(false)
+	animator.play(anim_name)
+	# Get animation duration
+	var duration: float = 0.0
+	if animator._anim_player and animator._anim_player.has_animation(anim_name):
+		duration = animator._anim_player.get_animation(anim_name).length
+	return '{"ok":true,"name":"%s","duration":%.3f}' % [anim_name, duration]
+
+
+func _cmd_camera_detach(args: Dictionary) -> String:
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
+	var pos := Vector3(
+		float(args.get("x", 0)),
+		float(args.get("y", 2)),
+		float(args.get("z", 5))
+	)
+	var yaw: float = deg_to_rad(float(args.get("yaw", 0)))
+	var pitch: float = float(args.get("pitch", -0.2))
+	cam.detach(pos, yaw, pitch)
+	return '{"ok":true}'
+
+
+func _cmd_camera_attach() -> String:
+	var cam := get_tree().current_scene.get_node_or_null("CameraController")
+	if not cam:
+		return '{"error":"no camera"}'
+	var player := get_tree().current_scene.get_node_or_null("Player")
+	if player:
+		cam.attach(player)
+	return '{"ok":true}'

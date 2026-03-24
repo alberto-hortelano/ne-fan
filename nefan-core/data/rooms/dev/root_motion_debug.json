@@ -1,0 +1,36 @@
+{
+  "room_id": "root_motion_debug",
+  "room_description": "Root motion debug room — grid markers, no enemies",
+  "dimensions": { "width": 16.0, "height": 4.0, "depth": 16.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "white and grey checkerboard grid floor, 1 meter squares, clean bright, seamless tiling", "tiling": [16, 16] },
+    "ceiling": { "texture_prompt": "plain white ceiling, bright", "tiling": [2, 2] },
+    "walls": [
+      { "side": "north", "texture_prompt": "plain light grey wall", "tiling": [3, 1] },
+      { "side": "east", "texture_prompt": "plain light grey wall", "tiling": [3, 1] },
+      { "side": "south", "texture_prompt": "plain light grey wall", "tiling": [3, 1] },
+      { "side": "west", "texture_prompt": "plain light grey wall", "tiling": [3, 1] }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.6, 0.6, 0.6], "intensity": 1.5 },
+    "lights": [
+      { "type": "point", "position": [0, 3.5, 0], "color": [1, 1, 1], "intensity": 5.0, "range": 20.0 }
+    ]
+  },
+  "objects": [
+    { "id": "mark_0", "mesh": "box", "position": [0, 0.01, 0], "scale": [0.1, 0.02, 6], "category": "prop", "description": "center line Z" },
+    { "id": "mark_1", "mesh": "box", "position": [0, 0.01, 0], "scale": [6, 0.02, 0.1], "category": "prop", "description": "center line X" },
+    { "id": "mark_2m", "mesh": "box", "position": [0, 0.01, -2], "scale": [1.0, 0.02, 0.05], "category": "prop", "description": "2m mark" },
+    { "id": "mark_4m", "mesh": "box", "position": [0, 0.01, -4], "scale": [1.5, 0.02, 0.05], "category": "prop", "description": "4m mark" },
+    { "id": "mark_n2m", "mesh": "box", "position": [0, 0.01, 2], "scale": [1.0, 0.02, 0.05], "category": "prop", "description": "-2m mark" },
+    { "id": "mark_n4m", "mesh": "box", "position": [0, 0.01, 4], "scale": [1.5, 0.02, 0.05], "category": "prop", "description": "-4m mark" },
+    { "id": "mark_r2m", "mesh": "box", "position": [2, 0.01, 0], "scale": [0.05, 0.02, 1.0], "category": "prop", "description": "2m right" },
+    { "id": "mark_r4m", "mesh": "box", "position": [4, 0.01, 0], "scale": [0.05, 0.02, 1.5], "category": "prop", "description": "4m right" },
+    { "id": "mark_l2m", "mesh": "box", "position": [-2, 0.01, 0], "scale": [0.05, 0.02, 1.0], "category": "prop", "description": "2m left" },
+    { "id": "mark_l4m", "mesh": "box", "position": [-4, 0.01, 0], "scale": [0.05, 0.02, 1.5], "category": "prop", "description": "4m left" }
+  ],
+  "npcs": [],
+  "ambient_event": ""
+}

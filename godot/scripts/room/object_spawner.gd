@@ -100,6 +100,7 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		for child in body.get_children():
 			if child is MeshInstance3D:
 				child.visible = false
+				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 		# 3D animated model
 		var animator = CombatAnimatorScript.new()
@@ -110,13 +111,34 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		# Override animation if specified (for dev showcase rooms)
 		var forced_anim: String = data.get("animation", "")
 		if forced_anim != "":
-			# Lock in place + play forced animation (deferred so _ready completes first)
-			animator.call_deferred("lock_in_place")
+			# Play forced animation — let root motion move freely
 			animator.call_deferred("play", forced_anim)
 		else:
 			var sync = CombatAnimationSyncScript.new()
 			sync.name = "CombatAnimationSync"
 			body.add_child(sync)
+
+	# Debug capsule overlay (visible collision shape)
+	if data.get("debug_capsule", false):
+		var col: CollisionShape3D = body.get_node_or_null("CollisionShape3D")
+		if col and col.shape:
+			var dbg_mesh := MeshInstance3D.new()
+			dbg_mesh.name = "DebugCapsule"
+			if col.shape is CapsuleShape3D:
+				var cap := CapsuleMesh.new()
+				cap.radius = col.shape.radius + 0.02
+				cap.height = col.shape.height
+				dbg_mesh.mesh = cap
+			else:
+				var bx := BoxMesh.new()
+				bx.size = Vector3(0.62, 1.82, 0.62)
+				dbg_mesh.mesh = bx
+			var dbg_mat := StandardMaterial3D.new()
+			dbg_mat.albedo_color = Color(0.1, 1.0, 0.2, 0.4)
+			dbg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			dbg_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			dbg_mesh.material_override = dbg_mat
+			col.add_child(dbg_mesh)
 
 	return body
 

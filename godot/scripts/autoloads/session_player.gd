@@ -77,10 +77,10 @@ func _apply_snapshot(snap: Dictionary) -> void:
 		var pos: Array = player_data.get("pos", [0, 0, 0])
 		_player_node.position = Vector3(pos[0], pos[1], pos[2])
 
-		var pivot: Node3D = _player_node.get_node_or_null("CameraPivot")
-		if pivot:
-			pivot.rotation.y = player_data.get("camera_yaw", 0.0)
-			pivot.rotation.x = player_data.get("camera_pitch", 0.0)
+		var cam: Node3D = get_tree().current_scene.get_node_or_null("CameraController")
+		if cam:
+			cam._yaw = player_data.get("camera_yaw", 0.0)
+			cam._pitch = player_data.get("camera_pitch", 0.0)
 
 	# Update store state (without re-dispatching)
 	GameStore.state = snap.duplicate(true)
