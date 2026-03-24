@@ -42,6 +42,12 @@ func _ready() -> void:
 	_load_animations()
 	play("idle")
 	_base_pos_y = position.y
+	# Detach from parent transform so moving the body doesn't move the model
+	top_level = true
+	# Sync initial position to parent
+	var body := get_parent()
+	if body:
+		global_position = body.global_position + Vector3(0, _base_pos_y, 0)
 	# Run after AnimationPlayer so bones are updated
 	process_priority = 100
 	if _skeleton:
@@ -52,9 +58,15 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# No body movement — the animation moves the model freely.
-	# Camera follows the Hips bone position via get_hips_world_position().
-	pass
+	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
+		return
+	# With top_level=true, moving body doesn't move the model (no feedback loop).
+	# Sync body XZ to Hips bone world position.
+	var hips_world: Vector3 = get_hips_world_position()
+	var body := get_parent()
+	if body:
+		body.position.x = hips_world.x
+		body.position.z = hips_world.z
 
 
 func get_hips_world_position() -> Vector3:
