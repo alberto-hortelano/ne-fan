@@ -242,11 +242,12 @@ func _cmd_play_anim(args: Dictionary) -> String:
 	var animator = player.get_node_or_null("CombatAnimator")
 	if not animator:
 		return '{"error":"no animator"}'
-	# Disable combat sync while previewing
+	# Use sync state machine if available, otherwise direct play
 	var sync = player.get_node_or_null("CombatAnimationSync")
-	if sync:
-		sync.set_process(false)
-	animator.play(anim_name)
+	if sync and sync.is_processing():
+		sync.request_action(anim_name)
+	else:
+		animator.play(anim_name)
 	# Get animation duration
 	var duration: float = 0.0
 	if animator._anim_player and animator._anim_player.has_animation(anim_name):
