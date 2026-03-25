@@ -229,6 +229,14 @@ func _cmd_status() -> String:
 		info["combat_hp"] = snappedf(player_combatant.health, 0.1)
 		info["combat_state"] = player_combatant.get_current_action()
 		info["combat_weapon"] = player_combatant.weapon_id
+	# Animation state
+	var anim_sync = main_scene.get_node_or_null("Player/CombatAnimationSync")
+	if anim_sync:
+		info["anim_state"] = anim_sync.get_current_state()
+		info["anim_interruptible"] = anim_sync.is_interruptible()
+	var animator = main_scene.get_node_or_null("Player/CombatAnimator")
+	if animator:
+		info["anim_name"] = animator.get_current()
 	return JSON.stringify(info)
 
 
