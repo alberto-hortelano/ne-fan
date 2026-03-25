@@ -33,9 +33,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
-	# Execute attack (LMB) — queued for bridge
+	# Execute attack (LMB)
 	if event.is_action_pressed("attack_execute"):
 		_pending_attack = {"type": selected_type}
+		# Notify animation state machine
+		var sync = get_parent().get_node_or_null("CombatAnimationSync")
+		if sync:
+			sync.request_action(selected_type)
 		get_viewport().set_input_as_handled()
 
 

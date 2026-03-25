@@ -77,7 +77,8 @@ func _physics_process(delta: float) -> void:
 	if not _model:
 		_model = get_node_or_null("CombatAnimator")
 	if _model and _move_direction.length() > 0.01:
-		var target_yaw: float = atan2(_move_direction.x, _move_direction.z)
+		# Mixamo model faces +Z, Godot forward is -Z, so offset by PI
+		var target_yaw: float = atan2(_move_direction.x, _move_direction.z) + PI
 		# Check if animation sync is in a non-interruptible state (attack etc)
 		var anim_sync = get_node_or_null("CombatAnimationSync")
 		if anim_sync and not anim_sync.is_interruptible():
