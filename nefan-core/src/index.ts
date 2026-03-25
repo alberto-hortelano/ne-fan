@@ -12,3 +12,7 @@ export { ROOMS, getRooms, getRoomsByCategory, getRoomEntry } from "./dev/room-re
 export type { RoomEntry } from "./dev/room-registry.js";
 export { createDevState } from "./dev/dev-state.js";
 export type { DevState } from "./dev/dev-state.js";
+export { AnimationController } from "./animation/animation-controller.js";
+export { loadAnimationConfigs } from "./animation/animation-state.js";
+export type { AnimationConfig, AnimEvent } from "./animation/animation-state.js";
+export { buildTransitionMap, canTransition } from "./animation/animation-transitions.js";

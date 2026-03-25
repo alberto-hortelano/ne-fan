@@ -229,6 +229,14 @@ func _cmd_status() -> String:
 		info["combat_hp"] = snappedf(player_combatant.health, 0.1)
 		info["combat_state"] = player_combatant.get_current_action()
 		info["combat_weapon"] = player_combatant.weapon_id
+	# Animation state
+	var anim_sync = main_scene.get_node_or_null("Player/CombatAnimationSync")
+	if anim_sync:
+		info["anim_state"] = anim_sync.get_current_state()
+		info["anim_interruptible"] = anim_sync.is_interruptible()
+	var animator = main_scene.get_node_or_null("Player/CombatAnimator")
+	if animator:
+		info["anim_name"] = animator.get_current()
 	return JSON.stringify(info)
 
 
@@ -242,11 +250,12 @@ func _cmd_play_anim(args: Dictionary) -> String:
 	var animator = player.get_node_or_null("CombatAnimator")
 	if not animator:
 		return '{"error":"no animator"}'
-	# Disable combat sync while previewing
+	# Use sync state machine if available, otherwise direct play
 	var sync = player.get_node_or_null("CombatAnimationSync")
-	if sync:
-		sync.set_process(false)
-	animator.play(anim_name)
+	if sync and sync.is_processing():
+		sync.request_action(anim_name)
+	else:
+		animator.play(anim_name)
 	# Get animation duration
 	var duration: float = 0.0
 	if animator._anim_player and animator._anim_player.has_animation(anim_name):

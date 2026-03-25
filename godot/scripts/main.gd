@@ -280,6 +280,13 @@ func _on_dev_animation_selected(anim_name: String) -> void:
 		sync.set_process(false)
 
 
+func _reactivate_animation_sync() -> void:
+	var sync = _player.get_node_or_null("CombatAnimationSync")
+	if sync:
+		sync.set_process(true)
+		sync.reset()
+
+
 func _make_player_capsule_visible() -> void:
 	var col_shape: CollisionShape3D = _player.get_node_or_null("CollisionShape3D")
 	if not col_shape:
@@ -307,6 +314,7 @@ func _make_player_capsule_visible() -> void:
 
 
 func load_room_by_path(file_path: String) -> void:
+	_reactivate_animation_sync()
 	var file := FileAccess.open(file_path, FileAccess.READ)
 	if not file:
 		push_error("Cannot open room: %s" % file_path)
