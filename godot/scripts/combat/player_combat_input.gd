@@ -1,4 +1,5 @@
-## Reads player input, queues attacks for nefan-core via LogicBridge.
+## Reads player attack type selection (keys 1-5).
+## Attack execution is handled by PlayerController._unhandled_input.
 class_name PlayerCombatInput
 extends Node
 
@@ -13,8 +14,7 @@ const ATTACK_KEYS := {
 }
 
 var selected_type: String = "quick"
-var _combatant: Node  # Combatant
-var _pending_attack: Dictionary = {}
+var _combatant: Node
 
 
 func _ready() -> void:
@@ -22,9 +22,6 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _combatant:
-		return
-
 	# Attack type selection (1-5)
 	for action in ATTACK_KEYS:
 		if event.is_action_pressed(action):
@@ -32,21 +29,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			attack_type_changed.emit(selected_type)
 			get_viewport().set_input_as_handled()
 			return
-
-	# Execute attack (LMB)
-	if event.is_action_pressed("attack_execute"):
-		_pending_attack = {"type": selected_type}
-		# Notify animation state machine
-		var sync = get_parent().get_node_or_null("CombatAnimationSync")
-		if sync:
-			sync.request_action(selected_type)
-		get_viewport().set_input_as_handled()
-
-
-func get_pending_attack() -> Dictionary:
-	var result := _pending_attack
-	_pending_attack = {}
-	return result
 
 
 func _physics_process(_delta: float) -> void:
