@@ -72,29 +72,14 @@ func _process(_delta: float) -> void:
 		_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
 		return
 
-	# Root motion: extract Hips XZ delta and move body
+	# Root motion during attacks: also lock Hips XZ to rest.
+	# The attack animation plays "in place" like locomotion.
+	# The body stays put during the attack — displacement is visual only.
 	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-	var current_xz := Vector2(hips_pos.x, hips_pos.z)
-	var delta_xz := current_xz - _prev_hips_xz
-
-	# Ignore large jumps (animation change / loop reset)
-	if delta_xz.length() > 0.3:
-		_prev_hips_xz = current_xz
-		return
-
-	_prev_hips_xz = current_xz
-
-	if delta_xz.length_squared() < 0.00001:
-		return
-
-	# Convert delta from model-local to world space
-	var model_yaw: float = rotation.y
-	var cos_y: float = cos(model_yaw)
-	var sin_y: float = sin(model_yaw)
-	var world_dx: float = delta_xz.x * cos_y - delta_xz.y * sin_y
-	var world_dz: float = delta_xz.x * sin_y + delta_xz.y * cos_y
-	body.position.x += world_dx
-	body.position.z += world_dz
+	var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
+	hips_pos.x = rest.origin.x
+	hips_pos.z = rest.origin.z
+	_skeleton.set_bone_pose_position(_hips_idx, hips_pos)
 
 
 func get_hips_world_position() -> Vector3:
