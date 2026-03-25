@@ -58,13 +58,18 @@ func _process(_delta: float) -> void:
 	if not body:
 		return
 
-	# Only apply root motion during non-interruptible animations (attacks/jump)
+	# During locomotion: lock Hips XZ to rest position so animation doesn't
+	# drift the model. WASD moves the body, animation only moves legs "in place".
+	# During attacks: extract Hips XZ delta and move body (root motion).
 	var sync = body.get_node_or_null("CombatAnimationSync")
 	if not sync or sync.is_interruptible():
-		# Locomotion: WASD drives body, model is child so follows automatically
-		_prev_hips_xz = Vector2(
-			_skeleton.get_bone_pose_position(_hips_idx).x,
-			_skeleton.get_bone_pose_position(_hips_idx).z)
+		# Lock Hips XZ to rest, keep Y for bobbing
+		var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
+		var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
+		hips_pos.x = rest.origin.x
+		hips_pos.z = rest.origin.z
+		_skeleton.set_bone_pose_position(_hips_idx, hips_pos)
+		_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
 		return
 
 	# Root motion: extract Hips XZ delta and move body
