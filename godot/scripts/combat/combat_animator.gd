@@ -1,4 +1,6 @@
-## Loads Mixamo FBX character + animations, maps combat states to animations.
+## Loads Mixamo FBX character + animations, sets up AnimationTree with StateMachine.
+## Animations are purely visual — all movement is via CharacterBody3D velocity.
+## Pattern follows: https://github.com/catprisbrey/Third-Person-Controller--SoulsLIke-Godot4
 class_name CombatAnimator
 extends Node3D
 
@@ -27,67 +29,24 @@ const ANIM_MAP := {
 	"draw_sword_2": "draw sword 2",
 }
 
+# Animations that loop
+const LOOPING_ANIMS := ["idle", "walk", "run", "block_idle"]
+
 var _anim_player: AnimationPlayer
+var _anim_tree: AnimationTree
+var _playback: AnimationNodeStateMachinePlayback
 var _current_anim: String = ""
 var _skeleton: Skeleton3D
-
 var _hips_idx: int = -1
-var _root_motion_enabled := true
-var _base_pos_y: float = 0.0
-var _prev_hips_xz := Vector2.ZERO
 
 
 func _ready() -> void:
 	_load_model()
 	_load_animations()
-	play("idle")
-	# Run after AnimationPlayer so bones are updated
-	process_priority = 100
-	if _skeleton:
-		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
-		if _hips_idx >= 0:
-			var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
-			_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
-
-
-func _process(_delta: float) -> void:
-	if not _root_motion_enabled or not _skeleton or _hips_idx < 0:
-		return
-
-	var body := get_parent()
-	if not body:
-		return
-
-	# During locomotion: lock Hips XZ to rest position so animation doesn't
-	# drift the model. WASD moves the body, animation only moves legs "in place".
-	# During attacks: extract Hips XZ delta and move body (root motion).
-	var sync = body.get_node_or_null("CombatAnimationSync")
-	if not sync or sync.is_interruptible():
-		# Lock Hips XZ to rest, keep Y for bobbing
-		var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-		var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
-		hips_pos.x = rest.origin.x
-		hips_pos.z = rest.origin.z
-		_skeleton.set_bone_pose_position(_hips_idx, hips_pos)
-		_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
-		return
-
-	# Root motion during attacks: also lock Hips XZ to rest.
-	# The attack animation plays "in place" like locomotion.
-	# The body stays put during the attack — displacement is visual only.
-	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-	var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
-	hips_pos.x = rest.origin.x
-	hips_pos.z = rest.origin.z
-	_skeleton.set_bone_pose_position(_hips_idx, hips_pos)
-
-
-func get_hips_world_position() -> Vector3:
-	"""Returns the world position of the Hips bone (where the character actually is)."""
-	if _skeleton and _hips_idx >= 0:
-		var hips_pose: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
-		return _skeleton.global_transform * hips_pose.origin
-	return global_position
+	_setup_animation_tree()
+	# Lock Hips XZ drift on all animations (movement is via velocity, not root motion)
+	_lock_all_hips_xz()
+	print("CombatAnimator: loaded %d animations" % _get_anim_count())
 
 
 func _load_model() -> void:
@@ -97,17 +56,13 @@ func _load_model() -> void:
 		return
 
 	var instance: Node3D = scene.instantiate()
-
-	# Clear owners before reparenting to avoid "inconsistent owner" issues
 	_clear_owner_recursive(instance)
 
-	# Extract skeleton and meshes
 	_skeleton = instance.get_node_or_null("Skeleton3D")
 	if _skeleton:
 		instance.remove_child(_skeleton)
 		add_child(_skeleton)
 
-	# Get or create AnimationPlayer
 	var src_player: AnimationPlayer = instance.get_node_or_null("AnimationPlayer")
 	if src_player:
 		instance.remove_child(src_player)
@@ -117,6 +72,9 @@ func _load_model() -> void:
 		_anim_player = AnimationPlayer.new()
 		add_child(_anim_player)
 
+	if _skeleton:
+		_hips_idx = _skeleton.find_bone("mixamorig_Hips")
+
 	instance.queue_free()
 
 
@@ -124,7 +82,6 @@ func _load_animations() -> void:
 	if not _anim_player:
 		return
 
-	# Ensure we have a default library
 	var lib: AnimationLibrary
 	if _anim_player.has_animation_library(""):
 		lib = _anim_player.get_animation_library("")
@@ -137,14 +94,12 @@ func _load_animations() -> void:
 		var path: String = ANIM_DIR + fbx_name + ".fbx"
 		var scene: PackedScene = load(path)
 		if not scene:
-			print("CombatAnimator: missing %s" % path)
 			continue
 
 		var instance: Node3D = scene.instantiate()
 		var src_player: AnimationPlayer = instance.get_node_or_null("AnimationPlayer")
 		if src_player and src_player.has_animation_library(""):
 			var src_lib: AnimationLibrary = src_player.get_animation_library("")
-			# Prefer "mixamo_com" over "Take 001" (T-pose from individual downloads)
 			var src_anim_name: String = ""
 			if src_lib.has_animation("mixamo_com"):
 				src_anim_name = "mixamo_com"
@@ -152,48 +107,137 @@ func _load_animations() -> void:
 				src_anim_name = src_lib.get_animation_list()[-1]
 			if src_anim_name != "":
 				var animation: Animation = src_lib.get_animation(src_anim_name).duplicate()
-				animation.loop_mode = Animation.LOOP_LINEAR
+				# Set loop mode based on animation type
+				if anim_name in LOOPING_ANIMS:
+					animation.loop_mode = Animation.LOOP_LINEAR
+				else:
+					animation.loop_mode = Animation.LOOP_NONE
 				if lib.has_animation(anim_name):
 					lib.remove_animation(anim_name)
 				lib.add_animation(anim_name, animation)
 		instance.queue_free()
 
-	print("CombatAnimator: loaded %d animations" % lib.get_animation_list().size())
+
+func _setup_animation_tree() -> void:
+	"""Create AnimationTree with StateMachine programmatically."""
+	_anim_tree = AnimationTree.new()
+	_anim_tree.name = "AnimationTree"
+	_anim_tree.anim_player = _anim_player.get_path()
+
+	var state_machine := AnimationNodeStateMachine.new()
+
+	# Add animation nodes for each loaded animation
+	var lib: AnimationLibrary = _anim_player.get_animation_library("")
+	for anim_name in lib.get_animation_list():
+		var node := AnimationNodeAnimation.new()
+		node.animation = anim_name
+		state_machine.add_node(anim_name, node)
+
+	# Add transitions: locomotion states can transition freely
+	var locomotion := ["idle", "walk", "run"]
+	for from in locomotion:
+		for to in locomotion:
+			if from != to and state_machine.has_node(from) and state_machine.has_node(to):
+				var t := AnimationNodeStateMachineTransition.new()
+				t.xfade_time = 0.15
+				state_machine.add_transition(from, to, t)
+
+	# From locomotion to one-shot animations (attacks, jump, etc.)
+	var one_shots := ["quick", "heavy", "medium", "defensive", "precise",
+					  "kick", "hit", "death", "jump", "casting", "turn",
+					  "power_up", "draw_sword_1", "draw_sword_2"]
+	for action in one_shots:
+		if not state_machine.has_node(action):
+			continue
+		for from in locomotion:
+			if state_machine.has_node(from):
+				var t := AnimationNodeStateMachineTransition.new()
+				t.xfade_time = 0.1
+				state_machine.add_transition(from, action, t)
+		# Auto-return to idle after one-shot completes
+		var t_back := AnimationNodeStateMachineTransition.new()
+		t_back.xfade_time = 0.1
+		t_back.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+		t_back.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+		state_machine.add_transition(action, "idle", t_back)
+
+	_anim_tree.tree_root = state_machine
+	_anim_tree.active = true
+	add_child(_anim_tree)
+
+	_playback = _anim_tree.get("parameters/playback")
 
 
-func play(anim_name: String, speed: float = 1.0) -> void:
-	if not _anim_player:
+func _lock_all_hips_xz() -> void:
+	"""Lock Hips XZ to first keyframe on ALL animations.
+	Movement is 100% via CharacterBody3D velocity, not root motion."""
+	if not _anim_player or not _anim_player.has_animation_library(""):
 		return
-	if anim_name == _current_anim and _anim_player.is_playing():
-		return
-	if _anim_player.has_animation(anim_name):
-		_anim_player.play(anim_name, -1, speed)
-		_current_anim = anim_name
-	else:
-		# Fallback to idle
-		if anim_name != "idle" and _anim_player.has_animation("idle"):
-			_anim_player.play("idle")
-			_current_anim = "idle"
+	var lib: AnimationLibrary = _anim_player.get_animation_library("")
+	for anim_name in lib.get_animation_list():
+		var anim: Animation = lib.get_animation(anim_name)
+		for i in range(anim.get_track_count()):
+			if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+				var path_str: String = str(anim.track_get_path(i))
+				if "Hips" in path_str:
+					var kc: int = anim.track_get_key_count(i)
+					if kc == 0:
+						continue
+					var base: Vector3 = anim.track_get_key_value(i, 0)
+					for k in range(kc):
+						var p: Vector3 = anim.track_get_key_value(i, k)
+						p.x = base.x
+						p.z = base.z
+						anim.track_set_key_value(i, k, p)
+					break
 
 
-func play_once(anim_name: String, speed: float = 1.0) -> void:
-	if not _anim_player:
-		return
-	if _anim_player.has_animation(anim_name):
-		_anim_player.play(anim_name, -1, speed)
-		_current_anim = anim_name
+# ─── Public API ───
+
+
+func travel(anim_name: String) -> void:
+	"""Transition to animation via AnimationTree StateMachine (smooth blend)."""
+	if _playback:
+		_playback.travel(anim_name)
+	_current_anim = anim_name
+
+
+func start(anim_name: String) -> void:
+	"""Jump directly to animation (no blend, for interrupts like roll)."""
+	if _playback:
+		_playback.start(anim_name)
+	_current_anim = anim_name
+
+
+func play(anim_name: String, _speed: float = 1.0) -> void:
+	"""Legacy API — routes to travel() for backwards compatibility."""
+	travel(anim_name)
+
+
+func play_once(anim_name: String, _speed: float = 1.0) -> void:
+	"""Legacy API — routes to travel() for backwards compatibility."""
+	travel(anim_name)
+
+
+func get_current() -> String:
+	if _playback:
+		var node: StringName = _playback.get_current_node()
+		return String(node)
+	return _current_anim
+
+
+func get_current_length() -> float:
+	var current: String = get_current()
+	if _anim_player and _anim_player.has_animation(current):
+		return _anim_player.get_animation(current).length
+	return 0.0
 
 
 func is_playing() -> bool:
 	return _anim_player and _anim_player.is_playing()
 
 
-func get_current() -> String:
-	return _current_anim
-
-
 func apply_skin(texture_path: String) -> void:
-	"""Replace albedo texture on all mesh materials with a custom skin."""
 	var tex: Texture2D = load(texture_path)
 	if not tex:
 		push_error("CombatAnimator: cannot load skin %s" % texture_path)
@@ -220,35 +264,14 @@ func apply_skin(texture_path: String) -> void:
 
 
 func lock_in_place() -> void:
-	"""Fix all loaded animations to stay in place (for showcase/preview)."""
-	_root_motion_enabled = false
-	if not _anim_player:
-		return
-	if _anim_player.has_animation_library(""):
-		var lib: AnimationLibrary = _anim_player.get_animation_library("")
-		for anim_name in lib.get_animation_list():
-			var anim: Animation = lib.get_animation(anim_name)
-			_fix_root_motion(anim)
+	"""Already locked — all animations are in place by default."""
+	pass
 
 
-func _fix_root_motion(anim: Animation) -> void:
-	# Fix XZ drift on Hips position track while keeping Y (height) intact.
-	# Locks XZ to the first keyframe value so the character stays in place
-	# but can still bob up/down, crouch, fall on death, etc.
-	for i in range(anim.get_track_count()):
-		if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
-			var path_str: String = str(anim.track_get_path(i))
-			if "Hips" in path_str:
-				var kc: int = anim.track_get_key_count(i)
-				if kc == 0:
-					continue
-				var base: Vector3 = anim.track_get_key_value(i, 0)
-				for k in range(kc):
-					var p: Vector3 = anim.track_get_key_value(i, k)
-					p.x = base.x
-					p.z = base.z
-					anim.track_set_key_value(i, k, p)
-				break
+func _get_anim_count() -> int:
+	if _anim_player and _anim_player.has_animation_library(""):
+		return _anim_player.get_animation_library("").get_animation_list().size()
+	return 0
 
 
 func _clear_owner_recursive(node: Node) -> void:
