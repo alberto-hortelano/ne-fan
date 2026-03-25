@@ -190,24 +190,107 @@ def test_attack_root_motion():
 
 
 def test_capsule_model_sync():
-    """Model and capsule should stay together during movement."""
+    """Model and capsule should stay together during WASD movement."""
     reset_player()
     detach_camera("side")
+    time.sleep(0.5)
+
+    # Start walking with real WASD input
+    send_cmd({"cmd": "key", "action": "move_forward", "duration": 3.0})
+
+    # Capture screenshots every 0.3s during movement
+    for i in range(10):
+        screenshot(f"frame_{i:02d}", "capsule_sync")
+        time.sleep(0.3)
+
+    attach_camera()
+    return True, "10 frames captured during WASD walk — verify model/capsule aligned"
+
+
+def test_walk_sequence():
+    """Walk forward, then left, then back — screenshots during each."""
+    reset_player()
+    detach_camera("top")
+    time.sleep(0.5)
+
+    screenshot("00_start", "walk_sequence")
+
+    # Walk forward 2s
+    send_cmd({"cmd": "key", "action": "move_forward", "duration": 2.0})
+    time.sleep(1.0)
+    screenshot("01_walk_fwd_mid", "walk_sequence")
+    time.sleep(1.2)
+    screenshot("02_walk_fwd_end", "walk_sequence")
     time.sleep(0.3)
 
-    screenshot("start", "capsule_sync")
-
-    send_cmd({"cmd": "key", "action": "move_forward", "duration": 1.5})
+    # Walk left 2s
+    send_cmd({"cmd": "key", "action": "move_left", "duration": 2.0})
     time.sleep(1.0)
-    screenshot("mid", "capsule_sync")
+    screenshot("03_walk_left_mid", "walk_sequence")
+    time.sleep(1.2)
+    screenshot("04_walk_left_end", "walk_sequence")
+    time.sleep(0.3)
 
+    # Walk backward 2s
+    send_cmd({"cmd": "key", "action": "move_backward", "duration": 2.0})
     time.sleep(1.0)
-    screenshot("end", "capsule_sync")
+    screenshot("05_walk_back_mid", "walk_sequence")
+    time.sleep(1.2)
+    screenshot("06_walk_back_end", "walk_sequence")
 
     attach_camera()
 
-    # Visual verification — check screenshots manually
-    return True, "Screenshots captured — verify model and capsule are aligned"
+    status = send_cmd({"cmd": "status"})
+    pos = status.get("player_pos", [0, 0, 0])
+    return True, f"Sequence complete. Final pos: ({pos[0]:.1f}, {pos[2]:.1f})"
+
+
+def test_sprint_sequence():
+    """Sprint forward with screenshots every 0.2s."""
+    reset_player()
+    detach_camera("side")
+    time.sleep(0.5)
+
+    # Sprint forward
+    send_cmd({"cmd": "key", "action": "sprint", "duration": 3.0})
+    send_cmd({"cmd": "key", "action": "move_forward", "duration": 2.5})
+
+    for i in range(12):
+        screenshot(f"frame_{i:02d}", "sprint_sequence")
+        time.sleep(0.25)
+
+    attach_camera()
+    return True, "12 frames captured during sprint"
+
+
+def test_attack_during_walk():
+    """Attack while walking — should stop, play attack, then resume."""
+    reset_player()
+    detach_camera("side")
+    time.sleep(0.5)
+
+    # Start walking
+    send_cmd({"cmd": "key", "action": "move_forward", "duration": 5.0})
+    time.sleep(0.5)
+    screenshot("00_walking", "attack_walk")
+
+    # Trigger attack mid-walk
+    send_cmd({"cmd": "play_anim", "name": "heavy"})
+    time.sleep(0.3)
+    screenshot("01_attack_start", "attack_walk")
+
+    time.sleep(0.7)
+    screenshot("02_attack_mid", "attack_walk")
+
+    time.sleep(0.7)
+    screenshot("03_attack_end", "attack_walk")
+
+    # Wait for return to walking
+    time.sleep(1.5)
+    screenshot("04_after_attack", "attack_walk")
+
+    attach_camera()
+    return True, "5 frames: walking → attack → after"
 
 
 def test_idle_state():
@@ -233,6 +316,9 @@ ALL_TESTS = {
     "attack_animation": test_attack_animation,
     "attack_root_motion": test_attack_root_motion,
     "capsule_sync": test_capsule_model_sync,
+    "walk_sequence": test_walk_sequence,
+    "sprint_sequence": test_sprint_sequence,
+    "attack_walk": test_attack_during_walk,
 }
 
 
