@@ -92,6 +92,9 @@ func _ready() -> void:
 	camera.name = "Camera3D"
 	spring_arm.add_child(camera)
 
+	# Exclude player from SpringArm collision (prevents camera going to head)
+	spring_arm.add_excluded_object(_player.get_rid())
+
 	# Logic bridge (TS combat authority)
 	LogicBridge._player = _player
 	LogicBridge._player_combatant = _player_combatant

@@ -21,13 +21,6 @@ const ONE_SHOT_ANIMS := [
 	"draw_sword_1", "draw_sword_2",
 ]
 
-# Attack combo chains: if you press attack during attack1, combo into attack2
-const COMBO_MAP := {
-	"quick": "medium",    # quick → medium combo
-	"medium": "heavy",    # medium → heavy combo
-}
-
-
 func _ready() -> void:
 	_combatant = get_parent().get_node_or_null("Combatant")
 	_animator = get_parent().get_node_or_null("CombatAnimator")
@@ -80,23 +73,11 @@ func _update_locomotion() -> void:
 
 
 func attack(type: String) -> void:
-	"""Execute attack. Supports combos: attack during attack chains to next."""
-	if not _animator or is_dead:
+	"""Execute selected attack type. Only from idle/walk/run."""
+	if not _animator or is_dead or is_attacking:
 		return
-
-	var current: String = _animator.get_current()
-
-	# Combo: if currently in an attack that has a combo follow-up
-	if current in COMBO_MAP:
-		var next: String = COMBO_MAP[current]
-		_animator.travel(next)
-		is_attacking = true
-		return
-
-	# Normal attack: only from idle/walk/run
-	if not is_attacking:
-		_animator.travel(type)
-		is_attacking = true
+	_animator.travel(type)
+	is_attacking = true
 
 
 func roll() -> void:
