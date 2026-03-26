@@ -78,15 +78,10 @@ func _process(_delta: float) -> void:
 			var yaw: float = rotation.y
 			var world_dx: float = delta_xz.x * cos(yaw) - delta_xz.y * sin(yaw)
 			var world_dz: float = delta_xz.x * sin(yaw) + delta_xz.y * cos(yaw)
-			body.position.x += world_dx
-			body.position.z += world_dz
-			# Reset Hips to previous position so model doesn't double-move
-			# (body moved, model is child, would drift if we don't cancel)
-			hips_pos.x = _prev_hips_xz.x
-			hips_pos.z = _prev_hips_xz.y
-			_skeleton.set_bone_pose_position(_hips_idx, hips_pos)
-			# Don't update _prev — it stays at the "locked" position
-			return
+			# Apply half delta — animation moves model by the same amount
+			# so total displacement matches the animation's intended movement
+			body.position.x += world_dx * 0.5
+			body.position.z += world_dz * 0.5
 
 	_prev_hips_xz = current_xz
 
