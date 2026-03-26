@@ -125,7 +125,7 @@ func _ready() -> void:
 	_make_player_capsule_visible()
 
 	# Load initial room
-	_load_room_from_file(0)
+	load_room_by_path("res://test_rooms/dev/root_motion_debug.json")
 
 
 func _unhandled_input(event: InputEvent) -> void:
