@@ -1,5 +1,5 @@
 ## Player movement controller with combat actions.
-## Camera-relative movement, Souls-Like attack/roll/sprint patterns.
+## Camera-relative movement, Souls-Like attack patterns.
 extends CharacterBody3D
 
 const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
@@ -20,9 +20,6 @@ var _horizontal_velocity := Vector3.ZERO
 var _walk_speed := 1.9
 var _sprint_speed := 3.8
 var _jump_velocity := 4.5
-
-# Sprint/roll detection (Souls-Like pattern)
-var _sprint_held := false
 var _is_sprinting := false
 
 
@@ -43,17 +40,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not _sync:
 		_sync = get_node_or_null("CombatAnimationSync")
 
-	# Attack (LMB)
+	# Attack (LMB) — always uses selected type, no combos
 	if event.is_action_pressed("attack_execute") and _sync:
 		var pci = get_node_or_null("PlayerCombatInput")
 		var attack_type: String = pci.selected_type if pci else "quick"
-
-		if _is_sprinting:
-			# Sprint attack (special)
-			_sync.special_attack()
-			_horizontal_velocity = _move_direction * DASH_POWER
-		else:
-			_sync.attack(attack_type)
+		_sync.attack(attack_type)
 
 
 func _physics_process(delta: float) -> void:
@@ -64,18 +55,16 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity += get_gravity() * delta
 
-	# Jump
+	# Jump — keeps current horizontal velocity (no stopping)
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		if _sync and _sync.is_interruptible():
 			velocity.y = _jump_velocity
 			_sync.jump()
+			# Don't zero horizontal velocity — player keeps moving
 
-	# Sprint state
-	_sprint_held = Input.is_action_pressed("sprint")
+	# Input
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 	var has_input := input_dir.length() > 0.01
-
-	# Block movement during attacks/roll (Souls-Like: velocity lerps to ~0)
 	var can_move: bool = _sync == null or _sync.is_interruptible()
 
 	# Camera-relative movement direction
@@ -90,11 +79,11 @@ func _physics_process(delta: float) -> void:
 		right = right.normalized()
 		direction = (forward * -input_dir.y + right * input_dir.x).normalized()
 
-	# Speed and sprint
+	# Speed
 	var movement_speed := 0.0
 	_is_sprinting = false
 	if can_move and has_input:
-		if _sprint_held:
+		if Input.is_action_pressed("sprint"):
 			movement_speed = _sprint_speed
 			_is_sprinting = true
 		else:
@@ -104,14 +93,14 @@ func _physics_process(delta: float) -> void:
 	# Apply velocity
 	var acceleration := 15.0
 
-	if _sync and _sync.is_rolling:
-		# During roll: reduced control
-		acceleration = 2.0
-	elif _sync and _sync.is_attacking:
-		# During attacks: almost no movement (Souls-Like pattern)
-		_horizontal_velocity = _horizontal_velocity.lerp(direction * 0.01, acceleration * delta)
+	if _sync and _sync.is_attacking and not _sync.get_current_state() == "jump":
+		# During attacks (not jump): almost no movement
+		_horizontal_velocity = _horizontal_velocity.lerp(Vector3.ZERO, acceleration * delta)
 	elif has_input and can_move:
 		_horizontal_velocity = _horizontal_velocity.lerp(direction * movement_speed, acceleration * delta)
+	elif not is_on_floor():
+		# In air: maintain momentum (reduced deceleration)
+		_horizontal_velocity = _horizontal_velocity.lerp(_horizontal_velocity * 0.99, 2.0 * delta)
 	else:
 		_horizontal_velocity = _horizontal_velocity.lerp(Vector3.ZERO, acceleration * delta)
 

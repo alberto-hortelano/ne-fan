@@ -169,12 +169,15 @@ func _setup_animation_tree() -> void:
 
 
 func _lock_all_hips_xz() -> void:
-	"""Lock Hips XZ to first keyframe on ALL animations.
-	Movement is 100% via CharacterBody3D velocity, not root motion."""
+	"""Lock Hips XZ on LOCOMOTION animations only.
+	Attacks/specials keep root motion so feet don't slide."""
 	if not _anim_player or not _anim_player.has_animation_library(""):
 		return
+	var lock_list := LOOPING_ANIMS + ["turn"]  # Only lock looping + turn
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
-	for anim_name in lib.get_animation_list():
+	for anim_name in lock_list:
+		if not lib.has_animation(anim_name):
+			continue
 		var anim: Animation = lib.get_animation(anim_name)
 		for i in range(anim.get_track_count()):
 			if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
