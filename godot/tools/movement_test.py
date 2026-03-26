@@ -49,10 +49,14 @@ def screenshot(name: str, test_name: str) -> str:
 
 
 def setup_room():
-    """Load root_motion_debug room."""
+    """Load root_motion_debug room by scanning for it."""
+    status = send_cmd({"cmd": "status"})
+    if status.get("room") == "root_motion_debug":
+        return True
+    # The room is loaded as default now, just need to reload if different
     for i in range(20):
         send_cmd({"cmd": "load_room", "index": i})
-        time.sleep(1.5)
+        time.sleep(0.5)
         status = send_cmd({"cmd": "status"})
         if status.get("room") == "root_motion_debug":
             return True
@@ -140,8 +144,8 @@ def test_attack_animation():
     detach_camera("side")
     time.sleep(0.5)
 
-    # Request attack
-    send_cmd({"cmd": "play_anim", "name": "quick"})
+    # Request attack — same path as player click
+    send_cmd({"cmd": "attack", "type": "quick"})
     time.sleep(0.3)
 
     status = send_cmd({"cmd": "status"})
@@ -170,8 +174,8 @@ def test_attack_root_motion():
 
     pos_before = send_cmd({"cmd": "status"}).get("player_pos", [0, 0, 0])
 
-    # Trigger attack via sync (like a real click)
-    send_cmd({"cmd": "play_anim", "name": "medium"})
+    # Trigger attack via sync.attack() — same path as player click
+    send_cmd({"cmd": "attack", "type": "medium"})
 
     # Capture frames during the attack (medium = 1.30s)
     for i in range(8):
@@ -292,8 +296,8 @@ def test_attack_during_walk():
     time.sleep(0.5)
     screenshot("00_walking", "attack_walk")
 
-    # Trigger attack mid-walk
-    send_cmd({"cmd": "play_anim", "name": "heavy"})
+    # Trigger attack mid-walk — same path as player click
+    send_cmd({"cmd": "attack", "type": "heavy"})
     time.sleep(0.3)
     screenshot("01_attack_start", "attack_walk")
 

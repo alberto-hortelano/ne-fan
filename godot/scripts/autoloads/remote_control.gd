@@ -113,6 +113,8 @@ func _handle(line: String) -> String:
 			return '{"ok":true}'
 		"play_anim":
 			return _cmd_play_anim(json)
+		"attack":
+			return _cmd_attack(json)
 		"camera_detach":
 			return _cmd_camera_detach(json)
 		"camera_attach":
@@ -261,6 +263,23 @@ func _cmd_play_anim(args: Dictionary) -> String:
 	if animator._anim_player and animator._anim_player.has_animation(anim_name):
 		duration = animator._anim_player.get_animation(anim_name).length
 	return '{"ok":true,"name":"%s","duration":%.3f}' % [anim_name, duration]
+
+
+func _cmd_attack(args: Dictionary) -> String:
+	"""Simulate attack exactly as player click does."""
+	var attack_type: String = args.get("type", "quick")
+	var player := get_tree().current_scene.get_node_or_null("Player")
+	if not player:
+		return '{"error":"no player"}'
+	var sync = player.get_node_or_null("CombatAnimationSync")
+	if not sync:
+		return '{"error":"no sync"}'
+	sync.attack(attack_type)
+	var animator = player.get_node_or_null("CombatAnimator")
+	var duration: float = 0.0
+	if animator and animator._anim_player and animator._anim_player.has_animation(attack_type):
+		duration = animator._anim_player.get_animation(attack_type).length
+	return '{"ok":true,"type":"%s","duration":%.3f}' % [attack_type, duration]
 
 
 func _cmd_camera_detach(args: Dictionary) -> String:
