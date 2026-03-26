@@ -12,9 +12,9 @@ const ANIM_MAP := {
 	"idle": "sword and shield idle",
 	"run": "sword and shield run",
 	"walk": "sword and shield walk",
-	"quick": "sword and shield attack",
+	"quick": "sword and shield attack (4)",
 	"heavy": "sword and shield slash",
-	"medium": "sword and shield attack (2)",
+	"medium": "sword and shield slash (5)",
 	"defensive": "sword and shield block",
 	"precise": "sword and shield slash (3)",
 	"hit": "sword and shield impact",
@@ -170,12 +170,15 @@ func _setup_animation_tree() -> void:
 
 
 func _lock_all_hips_xz() -> void:
-	"""Lock Hips XZ on ALL animations. Movement is via velocity only.
-	Model and body always stay together — no separation ever."""
+	"""Lock Hips XZ on locomotion animations only (walk/run).
+	These have significant drift that conflicts with WASD movement.
+	Other animations (idle, attacks) have ~0 drift and play naturally."""
 	if not _anim_player or not _anim_player.has_animation_library(""):
 		return
+	# Only lock animations with significant root motion drift
+	var lock_list := ["walk", "run"]
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
-	for anim_name in lib.get_animation_list():
+	for anim_name in lock_list:
 		if not lib.has_animation(anim_name):
 			continue
 		var anim: Animation = lib.get_animation(anim_name)
