@@ -38,15 +38,50 @@ var _playback: AnimationNodeStateMachinePlayback
 var _current_anim: String = ""
 var _skeleton: Skeleton3D
 var _hips_idx: int = -1
+var _prev_hips_xz := Vector2.ZERO  # For delta root motion during attacks
 
 
 func _ready() -> void:
 	_load_model()
 	_load_animations()
 	_setup_animation_tree()
-	# Lock Hips XZ drift on all animations (movement is via velocity, not root motion)
+	# Lock Hips XZ only on locomotion (walk/run/idle) — attacks keep root motion
 	_lock_all_hips_xz()
+	# Init prev hips for delta tracking
+	process_priority = 100  # Run after AnimationPlayer
+	if _skeleton and _hips_idx >= 0:
+		var rest: Transform3D = _skeleton.get_bone_rest(_hips_idx)
+		_prev_hips_xz = Vector2(rest.origin.x, rest.origin.z)
 	print("CombatAnimator: loaded %d animations" % _get_anim_count())
+
+
+func _process(_delta: float) -> void:
+	if not _skeleton or _hips_idx < 0:
+		return
+	var body := get_parent()
+	if not body:
+		return
+
+	# During attacks: apply delta root motion so body follows the model.
+	# During locomotion: Hips XZ is already locked in the animation data.
+	var sync = body.get_node_or_null("CombatAnimationSync")
+	var is_action: bool = sync != null and sync.is_attacking
+
+	var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
+	var current_xz := Vector2(hips_pos.x, hips_pos.z)
+
+	if is_action:
+		var delta_xz := current_xz - _prev_hips_xz
+		# Ignore large jumps (animation change / loop reset)
+		if delta_xz.length() < 0.3 and delta_xz.length_squared() > 0.00001:
+			# Convert from bone-local to world using model rotation
+			var yaw: float = rotation.y
+			var world_dx: float = delta_xz.x * cos(yaw) - delta_xz.y * sin(yaw)
+			var world_dz: float = delta_xz.x * sin(yaw) + delta_xz.y * cos(yaw)
+			body.position.x += world_dx
+			body.position.z += world_dz
+
+	_prev_hips_xz = current_xz
 
 
 func _load_model() -> void:
