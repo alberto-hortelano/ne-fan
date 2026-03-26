@@ -1,19 +1,21 @@
-## Combat UI overlay: HP bars, attack type selector, floating damage numbers.
+## Combat UI overlay: top bar with HP bars + attack selector (like HTML version).
 class_name CombatHUD
 extends CanvasLayer
 
 const ATTACK_TYPE_ORDER := ["quick", "heavy", "medium", "defensive", "precise"]
 const ATTACK_TYPE_LABELS := {
-	"quick": "1:Ráp",
-	"heavy": "2:Fue",
-	"medium": "3:Med",
+	"quick": "1:Quick",
+	"heavy": "2:Heavy",
+	"medium": "3:Medium",
 	"defensive": "4:Def",
-	"precise": "5:Pre",
+	"precise": "5:Precise",
 }
-const HP_BAR_WIDTH := 200.0
-const HP_BAR_HEIGHT := 16.0
-const ACTIVE_COLOR := Color(1.0, 0.85, 0.3)
+const BAR_WIDTH := 120.0
+const BAR_HEIGHT := 12.0
+const ACTIVE_COLOR := Color(1.0, 0.85, 0.2)
 const INACTIVE_COLOR := Color(0.5, 0.5, 0.5, 0.7)
+const ACTIVE_BG := Color(0.3, 0.25, 0.1, 0.8)
+const INACTIVE_BG := Color(0.15, 0.15, 0.15, 0.6)
 
 var _player_hp_bar: ColorRect
 var _player_hp_bg: ColorRect
@@ -21,8 +23,8 @@ var _player_hp_label: Label
 var _enemy_hp_bar: ColorRect
 var _enemy_hp_bg: ColorRect
 var _enemy_hp_label: Label
-var _enemy_hp_container: Control
-var _attack_slots: Array[Label] = []
+var _attack_slots: Array[PanelContainer] = []
+var _attack_labels: Array[Label] = []
 var _selected_type: String = "quick"
 
 var _player_combatant: Node
@@ -32,70 +34,117 @@ var _target_combatant: Node
 func _ready() -> void:
 	layer = 11
 
-	# --- Player HP (bottom-left) ---
-	var player_container := Control.new()
-	player_container.anchors_preset = Control.PRESET_BOTTOM_LEFT
-	player_container.offset_left = 20
-	player_container.offset_top = -50
-	add_child(player_container)
+	# Top bar background
+	var top_bar := PanelContainer.new()
+	top_bar.anchors_preset = Control.PRESET_TOP_WIDE
+	top_bar.offset_bottom = 32
+	var bar_style := StyleBoxFlat.new()
+	bar_style.bg_color = Color(0.08, 0.08, 0.1, 0.85)
+	bar_style.content_margin_left = 12
+	bar_style.content_margin_right = 12
+	bar_style.content_margin_top = 4
+	bar_style.content_margin_bottom = 4
+	top_bar.add_theme_stylebox_override("panel", bar_style)
+	add_child(top_bar)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 16)
+	top_bar.add_child(hbox)
+
+	# --- Player HP ---
+	var player_section := HBoxContainer.new()
+	player_section.add_theme_constant_override("separation", 6)
+	hbox.add_child(player_section)
+
+	var player_label := Label.new()
+	player_label.text = "Player"
+	player_label.add_theme_font_size_override("font_size", 12)
+	player_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	player_section.add_child(player_label)
+
+	var player_bar_container := Control.new()
+	player_bar_container.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	player_section.add_child(player_bar_container)
 
 	_player_hp_bg = ColorRect.new()
-	_player_hp_bg.color = Color(0.2, 0.0, 0.0, 0.6)
-	_player_hp_bg.size = Vector2(HP_BAR_WIDTH, HP_BAR_HEIGHT)
-	player_container.add_child(_player_hp_bg)
+	_player_hp_bg.color = Color(0.25, 0.05, 0.05, 0.8)
+	_player_hp_bg.size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	_player_hp_bg.position.y = 4
+	player_bar_container.add_child(_player_hp_bg)
 
 	_player_hp_bar = ColorRect.new()
 	_player_hp_bar.color = Color(0.8, 0.15, 0.1)
-	_player_hp_bar.size = Vector2(HP_BAR_WIDTH, HP_BAR_HEIGHT)
-	player_container.add_child(_player_hp_bar)
+	_player_hp_bar.size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	_player_hp_bar.position.y = 4
+	player_bar_container.add_child(_player_hp_bar)
 
 	_player_hp_label = Label.new()
-	_player_hp_label.position = Vector2(0, -20)
-	_player_hp_label.add_theme_font_size_override("font_size", 14)
+	_player_hp_label.text = "100"
+	_player_hp_label.add_theme_font_size_override("font_size", 12)
 	_player_hp_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7))
-	_player_hp_label.text = "HP: 100/100"
-	player_container.add_child(_player_hp_label)
+	player_section.add_child(_player_hp_label)
 
-	# --- Enemy HP (top-center) ---
-	_enemy_hp_container = Control.new()
-	_enemy_hp_container.anchors_preset = Control.PRESET_CENTER_TOP
-	_enemy_hp_container.offset_left = -HP_BAR_WIDTH / 2.0
-	_enemy_hp_container.offset_top = 20
-	_enemy_hp_container.visible = false
-	add_child(_enemy_hp_container)
+	# --- Enemy HP ---
+	var enemy_section := HBoxContainer.new()
+	enemy_section.add_theme_constant_override("separation", 6)
+	hbox.add_child(enemy_section)
+
+	var enemy_label := Label.new()
+	enemy_label.text = "Enemy"
+	enemy_label.add_theme_font_size_override("font_size", 12)
+	enemy_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	enemy_section.add_child(enemy_label)
+
+	var enemy_bar_container := Control.new()
+	enemy_bar_container.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	enemy_section.add_child(enemy_bar_container)
 
 	_enemy_hp_bg = ColorRect.new()
-	_enemy_hp_bg.color = Color(0.2, 0.0, 0.0, 0.6)
-	_enemy_hp_bg.size = Vector2(HP_BAR_WIDTH, HP_BAR_HEIGHT)
-	_enemy_hp_container.add_child(_enemy_hp_bg)
+	_enemy_hp_bg.color = Color(0.25, 0.05, 0.05, 0.8)
+	_enemy_hp_bg.size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	_enemy_hp_bg.position.y = 4
+	enemy_bar_container.add_child(_enemy_hp_bg)
 
 	_enemy_hp_bar = ColorRect.new()
-	_enemy_hp_bar.color = Color(0.7, 0.1, 0.1)
-	_enemy_hp_bar.size = Vector2(HP_BAR_WIDTH, HP_BAR_HEIGHT)
-	_enemy_hp_container.add_child(_enemy_hp_bar)
+	_enemy_hp_bar.color = Color(0.6, 0.1, 0.1)
+	_enemy_hp_bar.size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	_enemy_hp_bar.position.y = 4
+	enemy_bar_container.add_child(_enemy_hp_bar)
 
 	_enemy_hp_label = Label.new()
-	_enemy_hp_label.position = Vector2(0, -20)
-	_enemy_hp_label.add_theme_font_size_override("font_size", 14)
+	_enemy_hp_label.text = "--"
+	_enemy_hp_label.add_theme_font_size_override("font_size", 12)
 	_enemy_hp_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7))
-	_enemy_hp_label.text = ""
-	_enemy_hp_container.add_child(_enemy_hp_label)
+	enemy_section.add_child(_enemy_hp_label)
 
-	# --- Attack type selector (bottom-center) ---
-	var slot_container := HBoxContainer.new()
-	slot_container.anchors_preset = Control.PRESET_CENTER_BOTTOM
-	slot_container.offset_top = -30
-	slot_container.offset_left = -(ATTACK_TYPE_ORDER.size() * 60) / 2.0
-	add_child(slot_container)
+	# --- Spacer ---
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(spacer)
 
+	# --- Attack type selector ---
 	for type_id in ATTACK_TYPE_ORDER:
-		var slot := Label.new()
-		slot.text = ATTACK_TYPE_LABELS.get(type_id, type_id)
-		slot.add_theme_font_size_override("font_size", 14)
-		slot.custom_minimum_size = Vector2(55, 24)
-		slot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		slot_container.add_child(slot)
-		_attack_slots.append(slot)
+		var slot_panel := PanelContainer.new()
+		var slot_style := StyleBoxFlat.new()
+		slot_style.bg_color = INACTIVE_BG
+		slot_style.border_color = INACTIVE_COLOR
+		slot_style.border_width_left = 1
+		slot_style.border_width_right = 1
+		slot_style.border_width_top = 1
+		slot_style.border_width_bottom = 1
+		slot_style.content_margin_left = 4
+		slot_style.content_margin_right = 4
+		slot_style.content_margin_top = 1
+		slot_style.content_margin_bottom = 1
+		slot_panel.add_theme_stylebox_override("panel", slot_style)
+		hbox.add_child(slot_panel)
+		_attack_slots.append(slot_panel)
+
+		var slot_label := Label.new()
+		slot_label.text = ATTACK_TYPE_LABELS.get(type_id, type_id)
+		slot_label.add_theme_font_size_override("font_size", 12)
+		slot_panel.add_child(slot_label)
+		_attack_labels.append(slot_label)
 
 	_update_slot_colors()
 
@@ -106,7 +155,6 @@ func set_player_combatant(c: Node) -> void:
 
 func set_target(c: Node) -> void:
 	_target_combatant = c
-	_enemy_hp_container.visible = (c != null)
 
 
 func on_attack_type_changed(type_id: String) -> void:
@@ -119,34 +167,35 @@ func on_combat_result(attacker: Node, defender: Node, damage: float) -> void:
 
 
 func _process(_delta: float) -> void:
-	# Update player HP bar
 	if _player_combatant:
 		var p_hp: float = _player_combatant.health
 		var p_max: float = _player_combatant.max_health
 		var ratio: float = p_hp / maxf(p_max, 1.0)
-		_player_hp_bar.size.x = HP_BAR_WIDTH * ratio
-		_player_hp_label.text = "HP: %.0f/%.0f" % [p_hp, p_max]
+		_player_hp_bar.size.x = BAR_WIDTH * ratio
+		_player_hp_label.text = "%.0f" % p_hp
 
-	# Update enemy HP bar
-	if _target_combatant and _enemy_hp_container.visible:
+	if _target_combatant:
 		var e_hp: float = _target_combatant.health
 		var e_max: float = _target_combatant.max_health
-		if e_hp <= 0.0:
-			_enemy_hp_container.visible = false
-		else:
-			var ratio: float = e_hp / maxf(e_max, 1.0)
-			_enemy_hp_bar.size.x = HP_BAR_WIDTH * ratio
-			var ename: String = _target_combatant.get_parent().name if _target_combatant.get_parent() else "Enemy"
-			_enemy_hp_label.text = "%s: %.0f/%.0f" % [ename, e_hp, e_max]
+		var ratio: float = e_hp / maxf(e_max, 1.0)
+		_enemy_hp_bar.size.x = BAR_WIDTH * ratio
+		_enemy_hp_label.text = "%.0f" % e_hp
 
 
 func _update_slot_colors() -> void:
 	for i in range(_attack_slots.size()):
 		var type_id: String = ATTACK_TYPE_ORDER[i]
-		if type_id == _selected_type:
-			_attack_slots[i].add_theme_color_override("font_color", ACTIVE_COLOR)
+		var is_active: bool = type_id == _selected_type
+		var style: StyleBoxFlat = _attack_slots[i].get_theme_stylebox("panel").duplicate()
+		if is_active:
+			style.border_color = ACTIVE_COLOR
+			style.bg_color = ACTIVE_BG
+			_attack_labels[i].add_theme_color_override("font_color", ACTIVE_COLOR)
 		else:
-			_attack_slots[i].add_theme_color_override("font_color", INACTIVE_COLOR)
+			style.border_color = INACTIVE_COLOR
+			style.bg_color = INACTIVE_BG
+			_attack_labels[i].add_theme_color_override("font_color", INACTIVE_COLOR)
+		_attack_slots[i].add_theme_stylebox_override("panel", style)
 
 
 func _spawn_damage_number(target: Node, damage: float) -> void:
@@ -158,14 +207,11 @@ func _spawn_damage_number(target: Node, damage: float) -> void:
 	label.add_theme_constant_override("shadow_offset_x", 1)
 	label.add_theme_constant_override("shadow_offset_y", 1)
 	label.z_index = 100
-
-	# Position at screen center-ish with random offset
 	label.position = Vector2(
 		get_viewport().get_visible_rect().size.x / 2.0 + randf_range(-50, 50),
 		get_viewport().get_visible_rect().size.y / 3.0 + randf_range(-20, 20),
 	)
 	add_child(label)
-
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(label, "position:y", label.position.y - 60, 0.8)

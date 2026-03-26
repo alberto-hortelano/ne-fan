@@ -12,9 +12,9 @@ const ANIM_MAP := {
 	"idle": "sword and shield idle",
 	"run": "sword and shield run",
 	"walk": "sword and shield walk",
-	"quick": "sword and shield attack",
+	"quick": "sword and shield attack (4)",
 	"heavy": "sword and shield slash",
-	"medium": "sword and shield attack (2)",
+	"medium": "sword and shield slash (5)",
 	"defensive": "sword and shield block",
 	"precise": "sword and shield slash (3)",
 	"hit": "sword and shield impact",
@@ -24,7 +24,7 @@ const ANIM_MAP := {
 	"casting": "sword and shield casting",
 	"block_idle": "sword and shield block idle",
 	"power_up": "sword and shield power up",
-	"jump": "sword and shield jump",
+	"jump": "sword and shield jump (2)",
 	"draw_sword_1": "draw sword 1",
 	"draw_sword_2": "draw sword 2",
 }
@@ -44,7 +44,8 @@ func _ready() -> void:
 	_load_model()
 	_load_animations()
 	_setup_animation_tree()
-	# Lock Hips XZ drift on all animations (movement is via velocity, not root motion)
+	# Lock Hips XZ on ALL animations — movement is 100% via velocity
+	# Attacks play "in place" with no drift — feet don't slide
 	_lock_all_hips_xz()
 	print("CombatAnimator: loaded %d animations" % _get_anim_count())
 
@@ -169,12 +170,17 @@ func _setup_animation_tree() -> void:
 
 
 func _lock_all_hips_xz() -> void:
-	"""Lock Hips XZ to first keyframe on ALL animations.
-	Movement is 100% via CharacterBody3D velocity, not root motion."""
+	"""Lock Hips XZ on locomotion animations only (walk/run).
+	These have significant drift that conflicts with WASD movement.
+	Other animations (idle, attacks) have ~0 drift and play naturally."""
 	if not _anim_player or not _anim_player.has_animation_library(""):
 		return
+	# Only lock animations with significant root motion drift
+	var lock_list := ["walk", "run"]
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
-	for anim_name in lib.get_animation_list():
+	for anim_name in lock_list:
+		if not lib.has_animation(anim_name):
+			continue
 		var anim: Animation = lib.get_animation(anim_name)
 		for i in range(anim.get_track_count()):
 			if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
