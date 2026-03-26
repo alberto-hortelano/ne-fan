@@ -69,14 +69,18 @@ func _process(_delta: float) -> void:
 	var is_action: bool = sync != null and sync.is_attacking
 
 	if is_action:
-		# Move collision shape to where the Hips bone is (model-local XZ)
-		var hips_pos: Vector3 = _skeleton.get_bone_pose_position(_hips_idx)
-		# Convert from skeleton-local to body-local
-		var skel_offset: Vector3 = _skeleton.position + position
-		var local_x: float = skel_offset.x + hips_pos.x * cos(rotation.y) - hips_pos.z * sin(rotation.y)
-		var local_z: float = skel_offset.z + hips_pos.x * sin(rotation.y) + hips_pos.z * cos(rotation.y)
-		_collision_shape.position.x = local_x
-		_collision_shape.position.z = local_z
+		# Move collision shape to where the Hips bone is
+		# get_bone_global_pose gives position in skeleton space
+		# Convert to body-local space accounting for model rotation
+		var hips_global: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
+		var hips_in_skel: Vector3 = hips_global.origin
+		# Skeleton is child of CombatAnimator, which is child of body
+		# Transform: skeleton-local → animator-local → body-local
+		var hips_in_body: Vector3 = global_transform * _skeleton.transform * hips_in_skel
+		var body_global: Vector3 = get_parent().global_position
+		var offset: Vector3 = hips_in_body - body_global
+		_collision_shape.position.x = offset.x
+		_collision_shape.position.z = offset.z
 	else:
 		# Return to rest position
 		_collision_shape.position = _collision_rest_pos
