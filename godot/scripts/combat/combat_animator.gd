@@ -24,7 +24,7 @@ const ANIM_MAP := {
 	"casting": "sword and shield casting",
 	"block_idle": "sword and shield block idle",
 	"power_up": "sword and shield power up",
-	"jump": "sword and shield jump",
+	"jump": "sword and shield jump (2)",
 	"draw_sword_1": "draw sword 1",
 	"draw_sword_2": "draw sword 2",
 }
