@@ -78,7 +78,14 @@ export class GameSimulation {
       }
     }
 
-    // 2. Enemy AI decisions
+    // 2. Enemy movement (before attack decisions so distance is current)
+    for (const [id, ai] of this.enemyAIs) {
+      const enemy = this.combatants.get(id);
+      if (!enemy || !player) continue;
+      ai.updateMovement(delta, enemy, player);
+    }
+
+    // 3. Enemy AI attack decisions
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
       if (!enemy || !player) continue;

@@ -67,8 +67,11 @@ wss.on("connection", (ws: WebSocket) => {
       case "load_room": {
         // Reset simulation for new room
         sim.reset();
+        // Always use max HP when loading a new room (player starts fresh)
+        const playerMaxHp = store.state.player.max_hp || 100;
+        store.dispatch("player_respawned", { hp: playerMaxHp, pos: [0, 0, 0] });
         sim.addCombatant(
-          createCombatant("player", store.state.player.hp, store.state.player.weapon_id,
+          createCombatant("player", playerMaxHp, store.state.player.weapon_id,
             { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
         );
 
@@ -95,7 +98,14 @@ wss.on("connection", (ws: WebSocket) => {
         });
 
         console.log(`Bridge: room loaded '${msg.roomId}' with ${msg.enemies.length} enemies`);
-        ws.send(JSON.stringify({ type: "pong" }));
+        // Send state_update with reset HP so Godot gets the fresh state
+        const roomResponse: StateUpdateMessage = {
+          type: "state_update",
+          events: [{ type: "player_respawned", hp: playerMaxHp }],
+          playerHp: playerMaxHp,
+          enemies: getEnemyStates(),
+        };
+        ws.send(JSON.stringify(roomResponse));
         break;
       }
 
@@ -134,6 +144,9 @@ function getEnemyStates(): StateUpdateMessage["enemies"] {
         hp: c.health,
         state: c.state,
         alive: c.health > 0,
+        pos: { x: c.position.x, y: c.position.y, z: c.position.z },
+        forward: { x: c.forward.x, y: c.forward.y, z: c.forward.z },
+        attackType: c.currentAttackType || undefined,
       });
     }
   }
