@@ -15,6 +15,7 @@ const ATTACK_KEYS := {
 
 var selected_type: String = "quick"
 var _combatant: Node
+var _pending_attack: Dictionary = {}  # Set by player_controller, read by logic_bridge
 
 
 func _ready() -> void:
@@ -29,6 +30,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			attack_type_changed.emit(selected_type)
 			get_viewport().set_input_as_handled()
 			return
+
+
+func request_attack(type: String) -> void:
+	_pending_attack = {"type": type}
+
+
+func get_pending_attack() -> Dictionary:
+	var result := _pending_attack
+	_pending_attack = {}
+	return result
 
 
 func _physics_process(_delta: float) -> void:

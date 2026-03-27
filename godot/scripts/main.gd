@@ -128,7 +128,7 @@ func _ready() -> void:
 	_make_player_capsule_visible()
 
 	# Load initial room
-	load_room_by_path("res://test_rooms/dev/root_motion_debug.json")
+	load_room_by_path("res://test_rooms/dev/combat_arena.json")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -428,16 +428,16 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 				_combat_hud.set_target(combatant)
 				first_enemy = false
 
-	# Sync player state from store (logic is the authority)
-	var stored_hp: float = GameStore.state.player.hp
-	if stored_hp > 0:
-		_player_combatant.health = stored_hp
-		_player_combatant.state = 0  # IDLE
-		_player_combatant.current_attack_type = ""
-		var player_sync = _player.get_node_or_null("CombatAnimationSync")
-		if player_sync:
-			player_sync.reset()
-	GameState.player_health = _player_combatant.health
+	# Reset player state on room change
+	_player_combatant.health = _player_combatant.max_health
+	_player_combatant.state = 0  # IDLE
+	_player_combatant.current_attack_type = ""
+	GameState.player_health = _player_combatant.max_health
+	GameStore.state.player.hp = _player_combatant.max_health
+	GameStore.state.player.combat_state = "idle"
+	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	if player_sync:
+		player_sync.reset()
 
 	# Position player
 	_player.position = player_pos
@@ -464,25 +464,25 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	})
 
 	# Notify bridge of room change with enemy personalities
-	if LogicBridge.is_connected_to_bridge():
-		var bridge_enemies: Array = []
-		for child in _current_room.get_children():
-			var c = child.get_node_or_null("Combatant")
-			var ai = child.get_node_or_null("EnemyCombatAI")
-			if c and ai:
-				bridge_enemies.append({
-					"id": child.name,
-					"position": {"x": child.position.x, "y": child.position.y, "z": child.position.z},
-					"health": c.health,
-					"weaponId": c.weapon_id,
-					"personality": {
-						"aggression": ai.aggression,
-						"preferred_attacks": ai.preferred_attacks,
-						"reaction_time": ai.reaction_time,
-						"combat_range": ai.combat_range,
-					}
-				})
-		LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies)
+	# (send_room_loaded queues data if bridge not yet connected)
+	var bridge_enemies: Array = []
+	for child in _current_room.get_children():
+		var c = child.get_node_or_null("Combatant")
+		var ai = child.get_node_or_null("EnemyCombatAI")
+		if c and ai:
+			bridge_enemies.append({
+				"id": child.name,
+				"position": {"x": child.position.x, "y": child.position.y, "z": child.position.z},
+				"health": c.health,
+				"weaponId": c.weapon_id,
+				"personality": {
+					"aggression": ai.aggression,
+					"preferred_attacks": ai.preferred_attacks,
+					"reaction_time": ai.reaction_time,
+					"combat_range": ai.combat_range,
+				}
+			})
+	LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies)
 
 	# Update state
 	GameState.mark_room_visited(data.get("room_id", "unknown"), data)

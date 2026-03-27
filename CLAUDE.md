@@ -107,8 +107,12 @@ python3 godot/tools/movement_test.py capsule_sync attack_root_motion
 
 ### Modo headless (sin ventana)
 
+**IMPORTANTE:** Siempre arrancar Godot con `xvfb-run` para no bloquear la pantalla del usuario. Nunca usar `DISPLAY=:0`.
+
 ```bash
 ./start.sh headless    # Godot via xvfb-run, sin ventana visible
+# O manualmente:
+xvfb-run -a -s "-screen 0 1920x1080x24" ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
 # Luego ejecutar tests normalmente
 python3 godot/tools/movement_test.py
 ```
@@ -295,7 +299,7 @@ Meshes: box, sphere, capsule, cylinder, cone, plane, torus. Categorias: item (am
 - **Logica en nefan-core, Godot solo visual** — prepararse para cambio de motor. Datos compartidos (rooms, config) en nefan-core, no en godot/.
 - **AnimationTree con StateMachine (Souls-Like pattern)** — no usar AnimationPlayer directo. `travel()` para transiciones, `start()` para interrupciones.
 - **Sin root motion** — todo el movimiento via velocity del CharacterBody3D. Animaciones puramente visuales. Lockear Hips XZ solo en walk/run.
-- **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluyido del SpringArm collision.
+- **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluido del SpringArm collision.
 - **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
 - **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
 
