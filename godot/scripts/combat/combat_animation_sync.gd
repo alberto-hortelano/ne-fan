@@ -1,5 +1,6 @@
-## Animation state machine — Souls-Like pattern with combos, roll, and actions.
-## Controls AnimationTree via travel()/start() based on player state.
+## Animation state machine — Souls-Like pattern.
+## Handles locomotion, attacks, hits, death for both player and enemies.
+## Detects movement by position delta (works for StaticBody3D enemies too).
 class_name CombatAnimationSync
 extends Node
 
@@ -9,17 +10,21 @@ var _animator: Node  # CombatAnimator
 var _combatant: Node  # Combatant
 var _sprint_speed := 3.8
 
-# State booleans (Souls-Like pattern)
+# State
 var is_attacking := false
 var is_rolling := false
 var is_dead := false
 
-# One-shot animations that block movement and other actions
+# Movement detection (works for enemies without velocity)
+var _prev_pos := Vector3.ZERO
+var _movement_speed := 0.0
+
 const ONE_SHOT_ANIMS := [
 	"quick", "heavy", "medium", "defensive", "precise",
 	"kick", "hit", "death", "jump", "casting", "power_up",
 	"draw_sword_1", "draw_sword_2",
 ]
+
 
 func _ready() -> void:
 	_combatant = get_parent().get_node_or_null("Combatant")
@@ -31,11 +36,23 @@ func _ready() -> void:
 	if _combatant:
 		_combatant.damage_received.connect(_on_damage_received)
 		_combatant.died.connect(_on_died)
+		_combatant.attack_started.connect(_on_attack_started)
+
+	var parent := get_parent()
+	if parent is Node3D:
+		_prev_pos = parent.global_position
 
 
-func _process(_delta: float) -> void:
-	if not _animator or is_dead:
+func _process(delta: float) -> void:
+	if not _combatant or not _animator or is_dead:
 		return
+
+	# Calculate movement speed from position delta (works for enemies)
+	var parent := get_parent()
+	if parent is Node3D:
+		var current_pos: Vector3 = parent.global_position
+		_movement_speed = current_pos.distance_to(_prev_pos) / maxf(delta, 0.001)
+		_prev_pos = current_pos
 
 	var current: String = _animator.get_current()
 
@@ -52,12 +69,15 @@ func _process(_delta: float) -> void:
 
 
 func _update_locomotion() -> void:
-	var parent := get_parent()
-	if not parent is CharacterBody3D:
-		return
-	var speed: float = Vector2(parent.velocity.x, parent.velocity.z).length()
-	var current: String = _animator.get_current()
+	# Use position-based speed (works for both player and enemy)
+	var speed: float = _movement_speed
 
+	# For CharacterBody3D (player), also check velocity
+	var parent := get_parent()
+	if parent is CharacterBody3D:
+		speed = maxf(speed, Vector2(parent.velocity.x, parent.velocity.z).length())
+
+	var current: String = _animator.get_current()
 	if speed > _sprint_speed * 0.7:
 		if current != "run":
 			_animator.travel("run")
@@ -73,7 +93,6 @@ func _update_locomotion() -> void:
 
 
 func attack(type: String) -> void:
-	"""Execute selected attack type. Only from idle/walk/run."""
 	if not _animator or is_dead or is_attacking:
 		return
 	_animator.travel(type)
@@ -81,44 +100,45 @@ func attack(type: String) -> void:
 
 
 func roll() -> void:
-	"""Dodge roll with instant transition (interrupts locomotion)."""
 	if not _animator or is_dead or is_attacking:
 		return
-	# Use start() for instant snap (no blend), like Souls-Like
-	_animator.start("kick")  # Using kick as roll placeholder
+	_animator.start("kick")
 	is_rolling = true
-	is_attacking = true  # Blocks other actions during roll
+	is_attacking = true
 
 
 func jump() -> void:
-	"""Jump animation."""
 	if not _animator or is_dead or is_attacking:
 		return
 	_animator.travel("jump")
-	is_attacking = true  # Blocks other actions during jump
-
-
-func special_attack() -> void:
-	"""Special attack while sprinting."""
-	if not _animator or is_dead:
-		return
-	_animator.travel("heavy")
 	is_attacking = true
 
 
 func request_action(action: String) -> void:
-	"""Generic action request (backwards compatibility)."""
 	if action == "jump":
 		jump()
 	elif action in ONE_SHOT_ANIMS:
 		attack(action)
 
 
-func _on_damage_received(_amount: float, _from: Node) -> void:
+func _on_attack_started(type_id: String) -> void:
 	if not _animator or is_dead:
 		return
+	if not is_attacking:
+		_animator.travel(type_id)
+		is_attacking = true
+
+
+func _on_damage_received(amount: float, _from: Node) -> void:
+	if not _animator or is_dead:
+		return
+	# Hit reaction — interrupt current action
 	_animator.start("hit")
 	is_attacking = true
+	# 3D damage number
+	_spawn_damage_number(amount)
+	# Hit flash
+	_flash_hit()
 
 
 func _on_died() -> void:
@@ -127,12 +147,67 @@ func _on_died() -> void:
 	is_dead = true
 	_animator.start("death")
 	is_attacking = true
+	# Disable collision and fade after death animation
+	var tween := create_tween()
+	tween.tween_interval(2.5)
+	tween.tween_callback(_cleanup_dead)
+
+
+func _cleanup_dead() -> void:
+	var parent := get_parent()
+	var col: CollisionShape3D = parent.get_node_or_null("CollisionShape3D")
+	if col:
+		col.disabled = true
+	var anim: Node3D = parent.get_node_or_null("CombatAnimator")
+	if anim:
+		anim.visible = false
+	# Hide HP label
+	var hp_label: Node = parent.get_node_or_null("HPLabel")
+	if hp_label:
+		hp_label.visible = false
+
+
+func _spawn_damage_number(amount: float) -> void:
+	var label := Label3D.new()
+	label.text = "%.0f" % absf(amount)
+	label.font_size = 64
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position = Vector3(randf_range(-0.3, 0.3), 2.2, 0)
+	label.modulate = Color(1, 0.3, 0.1)
+	label.outline_size = 8
+	get_parent().add_child(label)
+	var tween := label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y + 1.5, 0.8)
+	tween.tween_property(label, "modulate:a", 0.0, 0.6).set_delay(0.2)
+	tween.set_parallel(false)
+	tween.tween_callback(label.queue_free)
+
+
+func _flash_hit() -> void:
+	var anim: Node = get_parent().get_node_or_null("CombatAnimator")
+	if not anim:
+		return
+	var skeleton: Node = anim.get_node_or_null("Skeleton3D")
+	if not skeleton:
+		return
+	for child in skeleton.get_children():
+		if child is MeshInstance3D:
+			for surf_idx in range(child.get_surface_override_material_count()):
+				var mat: Material = child.get_active_material(surf_idx)
+				if mat is StandardMaterial3D:
+					var orig: Color = mat.albedo_color
+					mat.albedo_color = Color(1, 0.2, 0.2)
+					var tw := create_tween()
+					tw.tween_property(mat, "albedo_color", orig, 0.2)
+			break  # Only flash first mesh
 
 
 func reset() -> void:
 	is_dead = false
 	is_attacking = false
 	is_rolling = false
+	_movement_speed = 0.0
 	if _animator:
 		_animator.travel("idle")
 

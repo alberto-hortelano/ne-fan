@@ -105,18 +105,31 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		# 3D animated model
 		var animator = CombatAnimatorScript.new()
 		animator.name = "CombatAnimator"
-		animator.position.y = -sy / 2.0  # Body center is offset by sy/2, model origin at feet
+		animator.position.y = -sy / 2.0
 		body.add_child(animator)
+
+		# Enemy skin (red to differentiate from player)
+		animator.call_deferred("apply_skin", "res://assets/characters/Sword and Shield Pack/skin_red.png")
 
 		# Override animation if specified (for dev showcase rooms)
 		var forced_anim: String = data.get("animation", "")
 		if forced_anim != "":
-			# Play forced animation — let root motion move freely
 			animator.call_deferred("play", forced_anim)
 		else:
 			var sync = CombatAnimationSyncScript.new()
 			sync.name = "CombatAnimationSync"
 			body.add_child(sync)
+
+		# HP label above enemy head
+		var hp_label := Label3D.new()
+		hp_label.name = "HPLabel"
+		hp_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		hp_label.position.y = sy + 0.3
+		hp_label.font_size = 48
+		hp_label.outline_size = 6
+		hp_label.modulate = Color(1, 0.2, 0.1)
+		hp_label.text = "%d" % combat_data.get("health", 100)
+		body.add_child(hp_label)
 
 	# Debug capsule overlay (visible collision shape)
 	if data.get("debug_capsule", false):

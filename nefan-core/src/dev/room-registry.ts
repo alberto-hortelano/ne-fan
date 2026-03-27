@@ -24,6 +24,7 @@ export const ROOMS: RoomEntry[] = [
   // Dev test rooms
   { id: "anim_showcase", file: "dev/anim_showcase.json", category: "dev", description: "Animation comparison" },
   { id: "root_motion_debug", file: "dev/root_motion_debug.json", category: "dev", description: "Root motion debug (grid floor)" },
+  { id: "combat_arena", file: "dev/combat_arena.json", category: "dev", description: "Combat arena (1v1 test)" },
 ];
 
 export function getRooms(): RoomEntry[] {

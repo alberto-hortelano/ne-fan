@@ -44,7 +44,15 @@ export interface StateUpdateMessage {
   type: "state_update";
   events: CombatEvent[];
   playerHp: number;
-  enemies: { id: string; hp: number; state: string; alive: boolean }[];
+  enemies: {
+    id: string;
+    hp: number;
+    state: string;
+    alive: boolean;
+    pos?: { x: number; y: number; z: number };
+    forward?: { x: number; y: number; z: number };
+    attackType?: string;
+  }[];
 }
 
 export interface PongMessage {

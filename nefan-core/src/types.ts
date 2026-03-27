@@ -53,6 +53,14 @@ export interface EnemyPersonality {
   preferred_attacks: string[];
   reaction_time: number;
   combat_range?: number;
+  difficulty?: string;
+  aggression_style?: string;
+  dodge_chance?: number;
+  damage_mult?: number;
+  attack_cooldown_mult?: number;
+  block_chance?: number;
+  preferred_distance?: number;
+  move_speed?: number;
 }
 
 export interface PlayerState {
