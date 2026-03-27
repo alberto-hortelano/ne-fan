@@ -154,12 +154,31 @@ func _apply_state_update(msg: Dictionary) -> void:
 		var alive: bool = enemy_data.get("alive", true)
 		var enemy_node: Node = _find_enemy_node(room, enemy_id)
 		if enemy_node:
+			# Apply position from nefan-core
+			var pos_data: Dictionary = enemy_data.get("pos", {})
+			if not pos_data.is_empty() and enemy_node is Node3D:
+				enemy_node.position.x = pos_data.get("x", enemy_node.position.x)
+				enemy_node.position.z = pos_data.get("z", enemy_node.position.z)
+			# Apply facing direction
+			var fwd_data: Dictionary = enemy_data.get("forward", {})
+			if not fwd_data.is_empty():
+				var animator: Node3D = enemy_node.get_node_or_null("CombatAnimator")
+				if animator:
+					var fx: float = fwd_data.get("x", 0.0)
+					var fz: float = fwd_data.get("z", -1.0)
+					if absf(fx) > 0.01 or absf(fz) > 0.01:
+						animator.rotation.y = atan2(fx, fz)
+			# Apply HP changes
 			var c: Node = enemy_node.get_node_or_null("Combatant")
 			if c:
 				var old_ehp: float = c.health
 				if absf(old_ehp - hp) > 0.01:
 					c.health = hp
 					c.damage_received.emit(old_ehp - hp, _player_combatant)
+				# Update HP label
+				var hp_label: Label3D = enemy_node.get_node_or_null("HPLabel")
+				if hp_label:
+					hp_label.text = "%d" % int(hp)
 				if not alive and old_ehp > 0:
 					c.health = 0.0
 					c.died.emit()

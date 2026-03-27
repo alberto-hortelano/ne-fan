@@ -16,3 +16,4 @@ export { AnimationController } from "./animation/animation-controller.js";
 export { loadAnimationConfigs } from "./animation/animation-state.js";
 export type { AnimationConfig, AnimEvent } from "./animation/animation-state.js";
 export { buildTransitionMap, canTransition } from "./animation/animation-transitions.js";
+export { buildPersonality, DIFFICULTY, AGGRESSION_STYLE } from "./combat/difficulty-presets.js";

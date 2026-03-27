@@ -1,0 +1,51 @@
+{
+  "room_id": "combat_arena",
+  "room_description": "Combat test arena — 1v1 melee combat",
+  "dimensions": { "width": 20.0, "height": 5.0, "depth": 20.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "dark stone arena floor, circular pattern, gladiator pit, seamless tiling", "tiling": [10, 10] },
+    "ceiling": { "texture_prompt": "open sky, dark clouds", "tiling": [2, 2] },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [4, 1] },
+      { "side": "east", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [4, 1] },
+      { "side": "south", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [4, 1] },
+      { "side": "west", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [4, 1] }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.3, 0.25, 0.2], "intensity": 0.8 },
+    "lights": [
+      { "type": "point", "position": [0, 4.5, 0], "color": [1.0, 0.85, 0.6], "intensity": 4.0, "range": 15.0 },
+      { "type": "point", "position": [-6, 3, -6], "color": [0.8, 0.4, 0.1], "intensity": 1.5, "range": 8.0 },
+      { "type": "point", "position": [6, 3, 6], "color": [0.8, 0.4, 0.1], "intensity": 1.5, "range": 8.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "arena_enemy_01",
+      "mesh": "capsule",
+      "position": [0, 0, -6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "guerrero oscuro con espada y escudo",
+      "debug_capsule": true,
+      "combat": {
+        "health": 80,
+        "weapon_id": "short_sword",
+        "personality": {
+          "aggression": 0.6,
+          "preferred_attacks": ["quick", "medium", "heavy"],
+          "reaction_time": 0.5,
+          "combat_range": 4.0,
+          "difficulty": "medium",
+          "aggression_style": "neutral",
+          "preferred_distance": 2.5,
+          "move_speed": 2.0
+        }
+      }
+    }
+  ],
+  "npcs": [],
+  "ambient_event": "El eco de las botas retumba en la arena vacia."
+}
