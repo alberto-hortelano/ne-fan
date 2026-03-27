@@ -210,6 +210,14 @@ func reset() -> void:
 	_movement_speed = 0.0
 	if _animator:
 		_animator.travel("idle")
+	# Re-enable collision and visibility after death
+	var parent := get_parent()
+	var col: CollisionShape3D = parent.get_node_or_null("CollisionShape3D")
+	if col:
+		col.disabled = false
+	var anim: Node3D = parent.get_node_or_null("CombatAnimator")
+	if anim:
+		anim.visible = true
 
 
 func get_current_state() -> String:
