@@ -7,6 +7,7 @@ import { CombatManager } from "../combat/combat-manager.js";
 import { EnemyAI, SeededRng } from "../combat/enemy-ai.js";
 import * as Combatant from "../combat/combatant.js";
 import { getEffectiveParams } from "../combat/combat-data.js";
+import { distanceXZ } from "../vec3.js";
 
 export interface FrameInputs {
   playerPosition: Vec3;
@@ -81,15 +82,19 @@ export class GameSimulation {
     // 2. Enemy movement (before attack decisions so distance is current)
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || !player) continue;
-      ai.updateMovement(delta, enemy, player);
+      if (!enemy || enemy.health <= 0) continue;
+      const target = this.findNearestTarget(enemy);
+      if (!target) continue;
+      ai.updateMovement(delta, enemy, target);
     }
 
     // 3. Enemy AI attack decisions
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || !player) continue;
-      const events = ai.tick(delta, enemy, player);
+      if (!enemy || enemy.health <= 0) continue;
+      const target = this.findNearestTarget(enemy);
+      if (!target) continue;
+      const events = ai.tick(delta, enemy, target);
       allEvents.push(...events);
     }
 
@@ -173,6 +178,18 @@ export class GameSimulation {
     });
 
     return [{ type: "player_respawned", hp: player.maxHealth }];
+  }
+
+  /** Find nearest alive combatant that isn't self. */
+  private findNearestTarget(self: CombatantState): CombatantState | undefined {
+    let best: CombatantState | undefined;
+    let bestDist = Infinity;
+    for (const [, c] of this.combatants) {
+      if (c.id === self.id || c.health <= 0) continue;
+      const d = distanceXZ(self.position, c.position);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    return best;
   }
 
   reset(): void {
