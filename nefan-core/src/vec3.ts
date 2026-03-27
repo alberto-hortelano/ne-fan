@@ -32,3 +32,17 @@ export function normalized(v: Vec3): Vec3 {
   if (len < 1e-8) return { x: 0, y: 0, z: 0 };
   return { x: v.x / len, y: v.y / len, z: v.z / len };
 }
+
+export function add(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+export function scale(v: Vec3, s: number): Vec3 {
+  return { x: v.x * s, y: v.y * s, z: v.z * s };
+}
+
+export function distanceXZ(a: Vec3, b: Vec3): number {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dz * dz);
+}

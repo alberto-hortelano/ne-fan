@@ -239,6 +239,7 @@ func _cmd_status() -> String:
 	var animator = main_scene.get_node_or_null("Player/CombatAnimator")
 	if animator:
 		info["anim_name"] = animator.get_current()
+	info["bridge_connected"] = LogicBridge.is_connected_to_bridge()
 	return JSON.stringify(info)
 
 
@@ -275,6 +276,9 @@ func _cmd_attack(args: Dictionary) -> String:
 	if not sync:
 		return '{"error":"no sync"}'
 	sync.attack(attack_type)
+	var pci = player.get_node_or_null("PlayerCombatInput")
+	if pci:
+		pci.request_attack(attack_type)
 	var animator = player.get_node_or_null("CombatAnimator")
 	var duration: float = 0.0
 	if animator and animator._anim_player and animator._anim_player.has_animation(attack_type):

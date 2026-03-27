@@ -13,6 +13,7 @@ var _retry_interval := 5.0
 
 var _player: CharacterBody3D = null
 var _player_combatant: Node = null  # Combatant
+var _pending_room: Dictionary = {}  # Room data to send when bridge connects
 
 
 func _ready() -> void:
@@ -35,6 +36,11 @@ func _process(delta: float) -> void:
 		if not _connected:
 			_connected = true
 			print("LogicBridge: connected to %s" % BRIDGE_URL)
+			# Send pending room data that was queued before connection
+			if not _pending_room.is_empty():
+				_socket.send_text(JSON.stringify(_pending_room))
+				print("LogicBridge: sent pending room: %s" % _pending_room.get("roomId", ""))
+				_pending_room = {}
 
 		# Read incoming messages
 		while _socket.get_available_packet_count() > 0:
@@ -56,7 +62,8 @@ func _physics_process(delta: float) -> void:
 	var model: Node3D = _player.get_node_or_null("CombatAnimator")
 	var fwd := Vector3.FORWARD
 	if model:
-		fwd = -model.global_transform.basis.z
+		# Mixamo model visual forward is +Z, so basis.z IS the forward direction
+		fwd = model.global_transform.basis.z
 		fwd.y = 0
 		fwd = fwd.normalized()
 
@@ -90,14 +97,18 @@ func _physics_process(delta: float) -> void:
 
 func send_room_loaded(room_id: String, enemies: Array) -> void:
 	"""Notify bridge of a room change with enemy data."""
-	if not _connected:
-		return
 	var msg := {
 		"type": "load_room",
 		"roomId": room_id,
 		"enemies": enemies,
 	}
+	if not _connected:
+		# Store for when bridge connects
+		_pending_room = msg
+		print("LogicBridge: queued room '%s' (%d enemies) for when bridge connects" % [room_id, enemies.size()])
+		return
 	_socket.send_text(JSON.stringify(msg))
+	print("LogicBridge: sent room '%s' (%d enemies)" % [room_id, enemies.size()])
 
 
 func send_respawn() -> void:
@@ -154,12 +165,31 @@ func _apply_state_update(msg: Dictionary) -> void:
 		var alive: bool = enemy_data.get("alive", true)
 		var enemy_node: Node = _find_enemy_node(room, enemy_id)
 		if enemy_node:
+			# Apply position from nefan-core
+			var pos_data: Dictionary = enemy_data.get("pos", {})
+			if not pos_data.is_empty() and enemy_node is Node3D:
+				enemy_node.position.x = pos_data.get("x", enemy_node.position.x)
+				enemy_node.position.z = pos_data.get("z", enemy_node.position.z)
+			# Apply facing direction
+			var fwd_data: Dictionary = enemy_data.get("forward", {})
+			if not fwd_data.is_empty():
+				var animator: Node3D = enemy_node.get_node_or_null("CombatAnimator")
+				if animator:
+					var fx: float = fwd_data.get("x", 0.0)
+					var fz: float = fwd_data.get("z", -1.0)
+					if absf(fx) > 0.01 or absf(fz) > 0.01:
+						animator.rotation.y = atan2(fx, fz)
+			# Apply HP changes
 			var c: Node = enemy_node.get_node_or_null("Combatant")
 			if c:
 				var old_ehp: float = c.health
 				if absf(old_ehp - hp) > 0.01:
 					c.health = hp
 					c.damage_received.emit(old_ehp - hp, _player_combatant)
+				# Update HP label
+				var hp_label: Label3D = enemy_node.get_node_or_null("HPLabel")
+				if hp_label:
+					hp_label.text = "%d" % int(hp)
 				if not alive and old_ehp > 0:
 					c.health = 0.0
 					c.died.emit()
@@ -223,10 +253,14 @@ func _apply_state_update(msg: Dictionary) -> void:
 					panim.play("idle")
 
 
-func _find_enemy_node(room: Node, enemy_id: String) -> Node:
-	if not room:
+func _find_enemy_node(root: Node, enemy_id: String) -> Node:
+	if not root:
 		return null
-	for child in room.get_children():
+	# Search all descendants (enemy is inside room container)
+	for child in root.get_children():
 		if child.name == enemy_id:
 			return child
+		var found: Node = _find_enemy_node(child, enemy_id)
+		if found:
+			return found
 	return null

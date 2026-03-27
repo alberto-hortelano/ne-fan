@@ -45,6 +45,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var pci = get_node_or_null("PlayerCombatInput")
 		var attack_type: String = pci.selected_type if pci else "quick"
 		_sync.attack(attack_type)
+		if pci:
+			pci.request_attack(attack_type)
 
 
 func _physics_process(delta: float) -> void:
