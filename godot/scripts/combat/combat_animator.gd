@@ -38,16 +38,52 @@ var _playback: AnimationNodeStateMachinePlayback
 var _current_anim: String = ""
 var _skeleton: Skeleton3D
 var _hips_idx: int = -1
+var _collision_shape: CollisionShape3D = null
+var _collision_rest_pos := Vector3(0, 0.9, 0)
 
 
 func _ready() -> void:
 	_load_model()
 	_load_animations()
 	_setup_animation_tree()
-	# Lock Hips XZ on ALL animations — movement is 100% via velocity
-	# Attacks play "in place" with no drift — feet don't slide
 	_lock_all_hips_xz()
+	# Cache collision shape for syncing during attacks
+	process_priority = 100  # Run after AnimationPlayer
+	var body := get_parent()
+	if body:
+		_collision_shape = body.get_node_or_null("CollisionShape3D")
+		if _collision_shape:
+			_collision_rest_pos = _collision_shape.position
 	print("CombatAnimator: loaded %d animations" % _get_anim_count())
+
+
+func _process(_delta: float) -> void:
+	if not _skeleton or _hips_idx < 0 or not _collision_shape:
+		return
+
+	var body := get_parent()
+	if not body:
+		return
+
+	var sync = body.get_node_or_null("CombatAnimationSync")
+	var is_action: bool = sync != null and sync.is_attacking
+
+	if is_action:
+		# Move collision shape to where the Hips bone is
+		# get_bone_global_pose gives position in skeleton space
+		# Convert to body-local space accounting for model rotation
+		var hips_global: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
+		var hips_in_skel: Vector3 = hips_global.origin
+		# Skeleton is child of CombatAnimator, which is child of body
+		# Transform: skeleton-local → animator-local → body-local
+		var hips_in_body: Vector3 = global_transform * _skeleton.transform * hips_in_skel
+		var body_global: Vector3 = get_parent().global_position
+		var offset: Vector3 = hips_in_body - body_global
+		_collision_shape.position.x = offset.x
+		_collision_shape.position.z = offset.z
+	else:
+		# Return to rest position
+		_collision_shape.position = _collision_rest_pos
 
 
 func _load_model() -> void:
