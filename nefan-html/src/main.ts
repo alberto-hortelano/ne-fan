@@ -14,7 +14,7 @@ import { KeyboardHandler } from "./input/keyboard-handler.js";
 // @ts-ignore — Vite resolves JSON imports
 import combatConfigJson from "../../nefan-core/data/combat_config.json";
 // @ts-ignore
-import cryptRoomJson from "../../godot/test_rooms/crypt_001.json";
+import combatArenaJson from "../../nefan-core/data/rooms/dev/combat_arena.json";
 
 const playerCfg = (combatConfigJson as any).player ?? {};
 const SPEED = playerCfg.walk_speed ?? 3.0;
@@ -53,7 +53,7 @@ attackBtns.forEach(btn => {
 });
 
 // --- Load Room ---
-const roomData = cryptRoomJson as any;
+const roomData = combatArenaJson as any;
 renderer.setRoom(roomData);
 
 // Player state
@@ -65,7 +65,7 @@ const player = createCombatant("player", playerMaxHp, "short_sword", playerPos, 
 sim.addCombatant(player);
 
 // Enemies from room data
-interface RoomEntity { id: string; pos: Vec3; radius: number; color: string; label: string; hp?: number; maxHp?: number; alive: boolean }
+interface RoomEntity { id: string; pos: Vec3; forward?: Vec3; radius: number; color: string; label: string; hp?: number; maxHp?: number; alive: boolean; attacking?: boolean }
 const enemyEntities: RoomEntity[] = [];
 const objectEntities: RoomEntity[] = [];
 
@@ -245,8 +245,11 @@ function gameLoop(now: number): void {
   for (const ee of enemyEntities) {
     const c = sim.getCombatant(ee.id);
     if (c) {
+      ee.pos = { ...c.position };
+      ee.forward = { ...c.forward };
       ee.hp = c.health;
       ee.alive = c.health > 0;
+      ee.attacking = c.state === "winding_up" || c.state === "attacking";
     }
   }
 
