@@ -19,6 +19,7 @@ export interface InputMessage {
 export interface LoadRoomMessage {
   type: "load_room";
   roomId: string;
+  dimensions?: { width: number; depth: number };
   enemies: {
     id: string;
     position: Vec3;

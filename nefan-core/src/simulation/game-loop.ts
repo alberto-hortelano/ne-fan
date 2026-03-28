@@ -28,12 +28,18 @@ export class GameSimulation {
   private enemyAIs = new Map<string, EnemyAI>();
   private config: CombatConfig;
   private rng: SeededRng;
+  private roomBounds: { halfW: number; halfD: number } | null = null;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number) {
     this.config = config;
     this.store = store ?? new GameStore();
     this.combatManager = new CombatManager(config);
     this.rng = new SeededRng(seed);
+  }
+
+  /** Set room bounds so AI movement is clamped to the arena. */
+  setRoomBounds(width: number, depth: number): void {
+    this.roomBounds = { halfW: width / 2 - 0.3, halfD: depth / 2 - 0.3 };
   }
 
   addCombatant(state: CombatantState, personality?: EnemyPersonality): void {
@@ -86,6 +92,17 @@ export class GameSimulation {
       const target = this.findNearestTarget(enemy);
       if (!target) continue;
       ai.updateMovement(delta, enemy, target);
+    }
+
+    // 2b. Clamp enemy positions to room bounds
+    if (this.roomBounds) {
+      const { halfW, halfD } = this.roomBounds;
+      for (const [id, ] of this.enemyAIs) {
+        const enemy = this.combatants.get(id);
+        if (!enemy) continue;
+        enemy.position.x = Math.max(-halfW, Math.min(halfW, enemy.position.x));
+        enemy.position.z = Math.max(-halfD, Math.min(halfD, enemy.position.z));
+      }
     }
 
     // 3. Enemy AI attack decisions
