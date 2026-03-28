@@ -95,13 +95,15 @@ func _physics_process(delta: float) -> void:
 	_socket.send_text(JSON.stringify(msg))
 
 
-func send_room_loaded(room_id: String, enemies: Array) -> void:
+func send_room_loaded(room_id: String, enemies: Array, dimensions: Dictionary = {}) -> void:
 	"""Notify bridge of a room change with enemy data."""
 	var msg := {
 		"type": "load_room",
 		"roomId": room_id,
 		"enemies": enemies,
 	}
+	if not dimensions.is_empty():
+		msg["dimensions"] = {"width": dimensions.get("width", 20.0), "depth": dimensions.get("depth", 20.0)}
 	if not _connected:
 		# Store for when bridge connects
 		_pending_room = msg

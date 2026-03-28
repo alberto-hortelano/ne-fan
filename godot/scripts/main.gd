@@ -482,7 +482,8 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 					"combat_range": ai.combat_range,
 				}
 			})
-	LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies)
+	var dims: Dictionary = data.get("dimensions", {})
+	LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies, dims)
 
 	# Update state
 	GameState.mark_room_visited(data.get("room_id", "unknown"), data)

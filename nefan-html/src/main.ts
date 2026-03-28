@@ -14,7 +14,7 @@ import { KeyboardHandler } from "./input/keyboard-handler.js";
 // @ts-ignore — Vite resolves JSON imports
 import combatConfigJson from "../../nefan-core/data/combat_config.json";
 // @ts-ignore
-import combatArenaJson from "../../nefan-core/data/rooms/dev/combat_arena.json";
+import battleRoyaleJson from "../../nefan-core/data/rooms/dev/battle_royale.json";
 
 const playerCfg = (combatConfigJson as any).player ?? {};
 const SPEED = playerCfg.walk_speed ?? 3.0;
@@ -31,8 +31,7 @@ const renderer = new CanvasRenderer(canvas);
 // HUD elements
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
-const enemyHpBar = document.getElementById("enemy-hp") as HTMLElement;
-const enemyHpText = document.getElementById("enemy-hp-text") as HTMLElement;
+const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
 const attackBtns = document.querySelectorAll(".attack-selector span");
 
@@ -53,8 +52,9 @@ attackBtns.forEach(btn => {
 });
 
 // --- Load Room ---
-const roomData = combatArenaJson as any;
+const roomData = battleRoyaleJson as any;
 renderer.setRoom(roomData);
+sim.setRoomBounds(roomData.dimensions.width, roomData.dimensions.depth);
 
 // Player state
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
@@ -69,6 +69,9 @@ interface RoomEntity { id: string; pos: Vec3; forward?: Vec3; radius: number; co
 const enemyEntities: RoomEntity[] = [];
 const objectEntities: RoomEntity[] = [];
 
+const ENEMY_COLORS = ["#c44", "#4a4", "#48c", "#ca4"];
+let colorIdx = 0;
+
 for (const obj of roomData.objects ?? []) {
   const pos: Vec3 = { x: obj.position[0], y: obj.position[1], z: obj.position[2] };
   if (obj.combat) {
@@ -76,15 +79,15 @@ for (const obj of roomData.objects ?? []) {
       obj.id, obj.combat.health, obj.combat.weapon_id ?? "unarmed",
       pos, { x: 0, y: 0, z: 1 },
     );
+    // Pass full personality including difficulty/aggression_style
     const personality: EnemyPersonality = {
-      aggression: obj.combat.personality?.aggression ?? 0.5,
-      preferred_attacks: obj.combat.personality?.preferred_attacks ?? ["medium"],
-      reaction_time: obj.combat.personality?.reaction_time ?? 0.8,
-      combat_range: 4.0,
+      ...(obj.combat.personality ?? {}),
+      combat_range: obj.combat.personality?.combat_range ?? 4.0,
     };
     sim.addCombatant(enemyCombatant, personality);
+    const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
     enemyEntities.push({
-      id: obj.id, pos, radius: 8, color: "#c44", label: obj.description,
+      id: obj.id, pos, radius: 8, color, label: obj.description ?? obj.id,
       hp: obj.combat.health, maxHp: obj.combat.health, alive: true,
     });
   } else {
@@ -94,6 +97,16 @@ for (const obj of roomData.objects ?? []) {
       label: obj.description, alive: true,
     });
   }
+}
+
+// Build enemy HP bars dynamically
+for (const ee of enemyEntities) {
+  const bar = document.createElement("div");
+  bar.className = "hp-bar";
+  bar.innerHTML = `<span style="color:${ee.color}">${ee.id}</span>
+    <div class="hp-fill"><div class="hp-fill-inner" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
+    <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
+  enemyBarsContainer.appendChild(bar);
 }
 
 // Combat log helper
@@ -258,11 +271,11 @@ function gameLoop(now: number): void {
   playerHpBar.style.width = pHpPct + "%";
   playerHpText.textContent = Math.ceil(player.health).toString();
 
-  const firstEnemy = enemyEntities[0];
-  if (firstEnemy) {
-    const eHpPct = Math.max(0, (firstEnemy.hp ?? 0) / (firstEnemy.maxHp ?? 1) * 100);
-    enemyHpBar.style.width = eHpPct + "%";
-    enemyHpText.textContent = Math.ceil(firstEnemy.hp ?? 0).toString();
+  for (const ee of enemyEntities) {
+    const bar = document.getElementById(`hp-${ee.id}`);
+    const text = document.getElementById(`hp-text-${ee.id}`);
+    if (bar) bar.style.width = Math.max(0, (ee.hp ?? 0) / (ee.maxHp ?? 1) * 100) + "%";
+    if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
   }
 
   // Render
