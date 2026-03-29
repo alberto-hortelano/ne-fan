@@ -7,6 +7,7 @@ import { CombatManager } from "../combat/combat-manager.js";
 import { EnemyAI, SeededRng } from "../combat/enemy-ai.js";
 import * as Combatant from "../combat/combatant.js";
 import { getEffectiveParams } from "../combat/combat-data.js";
+import { distanceXZ } from "../vec3.js";
 
 export interface FrameInputs {
   playerPosition: Vec3;
@@ -27,12 +28,18 @@ export class GameSimulation {
   private enemyAIs = new Map<string, EnemyAI>();
   private config: CombatConfig;
   private rng: SeededRng;
+  private roomBounds: { halfW: number; halfD: number } | null = null;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number) {
     this.config = config;
     this.store = store ?? new GameStore();
     this.combatManager = new CombatManager(config);
     this.rng = new SeededRng(seed);
+  }
+
+  /** Set room bounds so AI movement is clamped to the arena. */
+  setRoomBounds(width: number, depth: number): void {
+    this.roomBounds = { halfW: width / 2 - 0.3, halfD: depth / 2 - 0.3 };
   }
 
   addCombatant(state: CombatantState, personality?: EnemyPersonality): void {
@@ -81,15 +88,30 @@ export class GameSimulation {
     // 2. Enemy movement (before attack decisions so distance is current)
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || !player) continue;
-      ai.updateMovement(delta, enemy, player);
+      if (!enemy || enemy.health <= 0) continue;
+      const target = this.findNearestTarget(enemy);
+      if (!target) continue;
+      ai.updateMovement(delta, enemy, target);
+    }
+
+    // 2b. Clamp enemy positions to room bounds
+    if (this.roomBounds) {
+      const { halfW, halfD } = this.roomBounds;
+      for (const [id, ] of this.enemyAIs) {
+        const enemy = this.combatants.get(id);
+        if (!enemy) continue;
+        enemy.position.x = Math.max(-halfW, Math.min(halfW, enemy.position.x));
+        enemy.position.z = Math.max(-halfD, Math.min(halfD, enemy.position.z));
+      }
     }
 
     // 3. Enemy AI attack decisions
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || !player) continue;
-      const events = ai.tick(delta, enemy, player);
+      if (!enemy || enemy.health <= 0) continue;
+      const target = this.findNearestTarget(enemy);
+      if (!target) continue;
+      const events = ai.tick(delta, enemy, target);
       allEvents.push(...events);
     }
 
@@ -173,6 +195,18 @@ export class GameSimulation {
     });
 
     return [{ type: "player_respawned", hp: player.maxHealth }];
+  }
+
+  /** Find nearest alive combatant that isn't self. */
+  private findNearestTarget(self: CombatantState): CombatantState | undefined {
+    let best: CombatantState | undefined;
+    let bestDist = Infinity;
+    for (const [, c] of this.combatants) {
+      if (c.id === self.id || c.health <= 0) continue;
+      const d = distanceXZ(self.position, c.position);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    return best;
   }
 
   reset(): void {

@@ -15,12 +15,14 @@ interface RoomData {
 interface Entity {
   id: string;
   pos: Vec3;
+  forward?: Vec3;
   radius: number;
   color: string;
   label: string;
   hp?: number;
   maxHp?: number;
   alive: boolean;
+  attacking?: boolean;
 }
 
 const WALL_COLOR = "#3a3a3a";
@@ -156,9 +158,9 @@ export class CanvasRenderer {
       this.drawEntity(obj);
     }
 
-    // Enemies
+    // Enemies (alive and dead)
     for (const e of enemies) {
-      if (e.alive) this.drawEntity(e);
+      this.drawEntity(e);
     }
 
     // Player
@@ -194,8 +196,28 @@ export class CanvasRenderer {
     const ctx = this.ctx;
     const [ex, ey] = this.toScreen(e.pos.x, e.pos.z);
 
-    ctx.fillStyle = e.color;
+    // Dead entities: grey, no HP bar
+    if (!e.alive) {
+      ctx.fillStyle = "#555";
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1.0;
+      return;
+    }
+
+    // Attack flash: brighter color when attacking
+    ctx.fillStyle = e.attacking ? "#ff4" : e.color;
     ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
+
+    // Forward direction indicator
+    if (e.forward && (e.forward.x !== 0 || e.forward.z !== 0)) {
+      const fLen = 14;
+      const fx = ex + e.forward.x * fLen;
+      const fy = ey + e.forward.z * fLen;
+      ctx.strokeStyle = e.attacking ? "#ff4" : e.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(fx, fy); ctx.stroke();
+    }
 
     // HP bar if applicable
     if (e.hp !== undefined && e.maxHp !== undefined) {
