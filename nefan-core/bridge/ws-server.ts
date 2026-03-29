@@ -75,6 +75,11 @@ wss.on("connection", (ws: WebSocket) => {
             { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
         );
 
+        // Set room bounds for AI clamping
+        if (msg.dimensions) {
+          sim.setRoomBounds(msg.dimensions.width, msg.dimensions.depth);
+        }
+
         // Add enemies from room data
         for (const enemy of msg.enemies) {
           const combatant = createCombatant(

@@ -1,0 +1,102 @@
+{
+  "room_id": "battle_royale",
+  "room_description": "Arena de batalla libre — 4 guerreros IA se enfrentan entre si y contra ti",
+  "dimensions": { "width": 24.0, "height": 5.0, "depth": 24.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "dark stone arena floor, bloodstains, gladiator pit, seamless tiling", "tiling": [12, 12] },
+    "ceiling": { "texture_prompt": "open sky, dark clouds, lightning", "tiling": [2, 2] },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [5, 1] },
+      { "side": "east", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [5, 1] },
+      { "side": "south", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [5, 1] },
+      { "side": "west", "texture_prompt": "rough stone arena wall, iron spikes, dark fantasy", "tiling": [5, 1] }
+    ]
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.3, 0.25, 0.2], "intensity": 0.8 },
+    "lights": [
+      { "type": "point", "position": [0, 4.5, 0], "color": [1.0, 0.85, 0.6], "intensity": 5.0, "range": 18.0 },
+      { "type": "point", "position": [-8, 3, -8], "color": [0.8, 0.3, 0.1], "intensity": 1.5, "range": 8.0 },
+      { "type": "point", "position": [8, 3, 8], "color": [0.8, 0.3, 0.1], "intensity": 1.5, "range": 8.0 },
+      { "type": "point", "position": [-8, 3, 8], "color": [0.3, 0.3, 0.8], "intensity": 1.5, "range": 8.0 },
+      { "type": "point", "position": [8, 3, -8], "color": [0.3, 0.8, 0.3], "intensity": 1.5, "range": 8.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "berserker",
+      "mesh": "capsule",
+      "position": [-6, 0, -6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "Berserker — hard/aggressive",
+      "combat": {
+        "health": 100,
+        "weapon_id": "war_hammer",
+        "personality": {
+          "difficulty": "hard",
+          "aggression_style": "aggressive",
+          "preferred_attacks": ["heavy", "medium"],
+          "combat_range": 5.0
+        }
+      }
+    },
+    {
+      "id": "guardian",
+      "mesh": "capsule",
+      "position": [6, 0, -6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "Guardian — medium/defensive",
+      "combat": {
+        "health": 120,
+        "weapon_id": "short_sword",
+        "personality": {
+          "difficulty": "medium",
+          "aggression_style": "defensive",
+          "preferred_attacks": ["defensive", "quick", "medium"],
+          "combat_range": 4.0
+        }
+      }
+    },
+    {
+      "id": "duelist",
+      "mesh": "capsule",
+      "position": [-6, 0, 6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "Duelist — hard/neutral",
+      "combat": {
+        "health": 90,
+        "weapon_id": "short_sword",
+        "personality": {
+          "difficulty": "hard",
+          "aggression_style": "neutral",
+          "preferred_attacks": ["quick", "precise", "medium"],
+          "combat_range": 4.0
+        }
+      }
+    },
+    {
+      "id": "brawler",
+      "mesh": "capsule",
+      "position": [6, 0, 6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "Brawler — easy/aggressive",
+      "combat": {
+        "health": 80,
+        "weapon_id": "unarmed",
+        "personality": {
+          "difficulty": "easy",
+          "aggression_style": "aggressive",
+          "preferred_attacks": ["quick", "quick", "medium"],
+          "combat_range": 3.5
+        }
+      }
+    }
+  ],
+  "npcs": [],
+  "ambient_event": "Los rugidos de los combatientes resuenan en la arena de piedra."
+}
