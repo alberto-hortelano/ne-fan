@@ -1,14 +1,34 @@
 ; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
-; but it can also be manually edited.
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
+
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
 config/name="Never Ending Fantasy"
 run/main_scene="res://scenes/main.tscn"
-config/features=PackedStringArray("4.3", "Forward Plus")
+config/features=PackedStringArray("4.6", "Forward Plus")
+
+[autoload]
+
+GameStore="*res://scripts/autoloads/game_store.gd"
+GameState="*res://scripts/autoloads/game_state.gd"
+AIClient="*res://scripts/autoloads/ai_client.gd"
+TextureCache="*res://scripts/autoloads/texture_cache.gd"
+SpriteCache="*res://scripts/autoloads/sprite_cache.gd"
+RemoteControl="*res://scripts/autoloads/remote_control.gd"
+SessionRecorder="*res://scripts/autoloads/session_recorder.gd"
+SessionPlayer="*res://scripts/autoloads/session_player.gd"
+LogicBridge="*res://scripts/autoloads/logic_bridge.gd"
 
 [display]
 
@@ -82,19 +102,3 @@ attack_precise={
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":53,"key_label":0,"unicode":53,"location":0,"echo":false,"script":null)
 ]
 }
-
-[autoload]
-
-GameStore="*res://scripts/autoloads/game_store.gd"
-GameState="*res://scripts/autoloads/game_state.gd"
-AIClient="*res://scripts/autoloads/ai_client.gd"
-TextureCache="*res://scripts/autoloads/texture_cache.gd"
-SpriteCache="*res://scripts/autoloads/sprite_cache.gd"
-RemoteControl="*res://scripts/autoloads/remote_control.gd"
-SessionRecorder="*res://scripts/autoloads/session_recorder.gd"
-SessionPlayer="*res://scripts/autoloads/session_player.gd"
-LogicBridge="*res://scripts/autoloads/logic_bridge.gd"
-
-[rendering]
-
-renderer/rendering_method="forward_plus"

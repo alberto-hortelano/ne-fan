@@ -4,7 +4,7 @@
 class_name CombatAnimator
 extends Node3D
 
-const BASE_MODEL_PATH := "res://assets/characters/Sword and Shield Pack/Paladin J Nordstrom.fbx"
+const BASE_MODEL_PATH := "res://assets/characters/Sword and Shield Pack/character.fbx"
 const ANIM_DIR := "res://assets/characters/Sword and Shield Pack/"
 
 # Map combat states/types to FBX filenames (without .fbx)
@@ -12,6 +12,9 @@ const ANIM_MAP := {
 	"idle": "sword and shield idle",
 	"run": "sword and shield run",
 	"walk": "sword and shield walk",
+	"walk_back": "sword and shield walk (2)",
+	"strafe_left": "sword and shield strafe",
+	"strafe_right": "sword and shield strafe (2)",
 	"quick": "sword and shield attack (4)",
 	"heavy": "sword and shield slash",
 	"medium": "sword and shield slash (5)",
@@ -30,7 +33,7 @@ const ANIM_MAP := {
 }
 
 # Animations that loop
-const LOOPING_ANIMS := ["idle", "walk", "run", "block_idle"]
+const LOOPING_ANIMS := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "block_idle", "turn"]
 
 var _anim_player: AnimationPlayer
 var _anim_tree: AnimationTree
@@ -70,17 +73,12 @@ func _process(_delta: float) -> void:
 
 	if is_action:
 		# Move collision shape to where the Hips bone is
-		# get_bone_global_pose gives position in skeleton space
-		# Convert to body-local space accounting for model rotation
+		# Convert hips world position to body-local space (accounts for body rotation)
 		var hips_global: Transform3D = _skeleton.get_bone_global_pose(_hips_idx)
-		var hips_in_skel: Vector3 = hips_global.origin
-		# Skeleton is child of CombatAnimator, which is child of body
-		# Transform: skeleton-local → animator-local → body-local
-		var hips_in_body: Vector3 = global_transform * _skeleton.transform * hips_in_skel
-		var body_global: Vector3 = get_parent().global_position
-		var offset: Vector3 = hips_in_body - body_global
-		_collision_shape.position.x = offset.x
-		_collision_shape.position.z = offset.z
+		var hips_world: Vector3 = global_transform * _skeleton.transform * hips_global.origin
+		var offset_local: Vector3 = body.to_local(hips_world)
+		_collision_shape.position.x = offset_local.x
+		_collision_shape.position.z = offset_local.z
 	else:
 		# Return to rest position
 		_collision_shape.position = _collision_rest_pos
@@ -171,7 +169,7 @@ func _setup_animation_tree() -> void:
 		state_machine.add_node(anim_name, node)
 
 	# Add transitions: locomotion states can transition freely
-	var locomotion := ["idle", "walk", "run"]
+	var locomotion := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "turn"]
 	for from in locomotion:
 		for to in locomotion:
 			if from != to and state_machine.has_node(from) and state_machine.has_node(to):
@@ -181,7 +179,7 @@ func _setup_animation_tree() -> void:
 
 	# From locomotion to one-shot animations (attacks, jump, etc.)
 	var one_shots := ["quick", "heavy", "medium", "defensive", "precise",
-					  "kick", "hit", "death", "jump", "casting", "turn",
+					  "kick", "hit", "death", "jump", "casting",
 					  "power_up", "draw_sword_1", "draw_sword_2"]
 	for action in one_shots:
 		if not state_machine.has_node(action):
@@ -212,7 +210,7 @@ func _lock_all_hips_xz() -> void:
 	if not _anim_player or not _anim_player.has_animation_library(""):
 		return
 	# Only lock animations with significant root motion drift
-	var lock_list := ["walk", "run"]
+	var lock_list := ["walk", "run", "walk_back", "strafe_left", "strafe_right"]
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
 	for anim_name in lock_list:
 		if not lib.has_animation(anim_name):
