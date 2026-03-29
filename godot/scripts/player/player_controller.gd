@@ -4,7 +4,8 @@ extends CharacterBody3D
 
 const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
 
-const MODEL_TURN_SPEED := 10.0
+const MODEL_TURN_SPEED := 4.0  # rad/s constant angular speed (~230°/s)
+const TURN_THRESHOLD := 0.05  # ~3° deadzone
 const POS_THRESHOLD := 0.1
 const YAW_THRESHOLD := 0.02
 const DASH_POWER := 8.0
@@ -16,6 +17,9 @@ var _last_dispatched_pos := Vector3.ZERO
 var _last_dispatched_yaw := 0.0
 var _move_direction := Vector3.ZERO
 var _horizontal_velocity := Vector3.ZERO
+var _is_turning := false
+var _rotation_initialized := false
+var _local_input := Vector2.ZERO  # Raw WASD input: x=strafe, y=forward/back
 
 var _walk_speed := 1.9
 var _sprint_speed := 3.8
@@ -34,6 +38,14 @@ func _ready() -> void:
 
 func set_camera(camera: Node3D) -> void:
 	_camera = camera
+
+
+func is_turning() -> bool:
+	return _is_turning
+
+
+func get_local_input() -> Vector2:
+	return _local_input
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -66,20 +78,20 @@ func _physics_process(delta: float) -> void:
 
 	# Input
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
-	var has_input := input_dir.length() > 0.01
+	_local_input = input_dir if input_dir.length() > 0.01 else Vector2.ZERO
+	var has_input := _local_input.length() > 0.01
 	var can_move: bool = _sync == null or _sync.is_interruptible()
 
-	# Camera-relative movement direction
+	# Model-relative movement direction (W = model forward, A/D = strafe)
 	var direction := Vector3.ZERO
-	if _camera and has_input:
-		var cam_basis: Basis = _camera.get_camera_basis()
-		var forward := -cam_basis.z
-		forward.y = 0
-		forward = forward.normalized()
-		var right := cam_basis.x
-		right.y = 0
-		right = right.normalized()
-		direction = (forward * -input_dir.y + right * input_dir.x).normalized()
+	if not _model:
+		_model = get_node_or_null("CombatAnimator")
+	if has_input:
+		var body_yaw: float = rotation.y
+		# Mixamo faces +Z: rotated +Z = (sin(yaw), 0, cos(yaw))
+		var model_fwd := Vector3(sin(body_yaw), 0, cos(body_yaw))
+		var model_right := Vector3(-model_fwd.z, 0, model_fwd.x)
+		direction = (model_fwd * -input_dir.y + model_right * input_dir.x).normalized()
 
 	# Speed
 	var movement_speed := 0.0
@@ -111,13 +123,29 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	# Rotate model toward movement direction (not during attacks)
+	# Rotate BODY toward camera direction at constant angular speed
+	# Rotating the CharacterBody3D instead of CombatAnimator so AnimationTree can't override it
+	# PI offset: Mixamo model faces +Z at rotation 0, camera faces -Z at yaw 0
 	if not _model:
 		_model = get_node_or_null("CombatAnimator")
-	if _model and _move_direction.length() > 0.01:
-		if can_move:
-			var target_yaw: float = atan2(_move_direction.x, _move_direction.z)
-			_model.rotation.y = lerp_angle(_model.rotation.y, target_yaw, MODEL_TURN_SPEED * delta)
+	_is_turning = false
+	if _camera:
+		var cam_fwd: Vector3 = -_camera.global_transform.basis.z
+		cam_fwd.y = 0
+		if cam_fwd.length() > 0.01:
+			cam_fwd = cam_fwd.normalized()
+			var target_yaw: float = atan2(cam_fwd.x, cam_fwd.z)
+			# Snap to camera on first frame (no spinning at startup)
+			if not _rotation_initialized:
+				rotation.y = target_yaw
+				_rotation_initialized = true
+			else:
+				var diff: float = angle_difference(rotation.y, target_yaw)
+				if absf(diff) > TURN_THRESHOLD:
+					rotation.y += signf(diff) * minf(absf(diff), MODEL_TURN_SPEED * delta)
+					_is_turning = true
+				else:
+					rotation.y = target_yaw
 
 	# Dispatch state changes (throttled)
 	if position.distance_to(_last_dispatched_pos) > POS_THRESHOLD:
