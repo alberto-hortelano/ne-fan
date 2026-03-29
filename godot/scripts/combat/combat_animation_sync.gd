@@ -77,13 +77,30 @@ func _update_locomotion() -> void:
 	if parent is CharacterBody3D:
 		speed = maxf(speed, Vector2(parent.velocity.x, parent.velocity.z).length())
 
+	# Check player input direction for directional animations
+	var turning := false
+	var local_input := Vector2.ZERO
+	if parent.has_method("is_turning"):
+		turning = parent.is_turning()
+	if parent.has_method("get_local_input"):
+		local_input = parent.get_local_input()
+
 	var current: String = _animator.get_current()
 	if speed > _sprint_speed * 0.7:
 		if current != "run":
 			_animator.travel("run")
 	elif speed > 0.3:
-		if current != "walk":
-			_animator.travel("walk")
+		# Pick directional animation based on local input
+		var target_anim := "walk"
+		if local_input.y > 0.5:
+			target_anim = "walk_back"
+		elif absf(local_input.x) > absf(local_input.y):
+			target_anim = "strafe_right" if local_input.x < 0 else "strafe_left"
+		if current != target_anim:
+			_animator.travel(target_anim)
+	elif turning:
+		if current != "turn":
+			_animator.travel("turn")
 	else:
 		if current != "idle":
 			_animator.travel("idle")
