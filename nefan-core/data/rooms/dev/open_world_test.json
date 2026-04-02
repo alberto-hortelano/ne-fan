@@ -1,0 +1,50 @@
+{
+  "room_id": "open_world_test",
+  "zone_type": "outdoor",
+  "room_description": "Un bosque interminable. Arboles se extienden hasta donde alcanza la vista. El terreno ondula suavemente entre colinas cubiertas de hierba.",
+  "dimensions": { "width": 256.0, "depth": 256.0 },
+  "sky": {
+    "time_of_day": "day"
+  },
+  "fog": {
+    "enabled": true,
+    "density": 0.008,
+    "color": [0.5, 0.55, 0.5]
+  },
+  "terrain": {
+    "chunked": true,
+    "ground_texture_prompt": "forest floor, wild grass, dirt, fallen leaves, natural, seamless tiling",
+    "tiling": [4, 4],
+    "noise_seed": 42,
+    "noise_frequency": 0.03,
+    "noise_octaves": 4,
+    "height_scale": 3.0
+  },
+  "vegetation": {
+    "grass": {
+      "texture_prompt": "wild grass blades on transparent background, dark green, alpha cutout",
+      "density": 1500,
+      "radius": 20.0,
+      "scale_range": [0.3, 0.7],
+      "seed": 42
+    },
+    "trees": {
+      "trunk_texture_prompt": "dark tree bark, rough, mossy, seamless tiling",
+      "foliage_texture_prompt": "dark green tree canopy foliage on transparent background, dense leaves, alpha cutout",
+      "count": 30,
+      "ring_inner_radius": 15.0,
+      "ring_outer_radius": 25.0,
+      "trunk_height_range": [5.0, 12.0],
+      "trunk_radius_range": [0.3, 0.7],
+      "canopy_radius_range": [3.0, 6.0],
+      "seed": 99
+    }
+  },
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.1, 0.1, 0.1], "intensity": 0.6 },
+    "lights": []
+  },
+  "objects": [],
+  "npcs": []
+}

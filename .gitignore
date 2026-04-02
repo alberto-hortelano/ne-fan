@@ -39,6 +39,10 @@ archive/
 cache/
 godot/cache/
 
+# Mixamo/character assets (license prohibits redistribution)
+godot/assets/characters/
+vendor/
+
 # Session recordings
 godot/recordings/
 

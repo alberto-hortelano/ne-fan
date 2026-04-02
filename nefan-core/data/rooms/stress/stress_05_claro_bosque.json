@@ -1,0 +1,176 @@
+{
+  "room_id": "stress_05_claro_bosque",
+  "room_description": "Un claro en el bosque oscuro. La luz de la luna se filtra entre las copas de los arboles. El suelo esta cubierto de hojas secas y hierba silvestre.",
+  "dimensions": { "width": 25.0, "height": 8.0, "depth": 25.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "forest clearing floor, wild grass and fallen leaves, dirt path, mossy ground, natural, seamless tiling",
+      "tiling": [6, 6]
+    },
+    "ceiling": {
+      "texture_prompt": "dark night sky through tree canopy, moonlit clouds, branches silhouette, looking up at sky from forest, seamless tiling",
+      "tiling": [3, 3]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "dense dark forest tree line, gnarled trunks, thick undergrowth, fantasy forest edge viewed from clearing, seamless tiling", "tiling": [6, 2] },
+      { "side": "east",  "texture_prompt": "forest edge with rocky outcrop, moss covered boulders, ferns, dark fantasy forest, seamless tiling", "tiling": [6, 2] },
+      { "side": "south", "texture_prompt": "forest path entrance, ancient trees forming natural archway, dark forest, seamless tiling", "tiling": [6, 2] },
+      { "side": "west",  "texture_prompt": "overgrown forest edge, fallen tree trunk, mushrooms, dark dense woodland, seamless tiling", "tiling": [6, 2] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [3.0, 4.0],
+      "description": "sendero que se interna en el bosque",
+      "target_hint": "dark forest path"
+    },
+    {
+      "wall": "north",
+      "offset": -5.0,
+      "size": [2.0, 3.5],
+      "description": "cueva entre las raices de un arbol gigante",
+      "target_hint": "root cave"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.05, 0.08, 0.12], "intensity": 0.5 },
+    "lights": [
+      {
+        "type": "spot",
+        "position": [0, 7.5, 0],
+        "direction": [0, -1, 0],
+        "color": [0.6, 0.7, 1.0],
+        "intensity": 5.0,
+        "range": 15.0,
+        "angle": 60.0
+      },
+      {
+        "type": "point",
+        "position": [-4, 1.5, -4],
+        "color": [0.3, 1.0, 0.4],
+        "intensity": 1.0,
+        "range": 5.0
+      },
+      {
+        "type": "point",
+        "position": [5, 1.0, 3],
+        "color": [0.4, 0.6, 1.0],
+        "intensity": 0.8,
+        "range": 4.0
+      },
+      {
+        "type": "point",
+        "position": [0, 0.5, 0],
+        "color": [1.0, 0.6, 0.2],
+        "intensity": 3.0,
+        "range": 6.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "campfire",
+      "mesh": "cylinder",
+      "generate_3d": true,
+      "model_prompt": "campfire with stone ring, burning logs, embers, fantasy outdoor",
+      "position": [0, 0, 0],
+      "scale": [0.6, 0.3, 0.6],
+      "description": "fogata rodeada de piedras con brasas ardientes",
+      "category": "prop",
+      "state": "burning",
+      "interactive": true
+    },
+    {
+      "id": "rock_01",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "large mossy boulder, forest, grey granite with green moss patches",
+      "position": [8.0, 0, -6.0],
+      "rotation": [10, 30, 5],
+      "scale": [2.0, 1.5, 1.8],
+      "description": "roca grande cubierta de musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "rock_02",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "small forest boulder, dark grey, lichen covered",
+      "position": [9.0, 0, -4.0],
+      "rotation": [5, 60, 0],
+      "scale": [1.0, 0.7, 0.9],
+      "description": "roca pequena con liquenes",
+      "category": "terrain"
+    },
+    {
+      "id": "tree_stump",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "old tree stump, bark texture, moss, forest clearing",
+      "position": [-6.0, 0, 4.0],
+      "scale": [0.8, 0.5, 0.8],
+      "description": "tocon de arbol antiguo con musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "bush_01",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "dark green forest bush, wild berries, dense foliage",
+      "position": [-9.0, 0, -8.0],
+      "scale": [1.5, 1.0, 1.5],
+      "description": "arbusto denso con bayas silvestres",
+      "category": "terrain"
+    },
+    {
+      "id": "bush_02",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "wild fern bush, forest undergrowth, dark green",
+      "position": [10.0, 0, 8.0],
+      "rotation": [0, 45, 0],
+      "scale": [1.2, 0.8, 1.2],
+      "description": "helecho grande",
+      "category": "terrain"
+    },
+    {
+      "id": "fallen_log",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "fallen mossy log, bark peeling, forest floor",
+      "position": [3.0, 0, -9.0],
+      "rotation": [90, 20, 0],
+      "scale": [0.4, 3.0, 0.4],
+      "description": "tronco caido cubierto de musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "mushroom_ring",
+      "mesh": "cone",
+      "generate_3d": false,
+      "texture_prompt": "glowing fantasy mushroom, bioluminescent blue cap, forest floor",
+      "position": [-4.0, 0, -4.0],
+      "scale": [0.3, 0.25, 0.3],
+      "description": "seta bioluminiscente con brillo azulado",
+      "category": "terrain",
+      "mood": "mysterious"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "ranger_eira",
+      "name": "Eira",
+      "generate_3d": true,
+      "model_prompt": "female elf ranger, green cloak, longbow on back, pointed ears, sitting pose, dark fantasy character",
+      "sprite_prompt": "female elf ranger sitting by campfire, green cloak, longbow on back, sharp features, pointed ears, dark fantasy forest, pixel art",
+      "position": [-1.5, 0, 1.0],
+      "rotation": [0, 45, 0],
+      "scale": [0.5, 1.7, 0.5],
+      "description": "elfa exploradora sentada junto al fuego, con capa verde y arco largo en la espalda",
+      "dialogue_hint": "Conoce el bosque. Puede guiar al jugador. Advierte sobre las criaturas nocturnas."
+    }
+  ],
+  "ambient_event": "Un buho ulula en la distancia. Las hojas crujen con una brisa que huele a tierra humeda y hongos."
+}

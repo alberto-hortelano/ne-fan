@@ -1,0 +1,80 @@
+{
+  "room_id": "mixamo_test",
+  "zone_type": "outdoor",
+  "room_description": "Un claro donde acechan criaturas oscuras. El suelo retumba con pisadas pesadas.",
+  "dimensions": { "width": 30.0, "depth": 30.0 },
+  "sky": { "time_of_day": "dusk" },
+  "fog": { "enabled": true, "density": 0.01, "color": [0.3, 0.2, 0.15] },
+  "terrain": {
+    "ground_texture_prompt": "dark dirt ground, blood stains, dead grass, seamless tiling",
+    "tiling": [4, 4]
+  },
+  "vegetation": {},
+  "exits": [],
+  "lighting": {
+    "ambient": { "color": [0.1, 0.08, 0.05], "intensity": 0.7 },
+    "lights": [
+      { "type": "point", "position": [0, 5, 0], "color": [1.0, 0.7, 0.3], "intensity": 2.0, "range": 15.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "warrok_enemy",
+      "mesh": "capsule",
+      "position": [-5, 0, -5],
+      "scale": [0.8, 1.8, 0.8],
+      "description": "demonio warrok con cuernos retorcidos",
+      "category": "creature",
+      "interactive": false,
+      "character_model": "res://assets/characters/mixamo/warrok/character.fbx",
+      "combat": {
+        "health": 120,
+        "weapon_id": "unarmed",
+        "personality": {
+          "aggression": 0.8,
+          "preferred_attacks": ["heavy", "quick"],
+          "reaction_time": 0.5
+        }
+      }
+    },
+    {
+      "id": "mutant_enemy",
+      "mesh": "capsule",
+      "position": [5, 0, -5],
+      "scale": [0.8, 1.8, 0.8],
+      "description": "mutante con garras cristalinas",
+      "category": "creature",
+      "interactive": false,
+      "character_model": "res://assets/characters/mixamo/mutant/character.fbx",
+      "combat": {
+        "health": 100,
+        "weapon_id": "unarmed",
+        "personality": {
+          "aggression": 0.9,
+          "preferred_attacks": ["quick", "medium"],
+          "reaction_time": 0.3
+        }
+      }
+    },
+    {
+      "id": "skeleton_enemy",
+      "mesh": "capsule",
+      "position": [0, 0, -8],
+      "scale": [0.6, 1.7, 0.6],
+      "description": "esqueleto zombie con extremidades deformes",
+      "category": "creature",
+      "interactive": false,
+      "character_model": "res://assets/characters/mixamo/skeletonzombie/character.fbx",
+      "combat": {
+        "health": 60,
+        "weapon_id": "short_sword",
+        "personality": {
+          "aggression": 0.6,
+          "preferred_attacks": ["quick", "precise"],
+          "reaction_time": 0.7
+        }
+      }
+    }
+  ],
+  "npcs": []
+}

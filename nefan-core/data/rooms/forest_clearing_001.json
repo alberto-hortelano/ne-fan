@@ -1,0 +1,170 @@
+{
+  "room_id": "forest_clearing_001",
+  "zone_type": "outdoor",
+  "room_description": "Un claro en el bosque oscuro. La luz de la luna se filtra entre las copas de los arboles. El suelo esta cubierto de hojas secas y hierba silvestre. Una fogata crepita en el centro.",
+  "dimensions": { "width": 50.0, "depth": 50.0 },
+  "sky": {
+    "time_of_day": "night"
+  },
+  "fog": {
+    "enabled": true,
+    "density": 0.01,
+    "color": [0.03, 0.05, 0.04]
+  },
+  "terrain": {
+    "ground_texture_prompt": "forest clearing floor, wild grass and fallen leaves, dirt path, mossy ground, natural, dark fantasy, seamless tiling",
+    "tiling": [8, 8]
+  },
+  "vegetation": {
+    "grass": {
+      "texture_prompt": "wild grass blades on transparent background, dark green, alpha cutout, fantasy forest grass tuft",
+      "density": 2000,
+      "radius": 18.0,
+      "scale_range": [0.3, 0.7],
+      "seed": 42
+    },
+    "bushes": {
+      "texture_prompt": "dark forest bush with ferns on transparent background, alpha cutout, wild undergrowth",
+      "count": 40,
+      "radius": 20.0,
+      "scale_range": [0.6, 1.4],
+      "seed": 77
+    },
+    "trees": {
+      "trunk_texture_prompt": "dark tree bark, rough, mossy, gnarled, seamless tiling",
+      "foliage_texture_prompt": "dark green tree canopy foliage on transparent background, dense leaves, alpha cutout",
+      "count": 50,
+      "ring_inner_radius": 18.0,
+      "ring_outer_radius": 28.0,
+      "trunk_height_range": [5.0, 10.0],
+      "trunk_radius_range": [0.25, 0.6],
+      "canopy_radius_range": [2.5, 5.0],
+      "seed": 99
+    }
+  },
+  "exits": [
+    {
+      "position": [0, 0, -22],
+      "size": [3.0, 4.0],
+      "rotation_y": 0,
+      "wall": "north",
+      "description": "sendero que se interna en el bosque oscuro",
+      "target_hint": "dark forest path, twisted trees, barely visible trail"
+    },
+    {
+      "position": [20, 0, 5],
+      "size": [2.5, 3.5],
+      "rotation_y": 90,
+      "wall": "east",
+      "description": "cueva entre las raices de un arbol gigante",
+      "target_hint": "root cave, underground passage, damp stone"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.05, 0.08, 0.12], "intensity": 0.8 },
+    "lights": [
+      {
+        "type": "point",
+        "position": [0, 0.5, 0],
+        "color": [1.0, 0.6, 0.2],
+        "intensity": 4.0,
+        "range": 8.0
+      },
+      {
+        "type": "point",
+        "position": [-4, 1.5, -4],
+        "color": [0.3, 1.0, 0.4],
+        "intensity": 1.0,
+        "range": 5.0
+      },
+      {
+        "type": "point",
+        "position": [5, 1.0, 3],
+        "color": [0.4, 0.6, 1.0],
+        "intensity": 0.8,
+        "range": 4.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "campfire",
+      "mesh": "cylinder",
+      "generate_3d": true,
+      "model_prompt": "campfire with stone ring, burning logs, embers, fantasy outdoor",
+      "position": [0, 0, 0],
+      "scale": [0.6, 0.3, 0.6],
+      "description": "fogata rodeada de piedras con brasas ardientes",
+      "category": "prop",
+      "state": "burning",
+      "interactive": true
+    },
+    {
+      "id": "rock_01",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "large mossy boulder, forest, grey granite with green moss patches",
+      "position": [8.0, 0, -6.0],
+      "rotation": [10, 30, 5],
+      "scale": [2.0, 1.5, 1.8],
+      "description": "roca grande cubierta de musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "rock_02",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "small forest boulder, dark grey, lichen covered",
+      "position": [9.0, 0, -4.0],
+      "rotation": [5, 60, 0],
+      "scale": [1.0, 0.7, 0.9],
+      "description": "roca pequena con liquenes",
+      "category": "terrain"
+    },
+    {
+      "id": "tree_stump",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "old tree stump, bark texture, moss, forest clearing",
+      "position": [-6.0, 0, 4.0],
+      "scale": [0.8, 0.5, 0.8],
+      "description": "tocon de arbol antiguo con musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "fallen_log",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "fallen mossy log, bark peeling, forest floor",
+      "position": [3.0, 0, -9.0],
+      "rotation": [90, 20, 0],
+      "scale": [0.4, 3.0, 0.4],
+      "description": "tronco caido cubierto de musgo",
+      "category": "terrain"
+    },
+    {
+      "id": "mushroom_ring",
+      "mesh": "cone",
+      "generate_3d": false,
+      "texture_prompt": "glowing fantasy mushroom, bioluminescent blue cap, forest floor",
+      "position": [-4.0, 0, -4.0],
+      "scale": [0.3, 0.25, 0.3],
+      "description": "seta bioluminiscente con brillo azulado",
+      "category": "terrain",
+      "mood": "mysterious"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "ranger_eira",
+      "name": "Eira",
+      "sprite_prompt": "female elf ranger sitting by campfire, green cloak, longbow on back, sharp features, pointed ears, dark fantasy forest, pixel art",
+      "position": [-1.5, 0, 1.0],
+      "rotation": [0, 45, 0],
+      "scale": [0.5, 1.7, 0.5],
+      "description": "elfa exploradora sentada junto al fuego, con capa verde y arco largo en la espalda",
+      "dialogue_hint": "Conoce el bosque. Puede guiar al jugador. Advierte sobre las criaturas nocturnas."
+    }
+  ],
+  "ambient_event": "Un buho ulula en la distancia. Las hojas crujen con una brisa que huele a tierra humeda y hongos."
+}

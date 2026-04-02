@@ -57,7 +57,7 @@ func _request_model(prompt: String, body: StaticBody3D) -> void:
 
 func _send_generation_request(prompt: String, key: String, scale: Array) -> void:
 	var http := HTTPRequest.new()
-	http.timeout = 120.0
+	http.timeout = 300.0  # TripoSG can take ~2min per model
 	_scene_tree.root.call_deferred("add_child", http)
 	_http_nodes.append(http)
 	# Wait one frame for add_child to complete
