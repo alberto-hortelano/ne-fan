@@ -1,0 +1,174 @@
+{
+  "room_id": "stress_03_taberna",
+  "room_description": "Una taberna acogedora con techo bajo de vigas. El fuego crepita en la chimenea y el aroma de estofado impregna el aire calido.",
+  "dimensions": { "width": 14.0, "height": 3.5, "depth": 10.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "worn dark wooden plank floor, gaps between boards, tavern, seamless tiling",
+      "tiling": [4, 3]
+    },
+    "ceiling": {
+      "texture_prompt": "low wooden beam ceiling, dark smoke stained, oil lamps, medieval tavern, seamless tiling",
+      "tiling": [4, 3]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "tavern wall, rough plastered with exposed timber frame, mounted antlers, seamless tiling", "tiling": [4, 1] },
+      { "side": "east",  "texture_prompt": "wooden bar counter wall, shelves with bottles and tankards, tavern, seamless tiling", "tiling": [3, 1] },
+      { "side": "south", "texture_prompt": "tavern front wall, iron-studded oak door frame, notice board, seamless tiling", "tiling": [4, 1] },
+      { "side": "west",  "texture_prompt": "rough stone wall with fireplace recess, soot stained, tavern, seamless tiling", "tiling": [3, 1] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 2.0,
+      "size": [2.5, 2.8],
+      "description": "puerta de roble macizo hacia la calle",
+      "target_hint": "town square"
+    },
+    {
+      "wall": "east",
+      "offset": -3.0,
+      "size": [1.2, 2.2],
+      "description": "escalera estrecha al sotano",
+      "target_hint": "cellar storage"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.1, 0.07, 0.04], "intensity": 0.4 },
+    "lights": [
+      {
+        "type": "point",
+        "position": [-5.0, 2.8, -1.0],
+        "color": [1.0, 0.7, 0.3],
+        "intensity": 2.5,
+        "range": 6.0
+      },
+      {
+        "type": "point",
+        "position": [2.0, 2.8, 1.0],
+        "color": [1.0, 0.75, 0.35],
+        "intensity": 2.0,
+        "range": 5.5
+      },
+      {
+        "type": "point",
+        "position": [-6.0, 1.5, -4.0],
+        "color": [1.0, 0.5, 0.1],
+        "intensity": 3.5,
+        "range": 4.0
+      },
+      {
+        "type": "point",
+        "position": [5.0, 2.5, -3.0],
+        "color": [0.9, 0.8, 0.5],
+        "intensity": 1.5,
+        "range": 4.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "table_main",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "rough hewn wooden tavern table top, knife marks, beer stains",
+      "position": [-2.0, 0, 1.0],
+      "scale": [1.8, 0.75, 1.0],
+      "description": "mesa principal de la taberna con marcas de uso",
+      "category": "prop"
+    },
+    {
+      "id": "table_corner",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "small round wooden table, dark stained, candle wax drips",
+      "position": [4.0, 0, 3.0],
+      "rotation": [0, 25, 0],
+      "scale": [0.8, 0.7, 0.8],
+      "description": "mesa esquinera pequena con restos de cera",
+      "category": "prop"
+    },
+    {
+      "id": "barrel_ale",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "large ale barrel, dark oak, iron hoops, tavern",
+      "position": [5.5, 0, -2.0],
+      "scale": [0.5, 0.8, 0.5],
+      "description": "barril grande de cerveza detras de la barra",
+      "category": "prop"
+    },
+    {
+      "id": "bench_01",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "long wooden bench, medieval tavern, simple",
+      "position": [-2.0, 0, 2.0],
+      "scale": [1.6, 0.45, 0.3],
+      "description": "banco largo de madera",
+      "category": "prop"
+    },
+    {
+      "id": "fireplace",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "stone fireplace with burning logs and iron grate, medieval fantasy tavern",
+      "position": [-6.0, 0, -4.0],
+      "rotation": [0, 90, 0],
+      "scale": [1.5, 1.3, 0.8],
+      "description": "chimenea de piedra con fuego ardiente",
+      "category": "building",
+      "state": "burning",
+      "interactive": true
+    },
+    {
+      "id": "mug_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "wooden beer tankard, medieval, foam drips",
+      "position": [-1.2, 0.75, 0.8],
+      "rotation": [0, 45, 0],
+      "scale": [0.08, 0.12, 0.08],
+      "description": "jarra de cerveza medio llena con espuma",
+      "category": "item"
+    },
+    {
+      "id": "painting_wall",
+      "mesh": "plane",
+      "display": "flat_image",
+      "texture_prompt": "medieval oil painting of a dark fantasy landscape with castle, ornate golden frame, transparent background, isolated object",
+      "position": [0, 2.0, -4.9],
+      "rotation": [-90, 0, 0],
+      "scale": [1.2, 0.01, 0.8],
+      "description": "cuadro al oleo de un paisaje con castillo en marco dorado",
+      "category": "prop"
+    },
+    {
+      "id": "bottle_shelf",
+      "mesh": "plane",
+      "display": "flat_image",
+      "texture_prompt": "wooden shelf with glass bottles and tankards, medieval tavern, transparent background, isolated object, front view",
+      "position": [6.9, 1.5, -2.0],
+      "rotation": [-90, -90, 0],
+      "scale": [2.0, 0.01, 1.0],
+      "description": "estanteria con botellas y jarras detras de la barra",
+      "category": "prop"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "barkeeper_greta",
+      "name": "Greta",
+      "generate_3d": true,
+      "model_prompt": "stout female medieval barkeeper, leather apron, braided hair, standing pose, dark fantasy",
+      "sprite_prompt": "stout female barkeeper, leather apron, braided brown hair, warm smile, holding a tankard, dark fantasy tavern, detailed pixel art",
+      "position": [5.5, 0, -3.5],
+      "rotation": [0, -90, 0],
+      "scale": [0.6, 1.7, 0.6],
+      "description": "mujer robusta con delantal de cuero y trenzas, limpia vasos con expresion amable pero cansada",
+      "dialogue_hint": "Conoce rumores del pueblo. Ofrece comida y bebida. Advierte sobre los tuneles bajo la taberna."
+    }
+  ],
+  "ambient_event": "El crepitar del fuego se mezcla con risas lejanas. El olor a estofado y pan recien horneado flota en el aire."
+}

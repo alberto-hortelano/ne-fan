@@ -1,0 +1,70 @@
+{
+  "room_id": "stress_01_celda",
+  "room_description": "Una celda de piedra fria y humeda. Un unico haz de luz entra por una grieta en el techo.",
+  "dimensions": { "width": 5.0, "height": 3.0, "depth": 5.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "cold damp stone dungeon floor, dark grey, seamless tiling",
+      "tiling": [2, 2]
+    },
+    "ceiling": {
+      "texture_prompt": "rough hewn stone ceiling, cracks, dripping water, seamless tiling",
+      "tiling": [2, 2]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough grey stone dungeon wall, scratches, seamless tiling", "tiling": [2, 1] },
+      { "side": "east",  "texture_prompt": "rough grey stone dungeon wall, damp stains, seamless tiling", "tiling": [2, 1] },
+      { "side": "south", "texture_prompt": "rough grey stone dungeon wall, iron door frame, seamless tiling", "tiling": [2, 1] },
+      { "side": "west",  "texture_prompt": "rough grey stone dungeon wall, scratch marks, seamless tiling", "tiling": [2, 1] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [1.8, 2.5],
+      "description": "puerta de hierro oxidada",
+      "target_hint": "corridor"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.03, 0.03, 0.04], "intensity": 0.2 },
+    "lights": [
+      {
+        "type": "point",
+        "position": [0, 2.5, 0],
+        "color": [1.0, 0.8, 0.4],
+        "intensity": 1.5,
+        "range": 5.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "torch_01",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "burning torch, wooden handle, dark fantasy",
+      "position": [2.0, 1.5, -2.0],
+      "rotation": [0, 0, 0],
+      "scale": [0.08, 0.4, 0.08],
+      "description": "antorcha sujeta a la pared con soporte de hierro",
+      "category": "prop",
+      "state": "burning"
+    },
+    {
+      "id": "crate_01",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "old wooden crate, iron nails, dark stained",
+      "position": [-1.5, 0, -1.5],
+      "rotation": [0, 12, 0],
+      "scale": [0.5, 0.4, 0.5],
+      "description": "caja de madera vieja con clavos de hierro",
+      "category": "prop",
+      "state": "intact"
+    }
+  ],
+  "npcs": [],
+  "ambient_event": "Gotas de agua caen con ritmo constante desde una grieta en el techo."
+}

@@ -183,6 +183,7 @@ async def generate_model_endpoint(request: Request):
     prompt = body.get("prompt", "")
     scale = body.get("scale", [0.5, 0.5, 0.5])
     seed = body.get("seed", -1)
+    quality = body.get("quality", "normal")
 
     if not prompt:
         return {"error": "missing prompt"}
@@ -200,7 +201,7 @@ async def generate_model_endpoint(request: Request):
     # Generate (serialized with textures via GPU lock)
     start = time.time()
     async with _gpu_lock:
-        glb_bytes = await asyncio.to_thread(model_gen.generate, prompt, scale, seed)
+        glb_bytes = await asyncio.to_thread(model_gen.generate, prompt, scale, seed, quality)
     elapsed_ms = int((time.time() - start) * 1000)
 
     model_cache.put(prompt, "model", glb_bytes)

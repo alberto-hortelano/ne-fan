@@ -22,6 +22,9 @@ func cleanup() -> void:
 
 func _scan_node(node: Node) -> void:
 	if node is StaticBody3D and node.has_meta("sprite_prompt"):
+		# Skip NPCs that will use 3D models instead of sprites
+		if node.get_meta("generate_3d", false):
+			return
 		var prompt: String = node.get_meta("sprite_prompt")
 		if not prompt.is_empty():
 			_register_npc(prompt, node)

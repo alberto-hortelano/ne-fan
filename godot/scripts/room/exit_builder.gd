@@ -20,6 +20,10 @@ func build_exits(exits: Array, dims: Dictionary, room: Node3D) -> Array[Area3D]:
 
 
 func _create_exit_trigger(data: Dictionary, w: float, h: float, d: float) -> Area3D:
+	# Positional exit (outdoor zones): placed at explicit coordinates
+	if data.has("position"):
+		return _create_positioned_exit(data)
+
 	var wall: String = data.get("wall", "north")
 	var offset: float = float(data.get("offset", 0.0))
 	var exit_size: Array = data.get("size", [2.0, 3.0])
@@ -80,6 +84,48 @@ func _create_exit_trigger(data: Dictionary, w: float, h: float, d: float) -> Are
 	area.add_child(mesh_inst)
 
 	# Only detect player (layer 1), don't be detectable
+	area.monitoring = true
+	area.monitorable = false
+	area.collision_layer = 0
+	area.collision_mask = 1
+
+	return area
+
+
+func _create_positioned_exit(data: Dictionary) -> Area3D:
+	var pos_arr: Array = data.get("position", [0, 0, 0])
+	var exit_size: Array = data.get("size", [3.0, 4.0])
+	var exit_w: float = float(exit_size[0])
+	var exit_h: float = float(exit_size[1])
+	var rot_y: float = float(data.get("rotation_y", 0.0))
+
+	var area := Area3D.new()
+	area.name = "Exit_pos_%d_%d" % [int(pos_arr[0]), int(pos_arr[2])]
+	area.set_meta("description", data.get("description", ""))
+	area.set_meta("target_hint", data.get("target_hint", ""))
+	area.set_meta("wall", data.get("wall", "north"))
+	area.position = Vector3(float(pos_arr[0]), float(pos_arr[1]) + exit_h / 2.0, float(pos_arr[2]))
+	area.rotation_degrees.y = rot_y
+
+	# Collision shape
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(exit_w, exit_h, 0.5)
+	collision.shape = shape
+	area.add_child(collision)
+
+	# Visual indicator
+	var mesh_inst := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(exit_w, exit_h, 0.02)
+	mesh_inst.mesh = box
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = EXIT_COLOR
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mesh_inst.material_override = mat
+	area.add_child(mesh_inst)
+
+	# Only detect player
 	area.monitoring = true
 	area.monitorable = false
 	area.collision_layer = 0

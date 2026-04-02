@@ -72,6 +72,7 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 	body.set_meta("mood", data.get("mood", "neutral"))
 	body.set_meta("interactive", data.get("interactive", false))
 	body.set_meta("generate_3d", data.get("generate_3d", false))
+	body.set_meta("display", data.get("display", ""))
 	body.set_meta("scale_x", sx)
 	body.set_meta("scale_y", sy)
 	body.set_meta("scale_z", sz)
@@ -106,10 +107,19 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 		var animator = CombatAnimatorScript.new()
 		animator.name = "CombatAnimator"
 		animator.position.y = -sy / 2.0
+
+		# Custom character model (Mixamo characters)
+		var char_model: String = data.get("character_model", "")
+		if char_model != "":
+			animator.model_path = char_model
+			# Mixamo characters use the shared Sword and Shield animations
+			animator.anim_dir = "res://assets/characters/Sword and Shield Pack/"
+
 		body.add_child(animator)
 
-		# Enemy skin (red to differentiate from player)
-		animator.call_deferred("apply_skin", "res://assets/characters/Sword and Shield Pack/skin_red.png")
+		# Enemy skin (red to differentiate from player) — only for default model
+		if char_model == "":
+			animator.call_deferred("apply_skin", "res://assets/characters/Sword and Shield Pack/skin_red.png")
 
 		# Override animation if specified (for dev showcase rooms)
 		var forced_anim: String = data.get("animation", "")
@@ -193,9 +203,14 @@ func _create_npc(data: Dictionary) -> StaticBody3D:
 	# NPC metadata
 	body.set_meta("npc_name", npc_name)
 	body.set_meta("description", data.get("description", "a shadowy figure"))
+	body.set_meta("scale_x", sx)
 	body.set_meta("scale_y", sy)
+	body.set_meta("scale_z", sz)
+	body.set_meta("generate_3d", data.get("generate_3d", false))
 	if data.has("sprite_prompt"):
 		body.set_meta("sprite_prompt", data.get("sprite_prompt"))
+	if data.has("model_prompt"):
+		body.set_meta("model_prompt", data.get("model_prompt"))
 	if data.has("dialogue_hint"):
 		body.set_meta("dialogue_hint", data.get("dialogue_hint"))
 

@@ -119,6 +119,10 @@ func _handle(line: String) -> String:
 			return _cmd_camera_detach(json)
 		"camera_attach":
 			return _cmd_camera_attach()
+		"load_room_path":
+			return _cmd_load_room_path(json)
+		"texture_status":
+			return _cmd_texture_status()
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
@@ -309,3 +313,19 @@ func _cmd_camera_attach() -> String:
 	if player:
 		cam.attach(player)
 	return '{"ok":true}'
+
+
+func _cmd_load_room_path(args: Dictionary) -> String:
+	var path: String = args.get("path", "")
+	if path.is_empty():
+		return '{"error":"missing path"}'
+	var main_scene := get_tree().current_scene
+	if main_scene.has_method("load_room_by_path"):
+		main_scene.call("load_room_by_path", path)
+		return '{"ok":true,"path":"%s"}' % path
+	return '{"error":"main scene has no load_room_by_path"}'
+
+
+func _cmd_texture_status() -> String:
+	var pending: int = TextureCache._pending.size()
+	return '{"ok":true,"pending_textures":%d}' % pending

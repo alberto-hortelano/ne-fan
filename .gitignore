@@ -39,6 +39,9 @@ archive/
 cache/
 godot/cache/
 
+# Mixamo assets (license prohibits redistribution of raw files)
+godot/assets/characters/mixamo/
+
 # Session recordings
 godot/recordings/
 
@@ -51,3 +54,4 @@ export_presets.cfg
 node_modules/
 narrative-mcp/dist/
 nefan-core/dist/
+vendor/

@@ -1,10 +1,13 @@
-"""3D model generator: SD 1.5 reference image → rembg → textured GLB via trimesh.
+"""3D model generator: SD 1.5 reference image → TripoSG → simplified GLB.
 
-Phase 4 v1: Creates textured meshes from AI reference images.
-Can be upgraded to SF3D when CUDA toolkit is installed (nvcc needed for custom kernels).
+Uses TripoSG (VAST-AI) for image-to-3D generation with ~5000 face meshes.
+Falls back to textured box via trimesh if TripoSG is not available.
+TripoSG repo: vendor/triposg (or set TRIPOSG_PATH env).
 """
 
 import io
+import os
+import sys
 import time
 
 import numpy as np
@@ -12,18 +15,21 @@ import trimesh
 from PIL import Image
 
 
+# Add TripoSG to path
+_default_triposg = os.path.join(os.path.dirname(os.path.dirname(__file__)), "vendor", "triposg")
+_triposg_path = os.environ.get("TRIPOSG_PATH", _default_triposg)
+if _triposg_path not in sys.path:
+    sys.path.insert(0, _triposg_path)
+
+
 class ModelGenerator:
     def __init__(self, texture_gen_ref=None, device: str = "cuda", lazy: bool = True):
-        """
-        Args:
-            texture_gen_ref: Reference to TextureGenerator (for SD 1.5 reference image generation).
-            device: CUDA device.
-            lazy: If True, rembg session loaded on first use.
-        """
         self.texture_gen_ref = texture_gen_ref
         self.device = device
-        self._rembg_session = None
+        self._pipe = None
         self._loaded = False
+        self._triposg_available = False
+        self._target_faces = 5000
 
         if not lazy:
             self._load()
@@ -31,16 +37,32 @@ class ModelGenerator:
     def _load(self) -> None:
         if self._loaded:
             return
-        from rembg import new_session
-        print("ModelGen: Loading rembg session...")
-        self._rembg_session = new_session("u2net")
+        try:
+            from triposg.pipelines.pipeline_triposg import TripoSGPipeline
+            import torch
+            from huggingface_hub import snapshot_download
+
+            weights_dir = os.path.expanduser("~/.cache/triposg/TripoSG")
+            if not os.path.exists(os.path.join(weights_dir, "config.json")):
+                print("ModelGen: Downloading TripoSG weights...")
+                snapshot_download(repo_id="VAST-AI/TripoSG", local_dir=weights_dir)
+
+            print("ModelGen: Loading TripoSG pipeline...")
+            self._pipe = TripoSGPipeline.from_pretrained(weights_dir)
+            self._pipe.to(self.device, torch.float16)
+            self._triposg_available = True
+            print("ModelGen: TripoSG ready")
+        except Exception as e:
+            print(f"ModelGen: TripoSG not available ({e}), using trimesh fallback")
+            self._triposg_available = False
+
         self._loaded = True
-        print("ModelGen: Ready")
 
-    def generate(self, prompt: str, scale: list = None, seed: int = -1) -> bytes:
-        """Generate a GLB model from a text prompt.
+    def generate(self, prompt: str, scale: list = None, seed: int = -1,
+                 quality: str = "normal") -> bytes:
+        """Generate a GLB model from a text prompt. Returns GLB binary data.
 
-        Returns GLB binary data.
+        quality: "normal" (50 steps, 7.0 guidance) or "fast" (20 steps, 4.0 guidance, 2000 faces)
         """
         if scale is None:
             scale = [0.5, 0.5, 0.5]
@@ -48,28 +70,40 @@ class ModelGenerator:
         self._load()
         start = time.perf_counter()
 
-        # Step 1: Generate reference image using SD 1.5
+        # Step 1: Generate reference image using SD 1.5 (circular padding OFF)
         ref_image = self._generate_reference_image(prompt, seed)
 
-        # Step 2: Remove background
-        ref_rgba = self._remove_background(ref_image)
-
-        # Step 3: Create textured 3D mesh
-        glb_bytes = self._create_textured_mesh(ref_rgba, scale)
+        if self._triposg_available:
+            # Step 2: TripoSG image-to-3D (swaps GPU: SD→CPU, TripoSG→GPU, then restores SD→GPU)
+            mesh = self._generate_triposg(ref_image, scale, seed, quality)
+            # Step 3: Generate PBR material texture (SD 1.5 back on GPU with circular padding)
+            mesh = self._apply_texture(mesh, prompt)
+            glb_bytes = mesh.export(file_type="glb")
+        else:
+            # Fallback: textured box
+            glb_bytes = self._generate_textured_box(ref_image, scale)
 
         elapsed = time.perf_counter() - start
-        print(f"ModelGen: '{prompt[:50]}...' -> {elapsed:.2f}s")
+        print(f"ModelGen: '{prompt[:50]}' -> {elapsed:.1f}s")
         return glb_bytes
 
     def _generate_reference_image(self, prompt: str, seed: int) -> Image.Image:
         """Generate a reference image using the existing SD 1.5 pipeline."""
         if self.texture_gen_ref is None or self.texture_gen_ref.pipe is None:
-            # Fallback: create a simple colored placeholder
             return Image.new("RGB", (512, 512), color=(128, 100, 80))
 
         import torch
+        import torch.nn as nn
 
         self.texture_gen_ref._load_pipeline()
+
+        # Temporarily disable circular padding (used for seamless textures)
+        # so we get a normal isolated object image instead of a tiled pattern
+        patched = []
+        for module in self.texture_gen_ref.pipe.unet.modules():
+            if isinstance(module, nn.Conv2d) and module.padding_mode == "circular":
+                module.padding_mode = "zeros"
+                patched.append(module)
 
         full_prompt = (
             f"isolated 3D object on pure white background, studio lighting, "
@@ -81,7 +115,6 @@ class ModelGenerator:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
         with torch.no_grad():
-            # Temporarily disable circular padding for reference images
             result = self.texture_gen_ref.pipe(
                 prompt=full_prompt,
                 num_inference_steps=self.texture_gen_ref.steps,
@@ -91,43 +124,157 @@ class ModelGenerator:
                 generator=generator,
             ).images[0]
 
+        # Restore circular padding for texture generation
+        for module in patched:
+            module.padding_mode = "circular"
+
         return result
 
-    def _remove_background(self, image: Image.Image) -> Image.Image:
-        """Remove background using rembg, return RGBA image."""
-        from rembg import remove
-        rgba = remove(image, session=self._rembg_session)
-        return rgba
+    def _generate_triposg(self, image: Image.Image, scale: list, seed: int,
+                          quality: str = "normal") -> trimesh.Trimesh:
+        """Generate 3D mesh with TripoSG, simplify, and scale. Returns trimesh."""
+        import torch
 
-    def _create_textured_mesh(self, image: Image.Image, scale: list) -> bytes:
-        """Create a textured box mesh with the reference image applied to faces."""
+        # Quality presets
+        if quality == "fast":
+            num_steps = 20
+            guidance = 4.0
+            target_faces = 2000
+        else:
+            num_steps = 50
+            guidance = 7.0
+            target_faces = self._target_faces
+
+        # Move SD 1.5 to CPU to free VRAM for TripoSG
+        if self.texture_gen_ref and self.texture_gen_ref.pipe is not None:
+            self.texture_gen_ref.pipe.to("cpu")
+            torch.cuda.empty_cache()
+
+        # Ensure TripoSG is on GPU
+        if self._pipe.device.type != "cuda":
+            self._pipe.to(self.device, torch.float16)
+
+        actual_seed = seed if seed >= 0 else 42
+        with torch.no_grad():
+            outputs = self._pipe(
+                image=image,
+                generator=torch.Generator(device=self.device).manual_seed(actual_seed),
+                num_inference_steps=num_steps,
+                guidance_scale=guidance,
+            ).samples[0]
+
+        vertices = outputs[0].astype(np.float32)
+        faces = np.ascontiguousarray(outputs[1])
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+
+        # Simplify to target face count
+        if len(mesh.faces) > target_faces:
+            mesh = self._simplify_mesh(mesh, target_faces)
+
+        # Scale mesh to match requested dimensions
+        mesh = self._scale_mesh(mesh, scale)
+
+        # Move TripoSG to CPU, restore SD 1.5 to GPU for texture generation
+        self._pipe.to("cpu")
+        torch.cuda.empty_cache()
+        if self.texture_gen_ref and self.texture_gen_ref.pipe is not None:
+            self.texture_gen_ref.pipe.to(self.device)
+
+        return mesh
+
+    def _simplify_mesh(self, mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
+        """Reduce face count using quadric edge collapse."""
+        try:
+            import pymeshlab
+            ms = pymeshlab.MeshSet()
+            ms.add_mesh(pymeshlab.Mesh(
+                vertex_matrix=mesh.vertices,
+                face_matrix=mesh.faces,
+            ))
+            ms.meshing_merge_close_vertices()
+            ms.meshing_decimation_quadric_edge_collapse(targetfacenum=target_faces)
+            result = ms.current_mesh()
+            return trimesh.Trimesh(
+                vertices=result.vertex_matrix(),
+                faces=result.face_matrix(),
+            )
+        except Exception as e:
+            print(f"ModelGen: simplification failed ({e}), using original mesh")
+            return mesh
+
+    def _apply_texture(self, mesh: trimesh.Trimesh, prompt: str) -> trimesh.Trimesh:
+        """Generate seamless PBR material texture and apply via xatlas UV unwrap."""
+        try:
+            import xatlas
+            import torch
+
+            # Ensure SD 1.5 pipeline is loaded
+            self.texture_gen_ref._load_pipeline()
+
+            # Generate seamless material texture with SD 1.5 (circular padding active)
+            tex_prompt = (
+                f"seamless tiling texture, flat lit, no perspective, PBR albedo, "
+                f"surface material of {prompt}"
+            )
+            with torch.no_grad():
+                albedo = self.texture_gen_ref.pipe(
+                    prompt=tex_prompt,
+                    num_inference_steps=self.texture_gen_ref.steps,
+                    guidance_scale=1.0,
+                    width=512,
+                    height=512,
+                ).images[0]
+
+            # UV unwrap
+            vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
+            new_verts = mesh.vertices[vmapping]
+
+            material = trimesh.visual.material.PBRMaterial(
+                baseColorTexture=albedo.convert("RGBA"),
+                metallicFactor=0.0,
+                roughnessFactor=0.7,
+            )
+            tex_visual = trimesh.visual.TextureVisuals(uv=uvs, material=material)
+            return trimesh.Trimesh(vertices=new_verts, faces=indices, visual=tex_visual)
+        except Exception as e:
+            print(f"ModelGen: texture application failed ({e})")
+            return mesh
+
+    def _scale_mesh(self, mesh: trimesh.Trimesh, scale: list) -> trimesh.Trimesh:
+        """Scale mesh to fill the requested bounding box, stretching to match dimensions."""
+        current_extents = mesh.extents
+        if current_extents.max() == 0:
+            return mesh
         sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
+        target = np.array([sx, sy, sz])
+        # Per-axis scale to match target dimensions exactly
+        scale_factors = target / current_extents
+        mesh.vertices -= mesh.centroid
+        mesh.vertices *= scale_factors
+        return mesh
 
-        # Create a box mesh with correct proportions
+    def _generate_textured_box(self, image: Image.Image, scale: list) -> bytes:
+        """Fallback: create a textured box mesh (original v1 behavior)."""
+        from rembg import remove
+
+        if not hasattr(self, '_rembg_session'):
+            from rembg import new_session
+            self._rembg_session = new_session("u2net")
+
+        rgba = remove(image, session=self._rembg_session)
+        sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
         box = trimesh.creation.box(extents=[sx, sy, sz])
 
-        # Create UV mapping for the box
-        # trimesh box already has UVs, but let's make sure the texture maps well
-        # Apply the reference image as texture material
-        img_array = np.array(image.convert("RGBA"))
-
-        # Create a PBR material with the reference image
+        img_array = np.array(rgba.convert("RGBA"))
         material = trimesh.visual.material.PBRMaterial(
             baseColorTexture=Image.fromarray(img_array),
             metallicFactor=0.0,
             roughnessFactor=0.7,
         )
-
-        # Apply UV-mapped visual
-        # For a box, we need to create proper UV coordinates
-        # trimesh's box comes with face colors, not UV. Let's create UV-textured visual.
         uv = _compute_box_uvs(box)
-        color_visual = trimesh.visual.TextureVisuals(uv=uv, material=material)
-        box.visual = color_visual
+        box.visual = trimesh.visual.TextureVisuals(uv=uv, material=material)
 
-        # Export to GLB
-        glb_bytes = box.export(file_type="glb")
-        return glb_bytes
+        return box.export(file_type="glb")
 
     @property
     def is_loaded(self) -> bool:
@@ -135,19 +282,12 @@ class ModelGenerator:
 
 
 def _compute_box_uvs(box_mesh: trimesh.Trimesh) -> np.ndarray:
-    """Compute UV coordinates for a box mesh (project each face)."""
+    """Compute UV coordinates for a box mesh."""
     vertices = box_mesh.vertices
-    faces = box_mesh.faces
-    normals = box_mesh.face_normals
-
-    # For each vertex, compute UV based on position
     uvs = np.zeros((len(vertices), 2), dtype=np.float64)
-
     for i, vert in enumerate(vertices):
-        # Simple planar projection: use X,Y normalized to [0,1]
         extents = box_mesh.extents
         if extents[0] > 0 and extents[2] > 0:
             uvs[i, 0] = (vert[0] - box_mesh.bounds[0][0]) / extents[0]
             uvs[i, 1] = (vert[1] - box_mesh.bounds[0][1]) / extents[1]
-
     return uvs

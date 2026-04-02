@@ -1,0 +1,36 @@
+{
+  "room_id": "stress_00_mesa_test",
+  "room_description": "Sala de test para verificar generacion 3D de una mesa.",
+  "dimensions": { "width": 8.0, "height": 3.5, "depth": 8.0 },
+  "surfaces": {
+    "floor": { "texture_prompt": "dark wooden plank floor, tavern, seamless tiling", "tiling": [2, 2] },
+    "ceiling": { "texture_prompt": "wooden beam ceiling, dark, seamless tiling", "tiling": [2, 2] },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough stone wall, dark, seamless tiling", "tiling": [2, 1] },
+      { "side": "east",  "texture_prompt": "rough stone wall, dark, seamless tiling", "tiling": [2, 1] },
+      { "side": "south", "texture_prompt": "rough stone wall, dark, seamless tiling", "tiling": [2, 1] },
+      { "side": "west",  "texture_prompt": "rough stone wall, dark, seamless tiling", "tiling": [2, 1] }
+    ]
+  },
+  "exits": [{ "wall": "south", "offset": 0, "size": [2.0, 3.0], "description": "puerta", "target_hint": "exit" }],
+  "lighting": {
+    "ambient": { "color": [0.15, 0.12, 0.08], "intensity": 0.6 },
+    "lights": [
+      { "type": "point", "position": [0, 3, 0], "color": [1.0, 0.9, 0.7], "intensity": 3.0, "range": 8.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "mesa_test",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "wooden tavern table, four legs, rectangular top, medieval fantasy, dark oak",
+      "position": [0, 0, 0],
+      "scale": [1.8, 0.75, 1.0],
+      "description": "mesa de madera de taberna",
+      "category": "prop"
+    }
+  ],
+  "npcs": [],
+  "ambient_event": ""
+}

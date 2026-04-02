@@ -4,8 +4,12 @@
 class_name CombatAnimator
 extends Node3D
 
-const BASE_MODEL_PATH := "res://assets/characters/Sword and Shield Pack/character.fbx"
-const ANIM_DIR := "res://assets/characters/Sword and Shield Pack/"
+const DEFAULT_MODEL_PATH := "res://assets/characters/Sword and Shield Pack/character.fbx"
+const DEFAULT_ANIM_DIR := "res://assets/characters/Sword and Shield Pack/"
+
+# Configurable per-instance (set before _ready or via set_character_model)
+var model_path: String = DEFAULT_MODEL_PATH
+var anim_dir: String = DEFAULT_ANIM_DIR
 
 # Map combat states/types to FBX filenames (without .fbx)
 const ANIM_MAP := {
@@ -84,10 +88,39 @@ func _process(_delta: float) -> void:
 		_collision_shape.position = _collision_rest_pos
 
 
+func set_character_model(path: String) -> void:
+	"""Set a custom character model path. Call before _ready or use reload_model()."""
+	model_path = path
+	# Derive anim_dir from model path's directory
+	anim_dir = path.get_base_dir() + "/"
+
+
+func reload_model() -> void:
+	"""Reload the character with current model_path. Use after set_character_model()."""
+	# Clean up existing skeleton and animation player
+	if _skeleton:
+		_skeleton.queue_free()
+		_skeleton = null
+	if _anim_player:
+		_anim_player.queue_free()
+		_anim_player = null
+	if _anim_tree:
+		_anim_tree.queue_free()
+		_anim_tree = null
+	_playback = null
+	_hips_idx = -1
+	# Rebuild
+	_load_model()
+	_load_animations()
+	_setup_animation_tree()
+	_lock_all_hips_xz()
+	print("CombatAnimator: reloaded with %s (%d animations)" % [model_path, _get_anim_count()])
+
+
 func _load_model() -> void:
-	var scene: PackedScene = load(BASE_MODEL_PATH)
+	var scene: PackedScene = load(model_path)
 	if not scene:
-		push_error("CombatAnimator: cannot load %s" % BASE_MODEL_PATH)
+		push_error("CombatAnimator: cannot load %s" % model_path)
 		return
 
 	var instance: Node3D = scene.instantiate()
@@ -126,7 +159,7 @@ func _load_animations() -> void:
 
 	for anim_name in ANIM_MAP:
 		var fbx_name: String = ANIM_MAP[anim_name]
-		var path: String = ANIM_DIR + fbx_name + ".fbx"
+		var path: String = anim_dir + fbx_name + ".fbx"
 		var scene: PackedScene = load(path)
 		if not scene:
 			continue
