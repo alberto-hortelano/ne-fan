@@ -244,13 +244,20 @@ func _scan_rooms() -> void:
 	_scan_room_dir("res://test_rooms/dev", false)
 	for f: String in _room_files:
 		dev.append(f)
+	var stress: Array[String] = []
+	_room_files.clear()
+	_scan_room_dir("res://test_rooms/stress", false)
+	for f: String in _room_files:
+		stress.append(f)
 	game.sort()
 	style.sort()
 	dev.sort()
+	stress.sort()
 	_room_files = []
 	_room_files.append_array(game)
 	_room_files.append_array(style)
 	_room_files.append_array(dev)
+	_room_files.append_array(stress)
 	print("Scanned %d rooms" % _room_files.size())
 
 
@@ -393,6 +400,10 @@ func _on_generation_failed(error: String) -> void:
 # --- Room building ---
 
 func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> void:
+	# Freeze player during room swap to prevent falling through void
+	_player.set_physics_process(false)
+	_player.velocity = Vector3.ZERO
+
 	# Unregister old room combatants
 	if _current_room:
 		for child in _current_room.get_children():
@@ -408,6 +419,11 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 
 	for area in _room_builder.exit_areas:
 		area.body_entered.connect(_on_exit_entered.bind(area))
+
+	# Set player reference for ChunkManager (if outdoor chunked terrain)
+	var chunk_mgr = _current_room.get_node_or_null("ChunkManager")
+	if chunk_mgr:
+		chunk_mgr.set_player(_player)
 
 	# AI assets (async, progressive)
 	_texture_loader.load_room_textures(_current_room)
@@ -439,9 +455,10 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	if player_sync:
 		player_sync.reset()
 
-	# Position player
+	# Position player and re-enable physics
 	_player.position = player_pos
 	_player.velocity = Vector3.ZERO
+	_player.set_physics_process(true)
 
 	# Dispatch room change to store
 	var enemies_state: Array = []

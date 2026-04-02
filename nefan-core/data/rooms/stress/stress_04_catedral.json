@@ -1,0 +1,227 @@
+{
+  "room_id": "stress_04_catedral",
+  "room_description": "Una catedral en ruinas cuya boveda se pierde en la penumbra. Vitrales rotos dejan entrar haces de luz coloreada. El eco de cada paso retumba entre los pilares.",
+  "dimensions": { "width": 20.0, "height": 8.0, "depth": 20.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "grand cathedral marble floor, black and white checkered pattern, cracked, dusty, seamless tiling",
+      "tiling": [8, 8]
+    },
+    "ceiling": {
+      "texture_prompt": "ruined gothic cathedral vaulted ceiling, painted fresco faded and peeling, ribbed stone arches, dark, seamless tiling",
+      "tiling": [4, 4]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "gothic cathedral wall, ruined stained glass window, stone tracery, dark, seamless tiling", "tiling": [5, 2] },
+      { "side": "east",  "texture_prompt": "cathedral stone wall, pointed arch alcoves, crumbling statues in niches, seamless tiling", "tiling": [5, 2] },
+      { "side": "south", "texture_prompt": "cathedral entrance wall, massive wooden double doors, iron hinges, stone archway, seamless tiling", "tiling": [5, 2] },
+      { "side": "west",  "texture_prompt": "cathedral wall, collapsed section revealing sky, rubble and vines, seamless tiling", "tiling": [5, 2] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [3.5, 5.0],
+      "description": "enormes puertas de madera entreabiertas",
+      "target_hint": "cathedral courtyard"
+    },
+    {
+      "wall": "east",
+      "offset": 5.0,
+      "size": [2.0, 3.0],
+      "description": "puerta lateral hacia la sacristia",
+      "target_hint": "sacristy"
+    },
+    {
+      "wall": "north",
+      "offset": 0.0,
+      "size": [2.5, 4.0],
+      "description": "escaleras hacia la cripta bajo el altar",
+      "target_hint": "cathedral crypt"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.06, 0.05, 0.08], "intensity": 0.3 },
+    "lights": [
+      {
+        "type": "spot",
+        "position": [0, 7.5, -5],
+        "direction": [0, -1, 0.3],
+        "color": [0.8, 0.3, 0.3],
+        "intensity": 4.0,
+        "range": 12.0,
+        "angle": 30.0
+      },
+      {
+        "type": "spot",
+        "position": [-5, 7.5, 0],
+        "direction": [0.2, -1, 0],
+        "color": [0.3, 0.3, 0.8],
+        "intensity": 3.5,
+        "range": 12.0,
+        "angle": 35.0
+      },
+      {
+        "type": "spot",
+        "position": [5, 7.5, 0],
+        "direction": [-0.2, -1, 0],
+        "color": [0.3, 0.8, 0.3],
+        "intensity": 3.5,
+        "range": 12.0,
+        "angle": 35.0
+      },
+      {
+        "type": "point",
+        "position": [0, 6.0, -8],
+        "color": [1.0, 0.9, 0.7],
+        "intensity": 3.0,
+        "range": 10.0
+      },
+      {
+        "type": "point",
+        "position": [-7, 2.5, 5],
+        "color": [1.0, 0.6, 0.2],
+        "intensity": 1.5,
+        "range": 6.0
+      },
+      {
+        "type": "point",
+        "position": [7, 2.5, 5],
+        "color": [1.0, 0.6, 0.2],
+        "intensity": 1.5,
+        "range": 6.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "pillar_nw",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "massive gothic stone pillar, carved capitals, dark cathedral",
+      "position": [-5.0, 0, -5.0],
+      "scale": [0.8, 7.5, 0.8],
+      "description": "pilar gotico masivo con capiteles tallados",
+      "category": "building"
+    },
+    {
+      "id": "pillar_ne",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "gothic stone pillar, cracked and leaning, cathedral",
+      "position": [5.0, 0, -5.0],
+      "rotation": [0, 0, 2],
+      "scale": [0.8, 7.5, 0.8],
+      "description": "pilar gotico agrietado e inclinado",
+      "category": "building",
+      "state": "damaged"
+    },
+    {
+      "id": "pillar_sw",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "gothic stone pillar, moss and vine covered, cathedral ruins",
+      "position": [-5.0, 0, 5.0],
+      "scale": [0.8, 7.5, 0.8],
+      "description": "pilar cubierto de musgo y enredaderas",
+      "category": "building"
+    },
+    {
+      "id": "pillar_se",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "gothic stone pillar, intact, cathedral interior",
+      "position": [5.0, 0, 5.0],
+      "scale": [0.8, 7.5, 0.8],
+      "description": "pilar intacto, el unico sin danar",
+      "category": "building"
+    },
+    {
+      "id": "altar",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "gothic cathedral stone altar with carved crosses and candles, dark fantasy, ruined",
+      "texture_prompt": "carved stone altar, religious reliefs, candle wax, dark",
+      "position": [0, 0, -8.0],
+      "scale": [2.5, 1.2, 1.0],
+      "description": "altar de piedra tallada con cruces y restos de velas",
+      "category": "building",
+      "state": "damaged",
+      "mood": "ominous",
+      "interactive": true
+    },
+    {
+      "id": "pew_left",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "old wooden church pew, broken, dark wood",
+      "position": [-3.0, 0, 2.0],
+      "scale": [2.0, 0.9, 0.5],
+      "description": "banco de iglesia de madera oscura, parcialmente roto",
+      "category": "prop",
+      "state": "damaged"
+    },
+    {
+      "id": "pew_right",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "church pew, overturned, dark wood, broken",
+      "position": [3.0, 0, 0],
+      "rotation": [15, 10, 0],
+      "scale": [2.0, 0.9, 0.5],
+      "description": "banco de iglesia volcado",
+      "category": "prop",
+      "state": "damaged"
+    },
+    {
+      "id": "rubble_pile",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "pile of stone rubble, broken masonry, cathedral debris",
+      "position": [-8.0, 0, -2.0],
+      "rotation": [3, 20, 5],
+      "scale": [2.5, 0.8, 2.0],
+      "description": "monton de escombros donde colapso parte del muro",
+      "category": "terrain",
+      "state": "damaged"
+    },
+    {
+      "id": "stained_glass",
+      "mesh": "plane",
+      "display": "flat_image",
+      "texture_prompt": "gothic stained glass window, religious scene with angel, colored glass, lead frame, dark cathedral, transparent background, isolated object",
+      "position": [0, 4.5, -9.9],
+      "rotation": [-90, 0, 0],
+      "scale": [3.0, 0.01, 4.0],
+      "description": "vidriera gotica con escena de angel en cristal coloreado",
+      "category": "building"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "priestess_mara",
+      "name": "Hermana Mara",
+      "generate_3d": true,
+      "model_prompt": "kneeling nun priestess in tattered white robes, praying pose, dark gothic fantasy character",
+      "sprite_prompt": "kneeling nun priestess, tattered white robes, praying hands, blood on forehead, dark gothic fantasy, pixel art",
+      "position": [-1.0, 0, -6.0],
+      "scale": [0.5, 1.6, 0.5],
+      "description": "monja arrodillada frente al altar, susurrando oraciones con las manos ensangrentadas",
+      "dialogue_hint": "Fue testigo de la profanacion. Sabe que la catedral fue atacada por cultistas."
+    },
+    {
+      "id": "wounded_knight",
+      "name": "Sir Aldric",
+      "generate_3d": true,
+      "model_prompt": "wounded medieval knight in dented plate armor, sitting pose, bandaged arm, dark fantasy character",
+      "sprite_prompt": "wounded knight sitting against pillar, dented plate armor, bandaged arm, tired face, dark fantasy, pixel art",
+      "position": [5.5, 0, 5.5],
+      "rotation": [0, -135, 0],
+      "scale": [0.6, 1.5, 0.6],
+      "description": "caballero herido apoyado contra un pilar, con armadura abollada y brazo vendado",
+      "dialogue_hint": "Sobrevivio al ataque. Puede unirse como aliado temporal."
+    }
+  ],
+  "ambient_event": "El viento silba a traves de los vitrales rotos. Fragmentos de piedra caen de vez en cuando del techo."
+}

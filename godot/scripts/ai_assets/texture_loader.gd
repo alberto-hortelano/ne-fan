@@ -27,9 +27,28 @@ func _scan_node(node: Node) -> void:
 	if node is StaticBody3D and node.has_meta("texture_prompt"):
 		var prompt: String = node.get_meta("texture_prompt")
 		var tiling: Array = node.get_meta("tiling", [1, 1])
+		var is_flat_image: bool = node.get_meta("display", "") == "flat_image"
 		var mesh_inst := _find_mesh_instance(node)
 		if mesh_inst and mesh_inst.material_override:
+			if is_flat_image:
+				# Enable transparency for flat decorative images
+				var mat: StandardMaterial3D = mesh_inst.material_override
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.5
+				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			_register_material(prompt, mesh_inst, mesh_inst.material_override, tiling)
+	elif node is MultiMeshInstance3D and node.has_meta("texture_prompt"):
+		# Vegetation: MultiMesh instances (grass, bushes) with material_override
+		var prompt: String = node.get_meta("texture_prompt")
+		var tiling: Array = node.get_meta("tiling", [1, 1])
+		if node.material_override:
+			_register_material(prompt, node, node.material_override, tiling)
+	elif node is MeshInstance3D and node.has_meta("texture_prompt"):
+		# Direct MeshInstance3D (tree canopy planes, etc.)
+		var prompt: String = node.get_meta("texture_prompt")
+		var tiling: Array = node.get_meta("tiling", [1, 1])
+		if node.material_override:
+			_register_material(prompt, node, node.material_override, tiling)
 
 	for child in node.get_children():
 		_scan_node(child)

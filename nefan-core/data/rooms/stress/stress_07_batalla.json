@@ -1,0 +1,286 @@
+{
+  "room_id": "stress_07_batalla",
+  "room_description": "Un campo de batalla en las ruinas de un anfiteatro. Cuerpos y armas yacen entre escombros. El aire apesta a sangre y humo. Tres guerreros oscuros se preparan para atacar.",
+  "dimensions": { "width": 25.0, "height": 8.0, "depth": 25.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "battlefield ground, trampled mud and blood, broken weapons, scorched earth, dark fantasy, seamless tiling",
+      "tiling": [6, 6]
+    },
+    "ceiling": {
+      "texture_prompt": "dark stormy sky, red lightning, thick smoke, apocalyptic, looking up, seamless tiling",
+      "tiling": [2, 2]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "ruined amphitheatre stone wall, burning siege damage, dark smoke, war torn, seamless tiling", "tiling": [6, 2] },
+      { "side": "east",  "texture_prompt": "crumbling fortress wall, arrow impacts, oil stains, fire damage, dark fantasy battlefield, seamless tiling", "tiling": [6, 2] },
+      { "side": "south", "texture_prompt": "destroyed gatehouse, burning wreckage, smoke and ember, dark fantasy siege, seamless tiling", "tiling": [6, 2] },
+      { "side": "west",  "texture_prompt": "collapsed stone wall, battlefield beyond, distant fires, dark fantasy war, seamless tiling", "tiling": [6, 2] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [4.0, 5.0],
+      "description": "brecha en la puerta principal destruida",
+      "target_hint": "burning road"
+    },
+    {
+      "wall": "north",
+      "offset": 3.0,
+      "size": [2.5, 3.5],
+      "description": "tunel bajo las gradas del anfiteatro",
+      "target_hint": "underground passage"
+    },
+    {
+      "wall": "east",
+      "offset": -5.0,
+      "size": [2.0, 3.0],
+      "description": "escalera hacia la torre de vigilia",
+      "target_hint": "watchtower"
+    },
+    {
+      "wall": "west",
+      "offset": 4.0,
+      "size": [3.0, 4.0],
+      "description": "muro derrumbado, campo abierto",
+      "target_hint": "open battlefield"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.12, 0.06, 0.04], "intensity": 0.5 },
+    "lights": [
+      {
+        "type": "spot",
+        "position": [0, 7.5, 0],
+        "direction": [0, -1, 0],
+        "color": [1.0, 0.5, 0.2],
+        "intensity": 5.0,
+        "range": 18.0,
+        "angle": 60.0
+      },
+      {
+        "type": "point",
+        "position": [-8, 2, -8],
+        "color": [1.0, 0.3, 0.1],
+        "intensity": 3.0,
+        "range": 8.0
+      },
+      {
+        "type": "point",
+        "position": [8, 2, -8],
+        "color": [1.0, 0.3, 0.1],
+        "intensity": 3.0,
+        "range": 8.0
+      },
+      {
+        "type": "point",
+        "position": [-8, 2, 8],
+        "color": [0.8, 0.2, 0.1],
+        "intensity": 2.5,
+        "range": 7.0
+      },
+      {
+        "type": "point",
+        "position": [8, 2, 8],
+        "color": [0.8, 0.2, 0.1],
+        "intensity": 2.5,
+        "range": 7.0
+      },
+      {
+        "type": "spot",
+        "position": [0, 7, -10],
+        "direction": [0, -0.5, 0.5],
+        "color": [0.5, 0.5, 1.0],
+        "intensity": 2.0,
+        "range": 12.0,
+        "angle": 40.0
+      }
+    ]
+  },
+  "objects": [
+    {
+      "id": "warrior_berserker",
+      "mesh": "capsule",
+      "position": [-6, 0, -6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "guerrero berserker con hacha de guerra",
+      "combat": {
+        "health": 100,
+        "weapon_id": "war_hammer",
+        "personality": {
+          "difficulty": "hard",
+          "aggression_style": "aggressive",
+          "aggression": 0.9,
+          "preferred_attacks": ["heavy", "medium"],
+          "reaction_time": 0.4,
+          "combat_range": 5.0
+        }
+      }
+    },
+    {
+      "id": "warrior_duelist",
+      "mesh": "capsule",
+      "position": [6, 0, -6],
+      "scale": [0.5, 1.8, 0.5],
+      "category": "creature",
+      "description": "duelista con espada rapida",
+      "combat": {
+        "health": 80,
+        "weapon_id": "short_sword",
+        "personality": {
+          "difficulty": "hard",
+          "aggression_style": "neutral",
+          "aggression": 0.6,
+          "preferred_attacks": ["quick", "precise", "medium"],
+          "reaction_time": 0.3,
+          "combat_range": 4.0
+        }
+      }
+    },
+    {
+      "id": "warrior_guardian",
+      "mesh": "capsule",
+      "position": [0, 0, -8],
+      "scale": [0.6, 2.0, 0.6],
+      "category": "creature",
+      "description": "guardian acorazado con escudo y maza",
+      "combat": {
+        "health": 150,
+        "weapon_id": "short_sword",
+        "personality": {
+          "difficulty": "medium",
+          "aggression_style": "defensive",
+          "aggression": 0.4,
+          "preferred_attacks": ["defensive", "medium", "heavy"],
+          "reaction_time": 0.6,
+          "combat_range": 3.5
+        }
+      }
+    },
+    {
+      "id": "barricade_01",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "wooden battlefield barricade, splintered, arrow impacts, burning",
+      "position": [0, 0, -3],
+      "rotation": [0, 15, 5],
+      "scale": [4.0, 1.5, 0.5],
+      "description": "barricada de madera destrozada y en llamas",
+      "category": "building",
+      "state": "damaged"
+    },
+    {
+      "id": "siege_weapon",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "destroyed medieval catapult, broken arm, scattered rocks, battlefield, dark fantasy",
+      "position": [-10, 0, 5],
+      "rotation": [5, -30, 3],
+      "scale": [3.0, 2.5, 4.0],
+      "description": "catapulta destruida con brazo roto",
+      "category": "building",
+      "state": "damaged"
+    },
+    {
+      "id": "weapons_pile",
+      "mesh": "box",
+      "generate_3d": false,
+      "texture_prompt": "pile of broken medieval weapons, swords shields axes, bloodstained, battlefield",
+      "position": [5, 0, 4],
+      "rotation": [3, 45, 0],
+      "scale": [2.0, 0.6, 1.5],
+      "description": "pila de armas rotas y ensangrentadas",
+      "category": "prop",
+      "state": "damaged"
+    },
+    {
+      "id": "crater",
+      "mesh": "sphere",
+      "generate_3d": false,
+      "texture_prompt": "blast crater in stone, scorched black, glowing embers, battlefield",
+      "position": [3, -0.3, -2],
+      "scale": [3.0, 0.5, 3.0],
+      "description": "crater de explosion con bordes carbonizados",
+      "category": "terrain",
+      "state": "damaged"
+    },
+    {
+      "id": "war_banner_fallen",
+      "mesh": "plane",
+      "display": "flat_image",
+      "texture_prompt": "fallen war banner, torn red fabric, skull emblem, transparent background, isolated object",
+      "position": [-4, 0.05, 2],
+      "rotation": [0, 60, 0],
+      "scale": [2.0, 0.01, 3.0],
+      "description": "estandarte de guerra caido en el lodo",
+      "category": "prop",
+      "state": "damaged"
+    },
+    {
+      "id": "torch_stand",
+      "mesh": "cylinder",
+      "generate_3d": false,
+      "texture_prompt": "tall iron torch stand, burning oil, battlefield illumination",
+      "position": [-8, 0, -8],
+      "scale": [0.15, 2.5, 0.15],
+      "description": "soporte de antorcha de hierro con fuego de aceite",
+      "category": "prop",
+      "state": "burning"
+    },
+    {
+      "id": "treasure_chest",
+      "mesh": "box",
+      "generate_3d": true,
+      "model_prompt": "ornate war chest, iron-bound, padlocked, dented from battle, dark fantasy treasure",
+      "position": [10, 0, -10],
+      "rotation": [0, -20, 0],
+      "scale": [0.7, 0.5, 0.5],
+      "description": "cofre de guerra ornamentado y abollado",
+      "category": "item",
+      "state": "locked",
+      "mood": "mysterious",
+      "interactive": true
+    }
+  ],
+  "npcs": [
+    {
+      "id": "commander",
+      "name": "Capitana Vex",
+      "generate_3d": true,
+      "model_prompt": "female battle commander in dented plate armor, sword raised, commanding pose, dark fantasy character",
+      "sprite_prompt": "female battle commander, dented plate armor, bloodied sword raised, scar across eye, commanding pose, dark fantasy, pixel art",
+      "position": [0, 0, 8],
+      "scale": [0.6, 1.8, 0.6],
+      "description": "capitana con armadura abollada y espada ensangrentada, dirige a los supervivientes",
+      "dialogue_hint": "Lidera la defensa. Necesita que el jugador flanquee a los enemigos."
+    },
+    {
+      "id": "healer",
+      "name": "Sanador Loth",
+      "generate_3d": true,
+      "model_prompt": "battlefield healer monk in bloodstained white robes, kneeling pose, dark fantasy character",
+      "sprite_prompt": "battlefield healer monk, bloodstained white robes, glowing hands, tired face, kneeling, dark fantasy, pixel art",
+      "position": [10, 0, 8],
+      "rotation": [0, -90, 0],
+      "scale": [0.5, 1.6, 0.5],
+      "description": "monje sanador arrodillado junto a los heridos, sus manos brillan con luz curativa",
+      "dialogue_hint": "Puede curar al jugador. Sabe que el enemigo usa magia prohibida."
+    },
+    {
+      "id": "wounded_soldier",
+      "name": "Soldado Herido",
+      "generate_3d": true,
+      "model_prompt": "dying soldier in broken armor, lying on ground, reaching hand out, dark fantasy character",
+      "sprite_prompt": "dying soldier lying on ground, broken armor, reaching hand out, blood pool, dark fantasy, pixel art",
+      "position": [-3, 0, 6],
+      "rotation": [0, 90, 0],
+      "scale": [0.5, 0.5, 0.5],
+      "description": "soldado moribundo tendido en el suelo, extiende la mano pidiendo ayuda",
+      "dialogue_hint": "Entrega un mensaje antes de morir. Revela la localizacion del lider enemigo."
+    }
+  ],
+  "ambient_event": "Explosiones lejanas sacuden el suelo. Gritos de batalla y acero chocando llenan el aire. El olor a humo y sangre es sofocante."
+}
