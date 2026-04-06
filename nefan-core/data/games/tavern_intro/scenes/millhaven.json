@@ -1,0 +1,86 @@
+{
+  "room_id": "millhaven",
+  "room_description": "El borde del pueblo de Millhaven al atardecer. La taberna La Rueda Rota se alza junto al camino.",
+  "zone_type": "outdoor",
+  "dimensions": { "width": 60.0, "height": 30.0, "depth": 60.0 },
+  "terrain": {
+    "type": "static",
+    "texture_prompt": "dirt road with grass patches, medieval village path, seamless"
+  },
+  "sky": {
+    "time_of_day": "dusk",
+    "custom_sky_color": [0.12, 0.06, 0.18],
+    "custom_horizon_color": [0.4, 0.15, 0.08]
+  },
+  "fog": {
+    "enabled": true,
+    "density": 0.008,
+    "color": [0.08, 0.06, 0.1]
+  },
+  "vegetation": {
+    "grass": { "count": 800, "radius": 28.0 },
+    "bushes": { "count": 15, "radius": 25.0 },
+    "trees": { "count": 12, "ring_inner_radius": 20.0, "ring_outer_radius": 28.0 }
+  },
+  "lighting": {
+    "ambient": { "color": [0.1, 0.07, 0.05], "intensity": 0.4 },
+    "lights": [
+      { "type": "point", "position": [0, 2.8, 2], "color": [1.0, 0.8, 0.4], "intensity": 2.5, "range": 7.0 },
+      { "type": "point", "position": [4, 2.8, 2], "color": [1.0, 0.7, 0.3], "intensity": 2.0, "range": 6.0 },
+      { "type": "point", "position": [2, 1.8, -1], "color": [1.0, 0.5, 0.1], "intensity": 3.0, "range": 4.0 },
+      { "type": "point", "position": [2, 4.0, -10], "color": [0.8, 0.6, 0.3], "intensity": 1.5, "range": 8.0 }
+    ]
+  },
+  "objects": [
+    { "id": "tavern_floor", "mesh": "box", "position": [2, -0.05, 2], "scale": [10, 0.1, 8],
+      "texture_prompt": "worn wooden plank floor, dark stained, tavern, seamless",
+      "description": "suelo de la taberna", "category": "building" },
+    { "id": "tavern_wall_north", "mesh": "box", "position": [2, 1.5, -2], "scale": [10, 3, 0.2],
+      "texture_prompt": "rough plastered wall, medieval tavern interior",
+      "description": "pared norte de la taberna", "category": "building" },
+    { "id": "tavern_wall_east", "mesh": "box", "position": [7, 1.5, 2], "scale": [0.2, 3, 8],
+      "texture_prompt": "stone wall with wooden shelves, bottles and mugs",
+      "description": "pared este de la taberna", "category": "building" },
+    { "id": "tavern_wall_west", "mesh": "box", "position": [-3, 1.5, 2], "scale": [0.2, 3, 8],
+      "texture_prompt": "rough stone wall with faded wanted posters",
+      "description": "pared oeste de la taberna", "category": "building" },
+    { "id": "tavern_wall_south_left", "mesh": "box", "position": [-1.25, 1.5, 6], "scale": [3.5, 3, 0.2],
+      "texture_prompt": "wooden wall with iron studs, tavern exterior",
+      "description": "pared sur izquierda", "category": "building" },
+    { "id": "tavern_wall_south_right", "mesh": "box", "position": [5.25, 1.5, 6], "scale": [3.5, 3, 0.2],
+      "texture_prompt": "wooden wall with iron studs, tavern exterior",
+      "description": "pared sur derecha", "category": "building" },
+    { "id": "tavern_ceiling", "mesh": "box", "position": [2, 3.05, 2], "scale": [10, 0.1, 8],
+      "texture_prompt": "low wooden beam ceiling, dark smoke stained",
+      "description": "techo de la taberna", "category": "building" },
+
+    { "id": "table_01", "mesh": "box", "position": [0, 0, 1], "scale": [1.5, 0.75, 0.8],
+      "texture_prompt": "rough hewn wooden tavern table, dark stained",
+      "description": "mesa de madera tosca", "category": "prop" },
+    { "id": "table_02", "mesh": "box", "position": [4, 0, 3], "scale": [1.2, 0.75, 0.7],
+      "description": "mesa con manchas de bebida", "category": "prop" },
+    { "id": "bench_01", "mesh": "box", "position": [0, 0, 1.8], "scale": [1.4, 0.45, 0.3],
+      "description": "banco de madera", "category": "prop" },
+    { "id": "counter_01", "mesh": "box", "position": [5.5, 0, 0], "scale": [1.0, 1.0, 3.0],
+      "texture_prompt": "dark wooden bar counter, tavern",
+      "description": "mostrador de la barra", "category": "prop" },
+    { "id": "barrel_01", "mesh": "cylinder", "position": [6, 0, -1], "scale": [0.5, 0.8, 0.5],
+      "description": "barril de cerveza", "category": "prop" },
+    { "id": "fireplace_01", "mesh": "box", "position": [2, 0, -1.5], "scale": [1.2, 1.0, 0.5],
+      "description": "chimenea de piedra con lenos", "category": "building" },
+
+    { "id": "cart_01", "mesh": "box", "position": [-6, 0, 10], "scale": [2, 1, 1.2],
+      "description": "carro de mercader abandonado", "category": "prop" },
+    { "id": "barrel_ext", "mesh": "cylinder", "position": [4, 0, 8], "scale": [0.4, 0.7, 0.4],
+      "description": "barril junto a la puerta", "category": "prop" },
+    { "id": "post_01", "mesh": "cylinder", "position": [-4, 0, 7], "scale": [0.15, 2.5, 0.15],
+      "description": "poste de madera con farol", "category": "prop" },
+    { "id": "fence_01", "mesh": "box", "position": [10, 0, 5], "scale": [0.1, 1.0, 10],
+      "description": "valla de madera", "category": "prop" },
+    { "id": "rock_01", "mesh": "sphere", "position": [-8, 0, 15], "scale": [1.5, 1.0, 1.5],
+      "description": "roca grande junto al camino", "category": "terrain" }
+  ],
+  "npcs": [],
+  "exits": [],
+  "ambient_event": "El viento nocturno trae el crepitar de la chimenea y el olor a estofado."
+}

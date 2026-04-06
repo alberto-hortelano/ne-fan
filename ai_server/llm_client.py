@@ -17,10 +17,13 @@ from narrative_schemas import (
     NARRATIVE_SYSTEM_PROMPT_V2,
     POPULATE_ROOM_TOOL,
     GENERATE_ROOM_TOOL,
+    GENERATE_SCENE_SYSTEM_PROMPT,
+    GENERATE_SCENE_TOOL,
     FALLBACK_ROOM,
     FALLBACK_EXTENDED_ROOM,
     validate_room_response,
     validate_extended_room_response,
+    validate_scene_response,
 )
 
 # WebSocket is optional — only needed for MCP bridge mode
@@ -181,6 +184,111 @@ class LLMClient:
 
         print("LLM: No backend, returning fallback extended room")
         return copy.deepcopy(FALLBACK_EXTENDED_ROOM)
+
+    def generate_scene(self, scene_request: dict) -> dict:
+        """Generate an outdoor scene from premise + setting. Tries MCP, then API, then fallback."""
+        if self._ws_connected and self._ws:
+            result = self._generate_scene_via_mcp(scene_request)
+            if result is not None:
+                return result
+
+        if self.api_client:
+            return self._generate_scene_via_api(scene_request)
+
+        print("LLM: No backend, returning minimal outdoor scene")
+        return self._fallback_scene(scene_request)
+
+    def _generate_scene_via_mcp(self, scene_request: dict) -> dict | None:
+        """Send scene generation request through MCP bridge."""
+        request_id = str(uuid.uuid4())
+
+        with self._pending_lock:
+            self._pending[request_id] = None
+
+        self._ws.send(json.dumps({  # type: ignore
+            "type": "room_request",
+            "request_id": request_id,
+            "world_state": scene_request,
+            "format": "scene",
+        }))
+
+        print(f"LLM: Scene request via MCP (id={request_id[:8]}...)")
+
+        start = time.time()
+        while time.time() - start < self.timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    validated = validate_scene_response(result)
+                    print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
+                          f"{time.time() - start:.1f}s)")
+                    return validated
+            time.sleep(0.1)
+
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        print(f"LLM: MCP scene timeout ({self.timeout}s)")
+        return None
+
+    def _generate_scene_via_api(self, scene_request: dict) -> dict:
+        """Call Claude API directly with generate_scene tool."""
+        premise = scene_request.get("premise", "")
+        setting = scene_request.get("setting", {})
+
+        try:
+            response = self.api_client.messages.create(  # type: ignore
+                model=self.model,
+                max_tokens=4096,
+                system=GENERATE_SCENE_SYSTEM_PROMPT,
+                tools=[GENERATE_SCENE_TOOL],
+                tool_choice={"type": "tool", "name": "generate_scene"},
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Generate an outdoor scene for this setting:\n\n"
+                        f"PREMISE:\n{premise}\n\n"
+                        f"SETTING:\n{json.dumps(setting, indent=2)}\n\n"
+                        f"SCENE DESCRIPTION:\n{scene_request.get('scene_description', 'an outdoor area')}\n\n"
+                        f"Include buildings, terrain details, props, and atmospheric elements. "
+                        f"Do NOT include NPCs - they are managed separately."
+                    ),
+                }],
+            )
+
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "generate_scene":
+                    result = validate_scene_response(block.input)
+                    print(f"LLM: Scene via API ({len(result.get('objects', []))} objects)")
+                    return result
+
+            print("LLM: No tool call in scene API response, using fallback")
+            return self._fallback_scene(scene_request)
+
+        except Exception as e:
+            print(f"LLM: API scene error ({e}), using fallback")
+            return self._fallback_scene(scene_request)
+
+    @staticmethod
+    def _fallback_scene(scene_request: dict) -> dict:
+        """Minimal outdoor fallback scene."""
+        return {
+            "room_id": "fallback_scene",
+            "room_description": "Un paraje abierto y desolado.",
+            "zone_type": "outdoor",
+            "dimensions": {"width": 60.0, "height": 30.0, "depth": 60.0},
+            "terrain": {"type": "static", "texture_prompt": "grass and dirt, medieval, seamless"},
+            "sky": {"time_of_day": "day"},
+            "fog": {"enabled": False},
+            "lighting": {
+                "ambient": {"color": [0.15, 0.12, 0.1], "intensity": 0.4},
+                "lights": [],
+            },
+            "objects": [],
+            "npcs": [],
+            "exits": [],
+            "ambient_event": "El viento sopla entre la hierba.",
+        }
 
     def _generate_via_mcp(self, world_state: dict) -> dict | None:
         """Send extended room request through MCP bridge."""

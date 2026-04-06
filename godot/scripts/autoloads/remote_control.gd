@@ -87,6 +87,15 @@ func _handle(line: String) -> String:
 			return _cmd_status()
 		"load_room":
 			return _cmd_load_room(json)
+		"load_game":
+			return _cmd_load_game(json)
+		"dialogue_advance":
+			LogicBridge.send_scenario_event("dialogue_advanced")
+			return '{"ok":true}'
+		"dialogue_choice":
+			var ci: int = json.get("choice", 0)
+			LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": ci})
+			return '{"ok":true,"choice":%d}' % ci
 		"save":
 			return '{"ok":%s}' % str(GameState.save_to_disk()).to_lower()
 		"load":
@@ -324,6 +333,17 @@ func _cmd_load_room_path(args: Dictionary) -> String:
 		main_scene.call("load_room_by_path", path)
 		return '{"ok":true,"path":"%s"}' % path
 	return '{"error":"main scene has no load_room_by_path"}'
+
+
+func _cmd_load_game(args: Dictionary) -> String:
+	var game_id: String = args.get("game_id", "")
+	if game_id.is_empty():
+		return '{"error":"missing game_id"}'
+	var main_scene := get_tree().current_scene
+	if main_scene:
+		main_scene._scenario_active = true
+	LogicBridge.send_load_game(game_id)
+	return '{"ok":true,"game_id":"%s"}' % game_id
 
 
 func _cmd_texture_status() -> String:

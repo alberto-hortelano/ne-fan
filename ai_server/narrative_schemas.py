@@ -485,6 +485,220 @@ def validate_extended_room_response(data: dict) -> dict:
     return data
 
 
+GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a dark fantasy RPG. You generate open-world 3D scenes as structured data for a Godot 4 engine.
+
+IMPORTANT: You do NOT generate enclosed rooms. You generate OUTDOOR SCENES with buildings as objects.
+
+UNITS & COORDINATES:
+- All units in METERS. Scene area: 40-80m wide/deep.
+- Origin at center. Floor at y=0. +Z is south, -Z is north.
+- Object position.y=0 means bottom of object touches ground.
+
+BUILDINGS:
+- Buildings are constructed from box meshes: walls, floor, ceiling as separate objects.
+- Leave gaps between wall segments for doors/entrances.
+- Example tavern wall: mesh=box, scale=[8, 3, 0.2], position=[x, 1.5, z].
+- Floor: mesh=box, scale=[width, 0.1, depth], position=[cx, -0.05, cz].
+- Ceiling: mesh=box, scale=[width, 0.1, depth], position=[cx, height+0.05, cz].
+
+TERRAIN:
+- zone_type MUST be "outdoor".
+- terrain.type: "static" (flat ground plane) or "chunked" (infinite heightmap).
+- terrain.texture_prompt: English, for SD texture generation.
+
+SKY & FOG:
+- sky.time_of_day: "dawn", "day", "dusk", "night".
+- fog: density 0.005-0.02, color matching atmosphere.
+
+VEGETATION:
+- grass: count 500-2000, radius 20-30m.
+- bushes: count 10-30, radius 20-25m.
+- trees: count 5-20, ring_inner_radius 15-25m, ring_outer_radius 25-30m.
+
+OBJECTS (max 25):
+- mesh: box, sphere, capsule, cylinder, cone, plane, torus.
+- scale: ACTUAL SIZE in meters.
+- category: building (walls/floors/structure), prop (furniture/barrels/carts), terrain (rocks/logs), item (interactive).
+- texture_prompt: English, for SD. Include "seamless tiling".
+- description: Spanish.
+
+LIGHTING:
+- ambient: RGB [0-1], intensity 0.2-0.5.
+- lights: point/spot for torches, lamps, fires. Max 6.
+- The directional light (sun/moon) is auto-generated from sky.time_of_day.
+
+NPCs: Do NOT include NPCs in the scene. NPCs are spawned by the narrative scenario system.
+
+Generate a scene_id, room_description (Spanish), and ambient_event (Spanish).
+"""
+
+GENERATE_SCENE_TOOL = {
+    "name": "generate_scene",
+    "description": "Generates an open-world 3D scene with terrain, buildings, objects, and lighting.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "room_id": {"type": "string", "description": "Unique scene identifier"},
+            "room_description": {"type": "string", "description": "2-3 sentence description in Spanish"},
+            "zone_type": {"type": "string", "enum": ["outdoor"], "description": "Always outdoor"},
+            "dimensions": {
+                "type": "object",
+                "properties": {
+                    "width": {"type": "number", "description": "X axis, 40-80 meters"},
+                    "height": {"type": "number", "description": "Sky height, 20-40"},
+                    "depth": {"type": "number", "description": "Z axis, 40-80 meters"},
+                },
+                "required": ["width", "height", "depth"],
+            },
+            "terrain": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["static", "chunked"]},
+                    "texture_prompt": {"type": "string"},
+                },
+                "required": ["type", "texture_prompt"],
+            },
+            "sky": {
+                "type": "object",
+                "properties": {
+                    "time_of_day": {"type": "string", "enum": ["dawn", "day", "dusk", "night"]},
+                    "custom_sky_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                    "custom_horizon_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                },
+                "required": ["time_of_day"],
+            },
+            "fog": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "density": {"type": "number"},
+                    "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                },
+            },
+            "vegetation": {
+                "type": "object",
+                "properties": {
+                    "grass": {"type": "object", "properties": {"count": {"type": "integer"}, "radius": {"type": "number"}}},
+                    "bushes": {"type": "object", "properties": {"count": {"type": "integer"}, "radius": {"type": "number"}}},
+                    "trees": {"type": "object", "properties": {
+                        "count": {"type": "integer"},
+                        "ring_inner_radius": {"type": "number"},
+                        "ring_outer_radius": {"type": "number"},
+                    }},
+                },
+            },
+            "lighting": {
+                "type": "object",
+                "properties": {
+                    "ambient": {
+                        "type": "object",
+                        "properties": {
+                            "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                            "intensity": {"type": "number"},
+                        },
+                        "required": ["color", "intensity"],
+                    },
+                    "lights": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string", "enum": ["point", "spot"]},
+                                "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                                "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                                "intensity": {"type": "number"},
+                                "range": {"type": "number"},
+                            },
+                            "required": ["type", "position", "color", "intensity", "range"],
+                        },
+                        "maxItems": 6,
+                    },
+                },
+                "required": ["ambient", "lights"],
+            },
+            "objects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "mesh": {"type": "string", "enum": list(VALID_MESHES)},
+                        "texture_prompt": {"type": "string"},
+                        "model_prompt": {"type": "string"},
+                        "generate_3d": {"type": "boolean"},
+                        "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                        "rotation": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                        "scale": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                        "description": {"type": "string"},
+                        "category": {"type": "string", "enum": ["building", "prop", "terrain", "item"]},
+                    },
+                    "required": ["id", "mesh", "position", "scale", "description", "category"],
+                },
+                "maxItems": 25,
+            },
+            "ambient_event": {"type": "string"},
+        },
+        "required": ["room_id", "room_description", "zone_type", "dimensions", "terrain", "sky", "lighting", "objects", "ambient_event"],
+    },
+}
+
+
+def validate_scene_response(data: dict) -> dict:
+    """Validate and sanitize LLM-generated outdoor scene data."""
+    import uuid as _uuid
+
+    data.setdefault("room_id", f"scene_{_uuid.uuid4().hex[:8]}")
+    data.setdefault("room_description", "Un paraje desolado.")
+    data.setdefault("ambient_event", "")
+    data["zone_type"] = "outdoor"
+    data.setdefault("exits", [])
+    data.setdefault("npcs", [])
+
+    # Dimensions
+    dims = data.setdefault("dimensions", {"width": 60.0, "height": 30.0, "depth": 60.0})
+    dims["width"] = max(30.0, min(float(dims.get("width", 60.0)), 100.0))
+    dims["height"] = max(10.0, min(float(dims.get("height", 30.0)), 50.0))
+    dims["depth"] = max(30.0, min(float(dims.get("depth", 60.0)), 100.0))
+
+    # Terrain
+    terrain = data.setdefault("terrain", {"type": "static", "texture_prompt": "grass and dirt path, seamless"})
+    if terrain.get("type") not in ("static", "chunked"):
+        terrain["type"] = "static"
+
+    # Sky
+    sky = data.setdefault("sky", {"time_of_day": "day"})
+    if sky.get("time_of_day") not in ("dawn", "day", "dusk", "night"):
+        sky["time_of_day"] = "day"
+
+    # Fog
+    data.setdefault("fog", {"enabled": False})
+
+    # Lighting
+    lighting = data.setdefault("lighting", {})
+    lighting.setdefault("ambient", {"color": [0.15, 0.12, 0.1], "intensity": 0.4})
+    lighting.setdefault("lights", [])
+    lighting["lights"] = lighting["lights"][:6]
+
+    # Objects
+    objects = data.get("objects", [])[:25]
+    for obj in objects:
+        obj.setdefault("id", f"obj_{_uuid.uuid4().hex[:6]}")
+        if obj.get("mesh") not in VALID_MESHES:
+            obj["mesh"] = "box"
+        obj.setdefault("scale", [1.0, 1.0, 1.0])
+        if len(obj.get("scale", [])) != 3:
+            obj["scale"] = [1.0, 1.0, 1.0]
+        obj["scale"] = [max(0.05, min(float(s), 30.0)) for s in obj["scale"]]
+        obj.setdefault("position", [0, 0, 0])
+        obj.setdefault("rotation", [0, 0, 0])
+        obj.setdefault("description", "un objeto")
+        obj.setdefault("category", "prop")
+        obj.setdefault("generate_3d", False)
+    data["objects"] = objects
+
+    return data
+
+
 def validate_room_response(data: dict) -> dict:
     """Validate and clamp LLM response to safe values."""
     # Ensure required fields

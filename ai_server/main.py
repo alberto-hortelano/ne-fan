@@ -120,6 +120,16 @@ async def generate_room(request: Request):
     return result
 
 
+@app.post("/generate_scene")
+async def generate_scene(request: Request):
+    """Accept premise + setting, return outdoor scene JSON for open world."""
+    import asyncio
+
+    scene_request = await request.json()
+    result = await asyncio.to_thread(llm_client.generate_scene, scene_request)
+    return result
+
+
 @app.post("/generate_texture")
 async def generate_texture_endpoint(request: Request):
     """Generate PBR texture set from a prompt. Returns URLs to cached PNGs."""
