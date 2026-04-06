@@ -17,6 +17,7 @@ from llm_client import LLMClient
 from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
+from sprite_generator import SpriteGenerator
 from asset_cache import AssetCache
 
 import asyncio as _asyncio
@@ -26,9 +27,11 @@ llm_client: LLMClient | None = None
 texture_gen: TextureGenerator | None = None
 model_gen: ModelGenerator | None = None
 skin_gen: SkinGenerator | None = None
+sprite_gen: SpriteGenerator | None = None
 asset_cache: AssetCache | None = None
 model_cache: AssetCache | None = None
 skin_cache: AssetCache | None = None
+sprite_cache: AssetCache | None = None
 config: dict = {}
 _gpu_lock = _asyncio.Lock()  # Serialize ALL GPU operations
 
@@ -46,7 +49,7 @@ def load_config(config_path: str = "Config/ai_server_config.json") -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, asset_cache, model_cache, skin_cache, config
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, config
     config = load_config()
 
     llm_client = LLMClient(
@@ -78,6 +81,14 @@ async def lifespan(app: FastAPI):
     )
 
     skin_gen = SkinGenerator(
+        texture_gen_ref=texture_gen,
+    )
+
+    sprite_cache = AssetCache(
+        cache_dir=config.get("sprite_cache_dir", "cache/sprites"),
+    )
+
+    sprite_gen = SpriteGenerator(
         texture_gen_ref=texture_gen,
     )
 
@@ -249,6 +260,53 @@ async def generate_skin_endpoint(request: Request):
         "skin_url": f"/cache/skin/{key}",
         "generation_time_ms": elapsed_ms,
     }
+
+
+@app.post("/generate_sprite")
+async def generate_sprite_endpoint(request: Request):
+    """Generate an RGBA sprite PNG from a prompt (image with transparent background)."""
+    import asyncio
+
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    width = body.get("width", 512)
+    height = body.get("height", 512)
+    seed = body.get("seed", -1)
+
+    if not prompt:
+        return {"error": "missing prompt"}
+
+    key = sprite_cache.hash_key(prompt)
+
+    if sprite_cache.has(prompt, "sprite"):
+        return {
+            "hash": key,
+            "cached": True,
+            "sprite_url": f"/cache/sprite/{key}",
+        }
+
+    start = time.time()
+    async with _gpu_lock:
+        result = await asyncio.to_thread(sprite_gen.generate, prompt, width, height, seed)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    sprite_cache.put(prompt, "sprite", result["sprite"])
+
+    return {
+        "hash": key,
+        "cached": False,
+        "sprite_url": f"/cache/sprite/{key}",
+        "generation_time_ms": elapsed_ms,
+    }
+
+
+@app.get("/cache/sprite/{hash_key}")
+async def get_cached_sprite(hash_key: str):
+    """Serve a cached sprite PNG (RGBA with transparency)."""
+    data = sprite_cache.get_by_hash(hash_key, "sprite")
+    if data is None:
+        return Response(status_code=404, content="Not found")
+    return Response(content=data, media_type="image/png")
 
 
 @app.get("/cache/skin/{hash_key}")

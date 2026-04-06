@@ -37,6 +37,9 @@ func build_outdoor(data: Dictionary) -> Node3D:
 
 	var veg_data: Dictionary = data.get("vegetation", {})
 
+	# Extract exclusion zones from building objects (vegetation shouldn't grow inside buildings)
+	var exclusion_zones: Array = _extract_building_zones(data.get("objects", []))
+
 	if terrain_data.get("chunked", false):
 		# Infinite chunked terrain — ChunkManager handles ground + vegetation
 		var chunk_mgr := ChunkManagerScript.new()
@@ -48,11 +51,11 @@ func build_outdoor(data: Dictionary) -> Node3D:
 		_build_ground(room, w, d, terrain_data)
 		var ground_size := Vector2(w, d)
 		if veg_data.has("grass"):
-			vegetation_spawner.spawn_grass(veg_data.get("grass"), ground_size, room)
+			vegetation_spawner.spawn_grass(veg_data.get("grass"), ground_size, room, exclusion_zones)
 		if veg_data.has("bushes"):
-			vegetation_spawner.spawn_bushes(veg_data.get("bushes"), ground_size, room)
+			vegetation_spawner.spawn_bushes(veg_data.get("bushes"), ground_size, room, exclusion_zones)
 		if veg_data.has("trees"):
-			vegetation_spawner.spawn_trees(veg_data.get("trees"), room)
+			vegetation_spawner.spawn_trees(veg_data.get("trees"), room, exclusion_zones)
 
 	# Objects & NPCs (reuse existing spawner)
 	object_spawner.spawn_objects(data.get("objects", []), room)
@@ -62,6 +65,29 @@ func build_outdoor(data: Dictionary) -> Node3D:
 	exit_areas = exit_builder.build_exits(data.get("exits", []), dims, room)
 
 	return room
+
+
+## Extract rectangular exclusion zones from building objects (floor pieces).
+## Returns array of Rect2 in XZ plane where vegetation should not spawn.
+func _extract_building_zones(objects: Array) -> Array:
+	var zones: Array = []
+	for obj in objects:
+		if obj.get("category", "") != "building":
+			continue
+		var pos: Array = obj.get("position", [0, 0, 0])
+		var scale: Array = obj.get("scale", [1, 1, 1])
+		var sx: float = float(scale[0])
+		var sy: float = float(scale[1])
+		var sz: float = float(scale[2])
+		# Only use floor-like pieces (thin and wide) to define the zone
+		# Floor: thin Y (< 0.5), wide XZ
+		if sy < 0.5 and sx > 1.0 and sz > 1.0:
+			var cx: float = float(pos[0])
+			var cz: float = float(pos[2])
+			# Add margin around building
+			var margin: float = 1.0
+			zones.append(Rect2(cx - sx / 2.0 - margin, cz - sz / 2.0 - margin, sx + margin * 2, sz + margin * 2))
+	return zones
 
 
 func _build_ground(room: Node3D, w: float, d: float, terrain_data: Dictionary) -> void:
@@ -89,8 +115,9 @@ func _build_ground(room: Node3D, w: float, d: float, terrain_data: Dictionary) -
 	body.add_child(collision)
 
 	# Texture metadata for AI texture generation
-	if terrain_data.has("ground_texture_prompt"):
-		body.set_meta("texture_prompt", terrain_data.get("ground_texture_prompt"))
+	var ground_prompt: String = terrain_data.get("ground_texture_prompt", terrain_data.get("texture_prompt", ""))
+	if not ground_prompt.is_empty():
+		body.set_meta("texture_prompt", ground_prompt)
 	if terrain_data.has("tiling"):
 		body.set_meta("tiling", terrain_data.get("tiling"))
 	else:

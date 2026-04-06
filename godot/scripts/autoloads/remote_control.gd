@@ -340,9 +340,17 @@ func _cmd_load_game(args: Dictionary) -> String:
 	if game_id.is_empty():
 		return '{"error":"missing game_id"}'
 	var main_scene := get_tree().current_scene
-	if main_scene:
-		main_scene._scenario_active = true
-	LogicBridge.send_load_game(game_id)
+	if main_scene and main_scene.has_method("_on_title_game_selected"):
+		var scene_path: String = args.get("scene_path", "res://test_rooms/millhaven.json")
+		main_scene._on_title_game_selected(game_id, scene_path)
+		# Remove title screen if it exists
+		var title := main_scene.get_node_or_null("TitleScreen")
+		if title:
+			title.queue_free()
+	else:
+		if main_scene:
+			main_scene._scenario_active = true
+		LogicBridge.send_load_game(game_id)
 	return '{"ok":true,"game_id":"%s"}' % game_id
 
 

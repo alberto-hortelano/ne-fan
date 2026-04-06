@@ -70,7 +70,12 @@ export type BeatAction =
   | SetObjectiveAction
   | GiveWeaponAction
   | ChangeSceneAction
-  | WaitAction;
+  | WaitAction
+  | PlaceNpcAction
+  | NpcApproachAction
+  | PlaceObjectAction
+  | GenerateBuildingAction
+  | PlaceObjectInBuildingAction;
 
 interface BaseAction {
   type: string;
@@ -145,6 +150,63 @@ export interface ChangeSceneAction extends BaseAction {
 export interface WaitAction extends BaseAction {
   type: "wait";
   duration: number;
+}
+
+// ── World Toolkit Actions ──
+
+export interface PlaceNpcAction extends BaseAction {
+  type: "place_npc";
+  npc_id: string;
+  near?: string;
+  animation?: string;
+  minDist?: number;
+  maxDist?: number;
+}
+
+export interface NpcApproachAction extends BaseAction {
+  type: "npc_approach";
+  npc_id: string;
+  target_id: string;
+  stop_distance?: number;
+  speed?: number;
+}
+
+export interface PlaceObjectAction extends BaseAction {
+  type: "place_object";
+  object_id: string;
+  mesh: string;
+  scale: [number, number, number];
+  description: string;
+  category?: string;
+  near?: string;
+  interactive?: boolean;
+  texture_prompt?: string;
+}
+
+export interface GenerateBuildingAction extends BaseAction {
+  type: "generate_building";
+  building_id: string;
+  width: number;
+  depth: number;
+  num_rooms?: number;
+  wall_height?: number;
+  style?: string;
+  description?: string;
+  position?: [number, number, number];
+  near?: string;
+}
+
+export interface PlaceObjectInBuildingAction extends BaseAction {
+  type: "place_object_in_building";
+  object_id: string;
+  building_id: string;
+  room_index?: number;
+  mesh: string;
+  scale: [number, number, number];
+  description: string;
+  category?: string;
+  interactive?: boolean;
+  texture_prompt?: string;
 }
 
 // ── Triggers ──
@@ -241,4 +303,16 @@ export interface ScenarioUpdate {
       personality: EnemyPersonality;
     };
   };
+  spawn_objects?: SpawnObjectData[];
+}
+
+export interface SpawnObjectData {
+  id: string;
+  mesh: string;
+  position: [number, number, number];
+  scale: [number, number, number];
+  category: string;
+  description: string;
+  interactive?: boolean;
+  texture_prompt?: string;
 }

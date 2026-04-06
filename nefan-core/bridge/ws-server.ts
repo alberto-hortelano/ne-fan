@@ -96,25 +96,43 @@ wss.on("connection", (ws: WebSocket) => {
           scenario.setAllEnemiesDead(!anyAlive || store.state.enemies.length === 0);
         }
 
-        // Merge scenario updates into a single ScenarioUpdate
-        let mergedScenario: ScenarioUpdate | undefined;
+        // Send one state_update per scenario update to avoid Object.assign overwriting
+        const playerHpNow = sim.getCombatant("player")?.health ?? 0;
+        const enemyStates = getEnemyStates();
+        const npcStates = scenarioResult?.npcs;
+
         if (scenarioResult && scenarioResult.scenarioUpdates.length > 0) {
-          mergedScenario = {};
-          for (const u of scenarioResult.scenarioUpdates) {
-            Object.assign(mergedScenario, u);
+          // First message includes combat events + first scenario update
+          const firstUpdate = scenarioResult.scenarioUpdates[0];
+          ws.send(JSON.stringify({
+            type: "state_update",
+            events: result.events,
+            playerHp: playerHpNow,
+            enemies: enemyStates,
+            npcs: npcStates,
+            scenario: firstUpdate,
+          } satisfies StateUpdateMessage));
+
+          // Remaining scenario updates sent as separate messages
+          for (let i = 1; i < scenarioResult.scenarioUpdates.length; i++) {
+            ws.send(JSON.stringify({
+              type: "state_update",
+              events: [],
+              playerHp: playerHpNow,
+              enemies: enemyStates,
+              npcs: npcStates,
+              scenario: scenarioResult.scenarioUpdates[i],
+            } satisfies StateUpdateMessage));
           }
+        } else {
+          ws.send(JSON.stringify({
+            type: "state_update",
+            events: result.events,
+            playerHp: playerHpNow,
+            enemies: enemyStates,
+            npcs: npcStates,
+          } satisfies StateUpdateMessage));
         }
-
-        const response: StateUpdateMessage = {
-          type: "state_update",
-          events: result.events,
-          playerHp: sim.getCombatant("player")?.health ?? 0,
-          enemies: getEnemyStates(),
-          npcs: scenarioResult?.npcs,
-          scenario: mergedScenario,
-        };
-
-        ws.send(JSON.stringify(response));
         break;
       }
 
@@ -184,7 +202,7 @@ wss.on("connection", (ws: WebSocket) => {
       case "load_game": {
         // Reset simulation
         sim.reset();
-        scenario.loadGame(GAMES_DIR, msg.gameId).then((sceneData) => {
+        scenario.loadGame(GAMES_DIR, msg.gameId).then(async (sceneData) => {
           if (sceneData) {
             // Set up player
             const playerHp = 100;
@@ -194,15 +212,36 @@ wss.on("connection", (ws: WebSocket) => {
                 { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
             );
 
-            // Send the initial scene data to Godot
-            const response: StateUpdateMessage = {
+            // Send scene data first so Godot rebuilds the room
+            const sceneResponse: StateUpdateMessage = {
               type: "state_update",
               events: [{ type: "player_respawned", hp: playerHp }],
               playerHp,
               enemies: [],
               scenario: { change_scene: sceneData },
             };
-            ws.send(JSON.stringify(response));
+            ws.send(JSON.stringify(sceneResponse));
+
+            // Run an initial tick to execute first beat actions (spawn NPCs, dialogue, etc.)
+            const initialTick = await scenario.tick(0, { x: 0, y: 0, z: 0 });
+
+            // Send beat actions after a short delay so Godot has time to build the scene
+            if (initialTick.scenarioUpdates.length > 0) {
+              setTimeout(() => {
+                for (const u of initialTick.scenarioUpdates) {
+                  const beatResponse: StateUpdateMessage = {
+                    type: "state_update",
+                    events: [],
+                    playerHp,
+                    enemies: [],
+                    npcs: initialTick.npcs,
+                    scenario: u,
+                  };
+                  ws.send(JSON.stringify(beatResponse));
+                }
+              }, 500);
+            }
+
             console.log(`Bridge: game '${msg.gameId}' loaded`);
           }
         }).catch((err) => {
@@ -230,18 +269,16 @@ wss.on("connection", (ws: WebSocket) => {
             break;
         }
         if (updates.length > 0) {
-          const merged: ScenarioUpdate = {};
           for (const u of updates) {
-            Object.assign(merged, u);
+            const response: StateUpdateMessage = {
+              type: "state_update",
+              events: [],
+              playerHp: sim.getCombatant("player")?.health ?? 0,
+              enemies: getEnemyStates(),
+              scenario: u,
+            };
+            ws.send(JSON.stringify(response));
           }
-          const response: StateUpdateMessage = {
-            type: "state_update",
-            events: [],
-            playerHp: sim.getCombatant("player")?.health ?? 0,
-            enemies: getEnemyStates(),
-            scenario: merged,
-          };
-          ws.send(JSON.stringify(response));
         }
         break;
       }

@@ -12,6 +12,7 @@ signal scenario_spawn_npc(data: Dictionary)
 signal scenario_despawn_npc(npc_id: String)
 signal scenario_spawn_enemy(data: Dictionary)
 signal scenario_give_weapon(weapon_id: String)
+signal scenario_spawn_objects(objects: Array)
 
 var _socket := WebSocketPeer.new()
 var _connected := false
@@ -334,6 +335,8 @@ func _apply_state_update(msg: Dictionary) -> void:
 			scenario_spawn_enemy.emit(scenario.get("spawn_enemy", {}))
 		if scenario.has("give_weapon"):
 			scenario_give_weapon.emit(scenario.get("give_weapon", ""))
+		if scenario.has("spawn_objects"):
+			scenario_spawn_objects.emit(scenario.get("spawn_objects", []))
 
 
 func _find_enemy_node(root: Node, enemy_id: String) -> Node:
