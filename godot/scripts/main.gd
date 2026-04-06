@@ -3,7 +3,6 @@ extends Node3D
 const RoomBuilderScript = preload("res://scripts/room/room_builder.gd")
 const TextureLoaderScript = preload("res://scripts/ai_assets/texture_loader.gd")
 const ModelLoaderScript = preload("res://scripts/ai_assets/model_loader.gd")
-const SpriteLoaderScript = preload("res://scripts/ai_assets/sprite_loader.gd")
 const GameHUDScript = preload("res://scripts/ui/game_hud.gd")
 const CombatManagerScript = preload("res://scripts/combat/combat_manager.gd")
 const CombatHUDScript = preload("res://scripts/combat/combat_hud.gd")
@@ -21,7 +20,6 @@ var _camera_controller: Node3D
 var _room_builder = RoomBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
 var _model_loader = ModelLoaderScript.new()
-var _sprite_loader = SpriteLoaderScript.new()
 var _hud: CanvasLayer
 var _combat_manager: Node  # CombatManager
 var _combat_hud  # CombatHUD
@@ -428,7 +426,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	# AI assets (async, progressive)
 	_texture_loader.load_room_textures(_current_room)
 	_model_loader.load_room_models(_current_room)
-	_sprite_loader.load_room_sprites(_current_room)
+
 
 	# Register enemy combatants and set AI target to player
 	_combat_hud.set_target(null)

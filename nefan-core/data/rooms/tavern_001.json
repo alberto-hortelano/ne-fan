@@ -142,7 +142,8 @@
     {
       "id": "barkeeper_01",
       "name": "Greta",
-      "sprite_prompt": "stout female barkeeper, apron, braided hair, friendly face, dark fantasy, pixel art",
+      "character_type": "peasant_female",
+      "animation": "waving",
       "position": [5, 0, -3],
       "rotation": [0, -90, 0],
       "scale": [0.6, 1.7, 0.6],

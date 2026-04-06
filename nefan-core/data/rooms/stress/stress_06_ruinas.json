@@ -204,9 +204,8 @@
     {
       "id": "scavenger",
       "name": "Corvus",
-      "generate_3d": true,
-      "model_prompt": "ragged scavenger with patched cloak, hooded, carrying sack, standing pose, dark fantasy character",
-      "sprite_prompt": "ragged scavenger with crow on shoulder, patched cloak, carrying sack of loot, scarred face, dark fantasy, pixel art",
+      "character_type": "peasant_male",
+      "animation": "look_around",
       "position": [-6.0, 0, -6.0],
       "rotation": [0, 45, 0],
       "scale": [0.5, 1.75, 0.5],

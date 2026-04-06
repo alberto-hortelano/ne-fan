@@ -52,7 +52,8 @@ When you receive a world state with entry_wall, generate this JSON structure:
       "state": "intact", "mood": "neutral", "interactive": false }
   ],
   "npcs": [
-    { "id": "npc_01", "name": "Name", "sprite_prompt": "English prompt for sprite",
+    { "id": "npc_01", "name": "Name", "character_type": "peasant_female|peasant_male|knight|mage|rogue|soldier",
+      "animation": "idle|talking|sitting|drinking|praying|waving|leaning|wounded|lying|arms_crossed",
       "position": [x,0,z], "description": "Spanish", "dialogue_hint": "what they know" }
   ],
   "ambient_event": "atmospheric text in Spanish"

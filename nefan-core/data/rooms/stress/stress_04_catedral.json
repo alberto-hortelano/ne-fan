@@ -202,9 +202,8 @@
     {
       "id": "priestess_mara",
       "name": "Hermana Mara",
-      "generate_3d": true,
-      "model_prompt": "kneeling nun priestess in tattered white robes, praying pose, dark gothic fantasy character",
-      "sprite_prompt": "kneeling nun priestess, tattered white robes, praying hands, blood on forehead, dark gothic fantasy, pixel art",
+      "character_type": "mage",
+      "animation": "praying",
       "position": [-1.0, 0, -6.0],
       "scale": [0.5, 1.6, 0.5],
       "description": "monja arrodillada frente al altar, susurrando oraciones con las manos ensangrentadas",
@@ -213,9 +212,8 @@
     {
       "id": "wounded_knight",
       "name": "Sir Aldric",
-      "generate_3d": true,
-      "model_prompt": "wounded medieval knight in dented plate armor, sitting pose, bandaged arm, dark fantasy character",
-      "sprite_prompt": "wounded knight sitting against pillar, dented plate armor, bandaged arm, tired face, dark fantasy, pixel art",
+      "character_type": "knight",
+      "animation": "wounded",
       "position": [5.5, 0, 5.5],
       "rotation": [0, -135, 0],
       "scale": [0.6, 1.5, 0.6],

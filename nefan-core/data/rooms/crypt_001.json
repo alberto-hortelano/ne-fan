@@ -135,7 +135,8 @@
     {
       "id": "merchant_01",
       "name": "Elric",
-      "sprite_prompt": "hooded merchant, tattered robes, gaunt face, dark fantasy, pixel art",
+      "character_type": "rogue",
+      "animation": "idle",
       "position": [0, 0, 3],
       "rotation": [0, 180, 0],
       "scale": [0.5, 1.8, 0.5],
