@@ -15,6 +15,8 @@ const CombatantScript = preload("res://scripts/combat/combatant.gd")
 const EnemyCombatAIScript = preload("res://scripts/combat/enemy_combat_ai.gd")
 const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
+const NpcAnimatorScript = preload("res://scripts/npc/npc_animator.gd")
+const NpcModelRegistryScript = preload("res://scripts/npc/npc_model_registry.gd")
 
 
 func spawn_objects(objects: Array, room: Node3D) -> void:
@@ -182,15 +184,14 @@ func _create_npc(data: Dictionary) -> StaticBody3D:
 	body.position = Vector3(float(pos_arr[0]), float(pos_arr[1]) + sy / 2.0, float(pos_arr[2]))
 	body.rotation_degrees = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
 
+	# Capsule mesh (hidden, kept for interaction ray collision)
 	var mesh_inst := MeshInstance3D.new()
 	var capsule := CapsuleMesh.new()
 	capsule.radius = maxf(sx, sz) / 2.0
 	capsule.height = sy
 	mesh_inst.mesh = capsule
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = NPC_COLOR
-	mesh_inst.material_override = mat
+	mesh_inst.visible = false
+	mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	body.add_child(mesh_inst)
 
 	var collision := CollisionShape3D.new()
@@ -203,16 +204,19 @@ func _create_npc(data: Dictionary) -> StaticBody3D:
 	# NPC metadata
 	body.set_meta("npc_name", npc_name)
 	body.set_meta("description", data.get("description", "a shadowy figure"))
-	body.set_meta("scale_x", sx)
-	body.set_meta("scale_y", sy)
-	body.set_meta("scale_z", sz)
-	body.set_meta("generate_3d", data.get("generate_3d", false))
-	if data.has("sprite_prompt"):
-		body.set_meta("sprite_prompt", data.get("sprite_prompt"))
-	if data.has("model_prompt"):
-		body.set_meta("model_prompt", data.get("model_prompt"))
 	if data.has("dialogue_hint"):
 		body.set_meta("dialogue_hint", data.get("dialogue_hint"))
+
+	# 3D Mixamo character model
+	var character_type: String = data.get("character_type", "peasant_male")
+	var model_path: String = NpcModelRegistryScript.get_model_path(character_type)
+	if model_path != "":
+		var animator := NpcAnimatorScript.new()
+		animator.name = "NpcAnimator"
+		animator.model_path = model_path
+		animator.default_animation = data.get("animation", "idle")
+		animator.position.y = -sy / 2.0
+		body.add_child(animator)
 
 	return body
 

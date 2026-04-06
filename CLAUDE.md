@@ -1,6 +1,6 @@
 # Never Ending Fantasy — Guia de desarrollo
 
-RPG dark fantasy con motor Godot 4.6+. Salas 3D generadas desde JSON, assets IA (texturas PBR, modelos GLB, sprites NPC), narrativa LLM via MCP bridge. Combate cuerpo a cuerpo real-time.
+RPG dark fantasy con motor Godot 4.6+. Salas 3D generadas desde JSON, assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, narrativa LLM via MCP bridge. Combate cuerpo a cuerpo real-time.
 
 ## Arrancar el juego
 
@@ -155,7 +155,6 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
       session_recorder.gd  Snapshots periodicos para replay (F10)
       session_player.gd    Reproduce grabaciones (F11)
       texture_cache.gd     Texturas PBR, cachea en disco
-      sprite_cache.gd      Sprites NPC, cachea en disco
     room/
       room_builder.gd      JSON -> geometria
       object_spawner.gd    JSON -> objetos + NPCs + debug capsules
@@ -178,7 +177,9 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
     ai_assets/
       texture_loader.gd    Aplica PBR (albedo + normal)
       model_loader.gd      Carga GLB
-      sprite_loader.gd     Billboard sprites
+    npc/
+      npc_animator.gd      Carga modelo Mixamo + animaciones ambient para NPCs
+      npc_model_registry.gd  Diccionario character_type → path FBX
     ui/
       game_hud.gd          Info sala, prompts, panel texto, fade
       dev_menu.gd          Menu desarrollo (F12): lista salas + selector animaciones
@@ -207,8 +208,7 @@ narrative-mcp/            Node.js MCP bridge
 | `/generate_room` | POST | LLM genera sala completa desde world_state |
 | `/generate_texture` | POST | Textura PBR seamless (albedo+normal), ~1s |
 | `/generate_model` | POST | Modelo GLB desde prompt |
-| `/generate_sprite` | POST | Sprite RGBA (NPC portrait) |
-| `/cache/{type}/{hash}` | GET | Servir asset cacheado (albedo/normal/roughness/model/sprite) |
+| `/cache/{type}/{hash}` | GET | Servir asset cacheado (albedo/normal/roughness/model) |
 
 ## Modelos de IA y que hacen
 
@@ -216,8 +216,8 @@ narrative-mcp/            Node.js MCP bridge
 |--------|-----|-------|
 | **Claude Sonnet 4.5** | Genera salas JSON completas (narrativa + geometria + iluminacion) | llm_client.py via MCP bridge o API |
 | **SD 1.5** + LCM-LoRA + TAESD | Texturas PBR seamless tiling (4 pasos, fp16) | texture_generator.py |
-| **SD 1.5** | Imagenes referencia para modelos 3D y sprites NPC | model_generator.py, sprite_generator.py |
-| **rembg** (u2net) | Quitar fondo de sprites y referencias de modelo | model_generator.py, sprite_generator.py |
+| **SD 1.5** | Imagenes referencia para modelos 3D | model_generator.py |
+| **rembg** (u2net) | Quitar fondo de referencias de modelo | model_generator.py |
 
 VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
@@ -272,7 +272,7 @@ El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa
     "category": "item", "description": "...", "interactive": true,
     "combat": { "health": 60, "weapon_id": "short_sword", "personality": { "aggression": 0.7, "preferred_attacks": ["quick"], "reaction_time": 0.6 } }
   }],
-  "npcs": [{ "id": "npc_01", "name": "Elric", "sprite_prompt": "...", "dialogue_hint": "..." }],
+  "npcs": [{ "id": "npc_01", "name": "Elric", "character_type": "rogue", "animation": "idle", "dialogue_hint": "..." }],
   "ambient_event": "..."
 }
 ```
@@ -284,7 +284,7 @@ Meshes: box, sphere, capsule, cylinder, cone, plane, torus. Categorias: item (am
 - GDScript 4.6+ con tipado estricto (Variant inference = error)
 - Variables que acceden propiedades de Node generico: usar tipo explicito (`var x: float = node.health`, NO `:=`)
 - class_name en scripts de combat, pero usar preload() en vez de class_name para referencias cruzadas
-- Autoloads: GameStore, GameState, AIClient, TextureCache, SpriteCache, RemoteControl, LogicBridge, SessionRecorder, SessionPlayer
+- Autoloads: GameStore, GameState, AIClient, TextureCache, RemoteControl, LogicBridge, SessionRecorder, SessionPlayer
 - Scripts nuevos que referencian otros: `const FooRef = preload("res://scripts/path/foo.gd")`
 - Descripciones de objetos y NPC en espanol
 - Unidades en metros

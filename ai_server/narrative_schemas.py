@@ -184,9 +184,11 @@ OBJECTS (max 10):
 - description: vivid, in Spanish. texture_prompt/model_prompt: English, for AI generation.
 
 NPCs (max 3):
-- sprite_prompt: English, for sprite generation. Include art style and visual details.
+- character_type: one of peasant_female, peasant_male, knight, mage, rogue, soldier.
+- animation: ambient animation to play. One of: idle, look_around, breathing, sitting, sitting_talk, talking, drinking, praying, waving, leaning, wounded, lying, arms_crossed, salute.
 - scale: body dimensions in meters. Human: [0.5, 1.8, 0.5].
 - dialogue_hint: NPC knowledge/role (not shown to player).
+- Do NOT use sprite_prompt or model_prompt for NPCs. All NPCs are Mixamo 3D models.
 
 NARRATIVE:
 - room_description and ambient_event in Spanish.
@@ -326,14 +328,25 @@ GENERATE_ROOM_TOOL = {
                     "properties": {
                         "id": {"type": "string"},
                         "name": {"type": "string"},
-                        "sprite_prompt": {"type": "string"},
+                        "character_type": {
+                            "type": "string",
+                            "enum": ["peasant_female", "peasant_male", "knight", "mage", "rogue", "soldier"],
+                            "description": "Mixamo 3D character model type",
+                        },
+                        "animation": {
+                            "type": "string",
+                            "enum": ["idle", "look_around", "breathing", "sitting", "sitting_talk",
+                                     "talking", "drinking", "praying", "waving", "leaning",
+                                     "wounded", "lying", "arms_crossed", "salute"],
+                            "description": "Ambient animation to play (default: idle)",
+                        },
                         "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                         "rotation": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                         "scale": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                         "description": {"type": "string"},
                         "dialogue_hint": {"type": "string"},
                     },
-                    "required": ["id", "name", "position", "description"],
+                    "required": ["id", "name", "character_type", "position", "description"],
                 },
                 "maxItems": 3,
             },
@@ -444,6 +457,10 @@ def validate_extended_room_response(data: dict) -> dict:
     data["objects"] = objects
 
     # NPCs
+    valid_character_types = {"peasant_female", "peasant_male", "knight", "mage", "rogue", "soldier"}
+    valid_animations = {"idle", "look_around", "breathing", "sitting", "sitting_talk",
+                        "talking", "drinking", "praying", "waving", "leaning",
+                        "wounded", "lying", "arms_crossed", "salute"}
     npcs = data.get("npcs", [])[:3]
     for npc in npcs:
         npc.setdefault("id", f"npc_{_uuid.uuid4().hex[:6]}")
@@ -452,8 +469,17 @@ def validate_extended_room_response(data: dict) -> dict:
         npc.setdefault("position", [0, 0, 0])
         npc.setdefault("rotation", [0, 0, 0])
         npc.setdefault("description", "una figura sombria")
-        npc.setdefault("sprite_prompt", "shadowy hooded figure, dark fantasy, pixel art")
         npc.setdefault("dialogue_hint", "")
+        npc.setdefault("character_type", "peasant_male")
+        npc.setdefault("animation", "idle")
+        if npc["character_type"] not in valid_character_types:
+            npc["character_type"] = "peasant_male"
+        if npc["animation"] not in valid_animations:
+            npc["animation"] = "idle"
+        # Remove legacy fields
+        npc.pop("sprite_prompt", None)
+        npc.pop("model_prompt", None)
+        npc.pop("generate_3d", None)
     data["npcs"] = npcs
 
     return data

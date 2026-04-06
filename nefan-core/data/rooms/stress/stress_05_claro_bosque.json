@@ -162,9 +162,8 @@
     {
       "id": "ranger_eira",
       "name": "Eira",
-      "generate_3d": true,
-      "model_prompt": "female elf ranger, green cloak, longbow on back, pointed ears, sitting pose, dark fantasy character",
-      "sprite_prompt": "female elf ranger sitting by campfire, green cloak, longbow on back, sharp features, pointed ears, dark fantasy forest, pixel art",
+      "character_type": "rogue",
+      "animation": "sitting",
       "position": [-1.5, 0, 1.0],
       "rotation": [0, 45, 0],
       "scale": [0.5, 1.7, 0.5],

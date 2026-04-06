@@ -160,9 +160,8 @@
     {
       "id": "barkeeper_greta",
       "name": "Greta",
-      "generate_3d": true,
-      "model_prompt": "stout female medieval barkeeper, leather apron, braided hair, standing pose, dark fantasy",
-      "sprite_prompt": "stout female barkeeper, leather apron, braided brown hair, warm smile, holding a tankard, dark fantasy tavern, detailed pixel art",
+      "character_type": "peasant_female",
+      "animation": "waving",
       "position": [5.5, 0, -3.5],
       "rotation": [0, -90, 0],
       "scale": [0.6, 1.7, 0.6],

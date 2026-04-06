@@ -112,9 +112,8 @@
     {
       "id": "ghost_priest",
       "name": "Padre Aemond",
-      "generate_3d": true,
-      "model_prompt": "ghostly translucent priest figure, tattered robes, hooded, standing pose, dark fantasy character",
-      "sprite_prompt": "ghostly translucent priest, tattered robes, hollow eyes, dark fantasy, spectral glow, pixel art",
+      "character_type": "mage",
+      "animation": "praying",
       "position": [2.0, 0, 1.5],
       "rotation": [0, -90, 0],
       "scale": [0.5, 1.8, 0.5],
