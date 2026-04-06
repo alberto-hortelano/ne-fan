@@ -1,0 +1,130 @@
+{
+  "game_id": "tavern_intro",
+  "title": "The Calling",
+  "setting": {
+    "region": "Kingdom of Ashfeld, border town of Millhaven",
+    "time_of_day": "evening",
+    "atmosphere": "cozy tavern giving way to danger",
+    "style_token": "dark fantasy, medieval"
+  },
+  "player": {
+    "role": "servant",
+    "weapon_id": "unarmed",
+    "hp": 80
+  },
+  "initial_scene": "millhaven",
+  "npcs": {
+    "tavern_keeper": {
+      "name": "Marta",
+      "character_type": "peasant_female"
+    },
+    "knight_aldric": {
+      "name": "Sir Aldric",
+      "character_type": "knight"
+    },
+    "old_fenris": {
+      "name": "Fenris",
+      "character_type": "mage"
+    }
+  },
+  "scenes": {
+    "millhaven": {
+      "file": "scenes/millhaven.json",
+      "generate": true,
+      "description": "El borde del pueblo de Millhaven al atardecer. La taberna La Rueda Rota se alza junto al camino de tierra. Interior de la taberna con mesas, barra, chimenea, barriles. Exterior con camino, carros, postes con faroles, valla de madera, rocas y vegetacion. La puerta de la taberna mira al sur."
+    }
+  },
+  "beats": [
+    {
+      "beat_id": "intro",
+      "actions": [
+        { "type": "spawn_npc", "npc_id": "tavern_keeper", "position": [5.5, 0, 1], "animation": "waving" },
+        { "type": "dialogue", "speaker": "Marta", "text": "Deja de holgazanear y limpia esas mesas, muchacho." },
+        { "type": "set_objective", "text": "Espera en la taberna" }
+      ],
+      "next": "strangers_arrive",
+      "next_trigger": { "type": "timer", "delay": 10.0 }
+    },
+    {
+      "beat_id": "strangers_arrive",
+      "actions": [
+        { "type": "spawn_npc", "npc_id": "knight_aldric", "position": [2, 0, 7], "animation": "idle" },
+        { "type": "spawn_npc", "npc_id": "old_fenris", "position": [1, 0, 7], "animation": "idle" },
+        { "type": "npc_move", "npc_id": "knight_aldric", "target": [0, 0, 2], "speed": 1.5 },
+        { "type": "npc_move", "npc_id": "old_fenris", "target": [0, 0, 3], "speed": 1.2 },
+        { "type": "wait", "duration": 4.0 },
+        { "type": "npc_animation", "npc_id": "knight_aldric", "animation": "talking" },
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "Tabernera. Necesitamos provisiones... y al muchacho." },
+        { "type": "dialogue", "speaker": "Marta", "text": "El muchacho no esta en venta, caballero." },
+        { "type": "npc_animation", "npc_id": "old_fenris", "animation": "talking" },
+        { "type": "dialogue", "speaker": "Fenris", "text": "No en venta. Pero el destino lo reclama. Llevamos buscandolo mucho tiempo." }
+      ],
+      "next": "player_choice",
+      "next_trigger": { "type": "dialogue_complete" }
+    },
+    {
+      "beat_id": "player_choice",
+      "actions": [
+        {
+          "type": "dialogue_choice",
+          "speaker": "Fenris",
+          "text": "Ven con nosotros, muchacho. Tu vida esta a punto de cambiar.",
+          "choices": ["Ir con ellos", "Negarse"],
+          "choice_beats": ["leave_tavern", "persuasion"]
+        }
+      ]
+    },
+    {
+      "beat_id": "persuasion",
+      "actions": [
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "No tienes eleccion. El peligro viene, estes preparado o no." },
+        { "type": "dialogue", "speaker": "Marta", "text": "Ve con ellos, muchacho. Aqui no puedo protegerte de lo que viene." }
+      ],
+      "next": "leave_tavern",
+      "next_trigger": { "type": "dialogue_complete" }
+    },
+    {
+      "beat_id": "leave_tavern",
+      "actions": [
+        { "type": "npc_animation", "npc_id": "knight_aldric", "animation": "idle" },
+        { "type": "npc_move", "npc_id": "knight_aldric", "target": [2, 0, 10], "speed": 1.5 },
+        { "type": "npc_move", "npc_id": "old_fenris", "target": [1, 0, 10], "speed": 1.2 },
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "Siguenos. Rapido." },
+        { "type": "set_objective", "text": "Sigue al caballero fuera de la taberna" }
+      ],
+      "next": "ambush",
+      "next_trigger": { "type": "player_near", "target_id": "knight_aldric", "distance": 4.0 }
+    },
+    {
+      "beat_id": "ambush",
+      "actions": [
+        { "type": "npc_animation", "npc_id": "knight_aldric", "animation": "idle" },
+        { "type": "npc_animation", "npc_id": "old_fenris", "animation": "idle" },
+        { "type": "dialogue", "speaker": "Fenris", "text": "Algo no va bien... Nos han seguido." },
+        { "type": "spawn_enemy", "enemy_id": "bandit_1", "character_type": "warrok", "position": [10, 0, 18],
+          "combat": { "health": 60, "weapon_id": "short_sword", "personality": { "aggression": 0.7, "preferred_attacks": ["quick", "medium"], "reaction_time": 0.5 } }
+        },
+        { "type": "spawn_enemy", "enemy_id": "bandit_2", "character_type": "mutant", "position": [-6, 0, 18],
+          "combat": { "health": 60, "weapon_id": "unarmed", "personality": { "aggression": 0.6, "preferred_attacks": ["heavy"], "reaction_time": 0.6 } }
+        },
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "Emboscada! Muchacho, toma esto." },
+        { "type": "give_weapon", "weapon_id": "short_sword" },
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "Pulsa 1-5 para elegir tipo de ataque. Click izquierdo para golpear." },
+        { "type": "set_objective", "text": "Derrota a los bandidos" }
+      ],
+      "next": "aftermath",
+      "next_trigger": { "type": "enemies_defeated" }
+    },
+    {
+      "beat_id": "aftermath",
+      "actions": [
+        { "type": "npc_animation", "npc_id": "knight_aldric", "animation": "arms_crossed" },
+        { "type": "dialogue", "speaker": "Sir Aldric", "text": "Nada mal para un sirviente de taberna." },
+        { "type": "npc_animation", "npc_id": "old_fenris", "animation": "talking" },
+        { "type": "dialogue", "speaker": "Fenris", "text": "Tiene el don. Como predijeron los antiguos textos." },
+        { "type": "dialogue", "speaker": "Fenris", "text": "Hay mucho que aprender, muchacho. El camino sera largo y peligroso." },
+        { "type": "set_objective", "text": "Continuara..." }
+      ]
+    }
+  ]
+}

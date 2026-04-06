@@ -12,6 +12,7 @@ var default_animation: String = "idle"
 
 const ANIM_MAP := {
 	"idle": "idle_neutral",
+	"walk": "walking",
 	"look_around": "idle_look_around",
 	"breathing": "idle_breathing",
 	"sitting": "sitting_idle",

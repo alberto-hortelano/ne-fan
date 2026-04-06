@@ -1,0 +1,46 @@
+{
+  "room_id": "tavern_intro_exterior",
+  "room_description": "El camino de tierra frente a la taberna. La noche cae sobre Millhaven.",
+  "zone_type": "outdoor",
+  "dimensions": { "width": 40.0, "height": 20.0, "depth": 40.0 },
+  "terrain": {
+    "type": "static",
+    "texture_prompt": "dirt road with grass patches, medieval village, seamless"
+  },
+  "sky": {
+    "time_of_day": "dusk",
+    "custom_sky_color": [0.15, 0.08, 0.2],
+    "custom_horizon_color": [0.4, 0.15, 0.1]
+  },
+  "fog": {
+    "enabled": true,
+    "density": 0.01,
+    "color": [0.1, 0.08, 0.12]
+  },
+  "lighting": {
+    "ambient": { "color": [0.1, 0.08, 0.12], "intensity": 0.3 },
+    "lights": [
+      { "type": "point", "position": [-2, 3.0, 8], "color": [1.0, 0.7, 0.3], "intensity": 2.0, "range": 6.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "tavern_building", "mesh": "box",
+      "position": [0, 0, 12], "scale": [8, 4, 6],
+      "description": "fachada de la taberna La Rueda Rota", "category": "building"
+    },
+    {
+      "id": "cart_01", "mesh": "box",
+      "position": [-6, 0, 5], "scale": [2, 1, 1.2],
+      "description": "carro de mercader abandonado", "category": "prop"
+    },
+    {
+      "id": "barrel_02", "mesh": "cylinder",
+      "position": [4, 0, 8], "scale": [0.4, 0.7, 0.4],
+      "description": "barril junto a la puerta", "category": "prop"
+    }
+  ],
+  "npcs": [],
+  "exits": [],
+  "ambient_event": "El viento nocturno trae el olor a humo de chimeneas lejanas."
+}

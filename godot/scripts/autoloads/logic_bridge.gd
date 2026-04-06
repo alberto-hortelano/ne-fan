@@ -1,9 +1,17 @@
 ## WebSocket client to nefan-core logic bridge (localhost:9877).
-## Sends player inputs each physics frame, receives combat state updates.
+## Sends player inputs each physics frame, receives combat state + scenario updates.
 ## Falls back to local combat when bridge is not available.
 extends Node
 
 const BRIDGE_URL := "ws://127.0.0.1:9877"
+
+signal scenario_dialogue(speaker: String, text: String, choices: Array)
+signal scenario_objective(text: String)
+signal scenario_change_scene(scene_data: Dictionary)
+signal scenario_spawn_npc(data: Dictionary)
+signal scenario_despawn_npc(npc_id: String)
+signal scenario_spawn_enemy(data: Dictionary)
+signal scenario_give_weapon(weapon_id: String)
 
 var _socket := WebSocketPeer.new()
 var _connected := false
@@ -117,6 +125,23 @@ func send_respawn() -> void:
 	if not _connected:
 		return
 	_socket.send_text(JSON.stringify({"type": "respawn"}))
+
+
+func send_load_game(game_id: String) -> void:
+	var msg := {"type": "load_game", "gameId": game_id}
+	if not _connected:
+		_pending_room = msg
+		print("LogicBridge: queued load_game '%s' for when bridge connects" % game_id)
+		return
+	_socket.send_text(JSON.stringify(msg))
+	print("LogicBridge: sent load_game '%s'" % game_id)
+
+
+func send_scenario_event(event: String, data: Dictionary = {}) -> void:
+	if not _connected:
+		return
+	var msg := {"type": "scenario_event", "event": event, "data": data}
+	_socket.send_text(JSON.stringify(msg))
 
 
 func is_connected_to_bridge() -> bool:
@@ -253,6 +278,62 @@ func _apply_state_update(msg: Dictionary) -> void:
 				var panim = _player.get_node_or_null("CombatAnimator") if _player else null
 				if panim:
 					panim.play("idle")
+
+
+	# Update NPC positions/animations from scenario
+	var npcs: Array = msg.get("npcs", [])
+	for npc_data: Dictionary in npcs:
+		var npc_id: String = npc_data.get("id", "")
+		var npc_node: Node = _find_enemy_node(room, npc_id)
+		if not npc_node:
+			continue
+		# Position
+		var npc_pos: Dictionary = npc_data.get("pos", {})
+		if not npc_pos.is_empty() and npc_node is Node3D:
+			npc_node.position.x = npc_pos.get("x", npc_node.position.x)
+			npc_node.position.z = npc_pos.get("z", npc_node.position.z)
+		# Animation
+		var npc_anim: String = npc_data.get("animation", "")
+		if npc_anim != "":
+			var animator: Node = npc_node.get_node_or_null("NpcAnimator")
+			if animator and animator.has_method("play"):
+				animator.play(npc_anim)
+		# Facing
+		var npc_facing: Dictionary = npc_data.get("facing", {})
+		if not npc_facing.is_empty():
+			var animator: Node = npc_node.get_node_or_null("NpcAnimator")
+			if animator:
+				var fx: float = npc_facing.get("x", 0.0)
+				var fz: float = npc_facing.get("z", -1.0)
+				if absf(fx) > 0.01 or absf(fz) > 0.01:
+					animator.rotation.y = atan2(fx, fz)
+		# Visibility
+		if npc_data.has("visible"):
+			var vis: bool = npc_data.get("visible", true)
+			if npc_node is Node3D:
+				npc_node.visible = vis
+
+	# Process scenario updates
+	var scenario: Dictionary = msg.get("scenario", {})
+	if not scenario.is_empty():
+		if scenario.has("dialogue"):
+			var dlg: Dictionary = scenario.get("dialogue", {})
+			var speaker: String = dlg.get("speaker", "")
+			var text: String = dlg.get("text", "")
+			var choices: Array = dlg.get("choices", [])
+			scenario_dialogue.emit(speaker, text, choices)
+		if scenario.has("objective"):
+			scenario_objective.emit(scenario.get("objective", ""))
+		if scenario.has("change_scene"):
+			scenario_change_scene.emit(scenario.get("change_scene", {}))
+		if scenario.has("spawn_npc"):
+			scenario_spawn_npc.emit(scenario.get("spawn_npc", {}))
+		if scenario.has("despawn_npc"):
+			scenario_despawn_npc.emit(scenario.get("despawn_npc", ""))
+		if scenario.has("spawn_enemy"):
+			scenario_spawn_enemy.emit(scenario.get("spawn_enemy", {}))
+		if scenario.has("give_weapon"):
+			scenario_give_weapon.emit(scenario.get("give_weapon", ""))
 
 
 func _find_enemy_node(root: Node, enemy_id: String) -> Node:

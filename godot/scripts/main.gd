@@ -12,10 +12,13 @@ const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
 const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
 const CameraControllerScript = preload("res://scripts/player/camera_controller.gd")
+const DialogueUIScript = preload("res://scripts/ui/dialogue_ui.gd")
+const ObjectSpawnerScript = preload("res://scripts/room/object_spawner.gd")
 
 var _room_files: Array[String] = []
 var _dev_menu: CanvasLayer
 var _camera_controller: Node3D
+var _dialogue_ui: Node  # DialogueUI
 
 var _room_builder = RoomBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
@@ -26,6 +29,7 @@ var _combat_hud  # CombatHUD
 var _player_combatant: Node  # Combatant
 var _current_room: Node3D = null
 var _transitioning := false
+var _scenario_active := false
 
 @onready var _player: CharacterBody3D = $Player
 
@@ -122,11 +126,29 @@ func _ready() -> void:
 	_dev_menu.call_deferred("set_rooms", _room_files)
 	_dev_menu.call_deferred("set_animations", CombatAnimatorScript.ANIM_MAP.keys())
 
+	# Dialogue UI
+	_dialogue_ui = DialogueUIScript.new()
+	_dialogue_ui.name = "DialogueUI"
+	add_child(_dialogue_ui)
+	_dialogue_ui.dialogue_advanced.connect(_on_dialogue_advanced)
+	_dialogue_ui.dialogue_choice_made.connect(_on_dialogue_choice_made)
+
+	# Scenario signals from LogicBridge
+	LogicBridge.scenario_dialogue.connect(_on_scenario_dialogue)
+	LogicBridge.scenario_objective.connect(_on_scenario_objective)
+	LogicBridge.scenario_change_scene.connect(_on_scenario_change_scene)
+	LogicBridge.scenario_spawn_npc.connect(_on_scenario_spawn_npc)
+	LogicBridge.scenario_despawn_npc.connect(_on_scenario_despawn_npc)
+	LogicBridge.scenario_spawn_enemy.connect(_on_scenario_spawn_enemy)
+	LogicBridge.scenario_give_weapon.connect(_on_scenario_give_weapon)
+
 	# Make player collision capsule semi-visible for dev
 	_make_player_capsule_visible()
 
-	# Load initial room
-	load_room_by_path("res://test_rooms/dev/combat_arena.json")
+	# Default scenario: load scene immediately so player has ground, then bridge takes over
+	_scenario_active = true
+	load_room_by_path("res://test_rooms/millhaven.json")
+	LogicBridge.send_load_game("tavern_intro")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -135,6 +157,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1: _load_room_from_file(0)
 			KEY_F2: _load_room_from_file(1)
 			KEY_F3: _load_room_from_file(2)
+			KEY_F4:
+				_scenario_active = true
+				LogicBridge.send_load_game("tavern_intro")
+				_hud.show_brief_message("Cargando escenario...")
 			KEY_F12: _dev_menu.toggle()
 			KEY_R:
 				if _player_combatant.health <= 0.0:
@@ -349,6 +375,13 @@ func _on_exit_entered(body: Node3D, area: Area3D) -> void:
 	var exit_wall: String = area.get_meta("wall", "north")
 	var target_hint: String = area.get_meta("target_hint", "")
 
+	# Notify scenario runner of exit (may trigger beat advancement)
+	LogicBridge.send_scenario_event("exit_entered", {"exitWall": exit_wall})
+
+	# If a scenario game is active, let the ScenarioRunner handle scene transitions
+	if _scenario_active:
+		return
+
 	# Check cache
 	var cache_key := "%s_%s" % [GameState.current_room_id, exit_wall]
 	if GameState.visited_rooms.has(cache_key):
@@ -454,6 +487,11 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 		player_sync.reset()
 
 	# Position player and re-enable physics
+	# Wait a frame for collision shapes to register before enabling physics
+	_player.position = player_pos
+	_player.velocity = Vector3.ZERO
+	await get_tree().physics_frame
+	await get_tree().physics_frame
 	_player.position = player_pos
 	_player.velocity = Vector3.ZERO
 	_player.set_physics_process(true)
@@ -506,3 +544,101 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	# Fade in
 	if fade:
 		await _hud.fade_in(0.4)
+
+
+# --- Scenario handlers ---
+
+
+func _on_scenario_dialogue(speaker: String, text: String, choices: Array) -> void:
+	_dialogue_ui.show_dialogue(speaker, text, choices)
+
+
+func _on_scenario_objective(text: String) -> void:
+	_dialogue_ui.show_objective(text)
+
+
+func _on_scenario_change_scene(scene_data: Dictionary) -> void:
+	_scenario_active = true
+	_apply_room(scene_data, Vector3(0, 1, 0), true)
+
+
+func _on_scenario_spawn_npc(data: Dictionary) -> void:
+	if not _current_room:
+		return
+	var spawner = ObjectSpawnerScript.new()
+	var npc_data := {
+		"id": data.get("id", "npc"),
+		"name": data.get("name", "Stranger"),
+		"character_type": data.get("character_type", "peasant_male"),
+		"animation": data.get("animation", "idle"),
+		"position": data.get("position", [0, 0, 0]),
+		"scale": [0.5, 1.8, 0.5],
+		"description": data.get("name", ""),
+	}
+	spawner.spawn_npcs([npc_data], _current_room)
+	print("Scenario: spawned NPC '%s' (%s)" % [data.get("name", ""), data.get("character_type", "")])
+
+
+func _on_scenario_despawn_npc(npc_id: String) -> void:
+	if not _current_room:
+		return
+	var node := _current_room.get_node_or_null(npc_id)
+	if node:
+		node.queue_free()
+		print("Scenario: despawned NPC '%s'" % npc_id)
+
+
+func _on_scenario_spawn_enemy(data: Dictionary) -> void:
+	if not _current_room:
+		return
+	var spawner = ObjectSpawnerScript.new()
+	var combat_data: Dictionary = data.get("combat", {})
+	var pos: Array = data.get("position", [0, 0, 0])
+	var obj_data := {
+		"id": data.get("id", "enemy"),
+		"mesh": "capsule",
+		"position": pos,
+		"rotation": [0, 0, 0],
+		"scale": [0.6, 1.8, 0.6],
+		"category": "creature",
+		"description": "enemy",
+		"character_model": "",
+		"combat": {
+			"health": combat_data.get("health", 80),
+			"weapon_id": combat_data.get("weapon_id", "unarmed"),
+			"personality": combat_data.get("personality", {}),
+		},
+	}
+	# Map character_type to model path
+	var char_type: String = data.get("character_type", "")
+	if char_type == "mutant":
+		obj_data["character_model"] = "res://assets/characters/mixamo/mutant/character.fbx"
+	elif char_type == "warrok":
+		obj_data["character_model"] = "res://assets/characters/mixamo/warrok/character.fbx"
+	elif char_type == "skeletonzombie":
+		obj_data["character_model"] = "res://assets/characters/mixamo/skeletonzombie/character.fbx"
+	spawner.spawn_objects([obj_data], _current_room)
+
+	# Register with combat manager
+	for child in _current_room.get_children():
+		if child.name == data.get("id", ""):
+			var c = child.get_node_or_null("Combatant")
+			if c:
+				_combat_manager.register_combatant(c)
+	print("Scenario: spawned enemy '%s'" % data.get("id", ""))
+
+
+func _on_scenario_give_weapon(weapon_id: String) -> void:
+	if _player_combatant:
+		_player_combatant.weapon_id = weapon_id
+		GameStore.dispatch("weapon_changed", {"weapon_id": weapon_id})
+		_hud.show_brief_message("Obtienes: %s" % weapon_id)
+		print("Scenario: gave weapon '%s'" % weapon_id)
+
+
+func _on_dialogue_advanced() -> void:
+	LogicBridge.send_scenario_event("dialogue_advanced")
+
+
+func _on_dialogue_choice_made(choice_index: int) -> void:
+	LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": choice_index})

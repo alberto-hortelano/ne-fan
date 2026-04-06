@@ -1,0 +1,74 @@
+{
+  "room_id": "tavern_intro_interior",
+  "room_description": "La taberna La Rueda Rota, en el borde del pueblo de Millhaven. Huele a cerveza rancia y estofado.",
+  "dimensions": { "width": 14.0, "height": 3.5, "depth": 10.0 },
+  "surfaces": {
+    "floor": {
+      "texture_prompt": "worn wooden plank floor, dark stained, tavern, seamless tiling",
+      "tiling": [3, 2]
+    },
+    "ceiling": {
+      "texture_prompt": "low wooden beam ceiling, dark smoke stained, medieval tavern",
+      "tiling": [3, 2]
+    },
+    "walls": [
+      { "side": "north", "texture_prompt": "rough plastered wall with mounted deer antlers, tavern", "tiling": [3, 1] },
+      { "side": "east",  "texture_prompt": "stone wall with wooden shelves, bottles and mugs", "tiling": [3, 1] },
+      { "side": "south", "texture_prompt": "wooden wall with iron-studded door frame", "tiling": [3, 1] },
+      { "side": "west",  "texture_prompt": "rough stone wall with faded wanted posters", "tiling": [3, 1] }
+    ]
+  },
+  "exits": [
+    {
+      "wall": "south",
+      "offset": 0.0,
+      "size": [2.5, 2.8],
+      "description": "puerta de roble macizo hacia la calle",
+      "target_hint": "exterior del pueblo"
+    }
+  ],
+  "lighting": {
+    "ambient": { "color": [0.08, 0.05, 0.03], "intensity": 0.4 },
+    "lights": [
+      { "type": "point", "position": [-3, 3.0, 0], "color": [1.0, 0.8, 0.4], "intensity": 2.5, "range": 7.0 },
+      { "type": "point", "position": [3, 3.0, 0], "color": [1.0, 0.75, 0.35], "intensity": 2.0, "range": 6.0 },
+      { "type": "point", "position": [0, 2.0, -4], "color": [1.0, 0.5, 0.1], "intensity": 3.0, "range": 4.0 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "table_01", "mesh": "box",
+      "texture_prompt": "rough hewn wooden tavern table, dark stained",
+      "position": [-3, 0, 0], "rotation": [0, 0, 0], "scale": [1.5, 0.75, 0.8],
+      "description": "mesa de madera tosca", "category": "prop"
+    },
+    {
+      "id": "table_02", "mesh": "box",
+      "texture_prompt": "wooden tavern table with spilled drink stains",
+      "position": [3, 0, 1], "rotation": [0, 15, 0], "scale": [1.2, 0.75, 0.7],
+      "description": "mesa con manchas de bebida", "category": "prop"
+    },
+    {
+      "id": "bench_01", "mesh": "box",
+      "position": [-3, 0, 1], "scale": [1.4, 0.45, 0.3],
+      "description": "banco de madera", "category": "prop"
+    },
+    {
+      "id": "barrel_01", "mesh": "cylinder",
+      "position": [5.5, 0, -3.5], "scale": [0.5, 0.8, 0.5],
+      "description": "barril de cerveza", "category": "prop"
+    },
+    {
+      "id": "fireplace_01", "mesh": "box",
+      "position": [0, 0, -4.5], "scale": [1.5, 1.2, 0.6],
+      "description": "chimenea de piedra", "category": "building"
+    },
+    {
+      "id": "counter_01", "mesh": "box",
+      "position": [5, 0, -1], "scale": [1.0, 1.0, 3.0],
+      "description": "mostrador de la barra", "category": "prop"
+    }
+  ],
+  "npcs": [],
+  "ambient_event": "El crepitar del fuego se mezcla con el murmullo de conversaciones lejanas."
+}
