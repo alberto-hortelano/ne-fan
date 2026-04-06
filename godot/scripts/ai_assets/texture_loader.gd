@@ -37,18 +37,28 @@ func _scan_node(node: Node) -> void:
 				mat.alpha_scissor_threshold = 0.5
 				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 			_register_material(prompt, mesh_inst, mesh_inst.material_override, tiling)
-	elif node is MultiMeshInstance3D and node.has_meta("texture_prompt"):
+	elif node is MultiMeshInstance3D and (node.has_meta("sprite_prompt") or node.has_meta("texture_prompt")):
 		# Vegetation: MultiMesh instances (grass, bushes) with material_override
-		var prompt: String = node.get_meta("texture_prompt")
-		var tiling: Array = node.get_meta("tiling", [1, 1])
-		if node.material_override:
-			_register_material(prompt, node, node.material_override, tiling)
-	elif node is MeshInstance3D and node.has_meta("texture_prompt"):
+		if node.has_meta("sprite_prompt"):
+			var prompt: String = node.get_meta("sprite_prompt")
+			if node.material_override:
+				_register_sprite(prompt, node, node.material_override)
+		else:
+			var prompt: String = node.get_meta("texture_prompt")
+			var tiling: Array = node.get_meta("tiling", [1, 1])
+			if node.material_override:
+				_register_material(prompt, node, node.material_override, tiling)
+	elif node is MeshInstance3D and (node.has_meta("sprite_prompt") or node.has_meta("texture_prompt")):
 		# Direct MeshInstance3D (tree canopy planes, etc.)
-		var prompt: String = node.get_meta("texture_prompt")
-		var tiling: Array = node.get_meta("tiling", [1, 1])
-		if node.material_override:
-			_register_material(prompt, node, node.material_override, tiling)
+		if node.has_meta("sprite_prompt"):
+			var prompt: String = node.get_meta("sprite_prompt")
+			if node.material_override:
+				_register_sprite(prompt, node, node.material_override)
+		else:
+			var prompt: String = node.get_meta("texture_prompt")
+			var tiling: Array = node.get_meta("tiling", [1, 1])
+			if node.material_override:
+				_register_material(prompt, node, node.material_override, tiling)
 
 	for child in node.get_children():
 		_scan_node(child)
@@ -61,7 +71,7 @@ func _find_mesh_instance(parent: Node) -> MeshInstance3D:
 	return null
 
 
-func _register_material(prompt: String, mesh_inst: MeshInstance3D,
+func _register_material(prompt: String, mesh_inst: Node,
 						material: StandardMaterial3D, tiling: Array) -> void:
 	var key := TextureCache.hash_prompt(prompt)
 
@@ -78,6 +88,23 @@ func _register_material(prompt: String, mesh_inst: MeshInstance3D,
 	TextureCache.request_texture_set(prompt)
 
 
+func _register_sprite(prompt: String, mesh_inst: Node,
+						material: StandardMaterial3D) -> void:
+	var key := TextureCache.hash_prompt(prompt)
+
+	if not _pending_materials.has(key):
+		_pending_materials[key] = []
+
+	_pending_materials[key].append({
+		"mesh_instance": mesh_inst,
+		"material": material,
+		"tiling": [1, 1],
+	})
+
+	# Request sprite generation (RGBA with transparency)
+	TextureCache.request_sprite(prompt)
+
+
 func _on_texture_ready(hash_key: String, map_type: String, texture: ImageTexture) -> void:
 	if not _pending_materials.has(hash_key):
 		return
@@ -85,7 +112,7 @@ func _on_texture_ready(hash_key: String, map_type: String, texture: ImageTexture
 	for entry in _pending_materials[hash_key]:
 		var mat: StandardMaterial3D = entry["material"]
 		var tiling: Array = entry["tiling"]
-		var mesh_inst: MeshInstance3D = entry["mesh_instance"]
+		var mesh_inst: Node = entry["mesh_instance"]
 
 		if not is_instance_valid(mesh_inst):
 			continue
@@ -101,3 +128,10 @@ func _on_texture_ready(hash_key: String, map_type: String, texture: ImageTexture
 				mat.normal_texture = texture
 				if tiling.size() >= 2:
 					mat.uv1_scale = Vector3(float(tiling[0]), float(tiling[1]), 1)
+			"sprite":
+				mat.albedo_color = Color.WHITE
+				mat.albedo_texture = texture
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.4
+				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+				mat.uv1_scale = Vector3(1, 1, 1)

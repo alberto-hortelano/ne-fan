@@ -43,6 +43,60 @@ func request_texture_set(prompt: String) -> void:
 	_request_generation(prompt, key)
 
 
+func request_sprite(prompt: String) -> void:
+	"""Request a sprite (RGBA PNG with transparent background). Emits texture_ready with map_type 'sprite'."""
+	var key := hash_prompt(prompt)
+
+	if _pending.has(key):
+		return
+	_pending[key] = true
+
+	# Check local disk cache
+	if _load_from_disk(key, "sprite"):
+		_pending.erase(key)
+		return
+
+	# Request from server
+	_request_sprite_generation(prompt, key)
+
+
+func _request_sprite_generation(prompt: String, key: String) -> void:
+	var http := _get_http()
+	var json_str := JSON.stringify({"prompt": prompt, "width": 512, "height": 512})
+	var headers := PackedStringArray(["Content-Type: application/json"])
+
+	if http.request_completed.is_connected(_on_sprite_response):
+		http.request_completed.disconnect(_on_sprite_response)
+
+	http.request_completed.connect(_on_sprite_response.bind(key, prompt, http), CONNECT_ONE_SHOT)
+	var err := http.request(SERVER_URL + "/generate_sprite", headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		_release_http(http)
+		_pending.erase(key)
+		texture_failed.emit(key, "Sprite HTTP request failed: %d" % err)
+
+
+func _on_sprite_response(result: int, response_code: int,
+								_headers: PackedStringArray, body: PackedByteArray,
+								key: String, prompt: String, http: HTTPRequest) -> void:
+	_release_http(http)
+
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		_pending.erase(key)
+		texture_failed.emit(key, "Sprite server error: %d/%d" % [result, response_code])
+		return
+
+	var data = JSON.parse_string(body.get_string_from_utf8())
+	if data == null or not data is Dictionary:
+		_pending.erase(key)
+		texture_failed.emit(key, "Invalid sprite response")
+		return
+
+	var sprite_url: String = data.get("sprite_url", "")
+	if sprite_url:
+		_fetch_map(key, "sprite", SERVER_URL + sprite_url)
+
+
 func _load_from_disk(key: String, map_type: String) -> bool:
 	var path := CACHE_DIR + key + "/" + map_type + ".png"
 	if not FileAccess.file_exists(path):
@@ -161,6 +215,6 @@ func _on_map_fetched(result: int, response_code: int,
 	texture_ready.emit(key, map_type, tex)
 
 	# Check if all maps fetched for this key
-	if map_type == "normal":
+	if map_type == "normal" or map_type == "sprite":
 		_pending.erase(key)
-		print("TextureCache: %s complete" % key)
+		print("TextureCache: %s %s complete" % [key, map_type])

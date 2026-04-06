@@ -3,7 +3,7 @@ class_name VegetationSpawner
 extends RefCounted
 
 
-func spawn_grass(config: Dictionary, ground_size: Vector2, parent: Node3D) -> MultiMeshInstance3D:
+func spawn_grass(config: Dictionary, ground_size: Vector2, parent: Node3D, exclusion_zones: Array = []) -> MultiMeshInstance3D:
 	var density: int = int(config.get("density", 2000))
 	var radius: float = float(config.get("radius", 20.0))
 	var scale_range: Array = config.get("scale_range", [0.3, 0.6])
@@ -25,6 +25,12 @@ func spawn_grass(config: Dictionary, ground_size: Vector2, parent: Node3D) -> Mu
 	for i in density:
 		var x: float = rng.randf_range(-half_w, half_w)
 		var z: float = rng.randf_range(-half_d, half_d)
+		# Skip if inside an exclusion zone (building area)
+		if _in_exclusion_zone(x, z, exclusion_zones):
+			var t := Transform3D()
+			t = t.scaled(Vector3.ZERO)
+			multi.set_instance_transform(i, t)
+			continue
 		var s: float = rng.randf_range(scale_min, scale_max)
 		var rot_y: float = rng.randf_range(0, TAU)
 		var t := Transform3D()
@@ -45,8 +51,10 @@ func spawn_grass(config: Dictionary, ground_size: Vector2, parent: Node3D) -> Mu
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	inst.material_override = mat
 
-	# Store texture_prompt so TextureLoader picks it up
-	if config.has("texture_prompt"):
+	# Store sprite_prompt for AI sprite generation (image with transparent background)
+	if config.has("sprite_prompt"):
+		inst.set_meta("sprite_prompt", config.get("sprite_prompt"))
+	elif config.has("texture_prompt"):
 		inst.set_meta("texture_prompt", config.get("texture_prompt"))
 		inst.set_meta("tiling", [1, 1])
 
@@ -54,7 +62,7 @@ func spawn_grass(config: Dictionary, ground_size: Vector2, parent: Node3D) -> Mu
 	return inst
 
 
-func spawn_bushes(config: Dictionary, ground_size: Vector2, parent: Node3D) -> MultiMeshInstance3D:
+func spawn_bushes(config: Dictionary, ground_size: Vector2, parent: Node3D, exclusion_zones: Array = []) -> MultiMeshInstance3D:
 	var count: int = int(config.get("count", 30))
 	var radius: float = float(config.get("radius", 22.0))
 	var scale_range: Array = config.get("scale_range", [0.5, 1.2])
@@ -76,6 +84,11 @@ func spawn_bushes(config: Dictionary, ground_size: Vector2, parent: Node3D) -> M
 	for i in count:
 		var x: float = rng.randf_range(-half_w, half_w)
 		var z: float = rng.randf_range(-half_d, half_d)
+		if _in_exclusion_zone(x, z, exclusion_zones):
+			var t := Transform3D()
+			t = t.scaled(Vector3.ZERO)
+			multi.set_instance_transform(i, t)
+			continue
 		var s: float = rng.randf_range(scale_min, scale_max)
 		var rot_y: float = rng.randf_range(0, TAU)
 		var t := Transform3D()
@@ -95,7 +108,9 @@ func spawn_bushes(config: Dictionary, ground_size: Vector2, parent: Node3D) -> M
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	inst.material_override = mat
 
-	if config.has("texture_prompt"):
+	if config.has("sprite_prompt"):
+		inst.set_meta("sprite_prompt", config.get("sprite_prompt"))
+	elif config.has("texture_prompt"):
 		inst.set_meta("texture_prompt", config.get("texture_prompt"))
 		inst.set_meta("tiling", [1, 1])
 
@@ -103,7 +118,7 @@ func spawn_bushes(config: Dictionary, ground_size: Vector2, parent: Node3D) -> M
 	return inst
 
 
-func spawn_trees(config: Dictionary, parent: Node3D) -> Node3D:
+func spawn_trees(config: Dictionary, parent: Node3D, exclusion_zones: Array = []) -> Node3D:
 	var count: int = int(config.get("count", 40))
 	var inner_r: float = float(config.get("ring_inner_radius", 18.0))
 	var outer_r: float = float(config.get("ring_outer_radius", 25.0))
@@ -124,6 +139,9 @@ func spawn_trees(config: Dictionary, parent: Node3D) -> Node3D:
 		var dist: float = rng.randf_range(inner_r, outer_r)
 		var x: float = cos(angle) * dist
 		var z: float = sin(angle) * dist
+
+		if _in_exclusion_zone(x, z, exclusion_zones):
+			continue
 
 		var trunk_h: float = rng.randf_range(float(trunk_h_range[0]), float(trunk_h_range[1]))
 		var trunk_r: float = rng.randf_range(float(trunk_r_range[0]), float(trunk_r_range[1]))
@@ -200,10 +218,13 @@ func _create_tree(trunk_h: float, trunk_r: float, canopy_r: float,
 	plane2.material_override = canopy_mat
 	canopy.add_child(plane2)
 
-	if config.has("foliage_texture_prompt"):
+	if config.has("foliage_sprite_prompt"):
+		# Use sprite (image with transparent bg) for canopy
+		plane1.set_meta("sprite_prompt", config.get("foliage_sprite_prompt"))
+		plane2.set_meta("sprite_prompt", config.get("foliage_sprite_prompt"))
+	elif config.has("foliage_texture_prompt"):
 		canopy.set_meta("texture_prompt", config.get("foliage_texture_prompt"))
 		canopy.set_meta("tiling", [1, 1])
-		# Also set on planes so TextureLoader can find them
 		plane1.set_meta("texture_prompt", config.get("foliage_texture_prompt"))
 		plane1.set_meta("tiling", [1, 1])
 		plane2.set_meta("texture_prompt", config.get("foliage_texture_prompt"))
@@ -241,6 +262,15 @@ func _create_cross_mesh(size: float) -> ArrayMesh:
 
 	st.generate_normals()
 	return st.commit()
+
+
+## Check if a position (x, z) falls inside any exclusion zone (Rect2 in XZ plane).
+func _in_exclusion_zone(x: float, z: float, zones: Array) -> bool:
+	for zone in zones:
+		var r: Rect2 = zone as Rect2
+		if r.has_point(Vector2(x, z)):
+			return true
+	return false
 
 
 func _add_quad(st: SurfaceTool, bl: Vector3, br: Vector3, tr: Vector3, tl: Vector3) -> void:

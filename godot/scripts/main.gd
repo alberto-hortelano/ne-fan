@@ -14,6 +14,7 @@ const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
 const CameraControllerScript = preload("res://scripts/player/camera_controller.gd")
 const DialogueUIScript = preload("res://scripts/ui/dialogue_ui.gd")
 const ObjectSpawnerScript = preload("res://scripts/room/object_spawner.gd")
+const TitleScreenScript = preload("res://scripts/ui/title_screen.gd")
 
 var _room_files: Array[String] = []
 var _dev_menu: CanvasLayer
@@ -141,14 +142,20 @@ func _ready() -> void:
 	LogicBridge.scenario_despawn_npc.connect(_on_scenario_despawn_npc)
 	LogicBridge.scenario_spawn_enemy.connect(_on_scenario_spawn_enemy)
 	LogicBridge.scenario_give_weapon.connect(_on_scenario_give_weapon)
+	LogicBridge.scenario_spawn_objects.connect(_on_scenario_spawn_objects)
 
 	# Make player collision capsule semi-visible for dev
 	_make_player_capsule_visible()
 
-	# Default scenario: load scene immediately so player has ground, then bridge takes over
-	_scenario_active = true
-	load_room_by_path("res://test_rooms/millhaven.json")
-	LogicBridge.send_load_game("tavern_intro")
+	# Disable player until a game is selected
+	_player.set_physics_process(false)
+	_player.visible = false
+
+	# Show title screen
+	var title_screen := TitleScreenScript.new()
+	title_screen.name = "TitleScreen"
+	title_screen.game_selected.connect(_on_title_game_selected)
+	add_child(title_screen)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -546,6 +553,20 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 		await _hud.fade_in(0.4)
 
 
+# --- Title screen ---
+
+
+func _on_title_game_selected(game_id: String, scene_path: String) -> void:
+	print("Title: starting game '%s' from '%s'" % [game_id, scene_path])
+	_scenario_active = true
+	_player.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Load the scene file immediately so the player has ground
+	load_room_by_path(scene_path)
+	# Send load_game to bridge (queues if not connected yet)
+	LogicBridge.send_load_game(game_id)
+
+
 # --- Scenario handlers ---
 
 
@@ -634,6 +655,14 @@ func _on_scenario_give_weapon(weapon_id: String) -> void:
 		GameStore.dispatch("weapon_changed", {"weapon_id": weapon_id})
 		_hud.show_brief_message("Obtienes: %s" % weapon_id)
 		print("Scenario: gave weapon '%s'" % weapon_id)
+
+
+func _on_scenario_spawn_objects(objects: Array) -> void:
+	if not _current_room:
+		return
+	var spawner := ObjectSpawnerScript.new()
+	spawner.spawn_objects(objects, _current_room)
+	print("Scenario: spawned %d dynamic objects" % objects.size())
 
 
 func _on_dialogue_advanced() -> void:

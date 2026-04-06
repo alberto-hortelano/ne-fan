@@ -13,6 +13,8 @@ import type {
 import { NpcController } from "./npc-controller.js";
 import { ActionExecutor } from "./action-executor.js";
 import { evaluateTrigger, type TriggerContext } from "./trigger-evaluator.js";
+import { SpatialRegistry } from "./spatial-registry.js";
+import { PlacementResolver } from "./placement-resolver.js";
 
 export interface ScenarioTickResult {
   npcs: NpcUpdate[];
@@ -30,6 +32,8 @@ export class ScenarioRunner {
   private allActionsExecuted = false;
 
   private npcController = new NpcController();
+  private spatialRegistry = new SpatialRegistry();
+  private placementResolver = new PlacementResolver(this.spatialRegistry);
   private actionExecutor: ActionExecutor | null = null;
 
   // External state fed each tick
@@ -65,11 +69,28 @@ export class ScenarioRunner {
 
     // Init systems
     this.npcController.reset();
-    this.actionExecutor = new ActionExecutor(this.gameDef, this.npcController);
+    this.spatialRegistry.reset();
+    this.actionExecutor = new ActionExecutor(
+      this.gameDef, this.npcController, this.spatialRegistry, this.placementResolver,
+    );
 
     // Load or generate initial scene
     const initialSceneId = this.gameDef.initial_scene;
     const sceneData = await this.loadSceneData(initialSceneId);
+
+    // Populate spatial registry from scene data
+    if (sceneData) {
+      const objects = sceneData.objects as Array<{ id: string; position: number[]; scale: number[]; category?: string }> | undefined;
+      const npcs = sceneData.npcs as Array<{ id: string; position: number[]; scale?: number[] }> | undefined;
+      this.spatialRegistry.loadFromRoomData(objects, npcs);
+    }
+    // Register player in the registry
+    this.spatialRegistry.register({
+      id: "player",
+      position: { ...this.playerPosition },
+      aabb: { halfX: 0.3, halfY: 0.9, halfZ: 0.3 },
+      kind: "player",
+    });
 
     // Start first beat
     const firstBeat = this.gameDef.beats[0];
@@ -108,6 +129,14 @@ export class ScenarioRunner {
 
     // Tick NPC movement
     this.npcController.tick(delta);
+
+    // Sync NPC and player positions to spatial registry
+    this.spatialRegistry.updatePosition("player", playerPos);
+    for (const npcUpdate of this.npcController.getUpdates()) {
+      if (npcUpdate.pos) {
+        this.spatialRegistry.updatePosition(npcUpdate.id, { x: npcUpdate.pos.x, y: 0, z: npcUpdate.pos.z });
+      }
+    }
 
     // Check if we should advance to next beat
     if (this.allActionsExecuted && this.currentBeat.next_trigger) {
@@ -218,20 +247,26 @@ export class ScenarioRunner {
       return null;
     }
 
-    // Generate via LLM if flagged
-    if (sceneDef.generate) {
-      return this.generateScene(sceneId, sceneDef.description ?? "");
-    }
-
-    // Load from file
+    // Try to load from file first; only generate if file doesn't exist
     const scenePath = resolve(this.gameDir, sceneDef.file);
     try {
       const raw = readFileSync(scenePath, "utf-8");
-      return JSON.parse(raw) as Record<string, unknown>;
-    } catch (err) {
-      console.error(`ScenarioRunner: failed to load scene '${scenePath}':`, err);
-      return null;
+      const fileData = JSON.parse(raw) as Record<string, unknown>;
+      console.log(`ScenarioRunner: loaded scene '${sceneId}' from file`);
+      return fileData;
+    } catch {
+      // File not found — try generation if flagged
     }
+
+    if (sceneDef.generate) {
+      const generated = await this.generateScene(sceneId, sceneDef.description ?? "");
+      const objects = generated?.objects as unknown[] | undefined;
+      if (generated && objects && objects.length > 0) return generated;
+      console.log(`ScenarioRunner: generation returned empty/failed for '${sceneId}'`);
+    }
+
+    console.error(`ScenarioRunner: no scene data available for '${sceneId}'`);
+    return null;
   }
 
   /** Generate a scene via ai_server HTTP endpoint. */
