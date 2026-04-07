@@ -158,8 +158,7 @@ func show_dialogue(speaker: String, text: String, choices: Array = []) -> void:
 			choice_label.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
 			_choices_container.add_child(choice_label)
 
-	# Block player movement
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# Keep mouse captured — dialogue uses keyboard only (E/Space/1-3)
 
 
 func show_objective(text: String) -> void:
@@ -170,7 +169,6 @@ func show_objective(text: String) -> void:
 func _hide_dialogue() -> void:
 	_active = false
 	_panel.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func is_active() -> bool:

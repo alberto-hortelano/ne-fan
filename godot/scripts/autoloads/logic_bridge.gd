@@ -249,10 +249,12 @@ func _apply_state_update(msg: Dictionary) -> void:
 							c.current_attack_type = event.get("attackType", "")
 							c.attack_started.emit(event.get("attackType", ""))
 			"attack_impacted":
-				# Return to idle after impact
+				# Emit signal before resetting state so listeners can read attack type
 				var attacker_id: String = event.get("combatantId", "")
+				var attack_type: String = event.get("attackType", "")
 				if attacker_id == "player":
 					if _player_combatant:
+						_player_combatant.attack_impacted.emit(attack_type)
 						_player_combatant.state = 0  # IDLE
 						_player_combatant.current_attack_type = ""
 				else:
@@ -260,6 +262,7 @@ func _apply_state_update(msg: Dictionary) -> void:
 					if enode:
 						var c: Node = enode.get_node_or_null("Combatant")
 						if c:
+							c.attack_impacted.emit(attack_type)
 							c.state = 0
 							c.current_attack_type = ""
 			"died":

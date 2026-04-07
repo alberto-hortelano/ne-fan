@@ -30,6 +30,11 @@ var _selected_type: String = "quick"
 var _player_combatant: Node
 var _target_combatant: Node
 
+# Combat log
+var _log_container: VBoxContainer
+const LOG_MAX_LINES := 8
+const LOG_FADE_TIME := 8.0
+
 
 func _ready() -> void:
 	layer = 11
@@ -148,6 +153,29 @@ func _ready() -> void:
 
 	_update_slot_colors()
 
+	# Combat log (bottom-left) — uses PanelContainer with dark background for visibility
+	var vp_size: Vector2 = get_viewport().get_visible_rect().size
+	var log_panel := PanelContainer.new()
+	var log_style := StyleBoxFlat.new()
+	log_style.bg_color = Color(0.0, 0.0, 0.0, 0.5)
+	log_style.content_margin_left = 8
+	log_style.content_margin_right = 8
+	log_style.content_margin_top = 4
+	log_style.content_margin_bottom = 4
+	log_style.corner_radius_top_left = 4
+	log_style.corner_radius_top_right = 4
+	log_panel.add_theme_stylebox_override("panel", log_style)
+	log_panel.position = Vector2(8, vp_size.y - 150)
+	log_panel.size = Vector2(380, 140)
+	log_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(log_panel)
+
+	_log_container = VBoxContainer.new()
+	_log_container.add_theme_constant_override("separation", 2)
+	_log_container.alignment = BoxContainer.ALIGNMENT_END
+	_log_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	log_panel.add_child(_log_container)
+
 
 func set_player_combatant(c: Node) -> void:
 	_player_combatant = c
@@ -217,4 +245,27 @@ func _spawn_damage_number(target: Node, damage: float) -> void:
 	tween.tween_property(label, "position:y", label.position.y - 60, 0.8)
 	tween.tween_property(label, "modulate:a", 0.0, 0.8).set_delay(0.3)
 	tween.set_parallel(false)
+	tween.tween_callback(label.queue_free)
+
+
+func add_log_message(msg: String, color: Color = Color(0.8, 0.8, 0.7)) -> void:
+	if not _log_container:
+		return
+	var label := Label.new()
+	label.text = msg
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	_log_container.add_child(label)
+	# Remove oldest if too many
+	while _log_container.get_child_count() > LOG_MAX_LINES:
+		var oldest: Node = _log_container.get_child(0)
+		_log_container.remove_child(oldest)
+		oldest.queue_free()
+	# Fade out and remove after delay
+	var tween := create_tween()
+	tween.tween_interval(LOG_FADE_TIME - 1.0)
+	tween.tween_property(label, "modulate:a", 0.0, 1.0)
 	tween.tween_callback(label.queue_free)

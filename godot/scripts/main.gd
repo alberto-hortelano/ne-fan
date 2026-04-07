@@ -10,6 +10,7 @@ const CombatantScript = preload("res://scripts/combat/combatant.gd")
 const PlayerCombatInputScript = preload("res://scripts/combat/player_combat_input.gd")
 const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
+const AttackAreaVisualScript = preload("res://scripts/combat/attack_area_visual.gd")
 const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
 const CameraControllerScript = preload("res://scripts/player/camera_controller.gd")
 const DialogueUIScript = preload("res://scripts/ui/dialogue_ui.gd")
@@ -69,11 +70,17 @@ func _ready() -> void:
 	player_sync.name = "CombatAnimationSync"
 	_player.add_child(player_sync)
 
+	var attack_area_visual = AttackAreaVisualScript.new()
+	attack_area_visual.name = "AttackAreaVisual"
+	_player.add_child(attack_area_visual)
+
 	_combat_manager.register_combatant(_player_combatant)
 	_combat_hud.set_player_combatant(_player_combatant)
 	player_input.attack_type_changed.connect(_combat_hud.on_attack_type_changed)
 	_combat_manager.combat_result.connect(_combat_hud.on_combat_result)
 	_player_combatant.damage_received.connect(_on_player_damage_received)
+	_player_combatant.damage_received.connect(_on_player_damage_log)
+	_player_combatant.died.connect(func() -> void: _combat_hud.add_log_message("YOU DIED — press R to respawn", Color(1, 0.2, 0.2)))
 
 	# Independent camera (NOT child of player)
 	_camera_controller = CameraControllerScript.new()
@@ -222,6 +229,24 @@ func _on_interacted(body: StaticBody3D) -> void:
 
 func _on_player_damage_received(amount: float, _from: Node) -> void:
 	GameState.player_health = _player_combatant.health
+
+
+func _on_player_damage_log(amount: float, _from: Node) -> void:
+	if amount > 0:
+		_combat_hud.add_log_message("Player hit: -%.1f HP" % amount, Color(1.0, 0.6, 0.4))
+
+
+func _on_enemy_damage_log(amount: float, _from: Node, enemy_name: String) -> void:
+	if amount > 0:
+		_combat_hud.add_log_message("%s hit: -%.1f HP" % [enemy_name, amount], Color(0.9, 0.9, 0.7))
+	# Check for death
+	var room := _current_room
+	if room:
+		var enemy_node: Node = room.get_node_or_null(enemy_name)
+		if enemy_node:
+			var c: Node = enemy_node.get_node_or_null("Combatant")
+			if c and c.health <= 0.0:
+				_combat_hud.add_log_message("%s killed!" % enemy_name, Color(1.0, 0.85, 0.2))
 
 
 func _on_room_entered(room_id: String, description: String, _ambient: String) -> void:
@@ -481,6 +506,9 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 			if first_enemy:
 				_combat_hud.set_target(combatant)
 				first_enemy = false
+			# Connect enemy damage to combat log
+			var enemy_name: String = child.name
+			combatant.damage_received.connect(_on_enemy_damage_log.bind(enemy_name))
 
 	# Reset player state on room change
 	_player_combatant.health = _player_combatant.max_health

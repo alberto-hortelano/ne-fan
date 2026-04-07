@@ -1,39 +1,49 @@
 /** Never Ending Fantasy — 2D top-down HTML client.
- *  Imports nefan-core directly (no WebSocket needed). */
+ *  Dual mode: connects to nefan-core bridge (WebSocket) or falls back to local simulation. */
 
-import { GameSimulation } from "../../nefan-core/src/simulation/game-loop.js";
-import { createCombatant } from "../../nefan-core/src/combat/combatant.js";
-import { loadConfig } from "../../nefan-core/src/combat/combat-data.js";
-import { GameStore } from "../../nefan-core/src/store/game-store.js";
-import type { CombatConfig, Vec3, EnemyPersonality, EffectiveParams } from "../../nefan-core/src/types.js";
+import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
-import { getEffectiveParams } from "../../nefan-core/src/combat/combat-data.js";
-import { CanvasRenderer } from "./renderer/canvas-renderer.js";
+import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
+import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
+import { DialoguePanel } from "./ui/dialogue-panel.js";
+import { ObjectiveDisplay } from "./ui/objective-display.js";
+import {
+  createGameClient,
+  LocalGameClient,
+  type GameClient,
+  type FrameResult,
+  type RoomEnemy,
+} from "./net/game-client.js";
+import type { ScenarioUpdate } from "../../nefan-core/src/scenario/scenario-types.js";
 
 // @ts-ignore — Vite resolves JSON imports
 import combatConfigJson from "../../nefan-core/data/combat_config.json";
-// @ts-ignore
-import battleRoyaleJson from "../../nefan-core/data/rooms/dev/battle_royale.json";
 
-const playerCfg = (combatConfigJson as any).player ?? {};
+// Glob import all room JSONs (lazy) — Vite feature
+const roomModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
+  (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
+    .glob("../../nefan-core/data/rooms/**/*.json");
+
+const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
 const SPEED = playerCfg.walk_speed ?? 3.0;
 const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
 
-// --- Init ---
-const config: CombatConfig = loadConfig(combatConfigJson);
-const store = new GameStore();
-const sim = new GameSimulation(config, store, Date.now());
+const config = loadConfig(combatConfigJson);
 
+// --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const renderer = new CanvasRenderer(canvas);
-
-// HUD elements
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
 const attackBtns = document.querySelectorAll(".attack-selector span");
+const roomSelector = document.getElementById("room-selector") as HTMLSelectElement;
+const connectionStatus = document.getElementById("connection-status") as HTMLElement;
+
+const dialoguePanel = new DialoguePanel();
+const objectiveDisplay = new ObjectiveDisplay();
 
 const input = new KeyboardHandler(canvas, (type) => {
   attackBtns.forEach(btn => {
@@ -51,91 +61,20 @@ attackBtns.forEach(btn => {
   });
 });
 
-// --- Load Room ---
-const roomData = battleRoyaleJson as any;
-renderer.setRoom(roomData);
-sim.setRoomBounds(roomData.dimensions.width, roomData.dimensions.depth);
-
-// Player state
+// --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
-const playerMaxHp = 100;
+let playerMaxHp = 100;
+let playerWeaponId = "short_sword";
+let roomData: Record<string, unknown> | null = null;
+let scenarioActive = false;
 
-const player = createCombatant("player", playerMaxHp, "short_sword", playerPos, playerForward);
-sim.addCombatant(player);
-
-// Enemies from room data
-interface RoomEntity { id: string; pos: Vec3; forward?: Vec3; radius: number; color: string; label: string; hp?: number; maxHp?: number; alive: boolean; attacking?: boolean }
-const enemyEntities: RoomEntity[] = [];
-const objectEntities: RoomEntity[] = [];
-
+// Entity arrays
+let enemyEntities: Entity[] = [];
+let objectEntities: Entity[] = [];
+let npcEntities: Entity[] = [];
 const ENEMY_COLORS = ["#c44", "#4a4", "#48c", "#ca4"];
 let colorIdx = 0;
-
-for (const obj of roomData.objects ?? []) {
-  const pos: Vec3 = { x: obj.position[0], y: obj.position[1], z: obj.position[2] };
-  if (obj.combat) {
-    const enemyCombatant = createCombatant(
-      obj.id, obj.combat.health, obj.combat.weapon_id ?? "unarmed",
-      pos, { x: 0, y: 0, z: 1 },
-    );
-    // Pass full personality including difficulty/aggression_style
-    const personality: EnemyPersonality = {
-      ...(obj.combat.personality ?? {}),
-      combat_range: obj.combat.personality?.combat_range ?? 4.0,
-    };
-    sim.addCombatant(enemyCombatant, personality);
-    const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-    enemyEntities.push({
-      id: obj.id, pos, radius: 8, color, label: obj.description ?? obj.id,
-      hp: obj.combat.health, maxHp: obj.combat.health, alive: true,
-    });
-  } else {
-    objectEntities.push({
-      id: obj.id, pos, radius: 5,
-      color: obj.category === "item" ? "#aa8" : "#666",
-      label: obj.description, alive: true,
-    });
-  }
-}
-
-// Build enemy HP bars dynamically
-for (const ee of enemyEntities) {
-  const bar = document.createElement("div");
-  bar.className = "hp-bar";
-  bar.innerHTML = `<span style="color:${ee.color}">${ee.id}</span>
-    <div class="hp-fill"><div class="hp-fill-inner" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
-    <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
-  enemyBarsContainer.appendChild(bar);
-}
-
-// Combat log helper
-function log(msg: string): void {
-  const line = document.createElement("div");
-  line.textContent = msg;
-  combatLog.prepend(line);
-  while (combatLog.children.length > 8) combatLog.lastChild?.remove();
-}
-
-// Listen to store events for combat log
-store.on("player_damaged", (p) => log(`Player hit: -${(p.amount as number).toFixed(1)} HP`));
-store.on("enemy_damaged", (p) => log(`${p.enemy_id} hit: -${(p.amount as number).toFixed(1)} HP`));
-store.on("player_died", () => log("YOU DIED — press R to respawn"));
-store.on("enemy_died", (p) => log(`${p.enemy_id} killed!`));
-store.on("player_respawned", () => log("Respawned!"));
-
-// Respawn with R key
-window.addEventListener("keydown", (e) => {
-  if (e.key === "r" && player.health <= 0) {
-    sim.respawn({ x: 0, y: 0, z: 2 });
-    playerPos.x = 0; playerPos.z = 2;
-    // Sync enemy entities after respawn
-    for (const ee of enemyEntities) {
-      const c = sim.getCombatant(ee.id);
-      if (c) { ee.hp = c.health; ee.maxHp = c.maxHealth; ee.alive = true; }
-    }
-  }
-});
 
 // Attack area visualization state
 let attackVisual: {
@@ -146,17 +85,180 @@ let attackVisual: {
   fadeTimer: number;
 } | null = null;
 
-function getSelectedParams(): EffectiveParams {
-  const weaponData = config.weapons[player.weaponId] ?? config.weapons["unarmed"];
-  return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
+// --- Game client (will be set async) ---
+let gameClient: GameClient | null = null;
+
+// --- Room loading ---
+
+function populateRoomSelector(): void {
+  // Parse glob keys into room entries
+  const rooms: { key: string; label: string; group: string }[] = [];
+
+  for (const path of Object.keys(roomModules)) {
+    // path like "../../nefan-core/data/rooms/dev/battle_royale.json"
+    const match = path.match(/rooms\/(.+)\.json$/);
+    if (!match) continue;
+    const relPath = match[1]; // e.g. "dev/battle_royale"
+    const parts = relPath.split("/");
+    let group = "Game";
+    let label = relPath;
+    if (parts.length > 1) {
+      if (parts[0] === "dev") group = "Dev";
+      else if (parts[0] === "stress") group = "Stress";
+      label = parts.slice(1).join("/");
+    } else {
+      if (relPath.startsWith("style_")) group = "Style";
+    }
+    rooms.push({ key: path, label, group });
+  }
+
+  // Group and sort
+  const groups: Record<string, typeof rooms> = {};
+  for (const r of rooms) {
+    (groups[r.group] ??= []).push(r);
+  }
+
+  for (const [groupName, entries] of Object.entries(groups).sort()) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = groupName;
+    for (const entry of entries.sort((a, b) => a.label.localeCompare(b.label))) {
+      const opt = document.createElement("option");
+      opt.value = entry.key;
+      opt.textContent = entry.label;
+      optgroup.appendChild(opt);
+    }
+    roomSelector.appendChild(optgroup);
+  }
+
+  // Narrative games
+  const narrativeGroup = document.createElement("optgroup");
+  narrativeGroup.label = "Narrative";
+  const tavernOpt = document.createElement("option");
+  tavernOpt.value = "game:tavern_intro";
+  tavernOpt.textContent = "tavern_intro";
+  narrativeGroup.appendChild(tavernOpt);
+  roomSelector.appendChild(narrativeGroup);
 }
 
-// Mouse look — relative movement rotates player (like 3D camera)
+async function loadRoom(globKey: string): Promise<void> {
+  const loader = roomModules[globKey];
+  if (!loader) {
+    log("Room not found: " + globKey);
+    return;
+  }
+
+  const mod = await loader();
+  const data = mod.default;
+  roomData = data;
+  scenarioActive = false;
+
+  renderer.setRoom(data as unknown as Parameters<typeof renderer.setRoom>[0]);
+
+  // Reset player
+  playerPos.x = 0;
+  playerPos.z = 2;
+
+  // Extract enemies from objects with combat
+  const objects = (data.objects ?? []) as Record<string, unknown>[];
+  const enemies: RoomEnemy[] = [];
+  enemyEntities = [];
+  objectEntities = [];
+  colorIdx = 0;
+
+  for (const obj of objects) {
+    const pos: Vec3 = {
+      x: (obj.position as number[])[0],
+      y: (obj.position as number[])[1],
+      z: (obj.position as number[])[2],
+    };
+    const combat = obj.combat as Record<string, unknown> | undefined;
+    if (combat) {
+      const personality = (combat.personality ?? {}) as Record<string, unknown>;
+      enemies.push({
+        id: obj.id as string,
+        position: pos,
+        health: combat.health as number,
+        weaponId: (combat.weapon_id ?? "unarmed") as string,
+        personality: {
+          aggression: (personality.aggression ?? 0.5) as number,
+          preferred_attacks: (personality.preferred_attacks ?? ["quick"]) as string[],
+          reaction_time: (personality.reaction_time ?? 0.8) as number,
+          combat_range: (personality.combat_range ?? 4.0) as number,
+          ...(personality as Record<string, unknown>),
+        },
+      });
+      const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+      enemyEntities.push({
+        id: obj.id as string, pos, radius: 8, color,
+        label: (obj.description ?? obj.id) as string,
+        hp: combat.health as number, maxHp: combat.health as number, alive: true,
+      });
+    } else {
+      objectEntities.push({
+        id: obj.id as string, pos, radius: 5,
+        color: (obj.category as string) === "item" ? "#aa8" : "#666",
+        label: (obj.description ?? "") as string, alive: true,
+      });
+    }
+  }
+
+  // NPCs from room data
+  const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
+  npcEntities = npcsData.map(npc => ({
+    id: npc.id as string,
+    pos: {
+      x: (npc.position as number[])?.[0] ?? 0,
+      y: (npc.position as number[])?.[1] ?? 0,
+      z: (npc.position as number[])?.[2] ?? 0,
+    },
+    forward: { x: 0, y: 0, z: -1 },
+    radius: 7,
+    color: "#68c",
+    label: (npc.name ?? npc.id) as string,
+    name: (npc.name ?? npc.id) as string,
+    alive: true,
+  }));
+
+  // Build enemy HP bars
+  rebuildEnemyBars();
+
+  // Notify game client
+  if (gameClient) {
+    const dims = data.dimensions as { width: number; depth: number } | undefined;
+    gameClient.loadRoom(data, (data.room_id ?? "unknown") as string, enemies);
+  }
+
+  log("Room loaded: " + (data.room_id ?? "unknown"));
+}
+
+function rebuildEnemyBars(): void {
+  enemyBarsContainer.innerHTML = "";
+  for (const ee of enemyEntities) {
+    const bar = document.createElement("div");
+    bar.className = "hp-bar";
+    bar.innerHTML = `<span style="color:${ee.color}">${ee.id}</span>
+      <div class="hp-fill"><div class="hp-fill-inner" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
+      <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
+    enemyBarsContainer.appendChild(bar);
+  }
+}
+
+// --- Combat log ---
+function log(msg: string): void {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  combatLog.prepend(line);
+  while (combatLog.children.length > 8) combatLog.lastChild?.remove();
+}
+
+// --- Mouse look ---
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
 
 canvas.addEventListener("click", () => {
-  canvas.requestPointerLock();
+  if (!dialoguePanel.isVisible) {
+    canvas.requestPointerLock();
+  }
 });
 
 document.addEventListener("mousemove", (e) => {
@@ -165,49 +267,304 @@ document.addEventListener("mousemove", (e) => {
   playerForward = normalized({ x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) });
 });
 
+// --- Utility ---
+
+function getSelectedParams(): EffectiveParams {
+  const weaponData = config.weapons[playerWeaponId] ?? config.weapons["unarmed"];
+  return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
+}
+
+// --- Exit detection ---
+
+function checkExits(): void {
+  if (!roomData) return;
+  const dims = roomData.dimensions as { width: number; depth: number };
+  if (!dims) return;
+  const halfW = dims.width / 2;
+  const halfD = dims.depth / 2;
+  const threshold = 0.5;
+  const exits = (roomData.exits ?? []) as { wall: string; offset: number; size: number[] }[];
+
+  for (const exit of exits) {
+    const ew = exit.size[0] / 2;
+    const eOff = exit.offset;
+    let triggered = false;
+
+    switch (exit.wall) {
+      case "north":
+        triggered = playerPos.z < -halfD + threshold && Math.abs(playerPos.x - eOff) < ew;
+        break;
+      case "south":
+        triggered = playerPos.z > halfD - threshold && Math.abs(playerPos.x - eOff) < ew;
+        break;
+      case "east":
+        triggered = playerPos.x > halfW - threshold && Math.abs(playerPos.z - eOff) < ew;
+        break;
+      case "west":
+        triggered = playerPos.x < -halfW + threshold && Math.abs(playerPos.z - eOff) < ew;
+        break;
+    }
+
+    if (triggered) {
+      if (gameClient?.isBridge) {
+        gameClient.sendScenarioEvent("exit_entered", { exitWall: exit.wall });
+        log("Exit: " + exit.wall);
+      } else {
+        log("Exit detected — bridge required for transitions");
+      }
+      // Move player back slightly to prevent re-triggering
+      switch (exit.wall) {
+        case "north": playerPos.z += 1.0; break;
+        case "south": playerPos.z -= 1.0; break;
+        case "east": playerPos.x -= 1.0; break;
+        case "west": playerPos.x += 1.0; break;
+      }
+      return;
+    }
+  }
+}
+
+// --- Scenario update processing ---
+
+function processScenario(scenario: ScenarioUpdate): void {
+  if (scenario.dialogue) {
+    const dlg = scenario.dialogue;
+    dialoguePanel.show(dlg.speaker, dlg.text, dlg.choices);
+    input.dialogueActive = true;
+  }
+  if (scenario.objective) {
+    objectiveDisplay.show(scenario.objective);
+  }
+  if (scenario.spawn_npc) {
+    const npc = scenario.spawn_npc;
+    npcEntities.push({
+      id: npc.id,
+      pos: {
+        x: npc.position[0],
+        y: npc.position[1],
+        z: npc.position[2],
+      },
+      forward: { x: 0, y: 0, z: -1 },
+      radius: 7,
+      color: "#68c",
+      label: npc.name,
+      name: npc.name,
+      alive: true,
+    });
+    log("NPC appeared: " + npc.name);
+  }
+  if (scenario.despawn_npc) {
+    npcEntities = npcEntities.filter(n => n.id !== scenario.despawn_npc);
+    log("NPC left: " + scenario.despawn_npc);
+  }
+  if (scenario.spawn_enemy) {
+    const enemy = scenario.spawn_enemy;
+    const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+    enemyEntities.push({
+      id: enemy.id,
+      pos: {
+        x: enemy.position[0],
+        y: enemy.position[1],
+        z: enemy.position[2],
+      },
+      radius: 8, color,
+      label: enemy.id,
+      hp: enemy.combat.health,
+      maxHp: enemy.combat.health,
+      alive: true,
+    });
+    rebuildEnemyBars();
+    log("Enemy spawned: " + enemy.id);
+  }
+  if (scenario.give_weapon) {
+    playerWeaponId = scenario.give_weapon;
+    log("Weapon acquired: " + scenario.give_weapon);
+  }
+  if (scenario.change_scene) {
+    // change_scene contains full room data
+    const sceneData = scenario.change_scene as Record<string, unknown>;
+    roomData = sceneData;
+    scenarioActive = true;
+    renderer.setRoom(sceneData as unknown as Parameters<typeof renderer.setRoom>[0]);
+    playerPos.x = 0;
+    playerPos.z = 2;
+
+    // Parse objects/npcs from scene data
+    const objects = (sceneData.objects ?? []) as Record<string, unknown>[];
+    objectEntities = [];
+    const sceneEnemies: Entity[] = [];
+    for (const obj of objects) {
+      const pos: Vec3 = {
+        x: (obj.position as number[])[0],
+        y: (obj.position as number[])[1],
+        z: (obj.position as number[])[2],
+      };
+      if (obj.combat) {
+        const combat = obj.combat as Record<string, unknown>;
+        const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+        sceneEnemies.push({
+          id: obj.id as string, pos, radius: 8, color,
+          label: (obj.description ?? obj.id) as string,
+          hp: combat.health as number, maxHp: combat.health as number, alive: true,
+        });
+      } else {
+        objectEntities.push({
+          id: obj.id as string, pos, radius: 5,
+          color: (obj.category as string) === "item" ? "#aa8" : "#666",
+          label: (obj.description ?? "") as string, alive: true,
+        });
+      }
+    }
+    enemyEntities = sceneEnemies;
+
+    const npcsData = (sceneData.npcs ?? []) as Record<string, unknown>[];
+    npcEntities = npcsData.map(npc => ({
+      id: npc.id as string,
+      pos: {
+        x: (npc.position as number[])?.[0] ?? 0,
+        y: (npc.position as number[])?.[1] ?? 0,
+        z: (npc.position as number[])?.[2] ?? 0,
+      },
+      forward: { x: 0, y: 0, z: -1 },
+      radius: 7, color: "#68c",
+      label: (npc.name ?? npc.id) as string,
+      name: (npc.name ?? npc.id) as string,
+      alive: true,
+    }));
+
+    rebuildEnemyBars();
+    log("Scene changed: " + (sceneData.room_id ?? "unknown"));
+  }
+  if (scenario.spawn_objects) {
+    for (const obj of scenario.spawn_objects) {
+      objectEntities.push({
+        id: obj.id,
+        pos: { x: obj.position[0], y: obj.position[1], z: obj.position[2] },
+        radius: 5,
+        color: obj.category === "item" ? "#aa8" : "#666",
+        label: obj.description,
+        alive: true,
+      });
+    }
+  }
+}
+
+// --- Dialogue callbacks ---
+
+dialoguePanel.onAdvanced = () => {
+  input.dialogueActive = false;
+  gameClient?.sendScenarioEvent("dialogue_advanced");
+};
+
+dialoguePanel.onChoice = (index: number) => {
+  input.dialogueActive = false;
+  gameClient?.sendScenarioEvent("dialogue_choice", { choiceIndex: index });
+};
+
+// --- Room selector handler ---
+
+roomSelector.addEventListener("change", () => {
+  const value = roomSelector.value;
+  if (!value) return;
+
+  if (value.startsWith("game:")) {
+    const gameId = value.slice(5);
+    if (gameClient?.isBridge) {
+      scenarioActive = true;
+      gameClient.loadGame(gameId);
+      log("Loading game: " + gameId);
+    } else {
+      log("Bridge required for narrative games");
+    }
+  } else {
+    loadRoom(value);
+  }
+});
+
+// --- Respawn ---
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "r") {
+    const p = gameClient?.getCombatant("player");
+    if (p && p.health <= 0) {
+      gameClient?.respawn({ x: 0, y: 0, z: 2 });
+      playerPos.x = 0;
+      playerPos.z = 2;
+      log("Respawned!");
+    }
+  }
+});
+
+// --- Connection status UI ---
+
+function updateConnectionStatus(connected: boolean, isBridge: boolean): void {
+  if (isBridge && connected) {
+    connectionStatus.textContent = "Bridge";
+    connectionStatus.className = "connected";
+  } else if (isBridge) {
+    connectionStatus.textContent = "Disconnected";
+    connectionStatus.className = "disconnected";
+  } else {
+    connectionStatus.textContent = "Local";
+    connectionStatus.className = "disconnected";
+  }
+}
+
 // --- Game Loop ---
+
 let lastTime = performance.now();
 
 function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
-  // Movement relative to facing direction (mouse rotates, like 3D camera)
-  let inputFwd = 0, inputRight = 0;
-  if (input.state.up) inputFwd += 1;
-  if (input.state.down) inputFwd -= 1;
-  if (input.state.right) inputRight += 1;
-  if (input.state.left) inputRight -= 1;
-
-  const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
-  if (inputFwd !== 0 || inputRight !== 0) {
-    const len = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
-    const fwd = playerForward;
-    const right = { x: -fwd.z, z: fwd.x }; // perpendicular
-    const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
-    const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
-    playerPos.x += moveX * speed * delta;
-    playerPos.z += moveZ * speed * delta;
+  if (!gameClient) {
+    requestAnimationFrame(gameLoop);
+    return;
   }
 
-  // Clamp to room bounds
-  const halfW = roomData.dimensions.width / 2 - 0.3;
-  const halfD = roomData.dimensions.depth / 2 - 0.3;
-  playerPos.x = Math.max(-halfW, Math.min(halfW, playerPos.x));
-  playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
+  // Movement (suppressed during dialogue)
+  if (!dialoguePanel.isVisible) {
+    let inputFwd = 0, inputRight = 0;
+    if (input.state.up) inputFwd += 1;
+    if (input.state.down) inputFwd -= 1;
+    if (input.state.right) inputRight += 1;
+    if (input.state.left) inputRight -= 1;
 
-  // Update player combatant position
-  player.position = { ...playerPos };
-  player.forward = { ...playerForward };
+    const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
+    if (inputFwd !== 0 || inputRight !== 0) {
+      const len = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
+      const fwd = playerForward;
+      const right = { x: -fwd.z, z: fwd.x };
+      const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
+      const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
+      playerPos.x += moveX * speed * delta;
+      playerPos.z += moveZ * speed * delta;
+    }
+
+    // Clamp to room bounds
+    if (roomData) {
+      const dims = roomData.dimensions as { width: number; depth: number };
+      if (dims) {
+        const halfW = dims.width / 2 - 0.3;
+        const halfD = dims.depth / 2 - 0.3;
+        playerPos.x = Math.max(-halfW, Math.min(halfW, playerPos.x));
+        playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
+      }
+    }
+
+    // Exit detection
+    checkExits();
+  }
 
   // Attack
-  const attackRequested = input.consumeAttack();
+  const attackRequested = dialoguePanel.isVisible ? false : input.consumeAttack();
 
-  // Tick simulation
-  const result = sim.tick(delta, {
+  // Tick
+  const result: FrameResult = gameClient.tick(delta, {
     playerPosition: playerPos,
     playerForward: playerForward,
-    playerMoving: inputFwd !== 0 || inputRight !== 0,
+    playerMoving: input.state.up || input.state.down || input.state.left || input.state.right,
     attackRequested,
     attackType: attackRequested ? input.state.selectedAttack : undefined,
   });
@@ -223,7 +580,6 @@ function gameLoop(now: number): void {
         fadeTimer: 0,
       };
     } else if (e.type === "attack_impacted" && e.combatantId === "player") {
-      // Calculate actual quality against nearest enemy
       let quality = 0;
       for (const ee of enemyEntities) {
         if (!ee.alive) continue;
@@ -243,6 +599,23 @@ function gameLoop(now: number): void {
         impactQuality: quality,
         fadeTimer: 0.3,
       };
+    } else if (e.type === "attack_landed") {
+      const targetId = e.targetId as string;
+      const dmg = e.damage as number;
+      if (targetId === "player") {
+        log(`Player hit: -${dmg.toFixed(1)} HP`);
+      } else {
+        log(`${targetId} hit: -${dmg.toFixed(1)} HP`);
+      }
+    } else if (e.type === "died") {
+      const who = e.combatantId as string;
+      if (who === "player") {
+        log("YOU DIED — press R to respawn");
+      } else {
+        log(`${who} killed!`);
+      }
+    } else if (e.type === "player_respawned") {
+      log("Respawned!");
     }
   }
 
@@ -254,22 +627,52 @@ function gameLoop(now: number): void {
     }
   }
 
-  // Sync enemy entities from combatant states
-  for (const ee of enemyEntities) {
-    const c = sim.getCombatant(ee.id);
-    if (c) {
-      ee.pos = { ...c.position };
-      ee.forward = { ...c.forward };
-      ee.hp = c.health;
-      ee.alive = c.health > 0;
-      ee.attacking = c.state === "winding_up" || c.state === "attacking";
+  // Sync enemy entities from result
+  for (const enemyState of result.enemies) {
+    const ee = enemyEntities.find(e => e.id === enemyState.id);
+    if (ee) {
+      if (enemyState.pos) {
+        ee.pos = { x: enemyState.pos.x, y: enemyState.pos.y, z: enemyState.pos.z };
+      }
+      if (enemyState.forward) {
+        ee.forward = { x: enemyState.forward.x, y: enemyState.forward.y, z: enemyState.forward.z };
+      }
+      ee.hp = enemyState.hp;
+      ee.alive = enemyState.alive;
+      ee.attacking = enemyState.state === "winding_up" || enemyState.state === "attacking";
     }
   }
 
+  // Sync NPCs from result (bridge mode)
+  if (result.npcs) {
+    for (const npcState of result.npcs) {
+      const npc = npcEntities.find(n => n.id === npcState.id);
+      if (npc) {
+        if (npcState.pos) {
+          npc.pos.x = npcState.pos.x;
+          npc.pos.z = npcState.pos.z;
+        }
+        if (npcState.facing) {
+          npc.forward = { x: npcState.facing.x, y: 0, z: npcState.facing.z };
+        }
+        if (npcState.visible === false) {
+          npc.alive = false;
+        } else {
+          npc.alive = true;
+        }
+      }
+    }
+  }
+
+  // Process scenario updates (bridge mode)
+  if (result.scenario) {
+    processScenario(result.scenario);
+  }
+
   // Update HUD
-  const pHpPct = Math.max(0, player.health / playerMaxHp * 100);
+  const pHpPct = Math.max(0, result.playerHp / playerMaxHp * 100);
   playerHpBar.style.width = pHpPct + "%";
-  playerHpText.textContent = Math.ceil(player.health).toString();
+  playerHpText.textContent = Math.ceil(result.playerHp).toString();
 
   for (const ee of enemyEntities) {
     const bar = document.getElementById(`hp-${ee.id}`);
@@ -280,9 +683,10 @@ function gameLoop(now: number): void {
 
   // Render
   renderer.render(
-    { pos: playerPos, forward: playerForward, hp: player.health, maxHp: playerMaxHp },
+    { pos: playerPos, forward: playerForward, hp: result.playerHp, maxHp: playerMaxHp },
     enemyEntities,
     objectEntities,
+    npcEntities,
   );
 
   // Draw attack area overlay
@@ -301,5 +705,34 @@ function gameLoop(now: number): void {
 
   requestAnimationFrame(gameLoop);
 }
+
+// --- Init ---
+
+populateRoomSelector();
+
+createGameClient(combatConfigJson as Record<string, unknown>, (client) => {
+  gameClient = client;
+  updateConnectionStatus(client.isConnected, client.isBridge);
+
+  client.on("connected", () => updateConnectionStatus(true, true));
+  client.on("disconnected", () => updateConnectionStatus(false, true));
+
+  // Listen to store events for combat log (local mode)
+  if (client instanceof LocalGameClient) {
+    client.store.on("player_damaged", (p: Record<string, unknown>) =>
+      log(`Player hit: -${(p.amount as number).toFixed(1)} HP`));
+    client.store.on("enemy_damaged", (p: Record<string, unknown>) =>
+      log(`${p.enemy_id} hit: -${(p.amount as number).toFixed(1)} HP`));
+    client.store.on("player_died", () => log("YOU DIED — press R to respawn"));
+    client.store.on("enemy_died", (p: Record<string, unknown>) => log(`${p.enemy_id} killed!`));
+    client.store.on("player_respawned", () => log("Respawned!"));
+  }
+
+  // Load default room
+  const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
+  if (defaultRoom) {
+    loadRoom(defaultRoom);
+  }
+});
 
 requestAnimationFrame(gameLoop);
