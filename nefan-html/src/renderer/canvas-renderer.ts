@@ -1,18 +1,18 @@
 /** 2D top-down room renderer on Canvas. */
 
-import type { Vec3 } from "../../nefan-core/src/types.js";
+import type { Vec3 } from "../../../nefan-core/src/types.js";
 
 interface RoomData {
   room_id: string;
   room_description: string;
   dimensions: { width: number; height: number; depth: number };
-  exits: { wall: string; offset: number; size: number[] }[];
+  exits: { wall: string; offset: number; size: number[]; description?: string }[];
   objects: { id: string; position: number[]; scale: number[]; category: string; description: string }[];
   npcs: { id: string; name: string; position: number[] }[];
   lighting: { ambient: { color: number[]; intensity: number }; lights: { position: number[]; color: number[]; range: number }[] };
 }
 
-interface Entity {
+export interface Entity {
   id: string;
   pos: Vec3;
   forward?: Vec3;
@@ -23,15 +23,14 @@ interface Entity {
   maxHp?: number;
   alive: boolean;
   attacking?: boolean;
+  name?: string;
 }
 
 const WALL_COLOR = "#3a3a3a";
 const FLOOR_COLOR = "#252520";
-const EXIT_COLOR = "#1a1a14";
+const EXIT_COLOR = "#3a5";
 const GRID_COLOR = "#2a2a25";
 const PLAYER_COLOR = "#4a9";
-const ENEMY_COLOR = "#c44";
-const OBJECT_COLOR = "#886";
 const NPC_COLOR = "#68c";
 const LIGHT_COLOR = "rgba(255,200,100,0.08)";
 
@@ -62,6 +61,10 @@ export class CanvasRenderer {
     this.offsetY = this.canvas.height / 2;
   }
 
+  getRoomData(): RoomData | null {
+    return this.roomData;
+  }
+
   /** Convert world XZ to screen XY (top-down, Z goes up on screen) */
   private toScreen(x: number, z: number): [number, number] {
     return [
@@ -74,6 +77,7 @@ export class CanvasRenderer {
     player: { pos: Vec3; forward: Vec3; hp: number; maxHp: number },
     enemies: Entity[],
     objects: Entity[],
+    npcs: Entity[] = [],
   ): void {
     const ctx = this.ctx;
     const w = this.canvas.width;
@@ -122,9 +126,7 @@ export class CanvasRenderer {
       ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
     }
 
-    // Exits (gaps in walls)
-    ctx.strokeStyle = EXIT_COLOR;
-    ctx.lineWidth = 6;
+    // Exits (highlighted gaps in walls)
     for (const exit of this.roomData.exits) {
       const ew = exit.size[0];
       const eOff = exit.offset;
@@ -138,7 +140,17 @@ export class CanvasRenderer {
       }
       const [sx1, sy1] = this.toScreen(ex1, ez1);
       const [sx2, sy2] = this.toScreen(ex2, ez2);
+      // Draw exit with glow
+      ctx.strokeStyle = EXIT_COLOR;
+      ctx.lineWidth = 6;
       ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+      // Subtle arrow hint
+      const mx = (sx1 + sx2) / 2;
+      const my = (sy1 + sy2) / 2;
+      ctx.fillStyle = EXIT_COLOR;
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("EXIT", mx, my - 8);
     }
 
     // Lights (soft circles)
@@ -156,6 +168,11 @@ export class CanvasRenderer {
     // Objects
     for (const obj of objects) {
       this.drawEntity(obj);
+    }
+
+    // NPCs
+    for (const npc of npcs) {
+      this.drawNpc(npc);
     }
 
     // Enemies (alive and dead)
@@ -222,6 +239,33 @@ export class CanvasRenderer {
     // HP bar if applicable
     if (e.hp !== undefined && e.maxHp !== undefined) {
       this.drawHpBar(ex, ey - e.radius - 6, e.hp, e.maxHp, e.color);
+    }
+  }
+
+  private drawNpc(npc: Entity): void {
+    const ctx = this.ctx;
+    const [nx, ny] = this.toScreen(npc.pos.x, npc.pos.z);
+
+    // NPC circle
+    ctx.fillStyle = NPC_COLOR;
+    ctx.beginPath(); ctx.arc(nx, ny, npc.radius, 0, Math.PI * 2); ctx.fill();
+
+    // Forward direction indicator
+    if (npc.forward && (npc.forward.x !== 0 || npc.forward.z !== 0)) {
+      const fLen = 12;
+      const fx = nx + npc.forward.x * fLen;
+      const fy = ny + npc.forward.z * fLen;
+      ctx.strokeStyle = NPC_COLOR;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(fx, fy); ctx.stroke();
+    }
+
+    // Name label above
+    if (npc.name) {
+      ctx.fillStyle = "#9be";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(npc.name, nx, ny - npc.radius - 4);
     }
   }
 

@@ -15,6 +15,7 @@ const CombatantScript = preload("res://scripts/combat/combatant.gd")
 const EnemyCombatAIScript = preload("res://scripts/combat/enemy_combat_ai.gd")
 const CombatAnimatorScript = preload("res://scripts/combat/combat_animator.gd")
 const CombatAnimationSyncScript = preload("res://scripts/combat/combat_animation_sync.gd")
+const AttackAreaVisualScript = preload("res://scripts/combat/attack_area_visual.gd")
 const NpcAnimatorScript = preload("res://scripts/npc/npc_animator.gd")
 const NpcModelRegistryScript = preload("res://scripts/npc/npc_model_registry.gd")
 
@@ -131,6 +132,10 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 			var sync = CombatAnimationSyncScript.new()
 			sync.name = "CombatAnimationSync"
 			body.add_child(sync)
+
+			var attack_visual = AttackAreaVisualScript.new()
+			attack_visual.name = "AttackAreaVisual"
+			body.add_child(attack_visual)
 
 		# HP label above enemy head
 		var hp_label := Label3D.new()

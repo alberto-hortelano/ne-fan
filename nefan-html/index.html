@@ -18,12 +18,14 @@
     }
     #hud {
       display: flex;
-      gap: 20px;
-      padding: 8px 16px;
+      gap: 12px;
+      padding: 6px 12px;
       background: #1a1a1a;
       width: 100%;
-      font-size: 14px;
+      font-size: 13px;
       z-index: 10;
+      align-items: center;
+      flex-wrap: wrap;
     }
     #hud .hp-bar {
       display: flex;
@@ -52,6 +54,22 @@
       border-color: #fa0;
       color: #fa0;
     }
+    #room-selector {
+      background: #222;
+      color: #ccc;
+      border: 1px solid #555;
+      padding: 2px 4px;
+      font-size: 12px;
+      font-family: inherit;
+      max-width: 200px;
+    }
+    #connection-status {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    #connection-status.connected { color: #4a4; }
+    #connection-status.disconnected { color: #a44; }
     #combat-log {
       position: fixed;
       bottom: 8px;
@@ -60,6 +78,62 @@
       color: #888;
       max-height: 100px;
       overflow: hidden;
+      z-index: 5;
+    }
+    #objective-display {
+      display: none;
+      position: fixed;
+      top: 40px;
+      right: 12px;
+      font-size: 12px;
+      color: #da6;
+      background: rgba(0,0,0,0.7);
+      padding: 6px 10px;
+      border: 1px solid #553;
+      border-radius: 4px;
+      z-index: 10;
+      max-width: 300px;
+    }
+    #dialogue-panel {
+      display: none;
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      max-width: 90%;
+      background: rgba(10, 10, 15, 0.92);
+      border: 1px solid #554;
+      border-radius: 6px;
+      padding: 14px 18px;
+      z-index: 20;
+    }
+    #dialogue-speaker {
+      color: #da6;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    #dialogue-text {
+      color: #ccc;
+      font-size: 13px;
+      line-height: 1.4;
+      min-height: 40px;
+    }
+    #dialogue-choices {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dialogue-choice {
+      color: #8af;
+      cursor: pointer;
+      padding: 3px 0;
+      font-size: 13px;
+    }
+    .dialogue-choice:hover {
+      color: #bdf;
     }
     canvas {
       flex: 1;
@@ -69,6 +143,10 @@
 </head>
 <body>
   <div id="hud">
+    <select id="room-selector">
+      <option value="">-- Room --</option>
+    </select>
+    <span id="connection-status" class="disconnected">Local</span>
     <div class="hp-bar">
       <span>Player</span>
       <div class="hp-fill"><div class="hp-fill-inner" id="player-hp" style="width:100%"></div></div>
@@ -85,6 +163,12 @@
   </div>
   <canvas id="game"></canvas>
   <div id="combat-log"></div>
+  <div id="objective-display"></div>
+  <div id="dialogue-panel">
+    <div id="dialogue-speaker"></div>
+    <div id="dialogue-text"></div>
+    <div id="dialogue-choices"></div>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
