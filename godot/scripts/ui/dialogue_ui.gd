@@ -171,5 +171,11 @@ func _hide_dialogue() -> void:
 	_panel.visible = false
 
 
+func hide_all() -> void:
+	"""Hide both dialogue panel and objective label. Called on room/game transitions."""
+	_hide_dialogue()
+	_objective_label.visible = false
+
+
 func is_active() -> bool:
 	return _active

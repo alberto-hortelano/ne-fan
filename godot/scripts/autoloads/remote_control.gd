@@ -130,6 +130,8 @@ func _handle(line: String) -> String:
 			return _cmd_camera_attach()
 		"load_room_path":
 			return _cmd_load_room_path(json)
+		"npc_attack":
+			return _cmd_npc_attack(json)
 		"texture_status":
 			return _cmd_texture_status()
 		_:
@@ -299,6 +301,33 @@ func _cmd_attack(args: Dictionary) -> String:
 	return '{"ok":true,"type":"%s","duration":%.3f}' % [attack_type, duration]
 
 
+func _cmd_npc_attack(args: Dictionary) -> String:
+	"""Force an NPC to start an attack windup (for visual debugging)."""
+	var npc_id: String = args.get("id", "")
+	var attack_type: String = args.get("type", "heavy")
+	var main_scene := get_tree().current_scene
+	var room: Node = main_scene.get("_current_room") if main_scene else null
+	if not room:
+		return '{"error":"no current room"}'
+	var npc: Node = null
+	if npc_id.is_empty():
+		# Pick first child with a Combatant
+		for child in room.get_children():
+			if child.get_node_or_null("Combatant"):
+				npc = child
+				break
+	else:
+		npc = room.get_node_or_null(npc_id)
+	if not npc:
+		return '{"error":"npc not found"}'
+	var c = npc.get_node_or_null("Combatant")
+	if not c:
+		return '{"error":"no combatant on npc"}'
+	c.current_attack_type = attack_type
+	c.attack_started.emit(attack_type)
+	return '{"ok":true,"id":"%s","type":"%s"}' % [npc.name, attack_type]
+
+
 func _cmd_camera_detach(args: Dictionary) -> String:
 	var cam := get_tree().current_scene.get_node_or_null("CameraController")
 	if not cam:
@@ -329,6 +358,8 @@ func _cmd_load_room_path(args: Dictionary) -> String:
 	if path.is_empty():
 		return '{"error":"missing path"}'
 	var main_scene := get_tree().current_scene
+	# Deactivate scenario when loading a dev room directly
+	main_scene._scenario_active = false
 	if main_scene.has_method("load_room_by_path"):
 		main_scene.call("load_room_by_path", path)
 		return '{"ok":true,"path":"%s"}' % path

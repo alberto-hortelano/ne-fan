@@ -1,4 +1,5 @@
-## Loads Mixamo FBX character + animations, sets up AnimationTree with StateMachine.
+## Loads Mixamo FBX character + animations, sets up AnimationTree with upper/lower body blending.
+## Two layers: locomotion (full body base) + combat (upper body filtered via Blend2).
 ## Animations are purely visual — all movement is via CharacterBody3D velocity.
 ## Pattern follows: https://github.com/catprisbrey/Third-Person-Controller--SoulsLIke-Godot4
 class_name CombatAnimator
@@ -41,12 +42,25 @@ const LOOPING_ANIMS := ["idle", "walk", "run", "walk_back", "strafe_left", "stra
 
 var _anim_player: AnimationPlayer
 var _anim_tree: AnimationTree
-var _playback: AnimationNodeStateMachinePlayback
+var _locomotion_playback: AnimationNodeStateMachinePlayback
+var _combat_playback: AnimationNodeStateMachinePlayback
 var _current_anim: String = ""
 var _skeleton: Skeleton3D
 var _hips_idx: int = -1
 var _collision_shape: CollisionShape3D = null
 var _collision_rest_pos := Vector3(0, 0.9, 0)
+
+# One-shot animations (attacks, reactions) — used for routing travel() calls
+const ONE_SHOT_SET := {
+	"quick": true, "heavy": true, "medium": true, "defensive": true, "precise": true,
+	"kick": true, "hit": true, "death": true, "jump": true, "casting": true,
+	"power_up": true, "draw_sword_1": true, "draw_sword_2": true,
+}
+
+# Full-body animations — both layers play these (no split)
+const FULL_BODY_SET := {
+	"death": true, "hit": true, "jump": true,
+}
 
 
 func _ready() -> void:
@@ -107,7 +121,8 @@ func reload_model() -> void:
 	if _anim_tree:
 		_anim_tree.queue_free()
 		_anim_tree = null
-	_playback = null
+	_locomotion_playback = null
+	_combat_playback = null
 	_hips_idx = -1
 	# Rebuild
 	_load_model()
@@ -187,53 +202,135 @@ func _load_animations() -> void:
 
 
 func _setup_animation_tree() -> void:
-	"""Create AnimationTree with StateMachine programmatically."""
+	"""Create AnimationTree with BlendTree: locomotion (full body) + combat (upper body filtered)."""
 	_anim_tree = AnimationTree.new()
 	_anim_tree.name = "AnimationTree"
 	_anim_tree.anim_player = _anim_player.get_path()
 
-	var state_machine := AnimationNodeStateMachine.new()
+	var blend_tree := AnimationNodeBlendTree.new()
 
-	# Add animation nodes for each loaded animation
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
-	for anim_name in lib.get_animation_list():
-		var node := AnimationNodeAnimation.new()
-		node.animation = anim_name
-		state_machine.add_node(anim_name, node)
-
-	# Add transitions: locomotion states can transition freely
 	var locomotion := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "turn"]
-	for from in locomotion:
-		for to in locomotion:
-			if from != to and state_machine.has_node(from) and state_machine.has_node(to):
-				var t := AnimationNodeStateMachineTransition.new()
-				t.xfade_time = 0.15
-				state_machine.add_transition(from, to, t)
-
-	# From locomotion to one-shot animations (attacks, jump, etc.)
 	var one_shots := ["quick", "heavy", "medium", "defensive", "precise",
 					  "kick", "hit", "death", "jump", "casting",
 					  "power_up", "draw_sword_1", "draw_sword_2"]
-	for action in one_shots:
-		if not state_machine.has_node(action):
+
+	# Full-body one-shots that also need to be in the locomotion layer
+	var loco_one_shots := ["jump", "death", "hit"]
+
+	# ── Locomotion StateMachine (lower body always) ──
+	var loco_sm := AnimationNodeStateMachine.new()
+	for anim_name in locomotion:
+		if lib.has_animation(anim_name):
+			var node := AnimationNodeAnimation.new()
+			node.animation = anim_name
+			loco_sm.add_node(anim_name, node)
+	for from in locomotion:
+		for to in locomotion:
+			if from != to and loco_sm.has_node(from) and loco_sm.has_node(to):
+				var t := AnimationNodeStateMachineTransition.new()
+				t.xfade_time = 0.15
+				loco_sm.add_transition(from, to, t)
+	# Add full-body one-shots to locomotion layer (jump, death, hit)
+	for action in loco_one_shots:
+		if not lib.has_animation(action):
 			continue
+		var node := AnimationNodeAnimation.new()
+		node.animation = action
+		loco_sm.add_node(action, node)
 		for from in locomotion:
-			if state_machine.has_node(from):
+			if loco_sm.has_node(from):
 				var t := AnimationNodeStateMachineTransition.new()
 				t.xfade_time = 0.1
-				state_machine.add_transition(from, action, t)
-		# Auto-return to idle after one-shot completes
+				loco_sm.add_transition(from, action, t)
 		var t_back := AnimationNodeStateMachineTransition.new()
 		t_back.xfade_time = 0.1
 		t_back.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
 		t_back.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
-		state_machine.add_transition(action, "idle", t_back)
+		loco_sm.add_transition(action, "idle", t_back)
 
-	_anim_tree.tree_root = state_machine
+	# ── Combat StateMachine (upper body: locomotion mirror + one-shots) ──
+	var combat_sm := AnimationNodeStateMachine.new()
+	# Add locomotion mirrors so upper body stays in sync when not attacking
+	for anim_name in locomotion:
+		if lib.has_animation(anim_name):
+			var node := AnimationNodeAnimation.new()
+			node.animation = anim_name
+			combat_sm.add_node(anim_name, node)
+	for from in locomotion:
+		for to in locomotion:
+			if from != to and combat_sm.has_node(from) and combat_sm.has_node(to):
+				var t := AnimationNodeStateMachineTransition.new()
+				t.xfade_time = 0.15
+				combat_sm.add_transition(from, to, t)
+	# Add one-shot actions
+	for action in one_shots:
+		if lib.has_animation(action):
+			var node := AnimationNodeAnimation.new()
+			node.animation = action
+			combat_sm.add_node(action, node)
+	# Transitions: locomotion → one-shot, one-shot → idle (auto-return)
+	for action in one_shots:
+		if not combat_sm.has_node(action):
+			continue
+		for from in locomotion:
+			if combat_sm.has_node(from):
+				var t := AnimationNodeStateMachineTransition.new()
+				t.xfade_time = 0.1
+				combat_sm.add_transition(from, action, t)
+		var t_back := AnimationNodeStateMachineTransition.new()
+		t_back.xfade_time = 0.1
+		t_back.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+		t_back.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+		combat_sm.add_transition(action, "idle", t_back)
+
+	# ── Blend2 with upper body bone filter ──
+	var blend2 := AnimationNodeBlend2.new()
+	blend2.filter_enabled = true
+	for bone_path in _get_upper_body_filter_paths():
+		blend2.set_filter_path(bone_path, true)
+
+	# ── Assemble BlendTree ──
+	blend_tree.add_node("locomotion_sm", loco_sm)
+	blend_tree.add_node("combat_sm", combat_sm)
+	blend_tree.add_node("upper_blend", blend2)
+	blend_tree.connect_node("upper_blend", 0, "locomotion_sm")
+	blend_tree.connect_node("upper_blend", 1, "combat_sm")
+	blend_tree.connect_node("output", 0, "upper_blend")
+
+	_anim_tree.tree_root = blend_tree
 	_anim_tree.active = true
 	add_child(_anim_tree)
 
-	_playback = _anim_tree.get("parameters/playback")
+	# Set blend amount to 1.0 (always blend upper body from combat layer)
+	_anim_tree.set("parameters/upper_blend/blend_amount", 1.0)
+
+	_locomotion_playback = _anim_tree.get("parameters/locomotion_sm/playback")
+	_combat_playback = _anim_tree.get("parameters/combat_sm/playback")
+
+
+func _get_upper_body_filter_paths() -> Array[NodePath]:
+	"""Walk skeleton from mixamorig_Spine downward, return all bone NodePaths for filtering."""
+	var paths: Array[NodePath] = []
+	if not _skeleton:
+		return paths
+	var spine_idx: int = _skeleton.find_bone("mixamorig_Spine")
+	if spine_idx < 0:
+		push_warning("CombatAnimator: mixamorig_Spine bone not found, upper body filter disabled")
+		return paths
+	_collect_bone_filter_paths(spine_idx, paths)
+	print("CombatAnimator: upper body filter = %d bones" % paths.size())
+	return paths
+
+
+func _collect_bone_filter_paths(bone_idx: int, result: Array[NodePath]) -> void:
+	"""Recursively collect bone filter paths (Skeleton3D:bone_name format)."""
+	var bone_name: String = _skeleton.get_bone_name(bone_idx)
+	# Filter path format: relative path from AnimationPlayer root to Skeleton3D + :bone_name
+	result.append(NodePath("Skeleton3D:" + bone_name))
+	for i in range(_skeleton.get_bone_count()):
+		if _skeleton.get_bone_parent(i) == bone_idx:
+			_collect_bone_filter_paths(i, result)
 
 
 func _lock_all_hips_xz() -> void:
@@ -269,17 +366,62 @@ func _lock_all_hips_xz() -> void:
 
 
 func travel(anim_name: String) -> void:
-	"""Transition to animation via AnimationTree StateMachine (smooth blend)."""
-	if _playback:
-		_playback.travel(anim_name)
+	"""Backward-compatible: routes to correct layer based on animation type."""
+	if anim_name in FULL_BODY_SET:
+		travel_full_body(anim_name)
+	elif anim_name in ONE_SHOT_SET:
+		travel_combat(anim_name)
+	else:
+		# Locomotion: drive both layers in sync
+		travel_locomotion(anim_name)
+		travel_combat(anim_name)
 	_current_anim = anim_name
 
 
 func start(anim_name: String) -> void:
-	"""Jump directly to animation (no blend, for interrupts like roll)."""
-	if _playback:
-		_playback.start(anim_name)
+	"""Backward-compatible: immediate transition, routes to correct layer."""
+	if anim_name in FULL_BODY_SET:
+		start_full_body(anim_name)
+	elif anim_name in ONE_SHOT_SET:
+		start_combat(anim_name)
+	else:
+		if _locomotion_playback:
+			_locomotion_playback.start(anim_name)
+		if _combat_playback:
+			_combat_playback.start(anim_name)
 	_current_anim = anim_name
+
+
+func travel_locomotion(anim_name: String) -> void:
+	"""Drive the locomotion (lower body) layer."""
+	if _locomotion_playback:
+		_locomotion_playback.travel(anim_name)
+
+
+func travel_combat(anim_name: String) -> void:
+	"""Drive the combat (upper body) layer."""
+	if _combat_playback:
+		_combat_playback.travel(anim_name)
+
+
+func start_combat(anim_name: String) -> void:
+	"""Immediate transition on combat (upper body) layer."""
+	if _combat_playback:
+		_combat_playback.start(anim_name)
+
+
+func travel_full_body(anim_name: String) -> void:
+	"""Drive both layers (for death, hit, jump)."""
+	travel_locomotion(anim_name)
+	travel_combat(anim_name)
+
+
+func start_full_body(anim_name: String) -> void:
+	"""Immediate transition on both layers."""
+	if _locomotion_playback:
+		_locomotion_playback.start(anim_name)
+	if _combat_playback:
+		_combat_playback.start(anim_name)
 
 
 func play(anim_name: String, _speed: float = 1.0) -> void:
@@ -293,10 +435,18 @@ func play_once(anim_name: String, _speed: float = 1.0) -> void:
 
 
 func get_current() -> String:
-	if _playback:
-		var node: StringName = _playback.get_current_node()
+	"""Returns combat layer state (backward compatible with is_attacking checks)."""
+	if _combat_playback:
+		var node: StringName = _combat_playback.get_current_node()
 		return String(node)
 	return _current_anim
+
+
+func get_locomotion_current() -> String:
+	"""Returns locomotion layer state."""
+	if _locomotion_playback:
+		return String(_locomotion_playback.get_current_node())
+	return "idle"
 
 
 func get_current_length() -> float:
