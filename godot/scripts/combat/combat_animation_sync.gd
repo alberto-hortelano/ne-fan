@@ -1,6 +1,6 @@
-## Animation state machine — Souls-Like pattern.
-## Handles locomotion, attacks, hits, death for both player and enemies.
-## Detects movement by position delta (works for StaticBody3D enemies too).
+## Animation state machine — Souls-Like pattern with upper/lower body blending.
+## Locomotion always drives lower body; attacks only affect upper body.
+## Death/hit/jump are full-body. Detects movement by position delta.
 class_name CombatAnimationSync
 extends Node
 
@@ -24,6 +24,9 @@ const ONE_SHOT_ANIMS := [
 	"kick", "hit", "death", "jump", "casting", "power_up",
 	"draw_sword_1", "draw_sword_2",
 ]
+
+# These animations block ALL movement (full-body override)
+const MOVEMENT_BLOCKING_ANIMS := ["death", "hit", "power_up"]
 
 
 func _ready() -> void:
@@ -54,18 +57,17 @@ func _process(delta: float) -> void:
 		_movement_speed = current_pos.distance_to(_prev_pos) / maxf(delta, 0.001)
 		_prev_pos = current_pos
 
-	var current: String = _animator.get_current()
+	var combat_current: String = _animator.get_current()
 
-	# Update is_attacking based on current animation
-	if current in ONE_SHOT_ANIMS:
+	# Update is_attacking based on combat layer animation
+	if combat_current in ONE_SHOT_ANIMS:
 		is_attacking = true
 	else:
 		is_attacking = false
 		is_rolling = false
 
-	# Locomotion (only when not in a one-shot)
-	if not is_attacking:
-		_update_locomotion()
+	# Locomotion always runs (drives lower body independently)
+	_update_locomotion()
 
 
 func _update_locomotion() -> void:
@@ -85,25 +87,30 @@ func _update_locomotion() -> void:
 	if parent.has_method("get_local_input"):
 		local_input = parent.get_local_input()
 
-	var current: String = _animator.get_current()
+	# Determine target locomotion animation
+	var target_anim := "idle"
+	var loco_current: String = _animator.get_locomotion_current()
+
 	if speed > _sprint_speed * 0.7:
-		if current != "run":
-			_animator.travel("run")
+		target_anim = "run"
 	elif speed > 0.3:
-		# Pick directional animation based on local input
-		var target_anim := "walk"
+		target_anim = "walk"
 		if local_input.y > 0.5:
 			target_anim = "walk_back"
 		elif absf(local_input.x) > absf(local_input.y):
 			target_anim = "strafe_right" if local_input.x < 0 else "strafe_left"
-		if current != target_anim:
-			_animator.travel(target_anim)
 	elif turning:
-		if current != "turn":
-			_animator.travel("turn")
-	else:
-		if current != "idle":
-			_animator.travel("idle")
+		target_anim = "turn"
+
+	# Always drive locomotion layer (lower body)
+	if loco_current != target_anim:
+		_animator.travel_locomotion(target_anim)
+
+	# When not attacking, also sync combat layer to match locomotion (upper body follows)
+	if not is_attacking:
+		var combat_current: String = _animator.get_current()
+		if combat_current != target_anim:
+			_animator.travel_combat(target_anim)
 
 
 # ─── Public API ───
@@ -112,14 +119,15 @@ func _update_locomotion() -> void:
 func attack(type: String) -> void:
 	if not _animator or is_dead or is_attacking:
 		return
-	_animator.travel(type)
+	# Only upper body plays attack — legs keep locomotion
+	_animator.travel_combat(type)
 	is_attacking = true
 
 
 func roll() -> void:
 	if not _animator or is_dead or is_attacking:
 		return
-	_animator.start("kick")
+	_animator.start_combat("kick")
 	is_rolling = true
 	is_attacking = true
 
@@ -127,7 +135,8 @@ func roll() -> void:
 func jump() -> void:
 	if not _animator or is_dead or is_attacking:
 		return
-	_animator.travel("jump")
+	# Jump is full-body
+	_animator.travel_full_body("jump")
 	is_attacking = true
 
 
@@ -142,15 +151,16 @@ func _on_attack_started(type_id: String) -> void:
 	if not _animator or is_dead:
 		return
 	if not is_attacking:
-		_animator.travel(type_id)
+		# Only upper body plays attack
+		_animator.travel_combat(type_id)
 		is_attacking = true
 
 
 func _on_damage_received(amount: float, _from: Node) -> void:
 	if not _animator or is_dead:
 		return
-	# Hit reaction — interrupt current action
-	_animator.start("hit")
+	# Hit reaction — full body interrupt
+	_animator.start_full_body("hit")
 	is_attacking = true
 	# 3D damage number
 	_spawn_damage_number(amount)
@@ -162,7 +172,8 @@ func _on_died() -> void:
 	if not _animator:
 		return
 	is_dead = true
-	_animator.start("death")
+	# Death is full body
+	_animator.start_full_body("death")
 	is_attacking = true
 	# Disable collision and fade after death animation
 	var tween := create_tween()
@@ -226,7 +237,7 @@ func reset() -> void:
 	is_rolling = false
 	_movement_speed = 0.0
 	if _animator:
-		_animator.travel("idle")
+		_animator.travel_full_body("idle")
 	# Re-enable collision and visibility after death
 	var parent := get_parent()
 	var col: CollisionShape3D = parent.get_node_or_null("CollisionShape3D")
@@ -244,4 +255,9 @@ func get_current_state() -> String:
 
 
 func is_interruptible() -> bool:
-	return not is_attacking and not is_dead
+	if is_dead:
+		return false
+	# Attacks no longer block movement (upper/lower body split).
+	# Only truly immobilizing animations block movement.
+	var combat_current: String = _animator.get_current() if _animator else ""
+	return combat_current not in MOVEMENT_BLOCKING_ANIMS

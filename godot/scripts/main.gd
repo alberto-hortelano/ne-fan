@@ -32,6 +32,9 @@ var _player_combatant: Node  # Combatant
 var _current_room: Node3D = null
 var _transitioning := false
 var _scenario_active := false
+var _returning_to_title := false
+var _pause_menu: CanvasLayer = null
+var _paused := false
 
 @onready var _player: CharacterBody3D = $Player
 
@@ -80,7 +83,7 @@ func _ready() -> void:
 	_combat_manager.combat_result.connect(_combat_hud.on_combat_result)
 	_player_combatant.damage_received.connect(_on_player_damage_received)
 	_player_combatant.damage_received.connect(_on_player_damage_log)
-	_player_combatant.died.connect(func() -> void: _combat_hud.add_log_message("YOU DIED — press R to respawn", Color(1, 0.2, 0.2)))
+	_player_combatant.died.connect(_on_player_died)
 
 	# Independent camera (NOT child of player)
 	_camera_controller = CameraControllerScript.new()
@@ -166,13 +169,22 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_toggle_pause()
+		get_viewport().set_input_as_handled()
+		return
+
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_F1: _load_room_from_file(0)
 			KEY_F2: _load_room_from_file(1)
 			KEY_F3: _load_room_from_file(2)
 			KEY_F4:
+				_reset_game_state()
 				_scenario_active = true
+				_player.visible = true
+				_player.set_physics_process(true)
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				LogicBridge.send_load_game("tavern_intro")
 				_hud.show_brief_message("Cargando escenario...")
 			KEY_F12: _dev_menu.toggle()
@@ -280,6 +292,187 @@ func respawn_player() -> void:
 	_hud.show_brief_message("Respawn")
 
 
+func _on_player_died() -> void:
+	# Guard against re-entry: bridge may emit `died` multiple times after auto-respawn
+	if _returning_to_title:
+		return
+	_returning_to_title = true
+	_combat_hud.add_log_message("HAS MUERTO", Color(1, 0.2, 0.2))
+	# Wait for death animation to play out, then return to title
+	await get_tree().create_timer(2.5).timeout
+	return_to_title()
+	_returning_to_title = false
+
+
+func _toggle_pause() -> void:
+	if _paused:
+		_unpause()
+	else:
+		_pause()
+
+
+func _pause() -> void:
+	if _paused or not _current_room:
+		return
+	_paused = true
+	# Freeze player
+	_player.set_physics_process(false)
+	_player.set_process_input(false)
+	# Freeze bridge (stops sending input to TS, stops processing combat ticks)
+	LogicBridge.set_physics_process(false)
+	LogicBridge.set_process(false)
+	# Freeze room children (enemy animations, AI, combat sync)
+	for child in _current_room.get_children():
+		child.set_process(false)
+		child.set_physics_process(false)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+	_pause_menu = CanvasLayer.new()
+	_pause_menu.name = "PauseMenu"
+	_pause_menu.layer = 21
+	_pause_menu.process_mode = Node.PROCESS_MODE_ALWAYS
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.6)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_menu.add_child(bg)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_menu.add_child(center)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 20)
+	center.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "PAUSA"
+	title.add_theme_font_size_override("font_size", 42)
+	title.add_theme_color_override("font_color", Color(0.85, 0.65, 0.3))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	var btn_style := StyleBoxFlat.new()
+	btn_style.bg_color = Color(0.12, 0.08, 0.18)
+	btn_style.border_color = Color(0.5, 0.35, 0.15)
+	btn_style.set_border_width_all(2)
+	btn_style.set_corner_radius_all(6)
+	btn_style.set_content_margin_all(12)
+
+	var hover_style := btn_style.duplicate()
+	hover_style.bg_color = Color(0.2, 0.12, 0.25)
+	hover_style.border_color = Color(0.85, 0.65, 0.3)
+
+	var btn_resume := Button.new()
+	btn_resume.text = "Continuar"
+	btn_resume.add_theme_font_size_override("font_size", 24)
+	btn_resume.custom_minimum_size = Vector2(300, 55)
+	btn_resume.add_theme_stylebox_override("normal", btn_style)
+	btn_resume.add_theme_stylebox_override("hover", hover_style)
+	btn_resume.add_theme_stylebox_override("focus", hover_style)
+	btn_resume.pressed.connect(_unpause)
+	vbox.add_child(btn_resume)
+
+	var btn_title := Button.new()
+	btn_title.text = "Volver al titulo"
+	btn_title.add_theme_font_size_override("font_size", 24)
+	btn_title.custom_minimum_size = Vector2(300, 55)
+	btn_title.add_theme_stylebox_override("normal", btn_style.duplicate())
+	btn_title.add_theme_stylebox_override("hover", hover_style.duplicate())
+	btn_title.add_theme_stylebox_override("focus", hover_style.duplicate())
+	btn_title.pressed.connect(_on_pause_return_to_title)
+	vbox.add_child(btn_title)
+
+	add_child(_pause_menu)
+	btn_resume.call_deferred("grab_focus")
+
+
+func _unpause() -> void:
+	if not _paused:
+		return
+	_paused = false
+	# Unfreeze player
+	_player.set_physics_process(true)
+	_player.set_process_input(true)
+	# Unfreeze bridge
+	LogicBridge.set_physics_process(true)
+	LogicBridge.set_process(true)
+	# Unfreeze room children
+	if _current_room:
+		for child in _current_room.get_children():
+			child.set_process(true)
+			child.set_physics_process(true)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if _pause_menu:
+		_pause_menu.queue_free()
+		_pause_menu = null
+
+
+func _on_pause_return_to_title() -> void:
+	_unpause()
+	return_to_title()
+
+
+func _reset_game_state() -> void:
+	"""Full reset between games — clears UI, scenario, state, combat."""
+	# UI overlays
+	if _dialogue_ui:
+		_dialogue_ui.hide_all()
+	_hud.hide_prompt()
+	_hud.hide_text_panel()
+	# Scenario
+	_scenario_active = false
+	# GameState
+	GameState.reset()
+	# GameStore narrative
+	GameStore.state.narrative.story_so_far = ""
+	GameStore.state.narrative.last_dialogue = ""
+	GameStore.state.narrative.last_interaction = ""
+	GameStore.state.world.rooms_visited.clear()
+	# Combat
+	_combat_manager.clear_pending()
+	_combat_hud.set_target(null)
+
+
+func return_to_title() -> void:
+	_reset_game_state()
+
+	# Tear down current room
+	if _current_room:
+		for child in _current_room.get_children():
+			var c = child.get_node_or_null("Combatant")
+			if c:
+				_combat_manager.unregister_combatant(c)
+		_current_room.queue_free()
+		_current_room = null
+
+	# Reset player state
+	_player_combatant.health = _player_combatant.max_health
+	_player_combatant.state = 0  # IDLE
+	_player_combatant.current_attack_type = ""
+	GameStore.state.player.hp = _player_combatant.max_health
+	GameStore.state.player.combat_state = "idle"
+
+	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	if player_sync:
+		player_sync.reset()
+
+	# Hide and freeze player
+	_player.velocity = Vector3.ZERO
+	_player.set_physics_process(false)
+	_player.visible = false
+
+	# Release mouse
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+	# Recreate title screen if not already present
+	if not has_node("TitleScreen"):
+		var title_screen := TitleScreenScript.new()
+		title_screen.name = "TitleScreen"
+		title_screen.game_selected.connect(_on_title_game_selected)
+		add_child(title_screen)
+
+
 # --- Room scanning and loading ---
 
 func _scan_rooms() -> void:
@@ -333,6 +526,9 @@ func _scan_room_dir(dir_path: String, recurse: bool = false) -> void:
 
 
 func _on_dev_room_selected(file_path: String) -> void:
+	_scenario_active = false
+	if _dialogue_ui:
+		_dialogue_ui.hide_all()
 	load_room_by_path(file_path)
 
 
@@ -395,6 +591,9 @@ func load_room_by_path(file_path: String) -> void:
 func _load_room_from_file(index: int) -> void:
 	if index < 0 or index >= _room_files.size():
 		return
+	_scenario_active = false
+	if _dialogue_ui:
+		_dialogue_ui.hide_all()
 	load_room_by_path(_room_files[index])
 
 
@@ -463,6 +662,12 @@ func _on_generation_failed(error: String) -> void:
 # --- Room building ---
 
 func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> void:
+	# Clear stale UI from previous room
+	if _dialogue_ui:
+		_dialogue_ui.hide_all()
+	_hud.hide_prompt()
+	_hud.hide_text_panel()
+
 	# Freeze player during room swap to prevent falling through void
 	_player.set_physics_process(false)
 	_player.velocity = Vector3.ZERO
@@ -586,33 +791,41 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 
 func _on_title_game_selected(game_id: String, scene_path: String) -> void:
 	print("Title: starting game '%s' from '%s'" % [game_id, scene_path])
+	_reset_game_state()
 	_scenario_active = true
 	_player.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	# Load the scene file immediately so the player has ground
-	load_room_by_path(scene_path)
-	# Send load_game to bridge (queues if not connected yet)
+	# Send load_game to bridge — it will respond with change_scene + spawn_npc
 	LogicBridge.send_load_game(game_id)
+	if not LogicBridge.is_connected_to_bridge():
+		# Fallback: load room from disk when no bridge available
+		load_room_by_path(scene_path)
+	# Player physics re-enabled by _apply_room when room arrives
 
 
 # --- Scenario handlers ---
 
 
 func _on_scenario_dialogue(speaker: String, text: String, choices: Array) -> void:
+	if not _scenario_active:
+		return
 	_dialogue_ui.show_dialogue(speaker, text, choices)
 
 
 func _on_scenario_objective(text: String) -> void:
+	if not _scenario_active:
+		return
 	_dialogue_ui.show_objective(text)
 
 
 func _on_scenario_change_scene(scene_data: Dictionary) -> void:
-	_scenario_active = true
+	if not _scenario_active:
+		return
 	_apply_room(scene_data, Vector3(0, 1, 0), true)
 
 
 func _on_scenario_spawn_npc(data: Dictionary) -> void:
-	if not _current_room:
+	if not _scenario_active or not _current_room:
 		return
 	var spawner = ObjectSpawnerScript.new()
 	var npc_data := {
@@ -629,7 +842,7 @@ func _on_scenario_spawn_npc(data: Dictionary) -> void:
 
 
 func _on_scenario_despawn_npc(npc_id: String) -> void:
-	if not _current_room:
+	if not _scenario_active or not _current_room:
 		return
 	var node := _current_room.get_node_or_null(npc_id)
 	if node:
@@ -638,7 +851,7 @@ func _on_scenario_despawn_npc(npc_id: String) -> void:
 
 
 func _on_scenario_spawn_enemy(data: Dictionary) -> void:
-	if not _current_room:
+	if not _scenario_active or not _current_room:
 		return
 	var spawner = ObjectSpawnerScript.new()
 	var combat_data: Dictionary = data.get("combat", {})
@@ -678,6 +891,8 @@ func _on_scenario_spawn_enemy(data: Dictionary) -> void:
 
 
 func _on_scenario_give_weapon(weapon_id: String) -> void:
+	if not _scenario_active:
+		return
 	if _player_combatant:
 		_player_combatant.weapon_id = weapon_id
 		GameStore.dispatch("weapon_changed", {"weapon_id": weapon_id})
@@ -686,7 +901,7 @@ func _on_scenario_give_weapon(weapon_id: String) -> void:
 
 
 func _on_scenario_spawn_objects(objects: Array) -> void:
-	if not _current_room:
+	if not _scenario_active or not _current_room:
 		return
 	var spawner := ObjectSpawnerScript.new()
 	spawner.spawn_objects(objects, _current_room)

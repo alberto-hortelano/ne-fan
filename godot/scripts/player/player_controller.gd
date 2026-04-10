@@ -107,8 +107,9 @@ func _physics_process(delta: float) -> void:
 	# Apply velocity
 	var acceleration := 15.0
 
-	if _sync and _sync.is_attacking and not _sync.get_current_state() == "jump":
-		# During attacks (not jump): almost no movement
+	var combat_state: String = _sync.get_current_state() if _sync else ""
+	if combat_state in CombatAnimationSync.MOVEMENT_BLOCKING_ANIMS:
+		# Only death/hit/power_up block movement — attacks allow walking
 		_horizontal_velocity = _horizontal_velocity.lerp(Vector3.ZERO, acceleration * delta)
 	elif has_input and can_move:
 		_horizontal_velocity = _horizontal_velocity.lerp(direction * movement_speed, acceleration * delta)

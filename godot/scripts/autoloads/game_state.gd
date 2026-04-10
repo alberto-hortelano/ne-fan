@@ -69,6 +69,16 @@ func serialize_world_state(entry_wall: String = "south", target_hint: String = "
 	}
 
 
+func reset() -> void:
+	"""Clear all mutable state between games."""
+	visited_rooms.clear()
+	current_room_id = ""
+	story_so_far = ""
+	player_health = 100.0
+	player_gold = 0
+	active_quests.clear()
+
+
 func mark_room_visited(room_id: String, room_data: Dictionary) -> void:
 	visited_rooms[room_id] = room_data
 	current_room_id = room_id

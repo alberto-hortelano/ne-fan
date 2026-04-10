@@ -62,14 +62,21 @@ func _ready() -> void:
 	material_override = mat
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	# Use global coordinates — don't rotate with parent
+	# Use global coordinates — don't rotate with parent.
+	# Vertices are built in world space, so the visual must sit at the world origin.
 	top_level = true
+	global_transform = Transform3D.IDENTITY
 
 
 func _process(delta: float) -> void:
 	var im: ImmediateMesh = mesh as ImmediateMesh
 	if not im or not _combatant:
 		return
+
+	# Keep visual pinned at world origin so absolute vertex coords render correctly.
+	# (top_level captures global_transform when set, but parent reparenting can drift it.)
+	if global_transform != Transform3D.IDENTITY:
+		global_transform = Transform3D.IDENTITY
 
 	# Handle impact fade
 	if _mode == "impact":

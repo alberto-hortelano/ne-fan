@@ -1,15 +1,12 @@
 ## Combat UI overlay: top bar with HP bars + attack selector (like HTML version).
+## Attack types are read from combat_config.json — add/modify types there.
 class_name CombatHUD
 extends CanvasLayer
 
-const ATTACK_TYPE_ORDER := ["quick", "heavy", "medium", "defensive", "precise"]
-const ATTACK_TYPE_LABELS := {
-	"quick": "1:Quick",
-	"heavy": "2:Heavy",
-	"medium": "3:Medium",
-	"defensive": "4:Def",
-	"precise": "5:Precise",
-}
+const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
+
+var _attack_type_order: Array[String] = []
+
 const BAR_WIDTH := 120.0
 const BAR_HEIGHT := 12.0
 const ACTIVE_COLOR := Color(1.0, 0.85, 0.2)
@@ -127,8 +124,14 @@ func _ready() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hbox.add_child(spacer)
 
-	# --- Attack type selector ---
-	for type_id in ATTACK_TYPE_ORDER:
+	# --- Attack type selector (from config) ---
+	var config: Dictionary = CombatDataRef.load_config()
+	var attack_types: Dictionary = config.get("attack_types", {})
+	var idx := 0
+	for type_id: String in attack_types:
+		_attack_type_order.append(type_id)
+		idx += 1
+		var display: String = attack_types[type_id].get("display_name", type_id)
 		var slot_panel := PanelContainer.new()
 		var slot_style := StyleBoxFlat.new()
 		slot_style.bg_color = INACTIVE_BG
@@ -146,11 +149,13 @@ func _ready() -> void:
 		_attack_slots.append(slot_panel)
 
 		var slot_label := Label.new()
-		slot_label.text = ATTACK_TYPE_LABELS.get(type_id, type_id)
+		slot_label.text = "%d:%s" % [idx, display]
 		slot_label.add_theme_font_size_override("font_size", 12)
 		slot_panel.add_child(slot_label)
 		_attack_labels.append(slot_label)
 
+	if _attack_type_order.size() > 0:
+		_selected_type = _attack_type_order[0]
 	_update_slot_colors()
 
 	# Combat log (bottom-left) — uses PanelContainer with dark background for visibility
@@ -212,7 +217,7 @@ func _process(_delta: float) -> void:
 
 func _update_slot_colors() -> void:
 	for i in range(_attack_slots.size()):
-		var type_id: String = ATTACK_TYPE_ORDER[i]
+		var type_id: String = _attack_type_order[i]
 		var is_active: bool = type_id == _selected_type
 		var style: StyleBoxFlat = _attack_slots[i].get_theme_stylebox("panel").duplicate()
 		if is_active:
