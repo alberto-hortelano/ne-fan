@@ -4,7 +4,7 @@
   "dimensions": { "width": 16.0, "height": 4.0, "depth": 16.0 },
   "surfaces": {
     "floor": { "texture_prompt": "white and grey checkerboard grid floor, 1 meter squares, clean bright, seamless tiling", "tiling": [16, 16] },
-    "ceiling": { "texture_prompt": "plain white ceiling, bright", "tiling": [2, 2] },
+    "ceiling": null,
     "walls": [
       { "side": "north", "texture_prompt": "plain light grey wall", "tiling": [3, 1] },
       { "side": "east", "texture_prompt": "plain light grey wall", "tiling": [3, 1] },

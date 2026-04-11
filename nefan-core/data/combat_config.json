@@ -2,7 +2,7 @@
   "attack_types": {
     "quick": {
       "display_name": "Rápido",
-      "wind_up_time": 0.3,
+      "wind_up_time": 0.5,
       "optimal_distance": 1.5,
       "distance_tolerance": 1.0,
       "area_radius": 1.2,
@@ -234,7 +234,7 @@
       "category": "locomotion"
     },
     "quick": {
-      "duration": 2.33,
+      "duration": 1.00,
       "interruptible": false,
       "loops": false,
       "category": "combat"
@@ -246,7 +246,7 @@
       "category": "combat"
     },
     "medium": {
-      "duration": 1.30,
+      "duration": 1.37,
       "interruptible": false,
       "loops": false,
       "category": "combat"
@@ -259,6 +259,36 @@
     },
     "precise": {
       "duration": 1.67,
+      "interruptible": false,
+      "loops": false,
+      "category": "combat"
+    },
+    "attack_1": {
+      "duration": 2.33,
+      "interruptible": false,
+      "loops": false,
+      "category": "combat"
+    },
+    "attack_2": {
+      "duration": 1.30,
+      "interruptible": false,
+      "loops": false,
+      "category": "combat"
+    },
+    "attack_3": {
+      "duration": 1.73,
+      "interruptible": false,
+      "loops": false,
+      "category": "combat"
+    },
+    "slash_2": {
+      "duration": 3.53,
+      "interruptible": false,
+      "loops": false,
+      "category": "combat"
+    },
+    "slash_4": {
+      "duration": 2.43,
       "interruptible": false,
       "loops": false,
       "category": "combat"

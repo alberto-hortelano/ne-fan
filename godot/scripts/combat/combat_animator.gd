@@ -25,6 +25,11 @@ const ANIM_MAP := {
 	"medium": "sword and shield slash (5)",
 	"defensive": "sword and shield block",
 	"precise": "sword and shield slash (3)",
+	"attack_1": "sword and shield attack",
+	"attack_2": "sword and shield attack (2)",
+	"attack_3": "sword and shield attack (3)",
+	"slash_2": "sword and shield slash (2)",
+	"slash_4": "sword and shield slash (4)",
 	"hit": "sword and shield impact",
 	"death": "sword and shield death",
 	"turn": "sword and shield turn",
@@ -53,6 +58,7 @@ var _collision_rest_pos := Vector3(0, 0.9, 0)
 # One-shot animations (attacks, reactions) — used for routing travel() calls
 const ONE_SHOT_SET := {
 	"quick": true, "heavy": true, "medium": true, "defensive": true, "precise": true,
+	"attack_1": true, "attack_2": true, "attack_3": true, "slash_2": true, "slash_4": true,
 	"kick": true, "hit": true, "death": true, "jump": true, "casting": true,
 	"power_up": true, "draw_sword_1": true, "draw_sword_2": true,
 }
@@ -212,6 +218,7 @@ func _setup_animation_tree() -> void:
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
 	var locomotion := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "turn"]
 	var one_shots := ["quick", "heavy", "medium", "defensive", "precise",
+					  "attack_1", "attack_2", "attack_3", "slash_2", "slash_4",
 					  "kick", "hit", "death", "jump", "casting",
 					  "power_up", "draw_sword_1", "draw_sword_2"]
 
@@ -290,12 +297,17 @@ func _setup_animation_tree() -> void:
 	for bone_path in _get_upper_body_filter_paths():
 		blend2.set_filter_path(bone_path, true)
 
+	# ── TimeScale for combat speed adjustment ──
+	var time_scale := AnimationNodeTimeScale.new()
+
 	# ── Assemble BlendTree ──
 	blend_tree.add_node("locomotion_sm", loco_sm)
 	blend_tree.add_node("combat_sm", combat_sm)
+	blend_tree.add_node("combat_speed", time_scale)
 	blend_tree.add_node("upper_blend", blend2)
+	blend_tree.connect_node("combat_speed", 0, "combat_sm")
 	blend_tree.connect_node("upper_blend", 0, "locomotion_sm")
-	blend_tree.connect_node("upper_blend", 1, "combat_sm")
+	blend_tree.connect_node("upper_blend", 1, "combat_speed")
 	blend_tree.connect_node("output", 0, "upper_blend")
 
 	_anim_tree.tree_root = blend_tree
@@ -304,6 +316,8 @@ func _setup_animation_tree() -> void:
 
 	# Set blend amount to 1.0 (always blend upper body from combat layer)
 	_anim_tree.set("parameters/upper_blend/blend_amount", 1.0)
+	# Default combat speed scale
+	_anim_tree.set("parameters/combat_speed/scale", 1.0)
 
 	_locomotion_playback = _anim_tree.get("parameters/locomotion_sm/playback")
 	_combat_playback = _anim_tree.get("parameters/combat_sm/playback")
@@ -447,6 +461,18 @@ func get_locomotion_current() -> String:
 	if _locomotion_playback:
 		return String(_locomotion_playback.get_current_node())
 	return "idle"
+
+
+func set_combat_speed_scale(scale: float) -> void:
+	"""Set playback speed for combat (upper body) layer only."""
+	if _anim_tree:
+		_anim_tree.set("parameters/combat_speed/scale", scale)
+
+
+func get_combat_speed_scale() -> float:
+	if _anim_tree:
+		return _anim_tree.get("parameters/combat_speed/scale")
+	return 1.0
 
 
 func get_current_length() -> float:

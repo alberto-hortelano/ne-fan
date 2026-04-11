@@ -9,6 +9,9 @@ const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
 var _animator: Node  # CombatAnimator
 var _combatant: Node  # Combatant
 var _sprint_speed := 3.8
+var _animation_intrinsics: Dictionary = {}
+var _attack_types: Dictionary = {}
+var _weapons: Dictionary = {}
 
 # State
 var is_attacking := false
@@ -21,6 +24,7 @@ var _movement_speed := 0.0
 
 const ONE_SHOT_ANIMS := [
 	"quick", "heavy", "medium", "defensive", "precise",
+	"attack_1", "attack_2", "attack_3", "slash_2", "slash_4",
 	"kick", "hit", "death", "jump", "casting", "power_up",
 	"draw_sword_1", "draw_sword_2",
 ]
@@ -35,6 +39,9 @@ func _ready() -> void:
 	var config: Dictionary = CombatDataRef.load_config()
 	var pcfg: Dictionary = config.get("player", {})
 	_sprint_speed = pcfg.get("sprint_speed", 3.8)
+	_attack_types = config.get("attack_types", {})
+	_weapons = config.get("weapons", {})
+	_load_animation_intrinsics()
 
 	if _combatant:
 		_combatant.damage_received.connect(_on_damage_received)
@@ -63,6 +70,9 @@ func _process(delta: float) -> void:
 	if combat_current in ONE_SHOT_ANIMS:
 		is_attacking = true
 	else:
+		if is_attacking:
+			# Attack just ended — reset combat speed scale
+			_animator.set_combat_speed_scale(1.0)
 		is_attacking = false
 		is_rolling = false
 
@@ -119,8 +129,13 @@ func _update_locomotion() -> void:
 func attack(type: String) -> void:
 	if not _animator or is_dead or is_attacking:
 		return
+	# Select best animation and speed for current parameters
+	var match_result: Dictionary = _select_best_animation(type)
+	var anim_key: String = match_result.get("key", type)
+	var speed: float = match_result.get("speed_scale", 1.0)
+	_animator.set_combat_speed_scale(speed)
 	# Only upper body plays attack — legs keep locomotion
-	_animator.travel_combat(type)
+	_animator.travel_combat(anim_key)
 	is_attacking = true
 
 
@@ -261,3 +276,77 @@ func is_interruptible() -> bool:
 	# Only truly immobilizing animations block movement.
 	var combat_current: String = _animator.get_current() if _animator else ""
 	return combat_current not in MOVEMENT_BLOCKING_ANIMS
+
+
+func _load_animation_intrinsics() -> void:
+	var path := "res://data/animation_intrinsics.json"
+	var file := FileAccess.open(path, FileAccess.READ)
+	if not file:
+		return
+	var data = JSON.parse_string(file.get_as_text())
+	file.close()
+	if data is Dictionary and data.has("attack_animations"):
+		_animation_intrinsics = data["attack_animations"]
+		print("CombatAnimationSync: loaded %d animation intrinsics" % _animation_intrinsics.size())
+
+
+func _select_best_animation(attack_type: String) -> Dictionary:
+	"""Select best animation for given attack parameters. Returns {key, speed_scale}."""
+	if _animation_intrinsics.is_empty() or _attack_types.is_empty():
+		return {"key": attack_type, "speed_scale": 1.0}
+
+	# Get effective params for this attack type + current weapon
+	var weapon_id: String = _combatant.weapon_id if _combatant else "unarmed"
+	var weapon_data: Dictionary = _weapons.get(weapon_id, {})
+	var params: Dictionary = CombatDataRef.get_effective_params(attack_type, _attack_types, weapon_data)
+	if params.is_empty():
+		return {"key": attack_type, "speed_scale": 1.0}
+
+	var optimal_dist: float = params.get("optimal_distance", 1.5)
+	var area_radius: float = params.get("area_radius", 1.2)
+	var wind_up: float = params.get("wind_up_time", 0.3)
+
+	# Expected sweep angle from area_radius at optimal_distance
+	var expected_sweep: float = rad_to_deg(2.0 * atan(area_radius / maxf(optimal_dist, 0.01)))
+
+	var best_key: String = attack_type
+	var best_speed: float = 1.0
+	var best_score: float = -1.0
+
+	for anim_key in _animation_intrinsics:
+		var anim: Dictionary = _animation_intrinsics[anim_key]
+		if anim.get("has_steps", false):
+			continue
+		if anim.get("style", "") == "kick":
+			continue
+
+		var reach: float = anim.get("visual_reach_m", 0.5)
+		var sweep: float = anim.get("visual_sweep_deg", 90.0)
+		var duration: float = anim.get("duration", 1.0)
+		var impact_frac: float = anim.get("impact_fraction", 0.3)
+
+		# Speed scale: align impact with wind_up_time
+		var impact_time: float = duration * impact_frac
+		var speed_scale: float = impact_time / maxf(wind_up, 0.01)
+
+		# Score: reach fit (40%), arc fit (30%), speed fit (30%)
+		var reach_score: float = maxf(0.0, 1.0 - absf(reach - optimal_dist) / maxf(reach, optimal_dist))
+		var arc_score: float = maxf(0.0, 1.0 - absf(sweep - expected_sweep) / maxf(sweep, expected_sweep))
+
+		# Speed fit: prefer 1.0x, penalize outside [0.6, 1.8]
+		var speed_score: float = 0.0
+		if speed_scale >= 0.6 and speed_scale <= 1.8:
+			speed_score = maxf(0.0, 1.0 - absf(1.0 - speed_scale) * 0.3)
+		elif speed_scale < 0.6:
+			speed_score = maxf(0.0, speed_scale / 0.6 - 0.5)
+		else:
+			speed_score = maxf(0.0, 1.0 - (speed_scale - 1.8) * 0.5)
+
+		var total: float = reach_score * 0.4 + arc_score * 0.3 + speed_score * 0.3
+
+		if total > best_score:
+			best_score = total
+			best_key = anim_key
+			best_speed = clampf(speed_scale, 0.6, 1.8)
+
+	return {"key": best_key, "speed_scale": best_speed}

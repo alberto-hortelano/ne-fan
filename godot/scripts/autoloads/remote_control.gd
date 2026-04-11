@@ -254,6 +254,21 @@ func _cmd_status() -> String:
 	var animator = main_scene.get_node_or_null("Player/CombatAnimator")
 	if animator:
 		info["anim_name"] = animator.get_current()
+		# Weapon tip tracking for animation intrinsics measurement
+		if animator._skeleton:
+			var hand_idx: int = animator._skeleton.find_bone("mixamorig_RightHand")
+			if hand_idx >= 0:
+				var bone_pose: Transform3D = animator._skeleton.get_bone_global_pose(hand_idx)
+				var tip_world: Vector3 = animator.global_transform * animator._skeleton.transform * bone_pose.origin
+				info["weapon_tip"] = [snappedf(tip_world.x, 0.001),
+									  snappedf(tip_world.y, 0.001),
+									  snappedf(tip_world.z, 0.001)]
+	# Collision shape offset (tracks Hips during attacks)
+	var col_shape = main_scene.get_node_or_null("Player/CollisionShape3D")
+	if col_shape:
+		info["collision_offset"] = [snappedf(col_shape.position.x, 0.001),
+									snappedf(col_shape.position.y, 0.001),
+									snappedf(col_shape.position.z, 0.001)]
 	info["bridge_connected"] = LogicBridge.is_connected_to_bridge()
 	return JSON.stringify(info)
 
@@ -294,6 +309,12 @@ func _cmd_attack(args: Dictionary) -> String:
 	var pci = player.get_node_or_null("PlayerCombatInput")
 	if pci:
 		pci.request_attack(attack_type)
+	# When bridge is not connected, emit attack_started directly for area display
+	if not LogicBridge.is_connected_to_bridge():
+		var combatant = player.get_node_or_null("Combatant")
+		if combatant:
+			combatant.current_attack_type = attack_type
+			combatant.attack_started.emit(attack_type)
 	var animator = player.get_node_or_null("CombatAnimator")
 	var duration: float = 0.0
 	if animator and animator._anim_player and animator._anim_player.has_animation(attack_type):
