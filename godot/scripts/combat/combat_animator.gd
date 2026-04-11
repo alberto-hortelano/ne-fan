@@ -216,7 +216,7 @@ func _setup_animation_tree() -> void:
 	var blend_tree := AnimationNodeBlendTree.new()
 
 	var lib: AnimationLibrary = _anim_player.get_animation_library("")
-	var locomotion := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "turn"]
+	var locomotion := ["idle", "walk", "run", "walk_back", "strafe_left", "strafe_right", "turn", "block_idle"]
 	var one_shots := ["quick", "heavy", "medium", "defensive", "precise",
 					  "attack_1", "attack_2", "attack_3", "slash_2", "slash_4",
 					  "kick", "hit", "death", "jump", "casting",
