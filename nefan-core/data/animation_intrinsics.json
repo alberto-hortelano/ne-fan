@@ -1,0 +1,125 @@
+{
+  "attack_animations": {
+    "quick": {
+      "fbx_name": "sword and shield attack (4)",
+      "duration": 1.0,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.535,
+      "visual_sweep_deg": 108.0,
+      "max_hips_displacement_m": 0.008,
+      "impact_fraction": 0.1,
+      "style": "wide_slash"
+    },
+    "heavy": {
+      "fbx_name": "sword and shield slash",
+      "duration": 1.5,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.649,
+      "visual_sweep_deg": 149.6,
+      "max_hips_displacement_m": 0.085,
+      "impact_fraction": 0.47,
+      "style": "wide_slash"
+    },
+    "medium": {
+      "fbx_name": "sword and shield slash (5)",
+      "duration": 1.367,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.407,
+      "visual_sweep_deg": 162.1,
+      "max_hips_displacement_m": 0.075,
+      "impact_fraction": 0.33,
+      "style": "wide_slash"
+    },
+    "defensive": {
+      "fbx_name": "sword and shield block",
+      "duration": 0.567,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.626,
+      "visual_sweep_deg": 153.3,
+      "max_hips_displacement_m": 0.028,
+      "impact_fraction": 0.35,
+      "style": "block_strike"
+    },
+    "precise": {
+      "fbx_name": "sword and shield slash (3)",
+      "duration": 1.667,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.624,
+      "visual_sweep_deg": 4.0,
+      "max_hips_displacement_m": 0.085,
+      "impact_fraction": 0.54,
+      "style": "thrust"
+    },
+    "attack_1": {
+      "fbx_name": "sword and shield attack",
+      "duration": 2.333,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.525,
+      "visual_sweep_deg": 5.0,
+      "max_hips_displacement_m": 0.085,
+      "impact_fraction": 0.39,
+      "style": "thrust"
+    },
+    "attack_2": {
+      "fbx_name": "sword and shield attack (2)",
+      "duration": 1.3,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.666,
+      "visual_sweep_deg": 152.8,
+      "max_hips_displacement_m": 0.029,
+      "impact_fraction": 0.35,
+      "style": "wide_slash"
+    },
+    "attack_3": {
+      "fbx_name": "sword and shield attack (3)",
+      "duration": 1.733,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.719,
+      "visual_sweep_deg": 163.7,
+      "max_hips_displacement_m": 0.068,
+      "impact_fraction": 0.26,
+      "style": "wide_slash"
+    },
+    "slash_2": {
+      "fbx_name": "sword and shield slash (2)",
+      "duration": 3.533,
+      "num_hits": 2,
+      "has_steps": false,
+      "visual_reach_m": 0.582,
+      "visual_sweep_deg": 11.3,
+      "max_hips_displacement_m": 0.086,
+      "impact_fraction": 0.2,
+      "style": "thrust"
+    },
+    "slash_4": {
+      "fbx_name": "sword and shield slash (4)",
+      "duration": 2.433,
+      "num_hits": 2,
+      "has_steps": false,
+      "visual_reach_m": 0.465,
+      "visual_sweep_deg": 5.5,
+      "max_hips_displacement_m": 0.085,
+      "impact_fraction": 0.25,
+      "style": "thrust"
+    },
+    "kick": {
+      "fbx_name": "sword and shield kick",
+      "duration": 1.2,
+      "num_hits": 1,
+      "has_steps": false,
+      "visual_reach_m": 0.578,
+      "visual_sweep_deg": 118.7,
+      "max_hips_displacement_m": 0.01,
+      "impact_fraction": 0.17,
+      "style": "kick"
+    }
+  }
+}

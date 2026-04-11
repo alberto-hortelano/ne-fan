@@ -138,8 +138,8 @@ describe("AnimationController", () => {
 
   it("getProgress works for one-shot animations", () => {
     const ctrl = new AnimationController(animations, transitions);
-    ctrl.requestAction("quick"); // 2.33s
-    ctrl.tick(1.165, makeInputs(0)); // halfway
+    ctrl.requestAction("quick"); // 1.00s
+    ctrl.tick(0.5, makeInputs(0)); // halfway
     assert.ok(Math.abs(ctrl.getProgress() - 0.5) < 0.01);
   });
 

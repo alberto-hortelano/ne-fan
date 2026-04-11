@@ -49,11 +49,13 @@ func build_room(data: Dictionary) -> Node3D:
 		Vector3(w, WALL_THICKNESS, d),
 		FLOOR_COLOR, surfaces.get("floor", {}))
 
-	# Ceiling (bottom surface at y=h)
-	_create_surface(room, "Ceiling",
-		Vector3(0, h + WALL_THICKNESS / 2.0, 0),
-		Vector3(w, WALL_THICKNESS, d),
-		CEILING_COLOR, surfaces.get("ceiling", {}))
+	# Ceiling (bottom surface at y=h) — skip if null
+	var ceiling_data = surfaces.get("ceiling")
+	if ceiling_data != null:
+		_create_surface(room, "Ceiling",
+			Vector3(0, h + WALL_THICKNESS / 2.0, 0),
+			Vector3(w, WALL_THICKNESS, d),
+			CEILING_COLOR, ceiling_data)
 
 	# Build wall surface lookup
 	var wall_surface_map := {}

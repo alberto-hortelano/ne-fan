@@ -117,6 +117,15 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ~/Downloads/Godot_v4.6.1-stable_linux.x8
 python3 godot/tools/movement_test.py
 ```
 
+### Mapeo de animaciones de ataque
+
+Para medir atributos fisicos de animaciones (alcance, arco, velocidad) y actualizar la tabla de equivalencias, seguir la guia en [`godot/tools/ANIMATION_MAPPING.md`](godot/tools/ANIMATION_MAPPING.md). Resumen rapido:
+
+1. Registrar animacion en ANIM_MAP, ONE_SHOT_SET, combat_config.json
+2. `python3 godot/tools/attack_mapping.py mi_anim` — captura + medicion automatica
+3. Verificar screenshots laterales frame a frame (el detector confunde wind-ups con golpes)
+4. Actualizar `nefan-core/data/animation_intrinsics.json` con datos corregidos
+
 ### Lecciones aprendidas sobre animaciones Mixamo
 
 - **Hips XZ drift:** Las animaciones Mixamo mueven el bone Hips en XZ (root motion). Si se deja sin tratar, el modelo se desplaza del body. Solución: lockear Hips XZ al primer keyframe en animaciones de locomotion (walk/run). Ataques/idle no se lockean si su drift es ~0.
