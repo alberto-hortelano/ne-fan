@@ -134,6 +134,14 @@ func _handle(line: String) -> String:
 			return _cmd_npc_attack(json)
 		"texture_status":
 			return _cmd_texture_status()
+		"set_appearance":
+			return _cmd_set_appearance(json)
+		"dialogue_free_text":
+			return _cmd_dialogue_free_text(json)
+		"dialogue_state":
+			return _cmd_dialogue_state()
+		"inject_consequences":
+			return _cmd_inject_consequences(json)
 		_:
 			return '{"error":"unknown cmd: %s"}' % cmd
 
@@ -151,8 +159,32 @@ func _cmd_screenshot(args: Dictionary) -> String:
 
 func _cmd_key(args: Dictionary) -> String:
 	var action: String = args.get("action", "")
+	# Raw keycode mode: {"cmd":"key","keycode":84} sends an InputEventKey press+release.
+	# Used to test UI paths that check event.keycode directly (e.g. the T
+	# shortcut in DialogueUI for the free-text input). Also accepts "unicode"
+	# to type a printable character into a focused LineEdit.
 	if action.is_empty():
-		return '{"error":"missing action"}'
+		var keycode: int = int(args.get("keycode", 0))
+		var unicode: int = int(args.get("unicode", 0))
+		if keycode == 0 and unicode == 0:
+			return '{"error":"missing action or keycode"}'
+		var down := InputEventKey.new()
+		down.pressed = true
+		if keycode != 0:
+			down.keycode = keycode
+			down.physical_keycode = keycode
+		if unicode != 0:
+			down.unicode = unicode
+		Input.parse_input_event(down)
+		var up := InputEventKey.new()
+		up.pressed = false
+		if keycode != 0:
+			up.keycode = keycode
+			up.physical_keycode = keycode
+		if unicode != 0:
+			up.unicode = unicode
+		Input.parse_input_event(up)
+		return '{"ok":true,"keycode":%d}' % keycode
 	var duration: float = args.get("duration", 0.0)
 
 	if duration > 0:
@@ -391,6 +423,7 @@ func _cmd_load_game(args: Dictionary) -> String:
 	var game_id: String = args.get("game_id", "")
 	if game_id.is_empty():
 		return '{"error":"missing game_id"}'
+	var skip_editor: bool = args.get("skip_editor", false)
 	var main_scene := get_tree().current_scene
 	if main_scene and main_scene.has_method("_on_title_game_selected"):
 		var scene_path: String = args.get("scene_path", "res://test_rooms/millhaven.json")
@@ -399,6 +432,12 @@ func _cmd_load_game(args: Dictionary) -> String:
 		var title := main_scene.get_node_or_null("TitleScreen")
 		if title:
 			title.queue_free()
+		# Optionally skip the character editor by confirming default appearance
+		if skip_editor and main_scene.has_method("_on_appearance_confirmed"):
+			var editor := main_scene.get_node_or_null("CharacterEditor")
+			if editor:
+				editor.queue_free()
+			main_scene._on_appearance_confirmed("pete", "")
 	else:
 		if main_scene:
 			main_scene._scenario_active = true
@@ -409,3 +448,85 @@ func _cmd_load_game(args: Dictionary) -> String:
 func _cmd_texture_status() -> String:
 	var pending: int = TextureCache._pending.size()
 	return '{"ok":true,"pending_textures":%d}' % pending
+
+
+func _cmd_set_appearance(args: Dictionary) -> String:
+	"""Apply appearance to the player and start the game (skips editor UI)."""
+	var model_id: String = args.get("model_id", "pete")
+	var skin_path: String = args.get("skin_path", "")
+	var main_scene := get_tree().current_scene
+	if not main_scene:
+		return '{"error":"no main scene"}'
+	# Dismiss title screen and editor if open
+	var title := main_scene.get_node_or_null("TitleScreen")
+	if title:
+		title.queue_free()
+	var editor := main_scene.get_node_or_null("CharacterEditor")
+	if editor:
+		editor.queue_free()
+	# Apply appearance and start game
+	if main_scene.has_method("_apply_player_appearance"):
+		main_scene._apply_player_appearance(model_id, skin_path)
+	if main_scene.has_method("_start_game"):
+		main_scene._start_game("tavern_intro", "res://test_rooms/millhaven.json")
+	return '{"ok":true,"model_id":"%s","skin_path":"%s"}' % [model_id, skin_path]
+
+
+func _cmd_dialogue_state() -> String:
+	"""Expose the current DialogueUI state for tests. Returns active flag and
+	last speaker/text/choice_count so a test can confirm a dialogue is being
+	displayed before invoking dialogue_free_text."""
+	var main_scene := get_tree().current_scene
+	if not main_scene:
+		return '{"error":"no main scene"}'
+	var ui := main_scene.get_node_or_null("DialogueUI")
+	var active := false
+	if ui and ui.has_method("is_active"):
+		active = ui.is_active()
+	var speaker: String = main_scene.get("_last_dialogue_speaker") if "_last_dialogue_speaker" in main_scene else ""
+	var text: String = main_scene.get("_last_dialogue_text") if "_last_dialogue_text" in main_scene else ""
+	var choices: Array = main_scene.get("_last_dialogue_choices") if "_last_dialogue_choices" in main_scene else []
+	var pending_event: String = main_scene.get("_pending_free_text_event_id") if "_pending_free_text_event_id" in main_scene else ""
+	var pending: bool = main_scene.get("_pending_free_text_pending") if "_pending_free_text_pending" in main_scene else false
+	var claude_dialogue: bool = main_scene.get("_claude_injected_dialogue") if "_claude_injected_dialogue" in main_scene else false
+	var data := {
+		"active": active,
+		"speaker": speaker,
+		"text": text,
+		"choice_count": choices.size(),
+		"pending_event_id": pending_event,
+		"free_text_pending": pending,
+		"claude_dialogue": claude_dialogue,
+	}
+	return JSON.stringify(data)
+
+
+func _cmd_inject_consequences(args: Dictionary) -> String:
+	"""Bypass the ai_server round-trip by directly emitting the narrative
+	consequences signal on AIClient. Used by tests to verify the downstream
+	handling of dialogue/spawn/story consequences without needing Claude."""
+	var event_id: String = args.get("event_id", "test_event")
+	var consequences = args.get("consequences", [])
+	if not consequences is Array:
+		return '{"error":"consequences must be array"}'
+	AIClient.narrative_consequences.emit(event_id, consequences)
+	return '{"ok":true,"event_id":"%s","count":%d}' % [event_id, consequences.size()]
+
+
+func _cmd_dialogue_free_text(args: Dictionary) -> String:
+	"""Simulate the player typing a free-text reply to the current dialogue.
+	Bypasses the LineEdit UI and directly invokes the handler that T+Enter
+	would reach, so tests can validate the downstream flow even without
+	keyboard input support."""
+	var text: String = args.get("text", "")
+	if text.strip_edges() == "":
+		return '{"error":"empty text"}'
+	var main_scene := get_tree().current_scene
+	if not main_scene or not main_scene.has_method("_on_dialogue_choice_made"):
+		return '{"error":"no handler"}'
+	# Hide the dialogue panel first, matching what the real LineEdit.submit does.
+	var ui := main_scene.get_node_or_null("DialogueUI")
+	if ui and ui.has_method("_hide_dialogue"):
+		ui._hide_dialogue()
+	main_scene._on_dialogue_choice_made(-1, text)
+	return '{"ok":true,"text":"%s"}' % text.replace("\"", "\\\"")

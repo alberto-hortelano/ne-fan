@@ -43,6 +43,30 @@ func request_texture_set(prompt: String) -> void:
 	_request_generation(prompt, key)
 
 
+func request_texture_set_by_hash(key: String) -> void:
+	"""Fetch albedo + normal directly by hash (no generation), used when the
+	narrative engine reuses a cached asset via texture_hash. Emits texture_ready
+	for each map. Falls back silently if the server doesn't have it."""
+	if key == "":
+		return
+	if _pending.has(key):
+		return
+	_pending[key] = true
+
+	# Try local disk first — same key namespace as request_texture_set
+	var have_albedo := _load_from_disk(key, "albedo")
+	var have_normal := _load_from_disk(key, "normal")
+	if have_albedo and have_normal:
+		_pending.erase(key)
+		return
+
+	# Otherwise fetch directly from the server cache endpoint, no /generate_texture call
+	if not have_albedo:
+		_fetch_map(key, "albedo", SERVER_URL + "/cache/albedo/" + key)
+	if not have_normal:
+		_fetch_map(key, "normal", SERVER_URL + "/cache/normal/" + key)
+
+
 func request_sprite(prompt: String) -> void:
 	"""Request a sprite (RGBA PNG with transparent background). Emits texture_ready with map_type 'sprite'."""
 	var key := hash_prompt(prompt)

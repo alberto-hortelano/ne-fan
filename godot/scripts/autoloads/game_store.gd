@@ -28,6 +28,10 @@ var state: Dictionary = {
 		"gold": 0,
 		"inventory": [],
 		"active_quests": [],
+		"appearance": {
+			"model_id": "pete",
+			"skin_path": "",
+		},
 	},
 	"enemies": [],
 	"narrative": {
@@ -160,6 +164,9 @@ func _apply(event_name: String, payload: Dictionary) -> void:
 			state.narrative.last_dialogue = payload.get("dialogue", "")
 		"weapon_changed":
 			state.player.weapon_id = payload.get("weapon_id", state.player.weapon_id)
+		"appearance_changed":
+			state.player.appearance.model_id = payload.get("model_id", state.player.appearance.model_id)
+			state.player.appearance.skin_path = payload.get("skin_path", state.player.appearance.skin_path)
 		"meta_update":
 			for key: String in payload:
 				state.meta[key] = payload[key]

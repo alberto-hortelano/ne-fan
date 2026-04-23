@@ -14,8 +14,11 @@ const AttackAreaVisualScript = preload("res://scripts/combat/attack_area_visual.
 const DevMenuScript = preload("res://scripts/ui/dev_menu.gd")
 const CameraControllerScript = preload("res://scripts/player/camera_controller.gd")
 const DialogueUIScript = preload("res://scripts/ui/dialogue_ui.gd")
+const HistoryBrowserScript = preload("res://scripts/ui/history_browser.gd")
 const ObjectSpawnerScript = preload("res://scripts/room/object_spawner.gd")
 const TitleScreenScript = preload("res://scripts/ui/title_screen.gd")
+const CharacterEditorScript = preload("res://scripts/ui/character_editor.gd")
+const NpcModelRegistryScript = preload("res://scripts/npc/npc_model_registry.gd")
 
 var _room_files: Array[String] = []
 var _dev_menu: CanvasLayer
@@ -35,6 +38,22 @@ var _scenario_active := false
 var _returning_to_title := false
 var _pause_menu: CanvasLayer = null
 var _paused := false
+var _pending_game_id := ""
+var _pending_scene_path := ""
+var _pending_session_id := ""
+# Cache of the last dialogue shown so we can record it on choice
+var _last_dialogue_speaker := ""
+var _last_dialogue_text := ""
+var _last_dialogue_choices: Array = []
+# Free-text reply in flight: the scripted scenario is paused waiting for
+# Claude's reaction. When the reaction arrives (or the player advances past
+# Claude's injected dialogue), we resume the script with the remembered
+# fallback choice so the beat machine never stays stuck.
+var _pending_free_text_event_id := ""
+var _pending_free_text_orig_choices: Array = []
+var _pending_free_text_pending: bool = false
+var _claude_injected_dialogue: bool = false
+var _character_editor: CanvasLayer = null
 
 @onready var _player: CharacterBody3D = $Player
 
@@ -115,6 +134,7 @@ func _ready() -> void:
 	# AI client
 	AIClient.room_generated.connect(_on_room_generated)
 	AIClient.generation_failed.connect(_on_generation_failed)
+	AIClient.narrative_consequences.connect(_on_narrative_consequences)
 	AIClient.check_server()
 
 	# Interaction system
@@ -144,6 +164,11 @@ func _ready() -> void:
 	_dialogue_ui.dialogue_advanced.connect(_on_dialogue_advanced)
 	_dialogue_ui.dialogue_choice_made.connect(_on_dialogue_choice_made)
 
+	# History browser (tecla H)
+	var history_browser := HistoryBrowserScript.new()
+	history_browser.name = "HistoryBrowser"
+	add_child(history_browser)
+
 	# Scenario signals from LogicBridge
 	LogicBridge.scenario_dialogue.connect(_on_scenario_dialogue)
 	LogicBridge.scenario_objective.connect(_on_scenario_objective)
@@ -155,7 +180,7 @@ func _ready() -> void:
 	LogicBridge.scenario_spawn_objects.connect(_on_scenario_spawn_objects)
 
 	# Make player collision capsule semi-visible for dev
-	_make_player_capsule_visible()
+	#_make_player_capsule_visible()
 
 	# Disable player until a game is selected
 	_player.set_physics_process(false)
@@ -195,11 +220,16 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						respawn_player()
 			KEY_F5:
-				if GameState.save_to_disk():
+				# Save both: GameState (combat-side) and NarrativeState (canonical session)
+				var ok_legacy: bool = GameState.save_to_disk()
+				var ok_narrative: bool = NarrativeState.save() if NarrativeState.session_id != "" else false
+				if ok_legacy or ok_narrative:
 					_hud.show_brief_message("Partida guardada")
 			KEY_F9:
 				if GameState.load_from_disk():
 					_hud.show_brief_message("Partida cargada")
+					# Restore player appearance
+					_apply_player_appearance(GameState.player_model_id, GameState.player_skin_path)
 					# Reload current room from visited_rooms
 					if GameState.visited_rooms.has(GameState.current_room_id):
 						_apply_room(GameState.visited_rooms[GameState.current_room_id], Vector3(0, 1, 0), false)
@@ -789,12 +819,85 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 # --- Title screen ---
 
 
-func _on_title_game_selected(game_id: String, scene_path: String) -> void:
-	print("Title: starting game '%s' from '%s'" % [game_id, scene_path])
+func _on_title_game_selected(game_id: String, scene_path: String, session_id: String = "") -> void:
+	print("Title: %s game '%s' from '%s'" % ["resuming" if session_id != "" else "starting", game_id, scene_path])
+	_pending_game_id = game_id
+	_pending_scene_path = scene_path
+	_pending_session_id = session_id
+	# Show character editor before starting the game (skip if resuming — appearance is in the save)
+	if session_id != "":
+		_start_game(_pending_game_id, _pending_scene_path, _pending_session_id)
+		return
+	_character_editor = CharacterEditorScript.new()
+	_character_editor.name = "CharacterEditor"
+	_character_editor.appearance_confirmed.connect(_on_appearance_confirmed)
+	_character_editor.cancelled.connect(_on_editor_cancelled)
+	add_child(_character_editor)
+
+
+func _on_appearance_confirmed(model_id: String, skin_path: String) -> void:
+	_character_editor = null
+	# Apply appearance to player
+	_apply_player_appearance(model_id, skin_path)
+	# Continue with game start
+	_start_game(_pending_game_id, _pending_scene_path, _pending_session_id)
+
+
+func _on_editor_cancelled() -> void:
+	_character_editor = null
+	# Return to title screen
+	var title_screen := TitleScreenScript.new()
+	title_screen.name = "TitleScreen"
+	title_screen.game_selected.connect(_on_title_game_selected)
+	add_child(title_screen)
+
+
+func _apply_player_appearance(model_id: String, skin_path: String) -> void:
+	var animator: Node3D = _player.get_node_or_null("CombatAnimator")
+	if not animator:
+		return
+	var data: Dictionary = NpcModelRegistryScript.get_model_data(model_id)
+	var model_path: String = data.get("path", "")
+	if model_path != "" and model_path != animator.model_path:
+		animator.set_character_model(model_path)
+		animator.anim_dir = NpcModelRegistryScript.COMBAT_ANIM_DIR
+		animator.position.y = data.get("y_offset", -0.05)
+		animator.reload_model()
+	# Apply model scale (varies per character for height diversity)
+	var model_scale: float = data.get("model_scale", 1.0)
+	animator.scale = Vector3(model_scale, model_scale, model_scale)
+	if skin_path != "":
+		animator.apply_skin(skin_path)
+	# Attach weapon if model doesn't have one baked in
+	if not data.get("has_weapon", false):
+		animator.attach_weapon()
+	else:
+		animator.detach_weapon()
+	# Persist
+	GameStore.dispatch("appearance_changed", {"model_id": model_id, "skin_path": skin_path})
+	GameState.player_model_id = model_id
+	GameState.player_skin_path = skin_path
+
+
+func _start_game(game_id: String, scene_path: String, resume_session_id: String = "") -> void:
 	_reset_game_state()
 	_scenario_active = true
 	_player.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# Establish a NarrativeState session: either fresh or resumed from save
+	if resume_session_id != "":
+		if not NarrativeState.load_session(resume_session_id):
+			print("main: failed to resume session %s — starting fresh" % resume_session_id)
+			NarrativeState.start_new_session(game_id)
+	else:
+		NarrativeState.start_new_session(game_id)
+	# Tell the MCP bridge so Claude knows what session is in flight
+	if LogicBridge.has_method("send_session_start"):
+		LogicBridge.send_session_start(NarrativeState.session_id, game_id, resume_session_id != "")
+	# Notify ai_server so Claude sees session info in narrative requests
+	AIClient.notify_session_start(NarrativeState.session_id, game_id, resume_session_id != "")
+
 	# Send load_game to bridge — it will respond with change_scene + spawn_npc
 	LogicBridge.send_load_game(game_id)
 	if not LogicBridge.is_connected_to_bridge():
@@ -809,6 +912,9 @@ func _on_title_game_selected(game_id: String, scene_path: String) -> void:
 func _on_scenario_dialogue(speaker: String, text: String, choices: Array) -> void:
 	if not _scenario_active:
 		return
+	_last_dialogue_speaker = speaker
+	_last_dialogue_text = text
+	_last_dialogue_choices = choices
 	_dialogue_ui.show_dialogue(speaker, text, choices)
 
 
@@ -822,6 +928,10 @@ func _on_scenario_change_scene(scene_data: Dictionary) -> void:
 	if not _scenario_active:
 		return
 	_apply_room(scene_data, Vector3(0, 1, 0), true)
+	# Record into the narrative session for save/resume
+	var scene_id: String = scene_data.get("room_id", scene_data.get("scene_id", ""))
+	if scene_id != "":
+		NarrativeState.record_scene_loaded(scene_id, scene_data, [])
 
 
 func _on_scenario_spawn_npc(data: Dictionary) -> void:
@@ -839,6 +949,10 @@ func _on_scenario_spawn_npc(data: Dictionary) -> void:
 	}
 	spawner.spawn_npcs([npc_data], _current_room)
 	print("Scenario: spawned NPC '%s' (%s)" % [data.get("name", ""), data.get("character_type", "")])
+	NarrativeState.record_entity_spawned(
+		npc_data["id"], "npc", NarrativeState.world.get("active_scene_id", ""),
+		npc_data["position"], data, "scenario"
+	)
 
 
 func _on_scenario_despawn_npc(npc_id: String) -> void:
@@ -848,6 +962,7 @@ func _on_scenario_despawn_npc(npc_id: String) -> void:
 	if node:
 		node.queue_free()
 		print("Scenario: despawned NPC '%s'" % npc_id)
+	NarrativeState.record_entity_despawned(npc_id)
 
 
 func _on_scenario_spawn_enemy(data: Dictionary) -> void:
@@ -888,6 +1003,10 @@ func _on_scenario_spawn_enemy(data: Dictionary) -> void:
 			if c:
 				_combat_manager.register_combatant(c)
 	print("Scenario: spawned enemy '%s'" % data.get("id", ""))
+	NarrativeState.record_entity_spawned(
+		obj_data["id"], "enemy", NarrativeState.world.get("active_scene_id", ""),
+		obj_data["position"], data, "scenario"
+	)
 
 
 func _on_scenario_give_weapon(weapon_id: String) -> void:
@@ -906,11 +1025,225 @@ func _on_scenario_spawn_objects(objects: Array) -> void:
 	var spawner := ObjectSpawnerScript.new()
 	spawner.spawn_objects(objects, _current_room)
 	print("Scenario: spawned %d dynamic objects" % objects.size())
+	for obj in objects:
+		var obj_id: String = obj.get("id", "")
+		if obj_id == "":
+			continue
+		NarrativeState.record_entity_spawned(
+			obj_id, "object", NarrativeState.world.get("active_scene_id", ""),
+			obj.get("position", [0, 0, 0]), obj, "scenario"
+		)
 
 
 func _on_dialogue_advanced() -> void:
+	# If the player is advancing past a Claude-injected dialogue, use this
+	# moment to resume the scripted scenario that we paused when the player
+	# wrote free text. Otherwise we'd remain stuck waiting for a beat that
+	# never triggers.
+	if _claude_injected_dialogue and _pending_free_text_pending:
+		_resume_script_after_free_text()
+		return
 	LogicBridge.send_scenario_event("dialogue_advanced")
 
 
-func _on_dialogue_choice_made(choice_index: int) -> void:
-	LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": choice_index})
+func _on_dialogue_choice_made(choice_index: int, free_text: String = "") -> void:
+	var speaker: String = _last_dialogue_speaker
+	var text: String = _last_dialogue_text
+	var choices: Array = _last_dialogue_choices
+
+	# If the player was replying to a Claude-injected dialogue, treat the
+	# choice as "advance past it" and resume the scripted script (Claude's
+	# injected choices are freeform — they don't map onto scripted beats).
+	if _claude_injected_dialogue and _pending_free_text_pending:
+		# Record the Claude sub-dialogue into the session for replay/history,
+		# but don't re-trigger another Claude call (it would loop).
+		NarrativeState.record_dialogue_event(speaker, text, choices, choice_index, free_text)
+		_resume_script_after_free_text()
+		return
+
+	var event_id: String = NarrativeState.record_dialogue_event(
+		speaker, text, choices, choice_index, free_text
+	)
+
+	if choice_index < 0:
+		# Free text: PAUSE the scripted scenario and wait for Claude's
+		# reaction. We do NOT fall through to choice 0 — that would make
+		# the scripted response fire immediately, which is exactly what
+		# the player is trying to override.
+		_pending_free_text_event_id = event_id
+		_pending_free_text_orig_choices = choices.duplicate()
+		_pending_free_text_pending = true
+		_claude_injected_dialogue = false
+		_hud.show_text_panel("🤔 Claude piensa en cómo responde el mundo...")
+		AIClient.report_player_choice(event_id, speaker, "", free_text,
+			NarrativeState.serialize_for_llm("compact"))
+	else:
+		# Numbered choice: advance the scripted scenario immediately and
+		# (in parallel) let Claude react, but without pausing the game.
+		LogicBridge.send_scenario_event("dialogue_choice", {
+			"choiceIndex": choice_index,
+			"freeText": free_text,
+		})
+		var chosen_text: String = ""
+		if choice_index < choices.size():
+			var c = choices[choice_index]
+			chosen_text = String(c.get("text", "")) if c is Dictionary else String(c)
+		AIClient.report_player_choice(event_id, speaker, chosen_text, free_text,
+			NarrativeState.serialize_for_llm("compact"))
+
+
+func _resume_script_after_free_text() -> void:
+	"""Release the free-text pause and advance the scripted scenario with the
+	fallback action we remembered when the player first typed."""
+	var orig_choices: Array = _pending_free_text_orig_choices
+	_pending_free_text_event_id = ""
+	_pending_free_text_orig_choices = []
+	_pending_free_text_pending = false
+	_claude_injected_dialogue = false
+	_hud.hide_text_panel()
+	if orig_choices.size() > 0:
+		LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": 0})
+	else:
+		LogicBridge.send_scenario_event("dialogue_advanced")
+
+
+func _on_narrative_consequences(event_id: String, consequences: Array) -> void:
+	"""Apply consequences emitted by the narrative engine after a player choice."""
+	var is_free_text_pending: bool = (
+		_pending_free_text_pending and event_id == _pending_free_text_event_id
+	)
+	var injected_dialogue_this_round := false
+
+	# Clear the persistent "Claude piensa..." placeholder now that we have
+	# a response. Individual consequence handlers below may show their own
+	# brief messages on top.
+	if is_free_text_pending:
+		_hud.hide_text_panel()
+
+	if consequences.is_empty():
+		if is_free_text_pending:
+			# Claude had nothing to add — resume the scripted scenario so
+			# the player isn't stuck with a hidden dialogue state.
+			_hud.show_brief_message("💭 El silencio responde al viento...")
+			_resume_script_after_free_text()
+		else:
+			_hud.show_brief_message("💭 El mundo sigue su curso...")
+		return
+
+	for c in consequences:
+		if not c is Dictionary:
+			continue
+		var ctype: String = c.get("type", "")
+		match ctype:
+			"dialogue":
+				var spk: String = String(c.get("speaker", "?"))
+				var txt: String = String(c.get("text", ""))
+				var chx_raw = c.get("choices", [])
+				var chx: Array = chx_raw if chx_raw is Array else []
+				if txt == "":
+					continue
+				_last_dialogue_speaker = spk
+				_last_dialogue_text = txt
+				_last_dialogue_choices = chx
+				_dialogue_ui.show_dialogue(spk, txt, chx)
+				injected_dialogue_this_round = true
+				if is_free_text_pending:
+					_claude_injected_dialogue = true
+			"story_update":
+				var delta: String = c.get("delta", "")
+				if delta != "":
+					if NarrativeState.story_so_far == "":
+						NarrativeState.story_so_far = delta
+					else:
+						NarrativeState.story_so_far += "\n\n" + delta
+					if not injected_dialogue_this_round:
+						_hud.show_brief_message("📖 " + delta.substr(0, 60))
+			"spawn_entity":
+				_apply_spawn_entity_consequence(c, event_id)
+			"schedule_event":
+				print("Narrative: scheduled event '%s' (trigger=%s)" % [
+					c.get("description", ""), c.get("trigger", "")])
+		# Record the consequence so the history browser (Phase 4) can show it
+		NarrativeState.record_narrative_consequence(event_id, c)
+
+	# If Claude didn't inject any dialogue in response to free text we need
+	# to release the paused scenario so the game can continue; otherwise the
+	# player sees nothing on screen and the beat machine hangs.
+	if is_free_text_pending and not injected_dialogue_this_round:
+		_resume_script_after_free_text()
+
+
+func _apply_spawn_entity_consequence(c: Dictionary, event_id: String) -> void:
+	"""Materialize a narrative-driven spawn into the current scene."""
+	if not _current_room:
+		return
+	var kind: String = c.get("entity_kind", "object")
+	var description: String = c.get("description", "an entity")
+	var hint: String = c.get("position_hint", "near_player")
+	# Resolve a plausible position relative to the player
+	var spawn_pos := _resolve_position_hint(hint)
+	var entity_id := "narr_%s_%d" % [kind, int(Time.get_unix_time_from_system())]
+	var spawner = ObjectSpawnerScript.new()
+	if kind == "npc":
+		var npc_data := {
+			"id": entity_id,
+			"name": c.get("name", "Stranger"),
+			"character_type": "peasant_male",
+			"animation": "idle",
+			"position": [spawn_pos.x, spawn_pos.y, spawn_pos.z],
+			"scale": [0.5, 1.8, 0.5],
+			"description": description,
+			"dialogue_hint": description,
+		}
+		spawner.spawn_npcs([npc_data], _current_room)
+	else:
+		var obj_data := {
+			"id": entity_id,
+			"mesh": "box",
+			"position": [spawn_pos.x, spawn_pos.y, spawn_pos.z],
+			"rotation": [0, 0, 0],
+			"scale": [3.0, 3.0, 3.0] if kind == "building" else [0.5, 0.5, 0.5],
+			"category": "building" if kind == "building" else "prop",
+			"description": description,
+		}
+		# Reuse cached assets when Claude provided hashes
+		if c.has("texture_hash"):
+			obj_data["texture_hash"] = c["texture_hash"]
+		if c.has("model_hash"):
+			obj_data["model_hash"] = c["model_hash"]
+		spawner.spawn_objects([obj_data], _current_room)
+	# Record into NarrativeState so it survives save/resume
+	NarrativeState.record_entity_spawned(
+		entity_id, kind, NarrativeState.world.get("active_scene_id", ""),
+		[spawn_pos.x, spawn_pos.y, spawn_pos.z], c, "narrative_request", event_id
+	)
+	_hud.show_brief_message("✨ %s aparece" % description.substr(0, 40))
+	print("Narrative: spawned %s '%s' at %s (event=%s)" % [kind, description, spawn_pos, event_id])
+
+
+func _resolve_position_hint(hint: String) -> Vector3:
+	"""Convert a textual position hint from the narrative engine into a world
+	position relative to the player. Best-effort — anything unrecognized falls
+	through to 'near_player'."""
+	var base: Vector3 = _player.global_position if _player else Vector3.ZERO
+	var fwd := Vector3(0, 0, -1)
+	if _player:
+		var anim: Node3D = _player.get_node_or_null("CombatAnimator")
+		if anim:
+			fwd = anim.global_transform.basis.z
+			fwd.y = 0.0
+			fwd = fwd.normalized()
+	match hint:
+		"near_player":
+			return base + fwd * 5.0
+		"distant_north":
+			return base + Vector3(0, 0, -50)
+		"distant_south":
+			return base + Vector3(0, 0, 50)
+		"distant_east":
+			return base + Vector3(50, 0, 0)
+		"distant_west":
+			return base + Vector3(-50, 0, 0)
+		_:
+			# Unknown hint — try to parse "distant_<dir>" or fall back to near_player
+			return base + fwd * 10.0

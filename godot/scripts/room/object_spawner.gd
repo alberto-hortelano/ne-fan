@@ -81,8 +81,12 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 	body.set_meta("scale_z", sz)
 	if data.has("texture_prompt"):
 		body.set_meta("texture_prompt", data.get("texture_prompt"))
+	if data.has("texture_hash"):
+		body.set_meta("texture_hash", data.get("texture_hash"))
 	if data.has("model_prompt"):
 		body.set_meta("model_prompt", data.get("model_prompt"))
+	if data.has("model_hash"):
+		body.set_meta("model_hash", data.get("model_hash"))
 
 	# Combat components
 	if data.has("combat"):

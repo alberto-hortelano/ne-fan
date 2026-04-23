@@ -489,6 +489,17 @@ GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fant
 
 IMPORTANT: You do NOT generate enclosed rooms. You generate OUTDOOR SCENES with buildings as objects.
 
+ASSET REUSE (important):
+- The request payload may include `available_assets`: a list of previously generated
+  textures and models with their hashes and original prompts.
+- Whenever an existing asset matches what you need (semantically — read the prompt),
+  put its hash in the corresponding field instead of writing a new prompt:
+    * For terrain.texture_prompt or object.texture_prompt → use object.texture_hash.
+    * For object.model_prompt → use object.model_hash.
+- Asset reuse is the default. Only invent a new prompt when nothing in
+  `available_assets` is a reasonable match. This avoids slow regeneration and
+  keeps the world visually consistent across sessions.
+
 UNITS & COORDINATES:
 - All units in METERS. Scene area: 40-80m wide/deep.
 - Origin at center. Floor at y=0. +Z is south, -Z is north.
@@ -555,8 +566,12 @@ GENERATE_SCENE_TOOL = {
                 "properties": {
                     "type": {"type": "string", "enum": ["static", "chunked"]},
                     "texture_prompt": {"type": "string"},
+                    "texture_hash": {
+                        "type": "string",
+                        "description": "Reuse a cached texture by its 16-char hash from available_assets. Skips generation.",
+                    },
                 },
-                "required": ["type", "texture_prompt"],
+                "required": ["type"],
             },
             "sky": {
                 "type": "object",
@@ -624,7 +639,15 @@ GENERATE_SCENE_TOOL = {
                         "id": {"type": "string"},
                         "mesh": {"type": "string", "enum": list(VALID_MESHES)},
                         "texture_prompt": {"type": "string"},
+                        "texture_hash": {
+                            "type": "string",
+                            "description": "Reuse a cached texture by hash from available_assets. Mutually exclusive with texture_prompt; saves generation time.",
+                        },
                         "model_prompt": {"type": "string"},
+                        "model_hash": {
+                            "type": "string",
+                            "description": "Reuse a cached GLB model by hash from available_assets. Skips Meshy/TripoSG generation entirely.",
+                        },
                         "generate_3d": {"type": "boolean"},
                         "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                         "rotation": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
@@ -743,3 +766,329 @@ def validate_room_response(data: dict) -> dict:
     data.setdefault("ambient_event", "")
 
     return data
+
+
+# ----------------------------------------------------------------------
+# Weapon orientation (vision-guided)
+# ----------------------------------------------------------------------
+
+WEAPON_ORIENT_SYSTEM_PROMPT = """You orient 3D weapon meshes for a third-person RPG.
+
+Input: 3 orthographic renders of an isolated weapon model on white background:
+- front: camera at +Z looking toward origin (X axis right, Y axis up)
+- side:  camera at +X looking toward origin (Z axis right, Y axis up)
+- top:   camera at +Y looking down (X axis right, -Z into screen)
+
+The mesh is centered on its bounding box. Positions you return are normalized
+to [0,1]^3 where (0,0,0) is the bbox min and (1,1,1) is the bbox max.
+
+Identify:
+1. grip_point_normalized: where the hand wraps the weapon (cylindrical wrapped
+   area for swords, center of back face for shields, bottom of haft for axes/maces).
+2. blade_direction: unit vector from grip toward tip/edge/front of the weapon.
+3. up_direction: unit vector perpendicular to blade_direction, the "up" face
+   (back of sword blade, front of shield, top of axe head).
+
+Right-handed coordinates throughout. All unit vectors must be normalized.
+Confidence: 0.9+ if grip and blade are clearly visible; 0.5-0.8 if uncertain;
+<0.5 if mesh looks broken or you cannot identify the weapon.
+
+Always respond via the orient_weapon tool — never emit free-form text."""
+
+
+WEAPON_ORIENT_TOOL = {
+    "name": "orient_weapon",
+    "description": "Return the grip point and orientation vectors for a 3D weapon mesh.",
+    "input_schema": {
+        "type": "object",
+        "required": [
+            "grip_point_normalized",
+            "blade_direction",
+            "up_direction",
+            "weapon_type",
+            "confidence",
+        ],
+        "properties": {
+            "grip_point_normalized": {
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Grip point in normalized bbox space [0..1]^3",
+            },
+            "blade_direction": {
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Unit vector: from grip toward tip/edge/front",
+            },
+            "up_direction": {
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Unit vector: perpendicular to blade_direction, 'up' face",
+            },
+            "weapon_type": {
+                "type": "string",
+                "enum": [
+                    "sword", "shield", "axe", "mace", "staff",
+                    "bow", "dagger", "spear", "generic",
+                ],
+            },
+            "grip_length_normalized": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Fraction of the weapon length occupied by the grip",
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+            },
+            "notes": {
+                "type": "string",
+                "description": "Short rationale for debugging",
+            },
+        },
+    },
+}
+
+
+def validate_weapon_orient_response(data: dict) -> dict | None:
+    """Validate and normalize a weapon orientation response from the LLM.
+
+    Returns None if the response is malformed beyond repair.
+    """
+    if not isinstance(data, dict):
+        return None
+
+    # Required vector fields
+    for field in ("grip_point_normalized", "blade_direction", "up_direction"):
+        v = data.get(field)
+        if not isinstance(v, list) or len(v) != 3:
+            return None
+        try:
+            data[field] = [float(x) for x in v]
+        except (TypeError, ValueError):
+            return None
+
+    # Clamp grip point to [0, 1]
+    data["grip_point_normalized"] = [
+        max(0.0, min(1.0, x)) for x in data["grip_point_normalized"]
+    ]
+
+    # Normalize direction vectors
+    def _normalize(v: list) -> list | None:
+        length = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** 0.5
+        if length < 1e-6:
+            return None
+        return [v[0] / length, v[1] / length, v[2] / length]
+
+    blade = _normalize(data["blade_direction"])
+    up = _normalize(data["up_direction"])
+    if blade is None or up is None:
+        return None
+    data["blade_direction"] = blade
+    data["up_direction"] = up
+
+    # Reject if blade and up are nearly parallel (degenerate frame)
+    dot = abs(blade[0] * up[0] + blade[1] * up[1] + blade[2] * up[2])
+    if dot > 0.95:
+        return None
+
+    # Defaults for optional fields
+    data.setdefault("weapon_type", "generic")
+    data.setdefault("grip_length_normalized", 0.15)
+    data.setdefault("notes", "")
+    try:
+        data["confidence"] = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        data["confidence"] = 0.5
+
+    return data
+
+
+# ============================================================================
+# Narrative event reaction (Phase 3) — Claude reacts to player dialogue choices
+# by emitting consequences that the engine applies to the open world.
+# ============================================================================
+
+NARRATIVE_REACT_SYSTEM_PROMPT = """You are the narrative engine of a dark fantasy open-world RPG.
+
+A player has just answered an NPC — either by picking a scripted option or by
+typing a free-form reply. When they type free text, the scripted scenario is
+PAUSED waiting for you to decide what happens next. Your response drives the
+story: you can make NPCs speak, update the running story, schedule events, or
+materialize new entities.
+
+You will receive:
+- speaker: the NPC who spoke
+- chosen_text: which canned option they picked (may be empty if they typed)
+- free_text: a free-form reply they typed (may be empty)
+- context: a compact NarrativeState snapshot (story_so_far, recent_dialogues,
+  entities already in the world, current scene id, available_assets)
+
+CRITICAL — when free_text is non-empty:
+- The player has gone off-script. You MUST respond with at least one `dialogue`
+  consequence so a visible NPC reacts in-world. Stay in character.
+- The `dialogue` speaker should normally be an NPC that is already present in
+  `entities` (use the same display name). It can be the `speaker` you received
+  or another NPC in the scene.
+- You may also add other consequences (story_update, spawn_entity) when the
+  player expressed intent. Example: free_text says "I want a sword from a
+  forge" → add a spawn_entity (forge building) AND a dialogue line where an
+  NPC acknowledges "There's an old forge at the edge of town, follow me".
+- Write dialogue text in the same language the player used (match free_text).
+
+CRITICAL — when free_text is empty (numbered choice only):
+- The scripted scenario will advance on its own. Usually return empty
+  consequences, unless the choice strongly implies a world reaction.
+
+RULES:
+- Do NOT spawn things that are already in `entities`.
+- Reuse `available_assets` (by hash) when generating new entities, when sensible.
+- Be sparing — 0–4 consequences max. Prefer one dialogue + optional side effects.
+- Position spawns plausibly relative to the player using `position_hint`.
+- Return your answer ONLY via the react_to_player tool. Never write free text.
+"""
+
+NARRATIVE_REACT_TOOL = {
+    "name": "react_to_player",
+    "description": "Decide if the player's dialogue choice/free-text reshapes the open world. Return zero or more consequences.",
+    "input_schema": {
+        "type": "object",
+        "required": ["consequences"],
+        "properties": {
+            "consequences": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["dialogue", "story_update", "spawn_entity", "schedule_event", "noop"],
+                        },
+                        # dialogue — an NPC reacts in-world with spoken lines.
+                        # REQUIRED for free_text responses.
+                        "speaker": {
+                            "type": "string",
+                            "description": "Display name of the NPC who speaks. Prefer an NPC already in `entities`.",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "What the NPC says. Write in the same language as the player's free_text.",
+                        },
+                        "choices": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3,
+                            "description": "Optional 2-3 follow-up options for the player.",
+                        },
+                        # story_update
+                        "delta": {
+                            "type": "string",
+                            "description": "Incremental update to story_so_far (1-3 sentences).",
+                        },
+                        # spawn_entity
+                        "entity_kind": {
+                            "type": "string",
+                            "enum": ["npc", "building", "object"],
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Vivid English description of the entity (used for asset generation).",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Display name for an NPC entity.",
+                        },
+                        "position_hint": {
+                            "type": "string",
+                            "description": "Plausible placement: near_player, distant_east, distant_north, etc.",
+                        },
+                        "texture_hash": {
+                            "type": "string",
+                            "description": "Reuse a cached texture by hash from available_assets.",
+                        },
+                        "model_hash": {
+                            "type": "string",
+                            "description": "Reuse a cached GLB by hash from available_assets.",
+                        },
+                        # schedule_event
+                        "trigger": {
+                            "type": "string",
+                            "description": "When the scheduled event fires: next_scene, timer:60s, on_player_action:..",
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+
+def validate_narrative_reaction(data: dict | None) -> dict:
+    """Sanitize a Claude response to react_to_player into a safe consequences list."""
+    if not isinstance(data, dict):
+        return {"consequences": []}
+    raw = data.get("consequences", [])
+    if not isinstance(raw, list):
+        return {"consequences": []}
+    valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "noop"}
+    valid_kinds = {"npc", "building", "object"}
+    out: list[dict] = []
+    for c in raw[:4]:
+        if not isinstance(c, dict):
+            continue
+        t = c.get("type")
+        if t not in valid_types:
+            continue
+        if t == "noop":
+            continue
+        if t == "dialogue":
+            speaker = str(c.get("speaker", "")).strip()
+            text = str(c.get("text", "")).strip()
+            if not speaker or not text:
+                continue
+            entry = {"type": "dialogue", "speaker": speaker, "text": text}
+            raw_choices = c.get("choices")
+            if isinstance(raw_choices, list) and raw_choices:
+                trimmed = [str(x).strip() for x in raw_choices if str(x).strip()]
+                if trimmed:
+                    entry["choices"] = trimmed[:3]
+            out.append(entry)
+        elif t == "story_update":
+            delta = str(c.get("delta", "")).strip()
+            if delta:
+                out.append({"type": "story_update", "delta": delta})
+        elif t == "spawn_entity":
+            kind = c.get("entity_kind")
+            if kind not in valid_kinds:
+                continue
+            entry = {
+                "type": "spawn_entity",
+                "entity_kind": kind,
+                "description": str(c.get("description", "")).strip(),
+                "position_hint": str(c.get("position_hint", "near_player")),
+            }
+            if c.get("name"):
+                entry["name"] = str(c["name"])
+            if c.get("texture_hash"):
+                entry["texture_hash"] = str(c["texture_hash"])
+            if c.get("model_hash"):
+                entry["model_hash"] = str(c["model_hash"])
+            out.append(entry)
+        elif t == "schedule_event":
+            entry = {
+                "type": "schedule_event",
+                "description": str(c.get("description", "")).strip(),
+                "trigger": str(c.get("trigger", "next_scene")),
+            }
+            if entry["description"]:
+                out.append(entry)
+    return {"consequences": out}

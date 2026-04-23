@@ -4,7 +4,9 @@ class_name DialogueUI
 extends CanvasLayer
 
 signal dialogue_advanced
-signal dialogue_choice_made(choice_index: int)
+## Emitted when the player picks a numbered choice OR submits a free-text reply.
+## choice_index = -1 means free-text reply (text in `free_text`).
+signal dialogue_choice_made(choice_index: int, free_text: String)
 
 var _panel: PanelContainer
 var _vbox: VBoxContainer
@@ -12,12 +14,15 @@ var _speaker_label: Label
 var _text_label: Label
 var _choices_container: VBoxContainer
 var _objective_label: Label
+var _free_text_hint: Label
+var _free_text_input: LineEdit
 
 var _active := false
 var _choices: Array = []
 var _full_text := ""
 var _char_index := 0
 var _char_timer := 0.0
+var _free_text_visible := false
 const CHAR_SPEED := 40.0  # characters per second
 
 
@@ -66,6 +71,24 @@ func _ready() -> void:
 	_choices_container.add_theme_constant_override("separation", 4)
 	_vbox.add_child(_choices_container)
 
+	# Free-text hint (visible when choices present, before player presses T)
+	_free_text_hint = Label.new()
+	_free_text_hint.text = "[T] Escribir tu propia respuesta"
+	_free_text_hint.add_theme_font_size_override("font_size", 13)
+	_free_text_hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
+	_free_text_hint.visible = false
+	_vbox.add_child(_free_text_hint)
+
+	# Free-text LineEdit (hidden until T pressed)
+	_free_text_input = LineEdit.new()
+	_free_text_input.placeholder_text = "Escribe tu respuesta y pulsa Enter..."
+	_free_text_input.add_theme_font_size_override("font_size", 15)
+	_free_text_input.add_theme_color_override("font_color", Color(0.95, 0.9, 0.7))
+	_free_text_input.custom_minimum_size = Vector2(0, 32)
+	_free_text_input.visible = false
+	_free_text_input.text_submitted.connect(_on_free_text_submitted)
+	_vbox.add_child(_free_text_input)
+
 	_panel.visible = false
 	add_child(_panel)
 
@@ -101,6 +124,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not _active:
 		return
 
+	# When the LineEdit has focus, let it consume keys (Enter is handled via signal).
+	if _free_text_visible and _free_text_input.has_focus():
+		return
+
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := event as InputEventKey
 
@@ -111,6 +138,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				_text_label.text = _full_text
 				get_viewport().set_input_as_handled()
 				return
+
+		# Show free-text input on T press
+		if key.keycode == KEY_T:
+			_show_free_text_input()
+			get_viewport().set_input_as_handled()
+			return
 
 		# If choices are showing, pick one
 		if _choices.size() > 0:
@@ -123,7 +156,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				choice_idx = 2
 			if choice_idx >= 0 and choice_idx < _choices.size():
 				_hide_dialogue()
-				dialogue_choice_made.emit(choice_idx)
+				dialogue_choice_made.emit(choice_idx, "")
 				get_viewport().set_input_as_handled()
 				return
 
@@ -133,6 +166,32 @@ func _unhandled_input(event: InputEvent) -> void:
 				_hide_dialogue()
 				dialogue_advanced.emit()
 				get_viewport().set_input_as_handled()
+
+
+func _show_free_text_input() -> void:
+	_free_text_visible = true
+	_free_text_input.visible = true
+	_free_text_input.text = ""
+	_free_text_input.grab_focus()
+	# Release the captured mouse so the LineEdit can receive focus reliably
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _on_free_text_submitted(text: String) -> void:
+	var trimmed: String = text.strip_edges()
+	if trimmed == "":
+		_hide_free_text_input()
+		return
+	_hide_dialogue()
+	dialogue_choice_made.emit(-1, trimmed)
+
+
+func _hide_free_text_input() -> void:
+	_free_text_visible = false
+	_free_text_input.visible = false
+	_free_text_input.text = ""
+	# Re-capture mouse since we're back in game mode
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func show_dialogue(speaker: String, text: String, choices: Array = []) -> void:
@@ -153,12 +212,28 @@ func show_dialogue(speaker: String, text: String, choices: Array = []) -> void:
 	if choices.size() > 0:
 		for i in range(choices.size()):
 			var choice_label := Label.new()
-			choice_label.text = "[%d] %s" % [i + 1, choices[i]]
+			# Choices may be plain strings or {text, hint?} dicts
+			var choice_text: String = ""
+			var c = choices[i]
+			if c is Dictionary:
+				choice_text = String(c.get("text", ""))
+			else:
+				choice_text = String(c)
+			choice_label.text = "[%d] %s" % [i + 1, choice_text]
 			choice_label.add_theme_font_size_override("font_size", 15)
 			choice_label.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
 			_choices_container.add_child(choice_label)
+		# Hint about free-text mode
+		_free_text_hint.visible = true
+	else:
+		_free_text_hint.visible = true  # also allow free text on no-choice prompts
 
-	# Keep mouse captured — dialogue uses keyboard only (E/Space/1-3)
+	# Reset the LineEdit each time
+	_free_text_visible = false
+	_free_text_input.visible = false
+	_free_text_input.text = ""
+
+	# Keep mouse captured — dialogue uses keyboard only (E/Space/1-3, T for free text)
 
 
 func show_objective(text: String) -> void:
@@ -169,6 +244,13 @@ func show_objective(text: String) -> void:
 func _hide_dialogue() -> void:
 	_active = false
 	_panel.visible = false
+	_free_text_visible = false
+	_free_text_input.visible = false
+	_free_text_input.text = ""
+	_free_text_hint.visible = false
+	# If we released the mouse to type, recapture it
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func hide_all() -> void:

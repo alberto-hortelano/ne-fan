@@ -20,6 +20,8 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 
 [autoload]
 
+ServiceSettings="*res://scripts/autoloads/service_settings.gd"
+NarrativeState="*res://scripts/autoloads/narrative_state.gd"
 GameStore="*res://scripts/autoloads/game_store.gd"
 GameState="*res://scripts/autoloads/game_state.gd"
 AIClient="*res://scripts/autoloads/ai_client.gd"

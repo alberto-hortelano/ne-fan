@@ -5,6 +5,7 @@ extends Node
 
 const BRIDGE_URL := "ws://127.0.0.1:9877"
 
+signal connection_changed(connected: bool)
 signal scenario_dialogue(speaker: String, text: String, choices: Array)
 signal scenario_objective(text: String)
 signal scenario_change_scene(scene_data: Dictionary)
@@ -26,8 +27,23 @@ var _pending_room: Dictionary = {}  # Room data to send when bridge connects
 
 
 func _ready() -> void:
+	# Listen for explicit enable/disable from the user (not status updates)
+	var settings: Node = get_node_or_null("/root/ServiceSettings")
+	if settings and settings.has_signal("enabled_changed"):
+		settings.enabled_changed.connect(_on_enabled_changed)
 	# Try to connect on startup
 	_try_connect()
+
+
+func _on_enabled_changed(service_id: String, enabled_now: bool) -> void:
+	if service_id != "logic_bridge":
+		return
+	if enabled_now:
+		_try_connect()
+	else:
+		_socket.close()
+		_enabled = false
+		_connected = false
 
 
 func _process(delta: float) -> void:
@@ -45,6 +61,7 @@ func _process(delta: float) -> void:
 		if not _connected:
 			_connected = true
 			print("LogicBridge: connected to %s" % BRIDGE_URL)
+			connection_changed.emit(true)
 			# Send pending room data that was queued before connection
 			if not _pending_room.is_empty():
 				_socket.send_text(JSON.stringify(_pending_room))
@@ -57,9 +74,12 @@ func _process(delta: float) -> void:
 			_handle_message(data)
 
 	elif state == WebSocketPeer.STATE_CLOSED:
+		var was_connected := _connected
 		_connected = false
 		_enabled = false
-		print("LogicBridge: disconnected")
+		if was_connected:
+			print("LogicBridge: disconnected")
+			connection_changed.emit(false)
 
 
 func _physics_process(delta: float) -> void:
@@ -128,6 +148,26 @@ func send_respawn() -> void:
 	_socket.send_text(JSON.stringify({"type": "respawn"}))
 
 
+func send_session_start(session_id: String, game_id: String, is_resume: bool) -> void:
+	"""Notify the bridge (and through it, the narrative engine) that a new
+	playthrough session has started or been resumed. The bridge keeps this
+	'sticky' so it can be injected into upcoming room/scene/event requests."""
+	var msg := {
+		"type": "session_start",
+		"session_id": session_id,
+		"gameId": game_id,
+		"is_resume": is_resume,
+	}
+	if not _connected:
+		# Best-effort: queue along with any pending room (overwrite is fine —
+		# session_start should always come before the room).
+		_pending_room = msg
+		print("LogicBridge: queued session_start '%s' for when bridge connects" % session_id)
+		return
+	_socket.send_text(JSON.stringify(msg))
+	print("LogicBridge: sent session_start session=%s game=%s resume=%s" % [session_id, game_id, is_resume])
+
+
 func send_load_game(game_id: String) -> void:
 	var msg := {"type": "load_game", "gameId": game_id}
 	if not _connected:
@@ -150,6 +190,15 @@ func is_connected_to_bridge() -> bool:
 
 
 func _try_connect() -> void:
+	# Respect ServiceSettings: don't connect if disabled
+	var settings: Node = get_node_or_null("/root/ServiceSettings")
+	if settings and not settings.is_enabled("logic_bridge"):
+		_enabled = false
+		return
+	# Don't reconnect if socket is already open or in progress
+	var ready_state := _socket.get_ready_state()
+	if ready_state != WebSocketPeer.STATE_CLOSED:
+		return
 	var err := _socket.connect_to_url(BRIDGE_URL)
 	if err == OK:
 		_enabled = true

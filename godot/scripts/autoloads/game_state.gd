@@ -16,6 +16,8 @@ var player_health := 100.0
 var player_gold := 0
 var inventory_summary := "shortsword, lockpicks"
 var active_quests: Array[String] = []
+var player_model_id := "pete"
+var player_skin_path := ""
 
 # Story
 var story_so_far := "The adventurer descends into the depths of the Ashwood Dungeon, seeking answers about the ancient artifact."
@@ -104,6 +106,8 @@ func save_to_disk(path: String = "user://save.json") -> bool:
 		"story_so_far": story_so_far,
 		"current_room_id": current_room_id,
 		"visited_rooms": visited_rooms,
+		"player_model_id": player_model_id,
+		"player_skin_path": player_skin_path,
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if not file:
@@ -138,6 +142,8 @@ func load_from_disk(path: String = "user://save.json") -> bool:
 	story_so_far = data.get("story_so_far", story_so_far)
 	current_room_id = data.get("current_room_id", "")
 	visited_rooms = data.get("visited_rooms", {})
+	player_model_id = data.get("player_model_id", "pete")
+	player_skin_path = data.get("player_skin_path", "")
 	print("GameState: loaded from %s (%d rooms)" % [path, visited_rooms.size()])
 	return true
 
