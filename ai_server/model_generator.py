@@ -31,6 +31,16 @@ class ModelGenerator:
         self._triposg_available = False
         self._target_faces = 5000
 
+        # Try to use Meshy API as preferred backend
+        self._meshy = None
+        if os.environ.get("MESHY_API_KEY"):
+            try:
+                from meshy_client import MeshyClient
+                self._meshy = MeshyClient()
+                print("ModelGen: Meshy API backend ready")
+            except Exception as e:
+                print(f"ModelGen: Meshy not available ({e})")
+
         if not lazy:
             self._load()
 
@@ -62,13 +72,31 @@ class ModelGenerator:
                  quality: str = "normal") -> bytes:
         """Generate a GLB model from a text prompt. Returns GLB binary data.
 
-        quality: "normal" (50 steps, 7.0 guidance) or "fast" (20 steps, 4.0 guidance, 2000 faces)
+        Uses Meshy API if MESHY_API_KEY is set; falls back to local TripoSG.
         """
         if scale is None:
             scale = [0.5, 0.5, 0.5]
 
-        self._load()
         start = time.perf_counter()
+
+        # Preferred backend: Meshy API
+        if self._meshy is not None:
+            target_polycount = 5000 if quality == "normal" else 2000
+            try:
+                glb_bytes = self._meshy.text_to_3d(
+                    prompt=prompt,
+                    art_style="realistic",
+                    topology="triangle",
+                    target_polycount=target_polycount,
+                )
+                elapsed = time.perf_counter() - start
+                print(f"ModelGen[meshy]: '{prompt[:50]}' -> {elapsed:.1f}s")
+                return glb_bytes
+            except Exception as e:
+                print(f"ModelGen: Meshy failed ({e}), falling back to TripoSG")
+
+        # Fallback: local TripoSG pipeline
+        self._load()
 
         # Step 1: Generate reference image using SD 1.5 (circular padding OFF)
         ref_image = self._generate_reference_image(prompt, seed)
@@ -84,48 +112,71 @@ class ModelGenerator:
             glb_bytes = self._generate_textured_box(ref_image, scale)
 
         elapsed = time.perf_counter() - start
-        print(f"ModelGen: '{prompt[:50]}' -> {elapsed:.1f}s")
+        print(f"ModelGen[local]: '{prompt[:50]}' -> {elapsed:.1f}s")
         return glb_bytes
 
     def _generate_reference_image(self, prompt: str, seed: int) -> Image.Image:
         """Generate a reference image using the existing SD 1.5 pipeline."""
-        if self.texture_gen_ref is None or self.texture_gen_ref.pipe is None:
+        if self.texture_gen_ref is None:
             return Image.new("RGB", (512, 512), color=(128, 100, 80))
 
         import torch
         import torch.nn as nn
 
+        # Load SD pipeline BEFORE checking if it's available
         self.texture_gen_ref._load_pipeline()
+        if self.texture_gen_ref.pipe is None:
+            return Image.new("RGB", (512, 512), color=(128, 100, 80))
 
-        # Temporarily disable circular padding (used for seamless textures)
-        # so we get a normal isolated object image instead of a tiled pattern
-        patched = []
-        for module in self.texture_gen_ref.pipe.unet.modules():
+        pipe = self.texture_gen_ref.pipe
+
+        # 1. Disable circular padding (used for seamless textures)
+        patched_padding = []
+        for module in pipe.unet.modules():
             if isinstance(module, nn.Conv2d) and module.padding_mode == "circular":
                 module.padding_mode = "zeros"
-                patched.append(module)
+                patched_padding.append(module)
+
+        # 2. Unfuse LCM-LoRA and switch to standard scheduler for proper image generation
+        from diffusers import PNDMScheduler
+        lcm_scheduler = pipe.scheduler
+        try:
+            pipe.unfuse_lora()
+        except Exception:
+            pass  # May not be fused
+        pipe.scheduler = PNDMScheduler.from_config(lcm_scheduler.config)
 
         full_prompt = (
-            f"isolated 3D object on pure white background, studio lighting, "
-            f"no shadows, centered, {prompt}"
+            f"isolated 3D render on pure white background, studio lighting, "
+            f"no shadows, centered, single object, side view, {prompt}"
         )
 
         generator = None
         if seed >= 0:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
+        # Standard SD 1.5 parameters: 20 steps, guidance 7.5
         with torch.no_grad():
-            result = self.texture_gen_ref.pipe(
+            result = pipe(
                 prompt=full_prompt,
-                num_inference_steps=self.texture_gen_ref.steps,
-                guidance_scale=1.0,
+                num_inference_steps=20,
+                guidance_scale=7.5,
                 width=512,
                 height=512,
                 generator=generator,
             ).images[0]
 
-        # Restore circular padding for texture generation
-        for module in patched:
+        # Save reference image for debugging
+        result.save("/tmp/model_ref_image.png")
+        print("ModelGen: reference image saved to /tmp/model_ref_image.png")
+
+        # 3. Restore LCM-LoRA and circular padding for texture generation
+        try:
+            pipe.fuse_lora()
+        except Exception:
+            pass
+        pipe.scheduler = lcm_scheduler
+        for module in patched_padding:
             module.padding_mode = "circular"
 
         return result

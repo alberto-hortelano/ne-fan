@@ -18,16 +18,50 @@ func load_room_models(room: Node3D) -> void:
 
 
 func _scan_node(node: Node) -> void:
-	if node is StaticBody3D and node.get_meta("generate_3d", false):
-		var prompt: String = node.get_meta("model_prompt", "")
-		if not prompt.is_empty():
-			_request_model(prompt, node)
+	if node is StaticBody3D:
+		# Prefer model_hash (cache reuse) over model_prompt (generation)
+		if node.has_meta("model_hash"):
+			var key: String = node.get_meta("model_hash")
+			if not key.is_empty():
+				_request_model_by_hash(key, node)
+		elif node.get_meta("generate_3d", false):
+			var prompt: String = node.get_meta("model_prompt", "")
+			if not prompt.is_empty():
+				_request_model(prompt, node)
 	for child in node.get_children():
 		_scan_node(child)
 
 
 func _hash_prompt(prompt: String) -> String:
 	return prompt.strip_edges().to_lower().sha256_text().substr(0, 16)
+
+
+func _request_model_by_hash(key: String, body: StaticBody3D) -> void:
+	# Local cache hit?
+	var cache_path := CACHE_DIR + key + ".glb"
+	if FileAccess.file_exists(cache_path):
+		var file := FileAccess.open(cache_path, FileAccess.READ)
+		if file:
+			var glb_data := file.get_buffer(file.get_length())
+			file.close()
+			_apply_model(body, glb_data)
+			print("ModelLoader: cached (by hash) %s" % key)
+			return
+
+	# Fetch directly from server cache, no /generate_model call
+	if not _pending.has(key):
+		_pending[key] = []
+	_pending[key].append(body)
+	if _pending[key].size() != 1:
+		return  # Already in flight
+
+	var http := HTTPRequest.new()
+	http.timeout = 60.0
+	_scene_tree.root.call_deferred("add_child", http)
+	_http_nodes.append(http)
+	await _scene_tree.process_frame
+	http.request_completed.connect(_on_glb_fetched.bind(key, http), CONNECT_ONE_SHOT)
+	http.request(SERVER_URL + "/cache/model/" + key)
 
 
 func _request_model(prompt: String, body: StaticBody3D) -> void:

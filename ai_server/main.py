@@ -4,21 +4,57 @@ Start with: python ai_server/main.py [--port 8765]
 """
 
 import json
+import os
 import time
 import argparse
 from pathlib import Path
 from contextlib import asynccontextmanager
 
+
+def _load_env_file(env_path: Path) -> None:
+    """Load .env file into os.environ (simple parser, no python-dotenv dependency)."""
+    if not env_path.exists():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+_load_env_file(_env_file)
+
+import logging
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+
+
+class _SilenceHealthcheckFilter(logging.Filter):
+    """Drop uvicorn access log entries for noisy polling endpoints."""
+
+    _SILENCED = ("/health", "/backend_status")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(path in msg for path in self._SILENCED)
+
+
+logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from llm_client import LLMClient
 from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
 from sprite_generator import SpriteGenerator
-from asset_cache import AssetCache
+from asset_cache import AssetCache, AssetManifest
 
 import asyncio as _asyncio
 
@@ -32,6 +68,7 @@ asset_cache: AssetCache | None = None
 model_cache: AssetCache | None = None
 skin_cache: AssetCache | None = None
 sprite_cache: AssetCache | None = None
+asset_manifest: AssetManifest | None = None
 config: dict = {}
 _gpu_lock = _asyncio.Lock()  # Serialize ALL GPU operations
 
@@ -49,15 +86,52 @@ def load_config(config_path: str = "Config/ai_server_config.json") -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, config
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, asset_manifest, config
     config = load_config()
+
+    # Shared manifest sits at the cache root and tracks every asset across types.
+    from pathlib import Path as _P
+    cache_root = _P(config.get("cache_root", "cache"))
+    manifest_path = cache_root / "manifest.json"
+    asset_manifest = AssetManifest(manifest_path)
+    print(f"AssetManifest: {manifest_path.resolve()} ({asset_manifest.total_count()} entries)")
+
+    # First-run recovery: scan existing cache directories so previously generated
+    # assets become discoverable to the narrative engine.
+    if asset_manifest.total_count() == 0:
+        added_total = 0
+        added_total += asset_manifest.scan_directory(
+            cache_root / "textures",
+            asset_type="texture",
+            subtypes_by_filename={"albedo.png": "albedo", "normal.png": "normal", "roughness.png": "roughness"},
+        )
+        added_total += asset_manifest.scan_directory(
+            cache_root / "models",
+            asset_type="model",
+            subtypes_by_filename={"model.glb": "model"},
+        )
+        added_total += asset_manifest.scan_directory(
+            cache_root / "skins",
+            asset_type="skin",
+            subtypes_by_filename={"skin.png": "skin"},
+        )
+        added_total += asset_manifest.scan_directory(
+            cache_root / "sprites",
+            asset_type="sprite",
+            subtypes_by_filename={"sprite.png": "sprite"},
+        )
+        if added_total > 0:
+            print(f"AssetManifest: recovered {added_total} pre-existing assets")
 
     llm_client = LLMClient(
         model=config.get("llm_model", "claude-sonnet-4-5-20250514"),
+        asset_manifest=asset_manifest,
     )
 
     asset_cache = AssetCache(
         cache_dir=config.get("texture_cache_dir", "cache/textures"),
+        asset_type="texture",
+        manifest=asset_manifest,
     )
 
     texture_gen = TextureGenerator(
@@ -69,6 +143,8 @@ async def lifespan(app: FastAPI):
 
     model_cache = AssetCache(
         cache_dir=config.get("model_cache_dir", "cache/models"),
+        asset_type="model",
+        manifest=asset_manifest,
     )
 
     model_gen = ModelGenerator(
@@ -78,6 +154,8 @@ async def lifespan(app: FastAPI):
 
     skin_cache = AssetCache(
         cache_dir=config.get("skin_cache_dir", "cache/skins"),
+        asset_type="skin",
+        manifest=asset_manifest,
     )
 
     skin_gen = SkinGenerator(
@@ -86,6 +164,8 @@ async def lifespan(app: FastAPI):
 
     sprite_cache = AssetCache(
         cache_dir=config.get("sprite_cache_dir", "cache/sprites"),
+        asset_type="sprite",
+        manifest=asset_manifest,
     )
 
     sprite_gen = SpriteGenerator(
@@ -223,6 +303,83 @@ async def generate_model_endpoint(request: Request):
     }
 
 
+@app.get("/backend_status")
+async def backend_status_endpoint():
+    """Report the state of optional backends. Used by Godot's ServiceSettings panel."""
+    import asyncio
+
+    # Meshy 3D
+    if model_gen and getattr(model_gen, "_meshy", None):
+        meshy_status = {"state": "ready", "message": "API key configurada"}
+    elif model_gen and getattr(model_gen, "_triposg_available", False):
+        meshy_status = {
+            "state": "fallback",
+            "message": "Meshy no configurado (usando TripoSG local)",
+        }
+    else:
+        meshy_status = {
+            "state": "down",
+            "message": "no disponible (define MESHY_API_KEY en .env)",
+        }
+
+    # AI Vision (MCP bridge listener preferred, direct API as fallback)
+    if not llm_client:
+        vision_status = {"state": "down", "message": "LLM client no disponible"}
+    else:
+        bridge = await asyncio.to_thread(llm_client.get_bridge_status)
+        has_api: bool = llm_client.has_api_fallback()
+
+        def api_or_down(down_msg: str) -> dict:
+            if has_api:
+                return {"state": "fallback", "message": "API directa (sin listener MCP)"}
+            return {"state": "down", "message": down_msg}
+
+        if not bridge.get("connected"):
+            vision_status = api_or_down("bridge no conectado (¿narrative-mcp arrancado?)")
+        elif bridge.get("error"):
+            vision_status = api_or_down("bridge error: %s" % bridge["error"])
+        elif bridge.get("listener_active"):
+            ago: float = bridge.get("last_listen_seconds_ago", -1)
+            vision_status = {
+                "state": "ready",
+                "message": "MCP listener activo (último listen hace %.0fs)" % max(ago, 0),
+            }
+        else:
+            vision_status = api_or_down("no hay Claude Code escuchando narrative_listen")
+
+    return {
+        "meshy_3d": meshy_status,
+        "ai_vision": vision_status,
+    }
+
+
+@app.post("/analyze_weapon")
+async def analyze_weapon_endpoint(request: Request):
+    """Vision-guided weapon orientation. Receives images of a 3D weapon and
+    returns grip point + orientation vectors for placement."""
+    import asyncio
+
+    body = await request.json()
+    images = body.get("images", [])
+    weapon_type = body.get("weapon_type", "generic")
+    kind = body.get("kind", "weapon_orient")
+    context = body.get("context", {})
+
+    if not images:
+        return {"error": "missing images"}
+
+    if llm_client is None:
+        return {"error": "llm_client unavailable", "fallback": True}
+
+    result = await asyncio.to_thread(
+        llm_client.analyze_weapon, images, weapon_type, kind, context
+    )
+
+    if result is None:
+        return {"error": "vision unavailable", "fallback": True}
+
+    return result
+
 
 @app.post("/generate_skin")
 async def generate_skin_endpoint(request: Request):
@@ -298,6 +455,79 @@ async def generate_sprite_endpoint(request: Request):
         "sprite_url": f"/cache/sprite/{key}",
         "generation_time_ms": elapsed_ms,
     }
+
+
+@app.post("/report_player_choice")
+async def report_player_choice(request: Request):
+    """Forward a player dialogue choice to the narrative engine and return its
+    consequences (story_update / spawn_entity / schedule_event). Used by Godot
+    when the player picks a numbered option or types a free-text reply."""
+    import asyncio
+    body = await request.json()
+    if llm_client is None:
+        return {"consequences": []}
+    result = await asyncio.to_thread(
+        llm_client.report_player_choice,
+        str(body.get("event_id", "")),
+        str(body.get("speaker", "")),
+        str(body.get("chosen_text", "")),
+        str(body.get("free_text", "")),
+        body.get("context", {}) if isinstance(body.get("context"), dict) else {},
+    )
+    return result if isinstance(result, dict) else {"consequences": []}
+
+
+@app.post("/notify_session")
+async def notify_session(request: Request):
+    """Godot calls this when the player starts or resumes a narrative session.
+    The session metadata is propagated to Claude on the next bridge request."""
+    body = await request.json()
+    session_id = str(body.get("session_id", ""))
+    game_id = str(body.get("game_id", ""))
+    is_resume = bool(body.get("is_resume", False))
+    if not session_id or not game_id:
+        return Response(status_code=400, content="session_id and game_id required")
+    if llm_client is not None:
+        llm_client.set_session(session_id, game_id, is_resume)
+    return {"ok": True, "session_id": session_id, "game_id": game_id, "is_resume": is_resume}
+
+
+@app.get("/assets")
+async def list_assets(asset_type: str | None = None, limit: int = 50):
+    """List indexed assets from the shared manifest. Used by the narrative engine
+    to discover what's already been generated and avoid re-generation."""
+    if asset_manifest is None:
+        return {"assets": [], "total": 0}
+    return {
+        "assets": asset_manifest.list_assets(asset_type=asset_type, limit=limit),
+        "total": asset_manifest.total_count(),
+    }
+
+
+@app.get("/assets/by_hash/{hash_key}")
+async def asset_by_hash(hash_key: str):
+    """Look up all manifest entries for a specific hash (may include several
+    subtypes — e.g. a texture has both albedo and normal)."""
+    if asset_manifest is None:
+        return Response(status_code=404, content="No manifest")
+    matches = asset_manifest.find_by_hash(hash_key)
+    if not matches:
+        return Response(status_code=404, content="Not found")
+    enriched = []
+    for m in matches:
+        entry = dict(m)
+        atype = m.get("type", "")
+        subtype = m.get("subtype", "")
+        if atype == "texture":
+            entry["cache_url"] = f"/cache/{subtype}/{hash_key}"
+        elif atype == "model":
+            entry["cache_url"] = f"/cache/model/{hash_key}"
+        elif atype == "skin":
+            entry["cache_url"] = f"/cache/skin/{hash_key}"
+        elif atype == "sprite":
+            entry["cache_url"] = f"/cache/sprite/{hash_key}"
+        enriched.append(entry)
+    return {"matches": enriched}
 
 
 @app.get("/cache/sprite/{hash_key}")

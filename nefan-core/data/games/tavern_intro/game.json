@@ -16,15 +16,15 @@
   "npcs": {
     "tavern_keeper": {
       "name": "Marta",
-      "character_type": "peasant_female"
+      "character_type": "peasant_girl"
     },
     "knight_aldric": {
       "name": "Sir Aldric",
-      "character_type": "knight"
+      "character_type": "paladin"
     },
     "old_fenris": {
       "name": "Fenris",
-      "character_type": "mage"
+      "character_type": "nightshade"
     }
   },
   "scenes": {
