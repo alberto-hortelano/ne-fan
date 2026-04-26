@@ -5,6 +5,12 @@ import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
+import { SpriteRenderer } from "./renderer/sprite-renderer.js";
+import { AssetCache } from "./renderer/asset-cache.js";
+import { BridgeClient } from "./net/bridge-client.js";
+import { NarrativeClient } from "./net/narrative-client.js";
+import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
+import { HistoryBrowser } from "./ui/history-browser.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { ObjectiveDisplay } from "./ui/objective-display.js";
@@ -29,11 +35,26 @@ const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record
 const SPEED = playerCfg.walk_speed ?? 3.0;
 const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
 
+// Player Mixamo sprite — character editor will overwrite once shipped.
+let playerModel = "paladin";
+let playerAnimStartedAt = performance.now();
+
 const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
-const renderer = new CanvasRenderer(canvas);
+const WORLD_ANGLE = "isometric_30";
+const spriteRenderer = new SpriteRenderer("/sprites");
+const assetCache = new AssetCache("http://127.0.0.1:8765");
+const renderer = new CanvasRenderer(canvas, {
+  spriteRenderer,
+  assetCache,
+  worldAngle: WORLD_ANGLE,
+});
+
+// Pre-load the default Mixamo idle so the player has a sprite the moment a
+// session starts. Other anims load lazily on demand.
+void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
@@ -683,7 +704,13 @@ function gameLoop(now: number): void {
 
   // Render
   renderer.render(
-    { pos: playerPos, forward: playerForward, hp: result.playerHp, maxHp: playerMaxHp },
+    {
+      pos: playerPos,
+      forward: playerForward,
+      hp: result.playerHp,
+      maxHp: playerMaxHp,
+      sprite: { model: playerModel, anim: "idle", angle: WORLD_ANGLE, animStartedAt: playerAnimStartedAt },
+    },
     enemyEntities,
     objectEntities,
     npcEntities,
@@ -710,7 +737,62 @@ function gameLoop(now: number): void {
 
 populateRoomSelector();
 
-createGameClient(combatConfigJson as Record<string, unknown>, (client) => {
+const sharedBridge = new BridgeClient();
+const narrativeClient = new NarrativeClient(sharedBridge);
+const titleScreen = new TitleScreen(narrativeClient);
+const historyBrowser = new HistoryBrowser(narrativeClient);
+let activeSessionId: string | null = null;
+
+dialoguePanel.onChoice = (idx, text) => {
+  if (!activeSessionId) return;
+  const cur = dialoguePanel.current();
+  narrativeClient.sendDialogueChoice({
+    eventId: `client_${Date.now()}`,  // bridge generates the canonical id
+    choiceIndex: idx,
+    speaker: cur.speaker,
+    chosenText: text,
+  });
+};
+
+dialoguePanel.onFreeText = (freeText) => {
+  if (!activeSessionId) return;
+  const cur = dialoguePanel.current();
+  narrativeClient.sendDialogueChoice({
+    eventId: `client_${Date.now()}`,
+    choiceIndex: -1,
+    speaker: cur.speaker,
+    chosenText: freeText,
+    freeText,
+  });
+};
+
+narrativeClient.onNarrativeEvent((event) => {
+  // Minimum viable handler: log everything to the combat log.
+  // Task 13 will wire each effect to dialogue/spawns/story HUD.
+  for (const effect of event.effects) {
+    switch (effect.kind) {
+      case "show_dialogue":
+        dialoguePanel.show(effect.speaker, effect.text, effect.choices.map((c) =>
+          typeof c === "string" ? c : c.text,
+        ));
+        break;
+      case "story_delta":
+        log(`📖 ${effect.delta.slice(0, 80)}`);
+        break;
+      case "spawn_entity":
+        log(`✨ spawn ${effect.entityKind}: ${effect.description.slice(0, 60)}`);
+        break;
+      case "schedule_event":
+        log(`⏳ scheduled: ${effect.description.slice(0, 60)}`);
+        break;
+      case "ambient_message":
+        log(effect.message);
+        break;
+    }
+  }
+});
+
+createGameClient(combatConfigJson as Record<string, unknown>, sharedBridge, (client) => {
   gameClient = client;
   updateConnectionStatus(client.isConnected, client.isBridge);
 
@@ -728,11 +810,54 @@ createGameClient(combatConfigJson as Record<string, unknown>, (client) => {
     client.store.on("player_respawned", () => log("Respawned!"));
   }
 
-  // Load default room
-  const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
-  if (defaultRoom) {
-    loadRoom(defaultRoom);
-  }
+  void runTitleFlow(client);
 });
+
+async function runTitleFlow(client: GameClient): Promise<void> {
+  if (!client.isBridge) {
+    // Bridge unavailable: skip the narrative title screen and keep the legacy
+    // local mode (room JSON selector). This preserves the previous behaviour
+    // when running without the bridge.
+    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
+    if (defaultRoom) loadRoom(defaultRoom);
+    return;
+  }
+
+  let action: TitleAction;
+  try {
+    action = await titleScreen.show();
+  } catch (err) {
+    console.warn("title-screen failed, falling back to room selector:", err);
+    titleScreen.hide();
+    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
+    if (defaultRoom) loadRoom(defaultRoom);
+    return;
+  }
+
+  try {
+    if (action.kind === "new_game") {
+      const res = await narrativeClient.startSession(action.gameId, action.appearance);
+      activeSessionId = res.sessionId;
+      historyBrowser.setSession(res.sessionId);
+      log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
+      playerModel = action.appearance.model_id;
+      playerAnimStartedAt = performance.now();
+      void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+    } else {
+      const res = await narrativeClient.resumeSession(action.sessionId);
+      activeSessionId = res.state.session_id;
+      historyBrowser.setSession(res.state.session_id);
+      log(`Reanudada: ${res.state.session_id}`);
+      playerModel = res.state.player.appearance.model_id || playerModel;
+      playerAnimStartedAt = performance.now();
+      void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+    }
+  } catch (err) {
+    alert(`No se pudo iniciar la sesión: ${(err as Error).message}`);
+    console.error(err);
+  } finally {
+    titleScreen.hide();
+  }
+}
 
 requestAnimationFrame(gameLoop);

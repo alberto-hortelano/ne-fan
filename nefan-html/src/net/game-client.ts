@@ -263,12 +263,15 @@ export class BridgeGameClient implements GameClient {
   }
 }
 
-/** Try to create a bridge client; returns BridgeGameClient if connected within timeout, else LocalGameClient. */
+/** Try to create a bridge client; returns BridgeGameClient if connected within
+ *  timeout, else LocalGameClient. Accepts an existing BridgeClient (the same
+ *  one used by NarrativeClient) so we don't open two parallel sockets to the
+ *  bridge. */
 export function createGameClient(
   configJson: Record<string, unknown>,
+  bridge: BridgeClient,
   onReady: (client: GameClient) => void,
 ): void {
-  const bridge = new BridgeClient();
   const store = new GameStore();
   let resolved = false;
 
@@ -280,7 +283,6 @@ export function createGameClient(
       onReady(new BridgeGameClient(bridge, store));
     } else {
       console.log("GameClient: using local mode (bridge not available)");
-      bridge.destroy();
       onReady(new LocalGameClient(configJson));
     }
   }, 2000);
