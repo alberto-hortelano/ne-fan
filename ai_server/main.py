@@ -421,7 +421,13 @@ async def generate_skin_endpoint(request: Request):
 
 @app.post("/generate_sprite")
 async def generate_sprite_endpoint(request: Request):
-    """Generate an RGBA sprite PNG from a prompt (image with transparent background)."""
+    """Generate an RGBA sprite PNG from a prompt (image with transparent background).
+
+    Accepts an optional ``angle`` (top_down | isometric_30 | isometric_45 |
+    frontal) so 2D-world assets match the projection of pre-rendered Mixamo
+    sprite sheets. ``angle`` and ``style_token`` participate in the cache key,
+    so the same prompt at different angles cache independently.
+    """
     import asyncio
 
     body = await request.json()
@@ -429,30 +435,40 @@ async def generate_sprite_endpoint(request: Request):
     width = body.get("width", 512)
     height = body.get("height", 512)
     seed = body.get("seed", -1)
+    angle = body.get("angle", "top_down")
+    style_token = body.get("style_token") or None
 
     if not prompt:
         return {"error": "missing prompt"}
 
-    key = sprite_cache.hash_key(prompt)
+    context = {"angle": angle}
+    if style_token:
+        context["style_token"] = style_token
 
-    if sprite_cache.has(prompt, "sprite"):
+    key = sprite_cache.hash_key(prompt, context)
+
+    if sprite_cache.has(prompt, "sprite", context):
         return {
             "hash": key,
             "cached": True,
             "sprite_url": f"/cache/sprite/{key}",
+            "angle": angle,
         }
 
     start = time.time()
     async with _gpu_lock:
-        result = await asyncio.to_thread(sprite_gen.generate, prompt, width, height, seed)
+        result = await asyncio.to_thread(
+            sprite_gen.generate, prompt, width, height, seed, angle, style_token
+        )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    sprite_cache.put(prompt, "sprite", result["sprite"])
+    sprite_cache.put(prompt, "sprite", result["sprite"], context=context, subtype_override="sprite_2d")
 
     return {
         "hash": key,
         "cached": False,
         "sprite_url": f"/cache/sprite/{key}",
+        "angle": angle,
         "generation_time_ms": elapsed_ms,
     }
 
