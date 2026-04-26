@@ -1,12 +1,33 @@
 ## Persistent narrative state for the open-world RPG.
 ## Tracks world+player+story+spawned entities+dialogue history. Serializes to
-## user://saves/{session_id}/state.json. Replaces the old single-slot
-## GameState.save_to_disk model. The narrative engine reads this for context
-## and the title screen reads it to list resumable sessions.
+## ~/code/ne-fan/saves/{session_id}/state.json — a shared filesystem path so
+## the HTML 2D client (via nefan-core/bridge) and Godot read the same saves.
+## The narrative engine reads this for context and the title screen lists
+## resumable sessions.
 extends Node
 
 const SCHEMA_VERSION := 1
-const SAVES_DIR := "user://saves/"
+const SAVES_DIR_FALLBACK := "user://saves/"
+
+
+static func _saves_dir() -> String:
+	## Prefer the shared filesystem path under $HOME/code/ne-fan/saves/, falling
+	## back to user:// when the env var isn't set (e.g. exported builds).
+	var override: String = OS.get_environment("NEFAN_SAVES_DIR")
+	if override != "":
+		if not override.ends_with("/"):
+			override += "/"
+		return override
+	var home: String = OS.get_environment("HOME")
+	if home != "":
+		return home + "/code/ne-fan/saves/"
+	return SAVES_DIR_FALLBACK
+
+
+# Saves dir is resolved lazily because each call may rely on env vars set up
+# during _ready. Constant kept for backwards compat with code that referenced
+# it; see _saves_dir() for the live value.
+var SAVES_DIR := _saves_dir()
 
 signal session_started(session_id: String, game_id: String, is_resume: bool)
 signal session_saved(session_id: String, path: String)
@@ -58,7 +79,9 @@ var _dirty := false
 
 
 func _ready() -> void:
+	SAVES_DIR = _saves_dir()
 	DirAccess.make_dir_recursive_absolute(SAVES_DIR)
+	print("NarrativeState: saves dir = %s" % SAVES_DIR)
 
 
 # ----------------------------------------------------------------------
@@ -172,18 +195,19 @@ func save() -> bool:
 
 static func list_saved_sessions() -> Array:
 	"""Return a list of {session_id, game_id, updated_at, summary, scene_count,
-	entity_count} for every save under user://saves/. Sorted by updated_at desc."""
+	entity_count} for every save under the shared saves dir. Sorted desc."""
 	var result: Array = []
-	if not DirAccess.dir_exists_absolute(SAVES_DIR):
+	var saves_dir: String = _saves_dir()
+	if not DirAccess.dir_exists_absolute(saves_dir):
 		return result
-	var d := DirAccess.open(SAVES_DIR)
+	var d := DirAccess.open(saves_dir)
 	if not d:
 		return result
 	d.list_dir_begin()
 	var name := d.get_next()
 	while name != "":
 		if d.current_is_dir() and name != "." and name != "..":
-			var path := SAVES_DIR + name + "/state.json"
+			var path := saves_dir + name + "/state.json"
 			if FileAccess.file_exists(path):
 				var f := FileAccess.open(path, FileAccess.READ)
 				if f:
