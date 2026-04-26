@@ -1,17 +1,26 @@
 /** WebSocket bridge — runs GameSimulation + ScenarioRunner, communicates with Godot on :9877. */
 
 import { WebSocketServer, WebSocket } from "ws";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
 import { ScenarioRunner } from "../src/scenario/scenario-runner.js";
+import { NarrativeState } from "../src/narrative/narrative-state.js";
+import { FsSessionStorage } from "../src/narrative/session-storage.js";
+import { AiClient } from "../src/narrative/ai-client.js";
+import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { CombatConfig } from "../src/types.js";
-import type { ClientMessage, StateUpdateMessage } from "../src/protocol/messages.js";
+import type {
+  ClientMessage,
+  StateUpdateMessage,
+  ServerMessage,
+} from "../src/protocol/messages.js";
 import type { ScenarioUpdate } from "../src/scenario/scenario-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +29,12 @@ const projectRoot = resolve(__dirname, "..");
 const dataDir = resolve(projectRoot, "data").replace("/dist/data", "/data");
 const PORT = 9877;
 const GAMES_DIR = resolve(dataDir, "games");
+
+// Saves live in a shared filesystem location accessible to every client
+// (HTML cannot read user:// from Godot). Override with NEFAN_SAVES_DIR.
+const SAVES_DIR =
+  process.env.NEFAN_SAVES_DIR ?? resolve(homedir(), "code", "ne-fan", "saves");
+const AI_SERVER_URL = process.env.NEFAN_AI_SERVER ?? "http://127.0.0.1:8765";
 
 // Load combat config
 const configPath = resolve(dataDir, "combat_config.json");
@@ -30,6 +45,47 @@ const config: CombatConfig = loadConfig(
 const store = new GameStore();
 let sim = new GameSimulation(config, store, Date.now());
 const scenario = new ScenarioRunner();
+const sessionStorage = new FsSessionStorage(SAVES_DIR);
+const narrative = new NarrativeState(sessionStorage);
+const aiClient = new AiClient({ baseUrl: AI_SERVER_URL });
+
+// Players currently subscribed to narrative events (broadcast targets).
+const narrativeSubscribers = new Set<WebSocket>();
+
+function send(ws: WebSocket, msg: ServerMessage): void {
+  if (ws.readyState === ws.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function broadcastNarrative(msg: ServerMessage): void {
+  for (const ws of narrativeSubscribers) send(ws, msg);
+}
+
+function listGames(): Array<{ game_id: string; title: string; description?: string }> {
+  if (!existsSync(GAMES_DIR)) return [];
+  const out: Array<{ game_id: string; title: string; description?: string }> = [];
+  for (const entry of readdirSync(GAMES_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const gameJson = resolve(GAMES_DIR, entry.name, "game.json");
+    if (!existsSync(gameJson)) continue;
+    try {
+      const def = JSON.parse(readFileSync(gameJson, "utf-8")) as {
+        game_id?: string;
+        title?: string;
+        description?: string;
+      };
+      out.push({
+        game_id: def.game_id ?? entry.name,
+        title: def.title ?? entry.name,
+        description: def.description,
+      });
+    } catch {
+      // skip malformed
+    }
+  }
+  return out;
+}
 
 // Add player
 sim.addCombatant(
@@ -286,10 +342,138 @@ wss.on("connection", (ws: WebSocket) => {
       case "ping":
         ws.send(JSON.stringify({ type: "pong" }));
         break;
+
+      case "list_games": {
+        send(ws, { type: "games_listed", requestId: msg.requestId, games: listGames() });
+        break;
+      }
+
+      case "list_sessions": {
+        const sessions = await sessionStorage.list();
+        send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions });
+        break;
+      }
+
+      case "start_session": {
+        narrative.startNewSession(msg.gameId);
+        if (msg.appearance) {
+          narrative.updatePlayerAppearance(msg.appearance.model_id, msg.appearance.skin_path);
+        }
+        await aiClient.notifySessionStart(narrative.session_id, msg.gameId, false);
+        await narrative.save();
+        narrativeSubscribers.add(ws);
+        send(ws, {
+          type: "session_started",
+          requestId: msg.requestId,
+          ok: true,
+          sessionId: narrative.session_id,
+          gameId: narrative.game_id,
+          isResume: false,
+          state: narrative.toSessionData(),
+        });
+        // Generate the initial scene asynchronously and broadcast it as a
+        // narrative_event so all subscribed clients render the same world.
+        const ctx = narrative.serializeForLlm();
+        aiClient.generateScene(ctx).then(async (res) => {
+          if (res.ok && res.scene) {
+            const sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
+            narrative.recordSceneLoaded(sceneId, res.scene);
+            await narrative.save();
+            broadcastNarrative({
+              type: "narrative_event",
+              eventId: "scene_init",
+              consequences: [],
+              effects: [
+                {
+                  kind: "spawn_entity",
+                  entityId: sceneId,
+                  entityKind: "object",
+                  description: String(res.scene.room_description ?? sceneId),
+                  position: [0, 0, 0],
+                  data: { scene: res.scene },
+                  eventId: "scene_init",
+                },
+              ],
+            });
+          }
+        }).catch((err) => {
+          console.warn("Bridge: generate_scene failed:", err);
+        });
+        break;
+      }
+
+      case "resume_session": {
+        const ok = await narrative.loadSession(msg.sessionId);
+        if (!ok) {
+          send(ws, {
+            type: "session_started",
+            requestId: msg.requestId,
+            ok: false,
+            error: "session_not_found",
+          });
+          break;
+        }
+        await aiClient.notifySessionStart(narrative.session_id, narrative.game_id, true);
+        narrativeSubscribers.add(ws);
+        send(ws, {
+          type: "session_started",
+          requestId: msg.requestId,
+          ok: true,
+          sessionId: narrative.session_id,
+          gameId: narrative.game_id,
+          isResume: true,
+          state: narrative.toSessionData(),
+        });
+        break;
+      }
+
+      case "delete_session": {
+        const ok = await sessionStorage.delete(msg.sessionId);
+        send(ws, { type: "session_deleted", requestId: msg.requestId, ok });
+        break;
+      }
+
+      case "save_session": {
+        const ok = await narrative.save();
+        send(ws, { type: "session_saved", requestId: msg.requestId, ok });
+        break;
+      }
+
+      case "dialogue_choice": {
+        const eventId = narrative.recordDialogueEvent(
+          msg.speaker,
+          msg.chosenText,
+          [],
+          msg.choiceIndex,
+          msg.freeText ?? "",
+        );
+        const ctx = narrative.serializeForLlm();
+        const consequences = await aiClient.reportPlayerChoice({
+          eventId,
+          speaker: msg.speaker,
+          chosenText: msg.chosenText,
+          freeText: msg.freeText ?? "",
+          context: ctx,
+        });
+        const playerPos = store.state.player.pos;
+        const dispatched = dispatchConsequences(narrative, eventId, consequences, {
+          playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
+          playerForward: { x: 0, y: 0, z: -1 },
+        });
+        await narrative.save();
+        broadcastNarrative({
+          type: "narrative_event",
+          eventId,
+          consequences,
+          effects: dispatched.effects,
+        });
+        break;
+      }
     }
   });
 
   ws.on("close", () => {
+    narrativeSubscribers.delete(ws);
     console.log("Bridge: client disconnected");
   });
 });
