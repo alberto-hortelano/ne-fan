@@ -92,6 +92,11 @@ sim.addCombatant(
   createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
 );
 
+// Don't crash the bridge if a downstream service (ai_server) is offline.
+process.on("unhandledRejection", (reason) => {
+  console.warn("Bridge: unhandled rejection:", reason);
+});
+
 const wss = new WebSocketServer({ port: PORT });
 console.log(`NEFan Logic Bridge listening on ws://localhost:${PORT}`);
 

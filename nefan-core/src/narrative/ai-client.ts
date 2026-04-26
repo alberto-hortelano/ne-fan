@@ -58,12 +58,17 @@ export class AiClient {
   }
 
   async notifySessionStart(sessionId: string, gameId: string, isResume: boolean): Promise<boolean> {
-    const res = await this.request("POST", "/notify_session", {
-      session_id: sessionId,
-      game_id: gameId,
-      is_resume: isResume,
-    }, 5_000);
-    return res.ok;
+    try {
+      const res = await this.request("POST", "/notify_session", {
+        session_id: sessionId,
+        game_id: gameId,
+        is_resume: isResume,
+      }, 5_000);
+      return res.ok;
+    } catch (err) {
+      console.warn("AiClient.notifySessionStart failed:", (err as Error).message);
+      return false;
+    }
   }
 
   async generateScene(context: LlmContext): Promise<SceneGenerationResult> {
