@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Never Ending Fantasy — interactive launcher.
-# Run without arguments. Pick a preset from the menu.
-#
-# Presets honour service dependencies (wait_for_port instead of blind sleeps),
-# pause for Claude Code MCP setup when the narrative engine is involved, and
-# clean up child processes on Ctrl+C via a trap.
+# Never Ending Fantasy — interactive launcher (TUI).
+# Run without arguments. Use ↑/↓ to navigate, → to fine-tune which services
+# launch, ← to go back, Space to toggle a service, Enter to launch, q to quit.
 
 set -uo pipefail
 
@@ -67,6 +64,7 @@ preflight() {
     [[ -d "$PROJECT_DIR/narrative-mcp/node_modules" ]] || missing+=("narrative-mcp deps — cd narrative-mcp && npm install")
     have_cmd nc   || missing+=("netcat (nc) — sudo apt install netcat-openbsd")
     have_cmd curl || missing+=("curl — sudo apt install curl")
+    have_cmd tput || missing+=("tput (ncurses) — sudo apt install ncurses-bin")
 
     if (( ${#missing[@]} )); then
         echo "❌ Preflight failed:"
@@ -220,109 +218,402 @@ EOF
     done
 }
 
-# ─── Presets ───────────────────────────────────────────────────
+# ─── Service catalogue + presets ───────────────────────────────
+#
+# Single source of truth for which services exist and what each preset
+# turns on. The TUI reads from these arrays, the launcher runs them in
+# topological order.
 
-preset_play() {
-    echo "▶ preset: Play (full stack + Claude Code narrative)"
-    start_bridge        || return 1
-    start_narrative_mcp || return 1
-    start_ai            || return 1
-    pause_for_claude_code
-    start_godot         || return 1
-    start_html          || return 1
-    follow_logs
+# Service slot index → key
+SERVICES=(bridge narrative-mcp ai_server godot godot-headless html)
+# Service slot index → display label
+SERVICE_LABELS=(
+    "bridge          :9877"
+    "narrative-mcp   :3737"
+    "ai_server       :8765"
+    "Godot"
+    "Godot headless (xvfb)"
+    "HTML            :3000"
+)
+# Service slot index → one-line hint
+SERVICE_HINTS=(
+    "shared TS logic + WebSocket"
+    "MCP bridge to Claude Code"
+    "Python LLM/asset server"
+    "3D client window"
+    "Godot under xvfb (no window)"
+    "2D browser client"
+)
+
+# Mutually exclusive pairs (space-separated indices in a single string).
+# Toggling one in the TUI deactivates its sibling.
+EXCLUSIVE_PAIRS=("3 4")  # godot vs godot-headless
+
+# Presets: each entry is a name, a description, and a 6-element bitmask
+# (1 = service active) in the SERVICES order.
+PRESET_NAMES=(
+    "Play"
+    "Automated tests"
+    "HTML 2D iteration"
+    "Godot offline"
+    "Bridge only"
+    "ai_server only"
+    "Custom"
+)
+PRESET_DESCS=(
+    "Full stack + Claude Code narrative"
+    "bridge + Godot headless (movement_test.py et al.)"
+    "bridge + HTML (no AI generation)"
+    "Just Godot — fallback rooms only"
+    "Just nefan-core bridge"
+    "Just the Python AI server"
+    "Whatever you have selected"
+)
+#                  bridge  narr  ai  god  hl  html
+PRESET_PROFILES=(
+    "1 1 1 1 0 1"   # Play
+    "1 0 0 0 1 0"   # Automated tests
+    "1 0 0 0 0 1"   # HTML 2D iteration
+    "0 0 0 1 0 0"   # Godot offline
+    "1 0 0 0 0 0"   # Bridge only
+    "0 0 1 0 0 0"   # ai_server only
+    "0 0 0 0 0 0"   # Custom (filled in from current selection)
+)
+
+# Live state — applied by TUI, consumed by launcher.
+declare -a ACTIVE=(0 0 0 0 0 0)
+
+apply_preset() {
+    local idx=$1
+    if (( idx < 0 || idx >= ${#PRESET_NAMES[@]} )); then return; fi
+    if (( idx == ${#PRESET_NAMES[@]} - 1 )); then
+        # Custom: keep current selection
+        return
+    fi
+    local mask="${PRESET_PROFILES[$idx]}"
+    local i=0
+    for bit in $mask; do
+        ACTIVE[$i]=$bit
+        ((i++))
+    done
 }
 
-preset_tests_headless() {
-    echo "▶ preset: Automated tests (headless + bridge)"
-    start_bridge         || return 1
-    start_godot_headless || return 1
-    cat <<EOF
+apply_exclusivity() {
+    # When two slots in an exclusive pair are both 1, keep only `keep_idx`.
+    local keep_idx=$1
+    local pair other
+    for pair in "${EXCLUSIVE_PAIRS[@]}"; do
+        local a="${pair% *}" b="${pair#* }"
+        if [[ $keep_idx == "$a" && ${ACTIVE[$a]} -eq 1 && ${ACTIVE[$b]} -eq 1 ]]; then
+            ACTIVE[$b]=0
+        elif [[ $keep_idx == "$b" && ${ACTIVE[$a]} -eq 1 && ${ACTIVE[$b]} -eq 1 ]]; then
+            ACTIVE[$a]=0
+        fi
+    done
+}
+
+# ─── TUI: input + render ───────────────────────────────────────
+
+read_key() {
+    local k1="" k2="" k3=""
+    IFS= read -rsn1 k1
+    if [[ $k1 == $'\e' ]]; then
+        IFS= read -rsn1 -t 0.01 k2 2>/dev/null
+        IFS= read -rsn1 -t 0.01 k3 2>/dev/null
+        case "$k2$k3" in
+            '[A') printf "UP"    ; return ;;
+            '[B') printf "DOWN"  ; return ;;
+            '[C') printf "RIGHT" ; return ;;
+            '[D') printf "LEFT"  ; return ;;
+            '')   printf "ESC"   ; return ;;
+        esac
+        printf "ESC"; return
+    fi
+    case "$k1" in
+        $'\n'|$'\r'|'') printf "ENTER" ; return ;;
+        ' ')            printf "SPACE" ; return ;;
+        q|Q)            printf "QUIT"  ; return ;;
+        s|S)            printf "STATUS"; return ;;
+        k|K)            printf "STOP"  ; return ;;
+        *)              printf "OTHER:%s" "$k1" ;;
+    esac
+}
+
+# Init terminal capabilities once.
+TUI_BOLD=""
+TUI_REV=""
+TUI_DIM=""
+TUI_RESET=""
+TUI_CIVIS=""
+TUI_CNORM=""
+TUI_CLEAR=""
+TUI_CUP00=""
+TUI_ED=""
+init_tput() {
+    TUI_BOLD=$(tput bold 2>/dev/null || true)
+    TUI_REV=$(tput rev 2>/dev/null || true)
+    TUI_DIM=$(tput dim 2>/dev/null || true)
+    TUI_RESET=$(tput sgr0 2>/dev/null || true)
+    TUI_CIVIS=$(tput civis 2>/dev/null || true)
+    TUI_CNORM=$(tput cnorm 2>/dev/null || true)
+    TUI_CLEAR=$(tput clear 2>/dev/null || true)
+    TUI_CUP00=$(tput cup 0 0 2>/dev/null || true)
+    TUI_ED=$(tput ed 2>/dev/null || true)
+}
+
+render_menu() {
+    local mode=$1 preset_idx=$2 service_idx=$3
+    # Move to home + clear-to-end-of-display (less flicker than tput clear)
+    printf "%s%s" "$TUI_CUP00" "$TUI_ED"
+
+    printf "%s╭─ Never Ending Fantasy launcher ───────────────────────────────╮%s\n" "$TUI_BOLD" "$TUI_RESET"
+    printf "\n"
+
+    # Column headers
+    if [[ $mode == "presets" ]]; then
+        printf "  %sPresets%s                       %sServices for this preset%s\n" "$TUI_BOLD" "$TUI_RESET" "$TUI_DIM" "$TUI_RESET"
+    else
+        printf "  %s(presets — press ←)%s          %sServices to launch%s\n" "$TUI_DIM" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET"
+    fi
+    printf "\n"
+
+    local n_presets=${#PRESET_NAMES[@]}
+    local n_services=${#SERVICES[@]}
+    local rows=$n_presets
+    (( n_services > rows )) && rows=$n_services
+
+    local i
+    for ((i=0; i<rows; i++)); do
+        # Left column: presets
+        local left_text="" left=""
+        if (( i < n_presets )); then
+            left_text="${PRESET_NAMES[$i]}"
+            if [[ $mode == "presets" ]]; then
+                if (( i == preset_idx )); then
+                    left=$(printf "%s▶ %-22s%s" "$TUI_REV" "$left_text" "$TUI_RESET")
+                else
+                    left=$(printf "  %-22s" "$left_text")
+                fi
+            else
+                # Dim the presets while in services mode, but highlight the current one.
+                if (( i == preset_idx )); then
+                    left=$(printf "%s  %-22s%s" "$TUI_DIM" "$left_text" "$TUI_RESET")
+                else
+                    left=$(printf "%s  %-22s%s" "$TUI_DIM" "$left_text" "$TUI_RESET")
+                fi
+            fi
+        else
+            left=$(printf "  %-22s" "")
+        fi
+        printf "  %b   " "$left"
+
+        # Right column: services
+        if (( i < n_services )); then
+            local mark="[ ]"
+            (( ${ACTIVE[$i]} == 1 )) && mark="[✓]"
+            local label="${SERVICE_LABELS[$i]}"
+            if [[ $mode == "services" && $i == "$service_idx" ]]; then
+                printf "%s▶ %s %s%s" "$TUI_REV" "$mark" "$label" "$TUI_RESET"
+            else
+                printf "  %s %s" "$mark" "$label"
+            fi
+        fi
+        printf "\n"
+    done
+
+    printf "\n"
+
+    # Description of the highlighted preset / service
+    if [[ $mode == "presets" ]]; then
+        printf "  %s▸ %s%s\n" "$TUI_DIM" "${PRESET_DESCS[$preset_idx]}" "$TUI_RESET"
+    else
+        if (( service_idx < ${#SERVICE_HINTS[@]} )); then
+            printf "  %s▸ %s%s\n" "$TUI_DIM" "${SERVICE_HINTS[$service_idx]}" "$TUI_RESET"
+        else
+            printf "\n"
+        fi
+    fi
+
+    printf "\n"
+    printf "%s╰───────────────────────────────────────────────────────────────╯%s\n" "$TUI_BOLD" "$TUI_RESET"
+
+    if [[ $mode == "presets" ]]; then
+        printf "  %s↑/↓%s navigate   %s→%s edit services   %sEnter%s launch   %ss%s status   %sk%s stop   %sq%s quit\n" \
+            "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET" \
+            "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET"
+    else
+        printf "  %s↑/↓%s navigate   %sSpace%s toggle   %s←%s presets   %sEnter%s launch   %sq%s quit\n" \
+            "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET" \
+            "$TUI_BOLD" "$TUI_RESET" "$TUI_BOLD" "$TUI_RESET"
+    fi
+}
+
+# Save terminal state so we can restore it on exit.
+TTY_SAVED_STTY=""
+tui_enter() {
+    init_tput
+    if [[ -t 0 ]]; then
+        TTY_SAVED_STTY=$(stty -g 2>/dev/null || true)
+        stty -echo -icanon time 0 min 1 2>/dev/null || true
+    fi
+    printf "%s%s" "$TUI_CIVIS" "$TUI_CLEAR"
+}
+
+tui_leave() {
+    printf "%s" "$TUI_CNORM"
+    if [[ -n "$TTY_SAVED_STTY" ]]; then
+        stty "$TTY_SAVED_STTY" 2>/dev/null || true
+        TTY_SAVED_STTY=""
+    fi
+}
+
+# Returns via globals: ACTIVE[] (which services to start) and TUI_NEEDS_PAUSE.
+TUI_NEEDS_PAUSE=0
+TUI_RESULT=""   # "launch" or "quit"
+run_tui() {
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        echo "❌ This launcher needs an interactive terminal."
+        echo "   stdin/stdout must be a TTY. Aborting."
+        TUI_RESULT="quit"
+        return 1
+    fi
+
+    local mode="presets"
+    local preset_idx=0
+    local service_idx=0
+    apply_preset 0
+
+    tui_enter
+    # Make sure we always restore the terminal even on hard exits.
+    trap 'tui_leave; cleanup' EXIT INT TERM
+
+    while true; do
+        render_menu "$mode" "$preset_idx" "$service_idx"
+        local key
+        key=$(read_key)
+        case "$mode" in
+            presets)
+                case "$key" in
+                    UP)
+                        if (( preset_idx > 0 )); then
+                            ((preset_idx--))
+                            apply_preset "$preset_idx"
+                        fi
+                        ;;
+                    DOWN)
+                        if (( preset_idx < ${#PRESET_NAMES[@]} - 1 )); then
+                            ((preset_idx++))
+                            apply_preset "$preset_idx"
+                        fi
+                        ;;
+                    RIGHT)
+                        apply_preset "$preset_idx"
+                        mode="services"
+                        service_idx=0
+                        ;;
+                    ENTER)
+                        apply_preset "$preset_idx"
+                        TUI_RESULT="launch"
+                        break
+                        ;;
+                    STATUS)
+                        tui_leave
+                        cmd_status
+                        echo ""
+                        read -rp "  press Enter to return to the menu... " _
+                        tui_enter
+                        ;;
+                    STOP)
+                        tui_leave
+                        cmd_stop
+                        echo ""
+                        read -rp "  press Enter to return to the menu... " _
+                        tui_enter
+                        ;;
+                    QUIT|ESC)
+                        TUI_RESULT="quit"
+                        break
+                        ;;
+                esac
+                ;;
+            services)
+                case "$key" in
+                    UP)
+                        (( service_idx > 0 )) && ((service_idx--))
+                        ;;
+                    DOWN)
+                        (( service_idx < ${#SERVICES[@]} - 1 )) && ((service_idx++))
+                        ;;
+                    SPACE)
+                        ACTIVE[$service_idx]=$(( 1 - ACTIVE[$service_idx] ))
+                        if (( ACTIVE[service_idx] == 1 )); then
+                            apply_exclusivity "$service_idx"
+                        fi
+                        # Switch the preset to "Custom" since the user diverged.
+                        preset_idx=$(( ${#PRESET_NAMES[@]} - 1 ))
+                        ;;
+                    LEFT)
+                        mode="presets"
+                        ;;
+                    ENTER)
+                        TUI_RESULT="launch"
+                        break
+                        ;;
+                    QUIT|ESC)
+                        TUI_RESULT="quit"
+                        break
+                        ;;
+                esac
+                ;;
+        esac
+    done
+
+    tui_leave
+    # Decide if Claude Code pause is needed: narrative-mcp active AND a
+    # downstream consumer (ai_server / a renderer) is also active.
+    TUI_NEEDS_PAUSE=0
+    if (( ACTIVE[1] == 1 )); then
+        TUI_NEEDS_PAUSE=1
+    fi
+}
+
+# ─── Launch in topological order ───────────────────────────────
+
+run_selection() {
+    local any_selected=0
+    local s
+    for s in "${ACTIVE[@]}"; do (( s == 1 )) && any_selected=1; done
+    if (( any_selected == 0 )); then
+        echo "  Nothing selected. Bye."
+        return 0
+    fi
+
+    echo ""
+    echo "▶ Launching selected services..."
+    echo ""
+
+    # Order: bridge → narrative-mcp → ai_server → (Claude pause) → godot/headless → html
+    (( ACTIVE[0] == 1 )) && { start_bridge        || return 1; }
+    (( ACTIVE[1] == 1 )) && { start_narrative_mcp || return 1; }
+    (( ACTIVE[2] == 1 )) && { start_ai            || return 1; }
+
+    # Pause for Claude Code if the user activated narrative-mcp.
+    if (( TUI_NEEDS_PAUSE == 1 )); then
+        pause_for_claude_code
+    fi
+
+    (( ACTIVE[3] == 1 )) && { start_godot          || return 1; }
+    (( ACTIVE[4] == 1 )) && { start_godot_headless || return 1; }
+    (( ACTIVE[5] == 1 )) && { start_html           || return 1; }
+
+    # Hint for headless tests
+    if (( ACTIVE[4] == 1 )); then
+        cat <<EOF
 
   Now you can run for example:
     python3 godot/tools/movement_test.py
     python3 godot/tools/anim_debug.py medium --angles side
 EOF
-    follow_logs
-}
-
-preset_html_iter() {
-    echo "▶ preset: HTML 2D iteration (bridge + html)"
-    echo "  Note: ai_server is NOT started — for full narrative use the Play preset."
-    start_bridge || return 1
-    start_html   || return 1
-    follow_logs
-}
-
-preset_godot_offline() {
-    echo "▶ preset: Godot offline (no bridge, no AI)"
-    start_godot || return 1
-    follow_logs
-}
-
-preset_bridge_only() {
-    echo "▶ preset: Bridge only (nefan-core dev)"
-    start_bridge || return 1
-    follow_logs
-}
-
-preset_ai_only() {
-    echo "▶ preset: ai_server only (AI pipeline dev)"
-    start_ai || return 1
-    follow_logs
-}
-
-preset_custom() {
-    echo "▶ preset: Custom (toggle each service)"
-    local picks=()
-    local svc
-    for svc in bridge narrative-mcp ai_server godot godot-headless html; do
-        read -rp "  start $svc? [y/N]: " ans
-        [[ "$ans" =~ ^[Yy] ]] && picks+=("$svc")
-    done
-    if (( ${#picks[@]} == 0 )); then
-        echo "  nothing selected"
-        return 0
-    fi
-    # Topological order: bridge → narrative-mcp → ai_server → (pause) → godot → html
-    local needs_pause=0
-    [[ " ${picks[*]} " == *" narrative-mcp "* ]] && needs_pause=1
-    local order=(bridge narrative-mcp ai_server godot godot-headless html)
-    local started_ai=0
-    for svc in "${order[@]}"; do
-        if [[ " ${picks[*]} " == *" $svc "* ]]; then
-            case "$svc" in
-                bridge)         start_bridge        || return 1 ;;
-                narrative-mcp)  start_narrative_mcp || return 1 ;;
-                ai_server)      start_ai            || return 1; started_ai=1 ;;
-                godot)
-                    if (( needs_pause == 1 )) && (( started_ai == 1 )); then
-                        pause_for_claude_code
-                        needs_pause=0
-                    fi
-                    start_godot || return 1
-                    ;;
-                godot-headless)
-                    if (( needs_pause == 1 )) && (( started_ai == 1 )); then
-                        pause_for_claude_code
-                        needs_pause=0
-                    fi
-                    start_godot_headless || return 1
-                    ;;
-                html)
-                    if (( needs_pause == 1 )) && (( started_ai == 1 )); then
-                        pause_for_claude_code
-                        needs_pause=0
-                    fi
-                    start_html || return 1
-                    ;;
-            esac
-        fi
-    done
-    # If narrative-mcp was selected but no client renderer pulled the pause yet,
-    # offer it now so the user knows what to do.
-    if (( needs_pause == 1 )); then
-        pause_for_claude_code
     fi
     follow_logs
 }
@@ -382,13 +673,13 @@ follow_logs() {
   Press Ctrl+C to stop everything that this launcher started.
 
 EOF
-    # Block until interrupted; trap handles cleanup.
     wait
 }
 
 # ─── Cleanup trap ──────────────────────────────────────────────
 
 cleanup() {
+    tui_leave
     local pid
     if (( ${#STARTED_PIDS[@]} > 0 )); then
         echo ""
@@ -396,65 +687,28 @@ cleanup() {
         for pid in "${STARTED_PIDS[@]}"; do
             kill "$pid" 2>/dev/null
         done
-        # Best-effort: kill anything still holding our ports.
-        for port in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML"; do
-            port_busy "$port" && kill_port "$port"
+        local p
+        for p in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML"; do
+            port_busy "$p" && kill_port "$p"
         done
-        # And any orphaned Godot from headless mode (xvfb-run obscures the PID).
         pkill -f "Godot_v4.6" 2>/dev/null
     fi
 }
 trap cleanup EXIT INT TERM
-
-# ─── Main menu ─────────────────────────────────────────────────
-
-main_menu() {
-    while true; do
-        cat <<EOF
-
-╭─────────────────────────────────────────────╮
-│  Never Ending Fantasy — launcher            │
-╰─────────────────────────────────────────────╯
-
-  1) 🎮  Play (full stack + Claude Code narrative)
-  2) 🔬  Automated tests (bridge + Godot headless)
-  3) 🎨  HTML 2D iteration (bridge + html)
-  ─────────────────────────────────────────────
-  4) 🏛   Godot offline (fallback rooms only)
-  5) 🔌  Bridge only (nefan-core dev)
-  6) 🤖  ai_server only (AI pipeline dev)
-  7) ⚙️   Custom (toggle each service)
-  ─────────────────────────────────────────────
-  s)  📊  Status
-  k)  🛑  Stop everything
-  q)  Quit
-EOF
-        read -rp "  Choice: " choice
-        case "$choice" in
-            1) preset_play; return ;;
-            2) preset_tests_headless; return ;;
-            3) preset_html_iter; return ;;
-            4) preset_godot_offline; return ;;
-            5) preset_bridge_only; return ;;
-            6) preset_ai_only; return ;;
-            7) preset_custom; return ;;
-            s|S) cmd_status ;;
-            k|K) cmd_stop ;;
-            q|Q) exit 0 ;;
-            *)   echo "  unrecognised option" ;;
-        esac
-    done
-}
 
 # ─── Entry point ───────────────────────────────────────────────
 
 if (( $# > 0 )); then
     cat <<'EOF'
 ℹ️  start.sh no longer takes arguments — it's interactive now.
-   The previous modes (godot, bridge, html, ai, narrative, headless, all)
-   are available as numbered presets in the menu.
+   Old modes (godot, bridge, html, ai, narrative, headless, all) live
+   on as numbered presets in the TUI.
 EOF
 fi
 
 preflight
-main_menu
+run_tui
+case "$TUI_RESULT" in
+    launch) run_selection ;;
+    quit|*) exit 0 ;;
+esac
