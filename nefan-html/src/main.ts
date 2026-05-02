@@ -37,15 +37,45 @@ const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
 
 // Player Mixamo sprite — character editor will overwrite once shipped.
 let playerModel = "paladin";
+let playerSkinPrompt = "";   // appearance.skin_path from the save
 let playerAnimStartedAt = performance.now();
+const PLAYER_FALLBACK_MODEL = "paladin";
+
+/** Resolve the player's display sprite. If the requested model has no
+ *  pre-rendered sheet (only `paladin` ships with one today), fall back to
+ *  paladin so the player isn't stuck as a circle. When `skinPrompt` is set
+ *  we kick off an img2img skin pass on the base sheet so the character
+ *  looks like the prompt; the result swaps in once the bridge replies. */
+async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise<void> {
+  playerSkinPrompt = skinPrompt;
+  playerAnimStartedAt = performance.now();
+
+  let model = modelId || PLAYER_FALLBACK_MODEL;
+  let sheet = await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
+  if (!sheet) {
+    log(`(sin sprites para "${model}", usando ${PLAYER_FALLBACK_MODEL})`);
+    model = PLAYER_FALLBACK_MODEL;
+    await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
+  }
+  playerModel = model;
+
+  if (skinPrompt) {
+    void spriteRenderer
+      .loadSkinnedAnimation(model, "idle", WORLD_ANGLE, skinPrompt)
+      .then(skinned => {
+        if (skinned) log(`✨ skin aplicado: ${skinPrompt.slice(0, 40)}`);
+      });
+  }
+}
 
 const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const WORLD_ANGLE = "isometric_30";
-const spriteRenderer = new SpriteRenderer("/sprites");
-const assetCache = new AssetCache("http://127.0.0.1:8765");
+const AI_SERVER_URL = "http://127.0.0.1:8765";
+const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
+const assetCache = new AssetCache(AI_SERVER_URL);
 const renderer = new CanvasRenderer(canvas, {
   spriteRenderer,
   assetCache,
@@ -769,7 +799,12 @@ function gameLoop(now: number): void {
       forward: playerForward,
       hp: result.playerHp,
       maxHp: playerMaxHp,
-      sprite: { model: playerModel, anim: "idle", angle: WORLD_ANGLE, animStartedAt: playerAnimStartedAt },
+      sprite: {
+        model: spriteRenderer.skinnedKey(playerModel, playerSkinPrompt),
+        anim: "idle",
+        angle: WORLD_ANGLE,
+        animStartedAt: playerAnimStartedAt,
+      },
     },
     enemyEntities,
     objectEntities,
@@ -912,17 +947,15 @@ async function runTitleFlow(client: GameClient): Promise<void> {
       activeSessionId = res.sessionId;
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
-      playerModel = action.appearance.model_id;
-      playerAnimStartedAt = performance.now();
-      void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+      await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
-      playerModel = res.state.player.appearance.model_id || playerModel;
-      playerAnimStartedAt = performance.now();
-      void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+      const desiredModel = res.state.player.appearance.model_id || playerModel;
+      const skinPath = res.state.player.appearance.skin_path || "";
+      await setPlayerAppearance(desiredModel, skinPath);
 
       // Materialise the scene the player was last in. Without this the canvas
       // stays empty after a resume — the bridge only broadcasts a scene to new

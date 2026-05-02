@@ -484,6 +484,132 @@ async def generate_sprite_endpoint(request: Request):
     }
 
 
+# Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative
+# to the project root so the ai_server can read them off disk and run img2img
+# over each frame.
+SPRITE_SHEETS_DIR = Path(__file__).resolve().parent.parent / "nefan-html" / "public" / "sprites"
+SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_sheets"
+
+
+def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str) -> str:
+    import hashlib
+    payload = "\n".join([model, anim, angle, prompt.strip().lower()])
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+@app.post("/skin_sprite_sheet")
+async def skin_sprite_sheet_endpoint(request: Request):
+    """Apply img2img with `prompt` to every frame of a pre-rendered Mixamo
+    sheet at `nefan-html/public/sprites/{model}/{anim}/{angle}/` and serve the
+    resulting frames from `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
+
+    Body: {model, anim, angle, prompt, strength?, gamma?}
+    Returns: {ok, hash, meta, frame_urls: [[url, ...], ...]}
+    """
+    import asyncio
+    from PIL import Image
+    import io
+
+    body = await request.json()
+    model = str(body.get("model", "")).strip()
+    anim = str(body.get("anim", "idle")).strip()
+    angle = str(body.get("angle", "isometric_30")).strip()
+    prompt = str(body.get("prompt", "")).strip()
+    strength = float(body.get("strength", 0.55))
+    gamma = float(body.get("gamma", 1.0))
+
+    if not (model and prompt):
+        return {"ok": False, "error": "missing model or prompt"}
+
+    sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
+    meta_path = sheet_dir / "meta.json"
+    if not meta_path.exists():
+        return {"ok": False, "error": f"sheet not found: {model}/{anim}/{angle}"}
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    key = _skin_sheet_key(model, anim, angle, prompt)
+    out_dir = SKINNED_SHEETS_DIR / key
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build the URL list eagerly so the client can start downloading frames
+    # the moment they hit disk. Each cached frame is reused on subsequent
+    # requests with the same (model, anim, angle, prompt) tuple.
+    directions = int(meta.get("directions", 1))
+    frame_count = int(meta.get("frame_count", 1))
+    frame_urls: list[list[str]] = []
+
+    def frame_path(d: int, f: int) -> Path:
+        return out_dir / f"dir_{d}_frame_{f:03d}.png"
+
+    def src_path(d: int, f: int) -> Path:
+        return sheet_dir / f"dir_{d}_frame_{f:03d}.png"
+
+    # Make sure SkinGen's img2img pipeline is loaded; use a synthetic prompt
+    # tuned for character sprites instead of armor UV atlases.
+    full_prompt = f"{prompt}, full body character, isolated on transparent background"
+
+    def render_one(src: Path, dst: Path) -> None:
+        skin_gen._ensure_pipeline()
+        import torch
+        base = Image.open(src).convert("RGBA")
+        # img2img wants RGB; flatten over a neutral grey before transforming
+        # and reapply the original alpha at the end so transparency survives.
+        rgb = Image.new("RGB", base.size, (128, 128, 128))
+        rgb.paste(base, mask=base.split()[3])
+        with torch.no_grad():
+            result = skin_gen._img2img_pipe(
+                prompt=full_prompt,
+                image=rgb,
+                strength=strength,
+                num_inference_steps=6,
+                guidance_scale=1.0,
+            ).images[0]
+        out = result.convert("RGBA")
+        # Carry the silhouette mask from the source so we keep transparency.
+        out.putalpha(base.split()[3])
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        dst.write_bytes(buf.getvalue())
+
+    start = time.time()
+    async with _gpu_lock:
+        for d in range(directions):
+            row: list[str] = []
+            for f in range(frame_count):
+                dst = frame_path(d, f)
+                if not dst.exists():
+                    src = src_path(d, f)
+                    if not src.exists():
+                        continue
+                    await asyncio.to_thread(render_one, src, dst)
+                row.append(f"/cache/sprite_sheet/{key}/dir_{d}_frame_{f:03d}.png")
+            frame_urls.append(row)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    return {
+        "ok": True,
+        "hash": key,
+        "meta": meta,
+        "frame_urls": frame_urls,
+        "generation_time_ms": elapsed_ms,
+    }
+
+
+@app.get("/cache/sprite_sheet/{hash_key}/{filename}")
+async def get_skinned_sheet_frame(hash_key: str, filename: str):
+    """Serve a single frame of a skinned sprite sheet."""
+    # Tight path validation — only the canonical filename pattern is allowed.
+    import re
+    if not re.fullmatch(r"dir_\d+_frame_\d{3}\.png", filename):
+        return Response(status_code=400, content="Invalid filename")
+    path = SKINNED_SHEETS_DIR / hash_key / filename
+    if not path.exists():
+        return Response(status_code=404, content="Not found")
+    return Response(content=path.read_bytes(), media_type="image/png")
+
+
 @app.post("/report_player_choice")
 async def report_player_choice(request: Request):
     """Forward a player dialogue choice to the narrative engine and return its

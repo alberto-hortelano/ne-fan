@@ -39,8 +39,12 @@ const ANIM_LOOPS: ReadonlySet<string> = new Set([
 export class SpriteRenderer {
   private cache = new Map<string, SpriteSheet>();
   private inflight = new Map<string, Promise<SpriteSheet | null>>();
+  private skinInflight = new Map<string, Promise<SpriteSheet | null>>();
 
-  constructor(private baseUrl: string = "/sprites") {}
+  constructor(
+    private baseUrl: string = "/sprites",
+    private aiServerUrl: string = "http://127.0.0.1:8765",
+  ) {}
 
   /** Fetch meta.json and start loading every frame image. Subsequent calls for
    * the same triple resolve to the cached sheet. */
@@ -54,6 +58,82 @@ export class SpriteRenderer {
     const promise = this.fetchSheet(model, anim, angle, key);
     this.inflight.set(key, promise);
     return promise;
+  }
+
+  /** A model name that points to the skinned variant of a sheet, when the
+   *  variant has finished loading. Falls back to the bare model otherwise so
+   *  the player still sees the base Mixamo sheet meanwhile. */
+  skinnedKey(model: string, skinPrompt: string): string {
+    if (!skinPrompt) return model;
+    const skinned = this.skinKey(model, skinPrompt);
+    return this.cache.has(`${skinned}/idle/isometric_30`) ? skinned : model;
+  }
+
+  /** Ask ai_server to img2img each frame of a Mixamo sheet with the given
+   *  character prompt and register the result under a synthetic model name.
+   *  Idempotent — repeated calls share the inflight request and the cache. */
+  async loadSkinnedAnimation(
+    baseModel: string,
+    anim: string,
+    angle: string,
+    skinPrompt: string,
+  ): Promise<SpriteSheet | null> {
+    if (!skinPrompt) return null;
+    const skinnedModel = this.skinKey(baseModel, skinPrompt);
+    const cacheKey = `${skinnedModel}/${anim}/${angle}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) return cached;
+    const pending = this.skinInflight.get(cacheKey);
+    if (pending) return pending;
+
+    const promise = (async () => {
+      try {
+        const res = await fetch(`${this.aiServerUrl}/skin_sprite_sheet`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: baseModel,
+            anim,
+            angle,
+            prompt: skinPrompt,
+          }),
+        });
+        if (!res.ok) {
+          this.skinInflight.delete(cacheKey);
+          return null;
+        }
+        const data = (await res.json()) as { ok?: boolean; meta?: SpriteSheetMeta; frame_urls?: string[][]; error?: string };
+        if (!data.ok || !data.meta || !data.frame_urls) {
+          this.skinInflight.delete(cacheKey);
+          return null;
+        }
+        const meta = data.meta;
+        const frames: HTMLImageElement[][] = data.frame_urls.map((dir) => dir.map((url) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = url.startsWith("http") ? url : `${this.aiServerUrl}${url}`;
+          return img;
+        }));
+        const sheet: SpriteSheet = { ...meta, model: skinnedModel, frames };
+        this.cache.set(cacheKey, sheet);
+        this.skinInflight.delete(cacheKey);
+        return sheet;
+      } catch (err) {
+        console.warn(`SpriteRenderer: skin failed for ${cacheKey}:`, err);
+        this.skinInflight.delete(cacheKey);
+        return null;
+      }
+    })();
+    this.skinInflight.set(cacheKey, promise);
+    return promise;
+  }
+
+  private skinKey(model: string, skinPrompt: string): string {
+    // Encode the prompt into the synthetic model id so identical (model,
+    // prompt) pairs share the cache. The SpriteRenderer never reads this
+    // string — it's only a key — so keeping it human-readable is fine.
+    const slug = skinPrompt.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+    return `${model}__${slug}`;
   }
 
   private async fetchSheet(
