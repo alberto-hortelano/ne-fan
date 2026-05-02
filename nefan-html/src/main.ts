@@ -185,6 +185,9 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
   playerPos.x = 0;
   playerPos.z = 2;
 
+  const world = (data.world ?? {}) as Record<string, unknown>;
+  const styleToken = (typeof world.style_token === "string" ? world.style_token : "") || undefined;
+
   // Extract enemies from objects with combat
   const objects = (data.objects ?? []) as Record<string, unknown>[];
   const enemies: RoomEnemy[] = [];
@@ -215,36 +218,44 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
         },
       });
       const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-      enemyEntities.push({
+      const enemyEntity: Entity = {
         id: obj.id as string, pos, radius: 8, color,
         label: (obj.description ?? obj.id) as string,
         hp: combat.health as number, maxHp: combat.health as number, alive: true,
-      });
+      };
+      enemyEntities.push(enemyEntity);
+      attachSpriteForObject(obj, enemyEntity, styleToken);
     } else {
-      objectEntities.push({
+      const objectEntity: Entity = {
         id: obj.id as string, pos, radius: 5,
         color: (obj.category as string) === "item" ? "#aa8" : "#666",
         label: (obj.description ?? "") as string, alive: true,
-      });
+      };
+      objectEntities.push(objectEntity);
+      attachSpriteForObject(obj, objectEntity, styleToken);
     }
   }
 
   // NPCs from room data
   const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
-  npcEntities = npcsData.map(npc => ({
-    id: npc.id as string,
-    pos: {
-      x: (npc.position as number[])?.[0] ?? 0,
-      y: (npc.position as number[])?.[1] ?? 0,
-      z: (npc.position as number[])?.[2] ?? 0,
-    },
-    forward: { x: 0, y: 0, z: -1 },
-    radius: 7,
-    color: "#68c",
-    label: (npc.name ?? npc.id) as string,
-    name: (npc.name ?? npc.id) as string,
-    alive: true,
-  }));
+  npcEntities = npcsData.map(npc => {
+    const entity: Entity = {
+      id: npc.id as string,
+      pos: {
+        x: (npc.position as number[])?.[0] ?? 0,
+        y: (npc.position as number[])?.[1] ?? 0,
+        z: (npc.position as number[])?.[2] ?? 0,
+      },
+      forward: { x: 0, y: 0, z: -1 },
+      radius: 7,
+      color: "#68c",
+      label: (npc.name ?? npc.id) as string,
+      name: (npc.name ?? npc.id) as string,
+      alive: true,
+    };
+    attachSpriteForNpc(npc, entity, styleToken);
+    return entity;
+  });
 
   // Build enemy HP bars
   rebuildEnemyBars();
@@ -256,6 +267,49 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
   }
 
   log("Room loaded: " + (data.room_id ?? "unknown"));
+}
+
+/** Drop a Mixamo character ref or an AI sprite hash on the entity, kicking off
+ *  a generate_sprite request when the scene only carries a prompt. The entity
+ *  is mutated in place once the hash arrives — the game loop re-renders every
+ *  frame so the sprite pops in as soon as ai_server replies. */
+function attachSpriteForObject(obj: Record<string, unknown>, entity: Entity, styleToken?: string): void {
+  // Only `sprite_hash` is a 2D sprite — `texture_hash` is a PBR map for the
+  // Godot renderer and lives in cache/textures/, not cache/sprites/.
+  const existingHash = obj.sprite_hash as string | undefined;
+  if (existingHash) {
+    entity.spriteHash = existingHash;
+    return;
+  }
+  const description = (obj.description as string | undefined) ?? "";
+  const category = (obj.category as string | undefined) ?? "prop";
+  const id = (obj.id as string | undefined) ?? "object";
+  const prompt = description
+    ? `${description}, single ${category}, isolated on transparent background`
+    : `${id} ${category}, isolated on transparent background`;
+  void assetCache
+    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
+    .then(hash => {
+      if (hash) entity.spriteHash = hash;
+    });
+}
+
+function attachSpriteForNpc(npc: Record<string, unknown>, entity: Entity, styleToken?: string): void {
+  const existingHash = npc.sprite_hash as string | undefined;
+  if (existingHash) {
+    entity.spriteHash = existingHash;
+    return;
+  }
+  const skin = (npc.skin_prompt as string | undefined) ?? (npc.description as string | undefined) ?? "";
+  const name = (npc.name as string | undefined) ?? (npc.id as string | undefined) ?? "character";
+  const prompt = skin
+    ? `${skin}, full body, single character standing, isolated on transparent background`
+    : `${name}, full body, single character standing, isolated on transparent background`;
+  void assetCache
+    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
+    .then(hash => {
+      if (hash) entity.spriteHash = hash;
+    });
 }
 
 function rebuildEnemyBars(): void {

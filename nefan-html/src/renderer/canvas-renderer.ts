@@ -268,7 +268,7 @@ export class CanvasRenderer {
 
     let drewSprite = false;
     if (e.spriteHash && this.assetCache) {
-      drewSprite = this.assetCache.drawByHash(ctx, e.spriteHash, ex, ey);
+      drewSprite = this.assetCache.drawByHash(ctx, e.spriteHash, ex, ey, { widthPx: e.radius * 5 });
     }
     if (!drewSprite) {
       drewSprite = this.tryDrawSprite(e.sprite, e.forward, ex, ey);
@@ -297,7 +297,7 @@ export class CanvasRenderer {
 
     let drewSprite = false;
     if (npc.spriteHash && this.assetCache) {
-      drewSprite = this.assetCache.drawByHash(ctx, npc.spriteHash, nx, ny);
+      drewSprite = this.assetCache.drawByHash(ctx, npc.spriteHash, nx, ny, { widthPx: npc.radius * 6 });
     }
     if (!drewSprite) {
       drewSprite = this.tryDrawSprite(npc.sprite, npc.forward, nx, ny);

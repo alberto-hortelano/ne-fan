@@ -34,6 +34,7 @@ import logging
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 
@@ -180,6 +181,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
+
+# Allow the HTML 2D client (vite dev server on :3000) to call /generate_sprite
+# and /cache/sprite/{hash} from the browser. Without this, every fetch fails
+# the CORS preflight (OPTIONS) and the renderer never gets a sprite.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
