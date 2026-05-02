@@ -47,14 +47,20 @@ const AMBIENT_ANIM_MAP := {
 	"praying": "praying_kneel",
 }
 
-# Camera placement for each supported angle. Distance/height are picked so a
-# ~1.8 m tall humanoid fits within a 256×256 frame at orthogonal size 2.6.
+# Camera placement for each supported angle. The camera is placed on a ray of
+# length `distance` from the look-at target at the requested pitch, and the
+# orthogonal size is large enough so a ~1.8 m tall humanoid fits with margin
+# above the head and below the feet.
 const ANGLE_CAMERA := {
-	"top_down": {"pitch_deg": -90.0, "height": 4.0, "distance": 0.0, "ortho": 2.6},
-	"isometric_30": {"pitch_deg": -30.0, "height": 1.6, "distance": 3.0, "ortho": 2.6},
-	"isometric_45": {"pitch_deg": -45.0, "height": 2.5, "distance": 2.5, "ortho": 2.6},
-	"frontal": {"pitch_deg": 0.0, "height": 1.0, "distance": 3.5, "ortho": 2.6},
+	"top_down": {"pitch_deg": -90.0, "distance": 4.0, "ortho": 2.4},
+	"isometric_30": {"pitch_deg": -30.0, "distance": 4.0, "ortho": 2.4},
+	"isometric_45": {"pitch_deg": -45.0, "distance": 4.0, "ortho": 2.4},
+	"frontal": {"pitch_deg": 0.0, "distance": 4.0, "ortho": 2.4},
 }
+
+# Mid-body of a 1.8 m Mixamo humanoid (X-bot rest pose). Used as the look-at
+# target so the camera frames feet-to-head with even margin top and bottom.
+const TARGET_HEIGHT := 0.95
 
 @onready var _viewport: SubViewport = $SubViewport
 @onready var _camera: Camera3D = $SubViewport/Camera3D
@@ -127,17 +133,23 @@ func _position_camera(angle_id: String) -> void:
 	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	_camera.size = float(cfg["ortho"])
 	var pitch_rad := deg_to_rad(float(cfg["pitch_deg"]))
-	# Camera sits behind the pivot on +Z, looking towards -Z. Apply pitch so the
-	# camera looks down/up at the target.
 	var distance := float(cfg["distance"])
-	var height := float(cfg["height"])
-	# Place at (0, height, distance), then rotate around X axis to look at pivot.
-	_camera.transform = Transform3D.IDENTITY
-	_camera.global_position = Vector3(0, height, distance)
-	# Rotate camera to look at origin (pivot is at origin).
-	_camera.look_at(Vector3(0, 1.0, 0), Vector3.UP)
-	# `look_at` may produce a yaw component; force pitch only.
-	_camera.rotation = Vector3(pitch_rad, 0, 0)
+	var target := Vector3(0, TARGET_HEIGHT, 0)
+	# Place the camera so its forward (target − cam_pos) has the requested pitch:
+	# forward = (0, sin(pitch), −cos(pitch)) when looking towards −Z.
+	# cam_pos = target − forward × distance
+	var fwd := Vector3(0, sin(pitch_rad), -cos(pitch_rad))
+	# Top-down (pitch = ±90°) collapses cos to 0 and forward becomes vertical;
+	# look_at would fail with up=+Y, so place the camera straight above and
+	# pick a stable up axis (−Z keeps the model oriented head-up in screen).
+	if abs(cos(pitch_rad)) < 0.001:
+		_camera.transform = Transform3D.IDENTITY
+		_camera.global_position = target + Vector3(0, distance, 0)
+		_camera.look_at(target, Vector3(0, 0, -1))
+	else:
+		_camera.transform = Transform3D.IDENTITY
+		_camera.global_position = target - fwd * distance
+		_camera.look_at(target, Vector3.UP)
 	# Light from above-left so silhouettes read clearly at every facing.
 	_light.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
 

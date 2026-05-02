@@ -492,8 +492,15 @@ SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_
 
 
 def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str) -> str:
+    """Hash that invalidates whenever the underlying Mixamo sheet is
+    re-rendered. Including the base meta.json mtime guarantees the skinned
+    cache rebuilds on top of the latest frames; otherwise a re-render of the
+    base would silently keep the stale skinned variant alive.
+    """
     import hashlib
-    payload = "\n".join([model, anim, angle, prompt.strip().lower()])
+    base_meta = SPRITE_SHEETS_DIR / model / anim / angle / "meta.json"
+    base_stamp = str(int(base_meta.stat().st_mtime)) if base_meta.exists() else "0"
+    payload = "\n".join([model, anim, angle, prompt.strip().lower(), base_stamp])
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
