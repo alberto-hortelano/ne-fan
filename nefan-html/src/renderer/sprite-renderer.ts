@@ -69,6 +69,13 @@ export class SpriteRenderer {
         this.inflight.delete(key);
         return null;
       }
+      // Vite serves `index.html` for unknown routes with HTTP 200, so we
+      // can't rely on `res.ok` alone — confirm the body is JSON before parsing.
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        this.inflight.delete(key);
+        return null;
+      }
       const meta = (await res.json()) as SpriteSheetMeta;
       const frames: HTMLImageElement[][] = [];
       for (let d = 0; d < meta.directions; d++) {

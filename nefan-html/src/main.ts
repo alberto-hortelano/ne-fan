@@ -169,7 +169,13 @@ async function loadRoom(globKey: string): Promise<void> {
   }
 
   const mod = await loader();
-  const data = mod.default;
+  await loadSceneData(mod.default);
+}
+
+/** Apply an already-resolved scene/room JSON to the renderer + game client.
+ *  Used both by the local room selector (legacy) and by the narrative flow
+ *  when resuming a session or receiving a generated scene from the bridge. */
+async function loadSceneData(data: Record<string, unknown>): Promise<void> {
   roomData = data;
   scenarioActive = false;
 
@@ -779,9 +785,21 @@ narrativeClient.onNarrativeEvent((event) => {
       case "story_delta":
         log(`📖 ${effect.delta.slice(0, 80)}`);
         break;
-      case "spawn_entity":
-        log(`✨ spawn ${effect.entityKind}: ${effect.description.slice(0, 60)}`);
+      case "spawn_entity": {
+        // The bridge wraps a freshly generated scene in a spawn_entity effect
+        // with `data.scene` (see ws-server.ts start_session handler). Treat
+        // that as a "load scene" instruction; everything else is just a log.
+        const scene = (effect.data as Record<string, unknown> | undefined)?.scene as
+          | Record<string, unknown>
+          | undefined;
+        if (scene) {
+          void loadSceneData(scene);
+          log(`🌍 escena cargada: ${effect.entityId}`);
+        } else {
+          log(`✨ spawn ${effect.entityKind}: ${effect.description.slice(0, 60)}`);
+        }
         break;
+      }
       case "schedule_event":
         log(`⏳ scheduled: ${effect.description.slice(0, 60)}`);
         break;
@@ -851,6 +869,18 @@ async function runTitleFlow(client: GameClient): Promise<void> {
       playerModel = res.state.player.appearance.model_id || playerModel;
       playerAnimStartedAt = performance.now();
       void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+
+      // Materialise the scene the player was last in. Without this the canvas
+      // stays empty after a resume — the bridge only broadcasts a scene to new
+      // sessions via narrative_event/spawn_entity.
+      const activeId = res.state.world?.active_scene_id;
+      const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown> }> | undefined;
+      const sceneData = activeId ? scenes?.[activeId]?.scene_data : undefined;
+      if (sceneData) {
+        await loadSceneData(sceneData);
+      } else {
+        log(`(sin escena en el save — esperando narrativa)`);
+      }
     }
   } catch (err) {
     alert(`No se pudo iniciar la sesión: ${(err as Error).message}`);
