@@ -1,20 +1,44 @@
 /** WebSocket client for nefan-core logic bridge (:9877).
  *  Mirrors Godot's logic_bridge.gd WebSocket protocol. */
 
-import type { StateUpdateMessage } from "../../../nefan-core/src/protocol/messages.js";
+import type {
+  StateUpdateMessage,
+  ServerMessage,
+  NarrativeEventMessage,
+  SessionsListedMessage,
+  SessionStartedMessage,
+  GamesListedMessage,
+  SessionDeletedMessage,
+  SessionSavedMessage,
+} from "../../../nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
 
-export type BridgeEvent = "state_update" | "connected" | "disconnected";
+export type BridgeEvent = "state_update" | "connected" | "disconnected" | "narrative_event";
 
-type BridgeHandler = (data?: StateUpdateMessage) => void;
+type EventPayload = {
+  state_update: StateUpdateMessage;
+  connected: undefined;
+  disconnected: undefined;
+  narrative_event: NarrativeEventMessage;
+};
+
+type Handler<E extends BridgeEvent> = (data: EventPayload[E]) => void;
+
+interface PendingRequest {
+  resolve: (msg: ServerMessage) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 export class BridgeClient {
   private ws: WebSocket | null = null;
   private url: string;
   private retryInterval = 5000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private handlers: Map<BridgeEvent, BridgeHandler[]> = new Map();
+  private handlers: Map<BridgeEvent, Handler<BridgeEvent>[]> = new Map();
   private _connected = false;
+  private pending = new Map<string, PendingRequest>();
+  private nextRequestId = 0;
 
   constructor(url = "ws://127.0.0.1:9877") {
     this.url = url;
@@ -25,22 +49,22 @@ export class BridgeClient {
     return this._connected;
   }
 
-  on(event: BridgeEvent, handler: BridgeHandler): void {
+  on<E extends BridgeEvent>(event: E, handler: Handler<E>): void {
     const list = this.handlers.get(event) ?? [];
-    list.push(handler);
+    list.push(handler as Handler<BridgeEvent>);
     this.handlers.set(event, list);
   }
 
-  off(event: BridgeEvent, handler: BridgeHandler): void {
+  off<E extends BridgeEvent>(event: E, handler: Handler<E>): void {
     const list = this.handlers.get(event);
     if (list) {
-      this.handlers.set(event, list.filter(h => h !== handler));
+      this.handlers.set(event, list.filter((h) => h !== (handler as Handler<BridgeEvent>)));
     }
   }
 
-  private emit(event: BridgeEvent, data?: StateUpdateMessage): void {
+  private emit<E extends BridgeEvent>(event: E, data?: EventPayload[E]): void {
     for (const handler of this.handlers.get(event) ?? []) {
-      handler(data);
+      (handler as (d: EventPayload[E] | undefined) => void)(data);
     }
   }
 
@@ -65,6 +89,12 @@ export class BridgeClient {
         this.emit("disconnected");
         console.log("BridgeClient: disconnected");
       }
+      // Reject any in-flight requests
+      for (const [id, req] of this.pending) {
+        clearTimeout(req.timer);
+        req.reject(new Error("Bridge disconnected"));
+        this.pending.delete(id);
+      }
       this.scheduleRetry();
     };
 
@@ -74,14 +104,32 @@ export class BridgeClient {
 
     this.ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data as string);
-        if (msg.type === "state_update") {
-          this.emit("state_update", msg as StateUpdateMessage);
-        }
+        const msg = JSON.parse(event.data as string) as ServerMessage;
+        this.dispatch(msg);
       } catch {
         // Ignore parse errors
       }
     };
+  }
+
+  private dispatch(msg: ServerMessage): void {
+    if ("requestId" in msg && typeof msg.requestId === "string") {
+      const pending = this.pending.get(msg.requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pending.delete(msg.requestId);
+        pending.resolve(msg);
+        return;
+      }
+    }
+    switch (msg.type) {
+      case "state_update":
+        this.emit("state_update", msg);
+        break;
+      case "narrative_event":
+        this.emit("narrative_event", msg);
+        break;
+    }
   }
 
   private scheduleRetry(): void {
@@ -96,6 +144,28 @@ export class BridgeClient {
     if (this._connected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  private async request<T extends ServerMessage>(
+    msg: Record<string, unknown>,
+    timeoutMs = 30_000,
+  ): Promise<T> {
+    if (!this._connected) {
+      throw new Error("Bridge not connected");
+    }
+    const requestId = `req_${++this.nextRequestId}`;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`Bridge request timeout: ${msg.type}`));
+      }, timeoutMs);
+      this.pending.set(requestId, {
+        resolve: resolve as (m: ServerMessage) => void,
+        reject,
+        timer,
+      });
+      this.send({ ...msg, requestId });
+    });
   }
 
   sendInput(delta: number, inputs: {
@@ -128,6 +198,42 @@ export class BridgeClient {
 
   sendScenarioEvent(event: string, data?: Record<string, unknown>): void {
     this.send({ type: "scenario_event", event, data });
+  }
+
+  // ── Narrative requests (correlated by requestId) ──
+
+  listSessions(): Promise<SessionsListedMessage> {
+    return this.request<SessionsListedMessage>({ type: "list_sessions" });
+  }
+
+  listGames(): Promise<GamesListedMessage> {
+    return this.request<GamesListedMessage>({ type: "list_games" });
+  }
+
+  startSession(gameId: string, appearance?: { model_id: string; skin_path: string }): Promise<SessionStartedMessage> {
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance });
+  }
+
+  resumeSession(sessionId: string): Promise<SessionStartedMessage> {
+    return this.request<SessionStartedMessage>({ type: "resume_session", sessionId });
+  }
+
+  deleteSession(sessionId: string): Promise<SessionDeletedMessage> {
+    return this.request<SessionDeletedMessage>({ type: "delete_session", sessionId });
+  }
+
+  saveSession(): Promise<SessionSavedMessage> {
+    return this.request<SessionSavedMessage>({ type: "save_session" });
+  }
+
+  sendDialogueChoice(payload: {
+    eventId: string;
+    choiceIndex: number;
+    speaker: string;
+    chosenText: string;
+    freeText?: string;
+  }): void {
+    this.send({ type: "dialogue_choice", ...payload });
   }
 
   destroy(): void {

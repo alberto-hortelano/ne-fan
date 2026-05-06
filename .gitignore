@@ -38,6 +38,10 @@ archive/
 # Generated asset caches
 cache/
 godot/cache/
+nefan-html/public/sprites/
+
+# Saved narrative sessions (Godot↔HTML shared)
+saves/
 
 # Mixamo/character assets (license prohibits redistribution)
 godot/assets/characters/

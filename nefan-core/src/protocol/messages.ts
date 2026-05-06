@@ -2,6 +2,12 @@
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
 import type { NpcUpdate, ScenarioUpdate } from "../scenario/scenario-types.js";
+import type {
+  Consequence,
+  ConsequenceEffect,
+  SessionData,
+  SessionMetadata,
+} from "../narrative/types.js";
 
 // ── Frontend → Logic ──
 
@@ -52,13 +58,64 @@ export interface ScenarioEventMessage {
   };
 }
 
+export interface ListSessionsMessage {
+  type: "list_sessions";
+  requestId: string;
+}
+
+export interface StartSessionMessage {
+  type: "start_session";
+  requestId: string;
+  gameId: string;
+  appearance?: { model_id: string; skin_path: string };
+}
+
+export interface ResumeSessionMessage {
+  type: "resume_session";
+  requestId: string;
+  sessionId: string;
+}
+
+export interface DeleteSessionMessage {
+  type: "delete_session";
+  requestId: string;
+  sessionId: string;
+}
+
+export interface DialogueChoiceMessage {
+  type: "dialogue_choice";
+  requestId?: string;
+  eventId: string;
+  choiceIndex: number;
+  freeText?: string;
+  speaker: string;
+  chosenText: string;
+}
+
+export interface ListGamesMessage {
+  type: "list_games";
+  requestId: string;
+}
+
+export interface SaveSessionMessage {
+  type: "save_session";
+  requestId?: string;
+}
+
 export type ClientMessage =
   | InputMessage
   | LoadRoomMessage
   | RespawnMessage
   | PingMessage
   | LoadGameMessage
-  | ScenarioEventMessage;
+  | ScenarioEventMessage
+  | ListSessionsMessage
+  | StartSessionMessage
+  | ResumeSessionMessage
+  | DeleteSessionMessage
+  | DialogueChoiceMessage
+  | ListGamesMessage
+  | SaveSessionMessage;
 
 // ── Logic → Frontend ──
 
@@ -83,4 +140,55 @@ export interface PongMessage {
   type: "pong";
 }
 
-export type ServerMessage = StateUpdateMessage | PongMessage;
+export interface SessionsListedMessage {
+  type: "sessions_listed";
+  requestId: string;
+  sessions: SessionMetadata[];
+}
+
+export interface SessionStartedMessage {
+  type: "session_started";
+  requestId: string;
+  ok: boolean;
+  sessionId?: string;
+  gameId?: string;
+  isResume?: boolean;
+  state?: SessionData;
+  scene?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface NarrativeEventMessage {
+  type: "narrative_event";
+  eventId: string;
+  consequences: Consequence[];
+  effects: ConsequenceEffect[];
+}
+
+export interface GamesListedMessage {
+  type: "games_listed";
+  requestId: string;
+  games: Array<{ game_id: string; title: string; description?: string }>;
+}
+
+export interface SessionDeletedMessage {
+  type: "session_deleted";
+  requestId: string;
+  ok: boolean;
+}
+
+export interface SessionSavedMessage {
+  type: "session_saved";
+  requestId?: string;
+  ok: boolean;
+}
+
+export type ServerMessage =
+  | StateUpdateMessage
+  | PongMessage
+  | SessionsListedMessage
+  | SessionStartedMessage
+  | NarrativeEventMessage
+  | GamesListedMessage
+  | SessionDeletedMessage
+  | SessionSavedMessage;

@@ -1,7 +1,10 @@
 """Sprite generator: SD 1.5 image → rembg → RGBA PNG with transparent background.
 
 Used for vegetation (trees, bushes), objects, and anything that needs
-a billboard image instead of a seamless tiling texture.
+a billboard image instead of a seamless tiling texture. Sprites can be
+generated from a chosen camera angle (top_down, isometric_30, isometric_45,
+frontal) so HTML 2D assets share the same projection as pre-rendered
+Mixamo character sheets.
 """
 
 import io
@@ -11,11 +14,29 @@ import torch.nn as nn
 from PIL import Image
 
 
+# Camera-angle prompt fragments: every sprite (generated and pre-rendered) has
+# to use the same projection family for the 2D world to look coherent.
+ANGLE_PROMPT_FRAGMENTS = {
+    "top_down": "viewed from directly above, top-down orthographic view, no perspective",
+    "isometric_30": "isometric view from 30 degree elevation, classic RPG angle",
+    "isometric_45": "isometric view from 45 degree elevation, three-quarter perspective",
+    "frontal": "side view, frontal elevation, no perspective",
+}
+
+
 class SpriteGenerator:
     def __init__(self, texture_gen_ref=None):
         self.texture_gen_ref = texture_gen_ref
 
-    def generate(self, prompt: str, width: int = 512, height: int = 512, seed: int = -1) -> dict[str, bytes]:
+    def generate(
+        self,
+        prompt: str,
+        width: int = 512,
+        height: int = 512,
+        seed: int = -1,
+        angle: str = "top_down",
+        style_token: str | None = None,
+    ) -> dict[str, bytes]:
         """Generate an RGBA sprite PNG from a prompt.
 
         Returns dict with "sprite" key containing PNG bytes.
@@ -33,9 +54,14 @@ class SpriteGenerator:
         self._set_padding_mode(pipe, "zeros")
 
         try:
+            angle_fragment = ANGLE_PROMPT_FRAGMENTS.get(
+                angle, ANGLE_PROMPT_FRAGMENTS["top_down"]
+            )
+            style_fragment = f", {style_token}" if style_token else ""
             full_prompt = (
                 f"single object centered on solid white background, "
-                f"studio photo, clean edges, no ground, isolated, {prompt}"
+                f"studio photo, clean edges, no ground, isolated, "
+                f"{angle_fragment}{style_fragment}, {prompt}"
             )
 
             generator = None

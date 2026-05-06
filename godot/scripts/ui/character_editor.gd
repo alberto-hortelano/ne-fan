@@ -418,7 +418,7 @@ func _on_generate_pressed() -> void:
 	if ai_client and ai_client.has_method("generate_skin"):
 		ai_client.generate_skin(prompt, _on_skin_generated)
 	else:
-		_status_label.text = "AI server no disponible (iniciar con ./start.sh bridge)"
+		_status_label.text = "AI server no disponible (lanza ./start.sh y elige preset 1 o 6)"
 		_generate_btn.disabled = false
 
 

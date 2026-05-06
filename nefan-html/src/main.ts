@@ -5,6 +5,12 @@ import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
+import { SpriteRenderer } from "./renderer/sprite-renderer.js";
+import { AssetCache } from "./renderer/asset-cache.js";
+import { BridgeClient } from "./net/bridge-client.js";
+import { NarrativeClient } from "./net/narrative-client.js";
+import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
+import { HistoryBrowser } from "./ui/history-browser.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { ObjectiveDisplay } from "./ui/objective-display.js";
@@ -29,11 +35,56 @@ const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record
 const SPEED = playerCfg.walk_speed ?? 3.0;
 const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
 
+// Player Mixamo sprite — character editor will overwrite once shipped.
+let playerModel = "paladin";
+let playerSkinPrompt = "";   // appearance.skin_path from the save
+let playerAnimStartedAt = performance.now();
+const PLAYER_FALLBACK_MODEL = "paladin";
+
+/** Resolve the player's display sprite. If the requested model has no
+ *  pre-rendered sheet (only `paladin` ships with one today), fall back to
+ *  paladin so the player isn't stuck as a circle. When `skinPrompt` is set
+ *  we kick off an img2img skin pass on the base sheet so the character
+ *  looks like the prompt; the result swaps in once the bridge replies. */
+async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise<void> {
+  playerSkinPrompt = skinPrompt;
+  playerAnimStartedAt = performance.now();
+
+  let model = modelId || PLAYER_FALLBACK_MODEL;
+  let sheet = await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
+  if (!sheet) {
+    log(`(sin sprites para "${model}", usando ${PLAYER_FALLBACK_MODEL})`);
+    model = PLAYER_FALLBACK_MODEL;
+    await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
+  }
+  playerModel = model;
+
+  if (skinPrompt) {
+    void spriteRenderer
+      .loadSkinnedAnimation(model, "idle", WORLD_ANGLE, skinPrompt)
+      .then(skinned => {
+        if (skinned) log(`✨ skin aplicado: ${skinPrompt.slice(0, 40)}`);
+      });
+  }
+}
+
 const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
-const renderer = new CanvasRenderer(canvas);
+const WORLD_ANGLE = "isometric_30";
+const AI_SERVER_URL = "http://127.0.0.1:8765";
+const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
+const assetCache = new AssetCache(AI_SERVER_URL);
+const renderer = new CanvasRenderer(canvas, {
+  spriteRenderer,
+  assetCache,
+  worldAngle: WORLD_ANGLE,
+});
+
+// Pre-load the default Mixamo idle so the player has a sprite the moment a
+// session starts. Other anims load lazily on demand.
+void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
@@ -148,7 +199,13 @@ async function loadRoom(globKey: string): Promise<void> {
   }
 
   const mod = await loader();
-  const data = mod.default;
+  await loadSceneData(mod.default);
+}
+
+/** Apply an already-resolved scene/room JSON to the renderer + game client.
+ *  Used both by the local room selector (legacy) and by the narrative flow
+ *  when resuming a session or receiving a generated scene from the bridge. */
+async function loadSceneData(data: Record<string, unknown>): Promise<void> {
   roomData = data;
   scenarioActive = false;
 
@@ -157,6 +214,9 @@ async function loadRoom(globKey: string): Promise<void> {
   // Reset player
   playerPos.x = 0;
   playerPos.z = 2;
+
+  const world = (data.world ?? {}) as Record<string, unknown>;
+  const styleToken = (typeof world.style_token === "string" ? world.style_token : "") || undefined;
 
   // Extract enemies from objects with combat
   const objects = (data.objects ?? []) as Record<string, unknown>[];
@@ -188,36 +248,44 @@ async function loadRoom(globKey: string): Promise<void> {
         },
       });
       const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-      enemyEntities.push({
+      const enemyEntity: Entity = {
         id: obj.id as string, pos, radius: 8, color,
         label: (obj.description ?? obj.id) as string,
         hp: combat.health as number, maxHp: combat.health as number, alive: true,
-      });
+      };
+      enemyEntities.push(enemyEntity);
+      attachSpriteForObject(obj, enemyEntity, styleToken);
     } else {
-      objectEntities.push({
+      const objectEntity: Entity = {
         id: obj.id as string, pos, radius: 5,
         color: (obj.category as string) === "item" ? "#aa8" : "#666",
         label: (obj.description ?? "") as string, alive: true,
-      });
+      };
+      objectEntities.push(objectEntity);
+      attachSpriteForObject(obj, objectEntity, styleToken);
     }
   }
 
   // NPCs from room data
   const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
-  npcEntities = npcsData.map(npc => ({
-    id: npc.id as string,
-    pos: {
-      x: (npc.position as number[])?.[0] ?? 0,
-      y: (npc.position as number[])?.[1] ?? 0,
-      z: (npc.position as number[])?.[2] ?? 0,
-    },
-    forward: { x: 0, y: 0, z: -1 },
-    radius: 7,
-    color: "#68c",
-    label: (npc.name ?? npc.id) as string,
-    name: (npc.name ?? npc.id) as string,
-    alive: true,
-  }));
+  npcEntities = npcsData.map(npc => {
+    const entity: Entity = {
+      id: npc.id as string,
+      pos: {
+        x: (npc.position as number[])?.[0] ?? 0,
+        y: (npc.position as number[])?.[1] ?? 0,
+        z: (npc.position as number[])?.[2] ?? 0,
+      },
+      forward: { x: 0, y: 0, z: -1 },
+      radius: 7,
+      color: "#68c",
+      label: (npc.name ?? npc.id) as string,
+      name: (npc.name ?? npc.id) as string,
+      alive: true,
+    };
+    attachSpriteForNpc(npc, entity, styleToken);
+    return entity;
+  });
 
   // Build enemy HP bars
   rebuildEnemyBars();
@@ -229,6 +297,49 @@ async function loadRoom(globKey: string): Promise<void> {
   }
 
   log("Room loaded: " + (data.room_id ?? "unknown"));
+}
+
+/** Drop a Mixamo character ref or an AI sprite hash on the entity, kicking off
+ *  a generate_sprite request when the scene only carries a prompt. The entity
+ *  is mutated in place once the hash arrives — the game loop re-renders every
+ *  frame so the sprite pops in as soon as ai_server replies. */
+function attachSpriteForObject(obj: Record<string, unknown>, entity: Entity, styleToken?: string): void {
+  // Only `sprite_hash` is a 2D sprite — `texture_hash` is a PBR map for the
+  // Godot renderer and lives in cache/textures/, not cache/sprites/.
+  const existingHash = obj.sprite_hash as string | undefined;
+  if (existingHash) {
+    entity.spriteHash = existingHash;
+    return;
+  }
+  const description = (obj.description as string | undefined) ?? "";
+  const category = (obj.category as string | undefined) ?? "prop";
+  const id = (obj.id as string | undefined) ?? "object";
+  const prompt = description
+    ? `${description}, single ${category}, isolated on transparent background`
+    : `${id} ${category}, isolated on transparent background`;
+  void assetCache
+    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
+    .then(hash => {
+      if (hash) entity.spriteHash = hash;
+    });
+}
+
+function attachSpriteForNpc(npc: Record<string, unknown>, entity: Entity, styleToken?: string): void {
+  const existingHash = npc.sprite_hash as string | undefined;
+  if (existingHash) {
+    entity.spriteHash = existingHash;
+    return;
+  }
+  const skin = (npc.skin_prompt as string | undefined) ?? (npc.description as string | undefined) ?? "";
+  const name = (npc.name as string | undefined) ?? (npc.id as string | undefined) ?? "character";
+  const prompt = skin
+    ? `${skin}, full body, single character standing, isolated on transparent background`
+    : `${name}, full body, single character standing, isolated on transparent background`;
+  void assetCache
+    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
+    .then(hash => {
+      if (hash) entity.spriteHash = hash;
+    });
 }
 
 function rebuildEnemyBars(): void {
@@ -683,7 +794,18 @@ function gameLoop(now: number): void {
 
   // Render
   renderer.render(
-    { pos: playerPos, forward: playerForward, hp: result.playerHp, maxHp: playerMaxHp },
+    {
+      pos: playerPos,
+      forward: playerForward,
+      hp: result.playerHp,
+      maxHp: playerMaxHp,
+      sprite: {
+        model: spriteRenderer.skinnedKey(playerModel, playerSkinPrompt),
+        anim: "idle",
+        angle: WORLD_ANGLE,
+        animStartedAt: playerAnimStartedAt,
+      },
+    },
     enemyEntities,
     objectEntities,
     npcEntities,
@@ -710,7 +832,74 @@ function gameLoop(now: number): void {
 
 populateRoomSelector();
 
-createGameClient(combatConfigJson as Record<string, unknown>, (client) => {
+const sharedBridge = new BridgeClient();
+const narrativeClient = new NarrativeClient(sharedBridge);
+const titleScreen = new TitleScreen(narrativeClient);
+const historyBrowser = new HistoryBrowser(narrativeClient);
+let activeSessionId: string | null = null;
+
+dialoguePanel.onChoice = (idx, text) => {
+  if (!activeSessionId) return;
+  const cur = dialoguePanel.current();
+  narrativeClient.sendDialogueChoice({
+    eventId: `client_${Date.now()}`,  // bridge generates the canonical id
+    choiceIndex: idx,
+    speaker: cur.speaker,
+    chosenText: text,
+  });
+};
+
+dialoguePanel.onFreeText = (freeText) => {
+  if (!activeSessionId) return;
+  const cur = dialoguePanel.current();
+  narrativeClient.sendDialogueChoice({
+    eventId: `client_${Date.now()}`,
+    choiceIndex: -1,
+    speaker: cur.speaker,
+    chosenText: freeText,
+    freeText,
+  });
+};
+
+narrativeClient.onNarrativeEvent((event) => {
+  // Minimum viable handler: log everything to the combat log.
+  // Task 13 will wire each effect to dialogue/spawns/story HUD.
+  for (const effect of event.effects) {
+    switch (effect.kind) {
+      case "show_dialogue":
+        dialoguePanel.show(effect.speaker, effect.text, effect.choices.map((c) =>
+          typeof c === "string" ? c : c.text,
+        ));
+        break;
+      case "story_delta":
+        log(`📖 ${effect.delta.slice(0, 80)}`);
+        break;
+      case "spawn_entity": {
+        // The bridge wraps a freshly generated scene in a spawn_entity effect
+        // with `data.scene` (see ws-server.ts start_session handler). Treat
+        // that as a "load scene" instruction; everything else is just a log.
+        const scene = (effect.data as Record<string, unknown> | undefined)?.scene as
+          | Record<string, unknown>
+          | undefined;
+        if (scene) {
+          void loadSceneData(scene);
+          log(`🌍 escena cargada: ${effect.entityId}`);
+        } else {
+          log(`✨ spawn ${effect.entityKind}: ${effect.description.slice(0, 60)}`);
+        }
+        break;
+      }
+      case "schedule_event":
+        log(`⏳ scheduled: ${effect.description.slice(0, 60)}`);
+        break;
+      case "ambient_message":
+        log(effect.message);
+        break;
+    }
+  }
+});
+
+createGameClient(combatConfigJson as Record<string, unknown>, sharedBridge, (client) => {
   gameClient = client;
   updateConnectionStatus(client.isConnected, client.isBridge);
 
@@ -728,11 +917,64 @@ createGameClient(combatConfigJson as Record<string, unknown>, (client) => {
     client.store.on("player_respawned", () => log("Respawned!"));
   }
 
-  // Load default room
-  const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
-  if (defaultRoom) {
-    loadRoom(defaultRoom);
-  }
+  void runTitleFlow(client);
 });
+
+async function runTitleFlow(client: GameClient): Promise<void> {
+  if (!client.isBridge) {
+    // Bridge unavailable: skip the narrative title screen and keep the legacy
+    // local mode (room JSON selector). This preserves the previous behaviour
+    // when running without the bridge.
+    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
+    if (defaultRoom) loadRoom(defaultRoom);
+    return;
+  }
+
+  let action: TitleAction;
+  try {
+    action = await titleScreen.show();
+  } catch (err) {
+    console.warn("title-screen failed, falling back to room selector:", err);
+    titleScreen.hide();
+    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
+    if (defaultRoom) loadRoom(defaultRoom);
+    return;
+  }
+
+  try {
+    if (action.kind === "new_game") {
+      const res = await narrativeClient.startSession(action.gameId, action.appearance);
+      activeSessionId = res.sessionId;
+      historyBrowser.setSession(res.sessionId);
+      log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
+      await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
+    } else {
+      const res = await narrativeClient.resumeSession(action.sessionId);
+      activeSessionId = res.state.session_id;
+      historyBrowser.setSession(res.state.session_id);
+      log(`Reanudada: ${res.state.session_id}`);
+      const desiredModel = res.state.player.appearance.model_id || playerModel;
+      const skinPath = res.state.player.appearance.skin_path || "";
+      await setPlayerAppearance(desiredModel, skinPath);
+
+      // Materialise the scene the player was last in. Without this the canvas
+      // stays empty after a resume — the bridge only broadcasts a scene to new
+      // sessions via narrative_event/spawn_entity.
+      const activeId = res.state.world?.active_scene_id;
+      const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown> }> | undefined;
+      const sceneData = activeId ? scenes?.[activeId]?.scene_data : undefined;
+      if (sceneData) {
+        await loadSceneData(sceneData);
+      } else {
+        log(`(sin escena en el save — esperando narrativa)`);
+      }
+    }
+  } catch (err) {
+    alert(`No se pudo iniciar la sesión: ${(err as Error).message}`);
+    console.error(err);
+  } finally {
+    titleScreen.hide();
+  }
+}
 
 requestAnimationFrame(gameLoop);

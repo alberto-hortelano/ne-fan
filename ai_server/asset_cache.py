@@ -190,15 +190,28 @@ class AssetCache:
         self.manifest = manifest
         print(f"AssetCache[{asset_type}]: {self.cache_dir.resolve()}")
 
-    def hash_key(self, prompt: str) -> str:
-        return hashlib.sha256(prompt.strip().lower().encode()).hexdigest()[:16]
+    def hash_key(self, prompt: str, context: dict | None = None) -> str:
+        """Hash a prompt, optionally with extra context (e.g. angle, style_token).
+
+        The context dict participates in the hash so two requests with the same
+        prompt but different parameters get distinct cache slots. Keys are
+        sorted for deterministic hashing.
+        """
+        parts = [prompt.strip().lower()]
+        if context:
+            for k in sorted(context.keys()):
+                v = context[k]
+                if v is None or v == "":
+                    continue
+                parts.append(f"{k}={v}")
+        return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
     def get_path(self, key: str, map_type: str) -> Path:
         ext = ".glb" if map_type == "model" else ".png"
         return self.cache_dir / key / f"{map_type}{ext}"
 
-    def has(self, prompt: str, map_type: str = "albedo") -> bool:
-        key = self.hash_key(prompt)
+    def has(self, prompt: str, map_type: str = "albedo", context: dict | None = None) -> bool:
+        key = self.hash_key(prompt, context)
         return self.get_path(key, map_type).exists()
 
     def has_all(self, prompt: str, map_types: list[str] | None = None) -> bool:
@@ -206,8 +219,8 @@ class AssetCache:
             map_types = ["albedo", "normal"]
         return all(self.has(prompt, mt) for mt in map_types)
 
-    def get(self, prompt: str, map_type: str = "albedo") -> bytes | None:
-        key = self.hash_key(prompt)
+    def get(self, prompt: str, map_type: str = "albedo", context: dict | None = None) -> bytes | None:
+        key = self.hash_key(prompt, context)
         path = self.get_path(key, map_type)
         if path.exists():
             return path.read_bytes()
@@ -219,8 +232,15 @@ class AssetCache:
             return path.read_bytes()
         return None
 
-    def put(self, prompt: str, map_type: str, data: bytes) -> str:
-        key = self.hash_key(prompt)
+    def put(
+        self,
+        prompt: str,
+        map_type: str,
+        data: bytes,
+        context: dict | None = None,
+        subtype_override: str | None = None,
+    ) -> str:
+        key = self.hash_key(prompt, context)
         path = self.get_path(key, map_type)
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write: temp file + rename
@@ -240,9 +260,10 @@ class AssetCache:
             self.manifest.register(
                 hash_key=key,
                 asset_type=self.asset_type,
-                subtype=map_type,
+                subtype=subtype_override or map_type,
                 prompt=prompt,
                 size_bytes=len(data),
+                extra=context or None,
             )
         return key
 

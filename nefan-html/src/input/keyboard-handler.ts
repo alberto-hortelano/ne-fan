@@ -40,6 +40,8 @@ export class KeyboardHandler {
       // Dialogue mode suppresses combat/movement keys
       // (dialogue-panel.ts handles its own keys with stopPropagation)
       if (this.dialogueActive) return;
+      // Synthetic events (autofill, IME, etc.) can fire without `key`.
+      if (typeof e.key !== "string") return;
 
       switch (e.key.toLowerCase()) {
         case "w": case "arrowup": this.state.up = true; break;
@@ -59,6 +61,7 @@ export class KeyboardHandler {
     });
 
     window.addEventListener("keyup", (e) => {
+      if (typeof e.key !== "string") return;
       switch (e.key.toLowerCase()) {
         case "w": case "arrowup": this.state.up = false; break;
         case "s": case "arrowdown": this.state.down = false; break;

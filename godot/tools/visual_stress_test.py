@@ -375,7 +375,7 @@ def main():
         print(f"Connected to Godot. Current room: {status.get('room', 'unknown')}, FPS: {status.get('fps', '?')}")
     except Exception as e:
         print(f"Cannot connect to Godot on {HOST}:{PORT}: {e}")
-        print("Start Godot first: ./start.sh headless")
+        print("Start Godot first: ./start.sh -> preset 2 (Automated tests)")
         return
 
     print(f"\nRunning {len(levels)} level(s), skip_textures={skip_textures}")

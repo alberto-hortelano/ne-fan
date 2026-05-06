@@ -34,6 +34,7 @@ import logging
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 
@@ -54,6 +55,7 @@ from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
 from sprite_generator import SpriteGenerator
+from controlnet_skin import ControlNetSkinGenerator, seed_for
 from asset_cache import AssetCache, AssetManifest
 
 import asyncio as _asyncio
@@ -63,6 +65,7 @@ llm_client: LLMClient | None = None
 texture_gen: TextureGenerator | None = None
 model_gen: ModelGenerator | None = None
 skin_gen: SkinGenerator | None = None
+controlnet_skin_gen: ControlNetSkinGenerator | None = None
 sprite_gen: SpriteGenerator | None = None
 asset_cache: AssetCache | None = None
 model_cache: AssetCache | None = None
@@ -86,7 +89,7 @@ def load_config(config_path: str = "Config/ai_server_config.json") -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, asset_manifest, config
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, asset_manifest, config, controlnet_skin_gen
     config = load_config()
 
     # Shared manifest sits at the cache root and tracks every asset across types.
@@ -161,6 +164,10 @@ async def lifespan(app: FastAPI):
     skin_gen = SkinGenerator(
         texture_gen_ref=texture_gen,
     )
+    controlnet_skin_gen = ControlNetSkinGenerator(
+        texture_gen_ref=texture_gen,
+        default_strength=0.40,
+    )
 
     sprite_cache = AssetCache(
         cache_dir=config.get("sprite_cache_dir", "cache/sprites"),
@@ -180,6 +187,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
+
+# Allow the HTML 2D client (vite dev server on :3000) to call /generate_sprite
+# and /cache/sprite/{hash} from the browser. Without this, every fetch fails
+# the CORS preflight (OPTIONS) and the renderer never gets a sprite.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -421,7 +438,13 @@ async def generate_skin_endpoint(request: Request):
 
 @app.post("/generate_sprite")
 async def generate_sprite_endpoint(request: Request):
-    """Generate an RGBA sprite PNG from a prompt (image with transparent background)."""
+    """Generate an RGBA sprite PNG from a prompt (image with transparent background).
+
+    Accepts an optional ``angle`` (top_down | isometric_30 | isometric_45 |
+    frontal) so 2D-world assets match the projection of pre-rendered Mixamo
+    sprite sheets. ``angle`` and ``style_token`` participate in the cache key,
+    so the same prompt at different angles cache independently.
+    """
     import asyncio
 
     body = await request.json()
@@ -429,32 +452,339 @@ async def generate_sprite_endpoint(request: Request):
     width = body.get("width", 512)
     height = body.get("height", 512)
     seed = body.get("seed", -1)
+    angle = body.get("angle", "top_down")
+    style_token = body.get("style_token") or None
 
     if not prompt:
         return {"error": "missing prompt"}
 
-    key = sprite_cache.hash_key(prompt)
+    context = {"angle": angle}
+    if style_token:
+        context["style_token"] = style_token
 
-    if sprite_cache.has(prompt, "sprite"):
+    key = sprite_cache.hash_key(prompt, context)
+
+    if sprite_cache.has(prompt, "sprite", context):
         return {
             "hash": key,
             "cached": True,
             "sprite_url": f"/cache/sprite/{key}",
+            "angle": angle,
         }
 
     start = time.time()
     async with _gpu_lock:
-        result = await asyncio.to_thread(sprite_gen.generate, prompt, width, height, seed)
+        result = await asyncio.to_thread(
+            sprite_gen.generate, prompt, width, height, seed, angle, style_token
+        )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    sprite_cache.put(prompt, "sprite", result["sprite"])
+    sprite_cache.put(prompt, "sprite", result["sprite"], context=context, subtype_override="sprite_2d")
 
     return {
         "hash": key,
         "cached": False,
         "sprite_url": f"/cache/sprite/{key}",
+        "angle": angle,
         "generation_time_ms": elapsed_ms,
     }
+
+
+# Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative
+# to the project root so the ai_server can read them off disk and run img2img
+# over each frame.
+SPRITE_SHEETS_DIR = Path(__file__).resolve().parent.parent / "nefan-html" / "public" / "sprites"
+SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_sheets"
+
+
+def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str) -> str:
+    """Hash that invalidates whenever the underlying Mixamo sheet is
+    re-rendered. Including the base meta.json mtime guarantees the skinned
+    cache rebuilds on top of the latest frames; otherwise a re-render of the
+    base would silently keep the stale skinned variant alive.
+    """
+    import hashlib
+    base_meta = SPRITE_SHEETS_DIR / model / anim / angle / "meta.json"
+    base_stamp = str(int(base_meta.stat().st_mtime)) if base_meta.exists() else "0"
+    payload = "\n".join([model, anim, angle, prompt.strip().lower(), base_stamp])
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+@app.post("/skin_sprite_sheet")
+async def skin_sprite_sheet_endpoint(request: Request):
+    """Apply img2img with `prompt` to every frame of a pre-rendered Mixamo
+    sheet at `nefan-html/public/sprites/{model}/{anim}/{angle}/` and serve the
+    resulting frames from `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
+
+    Body: {model, anim, angle, prompt, strength?, gamma?}
+    Returns: {ok, hash, meta, frame_urls: [[url, ...], ...]}
+    """
+    import asyncio
+    from PIL import Image
+    import io
+
+    body = await request.json()
+    model = str(body.get("model", "")).strip()
+    anim = str(body.get("anim", "idle")).strip()
+    angle = str(body.get("angle", "isometric_30")).strip()
+    prompt = str(body.get("prompt", "")).strip()
+    # 0.40 is the strength sweet spot we landed on with ControlNet+canny:
+    # high enough to repaint clothing/skin, low enough that the silhouette
+    # the canny edges encode still drives the result. Tuned alongside
+    # controlnet_scale=0.5 in ControlNetSkinGenerator.
+    strength = float(body.get("strength", 0.40))
+
+    if not (model and prompt):
+        return {"ok": False, "error": "missing model or prompt"}
+
+    sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
+    meta_path = sheet_dir / "meta.json"
+    if not meta_path.exists():
+        return {"ok": False, "error": f"sheet not found: {model}/{anim}/{angle}"}
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    key = _skin_sheet_key(model, anim, angle, prompt)
+    out_dir = SKINNED_SHEETS_DIR / key
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build the URL list eagerly so the client can start downloading frames
+    # the moment they hit disk. Each cached frame is reused on subsequent
+    # requests with the same (model, anim, angle, prompt) tuple.
+    directions = int(meta.get("directions", 1))
+    frame_count = int(meta.get("frame_count", 1))
+    frame_urls: list[list[str]] = []
+
+    def frame_path(d: int, f: int) -> Path:
+        return out_dir / f"dir_{d}_frame_{f:03d}.png"
+
+    def src_path(d: int, f: int) -> Path:
+        return sheet_dir / f"dir_{d}_frame_{f:03d}.png"
+
+    # ControlNet (canny) anchors the silhouette across every frame, and the
+    # seed is derived from (model, anim, prompt) so the same character is
+    # sampled for every frame instead of re-rolling clothing 116 times.
+    seed = seed_for(prompt, salt=f"{model}|{anim}|{angle}")
+
+    def render_one(src: Path, dst: Path) -> None:
+        base = Image.open(src).convert("RGBA")
+        png_bytes = controlnet_skin_gen.generate_to_bytes(
+            base, prompt, seed=seed, strength=strength
+        )
+        dst.write_bytes(png_bytes)
+
+    start = time.time()
+    async with _gpu_lock:
+        for d in range(directions):
+            row: list[str] = []
+            for f in range(frame_count):
+                dst = frame_path(d, f)
+                if not dst.exists():
+                    src = src_path(d, f)
+                    if not src.exists():
+                        continue
+                    await asyncio.to_thread(render_one, src, dst)
+                row.append(f"/cache/sprite_sheet/{key}/dir_{d}_frame_{f:03d}.png")
+            frame_urls.append(row)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    return {
+        "ok": True,
+        "hash": key,
+        "meta": meta,
+        "frame_urls": frame_urls,
+        "generation_time_ms": elapsed_ms,
+    }
+
+
+@app.post("/skin_test_controlnet")
+async def skin_test_controlnet(request: Request):
+    """Diagnostic endpoint that exposes every ControlNet skinning knob, so a
+    curl loop can sweep configurations without touching the code."""
+    import asyncio
+    import io
+    from PIL import Image
+    import numpy as np
+    import cv2
+
+    body = await request.json()
+    model = str(body.get("model", "paladin"))
+    anim = str(body.get("anim", "idle"))
+    angle = str(body.get("angle", "isometric_30"))
+    direction = int(body.get("dir", 0))
+    frame = int(body.get("frame", 0))
+    prompt = str(body.get("prompt", "")).strip()
+    strength = float(body.get("strength", 0.30))
+    steps = int(body.get("steps", 12))
+    guidance = float(body.get("guidance", 1.5))
+    cn_scale = float(body.get("controlnet_scale", 0.85))
+    canny_low = int(body.get("canny_low", 80))
+    canny_high = int(body.get("canny_high", 180))
+    blur_kernel = int(body.get("blur_kernel", 5))
+    seed = int(body.get("seed", 42))
+    use_silhouette = bool(body.get("silhouette_input", False))
+
+    if not prompt:
+        return Response(status_code=400, content="missing prompt")
+
+    src = SPRITE_SHEETS_DIR / model / anim / angle / f"dir_{direction}_frame_{frame:03d}.png"
+    if not src.exists():
+        return Response(status_code=404, content=f"frame not found: {src.name}")
+
+    base = Image.open(src).convert("RGBA")
+
+    # Custom canny tuned per request: bigger blur + higher thresholds drop
+    # interior detail (armour seams) and only keep the gross silhouette.
+    flat = Image.new("RGB", base.size, (0, 0, 0))
+    flat.paste(base, mask=base.split()[3])
+    arr = np.array(flat.convert("L"))
+    if blur_kernel >= 3 and blur_kernel % 2 == 1:
+        arr = cv2.GaussianBlur(arr, (blur_kernel, blur_kernel), 0)
+    edges = cv2.Canny(arr, canny_low, canny_high)
+    edges_pil = Image.fromarray(edges).convert("RGB")
+
+    # Optionally hide the paladin texture entirely so the model only sees a
+    # white silhouette over grey. Tests whether internal detail is what's
+    # confusing the result.
+    if use_silhouette:
+        rgb = Image.new("RGB", base.size, (128, 128, 128))
+        white = Image.new("RGB", base.size, (255, 255, 255))
+        rgb.paste(white, mask=base.split()[3])
+    else:
+        rgb = Image.new("RGB", base.size, (128, 128, 128))
+        rgb.paste(base, mask=base.split()[3])
+
+    full_prompt = (
+        f"{prompt}, full body character standing, isometric perspective, "
+        f"same pose, detailed clothing, high quality"
+    )
+
+    controlnet_skin_gen._ensure_pipeline()
+    saved = controlnet_skin_gen._disable_circular_padding()
+    try:
+        import torch
+        async with _gpu_lock:
+            generator = torch.Generator(device=controlnet_skin_gen._texture_gen.device).manual_seed(seed)
+            with torch.no_grad():
+                result = await asyncio.to_thread(
+                    lambda: controlnet_skin_gen._pipe(
+                        prompt=full_prompt,
+                        image=rgb,
+                        control_image=edges_pil,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        controlnet_conditioning_scale=cn_scale,
+                        generator=generator,
+                    ).images[0]
+                )
+        out = result.convert("RGBA")
+        out.putalpha(base.split()[3])
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+    finally:
+        controlnet_skin_gen._restore_padding(saved)
+
+
+@app.post("/skin_test_frame")
+async def skin_test_frame(request: Request):
+    """Diagnostic endpoint: img2img a single frame with explicit knobs.
+
+    Used to validate whether the local model can produce a recognisable and
+    consistent character without committing to a full sheet rebuild. Body:
+      {model, anim, angle, dir, frame, prompt, strength, steps, guidance,
+       seed, circular_padding (bool)}
+
+    Returns the resulting PNG bytes directly so a curl loop can drop them on
+    disk for visual review. Not used by any client.
+    """
+    import asyncio
+    from PIL import Image
+    import io
+
+    body = await request.json()
+    model = str(body.get("model", "paladin"))
+    anim = str(body.get("anim", "idle"))
+    angle = str(body.get("angle", "isometric_30"))
+    direction = int(body.get("dir", 0))
+    frame = int(body.get("frame", 0))
+    prompt = str(body.get("prompt", "")).strip()
+    strength = float(body.get("strength", 0.45))
+    steps = int(body.get("steps", 8))
+    guidance = float(body.get("guidance", 1.0))
+    seed = int(body.get("seed", -1))
+    circular = bool(body.get("circular_padding", False))
+
+    if not prompt:
+        return Response(status_code=400, content="missing prompt")
+
+    src = SPRITE_SHEETS_DIR / model / anim / angle / f"dir_{direction}_frame_{frame:03d}.png"
+    if not src.exists():
+        return Response(status_code=404, content=f"frame not found: {src.name}")
+
+    skin_gen._ensure_pipeline()
+    import torch
+
+    # The texture pipeline applies circular padding to every Conv2d layer for
+    # seamless tiling. That's wrong for character portraits — wrapping the
+    # border bleeds left-pixels into right-context. Toggle it per request so
+    # we can A/B the impact in the test rig.
+    unet = skin_gen._img2img_pipe.unet
+    saved_padding: list[tuple[object, str]] = []
+    if not circular:
+        for module in unet.modules():
+            if isinstance(module, torch.nn.Conv2d) and module.padding_mode == "circular":
+                saved_padding.append((module, module.padding_mode))
+                module.padding_mode = "zeros"
+
+    base = Image.open(src).convert("RGBA")
+    rgb = Image.new("RGB", base.size, (128, 128, 128))
+    rgb.paste(base, mask=base.split()[3])
+
+    full_prompt = (
+        f"{prompt}, full body character standing, isometric perspective, "
+        f"same pose, detailed clothing, high quality"
+    )
+
+    try:
+        async with _gpu_lock:
+            generator = None
+            if seed >= 0:
+                generator = torch.Generator(device=skin_gen._texture_gen.device).manual_seed(seed)
+            with torch.no_grad():
+                result = await asyncio.to_thread(
+                    lambda: skin_gen._img2img_pipe(
+                        prompt=full_prompt,
+                        image=rgb,
+                        strength=strength,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        generator=generator,
+                    ).images[0]
+                )
+        out = result.convert("RGBA")
+        out.putalpha(base.split()[3])
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+    finally:
+        for module, mode in saved_padding:
+            module.padding_mode = mode
+
+
+@app.get("/cache/sprite_sheet/{hash_key}/{filename}")
+async def get_skinned_sheet_frame(hash_key: str, filename: str):
+    """Serve a single frame of a skinned sprite sheet."""
+    # Tight path validation — only the canonical filename pattern is allowed.
+    import re
+    if not re.fullmatch(r"dir_\d+_frame_\d{3}\.png", filename):
+        return Response(status_code=400, content="Invalid filename")
+    path = SKINNED_SHEETS_DIR / hash_key / filename
+    if not path.exists():
+        return Response(status_code=404, content="Not found")
+    return Response(content=path.read_bytes(), media_type="image/png")
 
 
 @app.post("/report_player_choice")

@@ -32,7 +32,7 @@
 - **Remote Control** - Puerto 9876 para testing automatizado.
 
 ### Infraestructura
-- `./start.sh all` arranca todo (bridge + Godot + HTML).
+- `./start.sh` (interactivo) — preset "Play" arranca todo el stack.
 - Tests automatizados con `movement_test.py`.
 
 ### Resumen

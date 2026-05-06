@@ -1,0 +1,20 @@
+# Test runs are too large to commit (~50-200MB per run).
+# Keep the directory structure but ignore contents.
+runs/*
+!runs/.gitkeep
+
+# Per-character base browsers are derived from nefan-html/public/sprites/
+# (which is also gitignored). Regenerate with build_base_browser.py.
+bases/
+
+# Generated characters (hero-shots + skinned anims). Each one was paid
+# Meshy credits to produce — but they're tied to a session/iteration, not
+# a stable canonical asset, so they don't belong in git.
+characters/
+
+# Auto-generated lab index (rebuilt every run.py invocation).
+index.html
+
+# Local server logs
+*.log
+__pycache__/

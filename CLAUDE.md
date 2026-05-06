@@ -5,18 +5,37 @@ RPG dark fantasy de **mundo abierto generativo** con motor Godot 4.6+. El motor 
 ## Arrancar el juego
 
 ```bash
-# Forma rápida (script):
-./start.sh godot      # Solo Godot
-./start.sh bridge     # Solo bridge TS (nefan-core :9877)
-./start.sh html       # Solo cliente HTML 2D (:3000)
-./start.sh headless   # Godot sin ventana (xvfb-run, para tests)
-./start.sh all        # Todo: bridge + Godot + HTML
+# Launcher interactivo (recomendado):
+./start.sh
+```
 
-# Manual:
+Sin argumentos, presenta un menú con presets que respetan dependencias entre servicios y, cuando se necesita el motor narrativo, pausan para que abras Claude Code en otra terminal:
+
+| Preset | Servicios | Cuándo |
+|--------|-----------|--------|
+| 1 · Play | bridge + narrative-mcp + ai_server + Godot + HTML + pausa Claude Code | Sesión narrativa completa |
+| 2 · Automated tests | bridge + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares |
+| 3 · HTML 2D iteration | bridge + HTML | Iterar UI/renderer 2D sin Godot |
+| 4 · Godot offline | sólo Godot | Tests visuales rápidos con fallback rooms |
+| 5 · Bridge only | sólo nefan-core bridge | Dev de la lógica compartida |
+| 6 · ai_server only | sólo Python ai_server | Dev del pipeline de IA |
+| 7 · Custom | toggle por servicio | Combinaciones puntuales |
+| s · Status | — | Listar puertos arriba/abajo |
+| k · Stop | — | Matar todo el stack |
+
+Cosas a tener en cuenta:
+- El launcher hace preflight (`.venv`, `node_modules`, binario de Godot, `nc`/`curl`) y aborta con instrucciones si falta algo.
+- Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
+- Ctrl+C mata limpiamente todo lo que el launcher arrancó (`trap EXIT`).
+- Si detecta saves antiguos en `~/.local/share/godot/.../Never Ending Fantasy/saves/`, ofrece migrarlos a `$PROJECT_DIR/saves/`.
+
+```bash
+# Manual (si prefieres arrancar servicios por separado):
 cd ~/code/ne-fan
 source .venv/bin/activate
 python ai_server/main.py                    # AI server :8765 (opcional)
-cd nefan-core && npm run dev                # Bridge TS :9877 (opcional)
+cd nefan-core && npx tsx bridge/ws-server.ts  # Bridge TS :9877 (opcional)
+cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
 cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
 ```
@@ -111,7 +130,7 @@ python3 godot/tools/movement_test.py capsule_sync attack_root_motion
 **IMPORTANTE:** Siempre arrancar Godot con `xvfb-run` para no bloquear la pantalla del usuario. Nunca usar `DISPLAY=:0`.
 
 ```bash
-./start.sh headless    # Godot via xvfb-run, sin ventana visible
+./start.sh             # → preset 2 "Automated tests" (bridge + Godot headless)
 # O manualmente:
 xvfb-run -a -s "-screen 0 1920x1080x24" ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
 # Luego ejecutar tests normalmente
@@ -213,7 +232,22 @@ nefan-html/               Cliente 2D top-down (Canvas)
 
 ai_server/                Python FastAPI en puerto 8765
 narrative-mcp/            Node.js MCP bridge
+
+skinning_lab/             Bench reusable de skinning AI sobre sprites Mixamo
+  run.py                   CLI principal — --preset, --preview-only, --list-presets
+  serve.sh                 HTTP server local en :8911 para navegar runs
+  presets/*.json           Configs reutilizables (anim, frames, variants, models)
+  runs/                    (gitignored) cada run = subdir self-contained con index.html
+  README.md                Workflow + cómo añadir un proveedor nuevo
 ```
+
+## skinning_lab — pruebas de IA sobre sprites
+
+Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets generados por el renderer Godot. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `skinning_lab/README.md` para detalles. Hallazgos consolidados:
+- **V1 single** y **V2 anchor** dan deriva inaceptable.
+- **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
+- **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
+- **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
 
 ## AI server — Endpoints
 

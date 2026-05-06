@@ -1,13 +1,15 @@
 /** 2D top-down room renderer on Canvas. */
 
 import type { Vec3 } from "../../../nefan-core/src/types.js";
+import type { SpriteRenderer } from "./sprite-renderer.js";
+import type { AssetCache } from "./asset-cache.js";
 
 interface RoomData {
   room_id: string;
   room_description: string;
   dimensions: { width: number; height: number; depth: number };
   exits: { wall: string; offset: number; size: number[]; description?: string }[];
-  objects: { id: string; position: number[]; scale: number[]; category: string; description: string }[];
+  objects: { id: string; position: number[]; scale: number[]; category: string; description: string; texture_hash?: string; sprite_hash?: string }[];
   npcs: { id: string; name: string; position: number[] }[];
   lighting: { ambient: { color: number[]; intensity: number }; lights: { position: number[]; color: number[]; range: number }[] };
 }
@@ -24,6 +26,11 @@ export interface Entity {
   alive: boolean;
   attacking?: boolean;
   name?: string;
+  /** Optional Mixamo character reference: when set and SpriteRenderer has the
+   *  matching sheet cached, the entity is drawn as a sprite instead of a circle. */
+  sprite?: { model: string; anim: string; angle: string; animStartedAt?: number };
+  /** AI-generated sprite hash (objects/buildings) served from /cache/sprite/{hash}. */
+  spriteHash?: string;
 }
 
 const WALL_COLOR = "#3a3a3a";
@@ -34,6 +41,16 @@ const PLAYER_COLOR = "#4a9";
 const NPC_COLOR = "#68c";
 const LIGHT_COLOR = "rgba(255,200,100,0.08)";
 
+export interface CanvasRendererOptions {
+  spriteRenderer?: SpriteRenderer;
+  assetCache?: AssetCache;
+  /** Default angle the world is rendered at. Must match the sprite sheets
+   * pre-rendered for Mixamo and the ai_server `/generate_sprite` calls. */
+  worldAngle?: string;
+  /** Pixel size of one world meter (used to scale sprites coherently). */
+  pixelsPerMeter?: number;
+}
+
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -41,12 +58,27 @@ export class CanvasRenderer {
   private offsetX = 0;
   private offsetY = 0;
   private roomData: RoomData | null = null;
+  private spriteRenderer: SpriteRenderer | undefined;
+  private assetCache: AssetCache | undefined;
+  private worldAngle = "isometric_30";
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, opts: CanvasRendererOptions = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
+    this.spriteRenderer = opts.spriteRenderer;
+    this.assetCache = opts.assetCache;
+    if (opts.worldAngle) this.worldAngle = opts.worldAngle;
+    if (opts.pixelsPerMeter) this.scale = opts.pixelsPerMeter;
     this.resize();
     window.addEventListener("resize", () => this.resize());
+  }
+
+  setWorldAngle(angle: string): void {
+    this.worldAngle = angle;
+  }
+
+  getWorldAngle(): string {
+    return this.worldAngle;
   }
 
   private resize(): void {
@@ -74,7 +106,13 @@ export class CanvasRenderer {
   }
 
   render(
-    player: { pos: Vec3; forward: Vec3; hp: number; maxHp: number },
+    player: {
+      pos: Vec3;
+      forward: Vec3;
+      hp: number;
+      maxHp: number;
+      sprite?: Entity["sprite"];
+    },
     enemies: Entity[],
     objects: Entity[],
     npcs: Entity[] = [],
@@ -188,25 +226,31 @@ export class CanvasRenderer {
     ctx.font = "11px monospace";
   }
 
-  private drawPlayer(player: { pos: Vec3; forward: Vec3; hp: number; maxHp: number }): void {
+  private drawPlayer(player: {
+    pos: Vec3;
+    forward: Vec3;
+    hp: number;
+    maxHp: number;
+    sprite?: Entity["sprite"];
+  }): void {
     const ctx = this.ctx;
     const [px, py] = this.toScreen(player.pos.x, player.pos.z);
     const r = 10;
 
-    // Player circle
-    ctx.fillStyle = PLAYER_COLOR;
-    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    const drewSprite = this.tryDrawSprite(player.sprite, player.forward, px, py);
+    if (!drewSprite) {
+      ctx.fillStyle = PLAYER_COLOR;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+      const fLen = 18;
+      const fx = px + player.forward.x * fLen;
+      const fy = py + player.forward.z * fLen;
+      ctx.strokeStyle = PLAYER_COLOR;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(fx, fy); ctx.stroke();
+    }
 
-    // Forward direction indicator
-    const fLen = 18;
-    const fx = px + player.forward.x * fLen;
-    const fy = py + player.forward.z * fLen;
-    ctx.strokeStyle = PLAYER_COLOR;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(fx, fy); ctx.stroke();
-
-    // HP bar above
-    this.drawHpBar(px, py - 16, player.hp, player.maxHp, "#4a9");
+    // HP bar above (always shown, even with sprite)
+    this.drawHpBar(px, py - (drewSprite ? 70 : 16), player.hp, player.maxHp, "#4a9");
   }
 
   private drawEntity(e: Entity): void {
@@ -222,23 +266,28 @@ export class CanvasRenderer {
       return;
     }
 
-    // Attack flash: brighter color when attacking
-    ctx.fillStyle = e.attacking ? "#ff4" : e.color;
-    ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
-
-    // Forward direction indicator
-    if (e.forward && (e.forward.x !== 0 || e.forward.z !== 0)) {
-      const fLen = 14;
-      const fx = ex + e.forward.x * fLen;
-      const fy = ey + e.forward.z * fLen;
-      ctx.strokeStyle = e.attacking ? "#ff4" : e.color;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(fx, fy); ctx.stroke();
+    let drewSprite = false;
+    if (e.spriteHash && this.assetCache) {
+      drewSprite = this.assetCache.drawByHash(ctx, e.spriteHash, ex, ey, { widthPx: e.radius * 5 });
+    }
+    if (!drewSprite) {
+      drewSprite = this.tryDrawSprite(e.sprite, e.forward, ex, ey);
+    }
+    if (!drewSprite) {
+      ctx.fillStyle = e.attacking ? "#ff4" : e.color;
+      ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
+      if (e.forward && (e.forward.x !== 0 || e.forward.z !== 0)) {
+        const fLen = 14;
+        const fx = ex + e.forward.x * fLen;
+        const fy = ey + e.forward.z * fLen;
+        ctx.strokeStyle = e.attacking ? "#ff4" : e.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(fx, fy); ctx.stroke();
+      }
     }
 
-    // HP bar if applicable
     if (e.hp !== undefined && e.maxHp !== undefined) {
-      this.drawHpBar(ex, ey - e.radius - 6, e.hp, e.maxHp, e.color);
+      this.drawHpBar(ex, ey - (drewSprite ? 70 : e.radius + 6), e.hp, e.maxHp, e.color);
     }
   }
 
@@ -246,27 +295,48 @@ export class CanvasRenderer {
     const ctx = this.ctx;
     const [nx, ny] = this.toScreen(npc.pos.x, npc.pos.z);
 
-    // NPC circle
-    ctx.fillStyle = NPC_COLOR;
-    ctx.beginPath(); ctx.arc(nx, ny, npc.radius, 0, Math.PI * 2); ctx.fill();
-
-    // Forward direction indicator
-    if (npc.forward && (npc.forward.x !== 0 || npc.forward.z !== 0)) {
-      const fLen = 12;
-      const fx = nx + npc.forward.x * fLen;
-      const fy = ny + npc.forward.z * fLen;
-      ctx.strokeStyle = NPC_COLOR;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(fx, fy); ctx.stroke();
+    let drewSprite = false;
+    if (npc.spriteHash && this.assetCache) {
+      drewSprite = this.assetCache.drawByHash(ctx, npc.spriteHash, nx, ny, { widthPx: npc.radius * 6 });
+    }
+    if (!drewSprite) {
+      drewSprite = this.tryDrawSprite(npc.sprite, npc.forward, nx, ny);
+    }
+    if (!drewSprite) {
+      ctx.fillStyle = NPC_COLOR;
+      ctx.beginPath(); ctx.arc(nx, ny, npc.radius, 0, Math.PI * 2); ctx.fill();
+      if (npc.forward && (npc.forward.x !== 0 || npc.forward.z !== 0)) {
+        const fLen = 12;
+        const fx = nx + npc.forward.x * fLen;
+        const fy = ny + npc.forward.z * fLen;
+        ctx.strokeStyle = NPC_COLOR;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(fx, fy); ctx.stroke();
+      }
     }
 
-    // Name label above
     if (npc.name) {
       ctx.fillStyle = "#9be";
       ctx.font = "10px monospace";
       ctx.textAlign = "center";
-      ctx.fillText(npc.name, nx, ny - npc.radius - 4);
+      ctx.fillText(npc.name, nx, ny - (drewSprite ? 78 : npc.radius + 4));
     }
+  }
+
+  private tryDrawSprite(
+    sprite: Entity["sprite"] | undefined,
+    forward: Vec3 | undefined,
+    cx: number,
+    cy: number,
+  ): boolean {
+    if (!sprite || !this.spriteRenderer) return false;
+    const sheet = this.spriteRenderer.getCached(sprite.model, sprite.anim, sprite.angle);
+    if (!sheet) return false;
+    const fwd = forward ?? { x: 0, y: 0, z: 1 };
+    const t = sprite.animStartedAt !== undefined
+      ? (performance.now() - sprite.animStartedAt) / 1000
+      : performance.now() / 1000;
+    return this.spriteRenderer.draw(this.ctx, sheet, fwd.x, fwd.z, t, cx, cy);
   }
 
   private drawHpBar(cx: number, cy: number, hp: number, maxHp: number, color: string): void {
