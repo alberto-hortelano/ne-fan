@@ -213,6 +213,7 @@ func _load_animation(anim_id: String) -> bool:
 		return false
 	var animation: Animation = src_lib.get_animation(src_name).duplicate()
 	_remap_animation_bones(animation)
+	_lock_hips_xz_if_locomotion(animation, anim_id)
 	# Stage on the model's existing AnimationPlayer so its tracks resolve
 	# against the right Skeleton3D.
 	var lib: AnimationLibrary
@@ -247,6 +248,34 @@ func _remap_animation_bones(animation: Animation) -> void:
 		if path.find(":mixamorig_") >= 0:
 			var fixed := path.replace(":mixamorig_", ":" + _bone_prefix)
 			animation.track_set_path(t, NodePath(fixed))
+
+
+const _LOCOMOTION_ANIMS := ["walk", "run", "walk_back", "strafe_left", "strafe_right"]
+
+
+func _lock_hips_xz_if_locomotion(animation: Animation, anim_id: String) -> void:
+	# Mixamo locomotion baked-in root motion shifts the character forward across the cycle,
+	# so it walks out of the sprite cell. Lock Hips XZ to its first keyframe (preserve Y so
+	# the head bob survives). Same pattern as combat_animator._lock_all_hips_xz().
+	if not _LOCOMOTION_ANIMS.has(anim_id):
+		return
+	for i in range(animation.get_track_count()):
+		if animation.track_get_type(i) != Animation.TYPE_POSITION_3D:
+			continue
+		var path_str: String = str(animation.track_get_path(i))
+		if not ("Hips" in path_str):
+			continue
+		var kc: int = animation.track_get_key_count(i)
+		if kc == 0:
+			continue
+		var base: Vector3 = animation.track_get_key_value(i, 0)
+		for k in range(kc):
+			var p: Vector3 = animation.track_get_key_value(i, k)
+			p.x = base.x
+			p.z = base.z
+			animation.track_set_key_value(i, k, p)
+		print("renderer: locked Hips XZ for '%s' (%d keys)" % [anim_id, kc])
+		return
 
 
 func _render_all_directions() -> void:

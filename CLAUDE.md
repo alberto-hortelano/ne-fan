@@ -232,7 +232,22 @@ nefan-html/               Cliente 2D top-down (Canvas)
 
 ai_server/                Python FastAPI en puerto 8765
 narrative-mcp/            Node.js MCP bridge
+
+skinning_lab/             Bench reusable de skinning AI sobre sprites Mixamo
+  run.py                   CLI principal — --preset, --preview-only, --list-presets
+  serve.sh                 HTTP server local en :8911 para navegar runs
+  presets/*.json           Configs reutilizables (anim, frames, variants, models)
+  runs/                    (gitignored) cada run = subdir self-contained con index.html
+  README.md                Workflow + cómo añadir un proveedor nuevo
 ```
+
+## skinning_lab — pruebas de IA sobre sprites
+
+Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets generados por el renderer Godot. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `skinning_lab/README.md` para detalles. Hallazgos consolidados:
+- **V1 single** y **V2 anchor** dan deriva inaceptable.
+- **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
+- **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
+- **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
 
 ## AI server — Endpoints
 

@@ -1,0 +1,14 @@
+{
+  "name": "paladin_idle_compare",
+  "description": "Paladin idle baseline — comparativa con Y Bot para ver impacto del modelo base",
+  "base_sprites": "paladin/idle/isometric_30",
+  "frames": 10,
+  "target_fps": 8,
+  "directions": 1,
+  "variants": ["V4"],
+  "models": ["nano-banana-pro"],
+  "prompt": "campesino arapiento, andrajos marrones, capucha tosca, cara sucia, sin armadura, mismo encuadre y misma pose, full body, isometric view",
+  "anchor_images": null,
+  "concurrency": 8,
+  "budget_usd": 0.3
+}
