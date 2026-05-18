@@ -129,6 +129,141 @@ describe("NarrativeState mutations", () => {
   });
 });
 
+describe("NarrativeState.worldMap", () => {
+  it("startNewSession initializes a world_map with a root world place", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    const map = s.worldMap.serialize();
+    assert.equal(map.root_id, "world");
+    assert.equal(map.active_place_id, "world");
+    assert.equal(map.places.world.kind, "world");
+  });
+
+  it("save/load roundtrips the world_map", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.worldMap.upsertPlace({
+      id: "robledo",
+      kind: "settlement",
+      parent_id: "world",
+      name: "Robledo",
+      approx_position: [12, 34],
+    });
+    await s1.save();
+
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true);
+    const r = s2.worldMap.get("robledo");
+    assert.equal(r?.name, "Robledo");
+    assert.deepEqual(r?.approx_position, [12, 34]);
+  });
+
+  it("recordSceneLoaded attaches the scene to a matching place by place_id", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.worldMap.upsertPlace({
+      id: "robledo",
+      kind: "settlement",
+      parent_id: "world",
+      name: "Robledo",
+    });
+    s.recordSceneLoaded("scene_r_v1", { place_id: "robledo", terrain: [] });
+    const r = s.worldMap.get("robledo")!;
+    assert.equal(r.realized_scene_id, "scene_r_v1");
+    assert.equal(r.visited, true);
+    assert.equal(s.worldMap.serialize().active_place_id, "robledo");
+  });
+
+  it("migrates a v1 session (no world_map) into v2 on load", async () => {
+    const storage = new MemorySessionStorage();
+    const legacy = {
+      schema_version: 1,
+      session_id: "old_sess",
+      game_id: "tavern_intro",
+      created_at: "",
+      updated_at: "",
+      world: { name: "Vall", atmosphere: "", style_token: "", active_scene_id: "tavern" },
+      player: {
+        level: 1,
+        class: "rogue",
+        health: 100,
+        gold: 0,
+        inventory: [],
+        appearance: { model_id: "pete", skin_path: "" },
+        position: [0, 0, 0],
+        current_scene_id: "tavern",
+      },
+      story_so_far: "",
+      scenes_loaded: { tavern: { scene_data: {}, loaded_at: "", asset_refs: [] } },
+      entities: [],
+      dialogue_history: [],
+      asset_index_snapshot: [],
+      _next_event_seq: 0,
+    };
+    // Bypass type system: write legacy shape to test migration.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await storage.write("old_sess", legacy as any);
+
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("old_sess"), true);
+    const map = s.worldMap.serialize();
+    assert.equal(map.places.world.name, "Vall");
+    assert.equal(map.places.tavern?.kind, "interior");
+    assert.equal(map.places.tavern?.realized_scene_id, "tavern");
+    assert.equal(map.active_place_id, "tavern");
+  });
+});
+
+describe("NarrativeState state queries", () => {
+  it("getEntity finds a spawned entity by id", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("boris", "npc", "scene_1", [1, 0, 2], { name: "Boris", health: 80 });
+    const e = s.getEntity("boris");
+    assert.equal(e?.id, "boris");
+    assert.equal(e?.data.health, 80);
+    assert.equal(s.getEntity("ghost"), undefined);
+  });
+
+  it("getInventory reads entity.data.inventory and player.inventory", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {
+      inventory: [{ id: "hammer" }],
+    });
+    assert.deepEqual(s.getInventory("boris"), [{ id: "hammer" }]);
+    assert.deepEqual(s.getInventory("player"), []);
+    assert.deepEqual(s.getInventory("ghost"), []);
+  });
+
+  it("addInventoryItem appends to an entity and to the player", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {});
+    assert.equal(s.addInventoryItem("boris", { id: "iron_key" }), true);
+    assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
+    assert.equal(s.addInventoryItem("player", { id: "coin" }), true);
+    assert.deepEqual(s.getInventory("player"), [{ id: "coin" }]);
+    assert.equal(s.addInventoryItem("ghost", { id: "x" }), false);
+  });
+
+  it("addInventoryItem persists through save/load", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {});
+    s1.addInventoryItem("boris", { id: "iron_key", name: "Llave de hierro" });
+    await s1.save();
+
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true);
+    assert.deepEqual(s2.getInventory("boris"), [
+      { id: "iron_key", name: "Llave de hierro" },
+    ]);
+  });
+});
+
 describe("NarrativeState.serializeForLlm", () => {
   it("produces compact context with last 5 dialogues", () => {
     const s = makeState();

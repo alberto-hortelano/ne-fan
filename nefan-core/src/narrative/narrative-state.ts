@@ -21,6 +21,8 @@ import {
   toTuple,
 } from "./types.js";
 import type { SessionStorage } from "./session-storage.js";
+import { WorldMapManager } from "../world-map/world-map.js";
+import type { WorldMap } from "../world-map/types.js";
 
 const DEFAULT_WORLD: NarrativeWorldState = {
   name: "",
@@ -52,6 +54,7 @@ export class NarrativeState {
   entities: EntityRecord[] = [];
   dialogue_history: DialogueEvent[] = [];
   asset_index_snapshot: AssetEntry[] = [];
+  worldMap: WorldMapManager = new WorldMapManager(WorldMapManager.createEmpty());
 
   private nextEventSeq = 0;
   private dirty = false;
@@ -72,6 +75,7 @@ export class NarrativeState {
     this.entities = [];
     this.dialogue_history = [];
     this.asset_index_snapshot = [];
+    this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
     this.nextEventSeq = 0;
     this.dirty = true;
     return this.session_id;
@@ -80,7 +84,7 @@ export class NarrativeState {
   async loadSession(sessionId: string): Promise<boolean> {
     const data = await this.storage.read(sessionId);
     if (!data) return false;
-    if (data.schema_version !== SCHEMA_VERSION) {
+    if (data.schema_version > SCHEMA_VERSION || data.schema_version < 1) {
       console.warn(`NarrativeState: unsupported schema_version ${data.schema_version}`);
       return false;
     }
@@ -95,8 +99,12 @@ export class NarrativeState {
     this.entities = data.entities;
     this.dialogue_history = data.dialogue_history;
     this.asset_index_snapshot = data.asset_index_snapshot;
+    const wm = data.world_map && data.schema_version >= 2
+      ? data.world_map
+      : migrateWorldMapFromV1(data);
+    this.worldMap = new WorldMapManager(wm);
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
-    this.dirty = false;
+    this.dirty = data.schema_version < SCHEMA_VERSION;
     return true;
   }
 
@@ -135,7 +143,94 @@ export class NarrativeState {
     };
     this.world.active_scene_id = sceneId;
     this.player.current_scene_id = sceneId;
+    const placeId = typeof sceneData.place_id === "string" ? sceneData.place_id : sceneId;
+    if (this.worldMap.get(placeId)) {
+      this.worldMap.attachRealizedScene(placeId, sceneId);
+      this.worldMap.markVisited(placeId);
+      this.worldMap.setActivePlace(placeId);
+    }
+    this.registerSceneNpcs(sceneId, sceneData);
     this.dirty = true;
+  }
+
+  /** Pull the NPCs declared in a scene into `entities`, so the narrative engine
+   *  sees them in its context (serializeForLlm) and can react when the player
+   *  talks to one. Without this the entities list is empty and every
+   *  interact_entity / dialogue choice comes back with 0 consequences. */
+  private registerSceneNpcs(sceneId: string, sceneData: Record<string, unknown>): void {
+    // Re-entering a cached scene must not duplicate its NPCs.
+    this.entities = this.entities.filter(
+      (e) => !(e.scene_id === sceneId && e.spawn_reason === "scene_init"),
+    );
+    const npcs: Array<{ id: string; name: string; pos: [number, number, number] }> = [];
+
+    // Format D (open-world scenes): entities[] with kind "npc", cell [col,row].
+    const fdEntities = sceneData.entities;
+    if (Array.isArray(fdEntities)) {
+      for (let i = 0; i < fdEntities.length; i++) {
+        const ent = fdEntities[i];
+        if (!ent || typeof ent !== "object") continue;
+        const e = ent as Record<string, unknown>;
+        if (e.kind !== "npc") continue;
+        if (typeof e.id !== "string" || !e.id) {
+          throw new Error(`scene ${sceneId}.entities[${i}] kind=npc missing string id`);
+        }
+        if (typeof e.name !== "string" || !e.name) {
+          throw new Error(`scene ${sceneId}.entities[${i}] (npc ${e.id}) missing string name`);
+        }
+        if (!Array.isArray(e.cell) || e.cell.length < 2) {
+          throw new Error(`scene ${sceneId}.entities[${i}] (npc ${e.id}) missing cell [col,row]`);
+        }
+        const col = e.cell[0];
+        const row = e.cell[1];
+        if (typeof col !== "number" || !Number.isFinite(col) ||
+            typeof row !== "number" || !Number.isFinite(row)) {
+          throw new Error(
+            `scene ${sceneId}.entities[${i}] (npc ${e.id}) cell must be finite numbers, got [${col}, ${row}]`,
+          );
+        }
+        npcs.push({ id: e.id, name: e.name, pos: [col, 0, row] });
+      }
+    }
+
+    // Legacy scenes: npcs[] with {id, name, position}.
+    const legacyNpcs = sceneData.npcs;
+    if (Array.isArray(legacyNpcs)) {
+      for (let i = 0; i < legacyNpcs.length; i++) {
+        const ent = legacyNpcs[i];
+        if (!ent || typeof ent !== "object") continue;
+        const e = ent as Record<string, unknown>;
+        if (typeof e.id !== "string" || !e.id) {
+          throw new Error(`scene ${sceneId}.npcs[${i}] missing string id`);
+        }
+        if (typeof e.name !== "string" || !e.name) {
+          throw new Error(`scene ${sceneId}.npcs[${i}] (${e.id}) missing string name`);
+        }
+        if (!Array.isArray(e.position) || e.position.length < 3) {
+          throw new Error(`scene ${sceneId}.npcs[${i}] (${e.id}) missing position [x,y,z]`);
+        }
+        const [x, y, z] = e.position;
+        if (typeof x !== "number" || !Number.isFinite(x) ||
+            typeof y !== "number" || !Number.isFinite(y) ||
+            typeof z !== "number" || !Number.isFinite(z)) {
+          throw new Error(
+            `scene ${sceneId}.npcs[${i}] (${e.id}) position must be finite numbers, got [${x},${y},${z}]`,
+          );
+        }
+        npcs.push({ id: e.id, name: e.name, pos: [x, y, z] });
+      }
+    }
+
+    for (const npc of npcs) {
+      this.recordEntitySpawned(
+        npc.id,
+        "npc",
+        sceneId,
+        { x: npc.pos[0], y: npc.pos[1], z: npc.pos[2] },
+        { name: npc.name },
+        "scene_init",
+      );
+    }
   }
 
   recordEntitySpawned(
@@ -168,6 +263,50 @@ export class NarrativeState {
       this.entities.splice(idx, 1);
       this.dirty = true;
     }
+  }
+
+  // ── State queries (read by narrative-engine tools) ──
+
+  getEntity(entityId: string): EntityRecord | undefined {
+    return this.entities.find((e) => e.id === entityId);
+  }
+
+  /** Inventory of an entity. "player" returns the player's inventory; any
+   * other id reads entity.data.inventory (empty array if absent). */
+  getInventory(entityId: string): unknown[] {
+    if (entityId === "player") return this.player.inventory;
+    const entity = this.getEntity(entityId);
+    if (!entity) return [];
+    const inv = entity.data.inventory;
+    return Array.isArray(inv) ? inv : [];
+  }
+
+  /** Append an item to an entity's inventory. Returns false if the entity
+   * doesn't exist. The narrative engine uses this to materialize quest items
+   * (e.g. a key in an NPC's pocket). */
+  addInventoryItem(entityId: string, item: unknown): boolean {
+    if (entityId === "player") {
+      this.player.inventory.push(item);
+      this.dirty = true;
+      return true;
+    }
+    const entity = this.getEntity(entityId);
+    if (!entity) return false;
+    const inv = entity.data.inventory;
+    if (Array.isArray(inv)) {
+      inv.push(item);
+    } else {
+      entity.data.inventory = [item];
+    }
+    this.dirty = true;
+    return true;
+  }
+
+  /** Notify that state was mutated out-of-band (e.g. by a narrative engine
+   * tool through the bridge HTTP API: world map, NPC directives, triggers),
+   * so the next save() persists it. */
+  markDirty(): void {
+    this.dirty = true;
   }
 
   recordDialogueEvent(
@@ -243,6 +382,7 @@ export class NarrativeState {
       entities: this.entities,
       dialogue_history: this.dialogue_history,
       asset_index_snapshot: this.asset_index_snapshot,
+      world_map: this.worldMap.serialize(),
       _next_event_seq: this.nextEventSeq,
     };
   }
@@ -266,6 +406,7 @@ export class NarrativeState {
       entities: this.entities.map((e) => ({
         id: e.id,
         type: e.type,
+        name: typeof e.data.name === "string" ? e.data.name : undefined,
         scene_id: e.scene_id,
         position: e.position,
         spawn_reason: e.spawn_reason,
@@ -291,4 +432,28 @@ function generateSessionId(): string {
   const ts = Math.floor(Date.now() / 1000);
   const rnd = Math.floor(Math.random() * 0xffffff);
   return `${ts}-${rnd.toString(16).padStart(6, "0")}`;
+}
+
+/** Build a minimal WorldMap from a pre-v2 SessionData. Each loaded scene
+ * becomes an "interior" place under the root, and the active scene becomes
+ * the active place. */
+function migrateWorldMapFromV1(data: SessionData): WorldMap {
+  const map = WorldMapManager.createEmpty(data.world?.name || "Mundo");
+  const mgr = new WorldMapManager(map);
+  const scenes = data.scenes_loaded ?? {};
+  for (const sceneId of Object.keys(scenes)) {
+    mgr.upsertPlace({
+      id: sceneId,
+      kind: "interior",
+      parent_id: map.root_id,
+      name: sceneId,
+      realized_scene_id: sceneId,
+      visited: true,
+    });
+  }
+  const active = data.world?.active_scene_id;
+  if (active && map.places[active]) {
+    map.active_place_id = active;
+  }
+  return map;
 }

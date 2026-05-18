@@ -142,8 +142,10 @@ class ModelGenerator:
         lcm_scheduler = pipe.scheduler
         try:
             pipe.unfuse_lora()
-        except Exception:
-            pass  # May not be fused
+        except Exception as e:
+            # The LoRA may not have been fused yet — log it instead of swallowing
+            # silently so when something else breaks we can correlate.
+            print(f"ModelGen: unfuse_lora skipped ({type(e).__name__}): {e}", flush=True)
         pipe.scheduler = PNDMScheduler.from_config(lcm_scheduler.config)
 
         full_prompt = (
@@ -173,8 +175,8 @@ class ModelGenerator:
         # 3. Restore LCM-LoRA and circular padding for texture generation
         try:
             pipe.fuse_lora()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"ModelGen: fuse_lora skipped ({type(e).__name__}): {e}", flush=True)
         pipe.scheduler = lcm_scheduler
         for module in patched_padding:
             module.padding_mode = "circular"

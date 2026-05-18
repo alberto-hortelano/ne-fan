@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>World Map sandbox — NE-Fan</title>
+<style>
+  :root {
+    --bg: #15161a;
+    --panel: #1c1e23;
+    --panel2: #23262d;
+    --border: #2e323b;
+    --text: #d8d3c4;
+    --muted: #7a7a78;
+    --accent: #d8a14c;
+    --selected: #c25a4a;
+    --ok: #6a9a4a;
+    --err: #c25a4a;
+    --link: #6aa8c0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0 0 4px 0;
+    font-size: 16px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 900px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 14px;
+    padding: 16px 24px;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  section.wide { grid-column: span 2; }
+  section h2 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  section h2 .hint { color: var(--muted); font-weight: normal; font-size: 11px; }
+  canvas {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .legend {
+    color: var(--muted);
+    font-size: 11px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .legend span::before {
+    content: '';
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 5px;
+    vertical-align: middle;
+    border-radius: 50%;
+  }
+  .legend .lg-region::before    { background: #4a6a3a; }
+  .legend .lg-settlement::before{ background: #c25a4a; }
+  .legend .lg-landmark::before  { background: #6aa8c0; }
+  .legend .lg-site::before      { background: #d8a14c; }
+  .legend .lg-realized::before  { background: #6a9a4a; }
+  .legend .lg-unrealized::before{ background: #5a4a38; border: 1px dashed #aaa; }
+
+  textarea {
+    width: 100%;
+    height: 220px;
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font: 12px/1.4 ui-monospace, Menlo, monospace;
+    resize: vertical;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button {
+    background: var(--accent);
+    color: #15161a;
+    border: 0;
+    padding: 6px 12px;
+    font: inherit;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:active { transform: translateY(1px); }
+  .status {
+    color: var(--muted);
+    font-size: 11px;
+    min-height: 14px;
+  }
+  .status.err { color: var(--err); }
+  .breadcrumb { color: var(--link); font-size: 12px; }
+  .breadcrumb b { color: var(--text); }
+  .placeholder {
+    color: var(--muted);
+    padding: 30px;
+    text-align: center;
+    background: var(--panel2);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .placeholder b { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>World Map sandbox — 3 niveles</h1>
+  <p>
+    Mismo <code>WorldMap</code> renderizado a 3 zooms: mundo (regiones, settlements, landmarks),
+    settlement (sub-lugares conectados) y site (realización en Format&nbsp;D si el lugar fue visitado).
+    Edita el JSON abajo y pulsa Re-render. Click en un nodo para descender.
+  </p>
+</header>
+
+<main>
+  <section class="wide">
+    <h2>
+      Mundo (alto)
+      <span class="hint">Click un settlement o landmark para entrar.</span>
+    </h2>
+    <canvas id="canvas-world" width="1100" height="440"></canvas>
+    <div class="legend">
+      <span class="lg-region">Región</span>
+      <span class="lg-settlement">Settlement</span>
+      <span class="lg-landmark">Landmark</span>
+      <span class="lg-realized">Realizado</span>
+      <span class="lg-unrealized">Sin realizar</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>
+      Settlement (medio)
+      <span id="bc-settlement" class="breadcrumb"></span>
+    </h2>
+    <canvas id="canvas-settlement" width="520" height="380"></canvas>
+    <div class="legend"><span class="lg-site">Site</span></div>
+  </section>
+
+  <section>
+    <h2>
+      Site (bajo / Format D)
+      <span id="bc-site" class="breadcrumb"></span>
+    </h2>
+    <div id="site-host"><canvas id="canvas-site" width="520" height="380"></canvas></div>
+  </section>
+
+  <section class="wide">
+    <h2>
+      WorldMap JSON
+      <span class="hint">Edita y pulsa Re-render. El cambio se aplica a los 3 paneles.</span>
+    </h2>
+    <textarea id="json-editor" spellcheck="false"></textarea>
+    <div class="controls">
+      <button id="btn-rerender">Re-render</button>
+      <button id="btn-reset" class="secondary">Cargar fixture inicial</button>
+      <span id="status" class="status"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ── Default fixture (kept inline so the sandbox is fully self-contained) ──
+const DEFAULT_FIXTURE = {
+  schema_version: 1,
+  root_id: "world",
+  active_place_id: "robledo",
+  places: {
+    world: { id: "world", kind: "world", parent_id: null, name: "Vall del Sauce Negro", description: "Valla aislada al norte del reino.", attrs: {}, triggers: [], visited: false },
+    greybark: { id: "greybark", kind: "region", parent_id: "world", name: "Bosque de Greybark", description: "Bosque centenario.", approx_position: [30, 40], approx_radius: 30, attrs: {}, triggers: [], visited: true },
+    llanos_del_sauce: { id: "llanos_del_sauce", kind: "region", parent_id: "world", name: "Llanos del Sauce", description: "Pradera abierta.", approx_position: [75, 65], approx_radius: 30, attrs: {}, triggers: [], visited: false },
+    robledo: { id: "robledo", kind: "settlement", parent_id: "greybark", name: "Robledo", description: "Pueblo de 300 almas.", approx_position: [35, 38], approx_radius: 6, attrs: { population: 300 }, realized_scene_id: "robledo_village", triggers: [], visited: true },
+    puerto_bajo: { id: "puerto_bajo", kind: "settlement", parent_id: "llanos_del_sauce", name: "El Puerto Bajo", description: "Puerto fluvial.", approx_position: [85, 75], approx_radius: 5, attrs: {}, triggers: [], visited: false },
+    ruinas_hal: { id: "ruinas_hal", kind: "settlement", parent_id: "greybark", name: "Ruinas de Hal", description: "Antiguo monasterio derruido.", approx_position: [22, 26], approx_radius: 4, attrs: {}, triggers: [], visited: false },
+    rio_sauce: { id: "rio_sauce", kind: "landmark", parent_id: "world", name: "Río Sauce", description: "Río principal.", approx_position: [55, 55], approx_radius: 40, attrs: {}, triggers: [], visited: true },
+    puente_hierro: { id: "puente_hierro", kind: "landmark", parent_id: "llanos_del_sauce", name: "Puente de Hierro", description: "Puente forjado sobre el Sauce.", approx_position: [55, 50], approx_radius: 1, attrs: {}, triggers: [], visited: false },
+    robledo_plaza: { id: "robledo_plaza", kind: "site", parent_id: "robledo", name: "Plaza", description: "Plaza adoquinada con pozo y mercado.", approx_position: [50, 50], approx_radius: 5, attrs: {}, triggers: [], visited: true },
+    robledo_iglesia: { id: "robledo_iglesia", kind: "site", parent_id: "robledo", name: "Iglesia de San Lucio", description: "Iglesia de piedra con cinco tumbas.", approx_position: [30, 40], approx_radius: 3, attrs: {}, triggers: [], visited: false },
+    robledo_taberna: { id: "robledo_taberna", kind: "site", parent_id: "robledo", name: "La Taberna del Cuervo", description: "Taberna de Berta.", approx_position: [62, 45], approx_radius: 3, attrs: {}, triggers: [], visited: false },
+    robledo_herreria: { id: "robledo_herreria", kind: "site", parent_id: "robledo", name: "Herrería de Boris", description: "Yunque, fragua, barricas.", approx_position: [40, 58], approx_radius: 2, attrs: {}, triggers: [], visited: false },
+    robledo_molino: { id: "robledo_molino", kind: "site", parent_id: "robledo", name: "Molino del Sauce", description: "Molino harinero junto al río.", approx_position: [78, 38], approx_radius: 2, attrs: {}, triggers: [], visited: false },
+    robledo_carpinteria: { id: "robledo_carpinteria", kind: "site", parent_id: "robledo", name: "Carpintería", description: "Pilas de troncos y un carro.", approx_position: [62, 28], approx_radius: 2, attrs: {}, triggers: [], visited: false }
+  },
+  links: [
+    { from: "greybark", to: "llanos_del_sauce", kind: "road", travel_hours: 5, bidirectional: true },
+    { from: "robledo", to: "ruinas_hal", kind: "path", travel_hours: 3, bidirectional: true },
+    { from: "robledo", to: "puente_hierro", kind: "road", travel_hours: 2, bidirectional: true },
+    { from: "puente_hierro", to: "puerto_bajo", kind: "road", travel_hours: 3, bidirectional: true },
+    { from: "rio_sauce", to: "puente_hierro", kind: "river", bidirectional: false },
+    { from: "rio_sauce", to: "puerto_bajo", kind: "river", bidirectional: false },
+    { from: "robledo_plaza", to: "robledo_iglesia", kind: "path", bidirectional: true },
+    { from: "robledo_plaza", to: "robledo_taberna", kind: "path", bidirectional: true },
+    { from: "robledo_plaza", to: "robledo_carpinteria", kind: "path", bidirectional: true },
+    { from: "robledo_plaza", to: "robledo_herreria", kind: "path", bidirectional: true },
+    { from: "robledo_taberna", to: "robledo_molino", kind: "path", bidirectional: true }
+  ]
+};
+
+// ── State ──
+let worldMap = structuredClone(DEFAULT_FIXTURE);
+let selectedSettlementId = worldMap.active_place_id;
+let selectedSiteId = null;
+const sceneCache = {};   // scene_id -> Format D data (for Panel 3)
+
+const elJson = document.getElementById("json-editor");
+const elStatus = document.getElementById("status");
+const elBcSettlement = document.getElementById("bc-settlement");
+const elBcSite = document.getElementById("bc-site");
+const cvWorld = document.getElementById("canvas-world");
+const cvSettlement = document.getElementById("canvas-settlement");
+const cvSite = document.getElementById("canvas-site");
+const siteHost = document.getElementById("site-host");
+
+// ── Drawing helpers ──
+const COLOR = {
+  region: "#4a6a3a",
+  settlement: "#c25a4a",
+  landmark: "#6aa8c0",
+  site: "#d8a14c",
+  edge: "#6a6a6a",
+  edgeMuted: "#3a3a3a",
+  label: "#d8d3c4",
+  realized: "#6a9a4a",
+};
+
+function clientRectOf(canvas) {
+  const r = canvas.getBoundingClientRect();
+  return { sx: canvas.width / r.width, sy: canvas.height / r.height, r };
+}
+
+function clearCanvas(cv) {
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#1c1e23";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
+function fitProject(items, getXY, w, h, pad = 40) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const it of items) {
+    const xy = getXY(it);
+    if (!xy) continue;
+    minX = Math.min(minX, xy[0]);
+    maxX = Math.max(maxX, xy[0]);
+    minY = Math.min(minY, xy[1]);
+    maxY = Math.max(maxY, xy[1]);
+  }
+  if (!isFinite(minX)) return null;
+  const dx = Math.max(maxX - minX, 1);
+  const dy = Math.max(maxY - minY, 1);
+  const sx = (w - 2 * pad) / dx;
+  const sy = (h - 2 * pad) / dy;
+  const scale = Math.min(sx, sy);
+  const cx = (w - scale * (minX + maxX)) / 2;
+  const cy = (h - scale * (minY + maxY)) / 2;
+  return (xy) => [cx + xy[0] * scale, cy + xy[1] * scale];
+}
+
+// ── Panel 1: World ──
+function drawWorld() {
+  clearCanvas(cvWorld);
+  const ctx = cvWorld.getContext("2d");
+  ctx.font = "13px ui-monospace, monospace";
+  const items = Object.values(worldMap.places).filter(p => p.kind === "region" || p.kind === "settlement" || p.kind === "landmark");
+  const proj = fitProject(items, p => p.approx_position, cvWorld.width, cvWorld.height);
+  if (!proj) {
+    drawEmptyMessage(ctx, cvWorld, "No hay places de nivel alto con approx_position.");
+    cvWorld._nodes = [];
+    return;
+  }
+  // Edges first
+  for (const link of worldMap.links) {
+    const a = worldMap.places[link.from];
+    const b = worldMap.places[link.to];
+    if (!a || !b) continue;
+    const aHi = items.includes(a);
+    const bHi = items.includes(b);
+    if (!aHi || !bHi) continue;
+    const [ax, ay] = proj(a.approx_position);
+    const [bx, by] = proj(b.approx_position);
+    ctx.strokeStyle = COLOR.edge;
+    ctx.lineWidth = link.kind === "river" ? 3 : (link.travel_hours ? Math.max(1, 4 - link.travel_hours / 3) : 1.5);
+    if (link.kind === "river") ctx.strokeStyle = "#3a5c70";
+    else if (link.kind === "road") ctx.strokeStyle = "#7a6238";
+    else ctx.strokeStyle = COLOR.edgeMuted;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.stroke();
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    if (link.travel_hours) {
+      ctx.fillStyle = "#666";
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText(`${link.travel_hours}h`, mx + 4, my - 4);
+      ctx.font = "13px ui-monospace, monospace";
+    }
+  }
+  // Nodes
+  const hits = [];
+  for (const p of items) {
+    const [x, y] = proj(p.approx_position);
+    const isSelected = p.id === selectedSettlementId;
+    const radius = p.kind === "region" ? 22 : p.kind === "settlement" ? 12 : 8;
+    if (p.kind === "region") {
+      ctx.fillStyle = "rgba(74,106,58,0.18)";
+      ctx.strokeStyle = COLOR.region;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.fillStyle = p.kind === "settlement" ? COLOR.settlement : COLOR.landmark;
+      ctx.strokeStyle = isSelected ? "#fff" : (p.realized_scene_id ? COLOR.realized : "#1c1e23");
+      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = COLOR.label;
+    ctx.textAlign = "center";
+    ctx.fillText(p.name, x, y - radius - 6);
+    if (p.realized_scene_id) {
+      ctx.fillStyle = COLOR.realized;
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText("●", x + radius + 5, y + 3);
+      ctx.font = "13px ui-monospace, monospace";
+    }
+    if (p.kind !== "region") hits.push({ id: p.id, x, y, r: radius });
+  }
+  cvWorld._nodes = hits;
+}
+
+// ── Panel 2: Settlement ──
+function drawSettlement() {
+  clearCanvas(cvSettlement);
+  const ctx = cvSettlement.getContext("2d");
+  ctx.font = "12px ui-monospace, monospace";
+  const settlement = selectedSettlementId ? worldMap.places[selectedSettlementId] : null;
+  if (!settlement || (settlement.kind !== "settlement" && settlement.kind !== "landmark")) {
+    drawEmptyMessage(ctx, cvSettlement, "Selecciona un settlement o landmark arriba.");
+    cvSettlement._nodes = [];
+    elBcSettlement.textContent = "";
+    return;
+  }
+  elBcSettlement.innerHTML = `&nbsp;→ <b>${escapeHtml(settlement.name)}</b>`;
+  const children = Object.values(worldMap.places).filter(p => p.parent_id === settlement.id);
+  if (children.length === 0) {
+    drawEmptyMessage(ctx, cvSettlement, `${settlement.name} no tiene sub-lugares (sites). Añade alguno en el JSON.`);
+    cvSettlement._nodes = [];
+    return;
+  }
+  const proj = fitProject(children, p => p.approx_position, cvSettlement.width, cvSettlement.height, 30);
+  if (!proj) {
+    drawEmptyMessage(ctx, cvSettlement, "Los sites no tienen approx_position definida.");
+    cvSettlement._nodes = [];
+    return;
+  }
+  // Edges between children only
+  for (const link of worldMap.links) {
+    const a = worldMap.places[link.from], b = worldMap.places[link.to];
+    if (!a || !b) continue;
+    if (a.parent_id !== settlement.id || b.parent_id !== settlement.id) continue;
+    const [ax, ay] = proj(a.approx_position);
+    const [bx, by] = proj(b.approx_position);
+    ctx.strokeStyle = "#5a4a38";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  // Nodes
+  const hits = [];
+  for (const p of children) {
+    const [x, y] = proj(p.approx_position);
+    const isSelected = p.id === selectedSiteId;
+    ctx.fillStyle = COLOR.site;
+    ctx.strokeStyle = isSelected ? "#fff" : (p.realized_scene_id ? COLOR.realized : "#1c1e23");
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = COLOR.label;
+    ctx.textAlign = "center";
+    ctx.fillText(p.name, x, y - 16);
+    hits.push({ id: p.id, x, y, r: 10 });
+  }
+  cvSettlement._nodes = hits;
+}
+
+// ── Panel 3: Site (Format D) ──
+async function drawSite() {
+  const site = selectedSiteId ? worldMap.places[selectedSiteId] : (selectedSettlementId ? worldMap.places[selectedSettlementId] : null);
+  if (!site) {
+    showSitePlaceholder("Selecciona un settlement (panel mundo) o un site (panel settlement).");
+    elBcSite.textContent = "";
+    return;
+  }
+  elBcSite.innerHTML = `&nbsp;→ <b>${escapeHtml(site.name)}</b>`;
+  if (!site.realized_scene_id) {
+    showSitePlaceholder(`${site.name} aún no está realizado.`, site.description);
+    return;
+  }
+  // Try cache, then fetch.
+  let scene = sceneCache[site.realized_scene_id];
+  if (!scene) {
+    try {
+      const resp = await fetch(`/scenes/${site.realized_scene_id}.json`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      scene = await resp.json();
+      sceneCache[site.realized_scene_id] = scene;
+    } catch (e) {
+      showSitePlaceholder(`scene "${site.realized_scene_id}" no encontrada`, `Coloca el JSON en nefan-html/public/scenes/${site.realized_scene_id}.json o añade un symlink. (${e.message})`);
+      return;
+    }
+  }
+  ensureSiteCanvas();
+  renderFormatD(cvSite, scene);
+}
+
+function ensureSiteCanvas() {
+  if (document.getElementById("canvas-site")) return;
+  siteHost.innerHTML = `<canvas id="canvas-site" width="520" height="380"></canvas>`;
+  const c = document.getElementById("canvas-site");
+  // re-bind to global var
+  // eslint-disable-next-line no-global-assign
+  Object.defineProperty(window, "cvSite", { value: c, writable: true, configurable: true });
+}
+
+function showSitePlaceholder(title, sub) {
+  siteHost.innerHTML = `<div class="placeholder"><b>${escapeHtml(title)}</b>${sub ? `<span>${escapeHtml(sub)}</span>` : ""}</div>`;
+}
+
+function renderFormatD(canvas, scene) {
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#1c1e23";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const cols = scene.size?.cols ?? 32;
+  const rows = scene.size?.rows ?? 20;
+  const cellPx = Math.max(4, Math.floor(Math.min(canvas.width / cols, canvas.height / rows)));
+  const offX = Math.floor((canvas.width - cols * cellPx) / 2);
+  const offY = Math.floor((canvas.height - rows * cellPx) / 2);
+  // terrain
+  const terrainColors = {
+    g: "#3a5a2a", w: "#274a5a", _: "#8a7350", s: "#6a6a6a",
+    b: "#7a6238", d: "#5a4a38", a: "#c9b27a", o: "#7a5538",
+  };
+  const terrain = scene.terrain || [];
+  for (let r = 0; r < rows; r++) {
+    const row = terrain[r] || "";
+    for (let c = 0; c < cols; c++) {
+      const ch = row[c] || "g";
+      ctx.fillStyle = terrainColors[ch] || "#3a3a3a";
+      ctx.fillRect(offX + c * cellPx, offY + r * cellPx, cellPx, cellPx);
+    }
+  }
+  // entities
+  const kindColor = {
+    building: "#5a4a38", prop: "#7a6238", item: "#d8a14c",
+    tree: "#2a4a1a", npc: "#4a6aa8", player: "#6ae0d8",
+  };
+  for (const e of scene.entities || []) {
+    if (!e || !Array.isArray(e.cell) || !Array.isArray(e.footprint)) continue;
+    const [cx, cy] = e.cell;
+    const [w, h] = e.footprint;
+    ctx.fillStyle = kindColor[e.kind] || "#888";
+    ctx.fillRect(offX + cx * cellPx, offY + cy * cellPx, w * cellPx, h * cellPx);
+    if (cellPx >= 6) {
+      ctx.fillStyle = "#fff";
+      ctx.font = `${Math.max(8, cellPx - 2)}px ui-monospace, monospace`;
+      ctx.textAlign = "center";
+      ctx.fillText(e.glyph || "?", offX + (cx + w / 2) * cellPx, offY + (cy + h / 2) * cellPx + 3);
+    }
+  }
+}
+
+// ── Misc ──
+function drawEmptyMessage(ctx, cv, text) {
+  ctx.fillStyle = "#7a7a78";
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(text, cv.width / 2, cv.height / 2);
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function rerenderAll() {
+  drawWorld();
+  drawSettlement();
+  drawSite();
+}
+
+function setStatus(msg, isErr) {
+  elStatus.textContent = msg || "";
+  elStatus.classList.toggle("err", !!isErr);
+}
+
+function applyJson() {
+  try {
+    const parsed = JSON.parse(elJson.value);
+    if (!parsed.places || !parsed.root_id) throw new Error("Falta places o root_id");
+    worldMap = parsed;
+    if (!worldMap.places[selectedSettlementId]) selectedSettlementId = worldMap.root_id;
+    if (selectedSiteId && !worldMap.places[selectedSiteId]) selectedSiteId = null;
+    rerenderAll();
+    const n = Object.keys(parsed.places).length;
+    setStatus(`OK · ${n} places · ${(parsed.links || []).length} links`, false);
+  } catch (e) {
+    setStatus(`Error: ${e.message}`, true);
+  }
+}
+
+function loadFixture() {
+  worldMap = structuredClone(DEFAULT_FIXTURE);
+  selectedSettlementId = worldMap.active_place_id;
+  selectedSiteId = null;
+  elJson.value = JSON.stringify(worldMap, null, 2);
+  rerenderAll();
+  setStatus("Fixture inicial cargado.", false);
+}
+
+// ── Wire events ──
+document.getElementById("btn-rerender").addEventListener("click", applyJson);
+document.getElementById("btn-reset").addEventListener("click", loadFixture);
+
+cvWorld.addEventListener("click", (ev) => {
+  const { sx, sy, r } = clientRectOf(cvWorld);
+  const x = (ev.clientX - r.left) * sx;
+  const y = (ev.clientY - r.top) * sy;
+  const hit = (cvWorld._nodes || []).find(n => Math.hypot(n.x - x, n.y - y) <= n.r + 4);
+  if (hit) {
+    selectedSettlementId = hit.id;
+    selectedSiteId = null;
+    rerenderAll();
+  }
+});
+cvSettlement.addEventListener("click", (ev) => {
+  const { sx, sy, r } = clientRectOf(cvSettlement);
+  const x = (ev.clientX - r.left) * sx;
+  const y = (ev.clientY - r.top) * sy;
+  const hit = (cvSettlement._nodes || []).find(n => Math.hypot(n.x - x, n.y - y) <= n.r + 4);
+  if (hit) {
+    selectedSiteId = hit.id;
+    drawSettlement();
+    drawSite();
+  }
+});
+
+// ── Boot ──
+loadFixture();
+</script>
+</body>
+</html>

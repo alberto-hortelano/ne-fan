@@ -6,6 +6,9 @@ export interface RoomRequestMsg {
   type: 'room_request';
   request_id: string;
   world_state: Record<string, unknown>;
+  /** "extended" = legacy enclosed-room schema (Godot still uses it).
+   *  "scene"    = open-world schema for the HTML client. */
+  format?: 'extended' | 'scene';
 }
 
 export interface VisionImage {

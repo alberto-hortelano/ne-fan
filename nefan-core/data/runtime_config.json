@@ -1,0 +1,32 @@
+{
+  "graphics": {
+    "player_sprites": false,
+    "ai_skin": false,
+    "ai_sprites": false,
+    "ai_textures": false,
+    "ai_models": false
+  },
+  "narrative": {
+    "require_llm": true,
+    "strict_validator": true
+  },
+  "session": {
+    "require_bridge": true
+  },
+  "dev": {
+    "cache_initial_scene": false
+  },
+  "ai_server": {
+    "llm_model": "claude-sonnet-4-5-20250514",
+    "llm_timeout_s": 300,
+    "port": 8765,
+    "cache_root": "cache",
+    "texture_cache_dir": "cache/textures",
+    "model_cache_dir": "cache/models",
+    "skin_cache_dir": "cache/skins",
+    "sprite_cache_dir": "cache/sprites",
+    "texture_resolution": 512,
+    "texture_steps": 4,
+    "texture_lazy_load": true
+  }
+}

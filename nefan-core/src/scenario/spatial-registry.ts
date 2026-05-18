@@ -112,18 +112,23 @@ export class SpatialRegistry {
     );
   }
 
-  /** Populate from room JSON objects array. */
+  /** Populate from room JSON objects array. Throws on malformed input — no
+   *  silent `Number(x) || 0` coercion that turns NaN into zero. */
   loadFromRoomData(objects?: RoomObjectData[], npcs?: RoomNpcData[]): void {
     if (objects) {
-      for (const obj of objects) {
-        if (!obj.id || !obj.position || !obj.scale) continue;
-        const sx = Number(obj.scale[0]) || 1;
-        const sy = Number(obj.scale[1]) || 1;
-        const sz = Number(obj.scale[2]) || 1;
-        const px = Number(obj.position[0]) || 0;
-        const py = Number(obj.position[1]) || 0;
-        const pz = Number(obj.position[2]) || 0;
-
+      for (let i = 0; i < objects.length; i++) {
+        const obj = objects[i];
+        if (!obj.id) throw new Error(`spatial-registry: object[${i}] missing id`);
+        if (!obj.position) throw new Error(`spatial-registry: object[${i}] (${obj.id}) missing position`);
+        if (!obj.scale) throw new Error(`spatial-registry: object[${i}] (${obj.id}) missing scale`);
+        const [sx, sy, sz] = obj.scale;
+        const [px, py, pz] = obj.position;
+        for (const [label, v] of [["scale.x", sx], ["scale.y", sy], ["scale.z", sz],
+                                  ["pos.x", px], ["pos.y", py], ["pos.z", pz]] as const) {
+          if (typeof v !== "number" || !Number.isFinite(v)) {
+            throw new Error(`spatial-registry: object[${i}] (${obj.id}) ${label} must be a finite number, got ${v}`);
+          }
+        }
         this.register({
           id: obj.id,
           position: { x: px, y: py, z: pz },
@@ -134,20 +139,26 @@ export class SpatialRegistry {
     }
 
     if (npcs) {
-      for (const npc of npcs) {
-        if (!npc.id || !npc.position) continue;
-        const scale = npc.scale ?? [0.6, 1.8, 0.6];
-        const sx = Number(scale[0]) || 0.6;
-        const sy = Number(scale[1]) || 1.8;
-        const sz = Number(scale[2]) || 0.6;
-
+      for (let i = 0; i < npcs.length; i++) {
+        const npc = npcs[i];
+        if (!npc.id) throw new Error(`spatial-registry: npc[${i}] missing id`);
+        if (!npc.position) throw new Error(`spatial-registry: npc[${i}] (${npc.id}) missing position`);
+        const [nx, ny, nz] = npc.position;
+        for (const [label, v] of [["pos.x", nx], ["pos.y", ny], ["pos.z", nz]] as const) {
+          if (typeof v !== "number" || !Number.isFinite(v)) {
+            throw new Error(`spatial-registry: npc[${i}] (${npc.id}) ${label} must be a finite number, got ${v}`);
+          }
+        }
+        const scale = npc.scale;
+        if (scale && (scale.length < 3 || scale.some((s) => typeof s !== "number" || !Number.isFinite(s)))) {
+          throw new Error(`spatial-registry: npc[${i}] (${npc.id}) scale must be [x,y,z] of finite numbers`);
+        }
+        const sx = scale ? scale[0] : 0.6;
+        const sy = scale ? scale[1] : 1.8;
+        const sz = scale ? scale[2] : 0.6;
         this.register({
           id: npc.id,
-          position: {
-            x: Number(npc.position[0]) || 0,
-            y: Number(npc.position[1]) || 0,
-            z: Number(npc.position[2]) || 0,
-          },
+          position: { x: nx, y: ny, z: nz },
           aabb: { halfX: sx / 2, halfY: sy / 2, halfZ: sz / 2 },
           kind: "npc",
         });

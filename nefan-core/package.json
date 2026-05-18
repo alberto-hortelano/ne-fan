@@ -8,7 +8,11 @@
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts",
-    "dev": "tsx bridge/ws-server.ts"
+    "dev": "tsx bridge/ws-server.ts",
+    "dump-config": "tsx scripts/dump-config.ts",
+    "prebuild": "tsx scripts/dump-config.ts",
+    "predev": "tsx scripts/dump-config.ts",
+    "pretest": "tsx scripts/dump-config.ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -253,8 +253,13 @@ class AssetCache:
             os.close(fd)
             try:
                 os.unlink(tmp)
-            except OSError:
-                pass
+            except OSError as cleanup_err:
+                # Original error wins (re-raised below); we still log the
+                # cleanup failure so a leaked tmp file is visible.
+                print(
+                    f"AssetCache: failed to remove temp file {tmp}: {cleanup_err}",
+                    flush=True,
+                )
             raise
         if self.manifest is not None:
             self.manifest.register(

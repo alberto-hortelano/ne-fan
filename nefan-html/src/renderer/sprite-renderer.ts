@@ -6,7 +6,16 @@
  *   public/sprites/{model}/{anim}/{angle}/meta.json
  *
  * Vite serves `public/` at the site root, so URLs are `/sprites/...`.
+ *
+ * No silent fallbacks: when a sheet/skin can't be loaded the API throws and
+ * the ErrorLog records the cause. The caller decides whether to surface it.
  */
+import { errors } from "../ui/error-log.js";
+
+/** A frame that hasn't decoded yet. Distinct from `null`, which would mean
+ *  "no such frame exists" — load failures throw rather than return null. */
+export const SPRITE_PENDING = Symbol("sprite-pending");
+export type SpriteImageResult = HTMLImageElement | typeof SPRITE_PENDING;
 export interface SpriteSheetMeta {
   model: string;
   anim: string;
@@ -38,8 +47,8 @@ const ANIM_LOOPS: ReadonlySet<string> = new Set([
 
 export class SpriteRenderer {
   private cache = new Map<string, SpriteSheet>();
-  private inflight = new Map<string, Promise<SpriteSheet | null>>();
-  private skinInflight = new Map<string, Promise<SpriteSheet | null>>();
+  private inflight = new Map<string, Promise<SpriteSheet>>();
+  private skinInflight = new Map<string, Promise<SpriteSheet>>();
 
   constructor(
     private baseUrl: string = "/sprites",
@@ -47,8 +56,9 @@ export class SpriteRenderer {
   ) {}
 
   /** Fetch meta.json and start loading every frame image. Subsequent calls for
-   * the same triple resolve to the cached sheet. */
-  async loadAnimation(model: string, anim: string, angle: string): Promise<SpriteSheet | null> {
+   * the same triple resolve to the cached sheet. Throws on any failure — no
+   * silent null returns. */
+  async loadAnimation(model: string, anim: string, angle: string): Promise<SpriteSheet> {
     const key = `${model}/${anim}/${angle}`;
     const cached = this.cache.get(key);
     if (cached) return cached;
@@ -61,24 +71,35 @@ export class SpriteRenderer {
   }
 
   /** A model name that points to the skinned variant of a sheet, when the
-   *  variant has finished loading. Falls back to the bare model otherwise so
-   *  the player still sees the base Mixamo sheet meanwhile. */
+   *  variant has finished loading. Returns the bare model only when no
+   *  skin was requested. If a skin was requested but the skinned sheet
+   *  isn't cached yet, throws — callers must `await loadSkinnedAnimation`
+   *  before relying on this. */
   skinnedKey(model: string, skinPrompt: string): string {
     if (!skinPrompt) return model;
     const skinned = this.skinKey(model, skinPrompt);
-    return this.cache.has(`${skinned}/idle/isometric_30`) ? skinned : model;
+    if (!this.cache.has(`${skinned}/idle/isometric_30`)) {
+      const msg = `skinned sheet not loaded: ${skinned}/idle/isometric_30 — call loadSkinnedAnimation first`;
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
+    return skinned;
   }
 
   /** Ask ai_server to img2img each frame of a Mixamo sheet with the given
    *  character prompt and register the result under a synthetic model name.
-   *  Idempotent — repeated calls share the inflight request and the cache. */
+   *  Throws on HTTP failure or invalid response shape — no silent nulls. */
   async loadSkinnedAnimation(
     baseModel: string,
     anim: string,
     angle: string,
     skinPrompt: string,
-  ): Promise<SpriteSheet | null> {
-    if (!skinPrompt) return null;
+  ): Promise<SpriteSheet> {
+    if (!skinPrompt) {
+      const msg = "loadSkinnedAnimation called with empty skinPrompt";
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
     const skinnedModel = this.skinKey(baseModel, skinPrompt);
     const cacheKey = `${skinnedModel}/${anim}/${angle}`;
     const cached = this.cache.get(cacheKey);
@@ -99,13 +120,11 @@ export class SpriteRenderer {
           }),
         });
         if (!res.ok) {
-          this.skinInflight.delete(cacheKey);
-          return null;
+          throw new Error(`ai_server /skin_sprite_sheet HTTP ${res.status}`);
         }
         const data = (await res.json()) as { ok?: boolean; meta?: SpriteSheetMeta; frame_urls?: string[][]; error?: string };
         if (!data.ok || !data.meta || !data.frame_urls) {
-          this.skinInflight.delete(cacheKey);
-          return null;
+          throw new Error(`ai_server /skin_sprite_sheet bad response: ${data.error ?? "missing meta/frame_urls"}`);
         }
         const meta = data.meta;
         const frames: HTMLImageElement[][] = data.frame_urls.map((dir) => dir.map((url) => {
@@ -116,12 +135,12 @@ export class SpriteRenderer {
         }));
         const sheet: SpriteSheet = { ...meta, model: skinnedModel, frames };
         this.cache.set(cacheKey, sheet);
-        this.skinInflight.delete(cacheKey);
         return sheet;
       } catch (err) {
-        console.warn(`SpriteRenderer: skin failed for ${cacheKey}:`, err);
+        errors.push("sprite", `skin failed for ${cacheKey}`, err);
+        throw err;
+      } finally {
         this.skinInflight.delete(cacheKey);
-        return null;
       }
     })();
     this.skinInflight.set(cacheKey, promise);
@@ -141,20 +160,18 @@ export class SpriteRenderer {
     anim: string,
     angle: string,
     key: string,
-  ): Promise<SpriteSheet | null> {
+  ): Promise<SpriteSheet> {
     try {
       const metaUrl = `${this.baseUrl}/${model}/${anim}/${angle}/meta.json`;
       const res = await fetch(metaUrl);
       if (!res.ok) {
-        this.inflight.delete(key);
-        return null;
+        throw new Error(`HTTP ${res.status} on ${metaUrl}`);
       }
       // Vite serves `index.html` for unknown routes with HTTP 200, so we
       // can't rely on `res.ok` alone — confirm the body is JSON before parsing.
       const ct = res.headers.get("content-type") ?? "";
       if (!ct.includes("application/json")) {
-        this.inflight.delete(key);
-        return null;
+        throw new Error(`non-JSON response for ${metaUrl} (content-type: ${ct})`);
       }
       const meta = (await res.json()) as SpriteSheetMeta;
       const frames: HTMLImageElement[][] = [];
@@ -171,25 +188,27 @@ export class SpriteRenderer {
       }
       const sheet: SpriteSheet = { ...meta, frames };
       this.cache.set(key, sheet);
-      this.inflight.delete(key);
       return sheet;
     } catch (err) {
-      console.warn(`SpriteRenderer: load failed for ${key}:`, err);
+      errors.push("sprite", `sheet load failed for ${key}`, err);
+      throw err;
+    } finally {
       this.inflight.delete(key);
-      return null;
     }
   }
 
-  /** Returns the sheet synchronously if already cached. Triggers a background
-   * load on first miss so subsequent frames find it ready. */
+  /** Returns the sheet synchronously if already cached. Throws if no load
+   *  has been started — callers must call `loadAnimation` first. Mid-load
+   *  it returns null (the same frame can be re-rendered next tick once the
+   *  image decodes), distinguishing "still loading" from "not requested". */
   getCached(model: string, anim: string, angle: string): SpriteSheet | null {
     const key = `${model}/${anim}/${angle}`;
     const sheet = this.cache.get(key);
     if (sheet) return sheet;
-    if (!this.inflight.has(key)) {
-      void this.loadAnimation(model, anim, angle);
-    }
-    return null;
+    if (this.inflight.has(key)) return null;
+    const msg = `sprite sheet ${key} requested without prior loadAnimation`;
+    errors.push("sprite", msg);
+    throw new Error(msg);
   }
 
   /** Map a forward XZ vector to one of `dirCount` discrete facings. Convention
@@ -217,20 +236,35 @@ export class SpriteRenderer {
     return Math.min(Math.max(0, Math.floor(t * sheet.fps)), sheet.frame_count - 1);
   }
 
-  /** Returns the image for the right (direction, frame). null if not ready. */
-  pickImage(sheet: SpriteSheet, dir: number, frame: number): HTMLImageElement | null {
+  /** Returns the image, or SPRITE_PENDING if it's still decoding. Throws on
+   *  hard failures (frame index out of range, image element marked complete
+   *  but with naturalWidth 0 = 404/MIME error). */
+  pickImage(sheet: SpriteSheet, dir: number, frame: number): SpriteImageResult {
     const dirFrames = sheet.frames[dir];
-    if (!dirFrames) return null;
+    if (!dirFrames) {
+      const msg = `sprite ${sheet.model}/${sheet.anim}: direction ${dir} out of range (have ${sheet.frames.length})`;
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
     const img = dirFrames[frame];
-    if (!img) return null;
-    if (!img.complete || img.naturalWidth === 0) return null;
+    if (!img) {
+      const msg = `sprite ${sheet.model}/${sheet.anim} dir=${dir}: frame ${frame} missing (have ${dirFrames.length})`;
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
+    if (!img.complete) return SPRITE_PENDING;
+    if (img.naturalWidth === 0) {
+      const msg = `sprite ${sheet.model}/${sheet.anim} dir=${dir} frame=${frame} failed to decode (${img.src})`;
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
     return img;
   }
 
   /** High-level draw: place a model at (cx, cy) facing forward, time t since
-   * the animation started. Returns true if a frame was drawn (false → caller
-   * should fall back to a placeholder). The image is drawn centered horizontally
-   * and anchored at the bottom (feet on cy) so characters stand on the cell. */
+   * the animation started. Returns true if a frame was drawn. Returns false
+   * ONLY when the frame is still decoding (transient). On any hard failure
+   * (404, MIME, missing frame) it throws — there is no placeholder. */
   draw(
     ctx: CanvasRenderingContext2D,
     sheet: SpriteSheet,
@@ -244,7 +278,7 @@ export class SpriteRenderer {
     const dir = this.pickDirection(forwardX, forwardZ, sheet.directions);
     const frame = this.pickFrame(sheet, t, opts.loop);
     const img = this.pickImage(sheet, dir, frame);
-    if (!img) return false;
+    if (img === SPRITE_PENDING) return false;
     const scale = opts.scale ?? 1;
     const w = sheet.frame_width * scale;
     const h = sheet.frame_height * scale;

@@ -9,25 +9,39 @@ import type {
   SessionData,
   ConsequenceEffect,
 } from "../../../nefan-core/src/narrative/types.js";
-import type { NarrativeEventMessage } from "../../../nefan-core/src/protocol/messages.js";
+import type {
+  NarrativeEventMessage,
+  NarrativeStatusMessage,
+} from "../../../nefan-core/src/protocol/messages.js";
 
 export type GameInfo = { game_id: string; title: string; description?: string };
 
 export type NarrativeEventListener = (event: NarrativeEventMessage) => void;
+export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;
 
 export class NarrativeClient {
   private listeners = new Set<NarrativeEventListener>();
+  private statusListeners = new Set<NarrativeStatusListener>();
 
   constructor(private bridge: BridgeClient) {
     this.bridge.on("narrative_event", (msg) => {
       if (!msg) return;
       for (const fn of this.listeners) fn(msg);
     });
+    this.bridge.on("narrative_status", (msg) => {
+      if (!msg) return;
+      for (const fn of this.statusListeners) fn(msg);
+    });
   }
 
   onNarrativeEvent(fn: NarrativeEventListener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  onNarrativeStatus(fn: NarrativeStatusListener): () => void {
+    this.statusListeners.add(fn);
+    return () => this.statusListeners.delete(fn);
   }
 
   async listGames(): Promise<GameInfo[]> {
@@ -76,6 +90,18 @@ export class NarrativeClient {
     freeText?: string;
   }): void {
     this.bridge.sendDialogueChoice(payload);
+  }
+
+  /** Trigger lazy realize of a world-map place. The realized scene arrives via
+   *  the onNarrativeEvent callback as a scene_init spawn_entity effect. */
+  enterPlace(placeId: string): void {
+    this.bridge.sendPlayerEnteredPlace(placeId);
+  }
+
+  /** Tell the narrative engine the player approached an NPC. The reply arrives
+   *  via onNarrativeEvent, usually as a show_dialogue effect. */
+  interactEntity(entityId: string, entityName: string): void {
+    this.bridge.sendInteractEntity(entityId, entityName);
   }
 }
 

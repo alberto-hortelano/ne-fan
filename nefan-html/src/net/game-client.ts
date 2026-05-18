@@ -1,12 +1,12 @@
-/** Dual-mode game client abstraction: local simulation or bridge WebSocket. */
+/** Game client over the WebSocket bridge. There is no local-simulation
+ *  fallback any more: per CONFIG.session.require_bridge, the bridge MUST be
+ *  reachable or the game refuses to start (see `createGameClient` below). */
 
-import { GameSimulation } from "../../../nefan-core/src/simulation/game-loop.js";
-import { createCombatant } from "../../../nefan-core/src/combat/combatant.js";
-import { loadConfig } from "../../../nefan-core/src/combat/combat-data.js";
 import { GameStore } from "../../../nefan-core/src/store/game-store.js";
-import type { CombatConfig, CombatEvent, Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
-import type { StateUpdateMessage } from "../../../nefan-core/src/protocol/messages.js";
+import type { CombatEvent, Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
 import type { NpcUpdate, ScenarioUpdate } from "../../../nefan-core/src/scenario/scenario-types.js";
+import { CONFIG } from "../../../nefan-core/src/config.js";
+import { errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
 
 export interface FrameResult {
@@ -55,112 +55,6 @@ export interface GameClient {
   isBridge: boolean;
   on(event: GameClientEvent, handler: EventHandler): void;
   store: GameStore;
-}
-
-// --- Local mode: in-process simulation (current behavior) ---
-
-export class LocalGameClient implements GameClient {
-  private sim: GameSimulation;
-  store: GameStore;
-  private config: CombatConfig;
-  isConnected = true;
-  isBridge = false;
-  private handlers: Map<GameClientEvent, EventHandler[]> = new Map();
-
-  constructor(configJson: Record<string, unknown>) {
-    this.config = loadConfig(configJson);
-    this.store = new GameStore();
-    this.sim = new GameSimulation(this.config, this.store, Date.now());
-    this.sim.addCombatant(
-      createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 2 }, { x: 0, y: 0, z: -1 }),
-    );
-  }
-
-  on(event: GameClientEvent, handler: EventHandler): void {
-    const list = this.handlers.get(event) ?? [];
-    list.push(handler);
-    this.handlers.set(event, list);
-  }
-
-  tick(delta: number, inputs: TickInputs): FrameResult {
-    // Update player position in combatant
-    const player = this.sim.getCombatant("player");
-    if (player) {
-      player.position = { ...inputs.playerPosition };
-      player.forward = { ...inputs.playerForward };
-    }
-
-    const result = this.sim.tick(delta, {
-      playerPosition: inputs.playerPosition,
-      playerForward: inputs.playerForward,
-      playerMoving: inputs.playerMoving,
-      attackRequested: inputs.attackRequested,
-      attackType: inputs.attackType,
-    });
-
-    const enemies: FrameResult["enemies"] = [];
-    for (const e of this.store.state.enemies) {
-      const c = this.sim.getCombatant(e.id);
-      if (c) {
-        enemies.push({
-          id: c.id,
-          hp: c.health,
-          state: c.state,
-          alive: c.health > 0,
-          pos: { x: c.position.x, y: c.position.y, z: c.position.z },
-          forward: { x: c.forward.x, y: c.forward.y, z: c.forward.z },
-          attackType: c.currentAttackType || undefined,
-        });
-      }
-    }
-
-    return {
-      events: result.events,
-      playerHp: player?.health ?? 0,
-      enemies,
-    };
-  }
-
-  loadRoom(roomData: Record<string, unknown>, roomId: string, enemies: RoomEnemy[]): void {
-    this.sim.reset();
-    this.sim.addCombatant(
-      createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 2 }, { x: 0, y: 0, z: -1 }),
-    );
-    const dims = roomData.dimensions as { width?: number; depth?: number } | undefined;
-    if (dims) {
-      this.sim.setRoomBounds(dims.width ?? 20, dims.depth ?? 20);
-    }
-    for (const e of enemies) {
-      const combatant = createCombatant(e.id, e.health, e.weaponId, e.position, { x: 0, y: 0, z: 1 });
-      this.sim.addCombatant(combatant, e.personality);
-    }
-    this.store.dispatch("room_changed", {
-      room_id: roomId,
-      enemies: enemies.map(e => ({
-        id: e.id, pos: [e.position.x, e.position.y, e.position.z],
-        hp: e.health, max_hp: e.health, weapon_id: e.weaponId,
-        combat_state: "idle", alive: true,
-      })),
-    });
-  }
-
-  loadGame(_gameId: string): void {
-    console.warn("LocalGameClient: loadGame requires bridge connection");
-  }
-
-  respawn(pos: Vec3): void {
-    this.sim.respawn(pos);
-  }
-
-  sendScenarioEvent(_event: string, _data?: Record<string, unknown>): void {
-    // No-op in local mode
-  }
-
-  getCombatant(id: string) {
-    const c = this.sim.getCombatant(id);
-    if (!c) return undefined;
-    return { health: c.health, maxHealth: c.maxHealth, weaponId: c.weaponId };
-  }
 }
 
 // --- Bridge mode: WebSocket to nefan-core ---
@@ -263,35 +157,31 @@ export class BridgeGameClient implements GameClient {
   }
 }
 
-/** Try to create a bridge client; returns BridgeGameClient if connected within
- *  timeout, else LocalGameClient. Accepts an existing BridgeClient (the same
- *  one used by NarrativeClient) so we don't open two parallel sockets to the
- *  bridge. */
+/** Wait for the BridgeClient to connect and then build a BridgeGameClient.
+ *  If the bridge fails to connect within `timeoutMs`, the returned promise
+ *  rejects — there is no local-simulation fallback. */
 export function createGameClient(
-  configJson: Record<string, unknown>,
   bridge: BridgeClient,
-  onReady: (client: GameClient) => void,
-): void {
+  timeoutMs = 5000,
+): Promise<GameClient> {
+  if (!CONFIG.session.require_bridge) {
+    const msg = "session.require_bridge is false but no offline mode exists — refusing to start";
+    errors.push("session", msg);
+    return Promise.reject(new Error(msg));
+  }
   const store = new GameStore();
-  let resolved = false;
-
-  const timeout = setTimeout(() => {
-    if (resolved) return;
-    resolved = true;
-    if (bridge.isConnected) {
-      console.log("GameClient: using bridge mode");
-      onReady(new BridgeGameClient(bridge, store));
-    } else {
-      console.log("GameClient: using local mode (bridge not available)");
-      onReady(new LocalGameClient(configJson));
-    }
-  }, 2000);
-
-  bridge.on("connected", () => {
-    if (resolved) return;
-    resolved = true;
-    clearTimeout(timeout);
-    console.log("GameClient: using bridge mode");
-    onReady(new BridgeGameClient(bridge, store));
+  if (bridge.isConnected) {
+    return Promise.resolve(new BridgeGameClient(bridge, store));
+  }
+  return new Promise<GameClient>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ws://localhost:9877?`;
+      errors.push("session", msg);
+      reject(new Error(msg));
+    }, timeoutMs);
+    bridge.on("connected", () => {
+      clearTimeout(timer);
+      resolve(new BridgeGameClient(bridge, store));
+    });
   });
 }

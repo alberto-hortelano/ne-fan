@@ -1,5 +1,7 @@
 export * from "./types.js";
 export * from "./vec3.js";
+export { CONFIG } from "./config.js";
+export type { NefanConfig } from "./config.js";
 export * from "./combat/combat-resolver.js";
 export * from "./combat/combat-data.js";
 export * as Combatant from "./combat/combatant.js";
