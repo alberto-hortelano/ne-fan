@@ -1,0 +1,16 @@
+{
+  "graphics": {
+    "player_sprites": false,
+    "ai_skin": false,
+    "ai_sprites": false,
+    "ai_textures": false,
+    "ai_models": false
+  },
+  "narrative": {
+    "require_llm": true,
+    "strict_validator": true
+  },
+  "session": {
+    "require_bridge": true
+  }
+}

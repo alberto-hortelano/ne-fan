@@ -50,6 +50,9 @@ vendor/
 # Session recordings
 godot/recordings/
 
+# Personal scratch space
+sandbox/
+
 # Godot 4 editor
 godot/.godot/
 *.import

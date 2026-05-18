@@ -139,6 +139,153 @@
       flex: 1;
       cursor: crosshair;
     }
+    #narrative-loader {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(8, 8, 12, 0.78);
+      z-index: 40;
+      color: #d8c79a;
+      font-size: 14px;
+      text-align: center;
+      padding: 24px;
+    }
+    #narrative-loader.visible { display: flex; }
+    #narrative-loader.error { color: #e88; }
+    #narrative-loader .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #443;
+      border-top-color: #d8c79a;
+      border-radius: 50%;
+      animation: nl-spin 1s linear infinite;
+    }
+    #narrative-loader.error .spinner {
+      animation: none;
+      border-top-color: currentColor;
+    }
+    #narrative-loader .title { font-size: 16px; letter-spacing: 0.5px; }
+    #narrative-loader .detail { color: #998; max-width: 480px; line-height: 1.4; }
+    #narrative-loader .elapsed { color: #776; font-size: 12px; }
+    #narrative-loader .dismiss {
+      display: none;
+      margin-top: 6px;
+      padding: 6px 14px;
+      background: #2a2a30;
+      color: #d8c79a;
+      border: 1px solid #554;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    #narrative-loader.error .dismiss { display: inline-block; }
+    @keyframes nl-spin { to { transform: rotate(360deg); } }
+    #travel-panel {
+      display: none;
+      position: fixed;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(10, 10, 15, 0.85);
+      border: 1px solid #454;
+      border-radius: 4px;
+      padding: 6px 8px;
+      z-index: 15;
+      max-width: 220px;
+    }
+    #travel-panel .travel-title {
+      color: #9a9;
+      font-size: 11px;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+    #travel-panel .travel-exit {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: #1e2420;
+      color: #8db;
+      border: 1px solid #354;
+      border-radius: 3px;
+      padding: 4px 6px;
+      margin-top: 3px;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #travel-panel .travel-exit:hover {
+      background: #283430;
+      color: #adf;
+    }
+    #interact-prompt {
+      display: none;
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 10, 15, 0.85);
+      border: 1px solid #564;
+      border-radius: 4px;
+      padding: 5px 12px;
+      z-index: 15;
+      color: #da6;
+      font-size: 13px;
+    }
+    #error-log {
+      position: fixed;
+      top: 40px;
+      right: 12px;
+      width: 320px;
+      max-height: calc(100vh - 60px);
+      overflow-y: auto;
+      background: rgba(15, 8, 8, 0.92);
+      border: 1px solid #633;
+      border-radius: 4px;
+      padding: 6px 8px;
+      z-index: 50;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #cba;
+    }
+    #error-log .error-log__header {
+      color: #e88;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #533;
+      padding-bottom: 3px;
+    }
+    #error-log .error-log__empty {
+      color: #666;
+      font-style: italic;
+      font-size: 10px;
+    }
+    #error-log .error-log__entry {
+      border-top: 1px solid #2a1a1a;
+      padding: 4px 0;
+    }
+    #error-log .error-log__entry:first-child { border-top: none; }
+    #error-log .error-log__meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+    }
+    #error-log .error-log__source { font-weight: bold; }
+    #error-log .error-log__time { color: #777; }
+    #error-log .error-log__msg { color: #f0c8a8; margin-top: 2px; }
+    #error-log .error-log__detail {
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #a88;
+      font-size: 10px;
+      margin-top: 3px;
+      max-height: 90px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -164,10 +311,20 @@
   <canvas id="game"></canvas>
   <div id="combat-log"></div>
   <div id="objective-display"></div>
+  <div id="travel-panel"></div>
+  <div id="interact-prompt"></div>
+  <div id="error-log"></div>
   <div id="dialogue-panel">
     <div id="dialogue-speaker"></div>
     <div id="dialogue-text"></div>
     <div id="dialogue-choices"></div>
+  </div>
+  <div id="narrative-loader" role="status" aria-live="polite">
+    <div class="spinner"></div>
+    <div class="title" id="narrative-loader-title">Generando escena...</div>
+    <div class="detail" id="narrative-loader-detail">El motor narrativo está construyendo el mundo. Puede tardar un momento.</div>
+    <div class="elapsed" id="narrative-loader-elapsed"></div>
+    <button class="dismiss" id="narrative-loader-dismiss" type="button">Cerrar</button>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
