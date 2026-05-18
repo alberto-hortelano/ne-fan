@@ -41,6 +41,23 @@ export interface NefanConfig {
      *  true. There is no `LocalGameClient` fallback any more. */
     require_bridge: boolean;
   };
+  /** Python ai_server runtime. Lives here so there is exactly one config
+   *  file in the repo; `scripts/dump-config.ts` emits the snapshot the
+   *  server reads at startup. Fail-loud: a missing field is a hard error,
+   *  not a `.get(key, default)` silent fallback. */
+  ai_server: {
+    llm_model: string;
+    llm_timeout_s: number;
+    port: number;
+    cache_root: string;
+    texture_cache_dir: string;
+    model_cache_dir: string;
+    skin_cache_dir: string;
+    sprite_cache_dir: string;
+    texture_resolution: number;
+    texture_steps: number;
+    texture_lazy_load: boolean;
+  };
 }
 
 export const CONFIG: NefanConfig = {
@@ -57,5 +74,18 @@ export const CONFIG: NefanConfig = {
   },
   session: {
     require_bridge: true,
+  },
+  ai_server: {
+    llm_model: "claude-sonnet-4-5-20250514",
+    llm_timeout_s: 300,
+    port: 8765,
+    cache_root: "cache",
+    texture_cache_dir: "cache/textures",
+    model_cache_dir: "cache/models",
+    skin_cache_dir: "cache/skins",
+    sprite_cache_dir: "cache/sprites",
+    texture_resolution: 512,
+    texture_steps: 4,
+    texture_lazy_load: true,
   },
 };

@@ -76,15 +76,32 @@ config: dict = {}
 _gpu_lock = _asyncio.Lock()  # Serialize ALL GPU operations
 
 
-def load_config(config_path: str = "Config/ai_server_config.json") -> dict:
-    path = Path(config_path)
+RUNTIME_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "runtime_config.json"
+)
+
+
+def load_config(config_path: Path | None = None) -> dict:
+    """Read the snapshot produced by `nefan-core/scripts/dump-config.ts`.
+
+    Fail-loud: a missing file or a missing `ai_server` block is a hard error.
+    Regenerate the snapshot via `cd nefan-core && npx tsx scripts/dump-config.ts`
+    (or any `npm run build/dev/test` which triggers the pre-hook)."""
+    path = Path(config_path) if config_path else RUNTIME_CONFIG_PATH
     if not path.exists():
-        path = Path(__file__).resolve().parent.parent / config_path
-    if path.exists():
-        print(f"Config loaded from: {path}")
-        with open(path) as f:
-            return json.load(f)
-    return {}
+        raise FileNotFoundError(
+            f"runtime_config.json not found at {path}. "
+            "Run `cd nefan-core && npx tsx scripts/dump-config.ts` to regenerate it."
+        )
+    print(f"Config loaded from: {path}")
+    with open(path) as f:
+        full = json.load(f)
+    ai = full.get("ai_server")
+    if not isinstance(ai, dict):
+        raise ValueError(
+            f"{path} has no `ai_server` block. Update nefan-core/src/config.ts."
+        )
+    return ai
 
 
 @asynccontextmanager
@@ -94,7 +111,7 @@ async def lifespan(app: FastAPI):
 
     # Shared manifest sits at the cache root and tracks every asset across types.
     from pathlib import Path as _P
-    cache_root = _P(config.get("cache_root", "cache"))
+    cache_root = _P(config["cache_root"])
     manifest_path = cache_root / "manifest.json"
     asset_manifest = AssetManifest(manifest_path)
     print(f"AssetManifest: {manifest_path.resolve()} ({asset_manifest.total_count()} entries)")
@@ -127,26 +144,26 @@ async def lifespan(app: FastAPI):
             print(f"AssetManifest: recovered {added_total} pre-existing assets")
 
     llm_client = LLMClient(
-        model=config.get("llm_model", "claude-sonnet-4-5-20250514"),
-        timeout=float(config.get("llm_timeout_s", 300.0)),
+        model=config["llm_model"],
+        timeout=float(config["llm_timeout_s"]),
         asset_manifest=asset_manifest,
     )
 
     asset_cache = AssetCache(
-        cache_dir=config.get("texture_cache_dir", "cache/textures"),
+        cache_dir=config["texture_cache_dir"],
         asset_type="texture",
         manifest=asset_manifest,
     )
 
     texture_gen = TextureGenerator(
-        width=config.get("texture_resolution", 512),
-        height=config.get("texture_resolution", 512),
-        steps=config.get("texture_steps", 4),
-        lazy=config.get("texture_lazy_load", True),
+        width=config["texture_resolution"],
+        height=config["texture_resolution"],
+        steps=config["texture_steps"],
+        lazy=config["texture_lazy_load"],
     )
 
     model_cache = AssetCache(
-        cache_dir=config.get("model_cache_dir", "cache/models"),
+        cache_dir=config["model_cache_dir"],
         asset_type="model",
         manifest=asset_manifest,
     )
@@ -157,7 +174,7 @@ async def lifespan(app: FastAPI):
     )
 
     skin_cache = AssetCache(
-        cache_dir=config.get("skin_cache_dir", "cache/skins"),
+        cache_dir=config["skin_cache_dir"],
         asset_type="skin",
         manifest=asset_manifest,
     )
@@ -171,7 +188,7 @@ async def lifespan(app: FastAPI):
     )
 
     sprite_cache = AssetCache(
-        cache_dir=config.get("sprite_cache_dir", "cache/sprites"),
+        cache_dir=config["sprite_cache_dir"],
         asset_type="sprite",
         manifest=asset_manifest,
     )
@@ -180,7 +197,7 @@ async def lifespan(app: FastAPI):
         texture_gen_ref=texture_gen,
     )
 
-    print(f"\nAI Server ready. HTTP :{config.get('port', 8765)}")
+    print(f"\nAI Server ready. HTTP :{config['port']}")
     yield
     llm_client = None
     texture_gen = None
@@ -941,7 +958,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NE-Fan AI Server")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--config", default="Config/ai_server_config.json")
     args = parser.parse_args()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
