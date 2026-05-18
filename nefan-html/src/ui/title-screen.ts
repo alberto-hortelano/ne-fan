@@ -13,6 +13,7 @@ import type { NarrativeClient, GameInfo } from "../net/narrative-client.js";
 import type {
   SessionMetadata,
 } from "../../../nefan-core/src/narrative/types.js";
+import { CONFIG } from "../../../nefan-core/src/config.js";
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }
@@ -129,35 +130,47 @@ export class TitleScreen {
   }
 
   private async renderCharacterEditor(): Promise<void> {
-    let games: GameInfo[] = [];
-    try {
-      games = await this.narrative.listGames();
-    } catch {
-      // best effort — render the editor anyway
+    // listGames must succeed — there's no scripted fallback any more. If it
+    // throws, the title-screen surfaces the error and stops here.
+    const games: GameInfo[] = await this.narrative.listGames();
+    if (games.length === 0) {
+      throw new Error("no games available in bridge — check nefan-core/data/games/");
     }
-    const defaultGame = games[0]?.game_id ?? "tavern_intro";
+
+    const spritesOn = CONFIG.graphics.player_sprites;
+    const skinOn = CONFIG.graphics.ai_skin;
+
+    const modelBlock = spritesOn
+      ? `<label style="display:block;margin-bottom:14px">
+           <div style="font-size:12px;color:#999;margin-bottom:4px">Modelo base (Mixamo)</div>
+           <select id="ts-model" style="${SELECT_CSS}">
+             ${MIXAMO_MODELS.map((m) => `<option value="${m.id}">${m.name}</option>`).join("")}
+           </select>
+         </label>`
+      : `<div style="margin-bottom:14px;color:#666;font-size:11px;font-style:italic">
+           Modelo Mixamo deshabilitado (activa <code>graphics.player_sprites</code> en config.ts para usarlo).
+         </div>`;
+
+    const skinBlock = skinOn
+      ? `<label style="display:block;margin-bottom:18px">
+           <div style="font-size:12px;color:#999;margin-bottom:4px">Skin AI (prompt opcional)</div>
+           <input id="ts-skin" type="text" placeholder="ej: caballero con armadura roja"
+                  style="${INPUT_CSS}">
+         </label>`
+      : `<div style="margin-bottom:18px;color:#666;font-size:11px;font-style:italic">
+           Skin AI deshabilitada (activa <code>graphics.ai_skin</code> en config.ts para usarla).
+         </div>`;
 
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:18px">Crear personaje</h1>
       <label style="display:block;margin-bottom:14px">
         <div style="font-size:12px;color:#999;margin-bottom:4px">Historia</div>
         <select id="ts-game" style="${SELECT_CSS}">
-          ${games.length === 0
-            ? `<option value="${defaultGame}">${defaultGame}</option>`
-            : games.map((g) => `<option value="${g.game_id}">${g.title}</option>`).join("")}
+          ${games.map((g) => `<option value="${g.game_id}">${g.title}</option>`).join("")}
         </select>
       </label>
-      <label style="display:block;margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Modelo base (Mixamo)</div>
-        <select id="ts-model" style="${SELECT_CSS}">
-          ${MIXAMO_MODELS.map((m) => `<option value="${m.id}">${m.name}</option>`).join("")}
-        </select>
-      </label>
-      <label style="display:block;margin-bottom:18px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Skin AI (prompt opcional)</div>
-        <input id="ts-skin" type="text" placeholder="ej: caballero con armadura roja"
-               style="${INPUT_CSS}">
-      </label>
+      ${modelBlock}
+      ${skinBlock}
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
         <button id="ts-start" style="${BTN_PRIMARY_CSS}">Comenzar</button>
@@ -166,8 +179,8 @@ export class TitleScreen {
     const back = this.content.querySelector("#ts-back") as HTMLButtonElement;
     const start = this.content.querySelector("#ts-start") as HTMLButtonElement;
     const gameSel = this.content.querySelector("#ts-game") as HTMLSelectElement;
-    const modelSel = this.content.querySelector("#ts-model") as HTMLSelectElement;
-    const skinInput = this.content.querySelector("#ts-skin") as HTMLInputElement;
+    const modelSel = this.content.querySelector("#ts-model") as HTMLSelectElement | null;
+    const skinInput = this.content.querySelector("#ts-skin") as HTMLInputElement | null;
 
     back.addEventListener("click", () => void this.renderHome());
     start.addEventListener("click", () => {
@@ -175,8 +188,8 @@ export class TitleScreen {
         kind: "new_game",
         gameId: gameSel.value,
         appearance: {
-          model_id: modelSel.value,
-          skin_path: skinInput.value.trim(),
+          model_id: modelSel ? modelSel.value : "",
+          skin_path: skinInput ? skinInput.value.trim() : "",
         },
       });
     });

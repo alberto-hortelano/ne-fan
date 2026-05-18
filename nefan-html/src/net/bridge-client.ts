@@ -5,6 +5,7 @@ import type {
   StateUpdateMessage,
   ServerMessage,
   NarrativeEventMessage,
+  NarrativeStatusMessage,
   SessionsListedMessage,
   SessionStartedMessage,
   GamesListedMessage,
@@ -13,13 +14,19 @@ import type {
 } from "../../../nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
 
-export type BridgeEvent = "state_update" | "connected" | "disconnected" | "narrative_event";
+export type BridgeEvent =
+  | "state_update"
+  | "connected"
+  | "disconnected"
+  | "narrative_event"
+  | "narrative_status";
 
 type EventPayload = {
   state_update: StateUpdateMessage;
   connected: undefined;
   disconnected: undefined;
   narrative_event: NarrativeEventMessage;
+  narrative_status: NarrativeStatusMessage;
 };
 
 type Handler<E extends BridgeEvent> = (data: EventPayload[E]) => void;
@@ -129,6 +136,9 @@ export class BridgeClient {
       case "narrative_event":
         this.emit("narrative_event", msg);
         break;
+      case "narrative_status":
+        this.emit("narrative_status", msg);
+        break;
     }
   }
 
@@ -234,6 +244,18 @@ export class BridgeClient {
     freeText?: string;
   }): void {
     this.send({ type: "dialogue_choice", ...payload });
+  }
+
+  /** Tell the bridge the player entered a world-map place. The bridge lazily
+   *  realizes the place's scene and broadcasts it as a narrative_event. */
+  sendPlayerEnteredPlace(placeId: string): void {
+    this.send({ type: "player_entered_place", placeId });
+  }
+
+  /** Tell the bridge the player walked up to an NPC and pressed interact. The
+   *  bridge reports it to the narrative engine and broadcasts the reply. */
+  sendInteractEntity(entityId: string, entityName: string): void {
+    this.send({ type: "interact_entity", entityId, entityName });
   }
 
   destroy(): void {

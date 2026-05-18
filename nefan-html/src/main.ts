@@ -14,9 +14,10 @@ import { HistoryBrowser } from "./ui/history-browser.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { ObjectiveDisplay } from "./ui/objective-display.js";
+import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
+import { errors } from "./ui/error-log.js";
 import {
   createGameClient,
-  LocalGameClient,
   type GameClient,
   type FrameResult,
   type RoomEnemy,
@@ -25,46 +26,67 @@ import type { ScenarioUpdate } from "../../nefan-core/src/scenario/scenario-type
 
 // @ts-ignore — Vite resolves JSON imports
 import combatConfigJson from "../../nefan-core/data/combat_config.json";
+import { CONFIG } from "../../nefan-core/src/config.js";
 
-// Glob import all room JSONs (lazy) — Vite feature
-const roomModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
+// Glob import all open-world scene JSONs (lazy) — Vite feature.
+// El concepto sala se ha retirado del cliente HTML: estos fixtures definen
+// escenarios exteriores con elementos planos por categoría.
+const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
   (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
-    .glob("../../nefan-core/data/rooms/**/*.json");
+    .glob("../../nefan-core/data/scenes/**/*.json");
 
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
 const SPEED = playerCfg.walk_speed ?? 3.0;
 const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
 
-// Player Mixamo sprite — character editor will overwrite once shipped.
-let playerModel = "paladin";
-let playerSkinPrompt = "";   // appearance.skin_path from the save
+/** Player visual state. When CONFIG.graphics.player_sprites is false the
+ *  player is drawn as a coloured circle and these stay null. When true,
+ *  setPlayerAppearance must succeed before the first frame is rendered. */
+let playerModel: string | null = null;
+let playerSkinPrompt = "";
 let playerAnimStartedAt = performance.now();
-const PLAYER_FALLBACK_MODEL = "paladin";
 
-/** Resolve the player's display sprite. If the requested model has no
- *  pre-rendered sheet (only `paladin` ships with one today), fall back to
- *  paladin so the player isn't stuck as a circle. When `skinPrompt` is set
- *  we kick off an img2img skin pass on the base sheet so the character
- *  looks like the prompt; the result swaps in once the bridge replies. */
+/** Load (and optionally AI-skin) the Mixamo sheet that represents the player.
+ *
+ *  - CONFIG.graphics.player_sprites === false  → does nothing. The renderer
+ *    draws a circle and that's the contract.
+ *  - CONFIG.graphics.player_sprites === true   → demands the requested model
+ *    exists on disk. If the sheet fails to load, throws and pushes to
+ *    ErrorLog. No silent fallback to paladin.
+ *  - CONFIG.graphics.ai_skin === false but skinPrompt is non-empty → throws.
+ *    Caller asked for something the config does not allow. */
 async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise<void> {
+  if (!CONFIG.graphics.player_sprites) {
+    if (skinPrompt) {
+      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.player_sprites=true`;
+      errors.push("config", msg);
+      throw new Error(msg);
+    }
+    playerModel = null;
+    playerSkinPrompt = "";
+    return;
+  }
+
+  if (!modelId) {
+    const msg = "appearance.model_id is empty but graphics.player_sprites=true";
+    errors.push("player", msg);
+    throw new Error(msg);
+  }
+
   playerSkinPrompt = skinPrompt;
   playerAnimStartedAt = performance.now();
 
-  let model = modelId || PLAYER_FALLBACK_MODEL;
-  let sheet = await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
-  if (!sheet) {
-    log(`(sin sprites para "${model}", usando ${PLAYER_FALLBACK_MODEL})`);
-    model = PLAYER_FALLBACK_MODEL;
-    await spriteRenderer.loadAnimation(model, "idle", WORLD_ANGLE);
-  }
-  playerModel = model;
+  await spriteRenderer.loadAnimation(modelId, "idle", WORLD_ANGLE);
+  playerModel = modelId;
 
   if (skinPrompt) {
-    void spriteRenderer
-      .loadSkinnedAnimation(model, "idle", WORLD_ANGLE, skinPrompt)
-      .then(skinned => {
-        if (skinned) log(`✨ skin aplicado: ${skinPrompt.slice(0, 40)}`);
-      });
+    if (!CONFIG.graphics.ai_skin) {
+      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.ai_skin=true`;
+      errors.push("config", msg);
+      throw new Error(msg);
+    }
+    await spriteRenderer.loadSkinnedAnimation(modelId, "idle", WORLD_ANGLE, skinPrompt);
+    log(`skin aplicado: ${skinPrompt.slice(0, 40)}`);
   }
 }
 
@@ -81,20 +103,22 @@ const renderer = new CanvasRenderer(canvas, {
   assetCache,
   worldAngle: WORLD_ANGLE,
 });
-
-// Pre-load the default Mixamo idle so the player has a sprite the moment a
-// session starts. Other anims load lazily on demand.
-void spriteRenderer.loadAnimation(playerModel, "idle", WORLD_ANGLE);
+// Sprite sheets are loaded on demand from setPlayerAppearance once the
+// session starts. No pre-load: if the player ends up needing them, that
+// happens behind an explicit CONFIG.graphics.player_sprites=true check.
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
 const attackBtns = document.querySelectorAll(".attack-selector span");
-const roomSelector = document.getElementById("room-selector") as HTMLSelectElement;
+const sceneSelector = document.getElementById("room-selector") as HTMLSelectElement;
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
 const dialoguePanel = new DialoguePanel();
 const objectiveDisplay = new ObjectiveDisplay();
+const travelPanel = new TravelPanel();
+const interactPromptEl = document.getElementById("interact-prompt") as HTMLElement;
+errors.attach(document.getElementById("error-log") as HTMLElement);
 
 const input = new KeyboardHandler(canvas, (type) => {
   attackBtns.forEach(btn => {
@@ -117,7 +141,7 @@ const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
 let playerMaxHp = 100;
 let playerWeaponId = "short_sword";
-let roomData: Record<string, unknown> | null = null;
+let sceneData: Record<string, unknown> | null = null;
 let scenarioActive = false;
 
 // Entity arrays
@@ -139,62 +163,43 @@ let attackVisual: {
 // --- Game client (will be set async) ---
 let gameClient: GameClient | null = null;
 
-// --- Room loading ---
+// --- Scene loading ---
 
-function populateRoomSelector(): void {
-  // Parse glob keys into room entries
-  const rooms: { key: string; label: string; group: string }[] = [];
-
-  for (const path of Object.keys(roomModules)) {
-    // path like "../../nefan-core/data/rooms/dev/battle_royale.json"
-    const match = path.match(/rooms\/(.+)\.json$/);
+function populateSceneSelector(): void {
+  // Scene fixtures (cargados localmente, sin bridge).
+  const scenes: { key: string; label: string }[] = [];
+  for (const path of Object.keys(sceneModules)) {
+    // path like "../../nefan-core/data/scenes/tavern_clearing.json"
+    const match = path.match(/scenes\/(.+)\.json$/);
     if (!match) continue;
-    const relPath = match[1]; // e.g. "dev/battle_royale"
-    const parts = relPath.split("/");
-    let group = "Game";
-    let label = relPath;
-    if (parts.length > 1) {
-      if (parts[0] === "dev") group = "Dev";
-      else if (parts[0] === "stress") group = "Stress";
-      label = parts.slice(1).join("/");
-    } else {
-      if (relPath.startsWith("style_")) group = "Style";
-    }
-    rooms.push({ key: path, label, group });
+    scenes.push({ key: path, label: match[1] });
   }
-
-  // Group and sort
-  const groups: Record<string, typeof rooms> = {};
-  for (const r of rooms) {
-    (groups[r.group] ??= []).push(r);
-  }
-
-  for (const [groupName, entries] of Object.entries(groups).sort()) {
-    const optgroup = document.createElement("optgroup");
-    optgroup.label = groupName;
-    for (const entry of entries.sort((a, b) => a.label.localeCompare(b.label))) {
+  if (scenes.length > 0) {
+    const sceneGroup = document.createElement("optgroup");
+    sceneGroup.label = "Scene";
+    for (const entry of scenes.sort((a, b) => a.label.localeCompare(b.label))) {
       const opt = document.createElement("option");
       opt.value = entry.key;
       opt.textContent = entry.label;
-      optgroup.appendChild(opt);
+      sceneGroup.appendChild(opt);
     }
-    roomSelector.appendChild(optgroup);
+    sceneSelector.appendChild(sceneGroup);
   }
 
-  // Narrative games
+  // Narrative games — vía bridge + Claude.
   const narrativeGroup = document.createElement("optgroup");
   narrativeGroup.label = "Narrative";
   const tavernOpt = document.createElement("option");
   tavernOpt.value = "game:tavern_intro";
   tavernOpt.textContent = "tavern_intro";
   narrativeGroup.appendChild(tavernOpt);
-  roomSelector.appendChild(narrativeGroup);
+  sceneSelector.appendChild(narrativeGroup);
 }
 
-async function loadRoom(globKey: string): Promise<void> {
-  const loader = roomModules[globKey];
+async function loadSceneFile(globKey: string): Promise<void> {
+  const loader = sceneModules[globKey];
   if (!loader) {
-    log("Room not found: " + globKey);
+    log("Scene not found: " + globKey);
     return;
   }
 
@@ -202,21 +207,131 @@ async function loadRoom(globKey: string): Promise<void> {
   await loadSceneData(mod.default);
 }
 
-/** Apply an already-resolved scene/room JSON to the renderer + game client.
- *  Used both by the local room selector (legacy) and by the narrative flow
- *  when resuming a session or receiving a generated scene from the bridge. */
-async function loadSceneData(data: Record<string, unknown>): Promise<void> {
-  roomData = data;
+/** Detecta si `data` viene en Map Format D (size.cols + terrain como array de
+ *  strings + entities con cell/footprint) y, si es así, lo convierte al
+ *  formato que el canvas-renderer ya entiende (`dimensions` + `objects[]` +
+ *  `npcs[]` con position/scale en metros). Si no es D, lo devuelve tal cual. */
+function normalizeSceneFormatD(raw: Record<string, unknown>): Record<string, unknown> {
+  const size = raw.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
+  const terrain = raw.terrain;
+  const entities = raw.entities;
+  const isFormatD =
+    !!size && typeof size.cols === "number" && typeof size.rows === "number" &&
+    Array.isArray(terrain) && terrain.every(r => typeof r === "string") &&
+    Array.isArray(entities);
+
+  if (!isFormatD) return raw;
+
+  const cols = size!.cols!;
+  const rows = size!.rows!;
+  const mpc = size!.meters_per_cell ?? 2;
+  const halfW = (cols * mpc) / 2;
+  const halfD = (rows * mpc) / 2;
+
+  type FormatDEntity = {
+    id: string; kind: string; name: string;
+    cell: [number, number]; footprint: [number, number]; glyph?: string;
+    texture_hash?: string; model_hash?: string;
+  };
+
+  const objects: Record<string, unknown>[] = [];
+  const npcs: Record<string, unknown>[] = [];
+  let playerStart: { x: number; z: number } | null = null;
+
+  const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item"]);
+  for (let i = 0; i < entities.length; i++) {
+    const ent = (entities as FormatDEntity[])[i];
+    if (!ent) throw new Error(`scene entities[${i}] is null/undefined`);
+    if (!ent.id) throw new Error(`scene entities[${i}] missing id`);
+    if (!VALID_KINDS.has(ent.kind)) {
+      throw new Error(`scene entities[${i}] (${ent.id}) has invalid kind="${ent.kind}"; expected one of ${[...VALID_KINDS]}`);
+    }
+    if (!Array.isArray(ent.cell) || ent.cell.length < 2) {
+      throw new Error(`scene entities[${i}] (${ent.id}) missing cell [col,row]`);
+    }
+    if (!Array.isArray(ent.footprint) || ent.footprint.length < 2) {
+      throw new Error(`scene entities[${i}] (${ent.id}) missing footprint [w,h]`);
+    }
+    const [c, r] = ent.cell;
+    const [w, h] = ent.footprint;
+    if (![c, r, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) {
+      throw new Error(`scene entities[${i}] (${ent.id}) cell/footprint must be finite numbers, got cell=[${c},${r}] fp=[${w},${h}]`);
+    }
+    // Centro del footprint en coordenadas mundo (origin = centro del mapa).
+    const x = (c + w / 2) * mpc - halfW;
+    const z = (r + h / 2) * mpc - halfD;
+
+    if (ent.kind === "player") {
+      playerStart = { x, z };
+      continue;
+    }
+    if (ent.kind === "npc") {
+      if (!ent.name) {
+        throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
+      }
+      npcs.push({
+        id: ent.id,
+        name: ent.name,
+        position: [x, 0, z],
+      });
+      continue;
+    }
+    // building / prop / tree / item: tree maps to prop visually.
+    const category = (ent.kind === "tree") ? "prop" : ent.kind;
+    if (!ent.name) {
+      throw new Error(`scene entities[${i}] (${ent.id}) missing name`);
+    }
+    const obj: Record<string, unknown> = {
+      id: ent.id,
+      position: [x, 0, z],
+      scale: [w * mpc, 1, h * mpc],
+      category,
+      description: ent.name,
+    };
+    if (ent.texture_hash) obj.texture_hash = ent.texture_hash;
+    if (ent.model_hash)   obj.model_hash = ent.model_hash;
+    objects.push(obj);
+  }
+
+  return {
+    scene_id: raw.scene_id ?? raw.room_id,
+    room_id: raw.scene_id ?? raw.room_id,
+    scene_description: raw.scene_description ?? raw.room_description ?? "",
+    room_description: raw.scene_description ?? raw.room_description ?? "",
+    dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
+    terrain: { color: [0.18, 0.22, 0.14] },
+    objects,
+    npcs,
+    ambient_event: raw.ambient_event,
+    // El bridge adjunta las salidas del world map; el renderer las ignora pero
+    // loadSceneData las pasa al TravelPanel.
+    exits: raw.exits,
+    // Metadatos para el cliente — el renderer los ignora.
+    __player_start: playerStart,
+    __format_d: raw,
+  };
+}
+
+/** Apply an already-resolved scene JSON to the renderer + game client.
+ *  Used tanto por el dropdown de escenarios locales como por el flujo narrativo
+ *  (start_session / resume_session). Acepta el campo legacy `room_id` para
+ *  saves antiguos. */
+async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
+  const data = normalizeSceneFormatD(rawData);
+  sceneData = data;
   scenarioActive = false;
 
-  renderer.setRoom(data as unknown as Parameters<typeof renderer.setRoom>[0]);
+  renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
 
-  // Reset player
-  playerPos.x = 0;
-  playerPos.z = 2;
-
-  const world = (data.world ?? {}) as Record<string, unknown>;
-  const styleToken = (typeof world.style_token === "string" ? world.style_token : "") || undefined;
+  // Reset player — si la escena trae __player_start (Format D), aplicarlo.
+  const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
+  if (playerStart) {
+    playerPos.x = playerStart.x;
+    playerPos.z = playerStart.z;
+  } else {
+    playerPos.x = 0;
+    playerPos.z = 2;
+  }
 
   // Extract enemies from objects with combat
   const objects = (data.objects ?? []) as Record<string, unknown>[];
@@ -231,20 +346,49 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
       y: (obj.position as number[])[1],
       z: (obj.position as number[])[2],
     };
+    const scale = (obj.scale as number[] | undefined);
+    const sizeXZ = scale && scale.length >= 3
+      ? { x: scale[0], z: scale[2] }
+      : undefined;
+    const category = obj.category as string | undefined;
     const combat = obj.combat as Record<string, unknown> | undefined;
     if (combat) {
-      const personality = (combat.personality ?? {}) as Record<string, unknown>;
+      // Combat block exists → every field is required. The narrative engine
+      // sets these explicitly; missing values mean the LLM produced a broken
+      // combat record, not a place to default-fill.
+      if (typeof combat.health !== "number" || !Number.isFinite(combat.health)) {
+        throw new Error(`scene object ${obj.id} combat.health must be a finite number, got ${combat.health}`);
+      }
+      if (typeof combat.weapon_id !== "string" || !combat.weapon_id) {
+        throw new Error(`scene object ${obj.id} combat.weapon_id missing`);
+      }
+      const personality = combat.personality as Record<string, unknown> | undefined;
+      if (!personality || typeof personality !== "object") {
+        throw new Error(`scene object ${obj.id} combat.personality missing`);
+      }
+      const requireNum = (key: string): number => {
+        const v = personality[key];
+        if (typeof v !== "number" || !Number.isFinite(v)) {
+          throw new Error(`scene object ${obj.id} combat.personality.${key} must be a finite number, got ${v}`);
+        }
+        return v;
+      };
+      const attacks = personality.preferred_attacks;
+      if (!Array.isArray(attacks) || attacks.length === 0 ||
+          !attacks.every((a) => typeof a === "string")) {
+        throw new Error(`scene object ${obj.id} combat.personality.preferred_attacks must be a non-empty string array`);
+      }
       enemies.push({
         id: obj.id as string,
         position: pos,
-        health: combat.health as number,
-        weaponId: (combat.weapon_id ?? "unarmed") as string,
+        health: combat.health,
+        weaponId: combat.weapon_id,
         personality: {
-          aggression: (personality.aggression ?? 0.5) as number,
-          preferred_attacks: (personality.preferred_attacks ?? ["quick"]) as string[],
-          reaction_time: (personality.reaction_time ?? 0.8) as number,
-          combat_range: (personality.combat_range ?? 4.0) as number,
-          ...(personality as Record<string, unknown>),
+          aggression: requireNum("aggression"),
+          preferred_attacks: attacks as string[],
+          reaction_time: requireNum("reaction_time"),
+          combat_range: requireNum("combat_range"),
+          ...personality,
         },
       });
       const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
@@ -252,17 +396,19 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
         id: obj.id as string, pos, radius: 8, color,
         label: (obj.description ?? obj.id) as string,
         hp: combat.health as number, maxHp: combat.health as number, alive: true,
+        category: category ?? "creature",
+        sizeXZ,
       };
       enemyEntities.push(enemyEntity);
-      attachSpriteForObject(obj, enemyEntity, styleToken);
     } else {
       const objectEntity: Entity = {
         id: obj.id as string, pos, radius: 5,
-        color: (obj.category as string) === "item" ? "#aa8" : "#666",
+        color: category === "item" ? "#aa8" : "#666",
         label: (obj.description ?? "") as string, alive: true,
+        category: category ?? "prop",
+        sizeXZ,
       };
       objectEntities.push(objectEntity);
-      attachSpriteForObject(obj, objectEntity, styleToken);
     }
   }
 
@@ -282,64 +428,24 @@ async function loadSceneData(data: Record<string, unknown>): Promise<void> {
       label: (npc.name ?? npc.id) as string,
       name: (npc.name ?? npc.id) as string,
       alive: true,
+      category: "creature",
     };
-    attachSpriteForNpc(npc, entity, styleToken);
     return entity;
   });
 
   // Build enemy HP bars
   rebuildEnemyBars();
 
-  // Notify game client
+  // Travel panel — el bridge adjunta `exits` (salidas del world map).
+  travelPanel.setExits((data.exits ?? []) as SceneExit[]);
+
+  // Notify game client (load_room sigue siendo el mensaje del protocolo —
+  // sólo el cliente HTML ya no piensa en "salas").
   if (gameClient) {
-    const dims = data.dimensions as { width: number; depth: number } | undefined;
-    gameClient.loadRoom(data, (data.room_id ?? "unknown") as string, enemies);
+    gameClient.loadRoom(data, (data.scene_id ?? data.room_id ?? "unknown") as string, enemies);
   }
 
-  log("Room loaded: " + (data.room_id ?? "unknown"));
-}
-
-/** Drop a Mixamo character ref or an AI sprite hash on the entity, kicking off
- *  a generate_sprite request when the scene only carries a prompt. The entity
- *  is mutated in place once the hash arrives — the game loop re-renders every
- *  frame so the sprite pops in as soon as ai_server replies. */
-function attachSpriteForObject(obj: Record<string, unknown>, entity: Entity, styleToken?: string): void {
-  // Only `sprite_hash` is a 2D sprite — `texture_hash` is a PBR map for the
-  // Godot renderer and lives in cache/textures/, not cache/sprites/.
-  const existingHash = obj.sprite_hash as string | undefined;
-  if (existingHash) {
-    entity.spriteHash = existingHash;
-    return;
-  }
-  const description = (obj.description as string | undefined) ?? "";
-  const category = (obj.category as string | undefined) ?? "prop";
-  const id = (obj.id as string | undefined) ?? "object";
-  const prompt = description
-    ? `${description}, single ${category}, isolated on transparent background`
-    : `${id} ${category}, isolated on transparent background`;
-  void assetCache
-    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
-    .then(hash => {
-      if (hash) entity.spriteHash = hash;
-    });
-}
-
-function attachSpriteForNpc(npc: Record<string, unknown>, entity: Entity, styleToken?: string): void {
-  const existingHash = npc.sprite_hash as string | undefined;
-  if (existingHash) {
-    entity.spriteHash = existingHash;
-    return;
-  }
-  const skin = (npc.skin_prompt as string | undefined) ?? (npc.description as string | undefined) ?? "";
-  const name = (npc.name as string | undefined) ?? (npc.id as string | undefined) ?? "character";
-  const prompt = skin
-    ? `${skin}, full body, single character standing, isolated on transparent background`
-    : `${name}, full body, single character standing, isolated on transparent background`;
-  void assetCache
-    .requestSprite(prompt, { angle: WORLD_ANGLE, styleToken })
-    .then(hash => {
-      if (hash) entity.spriteHash = hash;
-    });
+  log("Scene loaded: " + (data.scene_id ?? data.room_id ?? "unknown"));
 }
 
 function rebuildEnemyBars(): void {
@@ -352,6 +458,24 @@ function rebuildEnemyBars(): void {
       <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
     enemyBarsContainer.appendChild(bar);
   }
+}
+
+// --- Collision ---
+const PLAYER_RADIUS = 0.4;
+
+/** AABB collision of the player (inflated point) against solid scene objects.
+ *  Items are walkable; only buildings and props block. */
+function collidesAt(x: number, z: number): boolean {
+  for (const obj of objectEntities) {
+    if (!obj.sizeXZ) continue;
+    if (obj.category !== "building" && obj.category !== "prop") continue;
+    const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
+    const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
+    if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // --- Combat log ---
@@ -383,56 +507,6 @@ document.addEventListener("mousemove", (e) => {
 function getSelectedParams(): EffectiveParams {
   const weaponData = config.weapons[playerWeaponId] ?? config.weapons["unarmed"];
   return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
-}
-
-// --- Exit detection ---
-
-function checkExits(): void {
-  if (!roomData) return;
-  const dims = roomData.dimensions as { width: number; depth: number };
-  if (!dims) return;
-  const halfW = dims.width / 2;
-  const halfD = dims.depth / 2;
-  const threshold = 0.5;
-  const exits = (roomData.exits ?? []) as { wall: string; offset: number; size: number[] }[];
-
-  for (const exit of exits) {
-    const ew = exit.size[0] / 2;
-    const eOff = exit.offset;
-    let triggered = false;
-
-    switch (exit.wall) {
-      case "north":
-        triggered = playerPos.z < -halfD + threshold && Math.abs(playerPos.x - eOff) < ew;
-        break;
-      case "south":
-        triggered = playerPos.z > halfD - threshold && Math.abs(playerPos.x - eOff) < ew;
-        break;
-      case "east":
-        triggered = playerPos.x > halfW - threshold && Math.abs(playerPos.z - eOff) < ew;
-        break;
-      case "west":
-        triggered = playerPos.x < -halfW + threshold && Math.abs(playerPos.z - eOff) < ew;
-        break;
-    }
-
-    if (triggered) {
-      if (gameClient?.isBridge) {
-        gameClient.sendScenarioEvent("exit_entered", { exitWall: exit.wall });
-        log("Exit: " + exit.wall);
-      } else {
-        log("Exit detected — bridge required for transitions");
-      }
-      // Move player back slightly to prevent re-triggering
-      switch (exit.wall) {
-        case "north": playerPos.z += 1.0; break;
-        case "south": playerPos.z -= 1.0; break;
-        case "east": playerPos.x -= 1.0; break;
-        case "west": playerPos.x += 1.0; break;
-      }
-      return;
-    }
-  }
 }
 
 // --- Scenario update processing ---
@@ -492,16 +566,15 @@ function processScenario(scenario: ScenarioUpdate): void {
     log("Weapon acquired: " + scenario.give_weapon);
   }
   if (scenario.change_scene) {
-    // change_scene contains full room data
-    const sceneData = scenario.change_scene as Record<string, unknown>;
-    roomData = sceneData;
+    const next = scenario.change_scene as Record<string, unknown>;
+    sceneData = next;
     scenarioActive = true;
-    renderer.setRoom(sceneData as unknown as Parameters<typeof renderer.setRoom>[0]);
+    renderer.setScene(next as unknown as Parameters<typeof renderer.setScene>[0]);
     playerPos.x = 0;
     playerPos.z = 2;
 
     // Parse objects/npcs from scene data
-    const objects = (sceneData.objects ?? []) as Record<string, unknown>[];
+    const objects = (next.objects ?? []) as Record<string, unknown>[];
     objectEntities = [];
     const sceneEnemies: Entity[] = [];
     for (const obj of objects) {
@@ -528,7 +601,7 @@ function processScenario(scenario: ScenarioUpdate): void {
     }
     enemyEntities = sceneEnemies;
 
-    const npcsData = (sceneData.npcs ?? []) as Record<string, unknown>[];
+    const npcsData = (next.npcs ?? []) as Record<string, unknown>[];
     npcEntities = npcsData.map(npc => ({
       id: npc.id as string,
       pos: {
@@ -544,7 +617,8 @@ function processScenario(scenario: ScenarioUpdate): void {
     }));
 
     rebuildEnemyBars();
-    log("Scene changed: " + (sceneData.room_id ?? "unknown"));
+    travelPanel.setExits((next.exits ?? []) as SceneExit[]);
+    log("Scene changed: " + (next.scene_id ?? next.room_id ?? "unknown"));
   }
   if (scenario.spawn_objects) {
     for (const obj of scenario.spawn_objects) {
@@ -572,10 +646,10 @@ dialoguePanel.onChoice = (index: number) => {
   gameClient?.sendScenarioEvent("dialogue_choice", { choiceIndex: index });
 };
 
-// --- Room selector handler ---
+// --- Scene selector handler ---
 
-roomSelector.addEventListener("change", () => {
-  const value = roomSelector.value;
+sceneSelector.addEventListener("change", () => {
+  const value = sceneSelector.value;
   if (!value) return;
 
   if (value.startsWith("game:")) {
@@ -588,7 +662,7 @@ roomSelector.addEventListener("change", () => {
       log("Bridge required for narrative games");
     }
   } else {
-    loadRoom(value);
+    loadSceneFile(value);
   }
 });
 
@@ -624,6 +698,8 @@ function updateConnectionStatus(connected: boolean, isBridge: boolean): void {
 // --- Game Loop ---
 
 let lastTime = performance.now();
+// Evita reenviar interact_entity mientras el motor narrativo aún responde.
+let interactCooldownUntil = 0;
 
 function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
@@ -649,13 +725,16 @@ function gameLoop(now: number): void {
       const right = { x: -fwd.z, z: fwd.x };
       const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
       const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
-      playerPos.x += moveX * speed * delta;
-      playerPos.z += moveZ * speed * delta;
+      const dx = moveX * speed * delta;
+      const dz = moveZ * speed * delta;
+      // Resolución por ejes contra objetos sólidos → desliza por las paredes.
+      if (!collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
+      if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Clamp to room bounds
-    if (roomData) {
-      const dims = roomData.dimensions as { width: number; depth: number };
+    // Clamp al borde del terrain (los bounds de la escena open-world).
+    if (sceneData) {
+      const dims = sceneData.dimensions as { width: number; depth: number };
       if (dims) {
         const halfW = dims.width / 2 - 0.3;
         const halfD = dims.depth / 2 - 0.3;
@@ -663,9 +742,32 @@ function gameLoop(now: number): void {
         playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
       }
     }
+  }
 
-    // Exit detection
-    checkExits();
+  // NPC interaction — NPC vivo más cercano dentro de rango + tecla E.
+  const INTERACT_RANGE = 2.5;
+  let npcInRange: Entity | null = null;
+  let nearestDist = Infinity;
+  for (const npc of npcEntities) {
+    if (npc.alive === false) continue;
+    const d = Math.hypot(npc.pos.x - playerPos.x, npc.pos.z - playerPos.z);
+    if (d < nearestDist) { nearestDist = d; npcInRange = npc; }
+  }
+  if (npcInRange && nearestDist > INTERACT_RANGE) npcInRange = null;
+
+  if (npcInRange && !dialoguePanel.isVisible) {
+    interactPromptEl.textContent = `[E] hablar con ${npcInRange.name ?? npcInRange.id}`;
+    interactPromptEl.style.display = "block";
+  } else {
+    interactPromptEl.style.display = "none";
+  }
+
+  const interactPressed = input.consumeInteract();
+  if (interactPressed && npcInRange && !dialoguePanel.isVisible && now >= interactCooldownUntil) {
+    interactCooldownUntil = now + 3000;
+    const name = (npcInRange.name ?? npcInRange.id) as string;
+    narrativeClient.interactEntity(npcInRange.id, name);
+    log(`Hablando con ${name}...`);
   }
 
   // Attack
@@ -792,19 +894,24 @@ function gameLoop(now: number): void {
     if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
   }
 
-  // Render
+  // Render. Sprite is supplied only when player_sprites is on AND the sheet
+  // has been loaded by setPlayerAppearance. Otherwise the renderer draws the
+  // primary path (a circle) — explicitly, not as a fallback.
+  const playerSprite = CONFIG.graphics.player_sprites && playerModel !== null
+    ? {
+        model: spriteRenderer.skinnedKey(playerModel, playerSkinPrompt),
+        anim: "idle",
+        angle: WORLD_ANGLE,
+        animStartedAt: playerAnimStartedAt,
+      }
+    : undefined;
   renderer.render(
     {
       pos: playerPos,
       forward: playerForward,
       hp: result.playerHp,
       maxHp: playerMaxHp,
-      sprite: {
-        model: spriteRenderer.skinnedKey(playerModel, playerSkinPrompt),
-        anim: "idle",
-        angle: WORLD_ANGLE,
-        animStartedAt: playerAnimStartedAt,
-      },
+      sprite: playerSprite,
     },
     enemyEntities,
     objectEntities,
@@ -830,7 +937,7 @@ function gameLoop(now: number): void {
 
 // --- Init ---
 
-populateRoomSelector();
+populateSceneSelector();
 
 const sharedBridge = new BridgeClient();
 const narrativeClient = new NarrativeClient(sharedBridge);
@@ -860,6 +967,83 @@ dialoguePanel.onFreeText = (freeText) => {
     freeText,
   });
 };
+
+travelPanel.onTravel = (placeId) => {
+  if (!activeSessionId) return;
+  showLoader("Viajando...", "El motor narrativo está preparando el lugar.");
+  narrativeClient.enterPlace(placeId);
+};
+
+// --- Narrative loader (status-driven overlay) ---
+const loaderEl = document.getElementById("narrative-loader") as HTMLDivElement | null;
+const loaderTitle = document.getElementById("narrative-loader-title");
+const loaderDetail = document.getElementById("narrative-loader-detail");
+const loaderElapsed = document.getElementById("narrative-loader-elapsed");
+const loaderDismiss = document.getElementById("narrative-loader-dismiss");
+
+let loaderStartedAt = 0;
+let loaderTicker: ReturnType<typeof setInterval> | null = null;
+
+function showLoader(title: string, detail: string): void {
+  if (!loaderEl) return;
+  loaderEl.classList.remove("error");
+  loaderEl.classList.add("visible");
+  if (loaderTitle) loaderTitle.textContent = title;
+  if (loaderDetail) loaderDetail.textContent = detail;
+  loaderStartedAt = Date.now();
+  if (loaderElapsed) loaderElapsed.textContent = "0s";
+  if (loaderTicker) clearInterval(loaderTicker);
+  loaderTicker = setInterval(() => {
+    if (!loaderElapsed) return;
+    const s = Math.floor((Date.now() - loaderStartedAt) / 1000);
+    loaderElapsed.textContent = `${s}s`;
+  }, 500);
+}
+
+function hideLoader(): void {
+  if (!loaderEl) return;
+  loaderEl.classList.remove("visible", "error");
+  if (loaderTicker) {
+    clearInterval(loaderTicker);
+    loaderTicker = null;
+  }
+}
+
+function setLoaderState(state: "error", title: string, detail: string): void {
+  if (!loaderEl) return;
+  loaderEl.classList.remove("error");
+  loaderEl.classList.add("visible", state);
+  if (loaderTitle) loaderTitle.textContent = title;
+  if (loaderDetail) loaderDetail.textContent = detail;
+  if (loaderTicker) {
+    clearInterval(loaderTicker);
+    loaderTicker = null;
+  }
+}
+
+if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
+
+narrativeClient.onNarrativeStatus((status) => {
+  if (status.kind === "scene") {
+    switch (status.phase) {
+      case "generating":
+        showLoader(
+          "Generando escena...",
+          status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
+        );
+        break;
+      case "ready":
+        hideLoader();
+        break;
+      case "error": {
+        const detail = status.message ?? "Algo falló en el motor narrativo.";
+        errors.push("narrative", detail);
+        setLoaderState("error", "Error al generar la escena", detail);
+        break;
+      }
+    }
+  }
+});
 
 narrativeClient.onNarrativeEvent((event) => {
   // Minimum viable handler: log everything to the combat log.
@@ -899,50 +1083,49 @@ narrativeClient.onNarrativeEvent((event) => {
   }
 });
 
-createGameClient(combatConfigJson as Record<string, unknown>, sharedBridge, (client) => {
-  gameClient = client;
-  updateConnectionStatus(client.isConnected, client.isBridge);
+void bootstrap();
 
-  client.on("connected", () => updateConnectionStatus(true, true));
-  client.on("disconnected", () => updateConnectionStatus(false, true));
-
-  // Listen to store events for combat log (local mode)
-  if (client instanceof LocalGameClient) {
-    client.store.on("player_damaged", (p: Record<string, unknown>) =>
-      log(`Player hit: -${(p.amount as number).toFixed(1)} HP`));
-    client.store.on("enemy_damaged", (p: Record<string, unknown>) =>
-      log(`${p.enemy_id} hit: -${(p.amount as number).toFixed(1)} HP`));
-    client.store.on("player_died", () => log("YOU DIED — press R to respawn"));
-    client.store.on("enemy_died", (p: Record<string, unknown>) => log(`${p.enemy_id} killed!`));
-    client.store.on("player_respawned", () => log("Respawned!"));
+async function bootstrap(): Promise<void> {
+  try {
+    const client = await createGameClient(sharedBridge);
+    gameClient = client;
+    updateConnectionStatus(client.isConnected, true);
+    client.on("connected", () => updateConnectionStatus(true, true));
+    client.on("disconnected", () => updateConnectionStatus(false, true));
+    await runTitleFlow();
+  } catch (err) {
+    setLoaderState(
+      "error",
+      "No se pudo arrancar la partida",
+      (err as Error).message,
+    );
+    errors.push("session", "bootstrap failed", err);
   }
+}
 
-  void runTitleFlow(client);
-});
-
-async function runTitleFlow(client: GameClient): Promise<void> {
-  if (!client.isBridge) {
-    // Bridge unavailable: skip the narrative title screen and keep the legacy
-    // local mode (room JSON selector). This preserves the previous behaviour
-    // when running without the bridge.
-    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
-    if (defaultRoom) loadRoom(defaultRoom);
-    return;
-  }
-
+async function runTitleFlow(): Promise<void> {
   let action: TitleAction;
   try {
     action = await titleScreen.show();
   } catch (err) {
-    console.warn("title-screen failed, falling back to room selector:", err);
     titleScreen.hide();
-    const defaultRoom = Object.keys(roomModules).find(k => k.includes("battle_royale"));
-    if (defaultRoom) loadRoom(defaultRoom);
-    return;
+    setLoaderState(
+      "error",
+      "No se pudo mostrar la pantalla de título",
+      (err as Error).message,
+    );
+    errors.push("session", "title-screen failed", err);
+    throw err;
   }
 
   try {
     if (action.kind === "new_game") {
+      // Show loader immediately so the canvas isn't blank while we wait on
+      // start_session + the bridge's "generating" broadcast.
+      showLoader(
+        "Iniciando partida...",
+        "Pidiendo al motor narrativo que construya la escena inicial.",
+      );
       const res = await narrativeClient.startSession(action.gameId, action.appearance);
       activeSessionId = res.sessionId;
       historyBrowser.setSession(res.sessionId);
@@ -953,7 +1136,9 @@ async function runTitleFlow(client: GameClient): Promise<void> {
       activeSessionId = res.state.session_id;
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
-      const desiredModel = res.state.player.appearance.model_id || playerModel;
+      // resume: trust the save's appearance verbatim. If model_id is empty
+      // and player_sprites is on, setPlayerAppearance will refuse to start.
+      const desiredModel = res.state.player.appearance.model_id;
       const skinPath = res.state.player.appearance.skin_path || "";
       await setPlayerAppearance(desiredModel, skinPath);
 
@@ -970,8 +1155,13 @@ async function runTitleFlow(client: GameClient): Promise<void> {
       }
     }
   } catch (err) {
-    alert(`No se pudo iniciar la sesión: ${(err as Error).message}`);
-    console.error(err);
+    setLoaderState(
+      "error",
+      "No se pudo iniciar la sesión",
+      (err as Error).message,
+    );
+    errors.push("session", "session start/resume failed", err);
+    throw err;
   } finally {
     titleScreen.hide();
   }

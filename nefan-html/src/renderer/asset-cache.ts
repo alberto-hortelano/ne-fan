@@ -6,7 +6,16 @@
  * here and reuse them across renders. When a scene only has prompts (the
  * common case for narrative-generated worlds), call `requestSprite` to ask
  * ai_server to produce one and remember the resulting hash.
+ *
+ * No silent fallbacks: any failure throws and pushes to the ErrorLog. There
+ * is no `failedHashes` blacklist that pretends a hash never existed. The
+ * caller must gate use behind CONFIG.graphics.ai_sprites.
  */
+import { errors } from "../ui/error-log.js";
+
+export const SPRITE_PENDING = Symbol("hashed-sprite-pending");
+export type HashedImageResult = HTMLImageElement | typeof SPRITE_PENDING;
+
 export interface SpriteRequestOptions {
   angle?: string;
   styleToken?: string;
@@ -16,16 +25,20 @@ export interface SpriteRequestOptions {
 
 export class AssetCache {
   private images = new Map<string, HTMLImageElement>();
-  private failedHashes = new Set<string>();
-  private hashByPromptKey = new Map<string, Promise<string | null>>();
+  private hashByPromptKey = new Map<string, Promise<string>>();
 
   constructor(private baseUrl: string = "http://127.0.0.1:8765") {}
 
   /** Ask ai_server to render (or look up) a sprite for `prompt` at `angle`.
    * Returns the hash so the caller can stash it on an entity for `drawByHash`.
-   * Identical (prompt, angle, styleToken) requests share an inflight promise. */
-  async requestSprite(prompt: string, opts: SpriteRequestOptions = {}): Promise<string | null> {
-    if (!prompt) return null;
+   * Identical (prompt, angle, styleToken) requests share an inflight promise.
+   * Throws on HTTP failure or missing hash in the response. */
+  async requestSprite(prompt: string, opts: SpriteRequestOptions = {}): Promise<string> {
+    if (!prompt) {
+      const msg = "AssetCache.requestSprite called with empty prompt";
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
     const angle = opts.angle ?? "top_down";
     const styleToken = opts.styleToken ?? "";
     const key = `${angle}|${styleToken}|${prompt}`;
@@ -46,52 +59,55 @@ export class AssetCache {
           }),
         });
         if (!res.ok) {
-          this.hashByPromptKey.delete(key);
-          return null;
+          throw new Error(`ai_server /generate_sprite HTTP ${res.status}`);
         }
         const data = (await res.json()) as { hash?: string; error?: string };
         if (!data.hash) {
-          this.hashByPromptKey.delete(key);
-          return null;
+          throw new Error(`ai_server /generate_sprite returned no hash: ${data.error ?? "unknown"}`);
         }
         return data.hash;
       } catch (err) {
-        console.warn("AssetCache.requestSprite failed:", (err as Error).message);
+        errors.push("sprite", `requestSprite failed (${prompt.slice(0, 40)})`, err);
         this.hashByPromptKey.delete(key);
-        return null;
+        throw err;
       }
     })();
     this.hashByPromptKey.set(key, promise);
     return promise;
   }
 
-  /** Synchronous getter — returns the image only if it has finished decoding.
-   * On first call for a hash it kicks off the download in the background, so
-   * a few render frames later the same call will return the loaded image. */
-  getSpriteByHash(hash: string): HTMLImageElement | null {
-    if (!hash) return null;
-    if (this.failedHashes.has(hash)) return null;
+  /** Returns the image, SPRITE_PENDING if still decoding. Throws on hard
+   * failures (404, MIME). On first call for a hash it kicks off the
+   * download in the background. */
+  getSpriteByHash(hash: string): HashedImageResult {
+    if (!hash) {
+      const msg = "AssetCache.getSpriteByHash called with empty hash";
+      errors.push("sprite", msg);
+      throw new Error(msg);
+    }
     const existing = this.images.get(hash);
     if (existing) {
-      return existing.complete && existing.naturalWidth > 0 ? existing : null;
+      if (!existing.complete) return SPRITE_PENDING;
+      if (existing.naturalWidth === 0) {
+        const msg = `hashed sprite ${hash} failed to decode (${existing.src})`;
+        errors.push("sprite", msg);
+        throw new Error(msg);
+      }
+      return existing;
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = `${this.baseUrl}/cache/sprite/${hash}`;
     img.addEventListener("error", () => {
-      // Cache the failure so we don't spam ai_server at 60 FPS.
-      this.failedHashes.add(hash);
-      this.images.delete(hash);
+      errors.push("sprite", `hashed sprite ${hash} failed to load (${img.src})`);
     });
     this.images.set(hash, img);
-    return null;
+    return SPRITE_PENDING;
   }
 
   /** Draw a hashed sprite at (cx, cy) anchored on its bottom-center. Returns
-   * true when something was drawn, false if the image is still loading and
-   * the caller should fall back to a placeholder. When only `widthPx` is
-   * supplied the image height is derived from its aspect ratio so AI sprites
-   * (any resolution / shape) draw at a coherent size. */
+   * true on success, false ONLY when the image is still decoding (transient).
+   * Throws on hard failures (404, MIME) — no placeholder substitution. */
   drawByHash(
     ctx: CanvasRenderingContext2D,
     hash: string,
@@ -100,7 +116,7 @@ export class AssetCache {
     opts: { scale?: number; widthPx?: number; heightPx?: number } = {},
   ): boolean {
     const img = this.getSpriteByHash(hash);
-    if (!img) return false;
+    if (img === SPRITE_PENDING) return false;
     const scale = opts.scale ?? 1;
     const naturalRatio = img.naturalWidth > 0 ? img.naturalHeight / img.naturalWidth : 1;
     let w: number;
