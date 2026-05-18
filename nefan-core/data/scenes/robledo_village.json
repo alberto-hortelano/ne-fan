@@ -1,0 +1,862 @@
+{
+  "scene_id": "robledo_village",
+  "scene_description": "El pueblo de Robledo se extiende junto al río Negro. La calle principal cruza un puente de madera y desemboca en una plaza pavimentada con un pozo en el centro. Las casas de los vecinos huelen a estofado.",
+  "size": {
+    "cols": 60,
+    "rows": 40,
+    "meters_per_cell": 2
+  },
+  "terrain": [
+    "ggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggggg",
+    "ggggggggggggggggggggggggggggggggggggggwwwggggggggggggggggggg",
+    "ggggggggggggggggggggggggggggggggggggggwwwggggggggggggggggggg",
+    "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg",
+    "ggggddddddgggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+    "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+    "ggggddddddgggggggggggg_gggggggggggggggawwwgggggggggggggggggg",
+    "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+    "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+    "ggggddddddgggggggggggg_gggggggggggggggawwwgggggggggggggggggg",
+    "gggggggggggggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+    "gggggggggggggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+    "gggggggggggggggggggggg_ggggggggggggggawwwggggggggggggggggggg",
+    "gggggggggggggggggggggg_gggggggggggggggwwwggggggggggggggggggg",
+    "gggggggggggggggggggggg_ggggggggggggggwwwgggggggggggggggggggg",
+    "gggggggggggggggggggggg_gggggggggggggawwwgggggggggggggggggggg",
+    "gggggggggggggggggggggg_gggggggggggggwwwooogggggggggggggggggg",
+    "ggggggggggggggggggggsssssssgggggggggwwwooogggggggggggggggggg",
+    "ggggggggggggggggggggsssssssgggggggawwwoooggggggggggggggggggg",
+    "____________________sssssss_______bbbbb_____________________",
+    "ggggggggggggggggggggsssssssggggggggwwwgggggggggggggggggggggg",
+    "ggggggggggggggggggggsssssssgggggggawwwgggggggggggggggggggggg",
+    "gggggggggggggggggggggg_gg_gggggggggwwwgggggggggggggggggggggg",
+    "gggggggggggggggggggggg_gg_gggggggggwwwgggggggggggggggggggggg",
+    "gggggggggggggggggggggg_gg_ggggggggawwwgggggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_gggggggggwwwgggggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_ggggggggggwwwggggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_gggggggggawwwggggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_gggggggggggwwwgggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_gggggggggggwwwgggggddddddddddddddg",
+    "gggggggggggggggggggggg_gg_gggggggggggawwwggggddddddddddddddg",
+    "ggggggggggggggggggggggggg_ggggggggggggwwwggggddddddddddddddg",
+    "ggggggggggggggggggggggggg_gggggggggggggwwwgggddddddddddddddg",
+    "ggggggggggggggggggggggggggggggggggggggawwwgggddddddddddddddg",
+    "gggggggggggggggggggggggggggggggggggggggwwwgggddddddddddddddg",
+    "gggggggggggggggggggggggggggggggggggggggwwwgggddddddddddddddg",
+    "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg",
+    "gggggggggggggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+    "gggggggggggggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+    "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg"
+  ],
+  "terrain_legend": {
+    "g": "grass",
+    "w": "water",
+    "_": "path",
+    "s": "stone",
+    "b": "bridge",
+    "d": "dirt",
+    "a": "sand",
+    "o": "wood"
+  },
+  "entities": [
+    {
+      "id": "chapel",
+      "kind": "building",
+      "name": "Capilla de San Beda",
+      "cell": [
+        14,
+        4
+      ],
+      "footprint": [
+        6,
+        5
+      ],
+      "glyph": "K"
+    },
+    {
+      "id": "tavern_main",
+      "kind": "building",
+      "name": "La Taberna del Cuervo",
+      "cell": [
+        27,
+        13
+      ],
+      "footprint": [
+        7,
+        5
+      ],
+      "glyph": "H"
+    },
+    {
+      "id": "house_north",
+      "kind": "building",
+      "name": "Casa del Sastre",
+      "cell": [
+        4,
+        12
+      ],
+      "footprint": [
+        6,
+        4
+      ],
+      "glyph": "C"
+    },
+    {
+      "id": "house_south",
+      "kind": "building",
+      "name": "Casa Vieja",
+      "cell": [
+        4,
+        25
+      ],
+      "footprint": [
+        6,
+        4
+      ],
+      "glyph": "V"
+    },
+    {
+      "id": "smithy",
+      "kind": "building",
+      "name": "Herrería",
+      "cell": [
+        12,
+        22
+      ],
+      "footprint": [
+        5,
+        5
+      ],
+      "glyph": "F"
+    },
+    {
+      "id": "carpentry",
+      "kind": "building",
+      "name": "Carpintería",
+      "cell": [
+        28,
+        23
+      ],
+      "footprint": [
+        5,
+        4
+      ],
+      "glyph": "P"
+    },
+    {
+      "id": "inn",
+      "kind": "building",
+      "name": "Posada del Olmo",
+      "cell": [
+        19,
+        28
+      ],
+      "footprint": [
+        8,
+        5
+      ],
+      "glyph": "I"
+    },
+    {
+      "id": "mill",
+      "kind": "building",
+      "name": "Molino",
+      "cell": [
+        44,
+        14
+      ],
+      "footprint": [
+        6,
+        5
+      ],
+      "glyph": "M"
+    },
+    {
+      "id": "stable",
+      "kind": "building",
+      "name": "Establo",
+      "cell": [
+        33,
+        33
+      ],
+      "footprint": [
+        6,
+        4
+      ],
+      "glyph": "E"
+    },
+    {
+      "id": "watchtower",
+      "kind": "building",
+      "name": "Atalaya",
+      "cell": [
+        1,
+        36
+      ],
+      "footprint": [
+        3,
+        3
+      ],
+      "glyph": "Y"
+    },
+    {
+      "id": "well_plaza",
+      "kind": "prop",
+      "name": "pozo",
+      "cell": [
+        23,
+        19
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "W"
+    },
+    {
+      "id": "fountain",
+      "kind": "prop",
+      "name": "fuente de piedra",
+      "cell": [
+        25,
+        18
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "*"
+    },
+    {
+      "id": "market_stall_1",
+      "kind": "prop",
+      "name": "puesto de pan",
+      "cell": [
+        20,
+        17
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "1"
+    },
+    {
+      "id": "market_stall_2",
+      "kind": "prop",
+      "name": "puesto de fruta",
+      "cell": [
+        24,
+        17
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "2"
+    },
+    {
+      "id": "lantern_plaza",
+      "kind": "item",
+      "name": "farolillo plaza",
+      "cell": [
+        21,
+        21
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "L"
+    },
+    {
+      "id": "anvil",
+      "kind": "prop",
+      "name": "yunque",
+      "cell": [
+        17,
+        23
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "Z"
+    },
+    {
+      "id": "smith_barrel",
+      "kind": "prop",
+      "name": "barril de templar",
+      "cell": [
+        17,
+        25
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "Q"
+    },
+    {
+      "id": "log_pile_1",
+      "kind": "prop",
+      "name": "pila de troncos",
+      "cell": [
+        33,
+        23
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "="
+    },
+    {
+      "id": "log_pile_2",
+      "kind": "prop",
+      "name": "pila de tablones",
+      "cell": [
+        33,
+        25
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "#"
+    },
+    {
+      "id": "cart",
+      "kind": "prop",
+      "name": "carro",
+      "cell": [
+        33,
+        27
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "X"
+    },
+    {
+      "id": "water_wheel",
+      "kind": "prop",
+      "name": "rueda hidráulica",
+      "cell": [
+        43,
+        16
+      ],
+      "footprint": [
+        1,
+        2
+      ],
+      "glyph": "O"
+    },
+    {
+      "id": "flour_sacks",
+      "kind": "prop",
+      "name": "sacos de harina",
+      "cell": [
+        50,
+        18
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "U"
+    },
+    {
+      "id": "grave_1",
+      "kind": "prop",
+      "name": "lápida",
+      "cell": [
+        11,
+        5
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "+"
+    },
+    {
+      "id": "grave_2",
+      "kind": "prop",
+      "name": "lápida",
+      "cell": [
+        13,
+        6
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "+"
+    },
+    {
+      "id": "grave_3",
+      "kind": "prop",
+      "name": "lápida",
+      "cell": [
+        11,
+        7
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "+"
+    },
+    {
+      "id": "grave_4",
+      "kind": "prop",
+      "name": "lápida",
+      "cell": [
+        12,
+        8
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "+"
+    },
+    {
+      "id": "grave_5",
+      "kind": "prop",
+      "name": "tumba antigua",
+      "cell": [
+        13,
+        9
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "+"
+    },
+    {
+      "id": "haystack_1",
+      "kind": "prop",
+      "name": "fardo de heno",
+      "cell": [
+        40,
+        33
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "h"
+    },
+    {
+      "id": "haystack_2",
+      "kind": "prop",
+      "name": "fardo de heno",
+      "cell": [
+        40,
+        35
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "h"
+    },
+    {
+      "id": "cow",
+      "kind": "prop",
+      "name": "vaca",
+      "cell": [
+        34,
+        37
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "v"
+    },
+    {
+      "id": "chicken_1",
+      "kind": "prop",
+      "name": "gallina",
+      "cell": [
+        11,
+        17
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "u"
+    },
+    {
+      "id": "chicken_2",
+      "kind": "prop",
+      "name": "gallina",
+      "cell": [
+        12,
+        18
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "u"
+    },
+    {
+      "id": "dog",
+      "kind": "prop",
+      "name": "perro pastor",
+      "cell": [
+        17,
+        27
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "j"
+    },
+    {
+      "id": "tree_n1",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        22,
+        1
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_n2",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        28,
+        2
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_n3",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [
+        33,
+        4
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_w1",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        1,
+        10
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_w2",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [
+        1,
+        14
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_s1",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        12,
+        36
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_s2",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [
+        18,
+        38
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_s3",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        25,
+        37
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_se",
+      "kind": "tree",
+      "name": "abedul",
+      "cell": [
+        45,
+        38
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_e1",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [
+        57,
+        8
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "tree_e2",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [
+        55,
+        20
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "sign_welcome",
+      "kind": "item",
+      "name": "Cartel: Bienvenidos a Robledo",
+      "cell": [
+        3,
+        18
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "?"
+    },
+    {
+      "id": "blacksmith",
+      "kind": "npc",
+      "name": "Boris el Herrero",
+      "cell": [
+        17,
+        22
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "$"
+    },
+    {
+      "id": "innkeeper",
+      "kind": "npc",
+      "name": "Greta la Posadera",
+      "cell": [
+        22,
+        28
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "p"
+    },
+    {
+      "id": "mayor",
+      "kind": "npc",
+      "name": "Alcaldesa Mirla",
+      "cell": [
+        23,
+        20
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "A"
+    },
+    {
+      "id": "child",
+      "kind": "npc",
+      "name": "Niño Tomé",
+      "cell": [
+        25,
+        21
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "k"
+    },
+    {
+      "id": "priest",
+      "kind": "npc",
+      "name": "Padre Lucas",
+      "cell": [
+        16,
+        9
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "&"
+    },
+    {
+      "id": "carpenter_npc",
+      "kind": "npc",
+      "name": "Tomás Carpintero",
+      "cell": [
+        30,
+        27
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "%"
+    },
+    {
+      "id": "tavern_keeper",
+      "kind": "npc",
+      "name": "Berta Tabernera",
+      "cell": [
+        29,
+        18
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "t"
+    },
+    {
+      "id": "miller",
+      "kind": "npc",
+      "name": "Halmar el Molinero",
+      "cell": [
+        47,
+        19
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "m"
+    },
+    {
+      "id": "stable_boy",
+      "kind": "npc",
+      "name": "Mozo Yannis",
+      "cell": [
+        36,
+        32
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "y"
+    },
+    {
+      "id": "farmer",
+      "kind": "npc",
+      "name": "Granjera Eleva",
+      "cell": [
+        50,
+        30
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "e"
+    },
+    {
+      "id": "guard",
+      "kind": "npc",
+      "name": "Guardia Roric",
+      "cell": [
+        2,
+        38
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "r"
+    },
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Tú",
+      "cell": [
+        1,
+        19
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "@"
+    }
+  ],
+  "ambient_event": "El viento del río trae olor a pan recién hecho y al barniz tibio de la carpintería."
+}

@@ -1,0 +1,198 @@
+{
+	"schema_version": 1,
+	"root_id": "world",
+	"active_place_id": "robledo",
+	"places": {
+		"world": {
+			"id": "world",
+			"kind": "world",
+			"parent_id": null,
+			"name": "Vall del Sauce Negro",
+			"description": "Una valla aislada al norte del reino, rodeada de bosques y antiguas ruinas. Los caminos serpentean entre Greybark y los Llanos.",
+			"attrs": { "atmosphere": "dark_fantasy", "danger": "moderate" },
+			"triggers": [],
+			"visited": false
+		},
+		"greybark": {
+			"id": "greybark",
+			"kind": "region",
+			"parent_id": "world",
+			"name": "Bosque de Greybark",
+			"description": "Bosque centenario de cortezas grises. Cobija a Robledo y a las Ruinas de Hal.",
+			"approx_position": [30, 40],
+			"approx_radius": 30,
+			"attrs": { "biome": "old_forest", "fauna": "wolves,bears" },
+			"triggers": [],
+			"visited": true
+		},
+		"llanos_del_sauce": {
+			"id": "llanos_del_sauce",
+			"kind": "region",
+			"parent_id": "world",
+			"name": "Llanos del Sauce",
+			"description": "Pradera abierta entre Greybark y la costa. Camino real del rey atraviesa de norte a sur.",
+			"approx_position": [75, 65],
+			"approx_radius": 30,
+			"attrs": { "biome": "plains" },
+			"triggers": [],
+			"visited": false
+		},
+		"robledo": {
+			"id": "robledo",
+			"kind": "settlement",
+			"parent_id": "greybark",
+			"name": "Robledo",
+			"description": "Pueblo de 300 almas, conocido por sus carpinteros y por el molino del río Sauce.",
+			"approx_position": [35, 38],
+			"approx_radius": 6,
+			"attrs": { "population": 300, "faction": "neutral", "danger": "low" },
+			"realized_scene_id": "robledo_village",
+			"triggers": [
+				{
+					"id": "primer_arribo_robledo",
+					"when": { "type": "first_visit" },
+					"consequences": [
+						{
+							"type": "story_update",
+							"delta": "Has llegado a Robledo por primera vez. El humo del molino se mezcla con la niebla del río."
+						}
+					]
+				}
+			],
+			"visited": true
+		},
+		"puerto_bajo": {
+			"id": "puerto_bajo",
+			"kind": "settlement",
+			"parent_id": "llanos_del_sauce",
+			"name": "El Puerto Bajo",
+			"description": "Pequeño puerto fluvial donde la sauce desemboca en el mar. Punto de comercio.",
+			"approx_position": [85, 75],
+			"approx_radius": 5,
+			"attrs": { "population": 600, "faction": "merchants" },
+			"triggers": [],
+			"visited": false
+		},
+		"ruinas_hal": {
+			"id": "ruinas_hal",
+			"kind": "settlement",
+			"parent_id": "greybark",
+			"name": "Ruinas de Hal",
+			"description": "Antiguo monasterio derruido. Se rumorea que aún resuenan campanas al anochecer.",
+			"approx_position": [22, 26],
+			"approx_radius": 4,
+			"attrs": { "population": 0, "faction": "abandoned", "danger": "high" },
+			"triggers": [],
+			"visited": false
+		},
+		"rio_sauce": {
+			"id": "rio_sauce",
+			"kind": "landmark",
+			"parent_id": "world",
+			"name": "Río Sauce",
+			"description": "Río principal de la valla, baja del norte y se ensancha cerca del Puerto Bajo.",
+			"approx_position": [55, 55],
+			"approx_radius": 40,
+			"attrs": { "navigable": false },
+			"triggers": [],
+			"visited": true
+		},
+		"puente_hierro": {
+			"id": "puente_hierro",
+			"kind": "landmark",
+			"parent_id": "llanos_del_sauce",
+			"name": "Puente de Hierro",
+			"description": "Puente de hierro forjado que cruza el Sauce entre Greybark y los Llanos.",
+			"approx_position": [55, 50],
+			"approx_radius": 1,
+			"attrs": { "condition": "fair" },
+			"triggers": [],
+			"visited": false
+		},
+		"robledo_plaza": {
+			"id": "robledo_plaza",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "Plaza de Robledo",
+			"description": "Plaza adoquinada con pozo y mercado. Centro social del pueblo.",
+			"approx_position": [50, 50],
+			"approx_radius": 5,
+			"attrs": {},
+			"triggers": [],
+			"visited": true
+		},
+		"robledo_iglesia": {
+			"id": "robledo_iglesia",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "Iglesia de San Lucio",
+			"description": "Pequeña iglesia de piedra con cinco tumbas en el atrio. Padre Lucas oficia.",
+			"approx_position": [30, 40],
+			"approx_radius": 3,
+			"attrs": { "denomination": "estandar" },
+			"triggers": [],
+			"visited": false
+		},
+		"robledo_taberna": {
+			"id": "robledo_taberna",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "La Taberna del Cuervo",
+			"description": "Taberna de Berta. Punto de reunión nocturno; rumores y trabajos.",
+			"approx_position": [62, 45],
+			"approx_radius": 3,
+			"attrs": {},
+			"triggers": [],
+			"visited": false
+		},
+		"robledo_herreria": {
+			"id": "robledo_herreria",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "Herrería de Boris",
+			"description": "Yunque, fragua, barricas de templado. Boris afila armas y vende cuchillería.",
+			"approx_position": [40, 58],
+			"approx_radius": 2,
+			"attrs": {},
+			"triggers": [],
+			"visited": false
+		},
+		"robledo_molino": {
+			"id": "robledo_molino",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "Molino del Sauce",
+			"description": "Molino harinero junto al río con rueda hidráulica. Halmar es el molinero.",
+			"approx_position": [78, 38],
+			"approx_radius": 2,
+			"attrs": {},
+			"triggers": [],
+			"visited": false
+		},
+		"robledo_carpinteria": {
+			"id": "robledo_carpinteria",
+			"kind": "site",
+			"parent_id": "robledo",
+			"name": "Carpintería",
+			"description": "Pilas de troncos, sierras y un carro a medio cargar. Tomás trabaja la madera.",
+			"approx_position": [62, 28],
+			"approx_radius": 2,
+			"attrs": {},
+			"triggers": [],
+			"visited": false
+		}
+	},
+	"links": [
+		{ "from": "greybark", "to": "llanos_del_sauce", "kind": "road", "travel_hours": 5, "description": "Camino del rey, cruza el Puente de Hierro.", "bidirectional": true },
+		{ "from": "robledo", "to": "ruinas_hal", "kind": "path", "travel_hours": 3, "description": "Sendero hacia el norte por el bosque.", "bidirectional": true },
+		{ "from": "robledo", "to": "puente_hierro", "kind": "road", "travel_hours": 2, "description": "Camino del rey hacia el sur.", "bidirectional": true },
+		{ "from": "puente_hierro", "to": "puerto_bajo", "kind": "road", "travel_hours": 3, "description": "Camino del rey hacia el puerto.", "bidirectional": true },
+		{ "from": "rio_sauce", "to": "puente_hierro", "kind": "river", "description": "El río pasa bajo el puente.", "bidirectional": false },
+		{ "from": "rio_sauce", "to": "puerto_bajo", "kind": "river", "description": "Desemboca en el mar.", "bidirectional": false },
+		{ "from": "robledo_plaza", "to": "robledo_iglesia", "kind": "path", "description": "Callejón del cementerio.", "bidirectional": true },
+		{ "from": "robledo_plaza", "to": "robledo_taberna", "kind": "path", "description": "Calle Mayor.", "bidirectional": true },
+		{ "from": "robledo_plaza", "to": "robledo_carpinteria", "kind": "path", "description": "Calle del Norte.", "bidirectional": true },
+		{ "from": "robledo_plaza", "to": "robledo_herreria", "kind": "path", "description": "Calle del Sur.", "bidirectional": true },
+		{ "from": "robledo_taberna", "to": "robledo_molino", "kind": "path", "description": "Camino del muelle.", "bidirectional": true }
+	]
+}

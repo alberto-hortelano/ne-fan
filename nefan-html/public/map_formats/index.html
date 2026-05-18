@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Map format sandbox — NE-Fan</title>
+<style>
+  :root {
+    --bg: #15161a;
+    --panel: #1c1e23;
+    --panel2: #23262d;
+    --border: #2e323b;
+    --text: #d8d3c4;
+    --muted: #7a7a78;
+    --accent: #d8a14c;
+    --ok: #6a9a4a;
+    --err: #c25a4a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0 0 6px 0;
+    font-size: 16px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 880px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+  section.panel .body {
+    display: grid;
+    grid-template-columns: 900px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  section.panel .body textarea {
+    min-height: 580px;
+  }
+  section.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  section.panel h2 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    color: var(--accent);
+  }
+  section.panel .desc {
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  section.panel .canvas-wrap {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: auto;
+    margin-bottom: 8px;
+  }
+  section.panel canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+  section.panel textarea {
+    width: 100%;
+    min-height: 320px;
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font: 12px/1.4 ui-monospace, Menlo, monospace;
+    resize: vertical;
+    tab-size: 2;
+  }
+  section.panel .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    gap: 8px;
+  }
+  section.panel button {
+    background: var(--accent);
+    color: #1a1505;
+    border: 0;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: bold;
+  }
+  section.panel button:hover { background: #e6b057; }
+  section.panel .status {
+    font-size: 11px;
+    color: var(--muted);
+    flex: 1;
+    text-align: right;
+    white-space: pre-wrap;
+  }
+  section.panel .status.ok { color: var(--ok); }
+  section.panel .status.err { color: var(--err); }
+  details {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+  }
+  details summary { cursor: pointer; color: var(--muted); }
+  details ul { margin: 6px 0 0 18px; padding: 0; }
+  details li { color: var(--muted); }
+  details li.pro::before { content: "✓ "; color: var(--ok); }
+  details li.con::before { content: "✗ "; color: var(--err); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Map format sandbox — NE-Fan</h1>
+  <p>
+    Cuatro formatos para describir el mismo escenario (claro de taberna, 32×20 celdas a 2 m/celda).
+    Edita cualquier textarea y pulsa "Re-render" para ver qué tal aguanta cada formato.
+    El render común es deliberadamente plano — buscamos legibilidad del data source, no belleza visual.
+  </p>
+</header>
+
+<main>
+  <section class="panel" id="panel-A">
+    <h2>A · ASCII monocapa</h2>
+    <p class="desc">Una sola grid, un char por celda. Legend mapea char a terreno o entidad. El parser une clusters contiguos del mismo char en una entidad con bounding box.</p>
+    <details><summary>Pros / contras</summary>
+      <ul>
+        <li class="pro">Ultrá compacto y "ves" el mapa en texto plano.</li>
+        <li class="pro">Fácil de modificar visualmente (mover una T una celda a la derecha).</li>
+        <li class="con">Limitado a 1 char por celda — entidades con el mismo glyph se confunden si están adyacentes.</li>
+        <li class="con">No hay metadatos por entidad (sólo lo que entre en el char).</li>
+      </ul>
+    </details>
+    <div class="body">
+      <div class="canvas-wrap"><canvas id="canvas-A"></canvas></div>
+      <textarea id="src-A" spellcheck="false"></textarea>
+    </div>
+    <div class="row">
+      <button data-target="A">Re-render</button>
+      <div class="status" id="status-A">—</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-B">
+    <h2>B · ASCII doble capa</h2>
+    <p class="desc">Dos grids del mismo tamaño: una de terreno, otra de entidades. Dos legends. Los chars de entidad se agrupan en clusters contiguos.</p>
+    <details><summary>Pros / contras</summary>
+      <ul>
+        <li class="pro">Separa nítidamente el suelo de los objetos.</li>
+        <li class="pro">Permite poner cualquier entidad sobre cualquier terreno sin choque de chars.</li>
+        <li class="con">Más verboso — dos matrices de 32×20.</li>
+        <li class="con">Sigue sin metadatos ricos por entidad (legend tiene que cubrir el char).</li>
+      </ul>
+    </details>
+    <div class="body">
+      <div class="canvas-wrap"><canvas id="canvas-B"></canvas></div>
+      <textarea id="src-B" spellcheck="false"></textarea>
+    </div>
+    <div class="row">
+      <button data-target="B">Re-render</button>
+      <div class="status" id="status-B">—</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-C">
+    <h2>C · JSON cells matrix</h2>
+    <p class="desc">Una matriz 2D de objetos celda a celda con <code>t</code> (terreno) y opcional <code>ent</code> (id de entidad). Diccionario aparte para metadatos de entidades.</p>
+    <details><summary>Pros / contras</summary>
+      <ul>
+        <li class="pro">Cada celda puede llevar cualquier atributo (humedad, transitabilidad, color…).</li>
+        <li class="pro">Sin ambigüedad — las entidades son objetos completos referidos por id.</li>
+        <li class="con">Brutalmente verboso (640 entradas), ilegible al ojo desnudo.</li>
+        <li class="con">Para un LLM: muchísimos tokens generados, alto riesgo de error y altísimo coste.</li>
+      </ul>
+    </details>
+    <div class="body">
+      <div class="canvas-wrap"><canvas id="canvas-C"></canvas></div>
+      <textarea id="src-C" spellcheck="false"></textarea>
+    </div>
+    <div class="row">
+      <button data-target="C">Re-render</button>
+      <div class="status" id="status-C">—</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-D">
+    <h2>D · Híbrido (terreno ASCII + entidades como lista)</h2>
+    <p class="desc">Terreno como grid ASCII legible, entidades como lista de objetos nombrados con <code>cell</code>, <code>footprint</code> y <code>glyph</code>. Coordenadas en celdas enteras.</p>
+    <details><summary>Pros / contras</summary>
+      <ul>
+        <li class="pro">Suelo como mapa visual + entidades como objetos nombrados → ambos mundos.</li>
+        <li class="pro">Footprints &gt; 1 celda, cada entidad con id único y metadatos arbitrarios.</li>
+        <li class="pro">Para el motor narrativo: trivial decir "mueve <code>hooded_stranger</code> a <code>tavern_porch</code>".</li>
+        <li class="con">Dos representaciones que el LLM tiene que mantener coherentes (terreno + posiciones).</li>
+        <li class="con">Si dos entidades caen en la misma celda, el render tiene que decidir cuál pinta encima.</li>
+      </ul>
+    </details>
+    <div class="body">
+      <div class="canvas-wrap"><canvas id="canvas-D"></canvas></div>
+      <textarea id="src-D" spellcheck="false"></textarea>
+    </div>
+    <div class="row">
+      <button data-target="D">Re-render</button>
+      <div class="status" id="status-D">—</div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ── Constantes ──────────────────────────────────────────────────────────────
+const COLS = 48;
+const ROWS = 30;
+const CELL_PX = 14;
+
+const TERRAIN_COLORS = {
+  grass:  "#3a5a2a",
+  water:  "#274a5a",
+  path:   "#8a7350",
+  stone:  "#6a6a6a",
+  bridge: "#5a3a1c",
+  dirt:   "#6a4a2a",
+  sand:   "#c2a86a",
+  wood:   "#7a5028",
+  default: "#2a2a25",
+};
+
+const KIND_PALETTE = {
+  building: { fill: "#5a4a38", stroke: "#8c7050" },
+  prop:     { fill: "#444038", stroke: "#7a7060" },
+  tree:     { fill: "#2d4a32", stroke: "#5a8060" },
+  item:     { fill: "#a8902d", stroke: "#dec268" },
+  npc:      { fill: "#3a5a8a", stroke: "#9bd" },
+  player:   { fill: "#2a8a76", stroke: "#7fe6ce" },
+  default:  { fill: "#555050", stroke: "#888" },
+};
+
+// ── Modelo canónico (un pueblo medieval con río y puente) ───────────────────
+// A, B y C se derivan automáticamente de este objeto para garantizar que los
+// cuatro paneles muestran exactamente lo mismo. Si los canvases discrepan,
+// el problema es del formato o del parser, no de transcripción.
+
+const SAMPLE_D_OBJ = (function buildVillageModel() {
+  const cols = 60, rows = 40;
+  const t = Array.from({length: rows}, () => new Array(cols).fill("g"));
+
+  // Río serpenteante de N a S — 3 celdas de ancho. Recorrido suave.
+  const riverPath = [];
+  for (let r = 0; r < rows; r++) {
+    const center = Math.round(38 + Math.sin(r * 0.22) * 2.5);
+    riverPath.push(center);
+    for (let dx = -1; dx <= 1; dx++) {
+      if (center + dx >= 0 && center + dx < cols) t[r][center + dx] = "w";
+    }
+    // Orilla de arena en la ribera occidental cada pocas filas.
+    if (r % 3 === 0 && center - 2 >= 0) t[r][center - 2] = "a";
+  }
+
+  // Camino principal W-E (row 19). Puente sobre la zona del río.
+  for (let c = 0; c < cols; c++) {
+    t[19][c] = (t[19][c] === "w") ? "b" : "_";
+  }
+  // Rampas/aproches del puente (extender bridge 1 col a cada lado del agua).
+  const riverAt19 = riverPath[19];
+  if (riverAt19 - 2 >= 0) t[19][riverAt19 - 2] = "b";
+  if (riverAt19 + 2 < cols) t[19][riverAt19 + 2] = "b";
+
+  // Camino secundario N-S (col 22, rows 5-30).
+  for (let r = 5; r <= 30; r++) {
+    if (t[r][22] === "g") t[r][22] = "_";
+  }
+  // Tramo N-S al sur de la plaza (col 25, rows 22-32).
+  for (let r = 22; r <= 32; r++) {
+    if (t[r][25] === "g") t[r][25] = "_";
+  }
+
+  // Plaza pavimentada (rows 17-21, cols 20-26). Sobreescribe path/grass.
+  for (let r = 17; r <= 21; r++) {
+    for (let c = 20; c <= 26; c++) {
+      if (t[r][c] !== "w" && t[r][c] !== "b") t[r][c] = "s";
+    }
+  }
+
+  // Huerta del NW (rows 4-9, cols 4-9) — tierra de cultivo.
+  for (let r = 4; r <= 9; r++) {
+    for (let c = 4; c <= 9; c++) t[r][c] = "d";
+  }
+
+  // Granja al este del río (rows 24-35, cols 45-58).
+  for (let r = 24; r <= 35; r++) {
+    for (let c = 45; c <= 58; c++) {
+      if (t[r][c] === "g") t[r][c] = "d";
+    }
+  }
+
+  // Muelle de madera junto al molino (rows 16-18, cols inmediatamente al
+  // oeste del río en esa franja).
+  for (let r = 16; r <= 18; r++) {
+    const riverC = riverPath[r];
+    for (let c = riverC + 2; c <= riverC + 4 && c < cols; c++) {
+      if (t[r][c] === "g") t[r][c] = "o";
+    }
+  }
+
+  const terrain = t.map(row => row.join(""));
+
+  const entities = [
+    // ── Edificios principales ──
+    { id: "chapel",      kind: "building", name: "Capilla de San Beda",
+      cell: [14, 4],  footprint: [6, 5], glyph: "K" },
+    { id: "tavern_main", kind: "building", name: "La Taberna del Cuervo",
+      cell: [27, 13], footprint: [7, 5], glyph: "H" },
+    { id: "house_north", kind: "building", name: "Casa del Sastre",
+      cell: [4, 12],  footprint: [6, 4], glyph: "C" },
+    { id: "house_south", kind: "building", name: "Casa Vieja",
+      cell: [4, 25],  footprint: [6, 4], glyph: "V" },
+    { id: "smithy",      kind: "building", name: "Herrería",
+      cell: [12, 22], footprint: [5, 5], glyph: "F" },
+    { id: "carpentry",   kind: "building", name: "Carpintería",
+      cell: [28, 23], footprint: [5, 4], glyph: "P" },
+    { id: "inn",         kind: "building", name: "Posada del Olmo",
+      cell: [19, 28], footprint: [8, 5], glyph: "I" },
+    { id: "mill",        kind: "building", name: "Molino",
+      cell: [44, 14], footprint: [6, 5], glyph: "M" },
+    { id: "stable",      kind: "building", name: "Establo",
+      cell: [33, 33], footprint: [6, 4], glyph: "E" },
+    { id: "watchtower",  kind: "building", name: "Atalaya",
+      cell: [1, 36],  footprint: [3, 3], glyph: "Y" },
+
+    // ── Plaza ──
+    { id: "well_plaza",     kind: "prop", name: "pozo",
+      cell: [23, 19], footprint: [1, 1], glyph: "W" },
+    { id: "fountain",       kind: "prop", name: "fuente de piedra",
+      cell: [25, 18], footprint: [1, 1], glyph: "*" },
+    { id: "market_stall_1", kind: "prop", name: "puesto de pan",
+      cell: [20, 17], footprint: [2, 1], glyph: "1" },
+    { id: "market_stall_2", kind: "prop", name: "puesto de fruta",
+      cell: [24, 17], footprint: [2, 1], glyph: "2" },
+    { id: "lantern_plaza",  kind: "item", name: "farolillo plaza",
+      cell: [21, 21], footprint: [1, 1], glyph: "L" },
+
+    // ── Herrería ──
+    { id: "anvil",        kind: "prop", name: "yunque",
+      cell: [17, 23], footprint: [1, 1], glyph: "Z" },
+    { id: "smith_barrel", kind: "prop", name: "barril de templar",
+      cell: [17, 25], footprint: [1, 1], glyph: "Q" },
+
+    // ── Carpintería ──
+    { id: "log_pile_1", kind: "prop", name: "pila de troncos",
+      cell: [33, 23], footprint: [2, 1], glyph: "=" },
+    { id: "log_pile_2", kind: "prop", name: "pila de tablones",
+      cell: [33, 25], footprint: [2, 1], glyph: "#" },
+    { id: "cart",       kind: "prop", name: "carro",
+      cell: [33, 27], footprint: [2, 1], glyph: "X" },
+
+    // ── Molino ──
+    { id: "water_wheel", kind: "prop", name: "rueda hidráulica",
+      cell: [43, 16], footprint: [1, 2], glyph: "O" },
+    { id: "flour_sacks", kind: "prop", name: "sacos de harina",
+      cell: [50, 18], footprint: [1, 1], glyph: "U" },
+
+    // ── Cementerio (sur de la capilla) ──
+    { id: "grave_1", kind: "prop", name: "lápida",       cell: [11, 5],  footprint: [1, 1], glyph: "+" },
+    { id: "grave_2", kind: "prop", name: "lápida",       cell: [13, 6],  footprint: [1, 1], glyph: "+" },
+    { id: "grave_3", kind: "prop", name: "lápida",       cell: [11, 7],  footprint: [1, 1], glyph: "+" },
+    { id: "grave_4", kind: "prop", name: "lápida",       cell: [12, 8],  footprint: [1, 1], glyph: "+" },
+    { id: "grave_5", kind: "prop", name: "tumba antigua",cell: [13, 9],  footprint: [1, 1], glyph: "+" },
+
+    // ── Establo y animales ──
+    { id: "haystack_1", kind: "prop", name: "fardo de heno",
+      cell: [40, 33], footprint: [1, 1], glyph: "h" },
+    { id: "haystack_2", kind: "prop", name: "fardo de heno",
+      cell: [40, 35], footprint: [1, 1], glyph: "h" },
+    { id: "cow",        kind: "prop", name: "vaca",
+      cell: [34, 37], footprint: [2, 1], glyph: "v" },
+    { id: "chicken_1",  kind: "prop", name: "gallina",
+      cell: [11, 17], footprint: [1, 1], glyph: "u" },
+    { id: "chicken_2",  kind: "prop", name: "gallina",
+      cell: [12, 18], footprint: [1, 1], glyph: "u" },
+    { id: "dog",        kind: "prop", name: "perro pastor",
+      cell: [17, 27], footprint: [1, 1], glyph: "j" },
+
+    // ── Árboles (bosque disperso) ──
+    { id: "tree_n1", kind: "tree", name: "roble",  cell: [22, 1],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_n2", kind: "tree", name: "roble",  cell: [28, 2],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_n3", kind: "tree", name: "pino",   cell: [33, 4],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_w1", kind: "tree", name: "roble",  cell: [1, 10],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_w2", kind: "tree", name: "pino",   cell: [1, 14],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_s1", kind: "tree", name: "roble",  cell: [12, 36], footprint: [1, 1], glyph: "T" },
+    { id: "tree_s2", kind: "tree", name: "pino",   cell: [18, 38], footprint: [1, 1], glyph: "T" },
+    { id: "tree_s3", kind: "tree", name: "roble",  cell: [25, 37], footprint: [1, 1], glyph: "T" },
+    { id: "tree_se", kind: "tree", name: "abedul", cell: [45, 38], footprint: [1, 1], glyph: "T" },
+    { id: "tree_e1", kind: "tree", name: "pino",   cell: [57, 8],  footprint: [1, 1], glyph: "T" },
+    { id: "tree_e2", kind: "tree", name: "roble",  cell: [55, 20], footprint: [1, 1], glyph: "T" },
+
+    // ── Valla del cementerio ──
+    { id: "fence_north", kind: "prop", name: "valla", cell: [10, 3],  footprint: [5, 1], glyph: "-" },
+    { id: "fence_south", kind: "prop", name: "valla", cell: [10, 10], footprint: [5, 1], glyph: "-" },
+    { id: "fence_west",  kind: "prop", name: "valla", cell: [10, 4],  footprint: [1, 6], glyph: "|" },
+
+    // ── Señal de entrada ──
+    { id: "sign_welcome", kind: "item", name: "Cartel: Bienvenidos a Robledo",
+      cell: [3, 18], footprint: [1, 1], glyph: "?" },
+
+    // ── NPCs ──
+    { id: "blacksmith",     kind: "npc", name: "Boris el Herrero",
+      cell: [17, 22], footprint: [1, 1], glyph: "$" },
+    { id: "innkeeper",      kind: "npc", name: "Greta la Posadera",
+      cell: [22, 28], footprint: [1, 1], glyph: "p" },
+    { id: "mayor",          kind: "npc", name: "Alcaldesa Mirla",
+      cell: [23, 20], footprint: [1, 1], glyph: "A" },
+    { id: "child",          kind: "npc", name: "Niño Tomé",
+      cell: [25, 21], footprint: [1, 1], glyph: "k" },
+    { id: "priest",         kind: "npc", name: "Padre Lucas",
+      cell: [16, 9],  footprint: [1, 1], glyph: "&" },
+    { id: "carpenter_npc",  kind: "npc", name: "Tomás Carpintero",
+      cell: [30, 27], footprint: [1, 1], glyph: "%" },
+    { id: "tavern_keeper",  kind: "npc", name: "Berta Tabernera",
+      cell: [29, 18], footprint: [1, 1], glyph: "t" },
+    { id: "miller",         kind: "npc", name: "Halmar el Molinero",
+      cell: [47, 19], footprint: [1, 1], glyph: "m" },
+    { id: "stable_boy",     kind: "npc", name: "Mozo Yannis",
+      cell: [36, 32], footprint: [1, 1], glyph: "y" },
+    { id: "farmer",         kind: "npc", name: "Granjera Eleva",
+      cell: [50, 30], footprint: [1, 1], glyph: "e" },
+    { id: "guard",          kind: "npc", name: "Guardia Roric",
+      cell: [2, 38],  footprint: [1, 1], glyph: "r" },
+
+    // ── Player ──
+    { id: "player", kind: "player", name: "Tú",
+      cell: [1, 19], footprint: [1, 1], glyph: "@" },
+  ];
+
+  return {
+    size: { cols, rows, meters_per_cell: 2 },
+    terrain,
+    terrain_legend: {
+      g: "grass", w: "water", _: "path", s: "stone", b: "bridge",
+      d: "dirt", a: "sand", o: "wood",
+    },
+    entities,
+  };
+})();
+
+// ── Generadores de A, B, C a partir del modelo canónico ─────────────────────
+
+function buildSampleA(model) {
+  const cols = model.size.cols;
+  const rows = model.size.rows;
+  // Mapa "terrain name → char" (inverso de terrain_legend); para A usamos
+  // "." en vez de "g" para grass porque resulta mucho más legible.
+  const charFor = { grass: "." };
+  for (const [ch, name] of Object.entries(model.terrain_legend)) {
+    if (name !== "grass") charFor[name] = ch;
+  }
+  const grid = Array.from({length: rows}, () => new Array(cols).fill("."));
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const tch = model.terrain[r][c];
+      const name = model.terrain_legend[tch] || "grass";
+      grid[r][c] = charFor[name] || tch;
+    }
+  }
+  for (const e of model.entities) {
+    const [c0, r0] = e.cell;
+    const [w, h] = e.footprint;
+    for (let dr = 0; dr < h; dr++) {
+      for (let dc = 0; dc < w; dc++) {
+        const r = r0 + dr, c = c0 + dc;
+        if (r >= 0 && r < rows && c >= 0 && c < cols) grid[r][c] = e.glyph;
+      }
+    }
+  }
+  const legendLines = [`  ".": { terrain: "grass" }`];
+  if (charFor.water)  legendLines.push(`  "${charFor.water}": { terrain: "water" }`);
+  if (charFor.path)   legendLines.push(`  "${charFor.path}": { terrain: "path" }`);
+  if (charFor.stone)  legendLines.push(`  "${charFor.stone}": { terrain: "stone" }`);
+  if (charFor.bridge) legendLines.push(`  "${charFor.bridge}": { terrain: "bridge" }`);
+  if (charFor.dirt)   legendLines.push(`  "${charFor.dirt}": { terrain: "dirt" }`);
+  if (charFor.sand)   legendLines.push(`  "${charFor.sand}": { terrain: "sand" }`);
+  if (charFor.wood)   legendLines.push(`  "${charFor.wood}": { terrain: "wood" }`);
+  const seen = new Set();
+  for (const e of model.entities) {
+    if (seen.has(e.glyph)) continue;
+    seen.add(e.glyph);
+    const sameGlyph = model.entities.filter(x => x.glyph === e.glyph);
+    const parts = [`kind: "${e.kind}"`];
+    if (sameGlyph.length === 1 && e.id) parts.push(`id: "${e.id}"`);
+    parts.push(`name: "${e.name}"`);
+    legendLines.push(`  "${e.glyph}": { ${parts.join(", ")} }`);
+  }
+  const gridLines = grid.map(row => "  " + row.join(""));
+  return `# Formato A — ASCII monocapa. Generado desde el modelo canónico.
+# Cada cluster contiguo del mismo glyph se interpreta como UNA entidad.
+
+legend:
+${legendLines.join("\n")}
+
+grid:
+${gridLines.join("\n")}
+`;
+}
+
+function buildSampleB(model) {
+  const cols = model.size.cols;
+  const rows = model.size.rows;
+  const terrainLines = model.terrain.map(row => "  " + row);
+  const ents = Array.from({length: rows}, () => new Array(cols).fill("."));
+  for (const e of model.entities) {
+    const [c0, r0] = e.cell;
+    const [w, h] = e.footprint;
+    for (let dr = 0; dr < h; dr++) {
+      for (let dc = 0; dc < w; dc++) {
+        const r = r0 + dr, c = c0 + dc;
+        if (r >= 0 && r < rows && c >= 0 && c < cols) ents[r][c] = e.glyph;
+      }
+    }
+  }
+  const entLines = ents.map(row => "  " + row.join(""));
+  const tLegLines = Object.entries(model.terrain_legend)
+    .map(([ch, name]) => `  ${ch}: ${name}`);
+  const seen = new Set();
+  const eLegLines = [];
+  for (const e of model.entities) {
+    if (seen.has(e.glyph)) continue;
+    seen.add(e.glyph);
+    const sameGlyph = model.entities.filter(x => x.glyph === e.glyph);
+    const parts = [`kind: "${e.kind}"`];
+    if (sameGlyph.length === 1 && e.id) parts.push(`id: "${e.id}"`);
+    parts.push(`name: "${e.name}"`);
+    // Siempre quotamos el char para evitar colisiones con sintaxis YAML:
+    // "#" se confundiría con comentario, "*"/"&"/"%" con anchors, etc.
+    eLegLines.push(`  "${e.glyph}": { ${parts.join(", ")} }`);
+  }
+  return `# Formato B — Doble capa ASCII. Generado desde el modelo canónico.
+
+terrain:
+${terrainLines.join("\n")}
+
+entities:
+${entLines.join("\n")}
+
+legend_terrain:
+${tLegLines.join("\n")}
+
+legend_entities:
+${eLegLines.join("\n")}
+`;
+}
+
+const SAMPLE_D = JSON.stringify(SAMPLE_D_OBJ, null, 2);
+
+// Sample C derivado del modelo D (matriz completa cell-by-cell).
+function buildSampleC(model) {
+  const ents = {};
+  for (const e of model.entities) {
+    ents[e.id] = { kind: e.kind, name: e.name, footprint: e.footprint };
+  }
+  const cells = [];
+  // Mapeo posicional: para cada celda dentro del footprint de cada entidad, marcamos ent.
+  const occ = Array.from({length: model.size.rows}, () =>
+    Array.from({length: model.size.cols}, () => null));
+  for (const e of model.entities) {
+    const [c0, r0] = e.cell;
+    const [w, h] = e.footprint;
+    for (let dr = 0; dr < h; dr++) {
+      for (let dc = 0; dc < w; dc++) {
+        if (r0 + dr < model.size.rows && c0 + dc < model.size.cols) {
+          occ[r0 + dr][c0 + dc] = e.id;
+        }
+      }
+    }
+  }
+  const terrainLegend = model.terrain_legend;
+  for (let r = 0; r < model.size.rows; r++) {
+    const row = [];
+    for (let c = 0; c < model.size.cols; c++) {
+      const ch = model.terrain[r][c];
+      const t = terrainLegend[ch] || "grass";
+      const cell = { t };
+      if (occ[r][c]) cell.ent = occ[r][c];
+      row.push(cell);
+    }
+    cells.push(row);
+  }
+  return {
+    size: model.size,
+    cells,
+    entities: ents,
+  };
+}
+
+// ── Parsers — cada uno devuelve modelo NORMALIZADO ──────────────────────────
+// Modelo normalizado:
+// {
+//   cols, rows,
+//   terrain: 2D array of single-char codes (or null)
+//   terrainLegend: { char: terrainName }
+//   entities: [{ id, kind, name, cell:[c,r], footprint:[w,h], glyph? }]
+// }
+
+function trimLineList(text) {
+  return text.split("\n")
+    .filter(l => l.length > 0)
+    .map(l => l.replace(/^\s+/, "").replace(/\s+$/, ""));
+}
+
+// Parser pequeño para los samples "YAML-ish" usados en A y B.
+// Soporta: clave: valor escalar | grids identadas | mapeos `clave: { ...json... }`
+// Acepta tanto `"clave": {json}` como `clave: {json}`.
+function parseYamlIsh(text) {
+  // Devuelve estructura jerárquica de objetos / strings.
+  const lines = text.split("\n");
+  const out = {};
+  let currentKey = null;
+  let mode = null; // "grid" | "map"
+  let buf = [];
+  let mapBuf = {};
+
+  function flush() {
+    if (currentKey == null) return;
+    if (mode === "grid") out[currentKey] = buf.slice();
+    else if (mode === "map") out[currentKey] = mapBuf;
+    buf = [];
+    mapBuf = {};
+    currentKey = null;
+    mode = null;
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+
+    // Top-level key (no indent): "name:" or "name: value"
+    const topMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)$/);
+    if (topMatch && !line.startsWith(" ") && !line.startsWith("\t")) {
+      flush();
+      currentKey = topMatch[1];
+      const rest = topMatch[2];
+      if (rest.length === 0) {
+        // ambiguous: decide on first child
+        mode = null;
+      } else {
+        // single-line value
+        out[currentKey] = rest;
+        currentKey = null;
+      }
+      continue;
+    }
+
+    // Indented line — child of currentKey
+    if (currentKey == null) continue;
+    const content = line.replace(/^\s+/, "");
+    if (content.length === 0) continue;
+
+    // Si la línea no tiene ":", se trata como fila de grid. Si tiene ":",
+    // es una entrada de mapa `"char": { ... }`. Para legend_terrain admitimos
+    // entradas simples `g: grass` (un único char antes del ":") que también
+    // matcheamos como map entry.
+    const mapEntry = content.match(/^"?(.)"?\s*:\s*(.*)$/);
+    const isGrid = !content.includes(":");
+
+    if (isGrid) {
+      if (mode == null) mode = "grid";
+      if (mode === "grid") buf.push(content);
+    } else if (mapEntry) {
+      if (mode == null) mode = "map";
+      if (mode === "map") {
+        const k = mapEntry[1];
+        let v = mapEntry[2].trim();
+        // Strip enclosing quotes
+        if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+        // Convert YAML-ish `{ a: "b", c: "d" }` to JSON.
+        if (v.startsWith("{")) {
+          try {
+            // Allow unquoted keys and trailing commas — turn into valid JSON.
+            const jsonish = v
+              .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+            mapBuf[k] = JSON.parse(jsonish);
+          } catch (e) {
+            mapBuf[k] = { _raw: v, _error: e.message };
+          }
+        } else {
+          mapBuf[k] = v;
+        }
+      }
+    }
+  }
+  flush();
+  return out;
+}
+
+// Flood-fill contiguo en una grid de strings por mismo char.
+function clusterCells(grid, ignoreChars = new Set([".", " "])) {
+  const rows = grid.length;
+  const cols = rows ? grid[0].length : 0;
+  const visited = Array.from({length: rows}, () => new Array(cols).fill(false));
+  const clusters = []; // {char, cells: [[c,r]]}
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (visited[r][c]) continue;
+      const ch = grid[r][c];
+      if (!ch || ignoreChars.has(ch)) { visited[r][c] = true; continue; }
+      const stack = [[c, r]];
+      const cells = [];
+      while (stack.length) {
+        const [cc, rr] = stack.pop();
+        if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+        if (visited[rr][cc]) continue;
+        if (grid[rr][cc] !== ch) continue;
+        visited[rr][cc] = true;
+        cells.push([cc, rr]);
+        stack.push([cc+1, rr]); stack.push([cc-1, rr]);
+        stack.push([cc, rr+1]); stack.push([cc, rr-1]);
+      }
+      clusters.push({char: ch, cells});
+    }
+  }
+  return clusters;
+}
+
+function bboxOf(cells) {
+  let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+  for (const [c, r] of cells) {
+    if (c < minC) minC = c;
+    if (c > maxC) maxC = c;
+    if (r < minR) minR = r;
+    if (r > maxR) maxR = r;
+  }
+  return { cell: [minC, minR], footprint: [maxC - minC + 1, maxR - minR + 1] };
+}
+
+// Parser A: ASCII monocapa con legend unificada.
+function parseA(text) {
+  const parsed = parseYamlIsh(text);
+  const legend = parsed.legend || {};
+  const grid = parsed.grid || [];
+  if (!grid.length) throw new Error("Falta el bloque `grid:` con la matriz.");
+
+  const terrainLegend = {};
+  const entityLegend = {}; // char -> { kind, id?, name? }
+  for (const [ch, def] of Object.entries(legend)) {
+    if (def && typeof def === "object") {
+      if (def.terrain) terrainLegend[ch] = def.terrain;
+      else if (def.kind) entityLegend[ch] = def;
+    }
+  }
+
+  // Construye terrain como matriz de chars de terreno; las entidades quedan en blanco.
+  const terrain = grid.map(row => {
+    return Array.from(row).map(ch => terrainLegend[ch] ? ch : "g").join("");
+  });
+  // Necesitamos al menos "g" en legend para grass; si no, asumimos.
+  if (!Object.values(terrainLegend).includes("grass")) {
+    terrainLegend["g"] = "grass";
+  }
+
+  // Para clustering, construye grid donde sólo dejamos chars de entidad.
+  const entGrid = grid.map(row =>
+    Array.from(row).map(ch => entityLegend[ch] ? ch : ".").join(""));
+  const ignore = new Set([".", " "]);
+  const clusters = clusterCells(entGrid, ignore);
+
+  const entities = [];
+  const idCounter = {};
+  for (const cl of clusters) {
+    const def = entityLegend[cl.char];
+    if (!def) continue;
+    const bb = bboxOf(cl.cells);
+    let id = def.id;
+    if (!id) {
+      idCounter[cl.char] = (idCounter[cl.char] || 0) + 1;
+      id = `${def.kind}_${cl.char}_${idCounter[cl.char]}`;
+    }
+    entities.push({
+      id, kind: def.kind, name: def.name || id,
+      cell: bb.cell, footprint: bb.footprint, glyph: cl.char,
+    });
+  }
+
+  const realCols = grid[0]?.length ?? COLS;
+  const realRows = grid.length;
+  return { cols: realCols, rows: realRows, terrain, terrainLegend, entities };
+}
+
+// Parser B: doble capa.
+function parseB(text) {
+  const parsed = parseYamlIsh(text);
+  const terrain = parsed.terrain || [];
+  const entGrid = parsed.entities || [];
+  const terrainLegend = {};
+  const entLegend = parsed.legend_entities || {};
+  for (const [ch, def] of Object.entries(parsed.legend_terrain || {})) {
+    if (typeof def === "string") terrainLegend[ch] = def;
+  }
+  if (!terrain.length) throw new Error("Falta el bloque `terrain:`.");
+  if (!entGrid.length) throw new Error("Falta el bloque `entities:`.");
+
+  const clusters = clusterCells(entGrid);
+  const entities = [];
+  const idCounter = {};
+  for (const cl of clusters) {
+    const def = entLegend[cl.char];
+    if (!def) continue;
+    const bb = bboxOf(cl.cells);
+    let id = def.id;
+    if (!id) {
+      idCounter[cl.char] = (idCounter[cl.char] || 0) + 1;
+      id = `${def.kind}_${cl.char}_${idCounter[cl.char]}`;
+    }
+    entities.push({
+      id, kind: def.kind, name: def.name || id,
+      cell: bb.cell, footprint: bb.footprint, glyph: cl.char,
+    });
+  }
+  const realCols = terrain[0]?.length ?? COLS;
+  const realRows = terrain.length;
+  return { cols: realCols, rows: realRows, terrain, terrainLegend, entities };
+}
+
+// Parser C: JSON cells matrix.
+function parseC(text) {
+  const obj = JSON.parse(text);
+  const cols = obj.size?.cols ?? COLS;
+  const rows = obj.size?.rows ?? ROWS;
+  const cells = obj.cells || [];
+
+  // Reconstruye terrain como strings de chars.
+  // Necesitamos un mapeo inverso terrain name -> char (mantengo gwsp_ ).
+  const reverseTerrain = { grass: "g", water: "w", path: "_", stone: "s" };
+  const terrain = [];
+  for (let r = 0; r < rows; r++) {
+    let row = "";
+    for (let c = 0; c < cols; c++) {
+      const cell = cells[r]?.[c] || { t: "grass" };
+      row += reverseTerrain[cell.t] || "g";
+    }
+    terrain.push(row);
+  }
+  const terrainLegend = { g: "grass", w: "water", _: "path", s: "stone" };
+
+  // Reconstruye entidades: agrupa celdas por `ent` id, calcula bbox.
+  const cellsById = {};
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const id = cells[r]?.[c]?.ent;
+      if (!id) continue;
+      (cellsById[id] = cellsById[id] || []).push([c, r]);
+    }
+  }
+  const entities = [];
+  for (const [id, cellsList] of Object.entries(cellsById)) {
+    const def = obj.entities?.[id] || {};
+    const bb = bboxOf(cellsList);
+    entities.push({
+      id, kind: def.kind || "prop", name: def.name || id,
+      cell: bb.cell, footprint: bb.footprint, glyph: id[0].toUpperCase(),
+    });
+  }
+  return { cols, rows, terrain, terrainLegend, entities };
+}
+
+// Parser D: terrain ASCII + entidades como lista (es ya casi el modelo normalizado).
+function parseD(text) {
+  const obj = JSON.parse(text);
+  const cols = obj.size?.cols ?? COLS;
+  const rows = obj.size?.rows ?? ROWS;
+  const terrain = obj.terrain || [];
+  const terrainLegend = obj.terrain_legend || { g: "grass" };
+  const entities = (obj.entities || []).map(e => ({
+    id: e.id, kind: e.kind || "prop", name: e.name || e.id,
+    cell: e.cell || [0, 0], footprint: e.footprint || [1, 1],
+    glyph: e.glyph || (e.kind ? e.kind[0].toUpperCase() : "?"),
+  }));
+  return { cols, rows, terrain, terrainLegend, entities };
+}
+
+// ── Renderer común sobre el modelo normalizado ──────────────────────────────
+
+function ensureCanvasSize(canvas, cols, rows) {
+  const w = cols * CELL_PX;
+  const h = rows * CELL_PX;
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+}
+
+function renderNormalized(canvas, model) {
+  const { cols, rows, terrain, terrainLegend, entities } = model;
+  ensureCanvasSize(canvas, cols, rows);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
+  // Terrain
+  for (let r = 0; r < rows; r++) {
+    const row = terrain[r] || "";
+    for (let c = 0; c < cols; c++) {
+      const ch = row[c] || "g";
+      const name = terrainLegend[ch] || "grass";
+      ctx.fillStyle = TERRAIN_COLORS[name] || TERRAIN_COLORS.default;
+      ctx.fillRect(c * CELL_PX, r * CELL_PX, CELL_PX, CELL_PX);
+    }
+  }
+
+  // Grid sutil
+  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  ctx.lineWidth = 1;
+  for (let c = 0; c <= cols; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * CELL_PX + 0.5, 0);
+    ctx.lineTo(c * CELL_PX + 0.5, rows * CELL_PX);
+    ctx.stroke();
+  }
+  for (let r = 0; r <= rows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * CELL_PX + 0.5);
+    ctx.lineTo(cols * CELL_PX, r * CELL_PX + 0.5);
+    ctx.stroke();
+  }
+
+  // Entidades: ordena para que buildings (footprint grande) salgan primero.
+  const ordered = entities.slice().sort((a, b) => {
+    const sa = a.footprint[0] * a.footprint[1];
+    const sb = b.footprint[0] * b.footprint[1];
+    return sb - sa;
+  });
+
+  ctx.font = "11px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (const e of ordered) {
+    const [c, r] = e.cell;
+    const [w, h] = e.footprint;
+    const px = c * CELL_PX;
+    const py = r * CELL_PX;
+    const pw = w * CELL_PX;
+    const ph = h * CELL_PX;
+    const pal = KIND_PALETTE[e.kind] || KIND_PALETTE.default;
+
+    if (e.kind === "building" || (w * h >= 4)) {
+      // Rectángulo completo del footprint.
+      ctx.fillStyle = pal.fill;
+      ctx.fillRect(px + 2, py + 2, pw - 4, ph - 4);
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+      ctx.fillStyle = "rgba(240,230,210,0.95)";
+      const label = e.name.length > 22 ? e.name.slice(0, 22) + "…" : e.name;
+      ctx.fillText(label, px + pw / 2, py + ph / 2);
+    } else if (e.kind === "item") {
+      // Diamante amarillo.
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const s = Math.min(pw, ph) * 0.45;
+      ctx.fillStyle = pal.fill;
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx + s, cy);
+      ctx.lineTo(cx, cy + s);
+      ctx.lineTo(cx - s, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(20,20,10,0.9)";
+      ctx.fillText(e.glyph || "·", cx, cy);
+    } else if (e.kind === "npc" || e.kind === "player") {
+      // Círculo.
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const radius = Math.min(pw, ph) * 0.4;
+      ctx.fillStyle = pal.fill;
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(240,240,250,0.95)";
+      ctx.fillText(e.glyph || "?", cx, cy);
+      // Etiqueta debajo
+      ctx.fillStyle = "rgba(240,240,250,0.8)";
+      ctx.font = "10px ui-monospace, Menlo, monospace";
+      ctx.fillText(e.name.length > 18 ? e.name.slice(0, 18) + "…" : e.name,
+                   cx, cy + radius + 9);
+      ctx.font = "11px ui-monospace, Menlo, monospace";
+    } else if (e.kind === "tree") {
+      // Copa circular + tronco gris simulado por un punto.
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const radius = Math.min(pw, ph) * 0.42;
+      ctx.fillStyle = pal.fill;
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Tronco
+      ctx.fillStyle = "#3a2a18";
+      ctx.fillRect(cx - 2, cy - 1, 4, 4);
+    } else {
+      // Prop genérico.
+      ctx.fillStyle = pal.fill;
+      ctx.fillRect(px + 4, py + 4, pw - 8, ph - 8);
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(px + 4, py + 4, pw - 8, ph - 8);
+      ctx.fillStyle = "rgba(240,230,210,0.85)";
+      ctx.font = "10px ui-monospace, Menlo, monospace";
+      ctx.fillText(e.glyph || "?", px + pw / 2, py + ph / 2);
+      ctx.font = "11px ui-monospace, Menlo, monospace";
+    }
+  }
+}
+
+// ── Wiring de paneles ───────────────────────────────────────────────────────
+
+function hookPanel(id, parseFn, initial) {
+  const textarea = document.getElementById("src-" + id);
+  const canvas = document.getElementById("canvas-" + id);
+  const status = document.getElementById("status-" + id);
+  const button = document.querySelector(`button[data-target="${id}"]`);
+
+  textarea.value = initial;
+
+  function rerender() {
+    try {
+      const model = parseFn(textarea.value);
+      renderNormalized(canvas, model);
+      const ents = model.entities.length;
+      const buildings = model.entities.filter(e => e.kind === "building").length;
+      const npcs = model.entities.filter(e => e.kind === "npc").length;
+      status.className = "status ok";
+      status.textContent = `${ents} entidades · ${buildings} buildings · ${npcs} NPCs`;
+    } catch (e) {
+      status.className = "status err";
+      status.textContent = `Error: ${e.message}`;
+      console.error(`Panel ${id} parse error:`, e);
+    }
+  }
+  button.addEventListener("click", rerender);
+  // Re-render on textarea blur too para feedback inmediato.
+  textarea.addEventListener("change", rerender);
+  rerender();
+}
+
+// Inicialización — los samples A, B y C se derivan del modelo canónico (D)
+// para garantizar que los 4 paneles muestran exactamente la misma escena.
+const SAMPLE_A = buildSampleA(SAMPLE_D_OBJ);
+const SAMPLE_B = buildSampleB(SAMPLE_D_OBJ);
+const SAMPLE_C = JSON.stringify(buildSampleC(SAMPLE_D_OBJ), null, 1);
+
+hookPanel("A", parseA, SAMPLE_A);
+hookPanel("B", parseB, SAMPLE_B);
+hookPanel("C", parseC, SAMPLE_C);
+hookPanel("D", parseD, SAMPLE_D);
+</script>
+</body>
+</html>
