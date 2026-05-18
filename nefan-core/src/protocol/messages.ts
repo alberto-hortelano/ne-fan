@@ -102,6 +102,23 @@ export interface SaveSessionMessage {
   requestId?: string;
 }
 
+/** The player walked into a world-map place. The bridge realizes the place's
+ *  low-level scene on demand (lazy realize): if it already has a scene it is
+ *  re-broadcast, otherwise the narrative engine generates one. */
+export interface PlayerEnteredPlaceMessage {
+  type: "player_entered_place";
+  placeId: string;
+}
+
+/** The player walked up to an entity (NPC) and pressed the interact key. The
+ *  bridge reports it to the narrative engine, which replies with consequences
+ *  (typically a show_dialogue effect). */
+export interface InteractEntityMessage {
+  type: "interact_entity";
+  entityId: string;
+  entityName: string;
+}
+
 export type ClientMessage =
   | InputMessage
   | LoadRoomMessage
@@ -115,7 +132,9 @@ export type ClientMessage =
   | DeleteSessionMessage
   | DialogueChoiceMessage
   | ListGamesMessage
-  | SaveSessionMessage;
+  | SaveSessionMessage
+  | PlayerEnteredPlaceMessage
+  | InteractEntityMessage;
 
 // ── Logic → Frontend ──
 
@@ -165,6 +184,17 @@ export interface NarrativeEventMessage {
   effects: ConsequenceEffect[];
 }
 
+/** Lifecycle hint for long-running narrative work so clients can show a loader.
+ *  Phase: "generating" (LLM dispatched, awaiting), "ready" (scene applied),
+ *  "error" (LLM call failed — surfaced verbatim, no silent placeholder). */
+export interface NarrativeStatusMessage {
+  type: "narrative_status";
+  phase: "generating" | "ready" | "error";
+  kind: "scene" | "consequences";
+  message?: string;
+  elapsedMs?: number;
+}
+
 export interface GamesListedMessage {
   type: "games_listed";
   requestId: string;
@@ -189,6 +219,7 @@ export type ServerMessage =
   | SessionsListedMessage
   | SessionStartedMessage
   | NarrativeEventMessage
+  | NarrativeStatusMessage
   | GamesListedMessage
   | SessionDeletedMessage
   | SessionSavedMessage;

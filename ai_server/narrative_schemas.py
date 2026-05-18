@@ -108,49 +108,9 @@ POPULATE_ROOM_TOOL = {
     },
 }
 
-FALLBACK_ROOM = {
-    "room_description": "A dimly lit stone chamber. Dust motes drift through stale air. The walls bear scratch marks from ages past.",
-    "objects": [
-        {
-            "mesh": "cylinder",
-            "scale": [0.3, 0.3, 0.5],
-            "description": "old wooden barrel with iron hoops, stained with age",
-            "category": "prop",
-            "state": "intact",
-            "mood": "neutral",
-            "spawn_position": [-150, -100, 25],
-        },
-        {
-            "mesh": "cylinder",
-            "scale": [0.3, 0.3, 0.5],
-            "description": "cracked wooden barrel leaking dark liquid",
-            "category": "prop",
-            "state": "damaged",
-            "mood": "ominous",
-            "spawn_position": [-100, -150, 25],
-        },
-        {
-            "mesh": "box",
-            "scale": [0.4, 0.3, 0.3],
-            "description": "small stone bench worn smooth by countless travelers",
-            "category": "prop",
-            "state": "intact",
-            "mood": "neutral",
-            "spawn_position": [200, -50, 15],
-        },
-        {
-            "mesh": "sphere",
-            "scale": [0.15, 0.15, 0.15],
-            "description": "a broken lantern with faintly glowing embers inside",
-            "category": "item",
-            "state": "damaged",
-            "mood": "mysterious",
-            "spawn_position": [0, -200, 80],
-        },
-    ],
-    "npcs": [],
-    "ambient_event": "Water drips slowly from the ceiling, echoing in the silence.",
-}
+# FALLBACK_ROOM was removed. The bridge and ai_server no longer manufacture a
+# scripted room when the LLM is unreachable — they raise NarrativeUnavailable
+# (HTTP 503) so the caller sees the failure instead of a placeholder.
 
 
 # --- Extended schema for Godot 3D rooms (Phase 2+) ---
@@ -356,36 +316,7 @@ GENERATE_ROOM_TOOL = {
     },
 }
 
-FALLBACK_EXTENDED_ROOM = {
-    "room_id": "fallback_001",
-    "room_description": "Una sala de piedra tenuemente iluminada. El polvo flota en el aire viciado.",
-    "dimensions": {"width": 10.0, "height": 4.0, "depth": 8.0},
-    "surfaces": {
-        "floor": {"texture_prompt": "cracked stone floor, dark, seamless tiling", "tiling": [2, 2]},
-        "ceiling": {"texture_prompt": "rough stone ceiling, cobwebs, seamless tiling", "tiling": [2, 2]},
-        "walls": [
-            {"side": "north", "texture_prompt": "damp stone wall, moss patches, seamless tiling", "tiling": [2, 1]},
-            {"side": "east", "texture_prompt": "rough stone wall, cracks, seamless tiling", "tiling": [2, 1]},
-            {"side": "south", "texture_prompt": "stone wall with archway marks, seamless tiling", "tiling": [2, 1]},
-            {"side": "west", "texture_prompt": "stone wall, water stains, seamless tiling", "tiling": [2, 1]},
-        ],
-    },
-    "exits": [
-        {"wall": "south", "offset": 0, "size": [2.0, 3.0], "description": "arco de piedra desgastado", "target_hint": "passage back"},
-    ],
-    "lighting": {
-        "ambient": {"color": [0.05, 0.03, 0.02], "intensity": 0.3},
-        "lights": [{"type": "point", "position": [0, 3.5, 0], "color": [1.0, 0.7, 0.3], "intensity": 1.5, "range": 8.0}],
-    },
-    "objects": [
-        {"id": "barrel_f1", "mesh": "cylinder", "position": [-3, 0, 2], "scale": [0.4, 0.6, 0.4],
-         "description": "barril viejo con aros de hierro", "category": "prop", "generate_3d": False},
-        {"id": "crate_f1", "mesh": "box", "position": [2, 0, -1], "scale": [0.5, 0.4, 0.5],
-         "description": "caja de madera astillada", "category": "prop", "generate_3d": False},
-    ],
-    "npcs": [],
-    "ambient_event": "Gotas de agua caen lentamente del techo.",
-}
+# FALLBACK_EXTENDED_ROOM also removed; same reasoning.
 
 
 def validate_extended_room_response(data: dict) -> dict:
@@ -485,239 +416,352 @@ def validate_extended_room_response(data: dict) -> dict:
     return data
 
 
-GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a dark fantasy RPG. You generate open-world 3D scenes as structured data for a Godot 4 engine.
+GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a dark fantasy RPG. You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are.
 
-IMPORTANT: You do NOT generate enclosed rooms. You generate OUTDOOR SCENES with buildings as objects.
+OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
 
-ASSET REUSE (important):
-- The request payload may include `available_assets`: a list of previously generated
-  textures and models with their hashes and original prompts.
-- Whenever an existing asset matches what you need (semantically — read the prompt),
-  put its hash in the corresponding field instead of writing a new prompt:
-    * For terrain.texture_prompt or object.texture_prompt → use object.texture_hash.
-    * For object.model_prompt → use object.model_hash.
-- Asset reuse is the default. Only invent a new prompt when nothing in
-  `available_assets` is a reasonable match. This avoids slow regeneration and
-  keeps the world visually consistent across sessions.
+{
+  "scene_id": "<slug, e.g. 'tavern_clearing' or 'forest_path'>",
+  "place_id": "<optional: the world-map place id this scene realizes>",
+  "scene_description": "<2-3 sentences in Spanish describing the scene>",
+  "size":  { "cols": <int>, "rows": <int>, "meters_per_cell": 2 },
+  "terrain": [
+    "<string of EXACTLY `cols` chars>",
+    ...   // EXACTLY `rows` strings total
+  ],
+  "terrain_legend": { "<char>": "<terrain name>", ... },
+  "entities": [
+    {
+      "id":        "<unique slug, e.g. 'tavern_main', 'tree_n1', 'boris'>",
+      "kind":      "building" | "prop" | "item" | "tree" | "npc" | "player",
+      "name":      "<spanish display name>",
+      "cell":      [<col>, <row>],       // 0-indexed; top-left of footprint
+      "footprint": [<width_cells>, <height_cells>],
+      "glyph":     "<one ASCII char, must be different from terrain chars>"
+    },
+    ...
+  ],
+  "ambient_event": "<one Spanish sentence of atmospheric flavour>"
+}
 
-UNITS & COORDINATES:
-- All units in METERS. Scene area: 40-80m wide/deep.
-- Origin at center. Floor at y=0. +Z is south, -Z is north.
-- Object position.y=0 means bottom of object touches ground.
+COORDINATE SYSTEM
+- Top-left is (0,0). Col grows EAST, row grows SOUTH.
+- meters_per_cell is always 2 (so a 30×20 grid is 60 m × 40 m of world).
 
-BUILDINGS:
-- Buildings are constructed from box meshes: walls, floor, ceiling as separate objects.
-- Leave gaps between wall segments for doors/entrances.
-- Example tavern wall: mesh=box, scale=[8, 3, 0.2], position=[x, 1.5, z].
-- Floor: mesh=box, scale=[width, 0.1, depth], position=[cx, -0.05, cz].
-- Ceiling: mesh=box, scale=[width, 0.1, depth], position=[cx, height+0.05, cz].
+GRID SIZES (pick what suits the scene)
+- Small scene (a clearing, a cabin and surroundings): 16×10 to 24×16.
+- Town square / village: 32×24 to 48×30.
+- Big town: 48×30 to 60×40.
+- Never larger than 80×60.
 
-TERRAIN:
-- zone_type MUST be "outdoor".
-- terrain.type: "static" (flat ground plane) or "chunked" (infinite heightmap).
-- terrain.texture_prompt: English, for SD texture generation.
+TERRAIN CHARS — reserved (you do not need to declare these in terrain_legend, but it doesn't hurt)
+- "g" grass (default)         - "_" path / dirt road        - "s" stone / paved
+- "w" water (river / pond)    - "b" bridge (wood over water)
+- "d" dirt / tilled soil      - "a" sand (river bank)       - "o" wood (planks / dock)
+You may invent additional chars (lowercase letters or "~", "-", ":") and document them in terrain_legend.
 
-SKY & FOG:
-- sky.time_of_day: "dawn", "day", "dusk", "night".
-- fog: density 0.005-0.02, color matching atmosphere.
+ENTITY RULES
+- Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").
+- `cell` is the TOP-LEFT of the footprint. `cell + footprint` must stay inside the grid.
+- Buildings: ONE rectangular footprint (a tavern is one rectangle, not four wall slabs). Typical size 4×3 to 8×6 cells.
+- Props are usually 1×1 (barrel, lantern, well). Carts/log piles can be 2×1 or 3×2.
+- NPCs and player are always 1×1.
+- Place NPCs at their work spot (smith near the smithy, innkeeper at the inn's door).
+- The player sits where the narrative says the player ENTERS the scene.
 
-VEGETATION:
-- grass: count 500-2000, radius 20-30m.
-- bushes: count 10-30, radius 20-25m.
-- trees: count 5-20, ring_inner_radius 15-25m, ring_outer_radius 25-30m.
+GLYPH RULES (critical for ASCII debug rendering)
+- Glyph must be a SINGLE printable ASCII char.
+- Glyph must NOT equal any terrain char in the same map (so an entity over grass "g" cannot have glyph "g").
+- Glyphs CAN repeat across entities of the same kind (e.g. all trees use "T") because each entity has its own id. The narrative engine uses the id, not the glyph.
 
-OBJECTS (max 25):
-- mesh: box, sphere, capsule, cylinder, cone, plane, torus.
-- scale: ACTUAL SIZE in meters.
-- category: building (walls/floors/structure), prop (furniture/barrels/carts), terrain (rocks/logs), item (interactive).
-- texture_prompt: English, for SD. Include "seamless tiling".
-- description: Spanish.
+NPCs
+- Yes, include the NPCs that belong to this scene as `kind: "npc"` entities. The narrative engine reads them by id.
+- Use Spanish first names (Boris, Greta, Mirla, Tomás, Halmar, Yannis, etc.) and a short title ("Boris el Herrero").
 
-LIGHTING:
-- ambient: RGB [0-1], intensity 0.2-0.5.
-- lights: point/spot for torches, lamps, fires. Max 6.
-- The directional light (sun/moon) is auto-generated from sky.time_of_day.
+ASSET REUSE
+- The request may include `available_assets`: a list of cached textures/models with hashes and prompts. If a cached prompt matches what you'd want for an entity, add `"texture_hash": "<hash>"` or `"model_hash": "<hash>"` to that entity. Optional but encouraged for visual consistency across scenes.
 
-NPCs: Do NOT include NPCs in the scene. NPCs are spawned by the narrative scenario system.
+VALIDATION CHECKLIST — before calling narrative_respond:
+- [ ] All `terrain` rows are strings of EXACTLY `size.cols` chars.
+- [ ] Number of `terrain` rows equals `size.rows`.
+- [ ] Every char that appears in `terrain` is reserved OR documented in `terrain_legend`.
+- [ ] Every entity has all required fields.
+- [ ] No two entities share an `id`.
+- [ ] No entity's footprint runs off the grid.
+- [ ] Every glyph differs from every terrain char.
 
-Generate a scene_id, room_description (Spanish), and ambient_event (Spanish).
+EXAMPLE — claro del cazador, 16 cols × 10 rows:
+{
+  "scene_id": "claro_cazador",
+  "scene_description": "Un claro pequeño en lo profundo del bosque. Una cabaña baja humea perezosamente y un sendero pisado lleva al sur.",
+  "size": { "cols": 16, "rows": 10, "meters_per_cell": 2 },
+  "terrain": [
+    "gggggggggggggggg",
+    "gggggggggggggggg",
+    "gggggggggggggggg",
+    "gggggggggggggggg",
+    "gggggggggggggggg",
+    "gggggggg__gggggg",
+    "gggggggg__gggggg",
+    "gggggggg__gggggg",
+    "gggggggg__gggggg",
+    "gggggggg__gggggg"
+  ],
+  "terrain_legend": { "g": "grass", "_": "path" },
+  "entities": [
+    { "id": "cabin",      "kind": "building", "name": "Cabaña del Cazador", "cell": [7, 2], "footprint": [6, 3], "glyph": "H" },
+    { "id": "fire_pit",   "kind": "prop",     "name": "hoguera",            "cell": [10, 6], "footprint": [1, 1], "glyph": "f" },
+    { "id": "tree_n1",    "kind": "tree",     "name": "pino",               "cell": [2, 1],  "footprint": [1, 1], "glyph": "T" },
+    { "id": "tree_n2",    "kind": "tree",     "name": "pino",               "cell": [13, 1], "footprint": [1, 1], "glyph": "T" },
+    { "id": "tree_s",     "kind": "tree",     "name": "roble",              "cell": [3, 8],  "footprint": [1, 1], "glyph": "T" },
+    { "id": "hunter",     "kind": "npc",      "name": "Tarald el Cazador",  "cell": [11, 5], "footprint": [1, 1], "glyph": "n" },
+    { "id": "player",     "kind": "player",   "name": "Tú",                 "cell": [9, 9],  "footprint": [1, 1], "glyph": "@" }
+  ],
+  "ambient_event": "Una rama cruje en algún lugar tras los pinos y el humo de la chimenea huele a pino quemado."
+}
 """
 
 GENERATE_SCENE_TOOL = {
     "name": "generate_scene",
-    "description": "Generates an open-world 3D scene with terrain, buildings, objects, and lighting.",
+    "description": (
+        "Generates a top-down 2D map in Map Format D: a terrain grid (ASCII strings) "
+        "plus a list of named entities with cell + footprint. The narrative engine reads "
+        "it to know what is where; the game engine renders it. See system prompt for the "
+        "full schema and a worked example."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "room_id": {"type": "string", "description": "Unique scene identifier"},
-            "room_description": {"type": "string", "description": "2-3 sentence description in Spanish"},
-            "zone_type": {"type": "string", "enum": ["outdoor"], "description": "Always outdoor"},
-            "dimensions": {
+            "scene_id": {
+                "type": "string",
+                "description": "Unique slug identifying this map (e.g. 'tavern_clearing', 'robledo_village').",
+            },
+            "place_id": {
+                "type": "string",
+                "description": "Optional. The world-map place id this scene realizes; the engine binds the scene to that place.",
+            },
+            "scene_description": {
+                "type": "string",
+                "description": "2-3 sentence description of the scene, in Spanish.",
+            },
+            "size": {
                 "type": "object",
                 "properties": {
-                    "width": {"type": "number", "description": "X axis, 40-80 meters"},
-                    "height": {"type": "number", "description": "Sky height, 20-40"},
-                    "depth": {"type": "number", "description": "Z axis, 40-80 meters"},
+                    "cols": {"type": "integer", "minimum": 12, "maximum": 80},
+                    "rows": {"type": "integer", "minimum": 8, "maximum": 60},
+                    "meters_per_cell": {"type": "number", "description": "Always 2."},
                 },
-                "required": ["width", "height", "depth"],
+                "required": ["cols", "rows", "meters_per_cell"],
             },
             "terrain": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string", "enum": ["static", "chunked"]},
-                    "texture_prompt": {"type": "string"},
-                    "texture_hash": {
-                        "type": "string",
-                        "description": "Reuse a cached texture by its 16-char hash from available_assets. Skips generation.",
-                    },
-                },
-                "required": ["type"],
-            },
-            "sky": {
-                "type": "object",
-                "properties": {
-                    "time_of_day": {"type": "string", "enum": ["dawn", "day", "dusk", "night"]},
-                    "custom_sky_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                    "custom_horizon_color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                },
-                "required": ["time_of_day"],
-            },
-            "fog": {
-                "type": "object",
-                "properties": {
-                    "enabled": {"type": "boolean"},
-                    "density": {"type": "number"},
-                    "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                },
-            },
-            "vegetation": {
-                "type": "object",
-                "properties": {
-                    "grass": {"type": "object", "properties": {"count": {"type": "integer"}, "radius": {"type": "number"}}},
-                    "bushes": {"type": "object", "properties": {"count": {"type": "integer"}, "radius": {"type": "number"}}},
-                    "trees": {"type": "object", "properties": {
-                        "count": {"type": "integer"},
-                        "ring_inner_radius": {"type": "number"},
-                        "ring_outer_radius": {"type": "number"},
-                    }},
-                },
-            },
-            "lighting": {
-                "type": "object",
-                "properties": {
-                    "ambient": {
-                        "type": "object",
-                        "properties": {
-                            "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                            "intensity": {"type": "number"},
-                        },
-                        "required": ["color", "intensity"],
-                    },
-                    "lights": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {"type": "string", "enum": ["point", "spot"]},
-                                "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                                "color": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                                "intensity": {"type": "number"},
-                                "range": {"type": "number"},
-                            },
-                            "required": ["type", "position", "color", "intensity", "range"],
-                        },
-                        "maxItems": 6,
-                    },
-                },
-                "required": ["ambient", "lights"],
-            },
-            "objects": {
                 "type": "array",
+                "description": (
+                    "Exactly `rows` strings, each EXACTLY `cols` characters wide. "
+                    "Each char is a terrain glyph (g=grass, w=water, _=path, s=stone, "
+                    "b=bridge, d=dirt, a=sand, o=wood, or any char you define in terrain_legend)."
+                ),
+                "items": {"type": "string"},
+            },
+            "terrain_legend": {
+                "type": "object",
+                "description": (
+                    "Mapping from terrain char to terrain name. Reserved chars don't need to "
+                    "appear here. Add any custom terrain chars you used."
+                ),
+                "additionalProperties": {"type": "string"},
+            },
+            "entities": {
+                "type": "array",
+                "description": "Every thing on the map that is NOT terrain.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "string"},
-                        "mesh": {"type": "string", "enum": list(VALID_MESHES)},
-                        "texture_prompt": {"type": "string"},
+                        "id": {
+                            "type": "string",
+                            "description": "Unique slug (lowercase + underscore).",
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["building", "prop", "item", "tree", "npc", "player"],
+                        },
+                        "name": {"type": "string", "description": "Spanish display name."},
+                        "cell": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "description": "[col, row] of the top-left of the footprint.",
+                        },
+                        "footprint": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1},
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "description": "[width_cells, height_cells]; usually [1,1] for props/NPCs.",
+                        },
+                        "glyph": {
+                            "type": "string",
+                            "description": "A single printable ASCII char, distinct from terrain chars.",
+                        },
                         "texture_hash": {
                             "type": "string",
-                            "description": "Reuse a cached texture by hash from available_assets. Mutually exclusive with texture_prompt; saves generation time.",
+                            "description": "Optional. Reuse a cached texture by 16-char hash from available_assets.",
                         },
-                        "model_prompt": {"type": "string"},
                         "model_hash": {
                             "type": "string",
-                            "description": "Reuse a cached GLB model by hash from available_assets. Skips Meshy/TripoSG generation entirely.",
+                            "description": "Optional. Reuse a cached 3D model by hash.",
                         },
-                        "generate_3d": {"type": "boolean"},
-                        "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                        "rotation": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                        "scale": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                        "description": {"type": "string"},
-                        "category": {"type": "string", "enum": ["building", "prop", "terrain", "item"]},
                     },
-                    "required": ["id", "mesh", "position", "scale", "description", "category"],
+                    "required": ["id", "kind", "name", "cell", "footprint", "glyph"],
                 },
-                "maxItems": 25,
+                "maxItems": 80,
             },
-            "ambient_event": {"type": "string"},
+            "ambient_event": {
+                "type": "string",
+                "description": "One Spanish sentence of atmospheric flavour (wind, birdsong, smell of stew, etc.).",
+            },
         },
-        "required": ["room_id", "room_description", "zone_type", "dimensions", "terrain", "sky", "lighting", "objects", "ambient_event"],
+        "required": ["scene_id", "scene_description", "size", "terrain", "terrain_legend", "entities", "ambient_event"],
     },
 }
 
 
+RESERVED_TERRAIN = {
+    "g": "grass", "w": "water", "_": "path", "s": "stone",
+    "b": "bridge", "d": "dirt", "a": "sand", "o": "wood",
+}
+
+VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player"}
+
+
 def validate_scene_response(data: dict) -> dict:
-    """Validate and sanitize LLM-generated outdoor scene data."""
+    """Validate and sanitize a Map Format D scene returned by the LLM.
+
+    Tolerant pass: when the LLM gets a field slightly wrong (wrong row length,
+    glyph collision, footprint out of bounds, missing glyph) we trim/fix it
+    instead of rejecting the whole map. Truly broken responses degrade to a
+    minimal grass-only fallback so the client never gets a 500.
+    """
     import uuid as _uuid
 
-    data.setdefault("room_id", f"scene_{_uuid.uuid4().hex[:8]}")
-    data.setdefault("room_description", "Un paraje desolado.")
-    data.setdefault("ambient_event", "")
-    data["zone_type"] = "outdoor"
-    data.setdefault("exits", [])
-    data.setdefault("npcs", [])
+    # ── Identity & description ───────────────────────────────────────────
+    scene_id = (
+        data.get("scene_id")
+        or data.get("room_id")  # legacy alias
+        or f"scene_{_uuid.uuid4().hex[:8]}"
+    )
+    data["scene_id"] = scene_id
+    # Keep `room_id` as alias so older clients keep working.
+    data["room_id"] = scene_id
+    data["scene_description"] = (
+        data.get("scene_description") or data.get("room_description") or "Un paraje desolado."
+    )
+    data["room_description"] = data["scene_description"]
+    data["ambient_event"] = data.get("ambient_event") or ""
 
-    # Dimensions
-    dims = data.setdefault("dimensions", {"width": 60.0, "height": 30.0, "depth": 60.0})
-    dims["width"] = max(30.0, min(float(dims.get("width", 60.0)), 100.0))
-    dims["height"] = max(10.0, min(float(dims.get("height", 30.0)), 50.0))
-    dims["depth"] = max(30.0, min(float(dims.get("depth", 60.0)), 100.0))
+    # ── Size ─────────────────────────────────────────────────────────────
+    size = data.get("size") or {}
+    cols = int(size.get("cols") or 24)
+    rows = int(size.get("rows") or 16)
+    mpc = float(size.get("meters_per_cell") or 2)
+    cols = max(12, min(cols, 80))
+    rows = max(8, min(rows, 60))
+    data["size"] = {"cols": cols, "rows": rows, "meters_per_cell": mpc}
 
-    # Terrain
-    terrain = data.setdefault("terrain", {"type": "static", "texture_prompt": "grass and dirt path, seamless"})
-    if terrain.get("type") not in ("static", "chunked"):
-        terrain["type"] = "static"
+    # ── Terrain grid ─────────────────────────────────────────────────────
+    raw_terrain = data.get("terrain")
+    if not isinstance(raw_terrain, list) or not raw_terrain:
+        # Old schema with `terrain: { type, texture_prompt }` — replace with empty grass.
+        raw_terrain = []
 
-    # Sky
-    sky = data.setdefault("sky", {"time_of_day": "day"})
-    if sky.get("time_of_day") not in ("dawn", "day", "dusk", "night"):
-        sky["time_of_day"] = "day"
+    # Normalize each row to exactly `cols` chars: pad with "g" or truncate.
+    normalized = []
+    for r in range(rows):
+        if r < len(raw_terrain) and isinstance(raw_terrain[r], str):
+            row = raw_terrain[r]
+        else:
+            row = ""
+        if len(row) > cols:
+            row = row[:cols]
+        elif len(row) < cols:
+            row = row + ("g" * (cols - len(row)))
+        normalized.append(row)
+    data["terrain"] = normalized
 
-    # Fog
-    data.setdefault("fog", {"enabled": False})
+    # ── Terrain legend ───────────────────────────────────────────────────
+    legend = data.get("terrain_legend")
+    if not isinstance(legend, dict):
+        legend = {}
+    # Ensure every char used in terrain has an entry (default = grass for unknown).
+    used_chars = set("".join(normalized))
+    for ch in used_chars:
+        if ch not in legend and ch not in RESERVED_TERRAIN:
+            legend[ch] = "grass"
+    # Merge reserved (the legend takes precedence if LLM redefined a char).
+    for ch, name in RESERVED_TERRAIN.items():
+        legend.setdefault(ch, name)
+    data["terrain_legend"] = legend
 
-    # Lighting
-    lighting = data.setdefault("lighting", {})
-    lighting.setdefault("ambient", {"color": [0.15, 0.12, 0.1], "intensity": 0.4})
-    lighting.setdefault("lights", [])
-    lighting["lights"] = lighting["lights"][:6]
+    # ── Entities ─────────────────────────────────────────────────────────
+    raw_entities = data.get("entities")
+    if not isinstance(raw_entities, list):
+        raw_entities = []
+    terrain_chars = set(legend.keys())
 
-    # Objects
-    objects = data.get("objects", [])[:25]
-    for obj in objects:
-        obj.setdefault("id", f"obj_{_uuid.uuid4().hex[:6]}")
-        if obj.get("mesh") not in VALID_MESHES:
-            obj["mesh"] = "box"
-        obj.setdefault("scale", [1.0, 1.0, 1.0])
-        if len(obj.get("scale", [])) != 3:
-            obj["scale"] = [1.0, 1.0, 1.0]
-        obj["scale"] = [max(0.05, min(float(s), 30.0)) for s in obj["scale"]]
-        obj.setdefault("position", [0, 0, 0])
-        obj.setdefault("rotation", [0, 0, 0])
-        obj.setdefault("description", "un objeto")
-        obj.setdefault("category", "prop")
-        obj.setdefault("generate_3d", False)
-    data["objects"] = objects
+    seen_ids: set = set()
+    cleaned: list = []
+    for ent in raw_entities[:80]:
+        if not isinstance(ent, dict):
+            continue
+        eid = ent.get("id") or f"ent_{_uuid.uuid4().hex[:6]}"
+        if eid in seen_ids:
+            eid = f"{eid}_{_uuid.uuid4().hex[:4]}"
+        seen_ids.add(eid)
+
+        kind = ent.get("kind") or "prop"
+        if kind not in VALID_ENTITY_KINDS:
+            kind = "prop"
+
+        cell = ent.get("cell") or [0, 0]
+        if not (isinstance(cell, list) and len(cell) == 2):
+            cell = [0, 0]
+        col = max(0, min(int(cell[0]), cols - 1))
+        row = max(0, min(int(cell[1]), rows - 1))
+
+        fp = ent.get("footprint") or [1, 1]
+        if not (isinstance(fp, list) and len(fp) == 2):
+            fp = [1, 1]
+        w = max(1, min(int(fp[0]), cols - col))
+        h = max(1, min(int(fp[1]), rows - row))
+
+        glyph = ent.get("glyph")
+        if not (isinstance(glyph, str) and len(glyph) == 1) or glyph in terrain_chars:
+            # Pick a fallback glyph that's not used as terrain.
+            fallback_pool = "?xyzqXYZQ#&%$*+!"
+            glyph = next(
+                (c for c in fallback_pool if c not in terrain_chars),
+                "?",
+            )
+
+        clean_ent = {
+            "id": eid,
+            "kind": kind,
+            "name": ent.get("name") or eid,
+            "cell": [col, row],
+            "footprint": [w, h],
+            "glyph": glyph,
+        }
+        if isinstance(ent.get("texture_hash"), str):
+            clean_ent["texture_hash"] = ent["texture_hash"]
+        if isinstance(ent.get("model_hash"), str):
+            clean_ent["model_hash"] = ent["model_hash"]
+        cleaned.append(clean_ent)
+    data["entities"] = cleaned
+
+    # ── Strip legacy fields the new schema doesn't use ───────────────────
+    for legacy in ("dimensions", "sky", "fog", "vegetation", "lighting", "exits",
+                   "npcs", "objects", "surfaces", "zone_type"):
+        data.pop(legacy, None)
 
     return data
 
@@ -1033,47 +1077,73 @@ NARRATIVE_REACT_TOOL = {
 
 
 def validate_narrative_reaction(data: dict | None) -> dict:
-    """Sanitize a Claude response to react_to_player into a safe consequences list."""
+    """Validate a Claude response to react_to_player.
+
+    Strict mode — accepted types are exactly {dialogue, story_update,
+    spawn_entity, schedule_event, noop}. Any deviation (aliases like
+    show_dialogue, text instead of delta, missing required fields, malformed
+    kinds) raises ValueError. The bridge surfaces the error to the client; the
+    operator fixes the narrative engine's prompt.
+    """
     if not isinstance(data, dict):
-        return {"consequences": []}
-    raw = data.get("consequences", [])
+        raise ValueError(f"react_to_player payload must be an object, got {type(data).__name__}")
+    raw = data.get("consequences")
     if not isinstance(raw, list):
-        return {"consequences": []}
+        raise ValueError("react_to_player payload missing list `consequences`")
+    if len(raw) > 4:
+        raise ValueError(f"react_to_player returned {len(raw)} consequences, max is 4")
+
     valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "noop"}
     valid_kinds = {"npc", "building", "object"}
     out: list[dict] = []
-    for c in raw[:4]:
+    for idx, c in enumerate(raw):
         if not isinstance(c, dict):
-            continue
+            raise ValueError(f"consequence[{idx}] is not an object")
         t = c.get("type")
         if t not in valid_types:
-            continue
+            raise ValueError(
+                f"consequence[{idx}].type='{t}' is invalid; allowed: {sorted(valid_types)}"
+            )
         if t == "noop":
             continue
         if t == "dialogue":
             speaker = str(c.get("speaker", "")).strip()
             text = str(c.get("text", "")).strip()
-            if not speaker or not text:
-                continue
-            entry = {"type": "dialogue", "speaker": speaker, "text": text}
+            if not speaker:
+                raise ValueError(f"dialogue[{idx}] missing required field `speaker`")
+            if not text:
+                raise ValueError(f"dialogue[{idx}] missing required field `text`")
+            entry: dict = {"type": "dialogue", "speaker": speaker, "text": text}
             raw_choices = c.get("choices")
-            if isinstance(raw_choices, list) and raw_choices:
+            if raw_choices is not None:
+                if not isinstance(raw_choices, list):
+                    raise ValueError(f"dialogue[{idx}].choices must be a list")
                 trimmed = [str(x).strip() for x in raw_choices if str(x).strip()]
                 if trimmed:
-                    entry["choices"] = trimmed[:3]
+                    if len(trimmed) > 3:
+                        raise ValueError(f"dialogue[{idx}].choices has {len(trimmed)} entries, max is 3")
+                    entry["choices"] = trimmed
             out.append(entry)
         elif t == "story_update":
-            delta = str(c.get("delta", "")).strip()
-            if delta:
-                out.append({"type": "story_update", "delta": delta})
+            delta_raw = c.get("delta")
+            if not isinstance(delta_raw, str) or not delta_raw.strip():
+                raise ValueError(
+                    f"story_update[{idx}] missing required field `delta` (non-empty string)"
+                )
+            out.append({"type": "story_update", "delta": delta_raw.strip()})
         elif t == "spawn_entity":
             kind = c.get("entity_kind")
             if kind not in valid_kinds:
-                continue
+                raise ValueError(
+                    f"spawn_entity[{idx}].entity_kind='{kind}' invalid; allowed: {sorted(valid_kinds)}"
+                )
+            description = str(c.get("description", "")).strip()
+            if not description:
+                raise ValueError(f"spawn_entity[{idx}] missing required field `description`")
             entry = {
                 "type": "spawn_entity",
                 "entity_kind": kind,
-                "description": str(c.get("description", "")).strip(),
+                "description": description,
                 "position_hint": str(c.get("position_hint", "near_player")),
             }
             if c.get("name"):
@@ -1084,11 +1154,12 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 entry["model_hash"] = str(c["model_hash"])
             out.append(entry)
         elif t == "schedule_event":
-            entry = {
+            description = str(c.get("description", "")).strip()
+            if not description:
+                raise ValueError(f"schedule_event[{idx}] missing required field `description`")
+            out.append({
                 "type": "schedule_event",
-                "description": str(c.get("description", "")).strip(),
+                "description": description,
                 "trigger": str(c.get("trigger", "next_scene")),
-            }
-            if entry["description"]:
-                out.append(entry)
+            })
     return {"consequences": out}

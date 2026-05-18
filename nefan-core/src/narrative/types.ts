@@ -1,7 +1,8 @@
 /** Shared narrative types — schema mirrors godot/scripts/autoloads/narrative_state.gd. */
 import type { Vec3 } from "../types.js";
+import type { WorldMap } from "../world-map/types.js";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export interface PlayerAppearance {
   model_id: string;
@@ -90,6 +91,7 @@ export interface SessionData {
   entities: EntityRecord[];
   dialogue_history: DialogueEvent[];
   asset_index_snapshot: AssetEntry[];
+  world_map: WorldMap;
   _next_event_seq: number;
 }
 
@@ -122,6 +124,7 @@ export interface LlmContext {
   entities: Array<{
     id: string;
     type: string;
+    name?: string;
     scene_id: string;
     position: [number, number, number];
     spawn_reason: string;
@@ -129,6 +132,21 @@ export interface LlmContext {
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string }>;
   rooms_visited: number;
   available_assets?: AssetEntry[];
+  /** Set on the first scene request of a fresh session: the narrative engine
+   *  should bootstrap the world map (3-5 places + their sites + links) via the
+   *  map tools before generating the starting scene. */
+  bootstrap_world_map?: boolean;
+  /** Present only on lazy-realize scene requests: the world-map place the
+   *  player just entered, so the narrative engine builds a scene that fits it. */
+  realize_place?: {
+    id: string;
+    kind: string;
+    name: string;
+    description: string;
+    attrs: Record<string, unknown>;
+    sites: Array<{ id: string; kind: string; name: string; description: string }>;
+    links: unknown[];
+  };
 }
 
 export type Vec3Like = Vec3 | [number, number, number];

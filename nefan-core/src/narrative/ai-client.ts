@@ -73,8 +73,13 @@ export class AiClient {
 
   async generateScene(context: LlmContext): Promise<SceneGenerationResult> {
     try {
-      const res = await this.request("POST", "/generate_scene", context);
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+      // Long timeout: ai_server waits up to ~300s for the LLM (Claude Code Max
+      // can take several minutes when reasoning). Add a margin on top.
+      const res = await this.request("POST", "/generate_scene", context, 360_000);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}` };
+      }
       const data = (await res.json()) as Record<string, unknown>;
       return { ok: true, scene: data };
     } catch (err) {
@@ -85,8 +90,11 @@ export class AiClient {
   /** Legacy room generation — kept for the closed-room scenarios still used in tests. */
   async generateRoom(context: LlmContext): Promise<SceneGenerationResult> {
     try {
-      const res = await this.request("POST", "/generate_room", context);
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+      const res = await this.request("POST", "/generate_room", context, 360_000);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}` };
+      }
       const data = (await res.json()) as Record<string, unknown>;
       return { ok: true, scene: data };
     } catch (err) {

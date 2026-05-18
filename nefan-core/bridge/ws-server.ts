@@ -15,7 +15,11 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { FsSessionStorage } from "../src/narrative/session-storage.js";
 import { AiClient } from "../src/narrative/ai-client.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
+import { NpcDirector } from "../src/world-map/npc-director.js";
+import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
+import { createStateHttpServer } from "./state-http-server.js";
 import type { CombatConfig } from "../src/types.js";
+import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import type {
   ClientMessage,
   StateUpdateMessage,
@@ -28,6 +32,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..");
 const dataDir = resolve(projectRoot, "data").replace("/dist/data", "/data");
 const PORT = 9877;
+// State HTTP API for the narrative engine's tools (map / entities / inventory).
+const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? 9878);
 const GAMES_DIR = resolve(dataDir, "games");
 
 // Saves live in a shared filesystem location accessible to every client
@@ -48,6 +54,8 @@ const scenario = new ScenarioRunner();
 const sessionStorage = new FsSessionStorage(SAVES_DIR);
 const narrative = new NarrativeState(sessionStorage);
 const aiClient = new AiClient({ baseUrl: AI_SERVER_URL });
+const npcDirector = new NpcDirector(narrative);
+const mapTriggers = new MapTriggerEvaluator(narrative);
 
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();
@@ -62,27 +70,112 @@ function broadcastNarrative(msg: ServerMessage): void {
   for (const ws of narrativeSubscribers) send(ws, msg);
 }
 
+/** Attach the current place's outgoing links to the scene as `exits`, so the
+ *  2D client can show a travel panel without pulling the whole world map.
+ *  Mutates `scene` in place (same object recordSceneLoaded stored by ref). */
+function enrichSceneWithExits(scene: Record<string, unknown>): void {
+  const placeId =
+    (typeof scene.place_id === "string" && scene.place_id) ||
+    narrative.worldMap.serialize().active_place_id;
+  if (!placeId) return;
+  const links = narrative.worldMap.getOutgoingLinks(placeId);
+  scene.exits = links.map((l) => {
+    const targetId = l.from === placeId ? l.to : l.from;
+    return {
+      place_id: targetId,
+      name: narrative.worldMap.get(targetId)?.name ?? targetId,
+      link_kind: l.kind,
+      travel_hours: l.travel_hours,
+      description: l.description,
+    };
+  });
+}
+
+/** Push a freshly loaded/realized scene to every narrative subscriber, reusing
+ *  the scene_init spawn_entity effect the clients already render. Only real
+ *  scenes pass through here — there is no "fallback minimal scene" any more. */
+function broadcastScene(
+  sceneId: string,
+  scene: Record<string, unknown>,
+  elapsedMs?: number,
+): void {
+  enrichSceneWithExits(scene);
+  broadcastNarrative({
+    type: "narrative_event",
+    eventId: "scene_init",
+    consequences: [],
+    effects: [
+      {
+        kind: "spawn_entity",
+        entityId: sceneId,
+        entityKind: "object",
+        description: String(
+          scene.room_description ?? scene.scene_description ?? sceneId,
+        ),
+        position: [0, 0, 0],
+        data: { scene },
+        eventId: "scene_init",
+      },
+    ],
+  });
+  broadcastNarrative({
+    type: "narrative_status",
+    phase: "ready",
+    kind: "scene",
+    elapsedMs,
+  });
+}
+
+/** Evaluate the map triggers crossed by a place transition and dispatch their
+ *  consequences. Fires player_left on the old place, player_entered/first_visit
+ *  on the new one. Pre-authored by the narrative engine via map_add_trigger. */
+async function fireMapTriggers(prevPlaceId: string, newPlaceId: string): Promise<void> {
+  const fired: PlaceTriggerSpec[] = [];
+  if (prevPlaceId && prevPlaceId !== newPlaceId) {
+    fired.push(...mapTriggers.evaluateLeave(prevPlaceId));
+  }
+  fired.push(...mapTriggers.evaluateEnter(newPlaceId));
+  if (fired.length === 0) return;
+  // evaluateEnter may have stamped first_visit triggers — persist that.
+  await narrative.save();
+
+  const consequences = fired.flatMap((t) => t.consequences);
+  if (consequences.length === 0) return;
+  const eventId = "map_trigger";
+  const playerPos = store.state.player.pos;
+  const dispatched = dispatchConsequences(narrative, eventId, consequences, {
+    playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
+    playerForward: { x: 0, y: 0, z: -1 },
+  });
+  await narrative.save();
+  broadcastNarrative({
+    type: "narrative_event",
+    eventId,
+    consequences,
+    effects: dispatched.effects,
+  });
+}
+
 function listGames(): Array<{ game_id: string; title: string; description?: string }> {
-  if (!existsSync(GAMES_DIR)) return [];
+  if (!existsSync(GAMES_DIR)) {
+    throw new Error(`games directory not found: ${GAMES_DIR}`);
+  }
   const out: Array<{ game_id: string; title: string; description?: string }> = [];
   for (const entry of readdirSync(GAMES_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const gameJson = resolve(GAMES_DIR, entry.name, "game.json");
     if (!existsSync(gameJson)) continue;
+    let def: { game_id?: string; title?: string; description?: string };
     try {
-      const def = JSON.parse(readFileSync(gameJson, "utf-8")) as {
-        game_id?: string;
-        title?: string;
-        description?: string;
-      };
-      out.push({
-        game_id: def.game_id ?? entry.name,
-        title: def.title ?? entry.name,
-        description: def.description,
-      });
-    } catch {
-      // skip malformed
+      def = JSON.parse(readFileSync(gameJson, "utf-8"));
+    } catch (err) {
+      throw new Error(`game.json malformed (${gameJson}): ${(err as Error).message}`);
     }
+    out.push({
+      game_id: def.game_id ?? entry.name,
+      title: def.title ?? entry.name,
+      description: def.description,
+    });
   }
   return out;
 }
@@ -100,6 +193,18 @@ process.on("unhandledRejection", (reason) => {
 const wss = new WebSocketServer({ port: PORT });
 console.log(`NEFan Logic Bridge listening on ws://localhost:${PORT}`);
 
+// State HTTP API: the narrative engine (Claude via narrative-mcp tools) queries
+// and mutates the authoritative NarrativeState here, instead of receiving the
+// whole world in the LLM context.
+createStateHttpServer({
+  port: STATE_HTTP_PORT,
+  narrative,
+  npcDirector,
+  onMutation: async () => {
+    await narrative.save();
+  },
+});
+
 wss.on("connection", (ws: WebSocket) => {
   console.log("Bridge: client connected");
 
@@ -107,7 +212,15 @@ wss.on("connection", (ws: WebSocket) => {
     let msg: ClientMessage;
     try {
       msg = JSON.parse(raw.toString()) as ClientMessage;
-    } catch {
+    } catch (err) {
+      const preview = raw.toString().slice(0, 200);
+      console.error(`Bridge: invalid WS frame, dropping: ${preview}`, err);
+      send(ws, {
+        type: "narrative_status",
+        phase: "error",
+        kind: "scene",
+        message: `Bridge recibió un frame WS inválido: ${(err as Error).message}`,
+      });
       return;
     }
 
@@ -378,31 +491,47 @@ wss.on("connection", (ws: WebSocket) => {
         });
         // Generate the initial scene asynchronously and broadcast it as a
         // narrative_event so all subscribed clients render the same world.
+        // Emit lifecycle hints so the client can show a loader instead of a
+        // blank canvas while we wait on the LLM.
         const ctx = narrative.serializeForLlm();
+        // Fresh session: ask the narrative engine to bootstrap the world map
+        // (3-5 places + sites + links) via the map tools before it builds the
+        // starting scene. Progressive expansion happens later, via the tools.
+        ctx.bootstrap_world_map = true;
+        const sceneStart = Date.now();
+        broadcastNarrative({
+          type: "narrative_status",
+          phase: "generating",
+          kind: "scene",
+          message: "Generando mundo inicial...",
+        });
         aiClient.generateScene(ctx).then(async (res) => {
-          if (res.ok && res.scene) {
-            const sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
-            narrative.recordSceneLoaded(sceneId, res.scene);
-            await narrative.save();
+          const elapsedMs = Date.now() - sceneStart;
+          if (!res.ok || !res.scene) {
             broadcastNarrative({
-              type: "narrative_event",
-              eventId: "scene_init",
-              consequences: [],
-              effects: [
-                {
-                  kind: "spawn_entity",
-                  entityId: sceneId,
-                  entityKind: "object",
-                  description: String(res.scene.room_description ?? sceneId),
-                  position: [0, 0, 0],
-                  data: { scene: res.scene },
-                  eventId: "scene_init",
-                },
-              ],
+              type: "narrative_status",
+              phase: "error",
+              kind: "scene",
+              message: `No se pudo generar la escena. ${res.error ?? "Revisa el motor narrativo."}`,
+              elapsedMs,
             });
+            return;
           }
+          const sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
+          narrative.recordSceneLoaded(sceneId, res.scene);
+          await narrative.save();
+          broadcastScene(sceneId, res.scene, elapsedMs);
+          // broadcastScene mutated the scene with `exits` — persist them.
+          await narrative.save();
         }).catch((err) => {
           console.warn("Bridge: generate_scene failed:", err);
+          broadcastNarrative({
+            type: "narrative_status",
+            phase: "error",
+            kind: "scene",
+            message: `Error: ${(err as Error).message ?? err}`,
+            elapsedMs: Date.now() - sceneStart,
+          });
         });
         break;
       }
@@ -474,6 +603,126 @@ wss.on("connection", (ws: WebSocket) => {
         });
         break;
       }
+
+      case "player_entered_place": {
+        const placeId = msg.placeId;
+        const place = narrative.worldMap.get(placeId);
+        if (!place) {
+          broadcastNarrative({
+            type: "narrative_status",
+            phase: "error",
+            kind: "scene",
+            message: `Lugar desconocido en el mapa: ${placeId}`,
+          });
+          break;
+        }
+        // Captured before the place becomes active, so we can fire player_left.
+        const prevPlaceId = narrative.worldMap.serialize().active_place_id;
+
+        // Already realized → re-activate and re-broadcast the cached scene.
+        const cachedSceneId = place.realized_scene_id;
+        if (cachedSceneId && narrative.scenes_loaded[cachedSceneId]) {
+          const cachedScene = narrative.scenes_loaded[cachedSceneId].scene_data;
+          // recordSceneLoaded re-activates the place AND (re-)registers the
+          // scene's NPCs into entities so the narrative engine sees them.
+          narrative.recordSceneLoaded(cachedSceneId, cachedScene);
+          await narrative.save();
+          broadcastScene(cachedSceneId, cachedScene);
+          await fireMapTriggers(prevPlaceId, placeId);
+          break;
+        }
+
+        // Lazy realize: ask the narrative engine for this place's low-level scene.
+        const realizeCtx = narrative.serializeForLlm();
+        realizeCtx.realize_place = {
+          id: place.id,
+          kind: place.kind,
+          name: place.name,
+          description: place.description,
+          attrs: place.attrs,
+          sites: narrative.worldMap.getChildren(placeId).map((s) => ({
+            id: s.id,
+            kind: s.kind,
+            name: s.name,
+            description: s.description,
+          })),
+          links: narrative.worldMap.getOutgoingLinks(placeId),
+        };
+        const realizeStart = Date.now();
+        broadcastNarrative({
+          type: "narrative_status",
+          phase: "generating",
+          kind: "scene",
+          message: `Generando ${place.name}...`,
+        });
+        aiClient.generateScene(realizeCtx).then(async (res) => {
+          const elapsedMs = Date.now() - realizeStart;
+          if (!res.ok || !res.scene) {
+            broadcastNarrative({
+              type: "narrative_status",
+              phase: "error",
+              kind: "scene",
+              message: `No se pudo generar ${place.name}. ${res.error ?? "Revisa el motor narrativo."}`,
+              elapsedMs,
+            });
+            return;
+          }
+          const sceneId = String(
+            res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`,
+          );
+          // Tag the scene with the place so recordSceneLoaded attaches it.
+          res.scene.place_id = placeId;
+          narrative.recordSceneLoaded(sceneId, res.scene);
+          await narrative.save();
+          broadcastScene(sceneId, res.scene, elapsedMs);
+          await fireMapTriggers(prevPlaceId, placeId);
+        }).catch((err) => {
+          console.warn("Bridge: lazy realize failed:", err);
+          broadcastNarrative({
+            type: "narrative_status",
+            phase: "error",
+            kind: "scene",
+            message: `Error: ${(err as Error).message ?? err}`,
+            elapsedMs: Date.now() - realizeStart,
+          });
+        });
+        break;
+      }
+
+      case "interact_entity": {
+        // The player walked up to an NPC and pressed E. Report it to the
+        // narrative engine via the same path as a dialogue choice; it replies
+        // with consequences (typically a show_dialogue effect).
+        const eventId = narrative.recordDialogueEvent(
+          msg.entityName,
+          "",
+          [],
+          -1,
+          "(el jugador se acerca a hablar)",
+        );
+        const ctx = narrative.serializeForLlm();
+        const consequences = await aiClient.reportPlayerChoice({
+          eventId,
+          speaker: msg.entityName,
+          chosenText: "",
+          freeText: `(el jugador inicia conversación con ${msg.entityName})`,
+          context: ctx,
+        });
+        const playerPos = store.state.player.pos;
+        const dispatched = dispatchConsequences(narrative, eventId, consequences, {
+          playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
+          playerForward: { x: 0, y: 0, z: -1 },
+        });
+        await narrative.save();
+        broadcastNarrative({
+          type: "narrative_event",
+          eventId,
+          consequences,
+          effects: dispatched.effects,
+        });
+        break;
+      }
+
     }
   });
 

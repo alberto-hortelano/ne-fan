@@ -19,8 +19,6 @@ from narrative_schemas import (
     GENERATE_ROOM_TOOL,
     GENERATE_SCENE_SYSTEM_PROMPT,
     GENERATE_SCENE_TOOL,
-    FALLBACK_ROOM,
-    FALLBACK_EXTENDED_ROOM,
     WEAPON_ORIENT_SYSTEM_PROMPT,
     WEAPON_ORIENT_TOOL,
     NARRATIVE_REACT_SYSTEM_PROMPT,
@@ -31,6 +29,11 @@ from narrative_schemas import (
     validate_weapon_orient_response,
     validate_narrative_reaction,
 )
+
+
+class NarrativeUnavailable(RuntimeError):
+    """No backend (MCP listener + API) is available to satisfy the request.
+    Surfaced by ai_server endpoints as HTTP 503 — no scripted fallback runs."""
 
 # WebSocket is optional — only needed for MCP bridge mode
 try:
@@ -122,8 +125,15 @@ class LLMClient:
                                 "listener_ever_connected": msg.get("listener_ever_connected", False),
                                 "last_listen_seconds_ago": msg.get("last_listen_seconds_ago", -1),
                             }
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (json.JSONDecodeError, KeyError) as e:
+                # The narrative-mcp bridge produced a frame we can't parse. Log
+                # the preview so a real protocol mismatch surfaces instead of
+                # disappearing into the void.
+                preview = (message if isinstance(message, str) else str(message))[:200]
+                print(
+                    f"LLM: dropping unparseable bridge frame ({type(e).__name__}): {preview}",
+                    flush=True,
+                )
 
         def on_open(ws: "websocket.WebSocket") -> None:
             self._ws_connected = True
@@ -189,7 +199,9 @@ class LLMClient:
         return payload
 
     def populate_room(self, world_state: dict) -> dict:
-        """Generate room contents. Tries MCP bridge, then API, then fallback."""
+        """Generate room contents. Tries MCP bridge, then API. Raises
+        NarrativeUnavailable if neither backend is reachable. There is no
+        scripted fallback any more."""
         world_state = self._inject_available_assets(dict(world_state))
         if self._ws_connected and self._ws:
             result = self._populate_via_mcp(world_state)
@@ -199,8 +211,9 @@ class LLMClient:
         if self.api_client:
             return self._populate_via_api(world_state)
 
-        print("LLM: No backend, returning fallback room")
-        return copy.deepcopy(FALLBACK_ROOM)
+        raise NarrativeUnavailable(
+            "populate_room: no MCP listener and no API client configured"
+        )
 
     def _populate_via_mcp(self, world_state: dict) -> dict | None:
         """Send request through MCP bridge, wait for Claude Code to respond."""
@@ -239,7 +252,8 @@ class LLMClient:
         return None
 
     def generate_room(self, world_state: dict) -> dict:
-        """Generate extended room data. Tries MCP bridge, then API, then fallback."""
+        """Generate extended room data. Tries MCP, then API. Raises
+        NarrativeUnavailable if neither backend can satisfy the request."""
         world_state = self._inject_available_assets(dict(world_state))
         if self._ws_connected and self._ws:
             result = self._generate_via_mcp(world_state)
@@ -249,11 +263,13 @@ class LLMClient:
         if self.api_client:
             return self._generate_via_api(world_state)
 
-        print("LLM: No backend, returning fallback extended room")
-        return copy.deepcopy(FALLBACK_EXTENDED_ROOM)
+        raise NarrativeUnavailable(
+            "generate_room: no MCP listener and no API client configured"
+        )
 
     def generate_scene(self, scene_request: dict) -> dict:
-        """Generate an outdoor scene from premise + setting. Tries MCP, then API, then fallback."""
+        """Generate an outdoor scene. Tries MCP, then API. Raises
+        NarrativeUnavailable if neither backend can satisfy the request."""
         scene_request = self._inject_available_assets(dict(scene_request))
         if self._ws_connected and self._ws:
             result = self._generate_scene_via_mcp(scene_request)
@@ -263,8 +279,9 @@ class LLMClient:
         if self.api_client:
             return self._generate_scene_via_api(scene_request)
 
-        print("LLM: No backend, returning minimal outdoor scene")
-        return self._fallback_scene(scene_request)
+        raise NarrativeUnavailable(
+            "generate_scene: no MCP listener and no API client configured"
+        )
 
     def _generate_scene_via_mcp(self, scene_request: dict) -> dict | None:
         """Send scene generation request through MCP bridge."""
@@ -330,33 +347,16 @@ class LLMClient:
                     print(f"LLM: Scene via API ({len(result.get('objects', []))} objects)")
                     return result
 
-            print("LLM: No tool call in scene API response, using fallback")
-            return self._fallback_scene(scene_request)
+            raise NarrativeUnavailable(
+                "generate_scene API response had no tool_use block"
+            )
 
+        except NarrativeUnavailable:
+            raise
         except Exception as e:
-            print(f"LLM: API scene error ({e}), using fallback")
-            return self._fallback_scene(scene_request)
-
-    @staticmethod
-    def _fallback_scene(scene_request: dict) -> dict:
-        """Minimal outdoor fallback scene."""
-        return {
-            "room_id": "fallback_scene",
-            "room_description": "Un paraje abierto y desolado.",
-            "zone_type": "outdoor",
-            "dimensions": {"width": 60.0, "height": 30.0, "depth": 60.0},
-            "terrain": {"type": "static", "texture_prompt": "grass and dirt, medieval, seamless"},
-            "sky": {"time_of_day": "day"},
-            "fog": {"enabled": False},
-            "lighting": {
-                "ambient": {"color": [0.15, 0.12, 0.1], "intensity": 0.4},
-                "lights": [],
-            },
-            "objects": [],
-            "npcs": [],
-            "exits": [],
-            "ambient_event": "El viento sopla entre la hierba.",
-        }
+            raise NarrativeUnavailable(
+                f"generate_scene API call failed: {e}"
+            ) from e
 
     def _generate_via_mcp(self, world_state: dict) -> dict | None:
         """Send extended room request through MCP bridge."""
@@ -420,12 +420,16 @@ class LLMClient:
                           f"{len(result.get('npcs', []))} npcs)")
                     return result
 
-            print("LLM: No tool call in API response, using fallback")
-            return copy.deepcopy(FALLBACK_EXTENDED_ROOM)
+            raise NarrativeUnavailable(
+                "generate_room API response had no tool_use block"
+            )
 
+        except NarrativeUnavailable:
+            raise
         except Exception as e:
-            print(f"LLM: API error ({e}), using fallback extended room")
-            return copy.deepcopy(FALLBACK_EXTENDED_ROOM)
+            raise NarrativeUnavailable(
+                f"generate_room API call failed: {e}"
+            ) from e
 
     def _populate_via_api(self, world_state: dict) -> dict:
         """Call Claude API directly with tool_use."""
@@ -451,12 +455,16 @@ class LLMClient:
                     print(f"LLM: Room generated via API ({len(result['objects'])} objects)")
                     return result
 
-            print("LLM: No tool call in API response, using fallback")
-            return copy.deepcopy(FALLBACK_ROOM)
+            raise NarrativeUnavailable(
+                "populate_room API response had no tool_use block"
+            )
 
+        except NarrativeUnavailable:
+            raise
         except Exception as e:
-            print(f"LLM: API error ({e}), using fallback room")
-            return copy.deepcopy(FALLBACK_ROOM)
+            raise NarrativeUnavailable(
+                f"populate_room API call failed: {e}"
+            ) from e
 
     # ------------------------------------------------------------------
     # Vision: weapon orientation
@@ -622,10 +630,13 @@ class LLMClient:
         context: dict,
     ) -> dict:
         """Forward a player dialogue choice/free-text to the narrative engine
-        and return its consequences. Tries MCP bridge first, then API.
+        and return its consequences.
 
-        Returns dict {consequences: [...]} (possibly empty)."""
-        # Always inject session+assets so Claude has full context
+        Tries MCP bridge first, then API. Raises NarrativeUnavailable if
+        neither backend produced a valid response — the ai_server endpoint
+        translates that into HTTP 503 so the client sees the failure instead
+        of an empty consequences list.
+        """
         context = self._inject_available_assets(dict(context))
         if self._ws_connected and self._ws:
             result = self._report_choice_via_mcp(event_id, speaker, chosen_text, free_text, context)
@@ -635,8 +646,9 @@ class LLMClient:
             result = self._report_choice_via_api(event_id, speaker, chosen_text, free_text, context)
             if result is not None:
                 return result
-        # No backend reachable — empty consequences (degrades gracefully)
-        return {"consequences": []}
+        raise NarrativeUnavailable(
+            "report_player_choice: no MCP listener and no API client produced a response"
+        )
 
     def _report_choice_via_mcp(
         self,

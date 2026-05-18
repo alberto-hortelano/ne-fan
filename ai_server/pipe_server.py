@@ -94,8 +94,8 @@ def _handle_client(conn, pipeline, config):
             conn.sendall(jpeg_data)
             conn.sendall(struct.pack('<I', elapsed_ms))
 
-    except (ConnectionError, struct.error, OSError):
-        pass
+    except (ConnectionError, struct.error, OSError) as e:
+        print(f"Pipe server: client error ({type(e).__name__}): {e}", flush=True)
     finally:
         conn.close()
         print("Pipe server: client disconnected")

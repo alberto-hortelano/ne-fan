@@ -33,7 +33,7 @@ _load_env_file(_env_file)
 import logging
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -50,7 +50,7 @@ class _SilenceHealthcheckFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
-from llm_client import LLMClient
+from llm_client import LLMClient, NarrativeUnavailable
 from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI):
 
     llm_client = LLMClient(
         model=config.get("llm_model", "claude-sonnet-4-5-20250514"),
+        timeout=float(config.get("llm_timeout_s", 300.0)),
         asset_manifest=asset_manifest,
     )
 
@@ -214,8 +215,10 @@ async def populate_room(request: Request):
     import asyncio
 
     world_state = await request.json()
-    result = await asyncio.to_thread(llm_client.populate_room, world_state)
-    return result
+    try:
+        return await asyncio.to_thread(llm_client.populate_room, world_state)
+    except NarrativeUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.post("/generate_room")
@@ -224,8 +227,10 @@ async def generate_room(request: Request):
     import asyncio
 
     world_state = await request.json()
-    result = await asyncio.to_thread(llm_client.generate_room, world_state)
-    return result
+    try:
+        return await asyncio.to_thread(llm_client.generate_room, world_state)
+    except NarrativeUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.post("/generate_scene")
@@ -234,8 +239,10 @@ async def generate_scene(request: Request):
     import asyncio
 
     scene_request = await request.json()
-    result = await asyncio.to_thread(llm_client.generate_scene, scene_request)
-    return result
+    try:
+        return await asyncio.to_thread(llm_client.generate_scene, scene_request)
+    except NarrativeUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.post("/generate_texture")
@@ -790,21 +797,39 @@ async def get_skinned_sheet_frame(hash_key: str, filename: str):
 @app.post("/report_player_choice")
 async def report_player_choice(request: Request):
     """Forward a player dialogue choice to the narrative engine and return its
-    consequences (story_update / spawn_entity / schedule_event). Used by Godot
-    when the player picks a numbered option or types a free-text reply."""
+    consequences. No silent fallback: if there is no LLM backend or the LLM
+    produces an invalid response, this endpoint returns HTTP 503 / 422 so the
+    bridge surfaces the error to the client."""
     import asyncio
     body = await request.json()
     if llm_client is None:
-        return {"consequences": []}
-    result = await asyncio.to_thread(
-        llm_client.report_player_choice,
-        str(body.get("event_id", "")),
-        str(body.get("speaker", "")),
-        str(body.get("chosen_text", "")),
-        str(body.get("free_text", "")),
-        body.get("context", {}) if isinstance(body.get("context"), dict) else {},
-    )
-    return result if isinstance(result, dict) else {"consequences": []}
+        raise HTTPException(
+            status_code=503,
+            detail="ai_server has no llm_client configured — no MCP listener, no API key",
+        )
+    try:
+        result = await asyncio.to_thread(
+            llm_client.report_player_choice,
+            str(body.get("event_id", "")),
+            str(body.get("speaker", "")),
+            str(body.get("chosen_text", "")),
+            str(body.get("free_text", "")),
+            body.get("context", {}) if isinstance(body.get("context"), dict) else {},
+        )
+    except NarrativeUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        # validate_narrative_reaction raised: LLM returned invalid payload.
+        raise HTTPException(
+            status_code=422,
+            detail=f"narrative engine returned invalid response: {e}",
+        )
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=502,
+            detail=f"narrative engine returned non-dict result: {type(result).__name__}",
+        )
+    return result
 
 
 @app.post("/notify_session")
