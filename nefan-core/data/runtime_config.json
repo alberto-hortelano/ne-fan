@@ -13,6 +13,9 @@
   "session": {
     "require_bridge": true
   },
+  "dev": {
+    "cache_initial_scene": false
+  },
   "ai_server": {
     "llm_model": "claude-sonnet-4-5-20250514",
     "llm_timeout_s": 300,

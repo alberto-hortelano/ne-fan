@@ -53,6 +53,9 @@ godot/recordings/
 # Personal scratch space
 sandbox/
 
+# Dev-only cache of initial start_session bootstrap (CONFIG.dev.cache_initial_scene)
+nefan-core/data/initial_scene_cache/
+
 # Godot 4 editor
 godot/.godot/
 *.import

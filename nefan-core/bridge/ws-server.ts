@@ -17,6 +17,9 @@ import { AiClient } from "../src/narrative/ai-client.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
+import { WorldMapManager } from "../src/world-map/world-map.js";
+import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
+import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
 import type { CombatConfig } from "../src/types.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
@@ -56,6 +59,9 @@ const narrative = new NarrativeState(sessionStorage);
 const aiClient = new AiClient({ baseUrl: AI_SERVER_URL });
 const npcDirector = new NpcDirector(narrative);
 const mapTriggers = new MapTriggerEvaluator(narrative);
+const initialSceneCache = new InitialSceneCache(
+  resolve(dataDir, "initial_scene_cache"),
+);
 
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();
@@ -489,6 +495,35 @@ wss.on("connection", (ws: WebSocket) => {
           isResume: false,
           state: narrative.toSessionData(),
         });
+        // Dev-only shortcut: replay a cached bootstrap (world_map + first
+        // scene) for the same gameId instead of paying the ~90 s LLM cost.
+        // Gated by CONFIG.dev.cache_initial_scene; off in production.
+        const cached = CONFIG.dev.cache_initial_scene
+          ? initialSceneCache.get(msg.gameId)
+          : null;
+        if (cached) {
+          console.log(
+            `Bridge: initial_scene_cache HIT for gameId="${msg.gameId}" ` +
+              `(cached_at=${cached.cached_at}); skipping LLM bootstrap`,
+          );
+          // Restore the world map that the narrative engine bootstrapped on
+          // the cached run, then replay the scene through the normal
+          // recordSceneLoaded + broadcastScene path so NPCs, exits and the
+          // visited flag all line up.
+          narrative.worldMap = WorldMapManager.fromSerialized(
+            JSON.parse(JSON.stringify(cached.world_map)),
+          );
+          const cachedScene = JSON.parse(
+            JSON.stringify(cached.scene),
+          ) as Record<string, unknown>;
+          const sceneId = String(cachedScene.room_id ?? `scene_${Date.now()}`);
+          narrative.recordSceneLoaded(sceneId, cachedScene);
+          await narrative.save();
+          broadcastScene(sceneId, cachedScene, 0);
+          await narrative.save();
+          break;
+        }
+
         // Generate the initial scene asynchronously and broadcast it as a
         // narrative_event so all subscribed clients render the same world.
         // Emit lifecycle hints so the client can show a loader instead of a
@@ -499,6 +534,7 @@ wss.on("connection", (ws: WebSocket) => {
         // starting scene. Progressive expansion happens later, via the tools.
         ctx.bootstrap_world_map = true;
         const sceneStart = Date.now();
+        const sessionGameId = msg.gameId;
         broadcastNarrative({
           type: "narrative_status",
           phase: "generating",
@@ -520,6 +556,26 @@ wss.on("connection", (ws: WebSocket) => {
           const sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
           narrative.recordSceneLoaded(sceneId, res.scene);
           await narrative.save();
+          // Snapshot the bootstrap before broadcastScene mutates the scene
+          // with `exits`. Replays go through broadcastScene again, which
+          // re-attaches exits from the restored world map.
+          if (CONFIG.dev.cache_initial_scene) {
+            try {
+              initialSceneCache.set(
+                sessionGameId,
+                res.scene,
+                narrative.worldMap.serialize(),
+              );
+              console.log(
+                `Bridge: initial_scene_cache SET for gameId="${sessionGameId}"`,
+              );
+            } catch (cacheErr) {
+              console.warn(
+                `Bridge: initial_scene_cache SET failed for "${sessionGameId}":`,
+                cacheErr,
+              );
+            }
+          }
           broadcastScene(sceneId, res.scene, elapsedMs);
           // broadcastScene mutated the scene with `exits` — persist them.
           await narrative.save();

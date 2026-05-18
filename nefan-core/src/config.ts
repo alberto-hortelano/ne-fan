@@ -41,6 +41,16 @@ export interface NefanConfig {
      *  true. There is no `LocalGameClient` fallback any more. */
     require_bridge: boolean;
   };
+  /** Knobs only meant for development. Production should leave these off. */
+  dev: {
+    /** Cache the bootstrap of a fresh session (world map + first scene) by
+     *  gameId. When true and a cache entry exists for `start_session`'s
+     *  gameId, the bridge replays it instead of asking the narrative engine,
+     *  saving the ~90 s the LLM spends on the initial bootstrap. Cache lives
+     *  in `nefan-core/data/initial_scene_cache/` (gitignored); delete the
+     *  file (or the dir) to invalidate. */
+    cache_initial_scene: boolean;
+  };
   /** Python ai_server runtime. Lives here so there is exactly one config
    *  file in the repo; `scripts/dump-config.ts` emits the snapshot the
    *  server reads at startup. Fail-loud: a missing field is a hard error,
@@ -74,6 +84,9 @@ export const CONFIG: NefanConfig = {
   },
   session: {
     require_bridge: true,
+  },
+  dev: {
+    cache_initial_scene: false,
   },
   ai_server: {
     llm_model: "claude-sonnet-4-5-20250514",
