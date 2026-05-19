@@ -209,6 +209,12 @@ func _try_connect() -> void:
 func _handle_message(data: String) -> void:
 	var msg = JSON.parse_string(data)
 	if msg == null or not msg is Dictionary:
+		# Fail-loud: surface malformed frames instead of silently dropping them.
+		# Truncate the preview so a hostile/garbled stream doesn't flood logs.
+		var preview: String = data.substr(0, 200)
+		if data.length() > 200:
+			preview += "…"
+		push_error("LogicBridge: cannot parse WS frame as Dictionary: %s" % preview)
 		return
 
 	var msg_type: String = msg.get("type", "")
@@ -217,6 +223,11 @@ func _handle_message(data: String) -> void:
 			_apply_state_update(msg)
 		"pong":
 			pass
+		_:
+			# Unknown message type — log so we notice protocol drift instead of
+			# silently dropping a frame the bridge added without our knowing.
+			if msg_type != "":
+				push_warning("LogicBridge: unknown message type '%s'" % msg_type)
 
 
 func _apply_state_update(msg: Dictionary) -> void:
@@ -231,7 +242,11 @@ func _apply_state_update(msg: Dictionary) -> void:
 			if player_hp <= 0.0:
 				_player_combatant.died.emit()
 
-	# Update enemy Combatant nodes in the scene
+	# Update enemy Combatant nodes in the scene. The Player node is the
+	# anchor we walk up from — its parent is the current room container.
+	# `null` is acceptable here only during title-screen / scene-transition
+	# windows; _find_enemy_node handles null root by returning null, so the
+	# subsequent loop becomes a no-op rather than crashing.
 	var room: Node3D = get_tree().current_scene.get_node_or_null("Player")
 	if room:
 		room = room.get_parent()

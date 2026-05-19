@@ -13,6 +13,7 @@ import type {
   SessionSavedMessage,
 } from "../../../nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
+import { errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -105,16 +106,23 @@ export class BridgeClient {
       this.scheduleRetry();
     };
 
-    this.ws.onerror = () => {
-      // onclose will fire after this
+    this.ws.onerror = (event) => {
+      // The browser hides the underlying error for security; onclose fires
+      // right after with a useful close code, so we surface the event here
+      // mostly as a breadcrumb. Without this push the user sees only a
+      // generic "disconnected" later, with no hint that the disconnect
+      // came from an error rather than a clean close.
+      errors.push("bridge", `WebSocket onerror on ${this.url}`, event);
     };
 
     this.ws.onmessage = (event) => {
+      const raw = typeof event.data === "string" ? event.data : "";
       try {
-        const msg = JSON.parse(event.data as string) as ServerMessage;
+        const msg = JSON.parse(raw) as ServerMessage;
         this.dispatch(msg);
-      } catch {
-        // Ignore parse errors
+      } catch (err) {
+        const preview = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err);
       }
     };
   }
