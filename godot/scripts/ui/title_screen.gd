@@ -4,6 +4,7 @@
 extends CanvasLayer
 
 const NarrativeStateScript = preload("res://scripts/autoloads/narrative_state.gd")
+const SignalLifecycle = preload("res://scripts/util/signal_lifecycle.gd")
 
 signal game_selected(game_id: String, scene_path: String, session_id: String)
 
@@ -161,7 +162,9 @@ func _create_services_panel() -> void:
 
 	# Initial status checks
 	settings.check_all()
-	settings.status_changed.connect(_on_service_status_changed)
+	# Transient subscriber → autoload: auto_disconnect on tree_exiting so the
+	# emit doesn't fire into a freed instance after we leave the title screen.
+	SignalLifecycle.auto_disconnect(self, settings.status_changed, _on_service_status_changed)
 
 	# Periodic refresh every 5 seconds
 	_refresh_timer = Timer.new()

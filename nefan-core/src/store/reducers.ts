@@ -10,8 +10,8 @@ export function applyReducer(
 ): void {
   switch (eventName) {
     case "player_moved":
-      if (payload.pos) state.player.pos = payload.pos as number[];
-      if (payload.velocity) state.player.velocity = payload.velocity as number[];
+      if (payload.pos) state.player.pos = (payload.pos as number[]).slice();
+      if (payload.velocity) state.player.velocity = (payload.velocity as number[]).slice();
       break;
 
     case "camera_rotated":
@@ -35,7 +35,7 @@ export function applyReducer(
     case "player_respawned":
       state.player.hp = (payload.hp as number) ?? state.player.max_hp;
       state.player.combat_state = "idle";
-      if (payload.pos) state.player.pos = payload.pos as number[];
+      if (payload.pos) state.player.pos = (payload.pos as number[]).slice();
       break;
 
     case "attack_started": {
@@ -83,12 +83,17 @@ export function applyReducer(
 
     case "room_changed":
       state.world.room_id = (payload.room_id as string) ?? "";
-      state.world.room_data = (payload.room_data as Record<string, unknown>) ?? {};
-      state.enemies = (payload.enemies as EnemyState[]) ?? [];
+      state.world.room_data = payload.room_data
+        ? structuredClone(payload.room_data as Record<string, unknown>)
+        : {};
+      state.enemies = payload.enemies
+        ? structuredClone(payload.enemies as EnemyState[])
+        : [];
       break;
 
     case "room_visited":
-      state.world.rooms_visited[payload.room_id as string] = payload.room_data;
+      state.world.rooms_visited[payload.room_id as string] =
+        payload.room_data !== undefined ? structuredClone(payload.room_data) : {};
       break;
 
     case "object_interacted":

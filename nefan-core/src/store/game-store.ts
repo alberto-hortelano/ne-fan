@@ -47,13 +47,31 @@ export function createInitialState(): GameState {
   };
 }
 
+function deepFreeze<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Object.isFrozen(obj)) return obj;
+  Object.freeze(obj);
+  for (const key of Object.keys(obj)) {
+    deepFreeze((obj as Record<string, unknown>)[key]);
+  }
+  return obj;
+}
+
 export class GameStore {
   state: GameState;
   private listeners = new Map<string, EventCallback[]>();
   private globalListeners: GlobalCallback[] = [];
+  private freezeInDev = false;
 
   constructor(initialState?: GameState) {
     this.state = initialState ?? createInitialState();
+  }
+
+  /** When enabled, snapshot() deep-freezes the returned clone so accidental
+   *  consumer mutations throw in dev. Reducers still mutate `state` in place
+   *  via dispatch(). Off by default for production cost. */
+  setFreezeInDev(enabled: boolean): void {
+    this.freezeInDev = enabled;
   }
 
   dispatch(eventName: string, payload: Record<string, unknown> = {}): void {
@@ -88,7 +106,9 @@ export class GameStore {
   }
 
   snapshot(): GameState {
-    return structuredClone(this.state);
+    const snap = structuredClone(this.state);
+    if (this.freezeInDev) deepFreeze(snap);
+    return snap;
   }
 
   restore(snap: GameState): void {

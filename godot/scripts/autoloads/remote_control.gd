@@ -97,9 +97,12 @@ func _handle(line: String) -> String:
 			LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": ci})
 			return '{"ok":true,"choice":%d}' % ci
 		"save":
-			return '{"ok":%s}' % str(GameState.save_to_disk()).to_lower()
+			var ok_save: bool = NarrativeState.session_id != "" and NarrativeState.save()
+			return '{"ok":%s}' % str(ok_save).to_lower()
 		"load":
-			return '{"ok":%s}' % str(GameState.load_from_disk()).to_lower()
+			var sid: String = NarrativeState.session_id
+			var ok_load: bool = sid != "" and NarrativeState.load_session(sid)
+			return '{"ok":%s}' % str(ok_load).to_lower()
 		"teleport":
 			return _cmd_teleport(json)
 		"look_at":
@@ -268,12 +271,12 @@ func _cmd_status() -> String:
 		var col = ray.get_collider()
 		info["ray_hit"] = col.name if col else "null"
 		info["ray_hit_npc"] = col.has_meta("npc_name") if col else false
-	info["room"] = GameState.current_room_id
-	info["rooms_visited"] = GameState.visited_rooms.size()
+	info["room"] = String(NarrativeState.world.get("active_scene_id", ""))
+	info["rooms_visited"] = NarrativeState.scenes_loaded.size()
 	info["fps"] = Engine.get_frames_per_second()
-	info["player_health"] = GameState.player_health
 	# Combat info
 	var player_combatant = main_scene.get_node_or_null("Player/Combatant")
+	info["player_health"] = player_combatant.health if player_combatant else 0.0
 	if player_combatant:
 		info["combat_hp"] = snappedf(player_combatant.health, 0.1)
 		info["combat_state"] = player_combatant.get_current_action()
