@@ -177,7 +177,6 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
     main.gd               Orquestador: carga escenas open-world, gestiona spawns dinámicos, motor narrativo
     autoloads/
       game_store.gd        Estado centralizado, dispatch/on/snapshot
-      game_state.gd        Estado mundo/jugador (legacy, wrapper sobre NarrativeState)
       narrative_state.gd   Estado canónico de la sesión: world+player+entities+dialogue, save multi-slot
       service_settings.gd  Toggles de servicios opcionales (panel del title screen)
       ai_client.gd         HTTP a ai_server:8765
@@ -368,7 +367,7 @@ Meshes: box, sphere, capsule, cylinder, cone, plane, torus. Categorias: item (am
 - GDScript 4.6+ con tipado estricto (Variant inference = error)
 - Variables que acceden propiedades de Node generico: usar tipo explicito (`var x: float = node.health`, NO `:=`)
 - class_name en scripts de combat, pero usar preload() en vez de class_name para referencias cruzadas
-- Autoloads: GameStore, GameState, AIClient, TextureCache, RemoteControl, LogicBridge, SessionRecorder, SessionPlayer
+- Autoloads: GameStore, NarrativeState, AIClient, TextureCache, RemoteControl, LogicBridge, SessionRecorder, SessionPlayer
 - Scripts nuevos que referencian otros: `const FooRef = preload("res://scripts/path/foo.gd")`
 - Descripciones de objetos y NPC en espanol
 - Unidades en metros
@@ -376,7 +375,7 @@ Meshes: box, sphere, capsule, cylinder, cone, plane, torus. Categorias: item (am
 ## Decisiones de diseno importantes
 
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador. Las "salas" cerradas son legacy de tests, no la unidad de gameplay.
-- **NarrativeState como save canónico** — todo el playthrough vive en `user://saves/{session_id}/state.json` (multi-slot). `GameState` legacy queda como wrapper. Schema versionado.
+- **NarrativeState como save canónico** — todo el playthrough vive en `user://saves/{session_id}/state.json` (multi-slot). El autoload `GameState` legacy fue eliminado: world/player/story leen directamente de `NarrativeState`; el runtime puro (player.pos, enemies) vive en `GameStore`. Schema versionado.
 - **Asset library indexada** — `cache/manifest.json` traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.

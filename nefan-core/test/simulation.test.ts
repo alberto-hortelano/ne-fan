@@ -207,7 +207,7 @@ describe("GameSimulation", () => {
     if (enemy.health < 60) {
       // Store should have been notified
       const storeEnemies = store.state.enemies;
-      // (enemies array only populated via room_changed dispatch,
+      // (enemies array only populated via enemies_projected dispatch,
       //  but enemy_damaged should have been dispatched)
     }
   });

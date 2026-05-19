@@ -151,8 +151,12 @@ func _apply(event_name: String, payload: Dictionary) -> void:
 			else:
 				_update_enemy(entity_id, "combat_state", new_state)
 		"room_changed":
+			# World-only: room_id + room_data. Enemies are projected via the
+			# dedicated `enemies_projected` action so this dispatch no longer
+			# wipes the combat list — see next.md §1.3.
 			state.world.room_id = payload.get("room_id", "")
 			state.world.room_data = payload.get("room_data", {})
+		"enemies_projected":
 			state.enemies = payload.get("enemies", [])
 		"room_visited":
 			var room_id: String = payload.get("room_id", "")

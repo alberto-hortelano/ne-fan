@@ -149,6 +149,16 @@ export class AiClient {
     }
   }
 
+  /** Probe whether a cached asset is still present in the server manifest.
+   *  Returns true on 200, false on 404. Throws for other HTTP errors or
+   *  network failures — caller decides how to treat the uncertainty. */
+  async assetExists(hash: string): Promise<boolean> {
+    const res = await this.request("GET", `/assets/by_hash/${encodeURIComponent(hash)}`, undefined, 5_000);
+    if (res.ok) return true;
+    if (res.status === 404) return false;
+    throw new Error(`assetExists ${hash}: HTTP ${res.status}`);
+  }
+
   async generateSkin(opts: {
     prompt: string;
     strength?: number;

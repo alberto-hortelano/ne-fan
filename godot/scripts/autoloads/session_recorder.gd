@@ -12,6 +12,9 @@ var _events: Array = []
 
 
 func _ready() -> void:
+	# OK: autoload → autoload; both live for the lifetime of the app, so no
+	# explicit disconnect is needed. Transient subscribers must use
+	# SignalLifecycle.auto_disconnect instead — see next.md §1.5.
 	GameStore.state_changed.connect(_on_state_changed)
 
 

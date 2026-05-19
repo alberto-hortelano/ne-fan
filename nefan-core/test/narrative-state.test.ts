@@ -92,6 +92,69 @@ describe("NarrativeState lifecycle", () => {
   });
 });
 
+describe("NarrativeState.loadSession asset validation", () => {
+  it("drops orphan asset entries (validator → false) and marks dirty", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.setAssetIndexSnapshot([
+      { hash: "alive_1", type: "tex", subtype: "albedo", prompt: "p", created_at: "", size_bytes: 0 },
+      { hash: "dead_1",  type: "tex", subtype: "albedo", prompt: "p", created_at: "", size_bytes: 0 },
+      { hash: "alive_1", type: "tex", subtype: "normal", prompt: "p", created_at: "", size_bytes: 0 },
+    ]);
+    await s1.save();
+
+    const warnings: Array<[string, string]> = [];
+    const s2 = new NarrativeState(storage);
+    const ok = await s2.loadSession(id, {
+      assetValidator: async (h) => h !== "dead_1",
+      onWarning: (src, msg) => warnings.push([src, msg]),
+    });
+    assert.equal(ok, true);
+    assert.equal(s2.asset_index_snapshot.length, 2);
+    assert.ok(s2.asset_index_snapshot.every((e) => e.hash !== "dead_1"));
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0][0], "session");
+    assert.match(warnings[0][1], /dead_1/);
+    assert.equal(s2.isDirty(), true);
+  });
+
+  it("keeps the entry when the validator throws (uncertain ≠ missing)", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.setAssetIndexSnapshot([
+      { hash: "h", type: "model", subtype: "glb", prompt: "p", created_at: "", size_bytes: 0 },
+    ]);
+    await s1.save();
+
+    const warnings: Array<[string, string]> = [];
+    const s2 = new NarrativeState(storage);
+    const ok = await s2.loadSession(id, {
+      assetValidator: async () => { throw new Error("network unreachable"); },
+      onWarning: (src, msg) => warnings.push([src, msg]),
+    });
+    assert.equal(ok, true);
+    assert.equal(s2.asset_index_snapshot.length, 1);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0][1], /could not validate/);
+  });
+
+  it("no-op when no validator is provided", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.setAssetIndexSnapshot([
+      { hash: "h", type: "model", subtype: "glb", prompt: "p", created_at: "", size_bytes: 0 },
+    ]);
+    await s1.save();
+    const s2 = new NarrativeState(storage);
+    await s2.loadSession(id);
+    assert.equal(s2.asset_index_snapshot.length, 1);
+    assert.equal(s2.isDirty(), false);
+  });
+});
+
 describe("NarrativeState mutations", () => {
   it("appendStory concatenates with double newline", () => {
     const s = makeState();

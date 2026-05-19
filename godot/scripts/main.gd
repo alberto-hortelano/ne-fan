@@ -132,8 +132,6 @@ func _ready() -> void:
 	LogicBridge._player_combatant = _player_combatant
 
 	# AI client
-	AIClient.room_generated.connect(_on_room_generated)
-	AIClient.generation_failed.connect(_on_generation_failed)
 	AIClient.narrative_consequences.connect(_on_narrative_consequences)
 	AIClient.check_server()
 
@@ -142,9 +140,6 @@ func _ready() -> void:
 	if ray:
 		ray.target_changed.connect(_on_target_changed)
 		ray.interacted.connect(_on_interacted)
-
-	# Room info display
-	GameState.room_entered.connect(_on_room_entered)
 
 	# Scan test rooms dynamically
 	_scan_rooms()
@@ -220,19 +215,24 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						respawn_player()
 			KEY_F5:
-				# Save both: GameState (combat-side) and NarrativeState (canonical session)
-				var ok_legacy: bool = GameState.save_to_disk()
-				var ok_narrative: bool = NarrativeState.save() if NarrativeState.session_id != "" else false
-				if ok_legacy or ok_narrative:
+				if NarrativeState.session_id != "" and NarrativeState.save():
 					_hud.show_brief_message("Partida guardada")
+				else:
+					push_warning("F5: no active session to save")
 			KEY_F9:
-				if GameState.load_from_disk():
+				# Quick-load reloads the currently active session from disk and
+				# re-applies the active scene's cached data. Multi-slot resume
+				# goes through the title screen, not F9.
+				if NarrativeState.session_id == "":
+					push_warning("F9: no active session to reload")
+				elif NarrativeState.load_session(NarrativeState.session_id):
 					_hud.show_brief_message("Partida cargada")
-					# Restore player appearance
-					_apply_player_appearance(GameState.player_model_id, GameState.player_skin_path)
-					# Reload current room from visited_rooms
-					if GameState.visited_rooms.has(GameState.current_room_id):
-						_apply_room(GameState.visited_rooms[GameState.current_room_id], Vector3(0, 1, 0), false)
+					var appearance: Dictionary = NarrativeState.player.get("appearance", {})
+					_apply_player_appearance(appearance.get("model_id", "pete"), appearance.get("skin_path", ""))
+					var active_id: String = NarrativeState.world.get("active_scene_id", "")
+					if active_id != "" and NarrativeState.scenes_loaded.has(active_id):
+						var scene_record: Dictionary = NarrativeState.scenes_loaded[active_id]
+						_apply_room(scene_record.get("scene_data", {}), Vector3(0, 1, 0), false)
 
 
 # --- Interaction ---
@@ -269,8 +269,10 @@ func _on_interacted(body: StaticBody3D) -> void:
 	_hud.show_text_panel(text)
 
 
-func _on_player_damage_received(amount: float, _from: Node) -> void:
-	GameState.player_health = _player_combatant.health
+func _on_player_damage_received(_amount: float, _from: Node) -> void:
+	# HP lives in _player_combatant (visual) and is mirrored to GameStore via
+	# the bridge's apply_state_update events. No third copy needed.
+	pass
 
 
 func _on_player_damage_log(amount: float, _from: Node) -> void:
@@ -291,10 +293,6 @@ func _on_enemy_damage_log(amount: float, _from: Node, enemy_name: String) -> voi
 				_combat_hud.add_log_message("%s killed!" % enemy_name, Color(1.0, 0.85, 0.2))
 
 
-func _on_room_entered(room_id: String, description: String, _ambient: String) -> void:
-	_hud.show_room_info(room_id, description)
-
-
 func respawn_player() -> void:
 	_combat_manager.clear_pending()
 	# Reset all enemy combatants to idle
@@ -308,7 +306,6 @@ func respawn_player() -> void:
 	_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameState.player_health = _player_combatant.max_health
 	GameStore.state.player.hp = _player_combatant.max_health
 	GameStore.state.player.combat_state = "idle"
 	_player.position = Vector3(0, 1, 4)
@@ -452,8 +449,6 @@ func _reset_game_state() -> void:
 	_hud.hide_text_panel()
 	# Scenario
 	_scenario_active = false
-	# GameState
-	GameState.reset()
 	# GameStore narrative
 	GameStore.state.narrative.story_so_far = ""
 	GameStore.state.narrative.last_dialogue = ""
@@ -627,66 +622,17 @@ func _load_room_from_file(index: int) -> void:
 	load_room_by_path(_room_files[index])
 
 
-# --- AI room generation (exit transitions) ---
+# --- Exit transitions ---
 
 func _on_exit_entered(body: Node3D, area: Area3D) -> void:
+	# Exits are events for the scenario runner. In dev/test rooms (F1/F2/F3)
+	# there is no scenario, so exits become no-ops — to move between test
+	# rooms, use the function keys or the dev menu (F12). The old per-exit
+	# AIClient.generate_room path was removed with the GameState cleanup.
 	if body != _player or _transitioning:
 		return
-
 	var exit_wall: String = area.get_meta("wall", "north")
-	var target_hint: String = area.get_meta("target_hint", "")
-
-	# Notify scenario runner of exit (may trigger beat advancement)
 	LogicBridge.send_scenario_event("exit_entered", {"exitWall": exit_wall})
-
-	# If a scenario game is active, let the ScenarioRunner handle scene transitions
-	if _scenario_active:
-		return
-
-	# Check cache
-	var cache_key := "%s_%s" % [GameState.current_room_id, exit_wall]
-	if GameState.visited_rooms.has(cache_key):
-		var entry_wall: String = GameState.OPPOSITE_WALL.get(exit_wall, "south")
-		var cached_data: Dictionary = GameState.visited_rooms[cache_key]
-		var dims: Dictionary = cached_data.get("dimensions", {})
-		_apply_room(cached_data, GameState.get_entry_position(entry_wall, dims), true)
-		return
-
-	# Freeze player + fade out
-	_transitioning = true
-	_player.velocity = Vector3.ZERO
-	_player.set_physics_process(false)
-	_hud.hide_prompt()
-	_hud.hide_text_panel()
-
-	var entry_wall: String = GameState.OPPOSITE_WALL.get(exit_wall, "south")
-	var world_state := GameState.serialize_world_state(entry_wall, target_hint)
-	set_meta("_pending_entry_wall", entry_wall)
-	set_meta("_pending_cache_key", cache_key)
-
-	await _hud.fade_out(0.4)
-	AIClient.generate_room(world_state)
-
-
-func _on_room_generated(room_data: Dictionary) -> void:
-	_transitioning = false
-	_player.set_physics_process(true)
-	var entry_wall: String = get_meta("_pending_entry_wall", "south")
-	var cache_key: String = get_meta("_pending_cache_key", "")
-
-	if cache_key:
-		GameState.visited_rooms[cache_key] = room_data
-
-	var dims: Dictionary = room_data.get("dimensions", {})
-	_apply_room(room_data, GameState.get_entry_position(entry_wall, dims), true)
-
-
-func _on_generation_failed(error: String) -> void:
-	_transitioning = false
-	_player.set_physics_process(true)
-	print("Generation failed: %s" % error)
-	_load_room_from_file(0)
-	await _hud.fade_in(0.3)
 
 
 # --- Room building ---
@@ -749,7 +695,6 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameState.player_health = _player_combatant.max_health
 	GameStore.state.player.hp = _player_combatant.max_health
 	GameStore.state.player.combat_state = "idle"
 	var player_sync = _player.get_node_or_null("CombatAnimationSync")
@@ -766,7 +711,13 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	_player.velocity = Vector3.ZERO
 	_player.set_physics_process(true)
 
-	# Dispatch room change to store
+	# Dispatch room change (world-only) and the enemy projection separately,
+	# so a room_changed without enemies no longer wipes the list — see
+	# next.md §1.3 and nefan-core/src/store/state-projection.ts.
+	GameStore.dispatch("room_changed", {
+		"room_id": data.get("room_id", "unknown"),
+		"room_data": data,
+	})
 	var enemies_state: Array = []
 	for child in _current_room.get_children():
 		var c = child.get_node_or_null("Combatant")
@@ -780,11 +731,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 				"combat_state": "idle",
 				"alive": true,
 			})
-	GameStore.dispatch("room_changed", {
-		"room_id": data.get("room_id", "unknown"),
-		"room_data": data,
-		"enemies": enemies_state,
-	})
+	GameStore.dispatch("enemies_projected", {"enemies": enemies_state})
 
 	# Notify bridge of room change with enemy personalities
 	# (send_room_loaded queues data if bridge not yet connected)
@@ -808,8 +755,15 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	var dims: Dictionary = data.get("dimensions", {})
 	LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies, dims)
 
-	# Update state
-	GameState.mark_room_visited(data.get("room_id", "unknown"), data)
+	# Surface room metadata in the HUD. The canonical session record is owned
+	# by NarrativeState — recorded by the scenario change_scene handler and by
+	# the open-world scene loader; the HUD update belongs here because it is
+	# the only universally applicable side-effect (dev rooms, scenario rooms,
+	# F1/F2/F3 all hit this path).
+	_hud.show_room_info(
+		String(data.get("room_id", "unknown")),
+		String(data.get("room_description", "")),
+	)
 
 	# Fade in
 	if fade:
@@ -837,10 +791,13 @@ func _on_title_game_selected(game_id: String, scene_path: String, session_id: St
 
 func _on_appearance_confirmed(model_id: String, skin_path: String) -> void:
 	_character_editor = null
-	# Apply appearance to player
+	# Apply appearance to player (visual)
 	_apply_player_appearance(model_id, skin_path)
-	# Continue with game start
+	# Start the game — this creates the NarrativeState session
 	_start_game(_pending_game_id, _pending_scene_path, _pending_session_id)
+	# Persist appearance to the canonical save now that the session exists
+	if NarrativeState.session_id != "":
+		NarrativeState.update_player_appearance(model_id, skin_path)
 
 
 func _on_editor_cancelled() -> void:
@@ -873,10 +830,11 @@ func _apply_player_appearance(model_id: String, skin_path: String) -> void:
 		animator.attach_weapon()
 	else:
 		animator.detach_weapon()
-	# Persist
+	# Reflect the new appearance in the runtime store. Persistence to the
+	# canonical NarrativeState happens at the call site that owns the session
+	# lifecycle (`_on_appearance_confirmed` for new games, `F9`/`_start_game`
+	# for resumes), because at this point we may not have a session yet.
 	GameStore.dispatch("appearance_changed", {"model_id": model_id, "skin_path": skin_path})
-	GameState.player_model_id = model_id
-	GameState.player_skin_path = skin_path
 
 
 func _start_game(game_id: String, scene_path: String, resume_session_id: String = "") -> void:

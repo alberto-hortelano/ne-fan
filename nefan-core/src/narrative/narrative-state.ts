@@ -24,6 +24,21 @@ import type { SessionStorage } from "./session-storage.js";
 import { WorldMapManager } from "../world-map/world-map.js";
 import type { WorldMap } from "../world-map/types.js";
 
+export type AssetValidator = (hash: string) => Promise<boolean>;
+export type LoadWarningSink = (source: string, message: string) => void;
+
+export interface LoadSessionOptions {
+  /** Probe each unique asset hash in `asset_index_snapshot` against the live
+   *  manifest. Hashes the validator reports as missing (resolved `false`) are
+   *  dropped from the snapshot. Errors thrown by the validator leave the entry
+   *  intact — we don't conflate "uncertain" with "missing". */
+  assetValidator?: AssetValidator;
+  /** Optional channel for human-facing warnings during the load
+   *  (orphan-asset drops, validation errors). Pair this with the HTML
+   *  `errors.push("session", …)` to surface in the dev panel. */
+  onWarning?: LoadWarningSink;
+}
+
 const DEFAULT_WORLD: NarrativeWorldState = {
   name: "",
   atmosphere: "",
@@ -81,7 +96,7 @@ export class NarrativeState {
     return this.session_id;
   }
 
-  async loadSession(sessionId: string): Promise<boolean> {
+  async loadSession(sessionId: string, opts?: LoadSessionOptions): Promise<boolean> {
     const data = await this.storage.read(sessionId);
     if (!data) return false;
     if (data.schema_version > SCHEMA_VERSION || data.schema_version < 1) {
@@ -105,6 +120,18 @@ export class NarrativeState {
     this.worldMap = new WorldMapManager(wm);
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     this.dirty = data.schema_version < SCHEMA_VERSION;
+    if (opts?.assetValidator) {
+      const pruned = await validateAssetSnapshot(
+        this.asset_index_snapshot,
+        opts.assetValidator,
+        opts.onWarning,
+        sessionId,
+      );
+      if (pruned.changed) {
+        this.asset_index_snapshot = pruned.entries;
+        this.dirty = true;
+      }
+    }
     return true;
   }
 
@@ -422,6 +449,47 @@ export class NarrativeState {
     this.nextEventSeq += 1;
     return `evt_${String(this.nextEventSeq).padStart(4, "0")}`;
   }
+}
+
+async function validateAssetSnapshot(
+  entries: AssetEntry[],
+  validator: AssetValidator,
+  warn: LoadWarningSink | undefined,
+  sessionId: string,
+): Promise<{ changed: boolean; entries: AssetEntry[] }> {
+  if (entries.length === 0) return { changed: false, entries };
+  const cache = new Map<string, boolean>();
+  const kept: AssetEntry[] = [];
+  let changed = false;
+  for (const entry of entries) {
+    let present: boolean;
+    if (cache.has(entry.hash)) {
+      present = cache.get(entry.hash)!;
+    } else {
+      try {
+        present = await validator(entry.hash);
+      } catch (err) {
+        // Validator failed (network/HTTP error). Keep the entry — uncertain
+        // is not the same as missing, and dropping on a transient blip would
+        // silently corrupt the session.
+        const msg = `could not validate asset ${entry.hash}: ${(err as Error).message}`;
+        console.warn(`NarrativeState[${sessionId}]: ${msg}`);
+        warn?.("session", msg);
+        kept.push(entry);
+        continue;
+      }
+      cache.set(entry.hash, present);
+    }
+    if (present) {
+      kept.push(entry);
+    } else {
+      changed = true;
+      const msg = `dropped orphan asset ${entry.hash} (${entry.type}/${entry.subtype}) from session ${sessionId}`;
+      console.warn(`NarrativeState: ${msg}`);
+      warn?.("session", msg);
+    }
+  }
+  return { changed, entries: kept };
 }
 
 function nowIso(): string {
