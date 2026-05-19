@@ -258,6 +258,14 @@ class NotifySessionRequest(BaseModel):
     is_resume: bool = False
 
 
+class ReportPlayerChoiceRequest(BaseModel):
+    event_id: str = Field(min_length=1)
+    speaker: str = ""
+    chosen_text: str = ""
+    free_text: str = ""
+    context: dict = Field(default_factory=dict)
+
+
 @app.get("/health")
 async def health():
     return {
@@ -829,13 +837,12 @@ async def get_skinned_sheet_frame(hash_key: str, filename: str):
 
 
 @app.post("/report_player_choice")
-async def report_player_choice(request: Request):
+async def report_player_choice(body: ReportPlayerChoiceRequest):
     """Forward a player dialogue choice to the narrative engine and return its
     consequences. No silent fallback: if there is no LLM backend or the LLM
     produces an invalid response, this endpoint returns HTTP 503 / 422 so the
     bridge surfaces the error to the client."""
     import asyncio
-    body = await request.json()
     if llm_client is None:
         raise HTTPException(
             status_code=503,
@@ -844,11 +851,11 @@ async def report_player_choice(request: Request):
     try:
         result = await asyncio.to_thread(
             llm_client.report_player_choice,
-            str(body.get("event_id", "")),
-            str(body.get("speaker", "")),
-            str(body.get("chosen_text", "")),
-            str(body.get("free_text", "")),
-            body.get("context", {}) if isinstance(body.get("context"), dict) else {},
+            body.event_id,
+            body.speaker,
+            body.chosen_text,
+            body.free_text,
+            body.context,
         )
     except NarrativeUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))

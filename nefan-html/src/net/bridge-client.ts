@@ -158,9 +158,19 @@ export class BridgeClient {
     }, this.retryInterval);
   }
 
-  private send(msg: Record<string, unknown>): void {
+  /** Send a frame to the bridge. When disconnected the message is dropped;
+   *  unless `opts.quietOnDisconnect` is set we log it to ErrorLog so a lost
+   *  one-shot (load_game, dialogue_choice…) is visible. High-frequency calls
+   *  like `sendInput` pass `quietOnDisconnect: true` — losing one frame is
+   *  harmless and we'd otherwise flood the log. */
+  private send(msg: Record<string, unknown>, opts: { quietOnDisconnect?: boolean } = {}): void {
     if (this._connected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+      return;
+    }
+    if (!opts.quietOnDisconnect) {
+      const type = typeof msg.type === "string" ? msg.type : "<no type>";
+      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`);
     }
   }
 
@@ -193,7 +203,9 @@ export class BridgeClient {
     attackRequested?: boolean;
     attackType?: string;
   }): void {
-    this.send({ type: "input", delta, inputs });
+    // Per-frame call: dropping while disconnected is fine, the next reconnect
+    // resyncs from the player's current position.
+    this.send({ type: "input", delta, inputs }, { quietOnDisconnect: true });
   }
 
   sendLoadRoom(roomId: string, enemies: {

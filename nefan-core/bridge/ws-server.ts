@@ -384,11 +384,13 @@ wss.on("connection", (ws: WebSocket) => {
         scenario.loadGame(GAMES_DIR, msg.gameId).then(async (sceneData) => {
           if (!sceneData) {
             // No initial scene materialized — the scenario runner expected
-            // one but loadSceneData returned null. Surface to the client
-            // instead of leaving it waiting on a scene that never arrives.
+            // one but loadSceneData returned null. Reply directly to the
+            // requesting socket: `load_game` is the legacy bypass path so
+            // the caller is not necessarily in `narrativeSubscribers`, and
+            // a `broadcastNarrative` would not reach them.
             const message = `load_game '${msg.gameId}': scenario produced no initial scene`;
             console.warn(`Bridge: ${message}`);
-            broadcastNarrative({
+            send(ws, {
               type: "narrative_status",
               phase: "error",
               kind: "scene",
@@ -437,12 +439,11 @@ wss.on("connection", (ws: WebSocket) => {
 
           console.log(`Bridge: game '${msg.gameId}' loaded`);
         }).catch((err: unknown) => {
-          // Mirror the generateScene `.catch` pattern (ws-server.ts:544-591):
-          // log + broadcast a narrative_status:error so the client stops
-          // waiting on a load that's never going to complete.
+          // Reply directly to the requesting socket — see the !sceneData
+          // branch above for why we don't `broadcastNarrative` here.
           const message = `load_game '${msg.gameId}' failed: ${(err as Error).message ?? String(err)}`;
           console.error(`Bridge: ${message}`);
-          broadcastNarrative({
+          send(ws, {
             type: "narrative_status",
             phase: "error",
             kind: "scene",

@@ -89,6 +89,19 @@ describe("AiClient", () => {
     assert.match(r.error, /boom/);
   });
 
+  it("reportPlayerChoice surfaces network/abort errors thrown by the fetch", async () => {
+    const client = new AiClient({
+      baseUrl: "http://test",
+      fetchImpl: (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch,
+    });
+    const r = await client.reportPlayerChoice({
+      eventId: "x", speaker: "x", chosenText: "", freeText: "", context: ctx,
+    });
+    assert.equal(r.ok, false);
+    if (r.ok) throw new Error("unreachable");
+    assert.match(r.error, /ECONNREFUSED/);
+  });
+
   it("reportPlayerChoice ok=true + empty array when LLM returned no consequences", async () => {
     const client = new AiClient({
       baseUrl: "http://test",
