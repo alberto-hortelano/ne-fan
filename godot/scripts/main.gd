@@ -711,7 +711,13 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	_player.velocity = Vector3.ZERO
 	_player.set_physics_process(true)
 
-	# Dispatch room change to store
+	# Dispatch room change (world-only) and the enemy projection separately,
+	# so a room_changed without enemies no longer wipes the list — see
+	# next.md §1.3 and nefan-core/src/store/state-projection.ts.
+	GameStore.dispatch("room_changed", {
+		"room_id": data.get("room_id", "unknown"),
+		"room_data": data,
+	})
 	var enemies_state: Array = []
 	for child in _current_room.get_children():
 		var c = child.get_node_or_null("Combatant")
@@ -725,11 +731,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 				"combat_state": "idle",
 				"alive": true,
 			})
-	GameStore.dispatch("room_changed", {
-		"room_id": data.get("room_id", "unknown"),
-		"room_data": data,
-		"enemies": enemies_state,
-	})
+	GameStore.dispatch("enemies_projected", {"enemies": enemies_state})
 
 	# Notify bridge of room change with enemy personalities
 	# (send_room_loaded queues data if bridge not yet connected)

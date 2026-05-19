@@ -36,10 +36,10 @@ describe("GameStore — payload aliasing invariant", () => {
     assert.deepEqual(store.state.world.room_data, { exits: ["north", "south"] });
   });
 
-  it("room_changed: mutating payload.enemies after dispatch does not affect state", () => {
+  it("enemies_projected: mutating payload.enemies after dispatch does not affect state", () => {
     const store = new GameStore();
     const enemies = [{ id: "e1", hp: 100, alive: true } as never];
-    store.dispatch("room_changed", { room_id: "r1", room_data: {}, enemies });
+    store.dispatch("enemies_projected", { enemies });
     (enemies[0] as unknown as Record<string, unknown>).hp = 0;
     enemies.push({ id: "e2", hp: 50, alive: true } as never);
     assert.equal(store.state.enemies.length, 1);
@@ -52,6 +52,40 @@ describe("GameStore — payload aliasing invariant", () => {
     store.dispatch("room_visited", { room_id: "r1", room_data });
     room_data.name = "different";
     assert.deepEqual(store.state.world.rooms_visited["r1"], { name: "tavern" });
+  });
+});
+
+describe("GameStore — room_changed/enemies_projected decoupling", () => {
+  it("room_changed without enemies does NOT wipe the existing list", () => {
+    const store = new GameStore();
+    store.dispatch("enemies_projected", {
+      enemies: [{ id: "e1", pos: [0, 0, 0], hp: 100, max_hp: 100,
+                  weapon_id: "club", combat_state: "idle", alive: true } as never],
+    });
+    assert.equal(store.state.enemies.length, 1);
+    store.dispatch("room_changed", { room_id: "next", room_data: {} });
+    assert.equal(store.state.enemies.length, 1);
+    assert.equal(store.state.world.room_id, "next");
+  });
+
+  it("enemies_projected without payload yields an empty list", () => {
+    const store = new GameStore();
+    store.dispatch("enemies_projected", {});
+    assert.deepEqual(store.state.enemies, []);
+  });
+
+  it("enemies_projected replaces the list wholesale", () => {
+    const store = new GameStore();
+    store.dispatch("enemies_projected", {
+      enemies: [{ id: "a", pos: [0, 0, 0], hp: 50, max_hp: 50,
+                  weapon_id: "fist", combat_state: "idle", alive: true } as never],
+    });
+    store.dispatch("enemies_projected", {
+      enemies: [{ id: "b", pos: [1, 0, 0], hp: 80, max_hp: 80,
+                  weapon_id: "club", combat_state: "idle", alive: true } as never],
+    });
+    assert.equal(store.state.enemies.length, 1);
+    assert.equal((store.state.enemies[0] as unknown as { id: string }).id, "b");
   });
 });
 

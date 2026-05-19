@@ -82,10 +82,17 @@ export function applyReducer(
     }
 
     case "room_changed":
+      // World-only: room_id + room_data. Enemies are projected from
+      // NarrativeState via the dedicated `enemies_projected` action so a
+      // room_changed without enemies no longer wipes the combat list — see
+      // next.md §1.3 and src/store/state-projection.ts.
       state.world.room_id = (payload.room_id as string) ?? "";
       state.world.room_data = payload.room_data
         ? structuredClone(payload.room_data as Record<string, unknown>)
         : {};
+      break;
+
+    case "enemies_projected":
       state.enemies = payload.enemies
         ? structuredClone(payload.enemies as EnemyState[])
         : [];

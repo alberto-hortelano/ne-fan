@@ -253,8 +253,7 @@ wss.on("connection", (ws: WebSocket) => {
                 { x: 0, y: 0, z: 1 },
               );
               sim.addCombatant(combatant, enemy.combat.personality);
-              store.dispatch("room_changed", {
-                room_id: store.state.world.room_id,
+              store.dispatch("enemies_projected", {
                 enemies: [
                   ...store.state.enemies,
                   {
@@ -341,8 +340,8 @@ wss.on("connection", (ws: WebSocket) => {
           sim.addCombatant(combatant, enemy.personality);
         }
 
-        store.dispatch("room_changed", {
-          room_id: msg.roomId,
+        store.dispatch("room_changed", { room_id: msg.roomId });
+        store.dispatch("enemies_projected", {
           enemies: msg.enemies.map(e => ({
             id: e.id,
             pos: [e.position.x, e.position.y, e.position.z],
