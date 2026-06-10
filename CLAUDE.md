@@ -297,7 +297,7 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
-## Plugins declarativos (next.md §7 — F1–F4 implementadas)
+## Plugins declarativos (next.md §7 — F1–F5 implementadas)
 
 Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
 
@@ -305,7 +305,9 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **DSL** (`src/plugins/dsl/`): paths dot-notation con `{interpolación}`, `[i]`, `[*]`; predicados eq/neq/gt/…/all/any/not; efectos set/inc/dec/mul/push/pull/remove/emit_event (secuenciales); expresiones string con aritmética y min/max/clamp/len/concat/coalesce; `random(seed_path, lo, hi)` determinista (sha256+SeededRng). Regla path-vs-literal: raíz ∈ {event, slice, world, player, entities, plugins, _, entity, acc} ⇒ path; si no, literal (`'…'` o `{$lit}` fuerzan literal).
 - **Shipped plugins**: `nefan-core/data/games/{gameId}/plugins/*.json`. Se validan y activan en `start_session` (projections → slice inicial); en resume se casan por id contra el save — hash distinto o manifest borrado ⇒ resume abortado fail-loud.
 - **Runtime**: el LLM emite `{type: "plugin_event", plugin_id, event_type, payload}`; el dispatcher (`src/plugins/dispatcher.ts`) es transaccional (working copies, commit sólo si todo el tick es válido), multi-consumer en orden alfabético de id, `emit_event` derivados con límite 16/tick, whitelist dura de escrituras externas (`player.gold|health|level|inventory`, `entities[i].data.*`). El hot loop de input (combate/movimiento) NO pasa por plugins.
-- **Pendiente**: F5 (`plugin_register` MCP para génesis por IA), F6 (`derived_views` → `serializeForLlm` + `plugin_inspect`), F7 (`migrate` v→v+1), F8 (plugin commerce real).
+- **Génesis por IA (F5)**: tools MCP `plugin_register` (manifest JSON → `POST /plugins/register` del state API → `registerRuntimePlugin`: zod + hash + validación estática + replay de fixtures, **al menos una obligatoria** en runtime) y `plugin_list` (`GET /plugins`). El manifest queda embebido en el save (`PluginRecord.manifest`) y el resume lo rebindea sin archivo en disco.
+- **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Ojo: el flujo Godot (bypass `load_game`) aún no ejercita plugins; viven en la sesión del bridge (`start_session`/`resume_session`).
+- **Pendiente**: F6 (`derived_views` → `serializeForLlm` + `plugin_inspect`), F7 (`migrate` v→v+1), F8 (plugin commerce real).
 
 ## Sistema de combate
 
