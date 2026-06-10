@@ -37,3 +37,7 @@ export type { AssetIndexFilter } from "./narrative/asset-index.js";
 export * from "./narrative/types.js";
 export * from "./plugins/types.js";
 export { canonicalJson, computePluginId } from "./plugins/hash.js";
+export * from "./plugins/dsl/evaluate.js";
+export { DslError } from "./plugins/dsl/errors.js";
+export { deepEqual } from "./plugins/dsl/deep-equal.js";
+export { validateManifestStatic } from "./plugins/validate.js";
