@@ -24,6 +24,11 @@ import {
   activatePluginsForNewSession,
   bindPluginsForResume,
 } from "../src/plugins/loader.js";
+import {
+  dispatchPluginEvents,
+  type PluginAppliedEffect,
+  type PluginEventInput,
+} from "../src/plugins/dispatcher.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
@@ -165,13 +170,35 @@ async function fireMapTriggers(prevPlaceId: string, newPlaceId: string): Promise
     playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
     playerForward: { x: 0, y: 0, z: -1 },
   });
+  const pluginFx = runPluginTick(eventId, dispatched.pluginEvents);
   await narrative.save();
   broadcastNarrative({
     type: "narrative_event",
     eventId,
     consequences,
-    effects: dispatched.effects,
+    effects: [...dispatched.effects, ...pluginFx],
   });
+}
+
+/** Nivel 3 del tick (§7.4): pasa los plugin_events recolectados por
+ *  dispatchConsequences al dispatcher de plugins. El tick es transaccional:
+ *  en error no se commitea nada, se loguea y se propaga narrative_status al
+ *  cliente (las consequences core ya aplicadas se conservan). El save lo hace
+ *  el caller — un único save por tick. */
+function runPluginTick(eventId: string, events: PluginEventInput[]): PluginAppliedEffect[] {
+  if (events.length === 0) return [];
+  const result = dispatchPluginEvents(narrative, activePlugins, events);
+  if (!result.ok) {
+    console.error(`Bridge: plugin tick aborted for ${eventId}:`, result.error);
+    broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "consequences",
+      message: `plugin ${result.error?.code}: ${JSON.stringify(result.error)}`,
+    });
+    return [];
+  }
+  return result.effects;
 }
 
 function listGames(): Array<{ game_id: string; title: string; description?: string }> {
@@ -728,12 +755,13 @@ wss.on("connection", (ws: WebSocket) => {
           playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
           playerForward: { x: 0, y: 0, z: -1 },
         });
+        const pluginFx = runPluginTick(eventId, dispatched.pluginEvents);
         await narrative.save();
         broadcastNarrative({
           type: "narrative_event",
           eventId,
           consequences,
-          effects: dispatched.effects,
+          effects: [...dispatched.effects, ...pluginFx],
         });
         break;
       }
@@ -858,12 +886,13 @@ wss.on("connection", (ws: WebSocket) => {
           playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
           playerForward: { x: 0, y: 0, z: -1 },
         });
+        const pluginFx = runPluginTick(eventId, dispatched.pluginEvents);
         await narrative.save();
         broadcastNarrative({
           type: "narrative_event",
           eventId,
           consequences,
-          effects: dispatched.effects,
+          effects: [...dispatched.effects, ...pluginFx],
         });
         break;
       }
