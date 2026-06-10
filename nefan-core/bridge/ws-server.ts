@@ -29,6 +29,7 @@ import {
   type PluginAppliedEffect,
   type PluginEventInput,
 } from "../src/plugins/dispatcher.js";
+import { registerRuntimePlugin } from "../src/plugins/register.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
@@ -247,6 +248,39 @@ createStateHttpServer({
   npcDirector,
   onMutation: async () => {
     await narrative.save();
+  },
+  plugins: {
+    register: (raw) => {
+      const result = registerRuntimePlugin(narrative, activePlugins, raw);
+      console.log(
+        `Bridge: plugin '${result.manifest.name}' v${result.manifest.version} ` +
+          `activado en runtime (${result.id.slice(0, 12)}…, ${result.fixturesPassed} fixtures)`,
+      );
+      // plugin_activated (§7.3 paso 5): se notifica con el status existente
+      // para no tocar los parsers de cliente.
+      broadcastNarrative({
+        type: "narrative_status",
+        phase: "ready",
+        kind: "consequences",
+        message: `Plugin activado: ${result.manifest.name} (${result.id.slice(0, 12)}…)`,
+      });
+      return {
+        id: result.id,
+        name: result.manifest.name,
+        version: result.manifest.version,
+        fixturesPassed: result.fixturesPassed,
+      };
+    },
+    list: () =>
+      [...activePlugins.entries()].map(([id, m]) => ({
+        id,
+        name: m.name,
+        version: m.version,
+        description: m.description,
+        origin_author: narrative.getPluginRecord(id)?.origin.author ?? m.origin.author,
+        events_consumed: m.events_consumed.map((e) => e.type),
+        events_produced: m.events_produced,
+      })),
   },
 });
 

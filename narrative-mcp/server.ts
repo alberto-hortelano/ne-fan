@@ -471,6 +471,52 @@ validator.`,
   );
 
   server.tool(
+    'plugin_list',
+    `List the declarative plugins active in the current session: id, name, ` +
+    `version, description, events_consumed (types you can target with a ` +
+    `plugin_event consequence) and events_produced. Check this before emitting ` +
+    `plugin_event or registering a new plugin with plugin_register.`,
+    {},
+    async () => reportBridge(await bridgeGet('/plugins')),
+  );
+
+  server.tool(
+    'plugin_register',
+    `Register and activate a declarative plugin for this session. A plugin is ` +
+    `a pure-JSON manifest the game engine interprets: it owns a state slice, ` +
+    `consumes events (when-predicate → effects) and can read/write declared ` +
+    `external paths. Use it when the story repeatedly needs a SYSTEM the core ` +
+    `engine doesn't model (commerce, reputation, crafting, ...) instead of ` +
+    `hand-narrating its bookkeeping. The manifest is validated (zod shape, ` +
+    `static path/permission analysis) and EVERY fixture is replayed before ` +
+    `activation — at least one fixture {before, event, after} is required; if ` +
+    `anything fails the registration is rejected with the reason. On success ` +
+    `the plugin survives save/load (manifest persisted in the session) and you ` +
+    `can drive it with {"type": "plugin_event", "plugin_id", "event_type", ` +
+    `"payload"} consequences. Required manifest fields: version (int ≥ 1), ` +
+    `name, description, origin {author: "narrative_engine", rationale}, slice ` +
+    `{schema, initial}, plus reads/writes/events_consumed/events_produced/` +
+    `projections/derived_views/fixtures as needed. Writes outside your slice ` +
+    `must be declared in "writes" and only player.gold|health|level|inventory ` +
+    `and entities[i].data.* are accepted. In DSL strings, a bare string whose ` +
+    `root is one of event/slice/world/player/entities/plugins/_/entity/acc is ` +
+    `a PATH; anything else is a literal ('single quotes' or {"$lit": ...} ` +
+    `force literals).`,
+    {
+      manifest_json: z.string().describe('The full PluginManifest as a JSON string. Omit "id" — the engine computes it (sha256 of the canonical manifest).'),
+    },
+    async ({ manifest_json }) => {
+      let manifest: unknown;
+      try {
+        manifest = JSON.parse(manifest_json);
+      } catch {
+        return { content: [{ type: 'text', text: 'manifest_json is not valid JSON' }], isError: true };
+      }
+      return reportBridge(await bridgePost('/plugins/register', { manifest }));
+    },
+  );
+
+  server.tool(
     'entity_get',
     `Read one entity's authoritative record: type, scene, position and its ` +
     `data blob (health, state, inventory, etc.). Pass "player" to read the ` +
