@@ -27,6 +27,7 @@
     "sprite_cache_dir": "cache/sprites",
     "texture_resolution": 512,
     "texture_steps": 4,
-    "texture_lazy_load": true
+    "texture_lazy_load": true,
+    "expose_diagnostic": false
   }
 }

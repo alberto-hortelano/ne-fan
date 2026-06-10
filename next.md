@@ -1,318 +1,59 @@
-# Auditoría del repo — propuestas de mejora
+# Auditoría del repo — pendientes y siguiente objetivo
 
-Auditoría enfocada en **modularidad/legibilidad, gestión de errores, gestión de estado y código muerto**. Cubre `nefan-core`, `narrative-mcp`, `ai_server`, `godot/` y `nefan-html`. Para código sospechoso de estar muerto, sólo se enumera con evidencia — ninguna propuesta destructiva.
-
-Encaja con la línea reciente del repo (commits `narrative engine: strict fail-loud mode`, `remove silent fallbacks`, `fold ai_server config…`): la dirección correcta ya está fijada; aquí se identifican los rincones que todavía no han recibido el mismo tratamiento.
+Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las secciones ya implementadas se han retirado de este documento y quedan resumidas con su commit. **Se conserva la numeración original** porque hay docstrings en el código que la citan (p. ej. `analyze_weapon` en `ai_server/main.py` cita "next.md §2.1").
 
 ---
 
-## 0. TL;DR
+## 0. Estado a 2026-06-10
 
-1. **Tres stores de estado** conviven (`GameState` GD, `NarrativeState` TS+GD, `GameStore` TS+GD) y la frontera entre ellos no es clara — varias rutas de Godot siguen escribiendo directamente en `GameState` legacy.
-2. **Ruta legacy `generate_room` viva**: `godot/scripts/main.gd:668` la usa, con fallback silencioso a `_load_room_from_file(0)` (`main.gd:684-689`) — el opuesto exacto del modo fail-loud que el resto del stack ya adoptó.
-3. **`bridge-client.ts:116-118`** ignora silenciosamente errores de parseo WS, pese a que el repo ya tiene `ErrorLog` ("nunca fallback silencioso", `nefan-html/src/ui/error-log.ts:1-11`).
-4. **`session_recorder.gd:15`** conecta `GameStore.state_changed` sin desconectar en `_exit_tree`/`tree_exiting`. Sólo es un autoload (no leak real), pero marca un patrón: no hay convención de desuscripción para listeners GD.
-5. **`reducers.ts:6-112`** mutan in-place; el contrato Redux-like (`(state, action) => state'`) no se cumple — riesgo bajo hoy pero rompe `snapshot()`+`restore()` si se introduce serialización selectiva.
-6. **Reducer `room_changed` (`reducers.ts:84-88`)** machaca `state.enemies = payload.enemies ?? []`: cualquier `room_changed` sin `enemies` vacía la lista. `NarrativeState.entities` y `GameStore.state.enemies` no se sincronizan.
-7. **Endpoints FastAPI sin Pydantic** (`ai_server/main.py:229,241,253,265,307,425,463,815`): `await request.json()` directo y `body.get(...)` con casts manuales. `report_player_choice:815` ya pasó al modo fail-loud — replicarlo en el resto.
-8. **`generate_room`/`populate_room` legacy** vivos en `ai_server/main.py:229-250` y `ai-client.ts:91-103`. Decisión pendiente: retirar el call site de Godot y eliminar, o aceptar y documentar el dual-stack.
-9. **`combat_resolver.gd` (4 líneas) y `enemy_combat_ai.gd` (17 líneas)** son scripts esqueleto cuya lógica vive en `nefan-core`. Sin call sites de instanciación encontrados — candidatos a borrar.
-10. **`getRoomsByCategory()` y `createDevState()`** (`nefan-core/src/index.ts:13,15`) exportados al barrel pero sin call sites externos — candidatos a borrar de la API pública.
-11. **`archive/ai-graphics-prototype/`** entero — declarado descartado en CLAUDE.md, no importado por nadie vivo.
-12. **`ai_server/test_narrative.py`** — test legacy aislado, evaluar si el escenario que cubre sigue vivo.
-13. **`schema_version` migration v1→v2** (`narrative-state.ts:102-104`) buena, pero no revalida hashes del `asset_index_snapshot` — un save de v1 con assets borrados se reanuda sin detectar la inconsistencia.
-14. **Convención de logging incoherente** entre `print`, `push_error`, `console.warn`/`error` y `errors.push(...)`. Falta canal único hacia `ErrorLog` para el lado HTML/TS.
-15. **`AiClient.reportPlayerChoice` (`ai-client.ts:120,124`)** devuelve `[]` en error (silencio) en vez de propagar — el bridge no distingue "no hay consecuencias" de "el LLM falló".
-16. **Visión a medio plazo (§7)**: arquitectura de estado **extensible por plugins declarativos**. Genesis dual (developer o motor narrativo vía MCP), manifest determinista (hash estable cross-sesión), multi-consumer permitido. Encaja con la consolidación en curso de `NarrativeState` como fuente canónica.
+**Implementado** (retirado del documento):
 
----
+- **§1 Gestión de estado — cerrado** (`960e7f8`, `cb8dcf6`, PR #22): `GameState` eliminado; proyección `enemies_projected`; invariantes de store; `validateAssetSnapshot`; `SignalLifecycle`.
+- **§2 Gestión de errores — cerrado** (`48dc53f`, `ba2dd3b`, PR #23): catches TS → `errors.push`; `load_game` responde al socket; `Result` en `reportPlayerChoice`; Pydantic en todos los endpoints de generación; `NodeAccess.must_get_node`; doctrina en CLAUDE.md.
+- **§2.2 restos + §4 dead code — cerrado** (rama `legacy/retire-generate-room`):
+  - Cadena `generate_room`/`populate_room` retirada end-to-end: endpoints de `ai_server/main.py`, `populate_room`/`generate_room` y sus helpers MCP/API de `llm_client.py`, prompts/tools/validators legacy de `narrative_schemas.py` (el archivo pasó de ~1140 a ~700 líneas), `AiClient.generateRoom` de `ai-client.ts`, tabla de endpoints de CLAUDE.md. El tipo WS `room_request` se queda: lo comparte la ruta canónica (`format: "scene"`).
+  - Pydantic en `/generate_scene` (acepta las dos formas vivas: LlmContext del bridge y bypass de ScenarioRunner, con `model_validator` que exige una completa) y `/analyze_weapon`.
+  - `skin_test_*` movidos a `ai_server/routers/diagnostic.py` bajo prefijo `/diagnostic/*`, montados sólo si `ai_server.expose_diagnostic = true` en `nefan-core/src/config.ts` (default false → 404).
+  - Dead code borrado: `combat_resolver.gd`, `nefan-core/src/dev/room-registry.ts`, `nefan-core/src/dev/dev-state.ts` y sus exports del barrel.
+  - **Fix fail-loud nuevo**: `_generate_scene_via_mcp` no detectaba la respuesta estructurada `{error: no_mcp_listener}` del bridge MCP — `validate_scene_response` la rellenaba hasta convertirla en escena placeholder ("Un paraje desolado") y el endpoint devolvía 200. Ahora replica el guard de la ruta de visión y el endpoint devuelve 503.
+- **§3.1** ruta legacy fuera de `main.gd`; **§3.3** convención de logging en CLAUDE.md.
 
-## 1. Gestión de estado
+**Correcciones a la auditoría original**:
 
-### 1.1 Mapa actual de fuentes de verdad
+- `enemy_combat_ai.gd` **NO está muerto**: `object_spawner.gd:101` lo instancia (`EnemyCombatAIScript.new()`) y `main.gd:684,741` lo consulta por nombre. Se queda.
 
-| Pieza de estado | Dueño canónico (deseado) | Dueños reales hoy | Notas |
-|---|---|---|---|
-| Player position runtime | `GameStore` (proyección de input) | `GameStore.state.player.pos` (`game-store.ts:21`) **y** `NarrativeState.player.position` (`narrative-state.ts:40`) | Dos formatos distintos: tupla `[x,y,z]` vs `position: [x,y,z]`. Sincronización manual vía `updatePlayerPosition()` (`narrative-state.ts:343`). |
-| Player HP | `Combatant` (Godot) ↔ `GameStore.state.player.hp` | `Combatant.health`, `GameStore.state.player.hp`, `NarrativeState.player.health` (`narrative-state.ts:37`) | Tres copias. El bridge sólo mantiene dos (`ws-server.ts:280` lee de `sim.getCombatant("player")`). |
-| Lista de enemigos en escena | `GameStore.state.enemies` | `GameStore.state.enemies` (`reducers.ts:87`) **y** `sim.combatants` (en `GameSimulation`) **y** entradas en `NarrativeState.entities` (`narrative-state.ts:54`) | Tres listas, todas semánticas distintas: combat runtime vs combat lógica vs narrativa. |
-| Mundo / `room_id` | `NarrativeState` (canónico) | `GameStore.state.world.room_id` (`reducers.ts:85`), `GameState.current_room_id` (`game_state.gd:27`), `NarrativeState.world.active_scene_id` (`narrative-state.ts:31`), `WorldMap.active_place_id` (`narrative-state.ts:150`) | Cuatro IDs paralelos. `recordSceneLoaded` actualiza tres (`narrative-state.ts:144-150`); el cuarto (`GameState.current_room_id`) lo escribe `mark_room_visited` desde la ruta legacy de salas (`game_state.gd:84-91`). |
-| Story / dialogue history | `NarrativeState` | `NarrativeState.story_so_far`, `NarrativeState.dialogue_history` | Único dueño. Bien. |
-| Asset manifest | `ai_server/asset_cache.py` (`AssetManifest`) | `AssetManifest` Python + snapshot en `NarrativeState.asset_index_snapshot` | El snapshot se persiste en saves pero nunca se revalida en `loadSession` (`narrative-state.ts:101`). |
-| World map (places + links) | `WorldMapManager` dentro de `NarrativeState` | `narrative-state.ts:57` único dueño TS. Migrado en `migrateWorldMapFromV1` (`narrative-state.ts:440-459`). | Bien. |
+**Pendiente**:
 
-**Conclusión**: la "fuente de verdad" canónica anunciada (`NarrativeState`) coexiste con dos legacy (`GameState`, fragmentos de `GameStore.world`). El proyecto está a mitad de migración.
+1. **Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`). Reproducidos también en la rama base sin los cambios de `legacy/retire-generate-room` — defecto real anterior, investigar aparte.
+2. **§3.2 / §3.4** — acoplamientos y splits (abajo).
+3. **§7 — plugins declarativos**: siguiente objetivo. Prerequisitos (§7.10) cerrados.
 
-### 1.2 Duplicación `GameState` ⇄ `NarrativeState`
+(§4.4 cerrado con confirmación del usuario: `ai_server/test_narrative.py` y `archive/ai-graphics-prototype/` borrados.)
 
-`godot/scripts/autoloads/game_state.gd:1-163` mantiene un modelo paralelo completo: `region`, `time_of_day`, `atmosphere`, `style_token`, `player_level`, `player_class`, `player_health`, `player_gold`, `inventory_summary`, `active_quests`, `story_so_far`, `visited_rooms`, `current_room_id`, `player_model_id`, `player_skin_path`. Persiste por su cuenta a `user://save.json` (`game_state.gd:94-148`), separado del `state.json` multi-slot.
+### Siguiente objetivo: §7 F1+F2 (tipos + registry + validador del DSL)
 
-CLAUDE.md afirma que `GameState` es "wrapper legacy" sobre `NarrativeState` — **no lo es**: es un store paralelo con su propio save. La ruta legacy lo lee/escribe directamente:
-- `main.gd:647-668`: `GameState.current_room_id`, `GameState.visited_rooms`, `GameState.serialize_world_state(...)`, `AIClient.generate_room(world_state)`.
-- `main.gd:678`: `GameState.visited_rooms[cache_key] = room_data` después de generar.
-
-**Propuesta** (decisión pendiente del usuario):
-- **Opción A — Cortar la duplicación**: eliminar la ruta `GameState.serialize_world_state` + `AIClient.generate_room` y hacer que la entrada por `_on_exit_entered` use el bridge `player_entered_place` que ya está bien integrado en `ws-server.ts:663-746`. Hacer `GameState` un *thin getter* que delegue a `NarrativeState` (lo que CLAUDE.md ya afirma erróneamente).
-- **Opción B — Documentar el dual-stack**: si se quiere mantener la ruta de "salas cerradas" para F1/F2/F3, aislar `GameState` en un módulo `dev_only/` y marcar explícitamente que no es producción.
-
-### 1.3 Acoplamiento `GameStore.enemies` ⇄ `NarrativeState.entities`
-
-`reducers.ts:84-88` (case `room_changed`):
-```
-state.enemies = (payload.enemies as EnemyState[]) ?? [];
-```
-Cualquier dispatch de `room_changed` sin `enemies` los borra. `NarrativeState.entities` (donde viven NPCs spawneados por `registerSceneNpcs` — `narrative-state.ts:160-234`) nunca cruza ese boundary: los NPCs declarados en la escena no aparecen como combatientes ni como entidades en `GameStore`.
-
-**Propuesta**: cuando una nueva escena se materialice en el bridge (`recordSceneLoaded`), proyectar la lista resultante de NPCs combatientes al `GameStore` en un solo dispatch — y dejar de pasar `enemies` por `room_changed` desde dos sitios distintos. Hacer la proyección un módulo `state-projection.ts` con tests.
-
-### 1.4 Reducer no inmutable
-
-`reducers.ts:6-124` muta `state` en sitio. Funciona porque `GameStore.snapshot()` (`game-store.ts:90-92`) usa `structuredClone` antes de exponerlo, pero rompe expectativas y bloquea optimizaciones triviales (memoización por identidad). Si en algún momento se quiere persistir snapshots cada N events sin clonar el árbol entero, la mutación in-place lo prohíbe.
-
-**Propuesta**: dejar el patrón mutable (el coste de migrar es real, las ganancias prácticas hoy son pocas) pero añadir test que enforce la invariante "todo `dispatch` produce un objeto sin alias compartidos con el payload" — basta `Object.freeze` en modo dev. Es 30 líneas y blinda el contrato.
-
-### 1.5 Listeners GD sin disconnect
-
-`session_recorder.gd:15` conecta `GameStore.state_changed` en `_ready()`. Como es un autoload, no muere — no es leak real. Pero el patrón se repite en otros nodos de vida finita: el repo tiene ~23 archivos `.gd` con `connect(...)`, y la búsqueda `state_changed.*disconnect` devuelve 0 resultados.
-
-**Propuesta**:
-- Convención de equipo: cualquier nodo no-autoload que conecte a una señal de un autoload **debe** desconectar en `tree_exiting`. Helper de una línea: `func _exit_tree(): GameStore.state_changed.disconnect(_on_state_changed)`.
-- Auditar de una pasada los conectores que viven en nodos transitorios (NPCs spawneados, UI temporal). No requiere refactor masivo, sólo grep + parche por archivo.
-
-### 1.6 Save/load: integridad de assets no validada
-
-`narrative-state.ts:84-109` (`loadSession`) acepta `data.asset_index_snapshot` tal cual (`narrative-state.ts:101`) y no comprueba si esos hashes siguen existiendo en el `AssetManifest` del `ai_server`. Si el cache se borra entre sesiones, el siguiente `recordSceneLoaded` arrastra `asset_refs` muertos.
-
-**Propuesta**: al cargar, hacer un `GET /assets/by_hash/{hash}` (ya existe — `ai_server/main.py:879`) por cada `asset_ref` único; los que devuelvan 404 se loguean a `ErrorLog` con severidad warning y se eliminan del snapshot. Mantiene fail-loud sin romper la partida.
-
-### 1.7 Esquema objetivo (a medio plazo)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       NarrativeState                        │
-│  (única fuente de verdad persistente, schema versionado)    │
-│                                                             │
-│   world, player, scenes_loaded, entities, dialogue,         │
-│   world_map, asset_index_snapshot                           │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │ proyección (read-only)        │ mutaciones vía
-               ▼                               │ recordXxx/updateXxx
-        ┌──────────────┐                       │
-        │  GameStore   │ ←─ inputs runtime ────┤
-        │  (player.pos,│   (no se persisten;   │
-        │   enemies,   │    derivables)        │
-        │   combat)    │                       │
-        └──────────────┘                       │
-                                               │
-        ┌─────────────────────────────┐        │
-        │  GameState (Godot legacy)   │ ◀──────┘
-        │  → wrapper de lectura sobre │   (escrituras sólo
-        │  NarrativeState; no escribe)│    desde el bridge)
-        └─────────────────────────────┘
-```
-
-Esto está implícito en el diseño actual; el trabajo consiste en cerrar los huecos donde la realidad se desvía (sección 1.2 sobre todo).
+Con §1, §2 y §4 cerrados, el saneamiento previo que exigía §7.10 está completo. F1 (zod schemas en `nefan-core/src/plugins/types.ts`, `NarrativeState.plugins: []`, `SCHEMA_VERSION = 3`) y F2 (`dsl/evaluate.ts` con tests sobre fixtures) son trabajo puro de nefan-core sin tocar servicios.
 
 ---
 
-## 2. Gestión de errores
-
-### 2.1 Catches silenciosos / fallbacks ocultos
-
-| Ubicación | Qué hace | Por qué importa |
-|---|---|---|
-| `nefan-html/src/net/bridge-client.ts:116-118` | `catch { /* Ignore parse errors */ }` en `ws.onmessage` | El cliente HTML no se entera de frames malformados; rompe la filosofía declarada en `error-log.ts:11`. |
-| `godot/scripts/main.gd:684-689` `_on_generation_failed` | `print("Generation failed: …"); _load_room_from_file(0)` | Fallback silencioso a sala hardcoded. Esto es exactamente lo que `report_player_choice` (`ai_server/main.py:815`) ya eliminó: ahora el endpoint lanza 503/422 fail-loud. Coherencia rota. |
-| `ai-client.ts:120,124` `reportPlayerChoice` | `if (!res.ok) return []; … catch { console.warn(...); return []; }` | El bridge consume `consequences.length === 0` como "el LLM no quiso hacer nada", indistinguible de "el LLM falló y no lo sabes". |
-| `ws-server.ts:582-591` `.catch((err) => …)` en `aiClient.generateScene` | Sólo loguea + broadcast `narrative_status: error`. **OK** — esto sí propaga al cliente. Mantener este patrón. |
-| `ws-server.ts:427-429` `.catch((err) => …)` en `scenario.loadGame` | `console.error(...)` y nada más. El cliente que pidió `load_game` queda esperando hasta su propio timeout. |
-| `ws-server.ts:735-744` lazy realize `.catch` | Equivalente a 582-591, ya propaga. **OK**. |
-| `bridge-client.ts:108-110` `ws.onerror = () => { /* onclose fires later */ }` | Pierde el error original; sólo verás "disconnected". Loguear al menos el evento `Event` para tener algo. |
-| `bridge-client.ts:163-179` `request<T>` | Si `!_connected`, lanza `"Bridge not connected"` — bien. Pero `send()` en línea 154-156 es silencioso si no conectado. |
-| `logic_bridge.gd:209-212` `_handle_message` | `if msg == null or not msg is Dictionary: return` — silencia frames inválidos. En Godot debería ir a `push_error` con preview del frame. |
-| `ai-client.ts:80-81, 95-96` | `body.slice(0, 200)` trunca cuerpos de error. FastAPI suele devolver stack traces útiles >200 chars. Subir a 2000 o no truncar. |
-| `ai_server/main.py:413,420` `analyze_weapon` | Devuelve `{"error": "...", "fallback": True}` con 200 OK — el cliente debe leer el campo `error` para detectar fallo. Inconsistente con el 503/422 del resto. |
-| `nefan-core/src/narrative/session-storage.ts:26-28, 35-37, 50-52, 59-61` (según hallazgo del agente, sin confirmar in situ) | Catches genéricos que no distinguen "no existe" de "I/O error". Re-verificar antes de tocar. |
-
-### 2.2 Validación en boundaries
-
-| Boundary | Validación | Recomendación |
-|---|---|---|
-| FastAPI POST endpoints (`ai_server/main.py:229-260, 265-345, 425-515, 537-712, 815-849`) | `await request.json()` + `body.get(...)` manual. Algunos campos obligatorios (`prompt`) se validan; los tipos no. | Pasar a Pydantic `BaseModel` por endpoint. `report_player_choice:815-849` ya hace casting defensivo (`str(...)`) — formalizarlo. |
-| WebSocket bridge `ws-server.ts:217-231` | `JSON.parse` con catch que envía error al cliente. **Bien**. | Mantener. |
-| MCP tools (`narrative-mcp/server.ts`) | Según hallazgo del agente, throws son capturados y stringificados sin esquema. | Validar con zod los `room_data` recibidos antes de enviarlos al `ai_server`. |
-| `NarrativeState.recordSceneLoaded` (`narrative-state.ts:160-234`) | **Excelente**: lanza errores específicos por entrada inválida con índice. Es el modelo a seguir. | Tomar como referencia para los otros boundaries. |
-| Godot WS handlers (`logic_bridge.gd:209-289`) | `get_node_or_null()` + acceso directo. Falla silenciosa. | Helper `_must_get_node(path: String) -> Node` que `push_error` y devuelve null + propaga el error al `ErrorLog` HTTP cuando exista. |
-
-### 2.3 Promesas sin propagación al cliente
-
-`ws-server.ts:385-429` (`load_game`): se llama `scenario.loadGame(...).then(...).catch((err) => console.error(...))`. El catch sólo loguea. El cliente WS espera la respuesta hasta su propio timeout sin saber qué pasó. El patrón correcto está en líneas 544-591 (broadcast un `narrative_status` con `phase: "error"` al cliente). **Aplicar el mismo patrón al case `load_game`.**
-
-### 2.4 GDScript: nulls sin chequear
-
-`logic_bridge.gd:235-237`:
-```
-var room: Node3D = get_tree().current_scene.get_node_or_null("Player")
-if room:
-    room = room.get_parent()
-```
-Si no hay nodo `"Player"`, `room` es `null`, el `if room` salta el bloque, pero todo el resto del método (`enemy_node:Node = _find_enemy_node(room, enemy_id)` línea 243) se ejecuta con `room=null`. `_find_enemy_node(null, ...)` puede crashear o devolver `null` silenciosamente.
-
-**Patrón a establecer**: cuando una pre-condición sea obligatoria, `push_error` + `return` temprano. Cuando sea opcional, comentar el porqué.
-
-Otros nulls no chequeados: `logic_bridge.gd:253, 260, 267`. `remote_control.gd` (según hallazgo del agente, sin verificación in situ): líneas 208, 211, 230, 242, 254, 261, 265, 276, 282, 286.
-
-### 2.5 Contrato uniforme de errores propuesto
-
-- **TS/HTML**: todo error capturado pasa por `errors.push(source, msg, err)` (`nefan-html/src/ui/error-log.ts:41-54`). Re-lanzar siempre que sea recuperable, devolver `Result<T,E>` cuando no.
-- **TS/bridge**: `.catch()` en cualquier `aiClient.*Async(...)` debe terminar en `broadcastNarrative({type:"narrative_status", phase:"error", ...})` además del `console.warn`. Patrón ya correcto en `ws-server.ts:544-591`; falta en 427-429.
-- **GDScript**: nunca `pass`, nunca `return` silencioso ante un `null`/parse-fail. Mínimo `push_error`. Si la condición es de degradación aceptable, comentario `# fallback intencionado: ...`.
-- **Python/FastAPI**: replicar el patrón de `report_player_choice:815-849` (`HTTPException` con `status_code` específico y `detail` informativo). Pasar a Pydantic.
-
----
-
-## 3. Modularidad y legibilidad
-
-### 3.1 Responsabilidades difusas en `godot/scripts/main.gd`
-
-`main.gd` actúa como orquestador, pero mezcla:
-- Carga de escenarios open-world (vía bridge, ruta nueva).
-- Carga de salas legacy (vía `AIClient.generate_room` directo + `_apply_room` local, ruta vieja, líneas 640-689).
-- Gestión de transiciones de UI (`_hud.fade_out/_in`).
-- Cache de salas en `GameState.visited_rooms`.
-
-Dos rutas de generación (legacy vs canónica) en el mismo archivo enmascaran qué entradas siguen vivas y cuáles son sólo para F1/F2/F3.
-
-**Propuesta**: extraer la ruta legacy a `main_legacy_rooms.gd` (o a `dev_room_loader.gd`) y dejar `main.gd` con la ruta canónica. Esto enseña al lector qué es producción y qué es testbed sin tocar comportamiento. Borrar nada — sólo separar.
+## 3. Modularidad — restos
 
 ### 3.2 Acoplamiento entre capas
 
-- **`nefan-core` ↔ Godot**: el contrato real (`protocol/messages.ts`) está documentado por tipos. Bien.
-- **`nefan-core` ↔ HTML**: `nefan-html/src/net/bridge-client.ts:14` importa con ruta relativa `../../../nefan-core/src/protocol/messages.js`. Funciona pero amarra la estructura de carpetas. Considerar publicar `nefan-core` como paquete local (`file:../nefan-core`) o alias TS `paths`. No urgente.
-- **`ai_server` ↔ `narrative-mcp`**: el contrato pasa por WebSocket sin schema central. Los hallazgos del agente sugieren que un error en `room_data` desde MCP llega como string genérico al cliente. Añadir tipos compartidos (JSON Schema en `nefan-core/data/`, generador para Python + TS) si esto crece.
-
-### 3.3 Convención de logging incoherente
-
-Coexisten:
-- `print(...)` (Godot, ws-server.ts cuando es informativo).
-- `push_error(...)` (Godot, sólo en `session_recorder.gd:101` y pocos más).
-- `console.warn/error/log` (TS).
-- `errors.push(...)` (HTML, vía `ErrorLog`).
-
-**Propuesta mínima**: una guía de 6 líneas en CLAUDE.md sobre cuándo usar cada uno. Idealmente, todos los `console.error` del bridge se convierten en `errors.push("bridge", ...)` también, una vez exista un canal de telemetría del bridge al HTML (puede ser un broadcast WS extra con `type: "log_event"`).
+- **`nefan-core` ↔ HTML**: `bridge-client.ts` importa con ruta relativa `../../../nefan-core/src/protocol/messages.js`. Considerar paquete local (`file:../nefan-core`) o alias TS `paths`. No urgente.
+- **`ai_server` ↔ `narrative-mcp`**: contrato WebSocket sin schema central. Añadir tipos compartidos (JSON Schema en `nefan-core/data/`, generador para Python + TS) si esto crece.
 
 ### 3.4 Tamaños y splits
 
-- `bridge/ws-server.ts` (~810 líneas): mezcla bootstrap del bridge + handlers de N comandos + helpers de broadcast + helper de listGames. Empieza a pedir un split por dominio: `handlers/scene.ts`, `handlers/dialogue.ts`, `handlers/session.ts`. No urgente, pero el archivo está en el umbral donde leerlo cuesta.
-- `ai_server/main.py` (~963 líneas): mismo patrón, todos los endpoints en un solo archivo. Router-split de FastAPI sería trivial. Endpoints de diagnóstico `skin_test_controlnet` (625-712) y `skin_test_frame` (715-799) **deberían vivir en un router `/diagnostic/*` separado** (ver §4.2).
-
-### 3.5 Identificadores / formato
-
-- `NarrativePlayerState.position` es `[x,y,z]` (`narrative-state.ts:42`). `GameState.player.pos` es `[x,y,z]` (`game-store.ts:21`). Mismo formato, distinto nombre. Unificar a `position`.
-- `GameState.player_health` (GD, float) vs `NarrativeState.player.health` (TS, number) vs `combatant.health` (Godot, float). Mismo concepto, tres nombres consistentes pero tres dueños (ver §1.1).
-
----
-
-## 4. Código muerto / legacy
-
-**Importante**: sólo listado. Ninguna acción hasta confirmación.
-
-### 4.1 Confirmado obvio (alta confianza)
-
-| Archivo / símbolo | Evidencia |
-|---|---|
-| `godot/scripts/combat/combat_resolver.gd` (4 líneas) | Marcado "vacío, lógica en nefan-core" en CLAUDE.md. Sólo preload estático en `object_spawner.gd:15`. |
-| `godot/scripts/combat/enemy_combat_ai.gd` (17 líneas) | Marcado "datos personalidad, lógica en nefan-core". Mismo perfil que el anterior. |
-| `archive/ai-graphics-prototype/` (directorio entero) | Declarado descartado en CLAUDE.md ("StreamDiffusion descartado", "rendering frame-by-frame archivado"). Sin imports vivos. |
-| `ai_server/test_narrative.py` | Test aislado contra la lógica vieja de generación de salas. Verificar si ejecutarlo todavía aporta señal. |
-| `getRoomsByCategory()` en `nefan-core/src/dev/room-registry.ts:34` | Exportado en `nefan-core/src/index.ts:13` pero `grep` no encuentra call sites fuera de `dist/`. |
-| `createDevState()` en `nefan-core/src/dev/dev-state.ts:18` | Idem: export en `index.ts:15`, sin call sites externos. |
-
-### 4.2 Endpoints de diagnóstico nunca llamados por clientes
-
-| Endpoint | Línea | Estado |
-|---|---|---|
-| `POST /skin_test_controlnet` | `ai_server/main.py:625-712` | Diagnóstico para curl manual durante tuning. El propio docstring lo declara. |
-| `POST /skin_test_frame` | `ai_server/main.py:715-799` | Comentario explícito en línea 725: "Not used by any client". |
-
-**Propuesta**: mover a `ai_server/routers/diagnostic.py` y exponer sólo si `CONFIG.dev.expose_diagnostic = true`. No borrarlos — son útiles para iterar parámetros.
-
-### 4.3 Legacy en transición (decisión pendiente)
-
-| Pieza | Estado | Decisión |
-|---|---|---|
-| `POST /populate_room`, `POST /generate_room` (`ai_server/main.py:229-250`) | Llamados desde `main.gd:668` + `ai-client.ts:91-103`. CLAUDE.md los marca legacy pero hay un call site vivo. | ¿Eliminar el call site de `main.gd` y retirar endpoints, o documentar el dual-stack? |
-| `GameState` autoload (`game_state.gd:1-163`) | "Wrapper legacy" según CLAUDE.md, pero es un store paralelo completo con su propio `save_to_disk/load_from_disk`. | Cumplir lo prometido (convertir en wrapper) o renombrar para evitar engaño. |
-| `_load_room_from_file(0)` en `main.gd:688` (fallback de `_on_generation_failed`) | Carga la primera sala JSON local cuando el LLM falla. | Incompatible con el modo fail-loud reciente del resto del stack. Eliminar y propagar el error al `ErrorLog` GD. |
-| Sistema de F1/F2/F3 + `data/rooms/*.json` (crypt, tavern, corridor) | Sólo para tests visuales. | Mantener pero aislar visualmente: prefix `dev_only/`, mover bindings de F1/F2/F3 a `dev_menu.gd` exclusivamente. |
-
-### 4.4 Posiblemente muerto (verificar antes de borrar)
-
-- `main.gd:_on_generation_failed` (`684-689`): si se elimina la ruta `AIClient.generate_room`, este handler también se va.
-- Comandos `remote_control.gd` (no auditado uno a uno aquí): cruzar con los tests Python en `godot/tools/` para confirmar cuáles tienen call sites.
-- Funciones exportadas en `nefan-core/src/index.ts`: hacer un `tsc --listFiles` + grep de cada export contra los clientes (Godot vía bridge no cuenta, HTML sí).
-
----
-
-## 5. Priorización sugerida
-
-| Prioridad | Tarea | Esfuerzo | Impacto |
-|---|---|---|---|
-| **P0 — quick wins (1-2h cada uno)** | Eliminar fallback silencioso `_load_room_from_file(0)` en `main.gd:684-689` y propagar al `ErrorLog` GD | XS | Alto: coherencia con fail-loud |
-| | Sustituir `catch {}` por `errors.push("bridge", ...)` en `bridge-client.ts:116-118` | XS | Medio |
-| | `.catch()` con propagación al cliente en `ws-server.ts:427-429` (`load_game`) | XS | Medio |
-| | Subir el truncado de 200 → 2000 chars en `ai-client.ts:80,95` | XXS | Bajo, pero ahorra horas debuggeando |
-| | Distinguir `[]` (sin consecuencias) de `null`/throw (error) en `ai-client.ts:reportPlayerChoice` | XS | Medio |
-| **P1 — a planificar (medio día cada uno)** | Decidir destino de `GameState` (wrapper real vs separar como `dev_only/`) | S | Alto: desambigua arquitectura |
-| | Pydantic en endpoints FastAPI principales (`generate_*`, `notify_session`) | S | Alto |
-| | Separar diagnostic endpoints a `routers/diagnostic.py` | XS | Bajo |
-| | Helper Godot `_must_get_node(path)` + auditar nulls en `logic_bridge.gd` y `remote_control.gd` | S | Medio |
-| | Convención de logging + aterrizarla en CLAUDE.md | XS | Medio |
-| | Validación de `asset_index_snapshot` en `loadSession` contra `/assets/by_hash/{hash}` | S | Medio |
-| | Test de inmutabilidad sobre `reducers.ts` (Object.freeze en dev) | XS | Bajo |
-| **P2 — re-arquitectura (>1 día)** | Decidir y eliminar la ruta legacy `generate_room` end-to-end (Godot + ai_server + ai-client.ts) | M | Alto: cierra una bifurcación |
-| | Split de `ws-server.ts` en handlers por dominio | M | Medio (legibilidad) |
-| | Split de `ai_server/main.py` en routers por dominio | M | Medio (legibilidad) |
-| | Proyección `NarrativeState.entities` → `GameStore.enemies` con tests | M | Alto: cierra el último gap de duplicación |
-
----
-
-## 6. Apéndice — archivos críticos
-
-**Estado**
-- `nefan-core/src/store/game-store.ts` (todo el archivo, 100 líneas)
-- `nefan-core/src/store/reducers.ts` (todo el archivo, 124 líneas)
-- `nefan-core/src/narrative/narrative-state.ts` (84-109 load; 134-234 recordSceneLoaded + registerSceneNpcs; 343-347 updatePlayerPosition; 440-459 migrateV1)
-- `godot/scripts/autoloads/game_state.gd` (todo el archivo, 163 líneas)
-- `godot/scripts/autoloads/session_recorder.gd:15` (connect sin disconnect)
-- `godot/scripts/autoloads/logic_bridge.gd:222-289` (apply_state_update con nulls)
-
-**Errores**
-- `nefan-html/src/net/bridge-client.ts:108-119` (onerror + onmessage catch silencioso)
-- `nefan-html/src/ui/error-log.ts:1-107` (patrón de referencia)
-- `nefan-core/src/narrative/ai-client.ts:74-127` (catches que tragan errores)
-- `nefan-core/bridge/ws-server.ts:217-231` (parse con feedback correcto), `:427-429` (catch silencioso), `:544-591`, `:714-744` (catches con broadcast — modelo a seguir)
-- `ai_server/main.py:229-250` (legacy sin validación), `:425-515` (skin/sprite con `body.get`), `:815-849` (modelo fail-loud), `:413,420` (analyze_weapon devuelve 200 con error en body)
-- `godot/scripts/main.gd:684-689` (fallback silencioso)
-
-**Modularidad**
-- `nefan-core/bridge/ws-server.ts` (~810 líneas, candidato a split)
-- `ai_server/main.py` (~963 líneas, candidato a split)
-- `godot/scripts/main.gd:640-720` (mezcla ruta legacy + actual)
-
-**Dead code**
-- `godot/scripts/combat/combat_resolver.gd`
-- `godot/scripts/combat/enemy_combat_ai.gd`
-- `archive/ai-graphics-prototype/` (directorio)
-- `ai_server/test_narrative.py`
-- `ai_server/main.py:625-799` (skin_test_*, diagnostic)
-- `ai_server/main.py:229-250` (generate_room/populate_room legacy)
-- `nefan-core/src/dev/room-registry.ts:34` (getRoomsByCategory)
-- `nefan-core/src/dev/dev-state.ts:18` (createDevState)
+- `godot/scripts/main.gd` (~1200 líneas): candidato a extraer `consequence_applier.gd` y/o `scene_loader.gd`.
+- `ai_server/main.py` (~870 líneas tras esta rama): router-split de FastAPI por dominio; `routers/diagnostic.py` ya marca el patrón.
+- `nefan-core/bridge/ws-server.ts` (~850 líneas): split por dominio (`handlers/scene.ts`, `handlers/dialogue.ts`, `handlers/session.ts`). No urgente.
 
 ---
 
 ## 7. Arquitectura objetivo: estado extensible por plugins declarativos
+
+> **Estado 2026-06-10**: sin empezar (`nefan-core/src/plugins` no existe). Sus prerequisitos (§7.10) ya están cerrados por los commits `960e7f8`/`cb8dcf6`/`48dc53f`/`ba2dd3b` — es el objetivo que sigue al cierre de §4.
 
 **Contexto y motivación.** Ne-fan es open-world generativo: el motor narrativo crea entidades en runtime y, a medida que la partida deriva en una dirección no anticipada (el jugador se centra en comercio, magia, política…), hace falta materializar **sistemas completos** que el motor genérico no cubre. La opción ambiciosa (código TS real generado por el LLM en un sandbox V8/WASM) introduce infraestructura nueva y problemas de seguridad/persistencia. Esta sección describe el camino **declarativo puro**: cada plugin es un manifest JSON que un intérprete del motor en `nefan-core` ejecuta. El LLM (o un developer) describe *qué pasa cuando*, no *cómo*. El precio es expresividad acotada; el premio es sandbox automático, saves deterministas y migración por construcción.
 
@@ -542,10 +283,4 @@ F1+F2 son inversión sin retorno visible para el usuario; a partir de F3 ya hay 
 
 ### 7.10 Encaje con el resto de la auditoría
 
-Esta arquitectura **presupone** que las brechas de §1 (tres stores paralelos, `GameState` legacy) están cerradas o en cierre. Sin una fuente canónica clara (`NarrativeState`), los plugins no tienen un `slice` estable contra el que proyectar. Por lo tanto:
-
-- §1.2 (decisión sobre `GameState`) es **prerequisito** de F1.
-- §1.3 (proyección `entities` ⇄ `enemies`) es **prerequisito** de F3 si algún plugin shipped lee entidades.
-- §2 (fail-loud uniforme) es **prerequisito** de F5 — el motor narrativo necesita errores estructurados para entender por qué un manifest fue rechazado.
-
-Es decir: la auditoría P0/P1 no es trabajo paralelo al plugin system — es el saneamiento necesario antes de poder construirlo encima.
+> **Cerrado**: §1.2 (`GameState` eliminado), §1.3 (proyección `enemies_projected`) y §2 (fail-loud uniforme) ya están implementados. El único saneamiento previo que queda es §4 (este documento, siguiente objetivo): retirar la bifurcación legacy antes de que el plugin system se construya sobre `NarrativeState`.

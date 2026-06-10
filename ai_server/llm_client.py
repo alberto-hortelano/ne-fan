@@ -13,18 +13,12 @@ import threading
 import time
 
 from narrative_schemas import (
-    NARRATIVE_SYSTEM_PROMPT,
-    NARRATIVE_SYSTEM_PROMPT_V2,
-    POPULATE_ROOM_TOOL,
-    GENERATE_ROOM_TOOL,
     GENERATE_SCENE_SYSTEM_PROMPT,
     GENERATE_SCENE_TOOL,
     WEAPON_ORIENT_SYSTEM_PROMPT,
     WEAPON_ORIENT_TOOL,
     NARRATIVE_REACT_SYSTEM_PROMPT,
     NARRATIVE_REACT_TOOL,
-    validate_room_response,
-    validate_extended_room_response,
     validate_scene_response,
     validate_weapon_orient_response,
     validate_narrative_reaction,
@@ -90,7 +84,7 @@ class LLMClient:
 
         if not self._ws_connected and not self.api_client:
             print("LLM: No backend available. Install websocket-client for MCP bridge, "
-                  "or set ANTHROPIC_API_KEY. Will use fallback rooms.")
+                  "or set ANTHROPIC_API_KEY. Narrative requests will fail with 503.")
 
     def _try_connect_mcp(self) -> None:
         """Connect to narrative-mcp WebSocket bridge."""
@@ -198,75 +192,6 @@ class LLMClient:
             payload["session"] = dict(self.session_info)
         return payload
 
-    def populate_room(self, world_state: dict) -> dict:
-        """Generate room contents. Tries MCP bridge, then API. Raises
-        NarrativeUnavailable if neither backend is reachable. There is no
-        scripted fallback any more."""
-        world_state = self._inject_available_assets(dict(world_state))
-        if self._ws_connected and self._ws:
-            result = self._populate_via_mcp(world_state)
-            if result is not None:
-                return result
-
-        if self.api_client:
-            return self._populate_via_api(world_state)
-
-        raise NarrativeUnavailable(
-            "populate_room: no MCP listener and no API client configured"
-        )
-
-    def _populate_via_mcp(self, world_state: dict) -> dict | None:
-        """Send request through MCP bridge, wait for Claude Code to respond."""
-        request_id = str(uuid.uuid4())
-
-        with self._pending_lock:
-            self._pending[request_id] = None
-
-        # Send room request
-        self._ws.send(json.dumps({  # type: ignore
-            "type": "room_request",
-            "request_id": request_id,
-            "world_state": world_state,
-        }))
-
-        print(f"LLM: Room request sent via MCP bridge (id={request_id[:8]}...)")
-
-        # Wait for response with timeout
-        start = time.time()
-        while time.time() - start < self.timeout:
-            with self._pending_lock:
-                result = self._pending.get(request_id)
-                if result is not None:
-                    del self._pending[request_id]
-                    validated = validate_room_response(result)
-                    print(f"LLM: Room received via MCP ({len(validated['objects'])} objects, "
-                          f"{time.time() - start:.1f}s)")
-                    return validated
-            time.sleep(0.1)
-
-        # Timeout
-        with self._pending_lock:
-            self._pending.pop(request_id, None)
-
-        print(f"LLM: MCP bridge timeout ({self.timeout}s)")
-        return None
-
-    def generate_room(self, world_state: dict) -> dict:
-        """Generate extended room data. Tries MCP, then API. Raises
-        NarrativeUnavailable if neither backend can satisfy the request."""
-        world_state = self._inject_available_assets(dict(world_state))
-        if self._ws_connected and self._ws:
-            result = self._generate_via_mcp(world_state)
-            if result is not None:
-                return result
-
-        if self.api_client:
-            return self._generate_via_api(world_state)
-
-        raise NarrativeUnavailable(
-            "generate_room: no MCP listener and no API client configured"
-        )
-
     def generate_scene(self, scene_request: dict) -> dict:
         """Generate an outdoor scene. Tries MCP, then API. Raises
         NarrativeUnavailable if neither backend can satisfy the request."""
@@ -305,6 +230,14 @@ class LLMClient:
                 result = self._pending.get(request_id)
                 if result is not None:
                     del self._pending[request_id]
+                    # Structured error from the bridge (e.g. no_mcp_listener).
+                    # Without this check, validate_scene_response pads the
+                    # error dict into a placeholder scene and the caller gets
+                    # a 200 — same guard the vision path already has.
+                    if isinstance(result, dict) and result.get("error"):
+                        reason = result.get("reason", "unknown")
+                        print(f"LLM: Scene MCP rejected — {reason}")
+                        return None
                     validated = validate_scene_response(result)
                     print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
                           f"{time.time() - start:.1f}s)")
@@ -356,114 +289,6 @@ class LLMClient:
         except Exception as e:
             raise NarrativeUnavailable(
                 f"generate_scene API call failed: {e}"
-            ) from e
-
-    def _generate_via_mcp(self, world_state: dict) -> dict | None:
-        """Send extended room request through MCP bridge."""
-        request_id = str(uuid.uuid4())
-
-        with self._pending_lock:
-            self._pending[request_id] = None
-
-        self._ws.send(json.dumps({  # type: ignore
-            "type": "room_request",
-            "request_id": request_id,
-            "world_state": world_state,
-            "format": "extended",
-        }))
-
-        print(f"LLM: Extended room request via MCP (id={request_id[:8]}...)")
-
-        start = time.time()
-        while time.time() - start < self.timeout:
-            with self._pending_lock:
-                result = self._pending.get(request_id)
-                if result is not None:
-                    del self._pending[request_id]
-                    validated = validate_extended_room_response(result)
-                    print(f"LLM: Extended room via MCP ({len(validated['objects'])} objects, "
-                          f"{time.time() - start:.1f}s)")
-                    return validated
-            time.sleep(0.1)
-
-        with self._pending_lock:
-            self._pending.pop(request_id, None)
-        print(f"LLM: MCP timeout ({self.timeout}s)")
-        return None
-
-    def _generate_via_api(self, world_state: dict) -> dict:
-        """Call Claude API directly with generate_room tool."""
-        entry_wall = world_state.get("entry_wall", "south")
-        target_hint = world_state.get("target_hint", "a new chamber")
-
-        try:
-            response = self.api_client.messages.create(  # type: ignore
-                model=self.model,
-                max_tokens=2048,
-                system=NARRATIVE_SYSTEM_PROMPT_V2,
-                tools=[GENERATE_ROOM_TOOL],
-                tool_choice={"type": "tool", "name": "generate_room"},
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"Generate a room. The player enters from the {entry_wall} wall.\n"
-                        f"Expected room theme: {target_hint}\n\n"
-                        f"World state:\n{json.dumps(world_state, indent=2)}"
-                    ),
-                }],
-            )
-
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "generate_room":
-                    result = validate_extended_room_response(block.input)
-                    print(f"LLM: Extended room via API ({len(result['objects'])} objects, "
-                          f"{len(result.get('npcs', []))} npcs)")
-                    return result
-
-            raise NarrativeUnavailable(
-                "generate_room API response had no tool_use block"
-            )
-
-        except NarrativeUnavailable:
-            raise
-        except Exception as e:
-            raise NarrativeUnavailable(
-                f"generate_room API call failed: {e}"
-            ) from e
-
-    def _populate_via_api(self, world_state: dict) -> dict:
-        """Call Claude API directly with tool_use."""
-        try:
-            response = self.api_client.messages.create(  # type: ignore
-                model=self.model,
-                max_tokens=1024,
-                system=NARRATIVE_SYSTEM_PROMPT,
-                tools=[POPULATE_ROOM_TOOL],
-                tool_choice={"type": "tool", "name": "populate_room"},
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "The player enters a new room. Generate its contents.\n\n"
-                        f"World state:\n{json.dumps(world_state, indent=2)}"
-                    ),
-                }],
-            )
-
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "populate_room":
-                    result = validate_room_response(block.input)
-                    print(f"LLM: Room generated via API ({len(result['objects'])} objects)")
-                    return result
-
-            raise NarrativeUnavailable(
-                "populate_room API response had no tool_use block"
-            )
-
-        except NarrativeUnavailable:
-            raise
-        except Exception as e:
-            raise NarrativeUnavailable(
-                f"populate_room API call failed: {e}"
             ) from e
 
     # ------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Never Ending Fantasy — Guia de desarrollo
 
-RPG dark fantasy de **mundo abierto generativo** con motor Godot 4.6+. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. Las "salas" cerradas (`data/rooms/*.json`, herramienta `generate_room`) son **legacy de tests** — no son la unidad de gameplay canónica.
+RPG dark fantasy de **mundo abierto generativo** con motor Godot 4.6+. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. Las "salas" cerradas (`data/rooms/*.json`, cargadas en local con F1/F2/F3) son **legacy de tests** — no son la unidad de gameplay canónica y ya no pasan por el LLM.
 
 ## Arrancar el juego
 
@@ -164,7 +164,7 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
     animation/             AnimationController, transitions, state config
     simulation/            GameSimulation tick loop
     protocol/              Mensajes frontend ↔ logica
-    dev/                   Room registry, dev state
+    dev/                   Initial scene cache (bootstrap replay)
   bridge/
     ws-server.ts           WebSocket bridge para Godot (:9877)
   data/
@@ -198,7 +198,6 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
       player_combat_input.gd  Seleccion tipo ataque (1-5)
       combat_hud.gd        Barra superior: HP + selector ataque
       combat_data.gd       Carga combat_config.json
-      combat_resolver.gd   (vacio, logica en nefan-core)
       enemy_combat_ai.gd   Datos personalidad (logica en nefan-core)
     player/
       player_controller.gd WASD + sprint + jump + attack (Souls-Like pattern)
@@ -255,7 +254,6 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 | `/health` | GET | Estado: ready/loading, pipeline texturas |
 | `/backend_status` | GET | Estado de meshy_3d, ai_vision (consumido por panel del title screen) |
 | `/generate_scene` | POST | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
-| `/generate_room` | POST | Legacy — LLM genera sala cerrada (solo para tests F1/F2/F3) |
 | `/generate_texture` | POST | Textura PBR seamless (albedo+normal), ~1s |
 | `/generate_model` | POST | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | POST | Skin de personaje (PNG, ~10s) |
@@ -280,7 +278,7 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 ## MCP bridge — Como funciona la narrativa
 
 **Generación de escena inicial open-world**:
-1. Godot pide la escena → `AIClient.generate_room(world_state)` POST a ai_server (`/generate_scene` es la herramienta canónica de Claude)
+1. Godot envía `session_start` al bridge (`logic_bridge`); el bridge construye el contexto y hace POST `/generate_scene` a ai_server (`AiClient.generateScene` en nefan-core)
 2. ai_server envía request vía WebSocket a narrative-mcp (:3737), añadiendo `available_assets` (lista del manifest) y `session` info
 3. Claude Code (en otra terminal) llama `narrative_listen()` → recibe el world_state
 4. Claude genera la escena JSON completa, opcionalmente referenciando assets cacheados por hash → llama `narrative_respond(scene_json)`
