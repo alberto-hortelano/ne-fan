@@ -203,6 +203,9 @@ export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 export interface PluginRecord {
   /** sha256 del manifest canónico sin `origin` ni `id`. */
   id: string;
+  /** Nombre humano del manifest — permite correlacionar save ⇄ FS en los
+   *  errores de integridad de resume y distinguir plugins en UI. */
+  name: string;
   version: number;
   /** Estado vivo del plugin; conforma con manifest.slice.schema. */
   slice: unknown;

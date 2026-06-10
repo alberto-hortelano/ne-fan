@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "cycle_b",
+  "description": "Mitad B de un ciclo pong→ping (solo para el test de límite de emisiones).",
+  "origin": { "author": "developer", "rationale": "fixture del test emit_limit_exceeded" },
+  "slice": { "schema": { "type": "object" }, "initial": { "n": 0 } },
+  "events_consumed": [
+    {
+      "type": "pong",
+      "do": [
+        { "op": "inc", "path": "slice.n", "value": 1 },
+        { "op": "emit_event", "value": { "type": "ping", "payload": {} } }
+      ]
+    }
+  ],
+  "events_produced": ["ping"],
+  "fixtures": [
+    { "before": { "n": 0 }, "event": { "type": "pong" }, "after": { "n": 1 } }
+  ]
+}

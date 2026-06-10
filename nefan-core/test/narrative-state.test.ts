@@ -301,6 +301,7 @@ describe("NarrativeState.worldMap", () => {
     s1.startNewSession("tavern_intro");
     s1.plugins.push({
       id: "a".repeat(64),
+      name: "test_counter",
       version: 1,
       slice: { count: 3 },
       origin: { author: "developer", rationale: "test" },

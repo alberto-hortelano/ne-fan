@@ -19,6 +19,12 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { WorldMapManager } from "../src/world-map/world-map.js";
 import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
+import {
+  loadGamePluginManifests,
+  activatePluginsForNewSession,
+  bindPluginsForResume,
+} from "../src/plugins/loader.js";
+import type { PluginManifest } from "../src/plugins/types.js";
 import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
 import type { CombatConfig } from "../src/types.js";
@@ -65,6 +71,12 @@ const initialSceneCache = new InitialSceneCache(
 
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();
+
+// Manifests de los plugins activos de la sesión en curso (id → manifest).
+// Se puebla en start_session/resume_session y lo consume el dispatcher de
+// plugins (F4). Se resetea al entrar a ambos handlers para que una sesión
+// sin plugins no herede los de la anterior.
+let activePlugins: Map<string, PluginManifest> = new Map();
 
 function send(ws: WebSocket, msg: ServerMessage): void {
   if (ws.readyState === ws.OPEN) {
@@ -502,9 +514,25 @@ wss.on("connection", (ws: WebSocket) => {
       }
 
       case "start_session": {
+        activePlugins = new Map();
         narrative.startNewSession(msg.gameId);
         if (msg.appearance) {
           narrative.updatePlayerAppearance(msg.appearance.model_id, msg.appearance.skin_path);
+        }
+        // Génesis de plugins shipped (F3): validación + projections. Un
+        // manifest inválido aborta el arranque de sesión — fail-loud.
+        try {
+          const loaded = loadGamePluginManifests(GAMES_DIR, msg.gameId);
+          activePlugins = activatePluginsForNewSession(narrative, loaded);
+        } catch (err) {
+          console.error("Bridge: plugin load failed on start_session:", err);
+          send(ws, {
+            type: "session_started",
+            requestId: msg.requestId,
+            ok: false,
+            error: `plugin_load_failed: ${(err as Error).message ?? err}`,
+          });
+          break;
         }
         await aiClient.notifySessionStart(narrative.session_id, msg.gameId, false);
         await narrative.save();
@@ -616,6 +644,7 @@ wss.on("connection", (ws: WebSocket) => {
       }
 
       case "resume_session": {
+        activePlugins = new Map();
         const ok = await narrative.loadSession(msg.sessionId);
         if (!ok) {
           send(ws, {
@@ -623,6 +652,21 @@ wss.on("connection", (ws: WebSocket) => {
             requestId: msg.requestId,
             ok: false,
             error: "session_not_found",
+          });
+          break;
+        }
+        // Bind de plugins shipped (F3): el slice vive en el save, el manifest
+        // se relee del FS y se casa por id (integridad fail-loud).
+        try {
+          const loaded = loadGamePluginManifests(GAMES_DIR, narrative.game_id);
+          activePlugins = bindPluginsForResume(narrative, loaded);
+        } catch (err) {
+          console.error("Bridge: plugin bind failed on resume_session:", err);
+          send(ws, {
+            type: "session_started",
+            requestId: msg.requestId,
+            ok: false,
+            error: `plugin_integrity: ${(err as Error).message ?? err}`,
           });
           break;
         }

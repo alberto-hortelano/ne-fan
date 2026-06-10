@@ -341,6 +341,32 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  // ── Plugins (next.md §7) ──
+
+  getPluginRecord(id: string): PluginRecord | undefined {
+    return this.plugins.find((p) => p.id === id);
+  }
+
+  /** Registra un plugin activado (génesis F3 o plugin_register F5). Id
+   *  duplicado es un bug del caller — fail-loud. */
+  addPlugin(record: PluginRecord): void {
+    if (this.getPluginRecord(record.id)) {
+      throw new Error(`NarrativeState.addPlugin: id duplicado ${record.id}`);
+    }
+    this.plugins.push(record);
+    this.dirty = true;
+  }
+
+  /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
+  setPluginSlice(id: string, slice: unknown): void {
+    const record = this.getPluginRecord(id);
+    if (!record) {
+      throw new Error(`NarrativeState.setPluginSlice: plugin desconocido ${id}`);
+    }
+    record.slice = slice;
+    this.dirty = true;
+  }
+
   recordDialogueEvent(
     speaker: string,
     text: string,
