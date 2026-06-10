@@ -23,6 +23,7 @@ import {
 import type { SessionStorage } from "./session-storage.js";
 import { WorldMapManager } from "../world-map/world-map.js";
 import type { WorldMap } from "../world-map/types.js";
+import type { PluginRecord } from "../plugins/types.js";
 
 export type AssetValidator = (hash: string) => Promise<boolean>;
 export type LoadWarningSink = (source: string, message: string) => void;
@@ -70,6 +71,7 @@ export class NarrativeState {
   dialogue_history: DialogueEvent[] = [];
   asset_index_snapshot: AssetEntry[] = [];
   worldMap: WorldMapManager = new WorldMapManager(WorldMapManager.createEmpty());
+  plugins: PluginRecord[] = [];
 
   private nextEventSeq = 0;
   private dirty = false;
@@ -91,6 +93,7 @@ export class NarrativeState {
     this.dialogue_history = [];
     this.asset_index_snapshot = [];
     this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
+    this.plugins = [];
     this.nextEventSeq = 0;
     this.dirty = true;
     return this.session_id;
@@ -118,6 +121,8 @@ export class NarrativeState {
       ? data.world_map
       : migrateWorldMapFromV1(data);
     this.worldMap = new WorldMapManager(wm);
+    // Migración v2→v3 trivial: los saves anteriores no tienen plugins.
+    this.plugins = data.plugins ?? [];
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     this.dirty = data.schema_version < SCHEMA_VERSION;
     if (opts?.assetValidator) {
@@ -336,6 +341,32 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  // ── Plugins (next.md §7) ──
+
+  getPluginRecord(id: string): PluginRecord | undefined {
+    return this.plugins.find((p) => p.id === id);
+  }
+
+  /** Registra un plugin activado (génesis F3 o plugin_register F5). Id
+   *  duplicado es un bug del caller — fail-loud. */
+  addPlugin(record: PluginRecord): void {
+    if (this.getPluginRecord(record.id)) {
+      throw new Error(`NarrativeState.addPlugin: id duplicado ${record.id}`);
+    }
+    this.plugins.push(record);
+    this.dirty = true;
+  }
+
+  /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
+  setPluginSlice(id: string, slice: unknown): void {
+    const record = this.getPluginRecord(id);
+    if (!record) {
+      throw new Error(`NarrativeState.setPluginSlice: plugin desconocido ${id}`);
+    }
+    record.slice = slice;
+    this.dirty = true;
+  }
+
   recordDialogueEvent(
     speaker: string,
     text: string,
@@ -410,6 +441,7 @@ export class NarrativeState {
       dialogue_history: this.dialogue_history,
       asset_index_snapshot: this.asset_index_snapshot,
       world_map: this.worldMap.serialize(),
+      plugins: this.plugins,
       _next_event_seq: this.nextEventSeq,
     };
   }

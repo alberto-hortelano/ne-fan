@@ -231,19 +231,25 @@ Respond with narrative_respond, passing this JSON:
       "texture_hash": "optional reused asset hash",
       "model_hash": "optional reused asset hash" },
     { "type": "schedule_event", "description": "what to schedule",
-      "trigger": "next_scene|timer:60s|on_player_action:..." }
+      "trigger": "next_scene|timer:60s|on_player_action:..." },
+    { "type": "plugin_event", "plugin_id": "sha256 of an ACTIVE plugin",
+      "event_type": "one of the plugin's events_consumed (e.g. trade_offered)",
+      "payload": { "any": "fields the plugin's rules read as event.*" } }
   ]
 }
 Max 4 consequences. Reuse available_assets by hash when sensible.
 
 STRICT SHAPE — the validator REJECTS aliases:
 - type MUST be exactly one of "dialogue" | "story_update" | "spawn_entity"
-  | "schedule_event" | "noop". "show_dialogue" is NOT valid.
+  | "schedule_event" | "plugin_event" | "noop". "show_dialogue" is NOT valid.
 - story_update REQUIRES a non-empty "delta" field. Do not use "text" or
   "summary" — they will be rejected.
 - dialogue REQUIRES non-empty "speaker" and "text". spawn_entity REQUIRES
   "entity_kind" (npc/building/object) and "description". schedule_event
-  REQUIRES "description".
+  REQUIRES "description". plugin_event REQUIRES "plugin_id" and "event_type"
+  and only makes sense for plugins the session has active — the game engine
+  runs the plugin's declarative rules (commerce, reputation, ...); emit it
+  instead of hand-narrating what a plugin already models.
 If you produce an alias, ai_server returns HTTP 422 to the bridge and the
 client surfaces the error in its log. Fix the response shape, not the
 validator.`,
@@ -441,7 +447,7 @@ validator.`,
       trigger_id: z.string().describe('Unique within the place.'),
       when_type: z.enum(['player_entered', 'player_left', 'player_near', 'first_visit']),
       when_radius: z.number().optional().describe('Required only for when_type "player_near".'),
-      consequences_json: z.string().describe('JSON array of consequences, same shape as narrative_event consequences (dialogue / story_update / spawn_entity / schedule_event).'),
+      consequences_json: z.string().describe('JSON array of consequences, same shape as narrative_event consequences (dialogue / story_update / spawn_entity / schedule_event / plugin_event).'),
     },
     async ({ place_id, trigger_id, when_type, when_radius, consequences_json }) => {
       let consequences: unknown;

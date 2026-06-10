@@ -90,4 +90,23 @@ describe("dispatchConsequences", () => {
     dispatchConsequences(s, eventId, cs);
     assert.equal(s.dialogue_history[0].narrative_consequences.length, 2);
   });
+
+  it("plugin_event is collected, produces no core effect, and is audited", () => {
+    const s = makeState();
+    const eventId = s.recordDialogueEvent("a", "b", [], -1);
+    const cs: Consequence[] = [
+      {
+        type: "plugin_event",
+        plugin_id: "a".repeat(64),
+        event_type: "trade_offered",
+        payload: { item_id: "iron_sword" },
+      },
+    ];
+    const r = dispatchConsequences(s, eventId, cs);
+    assert.deepEqual(r.effects, []);
+    assert.deepEqual(r.pluginEvents, [
+      { pluginId: "a".repeat(64), type: "trade_offered", payload: { item_id: "iron_sword" } },
+    ]);
+    assert.equal(s.dialogue_history[0].narrative_consequences[0].type, "plugin_event");
+  });
 });

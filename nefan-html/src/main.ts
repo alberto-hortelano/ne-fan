@@ -1079,6 +1079,9 @@ narrativeClient.onNarrativeEvent((event) => {
       case "ambient_message":
         log(effect.message);
         break;
+      case "plugin_applied":
+        log(`⚙️ plugin ${effect.pluginId.slice(0, 8)}…: ${effect.eventType} → ${effect.changedPaths.join(", ") || "(solo slice)"}`);
+        break;
     }
   }
 });

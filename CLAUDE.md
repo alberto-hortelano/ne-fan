@@ -164,13 +164,15 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
     animation/             AnimationController, transitions, state config
     simulation/            GameSimulation tick loop
     protocol/              Mensajes frontend ↔ logica
+    plugins/               Plugins declarativos: tipos zod, hash, DSL, loader, dispatcher
     dev/                   Initial scene cache (bootstrap replay)
   bridge/
     ws-server.ts           WebSocket bridge para Godot (:9877)
   data/
     combat_config.json     Config compartida (symlink desde godot/data/)
     rooms/                 Escenarios JSON (incluye open_world_test.json y rooms legacy de tests)
-  test/                    39 tests (combat, animation, simulation)
+    games/{id}/plugins/    Manifests JSON de plugins shipped (cargados en start_session)
+  test/                    ~245 tests (combat, animation, simulation, narrativa, plugins)
 
 godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
   scripts/
@@ -290,10 +292,20 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 2. `dialogue_ui` emite `dialogue_choice_made(idx, free_text)`; `main.gd` lo registra en `NarrativeState` y obtiene `event_id`
 3. `AIClient.report_player_choice(event_id, ...)` → POST `/report_player_choice` en ai_server
 4. ai_server envía `narrative_event` por MCP con el contexto compacto del NarrativeState
-5. Claude responde con `consequences: [story_update | spawn_entity | schedule_event]`
+5. Claude responde con `consequences: [story_update | spawn_entity | schedule_event | plugin_event]`
 6. `main.gd._on_narrative_consequences` aplica cada una: actualiza `story_so_far`, materializa entidades, registra todo en NarrativeState
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
+
+## Plugins declarativos (next.md §7 — F1–F4 implementadas)
+
+Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
+
+- **Manifest** (`PluginManifestSchema`, zod estricto): `slice` (estado propio + schema), `reads`/`writes` (paths externos legibles/escribibles), `events_consumed` (`when` predicado → `do` efectos), `events_produced`, `projections` (slice inicial desde el estado), `derived_views`, `fixtures` (replay determinista que valida el manifest antes de activarlo). `plugin_id = sha256(canonical_json(manifest sin origin/id))`.
+- **DSL** (`src/plugins/dsl/`): paths dot-notation con `{interpolación}`, `[i]`, `[*]`; predicados eq/neq/gt/…/all/any/not; efectos set/inc/dec/mul/push/pull/remove/emit_event (secuenciales); expresiones string con aritmética y min/max/clamp/len/concat/coalesce; `random(seed_path, lo, hi)` determinista (sha256+SeededRng). Regla path-vs-literal: raíz ∈ {event, slice, world, player, entities, plugins, _, entity, acc} ⇒ path; si no, literal (`'…'` o `{$lit}` fuerzan literal).
+- **Shipped plugins**: `nefan-core/data/games/{gameId}/plugins/*.json`. Se validan y activan en `start_session` (projections → slice inicial); en resume se casan por id contra el save — hash distinto o manifest borrado ⇒ resume abortado fail-loud.
+- **Runtime**: el LLM emite `{type: "plugin_event", plugin_id, event_type, payload}`; el dispatcher (`src/plugins/dispatcher.ts`) es transaccional (working copies, commit sólo si todo el tick es válido), multi-consumer en orden alfabético de id, `emit_event` derivados con límite 16/tick, whitelist dura de escrituras externas (`player.gold|health|level|inventory`, `entities[i].data.*`). El hot loop de input (combate/movimiento) NO pasa por plugins.
+- **Pendiente**: F5 (`plugin_register` MCP para génesis por IA), F6 (`derived_views` → `serializeForLlm` + `plugin_inspect`), F7 (`migrate` v→v+1), F8 (plugin commerce real).
 
 ## Sistema de combate
 

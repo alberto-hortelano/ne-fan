@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "name": "gold_giver",
+  "description": "Da oro al jugador (cubre external writes con `writes`).",
+  "origin": { "author": "developer", "rationale": "fixture de tests F4 (external writes)" },
+  "slice": {
+    "schema": { "type": "object" },
+    "initial": { "total_given": 0 }
+  },
+  "reads": ["player.gold"],
+  "writes": ["player.gold"],
+  "events_consumed": [
+    {
+      "type": "give_gold",
+      "do": [
+        { "op": "inc", "path": "player.gold", "value": "event.amount" },
+        { "op": "inc", "path": "slice.total_given", "value": "event.amount" }
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "before": { "total_given": 0 },
+      "event": { "type": "give_gold", "amount": 25 },
+      "context": { "player": { "gold": 5 } },
+      "after": { "total_given": 25 }
+    }
+  ]
+}

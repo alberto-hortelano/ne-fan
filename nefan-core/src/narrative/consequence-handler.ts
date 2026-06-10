@@ -19,6 +19,9 @@ export interface DispatchOptions {
 export interface DispatchResult {
   effects: ConsequenceEffect[];
   injectedDialogue: boolean;
+  /** Eventos `plugin_event` recolectados (no aplicados): el bridge los pasa
+   *  al dispatcher de plugins después de las consequences core (§7.4). */
+  pluginEvents: Array<{ pluginId: string; type: string; payload: Record<string, unknown> }>;
 }
 
 export function dispatchConsequences(
@@ -27,7 +30,7 @@ export function dispatchConsequences(
   consequences: Consequence[],
   opts: DispatchOptions = {},
 ): DispatchResult {
-  const result: DispatchResult = { effects: [], injectedDialogue: false };
+  const result: DispatchResult = { effects: [], injectedDialogue: false, pluginEvents: [] };
 
   if (consequences.length === 0) {
     result.effects.push({ kind: "ambient_message", message: "💭 El mundo sigue su curso..." });
@@ -81,6 +84,16 @@ export function dispatchConsequences(
           kind: "schedule_event",
           description: c.description ?? "",
           trigger: typeof c.trigger === "string" ? c.trigger : undefined,
+        });
+        break;
+      }
+      case "plugin_event": {
+        // Sólo recolecta; el tick de plugins (nivel 3) lo resuelve después.
+        // recordNarrativeConsequence lo deja auditado en dialogue_history.
+        result.pluginEvents.push({
+          pluginId: c.plugin_id,
+          type: c.event_type,
+          payload: c.payload ?? {},
         });
         break;
       }

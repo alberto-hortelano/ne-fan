@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "test_counter",
+  "description": "Contador trivial: incrementa y anuncia el nuevo valor.",
+  "origin": { "author": "developer", "rationale": "fixture de tests F3/F4" },
+  "slice": {
+    "schema": { "type": "object", "properties": { "count": { "type": "number" } } },
+    "initial": { "count": 0 }
+  },
+  "events_consumed": [
+    {
+      "type": "counter_inc",
+      "do": [
+        { "op": "inc", "path": "slice.count", "value": 1 },
+        {
+          "op": "emit_event",
+          "value": { "type": "counter_changed", "payload": { "count": "slice.count" } }
+        }
+      ]
+    }
+  ],
+  "events_produced": ["counter_changed"],
+  "fixtures": [
+    { "before": { "count": 0 }, "event": { "type": "counter_inc" }, "after": { "count": 1 } },
+    { "before": { "count": 41 }, "event": { "type": "counter_inc" }, "after": { "count": 42 } }
+  ]
+}

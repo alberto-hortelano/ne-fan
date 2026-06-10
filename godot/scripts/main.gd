@@ -1121,6 +1121,11 @@ func _on_narrative_consequences(event_id: String, consequences: Array) -> void:
 			"schedule_event":
 				print("Narrative: scheduled event '%s' (trigger=%s)" % [
 					c.get("description", ""), c.get("trigger", "")])
+			"plugin_event":
+				# Los efectos los aplica el dispatcher de plugins en el bridge;
+				# aquí sólo se deja traza (el estado llega vía state updates).
+				print("Narrative: plugin_event '%s' -> %s" % [
+					c.get("event_type", ""), String(c.get("plugin_id", "")).substr(0, 12)])
 		# Record the consequence so the history browser (Phase 4) can show it
 		NarrativeState.record_narrative_consequence(event_id, c)
 

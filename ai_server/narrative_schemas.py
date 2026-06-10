@@ -553,7 +553,7 @@ NARRATIVE_REACT_TOOL = {
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["dialogue", "story_update", "spawn_entity", "schedule_event", "noop"],
+                            "enum": ["dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event", "noop"],
                         },
                         # dialogue — an NPC reacts in-world with spoken lines.
                         # REQUIRED for free_text responses.
@@ -606,6 +606,22 @@ NARRATIVE_REACT_TOOL = {
                             "type": "string",
                             "description": "When the scheduled event fires: next_scene, timer:60s, on_player_action:..",
                         },
+                        # plugin_event — dirige un evento a un plugin declarativo
+                        # activo. El motor del juego ejecuta sus reglas; usar esto
+                        # en vez de narrar a mano lo que un plugin ya modela
+                        # (comercio, reputación, ...).
+                        "plugin_id": {
+                            "type": "string",
+                            "description": "Id (sha256) of the active plugin that consumes the event.",
+                        },
+                        "event_type": {
+                            "type": "string",
+                            "description": "Event type from the plugin's events_consumed (e.g. trade_offered).",
+                        },
+                        "payload": {
+                            "type": "object",
+                            "description": "Event payload matching what the plugin's rules read (event.*).",
+                        },
                     },
                 },
             },
@@ -631,7 +647,7 @@ def validate_narrative_reaction(data: dict | None) -> dict:
     if len(raw) > 4:
         raise ValueError(f"react_to_player returned {len(raw)} consequences, max is 4")
 
-    valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "noop"}
+    valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event", "noop"}
     valid_kinds = {"npc", "building", "object"}
     out: list[dict] = []
     for idx, c in enumerate(raw):
@@ -699,5 +715,21 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 "type": "schedule_event",
                 "description": description,
                 "trigger": str(c.get("trigger", "next_scene")),
+            })
+        elif t == "plugin_event":
+            plugin_id = str(c.get("plugin_id", "")).strip()
+            event_type = str(c.get("event_type", "")).strip()
+            if not plugin_id:
+                raise ValueError(f"plugin_event[{idx}] missing required field `plugin_id`")
+            if not event_type:
+                raise ValueError(f"plugin_event[{idx}] missing required field `event_type`")
+            payload = c.get("payload", {})
+            if not isinstance(payload, dict):
+                raise ValueError(f"plugin_event[{idx}].payload must be an object")
+            out.append({
+                "type": "plugin_event",
+                "plugin_id": plugin_id,
+                "event_type": event_type,
+                "payload": payload,
             })
     return {"consequences": out}

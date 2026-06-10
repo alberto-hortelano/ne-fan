@@ -1,8 +1,10 @@
 /** Shared narrative types — schema mirrors godot/scripts/autoloads/narrative_state.gd. */
 import type { Vec3 } from "../types.js";
 import type { WorldMap } from "../world-map/types.js";
+import type { PluginRecord } from "../plugins/types.js";
 
-export const SCHEMA_VERSION = 2;
+// v3: añade `plugins: PluginRecord[]` (migración v2→v3: lista vacía).
+export const SCHEMA_VERSION = 3;
 
 export interface PlayerAppearance {
   model_id: string;
@@ -76,7 +78,12 @@ export type Consequence =
       character_type?: string;
       [key: string]: unknown;
     }
-  | { type: "schedule_event"; description: string; trigger?: string; [key: string]: unknown };
+  | { type: "schedule_event"; description: string; trigger?: string; [key: string]: unknown }
+  /** Evento dirigido a un plugin declarativo (next.md §7.7 paso 2). El
+   *  consequence-handler sólo lo recolecta; los efectos los resuelve el
+   *  dispatcher de plugins en el nivel 3 del tick. snake_case como el resto;
+   *  `event_type` evita colisionar con el discriminante `type`. */
+  | { type: "plugin_event"; plugin_id: string; event_type: string; payload?: Record<string, unknown> };
 
 export interface SessionData {
   schema_version: number;
@@ -92,6 +99,8 @@ export interface SessionData {
   dialogue_history: DialogueEvent[];
   asset_index_snapshot: AssetEntry[];
   world_map: WorldMap;
+  /** v3 — registro de plugins activos (§7.6 de next.md). */
+  plugins: PluginRecord[];
   _next_event_seq: number;
 }
 
@@ -173,4 +182,14 @@ export type ConsequenceEffect =
       eventId: string;
     }
   | { kind: "schedule_event"; description: string; trigger?: string }
-  | { kind: "ambient_message"; message: string };
+  | { kind: "ambient_message"; message: string }
+  /** Tick de plugins aplicado (F4): qué plugin procesó qué evento, qué paths
+   *  cambiaron (externos + plugins.<id>.slice) y qué eventos emitió. Los
+   *  clientes que no lo entiendan deben ignorar kinds desconocidos. */
+  | {
+      kind: "plugin_applied";
+      pluginId: string;
+      eventType: string;
+      changedPaths: string[];
+      emitted: Array<{ type: string; payload: unknown }>;
+    };

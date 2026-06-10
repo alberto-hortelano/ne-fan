@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "test_listener",
+  "description": "Escucha counter_changed y registra el último valor visto.",
+  "origin": { "author": "developer", "rationale": "fixture de tests F4 (multi-consumer)" },
+  "slice": {
+    "schema": { "type": "object" },
+    "initial": { "last_seen": null, "times": 0 }
+  },
+  "events_consumed": [
+    {
+      "type": "counter_changed",
+      "do": [
+        { "op": "set", "path": "slice.last_seen", "value": "event.count" },
+        { "op": "inc", "path": "slice.times", "value": 1 }
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "before": { "last_seen": null, "times": 0 },
+      "event": { "type": "counter_changed", "count": 5 },
+      "after": { "last_seen": 5, "times": 1 }
+    }
+  ]
+}
