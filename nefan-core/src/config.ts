@@ -67,6 +67,9 @@ export interface NefanConfig {
     texture_resolution: number;
     texture_steps: number;
     texture_lazy_load: boolean;
+    /** Mount the /diagnostic/* router (skin_test_* endpoints used for manual
+     *  parameter sweeps with curl). Off in production: the routes 404. */
+    expose_diagnostic: boolean;
   };
 }
 
@@ -100,5 +103,6 @@ export const CONFIG: NefanConfig = {
     texture_resolution: 512,
     texture_steps: 4,
     texture_lazy_load: true,
+    expose_diagnostic: false,
   },
 };

@@ -91,21 +91,6 @@ export class AiClient {
     }
   }
 
-  /** Legacy room generation — kept for the closed-room scenarios still used in tests. */
-  async generateRoom(context: LlmContext): Promise<SceneGenerationResult> {
-    try {
-      const res = await this.request("POST", "/generate_room", context, 360_000);
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
-      }
-      const data = (await res.json()) as Record<string, unknown>;
-      return { ok: true, scene: data };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    }
-  }
-
   /** Report a player dialogue choice to the narrative engine and return the
    *  consequences it emits. Result is a discriminated union so callers can
    *  distinguish "the LLM had nothing to add" (`ok=true, consequences=[]`)
