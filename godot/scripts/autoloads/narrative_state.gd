@@ -6,6 +6,11 @@
 ## resumable sessions.
 extends Node
 
+# Divergencia conocida: el NarrativeState TS (nefan-core/src/narrative/types.ts)
+# va por schema 3 (v2 world_map, v3 plugins). Este mirror GD sólo escribe y
+# carga su propio formato local v1 — ya rechazaba los saves v2 del bridge antes
+# de v3. No subir esta constante sin portar los campos nuevos; unificar cuando
+# el save canónico se lea siempre vía bridge.
 const SCHEMA_VERSION := 1
 const SAVES_DIR_FALLBACK := "user://saves/"
 

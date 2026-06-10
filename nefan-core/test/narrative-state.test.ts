@@ -276,6 +276,44 @@ describe("NarrativeState.worldMap", () => {
     assert.equal(map.places.tavern?.realized_scene_id, "tavern");
     assert.equal(map.active_place_id, "tavern");
   });
+
+  it("migrates a v2 session (no plugins) into v3 on load", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    s1.startNewSession("tavern_intro");
+    const v2 = { ...s1.toSessionData(), schema_version: 2 } as Record<string, unknown>;
+    delete v2.plugins;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await storage.write(s1.session_id, v2 as any);
+
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(s1.session_id), true);
+    assert.deepEqual(s2.plugins, []);
+    assert.ok(s2.isDirty(), "save v2 debe quedar dirty para re-guardarse como v3");
+    const resaved = s2.toSessionData();
+    assert.equal(resaved.schema_version, SCHEMA_VERSION);
+    assert.deepEqual(resaved.plugins, []);
+  });
+
+  it("round-trips plugin records through save/load", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    s1.startNewSession("tavern_intro");
+    s1.plugins.push({
+      id: "a".repeat(64),
+      version: 1,
+      slice: { count: 3 },
+      origin: { author: "developer", rationale: "test" },
+      activated_at: "2026-01-01T00:00:00Z",
+    });
+    assert.equal(await s1.save(), true);
+
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(s1.session_id), true);
+    assert.equal(s2.plugins.length, 1);
+    assert.equal(s2.plugins[0].id, "a".repeat(64));
+    assert.deepEqual(s2.plugins[0].slice, { count: 3 });
+  });
 });
 
 describe("NarrativeState state queries", () => {

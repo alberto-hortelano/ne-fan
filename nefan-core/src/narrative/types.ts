@@ -1,8 +1,10 @@
 /** Shared narrative types — schema mirrors godot/scripts/autoloads/narrative_state.gd. */
 import type { Vec3 } from "../types.js";
 import type { WorldMap } from "../world-map/types.js";
+import type { PluginRecord } from "../plugins/types.js";
 
-export const SCHEMA_VERSION = 2;
+// v3: añade `plugins: PluginRecord[]` (migración v2→v3: lista vacía).
+export const SCHEMA_VERSION = 3;
 
 export interface PlayerAppearance {
   model_id: string;
@@ -92,6 +94,8 @@ export interface SessionData {
   dialogue_history: DialogueEvent[];
   asset_index_snapshot: AssetEntry[];
   world_map: WorldMap;
+  /** v3 — registro de plugins activos (§7.6 de next.md). */
+  plugins: PluginRecord[];
   _next_event_seq: number;
 }
 
