@@ -13,6 +13,7 @@ import type {
   SessionSavedMessage,
 } from "../../../nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
+import { errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -105,16 +106,23 @@ export class BridgeClient {
       this.scheduleRetry();
     };
 
-    this.ws.onerror = () => {
-      // onclose will fire after this
+    this.ws.onerror = (event) => {
+      // The browser hides the underlying error for security; onclose fires
+      // right after with a useful close code, so we surface the event here
+      // mostly as a breadcrumb. Without this push the user sees only a
+      // generic "disconnected" later, with no hint that the disconnect
+      // came from an error rather than a clean close.
+      errors.push("bridge", `WebSocket onerror on ${this.url}`, event);
     };
 
     this.ws.onmessage = (event) => {
+      const raw = typeof event.data === "string" ? event.data : "";
       try {
-        const msg = JSON.parse(event.data as string) as ServerMessage;
+        const msg = JSON.parse(raw) as ServerMessage;
         this.dispatch(msg);
-      } catch {
-        // Ignore parse errors
+      } catch (err) {
+        const preview = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err);
       }
     };
   }
@@ -150,9 +158,19 @@ export class BridgeClient {
     }, this.retryInterval);
   }
 
-  private send(msg: Record<string, unknown>): void {
+  /** Send a frame to the bridge. When disconnected the message is dropped;
+   *  unless `opts.quietOnDisconnect` is set we log it to ErrorLog so a lost
+   *  one-shot (load_game, dialogue_choice…) is visible. High-frequency calls
+   *  like `sendInput` pass `quietOnDisconnect: true` — losing one frame is
+   *  harmless and we'd otherwise flood the log. */
+  private send(msg: Record<string, unknown>, opts: { quietOnDisconnect?: boolean } = {}): void {
     if (this._connected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+      return;
+    }
+    if (!opts.quietOnDisconnect) {
+      const type = typeof msg.type === "string" ? msg.type : "<no type>";
+      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`);
     }
   }
 
@@ -185,7 +203,9 @@ export class BridgeClient {
     attackRequested?: boolean;
     attackType?: string;
   }): void {
-    this.send({ type: "input", delta, inputs });
+    // Per-frame call: dropping while disconnected is fine, the next reconnect
+    // resyncs from the player's current position.
+    this.send({ type: "input", delta, inputs }, { quietOnDisconnect: true });
   }
 
   sendLoadRoom(roomId: string, enemies: {

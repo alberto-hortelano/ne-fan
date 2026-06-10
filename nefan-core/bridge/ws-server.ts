@@ -382,49 +382,73 @@ wss.on("connection", (ws: WebSocket) => {
         // Reset simulation
         sim.reset();
         scenario.loadGame(GAMES_DIR, msg.gameId).then(async (sceneData) => {
-          if (sceneData) {
-            // Set up player
-            const playerHp = 100;
-            store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
-            sim.addCombatant(
-              createCombatant("player", playerHp, "unarmed",
-                { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
-            );
-
-            // Send scene data first so Godot rebuilds the room
-            const sceneResponse: StateUpdateMessage = {
-              type: "state_update",
-              events: [{ type: "player_respawned", hp: playerHp }],
-              playerHp,
-              enemies: [],
-              scenario: { change_scene: sceneData },
-            };
-            ws.send(JSON.stringify(sceneResponse));
-
-            // Run an initial tick to execute first beat actions (spawn NPCs, dialogue, etc.)
-            const initialTick = await scenario.tick(0, { x: 0, y: 0, z: 0 });
-
-            // Send beat actions after a short delay so Godot has time to build the scene
-            if (initialTick.scenarioUpdates.length > 0) {
-              setTimeout(() => {
-                for (const u of initialTick.scenarioUpdates) {
-                  const beatResponse: StateUpdateMessage = {
-                    type: "state_update",
-                    events: [],
-                    playerHp,
-                    enemies: [],
-                    npcs: initialTick.npcs,
-                    scenario: u,
-                  };
-                  ws.send(JSON.stringify(beatResponse));
-                }
-              }, 500);
-            }
-
-            console.log(`Bridge: game '${msg.gameId}' loaded`);
+          if (!sceneData) {
+            // No initial scene materialized — the scenario runner expected
+            // one but loadSceneData returned null. Reply directly to the
+            // requesting socket: `load_game` is the legacy bypass path so
+            // the caller is not necessarily in `narrativeSubscribers`, and
+            // a `broadcastNarrative` would not reach them.
+            const message = `load_game '${msg.gameId}': scenario produced no initial scene`;
+            console.warn(`Bridge: ${message}`);
+            send(ws, {
+              type: "narrative_status",
+              phase: "error",
+              kind: "scene",
+              message,
+            });
+            return;
           }
-        }).catch((err) => {
-          console.error(`Bridge: failed to load game '${msg.gameId}':`, err);
+
+          // Set up player
+          const playerHp = 100;
+          store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
+          sim.addCombatant(
+            createCombatant("player", playerHp, "unarmed",
+              { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
+          );
+
+          // Send scene data first so Godot rebuilds the room
+          const sceneResponse: StateUpdateMessage = {
+            type: "state_update",
+            events: [{ type: "player_respawned", hp: playerHp }],
+            playerHp,
+            enemies: [],
+            scenario: { change_scene: sceneData },
+          };
+          ws.send(JSON.stringify(sceneResponse));
+
+          // Run an initial tick to execute first beat actions (spawn NPCs, dialogue, etc.)
+          const initialTick = await scenario.tick(0, { x: 0, y: 0, z: 0 });
+
+          // Send beat actions after a short delay so Godot has time to build the scene
+          if (initialTick.scenarioUpdates.length > 0) {
+            setTimeout(() => {
+              for (const u of initialTick.scenarioUpdates) {
+                const beatResponse: StateUpdateMessage = {
+                  type: "state_update",
+                  events: [],
+                  playerHp,
+                  enemies: [],
+                  npcs: initialTick.npcs,
+                  scenario: u,
+                };
+                ws.send(JSON.stringify(beatResponse));
+              }
+            }, 500);
+          }
+
+          console.log(`Bridge: game '${msg.gameId}' loaded`);
+        }).catch((err: unknown) => {
+          // Reply directly to the requesting socket — see the !sceneData
+          // branch above for why we don't `broadcastNarrative` here.
+          const message = `load_game '${msg.gameId}' failed: ${(err as Error).message ?? String(err)}`;
+          console.error(`Bridge: ${message}`);
+          send(ws, {
+            type: "narrative_status",
+            phase: "error",
+            kind: "scene",
+            message,
+          });
         });
         break;
       }
@@ -637,13 +661,24 @@ wss.on("connection", (ws: WebSocket) => {
           msg.freeText ?? "",
         );
         const ctx = narrative.serializeForLlm();
-        const consequences = await aiClient.reportPlayerChoice({
+        const result = await aiClient.reportPlayerChoice({
           eventId,
           speaker: msg.speaker,
           chosenText: msg.chosenText,
           freeText: msg.freeText ?? "",
           context: ctx,
         });
+        if (!result.ok) {
+          console.warn(`Bridge: reportPlayerChoice failed for ${eventId}: ${result.error}`);
+          broadcastNarrative({
+            type: "narrative_status",
+            phase: "error",
+            kind: "consequences",
+            message: `Narrative engine error: ${result.error}`,
+          });
+          break;
+        }
+        const consequences = result.consequences;
         const playerPos = store.state.player.pos;
         const dispatched = dispatchConsequences(narrative, eventId, consequences, {
           playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
@@ -756,13 +791,24 @@ wss.on("connection", (ws: WebSocket) => {
           "(el jugador se acerca a hablar)",
         );
         const ctx = narrative.serializeForLlm();
-        const consequences = await aiClient.reportPlayerChoice({
+        const result = await aiClient.reportPlayerChoice({
           eventId,
           speaker: msg.entityName,
           chosenText: "",
           freeText: `(el jugador inicia conversación con ${msg.entityName})`,
           context: ctx,
         });
+        if (!result.ok) {
+          console.warn(`Bridge: reportPlayerChoice (interact_entity ${msg.entityName}) failed: ${result.error}`);
+          broadcastNarrative({
+            type: "narrative_status",
+            phase: "error",
+            kind: "consequences",
+            message: `Narrative engine error: ${result.error}`,
+          });
+          break;
+        }
+        const consequences = result.consequences;
         const playerPos = store.state.player.pos;
         const dispatched = dispatchConsequences(narrative, eventId, consequences, {
           playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },

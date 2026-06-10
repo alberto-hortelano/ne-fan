@@ -46,7 +46,7 @@ describe("AiClient", () => {
     assert.deepEqual(captured.body, { session_id: "s1", game_id: "g1", is_resume: true });
   });
 
-  it("reportPlayerChoice returns parsed consequences", async () => {
+  it("reportPlayerChoice returns parsed consequences on 200", async () => {
     const client = new AiClient({
       baseUrl: "http://test",
       fetchImpl: mockFetch(() =>
@@ -58,30 +58,63 @@ describe("AiClient", () => {
         ),
       ),
     });
-    const cs = await client.reportPlayerChoice({
+    const r = await client.reportPlayerChoice({
       eventId: "evt_1",
       speaker: "x",
       chosenText: "ok",
       freeText: "",
       context: ctx,
     });
-    assert.equal(cs.length, 1);
-    assert.equal(cs[0].type, "story_update");
+    assert.equal(r.ok, true);
+    if (!r.ok) throw new Error("unreachable");
+    assert.equal(r.consequences.length, 1);
+    assert.equal(r.consequences[0].type, "story_update");
   });
 
-  it("reportPlayerChoice returns empty array on HTTP error", async () => {
+  it("reportPlayerChoice surfaces the HTTP error (no longer collapses to [])", async () => {
     const client = new AiClient({
       baseUrl: "http://test",
-      fetchImpl: mockFetch(() => new Response("boom", { status: 500 })),
+      fetchImpl: mockFetch(() => new Response("boom: stack trace here", { status: 500 })),
     });
-    const cs = await client.reportPlayerChoice({
+    const r = await client.reportPlayerChoice({
       eventId: "x",
       speaker: "x",
       chosenText: "",
       freeText: "",
       context: ctx,
     });
-    assert.deepEqual(cs, []);
+    assert.equal(r.ok, false);
+    if (r.ok) throw new Error("unreachable");
+    assert.match(r.error, /HTTP 500/);
+    assert.match(r.error, /boom/);
+  });
+
+  it("reportPlayerChoice surfaces network/abort errors thrown by the fetch", async () => {
+    const client = new AiClient({
+      baseUrl: "http://test",
+      fetchImpl: (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch,
+    });
+    const r = await client.reportPlayerChoice({
+      eventId: "x", speaker: "x", chosenText: "", freeText: "", context: ctx,
+    });
+    assert.equal(r.ok, false);
+    if (r.ok) throw new Error("unreachable");
+    assert.match(r.error, /ECONNREFUSED/);
+  });
+
+  it("reportPlayerChoice ok=true + empty array when LLM returned no consequences", async () => {
+    const client = new AiClient({
+      baseUrl: "http://test",
+      fetchImpl: mockFetch(() =>
+        new Response(JSON.stringify({ consequences: [] }), { status: 200 }),
+      ),
+    });
+    const r = await client.reportPlayerChoice({
+      eventId: "x", speaker: "x", chosenText: "", freeText: "", context: ctx,
+    });
+    assert.equal(r.ok, true);
+    if (!r.ok) throw new Error("unreachable");
+    assert.deepEqual(r.consequences, []);
   });
 
   it("generateSprite2D defaults to top_down angle", async () => {

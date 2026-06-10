@@ -36,6 +36,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 
 class _SilenceHealthcheckFilter(logging.Filter):
@@ -217,6 +218,54 @@ app.add_middleware(
 )
 
 
+# ── Request models ──
+# Pydantic models replace the previous `await request.json()` + body.get(...)
+# pattern so missing / wrong-type fields are rejected at the boundary with a
+# 422 and a structured detail, matching the fail-loud contract of
+# /report_player_choice. See next.md §2.2.
+
+class TextureRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    seed: int = -1
+
+
+class ModelRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    scale: list[float] = Field(default_factory=lambda: [0.5, 0.5, 0.5])
+    seed: int = -1
+    quality: str = "normal"
+
+
+class SkinRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    strength: float = -1
+    gamma: float = 0.35
+    seed: int = -1
+
+
+class SpriteRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    width: int = 512
+    height: int = 512
+    seed: int = -1
+    angle: str = "top_down"
+    style_token: str | None = None
+
+
+class NotifySessionRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+    game_id: str = Field(min_length=1)
+    is_resume: bool = False
+
+
+class ReportPlayerChoiceRequest(BaseModel):
+    event_id: str = Field(min_length=1)
+    speaker: str = ""
+    chosen_text: str = ""
+    free_text: str = ""
+    context: dict = Field(default_factory=dict)
+
+
 @app.get("/health")
 async def health():
     return {
@@ -263,21 +312,14 @@ async def generate_scene(request: Request):
 
 
 @app.post("/generate_texture")
-async def generate_texture_endpoint(request: Request):
+async def generate_texture_endpoint(body: TextureRequest):
     """Generate PBR texture set from a prompt. Returns URLs to cached PNGs."""
     import asyncio
 
-    body = await request.json()
-    prompt = body.get("prompt", "")
-    seed = body.get("seed", -1)
-
-    if not prompt:
-        return {"error": "missing prompt"}
-
-    key = asset_cache.hash_key(prompt)
+    key = asset_cache.hash_key(body.prompt)
 
     # Check cache first
-    if asset_cache.has_all(prompt, ["albedo", "normal"]):
+    if asset_cache.has_all(body.prompt, ["albedo", "normal"]):
         return {
             "hash": key,
             "cached": True,
@@ -288,12 +330,12 @@ async def generate_texture_endpoint(request: Request):
     # Generate (serialized — CUDA doesn't support concurrent access)
     start = time.time()
     async with _gpu_lock:
-        result = await asyncio.to_thread(texture_gen.generate, prompt, seed)
+        result = await asyncio.to_thread(texture_gen.generate, body.prompt, body.seed)
     elapsed_ms = int((time.time() - start) * 1000)
 
     # Store in cache
-    asset_cache.put(prompt, "albedo", result["albedo"])
-    asset_cache.put(prompt, "normal", result["normal"])
+    asset_cache.put(body.prompt, "albedo", result["albedo"])
+    asset_cache.put(body.prompt, "normal", result["normal"])
 
     return {
         "hash": key,
@@ -305,23 +347,14 @@ async def generate_texture_endpoint(request: Request):
 
 
 @app.post("/generate_model")
-async def generate_model_endpoint(request: Request):
+async def generate_model_endpoint(body: ModelRequest):
     """Generate a 3D model (GLB) from a prompt."""
     import asyncio
 
-    body = await request.json()
-    prompt = body.get("prompt", "")
-    scale = body.get("scale", [0.5, 0.5, 0.5])
-    seed = body.get("seed", -1)
-    quality = body.get("quality", "normal")
-
-    if not prompt:
-        return {"error": "missing prompt"}
-
-    key = model_cache.hash_key(prompt)
+    key = model_cache.hash_key(body.prompt)
 
     # Check cache
-    if model_cache.has(prompt, "model"):
+    if model_cache.has(body.prompt, "model"):
         return {
             "hash": key,
             "cached": True,
@@ -331,10 +364,12 @@ async def generate_model_endpoint(request: Request):
     # Generate (serialized with textures via GPU lock)
     start = time.time()
     async with _gpu_lock:
-        glb_bytes = await asyncio.to_thread(model_gen.generate, prompt, scale, seed, quality)
+        glb_bytes = await asyncio.to_thread(
+            model_gen.generate, body.prompt, body.scale, body.seed, body.quality
+        )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    model_cache.put(prompt, "model", glb_bytes)
+    model_cache.put(body.prompt, "model", glb_bytes)
 
     return {
         "hash": key,
@@ -397,7 +432,11 @@ async def backend_status_endpoint():
 @app.post("/analyze_weapon")
 async def analyze_weapon_endpoint(request: Request):
     """Vision-guided weapon orientation. Receives images of a 3D weapon and
-    returns grip point + orientation vectors for placement."""
+    returns grip point + orientation vectors for placement.
+
+    Errors are surfaced as HTTPException (4xx/5xx) instead of 200 with an
+    `error` field in the body — same fail-loud contract that
+    `/report_player_choice` already uses, see next.md §2.1."""
     import asyncio
 
     body = await request.json()
@@ -407,38 +446,29 @@ async def analyze_weapon_endpoint(request: Request):
     context = body.get("context", {})
 
     if not images:
-        return {"error": "missing images"}
+        raise HTTPException(status_code=400, detail="missing images")
 
     if llm_client is None:
-        return {"error": "llm_client unavailable", "fallback": True}
+        raise HTTPException(status_code=503, detail="llm_client unavailable")
 
     result = await asyncio.to_thread(
         llm_client.analyze_weapon, images, weapon_type, kind, context
     )
 
     if result is None:
-        return {"error": "vision unavailable", "fallback": True}
+        raise HTTPException(status_code=503, detail="vision unavailable")
 
     return result
 
 
 @app.post("/generate_skin")
-async def generate_skin_endpoint(request: Request):
+async def generate_skin_endpoint(body: SkinRequest):
     """Generate a character skin variant via img2img on the base Paladin UV."""
     import asyncio
 
-    body = await request.json()
-    prompt = body.get("prompt", "")
-    strength = body.get("strength", -1)
-    gamma = body.get("gamma", 0.35)
-    seed = body.get("seed", -1)
+    key = skin_cache.hash_key(body.prompt)
 
-    if not prompt:
-        return {"error": "missing prompt"}
-
-    key = skin_cache.hash_key(prompt)
-
-    if skin_cache.has(prompt, "skin"):
+    if skin_cache.has(body.prompt, "skin"):
         return {
             "hash": key,
             "cached": True,
@@ -447,10 +477,12 @@ async def generate_skin_endpoint(request: Request):
 
     start = time.time()
     async with _gpu_lock:
-        result = await asyncio.to_thread(skin_gen.generate, prompt, strength, gamma, seed)
+        result = await asyncio.to_thread(
+            skin_gen.generate, body.prompt, body.strength, body.gamma, body.seed
+        )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    skin_cache.put(prompt, "skin", result["skin"])
+    skin_cache.put(body.prompt, "skin", result["skin"])
 
     return {
         "hash": key,
@@ -461,7 +493,7 @@ async def generate_skin_endpoint(request: Request):
 
 
 @app.post("/generate_sprite")
-async def generate_sprite_endpoint(request: Request):
+async def generate_sprite_endpoint(body: SpriteRequest):
     """Generate an RGBA sprite PNG from a prompt (image with transparent background).
 
     Accepts an optional ``angle`` (top_down | isometric_30 | isometric_45 |
@@ -471,45 +503,38 @@ async def generate_sprite_endpoint(request: Request):
     """
     import asyncio
 
-    body = await request.json()
-    prompt = body.get("prompt", "")
-    width = body.get("width", 512)
-    height = body.get("height", 512)
-    seed = body.get("seed", -1)
-    angle = body.get("angle", "top_down")
-    style_token = body.get("style_token") or None
+    context = {"angle": body.angle}
+    if body.style_token:
+        context["style_token"] = body.style_token
 
-    if not prompt:
-        return {"error": "missing prompt"}
+    key = sprite_cache.hash_key(body.prompt, context)
 
-    context = {"angle": angle}
-    if style_token:
-        context["style_token"] = style_token
-
-    key = sprite_cache.hash_key(prompt, context)
-
-    if sprite_cache.has(prompt, "sprite", context):
+    if sprite_cache.has(body.prompt, "sprite", context):
         return {
             "hash": key,
             "cached": True,
             "sprite_url": f"/cache/sprite/{key}",
-            "angle": angle,
+            "angle": body.angle,
         }
 
     start = time.time()
     async with _gpu_lock:
         result = await asyncio.to_thread(
-            sprite_gen.generate, prompt, width, height, seed, angle, style_token
+            sprite_gen.generate, body.prompt, body.width, body.height,
+            body.seed, body.angle, body.style_token,
         )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    sprite_cache.put(prompt, "sprite", result["sprite"], context=context, subtype_override="sprite_2d")
+    sprite_cache.put(
+        body.prompt, "sprite", result["sprite"],
+        context=context, subtype_override="sprite_2d",
+    )
 
     return {
         "hash": key,
         "cached": False,
         "sprite_url": f"/cache/sprite/{key}",
-        "angle": angle,
+        "angle": body.angle,
         "generation_time_ms": elapsed_ms,
     }
 
@@ -812,13 +837,12 @@ async def get_skinned_sheet_frame(hash_key: str, filename: str):
 
 
 @app.post("/report_player_choice")
-async def report_player_choice(request: Request):
+async def report_player_choice(body: ReportPlayerChoiceRequest):
     """Forward a player dialogue choice to the narrative engine and return its
     consequences. No silent fallback: if there is no LLM backend or the LLM
     produces an invalid response, this endpoint returns HTTP 503 / 422 so the
     bridge surfaces the error to the client."""
     import asyncio
-    body = await request.json()
     if llm_client is None:
         raise HTTPException(
             status_code=503,
@@ -827,11 +851,11 @@ async def report_player_choice(request: Request):
     try:
         result = await asyncio.to_thread(
             llm_client.report_player_choice,
-            str(body.get("event_id", "")),
-            str(body.get("speaker", "")),
-            str(body.get("chosen_text", "")),
-            str(body.get("free_text", "")),
-            body.get("context", {}) if isinstance(body.get("context"), dict) else {},
+            body.event_id,
+            body.speaker,
+            body.chosen_text,
+            body.free_text,
+            body.context,
         )
     except NarrativeUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -850,18 +874,17 @@ async def report_player_choice(request: Request):
 
 
 @app.post("/notify_session")
-async def notify_session(request: Request):
+async def notify_session(body: NotifySessionRequest):
     """Godot calls this when the player starts or resumes a narrative session.
     The session metadata is propagated to Claude on the next bridge request."""
-    body = await request.json()
-    session_id = str(body.get("session_id", ""))
-    game_id = str(body.get("game_id", ""))
-    is_resume = bool(body.get("is_resume", False))
-    if not session_id or not game_id:
-        return Response(status_code=400, content="session_id and game_id required")
     if llm_client is not None:
-        llm_client.set_session(session_id, game_id, is_resume)
-    return {"ok": True, "session_id": session_id, "game_id": game_id, "is_resume": is_resume}
+        llm_client.set_session(body.session_id, body.game_id, body.is_resume)
+    return {
+        "ok": True,
+        "session_id": body.session_id,
+        "game_id": body.game_id,
+        "is_resume": body.is_resume,
+    }
 
 
 @app.get("/assets")

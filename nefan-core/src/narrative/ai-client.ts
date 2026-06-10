@@ -33,6 +33,10 @@ export interface SpriteGenerationResult {
   error?: string;
 }
 
+export type ReportPlayerChoiceResult =
+  | { ok: true; consequences: Consequence[] }
+  | { ok: false; error: string };
+
 export type SpriteAngle = "top_down" | "isometric_45" | "isometric_30" | "frontal";
 
 export class AiClient {
@@ -78,7 +82,7 @@ export class AiClient {
       const res = await this.request("POST", "/generate_scene", context, 360_000);
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}` };
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
       }
       const data = (await res.json()) as Record<string, unknown>;
       return { ok: true, scene: data };
@@ -93,7 +97,7 @@ export class AiClient {
       const res = await this.request("POST", "/generate_room", context, 360_000);
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}` };
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
       }
       const data = (await res.json()) as Record<string, unknown>;
       return { ok: true, scene: data };
@@ -102,13 +106,19 @@ export class AiClient {
     }
   }
 
+  /** Report a player dialogue choice to the narrative engine and return the
+   *  consequences it emits. Result is a discriminated union so callers can
+   *  distinguish "the LLM had nothing to add" (`ok=true, consequences=[]`)
+   *  from "the LLM call failed" (`ok=false, error=...`) — the bridge propagates
+   *  the latter as `narrative_status: error` instead of pretending nothing
+   *  happened. */
   async reportPlayerChoice(payload: {
     eventId: string;
     speaker: string;
     chosenText: string;
     freeText: string;
     context: LlmContext;
-  }): Promise<Consequence[]> {
+  }): Promise<ReportPlayerChoiceResult> {
     try {
       const res = await this.request("POST", "/report_player_choice", {
         event_id: payload.eventId,
@@ -117,12 +127,20 @@ export class AiClient {
         free_text: payload.freeText,
         context: payload.context,
       }, 120_000);
-      if (!res.ok) return [];
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return {
+          ok: false,
+          error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}`,
+        };
+      }
       const data = (await res.json()) as { consequences?: Consequence[] };
-      return Array.isArray(data.consequences) ? data.consequences : [];
+      return {
+        ok: true,
+        consequences: Array.isArray(data.consequences) ? data.consequences : [],
+      };
     } catch (err) {
-      console.warn("AiClient.reportPlayerChoice failed:", (err as Error).message);
-      return [];
+      return { ok: false, error: (err as Error).message };
     }
   }
 
