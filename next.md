@@ -24,10 +24,11 @@ Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las 
 
 **Pendiente**:
 
-1. **§4.4 — borrados con confirmación del usuario**: `ai_server/test_narrative.py` (llama a `client.populate_room`, retirado en esta rama → ya no ejecuta) y `archive/ai-graphics-prototype/`.
-2. **Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`). Reproducidos también en la rama base sin los cambios de `legacy/retire-generate-room` — defecto real anterior, investigar aparte.
-3. **§3.2 / §3.4** — acoplamientos y splits (abajo).
-4. **§7 — plugins declarativos**: siguiente objetivo. Prerequisitos (§7.10) cerrados.
+1. **Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`). Reproducidos también en la rama base sin los cambios de `legacy/retire-generate-room` — defecto real anterior, investigar aparte.
+2. **§3.2 / §3.4** — acoplamientos y splits (abajo).
+3. **§7 — plugins declarativos**: siguiente objetivo. Prerequisitos (§7.10) cerrados.
+
+(§4.4 cerrado con confirmación del usuario: `ai_server/test_narrative.py` y `archive/ai-graphics-prototype/` borrados.)
 
 ### Siguiente objetivo: §7 F1+F2 (tipos + registry + validador del DSL)
 
