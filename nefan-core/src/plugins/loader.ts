@@ -20,9 +20,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { NarrativeState } from "../narrative/narrative-state.js";
-import { runProjections, replayFixture } from "./dsl/evaluate.js";
+import { runProjections, replayFixture, runMigrationStep } from "./dsl/evaluate.js";
 import { computePluginId } from "./hash.js";
-import { PluginManifestSchema, type PluginManifest } from "./types.js";
+import { PluginManifestSchema, type PluginManifest, type PluginRecord } from "./types.js";
 import { validateManifestStatic } from "./validate.js";
 
 export class PluginLoadError extends Error {
@@ -169,14 +169,22 @@ export function bindPluginsForResume(
     }
     const nameMatch = byName.get(record.name);
     if (nameMatch) {
-      throw new PluginIntegrityError(
-        `el manifest de '${record.name}' (${nameMatch.file}) cambió desde que se creó el save ` +
-          `(save ${record.id.slice(0, 12)}… ≠ FS ${nameMatch.id.slice(0, 12)}…). ` +
-          `La evolución con migrate llega en F7 — restaura el archivo original o inicia sesión nueva.`,
-        record.name,
-        record.id,
-        nameMatch.id,
+      // Evolución (F7, §7.3): mismo name, hash distinto. Si el manifest del FS
+      // es de una versión MAYOR y trae la cadena migrate completa desde la
+      // versión del save, migramos el slice in situ en vez de abortar.
+      const fromVersion = record.version;
+      const migratedSlice = migrateSliceForResume(record, nameMatch, state);
+      state.migratePluginRecord(record.id, {
+        id: nameMatch.id,
+        version: nameMatch.manifest.version,
+        slice: migratedSlice,
+      });
+      console.log(
+        `PluginLoader: '${record.name}' migrado v${fromVersion}→v${nameMatch.manifest.version} ` +
+          `(${record.id.slice(0, 12)}… → ${nameMatch.id.slice(0, 12)}…)`,
       );
+      active.set(nameMatch.id, nameMatch.manifest);
+      continue;
     }
     throw new PluginIntegrityError(
       `el plugin '${record.name}' (${record.id.slice(0, 12)}…) del save no tiene manifest en disco — ` +
@@ -197,6 +205,78 @@ export function bindPluginsForResume(
   }
 
   return active;
+}
+
+/** Migra el slice del save al shape del manifest evolucionado (F7). Exige que
+ *  el FS sea una versión MAYOR y que `migrate` cubra cada versión intermedia
+ *  (migrate[from], …, migrate[to-1]); cualquier hueco o degradación aborta el
+ *  resume con PluginIntegrityError accionable. Los efectos de migrate son
+ *  slice-only (lo garantiza runMigrationStep). */
+function migrateSliceForResume(
+  record: PluginRecord,
+  target: LoadedPlugin,
+  state: NarrativeState,
+): unknown {
+  const from = record.version;
+  const to = target.manifest.version;
+  if (to === from) {
+    throw new PluginIntegrityError(
+      `el manifest de '${record.name}' cambió pero mantiene version ${from} ` +
+        `(save ${record.id.slice(0, 12)}… ≠ FS ${target.id.slice(0, 12)}…). ` +
+        `Un cambio de comportamiento exige subir 'version' y añadir 'migrate[${from}]', ` +
+        `o restaura el archivo original.`,
+      record.name,
+      record.id,
+      target.id,
+    );
+  }
+  if (to < from) {
+    throw new PluginIntegrityError(
+      `el manifest de '${record.name}' en disco es v${to}, ANTERIOR al del save v${from} — ` +
+        `no se degrada un slice; instala una versión ≥ ${from} o inicia sesión nueva.`,
+      record.name,
+      record.id,
+      target.id,
+    );
+  }
+  const migrate = target.manifest.migrate ?? {};
+  const ctxExtras = {
+    world: state.world,
+    player: state.player,
+    entities: state.entities as unknown[],
+    plugins: pluginSlices(state.plugins),
+  };
+  let slice = record.slice;
+  for (let v = from; v < to; v++) {
+    const effects = migrate[String(v)];
+    if (!effects || effects.length === 0) {
+      throw new PluginIntegrityError(
+        `falta 'migrate[${v}]' en '${record.name}' para evolucionar v${from}→v${to} ` +
+          `(se requiere una entrada por cada versión intermedia). ` +
+          `Añádela al manifest o restaura el archivo.`,
+        record.name,
+        record.id,
+        target.id,
+      );
+    }
+    try {
+      slice = runMigrationStep(effects, { slice, ...ctxExtras });
+    } catch (err) {
+      throw new PluginIntegrityError(
+        `migrate[${v}] de '${record.name}' falló: ${errMsg(err)}`,
+        record.name,
+        record.id,
+        target.id,
+      );
+    }
+  }
+  return slice;
+}
+
+function pluginSlices(records: PluginRecord[]): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  for (const r of records) m[r.id] = r.slice;
+  return m;
 }
 
 function errMsg(err: unknown): string {
