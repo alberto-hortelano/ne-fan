@@ -6,6 +6,7 @@
  */
 import type {
   DerivedView,
+  Effect,
   EventConsumedEntry,
   PluginFixture,
   PluginManifest,
@@ -149,6 +150,23 @@ export function runProjections(
 /** Evalúa una derived_view (read-only). Base de serializeForLlm en F6. */
 export function runDerivedView(view: DerivedView, ctx: DslContext): unknown {
   return evalValue(scopeFromContext(structuredClone(ctx)), view.rule);
+}
+
+/** Aplica una tanda de efectos `migrate[v]` sobre el slice (F7, §7.3
+ *  "Evolución"). PURO (clona el contexto) y SLICE-ONLY: la WriteAuth vacía hace
+ *  que cualquier efecto que intente escribir fuera de slice o emitir un evento
+ *  lance DslError — una migración sólo convierte el shape del propio slice, no
+ *  toca al jugador ni produce eventos (eso doblaría efectos en cada resume).
+ *  Devuelve el slice migrado. */
+export function runMigrationStep(effects: Effect[], ctx: DslContext): unknown {
+  const work = structuredClone(ctx);
+  const scope = scopeFromContext(work);
+  const auth: WriteAuth = { writes: [], eventsProduced: new Set() };
+  const sink = newEffectSink();
+  for (const effect of effects) {
+    applyEffect(scope, effect, auth, sink);
+  }
+  return work.slice;
 }
 
 export interface FixtureResult {

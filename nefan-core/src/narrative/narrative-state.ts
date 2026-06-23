@@ -358,6 +358,27 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  /** Sustituye un PluginRecord migrado (F7, §7.3 "Evolución"): nuevo
+   *  id/version/slice del manifest evolucionado, preservando name/origin/
+   *  activated_at. Tras esto el save refleja la versión nueva y los próximos
+   *  resume casan por id sin re-migrar. */
+  migratePluginRecord(
+    oldId: string,
+    next: { id: string; version: number; slice: unknown },
+  ): void {
+    const record = this.getPluginRecord(oldId);
+    if (!record) {
+      throw new Error(`NarrativeState.migratePluginRecord: plugin desconocido ${oldId}`);
+    }
+    if (next.id !== oldId && this.getPluginRecord(next.id)) {
+      throw new Error(`NarrativeState.migratePluginRecord: id destino duplicado ${next.id}`);
+    }
+    record.id = next.id;
+    record.version = next.version;
+    record.slice = next.slice;
+    this.dirty = true;
+  }
+
   /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
   setPluginSlice(id: string, slice: unknown): void {
     const record = this.getPluginRecord(id);

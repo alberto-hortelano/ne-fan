@@ -137,7 +137,20 @@ export function validateManifestStatic(manifest: PluginManifest): string[] {
 
   if (manifest.migrate) {
     for (const [from, effects] of Object.entries(manifest.migrate)) {
-      effects.forEach((e) => walkEffect(e, `migrate[${from}]`));
+      const where = `migrate[${from}]`;
+      effects.forEach((e) => {
+        walkEffect(e, where);
+        // migrate es slice-only: no emite eventos ni toca estado externo, aunque
+        // `writes` lo cubriera — re-aplicarlo en cada resume doblaría el efecto.
+        if (e.op === "emit_event") {
+          errors.push(`${where}: emit_event no está permitido en migrate (sólo transforma el slice)`);
+          return;
+        }
+        const ast = tryParse(e.path, `${where} efecto '${e.op}'`, errors);
+        if (ast && ast.root !== "slice") {
+          errors.push(`${where}: '${e.op}' escribe en '${e.path}'; migrate sólo puede escribir en slice.*`);
+        }
+      });
     }
   }
 
