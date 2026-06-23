@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "name": "commerce",
+  "description": "Comercio declarativo: mercados con stock, compra con oro. El motor narrativo abre un mercado con un plugin_event 'market_open' cuando aparece un mercader, y emite 'trade_offered' cuando el jugador compra; el plugin descuenta stock y oro, añade el item al inventario y emite 'trade_completed'. Génesis: si ya hay mercaderes (entities con data.role='merchant') al iniciar sesión, sus mercados se siembran solos.",
+  "origin": {
+    "author": "developer",
+    "rationale": "Plugin commerce v1 shipped (next.md §7 F8): prueba de concepto end-to-end del sistema de plugins declarativos sobre tavern_intro."
+  },
+  "slice": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "markets": { "type": "object" }
+      }
+    },
+    "initial": { "markets": {} }
+  },
+  "reads": ["entities[*].data", "player.gold", "player.inventory"],
+  "writes": ["player.gold", "player.inventory"],
+  "events_consumed": [
+    {
+      "type": "market_open",
+      "when": {
+        "all": [
+          { "op": "has", "path": "event.market_id" },
+          { "op": "has", "path": "event.name" },
+          { "op": "has", "path": "event.stock" }
+        ]
+      },
+      "do": [
+        {
+          "op": "set",
+          "path": "slice.markets.{event.market_id}",
+          "value": {
+            "owner_id": "event.market_id",
+            "name": "event.name",
+            "stock": "event.stock"
+          }
+        }
+      ]
+    },
+    {
+      "type": "trade_offered",
+      "when": {
+        "all": [
+          { "op": "has", "path": "event.market_id" },
+          { "op": "gt", "path": "slice.markets.{event.market_id}.stock.{event.item_id}", "value": 0 },
+          { "op": "gte", "path": "player.gold", "value": "event.price" }
+        ]
+      },
+      "do": [
+        { "op": "dec", "path": "slice.markets.{event.market_id}.stock.{event.item_id}", "value": 1 },
+        { "op": "dec", "path": "player.gold", "value": "event.price" },
+        {
+          "op": "push",
+          "path": "player.inventory",
+          "value": { "id": "event.item_id", "from": "event.market_id" }
+        },
+        {
+          "op": "emit_event",
+          "value": {
+            "type": "trade_completed",
+            "payload": {
+              "market_id": "event.market_id",
+              "item_id": "event.item_id",
+              "price": "event.price"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "events_produced": ["trade_completed"],
+  "projections": [
+    {
+      "source": "entities",
+      "rule": {
+        "filter": { "op": "eq", "path": "entity.data.role", "value": "merchant" },
+        "for_each": {
+          "set": "slice.markets.{entity.id}",
+          "value": {
+            "owner_id": "entity.id",
+            "name": "entity.data.name",
+            "stock": "entity.data.inventory"
+          }
+        }
+      }
+    }
+  ],
+  "derived_views": [
+    {
+      "name": "active_markets",
+      "rule": {
+        "map": "slice.markets[*]",
+        "to": { "id": "_.owner_id", "name": "_.name", "items": "len(_.stock)" }
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "before": { "markets": {} },
+      "event": {
+        "type": "market_open",
+        "market_id": "blacksmith_01",
+        "name": "Herrería de Boris",
+        "stock": { "iron_sword": 2, "shield": 1 }
+      },
+      "after": {
+        "markets": {
+          "blacksmith_01": {
+            "owner_id": "blacksmith_01",
+            "name": "Herrería de Boris",
+            "stock": { "iron_sword": 2, "shield": 1 }
+          }
+        }
+      }
+    },
+    {
+      "before": {
+        "markets": {
+          "blacksmith_01": {
+            "owner_id": "blacksmith_01",
+            "name": "Herrería de Boris",
+            "stock": { "iron_sword": 2 }
+          }
+        }
+      },
+      "event": {
+        "type": "trade_offered",
+        "market_id": "blacksmith_01",
+        "item_id": "iron_sword",
+        "price": 50
+      },
+      "context": { "player": { "gold": 100, "inventory": [] } },
+      "after": {
+        "markets": {
+          "blacksmith_01": {
+            "owner_id": "blacksmith_01",
+            "name": "Herrería de Boris",
+            "stock": { "iron_sword": 1 }
+          }
+        }
+      }
+    }
+  ]
+}
