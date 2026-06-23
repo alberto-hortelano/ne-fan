@@ -14,10 +14,10 @@ Sin argumentos, presenta un menú con presets que respetan dependencias entre se
 | Preset | Servicios | Cuándo |
 |--------|-----------|--------|
 | 1 · Play | bridge + narrative-mcp + ai_server + Godot + HTML + pausa Claude Code | Sesión narrativa completa |
-| 2 · Automated tests | bridge + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares |
-| 3 · HTML 2D iteration | bridge + HTML | Iterar UI/renderer 2D sin Godot |
-| 4 · Godot offline | sólo Godot | Tests visuales rápidos con fallback rooms |
-| 5 · Bridge only | sólo nefan-core bridge | Dev de la lógica compartida |
+| 2 · Story 2D | bridge + narrative-mcp + ai_server + HTML + pausa Claude Code (sin Godot) | Testear historia/NPCs/mapas/diálogo con gráficos mínimos (cliente 2D) |
+| 3 · Automated tests | bridge + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares |
+| 4 · HTML 2D iteration | bridge + HTML | Iterar UI/renderer 2D sin Godot ni IA |
+| 5 · Godot offline | sólo Godot | Tests visuales rápidos con fallback rooms |
 | 6 · ai_server only | sólo Python ai_server | Dev del pipeline de IA |
 | 7 · Custom | toggle por servicio | Combinaciones puntuales |
 | s · Status | — | Listar puertos arriba/abajo |
@@ -297,7 +297,7 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
-## Plugins declarativos (next.md §7 — F1–F5 implementadas)
+## Plugins declarativos (next.md §7 — F1–F6 implementadas)
 
 Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
 
@@ -306,8 +306,9 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **Shipped plugins**: `nefan-core/data/games/{gameId}/plugins/*.json`. Se validan y activan en `start_session` (projections → slice inicial); en resume se casan por id contra el save — hash distinto o manifest borrado ⇒ resume abortado fail-loud.
 - **Runtime**: el LLM emite `{type: "plugin_event", plugin_id, event_type, payload}`; el dispatcher (`src/plugins/dispatcher.ts`) es transaccional (working copies, commit sólo si todo el tick es válido), multi-consumer en orden alfabético de id, `emit_event` derivados con límite 16/tick, whitelist dura de escrituras externas (`player.gold|health|level|inventory`, `entities[i].data.*`). El hot loop de input (combate/movimiento) NO pasa por plugins.
 - **Génesis por IA (F5)**: tools MCP `plugin_register` (manifest JSON → `POST /plugins/register` del state API → `registerRuntimePlugin`: zod + hash + validación estática + replay de fixtures, **al menos una obligatoria** en runtime) y `plugin_list` (`GET /plugins`). El manifest queda embebido en el save (`PluginRecord.manifest`) y el resume lo rebindea sin archivo en disco.
+- **Visibilidad para el motor narrativo (F6)**: `serializeForLlm()` añade un bloque `plugins: [{id, name, version, views}]` con las `derived_views` de cada plugin activo evaluadas (resumen, no el slice entero); una vista que lance se marca `{_error}` sin tumbar el turno. La tool MCP `plugin_inspect(plugin_id, view?)` (→ `GET /plugins/{id}/inspect?view=`) da el detalle: con `view` la derived_view concreta, sin `view` el slice completo + `available_views`. Lógica pura en `src/plugins/views.ts` (`buildPluginLlmViews`/`inspectPlugin`); resuelve el manifest del `activePlugins` del bridge (shipped) o del embebido en el `PluginRecord` (IA).
 - **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Ojo: el flujo Godot (bypass `load_game`) aún no ejercita plugins; viven en la sesión del bridge (`start_session`/`resume_session`).
-- **Pendiente**: F6 (`derived_views` → `serializeForLlm` + `plugin_inspect`), F7 (`migrate` v→v+1), F8 (plugin commerce real).
+- **Pendiente**: F7 (`migrate` v→v+1), F8 (plugin commerce real).
 
 ## Sistema de combate
 

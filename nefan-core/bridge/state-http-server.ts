@@ -30,6 +30,9 @@ export interface StateHttpServerOptions {
     register: (raw: unknown) => { id: string; name: string; version: number; fixturesPassed: number };
     /** Plugins activos de la sesión, resumidos para el motor narrativo. */
     list: () => Array<Record<string, unknown>>;
+    /** Detalle de un plugin (F6): una derived_view concreta o el slice
+     *  completo. Lanza con el motivo si el plugin o la vista no existen. */
+    inspect: (id: string, view?: string) => Record<string, unknown>;
   };
 }
 
@@ -83,6 +86,22 @@ async function handle(
   // ── Plugins (F5) ──
   if (method === "GET" && path === "/plugins") {
     return ok({ plugins: plugins.list() });
+  }
+
+  // Detalle de un plugin (F6): GET /plugins/{id}/inspect?view=<name>
+  if (
+    method === "GET" &&
+    parts[0] === "plugins" &&
+    parts[1] &&
+    parts[2] === "inspect" &&
+    parts.length === 3
+  ) {
+    try {
+      const view = url.searchParams.get("view") ?? undefined;
+      return ok(plugins.inspect(parts[1], view));
+    } catch (err) {
+      return bad((err as Error).message);
+    }
   }
 
   if (method === "POST" && path === "/plugins/register") {

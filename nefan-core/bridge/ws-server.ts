@@ -30,6 +30,7 @@ import {
   type PluginEventInput,
 } from "../src/plugins/dispatcher.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
+import { inspectPlugin } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
@@ -280,7 +281,20 @@ createStateHttpServer({
         origin_author: narrative.getPluginRecord(id)?.origin.author ?? m.origin.author,
         events_consumed: m.events_consumed.map((e) => e.type),
         events_produced: m.events_produced,
+        derived_views: m.derived_views.map((v) => v.name),
       })),
+    inspect: (id, view) =>
+      inspectPlugin(
+        {
+          plugins: narrative.plugins,
+          world: narrative.world,
+          player: narrative.player,
+          entities: narrative.entities,
+        },
+        activePlugins,
+        id,
+        view,
+      ) as unknown as Record<string, unknown>,
   },
 });
 
@@ -640,7 +654,7 @@ wss.on("connection", (ws: WebSocket) => {
         // narrative_event so all subscribed clients render the same world.
         // Emit lifecycle hints so the client can show a loader instead of a
         // blank canvas while we wait on the LLM.
-        const ctx = narrative.serializeForLlm();
+        const ctx = narrative.serializeForLlm(activePlugins);
         // Fresh session: ask the narrative engine to bootstrap the world map
         // (3-5 places + sites + links) via the map tools before it builds the
         // starting scene. Progressive expansion happens later, via the tools.
@@ -765,7 +779,7 @@ wss.on("connection", (ws: WebSocket) => {
           msg.choiceIndex,
           msg.freeText ?? "",
         );
-        const ctx = narrative.serializeForLlm();
+        const ctx = narrative.serializeForLlm(activePlugins);
         const result = await aiClient.reportPlayerChoice({
           eventId,
           speaker: msg.speaker,
@@ -829,7 +843,7 @@ wss.on("connection", (ws: WebSocket) => {
         }
 
         // Lazy realize: ask the narrative engine for this place's low-level scene.
-        const realizeCtx = narrative.serializeForLlm();
+        const realizeCtx = narrative.serializeForLlm(activePlugins);
         realizeCtx.realize_place = {
           id: place.id,
           kind: place.kind,
@@ -888,20 +902,30 @@ wss.on("connection", (ws: WebSocket) => {
       case "interact_entity": {
         // The player walked up to an NPC and pressed E. Report it to the
         // narrative engine via the same path as a dialogue choice; it replies
-        // with consequences (typically a show_dialogue effect).
+        // with consequences (a `dialogue` effect that opens the dialogue UI).
+        //
+        // Framing matters: a parenthetical stage direction like "(el jugador
+        // inicia conversación con X)" reads as narration and nudges the engine
+        // to answer with a story_update (3rd-person narration) instead of a
+        // `dialogue` consequence — so the dialogue modal never opens. We send
+        // an explicit first-person greeting as the player's line plus an
+        // approach marker in chosen_text; the engine then naturally replies
+        // AS the NPC. The MCP prompt's narrative_event section reinforces that
+        // an approach/greeting MUST open with the NPC speaking.
+        const approachLine = "Saludos. ¿Puedes hablar conmigo un momento?";
         const eventId = narrative.recordDialogueEvent(
           msg.entityName,
-          "",
+          "(el jugador se acerca y saluda)",
           [],
           -1,
-          "(el jugador se acerca a hablar)",
+          approachLine,
         );
-        const ctx = narrative.serializeForLlm();
+        const ctx = narrative.serializeForLlm(activePlugins);
         const result = await aiClient.reportPlayerChoice({
           eventId,
           speaker: msg.entityName,
-          chosenText: "",
-          freeText: `(el jugador inicia conversación con ${msg.entityName})`,
+          chosenText: "(el jugador se acerca y saluda)",
+          freeText: approachLine,
           context: ctx,
         });
         if (!result.ok) {

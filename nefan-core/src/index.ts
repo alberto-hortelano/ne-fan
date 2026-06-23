@@ -42,3 +42,5 @@ export { DslError } from "./plugins/dsl/errors.js";
 export { deepEqual } from "./plugins/dsl/deep-equal.js";
 export { validateManifestStatic } from "./plugins/validate.js";
 export { registerRuntimePlugin, PluginRegisterError } from "./plugins/register.js";
+export { buildPluginLlmViews, inspectPlugin } from "./plugins/views.js";
+export type { PluginViewSources, ManifestResolver } from "./plugins/views.js";

@@ -216,3 +216,29 @@ export interface PluginRecord {
    *  (origin.author === "narrative_engine"); los shipped se releen del FS. */
   manifest?: PluginManifest;
 }
+
+// ── Vistas para el motor narrativo (F6, §7.6) ───────────────────────────────
+
+/** Resumen de un plugin activo que `serializeForLlm()` inyecta en el contexto:
+ *  sólo las `derived_views` evaluadas, nunca el slice entero (un mercado con
+ *  500 ítems es ruido — el detalle se pide con la tool `plugin_inspect`). */
+export interface PluginLlmView {
+  id: string;
+  name: string;
+  version: number;
+  /** name de la derived_view → su valor evaluado (o `{ _error }` si lanzó). */
+  views: Record<string, unknown>;
+}
+
+/** Resultado de `plugin_inspect`: con `view` devuelve esa derived_view en
+ *  `result`; sin `view`, el slice completo en `slice`. Siempre lista el
+ *  catálogo de vistas disponibles para que el motor sepa qué puede pedir. */
+export interface PluginInspectResult {
+  id: string;
+  name: string;
+  version: number;
+  available_views: string[];
+  view?: string;
+  result?: unknown;
+  slice?: unknown;
+}

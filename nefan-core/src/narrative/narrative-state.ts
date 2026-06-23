@@ -23,7 +23,8 @@ import {
 import type { SessionStorage } from "./session-storage.js";
 import { WorldMapManager } from "../world-map/world-map.js";
 import type { WorldMap } from "../world-map/types.js";
-import type { PluginRecord } from "../plugins/types.js";
+import type { PluginRecord, PluginManifest } from "../plugins/types.js";
+import { buildPluginLlmViews } from "../plugins/views.js";
 
 export type AssetValidator = (hash: string) => Promise<boolean>;
 export type LoadWarningSink = (source: string, message: string) => void;
@@ -446,7 +447,10 @@ export class NarrativeState {
     };
   }
 
-  serializeForLlm(): LlmContext {
+  /** @param manifests resolutor de manifests de los plugins activos (el
+   *   `activePlugins` del bridge). Sin él, sólo se proyectan los plugins cuyo
+   *   manifest está embebido en el record (los generados por IA). */
+  serializeForLlm(manifests?: Map<string, PluginManifest>): LlmContext {
     const recent = this.dialogue_history.slice(-5).map((d) => {
       let chosen = "";
       if (d.chosen_index >= 0 && d.chosen_index < d.choices.length) {
@@ -472,6 +476,19 @@ export class NarrativeState {
       })),
       recent_dialogues: recent,
       rooms_visited: Object.keys(this.scenes_loaded).length,
+      ...(this.plugins.length
+        ? {
+            plugins: buildPluginLlmViews(
+              {
+                plugins: this.plugins,
+                world: this.world,
+                player: this.player,
+                entities: this.entities,
+              },
+              manifests,
+            ),
+          }
+        : {}),
     };
   }
 
