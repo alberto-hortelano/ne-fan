@@ -253,29 +253,29 @@ EXCLUSIVE_PAIRS=("3 4")  # godot vs godot-headless
 # (1 = service active) in the SERVICES order.
 PRESET_NAMES=(
     "Play"
+    "Story 2D"
     "Automated tests"
     "HTML 2D iteration"
     "Godot offline"
-    "Bridge only"
     "ai_server only"
     "Custom"
 )
 PRESET_DESCS=(
     "Full stack + Claude Code narrative"
+    "Narrative test, minimal graphics: bridge + narrative-mcp + ai_server + HTML + Claude Code (no Godot)"
     "bridge + Godot headless (movement_test.py et al.)"
     "bridge + HTML (no AI generation)"
     "Just Godot — fallback rooms only"
-    "Just nefan-core bridge"
     "Just the Python AI server"
     "Whatever you have selected"
 )
 #                  bridge  narr  ai  god  hl  html
 PRESET_PROFILES=(
     "1 1 1 1 0 1"   # Play
+    "1 1 1 0 0 1"   # Story 2D
     "1 0 0 0 1 0"   # Automated tests
     "1 0 0 0 0 1"   # HTML 2D iteration
     "0 0 0 1 0 0"   # Godot offline
-    "1 0 0 0 0 0"   # Bridge only
     "0 0 1 0 0 0"   # ai_server only
     "0 0 0 0 0 0"   # Custom (filled in from current selection)
 )

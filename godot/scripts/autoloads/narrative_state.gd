@@ -6,13 +6,22 @@
 ## resumable sessions.
 extends Node
 
-# Divergencia conocida: el NarrativeState TS (nefan-core/src/narrative/types.ts)
-# va por schema 3 (v2 world_map, v3 plugins). Este mirror GD sólo escribe y
-# carga su propio formato local v1 — ya rechazaba los saves v2 del bridge antes
-# de v3. No subir esta constante sin portar los campos nuevos; unificar cuando
-# el save canónico se lea siempre vía bridge.
-const SCHEMA_VERSION := 1
+# Compatibilidad con el NarrativeState TS (nefan-core/src/narrative/types.ts):
+# este mirror modela los campos v1 y PRESERVA tal cual los que no modela
+# (world_map de v2, plugins de v3, futuros) en _extra_fields, de modo que un
+# save del bridge sobrevive intacto a un ciclo load_session → save desde Godot.
+# Lee cualquier schema 1..SCHEMA_VERSION y escribe siempre SCHEMA_VERSION.
+const SCHEMA_VERSION := 3
+const MIN_SCHEMA_VERSION := 1
 const SAVES_DIR_FALLBACK := "user://saves/"
+
+# Claves top-level que este mirror modela; el resto del save se preserva en
+# _extra_fields y se reescribe sin tocar.
+const MIRRORED_KEYS := [
+	"schema_version", "session_id", "game_id", "created_at", "updated_at",
+	"world", "player", "story_so_far", "scenes_loaded", "entities",
+	"dialogue_history", "asset_index_snapshot", "_next_event_seq",
+]
 
 
 static func _saves_dir() -> String:
@@ -79,6 +88,11 @@ var dialogue_history: Array = []
 # Last 100 entries from the asset manifest (refreshed on save)
 var asset_index_snapshot: Array = []
 
+# Campos del save que este mirror no modela (world_map, plugins, futuros):
+# se cargan tal cual y se reescriben sin modificar para no degradar saves
+# v2/v3 del bridge al guardar desde Godot.
+var _extra_fields: Dictionary = {}
+
 var _next_event_seq := 0
 var _dirty := false
 
@@ -119,6 +133,8 @@ func start_new_session(p_game_id: String) -> String:
 	entities = []
 	dialogue_history = []
 	asset_index_snapshot = []
+	# plugins es parte del schema v3; una sesión GD fresca arranca sin ellos.
+	_extra_fields = {"plugins": []}
 	_next_event_seq = 0
 	_dirty = true
 	session_started.emit(session_id, game_id, false)
@@ -140,9 +156,9 @@ func load_session(p_session_id: String) -> bool:
 		print("NarrativeState: corrupted save %s" % path)
 		return false
 	var ver: int = int(data.get("schema_version", 0))
-	if ver != SCHEMA_VERSION:
-		# Future: migrate. For now, refuse loudly.
-		push_warning("NarrativeState: schema version %d not supported" % ver)
+	if ver < MIN_SCHEMA_VERSION or ver > SCHEMA_VERSION:
+		push_warning("NarrativeState: schema version %d not supported (rango %d..%d)" % [
+			ver, MIN_SCHEMA_VERSION, SCHEMA_VERSION])
 		return false
 	session_id = data.get("session_id", "")
 	game_id = data.get("game_id", "")
@@ -155,6 +171,14 @@ func load_session(p_session_id: String) -> bool:
 	entities = data.get("entities", [])
 	dialogue_history = data.get("dialogue_history", [])
 	asset_index_snapshot = data.get("asset_index_snapshot", [])
+	# Preserva lo que este mirror no modela (world_map v2, plugins v3, futuros)
+	# para reescribirlo intacto en save().
+	_extra_fields = {}
+	for key in data.keys():
+		if not key in MIRRORED_KEYS:
+			_extra_fields[key] = data[key]
+	if ver >= 3 and not _extra_fields.has("plugins"):
+		_extra_fields["plugins"] = []
 	_next_event_seq = int(data.get("_next_event_seq", dialogue_history.size()))
 	_dirty = false
 	session_started.emit(session_id, game_id, true)
@@ -171,7 +195,10 @@ func save() -> bool:
 	var dir := SAVES_DIR + session_id + "/"
 	DirAccess.make_dir_recursive_absolute(dir)
 	var path := dir + "state.json"
-	var data := {
+	# Los campos no modelados (world_map, plugins, …) se reescriben tal cual
+	# se cargaron; los modelados van encima.
+	var data: Dictionary = _extra_fields.duplicate(true)
+	data.merge({
 		"schema_version": SCHEMA_VERSION,
 		"session_id": session_id,
 		"game_id": game_id,
@@ -185,7 +212,7 @@ func save() -> bool:
 		"dialogue_history": dialogue_history,
 		"asset_index_snapshot": asset_index_snapshot,
 		"_next_event_seq": _next_event_seq,
-	}
+	}, true)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if not f:
 		push_warning("NarrativeState: failed to open %s for writing" % path)

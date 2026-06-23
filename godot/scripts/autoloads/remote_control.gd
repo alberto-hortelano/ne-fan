@@ -100,7 +100,9 @@ func _handle(line: String) -> String:
 			var ok_save: bool = NarrativeState.session_id != "" and NarrativeState.save()
 			return '{"ok":%s}' % str(ok_save).to_lower()
 		"load":
-			var sid: String = NarrativeState.session_id
+			# session_id opcional: permite cargar una sesión concreta (tests);
+			# por defecto recarga la activa.
+			var sid: String = json.get("session_id", NarrativeState.session_id)
 			var ok_load: bool = sid != "" and NarrativeState.load_session(sid)
 			return '{"ok":%s}' % str(ok_load).to_lower()
 		"teleport":

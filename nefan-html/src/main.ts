@@ -1042,6 +1042,18 @@ narrativeClient.onNarrativeStatus((status) => {
         break;
       }
     }
+    return;
+  }
+
+  // Estados que no son de escena (consequences / plugins). El bridge sólo los
+  // emite en error: una reacción narrativa rechazada (p.ej. 422 de
+  // /report_player_choice por una consequence mal formada). Sin esto el error
+  // se traga en silencio — el jugador no ve diálogo ni motivo. Lo surgimos al
+  // error-log y a un overlay descartable.
+  if (status.phase === "error") {
+    const detail = status.message ?? "El motor narrativo rechazó la reacción.";
+    errors.push("narrative", detail);
+    setLoaderState("error", "El motor narrativo rechazó la respuesta", detail);
   }
 });
 

@@ -22,6 +22,18 @@ export interface StateHttpServerOptions {
   npcDirector: NpcDirector;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
+  /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
+   *  dispatcher (`activePlugins`) es estado del bridge. */
+  plugins: {
+    /** Valida y activa un manifest runtime. Lanza PluginRegisterError con el
+     *  motivo si es inválido. */
+    register: (raw: unknown) => { id: string; name: string; version: number; fixturesPassed: number };
+    /** Plugins activos de la sesión, resumidos para el motor narrativo. */
+    list: () => Array<Record<string, unknown>>;
+    /** Detalle de un plugin (F6): una derived_view concreta o el slice
+     *  completo. Lanza con el motivo si el plugin o la vista no existen. */
+    inspect: (id: string, view?: string) => Record<string, unknown>;
+  };
 }
 
 interface RouteResult {
@@ -36,7 +48,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
 
   const server = createServer((req, res) => {
-    handle(req, res, narrative, npcDirector)
+    handle(req, res, narrative, npcDirector, opts.plugins)
       .then(async (result) => {
         if (result.mutated) {
           try {
@@ -63,12 +75,47 @@ async function handle(
   _res: ServerResponse,
   narrative: NarrativeState,
   npcDirector: NpcDirector,
+  plugins: StateHttpServerOptions["plugins"],
 ): Promise<RouteResult> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = req.method ?? "GET";
   const parts = path.split("/").filter(Boolean); // e.g. ["entity", "boris", "inventory"]
   const wm = narrative.worldMap;
+
+  // ── Plugins (F5) ──
+  if (method === "GET" && path === "/plugins") {
+    return ok({ plugins: plugins.list() });
+  }
+
+  // Detalle de un plugin (F6): GET /plugins/{id}/inspect?view=<name>
+  if (
+    method === "GET" &&
+    parts[0] === "plugins" &&
+    parts[1] &&
+    parts[2] === "inspect" &&
+    parts.length === 3
+  ) {
+    try {
+      const view = url.searchParams.get("view") ?? undefined;
+      return ok(plugins.inspect(parts[1], view));
+    } catch (err) {
+      return bad((err as Error).message);
+    }
+  }
+
+  if (method === "POST" && path === "/plugins/register") {
+    const body = (await readJson(req)) as { manifest?: unknown };
+    if (!body || body.manifest === undefined) {
+      return bad("body requires { manifest: <PluginManifest> }");
+    }
+    try {
+      const result = plugins.register(body.manifest);
+      return mutated({ ok: true, ...result });
+    } catch (err) {
+      return bad((err as Error).message);
+    }
+  }
 
   // ── Health ──
   if (method === "GET" && path === "/health") {

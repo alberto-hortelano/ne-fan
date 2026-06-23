@@ -1,7 +1,7 @@
 /** Shared narrative types — schema mirrors godot/scripts/autoloads/narrative_state.gd. */
 import type { Vec3 } from "../types.js";
 import type { WorldMap } from "../world-map/types.js";
-import type { PluginRecord } from "../plugins/types.js";
+import type { PluginRecord, PluginLlmView } from "../plugins/types.js";
 
 // v3: añade `plugins: PluginRecord[]` (migración v2→v3: lista vacía).
 export const SCHEMA_VERSION = 3;
@@ -140,6 +140,9 @@ export interface LlmContext {
   }>;
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string }>;
   rooms_visited: number;
+  /** Plugins declarativos activos, resumidos por sus derived_views (F6, §7.6).
+   *  Sólo presente si hay plugins activos. El detalle se pide con plugin_inspect. */
+  plugins?: PluginLlmView[];
   available_assets?: AssetEntry[];
   /** Set on the first scene request of a fresh session: the narrative engine
    *  should bootstrap the world map (3-5 places + their sites + links) via the

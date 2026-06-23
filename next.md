@@ -26,14 +26,14 @@ Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las 
 
 1. **Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`). Reproducidos también en la rama base sin los cambios de `legacy/retire-generate-room` — defecto real anterior, investigar aparte.
 2. **§3.2 / §3.4** — acoplamientos y splits (abajo).
-3. **§7 — plugins declarativos**: F1–F4 implementadas en la rama `plugins/f1-f4`. Pendientes F5–F8 (tool MCP `plugin_register`, `serializeForLlm`+`plugin_inspect`, evolución con `migrate`, plugin commerce real).
-4. **Mirror GD `narrative_state.gd`** sigue en schema 1 (divergencia preexistente, documentada en el propio archivo): sólo escribe/carga su formato local y ya rechazaba los saves v2 del bridge. Unificar cuando el save canónico se lea siempre vía bridge.
+3. **§7 — plugins declarativos**: F1–F6 implementadas. Pendientes F7–F8 (evolución con `migrate`, plugin commerce real).
+4. **Unificación de sesiones Godot⇄bridge**: el flujo Godot sigue siendo el bypass de ScenarioRunner (`load_game`) con su sesión GD propia; el mensaje `session_start` de `logic_bridge` no tiene case en el bridge (vestigial, se ignora). Los plugins viven en la sesión del bridge (flujo `start_session`/`resume_session`), así que Godot no los ejercita hasta unificar. El mirror GD ya es compatible v1–v3 (abajo), pero la sesión canónica única sigue pendiente.
 
-(§4.4 cerrado con confirmación del usuario: `ai_server/test_narrative.py` y `archive/ai-graphics-prototype/` borrados.)
+(Resueltos: §4.4 con confirmación del usuario; **mirror GD `narrative_state.gd`** — ahora lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`, futuros), verificado con round-trip real de un save v3 del bridge y upgrade v1→v3.)
 
-### Siguiente objetivo: §7 F5 (tool MCP `plugin_register`)
+### Siguiente objetivo: §7 F7 (evolución de plugins + `migrate`)
 
-Con F1–F4 en su sitio (tipos+hash, DSL completo, loader de shipped, dispatcher transaccional con `plugin_event`), F5 desbloquea la génesis por IA: validación zod + dry-run de fixtures + persistencia del manifest embebido en `NarrativeState.plugins[]` (el bind de resume ya lo soporta). Después F6 (`derived_views` → `serializeForLlm` + `plugin_inspect`) hace los plugins visibles al motor narrativo.
+F6 ya está: el motor narrativo VE los plugins sin pedirlos — `serializeForLlm()` proyecta las `derived_views` de cada plugin activo al contexto (bloque `plugins[]`) y la tool `plugin_inspect(plugin_id, view?)` da el detalle bajo demanda (una vista concreta o el slice completo). Falta F7: detectar `version` v→v+1 en resume, replay de las fixtures de la nueva versión y ejecución de los efectos `migrate[v]` para migrar el slice, en vez de abortar el resume cuando el hash cambia.
 
 ---
 
@@ -54,7 +54,7 @@ Con F1–F4 en su sitio (tipos+hash, DSL completo, loader de shipped, dispatcher
 
 ## 7. Arquitectura objetivo: estado extensible por plugins declarativos
 
-> **Estado 2026-06-10 (2ª pasada)**: **F1–F4 implementadas** en la rama `plugins/f1-f4` (tipos+hash, intérprete del DSL, loader de developer, dispatcher integrado con consequence `plugin_event` y whitelist del LLM en ai_server/narrative-mcp). 245 tests en verde + smoke real del bridge (génesis, resume, integridad fail-loud). Pendientes F5–F8.
+> **Estado 2026-06-23 (4ª pasada)**: **F1–F6 implementadas** (F1–F4 en `plugins/f1-f4`; F5 en `plugins/f5-plugin-register`: `registerRuntimePlugin` con fixtures obligatorias para génesis runtime, endpoints `/plugins` y `/plugins/register` en el state API, tools MCP `plugin_register`/`plugin_list`, manifest embebido en el save y rebind en resume; F6: `serializeForLlm()` proyecta `derived_views` al contexto, tool `plugin_inspect` + endpoint `GET /plugins/{id}/inspect`). 257 tests en verde + smokes reales (registro por HTTP, 400 con motivo, resume con manifest embebido, `inspect` por HTTP con vista/slice y 400 por id/vista inexistente). Pendientes F7–F8.
 >
 > **Amendments de la implementación** (donde la realidad afinó esta spec):
 > - El manifest gana `writes: string[]`: §7.5 dice "sólo escribe en su slice" pero el ejemplo commerce de §7.7 hace `dec player.gold`. Los efectos escriben en `slice.*` libremente y en paths externos sólo si están declarados en `writes` (validación estática + runtime), con whitelist dura adicional en el dispatcher (`player.gold|health|level|inventory`, `entities[i].data.*`).
@@ -63,6 +63,7 @@ Con F1–F4 en su sitio (tipos+hash, DSL completo, loader de shipped, dispatcher
 > - La consequence es `{type: "plugin_event", plugin_id, event_type, payload}` (snake_case; `event_type` para no colisionar con el discriminante `type`).
 > - Alcance de eventos en F4: los plugins sólo ven consequences `plugin_event` (LLM o map triggers) y los `emit_event` derivados. El hot loop de input (nivel 1) no se ofrece a plugins — diseño de batching pendiente para una fase posterior.
 > - Integridad en resume: manifest del FS casado por id; mismo `name` con hash distinto o manifest borrado ⇒ resume abortado (la evolución es F7); plugin nuevo en FS ⇒ warning sin activar (génesis sólo en sesión nueva).
+> - F6: el bloque de plugins en `LlmContext` es un **array** `plugins: [{id, name, version, views}]` (la spec §7.6 lo dibujaba como objeto indexado por nombre; array evita colisiones de nombre y casa con `entities`). `views` mapea nombre de `derived_view` → su valor evaluado, o `{_error}` si la vista lanza en runtime (no tumba el turno narrativo). `plugin_inspect(plugin_id, view?)`: con `view` devuelve `result`; sin `view`, el `slice` completo + `available_views`. La evaluación de vistas necesita el manifest: los shipped lo toman del `activePlugins` del bridge, los de IA del manifest embebido en el `PluginRecord` (lógica pura en `src/plugins/views.ts`).
 
 **Contexto y motivación.** Ne-fan es open-world generativo: el motor narrativo crea entidades en runtime y, a medida que la partida deriva en una dirección no anticipada (el jugador se centra en comercio, magia, política…), hace falta materializar **sistemas completos** que el motor genérico no cubre. La opción ambiciosa (código TS real generado por el LLM en un sandbox V8/WASM) introduce infraestructura nueva y problemas de seguridad/persistencia. Esta sección describe el camino **declarativo puro**: cada plugin es un manifest JSON que un intérprete del motor en `nefan-core` ejecuta. El LLM (o un developer) describe *qué pasa cuando*, no *cómo*. El precio es expresividad acotada; el premio es sandbox automático, saves deterministas y migración por construcción.
 
@@ -274,8 +275,8 @@ Cada fase es ejecutable de forma independiente y deja el código en estado coher
 | **F2 — Validador del DSL** ✅ | `dsl/evaluate.ts` con predicados, paths, efectos. Tests unitarios sobre fixtures hardcoded. Sin integración aún. | M |
 | **F3 — Loader de plugins de developer** ✅ | Lectura de `data/games/{gameId}/plugins/*.json` en `start_session`. Validación de hash. Ejecución de `projections` iniciales. | S |
 | **F4 — Dispatcher integrado** ✅ | Cola serial + prioridades en el bridge. Eventos del core ofrecidos a plugins. Efectos aplicados a slices. Tests end-to-end con un plugin "test_counter" trivial. | M |
-| **F5 — Tool MCP `plugin_register`** | Validación, fixtures dry-run, persistencia en `NarrativeState`. Plugin emergido sobrevive `save/load`. | M |
-| **F6 — `serializeForLlm` + `plugin_inspect`** | `derived_views` proyectados al contexto. Tool `plugin_inspect(id, view)` para detalle. | S |
+| **F5 — Tool MCP `plugin_register`** ✅ | Validación, fixtures dry-run, persistencia en `NarrativeState`. Plugin emergido sobrevive `save/load`. | M |
+| **F6 — `serializeForLlm` + `plugin_inspect`** ✅ | `derived_views` proyectados al contexto (bloque `plugins[]`). Tool `plugin_inspect(plugin_id, view?)` + endpoint `GET /plugins/{id}/inspect` para detalle (vista o slice completo). | S |
 | **F7 — Evolución + `migrate`** | Detección v→v+1, replay de fixtures de la nueva versión, ejecución de `migrate`. | M |
 | **F8 — Plugin `commerce` real** | Manifest commerce v1 como prueba de concepto end-to-end. Documentar el patrón. | M |
 

@@ -4,6 +4,66 @@ import { z } from 'zod';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, type BridgeResult } from './bridge-http-client.js';
 
+/** Pre-flight check of a narrative_event response (kind === 'narrative_event')
+ *  BEFORE it is forwarded to the Python ai_server. The ai_server applies the
+ *  same strict rules (ai_server/narrative_schemas.py:validate_narrative_reaction)
+ *  and returns HTTP 422 on any deviation — but that rejection never reaches this
+ *  MCP session, so narrative_respond would report success while the player sees
+ *  nothing. Validating here gives the engine the precise error so it can fix the
+ *  shape and resend. Keep this mirror in sync with the Python validator. */
+function validateNarrativeReaction(data: unknown): { ok: true } | { ok: false; error: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
+  }
+  const raw = (data as Record<string, unknown>).consequences;
+  if (!Array.isArray(raw)) {
+    return { ok: false, error: 'payload missing list `consequences`' };
+  }
+  if (raw.length > 4) {
+    return { ok: false, error: `returned ${raw.length} consequences, max is 4` };
+  }
+  const validTypes = new Set(['dialogue', 'story_update', 'spawn_entity', 'schedule_event', 'plugin_event', 'noop']);
+  const validKinds = new Set(['npc', 'building', 'object']);
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  for (let idx = 0; idx < raw.length; idx++) {
+    const c = raw[idx];
+    if (typeof c !== 'object' || c === null || Array.isArray(c)) {
+      return { ok: false, error: `consequence[${idx}] is not an object` };
+    }
+    const o = c as Record<string, unknown>;
+    const t = o.type;
+    if (typeof t !== 'string' || !validTypes.has(t)) {
+      return { ok: false, error: `consequence[${idx}].type='${String(t)}' is invalid; allowed: ${[...validTypes].sort().join(', ')}` };
+    }
+    if (t === 'noop') continue;
+    if (t === 'dialogue') {
+      if (!str(o.speaker)) return { ok: false, error: `dialogue[${idx}] missing required field \`speaker\`` };
+      if (!str(o.text)) return { ok: false, error: `dialogue[${idx}] missing required field \`text\`` };
+      if (o.choices !== undefined && o.choices !== null) {
+        if (!Array.isArray(o.choices)) return { ok: false, error: `dialogue[${idx}].choices must be a list` };
+        const trimmed = o.choices.map(str).filter(Boolean);
+        if (trimmed.length > 3) return { ok: false, error: `dialogue[${idx}].choices has ${trimmed.length} entries, max is 3` };
+      }
+    } else if (t === 'story_update') {
+      if (!str(o.delta)) return { ok: false, error: `story_update[${idx}] missing required field \`delta\` (non-empty string)` };
+    } else if (t === 'spawn_entity') {
+      if (typeof o.entity_kind !== 'string' || !validKinds.has(o.entity_kind)) {
+        return { ok: false, error: `spawn_entity[${idx}].entity_kind='${String(o.entity_kind)}' invalid; allowed: ${[...validKinds].sort().join(', ')}` };
+      }
+      if (!str(o.description)) return { ok: false, error: `spawn_entity[${idx}] missing required field \`description\`` };
+    } else if (t === 'schedule_event') {
+      if (!str(o.description)) return { ok: false, error: `schedule_event[${idx}] missing required field \`description\`` };
+    } else if (t === 'plugin_event') {
+      if (!str(o.plugin_id)) return { ok: false, error: `plugin_event[${idx}] missing required field \`plugin_id\`` };
+      if (!str(o.event_type)) return { ok: false, error: `plugin_event[${idx}] missing required field \`event_type\`` };
+      if (o.payload !== undefined && (typeof o.payload !== 'object' || o.payload === null || Array.isArray(o.payload))) {
+        return { ok: false, error: `plugin_event[${idx}].payload must be an object` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
 async function main() {
   const bridge = await WsBridge.create();
 
@@ -205,6 +265,14 @@ CRITICAL — when free_text is non-empty:
 - The scripted scenario is PAUSED waiting for you. You MUST respond with at
   least one \`dialogue\` consequence so a visible NPC reacts in-world and the
   player sees something happen. Stay in character for the setting.
+- A \`story_update\` ALONE is NOT a valid answer here: it only writes a
+  3rd-person line to the log and the dialogue UI never opens, so the player
+  sees nothing to interact with. Always include the \`dialogue\` consequence
+  (you may ADD a story_update alongside it, never instead of it).
+- APPROACH/GREETING: if chosen_text marks the player walking up to an NPC
+  (e.g. "(el jugador se acerca y saluda)") or free_text is just a greeting,
+  open with that NPC SPEAKING in first person via a \`dialogue\` consequence
+  (speaker = the NPC you received). Do not merely narrate that they speak.
 - Write the dialogue text in the SAME LANGUAGE the player used in free_text
   (Spanish for Spanish, English for English, etc.).
 - The dialogue \`speaker\` should be an NPC already in \`entities\` — reuse
@@ -339,8 +407,24 @@ validator.`,
         }
 
         const parsed = JSON.parse(room_data);
-        const reqId = currentRequestId;
         const kind = currentKind;
+
+        // Pre-flight: validar la forma de las consequences ANTES de reenviar.
+        // El ai_server aplica las mismas reglas y devuelve 422, pero ese
+        // rechazo no vuelve a esta sesión. Si falla, NO limpiamos la petición
+        // pendiente: la sesión corrige la forma y vuelve a llamar a
+        // narrative_respond sobre el mismo request_id.
+        if (kind === 'narrative_event') {
+          const check = validateNarrativeReaction(parsed);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid consequences — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
+
+        const reqId = currentRequestId;
         currentRequestId = null;
         currentKind = 'room';
 
@@ -467,6 +551,74 @@ validator.`,
         place_id,
         trigger: { id: trigger_id, when, consequences },
       }));
+    },
+  );
+
+  server.tool(
+    'plugin_list',
+    `List the declarative plugins active in the current session: id, name, ` +
+    `version, description, events_consumed (types you can target with a ` +
+    `plugin_event consequence), events_produced and derived_views (names you ` +
+    `can pass to plugin_inspect for detail). Check this before emitting ` +
+    `plugin_event or registering a new plugin with plugin_register. Note: a ` +
+    `compact summary of each plugin (its derived_views) is already injected in ` +
+    `your narrative context — use plugin_inspect only for deeper detail.`,
+    {},
+    async () => reportBridge(await bridgeGet('/plugins')),
+  );
+
+  server.tool(
+    'plugin_register',
+    `Register and activate a declarative plugin for this session. A plugin is ` +
+    `a pure-JSON manifest the game engine interprets: it owns a state slice, ` +
+    `consumes events (when-predicate → effects) and can read/write declared ` +
+    `external paths. Use it when the story repeatedly needs a SYSTEM the core ` +
+    `engine doesn't model (commerce, reputation, crafting, ...) instead of ` +
+    `hand-narrating its bookkeeping. The manifest is validated (zod shape, ` +
+    `static path/permission analysis) and EVERY fixture is replayed before ` +
+    `activation — at least one fixture {before, event, after} is required; if ` +
+    `anything fails the registration is rejected with the reason. On success ` +
+    `the plugin survives save/load (manifest persisted in the session) and you ` +
+    `can drive it with {"type": "plugin_event", "plugin_id", "event_type", ` +
+    `"payload"} consequences. Required manifest fields: version (int ≥ 1), ` +
+    `name, description, origin {author: "narrative_engine", rationale}, slice ` +
+    `{schema, initial}, plus reads/writes/events_consumed/events_produced/` +
+    `projections/derived_views/fixtures as needed. Writes outside your slice ` +
+    `must be declared in "writes" and only player.gold|health|level|inventory ` +
+    `and entities[i].data.* are accepted. In DSL strings, a bare string whose ` +
+    `root is one of event/slice/world/player/entities/plugins/_/entity/acc is ` +
+    `a PATH; anything else is a literal ('single quotes' or {"$lit": ...} ` +
+    `force literals).`,
+    {
+      manifest_json: z.string().describe('The full PluginManifest as a JSON string. Omit "id" — the engine computes it (sha256 of the canonical manifest).'),
+    },
+    async ({ manifest_json }) => {
+      let manifest: unknown;
+      try {
+        manifest = JSON.parse(manifest_json);
+      } catch {
+        return { content: [{ type: 'text', text: 'manifest_json is not valid JSON' }], isError: true };
+      }
+      return reportBridge(await bridgePost('/plugins/register', { manifest }));
+    },
+  );
+
+  server.tool(
+    'plugin_inspect',
+    `Inspect an active plugin in detail. The narrative context (serializeForLlm) ` +
+    `already carries a compact summary of every active plugin via its ` +
+    `derived_views — use THIS tool only when you need more than that summary. ` +
+    `Call with a 'view' (one of the plugin's derived_views) to get that view's ` +
+    `full evaluated value; call without 'view' to get the plugin's complete raw ` +
+    `state slice plus the list of available views. Use plugin_list first to get ` +
+    `the plugin_id and the names of its derived_views.`,
+    {
+      plugin_id: z.string().describe('The id of an active plugin (from plugin_list).'),
+      view: z.string().optional().describe('Optional derived_view name; omit to get the full slice.'),
+    },
+    async ({ plugin_id, view }) => {
+      const qs = view ? `?view=${encodeURIComponent(view)}` : '';
+      return reportBridge(await bridgeGet(`/plugins/${encodeURIComponent(plugin_id)}/inspect${qs}`));
     },
   );
 
