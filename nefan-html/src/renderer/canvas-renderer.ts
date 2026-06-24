@@ -56,9 +56,22 @@ export interface Entity {
 }
 
 const DEFAULT_TERRAIN_COLOR = "#1d2a18";
+/** Open field painted across the whole viewport so the world feels continuous
+ *  beyond the authored scene rectangle (no black void at the edges). */
+const OPEN_FIELD_COLOR = "#16210f";
+/** Subtle border around the authored scene rectangle — the "plate" of geometry
+ *  on which AI-generated images are later layered. */
+const SCENE_PLATE_BORDER = "rgba(120,140,90,0.25)";
 const GRID_COLOR = "#2a2a25";
 const PLAYER_COLOR = "#4a9";
 const NPC_COLOR = "#68c";
+
+/** Radio de un personaje en METROS. Coincide con PLAYER_RADIUS (colisión) en
+ *  main.ts: dibujamos el cuerpo a su tamaño real de mundo en vez de un valor en
+ *  píxeles fijo, para que escale coherente con los objetos (que van en
+ *  metros·scale) y con cualquier zoom futuro. Un humano ~0.4m de radio queda
+ *  legiblemente mayor que un taburete (~0.5m de lado). */
+const CHARACTER_RADIUS_M = 0.4;
 
 const CATEGORY_FILL: Record<string, string> = {
   building: "#5a4a38",
@@ -131,9 +144,8 @@ export class CanvasRenderer {
 
   setScene(data: SceneData): void {
     this.sceneData = data;
-    // Centra el terrain en el canvas.
-    this.offsetX = this.canvas.width / 2;
-    this.offsetY = this.canvas.height / 2;
+    // La cámara sigue al jugador (offset recomputado por frame en render()).
+    // No se fija aquí: una escena abierta no se centra estáticamente.
   }
 
   getSceneData(): SceneData | null {
@@ -164,7 +176,22 @@ export class CanvasRenderer {
     const w = this.canvas.width;
     const h = this.canvas.height;
 
-    ctx.fillStyle = "#111";
+    // Cámara que sigue al jugador: lo deja centrado y el mundo hace scroll.
+    // Sustituye al offset fijo; es lo que hace el espacio "abierto y continuo"
+    // (paridad con godot/scripts/player/camera_controller.gd).
+    //
+    // Offset en coma flotante (NO redondeado): el jugador se mueve en fracciones
+    // de píxel por frame, así que redondear la cámara a píxeles enteros la obliga
+    // a saltar de entero en entero a intervalos irregulares — el "salto" visible
+    // pese a un movimiento físicamente suave. Con offset float el mundo scrollea
+    // de forma continua; el grid sutil se antialias a subpíxel (imperceptible).
+    // Ref: jitter de cámara pixel-art = cuantización del offset, no del input.
+    this.offsetX = w / 2 - player.pos.x * this.scale;
+    this.offsetY = h / 2 - player.pos.z * this.scale;
+
+    // Suelo abierto en todo el viewport: fuera de la escena no hay vacío negro,
+    // sino campo que se extiende (sensación de mundo continuo, sin chunks).
+    ctx.fillStyle = OPEN_FIELD_COLOR;
     ctx.fillRect(0, 0, w, h);
 
     if (!this.sceneData) return;
@@ -172,24 +199,38 @@ export class CanvasRenderer {
     const halfW = dims.width / 2;
     const halfD = dims.depth / 2;
 
-    // Terrain (rectángulo coloreado — sustituye al "floor" y a las "walls").
+    // Placa de escena: el rectángulo autorizado por el motor donde irán las
+    // imágenes IA. Sigue visible (con su color de terreno + borde sutil), pero
+    // ya no es el límite del mundo.
     const [fx, fy] = this.toScreen(-halfW, -halfD);
     const fw = dims.width * this.scale;
     const fh = dims.depth * this.scale;
     const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
     ctx.fillStyle = terrainColor;
     ctx.fillRect(fx, fy, fw, fh);
+    ctx.strokeStyle = SCENE_PLATE_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(fx, fy, fw, fh);
 
-    // Grid suave: orientación rápida sobre dónde está el player.
+    // Grid continuo en world-space visible (no acotado a dimensions): da
+    // orientación uniforme sobre campo + placa y refuerza la continuidad.
     ctx.strokeStyle = GRID_COLOR;
-    ctx.lineWidth = 0.5;
-    for (let gx = -halfW; gx <= halfW; gx++) {
-      const [sx] = this.toScreen(gx, -halfD);
-      ctx.beginPath(); ctx.moveTo(sx, fy); ctx.lineTo(sx, fy + fh); ctx.stroke();
+    // 1px sólido (no 0.5): con cámara float las líneas caen en posiciones
+    // subpíxel; una línea <1px titilaría en opacidad al cruzar bordes de píxel,
+    // una de 1px solo se antialias y desliza limpia.
+    ctx.lineWidth = 1;
+    const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
+    const wl = Math.floor((-this.offsetX) / this.scale / step) * step;
+    const wr = (w - this.offsetX) / this.scale;
+    for (let gx = wl; gx <= wr; gx += step) {
+      const [sx] = this.toScreen(gx, 0);
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
     }
-    for (let gz = -halfD; gz <= halfD; gz++) {
-      const [, sy] = this.toScreen(-halfW, gz);
-      ctx.beginPath(); ctx.moveTo(fx, sy); ctx.lineTo(fx + fw, sy); ctx.stroke();
+    const wt = Math.floor((-this.offsetY) / this.scale / step) * step;
+    const wb = (h - this.offsetY) / this.scale;
+    for (let gz = wt; gz <= wb; gz += step) {
+      const [, sy] = this.toScreen(0, gz);
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
     }
 
     // Luces ambientales pintadas como halos suaves.
@@ -307,7 +348,9 @@ export class CanvasRenderer {
   }): void {
     const ctx = this.ctx;
     const [px, py] = this.toScreen(player.pos.x, player.pos.z);
-    const r = 10;
+    // Cuerpo a tamaño de mundo (= su hitbox). Floor de 10px para que sea
+    // visible aunque la escala baje mucho.
+    const r = Math.max(10, CHARACTER_RADIUS_M * this.scale);
 
     // Two explicit modes — never a fallback chain. The caller decides which:
     //   sprite === undefined → primary path is the circle.
@@ -319,13 +362,13 @@ export class CanvasRenderer {
     if (player.sprite === undefined) {
       ctx.fillStyle = PLAYER_COLOR;
       ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-      const fLen = 18;
+      const fLen = r + 8;
       const fx = px + player.forward.x * fLen;
       const fy = py + player.forward.z * fLen;
       ctx.strokeStyle = PLAYER_COLOR;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(fx, fy); ctx.stroke();
-      hpBarY = py - 16;
+      hpBarY = py - (r + 6);
     } else {
       const drew = this.drawSprite(player.sprite, player.forward, px, py);
       hpBarY = py - (drew ? 70 : 16);
@@ -368,7 +411,7 @@ export class CanvasRenderer {
 
   private drawCreatureMarker(cx: number, cy: number, e: Entity): void {
     const ctx = this.ctx;
-    const r = Math.max(6, e.radius);
+    const r = Math.max(CHARACTER_RADIUS_M * this.scale, e.radius);
     ctx.fillStyle = e.attacking ? "#ff4" : (e.color || CATEGORY_FILL.creature);
     ctx.strokeStyle = CATEGORY_STROKE.creature;
     ctx.lineWidth = 1.5;
@@ -392,7 +435,7 @@ export class CanvasRenderer {
   private drawNpc(npc: Entity): void {
     const [nx, ny] = this.toScreen(npc.pos.x, npc.pos.z);
     const ctx = this.ctx;
-    const r = Math.max(6, npc.radius);
+    const r = Math.max(CHARACTER_RADIUS_M * this.scale, npc.radius);
     ctx.fillStyle = NPC_COLOR;
     ctx.strokeStyle = "#a5cef0";
     ctx.lineWidth = 1.5;
