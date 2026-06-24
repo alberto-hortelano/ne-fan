@@ -4,6 +4,7 @@
 import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
+import { formatDToWorld } from "../../nefan-core/src/scene/scene-normalize.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
@@ -36,8 +37,12 @@ const sceneModules: Record<string, () => Promise<{ default: Record<string, unkno
     .glob("../../nefan-core/data/scenes/**/*.json");
 
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
-const SPEED = playerCfg.walk_speed ?? 3.0;
-const SPRINT_SPEED = playerCfg.sprint_speed ?? 5.5;
+// La vista cenital 2D necesita un ritmo más arcade que el walk_speed realista
+// (1.9 m/s) que comparte el Godot 3D en tercera persona. Multiplicador propio
+// del cliente 2D para no alterar el config compartido (rompería el feel 3D).
+const TOPDOWN_SPEED_SCALE = 2.2;
+const SPEED = (playerCfg.walk_speed ?? 3.0) * TOPDOWN_SPEED_SCALE;
+const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * TOPDOWN_SPEED_SCALE;
 
 /** Player visual state. When CONFIG.graphics.player_sprites is false the
  *  player is drawn as a coloured circle and these stay null. When true,
@@ -143,6 +148,16 @@ let playerMaxHp = 100;
 let playerWeaponId = "short_sword";
 let sceneData: Record<string, unknown> | null = null;
 let scenarioActive = false;
+/** Salidas del world-map de la escena actual (las adjunta el bridge). Se usan
+ *  para la transición continua al cruzar un borde. */
+let currentExits: SceneExit[] = [];
+/** Cuando el jugador sale por un borde, se anota aquí el lado de SALIDA; la
+ *  siguiente escena coloca al jugador en el borde OPUESTO (entra caminando, sin
+ *  teletransporte al origen). null ⇒ usar __player_start / origen. */
+let pendingEntryEdge: "north" | "south" | "east" | "west" | null = null;
+/** Debounce para no disparar la transición de borde varias veces mientras llega
+ *  la escena nueva. */
+let edgeTransitionUntil = 0;
 
 // Entity arrays
 let enemyEntities: Entity[] = [];
@@ -207,125 +222,38 @@ async function loadSceneFile(globKey: string): Promise<void> {
   await loadSceneData(mod.default);
 }
 
-/** Detecta si `data` viene en Map Format D (size.cols + terrain como array de
- *  strings + entities con cell/footprint) y, si es así, lo convierte al
- *  formato que el canvas-renderer ya entiende (`dimensions` + `objects[]` +
- *  `npcs[]` con position/scale en metros). Si no es D, lo devuelve tal cual. */
-function normalizeSceneFormatD(raw: Record<string, unknown>): Record<string, unknown> {
-  const size = raw.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
-  const terrain = raw.terrain;
-  const entities = raw.entities;
-  const isFormatD =
-    !!size && typeof size.cols === "number" && typeof size.rows === "number" &&
-    Array.isArray(terrain) && terrain.every(r => typeof r === "string") &&
-    Array.isArray(entities);
-
-  if (!isFormatD) return raw;
-
-  const cols = size!.cols!;
-  const rows = size!.rows!;
-  const mpc = size!.meters_per_cell ?? 2;
-  const halfW = (cols * mpc) / 2;
-  const halfD = (rows * mpc) / 2;
-
-  type FormatDEntity = {
-    id: string; kind: string; name: string;
-    cell: [number, number]; footprint: [number, number]; glyph?: string;
-    texture_hash?: string; model_hash?: string;
-  };
-
-  const objects: Record<string, unknown>[] = [];
-  const npcs: Record<string, unknown>[] = [];
-  let playerStart: { x: number; z: number } | null = null;
-
-  const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item"]);
-  for (let i = 0; i < entities.length; i++) {
-    const ent = (entities as FormatDEntity[])[i];
-    if (!ent) throw new Error(`scene entities[${i}] is null/undefined`);
-    if (!ent.id) throw new Error(`scene entities[${i}] missing id`);
-    if (!VALID_KINDS.has(ent.kind)) {
-      throw new Error(`scene entities[${i}] (${ent.id}) has invalid kind="${ent.kind}"; expected one of ${[...VALID_KINDS]}`);
-    }
-    if (!Array.isArray(ent.cell) || ent.cell.length < 2) {
-      throw new Error(`scene entities[${i}] (${ent.id}) missing cell [col,row]`);
-    }
-    if (!Array.isArray(ent.footprint) || ent.footprint.length < 2) {
-      throw new Error(`scene entities[${i}] (${ent.id}) missing footprint [w,h]`);
-    }
-    const [c, r] = ent.cell;
-    const [w, h] = ent.footprint;
-    if (![c, r, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) {
-      throw new Error(`scene entities[${i}] (${ent.id}) cell/footprint must be finite numbers, got cell=[${c},${r}] fp=[${w},${h}]`);
-    }
-    // Centro del footprint en coordenadas mundo (origin = centro del mapa).
-    const x = (c + w / 2) * mpc - halfW;
-    const z = (r + h / 2) * mpc - halfD;
-
-    if (ent.kind === "player") {
-      playerStart = { x, z };
-      continue;
-    }
-    if (ent.kind === "npc") {
-      if (!ent.name) {
-        throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
-      }
-      npcs.push({
-        id: ent.id,
-        name: ent.name,
-        position: [x, 0, z],
-      });
-      continue;
-    }
-    // building / prop / tree / item: tree maps to prop visually.
-    const category = (ent.kind === "tree") ? "prop" : ent.kind;
-    if (!ent.name) {
-      throw new Error(`scene entities[${i}] (${ent.id}) missing name`);
-    }
-    const obj: Record<string, unknown> = {
-      id: ent.id,
-      position: [x, 0, z],
-      scale: [w * mpc, 1, h * mpc],
-      category,
-      description: ent.name,
-    };
-    if (ent.texture_hash) obj.texture_hash = ent.texture_hash;
-    if (ent.model_hash)   obj.model_hash = ent.model_hash;
-    objects.push(obj);
-  }
-
-  return {
-    scene_id: raw.scene_id ?? raw.room_id,
-    room_id: raw.scene_id ?? raw.room_id,
-    scene_description: raw.scene_description ?? raw.room_description ?? "",
-    room_description: raw.scene_description ?? raw.room_description ?? "",
-    dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
-    terrain: { color: [0.18, 0.22, 0.14] },
-    objects,
-    npcs,
-    ambient_event: raw.ambient_event,
-    // El bridge adjunta las salidas del world map; el renderer las ignora pero
-    // loadSceneData las pasa al TravelPanel.
-    exits: raw.exits,
-    // Metadatos para el cliente — el renderer los ignora.
-    __player_start: playerStart,
-    __format_d: raw,
-  };
-}
-
 /** Apply an already-resolved scene JSON to the renderer + game client.
  *  Used tanto por el dropdown de escenarios locales como por el flujo narrativo
  *  (start_session / resume_session). Acepta el campo legacy `room_id` para
  *  saves antiguos. */
 async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
-  const data = normalizeSceneFormatD(rawData);
+  const data = formatDToWorld(rawData);
   sceneData = data;
   scenarioActive = false;
 
   renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
 
-  // Reset player — si la escena trae __player_start (Format D), aplicarlo.
+  // Posición de entrada. Tres casos, en orden de prioridad:
+  //  1) pendingEntryEdge: venimos de cruzar un borde → entramos por el lado
+  //     OPUESTO preservando la posición lateral (transición continua, sin
+  //     teletransporte al origen).
+  //  2) __player_start: la escena Format D trae un punto de entrada explícito.
+  //  3) origen (carga directa / save antiguo).
+  const dims = data.dimensions as { width: number; depth: number } | undefined;
   const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
-  if (playerStart) {
+  if (pendingEntryEdge && dims) {
+    const halfW = dims.width / 2;
+    const halfD = dims.depth / 2;
+    const inset = 1.5;
+    const clampLat = (v: number, half: number) => Math.max(-half + inset, Math.min(half - inset, v));
+    switch (pendingEntryEdge) {
+      case "north": playerPos.z = halfD - inset; playerPos.x = clampLat(playerPos.x, halfW); break; // salió al N → entra por el S
+      case "south": playerPos.z = -halfD + inset; playerPos.x = clampLat(playerPos.x, halfW); break;
+      case "east":  playerPos.x = -halfW + inset; playerPos.z = clampLat(playerPos.z, halfD); break; // salió al E → entra por el O
+      case "west":  playerPos.x = halfW - inset;  playerPos.z = clampLat(playerPos.z, halfD); break;
+    }
+    pendingEntryEdge = null;
+  } else if (playerStart) {
     playerPos.x = playerStart.x;
     playerPos.z = playerStart.z;
   } else {
@@ -436,8 +364,10 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   // Build enemy HP bars
   rebuildEnemyBars();
 
-  // Travel panel — el bridge adjunta `exits` (salidas del world map).
-  travelPanel.setExits((data.exits ?? []) as SceneExit[]);
+  // Travel panel — el bridge adjunta `exits` (salidas del world map). También
+  // las guardamos para la transición continua al cruzar un borde (gameLoop).
+  currentExits = (data.exits ?? []) as SceneExit[];
+  travelPanel.setExits(currentExits);
 
   // Notify game client (load_room sigue siendo el mensaje del protocolo —
   // sólo el cliente HTML ya no piensa en "salas").
@@ -462,6 +392,10 @@ function rebuildEnemyBars(): void {
 
 // --- Collision ---
 const PLAYER_RADIUS = 0.4;
+/** El jugador puede salir del rectángulo de escena hasta este margen (metros)
+ *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
+ *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
+const EDGE_MARGIN = 6;
 
 /** AABB collision of the player (inflated point) against solid scene objects.
  *  Items are walkable; only buildings and props block. */
@@ -732,14 +666,37 @@ function gameLoop(now: number): void {
       if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Clamp al borde del terrain (los bounds de la escena open-world).
+    // Borde blando: ya no hay jaula. El jugador sale del rectángulo de escena
+    // al campo abierto hasta EDGE_MARGIN metros. Al alcanzar ese tope:
+    //  - si el lado cruzado tiene una salida del world-map (caso lineal: una
+    //    sola salida), se dispara una transición CONTINUA al lugar vecino y se
+    //    anota el lado para entrar por el borde opuesto (sin teletransporte).
+    //  - si no hay salida (o hay varias, ambiguas), sólo se retiene al jugador
+    //    (la "pared" existe sólo donde el mundo no continúa; el TravelPanel
+    //    sigue disponible para elegir destino).
     if (sceneData) {
       const dims = sceneData.dimensions as { width: number; depth: number };
       if (dims) {
-        const halfW = dims.width / 2 - 0.3;
-        const halfD = dims.depth / 2 - 0.3;
-        playerPos.x = Math.max(-halfW, Math.min(halfW, playerPos.x));
-        playerPos.z = Math.max(-halfD, Math.min(halfD, playerPos.z));
+        const limX = dims.width / 2 + EDGE_MARGIN;
+        const limD = dims.depth / 2 + EDGE_MARGIN;
+        // Lado cruzado (eje dominante). +x=este, -x=oeste, +z=sur, -z=norte.
+        let crossed: "north" | "south" | "east" | "west" | null = null;
+        if (playerPos.x > limX) crossed = "east";
+        else if (playerPos.x < -limX) crossed = "west";
+        else if (playerPos.z > limD) crossed = "south";
+        else if (playerPos.z < -limD) crossed = "north";
+        // Soft-clamp: nunca se sale más allá del tope.
+        playerPos.x = Math.max(-limX, Math.min(limX, playerPos.x));
+        playerPos.z = Math.max(-limD, Math.min(limD, playerPos.z));
+
+        if (crossed && activeSessionId && currentExits.length === 1 && now >= edgeTransitionUntil) {
+          edgeTransitionUntil = now + 8000;
+          pendingEntryEdge = crossed;
+          const exit = currentExits[0];
+          showLoader("Viajando...", `Hacia ${exit.name}`);
+          narrativeClient.enterPlace(exit.place_id);
+          log(`Saliendo hacia ${exit.name}...`);
+        }
       }
     }
   }
@@ -1057,9 +1014,60 @@ narrativeClient.onNarrativeStatus((status) => {
   }
 });
 
+/** Materializa un `spawn_entity` del motor narrativo EN LA ESCENA VIVA, sin
+ *  recargar (Task 13 — paridad con godot/scripts/main.gd:_apply_spawn_entity_
+ *  consequence). El `position` ya viene resuelto en metros mundo por el bridge
+ *  (consequence-handler.ts:resolvePositionHint, relativo al jugador). NPCs van a
+ *  npcEntities (interactuables con E); building/object a objectEntities con
+ *  `sizeXZ` para que sean sólidos (collidesAt) y dibujables (drawSceneBox), que
+ *  es la "geometría base" sobre la que luego se superponen imágenes IA. */
+function materializeSpawn(effect: {
+  entityId: string;
+  entityKind: "npc" | "object" | "building";
+  description: string;
+  name?: string;
+  position: [number, number, number];
+  data: Record<string, unknown>;
+}): void {
+  const [x, y, z] = effect.position;
+  const pos: Vec3 = { x, y, z };
+  const label = (effect.name ?? effect.description ?? effect.entityId).slice(0, 40);
+  const spriteHash = typeof effect.data.sprite_hash === "string" ? effect.data.sprite_hash : undefined;
+
+  if (effect.entityKind === "npc") {
+    npcEntities.push({
+      id: effect.entityId,
+      pos,
+      forward: { x: 0, y: 0, z: -1 },
+      radius: 7,
+      color: "#68c",
+      label,
+      name: effect.name ?? effect.entityId,
+      alive: true,
+      category: "creature",
+      spriteHash,
+    });
+    log(`✨ ${effect.name ?? "NPC"} aparece`);
+    return;
+  }
+
+  // building / object: caja sólida colocada en la escena actual.
+  const isBuilding = effect.entityKind === "building";
+  objectEntities.push({
+    id: effect.entityId,
+    pos,
+    radius: isBuilding ? 8 : 5,
+    color: isBuilding ? "#5a4a38" : "#666",
+    label,
+    alive: true,
+    category: isBuilding ? "building" : "prop",
+    sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },
+    spriteHash,
+  });
+  log(`✨ ${isBuilding ? "edificio" : "objeto"}: ${label}`);
+}
+
 narrativeClient.onNarrativeEvent((event) => {
-  // Minimum viable handler: log everything to the combat log.
-  // Task 13 will wire each effect to dialogue/spawns/story HUD.
   for (const effect of event.effects) {
     switch (effect.kind) {
       case "show_dialogue":
@@ -1071,9 +1079,10 @@ narrativeClient.onNarrativeEvent((event) => {
         log(`📖 ${effect.delta.slice(0, 80)}`);
         break;
       case "spawn_entity": {
-        // The bridge wraps a freshly generated scene in a spawn_entity effect
-        // with `data.scene` (see ws-server.ts start_session handler). Treat
-        // that as a "load scene" instruction; everything else is just a log.
+        // El bridge envuelve una escena recién generada en un spawn_entity con
+        // `data.scene` (ws-server.ts start_session): eso es "cargar escena".
+        // Un spawn_entity SIN `data.scene` es una entidad suelta que se
+        // materializa in-place en la escena viva (Task 13).
         const scene = (effect.data as Record<string, unknown> | undefined)?.scene as
           | Record<string, unknown>
           | undefined;
@@ -1081,7 +1090,7 @@ narrativeClient.onNarrativeEvent((event) => {
           void loadSceneData(scene);
           log(`🌍 escena cargada: ${effect.entityId}`);
         } else {
-          log(`✨ spawn ${effect.entityKind}: ${effect.description.slice(0, 60)}`);
+          materializeSpawn(effect);
         }
         break;
       }
