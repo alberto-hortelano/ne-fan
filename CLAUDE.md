@@ -297,7 +297,7 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
-## Plugins declarativos (next.md §7 — F1–F7 implementadas)
+## Plugins declarativos (next.md §7 — F1–F8 completas)
 
 Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
 
@@ -308,8 +308,9 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **Génesis por IA (F5)**: tools MCP `plugin_register` (manifest JSON → `POST /plugins/register` del state API → `registerRuntimePlugin`: zod + hash + validación estática + replay de fixtures, **al menos una obligatoria** en runtime) y `plugin_list` (`GET /plugins`). El manifest queda embebido en el save (`PluginRecord.manifest`) y el resume lo rebindea sin archivo en disco.
 - **Visibilidad para el motor narrativo (F6)**: `serializeForLlm()` añade un bloque `plugins: [{id, name, version, views}]` con las `derived_views` de cada plugin activo evaluadas (resumen, no el slice entero); una vista que lance se marca `{_error}` sin tumbar el turno. La tool MCP `plugin_inspect(plugin_id, view?)` (→ `GET /plugins/{id}/inspect?view=`) da el detalle: con `view` la derived_view concreta, sin `view` el slice completo + `available_views`. Lógica pura en `src/plugins/views.ts` (`buildPluginLlmViews`/`inspectPlugin`); resuelve el manifest del `activePlugins` del bridge (shipped) o del embebido en el `PluginRecord` (IA).
 - **Evolución / migración (F7)**: en resume, si el manifest del FS sube de `version` (mismo `name`, hash distinto), `bindPluginsForResume` ejecuta la cadena `migrate[v]` (`runMigrationStep`, **slice-only**: escribir fuera de slice o emitir eventos lanza) para convertir el slice del save al shape nuevo, en vez de abortar. Las fixtures de la versión nueva ya las valida `loadGamePluginManifests` al cargar. Fail-loud ante hueco en la cadena, degradación (FS < save) o cambio sin bump de versión. El record migrado adopta id/version/slice nuevos preservando `name`/`origin`; el siguiente resume casa por id (idempotente). La guarda slice-only se duplica en `validateManifestStatic`. Evolución en runtime (vía `plugin_register` con versión mayor) aún pendiente.
+- **Commerce shipped (F8)**: plugin de ejemplo real en `nefan-core/data/games/tavern_intro/plugins/commerce.json`. El bridge lo carga/activa en `start_session`. El motor narrativo lo conduce con `plugin_event`: `market_open {market_id, name, stock}` registra un mercado en runtime (los mercaderes spawnean tras la génesis; las `projections` sólo siembran los presentes al iniciar); `trade_offered {market_id, item_id, price}` descuenta stock+oro, añade al inventario y emite `trade_completed` (no-op si falta stock u oro). Es el patrón a replicar para otros sistemas (reputación, crafting…). End-to-end en `test/plugin-commerce.test.ts`.
 - **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Ojo: el flujo Godot (bypass `load_game`) aún no ejercita plugins; viven en la sesión del bridge (`start_session`/`resume_session`).
-- **Pendiente**: F8 (plugin commerce real end-to-end) + evolución en runtime vía `plugin_register`.
+- **Pendiente** (único, opcional): evolución en runtime vía `plugin_register` (versión mayor que reemplace al plugin vigente con su `migrate`); hoy la migración sólo opera en resume.
 
 ## Sistema de combate
 
