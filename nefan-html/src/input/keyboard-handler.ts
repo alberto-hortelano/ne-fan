@@ -31,6 +31,10 @@ export class KeyboardHandler {
   /** When true, movement and combat keys are suppressed (dialogue active). */
   dialogueActive = false;
 
+  /** Intención de zoom acumulada con signo (rueda + teclas), pendiente de
+   *  consumir por el game loop. +1 ≈ un paso de acercar, -1 de alejar. */
+  private zoomAccum = 0;
+
   private onAttackTypeChanged?: (type: string) => void;
 
   constructor(canvas: HTMLCanvasElement, onAttackTypeChanged?: (type: string) => void) {
@@ -50,6 +54,9 @@ export class KeyboardHandler {
         case "d": case "arrowright": this.state.right = true; break;
         case "shift": this.state.sprint = true; break;
         case "e": this.state.interact = true; break;
+        // Zoom por teclado: + / = acercan, - aleja (un paso por pulsación).
+        case "+": case "=": this.zoomAccum += 1; break;
+        case "-": this.zoomAccum -= 1; break;
       }
       if (e.key in ATTACK_KEYS) {
         this.state.selectedAttack = ATTACK_KEYS[e.key];
@@ -78,6 +85,21 @@ export class KeyboardHandler {
         this.state.attackRequested = true;
       }
     });
+
+    // Zoom con la rueda del ratón. passive:false + preventDefault para no
+    // hacer scroll de la página. deltaY<0 (rueda arriba) = acercar.
+    // Funciona siempre (también en diálogo): es control de vista.
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      this.zoomAccum += e.deltaY < 0 ? 1 : -1;
+    }, { passive: false });
+  }
+
+  /** Devuelve la intención de zoom acumulada (con signo) y la resetea. */
+  consumeZoomDelta(): number {
+    const z = this.zoomAccum;
+    this.zoomAccum = 0;
+    return z;
   }
 
   consumeAttack(): boolean {

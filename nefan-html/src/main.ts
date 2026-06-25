@@ -131,6 +131,22 @@ const input = new KeyboardHandler(canvas, (type) => {
   });
 });
 
+// --- Zoom (px por metro) ---
+// El objetivo (zoomTarget) salta por pasos multiplicativos con la rueda/teclas;
+// currentZoom lo persigue con suavizado frame-independent (mismo patrón que la
+// cámara) y se aplica al renderer cada frame. Se persiste en localStorage.
+const ZOOM_STEP = 1.12;   // factor por paso de rueda/tecla
+const ZOOM_RATE = 12;     // velocidad de convergencia del suavizado
+const ZOOM_KEY = "nefan.zoom";
+function loadSavedZoom(): number {
+  const raw = localStorage.getItem(ZOOM_KEY);
+  const v = raw ? parseFloat(raw) : NaN;
+  return Number.isFinite(v) ? v : 40;
+}
+let zoomTarget = renderer.clampScale(loadSavedZoom());
+let currentZoom = zoomTarget;
+renderer.setScale(currentZoom);
+
 // Click attack type selection
 attackBtns.forEach(btn => {
   btn.addEventListener("click", () => {
@@ -642,6 +658,20 @@ function gameLoop(now: number): void {
   if (!gameClient) {
     requestAnimationFrame(gameLoop);
     return;
+  }
+
+  // Zoom: aplica la intención de rueda/teclas al objetivo (pasos multiplicativos,
+  // clampados por el renderer) y persigue el objetivo con suavizado exponencial
+  // frame-independent. Centrado en el jugador automáticamente (el offset de la
+  // cámara se recomputa desde scale alrededor del player cada frame).
+  const zd = input.consumeZoomDelta();
+  if (zd !== 0) {
+    zoomTarget = renderer.clampScale(zoomTarget * Math.pow(ZOOM_STEP, zd));
+    localStorage.setItem(ZOOM_KEY, String(Math.round(zoomTarget)));
+  }
+  if (Math.abs(currentZoom - zoomTarget) > 0.01) {
+    currentZoom += (zoomTarget - currentZoom) * (1 - Math.exp(-ZOOM_RATE * delta));
+    renderer.setScale(currentZoom);
   }
 
   // Movement (suppressed during dialogue)
