@@ -9,12 +9,23 @@ interface PendingResponse {
 }
 
 export class WsBridge {
-  private wss: WebSocketServer;
+  // null until the port is actually bound. Binding is LAZY by default: it
+  // happens on the first narrative_listen, NOT at process startup. This is the
+  // crux — every Claude Code instance in the project spawns its own
+  // narrative-mcp via .mcp.json, so binding (and taking over) at startup means
+  // opening ANY second terminal — even one only used for code work — steals
+  // the bridge from an active narrative session. Binding on first listen makes
+  // "the terminal that calls narrative_listen owns the bridge" the rule.
+  private wss: WebSocketServer | null = null;
+  private bindPromise: Promise<void> | null = null;
   private client: WebSocket | null = null;
 
   // Request queue: Python pushes requests, narrative_listen pops
   private requestQueue: RequestMsg[] = [];
   private requestWaiter: ((msg: RequestMsg) => void) | null = null;
+  // Rejects a narrative_listen that's waiting when this bridge gets taken over,
+  // so the displaced terminal returns a clear error instead of hanging forever.
+  private requestRejecter: ((err: Error) => void) | null = null;
 
   // MCP listener tracking: is there a Claude Code instance actively
   // calling narrative_listen? Used to fail-fast on unattended requests.
@@ -24,10 +35,50 @@ export class WsBridge {
   // Pending responses: Claude responds, Python receives
   private pendingResponses = new Map<string, PendingResponse>();
 
-  private constructor(wss: WebSocketServer) {
+  private constructor() {}
+
+  /** Create the bridge. By default the port is NOT bound yet — the first
+   *  narrative_listen binds it (see ensureBound). Set NARRATIVE_EAGER_BIND to
+   *  bind immediately: used by the start.sh placeholder so its wait_for_port
+   *  passes and the port is held until a Claude Code terminal takes over. */
+  static async create(): Promise<WsBridge> {
+    const bridge = new WsBridge();
+    if (process.env.NARRATIVE_EAGER_BIND) {
+      await bridge.ensureBound();
+    }
+    return bridge;
+  }
+
+  /** Bind the port (taking over any existing bridge) exactly once. Concurrent
+   *  callers share the same in-flight promise; once bound it's a no-op. */
+  private ensureBound(): Promise<void> {
+    if (this.wss) return Promise.resolve();
+    if (!this.bindPromise) this.bindPromise = this.bind();
+    return this.bindPromise;
+  }
+
+  private async bind(): Promise<void> {
+    let wss: WebSocketServer;
+    try {
+      wss = await WsBridge.tryBind();
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
+        this.bindPromise = null;
+        throw err;
+      }
+      console.error(`[narrative-mcp] port ${PORT} in use — requesting takeover`);
+      await WsBridge.requestTakeover();
+      // Retry the bind: the previous owner's wss.close() may not release the
+      // port instantly, so poll briefly instead of failing on the first EADDRINUSE.
+      wss = await WsBridge.tryBindWithRetry();
+    }
+    this.attach(wss);
+  }
+
+  private attach(wss: WebSocketServer): void {
     this.wss = wss;
 
-    this.wss.on('connection', (ws) => {
+    wss.on('connection', (ws) => {
       ws.once('message', (raw) => {
         try {
           const msg: PeerMsg = JSON.parse(String(raw));
@@ -48,27 +99,28 @@ export class WsBridge {
     console.error(`[narrative-mcp] WebSocket listening on ws://localhost:${PORT}`);
   }
 
-  static async create(): Promise<WsBridge> {
-    try {
-      const wss = await WsBridge.tryBind();
-      return new WsBridge(wss);
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
-
-      console.error(`[narrative-mcp] port ${PORT} in use — requesting takeover`);
-      await WsBridge.requestTakeover();
-
-      const wss = await WsBridge.tryBind();
-      return new WsBridge(wss);
-    }
-  }
-
   private static tryBind(): Promise<WebSocketServer> {
     return new Promise((resolve, reject) => {
       const wss = new WebSocketServer({ port: PORT });
       wss.once('listening', () => resolve(wss));
       wss.once('error', (err) => reject(err));
     });
+  }
+
+  /** Bind, retrying on EADDRINUSE for a short window — the prior owner may need
+   *  a moment to release the port after its wss.close() during takeover. */
+  private static async tryBindWithRetry(attempts = 15, delayMs = 100): Promise<WebSocketServer> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await WsBridge.tryBind();
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+        lastErr = err;
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    throw lastErr;
   }
 
   private static requestTakeover(): Promise<void> {
@@ -177,28 +229,33 @@ export class WsBridge {
     if (this.requestWaiter) {
       const resolve = this.requestWaiter;
       this.requestWaiter = null;
+      this.requestRejecter = null;
       resolve(msg);
     } else {
       this.requestQueue.push(msg);
     }
   }
 
-  /** Block until Python sends a request. Called by narrative_listen tool. */
-  waitForRequest(): Promise<RequestMsg> {
-    this.mcpEverConnected = true;
-    this.lastListenAt = Date.now();
+  /** Block until Python sends a request. Called by narrative_listen tool.
+   *  Binds the port lazily on first call (taking over a placeholder/idle bridge
+   *  if needed) so only a terminal that actually listens owns the bridge. */
+  async waitForRequest(): Promise<RequestMsg> {
+    await this.ensureBound();
     if (!this.mcpEverConnected) {
       console.error('[narrative-mcp] MCP listener attached');
     }
+    this.mcpEverConnected = true;
+    this.lastListenAt = Date.now();
 
     const queued = this.requestQueue.shift();
     if (queued !== undefined) return Promise.resolve(queued);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.requestWaiter = (msg: RequestMsg) => {
         this.lastListenAt = Date.now();
         resolve(msg);
       };
+      this.requestRejecter = reject;
     });
   }
 
@@ -245,9 +302,21 @@ export class WsBridge {
   }
 
   private shutdown(): void {
+    // Wake a narrative_listen that was waiting so the displaced terminal sees a
+    // clear error instead of hanging on a dead bridge.
+    if (this.requestRejecter) {
+      this.requestRejecter(new Error('bridge taken over by another Claude Code instance'));
+    }
     this.requestWaiter = null;
-    for (const ws of this.wss.clients) ws.close();
+    this.requestRejecter = null;
     this.client = null;
-    this.wss.close();
+    if (this.wss) {
+      for (const ws of this.wss.clients) ws.close();
+      this.wss.close();
+    }
+    // Reset bind state so a later narrative_listen in THIS process can re-acquire
+    // the port (take the bridge back) instead of returning a stale bound handle.
+    this.wss = null;
+    this.bindPromise = null;
   }
 }

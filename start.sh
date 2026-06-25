@@ -109,7 +109,12 @@ start_narrative_mcp() {
         echo "🛠  narrative-mcp: building..."
         ( cd "$PROJECT_DIR/narrative-mcp" && npm run build ) || return 1
     fi
-    ( cd "$PROJECT_DIR/narrative-mcp" && exec node dist/server.js ) \
+    # NARRATIVE_EAGER_BIND: this standalone instance is a port placeholder, so it
+    # must bind :3737 at startup (no narrative_listen ever drives it) to satisfy
+    # wait_for_port below. Claude-Code-spawned instances bind lazily on first
+    # narrative_listen, so opening a terminal for code work no longer steals the
+    # bridge; the narrative terminal takes over this placeholder when it listens.
+    ( cd "$PROJECT_DIR/narrative-mcp" && NARRATIVE_EAGER_BIND=1 exec node dist/server.js ) \
         >"$LOG_DIR/nefan-narrative.log" 2>&1 &
     STARTED_PIDS+=($!)
     wait_for_port "$PORT_NARR" 20 "narrative-mcp" || return 1
