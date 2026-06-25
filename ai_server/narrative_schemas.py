@@ -8,7 +8,7 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
   "scene_id": "<slug, e.g. 'tavern_clearing' or 'forest_path'>",
   "place_id": "<optional: the world-map place id this scene realizes>",
   "scene_description": "<2-3 sentences in Spanish describing the scene>",
-  "size":  { "cols": <int>, "rows": <int>, "meters_per_cell": 2 },
+  "size":  { "cols": <int>, "rows": <int>, "meters_per_cell": <0.5 interior | 2 exterior> },
   "terrain": [
     "<string of EXACTLY `cols` chars>",
     ...   // EXACTLY `rows` strings total
@@ -30,12 +30,22 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
 
 COORDINATE SYSTEM
 - Top-left is (0,0). Col grows EAST, row grows SOUTH.
-- meters_per_cell is always 2 (so a 30×20 grid is 60 m × 40 m of world).
 
-GRID SIZES (pick what suits the scene)
-- Small scene (a clearing, a cabin and surroundings): 16×10 to 24×16.
-- Town square / village: 32×24 to 48×30.
-- Big town: 48×30 to 60×40.
+SCALE — meters_per_cell (CHOOSE IT per scene; do NOT default to 2)
+- A [1,1] footprint is meters_per_cell metres across, and the player is ~0.8 m.
+  Pick meters_per_cell to match the smallest thing that matters, keeping cols/rows
+  within budget (≤ 80×60). Real size = cols × meters_per_cell.
+- INTERIOR (tavern, shop, room): meters_per_cell 0.5 → a [1,1] prop is a 0.5 m
+  stool/keg (≈ the player). Size so cols×0.5 ≈ real width: a tavern ~10×7 m ⇒
+  ~20×14 cells. The room shell is the terrain "W" border, NOT a building entity.
+- OUTDOOR small (clearing, cabin yard): meters_per_cell 2 → real ~30–50 m.
+- OUTDOOR town/village: meters_per_cell 2 → real ~60–120 m.
+
+GRID SIZES in CELLS (string budget; metres = cells × meters_per_cell)
+- Interior room: 16×12 to 28×20 (mpc 0.5 ⇒ 8–14 m).
+- Small clearing/cabin: 16×10 to 24×16 (mpc 2 ⇒ 32–48 m).
+- Town square / village: 32×24 to 48×30 (mpc 2).
+- Big town: 48×30 to 60×40 (mpc 2).
 - Never larger than 80×60.
 
 TERRAIN CHARS — reserved (you do not need to declare these in terrain_legend, but it doesn't hurt)
@@ -47,8 +57,8 @@ You may invent additional chars (lowercase letters or "~", "-", ":") and documen
 ENTITY RULES
 - Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").
 - `cell` is the TOP-LEFT of the footprint. `cell + footprint` must stay inside the grid.
-- Buildings: ONE rectangular footprint (a tavern is one rectangle, not four wall slabs). Typical size 4×3 to 8×6 cells.
-- Props are usually 1×1 (barrel, lantern, well). Carts/log piles can be 2×1 or 3×2.
+- Buildings (OUTDOOR scenes, mpc 2): ONE rectangular footprint (a tavern seen from outside is one rectangle, not four wall slabs). Typical 4×3 to 8×6 cells. Indoors there is NO building entity — you are inside it; the terrain "W" border is the wall.
+- Props are usually 1×1 (= mpc metres: 0.5 m indoors, 2 m outdoors). Indoor furniture stays 1×1/2×1; tables and counters a bit bigger. Carts/log piles 2×1 or 3×2.
 - NPCs and player are always 1×1.
 - Place NPCs at their work spot (smith near the smithy, innkeeper at the inn's door).
 - The player sits where the narrative says the player ENTERS the scene.
@@ -103,6 +113,42 @@ EXAMPLE — claro del cazador, 16 cols × 10 rows:
   ],
   "ambient_event": "Una rama cruje en algún lugar tras los pinos y el humo de la chimenea huele a pino quemado."
 }
+
+EXAMPLE — INTERIOR de taberna, 20 cols × 14 rows, meters_per_cell 0.5 (= 10×7 m).
+The wall is the terrain "W" border; stools [1,1] are 0.5 m, ≈ the player (0.8 m).
+There is NO "building" entity because we are INSIDE it.
+{
+  "scene_id": "taberna_interior",
+  "scene_description": "El interior cálido de una taberna: vigas bajas, un mostrador gastado y el fuego crepitando en un rincón. Una puerta al sur da a la calle.",
+  "size": { "cols": 20, "rows": 14, "meters_per_cell": 0.5 },
+  "terrain": [
+    "WWWWWWWWWWWWWWWWWWWW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WooooooooooooooooooW",
+    "WWWWWWWWW__WWWWWWWWW"
+  ],
+  "terrain_legend": { "W": "muro de piedra y madera", "o": "tablones gastados", "_": "umbral de la puerta" },
+  "entities": [
+    { "id": "mostrador",  "kind": "prop",  "name": "mostrador de roble",     "cell": [3, 2],  "footprint": [6, 1], "glyph": "=" },
+    { "id": "barkeep",    "kind": "npc",   "name": "Tabernero corpulento",   "cell": [6, 3],  "footprint": [1, 1], "glyph": "n" },
+    { "id": "mesa_1",     "kind": "prop",  "name": "mesa con jarras vacías", "cell": [4, 7],  "footprint": [3, 2], "glyph": "m" },
+    { "id": "taburete_1", "kind": "prop",  "name": "taburete de madera",     "cell": [4, 10], "footprint": [1, 1], "glyph": "h" },
+    { "id": "taburete_2", "kind": "prop",  "name": "taburete de madera",     "cell": [6, 10], "footprint": [1, 1], "glyph": "h" },
+    { "id": "barril_1",   "kind": "prop",  "name": "barril de cerveza",      "cell": [16, 2], "footprint": [1, 1], "glyph": "k" },
+    { "id": "player",     "kind": "player","name": "Tú",                     "cell": [9, 11], "footprint": [1, 1], "glyph": "@" }
+  ],
+  "ambient_event": "El fuego crepita y alguien arrastra un taburete por los tablones."
+}
 """
 
 GENERATE_SCENE_TOOL = {
@@ -133,7 +179,7 @@ GENERATE_SCENE_TOOL = {
                 "properties": {
                     "cols": {"type": "integer", "minimum": 12, "maximum": 80},
                     "rows": {"type": "integer", "minimum": 8, "maximum": 60},
-                    "meters_per_cell": {"type": "number", "description": "Always 2."},
+                    "meters_per_cell": {"type": "number", "description": "0.5 for interiors (furniture-scale), 2 for outdoor scenes. See system prompt."},
                 },
                 "required": ["cols", "rows", "meters_per_cell"],
             },

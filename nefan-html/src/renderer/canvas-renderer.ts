@@ -69,9 +69,19 @@ const NPC_COLOR = "#68c";
 /** Radio de un personaje en METROS. Coincide con PLAYER_RADIUS (colisión) en
  *  main.ts: dibujamos el cuerpo a su tamaño real de mundo en vez de un valor en
  *  píxeles fijo, para que escale coherente con los objetos (que van en
- *  metros·scale) y con cualquier zoom futuro. Un humano ~0.4m de radio queda
- *  legiblemente mayor que un taburete (~0.5m de lado). */
+ *  metros·scale) y con el zoom. Un humano ~0.4m de radio queda legiblemente
+ *  mayor que un taburete (~0.5m de lado). */
 const CHARACTER_RADIUS_M = 0.4;
+
+/** Límites del zoom (píxeles por metro). El default es 40; el usuario acerca
+ *  hasta 160 (~4×) y aleja hasta 12 (~0.3×). setScale clampa a este rango. */
+const MIN_SCALE = 12;
+const MAX_SCALE = 160;
+/** Tamaño base (px) del lado de una sheet de sprite que se ve bien a scale=40.
+ *  Permite que el sprite escale con el zoom: factor = this.scale / este valor.
+ *  A 40px/m el factor es 1 (tamaño actual); tunear si los sprites quedan
+ *  grandes/pequeños respecto a los círculos. */
+const SPRITE_BASE_PPM = 40;
 
 const CATEGORY_FILL: Record<string, string> = {
   building: "#5a4a38",
@@ -135,6 +145,25 @@ export class CanvasRenderer {
 
   getWorldAngle(): string {
     return this.worldAngle;
+  }
+
+  /** Nivel de zoom = píxeles por metro. El game loop lo ajusta cada frame
+   *  (suavizado) desde el input de rueda/teclas. Clampa a [MIN_SCALE, MAX_SCALE].
+   *  Todo el render (toScreen, offset de cámara, screenToWorld) deriva de scale,
+   *  así que el zoom queda centrado en el jugador sin matemática extra. */
+  setScale(pixelsPerMeter: number): void {
+    this.scale = this.clampScale(pixelsPerMeter);
+  }
+
+  getScale(): number {
+    return this.scale;
+  }
+
+  /** Clampa un valor de escala al rango válido. El game loop lo usa para
+   *  mantener el objetivo de zoom dentro de límites (evita que la rueda lo
+   *  dispare fuera de rango). */
+  clampScale(pixelsPerMeter: number): number {
+    return Math.max(MIN_SCALE, Math.min(MAX_SCALE, pixelsPerMeter));
   }
 
   private resize(): void {
@@ -348,9 +377,9 @@ export class CanvasRenderer {
   }): void {
     const ctx = this.ctx;
     const [px, py] = this.toScreen(player.pos.x, player.pos.z);
-    // Cuerpo a tamaño de mundo (= su hitbox). Floor de 10px para que sea
-    // visible aunque la escala baje mucho.
-    const r = Math.max(10, CHARACTER_RADIUS_M * this.scale);
+    // Cuerpo a tamaño de mundo (= su hitbox). Floor de 6px para que siga
+    // visible con zoom-out fuerte sin desaparecer.
+    const r = Math.max(6, CHARACTER_RADIUS_M * this.scale);
 
     // Two explicit modes — never a fallback chain. The caller decides which:
     //   sprite === undefined → primary path is the circle.
@@ -477,7 +506,12 @@ export class CanvasRenderer {
     const t = sprite.animStartedAt !== undefined
       ? (performance.now() - sprite.animStartedAt) / 1000
       : performance.now() / 1000;
-    return this.spriteRenderer.draw(this.ctx, sheet, fwd.x, fwd.z, t, cx, cy);
+    // Escala el sprite con el zoom: a scale=SPRITE_BASE_PPM el factor es 1
+    // (tamaño actual) y crece/encoge con el zoom para no desacoplarse de los
+    // círculos/objetos, que ya van en metros·scale.
+    return this.spriteRenderer.draw(this.ctx, sheet, fwd.x, fwd.z, t, cx, cy, {
+      scale: this.scale / SPRITE_BASE_PPM,
+    });
   }
 
   private drawHpBar(cx: number, cy: number, hp: number, maxHp: number, color: string): void {
