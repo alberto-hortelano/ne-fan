@@ -715,6 +715,12 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     elapsed_ms = int((time.time() - start) * 1000)
 
     scene_cache.put(body.prompt, "scene", result["scene"], context=context)
+    # Guardar también el schematic de entrada (el blueprint que pintó el cliente
+    # desde la escena del motor narrativo) para inspección/debug. Directo a disco
+    # sin registrar en el manifest: no es un asset reusable por el LLM.
+    blueprint_path = scene_cache.get_path(key, "blueprint")
+    blueprint_path.parent.mkdir(parents=True, exist_ok=True)
+    blueprint_path.write_bytes(png)
 
     return {
         "hash": key,
