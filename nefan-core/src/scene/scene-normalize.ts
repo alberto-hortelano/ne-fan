@@ -24,9 +24,15 @@ type FormatDEntity = {
   cell: [number, number];
   footprint: [number, number];
   glyph?: string;
+  /** Pista de forma para el render (box|cylinder|sphere|cone). Opcional; el
+   *  cliente 2D la usa para dibujar círculos/triángulos en el schematic. */
+  shape?: string;
   texture_hash?: string;
   model_hash?: string;
 };
+
+/** Formas válidas que el cliente entiende. `shape` inválido se ignora (cae a box). */
+const VALID_SHAPES = new Set(["box", "cylinder", "sphere", "cone"]);
 
 const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item"]);
 
@@ -102,6 +108,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       category,
       description: ent.name,
     };
+    // Forma: explícita si es válida; si no, los árboles son redondos por defecto.
+    if (ent.shape && VALID_SHAPES.has(ent.shape)) obj.shape = ent.shape;
+    else if (ent.kind === "tree") obj.shape = "cylinder";
     if (ent.texture_hash) obj.texture_hash = ent.texture_hash;
     if (ent.model_hash) obj.model_hash = ent.model_hash;
     objects.push(obj);
@@ -114,6 +123,16 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     room_description: raw.scene_description ?? raw.room_description ?? "",
     dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
     terrain: { color: [0.18, 0.22, 0.14] },
+    // El grid de terreno crudo (río/camino/puente/piedra…) para que el cliente
+    // lo pinte en el schematic en vez de un color plano. El resto lo ignora.
+    // `terrain: { color }` sigue siendo el fallback cuando esto no está.
+    terrain_grid: {
+      grid: terrain as string[],
+      legend: (raw.terrain_legend as Record<string, string>) ?? {},
+      cols,
+      rows,
+      meters_per_cell: mpc,
+    },
     objects,
     npcs,
     ambient_event: raw.ambient_event,

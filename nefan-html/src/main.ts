@@ -315,6 +315,7 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
       ? { x: scale[0], z: scale[2] }
       : undefined;
     const category = obj.category as string | undefined;
+    const shape = obj.shape as string | undefined;
     const combat = obj.combat as Record<string, unknown> | undefined;
     if (combat) {
       // Combat block exists → every field is required. The narrative engine
@@ -371,6 +372,7 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
         label: (obj.description ?? "") as string, alive: true,
         category: category ?? "prop",
         sizeXZ,
+        shape,
       };
       objectEntities.push(objectEntity);
     }
