@@ -21,7 +21,8 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
       "name":      "<spanish display name>",
       "cell":      [<col>, <row>],       // 0-indexed; top-left of footprint
       "footprint": [<width_cells>, <height_cells>],
-      "glyph":     "<one ASCII char, must be different from terrain chars>"
+      "glyph":     "<one ASCII char, must be different from terrain chars>",
+      "shape":     "box" | "cylinder" | "sphere" | "cone"   // optional; default box
     },
     ...
   ],
@@ -62,6 +63,12 @@ ENTITY RULES
 - NPCs and player are always 1×1.
 - Place NPCs at their work spot (smith near the smithy, innkeeper at the inn's door).
 - The player sits where the narrative says the player ENTERS the scene.
+
+SHAPE (optional but encouraged — hints the rendered footprint, makes better maps)
+- "cylinder": round things seen from above — barrel, well, cauldron, urn, jar, brazier, ROUND tower, fountain, column. (Trees are round by default; no need to set it.) The most common one.
+- "sphere": boulder, dome, orb, haystack.
+- "cone": tent, spire, pointed roof, pile.
+- "box" (or omit): buildings, walls, crates, tables, carts, rectangular things.
 
 GLYPH RULES (critical for ASCII debug rendering)
 - Glyph must be a SINGLE printable ASCII char.
@@ -233,6 +240,15 @@ GENERATE_SCENE_TOOL = {
                             "type": "string",
                             "description": "A single printable ASCII char, distinct from terrain chars.",
                         },
+                        "shape": {
+                            "type": "string",
+                            "enum": ["box", "cylinder", "sphere", "cone"],
+                            "description": (
+                                "Optional footprint shape hint (default box). cylinder = round "
+                                "(barrel/well/round tower/urn/fountain), sphere = boulder/dome, "
+                                "cone = tent/spire/pile, box = buildings/walls/crates."
+                            ),
+                        },
                         "texture_hash": {
                             "type": "string",
                             "description": "Optional. Reuse a cached texture by 16-char hash from available_assets.",
@@ -381,6 +397,8 @@ def validate_scene_response(data: dict) -> dict:
             "footprint": [w, h],
             "glyph": glyph,
         }
+        if ent.get("shape") in ("box", "cylinder", "sphere", "cone"):
+            clean_ent["shape"] = ent["shape"]
         if isinstance(ent.get("texture_hash"), str):
             clean_ent["texture_hash"] = ent["texture_hash"]
         if isinstance(ent.get("model_hash"), str):

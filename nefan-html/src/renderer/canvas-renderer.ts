@@ -5,6 +5,7 @@
 import type { Vec3 } from "../../../nefan-core/src/types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
+import { errors } from "../ui/error-log.js";
 
 export interface SceneData {
   /** Acepta `scene_id` o el legado `room_id` por compatibilidad de saves antiguos. */
@@ -14,12 +15,24 @@ export interface SceneData {
   room_description?: string;
   dimensions: { width: number; depth: number; height?: number };
   terrain?: { color?: [number, number, number] };
+  /** Grid de terreno crudo (Format D) para pintar zonas de suelo (río/camino/
+   *  puente/piedra…) en el schematic. Lo emite `formatDToWorld`; ausente en
+   *  escenas legacy → fallback al color plano de `terrain`. */
+  terrain_grid?: {
+    grid: string[];
+    legend: Record<string, string>;
+    cols: number;
+    rows: number;
+    meters_per_cell: number;
+  };
   objects: {
     id: string;
     position: number[];
     scale: number[];
     category: string;
     description: string;
+    /** Pista de forma para el schematic (box|cylinder|sphere|cone). Opcional. */
+    shape?: string;
     texture_hash?: string;
     sprite_hash?: string;
   }[];
@@ -48,6 +61,9 @@ export interface Entity {
   /** Footprint in metres on the XZ plane, taken from the scene JSON `scale`.
    *  Falls back to a square based on `radius` when not set. */
   sizeXZ?: { x: number; z: number };
+  /** Pista de forma para el schematic: box (rect) | cylinder/sphere (círculo) |
+   *  cone (triángulo). Ausente → rectángulo (o rombo si category==="item"). */
+  shape?: string;
   /** Optional Mixamo character reference: when set and SpriteRenderer has the
    *  matching sheet cached, the entity is drawn as a sprite instead of a circle. */
   sprite?: { model: string; anim: string; angle: string; animStartedAt?: number };
@@ -98,6 +114,37 @@ const CATEGORY_STROKE: Record<string, string> = {
   creature: "#d87a7a",
   terrain: "#5a8060",
 };
+
+/** Colores canónicos por char reservado del grid de terreno (Format D). El
+ *  schematic los pinta por celda para que el modelo de imagen vea río/camino/
+ *  puente/piedra como zonas, no un fondo plano. */
+const TERRAIN_CHAR_COLOR: Record<string, string> = {
+  g: "#2d4a32", // grass
+  w: "#2f5a86", // water / río
+  _: "#8a7a55", // path / camino
+  s: "#6b6b66", // stone / paved
+  b: "#7a5a38", // bridge (wood)
+  d: "#5a4a34", // dirt
+  a: "#b9a878", // sand
+  o: "#6a4f30", // wood / planks
+};
+
+/** Resuelve el color de una celda por el NOMBRE de la leyenda (el modelo inventa
+ *  chars con nombre español), con palabras clave. Devuelve null si no reconoce
+ *  nada → el caller usa el color de char reservado o el terreno base. */
+function terrainColorFromName(name: string): string | null {
+  const n = name.toLowerCase();
+  const has = (...ws: string[]) => ws.some((w) => n.includes(w));
+  if (has("agua", "río", "rio", "water", "pond", "estanque", "lago", "mar")) return TERRAIN_CHAR_COLOR.w;
+  if (has("puente", "bridge")) return TERRAIN_CHAR_COLOR.b;
+  if (has("camino", "sendero", "path", "road", "senda")) return TERRAIN_CHAR_COLOR._;
+  if (has("piedra", "stone", "paved", "pavimento", "adoquín", "adoquin", "losa")) return TERRAIN_CHAR_COLOR.s;
+  if (has("arena", "sand", "playa")) return TERRAIN_CHAR_COLOR.a;
+  if (has("madera", "wood", "tablón", "tablon", "plank", "dock", "muelle")) return TERRAIN_CHAR_COLOR.o;
+  if (has("tierra", "dirt", "barro", "lodo", "soil", "cultivo", "tilled")) return TERRAIN_CHAR_COLOR.d;
+  if (has("hierba", "grass", "césped", "cesped", "pasto", "prado")) return TERRAIN_CHAR_COLOR.g;
+  return null;
+}
 
 /** World-space rectangle (metres) on the XZ plane that a scene image covers.
  *  Maps 1:1 onto the collision plane — top-down, no reprojection. */
@@ -302,6 +349,10 @@ export class CanvasRenderer {
       offCtx.fillStyle = terrainColor;
       offCtx.fillRect(0, 0, w, h);
 
+      // Zonas de suelo (río/camino/puente/piedra…) del grid Format D. Pintadas
+      // encima del color plano para que el blueprint tenga formas de terreno.
+      this.paintTerrainGrid();
+
       const staticObjects = (this.sceneData?.objects ?? [])
         .filter((o) => o.category !== "creature")
         .slice()
@@ -317,6 +368,43 @@ export class CanvasRenderer {
       this._capturing = savedCapturing;
     }
     return off.toDataURL("image/png");
+  }
+
+  /** Pinta el grid de terreno (Format D) por celdas en el ctx/transform ACTUAL
+   *  (llamado desde captureSchematic con el transform scene-local ya montado).
+   *  Cada celda es un cuadrado de `meters_per_cell` metros; el color sale del
+   *  char reservado o del nombre de la leyenda. 'g' (grass) se omite: es el
+   *  color de fondo ya pintado. Degrada al fondo plano si el grid es inconsistente. */
+  private paintTerrainGrid(): void {
+    const tg = this.sceneData?.terrain_grid;
+    const dims = this.sceneData?.dimensions;
+    if (!tg || !dims) return;
+    const { grid, legend, cols, rows, meters_per_cell: mpc } = tg;
+    if (!Array.isArray(grid) || grid.length !== rows || cols <= 0 || rows <= 0 || mpc <= 0) {
+      errors.push("scene", `terrain_grid inconsistente (filas=${grid?.length} rows=${rows} cols=${cols} mpc=${mpc}); uso color plano`);
+      return;
+    }
+    const ctx = this.ctx;
+    const halfW = dims.width / 2;
+    const halfD = dims.depth / 2;
+    for (let r = 0; r < rows; r++) {
+      const row = grid[r];
+      if (typeof row !== "string") continue;
+      const cmax = Math.min(cols, row.length);
+      for (let c = 0; c < cmax; c++) {
+        const ch = row[c];
+        if (ch === "g") continue; // grass = terreno base
+        const color = TERRAIN_CHAR_COLOR[ch] ?? terrainColorFromName(legend[ch] ?? "");
+        if (!color) continue;
+        const x0 = -halfW + c * mpc;
+        const z0 = -halfD + r * mpc;
+        const [px0, py0] = this.toScreen(x0, z0);
+        const [px1, py1] = this.toScreen(x0 + mpc, z0 + mpc);
+        ctx.fillStyle = color;
+        // +1px para evitar costuras entre celdas por el redondeo.
+        ctx.fillRect(Math.floor(px0), Math.floor(py0), Math.ceil(px1 - px0) + 1, Math.ceil(py1 - py0) + 1);
+      }
+    }
   }
 
   /** Convert world XZ to screen XY (top-down, Z goes up on screen) */
@@ -544,7 +632,7 @@ export class CanvasRenderer {
   /** Draw a static scene element (building/prop/item) using its authored
    *  footprint. Buildings/terrain get a filled rectangle the size of the XZ
    *  scale; props get a smaller box; items are diamond markers. */
-  private drawSceneBox(obj: { id: string; position: number[]; scale: number[]; category: string; description: string }): void {
+  private drawSceneBox(obj: { id: string; position: number[]; scale: number[]; category: string; description: string; shape?: string }): void {
     const ctx = this.ctx;
     const px = obj.position?.[0] ?? 0;
     const pz = obj.position?.[2] ?? 0;
@@ -556,6 +644,36 @@ export class CanvasRenderer {
     const cat = obj.category ?? "prop";
     const fill = CATEGORY_FILL[cat] ?? CATEGORY_FILL.prop;
     const stroke = CATEGORY_STROKE[cat] ?? CATEGORY_STROKE.prop;
+
+    // Forma explícita del modelo (barril/pozo/torre redonda → círculo; tienda/
+    // aguja → triángulo). Prevalece sobre la categoría para el primitivo, pero
+    // conserva el color de categoría. box/ausente → cae a la lógica de siempre.
+    const shape = obj.shape;
+    if (shape === "cylinder" || shape === "sphere") {
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(3, w / 2), Math.max(3, h / 2), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      this.drawObjectLabel(cx, cy - h / 2 - 4, obj.description || obj.id, stroke);
+      return;
+    }
+    if (shape === "cone") {
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - h / 2);
+      ctx.lineTo(cx - w / 2, cy + h / 2);
+      ctx.lineTo(cx + w / 2, cy + h / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      this.drawObjectLabel(cx, cy - h / 2 - 4, obj.description || obj.id, stroke);
+      return;
+    }
 
     if (cat === "building" || cat === "terrain") {
       ctx.fillStyle = fill;
@@ -673,6 +791,7 @@ export class CanvasRenderer {
         scale: [sx, 1, sz],
         category,
         description: e.label ?? e.id,
+        shape: e.shape,
       });
     } else {
       this.drawCreatureMarker(ex, ey, e);

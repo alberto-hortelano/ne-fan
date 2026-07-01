@@ -84,9 +84,12 @@ class SceneImageGenerator:
         sch = self._load_rgb(schematic_png_bytes)
         instruction = (
             "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "
-            "image as the LAYOUT blueprint: the coloured rectangles mark where "
-            "objects/buildings/walls go and the background colour is the ground; "
-            "keep every element in the same position and proportion. "
+            "image as the LAYOUT blueprint. The background colour zones are ground "
+            "types — blue = water/river, brown strip = a bridge, tan = path/road, "
+            "grey = stone/paving, green = grass. The coloured shapes mark objects and "
+            "hint their form: rectangles = buildings/walls/crates, circles = round "
+            "things (barrels, wells, round towers, fountains), triangles = tents/"
+            "spires. Keep every element in the SAME position, size and shape. "
             f"Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
         )
         refs = [_to_data_uri(sch, "PNG"), self._style_uri]

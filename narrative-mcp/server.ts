@@ -87,7 +87,8 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
   "terrain_legend": { "<char>": "<terrain name>", ... },
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player",
-      "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>" },
+      "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
+      "shape": "box"|"cylinder"|"sphere"|"cone" },   // optional; default box
     ...
   ],
   "ambient_event": "<one Spanish atmospheric line>"
@@ -134,6 +135,14 @@ ENTITY RULES
 - NPCs and player are always 1×1.
 - Place NPCs at their workspot (smith near smithy, innkeeper at inn's door).
 - Player starts where the narrative says they enter the scene.
+
+SHAPE (optional; hints the rendered footprint — use it, it makes better maps)
+- "cylinder": round things seen from above — barrel, well, cauldron, urn, jar,
+  brazier, ROUND tower, fountain, column. Trees are round by default (no need to
+  set it). This is the one you'll use most.
+- "sphere": boulder, dome, orb, haystack.
+- "cone": tent, spire, pointed roof, pile.
+- "box" (or omit): buildings, walls, crates, tables, carts, rectangular things.
 
 GLYPH RULES
 - Single printable ASCII char. NOT equal to any terrain char in the same map.
