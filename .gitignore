@@ -52,6 +52,7 @@ godot/recordings/
 
 # Personal scratch space
 sandbox/
+scene_gen_tests/
 
 # Dev-only cache of initial start_session bootstrap (CONFIG.dev.cache_initial_scene)
 nefan-core/data/initial_scene_cache/

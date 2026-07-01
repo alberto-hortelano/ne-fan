@@ -35,6 +35,15 @@ export class KeyboardHandler {
    *  consumir por el game loop. +1 ≈ un paso de acercar, -1 de alejar. */
   private zoomAccum = 0;
 
+  /** Disparos one-shot de generación de escena IA (teclas G/O de dev). Se
+   *  consumen en el game loop; el guard `e.repeat` evita re-disparar mientras
+   *  la tecla está pulsada. */
+  private generateRequested = false;
+  private outpaintRequested = false;
+  private segmentRequested = false;
+  private collisionDebugRequested = false;
+  private discoverRequested = false;
+
   private onAttackTypeChanged?: (type: string) => void;
 
   constructor(canvas: HTMLCanvasElement, onAttackTypeChanged?: (type: string) => void) {
@@ -57,6 +66,17 @@ export class KeyboardHandler {
         // Zoom por teclado: + / = acercan, - aleja (un paso por pulsación).
         case "+": case "=": this.zoomAccum += 1; break;
         case "-": this.zoomAccum -= 1; break;
+        // Generación de escena IA (dev): G regenera la imagen del escenario
+        // actual, O hace outpaint hacia el borde más cercano al jugador.
+        case "g": if (!e.repeat) this.generateRequested = true; break;
+        case "o": if (!e.repeat) this.outpaintRequested = true; break;
+        // X = eXtraer/segmentar oclusores (muros/edificios) de la imagen actual
+        // para que tapen al personaje (depth-sort). S está ocupada por movimiento.
+        case "x": if (!e.repeat) this.segmentRequested = true; break;
+        // B = toggle de los Bordes de colisión pintados sobre la imagen (debug).
+        case "b": if (!e.repeat) this.collisionDebugRequested = true; break;
+        // N = descubrir props Nuevos que la IA inventó (SAM3 open-vocab).
+        case "n": if (!e.repeat) this.discoverRequested = true; break;
       }
       if (e.key in ATTACK_KEYS) {
         this.state.selectedAttack = ATTACK_KEYS[e.key];
@@ -100,6 +120,51 @@ export class KeyboardHandler {
     const z = this.zoomAccum;
     this.zoomAccum = 0;
     return z;
+  }
+
+  /** True once per G press (regenerar imagen del escenario actual). */
+  consumeGenerateScene(): boolean {
+    if (this.generateRequested) {
+      this.generateRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per O press (outpaint hacia el borde más próximo). */
+  consumeOutpaintScene(): boolean {
+    if (this.outpaintRequested) {
+      this.outpaintRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per X press (segmentar oclusores de la imagen de escena). */
+  consumeSegmentScene(): boolean {
+    if (this.segmentRequested) {
+      this.segmentRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per B press (toggle de bordes de colisión sobre la imagen). */
+  consumeToggleCollisionDebug(): boolean {
+    if (this.collisionDebugRequested) {
+      this.collisionDebugRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per N press (descubrir props inventados por la IA). */
+  consumeDiscoverObjects(): boolean {
+    if (this.discoverRequested) {
+      this.discoverRequested = false;
+      return true;
+    }
+    return false;
   }
 
   consumeAttack(): boolean {

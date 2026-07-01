@@ -64,8 +64,26 @@ export interface NefanConfig {
     model_cache_dir: string;
     skin_cache_dir: string;
     sprite_cache_dir: string;
+    /** Cache for full-scene img2img backgrounds + outpainted extensions,
+     *  served at /cache/scene/{hash}. */
+    scene_cache_dir: string;
+    /** Cache for occluder sprites cut out of the scene image (SAM via fal.ai),
+     *  served at /cache/segment/{hash}. */
+    segment_cache_dir: string;
     texture_resolution: number;
     texture_steps: number;
+    /** Meshy image-to-image model for scene generation (best top-down:
+     *  nano-banana-pro). Also valid: nano-banana, nano-banana-2, gpt-image-2. */
+    scene_model: string;
+    /** Path (relative to repo root) of the art-style reference image passed as
+     *  the 2nd reference to Meshy so generated scenes match a target game look. */
+    scene_style_image: string;
+    /** fal.ai SAM model id used to segment occluder sprites out of the scene
+     *  image (box-prompt mode). Needs FAL_KEY in the environment. */
+    segment_model: string;
+    /** fal.ai SAM3 model id for open-vocabulary discovery of props the image
+     *  model invented (Phase 3, text-prompted multi-instance). Needs FAL_KEY. */
+    discover_model: string;
     texture_lazy_load: boolean;
     /** Mount the /diagnostic/* router (skin_test_* endpoints used for manual
      *  parameter sweeps with curl). Off in production: the routes 404. */
@@ -100,8 +118,14 @@ export const CONFIG: NefanConfig = {
     model_cache_dir: "cache/models",
     skin_cache_dir: "cache/skins",
     sprite_cache_dir: "cache/sprites",
+    scene_cache_dir: "cache/scenes",
+    segment_cache_dir: "cache/segments",
     texture_resolution: 512,
     texture_steps: 4,
+    scene_model: "nano-banana-pro",
+    scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
+    segment_model: "fal-ai/sam2/image",
+    discover_model: "fal-ai/sam-3/image",
     texture_lazy_load: true,
     expose_diagnostic: false,
   },

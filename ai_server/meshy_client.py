@@ -145,6 +145,7 @@ class MeshyImageToImage:
         "nano-banana": 3,
         "nano-banana-2": 6,
         "nano-banana-pro": 9,
+        "gpt-image-2": 12,
     }
     USD_PER_CREDIT = 0.02
 

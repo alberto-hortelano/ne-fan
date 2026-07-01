@@ -5,7 +5,8 @@ import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
 import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "../../nefan-core/src/scene/scene-normalize.js";
-import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
+import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
+import { SceneImageController } from "./scene/scene-image.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
@@ -108,6 +109,10 @@ const renderer = new CanvasRenderer(canvas, {
   assetCache,
   worldAngle: WORLD_ANGLE,
 });
+// Generación IA del fondo de escena (img2img desde el esquema del canvas +
+// outpainting). Disparada manualmente con G/O en dev. Puramente visual: no
+// toca colisiones ni SceneData.
+const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
 // Sprite sheets are loaded on demand from setPlayerAppearance once the
 // session starts. No pre-load: if the player ends up needing them, that
 // happens behind an explicit CONFIG.graphics.player_sprites=true check.
@@ -248,6 +253,21 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   scenarioActive = false;
 
   renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
+
+  // Reinicia el controlador de imagen de escena con el rectángulo de la nueva
+  // escena (centrado en el origen) y limpia cualquier fondo IA anterior. La
+  // generación se dispara después manualmente con G.
+  {
+    const d = data.dimensions as { width: number; depth: number } | undefined;
+    if (d) {
+      const hw = d.width / 2;
+      const hd = d.depth / 2;
+      sceneImageController.reset(
+        { minX: -hw, minZ: -hd, maxX: hw, maxZ: hd },
+        data as unknown as Parameters<typeof sceneImageController.reset>[1],
+      );
+    }
+  }
 
   // Posición de entrada. Tres casos, en orden de prioridad:
   //  1) pendingEntryEdge: venimos de cruzar un borde → entramos por el lado
@@ -412,6 +432,61 @@ const PLAYER_RADIUS = 0.4;
  *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
  *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
 const EDGE_MARGIN = 6;
+
+/** Phase 2 — snap each solid object's collision AABB to the footprint SAM
+ *  actually found painted (the cyan box in the B overlay), so collisions match
+ *  the image instead of the LLM-authored `scale`/`position`. Moves the centre to
+ *  the segmented centre and resizes; `collidesAt` then blocks on the real shape.
+ *  Degenerate masks (a near-empty crop, e.g. a flat rune) keep their authored
+ *  box — a tiny footprint would otherwise make a real object walk-through. */
+const MIN_REFINED_FOOTPRINT_M = 0.6;
+function refineCollisionsFromSegments(occluders: Occluder[]): void {
+  let refined = 0;
+  for (const occ of occluders) {
+    const obj = objectEntities.find((o) => o.id === occ.id);
+    if (!obj) continue;
+    const w = occ.world;
+    const sx = w.maxX - w.minX;
+    const sz = w.maxZ - w.minZ;
+    if (sx < MIN_REFINED_FOOTPRINT_M || sz < MIN_REFINED_FOOTPRINT_M) continue;
+    obj.pos.x = (w.minX + w.maxX) / 2;
+    obj.pos.z = (w.minZ + w.maxZ) / 2;
+    obj.sizeXZ = { x: sx, z: sz };
+    refined++;
+  }
+  if (refined > 0) {
+    console.log(`[collision] refined ${refined}/${occluders.length} AABBs to segmented footprint`);
+  }
+}
+
+/** Phase 3: register props the image model invented (discovered via SAM3) as
+ *  real solid objects so `collidesAt` blocks them and the B overlay shows them.
+ *  Their occluder sprite already gives z-index; here we add the collision AABB
+ *  from the same segmented footprint. Re-discovery updates in place by id. */
+function addDiscoveredObjects(occluders: Occluder[]): void {
+  let added = 0;
+  for (const occ of occluders) {
+    const w = occ.world;
+    const sx = w.maxX - w.minX;
+    const sz = w.maxZ - w.minZ;
+    if (sx < MIN_REFINED_FOOTPRINT_M || sz < MIN_REFINED_FOOTPRINT_M) continue;
+    const pos = { x: (w.minX + w.maxX) / 2, y: 0, z: (w.minZ + w.maxZ) / 2 };
+    const sizeXZ = { x: sx, z: sz };
+    const existing = objectEntities.find((o) => o.id === occ.id);
+    if (existing) {
+      existing.pos = pos;
+      existing.sizeXZ = sizeXZ;
+      existing.category = "prop";
+    } else {
+      objectEntities.push({
+        id: occ.id, pos, radius: 5, color: "#9a8", label: occ.id,
+        alive: true, category: "prop", sizeXZ,
+      });
+      added++;
+    }
+  }
+  if (added > 0) console.log(`[collision] added ${added} discovered props with collision`);
+}
 
 /** AABB collision of the player (inflated point) against solid scene objects.
  *  Items are walkable; only buildings and props block. */
@@ -672,6 +747,37 @@ function gameLoop(now: number): void {
   if (Math.abs(currentZoom - zoomTarget) > 0.01) {
     currentZoom += (zoomTarget - currentZoom) * (1 - Math.exp(-ZOOM_RATE * delta));
     renderer.setScale(currentZoom);
+  }
+
+  // Generación IA del escenario (dev): G regenera la imagen del escenario
+  // actual desde el esquema; O hace outpaint hacia el borde más próximo al
+  // jugador. Async fire-and-forget — el controlador ya loguea fallos a
+  // ErrorLog; el .catch evita unhandled rejection.
+  if (input.consumeGenerateScene()) {
+    void sceneImageController.generateFull().catch(() => {});
+  }
+  if (input.consumeOutpaintScene()) {
+    void sceneImageController.outpaintTowardPlayer(playerPos).catch(() => {});
+  }
+  // X segmenta los oclusores (muros/edificios) de la imagen actual para que
+  // tapen al personaje (depth-sort). Requiere haber generado antes con G.
+  if (input.consumeSegmentScene()) {
+    void sceneImageController.segmentOccluders()
+      .then((occ) => refineCollisionsFromSegments(occ))
+      .catch(() => {});
+  }
+  // B alterna el overlay de bordes de colisión (rojo) vs footprint segmentado
+  // (cian) sobre la imagen, para juzgar la precisión de las colisiones.
+  if (input.consumeToggleCollisionDebug()) {
+    const on = renderer.toggleDebugCollision();
+    console.log(`[debug] collision overlay ${on ? "ON" : "OFF"}`);
+  }
+  // N descubre props que la IA inventó (SAM3 open-vocab) y les da oclusión +
+  // colisión. Requiere haber generado antes con G (idealmente segmentado con X).
+  if (input.consumeDiscoverObjects()) {
+    void sceneImageController.discoverObjects()
+      .then((disc) => addDiscoveredObjects(disc))
+      .catch(() => {});
   }
 
   // Movement (suppressed during dialogue)

@@ -25,8 +25,14 @@
     "model_cache_dir": "cache/models",
     "skin_cache_dir": "cache/skins",
     "sprite_cache_dir": "cache/sprites",
+    "scene_cache_dir": "cache/scenes",
+    "segment_cache_dir": "cache/segments",
     "texture_resolution": 512,
     "texture_steps": 4,
+    "scene_model": "nano-banana-pro",
+    "scene_style_image": "skinning_lab/bases/battlemap-town-style.png",
+    "segment_model": "fal-ai/sam2/image",
+    "discover_model": "fal-ai/sam-3/image",
     "texture_lazy_load": true,
     "expose_diagnostic": false
   }

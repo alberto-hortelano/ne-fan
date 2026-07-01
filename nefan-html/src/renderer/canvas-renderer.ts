@@ -99,6 +99,25 @@ const CATEGORY_STROKE: Record<string, string> = {
   terrain: "#5a8060",
 };
 
+/** World-space rectangle (metres) on the XZ plane that a scene image covers.
+ *  Maps 1:1 onto the collision plane — top-down, no reprojection. */
+export interface SceneBounds {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/** An occluder sprite cut out of the AI scene image: its bitmap, the world
+ *  rectangle it covers, and the south-edge Z used as its depth-sort baseline so
+ *  it can be drawn over (or under) the player depending on who is "in front". */
+export interface Occluder {
+  id: string;
+  img: HTMLImageElement;
+  world: SceneBounds;
+  baselineZ: number;
+}
+
 export interface CanvasRendererOptions {
   spriteRenderer?: SpriteRenderer;
   assetCache?: AssetCache;
@@ -127,6 +146,29 @@ export class CanvasRenderer {
   private spriteRenderer: SpriteRenderer | undefined;
   private assetCache: AssetCache | undefined;
   private worldAngle = "isometric_30";
+
+  /** AI-generated top-down scene background. When set, it is drawn over its
+   *  `sceneBounds` rectangle instead of the flat terrain plate, and the static
+   *  object rectangles are hidden (they are now baked into the image) unless
+   *  `debugObjects` is on. Bounds are in world metres {minX,minZ,maxX,maxZ}. */
+  private sceneImage: HTMLImageElement | null = null;
+  private sceneBounds: SceneBounds | null = null;
+  /** Occluder sprites cut out of the scene image (X). When present, render()
+   *  switches from the fixed entity order to a depth-sorted pass so tall objects
+   *  (walls/buildings) can draw over the player when he is behind them. Cleared
+   *  whenever the scene image changes (the cutouts no longer match). */
+  private occluders: Occluder[] = [];
+  /** When true, overlay the schematic object rectangles on top of the AI image
+   *  to eyeball alignment between the painted scene and the collision boxes. */
+  private debugObjects = false;
+  /** When true, outline the collision boxes (red, = authored `position±scale/2`,
+   *  what `collidesAt` blocks) and the segmented occluder footprints (cyan dashed,
+   *  = what SAM actually found painted) over the scene, to judge how precise the
+   *  collision is vs the image. Toggled with B. */
+  private debugCollision = false;
+  /** True only while rendering the offscreen schematic for capture — suppresses
+   *  text labels, which would pollute the canny edge map. */
+  private _capturing = false;
 
   constructor(canvas: HTMLCanvasElement, opts: CanvasRendererOptions = {}) {
     this.canvas = canvas;
@@ -181,6 +223,102 @@ export class CanvasRenderer {
     return this.sceneData;
   }
 
+  /** Install the AI-painted scene background covering `bounds` (world metres).
+   *  Drawn under the entities every frame, scaling/scrolling with the camera. */
+  setSceneImage(img: HTMLImageElement, bounds: SceneBounds): void {
+    this.sceneImage = img;
+    this.sceneBounds = { ...bounds };
+    // A new image invalidates any previous cutouts — they were cut from the old
+    // pixels and would now be misaligned. Press X again to re-segment.
+    this.occluders = [];
+  }
+
+  clearSceneImage(): void {
+    this.sceneImage = null;
+    this.sceneBounds = null;
+    this.occluders = [];
+  }
+
+  hasSceneImage(): boolean {
+    return this.sceneImage !== null;
+  }
+
+  /** Install the occluder sprites cut out of the current scene image. */
+  setOccluders(occluders: Occluder[]): void {
+    this.occluders = occluders.slice();
+  }
+
+  /** Add occluders (discovered props, Phase 3) to the existing set, replacing
+   *  any with the same id so repeated discovery doesn't duplicate. */
+  addOccluders(occluders: Occluder[]): void {
+    const ids = new Set(occluders.map((o) => o.id));
+    this.occluders = this.occluders.filter((o) => !ids.has(o.id)).concat(occluders);
+  }
+
+  hasOccluders(): boolean {
+    return this.occluders.length > 0;
+  }
+
+  setDebugObjects(on: boolean): void {
+    this.debugObjects = on;
+  }
+
+  /** Toggle the collision-vs-image debug overlay (B). Returns the new state. */
+  toggleDebugCollision(): boolean {
+    this.debugCollision = !this.debugCollision;
+    return this.debugCollision;
+  }
+
+  /** Render the static schematic (terrain plate + object/building rectangles,
+   *  NO characters, NO labels) for a world rectangle into an offscreen canvas
+   *  and return it as a PNG data URL. This is the img2img conditioning image:
+   *  scene-local framing (not the camera-following viewport) so the result
+   *  maps 1:1 back onto `rect`. `ppm` = pixels per metre of the capture. */
+  captureSchematic(rect: SceneBounds, ppm: number): string {
+    const w = Math.max(8, Math.round((rect.maxX - rect.minX) * ppm));
+    const h = Math.max(8, Math.round((rect.maxZ - rect.minZ) * ppm));
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const offCtx = off.getContext("2d");
+    if (!offCtx) throw new Error("captureSchematic: failed to get 2D context");
+
+    // Swap the renderer's draw target + transform so the existing drawSceneBox
+    // / toScreen code paints into the offscreen canvas at scene-local coords:
+    // world (minX,minZ) maps to the top-left pixel (0,0).
+    const savedCtx = this.ctx;
+    const savedOx = this.offsetX;
+    const savedOy = this.offsetY;
+    const savedScale = this.scale;
+    const savedCapturing = this._capturing;
+    this.ctx = offCtx;
+    this.scale = ppm;
+    this.offsetX = -rect.minX * ppm;
+    this.offsetY = -rect.minZ * ppm;
+    this._capturing = true;
+    try {
+      const terrainColor =
+        rgb01ToCss(this.sceneData?.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+      offCtx.fillStyle = terrainColor;
+      offCtx.fillRect(0, 0, w, h);
+
+      const staticObjects = (this.sceneData?.objects ?? [])
+        .filter((o) => o.category !== "creature")
+        .slice()
+        .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
+      for (const obj of staticObjects) {
+        this.drawSceneBox(obj);
+      }
+    } finally {
+      this.ctx = savedCtx;
+      this.offsetX = savedOx;
+      this.offsetY = savedOy;
+      this.scale = savedScale;
+      this._capturing = savedCapturing;
+    }
+    return off.toDataURL("image/png");
+  }
+
   /** Convert world XZ to screen XY (top-down, Z goes up on screen) */
   private toScreen(x: number, z: number): [number, number] {
     return [
@@ -228,38 +366,49 @@ export class CanvasRenderer {
     const halfW = dims.width / 2;
     const halfD = dims.depth / 2;
 
-    // Placa de escena: el rectángulo autorizado por el motor donde irán las
-    // imágenes IA. Sigue visible (con su color de terreno + borde sutil), pero
-    // ya no es el límite del mundo.
-    const [fx, fy] = this.toScreen(-halfW, -halfD);
-    const fw = dims.width * this.scale;
-    const fh = dims.depth * this.scale;
-    const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
-    ctx.fillStyle = terrainColor;
-    ctx.fillRect(fx, fy, fw, fh);
-    ctx.strokeStyle = SCENE_PLATE_BORDER;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(fx, fy, fw, fh);
+    if (this.sceneImage && this.sceneBounds) {
+      // AI-painted scene: draw it over its world-space rectangle. Derived from
+      // `scale`, so it scrolls and zooms with the camera exactly like the
+      // geometry it replaces. No grid/plate on top — they'd hide the detail.
+      const b = this.sceneBounds;
+      const [ix, iy] = this.toScreen(b.minX, b.minZ);
+      const iw = (b.maxX - b.minX) * this.scale;
+      const ih = (b.maxZ - b.minZ) * this.scale;
+      ctx.drawImage(this.sceneImage, ix, iy, iw, ih);
+    } else {
+      // Placa de escena: el rectángulo autorizado por el motor donde irán las
+      // imágenes IA. Sigue visible (con su color de terreno + borde sutil),
+      // pero ya no es el límite del mundo.
+      const [fx, fy] = this.toScreen(-halfW, -halfD);
+      const fw = dims.width * this.scale;
+      const fh = dims.depth * this.scale;
+      const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+      ctx.fillStyle = terrainColor;
+      ctx.fillRect(fx, fy, fw, fh);
+      ctx.strokeStyle = SCENE_PLATE_BORDER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(fx, fy, fw, fh);
 
-    // Grid continuo en world-space visible (no acotado a dimensions): da
-    // orientación uniforme sobre campo + placa y refuerza la continuidad.
-    ctx.strokeStyle = GRID_COLOR;
-    // 1px sólido (no 0.5): con cámara float las líneas caen en posiciones
-    // subpíxel; una línea <1px titilaría en opacidad al cruzar bordes de píxel,
-    // una de 1px solo se antialias y desliza limpia.
-    ctx.lineWidth = 1;
-    const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
-    const wl = Math.floor((-this.offsetX) / this.scale / step) * step;
-    const wr = (w - this.offsetX) / this.scale;
-    for (let gx = wl; gx <= wr; gx += step) {
-      const [sx] = this.toScreen(gx, 0);
-      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
-    }
-    const wt = Math.floor((-this.offsetY) / this.scale / step) * step;
-    const wb = (h - this.offsetY) / this.scale;
-    for (let gz = wt; gz <= wb; gz += step) {
-      const [, sy] = this.toScreen(0, gz);
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+      // Grid continuo en world-space visible (no acotado a dimensions): da
+      // orientación uniforme sobre campo + placa y refuerza la continuidad.
+      ctx.strokeStyle = GRID_COLOR;
+      // 1px sólido (no 0.5): con cámara float las líneas caen en posiciones
+      // subpíxel; una línea <1px titilaría en opacidad al cruzar bordes de
+      // píxel, una de 1px solo se antialias y desliza limpia.
+      ctx.lineWidth = 1;
+      const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
+      const wl = Math.floor((-this.offsetX) / this.scale / step) * step;
+      const wr = (w - this.offsetX) / this.scale;
+      for (let gx = wl; gx <= wr; gx += step) {
+        const [sx] = this.toScreen(gx, 0);
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+      }
+      const wt = Math.floor((-this.offsetY) / this.scale / step) * step;
+      const wb = (h - this.offsetY) / this.scale;
+      for (let gz = wt; gz <= wb; gz += step) {
+        const [, sy] = this.toScreen(0, gz);
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+      }
     }
 
     // Luces ambientales pintadas como halos suaves.
@@ -276,28 +425,120 @@ export class CanvasRenderer {
     }
 
     // Static scene elements (buildings/props/items/terrain patches) por categoría,
-    // ordenados por Z para que el fondo no tape el frente.
-    const staticObjects = (this.sceneData.objects ?? [])
-      .filter((o) => o.category !== "creature")
-      .slice()
-      .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
-    for (const obj of staticObjects) {
-      this.drawSceneBox(obj);
+    // ordenados por Z para que el fondo no tape el frente. Cuando hay imagen IA
+    // ya están pintados en ella; sólo se dibujan como overlay de debug.
+    if (!this.sceneImage || this.debugObjects) {
+      const staticObjects = (this.sceneData.objects ?? [])
+        .filter((o) => o.category !== "creature")
+        .slice()
+        .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
+      for (const obj of staticObjects) {
+        this.drawSceneBox(obj);
+      }
     }
 
+    if (this.occluders.length > 0) {
+      this.drawDepthSorted(player, enemies, objects, npcs);
+    } else {
+      for (const npc of npcs) this.drawNpc(npc);
+      for (const e of enemies) this.drawEntity(e);
+      for (const obj of objects) this.drawEntity(obj);
+      this.drawPlayer(player);
+    }
+
+    if (this.debugCollision) this.drawCollisionDebug(objects);
+  }
+
+  /** Overlay (B): outline every solid object's collision box (red, what blocks
+   *  movement = `pos ± sizeXZ/2`) and every segmented occluder's actual painted
+   *  footprint (cyan dashed). The gap between a red and a cyan box is exactly how
+   *  imprecise the collision is vs the image — what Phase 2 would snap together. */
+  private drawCollisionDebug(objects: Entity[]): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    // Authored collision footprints (same set + rule as main.ts collidesAt):
+    // filled translucent red + bright outline so they read over the painting.
+    for (const o of objects) {
+      if (o.category !== "building" && o.category !== "prop") continue;
+      if (!o.sizeXZ) continue;
+      const [cx, cy] = this.toScreen(o.pos.x, o.pos.z);
+      const w = o.sizeXZ.x * this.scale;
+      const h = o.sizeXZ.z * this.scale;
+      ctx.fillStyle = "rgba(255,40,40,0.18)";
+      ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+      ctx.strokeStyle = "rgba(255,40,40,1)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    }
+
+    // Segmented actual footprints (only present after X): bright cyan dashed.
+    ctx.lineWidth = 3;
+    ctx.setLineDash([7, 5]);
+    for (const occ of this.occluders) {
+      const w = occ.world;
+      const [ix, iy] = this.toScreen(w.minX, w.minZ);
+      const iw = (w.maxX - w.minX) * this.scale;
+      const ih = (w.maxZ - w.minZ) * this.scale;
+      ctx.strokeStyle = "rgba(60,255,255,1)";
+      ctx.strokeRect(ix, iy, iw, ih);
+    }
+    ctx.setLineDash([]);
+
+    // Legend with solid swatches (below the top HUD bar).
+    ctx.font = "bold 12px monospace";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,40,40,1)";
+    ctx.fillRect(12, 52, 14, 10);
+    ctx.fillText("colision autorizada (pos±scale/2)", 32, 61);
+    ctx.fillStyle = "rgba(60,255,255,1)";
+    ctx.fillRect(12, 70, 14, 10);
+    ctx.fillText("footprint segmentado por SAM", 32, 79);
+    ctx.restore();
+  }
+
+  /** Depth-sorted pass used when occluder cutouts exist. Interleaves the
+   *  occluder sprites with the player/NPCs/enemies/objects by the screen-Y of
+   *  their south edge (baseline): whatever is further south draws later (on top),
+   *  so a wall whose base is in front of the player covers him, and one behind
+   *  him does not. The scene image is still the background; the cutouts here are
+   *  the SAME pixels redrawn at the same place, so the overlap is seamless. */
+  private drawDepthSorted(
+    player: {
+      pos: Vec3;
+      forward: Vec3;
+      hp: number;
+      maxHp: number;
+      sprite?: Entity["sprite"];
+    },
+    enemies: Entity[],
+    objects: Entity[],
+    npcs: Entity[],
+  ): void {
+    const items: { baseline: number; draw: () => void }[] = [];
+    for (const occ of this.occluders) {
+      const w = occ.world;
+      const [ix, iy] = this.toScreen(w.minX, w.minZ);
+      const iw = (w.maxX - w.minX) * this.scale;
+      const ih = (w.maxZ - w.minZ) * this.scale;
+      items.push({
+        baseline: this.toScreen(0, occ.baselineZ)[1],
+        draw: () => this.ctx.drawImage(occ.img, ix, iy, iw, ih),
+      });
+    }
     for (const npc of npcs) {
-      this.drawNpc(npc);
+      items.push({ baseline: this.toScreen(0, npc.pos.z)[1], draw: () => this.drawNpc(npc) });
     }
-
     for (const e of enemies) {
-      this.drawEntity(e);
+      items.push({ baseline: this.toScreen(0, e.pos.z)[1], draw: () => this.drawEntity(e) });
     }
-
     for (const obj of objects) {
-      this.drawEntity(obj);
+      items.push({ baseline: this.toScreen(0, obj.pos.z)[1], draw: () => this.drawEntity(obj) });
     }
+    items.push({ baseline: this.toScreen(0, player.pos.z)[1], draw: () => this.drawPlayer(player) });
 
-    this.drawPlayer(player);
+    items.sort((a, b) => a.baseline - b.baseline);
+    for (const it of items) it.draw();
   }
 
   /** Draw a static scene element (building/prop/item) using its authored
@@ -322,7 +563,7 @@ export class CanvasRenderer {
       ctx.strokeStyle = stroke;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
-      if (w >= 60 && h >= 16) {
+      if (!this._capturing && w >= 60 && h >= 16) {
         ctx.fillStyle = "rgba(230, 220, 200, 0.85)";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
@@ -360,7 +601,7 @@ export class CanvasRenderer {
   }
 
   private drawObjectLabel(cx: number, cy: number, text: string, color: string): void {
-    if (!text) return;
+    if (this._capturing || !text) return;
     const ctx = this.ctx;
     ctx.fillStyle = color;
     ctx.font = "9px monospace";
@@ -420,6 +661,10 @@ export class CanvasRenderer {
 
     const category = e.category ?? "creature";
     if (category === "building" || category === "terrain" || category === "prop" || category === "item") {
+      // Static-shape entities (buildings/props/items) are baked into the AI
+      // scene image; skip their schematic box when one is present (same gate as
+      // the sceneData.objects loop). Creatures still draw on top below.
+      if (this.sceneImage && !this.debugObjects) return;
       const sx = e.sizeXZ?.x ?? Math.max(0.5, e.radius / this.scale * 2);
       const sz = e.sizeXZ?.z ?? Math.max(0.5, e.radius / this.scale * 2);
       this.drawSceneBox({
