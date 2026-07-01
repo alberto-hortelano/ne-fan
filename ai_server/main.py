@@ -57,6 +57,9 @@ from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
 from sprite_generator import SpriteGenerator
 from controlnet_skin import ControlNetSkinGenerator, seed_for
+from scene_image_generator import SceneImageGenerator, SIDES
+from fal_client import FalSamClient
+from scene_segmenter import SceneSegmenter
 from asset_cache import AssetCache, AssetManifest
 
 import asyncio as _asyncio
@@ -68,10 +71,14 @@ model_gen: ModelGenerator | None = None
 skin_gen: SkinGenerator | None = None
 controlnet_skin_gen: ControlNetSkinGenerator | None = None
 sprite_gen: SpriteGenerator | None = None
+scene_image_gen: SceneImageGenerator | None = None
+scene_segmenter: SceneSegmenter | None = None
 asset_cache: AssetCache | None = None
 model_cache: AssetCache | None = None
 skin_cache: AssetCache | None = None
 sprite_cache: AssetCache | None = None
+scene_cache: AssetCache | None = None
+segment_cache: AssetCache | None = None
 asset_manifest: AssetManifest | None = None
 config: dict = {}
 _gpu_lock = _asyncio.Lock()  # Serialize ALL GPU operations
@@ -107,7 +114,7 @@ def load_config(config_path: Path | None = None) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, asset_manifest, config, controlnet_skin_gen
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter
     config = load_config()
 
     # Shared manifest sits at the cache root and tracks every asset across types.
@@ -140,6 +147,16 @@ async def lifespan(app: FastAPI):
             cache_root / "sprites",
             asset_type="sprite",
             subtypes_by_filename={"sprite.png": "sprite"},
+        )
+        added_total += asset_manifest.scan_directory(
+            cache_root / "scenes",
+            asset_type="scene",
+            subtypes_by_filename={"scene.png": "scene"},
+        )
+        added_total += asset_manifest.scan_directory(
+            cache_root / "segments",
+            asset_type="segment",
+            subtypes_by_filename={"segment.png": "segment"},
         )
         if added_total > 0:
             print(f"AssetManifest: recovered {added_total} pre-existing assets")
@@ -197,6 +214,37 @@ async def lifespan(app: FastAPI):
     sprite_gen = SpriteGenerator(
         texture_gen_ref=texture_gen,
     )
+
+    scene_cache = AssetCache(
+        cache_dir=config["scene_cache_dir"],
+        asset_type="scene",
+        manifest=asset_manifest,
+    )
+
+    _repo_root = Path(__file__).resolve().parent.parent
+    scene_image_gen = SceneImageGenerator(
+        style_image_path=str(_repo_root / config["scene_style_image"]),
+        model=config["scene_model"],
+    )
+
+    segment_cache = AssetCache(
+        cache_dir=config["segment_cache_dir"],
+        asset_type="segment",
+        manifest=asset_manifest,
+    )
+
+    # Occluder segmentation is OPTIONAL: it needs FAL_KEY. If the user hasn't
+    # added it yet the server still starts; /segment_scene_image returns 503.
+    try:
+        scene_segmenter = SceneSegmenter(
+            fal_client=FalSamClient(
+                segment_model=config["segment_model"],
+                discover_model=config["discover_model"],
+            ),
+        )
+    except ValueError as e:
+        scene_segmenter = None
+        print(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)", flush=True)
 
     if config["expose_diagnostic"]:
         from routers.diagnostic import build_diagnostic_router
@@ -316,6 +364,68 @@ class AnalyzeWeaponRequest(BaseModel):
     weapon_type: str = "generic"
     kind: str = "weapon_orient"
     context: dict = Field(default_factory=dict)
+
+
+class SceneImageRequest(BaseModel):
+    """Full-scene img2img from the 2D client's schematic capture.
+
+    `image_b64` is the base64-encoded PNG the Canvas renderer exports (terrain
+    plate + object rectangles, no characters). The result is a painted top-down
+    scene that maps 1:1 onto the same world rectangle."""
+    image_b64: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+    strength: float = 0.85
+    seed: int = -1
+    # Tuning knobs (dev). guidance ~6 for SDXL. controlnet_scale holds the
+    # layout (~0.5 = furniture/structures land on the boxes but with artistic
+    # freedom; higher hugs the boxes tighter, lower strays more).
+    guidance: float = 6.0
+    controlnet_scale: float = 0.5
+
+
+class OutpaintSceneRequest(BaseModel):
+    """Extend an existing scene image outward on one side. `side` is in image
+    space (left=minX, right=maxX, top=minZ, bottom=maxZ)."""
+    image_b64: str = Field(min_length=1)
+    side: str = Field(min_length=1)
+    expand_px: int = 256
+    prompt: str = ""
+    seed: int = -1
+
+
+class Occluder(BaseModel):
+    """A known scene object to cut out of the generated image. `box_px` is its
+    approximate pixel box in the scene image: [x_min, y_min, x_max, y_max]."""
+    id: str = Field(min_length=1)
+    box_px: list[int] = Field(min_length=4, max_length=4)
+
+
+class SegmentSceneRequest(BaseModel):
+    """Cut occluder sprites out of an AI-painted scene image (SAM via fal.ai).
+
+    `image_b64` is the same scene PNG the client is displaying; `occluders` are
+    the known building/prop objects with their pixel boxes. Returns one cropped
+    RGBA sprite per occluder for the client to depth-sort against the player."""
+    image_b64: str = Field(min_length=1)
+    occluders: list[Occluder] = Field(min_length=1)
+
+
+# Default vocabulary of solid dark-fantasy props the image model tends to invent.
+# Each concept is one SAM3 open-vocab call; keep the list focused (cost + noise).
+_DISCOVER_CONCEPTS = [
+    "statue", "barrel", "crate", "urn", "brazier",
+    "well", "cauldron", "tombstone", "stone pillar", "boulder",
+]
+
+
+class DiscoverSceneRequest(BaseModel):
+    """Phase 3: open-vocabulary discovery of props the image model invented that
+    were NOT in the schematic. `known_boxes` are the pixel boxes of objects we
+    already handle ([x_min,y_min,x_max,y_max]) so they are filtered out. Returns
+    new objects (sprite + footprint) for the client to give occlusion + collision."""
+    image_b64: str = Field(min_length=1)
+    known_boxes: list[list[int]] = Field(default_factory=list)
+    concepts: list[str] | None = None
 
 
 @app.get("/health")
@@ -562,6 +672,226 @@ async def generate_sprite_endpoint(body: SpriteRequest):
     }
 
 
+def _decode_b64_png(image_b64: str) -> bytes:
+    """Decode a base64 PNG (optionally a `data:image/png;base64,` URL) to bytes.
+    Fail-loud: a malformed payload is a 400, not a silent empty image."""
+    import base64
+    raw = image_b64
+    if raw.startswith("data:"):
+        _, _, raw = raw.partition(",")
+    try:
+        return base64.b64decode(raw, validate=True)
+    except (ValueError, base64.binascii.Error) as e:
+        raise HTTPException(status_code=400, detail=f"invalid base64 image: {e}")
+
+
+@app.post("/generate_scene_image")
+async def generate_scene_image_endpoint(body: SceneImageRequest):
+    """Repaint the client's schematic into a detailed top-down scene (img2img +
+    ControlNet canny). Cached by (prompt, layout, strength)."""
+    import asyncio
+    import hashlib
+
+    if scene_image_gen is None:
+        raise HTTPException(status_code=503, detail="scene_image_gen unavailable")
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    # `model` is in the key so switching backends/models never serves a stale
+    # image cached under a different generator.
+    context = {"layout": layout, "kind": "full", "model": scene_image_gen._model}
+    key = scene_cache.hash_key(body.prompt, context)
+
+    if scene_cache.has(body.prompt, "scene", context):
+        return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
+
+    # No _gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
+    # holding the lock would needlessly block texture/3D GPU work for ~30s.
+    start = time.time()
+    result = await asyncio.to_thread(
+        scene_image_gen.generate_full, png, body.prompt, body.strength,
+        body.seed, body.guidance, body.controlnet_scale,
+    )
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    scene_cache.put(body.prompt, "scene", result["scene"], context=context)
+
+    return {
+        "hash": key,
+        "cached": False,
+        "scene_url": f"/cache/scene/{key}",
+        "width": result["width"],
+        "height": result["height"],
+        "generation_time_ms": elapsed_ms,
+    }
+
+
+@app.post("/outpaint_scene_image")
+async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
+    """Extend an existing scene image outward on one side via SD inpaint.
+    Cached by (prompt, base layout, side, expand_px)."""
+    import asyncio
+    import hashlib
+
+    if scene_image_gen is None:
+        raise HTTPException(status_code=503, detail="scene_image_gen unavailable")
+    if body.side not in SIDES:
+        raise HTTPException(
+            status_code=422, detail=f"side must be one of {SIDES}, got {body.side!r}"
+        )
+
+    png = _decode_b64_png(body.image_b64)
+    base_layout = hashlib.sha256(png).hexdigest()[:16]
+    context = {
+        "layout": base_layout,
+        "kind": "outpaint",
+        "side": body.side,
+        "expand_px": body.expand_px,
+        "model": scene_image_gen._model,
+    }
+    key = scene_cache.hash_key(body.prompt, context)
+
+    if scene_cache.has(body.prompt, "scene", context):
+        return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
+
+    start = time.time()
+    result = await asyncio.to_thread(
+        scene_image_gen.outpaint,
+        png, body.side, body.expand_px, body.prompt, body.seed,
+    )
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    scene_cache.put(body.prompt, "scene", result["scene"], context=context)
+
+    return {
+        "hash": key,
+        "cached": False,
+        "scene_url": f"/cache/scene/{key}",
+        "side": result["side"],
+        "expand_px": result["expand_px"],
+        "width": result["width"],
+        "height": result["height"],
+        "generation_time_ms": elapsed_ms,
+    }
+
+
+@app.post("/segment_scene_image")
+async def segment_scene_image_endpoint(body: SegmentSceneRequest):
+    """Segment known occluders (buildings/props) out of the scene image so the
+    client can depth-sort them against the player. One fal SAM call per occluder;
+    each cropped RGBA sprite is cached by (scene layout, occluder id, box, model)."""
+    import asyncio
+    import hashlib
+
+    if scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable occluder segmentation",
+        )
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    model = scene_segmenter._fal.model
+
+    # Split occluders into cache hits (served straight away) and misses (segment).
+    segments: list[dict] = []
+    misses: list[dict] = []
+    keys: dict[str, str] = {}
+    for occ in body.occluders:
+        box_str = ",".join(str(v) for v in occ.box_px)
+        context = {"scene": layout, "box": box_str, "model": model}
+        key = segment_cache.hash_key(occ.id, context)
+        keys[occ.id] = key
+        if segment_cache.has(occ.id, "segment", context):
+            bbox_meta = segment_cache.get_by_hash(key, "bbox")
+            if bbox_meta is not None:
+                segments.append({"id": occ.id, "key": key, "bbox_json": bbox_meta})
+                continue
+        misses.append({"id": occ.id, "box_px": occ.box_px, "context": context, "key": key})
+
+    if misses:
+        produced = await asyncio.to_thread(
+            scene_segmenter.segment_occluders,
+            png,
+            [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
+        )
+        by_id = {p["id"]: p for p in produced}
+        for m in misses:
+            p = by_id.get(m["id"])
+            if p is None:
+                continue  # empty mask — segmenter logged the skip
+            ctx = m["context"]
+            segment_cache.put(m["id"], "segment", p["sprite_png_bytes"], context=ctx)
+            # Persist the placement metadata alongside the sprite so cache hits
+            # can answer without re-segmenting. Stored as a `bbox` map in the same
+            # hash dir (AssetCache forces a .png suffix; the bytes are JSON).
+            bbox_json = json.dumps({
+                "image_bbox": p["image_bbox"], "img_w": p["img_w"], "img_h": p["img_h"],
+            }).encode()
+            segment_cache.put(m["id"], "bbox", bbox_json, context=ctx, subtype_override="bbox")
+            segments.append({"id": m["id"], "key": m["key"], "bbox_json": bbox_json})
+
+    result = []
+    for s in segments:
+        meta = json.loads(s["bbox_json"])
+        result.append({
+            "id": s["id"],
+            "sprite_url": f"/cache/segment/{s['key']}",
+            "image_bbox": meta["image_bbox"],
+            "img_w": meta["img_w"],
+            "img_h": meta["img_h"],
+        })
+    return {"segments": result}
+
+
+@app.post("/discover_scene_objects")
+async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
+    """Discover props the image model invented (SAM3 open-vocab) and return them
+    as new objects (sprite + footprint) so the client can give them occlusion +
+    collision. Cached by (scene layout, concept set, model)."""
+    import asyncio
+    import hashlib
+
+    if scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable discovery",
+        )
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    concepts = body.concepts or _DISCOVER_CONCEPTS
+    model = scene_segmenter._fal.discover_model
+    ctx = {"layout": layout, "concepts": ",".join(concepts), "model": model}
+    key = segment_cache.hash_key("discovery", ctx)
+
+    cached = segment_cache.get_by_hash(key, "discovery")
+    if cached is not None:
+        return {"discovered": json.loads(cached)}
+
+    produced = await asyncio.to_thread(
+        scene_segmenter.discover_objects, png, body.known_boxes, concepts,
+    )
+
+    discovered = []
+    for p in produced:
+        sprite_hash = hashlib.sha256(p["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = segment_cache.put(sprite_hash, "segment", p["sprite_png_bytes"])
+        discovered.append({
+            "id": p["id"],
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "image_bbox": p["image_bbox"],
+            "img_w": p["img_w"],
+            "img_h": p["img_h"],
+            "score": p["score"],
+            "concept": p["concept"],
+        })
+
+    segment_cache.put("discovery", "discovery", json.dumps(discovered).encode(),
+                      context=ctx, subtype_override="discovery")
+    return {"discovered": discovered}
+
+
 # Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative
 # to the project root so the ai_server can read them off disk and run img2img
 # over each frame.
@@ -789,6 +1119,24 @@ async def get_cached_skin(hash_key: str):
         return Response(status_code=404, content="Not found")
     return Response(content=data, media_type="image/png")
 
+
+
+@app.get("/cache/scene/{hash_key}")
+async def get_cached_scene(hash_key: str):
+    """Serve a cached scene background PNG (full or outpainted)."""
+    data = scene_cache.get_by_hash(hash_key, "scene")
+    if data is None:
+        return Response(status_code=404, content="Not found")
+    return Response(content=data, media_type="image/png")
+
+
+@app.get("/cache/segment/{hash_key}")
+async def get_cached_segment(hash_key: str):
+    """Serve a cached occluder sprite PNG (RGBA cutout from the scene image)."""
+    data = segment_cache.get_by_hash(hash_key, "segment")
+    if data is None:
+        return Response(status_code=404, content="Not found")
+    return Response(content=data, media_type="image/png")
 
 
 @app.get("/cache/model/{hash_key}")
