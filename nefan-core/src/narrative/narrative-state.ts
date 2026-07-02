@@ -426,6 +426,11 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  updatePlayerHealth(health: number): void {
+    this.player.health = health;
+    this.dirty = true;
+  }
+
   updatePlayerAppearance(modelId: string, skinPath: string): void {
     this.player.appearance = { model_id: modelId, skin_path: skinPath };
     this.dirty = true;
