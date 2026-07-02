@@ -1,14 +1,21 @@
 {
   "name": "@nefan/html",
   "version": "0.1.0",
-  "description": "Never Ending Fantasy — 2D top-down HTML client",
+  "description": "Never Ending Fantasy \u2014 2D top-down HTML client",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "lint": "eslint .",
+    "format": "prettier --write src"
   },
   "devDependencies": {
-    "vite": "^6.0.0",
-    "typescript": "^5.4.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.4",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.62.1",
+    "vite": "^6.0.0"
   }
 }

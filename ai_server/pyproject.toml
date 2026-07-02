@@ -1,0 +1,26 @@
+[project]
+name = "nefan-ai-server"
+version = "0.1.0"
+description = "Never Ending Fantasy — AI asset/narrative server (FastAPI)"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "B",   # bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501", # line length — la maneja el formateador, no el linter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# main.py carga .env y configura logging ANTES de importar los generadores
+# (los imports leen os.environ al inicializarse) — E402 es deliberado ahí.
+"main.py" = ["E402"]

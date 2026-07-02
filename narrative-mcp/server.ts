@@ -551,8 +551,9 @@ into context:
             num_images: msg.images.length,
           }, null, 2);
 
-          // deno-lint-ignore no-explicit-any
-          const content: any[] = [
+          const content: Array<
+            { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+          > = [
             { type: 'text', text: `Vision request:\n${header}` },
           ];
           for (const img of msg.images) {

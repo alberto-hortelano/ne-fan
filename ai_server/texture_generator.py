@@ -51,13 +51,13 @@ class TextureGenerator:
         ).to(self.device)
 
         # TAESD: fast VAE
-        print(f"TextureGen: Loading TAESD...")
+        print("TextureGen: Loading TAESD...")
         self.pipe.vae = AutoencoderTiny.from_pretrained(
             self.taesd_id, torch_dtype=torch.float16
         ).to(self.device)
 
         # LCM-LoRA: 4-step inference
-        print(f"TextureGen: Loading LCM-LoRA...")
+        print("TextureGen: Loading LCM-LoRA...")
         self.pipe.load_lora_weights(self.lcm_lora_id)
         self.pipe.fuse_lora()
         self.pipe.scheduler = LCMScheduler.from_config(self.pipe.scheduler.config)

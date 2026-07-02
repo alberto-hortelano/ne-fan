@@ -17,7 +17,3 @@ func register_combatant(c: Node) -> void:
 
 func unregister_combatant(c: Node) -> void:
 	_combatants.erase(c)
-
-
-func clear_pending() -> void:
-	pass  # Pending impacts live in nefan-core now

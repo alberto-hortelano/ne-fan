@@ -122,7 +122,7 @@ export function runBattle(opts: BattleOptions): BattleResult {
   stats[fighter1.id].finalHp = Math.max(0, f1.health);
   stats[fighter2.id].finalHp = Math.max(0, f2.health);
 
-  let winner: string | null = null;
+  let winner: string | null;
   let winnerId = fighter1.id;
   let loserId = fighter2.id;
 

@@ -1,5 +1,7 @@
 # CLAUDE.md — AI-Rendered RPG Engine
 
+> **Documento histórico (prototipo UE5, archivado).** Describe la visión original con Unreal Engine 5 + StreamDiffusion, ambos descartados (ver `docs/ai-graphics-conclusions.md`). El motor actual es Godot 4.6 y los endpoints que se citan aquí (`populate_room`, etc.) ya no existen — el canónico es `POST /generate_scene`. Se conserva como referencia de diseño.
+
 ## Visión del proyecto
 
 RPG 3D en Unreal Engine 5 donde **ningún asset artístico es creado por humanos**. El motor de historia (LLM) genera misiones, personajes y objetos en tiempo de ejecución. El motor visual (StreamDiffusion + ControlNet) transforma geometría primitiva en gráficos detallados frame a frame. DLSS 4 Multi Frame Generation multiplica los FPS del resultado final.

@@ -10,7 +10,6 @@ import os
 import struct
 import socket
 import time
-import threading
 
 from PIL import Image
 

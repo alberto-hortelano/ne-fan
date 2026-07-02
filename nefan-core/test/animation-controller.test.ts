@@ -99,7 +99,7 @@ describe("AnimationController", () => {
   it("turn inserted when direction changes significantly", () => {
     const ctrl = new AnimationController(animations, transitions);
     ctrl.tick(0.016, makeInputs(1.5)); // idle → walk
-    const events = ctrl.tick(0.016, makeInputs(1.5, true)); // turning
+    ctrl.tick(0.016, makeInputs(1.5, true)); // turning
     assert.equal(ctrl.currentState, "turn");
   });
 

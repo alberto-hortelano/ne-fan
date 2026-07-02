@@ -8,7 +8,7 @@ import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
-import type { CombatConfig, EnemyPersonality } from "../src/types.js";
+import type { CombatConfig, CombatEvent, EnemyPersonality } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config: CombatConfig = loadConfig(
@@ -95,7 +95,7 @@ describe("GameSimulation", () => {
       attackType: "quick",
     });
 
-    let allEvents: unknown[] = [];
+    const allEvents: CombatEvent[] = [];
     for (let i = 0; i < 20; i++) {
       const result = sim.tick(0.016, {
         playerPosition: player.position,
@@ -106,7 +106,7 @@ describe("GameSimulation", () => {
     }
 
     // Should NOT have attack_landed (out of range)
-    const landed = allEvents.filter((e: any) => e.type === "attack_landed");
+    const landed = allEvents.filter((e) => e.type === "attack_landed");
     assert.equal(landed.length, 0, "should not hit at 20m distance");
     assert.equal(enemy.health, 60, "enemy should be at full health");
   });
@@ -129,7 +129,7 @@ describe("GameSimulation", () => {
     sim.addCombatant(enemy, personality);
 
     // Tick enough for AI reaction + wind-up + resolution
-    let allEvents: unknown[] = [];
+    const allEvents: CombatEvent[] = [];
     for (let i = 0; i < 60; i++) {
       const result = sim.tick(0.016, {
         playerPosition: player.position,
@@ -140,7 +140,7 @@ describe("GameSimulation", () => {
     }
 
     // Enemy should have started at least one attack
-    const started = allEvents.filter((e: any) => e.type === "attack_started" && e.combatantId === "skeleton_01");
+    const started = allEvents.filter((e) => e.type === "attack_started" && e.combatantId === "skeleton_01");
     assert.ok(started.length > 0, "enemy AI should have started an attack");
   });
 
@@ -160,7 +160,7 @@ describe("GameSimulation", () => {
       combat_range: 4.0,
     });
 
-    let allEvents: unknown[] = [];
+    const allEvents: CombatEvent[] = [];
     for (let i = 0; i < 30; i++) {
       const result = sim.tick(0.016, {
         playerPosition: player.position,
@@ -170,7 +170,7 @@ describe("GameSimulation", () => {
       allEvents.push(...result.events);
     }
 
-    const started = allEvents.filter((e: any) => e.type === "attack_started" && e.combatantId === "skeleton_01");
+    const started = allEvents.filter((e) => e.type === "attack_started" && e.combatantId === "skeleton_01");
     assert.equal(started.length, 0, "enemy should not attack at 15m");
   });
 
@@ -206,7 +206,6 @@ describe("GameSimulation", () => {
     // If hit connected, store should reflect damage
     if (enemy.health < 60) {
       // Store should have been notified
-      const storeEnemies = store.state.enemies;
       // (enemies array only populated via enemies_projected dispatch,
       //  but enemy_damaged should have been dispatched)
     }
@@ -241,7 +240,7 @@ describe("GameSimulation", () => {
 
     const run1 = runSim(42);
     const run2 = runSim(42);
-    const run3 = runSim(99);
+    runSim(99); // different seed — smoke check only, result may legitimately match
 
     assert.deepEqual(run1, run2, "same seed should produce same results");
     // run3 MIGHT differ (different seed), but not guaranteed for all scenarios

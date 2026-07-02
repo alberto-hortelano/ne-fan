@@ -5,7 +5,6 @@ Falls back to textured box via trimesh if TripoSG is not available.
 TripoSG repo: vendor/triposg (or set TRIPOSG_PATH env).
 """
 
-import io
 import os
 import sys
 import time
