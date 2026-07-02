@@ -103,14 +103,6 @@ export function applyReducer(
         payload.room_data !== undefined ? structuredClone(payload.room_data) : {};
       break;
 
-    case "object_interacted":
-      state.narrative.last_interaction = (payload.description as string) ?? "";
-      break;
-
-    case "npc_talked":
-      state.narrative.last_dialogue = (payload.dialogue as string) ?? "";
-      break;
-
     case "weapon_changed":
       state.player.weapon_id = (payload.weapon_id as string) ?? state.player.weapon_id;
       break;

@@ -34,11 +34,6 @@ var state: Dictionary = {
 		},
 	},
 	"enemies": [],
-	"narrative": {
-		"story_so_far": "",
-		"last_dialogue": "",
-		"last_interaction": "",
-	},
 	"meta": {
 		"fps": 0.0,
 		"elapsed_ms": 0,
@@ -76,31 +71,6 @@ func snapshot() -> Dictionary:
 func restore(snap: Dictionary) -> void:
 	state = snap.duplicate(true)
 	state_changed.emit("state_restored", {})
-
-
-func save_to_disk(path: String = "user://save.json") -> bool:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if not file:
-		push_error("GameStore: cannot save to %s" % path)
-		return false
-	file.store_string(JSON.stringify(state, "\t"))
-	file.close()
-	print("GameStore: saved to %s" % path)
-	return true
-
-
-func load_from_disk(path: String = "user://save.json") -> bool:
-	var file := FileAccess.open(path, FileAccess.READ)
-	if not file:
-		return false
-	var data = JSON.parse_string(file.get_as_text())
-	file.close()
-	if data == null or not data is Dictionary:
-		push_error("GameStore: invalid save file")
-		return false
-	restore(data)
-	print("GameStore: loaded from %s" % path)
-	return true
 
 
 func _apply(event_name: String, payload: Dictionary) -> void:
@@ -162,10 +132,6 @@ func _apply(event_name: String, payload: Dictionary) -> void:
 			var room_id: String = payload.get("room_id", "")
 			var room_data: Dictionary = payload.get("room_data", {})
 			state.world.rooms_visited[room_id] = room_data
-		"object_interacted":
-			state.narrative.last_interaction = payload.get("description", "")
-		"npc_talked":
-			state.narrative.last_dialogue = payload.get("dialogue", "")
 		"weapon_changed":
 			state.player.weapon_id = payload.get("weapon_id", state.player.weapon_id)
 		"appearance_changed":

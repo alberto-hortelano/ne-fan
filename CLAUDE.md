@@ -279,21 +279,25 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 ## MCP bridge — Como funciona la narrativa
 
+**Sesión canónica única (Godot y HTML, mismo protocolo)**: la sesión vive en el bridge (`NarrativeState` TS + plugins). Godot habla con él por `logic_bridge` con `start_session`/`resume_session`/`save_session`/`dialogue_choice`/`interact_entity`; el mirror GD (`narrative_state.gd`) se hidrata del `SessionData` con `bridge_authoritative = true` (su `save()` queda bloqueado — **un solo escritor** de `saves/{id}/state.json`, el bridge, que además snapshotea pos/HP del sim al guardar y resiembra el sim al reanudar). Sin bridge, Godot degrada a sesión local offline (sin plugins ni motor narrativo).
+
 **Generación de escena inicial open-world**:
-1. Godot envía `session_start` al bridge (`logic_bridge`); el bridge construye el contexto y hace POST `/generate_scene` a ai_server (`AiClient.generateScene` en nefan-core)
+1. Godot envía `start_session` al bridge (`logic_bridge`); el bridge crea la sesión, activa plugins shipped y hace POST `/generate_scene` a ai_server (`AiClient.generateScene` en nefan-core)
 2. ai_server envía request vía WebSocket a narrative-mcp (:3737), añadiendo `available_assets` (lista del manifest) y `session` info
 3. Claude Code (en otra terminal) llama `narrative_listen()` → recibe el world_state
 4. Claude genera la escena JSON completa, opcionalmente referenciando assets cacheados por hash → llama `narrative_respond(scene_json)`
-5. ai_server recibe respuesta → la valida → la devuelve a Godot
-6. Godot construye la escena con `room_builder` + `object_spawner` (que respeta `texture_hash`/`model_hash` para reuso)
+5. ai_server la devuelve al bridge, que la registra en su NarrativeState y la difunde como `narrative_event` (effect `spawn_entity` con `data.scene`)
+6. Godot (señal `narrative_scene`) construye la escena con `room_builder` + `object_spawner` (que respeta `texture_hash`/`model_hash` para reuso)
 
 **Reactividad narrativa (diálogo → spawn dinámico)**:
-1. El jugador elige opción `1/2/3` o pulsa `T` y escribe respuesta libre
-2. `dialogue_ui` emite `dialogue_choice_made(idx, free_text)`; `main.gd` lo registra en `NarrativeState` y obtiene `event_id`
-3. `AIClient.report_player_choice(event_id, ...)` → POST `/report_player_choice` en ai_server
-4. ai_server envía `narrative_event` por MCP con el contexto compacto del NarrativeState
-5. Claude responde con `consequences: [story_update | spawn_entity | schedule_event | plugin_event]`
-6. `main.gd._on_narrative_consequences` aplica cada una: actualiza `story_so_far`, materializa entidades, registra todo en NarrativeState
+1. El jugador pulsa `E` sobre un NPC (→ `interact_entity`), elige opción `1/2/3` o pulsa `T` y escribe respuesta libre (→ `dialogue_choice`)
+2. El bridge registra el evento en su NarrativeState y llama `reportPlayerChoice` → POST `/report_player_choice` en ai_server
+3. ai_server envía `narrative_event` por MCP con el contexto compacto del NarrativeState
+4. Claude responde con `consequences: [story_update | spawn_entity | schedule_event | plugin_event]`
+5. El bridge aplica las consequences (dispatchConsequences + tick de plugins), guarda, y difunde `narrative_event` con los effects
+6. Godot los materializa vía señales (`narrative_dialogue`/`narrative_spawn`/`narrative_story_delta`…); el espejo GD solo refleja en memoria
+
+**Bypass legacy** (`load_game`, deprecated): beats scripted del ScenarioRunner sin LLM ni sesión canónica — solo para F4/`game_test.py`. Ahí el diálogo sigue yendo por `AIClient.report_player_choice` (HTTP directo).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
@@ -401,7 +405,7 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 ## Decisiones de diseno importantes
 
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador. Las "salas" cerradas son legacy de tests, no la unidad de gameplay.
-- **NarrativeState como save canónico** — todo el playthrough vive en `user://saves/{session_id}/state.json` (multi-slot). El autoload `GameState` legacy fue eliminado: world/player/story leen directamente de `NarrativeState`; el runtime puro (player.pos, enemies) vive en `GameStore`. Schema versionado.
+- **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Con bridge conectado, la sesión es la del bridge (plugins incluidos): el mirror GD se hidrata en memoria (`bridge_authoritative`) y su `save()` está bloqueado; pos/HP se snapshotean en `save_session` y el resume restaura posición, HP y entities. Offline, el mirror GD guarda en local. El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
 - **Asset library indexada** — `cache/manifest.json` traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.

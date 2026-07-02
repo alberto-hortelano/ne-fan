@@ -103,11 +103,6 @@ export interface GameState {
   world: WorldState;
   player: PlayerState;
   enemies: EnemyState[];
-  narrative: {
-    story_so_far: string;
-    last_dialogue: string;
-    last_interaction: string;
-  };
   meta: {
     fps: number;
     elapsed_ms: number;
