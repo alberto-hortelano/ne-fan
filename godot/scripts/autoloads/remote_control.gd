@@ -102,12 +102,24 @@ func _handle(line: String) -> String:
 			LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": ci})
 			return '{"ok":true,"choice":%d}' % ci
 		"save":
+			# En sesión canónica el escritor es el bridge (async: el resultado
+			# llega por session_saved); en offline, save local síncrono.
+			if NarrativeState.bridge_authoritative:
+				if not LogicBridge.is_connected_to_bridge():
+					return '{"ok":false,"error":"bridge down — canonical save unavailable"}'
+				LogicBridge.send_save_session()
+				return '{"ok":true,"async":true}'
 			var ok_save: bool = NarrativeState.session_id != "" and NarrativeState.save()
 			return '{"ok":%s}' % str(ok_save).to_lower()
 		"load":
 			# session_id opcional: permite cargar una sesión concreta (tests);
 			# por defecto recarga la activa.
 			var sid: String = json.get("session_id", NarrativeState.session_id)
+			if NarrativeState.bridge_authoritative:
+				if not LogicBridge.is_connected_to_bridge() or sid == "":
+					return '{"ok":false,"error":"bridge down or no session"}'
+				LogicBridge.send_resume_session(sid)
+				return '{"ok":true,"async":true}'
 			var ok_load: bool = sid != "" and NarrativeState.load_session(sid)
 			return '{"ok":%s}' % str(ok_load).to_lower()
 		"teleport":

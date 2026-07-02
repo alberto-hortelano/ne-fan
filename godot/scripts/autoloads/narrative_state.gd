@@ -93,6 +93,13 @@ var asset_index_snapshot: Array = []
 # v2/v3 del bridge al guardar desde Godot.
 var _extra_fields: Dictionary = {}
 
+# true cuando la sesión canónica vive en el bridge (flujo start_session/
+# resume_session): este mirror pasa a ser un espejo en memoria — los record_*
+# alimentan al history browser, pero save() está bloqueado. El ÚNICO escritor
+# de saves/{id}/state.json es el FsSessionStorage del bridge (sin doble
+# escritor). El modo offline (sin bridge) sigue guardando en local.
+var bridge_authoritative := false
+
 var _next_event_seq := 0
 var _dirty := false
 
@@ -108,6 +115,7 @@ func _ready() -> void:
 # ----------------------------------------------------------------------
 
 func start_new_session(p_game_id: String) -> String:
+	bridge_authoritative = false
 	session_id = _generate_session_id()
 	game_id = p_game_id
 	created_at = Time.get_datetime_string_from_system(true)
@@ -160,6 +168,7 @@ func load_session(p_session_id: String) -> bool:
 		push_warning("NarrativeState: schema version %d not supported (rango %d..%d)" % [
 			ver, MIN_SCHEMA_VERSION, SCHEMA_VERSION])
 		return false
+	bridge_authoritative = false
 	session_id = data.get("session_id", "")
 	game_id = data.get("game_id", "")
 	created_at = data.get("created_at", "")
@@ -187,7 +196,39 @@ func load_session(p_session_id: String) -> bool:
 	return true
 
 
+func hydrate_from_session_data(data: Dictionary, is_resume: bool = false) -> void:
+	"""Hidrata el espejo desde el SessionData que devuelve el bridge en
+	session_started. Solo memoria: no toca disco ni marca _dirty, y activa
+	bridge_authoritative (save() local bloqueado — el escritor es el bridge)."""
+	bridge_authoritative = true
+	session_id = String(data.get("session_id", ""))
+	game_id = String(data.get("game_id", ""))
+	created_at = String(data.get("created_at", ""))
+	updated_at = String(data.get("updated_at", ""))
+	world = data.get("world", world)
+	player = data.get("player", player)
+	story_so_far = String(data.get("story_so_far", ""))
+	scenes_loaded = data.get("scenes_loaded", {})
+	entities = data.get("entities", [])
+	dialogue_history = data.get("dialogue_history", [])
+	asset_index_snapshot = data.get("asset_index_snapshot", [])
+	_extra_fields = {}
+	for key in data.keys():
+		if not key in MIRRORED_KEYS:
+			_extra_fields[key] = data[key]
+	_next_event_seq = int(data.get("_next_event_seq", dialogue_history.size()))
+	_dirty = false
+	session_started.emit(session_id, game_id, is_resume)
+	print("NarrativeState: hydrated from bridge session %s (%d entities, %d dialogues)" % [
+		session_id, entities.size(), dialogue_history.size()])
+
+
 func save() -> bool:
+	if bridge_authoritative:
+		# El bridge es el único escritor del state.json de esta sesión: un save
+		# local pisaría snapshots (pos/HP, plugins) que el espejo no modela.
+		push_error("NarrativeState: save() bloqueado — sesión bridge-authoritative; usa LogicBridge.send_save_session()")
+		return false
 	if session_id == "":
 		push_warning("NarrativeState: cannot save without an active session")
 		return false
