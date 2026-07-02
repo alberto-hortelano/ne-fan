@@ -22,6 +22,7 @@ from narrative_schemas import (
     validate_scene_response,
     validate_weapon_orient_response,
     validate_narrative_reaction,
+    validate_blueprint_review,
 )
 
 
@@ -105,6 +106,11 @@ class LLMClient:
                         if req_id in self._pending:
                             self._pending[req_id] = msg.get("result", {})
                 elif msg_type == "narrative_event_response":
+                    req_id = msg["request_id"]
+                    with self._pending_lock:
+                        if req_id in self._pending:
+                            self._pending[req_id] = msg.get("result", {})
+                elif msg_type == "blueprint_review_response":
                     req_id = msg["request_id"]
                     with self._pending_lock:
                         if req_id in self._pending:
@@ -562,6 +568,62 @@ class LLMClient:
             print(f"LLM: react_to_player API error ({e})")
             return None
         return {"consequences": []}
+
+    # ------------------------------------------------------------------
+    # Blueprint review (visión sobre el schematic antes de gastar créditos)
+    # ------------------------------------------------------------------
+
+    def review_blueprint(self, image_b64: str, scene: dict, context: dict | None = None) -> dict:
+        """Pide a Claude (vía MCP) que revise el blueprint pintado contra la
+        escena Format D. Devuelve { approved, issues, fixes? } validado.
+
+        Solo MCP: la revisión es un paso de dev opt-in (tecla R) y no tiene
+        sentido sin la sesión de Claude Code escuchando. Lanza
+        NarrativeUnavailable si no hay listener o expira el timeout — el
+        endpoint lo convierte en HTTP 503/504, nunca en un 200 con error.
+        """
+        if not (self._ws_connected and self._ws):
+            raise NarrativeUnavailable("review_blueprint: MCP bridge not connected")
+
+        request_id = str(uuid.uuid4())
+        with self._pending_lock:
+            self._pending[request_id] = None
+        try:
+            self._ws.send(json.dumps({  # type: ignore
+                "type": "blueprint_review",
+                "request_id": request_id,
+                "image": {"view": "blueprint", "media_type": "image/png", "data_b64": image_b64},
+                "scene": scene,
+                "context": context or {},
+            }))
+        except Exception as e:
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+            raise NarrativeUnavailable(f"review_blueprint: MCP send failed ({e})") from e
+        print(f"LLM: blueprint review sent via MCP (id={request_id[:8]})")
+
+        timeout = max(self.timeout, 180.0)
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
+                        raise NarrativeUnavailable(
+                            "review_blueprint: no Claude Code instance is listening on the bridge"
+                        )
+                    validated = validate_blueprint_review(result if isinstance(result, dict) else {})
+                    print(
+                        f"LLM: blueprint review received ({time.time() - start:.1f}s, "
+                        f"approved={validated['approved']}, issues={len(validated['issues'])})"
+                    )
+                    return validated
+            time.sleep(0.1)
+
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        raise NarrativeUnavailable(f"review_blueprint: MCP timeout ({timeout}s)")
 
     # ------------------------------------------------------------------
     # Bridge status probe

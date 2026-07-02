@@ -37,6 +37,17 @@ export interface NarrativeEventMsg {
   context: Record<string, unknown>;
 }
 
+/** El cliente 2D pide a Claude que REVISE el blueprint pintado (la imagen que
+ *  verá Meshy) contra la escena Format D antes de gastar créditos: incoherencias
+ *  tipo río cortado, puente que no toca las orillas, edificio flotando. */
+export interface BlueprintReviewMsg {
+  type: 'blueprint_review';
+  request_id: string;
+  image: VisionImage;                 // view: 'blueprint', PNG del schematic
+  scene: Record<string, unknown>;     // la escena Format D actual
+  context?: Record<string, unknown>;
+}
+
 export interface HelloMsg {
   type: 'hello';
 }
@@ -46,10 +57,10 @@ export interface BridgeStatusRequestMsg {
   request_id: string;
 }
 
-export type ClientMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg | HelloMsg | BridgeStatusRequestMsg;
+export type ClientMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg | BlueprintReviewMsg | HelloMsg | BridgeStatusRequestMsg;
 
 // Requests that flow through the bridge queue (excluding hello and status)
-export type RequestMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg;
+export type RequestMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg | BlueprintReviewMsg;
 
 // ── MCP server → Python ──
 
@@ -71,6 +82,13 @@ export interface NarrativeEventResponseMsg {
   result: Record<string, unknown>;
 }
 
+export interface BlueprintReviewResponseMsg {
+  type: 'blueprint_review_response';
+  request_id: string;
+  /** { approved: bool, issues: string[], fixes?: { terrain?, terrain_features?, entity_moves? } } */
+  result: Record<string, unknown>;
+}
+
 export interface BridgeStatusResponseMsg {
   type: 'bridge_status_response';
   request_id: string;
@@ -79,7 +97,7 @@ export interface BridgeStatusResponseMsg {
   last_listen_seconds_ago: number;  // -1 if never
 }
 
-export type ServerMsg = RoomResponseMsg | VisionResponseMsg | NarrativeEventResponseMsg | BridgeStatusResponseMsg;
+export type ServerMsg = RoomResponseMsg | VisionResponseMsg | NarrativeEventResponseMsg | BlueprintReviewResponseMsg | BridgeStatusResponseMsg;
 
 // ── Peer-to-peer ──
 

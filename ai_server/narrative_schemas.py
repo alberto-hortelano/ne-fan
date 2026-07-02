@@ -938,3 +938,102 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 "payload": payload,
             })
     return {"consequences": out}
+
+
+def validate_blueprint_review(data: dict | None) -> dict:
+    """Validate a Claude response to a blueprint_review request.
+
+    Strict mode (mirror of narrative-mcp/server.ts:validateBlueprintReview —
+    keep both in sync): the shape is { approved: bool, issues: [str],
+    fixes?: { terrain?, terrain_features?, entity_moves? } }. Any deviation
+    raises ValueError; the endpoint surfaces it as HTTP 422.
+
+    `fixes` son overrides PARCIALES pero de campo completo: si viene terrain,
+    son TODAS las filas; terrain_features reemplaza la lista entera. Las
+    terrain_features pasan por la misma limpieza tolerante que en
+    validate_scene_response (reutilizada aquí en miniatura).
+    """
+    if not isinstance(data, dict):
+        raise ValueError(f"blueprint_review payload must be an object, got {type(data).__name__}")
+    approved = data.get("approved")
+    if not isinstance(approved, bool):
+        raise ValueError("blueprint_review payload missing boolean `approved`")
+
+    raw_issues = data.get("issues", [])
+    if not isinstance(raw_issues, list) or any(not isinstance(i, str) for i in raw_issues):
+        raise ValueError("blueprint_review `issues` must be a list of strings")
+    issues = [i.strip() for i in raw_issues if i.strip()]
+    if approved is False and not issues:
+        raise ValueError("blueprint_review approved=false requires a non-empty `issues` list")
+
+    out: dict = {"approved": approved, "issues": issues}
+
+    raw_fixes = data.get("fixes")
+    if raw_fixes is not None:
+        if not isinstance(raw_fixes, dict):
+            raise ValueError("blueprint_review `fixes` must be an object")
+        allowed = {"terrain", "terrain_features", "entity_moves"}
+        unknown = set(raw_fixes.keys()) - allowed
+        if unknown:
+            raise ValueError(
+                f"blueprint_review fixes has invalid keys {sorted(unknown)}; allowed: {sorted(allowed)}"
+            )
+        fixes: dict = {}
+
+        terrain = raw_fixes.get("terrain")
+        if terrain is not None:
+            if not isinstance(terrain, list) or any(not isinstance(r, str) for r in terrain):
+                raise ValueError("blueprint_review fixes.terrain must be the FULL list of row strings")
+            fixes["terrain"] = terrain
+
+        feats = raw_fixes.get("terrain_features")
+        if feats is not None:
+            if not isinstance(feats, list):
+                raise ValueError("blueprint_review fixes.terrain_features must be a list")
+            clean: list = []
+            for feat in feats[:24]:
+                if not isinstance(feat, dict):
+                    continue
+                ftype = feat.get("type")
+                pts = feat.get("points")
+                if not isinstance(ftype, str) or not ftype or not isinstance(pts, list) or len(pts) < 2:
+                    continue
+                if any(
+                    not (isinstance(p, list) and len(p) >= 2 and all(isinstance(v, (int, float)) for v in p[:2]))
+                    for p in pts
+                ):
+                    continue
+                cf: dict = {"type": ftype, "points": [[float(p[0]), float(p[1])] for p in pts]}
+                width = feat.get("width")
+                if isinstance(width, (int, float)) and width > 0:
+                    cf["width"] = float(width)
+                if feat.get("closed") is True and len(pts) >= 3:
+                    cf["closed"] = True
+                if isinstance(feat.get("color"), str):
+                    cf["color"] = feat["color"]
+                clean.append(cf)
+            fixes["terrain_features"] = clean
+
+        moves = raw_fixes.get("entity_moves")
+        if moves is not None:
+            if not isinstance(moves, list):
+                raise ValueError("blueprint_review fixes.entity_moves must be a list")
+            clean_moves: list = []
+            for idx, m in enumerate(moves):
+                if (
+                    not isinstance(m, dict)
+                    or not isinstance(m.get("id"), str)
+                    or not isinstance(m.get("cell"), list)
+                    or len(m["cell"]) != 2
+                    or any(not isinstance(v, (int, float)) for v in m["cell"])
+                ):
+                    raise ValueError(
+                        f"blueprint_review fixes.entity_moves[{idx}] must be {{ id: str, cell: [col,row] }}"
+                    )
+                clean_moves.append({"id": m["id"], "cell": [m["cell"][0], m["cell"][1]]})
+            fixes["entity_moves"] = clean_moves
+
+        if fixes:
+            out["fixes"] = fixes
+
+    return out

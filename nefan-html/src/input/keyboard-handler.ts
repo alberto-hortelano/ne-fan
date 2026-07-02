@@ -43,6 +43,7 @@ export class KeyboardHandler {
   private segmentRequested = false;
   private collisionDebugRequested = false;
   private discoverRequested = false;
+  private reviewRequested = false;
 
   private onAttackTypeChanged?: (type: string) => void;
 
@@ -77,6 +78,9 @@ export class KeyboardHandler {
         case "b": if (!e.repeat) this.collisionDebugRequested = true; break;
         // N = descubrir props Nuevos que la IA inventó (SAM3 open-vocab).
         case "n": if (!e.repeat) this.discoverRequested = true; break;
+        // R = Revisar el blueprint con Claude (visión vía MCP) antes de
+        // generar con G. Opt-in: requiere terminal de Claude Code escuchando.
+        case "r": if (!e.repeat) this.reviewRequested = true; break;
       }
       if (e.key in ATTACK_KEYS) {
         this.state.selectedAttack = ATTACK_KEYS[e.key];
@@ -153,6 +157,15 @@ export class KeyboardHandler {
   consumeToggleCollisionDebug(): boolean {
     if (this.collisionDebugRequested) {
       this.collisionDebugRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per R press (revisar el blueprint con Claude antes de generar). */
+  consumeReviewBlueprint(): boolean {
+    if (this.reviewRequested) {
+      this.reviewRequested = false;
       return true;
     }
     return false;
