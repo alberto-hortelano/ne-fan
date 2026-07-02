@@ -183,6 +183,8 @@ func _create_controls_panel() -> VBoxContainer:
 
 	for model_id in NpcModelRegistryScript.get_all_ids():
 		var data: Dictionary = NpcModelRegistryScript.get_model_data(model_id)
+		if data.get("category", "") == "enemy":
+			continue  # modelos sólo de enemigos — no seleccionables por el jugador
 		var btn := Button.new()
 		btn.text = "  %s  " % data.get("display_name", model_id)
 		btn.add_theme_font_size_override("font_size", 16)
