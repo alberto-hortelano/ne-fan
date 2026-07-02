@@ -27,6 +27,10 @@ signal narrative_story_delta(delta: String)
 signal narrative_ambient(message: String)
 signal narrative_status_changed(phase: String, kind: String, message: String)
 signal session_saved(ok: bool)
+# Emitida al terminar de procesar un narrative_event, incluso con effects
+# vacíos. Permite a la UI liberar esperas ("Claude piensa...") aunque el motor
+# narrativo no devuelva ningún efecto visible.
+signal narrative_event_done(event_id: String)
 
 var _socket := WebSocketPeer.new()
 var _connected := false
@@ -362,6 +366,7 @@ func _on_narrative_event_msg(msg: Dictionary) -> void:
 				print("LogicBridge: effect %s recibido" % kind)
 			_:
 				push_warning("LogicBridge: unknown effect kind '%s'" % kind)
+	narrative_event_done.emit(String(msg.get("eventId", "")))
 
 
 func _apply_state_update(msg: Dictionary) -> void:

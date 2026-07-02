@@ -555,11 +555,15 @@ func _cmd_dialogue_free_text(args: Dictionary) -> String:
 	if text.strip_edges() == "":
 		return '{"error":"empty text"}'
 	var main_scene := get_tree().current_scene
-	if not main_scene or not main_scene.has_method("_on_dialogue_choice_made"):
-		return '{"error":"no handler"}'
+	if not main_scene:
+		return '{"error":"no main scene"}'
+	# La máquina de diálogo vive en el nodo DialogueFlow (extraído de main.gd).
+	var flow := main_scene.get_node_or_null("DialogueFlow")
+	if not flow or not flow.has_method("_on_dialogue_choice_made"):
+		return '{"error":"no DialogueFlow handler"}'
 	# Hide the dialogue panel first, matching what the real LineEdit.submit does.
 	var ui := main_scene.get_node_or_null("DialogueUI")
 	if ui and ui.has_method("_hide_dialogue"):
 		ui._hide_dialogue()
-	main_scene._on_dialogue_choice_made(-1, text)
+	flow._on_dialogue_choice_made(-1, text)
 	return '{"ok":true,"text":"%s"}' % text.replace("\"", "\\\"")
