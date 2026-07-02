@@ -15,10 +15,17 @@ export async function handleInput(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Sim aún sin sembrar (title screen, o bridge recién reiniciado antes del
+  // resume): responder aquí con playerHp 0 haría que el cliente matara al
+  // player. Sin combatiente no hay nada que simular ni reportar.
+  if (!ctx.sim.getCombatant("player")) return;
   const result = ctx.sim.tick(msg.delta, msg.inputs);
 
   // Tick scenario runner
   const playerPos = msg.inputs.playerPosition;
+  // Mantén store.player.pos al día: los position hints de los spawns
+  // narrativos (dialogue.ts) y fireMapTriggers se resuelven contra él.
+  ctx.store.dispatch("player_moved", { pos: [playerPos.x, playerPos.y, playerPos.z] });
   const scenarioResult = ctx.scenario.isActive
     ? await ctx.scenario.tick(msg.delta, playerPos)
     : null;
@@ -102,15 +109,20 @@ export function handleLoadRoom(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): void {
+  // Con sesión narrativa activa, cambiar de escena NO cura: se preserva el
+  // HP del combatiente vivo (leído antes del reset). Sin sesión (rooms de
+  // test legacy) se mantiene el arranque a tope de vida.
+  const livePlayer = ctx.sim.getCombatant("player");
+  const playerMaxHp = ctx.store.state.player.max_hp || 100;
+  const inSession = ctx.narrative.session_id !== "" && livePlayer !== undefined;
+  const playerHp = inSession ? livePlayer!.health : playerMaxHp;
   // Reset simulation for new room
   ctx.sim.reset();
-  // Always use max HP when loading a new room (player starts fresh)
-  const playerMaxHp = ctx.store.state.player.max_hp || 100;
-  ctx.store.dispatch("player_respawned", { hp: playerMaxHp, pos: [0, 0, 0] });
+  ctx.store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
   ctx.sim.addCombatant(
     createCombatant(
       "player",
-      playerMaxHp,
+      playerHp,
       ctx.store.state.player.weapon_id,
       { x: 0, y: 0, z: 0 },
       { x: 0, y: 0, z: -1 },
@@ -148,11 +160,15 @@ export function handleLoadRoom(
   });
 
   console.log(`Bridge: room loaded '${msg.roomId}' with ${msg.enemies.length} enemies`);
-  // Send state_update with reset HP so Godot gets the fresh state
+  // Send state_update with the (possibly preserved) HP so the client syncs.
+  // In-session, this is a scene TRANSITION, not a respawn: emitting the
+  // player_respawned event would make the client run its respawn side-effects
+  // (Godot teleports the player to the spawn point and refills HP, clobbering
+  // a resume's restored position). Legacy no-session loads keep the event.
   const roomResponse: StateUpdateMessage = {
     type: "state_update",
-    events: [{ type: "player_respawned", hp: playerMaxHp }],
-    playerHp: playerMaxHp,
+    events: inSession ? [] : [{ type: "player_respawned", hp: playerHp }],
+    playerHp: playerHp,
     enemies: getEnemyStates(ctx),
   };
   ctx.send(ws, roomResponse);

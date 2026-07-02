@@ -434,6 +434,178 @@ describe("bridge dialogue_choice", () => {
   });
 });
 
+describe("bridge runtime ↔ sesión (persistencia)", () => {
+  it("input actualiza store.player.pos (player_moved)", async () => {
+    const { ctx, store } = makeCtx();
+    const { socket } = makeSocket();
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 3, y: 1, z: -2 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      socket,
+      ctx,
+    );
+    assert.deepEqual(store.state.player.pos, [3, 1, -2]);
+  });
+
+  it("input sin combatiente player no responde (evita playerHp 0 fantasma)", async () => {
+    const { ctx, sim } = makeCtx();
+    sim.reset(); // bridge recién arrancado / title screen: sin player sembrado
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 0, y: 0, z: 0 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+        },
+      },
+      socket,
+      ctx,
+    );
+    assert.equal(sent.length, 0);
+  });
+
+  it("save_session snapshotea posición y HP del sim en el save", async () => {
+    const bundle = makeCtx();
+    const { ctx, narrative, sim, storage } = bundle;
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+
+    const player = sim.getCombatant("player")!;
+    player.position = { x: 4, y: 1, z: 7 };
+    player.health = 42;
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
+    assert.deepEqual(narrative.player.position, [4, 1, 7]);
+    assert.equal(narrative.player.health, 42);
+    const onDisk = (await storage.read(sessionId))!;
+    assert.deepEqual(onDisk.player.position, [4, 1, 7]);
+    assert.equal(onDisk.player.health, 42);
+  });
+
+  it("resume_session resiembra el sim con la posición y HP guardados", async () => {
+    const bundle = makeCtx();
+    const { ctx, sim, store } = bundle;
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    const player = sim.getCombatant("player")!;
+    player.position = { x: -5, y: 1, z: 9 };
+    player.health = 33;
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
+    // Ensuciar el runtime como haría seguir jugando (o una sesión distinta).
+    player.health = 100;
+    player.position = { x: 0, y: 0, z: 0 };
+    ctx.activePlugins = new Map();
+    const { socket: socket2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, socket2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).ok, true);
+
+    const reseeded = sim.getCombatant("player")!;
+    assert.equal(reseeded.health, 33);
+    assert.deepEqual(reseeded.position, { x: -5, y: 1, z: 9 });
+    assert.equal(store.state.player.hp, 33);
+  });
+
+  it("start_session resetea el runtime: no hereda el HP de la sesión anterior", async () => {
+    const { ctx, sim, store } = makeCtx();
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    sim.getCombatant("player")!.health = 12; // sesión 1 termina malherida
+
+    const { socket: s2 } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s2, ctx);
+    assert.equal(sim.getCombatant("player")!.health, 100);
+    assert.equal(store.state.player.hp, 100);
+  });
+
+  it("load_room con sesión activa preserva el HP; sin sesión resetea a tope", async () => {
+    const loadRoom = {
+      type: "load_room",
+      roomId: "scene_x",
+      enemies: [],
+    } as const;
+
+    // Con sesión: el HP vivo sobrevive a la transición de escena.
+    const withSession = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      withSession.ctx,
+    );
+    withSession.sim.getCombatant("player")!.health = 55;
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ ...loadRoom }, s2, withSession.ctx);
+    const inSessionUpdate = sent2[0] as StateUpdateMessage;
+    assert.equal(inSessionUpdate.playerHp, 55);
+    // Transición de escena, NO respawn: sin evento player_respawned (el
+    // cliente teletransportaría al player al spawn pisando un resume).
+    assert.equal(inSessionUpdate.events.length, 0);
+
+    // Sin sesión (rooms de test legacy): arranque a tope, como siempre.
+    const noSession = makeCtx();
+    noSession.sim.getCombatant("player")!.health = 55;
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage({ ...loadRoom }, s3, noSession.ctx);
+    const legacyUpdate = sent3[0] as StateUpdateMessage;
+    assert.equal(legacyUpdate.playerHp, 100);
+    assert.equal(legacyUpdate.events[0]?.type, "player_respawned");
+    void sent;
+  });
+
+  it("broadcastScene proyecta las entities enemy de la escena a store.enemies", async () => {
+    const { ctx, store, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({
+      id: "camp",
+      kind: "site",
+      parent_id: "world",
+      name: "El Campamento",
+    });
+    narrative.recordSceneLoaded("scene_camp", {
+      room_id: "scene_camp",
+      place_id: "camp",
+      room_description: "un campamento",
+    });
+    narrative.recordEntitySpawned(
+      "bandit_1",
+      "enemy",
+      "scene_camp",
+      { x: 2, y: 0, z: 3 },
+      { combat: { health: 70, weapon_id: "short_sword" } },
+      "react_to_player",
+    );
+    narrative.recordEntitySpawned(
+      "merchant_1",
+      "npc",
+      "scene_camp",
+      { x: 1, y: 0, z: 1 },
+      { name: "Boris" },
+      "react_to_player",
+    );
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "camp" }, socket, ctx);
+
+    assert.equal(store.state.enemies.length, 1);
+    assert.equal(store.state.enemies[0].id, "bandit_1");
+    assert.equal(store.state.enemies[0].hp, 70);
+    assert.equal(store.state.enemies[0].weapon_id, "short_sword");
+  });
+});
+
 describe("bridge player_entered_place + map triggers", () => {
   it("lugar desconocido → narrative_status: error", async () => {
     const { ctx, broadcasts } = makeCtx();

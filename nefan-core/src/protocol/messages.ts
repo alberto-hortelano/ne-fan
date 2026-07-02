@@ -44,6 +44,10 @@ export interface PingMessage {
   type: "ping";
 }
 
+/** @deprecated Bypass legacy del ScenarioRunner — no crea sesión canónica ni
+ *  toca NarrativeState/plugins. Consumidores restantes: F4 en Godot,
+ *  `remote_control.gd` (game_test.py, beats scripted sin LLM) y el dropdown
+ *  `game:` del cliente HTML. El flujo canónico es start_session/resume_session. */
 export interface LoadGameMessage {
   type: "load_game";
   gameId: string;

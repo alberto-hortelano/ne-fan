@@ -19,6 +19,7 @@ import {
   type PluginEventInput,
 } from "../src/plugins/dispatcher.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
+import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import type { ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
 
@@ -89,6 +90,13 @@ export function broadcastScene(
   elapsedMs?: number,
 ): void {
   enrichSceneWithExits(ctx, scene);
+  // Proyección canónica NarrativeState.entities → GameStore.enemies para la
+  // escena que se difunde. Los dos dispatch inline que quedan en
+  // handlers/simulation.ts proyectan fuentes NO narrativas (enemigos que el
+  // cliente declara en load_room y el ScenarioRunner legacy de load_game).
+  ctx.store.dispatch("enemies_projected", {
+    enemies: projectEnemiesFromEntities(ctx.narrative.entities, { sceneId }),
+  });
   ctx.broadcastNarrative({
     type: "narrative_event",
     eventId: "scene_init",

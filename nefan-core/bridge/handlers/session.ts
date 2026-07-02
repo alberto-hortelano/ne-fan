@@ -93,6 +93,21 @@ export async function handleStartSession(
     });
     return;
   }
+  // Sesión nueva ⇒ runtime nuevo: sin este reset el sim arrastra los
+  // combatientes (y el HP herido) de la sesión anterior del proceso.
+  ctx.sim.reset();
+  const freshHp = ctx.narrative.player.health;
+  const freshPos = ctx.narrative.player.position;
+  ctx.sim.addCombatant(
+    createCombatant(
+      "player",
+      freshHp,
+      ctx.store.state.player.weapon_id,
+      { x: freshPos[0], y: freshPos[1], z: freshPos[2] },
+      { x: 0, y: 0, z: -1 },
+    ),
+  );
+  ctx.store.dispatch("player_respawned", { hp: freshHp, pos: [...freshPos] });
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, msg.gameId, false);
   await ctx.narrative.save();
   ctx.subscribe(ws);
@@ -225,6 +240,21 @@ export async function handleResumeSession(
     });
     return;
   }
+  // Resembrar el sim desde el save: sin esto arrastra los combatientes de la
+  // sesión anterior y el HP guardado nunca vuelve al runtime.
+  ctx.sim.reset();
+  const savedPos = ctx.narrative.player.position;
+  const savedHp = ctx.narrative.player.health;
+  ctx.sim.addCombatant(
+    createCombatant(
+      "player",
+      savedHp,
+      ctx.store.state.player.weapon_id,
+      { x: savedPos[0], y: savedPos[1], z: savedPos[2] },
+      { x: 0, y: 0, z: -1 },
+    ),
+  );
+  ctx.store.dispatch("player_respawned", { hp: savedHp, pos: [...savedPos] });
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, ctx.narrative.game_id, true);
   ctx.subscribe(ws);
   ctx.send(ws, {
@@ -252,6 +282,15 @@ export async function handleSaveSession(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Snapshot del runtime antes de escribir: posición y HP viven en el sim
+  // durante el juego y sólo se persisten aquí (un único punto de sincronía).
+  const player = ctx.sim.getCombatant("player");
+  if (player) {
+    ctx.narrative.updatePlayerPosition(player.position, ctx.narrative.world.active_scene_id);
+    ctx.narrative.updatePlayerHealth(player.health);
+  } else {
+    console.warn("Bridge: save_session without player combatant — runtime snapshot skipped");
+  }
   const ok = await ctx.narrative.save();
   ctx.send(ws, { type: "session_saved", requestId: msg.requestId, ok });
 }
