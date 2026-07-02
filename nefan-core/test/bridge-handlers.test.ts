@@ -454,6 +454,26 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.deepEqual(store.state.player.pos, [3, 1, -2]);
   });
 
+  it("input sin combatiente player no responde (evita playerHp 0 fantasma)", async () => {
+    const { ctx, sim } = makeCtx();
+    sim.reset(); // bridge recién arrancado / title screen: sin player sembrado
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 0, y: 0, z: 0 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+        },
+      },
+      socket,
+      ctx,
+    );
+    assert.equal(sent.length, 0);
+  });
+
   it("save_session snapshotea posición y HP del sim en el save", async () => {
     const bundle = makeCtx();
     const { ctx, narrative, sim, storage } = bundle;

@@ -15,6 +15,10 @@ export async function handleInput(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Sim aún sin sembrar (title screen, o bridge recién reiniciado antes del
+  // resume): responder aquí con playerHp 0 haría que el cliente matara al
+  // player. Sin combatiente no hay nada que simular ni reportar.
+  if (!ctx.sim.getCombatant("player")) return;
   const result = ctx.sim.tick(msg.delta, msg.inputs);
 
   // Tick scenario runner
