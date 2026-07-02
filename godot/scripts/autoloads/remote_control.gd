@@ -18,6 +18,11 @@ var _held_actions: Dictionary = {}  # action_name → seconds_remaining
 
 
 func _ready() -> void:
+	# Infraestructura de test: en builds de release el servidor TCP no debe
+	# escuchar (puerto abierto sin uso en producción).
+	if not OS.is_debug_build():
+		set_process(false)
+		return
 	var err := _server.listen(PORT)
 	if err == OK:
 		print("RemoteControl: listening on :%d" % PORT)
@@ -226,7 +231,15 @@ func _cmd_load_room(args: Dictionary) -> String:
 	var index: int = args.get("index", 0)
 	var main_scene := get_tree().current_scene
 	if main_scene.has_method("_load_room_from_file"):
+		# Los dev rooms se prueban sin sesión narrativa: descartar el title
+		# screen y mostrar al player para que los screenshots vean el mundo.
+		var title := main_scene.get_node_or_null("TitleScreen")
+		if title:
+			title.queue_free()
 		main_scene.call("_load_room_from_file", index)
+		var player := main_scene.get_node_or_null("Player")
+		if player:
+			player.visible = true
 		return '{"ok":true,"index":%d}' % index
 	return '{"error":"main scene has no _load_room_from_file"}'
 
@@ -273,7 +286,10 @@ func _cmd_status() -> String:
 		var col = ray.get_collider()
 		info["ray_hit"] = col.name if col else "null"
 		info["ray_hit_npc"] = col.has_meta("npc_name") if col else false
-	info["room"] = String(NarrativeState.world.get("active_scene_id", ""))
+	# Room runtime (GameStore se actualiza en TODOS los paths de _apply_room;
+	# NarrativeState.active_scene_id sólo en el flujo de escenario/open-world).
+	info["room"] = String(GameStore.state.world.get("room_id", ""))
+	info["narrative_scene"] = String(NarrativeState.world.get("active_scene_id", ""))
 	info["rooms_visited"] = NarrativeState.scenes_loaded.size()
 	info["fps"] = Engine.get_frames_per_second()
 	# Combat info

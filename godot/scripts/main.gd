@@ -17,8 +17,11 @@ const DialogueUIScript = preload("res://scripts/ui/dialogue_ui.gd")
 const HistoryBrowserScript = preload("res://scripts/ui/history_browser.gd")
 const ObjectSpawnerScript = preload("res://scripts/room/object_spawner.gd")
 const TitleScreenScript = preload("res://scripts/ui/title_screen.gd")
+const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
+const DialogueFlowScript = preload("res://scripts/narrative/dialogue_flow.gd")
 const CharacterEditorScript = preload("res://scripts/ui/character_editor.gd")
 const NpcModelRegistryScript = preload("res://scripts/npc/npc_model_registry.gd")
+const NodeAccess = preload("res://scripts/util/node_access.gd")
 
 var _room_files: Array[String] = []
 var _dev_menu: CanvasLayer
@@ -41,18 +44,7 @@ var _paused := false
 var _pending_game_id := ""
 var _pending_scene_path := ""
 var _pending_session_id := ""
-# Cache of the last dialogue shown so we can record it on choice
-var _last_dialogue_speaker := ""
-var _last_dialogue_text := ""
-var _last_dialogue_choices: Array = []
-# Free-text reply in flight: the scripted scenario is paused waiting for
-# Claude's reaction. When the reaction arrives (or the player advances past
-# Claude's injected dialogue), we resume the script with the remembered
-# fallback choice so the beat machine never stays stuck.
-var _pending_free_text_event_id := ""
-var _pending_free_text_orig_choices: Array = []
-var _pending_free_text_pending: bool = false
-var _claude_injected_dialogue: bool = false
+var _dialogue_flow: Node = null  # DialogueFlow — máquina de diálogo/free-text
 var _character_editor: CanvasLayer = null
 
 @onready var _player: CharacterBody3D = $Player
@@ -131,12 +123,15 @@ func _ready() -> void:
 	LogicBridge._player = _player
 	LogicBridge._player_combatant = _player_combatant
 
-	# AI client
-	AIClient.narrative_consequences.connect(_on_narrative_consequences)
+	# AI client — las consequences las aplica DialogueFlow; main sólo materializa spawns
+	# OK: main es la escena raíz, vida == app — no necesita auto_disconnect
+	AIClient.narrative_consequences.connect(
+		func(event_id: String, consequences: Array) -> void:
+			_dialogue_flow.handle_consequences(event_id, consequences))
 	AIClient.check_server()
 
 	# Interaction system
-	var ray = _player.get_node_or_null("InteractionRay")
+	var ray: Node = NodeAccess.must_get_node(_player, "InteractionRay", "main._ready interaction")
 	if ray:
 		ray.target_changed.connect(_on_target_changed)
 		ray.interacted.connect(_on_interacted)
@@ -152,12 +147,15 @@ func _ready() -> void:
 	_dev_menu.call_deferred("set_rooms", _room_files)
 	_dev_menu.call_deferred("set_animations", CombatAnimatorScript.ANIM_MAP.keys())
 
-	# Dialogue UI
+	# Dialogue UI + máquina de diálogo narrativo
 	_dialogue_ui = DialogueUIScript.new()
 	_dialogue_ui.name = "DialogueUI"
 	add_child(_dialogue_ui)
-	_dialogue_ui.dialogue_advanced.connect(_on_dialogue_advanced)
-	_dialogue_ui.dialogue_choice_made.connect(_on_dialogue_choice_made)
+	_dialogue_flow = DialogueFlowScript.new()
+	_dialogue_flow.name = "DialogueFlow"
+	add_child(_dialogue_flow)
+	_dialogue_flow.setup(_dialogue_ui, _hud)
+	_dialogue_flow.spawn_entity_requested.connect(_apply_spawn_entity_consequence)
 
 	# History browser (tecla H)
 	var history_browser := HistoryBrowserScript.new()
@@ -165,6 +163,7 @@ func _ready() -> void:
 	add_child(history_browser)
 
 	# Scenario signals from LogicBridge
+	# OK: main es la escena raíz, vida == app — no necesita auto_disconnect
 	LogicBridge.scenario_dialogue.connect(_on_scenario_dialogue)
 	LogicBridge.scenario_objective.connect(_on_scenario_objective)
 	LogicBridge.scenario_change_scene.connect(_on_scenario_change_scene)
@@ -309,10 +308,10 @@ func respawn_player() -> void:
 	GameStore.state.player.combat_state = "idle"
 	_player.position = Vector3(0, 1, 4)
 	_player.velocity = Vector3.ZERO
-	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main.respawn_player")
 	if player_sync:
 		player_sync.reset()
-	var player_anim = _player.get_node_or_null("CombatAnimator")
+	var player_anim: Node = NodeAccess.must_get_node(_player, "CombatAnimator", "main.respawn_player")
 	if player_anim:
 		player_anim.travel("idle")
 	_hud.show_brief_message("Respawn")
@@ -353,64 +352,11 @@ func _pause() -> void:
 		child.set_physics_process(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-	_pause_menu = CanvasLayer.new()
+	_pause_menu = PauseMenuScript.new()
 	_pause_menu.name = "PauseMenu"
-	_pause_menu.layer = 21
-	_pause_menu.process_mode = Node.PROCESS_MODE_ALWAYS
-
-	var bg := ColorRect.new()
-	bg.color = Color(0, 0, 0, 0.6)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.add_child(bg)
-
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_pause_menu.add_child(center)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 20)
-	center.add_child(vbox)
-
-	var title := Label.new()
-	title.text = "PAUSA"
-	title.add_theme_font_size_override("font_size", 42)
-	title.add_theme_color_override("font_color", Color(0.85, 0.65, 0.3))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
-
-	var btn_style := StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.12, 0.08, 0.18)
-	btn_style.border_color = Color(0.5, 0.35, 0.15)
-	btn_style.set_border_width_all(2)
-	btn_style.set_corner_radius_all(6)
-	btn_style.set_content_margin_all(12)
-
-	var hover_style := btn_style.duplicate()
-	hover_style.bg_color = Color(0.2, 0.12, 0.25)
-	hover_style.border_color = Color(0.85, 0.65, 0.3)
-
-	var btn_resume := Button.new()
-	btn_resume.text = "Continuar"
-	btn_resume.add_theme_font_size_override("font_size", 24)
-	btn_resume.custom_minimum_size = Vector2(300, 55)
-	btn_resume.add_theme_stylebox_override("normal", btn_style)
-	btn_resume.add_theme_stylebox_override("hover", hover_style)
-	btn_resume.add_theme_stylebox_override("focus", hover_style)
-	btn_resume.pressed.connect(_unpause)
-	vbox.add_child(btn_resume)
-
-	var btn_title := Button.new()
-	btn_title.text = "Volver al titulo"
-	btn_title.add_theme_font_size_override("font_size", 24)
-	btn_title.custom_minimum_size = Vector2(300, 55)
-	btn_title.add_theme_stylebox_override("normal", btn_style.duplicate())
-	btn_title.add_theme_stylebox_override("hover", hover_style.duplicate())
-	btn_title.add_theme_stylebox_override("focus", hover_style.duplicate())
-	btn_title.pressed.connect(_on_pause_return_to_title)
-	vbox.add_child(btn_title)
-
+	_pause_menu.resume_requested.connect(_unpause)
+	_pause_menu.return_to_title_requested.connect(_on_pause_return_to_title)
 	add_child(_pause_menu)
-	btn_resume.call_deferred("grab_focus")
 
 
 func _unpause() -> void:
@@ -476,7 +422,7 @@ func return_to_title() -> void:
 	GameStore.state.player.hp = _player_combatant.max_health
 	GameStore.state.player.combat_state = "idle"
 
-	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main.return_to_title")
 	if player_sync:
 		player_sync.reset()
 
@@ -556,17 +502,17 @@ func _on_dev_room_selected(file_path: String) -> void:
 
 
 func _on_dev_animation_selected(anim_name: String) -> void:
-	var animator = _player.get_node_or_null("CombatAnimator")
+	var animator: Node = NodeAccess.must_get_node(_player, "CombatAnimator", "main dev anim preview")
 	if animator:
 		animator.travel(anim_name)
 	# Disable combat animation sync while previewing
-	var sync = _player.get_node_or_null("CombatAnimationSync")
+	var sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main dev anim preview")
 	if sync:
 		sync.set_process(false)
 
 
 func _reactivate_animation_sync() -> void:
-	var sync = _player.get_node_or_null("CombatAnimationSync")
+	var sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main._reactivate_animation_sync")
 	if sync:
 		sync.set_process(true)
 		sync.reset()
@@ -695,7 +641,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 	_player_combatant.current_attack_type = ""
 	GameStore.state.player.hp = _player_combatant.max_health
 	GameStore.state.player.combat_state = "idle"
-	var player_sync = _player.get_node_or_null("CombatAnimationSync")
+	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main._apply_room")
 	if player_sync:
 		player_sync.reset()
 
@@ -808,7 +754,7 @@ func _on_editor_cancelled() -> void:
 
 
 func _apply_player_appearance(model_id: String, skin_path: String) -> void:
-	var animator: Node3D = _player.get_node_or_null("CombatAnimator")
+	var animator: Node3D = NodeAccess.must_get_node(_player, "CombatAnimator", "main._apply_player_appearance")
 	if not animator:
 		return
 	var data: Dictionary = NpcModelRegistryScript.get_model_data(model_id)
@@ -844,7 +790,7 @@ func _start_game(game_id: String, scene_path: String, resume_session_id: String 
 	# Establish a NarrativeState session: either fresh or resumed from save
 	if resume_session_id != "":
 		if not NarrativeState.load_session(resume_session_id):
-			print("main: failed to resume session %s — starting fresh" % resume_session_id)
+			push_warning("main: failed to resume session %s — starting fresh" % resume_session_id)
 			NarrativeState.start_new_session(game_id)
 	else:
 		NarrativeState.start_new_session(game_id)
@@ -868,10 +814,7 @@ func _start_game(game_id: String, scene_path: String, resume_session_id: String 
 func _on_scenario_dialogue(speaker: String, text: String, choices: Array) -> void:
 	if not _scenario_active:
 		return
-	_last_dialogue_speaker = speaker
-	_last_dialogue_text = text
-	_last_dialogue_choices = choices
-	_dialogue_ui.show_dialogue(speaker, text, choices)
+	_dialogue_flow.show_dialogue(speaker, text, choices)
 
 
 func _on_scenario_objective(text: String) -> void:
@@ -942,14 +885,14 @@ func _on_scenario_spawn_enemy(data: Dictionary) -> void:
 			"personality": combat_data.get("personality", {}),
 		},
 	}
-	# Map character_type to model path
+	# Map character_type to model path via the shared registry
 	var char_type: String = data.get("character_type", "")
-	if char_type == "mutant":
-		obj_data["character_model"] = "res://assets/characters/mixamo/mutant/character.fbx"
-	elif char_type == "warrok":
-		obj_data["character_model"] = "res://assets/characters/mixamo/warrok/character.fbx"
-	elif char_type == "skeletonzombie":
-		obj_data["character_model"] = "res://assets/characters/mixamo/skeletonzombie/character.fbx"
+	if char_type != "":
+		var model_path: String = NpcModelRegistryScript.get_model_path(char_type)
+		if model_path != "":
+			obj_data["character_model"] = model_path
+		else:
+			push_warning("Scenario: unknown enemy character_type '%s' — using capsule" % char_type)
 	spawner.spawn_objects([obj_data], _current_room)
 
 	# Register with combat manager
@@ -989,149 +932,6 @@ func _on_scenario_spawn_objects(objects: Array) -> void:
 			obj_id, "object", NarrativeState.world.get("active_scene_id", ""),
 			obj.get("position", [0, 0, 0]), obj, "scenario"
 		)
-
-
-func _on_dialogue_advanced() -> void:
-	# If the player is advancing past a Claude-injected dialogue, use this
-	# moment to resume the scripted scenario that we paused when the player
-	# wrote free text. Otherwise we'd remain stuck waiting for a beat that
-	# never triggers.
-	if _claude_injected_dialogue and _pending_free_text_pending:
-		_resume_script_after_free_text()
-		return
-	LogicBridge.send_scenario_event("dialogue_advanced")
-
-
-func _on_dialogue_choice_made(choice_index: int, free_text: String = "") -> void:
-	var speaker: String = _last_dialogue_speaker
-	var text: String = _last_dialogue_text
-	var choices: Array = _last_dialogue_choices
-
-	# If the player was replying to a Claude-injected dialogue, treat the
-	# choice as "advance past it" and resume the scripted script (Claude's
-	# injected choices are freeform — they don't map onto scripted beats).
-	if _claude_injected_dialogue and _pending_free_text_pending:
-		# Record the Claude sub-dialogue into the session for replay/history,
-		# but don't re-trigger another Claude call (it would loop).
-		NarrativeState.record_dialogue_event(speaker, text, choices, choice_index, free_text)
-		_resume_script_after_free_text()
-		return
-
-	var event_id: String = NarrativeState.record_dialogue_event(
-		speaker, text, choices, choice_index, free_text
-	)
-
-	if choice_index < 0:
-		# Free text: PAUSE the scripted scenario and wait for Claude's
-		# reaction. We do NOT fall through to choice 0 — that would make
-		# the scripted response fire immediately, which is exactly what
-		# the player is trying to override.
-		_pending_free_text_event_id = event_id
-		_pending_free_text_orig_choices = choices.duplicate()
-		_pending_free_text_pending = true
-		_claude_injected_dialogue = false
-		_hud.show_text_panel("🤔 Claude piensa en cómo responde el mundo...")
-		AIClient.report_player_choice(event_id, speaker, "", free_text,
-			NarrativeState.serialize_for_llm("compact"))
-	else:
-		# Numbered choice: advance the scripted scenario immediately and
-		# (in parallel) let Claude react, but without pausing the game.
-		LogicBridge.send_scenario_event("dialogue_choice", {
-			"choiceIndex": choice_index,
-			"freeText": free_text,
-		})
-		var chosen_text: String = ""
-		if choice_index < choices.size():
-			var c = choices[choice_index]
-			chosen_text = String(c.get("text", "")) if c is Dictionary else String(c)
-		AIClient.report_player_choice(event_id, speaker, chosen_text, free_text,
-			NarrativeState.serialize_for_llm("compact"))
-
-
-func _resume_script_after_free_text() -> void:
-	"""Release the free-text pause and advance the scripted scenario with the
-	fallback action we remembered when the player first typed."""
-	var orig_choices: Array = _pending_free_text_orig_choices
-	_pending_free_text_event_id = ""
-	_pending_free_text_orig_choices = []
-	_pending_free_text_pending = false
-	_claude_injected_dialogue = false
-	_hud.hide_text_panel()
-	if orig_choices.size() > 0:
-		LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": 0})
-	else:
-		LogicBridge.send_scenario_event("dialogue_advanced")
-
-
-func _on_narrative_consequences(event_id: String, consequences: Array) -> void:
-	"""Apply consequences emitted by the narrative engine after a player choice."""
-	var is_free_text_pending: bool = (
-		_pending_free_text_pending and event_id == _pending_free_text_event_id
-	)
-	var injected_dialogue_this_round := false
-
-	# Clear the persistent "Claude piensa..." placeholder now that we have
-	# a response. Individual consequence handlers below may show their own
-	# brief messages on top.
-	if is_free_text_pending:
-		_hud.hide_text_panel()
-
-	if consequences.is_empty():
-		if is_free_text_pending:
-			# Claude had nothing to add — resume the scripted scenario so
-			# the player isn't stuck with a hidden dialogue state.
-			_hud.show_brief_message("💭 El silencio responde al viento...")
-			_resume_script_after_free_text()
-		else:
-			_hud.show_brief_message("💭 El mundo sigue su curso...")
-		return
-
-	for c in consequences:
-		if not c is Dictionary:
-			continue
-		var ctype: String = c.get("type", "")
-		match ctype:
-			"dialogue":
-				var spk: String = String(c.get("speaker", "?"))
-				var txt: String = String(c.get("text", ""))
-				var chx_raw = c.get("choices", [])
-				var chx: Array = chx_raw if chx_raw is Array else []
-				if txt == "":
-					continue
-				_last_dialogue_speaker = spk
-				_last_dialogue_text = txt
-				_last_dialogue_choices = chx
-				_dialogue_ui.show_dialogue(spk, txt, chx)
-				injected_dialogue_this_round = true
-				if is_free_text_pending:
-					_claude_injected_dialogue = true
-			"story_update":
-				var delta: String = c.get("delta", "")
-				if delta != "":
-					if NarrativeState.story_so_far == "":
-						NarrativeState.story_so_far = delta
-					else:
-						NarrativeState.story_so_far += "\n\n" + delta
-					if not injected_dialogue_this_round:
-						_hud.show_brief_message("📖 " + delta.substr(0, 60))
-			"spawn_entity":
-				_apply_spawn_entity_consequence(c, event_id)
-			"schedule_event":
-				print("Narrative: scheduled event '%s' (trigger=%s)" % [
-					c.get("description", ""), c.get("trigger", "")])
-			"plugin_event":
-				# Los efectos los aplica el dispatcher de plugins en el bridge;
-				# aquí sólo se deja traza (el estado llega vía state updates).
-				print("Narrative: plugin_event '%s' -> %s" % [
-					c.get("event_type", ""), String(c.get("plugin_id", "")).substr(0, 12)])
-		# Record the consequence so the history browser (Phase 4) can show it
-		NarrativeState.record_narrative_consequence(event_id, c)
-
-	# If Claude didn't inject any dialogue in response to free text we need
-	# to release the paused scenario so the game can continue; otherwise the
-	# player sees nothing on screen and the beat machine hangs.
-	if is_free_text_pending and not injected_dialogue_this_round:
-		_resume_script_after_free_text()
 
 
 func _apply_spawn_entity_consequence(c: Dictionary, event_id: String) -> void:
