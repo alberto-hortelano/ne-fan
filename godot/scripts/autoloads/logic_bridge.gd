@@ -3,6 +3,7 @@
 ## Falls back to local combat when bridge is not available.
 extends Node
 
+const NodeAccess = preload("res://scripts/util/node_access.gd")
 const BRIDGE_URL := "ws://127.0.0.1:9877"
 
 signal connection_changed(connected: bool)
@@ -24,6 +25,10 @@ var _retry_interval := 5.0
 var _player: CharacterBody3D = null
 var _player_combatant: Node = null  # Combatant
 var _pending_room: Dictionary = {}  # Room data to send when bridge connects
+# Cache id → Node para no recorrer el árbol entero por cada enemigo/NPC en
+# cada state_update. La validez se comprueba al leer (is_instance_valid), así
+# que un cambio de room o un despawn invalidan la entrada sin hooks extra.
+var _node_cache: Dictionary = {}
 
 
 func _ready() -> void:
@@ -78,7 +83,7 @@ func _process(delta: float) -> void:
 		_connected = false
 		_enabled = false
 		if was_connected:
-			print("LogicBridge: disconnected")
+			push_warning("LogicBridge: disconnected from bridge — combat falls back to local logic")
 			connection_changed.emit(false)
 
 
@@ -340,10 +345,10 @@ func _apply_state_update(msg: Dictionary) -> void:
 				if _player:
 					_player.position = Vector3(0, 1, 4)
 					_player.velocity = Vector3.ZERO
-				var psync = _player.get_node_or_null("CombatAnimationSync") if _player else null
+				var psync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "logic_bridge player_respawned") if _player else null
 				if psync:
 					psync.reset()
-				var panim = _player.get_node_or_null("CombatAnimator") if _player else null
+				var panim: Node = NodeAccess.must_get_node(_player, "CombatAnimator", "logic_bridge player_respawned") if _player else null
 				if panim:
 					panim.travel("idle")
 
@@ -409,11 +414,30 @@ func _apply_state_update(msg: Dictionary) -> void:
 func _find_enemy_node(root: Node, enemy_id: String) -> Node:
 	if not root:
 		return null
-	# Search all descendants (enemy is inside room container)
+	var cached: Variant = _node_cache.get(enemy_id)
+	# is_instance_valid PRIMERO: sobre una instancia liberada, cualquier otra
+	# operación (`is`, atributos) lanza "previously freed instance".
+	if (
+		is_instance_valid(cached)
+		and cached is Node
+		and not cached.is_queued_for_deletion()
+		and String(cached.name) == enemy_id
+		and root.is_ancestor_of(cached)
+	):
+		return cached
+	var found: Node = _search_node_recursive(root, enemy_id)
+	if found:
+		_node_cache[enemy_id] = found
+	else:
+		_node_cache.erase(enemy_id)
+	return found
+
+
+func _search_node_recursive(root: Node, enemy_id: String) -> Node:
 	for child in root.get_children():
-		if child.name == enemy_id:
+		if String(child.name) == enemy_id:
 			return child
-		var found: Node = _find_enemy_node(child, enemy_id)
+		var found: Node = _search_node_recursive(child, enemy_id)
 		if found:
 			return found
 	return null

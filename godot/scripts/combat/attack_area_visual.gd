@@ -9,8 +9,6 @@ const CombatDataRef = preload("res://scripts/combat/combat_data.gd")
 var _combatant: Node  # Combatant
 var _animator: Node3D  # CombatAnimator (for forward direction)
 var _config: Dictionary = {}
-var _attack_types: Dictionary = {}
-var _weapons: Dictionary = {}
 
 # Whether this is the player (shows persistent preview) or enemy (only wind-up)
 var is_player := false
@@ -36,8 +34,6 @@ func _ready() -> void:
 	_animator = get_parent().get_node_or_null("CombatAnimator")
 
 	_config = CombatDataRef.load_config()
-	_attack_types = _config.get("attack_types", {})
-	_weapons = _config.get("weapons", {})
 
 	if _combatant:
 		_combatant.attack_started.connect(_on_attack_started)
@@ -100,8 +96,7 @@ func _on_attack_started(type_id: String) -> void:
 	if not _combatant:
 		return
 	var weapon_id: String = _combatant.weapon_id
-	var weapon_data: Dictionary = _weapons.get(weapon_id, _weapons.get("unarmed", {}))
-	_params = CombatDataRef.get_effective_params(type_id, _attack_types, weapon_data)
+	_params = CombatDataRef.get_effective_params(type_id, weapon_id)
 	if _params.is_empty():
 		return
 	_mode = "windup"
@@ -122,8 +117,7 @@ func _update_preview_params() -> void:
 	if not _combatant:
 		return
 	var weapon_id: String = _combatant.weapon_id
-	var weapon_data: Dictionary = _weapons.get(weapon_id, _weapons.get("unarmed", {}))
-	_preview_params = CombatDataRef.get_effective_params(_selected_type, _attack_types, weapon_data)
+	_preview_params = CombatDataRef.get_effective_params(_selected_type, weapon_id)
 	if _mode == "" and is_player:
 		_mode = "preview"
 

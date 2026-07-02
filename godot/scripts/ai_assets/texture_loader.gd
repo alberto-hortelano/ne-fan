@@ -10,6 +10,7 @@ func load_room_textures(room: Node3D) -> void:
 	_pending_materials.clear()
 
 	# Connect to cache signals
+	# OK: RefCounted retenido por main toda la app; el guard evita duplicados
 	if not TextureCache.texture_ready.is_connected(_on_texture_ready):
 		TextureCache.texture_ready.connect(_on_texture_ready)
 

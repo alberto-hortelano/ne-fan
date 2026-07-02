@@ -11,7 +11,6 @@ var _combatant: Node  # Combatant
 var _sprint_speed := 3.8
 var _animation_intrinsics: Dictionary = {}
 var _attack_types: Dictionary = {}
-var _weapons: Dictionary = {}
 
 # State
 var is_attacking := false
@@ -40,7 +39,6 @@ func _ready() -> void:
 	var pcfg: Dictionary = config.get("player", {})
 	_sprint_speed = pcfg.get("sprint_speed", 3.8)
 	_attack_types = config.get("attack_types", {})
-	_weapons = config.get("weapons", {})
 	_load_animation_intrinsics()
 
 	if _combatant:
@@ -297,8 +295,7 @@ func _select_best_animation(attack_type: String) -> Dictionary:
 
 	# Get effective params for this attack type + current weapon
 	var weapon_id: String = _combatant.weapon_id if _combatant else "unarmed"
-	var weapon_data: Dictionary = _weapons.get(weapon_id, {})
-	var params: Dictionary = CombatDataRef.get_effective_params(attack_type, _attack_types, weapon_data)
+	var params: Dictionary = CombatDataRef.get_effective_params(attack_type, weapon_id)
 	if params.is_empty():
 		return {"key": attack_type, "speed_scale": 1.0}
 

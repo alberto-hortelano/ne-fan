@@ -23,7 +23,9 @@ OUTPUT_DIR = "/tmp/movement_test"
 
 def send_cmd(cmd: dict) -> dict:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(5.0)
+    # 15s: el escaneo de rooms de setup_room pasa por escenas pesadas
+    # (open_world_test) que en headless tardan varios segundos en construir.
+    sock.settimeout(15.0)
     sock.connect((HOST, PORT))
     sock.sendall((json.dumps(cmd) + "\n").encode())
     data = b""
@@ -160,10 +162,14 @@ def test_attack_animation():
 
     attach_camera()
 
-    if anim in ["quick", "idle"]:  # quick or already returned
-        return True, f"Attack played (state={anim}, after={anim_after})"
-    else:
-        return False, f"Expected 'quick', got '{anim}'"
+    # El selector de animaciones (_select_best_animation) elige el CLIP por
+    # parámetros físicos (reach/sweep/impacto), así que el ataque "quick"
+    # puede reproducir un clip con otro nombre. Lo que se valida: durante el
+    # ataque hay un one-shot sonando (anim != idle) o ya terminó, y al final
+    # SIEMPRE se vuelve a idle.
+    if anim_after != "idle":
+        return False, f"Attack did not return to idle (during={anim}, after={anim_after})"
+    return True, f"Attack played and returned to idle (during={anim or 'already done'})"
 
 
 def test_attack_root_motion():

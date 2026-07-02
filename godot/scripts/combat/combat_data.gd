@@ -1,6 +1,15 @@
-## Loads and merges combat configuration data from JSON.
+## Loads combat configuration data from JSON.
+##
+## La matemática de parámetros efectivos (daño, área, wind-up por arma) vive
+## en nefan-core (src/combat/combat-data.ts); `dump-config` la precalcula en
+## data/combat_effective_params.json y aquí SÓLO se lee la tabla — Godot no
+## duplica cálculos de combate ("lógica en nefan-core, Godot solo visual").
 class_name CombatData
 extends RefCounted
+
+const EFFECTIVE_PARAMS_PATH := "res://data/combat_effective_params.json"
+
+static var _effective_params: Dictionary = {}
 
 
 static func load_config(path: String = "res://data/combat_config.json") -> Dictionary:
@@ -16,30 +25,16 @@ static func load_config(path: String = "res://data/combat_config.json") -> Dicti
 	return data
 
 
-static func get_effective_params(attack_type_id: String, attack_types: Dictionary, weapon_data: Dictionary) -> Dictionary:
-	var base: Dictionary = attack_types.get(attack_type_id, {})
-	if base.is_empty():
-		push_error("CombatData: unknown attack type '%s'" % attack_type_id)
-		return {}
-
-	var mods: Dictionary = weapon_data.get("modifiers", {}).get(attack_type_id, {})
-	var wup_global: float = weapon_data.get("wind_up_modifier", 1.0)
-
-	return {
-		"optimal_distance": base.get("optimal_distance", 1.5) + mods.get("optimal_distance_offset", 0.0),
-		"distance_tolerance": base.get("distance_tolerance", 1.0),
-		"area_radius": base.get("area_radius", 1.0) * mods.get("area_radius_multiplier", 1.0),
-		"base_damage": base.get("base_damage", 10.0) * mods.get("damage_multiplier", 1.0),
-		"damage_reduction": base.get("damage_reduction", 0.0),
-		"wind_up_time": get_effective_wind_up(base, weapon_data, attack_type_id),
-	}
-
-
-static func get_effective_wind_up(attack_type_data: Dictionary, weapon_data: Dictionary, attack_type_id: String = "") -> float:
-	var base_wup: float = attack_type_data.get("wind_up_time", 0.3)
-	var global_mod: float = weapon_data.get("wind_up_modifier", 1.0)
-	var type_mod: float = 1.0
-	if attack_type_id != "":
-		var mods: Dictionary = weapon_data.get("modifiers", {}).get(attack_type_id, {})
-		type_mod = mods.get("wind_up_multiplier", 1.0)
-	return base_wup * global_mod * type_mod
+static func get_effective_params(attack_type_id: String, weapon_id: String) -> Dictionary:
+	"""Parámetros efectivos (weapon × attack type) precalculados por nefan-core.
+	Regenerar con `cd nefan-core && npm run dump-config` si cambia combat_config."""
+	if _effective_params.is_empty():
+		_effective_params = load_config(EFFECTIVE_PARAMS_PATH)
+		if _effective_params.is_empty():
+			push_error("CombatData: combat_effective_params.json missing — run `npm run dump-config` in nefan-core")
+			return {}
+	var weapon_table: Dictionary = _effective_params.get(weapon_id, _effective_params.get("unarmed", {}))
+	var params: Dictionary = weapon_table.get(attack_type_id, {})
+	if params.is_empty():
+		push_error("CombatData: no effective params for weapon='%s' attack='%s'" % [weapon_id, attack_type_id])
+	return params
