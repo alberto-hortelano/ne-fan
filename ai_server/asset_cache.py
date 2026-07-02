@@ -8,8 +8,10 @@ prompt, so the narrative engine can browse what already exists and reuse it.
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,13 +20,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Los touch() de last_used se persisten como mucho cada este intervalo para no
+# reescribir el manifest entero (O(n)) en cada cache hit. Un touch perdido por
+# un crash sólo degrada la aproximación LRU, no corrompe nada.
+_TOUCH_SAVE_INTERVAL_S = 60.0
+
+
 class AssetManifest:
-    """Shared, append-only index of all generated assets across cache types."""
+    """Shared index of all generated assets across cache types.
+
+    Crece con cada register(); `prune()` aplica un techo de tamaño con
+    eviction LRU (por `last_used`, con fallback a `created_at`)."""
 
     def __init__(self, manifest_path: Path):
         self.path = Path(manifest_path)
         self._lock = threading.Lock()
         self._entries: list[dict] = []
+        self._touch_dirty = False
+        self._last_touch_save = 0.0
         self._load()
 
     def _load(self) -> None:
@@ -109,6 +122,79 @@ class AssetManifest:
     def find_by_hash(self, hash_key: str) -> list[dict]:
         with self._lock:
             return [e for e in self._entries if e.get("hash") == hash_key]
+
+    def touch(self, hash_key: str) -> None:
+        """Marca un asset como usado (para el LRU de prune). El save se
+        debouncea a _TOUCH_SAVE_INTERVAL_S; en memoria es inmediato."""
+        with self._lock:
+            changed = False
+            for e in self._entries:
+                if e.get("hash") == hash_key:
+                    e["last_used"] = _now()
+                    changed = True
+            if not changed:
+                return
+            self._touch_dirty = True
+            now = time.monotonic()
+            if now - self._last_touch_save >= _TOUCH_SAVE_INTERVAL_S:
+                self._save_locked()
+                self._touch_dirty = False
+                self._last_touch_save = now
+
+    def total_bytes(self) -> int:
+        with self._lock:
+            return sum(int(e.get("size_bytes", 0)) for e in self._entries)
+
+    def prune(self, dirs_by_type: dict[str, Path], max_bytes: int) -> dict:
+        """Evicta assets completos (todas las subtypes de un (type, hash))
+        menos usados hasta que el total baje de max_bytes.
+
+        `dirs_by_type` mapea asset_type → directorio raíz de ese cache (el
+        blob vive en {dir}/{hash}/). Un type sin directorio conocido no se
+        toca en disco ni en el manifest (fail-safe). Devuelve un resumen."""
+        if max_bytes <= 0:
+            return {"pruned": 0, "freed_bytes": 0, "total_bytes": self.total_bytes()}
+        with self._lock:
+            groups: dict[tuple[str, str], dict] = {}
+            for e in self._entries:
+                key = (str(e.get("type", "")), str(e.get("hash", "")))
+                g = groups.setdefault(key, {"size": 0, "last": ""})
+                g["size"] += int(e.get("size_bytes", 0))
+                last = str(e.get("last_used") or e.get("created_at") or "")
+                if last > g["last"]:
+                    g["last"] = last
+            total = sum(g["size"] for g in groups.values())
+            if total <= max_bytes:
+                return {"pruned": 0, "freed_bytes": 0, "total_bytes": total}
+
+            evicted: set[tuple[str, str]] = set()
+            freed = 0
+            # ISO-8601 ordena lexicográficamente: el más antiguo primero.
+            for (atype, hash_key), g in sorted(groups.items(), key=lambda kv: kv[1]["last"]):
+                if total <= max_bytes:
+                    break
+                blob_root = dirs_by_type.get(atype)
+                if blob_root is None:
+                    continue  # type sin dir conocido — no tocar
+                blob_dir = Path(blob_root) / hash_key
+                try:
+                    if blob_dir.exists():
+                        shutil.rmtree(blob_dir)
+                except OSError as err:
+                    print(f"AssetManifest.prune: cannot remove {blob_dir}: {err}", flush=True)
+                    continue  # no desindexar lo que sigue en disco
+                evicted.add((atype, hash_key))
+                total -= g["size"]
+                freed += g["size"]
+
+            if evicted:
+                self._entries = [
+                    e
+                    for e in self._entries
+                    if (str(e.get("type", "")), str(e.get("hash", ""))) not in evicted
+                ]
+                self._save_locked()
+            return {"pruned": len(evicted), "freed_bytes": freed, "total_bytes": total}
 
     def find_by_prompt(
         self, prompt: str, asset_type: str | None = None
