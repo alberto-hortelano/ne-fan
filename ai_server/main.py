@@ -256,6 +256,18 @@ async def lifespan(app: FastAPI):
         ))
         print("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
 
+    # Techo de tamaño del cache (LRU por last_used del manifest). Sin él, el
+    # cache crece sin cota (llegó a 340 MB en dev). 0 = sin límite.
+    max_cache_bytes = int(config["cache_max_bytes"])
+    if max_cache_bytes > 0:
+        summary = asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
+        if summary["pruned"] > 0:
+            print(
+                f"AssetManifest: pruned {summary['pruned']} assets "
+                f"({summary['freed_bytes'] / 1e6:.1f} MB freed, "
+                f"{summary['total_bytes'] / 1e6:.1f} MB remain)"
+            )
+
     print(f"\nAI Server ready. HTTP :{config['port']}")
     yield
     llm_client = None
@@ -439,13 +451,48 @@ class DiscoverSceneRequest(BaseModel):
     concepts: list[str] | None = None
 
 
+def _cache_dirs_by_type() -> dict[str, Path]:
+    """asset_type → raíz del cache de ese tipo (el blob vive en {dir}/{hash})."""
+    return {
+        "texture": Path(config["texture_cache_dir"]),
+        "model": Path(config["model_cache_dir"]),
+        "skin": Path(config["skin_cache_dir"]),
+        "sprite": Path(config["sprite_cache_dir"]),
+        "scene": Path(config["scene_cache_dir"]),
+        "segment": Path(config["segment_cache_dir"]),
+    }
+
+
+def _touch_asset(hash_key: str) -> None:
+    """Marca un asset como usado para el LRU del prune (no-op sin manifest)."""
+    if asset_manifest is not None:
+        asset_manifest.touch(hash_key)
+
+
 @app.get("/health")
 async def health():
+    cache_total = asset_manifest.total_bytes() if asset_manifest else 0
+    cache_max = int(config.get("cache_max_bytes", 0)) if config else 0
     return {
         "status": "ready" if llm_client else "loading",
         "mode": "narrative",
         "texture_pipeline": "loaded" if (texture_gen and texture_gen.is_loaded) else "lazy",
+        "cache_total_bytes": cache_total,
+        "cache_max_bytes": cache_max,
+        "cache_over_limit": bool(cache_max and cache_total > cache_max),
     }
+
+
+@app.post("/cache/prune")
+async def prune_cache():
+    """Fuerza una pasada de eviction LRU hasta bajar de cache_max_bytes."""
+    if asset_manifest is None:
+        raise HTTPException(status_code=503, detail="manifest not ready")
+    max_cache_bytes = int(config["cache_max_bytes"])
+    if max_cache_bytes <= 0:
+        raise HTTPException(status_code=400, detail="cache_max_bytes is 0 (no limit configured)")
+    summary = asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
+    return {"ok": True, **summary}
 
 
 @app.post("/generate_scene")
@@ -1135,6 +1182,7 @@ async def asset_by_hash(hash_key: str):
     matches = asset_manifest.find_by_hash(hash_key)
     if not matches:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     enriched = []
     for m in matches:
         entry = dict(m)
@@ -1158,6 +1206,7 @@ async def get_cached_sprite(hash_key: str):
     data = sprite_cache.get_by_hash(hash_key, "sprite")
     if data is None:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     return Response(content=data, media_type="image/png")
 
 
@@ -1167,6 +1216,7 @@ async def get_cached_skin(hash_key: str):
     data = skin_cache.get_by_hash(hash_key, "skin")
     if data is None:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     return Response(content=data, media_type="image/png")
 
 
@@ -1177,6 +1227,7 @@ async def get_cached_scene(hash_key: str):
     data = scene_cache.get_by_hash(hash_key, "scene")
     if data is None:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     return Response(content=data, media_type="image/png")
 
 
@@ -1186,6 +1237,7 @@ async def get_cached_segment(hash_key: str):
     data = segment_cache.get_by_hash(hash_key, "segment")
     if data is None:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     return Response(content=data, media_type="image/png")
 
 
@@ -1195,6 +1247,7 @@ async def get_cached_model(hash_key: str):
     data = model_cache.get_by_hash(hash_key, "model")
     if data is None:
         return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
     return Response(content=data, media_type="model/gltf-binary")
 
 
@@ -1207,7 +1260,7 @@ async def get_cached_asset(map_type: str, hash_key: str):
     data = asset_cache.get_by_hash(hash_key, map_type)
     if data is None:
         return Response(status_code=404, content="Not found")
-
+    _touch_asset(hash_key)
     return Response(content=data, media_type="image/png")
 
 

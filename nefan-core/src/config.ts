@@ -88,6 +88,10 @@ export interface NefanConfig {
     /** Mount the /diagnostic/* router (skin_test_* endpoints used for manual
      *  parameter sweeps with curl). Off in production: the routes 404. */
     expose_diagnostic: boolean;
+    /** Techo del cache de assets en bytes. Al arrancar (y vía POST
+     *  /cache/prune) se evictan los assets menos usados (LRU por `last_used`
+     *  del manifest) hasta bajar del límite. 0 = sin límite. */
+    cache_max_bytes: number;
   };
 }
 
@@ -128,5 +132,6 @@ export const CONFIG: NefanConfig = {
     discover_model: "fal-ai/sam-3/image",
     texture_lazy_load: true,
     expose_diagnostic: false,
+    cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
   },
 };
