@@ -853,6 +853,12 @@ func _on_bridge_session_started(ok: bool, p_session_id: String, _p_game_id: Stri
 		return
 	NarrativeState.hydrate_from_session_data(state, is_resume)
 	print("main: bridge session %s (%s)" % [p_session_id, "resume" if is_resume else "new"])
+	# Asegura el estado in-game: un resume puede llegar sin pasar por
+	# _start_game (F9 / remote "load" tras una muerte que volvió al título).
+	_scenario_active = true
+	_player.visible = true
+	if has_node("TitleScreen"):
+		get_node("TitleScreen").queue_free()
 	if is_resume:
 		var appearance: Dictionary = NarrativeState.player.get("appearance", {})
 		_apply_player_appearance(
