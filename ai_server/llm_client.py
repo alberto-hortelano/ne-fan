@@ -7,7 +7,6 @@ Supports two backends:
 
 import os
 import json
-import copy
 import uuid
 import threading
 import time
@@ -64,7 +63,7 @@ class LLMClient:
         # Pending responses from MCP bridge
         self._pending: dict[str, dict | None] = {}
         self._pending_lock = threading.Lock()
-        self._ws: "websocket.WebSocketApp | None" = None
+        self._ws: websocket.WebSocketApp | None = None
         self._ws_connected = False
 
         # Try MCP bridge first

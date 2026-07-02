@@ -345,7 +345,7 @@ func _apply_state_update(msg: Dictionary) -> void:
 					psync.reset()
 				var panim = _player.get_node_or_null("CombatAnimator") if _player else null
 				if panim:
-					panim.play("idle")
+					panim.travel("idle")
 
 
 	# Update NPC positions/animations from scenario

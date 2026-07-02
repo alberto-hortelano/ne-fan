@@ -31,7 +31,7 @@ const ctx: LlmContext = {
 
 describe("AiClient", () => {
   it("notifySessionStart posts the right body", async () => {
-    let captured: { url?: string; body?: unknown } = {};
+    const captured: { url?: string; body?: unknown } = {};
     const client = new AiClient({
       baseUrl: "http://test",
       fetchImpl: mockFetch((url, init) => {

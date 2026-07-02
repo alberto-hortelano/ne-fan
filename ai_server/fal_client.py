@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 import os
-from typing import Optional
 
 import httpx
 
@@ -28,7 +27,7 @@ class FalSamClient:
         self,
         segment_model: str = "fal-ai/sam2/image",
         discover_model: str = "fal-ai/sam-3/image",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         self.segment_model = segment_model
         self.discover_model = discover_model

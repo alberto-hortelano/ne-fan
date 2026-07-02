@@ -1,12 +1,11 @@
 /** ScenarioRunner — orchestrates narrative beats, NPC behavior, and triggers. */
 
 import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 import type { Vec3 } from "../types.js";
 import type {
   GameDef,
   Beat,
-  BeatAction,
   NpcUpdate,
   ScenarioUpdate,
 } from "./scenario-types.js";

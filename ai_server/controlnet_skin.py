@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import time
-from typing import Iterable, Iterator
 
 import cv2
 import numpy as np

@@ -7,7 +7,6 @@ Requires MESHY_API_KEY environment variable.
 import asyncio
 import os
 import time
-from typing import Optional
 
 import httpx
 
@@ -15,7 +14,7 @@ import httpx
 class MeshyClient:
     BASE_URL = "https://api.meshy.ai"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.environ.get("MESHY_API_KEY", "")
         if not self.api_key:
             raise ValueError("MESHY_API_KEY not set")
@@ -149,7 +148,7 @@ class MeshyImageToImage:
     }
     USD_PER_CREDIT = 0.02
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.environ.get("MESHY_API_KEY", "")
         if not self.api_key:
             raise ValueError("MESHY_API_KEY not set")
@@ -171,7 +170,7 @@ class MeshyImageToImage:
         prompt: str,
         reference_image_urls: list[str],
         generate_multi_view: bool = False,
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> str:
         """POST a new image-to-image task. Returns task_id."""
         if ai_model not in self.MODEL_CREDITS:
@@ -206,7 +205,7 @@ class MeshyImageToImage:
         task_id: str,
         timeout: float = 180.0,
         poll_interval: float = 3.0,
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> dict:
         """Poll the task until SUCCEEDED/FAILED/CANCELED. Returns the final task dict."""
 
@@ -238,7 +237,7 @@ class MeshyImageToImage:
     async def download(
         self,
         url: str,
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> bytes:
         async def _get(c: httpx.AsyncClient) -> bytes:
             response = await c.get(url)
@@ -255,7 +254,7 @@ class MeshyImageToImage:
         ai_model: str,
         prompt: str,
         reference_image_urls: list[str],
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> tuple[bytes, dict]:
         """submit -> wait -> download. Returns (png_bytes, task_dict). Raises on failure."""
         own_client = client is None

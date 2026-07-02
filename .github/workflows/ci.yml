@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  nefan-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nefan-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: nefan-core/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test
+
+  narrative-mcp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: narrative-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: narrative-mcp/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  nefan-html:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nefan-html
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: nefan-html/package-lock.json
+      # nefan-html importa tipos de nefan-core por ruta relativa — hace falta
+      # instalar también las deps del core para que tsc/vite resuelvan.
+      - run: npm ci
+      - run: npm ci --prefix ../nefan-core
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build
+
+  ai-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check ai_server
+      - run: python -m compileall -q ai_server

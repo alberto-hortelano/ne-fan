@@ -461,7 +461,7 @@ async def generate_scene(body: GenerateSceneRequest):
             llm_client.generate_scene, body.model_dump(exclude_none=True)
         )
     except NarrativeUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
 
 @app.post("/generate_texture")
@@ -566,12 +566,12 @@ async def backend_status_endpoint():
         if not bridge.get("connected"):
             vision_status = api_or_down("bridge no conectado (¿narrative-mcp arrancado?)")
         elif bridge.get("error"):
-            vision_status = api_or_down("bridge error: %s" % bridge["error"])
+            vision_status = api_or_down(f"bridge error: {bridge['error']}")
         elif bridge.get("listener_active"):
             ago: float = bridge.get("last_listen_seconds_ago", -1)
             vision_status = {
                 "state": "ready",
-                "message": "MCP listener activo (último listen hace %.0fs)" % max(ago, 0),
+                "message": f"MCP listener activo (último listen hace {max(ago, 0):.0f}s)",
             }
         else:
             vision_status = api_or_down("no hay Claude Code escuchando narrative_listen")
@@ -693,7 +693,7 @@ def _decode_b64_png(image_b64: str) -> bytes:
     try:
         return base64.b64decode(raw, validate=True)
     except (ValueError, base64.binascii.Error) as e:
-        raise HTTPException(status_code=400, detail=f"invalid base64 image: {e}")
+        raise HTTPException(status_code=400, detail=f"invalid base64 image: {e}") from e
 
 
 @app.post("/generate_scene_image")
@@ -940,7 +940,6 @@ async def skin_sprite_sheet_endpoint(request: Request):
     """
     import asyncio
     from PIL import Image
-    import io
 
     body = await request.json()
     model = str(body.get("model", "")).strip()
@@ -954,12 +953,12 @@ async def skin_sprite_sheet_endpoint(request: Request):
     strength = float(body.get("strength", 0.40))
 
     if not (model and prompt):
-        return {"ok": False, "error": "missing model or prompt"}
+        raise HTTPException(status_code=400, detail="missing model or prompt")
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
     meta_path = sheet_dir / "meta.json"
     if not meta_path.exists():
-        return {"ok": False, "error": f"sheet not found: {model}/{anim}/{angle}"}
+        raise HTTPException(status_code=404, detail=f"sheet not found: {model}/{anim}/{angle}")
 
     with open(meta_path) as f:
         meta = json.load(f)
@@ -1052,13 +1051,13 @@ async def report_player_choice(body: ReportPlayerChoiceRequest):
             body.context,
         )
     except NarrativeUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         # validate_narrative_reaction raised: LLM returned invalid payload.
         raise HTTPException(
             status_code=422,
             detail=f"narrative engine returned invalid response: {e}",
-        )
+        ) from e
     if not isinstance(result, dict):
         raise HTTPException(
             status_code=502,
@@ -1092,12 +1091,12 @@ async def review_scene_blueprint(body: ReviewBlueprintRequest):
         )
     except NarrativeUnavailable as e:
         status = 504 if "timeout" in str(e).lower() else 503
-        raise HTTPException(status_code=status, detail=str(e))
+        raise HTTPException(status_code=status, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(
             status_code=422,
             detail=f"blueprint review returned invalid response: {e}",
-        )
+        ) from e
     return result
 
 
@@ -1215,7 +1214,6 @@ async def get_cached_asset(map_type: str, hash_key: str):
 @app.get("/cache/check/{hash_key}")
 async def check_cache(hash_key: str):
     """Check if a texture set is cached."""
-    from pathlib import Path
     cache_dir = asset_cache.cache_dir / hash_key
     if not cache_dir.exists():
         return {"exists": False, "maps": []}

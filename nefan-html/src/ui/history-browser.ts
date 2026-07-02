@@ -79,7 +79,7 @@ export class HistoryBrowser {
     this.content.innerHTML = `<div style="padding:14px;color:#666">Cargando…</div>`;
     this.detail.textContent = "Selecciona un evento para ver detalles…";
 
-    let state: SessionData | null = null;
+    let state: SessionData | null;
     if (this._resumeSessionId) {
       try {
         const r = await this.narrative.resumeSession(this._resumeSessionId);

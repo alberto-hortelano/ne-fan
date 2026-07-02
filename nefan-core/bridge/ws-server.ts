@@ -65,7 +65,7 @@ const config: CombatConfig = loadConfig(
 );
 
 const store = new GameStore();
-let sim = new GameSimulation(config, store, Date.now());
+const sim = new GameSimulation(config, store, Date.now());
 const scenario = new ScenarioRunner();
 const sessionStorage = new FsSessionStorage(SAVES_DIR);
 const narrative = new NarrativeState(sessionStorage);
@@ -216,7 +216,7 @@ function listGames(): Array<{ game_id: string; title: string; description?: stri
     try {
       def = JSON.parse(readFileSync(gameJson, "utf-8"));
     } catch (err) {
-      throw new Error(`game.json malformed (${gameJson}): ${(err as Error).message}`);
+      throw new Error(`game.json malformed (${gameJson}): ${(err as Error).message}`, { cause: err });
     }
     out.push({
       game_id: def.game_id ?? entry.name,
