@@ -25,6 +25,21 @@ export interface SceneData {
     rows: number;
     meters_per_cell: number;
   };
+  /** Formas vectoriales de terreno (Format D): polylines con grosor (río con
+   *  meandros, camino curvo) o polígonos rellenos (`closed`). Puntos en
+   *  coordenadas de celda, width en celdas. El orden del array es el orden de
+   *  pintado. Visual-only (la colisión no las lee). */
+  terrain_features?: {
+    type: string;
+    points: [number, number][];
+    width?: number;
+    closed?: boolean;
+    color?: string;
+  }[];
+  /** Capa SVG opcional de terreno (Format D). viewBox en celdas, mismo espacio
+   *  que terrain_features; ai_server la sanea (sin script/foreignObject/href).
+   *  Se rasteriza async al cargar la escena y se compone en el schematic. */
+  terrain_svg?: string;
   objects: {
     id: string;
     position: number[];
@@ -129,6 +144,29 @@ const TERRAIN_CHAR_COLOR: Record<string, string> = {
   o: "#6a4f30", // wood / planks
 };
 
+/** Color por `type` de terrain_feature (vocabulario en inglés de las
+ *  instrucciones). Los nombres en español o libres caen a terrainColorFromName. */
+const FEATURE_TYPE_COLOR: Record<string, string> = {
+  river: TERRAIN_CHAR_COLOR.w,
+  water: TERRAIN_CHAR_COLOR.w,
+  path: TERRAIN_CHAR_COLOR._,
+  road: TERRAIN_CHAR_COLOR._,
+  bridge: TERRAIN_CHAR_COLOR.b,
+  stone: TERRAIN_CHAR_COLOR.s,
+  paved: TERRAIN_CHAR_COLOR.s,
+  dirt: TERRAIN_CHAR_COLOR.d,
+  sand: TERRAIN_CHAR_COLOR.a,
+  wood: TERRAIN_CHAR_COLOR.o,
+  grass: TERRAIN_CHAR_COLOR.g,
+};
+
+/** Hash determinista (col,row) → [0,1). Ruido reproducible para variar el color
+ *  de la hierba sin Math.random (mismo blueprint en cada captura). */
+function cellHash01(c: number, r: number): number {
+  const s = Math.sin(c * 127.1 + r * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
 /** Resuelve el color de una celda por el NOMBRE de la leyenda (el modelo inventa
  *  chars con nombre español), con palabras clave. Devuelve null si no reconoce
  *  nada → el caller usa el color de char reservado o el terreno base. */
@@ -200,6 +238,8 @@ export class CanvasRenderer {
    *  `debugObjects` is on. Bounds are in world metres {minX,minZ,maxX,maxZ}. */
   private sceneImage: HTMLImageElement | null = null;
   private sceneBounds: SceneBounds | null = null;
+  /** Capa terrain_svg rasterizada (null hasta que decodifica o si no hay). */
+  private terrainSvgImage: HTMLImageElement | null = null;
   /** Occluder sprites cut out of the scene image (X). When present, render()
    *  switches from the fixed entity order to a depth-sorted pass so tall objects
    *  (walls/buildings) can draw over the player when he is behind them. Cleared
@@ -264,6 +304,37 @@ export class CanvasRenderer {
     this.sceneData = data;
     // La cámara sigue al jugador (offset recomputado por frame en render()).
     // No se fija aquí: una escena abierta no se centra estáticamente.
+    this.terrainSvgImage = null;
+    if (data.terrain_svg) this.loadTerrainSvg(data.terrain_svg);
+  }
+
+  /** Rasteriza la capa terrain_svg a una Image (async). Cuando decodifica,
+   *  captureSchematic la compone; hasta entonces el schematic sale sin ella
+   *  (degradación: el grid pintado sigue debajo). Decode fallido → errors.push. */
+  private loadTerrainSvg(svg: string): void {
+    // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
+    // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
+    let src = svg;
+    if (!/\bwidth\s*=/.test(src)) {
+      const vb = /viewBox\s*=\s*"([\d.\s-]+)"/.exec(src);
+      const parts = vb?.[1].trim().split(/\s+/).map(Number);
+      if (parts && parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+        // 16 px por celda: resolución de sobra para el blueprint de 1024².
+        src = src.replace("<svg", `<svg width="${Math.round(parts[2] * 16)}" height="${Math.round(parts[3] * 16)}"`);
+      }
+    }
+    const blob = new Blob([src], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      this.terrainSvgImage = img;
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      errors.push("scene", "terrain_svg no decodifica como imagen; se omite la capa SVG");
+    };
+    img.src = url;
   }
 
   getSceneData(): SceneData | null {
@@ -353,6 +424,21 @@ export class CanvasRenderer {
       // encima del color plano para que el blueprint tenga formas de terreno.
       this.paintTerrainGrid();
 
+      // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
+      // encima del grid: las features refinan lo que el grid solo aproxima.
+      this.paintTerrainFeatures();
+
+      // Capa SVG de terreno (opcional) estirada sobre la escena, entre el
+      // terreno y los objetos. Si aún no decodificó, se captura sin ella.
+      if (this.terrainSvgImage) {
+        const dims = this.sceneData?.dimensions;
+        if (dims) {
+          const [sx0, sy0] = this.toScreen(-dims.width / 2, -dims.depth / 2);
+          const [sx1, sy1] = this.toScreen(dims.width / 2, dims.depth / 2);
+          offCtx.drawImage(this.terrainSvgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
+        }
+      }
+
       const staticObjects = (this.sceneData?.objects ?? [])
         .filter((o) => o.category !== "creature")
         .slice()
@@ -387,22 +473,107 @@ export class CanvasRenderer {
     const ctx = this.ctx;
     const halfW = dims.width / 2;
     const halfD = dims.depth / 2;
+    // Base de la hierba en 0-255 para el ruido anti-flat: el modelo de imagen
+    // copia las manchas de color plano tal cual, así que una variación sutil
+    // determinista por celda le da "textura" que interpretar como suelo natural.
+    const base = this.sceneData?.terrain?.color;
+    const grassRgb: [number, number, number] =
+      base && base.length >= 3
+        ? [base[0] * 255, base[1] * 255, base[2] * 255]
+        : [29, 42, 24];
     for (let r = 0; r < rows; r++) {
       const row = grid[r];
       if (typeof row !== "string") continue;
       const cmax = Math.min(cols, row.length);
       for (let c = 0; c < cmax; c++) {
         const ch = row[c];
-        if (ch === "g") continue; // grass = terreno base
-        const color = TERRAIN_CHAR_COLOR[ch] ?? terrainColorFromName(legend[ch] ?? "");
-        if (!color) continue;
         const x0 = -halfW + c * mpc;
         const z0 = -halfD + r * mpc;
         const [px0, py0] = this.toScreen(x0, z0);
         const [px1, py1] = this.toScreen(x0 + mpc, z0 + mpc);
-        ctx.fillStyle = color;
+        if (ch === "g") {
+          // grass = terreno base con ruido ±4% (hash determinista por celda).
+          const f = 0.96 + 0.08 * cellHash01(c, r);
+          const rr = Math.min(255, Math.round(grassRgb[0] * f));
+          const gg = Math.min(255, Math.round(grassRgb[1] * f));
+          const bb = Math.min(255, Math.round(grassRgb[2] * f));
+          ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
+        } else {
+          const color = TERRAIN_CHAR_COLOR[ch] ?? terrainColorFromName(legend[ch] ?? "");
+          if (!color) continue;
+          ctx.fillStyle = color;
+        }
         // +1px para evitar costuras entre celdas por el redondeo.
         ctx.fillRect(Math.floor(px0), Math.floor(py0), Math.ceil(px1 - px0) + 1, Math.ceil(py1 - py0) + 1);
+      }
+    }
+  }
+
+  /** Pinta las terrain_features vectoriales en el ctx/transform ACTUAL (llamado
+   *  desde captureSchematic tras paintTerrainGrid). Polylines con grosor y
+   *  extremos redondeados, suavizadas por punto medio (quadraticCurveTo, sin
+   *  dependencias); `closed` → polígono relleno. Feature malformada o sin color
+   *  resoluble → errors.push y se omite (nunca tumba la captura). */
+  private paintTerrainFeatures(): void {
+    const feats = this.sceneData?.terrain_features;
+    const dims = this.sceneData?.dimensions;
+    if (!Array.isArray(feats) || feats.length === 0 || !dims) return;
+    const mpc = this.sceneData?.terrain_grid?.meters_per_cell ?? 2;
+    const ctx = this.ctx;
+    const halfW = dims.width / 2;
+    const halfD = dims.depth / 2;
+    for (const f of feats) {
+      if (!f || !Array.isArray(f.points) || f.points.length < 2) {
+        errors.push("scene", `terrain_feature "${f?.type}" con points malformados; omitida`);
+        continue;
+      }
+      const color =
+        (typeof f.color === "string" && f.color) ||
+        FEATURE_TYPE_COLOR[f.type] ||
+        terrainColorFromName(f.type);
+      if (!color) {
+        errors.push("scene", `terrain_feature tipo "${f.type}" sin color resoluble; omitida`);
+        continue;
+      }
+      // Celda → mundo → pantalla.
+      const pts: [number, number][] = [];
+      let bad = false;
+      for (const p of f.points) {
+        const [c, r] = p;
+        if (typeof c !== "number" || typeof r !== "number" || !Number.isFinite(c) || !Number.isFinite(r)) {
+          bad = true;
+          break;
+        }
+        pts.push(this.toScreen(-halfW + c * mpc, -halfD + r * mpc));
+      }
+      if (bad) {
+        errors.push("scene", `terrain_feature "${f.type}" con puntos no numéricos; omitida`);
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      if (pts.length === 2) {
+        ctx.lineTo(pts[1][0], pts[1][1]);
+      } else {
+        // Suavizado: cada vértice interior es punto de control de una curva
+        // cuadrática hacia el punto medio del siguiente segmento.
+        for (let i = 1; i < pts.length - 1; i++) {
+          const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+          const my = (pts[i][1] + pts[i + 1][1]) / 2;
+          ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+        }
+        ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      }
+      if (f.closed) {
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, (f.width ?? 1) * mpc * this.scale);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.stroke();
       }
     }
   }
