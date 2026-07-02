@@ -8,11 +8,11 @@ import type {
   SessionMetadata,
   SessionData,
   ConsequenceEffect,
-} from "../../../nefan-core/src/narrative/types.js";
+} from "@nefan-core/src/narrative/types.js";
 import type {
   NarrativeEventMessage,
   NarrativeStatusMessage,
-} from "../../../nefan-core/src/protocol/messages.js";
+} from "@nefan-core/src/protocol/messages.js";
 
 export type GameInfo = { game_id: string; title: string; description?: string };
 

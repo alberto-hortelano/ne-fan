@@ -2,10 +2,10 @@
  *  fallback any more: per CONFIG.session.require_bridge, the bridge MUST be
  *  reachable or the game refuses to start (see `createGameClient` below). */
 
-import { GameStore } from "../../../nefan-core/src/store/game-store.js";
-import type { CombatEvent, Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
-import type { NpcUpdate, ScenarioUpdate } from "../../../nefan-core/src/scenario/scenario-types.js";
-import { CONFIG } from "../../../nefan-core/src/config.js";
+import { GameStore } from "@nefan-core/src/store/game-store.js";
+import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
+import type { NpcUpdate, ScenarioUpdate } from "@nefan-core/src/scenario/scenario-types.js";
+import { CONFIG } from "@nefan-core/src/config.js";
 import { errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
 

@@ -8,7 +8,7 @@ import type {
   SessionData,
   DialogueEvent,
   EntityRecord,
-} from "../../../nefan-core/src/narrative/types.js";
+} from "@nefan-core/src/narrative/types.js";
 
 export class HistoryBrowser {
   private root: HTMLDivElement;
