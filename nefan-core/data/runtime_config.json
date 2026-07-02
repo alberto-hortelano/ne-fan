@@ -34,6 +34,7 @@
     "segment_model": "fal-ai/sam2/image",
     "discover_model": "fal-ai/sam-3/image",
     "texture_lazy_load": true,
-    "expose_diagnostic": false
+    "expose_diagnostic": false,
+    "cache_max_bytes": 2147483648
   }
 }
