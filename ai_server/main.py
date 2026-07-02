@@ -383,6 +383,17 @@ class SceneImageRequest(BaseModel):
     controlnet_scale: float = 0.5
 
 
+class ReviewBlueprintRequest(BaseModel):
+    """Revisión por visión del blueprint antes de generar (tecla R del cliente).
+
+    `image_b64` es el mismo PNG del schematic que iría a Meshy; `scene` es la
+    escena Format D que lo produjo. Claude (vía MCP) devuelve
+    { approved, issues, fixes? } con overrides parciales."""
+    scene_id: str = Field(min_length=1)
+    image_b64: str = Field(min_length=1)
+    scene: dict
+
+
 class OutpaintSceneRequest(BaseModel):
     """Extend an existing scene image outward on one side. `side` is in image
     space (left=minX, right=maxX, top=minZ, bottom=maxZ)."""
@@ -1052,6 +1063,40 @@ async def report_player_choice(body: ReportPlayerChoiceRequest):
         raise HTTPException(
             status_code=502,
             detail=f"narrative engine returned non-dict result: {type(result).__name__}",
+        )
+    return result
+
+
+@app.post("/review_scene_blueprint")
+async def review_scene_blueprint(body: ReviewBlueprintRequest):
+    """Pide a Claude (vía MCP) que MIRE el blueprint pintado y lo compare con la
+    escena Format D antes de gastar créditos de generación. Devuelve
+    { approved, issues, fixes? }. Fail-loud: sin listener MCP → 503; timeout →
+    504; respuesta inválida del LLM → 422. Nunca 200 con error."""
+    import asyncio
+    if llm_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ai_server has no llm_client configured — no MCP listener",
+        )
+    # El bloque de imagen MCP exige base64 puro; aceptar también data URLs.
+    image_b64 = body.image_b64
+    if image_b64.startswith("data:"):
+        _, _, image_b64 = image_b64.partition(",")
+    try:
+        result = await asyncio.to_thread(
+            llm_client.review_blueprint,
+            image_b64,
+            body.scene,
+            {"scene_id": body.scene_id},
+        )
+    except NarrativeUnavailable as e:
+        status = 504 if "timeout" in str(e).lower() else 503
+        raise HTTPException(status_code=status, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"blueprint review returned invalid response: {e}",
         )
     return result
 

@@ -156,7 +156,7 @@ export class WsBridge {
         return;
       }
 
-      if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event') {
+      if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event' || msg.type === 'blueprint_review') {
         // Fail-fast: if no MCP client (Claude Code) has ever called
         // narrative_listen, reject the request immediately so the AI server
         // can fall back to API or report an error to Godot.
@@ -212,6 +212,12 @@ export class WsBridge {
     } else if (msg.type === 'narrative_event') {
       this.client.send(JSON.stringify({
         type: 'narrative_event_response',
+        request_id: msg.request_id,
+        result: errorPayload,
+      }));
+    } else if (msg.type === 'blueprint_review') {
+      this.client.send(JSON.stringify({
+        type: 'blueprint_review_response',
         request_id: msg.request_id,
         result: errorPayload,
       }));
@@ -282,6 +288,20 @@ export class WsBridge {
 
     this.client.send(JSON.stringify({
       type: 'vision_response',
+      request_id: requestId,
+      result,
+    }));
+  }
+
+  /** Send blueprint review result back to Python. Called by narrative_respond. */
+  sendBlueprintReviewResponse(requestId: string, result: Record<string, unknown>): void {
+    if (!this.client || this.client.readyState !== this.client.OPEN) {
+      console.error('[narrative-mcp] Cannot send blueprint_review response: no client connected');
+      return;
+    }
+
+    this.client.send(JSON.stringify({
+      type: 'blueprint_review_response',
       request_id: requestId,
       result,
     }));

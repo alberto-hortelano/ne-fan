@@ -232,6 +232,46 @@ function populateSceneSelector(): void {
   sceneSelector.appendChild(narrativeGroup);
 }
 
+/** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
+ *  actual y aplica los fixes parciales que devuelva (terrain /
+ *  terrain_features / entity_moves) sobre el Format D, recargando la escena.
+ *  El jugador conserva su posición (es un paso de dev pre-generación). */
+async function reviewBlueprintAndApply(): Promise<void> {
+  const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
+    | Record<string, unknown>
+    | undefined;
+  if (!fd) {
+    errors.push("scene", "review (R): la escena actual no es Format D — nada que revisar");
+    return;
+  }
+  log("blueprint → revisión por visión (Claude)…");
+  const review = await sceneImageController.reviewBlueprint(fd);
+  for (const issue of review.issues) log(`review: ${issue}`);
+  if (review.approved && !review.fixes) {
+    log("review: blueprint aprobado — listo para G");
+    return;
+  }
+  if (!review.fixes) {
+    log("review: rechazado sin fixes — corrige a mano o regenera la escena");
+    return;
+  }
+  const fixed: Record<string, unknown> = { ...fd };
+  if (review.fixes.terrain) fixed.terrain = review.fixes.terrain;
+  if (review.fixes.terrain_features) fixed.terrain_features = review.fixes.terrain_features;
+  if (review.fixes.entity_moves?.length) {
+    const moves = new Map(review.fixes.entity_moves.map((m) => [m.id, m.cell]));
+    const ents = (fixed.entities as Record<string, unknown>[] | undefined) ?? [];
+    fixed.entities = ents.map((e) =>
+      moves.has(e.id as string) ? { ...e, cell: moves.get(e.id as string) } : e,
+    );
+  }
+  const saved = { x: playerPos.x, z: playerPos.z };
+  await loadSceneData(fixed);
+  playerPos.x = saved.x;
+  playerPos.z = saved.z;
+  log(`review: fixes aplicados y re-renderizados (${review.issues.length} issue(s)) — R de nuevo o G`);
+}
+
 async function loadSceneFile(globKey: string): Promise<void> {
   const loader = sceneModules[globKey];
   if (!loader) {
@@ -780,6 +820,12 @@ function gameLoop(now: number): void {
     void sceneImageController.discoverObjects()
       .then((disc) => addDiscoveredObjects(disc))
       .catch(() => {});
+  }
+  // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
+  // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:
+  // requiere terminal de Claude Code escuchando; si no, el error va al log.
+  if (input.consumeReviewBlueprint()) {
+    void reviewBlueprintAndApply().catch(() => {});
   }
 
   // Movement (suppressed during dialogue)

@@ -64,6 +64,51 @@ function validateNarrativeReaction(data: unknown): { ok: true } | { ok: false; e
   return { ok: true };
 }
 
+/** Pre-flight de una respuesta blueprint_review, espejo de
+ *  ai_server/narrative_schemas.py:validate_blueprint_review. Misma razón que
+ *  validateNarrativeReaction: el 422 del ai_server no vuelve a esta sesión. */
+function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; error: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
+  }
+  const o = data as Record<string, unknown>;
+  if (typeof o.approved !== 'boolean') {
+    return { ok: false, error: 'missing boolean `approved`' };
+  }
+  if (o.issues !== undefined && (!Array.isArray(o.issues) || o.issues.some((i) => typeof i !== 'string'))) {
+    return { ok: false, error: '`issues` must be a list of strings' };
+  }
+  if (o.approved === false && (!Array.isArray(o.issues) || o.issues.length === 0)) {
+    return { ok: false, error: 'approved=false requires a non-empty `issues` list explaining what is wrong' };
+  }
+  if (o.fixes !== undefined && o.fixes !== null) {
+    if (typeof o.fixes !== 'object' || Array.isArray(o.fixes)) {
+      return { ok: false, error: '`fixes` must be an object' };
+    }
+    const f = o.fixes as Record<string, unknown>;
+    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves']);
+    for (const k of Object.keys(f)) {
+      if (!allowed.has(k)) return { ok: false, error: `fixes.${k} is not a valid fix; allowed: ${[...allowed].sort().join(', ')}` };
+    }
+    if (f.terrain !== undefined && (!Array.isArray(f.terrain) || f.terrain.some((r) => typeof r !== 'string'))) {
+      return { ok: false, error: 'fixes.terrain must be the FULL list of terrain row strings' };
+    }
+    if (f.terrain_features !== undefined && !Array.isArray(f.terrain_features)) {
+      return { ok: false, error: 'fixes.terrain_features must be the FULL replacement list' };
+    }
+    if (f.entity_moves !== undefined) {
+      if (!Array.isArray(f.entity_moves)) return { ok: false, error: 'fixes.entity_moves must be a list' };
+      for (let i = 0; i < f.entity_moves.length; i++) {
+        const m = f.entity_moves[i] as Record<string, unknown>;
+        if (typeof m !== 'object' || m === null || typeof m.id !== 'string' || !Array.isArray(m.cell) || m.cell.length !== 2) {
+          return { ok: false, error: `fixes.entity_moves[${i}] must be { id: string, cell: [col,row] }` };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 // ── Per-kind response instructions ───────────────────────────────────────────
 // Single source of truth for "how to answer each request kind". These are
 // emitted INSIDE the narrative_listen return payload (adjacent to each request)
@@ -417,6 +462,34 @@ world map the story just mentioned), plugin_inspect / plugin_register (read or
 add declarative systems). Use these for bookkeeping; use \`consequences\` for
 what the player should SEE happen.`;
 
+const BLUEPRINT_REVIEW_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "blueprint_review") ====
+You are LOOKING at the blueprint image the image model (Meshy) will receive for
+this scene, next to the scene JSON that produced it. Review it for coherence
+BEFORE credits are spent. Look for:
+- a river/stream that starts or ends abruptly mid-map (should reach the edges
+  or a water body);
+- a bridge that does not touch both banks, or crosses nothing;
+- roads/paths that lead nowhere or stop short of the building they serve;
+- buildings/props overlapping each other or sitting inside water;
+- a described element (in scene_description) missing from the map;
+- large empty regions that contradict the description.
+
+Respond via narrative_respond with EXACTLY this JSON:
+{
+  "approved": true | false,
+  "issues": ["<one short Spanish line per problem found>", ...],   // required when approved=false
+  "fixes": {                    // optional — PARTIAL overrides, only what changes
+    "terrain": ["<row>", ...],              // FULL grid replacement (all rows, exact cols)
+    "terrain_features": [ ... ],            // FULL replacement list (same schema as the scene)
+    "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ]
+  }
+}
+- approved=true with no issues → the client proceeds to generation untouched.
+- approved=false SHOULD include "fixes" so the client can repair and re-render
+  without another round-trip. Fixes replace whole fields: if you fix one terrain
+  row you must return ALL rows; same for terrain_features.
+- Do NOT return a full scene; only the three fix fields above are applied.`;
+
 async function main() {
   const bridge = await WsBridge.create();
 
@@ -427,7 +500,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' = 'room';
+  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'blueprint_review' = 'room';
 
   server.tool(
     'narrative_listen',
@@ -452,6 +525,8 @@ Request kinds you may receive:
                       plugin_event. (dialogue is an ENTRY in that array, never a
                       top-level field; its option list is "choices", not
                       "options".)
+- "blueprint_review" → LOOK at the rendered blueprint image and check it against
+                      the scene JSON; return { approved, issues, fixes? }.
 
 Beyond responding, at ANY time during a turn you may ALSO call the state tools
 to query or mutate authoritative game state without dumping the whole world
@@ -494,6 +569,18 @@ into context:
               (msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS : WEAPON_ORIENT_INSTRUCTIONS),
           });
           return { content };
+        }
+
+        if (msg.type === 'blueprint_review') {
+          currentKind = 'blueprint_review';
+          const sceneJson = JSON.stringify(msg.scene ?? {}, null, 2);
+          return {
+            content: [
+              { type: 'text', text: 'Blueprint review request. This is the image the generator will receive:' },
+              { type: 'image', data: msg.image.data_b64, mimeType: msg.image.media_type },
+              { type: 'text', text: `Scene JSON that produced it:\n${sceneJson}\n\n${BLUEPRINT_REVIEW_INSTRUCTIONS}` },
+            ],
+          };
         }
 
         if (msg.type === 'narrative_event') {
@@ -542,7 +629,8 @@ into context:
     '  room           → legacy enclosed-room JSON\n' +
     '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
-    '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)',
+    '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
+    '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {
       room_data: z.string().describe(
         'JSON string matching the pending request kind. For narrative_event it MUST be ' +
@@ -575,6 +663,15 @@ into context:
             };
           }
         }
+        if (kind === 'blueprint_review') {
+          const check = validateBlueprintReview(parsed);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid blueprint review — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
 
         const reqId = currentRequestId;
         currentRequestId = null;
@@ -588,6 +685,11 @@ into context:
         if (kind === 'narrative_event') {
           bridge.sendNarrativeEventResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `Narrative event response sent for request ${reqId}` }] };
+        }
+
+        if (kind === 'blueprint_review') {
+          bridge.sendBlueprintReviewResponse(reqId, parsed);
+          return { content: [{ type: 'text', text: `Blueprint review sent for request ${reqId}` }] };
         }
 
         bridge.sendResponse(reqId, parsed);

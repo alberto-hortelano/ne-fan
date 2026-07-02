@@ -39,6 +39,18 @@ const OUTPAINT_FRACTION = 0.5;
 
 type Side = "left" | "right" | "top" | "bottom";
 
+/** Resultado de /review_scene_blueprint: Claude mira el blueprint y devuelve
+ *  aprobación + issues + overrides parciales de la escena Format D. */
+export interface BlueprintReview {
+  approved: boolean;
+  issues: string[];
+  fixes?: {
+    terrain?: string[];
+    terrain_features?: Record<string, unknown>[];
+    entity_moves?: { id: string; cell: [number, number] }[];
+  };
+}
+
 interface SceneSummary {
   scene_description?: string;
   room_description?: string;
@@ -145,6 +157,47 @@ export class SceneImageController {
       console.log(`[scene-image] full generated (${img.naturalWidth}x${img.naturalHeight})`);
     } catch (err) {
       errors.push("scene", "generateFull failed", err);
+      throw err;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Captura el blueprint actual y pide a Claude (vía ai_server + MCP) que lo
+   *  revise contra la escena Format D. No toca nada: devuelve el veredicto y
+   *  el caller decide si aplica los fixes. Requiere terminal de Claude Code
+   *  escuchando en el bridge (si no, el servidor responde 503 y aquí se
+   *  reporta al ErrorLog). */
+  async reviewBlueprint(scene: Record<string, unknown>): Promise<BlueprintReview> {
+    if (this.busy) {
+      throw new Error("scene-image controller busy");
+    }
+    if (!this.bounds) {
+      errors.push("scene", "reviewBlueprint called before reset() — no bounds");
+      throw new Error("no bounds");
+    }
+    this.busy = true;
+    try {
+      const bounds = { ...this.bounds };
+      const dataUrl = this.renderer.captureSchematic(bounds, this.ppmFor(bounds));
+      const sceneId = (scene.scene_id as string) || "unknown";
+      const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scene_id: sceneId,
+          // El endpoint espera base64 puro; captureSchematic devuelve data URL.
+          image_b64: dataUrl.replace(/^data:image\/png;base64,/, ""),
+          scene,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`/review_scene_blueprint HTTP ${res.status}: ${detail.slice(0, 200)}`);
+      }
+      return (await res.json()) as BlueprintReview;
+    } catch (err) {
+      errors.push("scene", "reviewBlueprint failed", err);
       throw err;
     } finally {
       this.busy = false;
