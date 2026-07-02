@@ -173,6 +173,16 @@ func _ready() -> void:
 	LogicBridge.scenario_give_weapon.connect(_on_scenario_give_weapon)
 	LogicBridge.scenario_spawn_objects.connect(_on_scenario_spawn_objects)
 
+	# Canonical session signals from LogicBridge (start_session/resume_session)
+	# OK: main es la escena raíz, vida == app — no necesita auto_disconnect
+	LogicBridge.session_started.connect(_on_bridge_session_started)
+	LogicBridge.narrative_scene.connect(_on_narrative_scene)
+	LogicBridge.narrative_spawn.connect(_on_narrative_spawn)
+	LogicBridge.narrative_status_changed.connect(_on_narrative_status)
+	LogicBridge.narrative_story_delta.connect(_on_narrative_story_delta)
+	LogicBridge.narrative_ambient.connect(_on_narrative_ambient)
+	LogicBridge.session_saved.connect(_on_bridge_session_saved)
+
 	# Make player collision capsule semi-visible for dev
 	#_make_player_capsule_visible()
 
@@ -214,15 +224,31 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						respawn_player()
 			KEY_F5:
-				if NarrativeState.session_id != "" and NarrativeState.save():
+				if NarrativeState.bridge_authoritative:
+					# El bridge snapshotea pos/HP del sim y escribe el save; el
+					# resultado llega por session_saved. Si el bridge cayó, NO
+					# hay save de emergencia local (reintroduciría el doble
+					# escritor de state.json) — fail-loud en HUD.
+					if LogicBridge.is_connected_to_bridge():
+						LogicBridge.send_save_session()
+					else:
+						push_warning("F5: bridge caído — el save canónico no está disponible")
+						_hud.show_brief_message("⚠ Bridge caído: no se puede guardar", 4.0)
+				elif NarrativeState.session_id != "" and NarrativeState.save():
 					_hud.show_brief_message("Partida guardada")
 				else:
 					push_warning("F5: no active session to save")
 			KEY_F9:
-				# Quick-load reloads the currently active session from disk and
-				# re-applies the active scene's cached data. Multi-slot resume
-				# goes through the title screen, not F9.
-				if NarrativeState.session_id == "":
+				# Quick-load: en canónico, el bridge relee el último save y
+				# responde session_started(is_resume) → _materialize_resumed_state
+				# (escena + posición + HP + entities). Multi-slot va por el título.
+				if NarrativeState.bridge_authoritative:
+					if LogicBridge.is_connected_to_bridge() and NarrativeState.session_id != "":
+						LogicBridge.send_resume_session(NarrativeState.session_id)
+					else:
+						push_warning("F9: bridge caído — el load canónico no está disponible")
+						_hud.show_brief_message("⚠ Bridge caído: no se puede cargar", 4.0)
+				elif NarrativeState.session_id == "":
 					push_warning("F9: no active session to reload")
 				elif NarrativeState.load_session(NarrativeState.session_id):
 					_hud.show_brief_message("Partida cargada")
@@ -581,7 +607,7 @@ func _on_exit_entered(body: Node3D, area: Area3D) -> void:
 
 # --- Room building ---
 
-func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> void:
+func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, reset_hp: bool = true) -> void:
 	# Clear stale UI from previous room
 	if _dialogue_ui:
 		_dialogue_ui.hide_all()
@@ -635,11 +661,13 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false) -> v
 			var enemy_name: String = child.name
 			combatant.damage_received.connect(_on_enemy_damage_log.bind(enemy_name))
 
-	# Reset player state on room change
-	_player_combatant.health = _player_combatant.max_health
+	# Reset player state on room change. En el flujo canónico (reset_hp=false)
+	# cambiar de escena NO cura: el HP lo gobierna el bridge (Fase 1).
+	if reset_hp:
+		_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameStore.state.player.hp = _player_combatant.max_health
+	GameStore.state.player.hp = _player_combatant.health
 	GameStore.state.player.combat_state = "idle"
 	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main._apply_room")
 	if player_sync:
@@ -737,10 +765,12 @@ func _on_appearance_confirmed(model_id: String, skin_path: String) -> void:
 	_character_editor = null
 	# Apply appearance to player (visual)
 	_apply_player_appearance(model_id, skin_path)
-	# Start the game — this creates the NarrativeState session
+	# Start the game — this creates the session (bridge o local)
 	_start_game(_pending_game_id, _pending_scene_path, _pending_session_id)
-	# Persist appearance to the canonical save now that the session exists
-	if NarrativeState.session_id != "":
+	# En canónico la appearance viaja en start_session y vuelve dentro del
+	# SessionData (la sesión aún no existe aquí — es asíncrona); sólo el
+	# fallback offline (sesión local síncrona) la persiste en el mirror.
+	if not LogicBridge.is_connected_to_bridge() and NarrativeState.session_id != "":
 		NarrativeState.update_player_appearance(model_id, skin_path)
 
 
@@ -787,7 +817,22 @@ func _start_game(game_id: String, scene_path: String, resume_session_id: String 
 	_player.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-	# Establish a NarrativeState session: either fresh or resumed from save
+	if LogicBridge.is_connected_to_bridge():
+		# Flujo canónico: la sesión vive en el bridge (NarrativeState TS +
+		# plugins). La respuesta llega por la señal session_started; la escena
+		# inicial, por narrative_scene (nuevo juego) o se materializa desde el
+		# SessionData (resume). El player queda congelado hasta que haya escena.
+		if resume_session_id != "":
+			LogicBridge.send_resume_session(resume_session_id)
+			_hud.show_brief_message("Reanudando sesión...")
+		else:
+			var appearance: Dictionary = GameStore.state.player.appearance
+			LogicBridge.send_start_session(game_id, appearance)
+			_hud.show_brief_message("Creando sesión...")
+		return
+
+	# Fallback offline (sin bridge): sesión local del mirror GD, sin motor
+	# narrativo ni plugins. Escena inicial desde disco.
 	if resume_session_id != "":
 		if not NarrativeState.load_session(resume_session_id):
 			push_warning("main: failed to resume session %s — starting fresh" % resume_session_id)
@@ -796,13 +841,214 @@ func _start_game(game_id: String, scene_path: String, resume_session_id: String 
 		NarrativeState.start_new_session(game_id)
 	# Notify ai_server so Claude sees session info in narrative requests
 	AIClient.notify_session_start(NarrativeState.session_id, game_id, resume_session_id != "")
-
-	# Send load_game to bridge — it will respond with change_scene + spawn_npc
-	LogicBridge.send_load_game(game_id)
-	if not LogicBridge.is_connected_to_bridge():
-		# Fallback: load room from disk when no bridge available
-		load_room_by_path(scene_path)
+	load_room_by_path(scene_path)
 	# Player physics re-enabled by _apply_room when room arrives
+
+
+func _on_bridge_session_started(ok: bool, p_session_id: String, _p_game_id: String, is_resume: bool, state: Dictionary, error: String) -> void:
+	if not ok:
+		push_error("main: bridge session failed: %s" % error)
+		_hud.show_brief_message("⚠ Error de sesión: %s" % error, 4.0)
+		return_to_title()
+		return
+	NarrativeState.hydrate_from_session_data(state, is_resume)
+	print("main: bridge session %s (%s)" % [p_session_id, "resume" if is_resume else "new"])
+	if is_resume:
+		var appearance: Dictionary = NarrativeState.player.get("appearance", {})
+		_apply_player_appearance(
+			String(appearance.get("model_id", "pete")), String(appearance.get("skin_path", ""))
+		)
+		_materialize_resumed_state(state)
+	# Nuevo juego: la escena inicial llega por narrative_scene cuando el motor
+	# narrativo la genera; narrative_status va informando en el HUD.
+
+
+func _materialize_resumed_state(state: Dictionary) -> void:
+	"""Reconstruye el mundo desde el SessionData del bridge: escena activa,
+	posición y HP del save, y entities dinámicas re-materializadas."""
+	var world_d: Dictionary = state.get("world", {})
+	var active_id: String = String(world_d.get("active_scene_id", ""))
+	var scenes: Dictionary = state.get("scenes_loaded", {})
+	if active_id == "" or not scenes.has(active_id):
+		push_error("main: resume sin escena activa materializable (active_scene_id='%s')" % active_id)
+		_hud.show_brief_message("⚠ El save no tiene escena activa", 4.0)
+		return
+	var scene_record: Dictionary = scenes[active_id]
+	var player_d: Dictionary = state.get("player", {})
+	var pos_arr: Array = player_d.get("position", [0.0, 1.0, 0.0])
+	var spawn_pos := Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
+	await _apply_room(scene_record.get("scene_data", {}), spawn_pos, true, false)
+	# Entities dinámicas (spawneadas después de la génesis de la escena); los
+	# NPCs scene_init ya vienen dentro del scene_data.
+	var respawned := 0
+	for ent_v: Variant in state.get("entities", []):
+		if not ent_v is Dictionary:
+			continue
+		var ent: Dictionary = ent_v
+		if String(ent.get("scene_id", "")) != active_id:
+			continue
+		if String(ent.get("spawn_reason", "")) == "scene_init":
+			continue
+		_materialize_entity_record(ent)
+		respawned += 1
+	# HP del save al runtime (la Fase 1 del bridge ya resembró su sim igual)
+	var hp: float = float(player_d.get("health", _player_combatant.max_health))
+	_player_combatant.health = hp
+	GameStore.state.player.hp = hp
+	print("main: resume materializado — escena %s, %d entities, hp %.0f" % [active_id, respawned, hp])
+
+
+func _materialize_entity_record(ent: Dictionary) -> void:
+	"""Materializa un EntityRecord del save (o un effect ya normalizado) en la
+	escena actual SIN registrarlo en NarrativeState (ya está registrado)."""
+	if not _current_room:
+		push_error("main: no hay escena para materializar entity '%s'" % ent.get("id", "?"))
+		return
+	var ent_id: String = String(ent.get("id", ""))
+	var ent_type: String = String(ent.get("type", "object"))
+	var pos: Array = ent.get("position", [0.0, 0.0, 0.0])
+	var data: Dictionary = ent.get("data", {})
+	var spawner = ObjectSpawnerScript.new()
+	match ent_type:
+		"npc":
+			spawner.spawn_npcs([{
+				"id": ent_id,
+				"name": String(data.get("name", "Stranger")),
+				"character_type": String(data.get("character_type", "peasant_male")),
+				"animation": String(data.get("animation", "idle")),
+				"position": pos,
+				"scale": [0.5, 1.8, 0.5],
+				"description": String(data.get("description", data.get("name", ""))),
+			}], _current_room)
+		"enemy":
+			var combat_data: Dictionary = data.get("combat", {})
+			var obj_data := {
+				"id": ent_id,
+				"mesh": "capsule",
+				"position": pos,
+				"rotation": [0, 0, 0],
+				"scale": [0.6, 1.8, 0.6],
+				"category": "creature",
+				"description": String(data.get("description", "enemy")),
+				"character_model": "",
+				"combat": {
+					"health": combat_data.get("health", 80),
+					"weapon_id": combat_data.get("weapon_id", "unarmed"),
+					"personality": combat_data.get("personality", {}),
+				},
+			}
+			var char_type: String = String(data.get("character_type", ""))
+			if char_type != "":
+				var model_path: String = NpcModelRegistryScript.get_model_path(char_type)
+				if model_path != "":
+					obj_data["character_model"] = model_path
+			spawner.spawn_objects([obj_data], _current_room)
+			var enemy_node := _current_room.get_node_or_null(ent_id)
+			if enemy_node:
+				var c = enemy_node.get_node_or_null("Combatant")
+				if c:
+					_combat_manager.register_combatant(c)
+		_:
+			# object / building / prop — si el data ya trae un obj completo del
+			# spawner (tiene "mesh"), usarlo tal cual; si no, construir uno.
+			var obj: Dictionary
+			if data.has("mesh"):
+				obj = data.duplicate(true)
+				obj["id"] = ent_id
+				obj["position"] = pos
+			else:
+				obj = {
+					"id": ent_id,
+					"mesh": "box",
+					"position": pos,
+					"rotation": [0, 0, 0],
+					"scale": [3.0, 3.0, 3.0] if ent_type == "building" else [0.5, 0.5, 0.5],
+					"category": "building" if ent_type == "building" else "prop",
+					"description": String(data.get("description", ent_type)),
+				}
+				if data.has("texture_hash"):
+					obj["texture_hash"] = data["texture_hash"]
+				if data.has("model_hash"):
+					obj["model_hash"] = data["model_hash"]
+			spawner.spawn_objects([obj], _current_room)
+
+
+# --- Canonical narrative handlers (bridge session) ---
+
+
+func _on_narrative_scene(scene_id: String, scene_data: Dictionary) -> void:
+	if not _scenario_active:
+		return
+	# El bridge ya registró la escena en SU NarrativeState (el canónico); el
+	# espejo GD la refleja en memoria para el history browser y F9. save()
+	# está bloqueado por bridge_authoritative, así que no hay doble escritor.
+	NarrativeState.record_scene_loaded(scene_id, scene_data, [])
+	_apply_room(scene_data, Vector3(0, 1, 0), true, false)
+
+
+func _on_narrative_spawn(effect: Dictionary) -> void:
+	if not _scenario_active or not _current_room:
+		return
+	var pos: Array = effect.get("position", [0.0, 0.0, 0.0])
+	var data: Dictionary = effect.get("data", {})
+	# El effect lleva nombre/descripción top-level; fusiónalos en data para el
+	# materializador (sin pisar los que ya vengan).
+	var merged: Dictionary = data.duplicate(true)
+	if not merged.has("name") and effect.has("name"):
+		merged["name"] = effect["name"]
+	if not merged.has("description"):
+		merged["description"] = effect.get("description", "")
+	var ent := {
+		"id": String(effect.get("entityId", "")),
+		"type": String(effect.get("entityKind", "object")),
+		"position": pos,
+		"data": merged,
+	}
+	_materialize_entity_record(ent)
+	# Espejo en memoria (el registro canónico ya lo hizo el bridge)
+	NarrativeState.record_entity_spawned(
+		ent["id"], ent["type"], NarrativeState.world.get("active_scene_id", ""),
+		pos, merged, "narrative_event", String(effect.get("eventId", ""))
+	)
+	var desc: String = String(effect.get("description", ""))
+	_hud.show_brief_message("✨ %s" % desc.substr(0, 40))
+
+
+func _on_narrative_status(phase: String, kind: String, message: String) -> void:
+	if not _scenario_active:
+		return
+	match phase:
+		"generating":
+			_hud.show_brief_message(message if message != "" else "Generando...", 8.0)
+		"error":
+			push_warning("main: narrative_status error (%s): %s" % [kind, message])
+			_hud.show_brief_message("⚠ %s" % message, 5.0)
+		"ready":
+			pass
+
+
+func _on_narrative_story_delta(delta: String) -> void:
+	if not NarrativeState.bridge_authoritative or delta == "":
+		return
+	# Espejo en memoria del story_so_far canónico (el bridge ya lo aplicó)
+	if NarrativeState.story_so_far == "":
+		NarrativeState.story_so_far = delta
+	else:
+		NarrativeState.story_so_far += "\n\n" + delta
+
+
+func _on_narrative_ambient(message: String) -> void:
+	if not _scenario_active or message == "":
+		return
+	_hud.show_brief_message(message, 4.0)
+
+
+func _on_bridge_session_saved(ok: bool) -> void:
+	if ok:
+		_hud.show_brief_message("Partida guardada")
+	else:
+		push_warning("main: el bridge no pudo guardar la sesión")
+		_hud.show_brief_message("⚠ Error al guardar", 4.0)
 
 
 # --- Scenario handlers ---
