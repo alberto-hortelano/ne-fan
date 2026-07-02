@@ -178,6 +178,7 @@ func _ready() -> void:
 	LogicBridge.session_started.connect(_on_bridge_session_started)
 	LogicBridge.narrative_scene.connect(_on_narrative_scene)
 	LogicBridge.narrative_spawn.connect(_on_narrative_spawn)
+	LogicBridge.narrative_dialogue.connect(_on_narrative_dialogue)
 	LogicBridge.narrative_status_changed.connect(_on_narrative_status)
 	LogicBridge.narrative_story_delta.connect(_on_narrative_story_delta)
 	LogicBridge.narrative_ambient.connect(_on_narrative_ambient)
@@ -279,6 +280,16 @@ func _on_interacted(body: StaticBody3D) -> void:
 	if _hud.is_text_panel_visible():
 		_hud.hide_text_panel()
 		return
+
+	# Canónico: hablar con un NPC arranca el ciclo interact_entity del bridge
+	# (saludo generado por el motor narrativo → show_dialogue, paridad HTML).
+	# El examine local de metadata queda para props y para el modo offline.
+	if NarrativeState.bridge_authoritative and body.has_meta("npc_name"):
+		if LogicBridge.is_connected_to_bridge():
+			LogicBridge.send_interact_entity(String(body.name), String(body.get_meta("npc_name", "")))
+			_hud.show_brief_message("...")
+			return
+		push_warning("main: bridge caído — interacción narrativa no disponible")
 
 	var text := ""
 	if body.has_meta("npc_name"):
@@ -990,6 +1001,12 @@ func _on_narrative_scene(scene_id: String, scene_data: Dictionary) -> void:
 	# está bloqueado por bridge_authoritative, así que no hay doble escritor.
 	NarrativeState.record_scene_loaded(scene_id, scene_data, [])
 	_apply_room(scene_data, Vector3(0, 1, 0), true, false)
+
+
+func _on_narrative_dialogue(speaker: String, text: String, choices: Array) -> void:
+	if not _scenario_active or text == "":
+		return
+	_dialogue_flow.show_dialogue(speaker, text, choices)
 
 
 func _on_narrative_spawn(effect: Dictionary) -> void:

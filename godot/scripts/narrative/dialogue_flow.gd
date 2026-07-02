@@ -23,6 +23,10 @@ var _pending_free_text_event_id := ""
 var _pending_free_text_orig_choices: Array = []
 var _pending_free_text_pending: bool = false
 var _claude_injected_dialogue: bool = false
+# Canónico: hay una dialogue_choice en vuelo hacia el bridge; el placeholder
+# se libera con narrative_event_done o narrative_status error (no hay guion
+# que reanudar — la máquina de beats sólo existe en el bypass load_game).
+var _awaiting_bridge_response: bool = false
 
 
 func setup(dialogue_ui: Node, hud: CanvasLayer) -> void:
@@ -30,6 +34,9 @@ func setup(dialogue_ui: Node, hud: CanvasLayer) -> void:
 	_hud = hud
 	dialogue_ui.dialogue_advanced.connect(_on_dialogue_advanced)
 	dialogue_ui.dialogue_choice_made.connect(_on_dialogue_choice_made)
+	# OK: autoload→nodo hijo de main, vida == app
+	LogicBridge.narrative_event_done.connect(_on_bridge_event_done)
+	LogicBridge.narrative_status_changed.connect(_on_bridge_status)
 
 
 func show_dialogue(speaker: String, text: String, choices: Array) -> void:
@@ -40,6 +47,10 @@ func show_dialogue(speaker: String, text: String, choices: Array) -> void:
 
 
 func _on_dialogue_advanced() -> void:
+	# Canónico: no hay guion que avanzar — el diálogo se cierra y el mundo
+	# sigue; el siguiente turno lo dispara el jugador (elección/interacción).
+	if NarrativeState.bridge_authoritative:
+		return
 	# If the player is advancing past a Claude-injected dialogue, use this
 	# moment to resume the scripted scenario that we paused when the player
 	# wrote free text. Otherwise we'd remain stuck waiting for a beat that
@@ -54,6 +65,10 @@ func _on_dialogue_choice_made(choice_index: int, free_text: String = "") -> void
 	var speaker: String = _last_dialogue_speaker
 	var text: String = _last_dialogue_text
 	var choices: Array = _last_dialogue_choices
+
+	if NarrativeState.bridge_authoritative:
+		_on_choice_canonical(choice_index, free_text, speaker, text, choices)
+		return
 
 	# If the player was replying to a Claude-injected dialogue, treat the
 	# choice as "advance past it" and resume the scripted script (Claude's
@@ -94,6 +109,37 @@ func _on_dialogue_choice_made(choice_index: int, free_text: String = "") -> void
 			chosen_text = String(c.get("text", "")) if c is Dictionary else String(c)
 		AIClient.report_player_choice(event_id, speaker, chosen_text, free_text,
 			NarrativeState.serialize_for_llm("compact"))
+
+
+func _on_choice_canonical(choice_index: int, free_text: String, speaker: String, text: String, choices: Array) -> void:
+	"""Ciclo canónico: la elección viaja por el bridge (recordDialogueEvent +
+	reportPlayerChoice + plugins). El registro canónico y su event_id los crea
+	el bridge; aquí sólo espejo en memoria para el history browser."""
+	NarrativeState.record_dialogue_event(speaker, text, choices, choice_index, free_text)
+	var chosen_text: String = ""
+	if choice_index >= 0 and choice_index < choices.size():
+		var c = choices[choice_index]
+		chosen_text = String(c.get("text", "")) if c is Dictionary else String(c)
+	if free_text != "":
+		_awaiting_bridge_response = true
+		_hud.show_text_panel("🤔 Claude piensa en cómo responde el mundo...")
+	LogicBridge.send_dialogue_choice(speaker, chosen_text, choice_index, free_text)
+
+
+func _on_bridge_event_done(_event_id: String) -> void:
+	# Los efectos del narrative_event (diálogo inyectado, spawns, story) ya se
+	# aplicaron vía sus señales; aquí sólo se libera la espera de texto libre.
+	if _awaiting_bridge_response:
+		_awaiting_bridge_response = false
+		_hud.hide_text_panel()
+
+
+func _on_bridge_status(phase: String, _kind: String, _message: String) -> void:
+	# Fail-loud aguas arriba (main muestra el error en HUD); aquí sólo evitar
+	# que el placeholder de "pensando" se quede colgado tras un error.
+	if phase == "error" and _awaiting_bridge_response:
+		_awaiting_bridge_response = false
+		_hud.hide_text_panel()
 
 
 func _resume_script_after_free_text() -> void:
