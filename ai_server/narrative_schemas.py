@@ -14,6 +14,12 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
     ...   // EXACTLY `rows` strings total
   ],
   "terrain_legend": { "<char>": "<terrain name>", ... },
+  "terrain_features": [   // OPTIONAL — smooth vector shapes over the grid (see TERRAIN FEATURES)
+    { "type": "river" | "path" | "bridge" | "stone" | "dirt" | "sand" | "wood" | "<free name>",
+      "points": [[<col>, <row>], ...],   // cell coords, floats allowed
+      "width": <cells>,                  // polyline stroke width; default 1
+      "closed": true | false }           // true = filled polygon
+  ],
   "entities": [
     {
       "id":        "<unique slug, e.g. 'tavern_main', 'tree_n1', 'boris'>",
@@ -54,6 +60,17 @@ TERRAIN CHARS — reserved (you do not need to declare these in terrain_legend, 
 - "w" water (river / pond)    - "b" bridge (wood over water)
 - "d" dirt / tilled soil      - "a" sand (river bank)       - "o" wood (planks / dock)
 You may invent additional chars (lowercase letters or "~", "-", ":") and document them in terrain_legend.
+
+TERRAIN FEATURES (optional; USE THEM for anything linear or organic — far better maps than cell rows)
+The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top: a meandering river, a curving road, a round plaza. Each feature is a thick polyline (default) or a filled polygon ("closed": true).
+- "points": [col,row] cell coordinates, FLOATS ALLOWED ([12.5, 3.0]). 2+ points for a polyline, 3+ for a polygon.
+- "width": stroke width in CELLS (rivers 2-4, roads 1-2, streams 0.5-1).
+- "type": river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass, or a free Spanish name ("arroyo", "sendero") resolved by keywords. "color": "#rrggbb" forces a colour.
+- PAINT ORDER = array order: river FIRST, then the bridge across it, then roads ending at the bridge.
+- A river/road drawn as a feature should follow the same course as its `w`/`_` cells in the grid (grid = coarse base, feature = smooth refinement). Purely decorative curves may skip the grid cells and use only the feature.
+
+TERRAIN SVG (advanced, RARELY needed — use ONLY when grid + terrain_features cannot express the shape)
+`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all.
 
 ENTITY RULES
 - Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").
@@ -207,6 +224,52 @@ GENERATE_SCENE_TOOL = {
                 ),
                 "additionalProperties": {"type": "string"},
             },
+            "terrain_features": {
+                "type": "array",
+                "description": (
+                    "Optional. Smooth vector shapes painted over the grid: thick polylines "
+                    "(meandering river, curving road) or filled polygons (closed=true). "
+                    "points are [col,row] cell coords (floats allowed), width in cells. "
+                    "Array order = paint order (river first, bridge after)."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": (
+                                "river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass "
+                                "or a free Spanish name resolved by keywords."
+                            ),
+                        },
+                        "points": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
+                            "minItems": 2,
+                            "description": "[col,row] cell coordinates; floats allowed.",
+                        },
+                        "width": {"type": "number", "minimum": 0.1, "description": "Stroke width in cells (default 1). Ignored for closed polygons."},
+                        "closed": {"type": "boolean", "description": "true = filled polygon (3+ points)."},
+                        "color": {"type": "string", "description": "Optional #rrggbb override."},
+                    },
+                    "required": ["type", "points"],
+                },
+                "maxItems": 24,
+            },
+            "terrain_svg": {
+                "type": "string",
+                "description": (
+                    "Optional, rarely needed. SVG of pure shapes over the terrain: "
+                    'viewBox EXACTLY "0 0 <cols> <rows>" (cell units), max 20KB, no '
+                    "script/foreignObject/href. Use only when grid + terrain_features "
+                    "cannot express the shape."
+                ),
+            },
             "entities": {
                 "type": "array",
                 "description": "Every thing on the map that is NOT terrain.",
@@ -347,6 +410,84 @@ def validate_scene_response(data: dict) -> dict:
     for ch, name in RESERVED_TERRAIN.items():
         legend.setdefault(ch, name)
     data["terrain_legend"] = legend
+
+    # ── Terrain features (vectoriales, opcionales) ───────────────────────
+    # Tolerante como el resto de campos del LLM: una feature malformada se
+    # descarta sin invalidar la escena. Puntos [col,row] numéricos (floats ok),
+    # width > 0, color #rrggbb opcional.
+    raw_features = data.get("terrain_features")
+    clean_features: list = []
+    if isinstance(raw_features, list):
+        import re as _re
+
+        for feat in raw_features[:24]:
+            if not isinstance(feat, dict):
+                continue
+            ftype = feat.get("type")
+            pts = feat.get("points")
+            if not isinstance(ftype, str) or not ftype or not isinstance(pts, list) or len(pts) < 2:
+                continue
+            clean_pts = []
+            for p in pts:
+                if (
+                    isinstance(p, list)
+                    and len(p) >= 2
+                    and all(isinstance(v, (int, float)) for v in p[:2])
+                ):
+                    clean_pts.append([float(p[0]), float(p[1])])
+                else:
+                    clean_pts = []
+                    break
+            if len(clean_pts) < 2:
+                continue
+            clean_feat: dict = {"type": ftype, "points": clean_pts}
+            width = feat.get("width")
+            if isinstance(width, (int, float)) and width > 0:
+                clean_feat["width"] = float(width)
+            if feat.get("closed") is True and len(clean_pts) >= 3:
+                clean_feat["closed"] = True
+            color = feat.get("color")
+            if isinstance(color, str) and _re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                clean_feat["color"] = color
+            clean_features.append(clean_feat)
+    data["terrain_features"] = clean_features
+
+    # ── Terrain SVG (capa opcional avanzada) ─────────────────────────────
+    # Solo formas puras: se descarta (con traza) si excede 20 KB, si el viewBox
+    # no casa con el size, o si contiene script/foreignObject/href.
+    svg = data.get("terrain_svg")
+    if isinstance(svg, str) and svg.strip():
+        svg = svg.strip()
+        reason = None
+        if len(svg.encode("utf-8")) > 20_000:
+            reason = "supera 20KB"
+        elif not svg.startswith("<svg"):
+            reason = "no empieza por <svg"
+        else:
+            low = svg.lower()
+            if "<script" in low or "foreignobject" in low or "href=" in low:
+                reason = "contiene script/foreignObject/href"
+            else:
+                import re as _re
+
+                vb = _re.search(r'viewBox\s*=\s*"([\d.\s-]+)"', svg)
+                parts = vb.group(1).split() if vb else []
+                ok = (
+                    len(parts) == 4
+                    and float(parts[0]) == 0
+                    and float(parts[1]) == 0
+                    and abs(float(parts[2]) - cols) < 0.01
+                    and abs(float(parts[3]) - rows) < 0.01
+                )
+                if not ok:
+                    reason = f'viewBox debe ser "0 0 {cols} {rows}"'
+        if reason:
+            print(f"validate_scene_response: terrain_svg descartado ({reason})", flush=True)
+            data.pop("terrain_svg", None)
+        else:
+            data["terrain_svg"] = svg
+    else:
+        data.pop("terrain_svg", None)
 
     # ── Entities ─────────────────────────────────────────────────────────
     raw_entities = data.get("entities")

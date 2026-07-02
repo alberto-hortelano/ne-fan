@@ -85,6 +85,10 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
     ...   // EXACTLY rows strings total
   ],
   "terrain_legend": { "<char>": "<terrain name>", ... },
+  "terrain_features": [   // OPTIONAL — vector shapes over the grid (see TERRAIN FEATURES)
+    { "type": "river"|"path"|"bridge"|"stone"|"dirt"|"sand"|"wood"|"<free name>",
+      "points": [[col,row], ...], "width": <cells>, "closed": true|false }
+  ],
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player",
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
@@ -121,6 +125,36 @@ RESERVED TERRAIN CHARS (you can use without declaring in legend)
 - d dirt/tilled       a sand              o wood/dock planks
 
 Any other char you use MUST be declared in terrain_legend.
+
+TERRAIN FEATURES (optional; USE THEM for anything linear or organic — they make
+far better maps than cell rows)
+The grid paints broad zones; terrain_features draw SMOOTH VECTOR SHAPES on top:
+a river that meanders, a curving road, a round plaza. Each feature is either a
+thick polyline (default) or a filled polygon ("closed": true).
+- "points": list of [col,row] cell coordinates, FLOATS ALLOWED ([12.5, 3.0]).
+  2+ points for a polyline, 3+ for a polygon.
+- "width": stroke width in CELLS (rivers 2-4, roads 1-2, streams 0.5-1).
+- "type": river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass, or a
+  free Spanish name ("arroyo", "sendero") — resolved by keywords. You can force
+  a colour with "color": "#rrggbb".
+- PAINT ORDER = array order: list the river FIRST, then the bridge across it,
+  then roads that end at the bridge.
+- Rule of thumb: a river/road drawn with terrain_features should follow the same
+  course as its "w"/"_" cells in the grid (the grid stays the coarse base; the
+  feature refines it with curves). For purely decorative curves you may skip the
+  grid cells entirely and use only the feature.
+Example — a meandering river crossed by a bridge, with a road reaching it:
+  "terrain_features": [
+    { "type": "river",  "points": [[0,18],[9,15],[20,13],[32,14],[47,12]], "width": 3 },
+    { "type": "bridge", "points": [[23,11],[23,17]], "width": 2 },
+    { "type": "path",   "points": [[24,29],[23.5,22],[23,17]], "width": 1.5 }
+  ]
+
+TERRAIN SVG (advanced, RARELY needed — only when grid + terrain_features cannot
+express the shape): "terrain_svg" is an SVG string of pure shapes drawn over the
+terrain, under the entities. viewBox EXACTLY "0 0 <cols> <rows>" (units = cells),
+max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line) — no
+<script>, no foreignObject, no href. Most scenes need no SVG at all.
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need
