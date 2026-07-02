@@ -110,8 +110,8 @@ export function handleLoadRoom(
   // test legacy) se mantiene el arranque a tope de vida.
   const livePlayer = ctx.sim.getCombatant("player");
   const playerMaxHp = ctx.store.state.player.max_hp || 100;
-  const playerHp =
-    ctx.narrative.session_id !== "" && livePlayer ? livePlayer.health : playerMaxHp;
+  const inSession = ctx.narrative.session_id !== "" && livePlayer !== undefined;
+  const playerHp = inSession ? livePlayer!.health : playerMaxHp;
   // Reset simulation for new room
   ctx.sim.reset();
   ctx.store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
@@ -156,10 +156,14 @@ export function handleLoadRoom(
   });
 
   console.log(`Bridge: room loaded '${msg.roomId}' with ${msg.enemies.length} enemies`);
-  // Send state_update with the (possibly preserved) HP so the client syncs
+  // Send state_update with the (possibly preserved) HP so the client syncs.
+  // In-session, this is a scene TRANSITION, not a respawn: emitting the
+  // player_respawned event would make the client run its respawn side-effects
+  // (Godot teleports the player to the spawn point and refills HP, clobbering
+  // a resume's restored position). Legacy no-session loads keep the event.
   const roomResponse: StateUpdateMessage = {
     type: "state_update",
-    events: [{ type: "player_respawned", hp: playerHp }],
+    events: inSession ? [] : [{ type: "player_respawned", hp: playerHp }],
     playerHp: playerHp,
     enemies: getEnemyStates(ctx),
   };

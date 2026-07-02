@@ -528,14 +528,20 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     withSession.sim.getCombatant("player")!.health = 55;
     const { socket: s2, sent: sent2 } = makeSocket();
     await routeMessage({ ...loadRoom }, s2, withSession.ctx);
-    assert.equal((sent2[0] as StateUpdateMessage).playerHp, 55);
+    const inSessionUpdate = sent2[0] as StateUpdateMessage;
+    assert.equal(inSessionUpdate.playerHp, 55);
+    // Transición de escena, NO respawn: sin evento player_respawned (el
+    // cliente teletransportaría al player al spawn pisando un resume).
+    assert.equal(inSessionUpdate.events.length, 0);
 
     // Sin sesión (rooms de test legacy): arranque a tope, como siempre.
     const noSession = makeCtx();
     noSession.sim.getCombatant("player")!.health = 55;
     const { socket: s3, sent: sent3 } = makeSocket();
     await routeMessage({ ...loadRoom }, s3, noSession.ctx);
-    assert.equal((sent3[0] as StateUpdateMessage).playerHp, 100);
+    const legacyUpdate = sent3[0] as StateUpdateMessage;
+    assert.equal(legacyUpdate.playerHp, 100);
+    assert.equal(legacyUpdate.events[0]?.type, "player_respawned");
     void sent;
   });
 
