@@ -341,8 +341,7 @@ func respawn_player() -> void:
 	_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameStore.state.player.hp = _player_combatant.max_health
-	GameStore.state.player.combat_state = "idle"
+	GameStore.dispatch("player_respawned", {"hp": _player_combatant.max_health})
 	_player.position = Vector3(0, 1, 4)
 	_player.velocity = Vector3.ZERO
 	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main.respawn_player")
@@ -431,10 +430,6 @@ func _reset_game_state() -> void:
 	_hud.hide_text_panel()
 	# Scenario
 	_scenario_active = false
-	# GameStore narrative
-	GameStore.state.narrative.story_so_far = ""
-	GameStore.state.narrative.last_dialogue = ""
-	GameStore.state.narrative.last_interaction = ""
 	GameStore.state.world.rooms_visited.clear()
 	# Combat
 	_combat_hud.set_target(null)
@@ -456,8 +451,7 @@ func return_to_title() -> void:
 	_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameStore.state.player.hp = _player_combatant.max_health
-	GameStore.state.player.combat_state = "idle"
+	GameStore.dispatch("player_respawned", {"hp": _player_combatant.max_health})
 
 	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main.return_to_title")
 	if player_sync:
@@ -678,8 +672,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 		_player_combatant.health = _player_combatant.max_health
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
-	GameStore.state.player.hp = _player_combatant.health
-	GameStore.state.player.combat_state = "idle"
+	GameStore.dispatch("player_respawned", {"hp": _player_combatant.health})
 	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main._apply_room")
 	if player_sync:
 		player_sync.reset()
@@ -911,7 +904,7 @@ func _materialize_resumed_state(state: Dictionary) -> void:
 	# HP del save al runtime (la Fase 1 del bridge ya resembró su sim igual)
 	var hp: float = float(player_d.get("health", _player_combatant.max_health))
 	_player_combatant.health = hp
-	GameStore.state.player.hp = hp
+	GameStore.dispatch("player_respawned", {"hp": hp})
 	print("main: resume materializado — escena %s, %d entities, hp %.0f" % [active_id, respawned, hp])
 
 

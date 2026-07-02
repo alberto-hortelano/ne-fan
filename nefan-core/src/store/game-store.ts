@@ -34,11 +34,6 @@ export function createInitialState(): GameState {
       active_quests: [],
     },
     enemies: [],
-    narrative: {
-      story_so_far: "",
-      last_dialogue: "",
-      last_interaction: "",
-    },
     meta: {
       fps: 0,
       elapsed_ms: 0,
