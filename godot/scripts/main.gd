@@ -794,9 +794,6 @@ func _start_game(game_id: String, scene_path: String, resume_session_id: String 
 			NarrativeState.start_new_session(game_id)
 	else:
 		NarrativeState.start_new_session(game_id)
-	# Tell the MCP bridge so Claude knows what session is in flight
-	if LogicBridge.has_method("send_session_start"):
-		LogicBridge.send_session_start(NarrativeState.session_id, game_id, resume_session_id != "")
 	# Notify ai_server so Claude sees session info in narrative requests
 	AIClient.notify_session_start(NarrativeState.session_id, game_id, resume_session_id != "")
 
