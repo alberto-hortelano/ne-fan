@@ -150,7 +150,7 @@ Tres niveles de prioridad, FIFO dentro de cada nivel:
 2. **Narrative consequences** (lo que devuelve `report_player_choice`): se aplican en orden de llegada.
 3. **Plugin side-effects** (`emit_event` desde un reducer): se encolan al final del tick actual y se procesan después de los dos anteriores.
 
-Para una acción/evento dado: primero la procesa el core (combat resolver, movement, etc.), luego se ofrece a **todos** los plugins cuyo `events_consumed` la incluye. Orden entre plugins: alfabético por `plugin_id` (hash → orden determinístico independiente de cuándo se registró cada uno). Si un plugin `emit_event`, el evento entra en la cola de nivel 3 y será procesado por **todos** los plugins suscritos a él (incluido el emisor, sin protección contra ciclos — el techo del DSL lo evita en la práctica, pero ver §7.9).
+Para una acción/evento dado: primero la procesa el core (combat resolver, movement, etc.), luego se ofrece a **todos** los plugins cuyo `events_consumed` la incluye. Orden entre plugins: alfabético por `plugin_id` (hash → orden determinístico independiente de cuándo se registró cada uno). Si un plugin `emit_event`, el evento entra en la cola de nivel 3 y será procesado por **todos** los plugins suscritos a él (incluido el emisor; la guarda `MAX_EMITS_PER_TICK` de `dispatcher.ts` aborta el tick si se excede, ver §7.9).
 
 **Aislamiento**: cada reducer recibe un proxy con sólo `{event, slice, reads_resolved}`. Cualquier intento de path no declarado en `reads` falla en validación estática (al `plugin_register`, no en runtime).
 
@@ -295,8 +295,8 @@ F1+F2 son inversión sin retorno visible para el usuario; a partir de F3 ya hay 
 
 ### 7.9 Riesgos asumidos / pendientes
 
-- **Ciclos de eventos**: A consume `x` y emite `y`; B consume `y` y emite `x`. Defensa: contador de re-emisiones por tick (límite 16, configurable); al excederlo, el dispatcher aborta el tick con `narrative_status: error` y log del ciclo. Detectable estáticamente en `plugin_register` si los emisores se conocen.
-- **Slices grandes en saves**: un plugin mal diseñado puede crecer sin cota (ej. `transactions[]` que acumula todo el histórico). Mitigación: cada manifest declara `slice_size_hint`; el bridge avisa cuando se rebasa 10×.
+- **Ciclos de eventos** ✅ implementado: A consume `x` y emite `y`; B consume `y` y emite `x`. Defensa en `src/plugins/dispatcher.ts`: `MAX_EMITS_PER_TICK = 16` (configurable vía `opts.maxEmits`); al excederlo el tick transaccional aborta sin commitear nada y devuelve el error tipado `emit_limit_exceeded` con `trace` del ciclo. Pendiente opcional: detección estática en `plugin_register`.
+- **Slices grandes en saves**: un plugin mal diseñado puede crecer sin cota (ej. `transactions[]` que acumula todo el histórico). Mitigación prevista: cada manifest declara `slice_size_hint`; el bridge avisa cuando se rebasa 10×. ⚠️ Estado real: `slice_size_hint` existe en el schema (`src/plugins/types.ts`) pero **ningún código lo aplica** — el aviso 10× está sin implementar.
 - **Compatibilidad cross-game**: dos juegos pueden tener `commerce v1` con manifests distintos (hash distinto). Bien — son plugins distintos por construcción. El registry global futuro (§7.5) puede ofrecer un "commerce canónico" que ambos juegos adopten si lo desean.
 - **Determinismo de `random(seed_path, ...)`**: el seed debe derivarse de paths estables (no `Date.now()`). Validador rechaza manifests que usen seeds volátiles.
 - **Schema evolution del slice**: si el `schema` cambia entre v1 y v2 sin `migrate`, el slice viejo no valida. Hay que enforce `version` bump ⇒ `migrate[v-1]` obligatorio.

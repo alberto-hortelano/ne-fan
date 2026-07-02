@@ -1,12 +1,11 @@
 /** Orchestrates combat: batch resolution of simultaneous attacks.
  *  Port of godot/scripts/combat/combat_manager.gd */
 
-import type { CombatantState, CombatEvent, CombatConfig, EffectiveParams } from "../types.js";
+import type { CombatantState, CombatEvent, CombatConfig } from "../types.js";
 import { resolveAttack, applyDefensiveReduction } from "./combat-resolver.js";
 import { getEffectiveParams } from "./combat-data.js";
 import { getCurrentAction } from "./combatant.js";
 import * as Combatant from "./combatant.js";
-import { distance } from "../vec3.js";
 
 const SIMULTANEOUS_WINDOW = 0.05;
 

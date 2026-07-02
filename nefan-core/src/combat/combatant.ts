@@ -1,7 +1,7 @@
 /** Combat state machine — tick-based, no engine dependencies.
  *  Port of godot/scripts/combat/combatant.gd */
 
-import type { CombatantState, CombatState, CombatEvent, Vec3 } from "../types.js";
+import type { CombatantState, CombatEvent, Vec3 } from "../types.js";
 
 export function createCombatant(
   id: string,

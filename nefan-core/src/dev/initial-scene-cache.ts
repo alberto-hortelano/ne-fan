@@ -20,7 +20,7 @@ import { join } from "node:path";
 import type { WorldMap } from "../world-map/types.js";
 
 const SCHEMA_VERSION = 1;
-const SAFE_GAME_ID = /^[A-Za-z0-9_.\-]+$/;
+const SAFE_GAME_ID = /^[A-Za-z0-9_.-]+$/;
 
 export interface CachedBootstrap {
   schema_version: number;

@@ -465,16 +465,6 @@ func start_full_body(anim_name: String) -> void:
 		_combat_playback.start(anim_name)
 
 
-func play(anim_name: String, _speed: float = 1.0) -> void:
-	"""Legacy API — routes to travel() for backwards compatibility."""
-	travel(anim_name)
-
-
-func play_once(anim_name: String, _speed: float = 1.0) -> void:
-	"""Legacy API — routes to travel() for backwards compatibility."""
-	travel(anim_name)
-
-
 func get_current() -> String:
 	"""Returns combat layer state (backward compatible with is_attacking checks)."""
 	if _combat_playback:

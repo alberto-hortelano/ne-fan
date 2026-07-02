@@ -11,6 +11,10 @@ export interface SessionStorage {
   exists(sessionId: string): Promise<boolean>;
 }
 
+function isEnoent(err: unknown): boolean {
+  return err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT";
+}
+
 /** Stores sessions on the local filesystem under {root}/{session_id}/state.json. */
 export class FsSessionStorage implements SessionStorage {
   constructor(private root: string) {}
@@ -23,17 +27,28 @@ export class FsSessionStorage implements SessionStorage {
     try {
       await fs.access(this.pathFor(sessionId));
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (isEnoent(err)) return false;
+      throw err;
     }
   }
 
+  /** Returns null only when the session does not exist; corrupt JSON or IO errors throw. */
   async read(sessionId: string): Promise<SessionData | null> {
+    let text: string;
     try {
-      const text = await fs.readFile(this.pathFor(sessionId), "utf-8");
+      text = await fs.readFile(this.pathFor(sessionId), "utf-8");
+    } catch (err) {
+      if (isEnoent(err)) return null;
+      throw err;
+    }
+    try {
       return JSON.parse(text) as SessionData;
-    } catch {
-      return null;
+    } catch (err) {
+      throw new Error(
+        `Corrupt session file for "${sessionId}" at ${this.pathFor(sessionId)}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   }
 
@@ -56,12 +71,20 @@ export class FsSessionStorage implements SessionStorage {
     let entries: string[];
     try {
       entries = await fs.readdir(this.root);
-    } catch {
-      return [];
+    } catch (err) {
+      if (isEnoent(err)) return []; // no saves dir yet — legitimate empty state
+      throw err;
     }
     const result: SessionMetadata[] = [];
     for (const name of entries) {
-      const data = await this.read(name);
+      let data: SessionData | null;
+      try {
+        data = await this.read(name);
+      } catch (err) {
+        // One corrupt session must not hide every other save from the list.
+        console.error(`[session-storage] skipping unreadable session "${name}":`, err);
+        continue;
+      }
       if (!data) continue;
       let summary = data.story_so_far ?? "";
       if (summary.length > 80) summary = summary.slice(0, 77) + "...";

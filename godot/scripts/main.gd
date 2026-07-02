@@ -294,7 +294,6 @@ func _on_enemy_damage_log(amount: float, _from: Node, enemy_name: String) -> voi
 
 
 func respawn_player() -> void:
-	_combat_manager.clear_pending()
 	# Reset all enemy combatants to idle
 	if _current_room:
 		for child in _current_room.get_children():
@@ -315,7 +314,7 @@ func respawn_player() -> void:
 		player_sync.reset()
 	var player_anim = _player.get_node_or_null("CombatAnimator")
 	if player_anim:
-		player_anim.play("idle")
+		player_anim.travel("idle")
 	_hud.show_brief_message("Respawn")
 
 
@@ -455,7 +454,6 @@ func _reset_game_state() -> void:
 	GameStore.state.narrative.last_interaction = ""
 	GameStore.state.world.rooms_visited.clear()
 	# Combat
-	_combat_manager.clear_pending()
 	_combat_hud.set_target(null)
 
 
@@ -560,7 +558,7 @@ func _on_dev_room_selected(file_path: String) -> void:
 func _on_dev_animation_selected(anim_name: String) -> void:
 	var animator = _player.get_node_or_null("CombatAnimator")
 	if animator:
-		animator.play(anim_name)
+		animator.travel(anim_name)
 	# Disable combat animation sync while previewing
 	var sync = _player.get_node_or_null("CombatAnimationSync")
 	if sync:

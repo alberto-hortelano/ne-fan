@@ -325,7 +325,7 @@ func _cmd_play_anim(args: Dictionary) -> String:
 	if sync and sync.is_processing():
 		sync.request_action(anim_name)
 	else:
-		animator.play(anim_name)
+		animator.travel(anim_name)
 	# Get animation duration
 	var duration: float = 0.0
 	if animator._anim_player and animator._anim_player.has_animation(anim_name):

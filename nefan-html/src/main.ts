@@ -26,7 +26,6 @@ import {
 } from "./net/game-client.js";
 import type { ScenarioUpdate } from "../../nefan-core/src/scenario/scenario-types.js";
 
-// @ts-ignore — Vite resolves JSON imports
 import combatConfigJson from "../../nefan-core/data/combat_config.json";
 import { CONFIG } from "../../nefan-core/src/config.js";
 
@@ -165,10 +164,9 @@ attackBtns.forEach(btn => {
 // --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
-let playerMaxHp = 100;
+const playerMaxHp = 100;
 let playerWeaponId = "short_sword";
 let sceneData: Record<string, unknown> | null = null;
-let scenarioActive = false;
 /** Salidas del world-map de la escena actual (las adjunta el bridge). Se usan
  *  para la transición continua al cruzar un borde. */
 let currentExits: SceneExit[] = [];
@@ -290,7 +288,6 @@ async function loadSceneFile(globKey: string): Promise<void> {
 async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   const data = formatDToWorld(rawData);
   sceneData = data;
-  scenarioActive = false;
 
   renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
 
@@ -635,7 +632,6 @@ function processScenario(scenario: ScenarioUpdate): void {
   if (scenario.change_scene) {
     const next = scenario.change_scene as Record<string, unknown>;
     sceneData = next;
-    scenarioActive = true;
     renderer.setScene(next as unknown as Parameters<typeof renderer.setScene>[0]);
     playerPos.x = 0;
     playerPos.z = 2;
@@ -722,7 +718,6 @@ sceneSelector.addEventListener("change", () => {
   if (value.startsWith("game:")) {
     const gameId = value.slice(5);
     if (gameClient?.isBridge) {
-      scenarioActive = true;
       gameClient.loadGame(gameId);
       log("Loading game: " + gameId);
     } else {

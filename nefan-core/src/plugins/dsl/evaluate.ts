@@ -28,7 +28,7 @@ import {
   type DslScope,
 } from "./paths.js";
 import { evalPredicate } from "./predicates.js";
-import { evalValue, MAX_ITERATIONS, newEvalState } from "./values.js";
+import { evalValue, MAX_ITERATIONS } from "./values.js";
 
 export type { EmittedEvent } from "./effects.js";
 

@@ -49,7 +49,7 @@ El **servidor narrativo** funciona correctamente y se mantiene en `ai_server/`:
 - **LLM Client** (`llm_client.py`): genera salas de dungeon estructuradas (objetos, NPCs, eventos ambientales) via Claude API o MCP bridge
 - **MCP Bridge** (`narrative-mcp/`): puente WebSocket entre Python y Claude Code para generación narrativa
 - **Narrative Schemas** (`narrative_schemas.py`): validación, clamping de valores, fallback rooms
-- **Endpoint activo**: `POST /populate_room` acepta world state y devuelve JSON estructurado
+- **Endpoint activo**: `POST /generate_scene` acepta world state y devuelve la escena open-world estructurada (la cadena `generate_room`/`populate_room` fue retirada; ver `next.md` §4)
 
 El pipeline UE5 de semántica (SemanticComponent, ObjectSpawner, QuestManager) sigue funcional con primitivos estándar de Unreal.
 
