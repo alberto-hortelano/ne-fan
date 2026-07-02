@@ -1,10 +1,10 @@
 /** Never Ending Fantasy — 2D top-down HTML client.
  *  Dual mode: connects to nefan-core bridge (WebSocket) or falls back to local simulation. */
 
-import type { Vec3, EffectiveParams } from "../../nefan-core/src/types.js";
-import { distance, normalized, sub } from "../../nefan-core/src/vec3.js";
-import { getEffectiveParams, loadConfig } from "../../nefan-core/src/combat/combat-data.js";
-import { formatDToWorld } from "../../nefan-core/src/scene/scene-normalize.js";
+import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
+import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
+import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
+import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
@@ -24,17 +24,17 @@ import {
   type FrameResult,
   type RoomEnemy,
 } from "./net/game-client.js";
-import type { ScenarioUpdate } from "../../nefan-core/src/scenario/scenario-types.js";
+import type { ScenarioUpdate } from "@nefan-core/src/scenario/scenario-types.js";
 
-import combatConfigJson from "../../nefan-core/data/combat_config.json";
-import { CONFIG } from "../../nefan-core/src/config.js";
+import combatConfigJson from "@nefan-core/data/combat_config.json";
+import { CONFIG } from "@nefan-core/src/config.js";
 
 // Glob import all open-world scene JSONs (lazy) — Vite feature.
 // El concepto sala se ha retirado del cliente HTML: estos fixtures definen
 // escenarios exteriores con elementos planos por categoría.
 const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
   (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
-    .glob("../../nefan-core/data/scenes/**/*.json");
+    .glob("@nefan-core/data/scenes/**/*.json");
 
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
 // La vista cenital 2D necesita un ritmo más arcade que el walk_speed realista
@@ -203,7 +203,7 @@ function populateSceneSelector(): void {
   // Scene fixtures (cargados localmente, sin bridge).
   const scenes: { key: string; label: string }[] = [];
   for (const path of Object.keys(sceneModules)) {
-    // path like "../../nefan-core/data/scenes/tavern_clearing.json"
+    // path like "@nefan-core/data/scenes/tavern_clearing.json"
     const match = path.match(/scenes\/(.+)\.json$/);
     if (!match) continue;
     scenes.push({ key: path, label: match[1] });

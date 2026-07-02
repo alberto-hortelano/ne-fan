@@ -12,8 +12,8 @@
 import type { NarrativeClient, GameInfo } from "../net/narrative-client.js";
 import type {
   SessionMetadata,
-} from "../../../nefan-core/src/narrative/types.js";
-import { CONFIG } from "../../../nefan-core/src/config.js";
+} from "@nefan-core/src/narrative/types.js";
+import { CONFIG } from "@nefan-core/src/config.js";
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }

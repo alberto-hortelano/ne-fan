@@ -2,7 +2,7 @@
  *  Pinta `terrain` (rectángulo coloreado) + objetos por categoría + NPCs/enemies.
  *  Sin paredes, sin exits — el concepto sala se fue. */
 
-import type { Vec3 } from "../../../nefan-core/src/types.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";

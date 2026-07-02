@@ -11,8 +11,8 @@ import type {
   GamesListedMessage,
   SessionDeletedMessage,
   SessionSavedMessage,
-} from "../../../nefan-core/src/protocol/messages.js";
-import type { Vec3, EnemyPersonality } from "../../../nefan-core/src/types.js";
+} from "@nefan-core/src/protocol/messages.js";
+import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
