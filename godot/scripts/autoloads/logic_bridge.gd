@@ -16,6 +16,18 @@ signal scenario_spawn_enemy(data: Dictionary)
 signal scenario_give_weapon(weapon_id: String)
 signal scenario_spawn_objects(objects: Array)
 
+# ── Protocolo de sesión canónico (start_session/resume_session, paridad con
+# el cliente HTML). Señales emitidas al recibir mensajes del bridge; nadie
+# está obligado a conectarlas (el flujo legacy load_game no las usa).
+signal session_started(ok: bool, session_id: String, game_id: String, is_resume: bool, state: Dictionary, error: String)
+signal narrative_scene(scene_id: String, scene_data: Dictionary)
+signal narrative_spawn(effect: Dictionary)
+signal narrative_dialogue(speaker: String, text: String, choices: Array)
+signal narrative_story_delta(delta: String)
+signal narrative_ambient(message: String)
+signal narrative_status_changed(phase: String, kind: String, message: String)
+signal session_saved(ok: bool)
+
 var _socket := WebSocketPeer.new()
 var _connected := false
 var _enabled := false  # Only active when bridge is available
@@ -24,7 +36,10 @@ var _retry_interval := 5.0
 
 var _player: CharacterBody3D = null
 var _player_combatant: Node = null  # Combatant
-var _pending_room: Dictionary = {}  # Room data to send when bridge connects
+# Cola FIFO de mensajes emitidos antes de conectar; se drena en orden al abrir
+# el socket. (Antes era un slot único que un segundo send pisaba.)
+var _pending_out: Array[Dictionary] = []
+var _next_request_id := 0
 # Cache id → Node para no recorrer el árbol entero por cada enemigo/NPC en
 # cada state_update. La validez se comprueba al leer (is_instance_valid), así
 # que un cambio de room o un despawn invalidan la entrada sin hooks extra.
@@ -67,11 +82,11 @@ func _process(delta: float) -> void:
 			_connected = true
 			print("LogicBridge: connected to %s" % BRIDGE_URL)
 			connection_changed.emit(true)
-			# Send pending room data that was queued before connection
-			if not _pending_room.is_empty():
-				_socket.send_text(JSON.stringify(_pending_room))
-				print("LogicBridge: sent pending room: %s" % _pending_room.get("roomId", ""))
-				_pending_room = {}
+			# Drain queued messages in the order they were requested
+			for pending: Dictionary in _pending_out:
+				_socket.send_text(JSON.stringify(pending))
+				print("LogicBridge: sent pending %s" % pending.get("type", "?"))
+			_pending_out.clear()
 
 		# Read incoming messages
 		while _socket.get_available_packet_count() > 0:
@@ -138,13 +153,7 @@ func send_room_loaded(room_id: String, enemies: Array, dimensions: Dictionary = 
 	}
 	if not dimensions.is_empty():
 		msg["dimensions"] = {"width": dimensions.get("width", 20.0), "depth": dimensions.get("depth", 20.0)}
-	if not _connected:
-		# Store for when bridge connects
-		_pending_room = msg
-		print("LogicBridge: queued room '%s' (%d enemies) for when bridge connects" % [room_id, enemies.size()])
-		return
-	_socket.send_text(JSON.stringify(msg))
-	print("LogicBridge: sent room '%s' (%d enemies)" % [room_id, enemies.size()])
+	_send_or_queue(msg, "room '%s' (%d enemies)" % [room_id, enemies.size()])
 
 
 func send_respawn() -> void:
@@ -153,34 +162,85 @@ func send_respawn() -> void:
 	_socket.send_text(JSON.stringify({"type": "respawn"}))
 
 
-func send_session_start(session_id: String, game_id: String, is_resume: bool) -> void:
-	"""Notify the bridge (and through it, the narrative engine) that a new
-	playthrough session has started or been resumed. The bridge keeps this
-	'sticky' so it can be injected into upcoming room/scene/event requests."""
+func send_start_session(game_id: String, appearance: Dictionary = {}) -> void:
+	"""Arranca una sesión canónica en el bridge (NarrativeState + plugins).
+	La respuesta llega como session_started; la escena inicial, como
+	narrative_event → señal narrative_scene."""
 	var msg := {
-		"type": "session_start",
-		"session_id": session_id,
+		"type": "start_session",
+		"requestId": _make_request_id(),
 		"gameId": game_id,
-		"is_resume": is_resume,
 	}
-	if not _connected:
-		# Best-effort: queue along with any pending room (overwrite is fine —
-		# session_start should always come before the room).
-		_pending_room = msg
-		print("LogicBridge: queued session_start '%s' for when bridge connects" % session_id)
-		return
-	_socket.send_text(JSON.stringify(msg))
-	print("LogicBridge: sent session_start session=%s game=%s resume=%s" % [session_id, game_id, is_resume])
+	if not appearance.is_empty():
+		msg["appearance"] = {
+			"model_id": String(appearance.get("model_id", "")),
+			"skin_path": String(appearance.get("skin_path", "")),
+		}
+	_send_or_queue(msg, "start_session '%s'" % game_id)
+
+
+func send_resume_session(session_id: String) -> void:
+	"""Reanuda una sesión guardada del bridge. Responde session_started con
+	el SessionData completo; la escena la materializa el cliente desde
+	state.scenes_loaded (el bridge no re-difunde escena en resume)."""
+	_send_or_queue(
+		{"type": "resume_session", "requestId": _make_request_id(), "sessionId": session_id},
+		"resume_session '%s'" % session_id,
+	)
+
+
+func send_save_session() -> void:
+	"""Pide al bridge que snapshotee el runtime (pos/HP del sim) y persista la
+	sesión. Responde session_saved."""
+	_send_or_queue(
+		{"type": "save_session", "requestId": _make_request_id()},
+		"save_session",
+	)
+
+
+func send_dialogue_choice(speaker: String, chosen_text: String, choice_index: int, free_text: String = "") -> void:
+	"""Reporta la elección de diálogo por el ciclo canónico del bridge
+	(recordDialogueEvent + reportPlayerChoice + plugins). El eventId lo crea
+	el bridge; el campo va vacío por contrato."""
+	var msg := {
+		"type": "dialogue_choice",
+		"eventId": "",
+		"choiceIndex": choice_index,
+		"speaker": speaker,
+		"chosenText": chosen_text,
+	}
+	if free_text != "":
+		msg["freeText"] = free_text
+	_send_or_queue(msg, "dialogue_choice")
+
+
+func send_interact_entity(entity_id: String, entity_name: String) -> void:
+	"""Interacción con una entidad narrativa (tecla E sobre un NPC): el bridge
+	genera el saludo y responde con narrative_event (show_dialogue...)."""
+	_send_or_queue(
+		{"type": "interact_entity", "entityId": entity_id, "entityName": entity_name},
+		"interact_entity '%s'" % entity_id,
+	)
 
 
 func send_load_game(game_id: String) -> void:
-	var msg := {"type": "load_game", "gameId": game_id}
+	"""DEPRECATED: bypass legacy del ScenarioRunner — no crea sesión canónica
+	ni ejercita plugins. Se conserva para F4/remote_control (game_test.py)."""
+	_send_or_queue({"type": "load_game", "gameId": game_id}, "load_game '%s'" % game_id)
+
+
+func _send_or_queue(msg: Dictionary, label: String) -> void:
 	if not _connected:
-		_pending_room = msg
-		print("LogicBridge: queued load_game '%s' for when bridge connects" % game_id)
+		_pending_out.append(msg)
+		print("LogicBridge: queued %s for when bridge connects" % label)
 		return
 	_socket.send_text(JSON.stringify(msg))
-	print("LogicBridge: sent load_game '%s'" % game_id)
+	print("LogicBridge: sent %s" % label)
+
+
+func _make_request_id() -> String:
+	_next_request_id += 1
+	return "gd_%d" % _next_request_id
 
 
 func send_scenario_event(event: String, data: Dictionary = {}) -> void:
@@ -226,6 +286,18 @@ func _handle_message(data: String) -> void:
 	match msg_type:
 		"state_update":
 			_apply_state_update(msg)
+		"session_started":
+			_on_session_started_msg(msg)
+		"narrative_event":
+			_on_narrative_event_msg(msg)
+		"narrative_status":
+			narrative_status_changed.emit(
+				String(msg.get("phase", "")),
+				String(msg.get("kind", "")),
+				String(msg.get("message", "")),
+			)
+		"session_saved":
+			session_saved.emit(bool(msg.get("ok", false)))
 		"pong":
 			pass
 		_:
@@ -233,6 +305,63 @@ func _handle_message(data: String) -> void:
 			# silently dropping a frame the bridge added without our knowing.
 			if msg_type != "":
 				push_warning("LogicBridge: unknown message type '%s'" % msg_type)
+
+
+func _on_session_started_msg(msg: Dictionary) -> void:
+	var ok: bool = bool(msg.get("ok", false))
+	var state_v: Variant = msg.get("state", {})
+	var state: Dictionary = state_v if state_v is Dictionary else {}
+	if ok and state.is_empty():
+		# Fail-loud: un session_started ok sin SessionData rompería la
+		# hidratación del espejo — mejor verlo aquí que aguas abajo.
+		push_error("LogicBridge: session_started ok=true sin 'state' — frame malformado")
+	session_started.emit(
+		ok,
+		String(msg.get("sessionId", "")),
+		String(msg.get("gameId", "")),
+		bool(msg.get("isResume", false)),
+		state,
+		String(msg.get("error", "")),
+	)
+
+
+func _on_narrative_event_msg(msg: Dictionary) -> void:
+	var effects_v: Variant = msg.get("effects", [])
+	if not effects_v is Array:
+		push_error("LogicBridge: narrative_event sin 'effects' Array — frame malformado")
+		return
+	for effect_v: Variant in (effects_v as Array):
+		if not effect_v is Dictionary:
+			push_error("LogicBridge: effect no-Dictionary en narrative_event")
+			continue
+		var effect: Dictionary = effect_v
+		var kind: String = String(effect.get("kind", ""))
+		match kind:
+			"spawn_entity":
+				var data_v: Variant = effect.get("data", {})
+				var data: Dictionary = data_v if data_v is Dictionary else {}
+				var scene_v: Variant = data.get("scene")
+				if scene_v is Dictionary:
+					# Una escena completa (scene_init / lazy realize del mapa).
+					narrative_scene.emit(String(effect.get("entityId", "")), scene_v)
+				else:
+					# Entidad suelta con posición ya resuelta por el bridge.
+					narrative_spawn.emit(effect)
+			"show_dialogue":
+				var choices_v: Variant = effect.get("choices", [])
+				var choices: Array = choices_v if choices_v is Array else []
+				narrative_dialogue.emit(
+					String(effect.get("speaker", "")), String(effect.get("text", "")), choices
+				)
+			"story_delta":
+				narrative_story_delta.emit(String(effect.get("delta", "")))
+			"ambient_message":
+				narrative_ambient.emit(String(effect.get("message", "")))
+			"schedule_event", "plugin_applied":
+				# Paridad con el cliente HTML: informativos, sin materialización.
+				print("LogicBridge: effect %s recibido" % kind)
+			_:
+				push_warning("LogicBridge: unknown effect kind '%s'" % kind)
 
 
 func _apply_state_update(msg: Dictionary) -> void:
