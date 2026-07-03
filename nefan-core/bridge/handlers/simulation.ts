@@ -4,7 +4,9 @@ import { createCombatant } from "../../src/combat/combatant.js";
 import { getEnemyStates, type BridgeContext, type ClientSocket } from "../context.js";
 import type {
   InputMessage,
+  AddCombatantsMessage,
   LoadRoomMessage,
+  RespawnMessage,
   ScenarioEventMessage,
   StateUpdateMessage,
 } from "../../src/protocol/messages.js";
@@ -174,8 +176,8 @@ export function handleLoadRoom(
   ctx.send(ws, roomResponse);
 }
 
-export function handleRespawn(ws: ClientSocket, ctx: BridgeContext): void {
-  const events = ctx.sim.respawn();
+export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
+  const events = ctx.sim.respawn(msg.pos);
   const response: StateUpdateMessage = {
     type: "state_update",
     events,
@@ -184,6 +186,34 @@ export function handleRespawn(ws: ClientSocket, ctx: BridgeContext): void {
   };
   ctx.send(ws, response);
   console.log("Bridge: player respawned");
+}
+
+/** Alta ADITIVA de combatientes (enemigos de un tile recién cargado en el
+ *  cliente). No resetea el sim ni toca bounds: los combatientes de otros
+ *  tiles siguen vivos — el mundo es un plano continuo, no una arena. Ids ya
+ *  presentes se ignoran (re-entrada a un tile). */
+export function handleAddCombatants(
+  msg: AddCombatantsMessage,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): void {
+  let added = 0;
+  for (const enemy of msg.enemies) {
+    if (ctx.sim.getCombatant(enemy.id)) continue;
+    ctx.sim.addCombatant(
+      createCombatant(enemy.id, enemy.health, enemy.weaponId, enemy.position, { x: 0, y: 0, z: 1 }),
+      enemy.personality,
+    );
+    added++;
+  }
+  if (added > 0) console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
+  const response: StateUpdateMessage = {
+    type: "state_update",
+    events: [],
+    playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
+    enemies: getEnemyStates(ctx),
+  };
+  ctx.send(ws, response);
 }
 
 export async function handleScenarioEvent(

@@ -20,6 +20,8 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { routeMessage } from "../bridge/router.js";
+import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type {
   ServerMessage,
@@ -97,7 +99,7 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     cacheInitialScene: false,
     activePlugins: new Map(),
-    pendingSceneGen: null,
+    sceneGen: new SceneGenQueue(),
     subscribe(ws) {
       subscribers.add(ws);
     },
@@ -761,7 +763,7 @@ describe("bridge player_crossed_frontier", () => {
     const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
     assert.equal(scene?.exits?.[0]?.place_id, "aldea");
     assert.equal(scene?.exits?.[0]?.edge, "west");
-    assert.equal(ctx.pendingSceneGen, null, "single-flight liberado");
+    assert.equal(ctx.sceneGen.current, null, "cola drenada");
   });
 
   it("el motor no crea el place → error accionable con map_upsert_place", async () => {
@@ -783,7 +785,7 @@ describe("bridge player_crossed_frontier", () => {
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
     assert.ok(err?.message?.includes("map_upsert_place"), err?.message);
-    assert.equal(ctx.pendingSceneGen, null);
+    assert.equal(ctx.sceneGen.current, null);
   });
 
   it("el motor no linkea el place nuevo → error accionable con map_link", async () => {
@@ -809,7 +811,7 @@ describe("bridge player_crossed_frontier", () => {
     assert.ok(err?.message?.includes("map_link"), err?.message);
   });
 
-  it("single-flight: una segunda frontera durante la generación se dropea", async () => {
+  it("cola: la misma frontera repetida durante la generación se dedupea", async () => {
     let release: (() => void) | null = null;
     let nref: NarrativeState | null = null;
     const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
@@ -827,9 +829,9 @@ describe("bridge player_crossed_frontier", () => {
     const { socket } = makeSocket();
     await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
     await waitFor(() => release !== null);
-    // Segunda frontera mientras la primera genera → dropeada + re-broadcast generating.
+    // Misma frontera repetida mientras genera → dedupe + re-broadcast generating.
     const before = broadcasts.length;
-    await routeMessage({ type: "player_crossed_frontier", edge: "west" }, socket, ctx);
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
     assert.equal(aiCalls.scene.length, 1, "una sola llamada al motor");
     assert.equal(
       (broadcasts[before] as NarrativeStatusMessage)?.phase,
@@ -840,7 +842,7 @@ describe("bridge player_crossed_frontier", () => {
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
     );
-    assert.equal(ctx.pendingSceneGen, null);
+    assert.equal(ctx.sceneGen.current, null);
   });
 
   it("lazy realize en vuelo → la frontera se dropea (y viceversa el guard cubre entered_place)", async () => {
@@ -864,5 +866,182 @@ describe("bridge player_crossed_frontier", () => {
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
     );
+  });
+});
+
+describe("bridge request_tile (plano continuo)", () => {
+  /** Tile mínimo válido: bioma + camino que continúa los cruces pedidos. */
+  const tileScene = (features: Record<string, unknown>[] = []) => ({
+    biome: "grass",
+    scene_description: "campo de bench",
+    terrain_features: features,
+    entities: [],
+    ambient_event: "",
+  });
+
+  function seedTile00(narrative: NarrativeState): void {
+    narrative.startNewSession("plugtest");
+    // Tile (0,0) con un camino que muere en su borde ESTE en la fila 41.
+    const t = {
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      ...tileScene([
+        { type: "path", points: [[64, 41], [128, 41]], width: 2, at_edges: [{ edge: "east", at: 41 }] },
+      ]),
+    };
+    narrative.recordSceneLoaded("tile_0_0", expandScenePrimitives(t));
+  }
+
+  it("cache-hit: re-difunde el tile persistido sin llamar al motor", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    seedTile00(narrative);
+    broadcasts.length = 0;
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 0, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 0, "sin LLM");
+    const sceneEvent = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    assert.ok(sceneEvent, "re-broadcast del esquema persistido");
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.equal(ready?.kind, "tile");
+    assert.deepEqual(ready?.tile, { tx: 0, ty: 0 });
+  });
+
+  it("miss: genera con contexto de costuras y el prefetch NO roba la escena activa", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          const gt = llmCtx.generate_tile!;
+          assert.equal(gt.tx, 1);
+          assert.equal(gt.ty, 0);
+          // El vecino oeste (tile 0,0) expone su cruce con el MISMO at.
+          assert.equal(gt.neighbors.west?.crossings[0]?.at, 41);
+          // Continuarlo: camino de oeste a este.
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "prefetch", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready" && m.kind === "tile"),
+    );
+    assert.ok(narrative.hasTile(1, 0), "tile registrado");
+    assert.equal(narrative.world.active_scene_id, "tile_0_0", "prefetch sin activar");
+    // El registro persistió las costuras del tile nuevo.
+    assert.equal(narrative.getTile(1, 0)!.edges!.west.crossings[0]?.at, 41);
+  });
+
+  it("un tile que no continúa los cruces del vecino se rechaza (red server-side)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) }, // sin camino
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("no es jugable"), err?.message);
+    assert.ok(!narrative.hasTile(1, 0));
+  });
+
+  it("player_crossed_frontier delega en el pipeline de tiles cuando el activo es un tile", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          assert.ok(llmCtx.generate_tile, "usa generate_tile, no frontier_request");
+          assert.equal(llmCtx.frontier_request, undefined);
+          assert.equal(llmCtx.generate_tile!.entry?.edge, "west", "entra por el opuesto al cruzado");
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() => narrative.hasTile(1, 0));
+    assert.equal(aiCalls.scene.length, 1);
+  });
+
+  it("blocking repetido mientras genera → generating re-difundido, una sola llamada", async () => {
+    let release: (() => void) | null = null;
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => release !== null);
+    const before = broadcasts.length;
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1);
+    const regen = broadcasts.slice(before).find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "generating",
+    );
+    assert.ok(regen, "re-broadcast de generating para el que espera");
+    release!();
+    await waitFor(() => narrative.hasTile(1, 0));
+  });
+
+  it("add_combatants es aditivo y respawn acepta pos", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "add_combatants",
+        enemies: [
+          {
+            id: "lobo_1",
+            position: { x: 70, y: 0, z: 5 },
+            health: 40,
+            weaponId: "unarmed",
+            personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3 },
+          },
+        ],
+      },
+      socket,
+      ctx,
+    );
+    assert.ok(sim.getCombatant("lobo_1"), "enemigo añadido");
+    assert.ok(sim.getCombatant("player"), "player intacto (sin reset)");
+    // Duplicado ignorado.
+    await routeMessage(
+      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
+      socket,
+      ctx,
+    );
+    assert.equal(sim.getCombatant("lobo_1")!.health, 40, "el duplicado no pisa el HP");
+
+    await routeMessage({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 66, y: 0, z: 2 });
+    assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
   });
 });

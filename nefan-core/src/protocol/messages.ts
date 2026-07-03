@@ -39,6 +39,9 @@ export interface LoadRoomMessage {
 
 export interface RespawnMessage {
   type: "respawn";
+  /** Punto de reaparición en coordenadas globales (el cliente elige un punto
+   *  libre cercano en el tile actual). Ausente = legacy (0,0,4). */
+  pos?: Vec3;
 }
 
 export interface PingMessage {
@@ -117,10 +120,39 @@ export interface PlayerEnteredPlaceMessage {
 
 /** El jugador salió por un borde de la escena que NO tiene destino conocido en
  *  el world map. El bridge pide al motor narrativo extender el mundo en esa
- *  dirección: crear place + link (con edge) + escena on-the-fly. */
+ *  dirección: crear place + link (con edge) + escena on-the-fly.
+ *  @deprecated con el plano de tiles delega en request_tile (se mantiene por
+ *  compat con clientes de la tanda 2). */
 export interface PlayerCrossedFrontierMessage {
   type: "player_crossed_frontier";
   edge: Edge;
+}
+
+/** Petición de un tile del plano continuo. `prefetch` = el jugador se acerca
+ *  al borde (generar en segundo plano, sin activar); `blocking` = está pegado
+ *  al borde esperando. Si el tile ya existe, el bridge lo re-difunde al
+ *  instante sin LLM (re-render al volver). */
+export interface RequestTileMessage {
+  type: "request_tile";
+  tx: number;
+  ty: number;
+  reason: "prefetch" | "blocking";
+  /** Borde del tile ACTUAL por el que se acerca/espera el jugador (para el
+   *  velo direccional y el `entry` del motor). */
+  edge?: Edge;
+}
+
+/** Alta ADITIVA de combatientes en el sim (enemigos de un tile nuevo). No
+ *  resetea nada: los combatientes de otros tiles siguen vivos. */
+export interface AddCombatantsMessage {
+  type: "add_combatants";
+  enemies: {
+    id: string;
+    position: Vec3;
+    health: number;
+    weaponId: string;
+    personality: EnemyPersonality;
+  }[];
 }
 
 /** Salida que el bridge adjunta a toda escena difundida (enrichSceneWithExits,
@@ -161,6 +193,8 @@ export type ClientMessage =
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | PlayerCrossedFrontierMessage
+  | RequestTileMessage
+  | AddCombatantsMessage
   | InteractEntityMessage;
 
 // ── Logic → Frontend ──
@@ -217,9 +251,14 @@ export interface NarrativeEventMessage {
 export interface NarrativeStatusMessage {
   type: "narrative_status";
   phase: "generating" | "ready" | "error";
-  kind: "scene" | "consequences";
+  kind: "scene" | "consequences" | "tile";
   message?: string;
   elapsedMs?: number;
+  /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
+   *  velo/notificación direccional con esto. */
+  tile?: { tx: number; ty: number };
+  /** Borde del tile ACTUAL del jugador hacia el que se genera/completó. */
+  edge?: Edge;
 }
 
 export interface GamesListedMessage {

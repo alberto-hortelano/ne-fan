@@ -173,11 +173,32 @@ export interface LlmContext {
   };
   /** Solo en peticiones de frontera: el jugador salió por `edge` de la escena
    *  que realiza `from_place_id` y el world map no tiene destino en esa
-   *  dirección. El motor debe crear place + link (con edge) + escena. */
+   *  dirección. El motor debe crear place + link (con edge) + escena.
+   *  @deprecated con el plano de tiles el bridge delega en generate_tile. */
   frontier_request?: {
     from_place_id: string;
     from_place_name: string;
     edge: "north" | "south" | "east" | "west";
+  };
+  /** Petición de un TILE del plano continuo (Format D v3): coords, contexto
+   *  de costuras de los vecinos ya generados (bioma + cruces del borde
+   *  compartido, con `at` espejo sin transformación), por dónde entra el
+   *  jugador, y places cercanos. */
+  generate_tile?: {
+    tx: number;
+    ty: number;
+    neighbors: Partial<Record<"north" | "south" | "east" | "west", {
+      tile: [number, number];
+      scene_id: string;
+      description: string;
+      biome: string;
+      crossings: Array<{ type: string; at: number; width: number }>;
+    }>>;
+    /** Borde del TILE NUEVO por el que entra el jugador (opuesto al cruzado). */
+    entry?: { edge: "north" | "south" | "east" | "west"; at?: number };
+    nearby_places: Array<{ id: string; name: string; kind: string; tile?: [number, number] }>;
+    /** true solo en el primer tile de una sesión nueva (lleva player + place). */
+    bootstrap?: boolean;
   };
 }
 

@@ -79,7 +79,9 @@ export function computeTileEdges(expanded: Record<string, unknown>): TileEdges {
     let runType: CrossingType | null = null;
     const flush = (end: number): void => {
       if (runType !== null && runStart >= 0) {
-        crossings.push({ type: runType, at: Math.floor((runStart + end - 1) / 2), width: end - runStart });
+        // Centro del run con redondeo hacia arriba en empates: un camino de
+        // width 2 declarado en `at` cubre [at-1, at] y recupera `at` exacto.
+        crossings.push({ type: runType, at: Math.round((runStart + end - 1) / 2), width: end - runStart });
       }
       runStart = -1;
       runType = null;
