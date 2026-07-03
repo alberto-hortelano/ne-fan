@@ -69,6 +69,7 @@ const ctx: BridgeContext = {
   gamesDir: GAMES_DIR,
   cacheInitialScene: CONFIG.dev.cache_initial_scene,
   activePlugins: new Map(),
+  pendingSceneGen: null,
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },

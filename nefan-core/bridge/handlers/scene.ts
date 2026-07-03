@@ -7,12 +7,39 @@ import {
   type BridgeContext,
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
-import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
+import { oppositeEdge } from "../../src/world-map/edges.js";
+import type { Edge } from "../../src/world-map/types.js";
+import type {
+  PlayerCrossedFrontierMessage,
+  PlayerEnteredPlaceMessage,
+} from "../../src/protocol/messages.js";
+
+const EDGE_ES: Record<Edge, string> = {
+  north: "norte",
+  south: "sur",
+  east: "este",
+  west: "oeste",
+};
+
+/** Guard single-flight compartido por los dos handlers de escena: con una
+ *  generación en vuelo, una petición nueva se dropea (el cliente congela el
+ *  movimiento, pero un segundo socket o el emulador pueden colarse) y se
+ *  re-difunde `generating` para que un cliente recién conectado mantenga el
+ *  loader. Devuelve true si hay que abortar. */
+function dropIfSceneGenInFlight(ctx: BridgeContext, what: string): boolean {
+  if (!ctx.pendingSceneGen) return false;
+  console.warn(
+    `Bridge: ${what} dropped — ${ctx.pendingSceneGen.kind}(${ctx.pendingSceneGen.key}) in flight`,
+  );
+  ctx.broadcastNarrative({ type: "narrative_status", phase: "generating", kind: "scene" });
+  return true;
+}
 
 export async function handlePlayerEnteredPlace(
   msg: PlayerEnteredPlaceMessage,
   ctx: BridgeContext,
 ): Promise<void> {
+  if (dropIfSceneGenInFlight(ctx, `player_entered_place(${msg.placeId})`)) return;
   const placeId = msg.placeId;
   const place = ctx.narrative.worldMap.get(placeId);
   if (!place) {
@@ -57,6 +84,7 @@ export async function handlePlayerEnteredPlace(
     links: ctx.narrative.worldMap.getOutgoingLinks(placeId),
   };
   const realizeStart = Date.now();
+  ctx.pendingSceneGen = { kind: "realize", key: placeId };
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "generating",
@@ -98,5 +126,100 @@ export async function handlePlayerEnteredPlace(
         message: `Error: ${(err as Error).message ?? err}`,
         elapsedMs: Date.now() - realizeStart,
       });
+    })
+    .finally(() => {
+      ctx.pendingSceneGen = null;
+    });
+}
+
+/** El jugador cruzó un borde SIN destino conocido en el world map: pedir al
+ *  motor narrativo que extienda el mundo en esa dirección. El motor debe crear
+ *  el place nuevo + map_link (el pre-flight de narrative_respond ya exige que
+ *  el place exista y tenga ≥1 link) y responder la escena que lo realiza. El
+ *  bridge valida el link concreto con el place de origen y ESTAMPA el edge con
+ *  la geometría real del cruce — el determinismo gana al LLM. */
+export async function handlePlayerCrossedFrontier(
+  msg: PlayerCrossedFrontierMessage,
+  ctx: BridgeContext,
+): Promise<void> {
+  if (dropIfSceneGenInFlight(ctx, `player_crossed_frontier(${msg.edge})`)) return;
+  const fromPlaceId = ctx.narrative.worldMap.serialize().active_place_id;
+  const fromPlace = ctx.narrative.worldMap.get(fromPlaceId);
+  if (!fromPlace) {
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "scene",
+      message: `Frontera sin place activo válido: "${fromPlaceId}"`,
+    });
+    return;
+  }
+
+  const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
+  genCtx.frontier_request = {
+    from_place_id: fromPlaceId,
+    from_place_name: fromPlace.name,
+    edge: msg.edge,
+  };
+  const start = Date.now();
+  ctx.pendingSceneGen = { kind: "frontier", key: `${fromPlaceId}:${msg.edge}` };
+  ctx.broadcastNarrative({
+    type: "narrative_status",
+    phase: "generating",
+    kind: "scene",
+    message: `Explorando hacia el ${EDGE_ES[msg.edge]}...`,
+  });
+
+  ctx.aiClient
+    .generateScene(genCtx)
+    .then(async (res) => {
+      const elapsedMs = Date.now() - start;
+      const fail = (message: string): void =>
+        ctx.broadcastNarrative({ type: "narrative_status", phase: "error", kind: "scene", message, elapsedMs });
+
+      if (!res.ok || !res.scene) {
+        return fail(`No se pudo expandir el mundo. ${res.error ?? "Revisa el motor narrativo."}`);
+      }
+      const newPlaceId = typeof res.scene.place_id === "string" ? res.scene.place_id : null;
+      if (!newPlaceId) {
+        return fail("El motor respondió una escena de frontera sin place_id.");
+      }
+      if (!ctx.narrative.worldMap.get(newPlaceId)) {
+        return fail(`El motor no creó el place "${newPlaceId}" en el mapa (map_upsert_place).`);
+      }
+      const link = ctx.narrative.worldMap
+        .getOutgoingLinks(fromPlaceId)
+        .find((l) => (l.from === fromPlaceId ? l.to : l.from) === newPlaceId);
+      if (!link) {
+        return fail(`El motor no linkó "${newPlaceId}" con "${fromPlaceId}" (map_link).`);
+      }
+      // El edge es relativo a link.from (puede ser cualquiera de los dos).
+      const expected = link.from === fromPlaceId ? msg.edge : oppositeEdge(msg.edge);
+      if (link.edge !== expected) {
+        if (link.edge) {
+          console.warn(`Bridge: frontier link edge "${link.edge}" != cruzado "${expected}" — corregido`);
+        }
+        link.edge = expected;
+      }
+
+      const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
+      res.scene = expandScenePrimitives(res.scene);
+      ctx.narrative.recordSceneLoaded(sceneId, res.scene);
+      await ctx.narrative.save();
+      broadcastScene(ctx, sceneId, res.scene, elapsedMs);
+      await fireMapTriggers(ctx, fromPlaceId, newPlaceId);
+    })
+    .catch((err) => {
+      console.warn("Bridge: frontier expansion failed:", err);
+      ctx.broadcastNarrative({
+        type: "narrative_status",
+        phase: "error",
+        kind: "scene",
+        message: `Error: ${(err as Error).message ?? err}`,
+        elapsedMs: Date.now() - start,
+      });
+    })
+    .finally(() => {
+      ctx.pendingSceneGen = null;
     });
 }

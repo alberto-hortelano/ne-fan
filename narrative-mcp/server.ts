@@ -403,7 +403,37 @@ EXTERIOR LINK RULE: the place a scene realizes must ALWAYS have at least one
 outgoing map_link (door/path to its containing exterior or a neighbour) —
 walking off the scene edge follows those links. When you realize an interior,
 create/link its exterior place FIRST (map_upsert_place + map_link), then
-respond. The scene pre-flight rejects a scene whose place has no links.`;
+respond. The scene pre-flight rejects a scene whose place has no links.
+Whenever two linked places are spatially adjacent, set the link's "edge"
+param (the side of the FROM place's scene where the exit sits) — walking off
+that side of the scene travels the link; the reverse direction automatically
+uses the opposite edge.
+
+A third flag can appear in world_state:
+- frontier_request: { from_place_id, from_place_name, edge }  → the player
+  walked off the <edge> side of the scene realizing from_place_id and the
+  world map has NO destination in that direction. Extend the world on the
+  fly (see FRONTIER below).
+
+FRONTIER (on-the-fly world expansion)
+
+When world_state carries frontier_request, the player is standing at the
+<edge> border of <from_place_name> waiting for the world to continue. Do, in
+this order, BEFORE narrative_respond:
+1. map_upsert_place — create ONE new place adjacent to from_place_id in that
+   direction (usually a sibling: same parent_id as from_place_id; give it an
+   approx_position offset from from_place's toward <edge>). Invent something
+   coherent with the region and the story so far.
+2. map_link — link the two places with edge set. Call it EXACTLY as
+   map_link(from=<from_place_id>, to=<new_place_id>, edge=<frontier_request's
+   edge>, kind=path|road|...). Do NOT swap from/to; do NOT use the opposite
+   edge — the reverse direction is derived automatically.
+3. Generate the Format D scene for the NEW place with "place_id":
+   "<new_place_id>". The player ENTERS from the side OPPOSITE to the crossed
+   edge (crossed east ⇒ the player entity sits near the WEST side of the new
+   grid), and the terrain must visibly continue back toward that side (a path
+   or open ground reaching that border).
+Optionally add more links from the new place onward (future frontiers).`;
 
 const ROOM_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "room", legacy enclosed-room schema) ====
 You are the narrative engine for a Godot 4 dark fantasy RPG (legacy enclosed-room schema).

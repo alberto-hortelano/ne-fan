@@ -159,6 +159,14 @@ export interface LlmContext {
     sites: Array<{ id: string; kind: string; name: string; description: string }>;
     links: unknown[];
   };
+  /** Solo en peticiones de frontera: el jugador salió por `edge` de la escena
+   *  que realiza `from_place_id` y el world map no tiene destino en esa
+   *  dirección. El motor debe crear place + link (con edge) + escena. */
+  frontier_request?: {
+    from_place_id: string;
+    from_place_name: string;
+    edge: "north" | "south" | "east" | "west";
+  };
 }
 
 export type Vec3Like = Vec3 | [number, number, number];

@@ -115,6 +115,14 @@ export interface PlayerEnteredPlaceMessage {
   placeId: string;
 }
 
+/** El jugador salió por un borde de la escena que NO tiene destino conocido en
+ *  el world map. El bridge pide al motor narrativo extender el mundo en esa
+ *  dirección: crear place + link (con edge) + escena on-the-fly. */
+export interface PlayerCrossedFrontierMessage {
+  type: "player_crossed_frontier";
+  edge: Edge;
+}
+
 /** Salida que el bridge adjunta a toda escena difundida (enrichSceneWithExits,
  *  derivada de los links del world map). El cliente la usa para el TravelPanel
  *  y para la transición continua al cruzar un borde. */
@@ -152,6 +160,7 @@ export type ClientMessage =
   | ListGamesMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
+  | PlayerCrossedFrontierMessage
   | InteractEntityMessage;
 
 // ── Logic → Frontend ──

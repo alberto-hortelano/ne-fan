@@ -272,6 +272,13 @@ export class BridgeClient {
     this.send({ type: "player_entered_place", placeId });
   }
 
+  /** Tell the bridge the player walked off a scene edge with NO known
+   *  destination: the narrative engine extends the world in that direction
+   *  (place + link + scene, on the fly). */
+  sendPlayerCrossedFrontier(edge: "north" | "south" | "east" | "west"): void {
+    this.send({ type: "player_crossed_frontier", edge });
+  }
+
   /** Tell the bridge the player walked up to an NPC and pressed interact. The
    *  bridge reports it to the narrative engine and broadcasts the reply. */
   sendInteractEntity(entityId: string, entityName: string): void {

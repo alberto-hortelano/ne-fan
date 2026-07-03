@@ -19,7 +19,7 @@ import {
   handleStartSession,
 } from "./handlers/session.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
-import { handlePlayerEnteredPlace } from "./handlers/scene.js";
+import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
 
 export async function routeMessage(
   msg: ClientMessage,
@@ -68,6 +68,9 @@ export async function routeMessage(
       break;
     case "player_entered_place":
       await handlePlayerEnteredPlace(msg, ctx);
+      break;
+    case "player_crossed_frontier":
+      await handlePlayerCrossedFrontier(msg, ctx);
       break;
     case "interact_entity":
       await handleInteractEntity(msg, ctx);

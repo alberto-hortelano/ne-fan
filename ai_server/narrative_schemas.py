@@ -114,6 +114,14 @@ EXTERIOR CONTEXT (open world — a scene is NEVER just the inside of a box)
 - The player must be able to WALK from their start position through the door
   and off the map edge. A sealed box with nothing outside is WRONG.
 
+FRONTIER REQUESTS
+The request may carry "frontier_request": { from_place_id, from_place_name,
+edge }. The player walked off that edge of the previous scene and the world
+continues there. Respond with a NEW scene whose "place_id" names the new
+adjacent place; put the player entity near the grid side OPPOSITE to the
+crossed edge (crossed east => player near the west side), and make the
+terrain visibly continue back toward it.
+
 TERRAIN FEATURES (optional; USE THEM for anything linear or organic — far better maps than cell rows)
 The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top: a meandering river, a curving road, a round plaza. Each feature is a thick polyline (default) or a filled polygon ("closed": true).
 - "points": [col,row] cell coordinates, FLOATS ALLOWED ([12.5, 3.0]). 2+ points for a polyline, 3+ for a polygon.

@@ -97,6 +97,7 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     cacheInitialScene: false,
     activePlugins: new Map(),
+    pendingSceneGen: null,
     subscribe(ws) {
       subscribers.add(ws);
     },
@@ -714,5 +715,154 @@ describe("bridge player_entered_place + map triggers", () => {
       .filter((m): m is NarrativeStatusMessage => m.type === "narrative_status")
       .map((m) => m.phase);
     assert.deepEqual(phases, ["generating", "ready"]);
+  });
+});
+
+describe("bridge player_crossed_frontier", () => {
+  /** Sesión con un place activo "aldea" realizado, listo para cruzar fronteras. */
+  function seedAldea(narrative: NarrativeState): void {
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
+    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
+  }
+
+  it("camino feliz: el motor crea place+link, el bridge estampa el edge y difunde la escena", async () => {
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          assert.equal((llmCtx.frontier_request as { edge: string }).edge, "east");
+          // El fake imita al motor: crea el place y el link SIN edge (probamos
+          // que el bridge lo estampa con la geometría real del cruce).
+          nref!.worldMap.upsertPlace({ id: "bosque_este", kind: "landmark", parent_id: "world", name: "Bosque" });
+          nref!.worldMap.addLink({ from: "aldea", to: "bosque_este", kind: "path" });
+          return { ok: true, scene: { room_id: "scene_bosque", place_id: "bosque_este", room_description: "el bosque" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+
+    assert.equal(narrative.worldMap.get("bosque_este")?.realized_scene_id, "scene_bosque");
+    assert.equal(narrative.worldMap.serialize().active_place_id, "bosque_este");
+    // Edge estampado por el bridge sobre el link que dejó el motor.
+    const link = narrative.worldMap.getOutgoingLinks("aldea")[0];
+    assert.equal(link.edge, "east");
+    // La escena difundida lleva el exit de vuelta con el edge opuesto.
+    const sceneEvent = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(scene?.exits?.[0]?.place_id, "aldea");
+    assert.equal(scene?.exits?.[0]?.edge, "west");
+    assert.equal(ctx.pendingSceneGen, null, "single-flight liberado");
+  });
+
+  it("el motor no crea el place → error accionable con map_upsert_place", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => ({
+          ok: true,
+          scene: { room_id: "scene_x", place_id: "no_existe", room_description: "x" },
+        }),
+      },
+    });
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "north" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("map_upsert_place"), err?.message);
+    assert.equal(ctx.pendingSceneGen, null);
+  });
+
+  it("el motor no linkea el place nuevo → error accionable con map_link", async () => {
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          nref!.worldMap.upsertPlace({ id: "paramo", kind: "landmark", parent_id: "world", name: "Páramo" });
+          return { ok: true, scene: { room_id: "scene_p", place_id: "paramo", room_description: "x" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "south" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("map_link"), err?.message);
+  });
+
+  it("single-flight: una segunda frontera durante la generación se dropea", async () => {
+    let release: (() => void) | null = null;
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          nref!.worldMap.upsertPlace({ id: "colina", kind: "landmark", parent_id: "world", name: "Colina" });
+          nref!.worldMap.addLink({ from: "aldea", to: "colina", kind: "path" });
+          return { ok: true, scene: { room_id: "scene_c", place_id: "colina", room_description: "x" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() => release !== null);
+    // Segunda frontera mientras la primera genera → dropeada + re-broadcast generating.
+    const before = broadcasts.length;
+    await routeMessage({ type: "player_crossed_frontier", edge: "west" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1, "una sola llamada al motor");
+    assert.equal(
+      (broadcasts[before] as NarrativeStatusMessage)?.phase,
+      "generating",
+      "re-broadcast de generating para mantener el loader",
+    );
+    release!();
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    assert.equal(ctx.pendingSceneGen, null);
+  });
+
+  it("lazy realize en vuelo → la frontera se dropea (y viceversa el guard cubre entered_place)", async () => {
+    let release: (() => void) | null = null;
+    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          return { ok: true, scene: { room_id: "scene_f", room_description: "x" } };
+        },
+      },
+    });
+    seedAldea(narrative);
+    narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "Forja" });
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => release !== null);
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1, "la frontera no dispara una segunda generación");
+    release!();
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
   });
 });

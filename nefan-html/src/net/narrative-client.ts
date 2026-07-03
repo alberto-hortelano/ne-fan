@@ -98,6 +98,12 @@ export class NarrativeClient {
     this.bridge.sendPlayerEnteredPlace(placeId);
   }
 
+  /** El jugador cruzó un borde sin destino conocido: el motor narrativo crea
+   *  mundo en esa dirección. La escena nueva llega igual que en enterPlace. */
+  crossFrontier(edge: "north" | "south" | "east" | "west"): void {
+    this.bridge.sendPlayerCrossedFrontier(edge);
+  }
+
   /** Tell the narrative engine the player approached an NPC. The reply arrives
    *  via onNarrativeEvent, usually as a show_dialogue effect. */
   interactEntity(entityId: string, entityName: string): void {

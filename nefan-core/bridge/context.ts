@@ -54,6 +54,11 @@ export interface BridgeContext {
    *  Se reasigna al entrar a start_session/resume_session para que una sesión
    *  sin plugins no herede los de la anterior. */
   activePlugins: Map<string, PluginManifest>;
+  /** No-null mientras hay una generación de escena en vuelo (lazy realize o
+   *  frontera). Los handlers de escena dropean peticiones nuevas mientras esté
+   *  seteado — el cliente congela el movimiento, pero un segundo socket o el
+   *  emulador podrían colarse; esta es la defensa real. Limpiar en finally. */
+  pendingSceneGen: { kind: "realize" | "frontier"; key: string } | null;
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;
