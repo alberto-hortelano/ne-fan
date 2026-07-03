@@ -900,6 +900,11 @@ into context:
       travel_hours: z.number().optional().describe('Approximate travel time on foot.'),
       description: z.string().optional(),
       bidirectional: z.boolean().optional().describe('Default true.'),
+      edge: z.enum(['north', 'south', 'east', 'west']).optional().describe(
+        "Side of the FROM place's scene where this exit sits (north = top of " +
+        'the grid, row 0). Walking off that scene edge follows this link; the ' +
+        'reverse direction automatically uses the opposite edge. Set it ' +
+        'whenever the two places are spatially adjacent.'),
     },
     async (args) => reportBridge(await bridgePost('/map/link', args)),
   );

@@ -1,6 +1,7 @@
 /** Protocol messages between frontend (Godot/HTML) and nefan-core logic. */
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
+import type { Edge } from "../world-map/types.js";
 import type { NpcUpdate, ScenarioUpdate } from "../scenario/scenario-types.js";
 import type {
   Consequence,
@@ -112,6 +113,19 @@ export interface SaveSessionMessage {
 export interface PlayerEnteredPlaceMessage {
   type: "player_entered_place";
   placeId: string;
+}
+
+/** Salida que el bridge adjunta a toda escena difundida (enrichSceneWithExits,
+ *  derivada de los links del world map). El cliente la usa para el TravelPanel
+ *  y para la transición continua al cruzar un borde. */
+export interface SceneExit {
+  place_id: string;
+  name: string;
+  link_kind: string;
+  travel_hours?: number;
+  description?: string;
+  /** Lado de ESTA escena donde está la salida; ausente si no se pudo resolver. */
+  edge?: Edge;
 }
 
 /** The player walked up to an entity (NPC) and pressed the interact key. The

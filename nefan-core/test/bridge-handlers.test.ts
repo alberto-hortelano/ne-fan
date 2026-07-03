@@ -656,6 +656,35 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.ok(narrative.story_so_far.includes("Huele a estofado."));
   });
 
+  it("las exits de la escena difundida llevan edge (directo e inverso)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
+    narrative.worldMap.upsertPlace({ id: "bosque", kind: "landmark", parent_id: "world", name: "Bosque" });
+    // Desde la aldea se sale al bosque por el sur ⇒ desde el bosque, por el norte.
+    narrative.worldMap.addLink({ from: "aldea", to: "bosque", kind: "path", edge: "south" });
+    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
+    narrative.recordSceneLoaded("scene_bosque", { room_id: "scene_bosque", place_id: "bosque", room_description: "x" });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);
+    const fromAldea = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const aldeaScene = fromAldea?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(aldeaScene?.exits?.[0]?.place_id, "bosque");
+    assert.equal(aldeaScene?.exits?.[0]?.edge, "south");
+
+    broadcasts.length = 0;
+    await routeMessage({ type: "player_entered_place", placeId: "bosque" }, socket, ctx);
+    const fromBosque = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const bosqueScene = fromBosque?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(bosqueScene?.exits?.[0]?.place_id, "aldea");
+    assert.equal(bosqueScene?.exits?.[0]?.edge, "north");
+  });
+
   it("lugar sin escena → lazy realize vía generateScene y trigger tras la escena", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: {

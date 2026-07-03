@@ -21,7 +21,8 @@ import {
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
-import type { ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
+import { resolveExitEdge } from "../src/world-map/edges.js";
+import type { SceneExit, ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
 
 /** Superficie mínima de socket que usan los handlers — un WebSocket de `ws`
  *  la cumple, y los tests pueden pasar un capturador. */
@@ -68,7 +69,7 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
     ctx.narrative.worldMap.serialize().active_place_id;
   if (!placeId) return;
   const links = ctx.narrative.worldMap.getOutgoingLinks(placeId);
-  scene.exits = links.map((l) => {
+  scene.exits = links.map((l): SceneExit => {
     const targetId = l.from === placeId ? l.to : l.from;
     return {
       place_id: targetId,
@@ -76,6 +77,9 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
       link_kind: l.kind,
       travel_hours: l.travel_hours,
       description: l.description,
+      // Lado de esta escena por el que sale el link (para la transición
+      // continua del cliente). null → undefined: exit sin orientación.
+      edge: resolveExitEdge(ctx.narrative.worldMap, placeId, l) ?? undefined,
     };
   });
 }

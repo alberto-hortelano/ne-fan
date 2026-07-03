@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import { validateScene } from "../src/scene/scene-validate.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
-import type { PlaceTriggerSpec } from "../src/world-map/types.js";
+import { isEdge, type PlaceTriggerSpec } from "../src/world-map/types.js";
 import type { NpcDirector, NpcDirective } from "../src/world-map/npc-director.js";
 
 export interface StateHttpServerOptions {
@@ -184,6 +184,9 @@ async function handle(
     const body = (await readJson(req)) as LinkSpec;
     if (!body || typeof body.from !== "string" || typeof body.to !== "string") {
       return bad("body requires { from, to, kind }");
+    }
+    if (body.edge !== undefined && !isEdge(body.edge)) {
+      return bad(`edge must be one of north|south|east|west, got "${body.edge}"`);
     }
     try {
       const link = wm.addLink(body);

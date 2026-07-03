@@ -1,13 +1,11 @@
 /** Travel panel (bottom-left corner). Lists the current place's exits as
  *  buttons; clicking one asks the bridge to realize that place. */
 
-export interface SceneExit {
-  place_id: string;
-  name: string;
-  link_kind: string;
-  travel_hours?: number;
-  description?: string;
-}
+import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+
+// El tipo canónico vive en el protocolo (lo fabrica enrichSceneWithExits);
+// se re-exporta para que los consumidores existentes no cambien de import.
+export type { SceneExit } from "@nefan-core/src/protocol/messages.js";
 
 export class TravelPanel {
   private el: HTMLElement;
