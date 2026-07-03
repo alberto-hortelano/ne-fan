@@ -124,6 +124,44 @@ describe("state HTTP API", () => {
     assert.equal(place.name, "Millhaven");
   });
 
+  it("POST /scene/validate valida jugabilidad y la regla de link exterior", async () => {
+    const scene = {
+      scene_id: "val_e2e",
+      place_id: "millhaven_inn",
+      size: { cols: 16, rows: 12, meters_per_cell: 0.5 },
+      terrain: Array.from({ length: 12 }, () => "g".repeat(16)),
+      terrain_legend: {},
+      structures: [
+        { type: "room", rect: [2, 1, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
+      ],
+      entities: [{ id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" }],
+    };
+
+    // Place inexistente → error que instruye a crear el place.
+    const missing = await post("/scene/validate", { scene });
+    assert.equal(missing.status, 200);
+    assert.equal(missing.body.ok, false);
+    assert.ok((missing.body.errors as string[]).some((e) => e.includes("map_upsert_place")));
+
+    // Con place pero sin link saliente → error que instruye a enlazar.
+    await post("/map/place", { id: "millhaven_inn", kind: "interior", parent_id: "millhaven", name: "Posada" });
+    const unlinked = await post("/scene/validate", { scene });
+    assert.equal(unlinked.body.ok, false);
+    assert.ok((unlinked.body.errors as string[]).some((e) => e.includes("map_link")));
+
+    // Con link → jugable.
+    await post("/map/link", { from: "millhaven_inn", to: "millhaven", kind: "door" });
+    const linked = await post("/scene/validate", { scene });
+    assert.equal(linked.body.ok, true, JSON.stringify(linked.body.errors));
+    assert.equal((linked.body.stats as { border_reachable: boolean }).border_reachable, true);
+  });
+
+  it("POST /scene/validate sin scene → 400", async () => {
+    const { status, body } = await post("/scene/validate", {});
+    assert.equal(status, 400);
+    assert.equal(body.ok, false);
+  });
+
   it("POST /map/place sin id → 400", async () => {
     const { status, body } = await post("/map/place", { kind: "settlement" });
     assert.equal(status, 400);

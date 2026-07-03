@@ -12,6 +12,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import { validateScene } from "../src/scene/scene-validate.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import type { NpcDirector, NpcDirective } from "../src/world-map/npc-director.js";
@@ -115,6 +116,27 @@ async function handle(
     } catch (err) {
       return bad((err as Error).message);
     }
+  }
+
+  // ── Escenas ──
+  // Validación de jugabilidad (pre-flight de narrative_respond y tool
+  // scene_validate). No muta nada; el contexto de world map alimenta la regla
+  // de contexto exterior (place existente + link saliente).
+  if (method === "POST" && path === "/scene/validate") {
+    const body = (await readJson(req)) as { scene?: unknown };
+    if (!body || typeof body.scene !== "object" || body.scene === null) {
+      return bad("body requires { scene: <Format D scene JSON> }");
+    }
+    const result = validateScene(body.scene as Record<string, unknown>, (placeId) => {
+      const place = wm.get(placeId);
+      if (!place) return { exists: false, outgoing_links: 0 };
+      return {
+        exists: true,
+        kind: place.kind,
+        outgoing_links: wm.getOutgoingLinks(placeId).length,
+      };
+    });
+    return ok(result);
   }
 
   // ── Health ──

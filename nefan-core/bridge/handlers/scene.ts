@@ -6,6 +6,7 @@ import {
   fireMapTriggers,
   type BridgeContext,
 } from "../context.js";
+import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
 
 export async function handlePlayerEnteredPlace(
@@ -77,6 +78,10 @@ export async function handlePlayerEnteredPlace(
         return;
       }
       const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
+      // Expandir primitivas (structures/vegetation) ANTES de persistir: lo
+      // guardado y difundido es Format D plano. Un throw cae al catch de abajo
+      // y se difunde como narrative_status error.
+      res.scene = expandScenePrimitives(res.scene);
       // Tag the scene with the place so recordSceneLoaded attaches it.
       res.scene.place_id = placeId;
       ctx.narrative.recordSceneLoaded(sceneId, res.scene);

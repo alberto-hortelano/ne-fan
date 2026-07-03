@@ -64,6 +64,24 @@ describe("formatDToWorld", () => {
     assert.equal(oak?.category, "prop");
   });
 
+  it("keeps decor kind as its own walkable category", () => {
+    const d = makeFormatD();
+    (d.entities as Record<string, unknown>[]).push({ id: "torch", kind: "decor", name: "antorcha de pared", cell: [1, 0], footprint: [1, 1], glyph: "i" });
+    const w = formatDToWorld(d);
+    const torch = (w.objects as Record<string, unknown>[]).find((o) => o.id === "torch");
+    assert.equal(torch?.category, "decor");
+  });
+
+  it("normalizes an object-form legend to plain names and emits solid_chars", () => {
+    const d = makeFormatD();
+    d.terrain_legend = { W: { name: "muro de piedra", solid: true }, o: "tablones" };
+    const w = formatDToWorld(d);
+    const tg = w.terrain_grid as { legend: Record<string, string>; solid_chars: string[] };
+    assert.equal(tg.legend.W, "muro de piedra");
+    assert.equal(tg.legend.o, "tablones");
+    assert.deepEqual(tg.solid_chars, ["W", "w"]);
+  });
+
   it("returns a non-Format-D payload unchanged", () => {
     const legacy = { room_id: "crypt", dimensions: { width: 10, height: 4, depth: 8 }, surfaces: {}, objects: [] };
     assert.equal(formatDToWorld(legacy), legacy);

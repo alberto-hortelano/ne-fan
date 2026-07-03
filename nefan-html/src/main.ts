@@ -5,6 +5,7 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
@@ -134,6 +135,16 @@ const input = new KeyboardHandler(canvas, (type) => {
     btn.classList.toggle("active", (btn as HTMLElement).dataset.type === type);
   });
 });
+
+// Hook de bench (narrative_lab / pruebas de navegador): estado vivo legible
+// desde la consola o la automatización. Solo lectura — no es API del juego.
+(window as unknown as { __nefan?: unknown }).__nefan = {
+  input,
+  get playerPos() { return playerPos; },
+  get scene() { return sceneData; },
+  get dialogueVisible() { return dialoguePanel.isVisible; },
+  probeCollide(x: number, z: number) { return collidesAt(x, z); },
+};
 
 // --- Zoom (px por metro) ---
 // El objetivo (zoomTarget) salta por pasos multiplicativos con la rueda/teclas;
@@ -290,6 +301,15 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   sceneData = data;
 
   renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
+
+  // Colisión de terreno: los chars sólidos del grid (muros W, agua w) bloquean
+  // en collidesAt. Grid malformado → sin colisión de terreno pero jugable.
+  try {
+    terrainCollider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
+  } catch (err) {
+    terrainCollider = null;
+    errors.push("scene", "terrain_grid inconsistente; colisión de terreno desactivada", err);
+  }
 
   // Reinicia el controlador de imagen de escena con el rectángulo de la nueva
   // escena (centrado en el origen) y limpia cualquier fondo IA anterior. La
@@ -467,6 +487,9 @@ function rebuildEnemyBars(): void {
 
 // --- Collision ---
 const PLAYER_RADIUS = 0.4;
+/** Colisión de celdas sólidas del terreno (muros/agua). Null en escenas sin
+ *  grid o sin ninguna celda sólida. Se reconstruye en cada loadSceneData. */
+let terrainCollider: TerrainCollider | null = null;
 /** El jugador puede salir del rectángulo de escena hasta este margen (metros)
  *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
  *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
@@ -527,16 +550,25 @@ function addDiscoveredObjects(occluders: Occluder[]): void {
   if (added > 0) console.log(`[collision] added ${added} discovered props with collision`);
 }
 
-/** AABB collision of the player (inflated point) against solid scene objects.
- *  Items are walkable; only buildings and props block. */
+/** AABB collision of the player (inflated point) against solid terrain cells
+ *  and solid scene objects. Items and decor are walkable; only terrain
+ *  solid_chars (walls/water), buildings and props block.
+ *
+ *  Semántica "salir sí, entrar no": un obstáculo que YA solapa la posición
+ *  actual del jugador no bloquea (permite des-penetrar si el spawn o un
+ *  empujón te dejó dentro); solo bloquean los obstáculos NUEVOS del destino.
+ *  Sin esto, spawn solapado ⇒ ambos ejes bloqueados ⇒ jugador clavado. */
 function collidesAt(x: number, z: number): boolean {
+  if (terrainCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
   for (const obj of objectEntities) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
     const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
     const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
     if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
-      return true;
+      const alreadyInside =
+        Math.abs(playerPos.x - obj.pos.x) < hx && Math.abs(playerPos.z - obj.pos.z) < hz;
+      if (!alreadyInside) return true;
     }
   }
   return false;
@@ -1075,7 +1107,10 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-const sharedBridge = new BridgeClient();
+// Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
+// bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.
+const bridgeOverride = new URLSearchParams(location.search).get("bridge");
+const sharedBridge = bridgeOverride ? new BridgeClient(bridgeOverride) : new BridgeClient();
 const narrativeClient = new NarrativeClient(sharedBridge);
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
