@@ -257,6 +257,22 @@ edge, where the world continues. There is NO "building" entity.
   ],
   "ambient_event": "El fuego crepita dentro y el viento arrastra olor a resina desde los pinos."
 }
+
+TILES (continuous world plane)
+When the request carries "generate_tile" { tx, ty, neighbors, entry,
+nearby_places, bootstrap }, respond with a TILE instead of a scene: 64x64 m,
+128x128 cells at 0.5 m/cell. Shape: { "tile": {tx,ty}, "scene_id":
+"tile_<tx>_<ty>", "biome": <grass|forest_floor|meadow|sand|dirt|stone|snow|
+swamp>, "terrain_patches" (optional ASCII stamps {at:[col,row], rows:[...]}),
+"terrain_features" (edge-to-edge, each with "at_edges": [{edge, at}]),
+"structures", "vegetation_zones" (area may be "rest" = everything still bare
+biome), "entities" (cells 0..127, NO "player" unless bootstrap),
+"place_anchors" [{place_id, rect}], "ambient_event" }. NEVER write "size" or
+a full "terrain[]" — the biome fill + primitives generate the grid. SEAMS:
+every crossing listed in neighbors.<edge> (mirrored "at") MUST be continued
+by a feature with matching at_edges (±2 cells); the player enters walking
+from entry.edge. Bootstrap tiles carry the starting location, a player
+entity and place_anchors.
 """
 
 GENERATE_SCENE_TOOL = {
@@ -270,6 +286,42 @@ GENERATE_SCENE_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "tile": {
+                "type": "object",
+                "description": "Continuous-plane tile coords (tile responses only).",
+                "properties": {"tx": {"type": "integer"}, "ty": {"type": "integer"}},
+                "required": ["tx", "ty"],
+            },
+            "biome": {
+                "type": "string",
+                "description": "Tile base fill: grass|forest_floor|meadow|sand|dirt|stone|snow|swamp (tiles only).",
+            },
+            "terrain_patches": {
+                "type": "array",
+                "description": "Optional ASCII detail stamps over the biome fill (tiles only).",
+                "maxItems": 24,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "at": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                        "rows": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    },
+                    "required": ["at", "rows"],
+                },
+            },
+            "place_anchors": {
+                "type": "array",
+                "description": "World-map places physically living in this tile (tiles only).",
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "place_id": {"type": "string"},
+                        "rect": {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
+                    },
+                    "required": ["place_id"],
+                },
+            },
             "scene_id": {
                 "type": "string",
                 "description": "Unique slug identifying this map (e.g. 'tavern_clearing', 'robledo_village').",
@@ -354,6 +406,18 @@ GENERATE_SCENE_TOOL = {
                         "width": {"type": "number", "minimum": 0.1, "description": "Stroke width in cells (default 1). Ignored for closed polygons."},
                         "closed": {"type": "boolean", "description": "true = filled polygon (3+ points)."},
                         "color": {"type": "string", "description": "Optional #rrggbb override."},
+                        "at_edges": {
+                            "type": "array",
+                            "description": "Tile seams: exact border cells this feature enters/exits at.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "edge": {"type": "string", "enum": ["north", "south", "east", "west"]},
+                                    "at": {"type": "integer"},
+                                },
+                                "required": ["edge", "at"],
+                            },
+                        },
                     },
                     "required": ["type", "points"],
                 },
@@ -423,11 +487,11 @@ GENERATE_SCENE_TOOL = {
                     "properties": {
                         "type": {"type": "string", "description": "Plant name in Spanish (pino, roble, matorral)."},
                         "area": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "minItems": 4,
-                            "maxItems": 4,
-                            "description": "[col, row, width_cells, height_cells].",
+                            "description": "[col, row, width_cells, height_cells], or \"rest\" (tiles only: everything still bare biome).",
+                            "oneOf": [
+                                {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
+                                {"type": "string", "enum": ["rest"]},
+                            ],
                         },
                         "density": {
                             "type": "number",
@@ -505,7 +569,7 @@ GENERATE_SCENE_TOOL = {
                 "description": "One Spanish sentence of atmospheric flavour (wind, birdsong, smell of stew, etc.).",
             },
         },
-        "required": ["scene_id", "scene_description", "size", "terrain", "terrain_legend", "entities", "ambient_event"],
+        "required": ["scene_id", "scene_description", "entities", "ambient_event"],
     },
 }
 
@@ -544,34 +608,90 @@ def validate_scene_response(data: dict) -> dict:
     data["room_description"] = data["scene_description"]
     data["ambient_event"] = data.get("ambient_event") or ""
 
-    # ── Size ─────────────────────────────────────────────────────────────
-    size = data.get("size") or {}
-    cols = int(size.get("cols") or 24)
-    rows = int(size.get("rows") or 16)
-    mpc = float(size.get("meters_per_cell") or 2)
-    cols = max(12, min(cols, 80))
-    rows = max(8, min(rows, 60))
-    data["size"] = {"cols": cols, "rows": rows, "meters_per_cell": mpc}
-
-    # ── Terrain grid ─────────────────────────────────────────────────────
-    raw_terrain = data.get("terrain")
-    if not isinstance(raw_terrain, list) or not raw_terrain:
-        # Old schema with `terrain: { type, texture_prompt }` — replace with empty grass.
-        raw_terrain = []
-
-    # Normalize each row to exactly `cols` chars: pad with "g" or truncate.
-    normalized = []
-    for r in range(rows):
-        if r < len(raw_terrain) and isinstance(raw_terrain[r], str):
-            row = raw_terrain[r]
+    # ── Tile (Format D v3, plano continuo) ───────────────────────────────
+    # Un tile no lleva size/terrain (la base es biome + primitivas, expandida
+    # en nefan-core). Aquí solo saneado superficial; el bridge fija las coords
+    # y valida jugabilidad/costuras server-side.
+    raw_tile = data.get("tile")
+    is_tile = (
+        isinstance(raw_tile, dict)
+        and isinstance(raw_tile.get("tx"), int)
+        and isinstance(raw_tile.get("ty"), int)
+    )
+    if is_tile:
+        tx, ty = raw_tile["tx"], raw_tile["ty"]
+        data["tile"] = {"tx": tx, "ty": ty}
+        data["scene_id"] = f"tile_{tx}_{ty}"
+        data["room_id"] = data["scene_id"]
+        data.pop("size", None)
+        data.pop("terrain", None)
+        cols, rows = 128, 128
+        if not isinstance(data.get("biome"), str) or not data["biome"]:
+            print("validate_scene_response: tile sin biome — se asume grass", flush=True)
+            data["biome"] = "grass"
+        patches = data.get("terrain_patches")
+        if isinstance(patches, list):
+            clean_p = []
+            for i, tp in enumerate(patches[:24]):
+                if (
+                    isinstance(tp, dict)
+                    and isinstance(tp.get("at"), list) and len(tp["at"]) == 2
+                    and all(isinstance(v, int) for v in tp["at"])
+                    and isinstance(tp.get("rows"), list) and tp["rows"]
+                    and all(isinstance(r, str) and r for r in tp["rows"])
+                ):
+                    clean_p.append({"at": tp["at"], "rows": tp["rows"]})
+                else:
+                    print(f"validate_scene_response: terrain_patches[{i}] malformado, descartado", flush=True)
+            data["terrain_patches"] = clean_p
         else:
-            row = ""
-        if len(row) > cols:
-            row = row[:cols]
-        elif len(row) < cols:
-            row = row + ("g" * (cols - len(row)))
-        normalized.append(row)
-    data["terrain"] = normalized
+            data.pop("terrain_patches", None)
+        anchors = data.get("place_anchors")
+        if isinstance(anchors, list):
+            clean_a = []
+            for i, a in enumerate(anchors[:8]):
+                if isinstance(a, dict) and isinstance(a.get("place_id"), str) and a["place_id"]:
+                    entry = {"place_id": a["place_id"]}
+                    rect = a.get("rect")
+                    if isinstance(rect, list) and len(rect) == 4 and all(isinstance(v, int) for v in rect):
+                        entry["rect"] = rect
+                    clean_a.append(entry)
+                else:
+                    print(f"validate_scene_response: place_anchors[{i}] malformado, descartado", flush=True)
+            data["place_anchors"] = clean_a
+        else:
+            data.pop("place_anchors", None)
+
+    # ── Size + terrain grid (solo escenas legacy; los tiles no llevan) ────
+    if not is_tile:
+        size = data.get("size") or {}
+        cols = int(size.get("cols") or 24)
+        rows = int(size.get("rows") or 16)
+        mpc = float(size.get("meters_per_cell") or 2)
+        cols = max(12, min(cols, 80))
+        rows = max(8, min(rows, 60))
+        data["size"] = {"cols": cols, "rows": rows, "meters_per_cell": mpc}
+
+        raw_terrain = data.get("terrain")
+        if not isinstance(raw_terrain, list) or not raw_terrain:
+            # Old schema with `terrain: { type, texture_prompt }` — replace with empty grass.
+            raw_terrain = []
+
+        # Normalize each row to exactly `cols` chars: pad with "g" or truncate.
+        normalized = []
+        for r in range(rows):
+            if r < len(raw_terrain) and isinstance(raw_terrain[r], str):
+                row = raw_terrain[r]
+            else:
+                row = ""
+            if len(row) > cols:
+                row = row[:cols]
+            elif len(row) < cols:
+                row = row + ("g" * (cols - len(row)))
+            normalized.append(row)
+        data["terrain"] = normalized
+    else:
+        normalized = []
 
     # ── Terrain legend ───────────────────────────────────────────────────
     # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
@@ -589,10 +709,12 @@ def validate_scene_response(data: dict) -> dict:
                     entry["solid"] = val["solid"]
                 legend[ch] = entry
     # Ensure every char used in terrain has an entry (default = grass for unknown).
-    used_chars = set("".join(normalized))
-    for ch in used_chars:
-        if ch not in legend and ch not in RESERVED_TERRAIN:
-            legend[ch] = "grass"
+    # (solo legacy: los tiles no traen grid que escanear)
+    if not is_tile:
+        used_chars = set("".join(normalized))
+        for ch in used_chars:
+            if ch not in legend and ch not in RESERVED_TERRAIN:
+                legend[ch] = "grass"
     # Merge reserved (the legend takes precedence if LLM redefined a char).
     for ch, name in RESERVED_TERRAIN.items():
         legend.setdefault(ch, name)
@@ -636,6 +758,19 @@ def validate_scene_response(data: dict) -> dict:
             color = feat.get("color")
             if isinstance(color, str) and _re.fullmatch(r"#[0-9a-fA-F]{6}", color):
                 clean_feat["color"] = color
+            # Costuras de tiles: celdas de borde exactas por las que la
+            # feature entra/sale (las consume el expander de nefan-core).
+            at_edges = feat.get("at_edges")
+            if isinstance(at_edges, list):
+                clean_edges = [
+                    {"edge": ae["edge"], "at": ae["at"]}
+                    for ae in at_edges
+                    if isinstance(ae, dict)
+                    and ae.get("edge") in ("north", "south", "east", "west")
+                    and isinstance(ae.get("at"), int)
+                ]
+                if clean_edges:
+                    clean_feat["at_edges"] = clean_edges
             clean_features.append(clean_feat)
     data["terrain_features"] = clean_features
 
@@ -764,12 +899,15 @@ def validate_scene_response(data: dict) -> dict:
     if isinstance(raw_veg, list):
         clean_veg = []
         for i, z in enumerate(raw_veg[:16]):
+            area_ok = z.get("area") == "rest" or (
+                isinstance(z.get("area"), list)
+                and len(z["area"]) == 4
+                and all(isinstance(v, int) for v in z["area"])
+            ) if isinstance(z, dict) else False
             if (
                 isinstance(z, dict)
                 and isinstance(z.get("type"), str)
-                and isinstance(z.get("area"), list)
-                and len(z["area"]) == 4
-                and all(isinstance(v, int) for v in z["area"])
+                and area_ok
                 and isinstance(z.get("density"), (int, float))
             ):
                 clean_veg.append(z)

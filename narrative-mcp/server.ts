@@ -116,6 +116,87 @@ function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; err
 // instead of living only in the (long, truncatable) narrative_listen tool
 // description. Keep wording in sync with ai_server/narrative_schemas.py.
 
+const TILE_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "scene" — TILE of the continuous world) ====
+world_state.generate_tile is present: you are generating ONE TILE of a
+continuous, unbroken world plane. Tiles are 64×64 m (128×128 cells of 0.5 m),
+keyed by (tx, ty). The player walks between tiles with NO transition — your
+tile must LOOK and CONNECT like a piece of the same world as its neighbours.
+
+Call narrative_respond with this JSON (Tile Format):
+{
+  "tile": { "tx": <from generate_tile>, "ty": <from generate_tile> },
+  "scene_id": "tile_<tx>_<ty>",
+  "scene_description": "<2-3 Spanish sentences>",
+  "biome": "grass"|"forest_floor"|"meadow"|"sand"|"dirt"|"stone"|"snow"|"swamp",
+  "terrain_patches": [ { "at": [col,row], "rows": ["ss","s_"] } ],   // OPTIONAL detail stamps
+  "terrain_legend": { },                                             // optional custom chars
+  "terrain_features": [                                              // paths/rivers EDGE TO EDGE
+    { "type": "path", "points": [[0,41],[64,46],[128,52]], "width": 2,
+      "at_edges": [ { "edge": "west", "at": 41 }, { "edge": "east", "at": 52 } ] }
+  ],
+  "structures": [ ],            // buildings stamped ON the plane (same schema as always)
+  "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
+  "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP)
+  "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
+  "ambient_event": "…"
+}
+
+HARD RULES OF THE TILE:
+- NEVER write "size" or a full "terrain[]" grid. The base is the "biome"
+  fill; everything else is primitives. A simple tile ("forest with a path")
+  is ~5 lines: biome + one feature + one vegetation zone — the engine stamps
+  the ~16,000 cells for you. "area": "rest" plants over everything that is
+  still bare biome (it avoids paths, water, buildings and occupied cells).
+- SEAMS: generate_tile.neighbors.<edge> lists what each existing neighbour
+  exposes on your shared border: its biome and crossings [{type, at, width}].
+  "at" is MIRRORED — the same coordinate on your side. You MUST continue
+  every crossing with a feature whose at_edges includes {edge: <that edge>,
+  at: <same at>} (±2 cells). A path may continue as path or road; water as
+  river or bridge. The server validates this and rejects the tile otherwise.
+- Extend features to OTHER edges when natural (a road usually crosses the
+  whole tile) — that seeds where future tiles will grow.
+- The player enters WALKING from generate_tile.entry.edge: keep that border
+  open/walkable. Do NOT include a "player" entity.
+- Match the neighbour biome near the shared border (no hard forest→desert
+  cuts without a visible transition strip).
+- place_anchors: if a world-map place should physically live in this tile
+  (see nearby_places, or one you just created with map_upsert_place), anchor
+  it with its cell rect — its triggers fire when the player steps inside.
+
+EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
+is {type:"path", at:41}) and seeding an east exit:
+{
+  "tile": { "tx": -1, "ty": 0 },
+  "scene_id": "tile_-1_0",
+  "scene_description": "Bosque cerrado de pinos; la senda serpentea entre los troncos hacia el este.",
+  "biome": "forest_floor",
+  "terrain_features": [
+    { "type": "path", "points": [[0,41],[70,45],[128,50]], "width": 2,
+      "at_edges": [ { "edge": "west", "at": 41 }, { "edge": "east", "at": 50 } ] }
+  ],
+  "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.14 } ],
+  "entities": [
+    { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
+  ],
+  "ambient_event": "Un cuervo grazna en lo alto de los pinos."
+}
+
+BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
+- FIRST lay down the initial world map with the map tools (map_upsert_place ×
+  several + map_link), as described in the WORLD MAP section.
+- Tile (0,0) carries the starting location: e.g. the tavern as "structures"
+  stamped on the plane (door + path to an edge), a "player" entity (REQUIRED
+  here, walkable spawn), and "place_anchors" anchoring those places (anchor
+  the tavern's rect!).
+- There are no neighbours yet: extend a path to at least one edge so the
+  world has somewhere to grow.
+
+Everything else (SOLIDITY, STRUCTURES details, VEGETATION ZONES, DECOR,
+GLYPH/NPC rules, ASSET REUSE, WORLD MAP tools) works exactly as in the
+standard scene reference that follows — but IGNORE its "size"/"terrain"
+schema, grid-size budgets and its examples' hand-written grids: tiles never
+write grids.`;
+
 const SCENE_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "scene") ====
 You generate TOP-DOWN 2D MAPS as a structured grid plus a list of named
 entities. The game renders them; the narrative engine uses them to know where
@@ -715,15 +796,25 @@ into context:
         }
 
         // room_request — distingue entre open-world ('scene') y legacy ('room')
-        // según el campo `format` que envía el ai_server.
+        // según el campo `format` que envía el ai_server. Dentro de 'scene',
+        // una petición con generate_tile usa las instrucciones de TILE
+        // (plano continuo) delante de la referencia estándar.
         const format = msg.format ?? 'extended';
         currentKind = format === 'scene' ? 'scene' : 'room';
         const kindLabel = currentKind;
+        const isTileRequest = Boolean(
+          (msg.world_state as { generate_tile?: unknown } | undefined)?.generate_tile,
+        );
+        const instructions = kindLabel !== 'scene'
+          ? ROOM_INSTRUCTIONS
+          : isTileRequest
+            ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
+            : SCENE_INSTRUCTIONS;
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({ kind: kindLabel, world_state: msg.world_state }, null, 2) +
-              '\n\n' + (kindLabel === 'scene' ? SCENE_INSTRUCTIONS : ROOM_INSTRUCTIONS),
+              '\n\n' + instructions,
           }],
         };
       } catch (e) {
