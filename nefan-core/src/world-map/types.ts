@@ -29,6 +29,17 @@ export type LinkKind =
   | "tunnel"
   | "door";
 
+/** Lado de una escena por el que se sale/entra. Mismos ejes que el cliente 2D:
+ *  east = +x, west = -x, south = +z, north = -z; en `approx_position` [x, y]
+ *  del espacio local del parent, y+ = south. */
+export type Edge = "north" | "south" | "east" | "west";
+
+export const EDGES: readonly Edge[] = ["north", "south", "east", "west"];
+
+export function isEdge(v: unknown): v is Edge {
+  return typeof v === "string" && (EDGES as readonly string[]).includes(v);
+}
+
 export type TriggerWhen =
   | { type: "player_entered" }
   | { type: "player_left" }
@@ -64,6 +75,12 @@ export interface PlaceLink {
   travel_hours?: number;
   description?: string;
   bidirectional: boolean;
+  /** Lado de la escena del place `from` donde está la salida hacia `to`.
+   *  Recorrer el link al revés (bidirectional, estando en `to`) pone la
+   *  salida en oppositeEdge(edge) de la escena de `to`. Ausente = sin
+   *  orientación conocida (resolveExitEdge puede inferirla por
+   *  approx_position). */
+  edge?: Edge;
 }
 
 export interface WorldMap {
