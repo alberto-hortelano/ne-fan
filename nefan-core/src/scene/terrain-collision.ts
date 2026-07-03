@@ -17,6 +17,9 @@ export interface TerrainGridData {
   cols: number;
   rows: number;
   meters_per_cell: number;
+  /** Esquina NW del grid en coordenadas mundo (plano continuo de tiles). Lo
+   *  emite `formatDToWorld`; ausente = escena legacy centrada en el origen. */
+  origin?: [number, number];
   /** Chars del grid que bloquean movimiento. Lo resuelve `formatDToWorld`
    *  (defaults W/w + leyenda `{name, solid}`). */
   solid_chars?: string[];
@@ -68,16 +71,17 @@ export function createTerrainCollider(
   }
   if (solidCellCount === 0) return null;
 
-  const halfW = (cols * mpc) / 2;
-  const halfD = (rows * mpc) / 2;
+  // Esquina NW del grid en mundo: global (tiles) o centrada (legacy).
+  const originX = tg.origin?.[0] ?? -(cols * mpc) / 2;
+  const originZ = tg.origin?.[1] ?? -(rows * mpc) / 2;
 
   const isSolidCell = (col: number, row: number): boolean =>
     col >= 0 && row >= 0 && col < cols && row < rows && solid[row * cols + col] === 1;
 
   /** ¿El AABB (x±radius, z±radius) solapa la celda (c, r)? */
   const circleOverlapsCell = (x: number, z: number, radius: number, c: number, r: number): boolean => {
-    const cellX0 = c * mpc - halfW;
-    const cellZ0 = r * mpc - halfD;
+    const cellX0 = originX + c * mpc;
+    const cellZ0 = originZ + r * mpc;
     return x + radius > cellX0 && x - radius < cellX0 + mpc &&
       z + radius > cellZ0 && z - radius < cellZ0 + mpc;
   };
@@ -86,10 +90,10 @@ export function createTerrainCollider(
     solidCellCount,
     isSolidCell,
     blocksCircle(x: number, z: number, radius: number): boolean {
-      const c0 = Math.floor((x - radius + halfW) / mpc);
-      const c1 = Math.floor((x + radius + halfW) / mpc);
-      const r0 = Math.floor((z - radius + halfD) / mpc);
-      const r1 = Math.floor((z + radius + halfD) / mpc);
+      const c0 = Math.floor((x - radius - originX) / mpc);
+      const c1 = Math.floor((x + radius - originX) / mpc);
+      const r0 = Math.floor((z - radius - originZ) / mpc);
+      const r1 = Math.floor((z + radius - originZ) / mpc);
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           if (isSolidCell(c, r)) return true;
@@ -98,10 +102,10 @@ export function createTerrainCollider(
       return false;
     },
     blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean {
-      const c0 = Math.floor((toX - radius + halfW) / mpc);
-      const c1 = Math.floor((toX + radius + halfW) / mpc);
-      const r0 = Math.floor((toZ - radius + halfD) / mpc);
-      const r1 = Math.floor((toZ + radius + halfD) / mpc);
+      const c0 = Math.floor((toX - radius - originX) / mpc);
+      const c1 = Math.floor((toX + radius - originX) / mpc);
+      const r0 = Math.floor((toZ - radius - originZ) / mpc);
+      const r1 = Math.floor((toZ + radius - originZ) / mpc);
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           if (!isSolidCell(c, r)) continue;

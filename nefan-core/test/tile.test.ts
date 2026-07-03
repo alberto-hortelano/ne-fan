@@ -144,6 +144,46 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.equal(grid[39].slice(35, 38), "___");
   });
 
+  it("formatDToWorld emite world_rect global y posiciones globales para tiles", async () => {
+    const { formatDToWorld } = await import("../src/scene/scene-normalize.js");
+    const { createTerrainCollider } = await import("../src/scene/terrain-collision.js");
+    const tile = makeForestTile(); // tx=1, ty=0 → rect [32..96, -32..32]
+    (tile.entities as Record<string, unknown>[]).push(
+      { id: "npc1", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1], glyph: "n" },
+    );
+    const w = formatDToWorld(tile);
+    assert.deepEqual(w.world_rect, { minX: 32, minZ: -32, maxX: 96, maxZ: 32 });
+    assert.deepEqual(w.tile, { tx: 1, ty: 0 });
+    // NPC en celda (0,0) → centro global (32.25, -31.75).
+    const npc = (w.npcs as { position: number[] }[])[0];
+    assert.deepEqual(npc.position, [32.25, 0, -31.75]);
+    const tg = w.terrain_grid as { origin: [number, number] };
+    assert.deepEqual(tg.origin, [32, -32]);
+    // El collider bloquea en coordenadas GLOBALES: agua/camino… usamos un
+    // muro de structure para probar.
+    const tile2 = makeForestTile();
+    tile2.structures = [{ type: "room", rect: [0, 0, 6, 6], doors: [{ side: "south", at: 2, width: 3 }] }];
+    const w2 = formatDToWorld(tile2);
+    const col = createTerrainCollider(w2.terrain_grid as never)!;
+    // Celda (0,0) del tile (1,0) = mundo [32..32.5): su centro es sólido (muro).
+    assert.ok(col.blocksCircle(32.25, -31.75, 0.1));
+    assert.ok(!col.blocksCircle(0, 0, 0.1), "el origen del mundo NO pertenece a este tile");
+  });
+
+  it("las escenas legacy conservan el rect centrado (identidad)", async () => {
+    const { formatDToWorld } = await import("../src/scene/scene-normalize.js");
+    const legacy = formatDToWorld({
+      scene_id: "s",
+      size: { cols: 10, rows: 6, meters_per_cell: 2 },
+      terrain: Array.from({ length: 6 }, () => "g".repeat(10)),
+      entities: [{ id: "b", kind: "building", name: "B", cell: [2, 1], footprint: [4, 2], glyph: "H" }],
+    });
+    assert.deepEqual(legacy.world_rect, { minX: -10, minZ: -6, maxX: 10, maxZ: 6 });
+    assert.equal(legacy.tile, undefined);
+    const obj = (legacy.objects as { position: number[] }[])[0];
+    assert.deepEqual(obj.position, [-2, 0, -2]); // misma posición que siempre
+  });
+
   it("area:'rest' fuera de un tile es fail-loud", () => {
     const legacy = {
       scene_id: "s",

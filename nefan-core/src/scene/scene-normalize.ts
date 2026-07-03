@@ -13,6 +13,7 @@
  *  world scene, e.g. legacy room JSON or a `change_scene` payload). */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import { tileWorldRect } from "./tile.js";
 
 /** The world-coordinate scene shape a renderer consumes. Loose by design — the
  *  renderer reads a known subset and ignores the rest (e.g. `__player_start`,
@@ -134,8 +135,19 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   const rows = size!.rows!;
   const mpc = size!.meters_per_cell ?? 2;
   const { legend, solidChars } = resolveTerrainLegend(raw.terrain_legend);
-  const halfW = (cols * mpc) / 2;
-  const halfD = (rows * mpc) / 2;
+  // Rect mundial de la escena — ÚNICA fuente del origen. Un tile vive en su
+  // rect global del plano continuo; una escena legacy queda centrada en el
+  // origen (comportamiento histórico, sin cambios).
+  const tile = raw.tile as { tx?: number; ty?: number } | undefined;
+  const worldRect =
+    tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty)
+      ? tileWorldRect(tile.tx!, tile.ty!)
+      : {
+          minX: -(cols * mpc) / 2,
+          minZ: -(rows * mpc) / 2,
+          maxX: (cols * mpc) / 2,
+          maxZ: (rows * mpc) / 2,
+        };
 
   const objects: Record<string, unknown>[] = [];
   const npcs: Record<string, unknown>[] = [];
@@ -159,9 +171,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     if (![c, r, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) {
       throw new Error(`scene entities[${i}] (${ent.id}) cell/footprint must be finite numbers, got cell=[${c},${r}] fp=[${w},${h}]`);
     }
-    // Centro del footprint en coordenadas mundo (origin = centro del mapa).
-    const x = (c + w / 2) * mpc - halfW;
-    const z = (r + h / 2) * mpc - halfD;
+    // Centro del footprint en coordenadas mundo GLOBALES (esquina NW del
+    // rect + offset de celda).
+    const x = worldRect.minX + (c + w / 2) * mpc;
+    const z = worldRect.minZ + (r + h / 2) * mpc;
 
     if (ent.kind === "player") {
       playerStart = { x, z };
@@ -206,6 +219,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     scene_description: raw.scene_description ?? raw.room_description ?? "",
     room_description: raw.scene_description ?? raw.room_description ?? "",
     dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
+    // Coordenadas del plano continuo: rect mundial de la escena/tile y, si es
+    // un tile, sus coords de grid. El cliente ancla capas/colisión aquí.
+    world_rect: worldRect,
+    tile: tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty) ? { tx: tile.tx, ty: tile.ty } : undefined,
     terrain: { color: [0.18, 0.22, 0.14] },
     // El grid de terreno crudo (río/camino/puente/piedra…) para que el cliente
     // lo pinte en el schematic en vez de un color plano. El resto lo ignora.
@@ -216,6 +233,8 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       cols,
       rows,
       meters_per_cell: mpc,
+      // Esquina NW del grid en coordenadas mundo (plano continuo).
+      origin: [worldRect.minX, worldRect.minZ] as [number, number],
       // Chars que bloquean movimiento (muro/agua + leyenda `{name, solid}`).
       // Los consume `createTerrainCollider`; el schematic los ignora.
       solid_chars: solidChars,
