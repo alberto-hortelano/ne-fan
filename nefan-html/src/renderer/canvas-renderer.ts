@@ -24,6 +24,9 @@ export interface SceneData {
     cols: number;
     rows: number;
     meters_per_cell: number;
+    /** Chars que bloquean movimiento (muro W, agua w, custom `{name, solid}`).
+     *  Los resuelve formatDToWorld; aquí solo se pintan en el overlay B. */
+    solid_chars?: string[];
   };
   /** Formas vectoriales de terreno (Format D): polylines con grosor (río con
    *  meandros, camino curvo) o polígonos rellenos (`closed`). Puntos en
@@ -120,6 +123,7 @@ const CATEGORY_FILL: Record<string, string> = {
   item: "#a8902d",
   creature: "#a04848",
   terrain: "#2d4a32",
+  decor: "#7a5f33",
 };
 
 const CATEGORY_STROKE: Record<string, string> = {
@@ -128,6 +132,7 @@ const CATEGORY_STROKE: Record<string, string> = {
   item: "#dec268",
   creature: "#d87a7a",
   terrain: "#5a8060",
+  decor: "#c9a25a",
 };
 
 /** Colores canónicos por char reservado del grid de terreno (Format D). El
@@ -142,6 +147,7 @@ const TERRAIN_CHAR_COLOR: Record<string, string> = {
   d: "#5a4a34", // dirt
   a: "#b9a878", // sand
   o: "#6a4f30", // wood / planks
+  W: "#4a4038", // wall / muro (sólido)
 };
 
 /** Color por `type` de terrain_feature (vocabulario en inglés de las
@@ -716,6 +722,29 @@ export class CanvasRenderer {
     const ctx = this.ctx;
     ctx.save();
 
+    // Solid terrain cells (walls/water — what terrainCollider blocks): filled
+    // translucent orange, distinct from the red object AABBs.
+    const tg = this.sceneData?.terrain_grid;
+    const tdims = this.sceneData?.dimensions;
+    if (tg?.solid_chars?.length && tdims) {
+      const solidSet = new Set(tg.solid_chars);
+      const mpc = tg.meters_per_cell;
+      const halfW = tdims.width / 2;
+      const halfD = tdims.depth / 2;
+      ctx.fillStyle = "rgba(255,140,0,0.30)";
+      for (let r = 0; r < tg.rows; r++) {
+        const row = tg.grid[r];
+        if (typeof row !== "string") continue;
+        const cmax = Math.min(tg.cols, row.length);
+        for (let c = 0; c < cmax; c++) {
+          if (!solidSet.has(row[c])) continue;
+          const [x0, y0] = this.toScreen(-halfW + c * mpc, -halfD + r * mpc);
+          const [x1, y1] = this.toScreen(-halfW + (c + 1) * mpc, -halfD + (r + 1) * mpc);
+          ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        }
+      }
+    }
+
     // Authored collision footprints (same set + rule as main.ts collidesAt):
     // filled translucent red + bright outline so they read over the painting.
     for (const o of objects) {
@@ -753,6 +782,9 @@ export class CanvasRenderer {
     ctx.fillStyle = "rgba(60,255,255,1)";
     ctx.fillRect(12, 70, 14, 10);
     ctx.fillText("footprint segmentado por SAM", 32, 79);
+    ctx.fillStyle = "rgba(255,140,0,1)";
+    ctx.fillRect(12, 88, 14, 10);
+    ctx.fillText("terreno solido (muro/agua)", 32, 97);
     ctx.restore();
   }
 
@@ -949,7 +981,7 @@ export class CanvasRenderer {
     }
 
     const category = e.category ?? "creature";
-    if (category === "building" || category === "terrain" || category === "prop" || category === "item") {
+    if (category === "building" || category === "terrain" || category === "prop" || category === "item" || category === "decor") {
       // Static-shape entities (buildings/props/items) are baked into the AI
       // scene image; skip their schematic box when one is present (same gate as
       // the sceneData.objects loop). Creatures still draw on top below.

@@ -74,7 +74,42 @@ function normalizeTerrainFeatures(raw: unknown): TerrainFeature[] {
   return out;
 }
 
-const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item"]);
+const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item", "decor"]);
+
+/** Chars de terreno sólidos por defecto: "W" muro (reservado para interiores)
+ *  y "w" agua (los puentes "b" son transitables). La leyenda puede añadir o
+ *  quitar solidez por char con la forma objeto `{name, solid}`. */
+export const DEFAULT_SOLID_CHARS: readonly string[] = ["W", "w"];
+
+/** Heurística retro para leyendas legacy (valor string, sin `solid`): un
+ *  nombre que suena a muro se trata como sólido. Arregla los saves generados
+ *  antes de que la leyenda declarase solidez, sin regenerar la escena. */
+const SOLID_LEGEND_NAME = /muro|muralla|pared|tapia|wall|acantilado|cliff/i;
+
+/** Normaliza `terrain_legend` (valores string legacy u objeto `{name, solid}`)
+ *  a un mapa char→nombre plano para el renderer, y resuelve qué chars bloquean
+ *  movimiento. `solid: false` explícito quita un default (p.ej. agua vadeable). */
+function resolveTerrainLegend(rawLegend: unknown): {
+  legend: Record<string, string>;
+  solidChars: string[];
+} {
+  const legend: Record<string, string> = {};
+  const solid = new Set<string>(DEFAULT_SOLID_CHARS);
+  if (rawLegend && typeof rawLegend === "object") {
+    for (const [ch, val] of Object.entries(rawLegend as Record<string, unknown>)) {
+      if (typeof val === "string") {
+        legend[ch] = val;
+        if (SOLID_LEGEND_NAME.test(val)) solid.add(ch);
+      } else if (val && typeof val === "object") {
+        const entry = val as { name?: unknown; solid?: unknown };
+        legend[ch] = typeof entry.name === "string" ? entry.name : ch;
+        if (entry.solid === true) solid.add(ch);
+        else if (entry.solid === false) solid.delete(ch);
+      }
+    }
+  }
+  return { legend, solidChars: [...solid].sort() };
+}
 
 /** Convert a Map Format D scene to a world-coordinate scene. If `raw` is not in
  *  Format D it is returned unchanged. */
@@ -92,6 +127,7 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   const cols = size!.cols!;
   const rows = size!.rows!;
   const mpc = size!.meters_per_cell ?? 2;
+  const { legend, solidChars } = resolveTerrainLegend(raw.terrain_legend);
   const halfW = (cols * mpc) / 2;
   const halfD = (rows * mpc) / 2;
 
@@ -136,7 +172,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       });
       continue;
     }
-    // building / prop / tree / item: tree maps to prop visually.
+    // building / prop / tree / item / decor: tree maps to prop visually.
+    // decor conserva su categoría — puramente estético, sin colisión ni
+    // interacción (el cliente solo bloquea building/prop).
     const category = ent.kind === "tree" ? "prop" : ent.kind;
     if (!ent.name) {
       throw new Error(`scene entities[${i}] (${ent.id}) missing name`);
@@ -168,10 +206,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // `terrain: { color }` sigue siendo el fallback cuando esto no está.
     terrain_grid: {
       grid: terrain as string[],
-      legend: (raw.terrain_legend as Record<string, string>) ?? {},
+      legend,
       cols,
       rows,
       meters_per_cell: mpc,
+      // Chars que bloquean movimiento (muro/agua + leyenda `{name, solid}`).
+      // Los consume `createTerrainCollider`; el schematic los ignora.
+      solid_chars: solidChars,
     },
     // Formas vectoriales de terreno (ríos con meandros, caminos curvos…).
     // El orden del array es el orden de pintado (río antes que puente).

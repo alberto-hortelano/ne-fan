@@ -5,6 +5,7 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
@@ -291,6 +292,15 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
 
   renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
 
+  // Colisión de terreno: los chars sólidos del grid (muros W, agua w) bloquean
+  // en collidesAt. Grid malformado → sin colisión de terreno pero jugable.
+  try {
+    terrainCollider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
+  } catch (err) {
+    terrainCollider = null;
+    errors.push("scene", "terrain_grid inconsistente; colisión de terreno desactivada", err);
+  }
+
   // Reinicia el controlador de imagen de escena con el rectángulo de la nueva
   // escena (centrado en el origen) y limpia cualquier fondo IA anterior. La
   // generación se dispara después manualmente con G.
@@ -467,6 +477,9 @@ function rebuildEnemyBars(): void {
 
 // --- Collision ---
 const PLAYER_RADIUS = 0.4;
+/** Colisión de celdas sólidas del terreno (muros/agua). Null en escenas sin
+ *  grid o sin ninguna celda sólida. Se reconstruye en cada loadSceneData. */
+let terrainCollider: TerrainCollider | null = null;
 /** El jugador puede salir del rectángulo de escena hasta este margen (metros)
  *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
  *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
@@ -527,9 +540,11 @@ function addDiscoveredObjects(occluders: Occluder[]): void {
   if (added > 0) console.log(`[collision] added ${added} discovered props with collision`);
 }
 
-/** AABB collision of the player (inflated point) against solid scene objects.
- *  Items are walkable; only buildings and props block. */
+/** AABB collision of the player (inflated point) against solid terrain cells
+ *  and solid scene objects. Items and decor are walkable; only terrain
+ *  solid_chars (walls/water), buildings and props block. */
 function collidesAt(x: number, z: number): boolean {
+  if (terrainCollider?.blocksCircle(x, z, PLAYER_RADIUS)) return true;
   for (const obj of objectEntities) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;

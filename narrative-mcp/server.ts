@@ -129,13 +129,13 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
     "<string of EXACTLY cols chars>",
     ...   // EXACTLY rows strings total
   ],
-  "terrain_legend": { "<char>": "<terrain name>", ... },
+  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
   "terrain_features": [   // OPTIONAL — vector shapes over the grid (see TERRAIN FEATURES)
     { "type": "river"|"path"|"bridge"|"stone"|"dirt"|"sand"|"wood"|"<free name>",
       "points": [[col,row], ...], "width": <cells>, "closed": true|false }
   ],
   "entities": [
-    { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player",
+    { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
       "shape": "box"|"cylinder"|"sphere"|"cone" },   // optional; default box
     ...
@@ -168,8 +168,17 @@ RESERVED TERRAIN CHARS (you can use without declaring in legend)
 - g grass (default)   _ path/dirt road    s stone/paved
 - w water             b bridge (wood over water)
 - d dirt/tilled       a sand              o wood/dock planks
+- W wall (SOLID)
 
 Any other char you use MUST be declared in terrain_legend.
+
+SOLIDITY — collision (the player physically CANNOT cross solid cells)
+- "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.
+- A custom char is declared solid with the object form of terrain_legend:
+  "R": { "name": "roca desprendida", "solid": true }. Plain string values are walkable.
+- Consequence: every walled room NEEDS a door gap (a walkable char like "_" in its
+  W border) or the player is trapped inside — or locked out. Water that crosses the
+  map needs a bridge if the far side matters.
 
 TERRAIN FEATURES (optional; USE THEM for anything linear or organic — they make
 far better maps than cell rows)
@@ -214,6 +223,10 @@ ENTITY RULES
 - NPCs and player are always 1×1.
 - Place NPCs at their workspot (smith near smithy, innkeeper at inn's door).
 - Player starts where the narrative says they enter the scene.
+- "decor" = purely aesthetic set dressing: wall torches, banners, rugs, cobwebs,
+  hanging signs, stains. Visible on the map but NO collision and NO interaction.
+  Use decor (never prop) for anything the player should walk past freely; a prop
+  is a physical obstacle (table, barrel, cart).
 
 SHAPE (optional; hints the rendered footprint — use it, it makes better maps)
 - "cylinder": round things seen from above — barrel, well, cauldron, urn, jar,
@@ -291,7 +304,7 @@ jugador (0.8 m). NO hay entidad "building" porque estamos DENTRO.
     "WooooooooooooooooooW",
     "WWWWWWWWW__WWWWWWWWW"
   ],
-  "terrain_legend": { "W": "muro de piedra y madera", "o": "tablones gastados", "_": "umbral de la puerta" },
+  "terrain_legend": { "W": { "name": "muro de piedra y madera", "solid": true }, "o": "tablones gastados", "_": "umbral de la puerta" },
   "entities": [
     { "id": "mostrador", "kind": "prop", "name": "mostrador de roble",        "cell": [3, 2],  "footprint": [6, 1], "glyph": "=" },
     { "id": "barkeep",   "kind": "npc",  "name": "Tabernero corpulento",      "cell": [6, 3],  "footprint": [1, 1], "glyph": "n" },
@@ -299,6 +312,8 @@ jugador (0.8 m). NO hay entidad "building" porque estamos DENTRO.
     { "id": "taburete_1","kind": "prop", "name": "taburete de madera",        "cell": [4, 10], "footprint": [1, 1], "glyph": "h" },
     { "id": "taburete_2","kind": "prop", "name": "taburete de madera",        "cell": [6, 10], "footprint": [1, 1], "glyph": "h" },
     { "id": "barril_1",  "kind": "prop", "name": "barril de cerveza",         "cell": [16, 2], "footprint": [1, 1], "glyph": "k" },
+    { "id": "antorcha_1","kind": "decor","name": "antorcha de pared",         "cell": [5, 0],  "footprint": [1, 1], "glyph": "i" },
+    { "id": "antorcha_2","kind": "decor","name": "antorcha de pared",         "cell": [14, 0], "footprint": [1, 1], "glyph": "i" },
     { "id": "player",    "kind": "player","name": "Tú",                       "cell": [9, 11], "footprint": [1, 1], "glyph": "@" }
   ],
   "ambient_event": "El fuego crepita y alguien arrastra un taburete por los tablones."

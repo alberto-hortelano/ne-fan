@@ -13,7 +13,7 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
     "<string of EXACTLY `cols` chars>",
     ...   // EXACTLY `rows` strings total
   ],
-  "terrain_legend": { "<char>": "<terrain name>", ... },
+  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
   "terrain_features": [   // OPTIONAL — smooth vector shapes over the grid (see TERRAIN FEATURES)
     { "type": "river" | "path" | "bridge" | "stone" | "dirt" | "sand" | "wood" | "<free name>",
       "points": [[<col>, <row>], ...],   // cell coords, floats allowed
@@ -23,7 +23,7 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
   "entities": [
     {
       "id":        "<unique slug, e.g. 'tavern_main', 'tree_n1', 'boris'>",
-      "kind":      "building" | "prop" | "item" | "tree" | "npc" | "player",
+      "kind":      "building" | "prop" | "item" | "tree" | "npc" | "player" | "decor",
       "name":      "<spanish display name>",
       "cell":      [<col>, <row>],       // 0-indexed; top-left of footprint
       "footprint": [<width_cells>, <height_cells>],
@@ -59,7 +59,16 @@ TERRAIN CHARS — reserved (you do not need to declare these in terrain_legend, 
 - "g" grass (default)         - "_" path / dirt road        - "s" stone / paved
 - "w" water (river / pond)    - "b" bridge (wood over water)
 - "d" dirt / tilled soil      - "a" sand (river bank)       - "o" wood (planks / dock)
+- "W" wall (SOLID)
 You may invent additional chars (lowercase letters or "~", "-", ":") and document them in terrain_legend.
+
+SOLIDITY — collision (the player physically CANNOT cross solid cells)
+- "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.
+- A custom char is declared solid with the object form of terrain_legend:
+  "R": { "name": "roca desprendida", "solid": true }. Plain string values are walkable.
+- Consequence: every walled room NEEDS a door gap (a walkable char like "_" in its
+  W border) or the player is trapped inside — or locked out. Water that crosses the
+  map needs a bridge if the far side matters.
 
 TERRAIN FEATURES (optional; USE THEM for anything linear or organic — far better maps than cell rows)
 The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top: a meandering river, a curving road, a round plaza. Each feature is a thick polyline (default) or a filled polygon ("closed": true).
@@ -80,6 +89,10 @@ ENTITY RULES
 - NPCs and player are always 1×1.
 - Place NPCs at their work spot (smith near the smithy, innkeeper at the inn's door).
 - The player sits where the narrative says the player ENTERS the scene.
+- "decor" = purely aesthetic set dressing: wall torches, banners, rugs, cobwebs,
+  hanging signs, stains. Visible on the map but NO collision and NO interaction.
+  Use decor (never prop) for anything the player should walk past freely; a prop
+  is a physical obstacle (table, barrel, cart).
 
 SHAPE (optional but encouraged — hints the rendered footprint, makes better maps)
 - "cylinder": round things seen from above — barrel, well, cauldron, urn, jar, brazier, ROUND tower, fountain, column. (Trees are round by default; no need to set it.) The most common one.
@@ -161,7 +174,7 @@ There is NO "building" entity because we are INSIDE it.
     "WooooooooooooooooooW",
     "WWWWWWWWW__WWWWWWWWW"
   ],
-  "terrain_legend": { "W": "muro de piedra y madera", "o": "tablones gastados", "_": "umbral de la puerta" },
+  "terrain_legend": { "W": { "name": "muro de piedra y madera", "solid": true }, "o": "tablones gastados", "_": "umbral de la puerta" },
   "entities": [
     { "id": "mostrador",  "kind": "prop",  "name": "mostrador de roble",     "cell": [3, 2],  "footprint": [6, 1], "glyph": "=" },
     { "id": "barkeep",    "kind": "npc",   "name": "Tabernero corpulento",   "cell": [6, 3],  "footprint": [1, 1], "glyph": "n" },
@@ -169,6 +182,8 @@ There is NO "building" entity because we are INSIDE it.
     { "id": "taburete_1", "kind": "prop",  "name": "taburete de madera",     "cell": [4, 10], "footprint": [1, 1], "glyph": "h" },
     { "id": "taburete_2", "kind": "prop",  "name": "taburete de madera",     "cell": [6, 10], "footprint": [1, 1], "glyph": "h" },
     { "id": "barril_1",   "kind": "prop",  "name": "barril de cerveza",      "cell": [16, 2], "footprint": [1, 1], "glyph": "k" },
+    { "id": "antorcha_1", "kind": "decor", "name": "antorcha de pared",      "cell": [5, 0],  "footprint": [1, 1], "glyph": "i" },
+    { "id": "antorcha_2", "kind": "decor", "name": "antorcha de pared",      "cell": [14, 0], "footprint": [1, 1], "glyph": "i" },
     { "id": "player",     "kind": "player","name": "Tú",                     "cell": [9, 11], "footprint": [1, 1], "glyph": "@" }
   ],
   "ambient_event": "El fuego crepita y alguien arrastra un taburete por los tablones."
@@ -220,9 +235,23 @@ GENERATE_SCENE_TOOL = {
                 "type": "object",
                 "description": (
                     "Mapping from terrain char to terrain name. Reserved chars don't need to "
-                    "appear here. Add any custom terrain chars you used."
+                    "appear here. Add any custom terrain chars you used. A value can also be "
+                    '{"name": ..., "solid": true|false} to declare that char blocks movement '
+                    "(walls, water). W and w are solid by default; b (bridge) is walkable."
                 ),
-                "additionalProperties": {"type": "string"},
+                "additionalProperties": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "solid": {"type": "boolean"},
+                            },
+                            "required": ["name"],
+                        },
+                    ]
+                },
             },
             "terrain_features": {
                 "type": "array",
@@ -282,7 +311,7 @@ GENERATE_SCENE_TOOL = {
                         },
                         "kind": {
                             "type": "string",
-                            "enum": ["building", "prop", "item", "tree", "npc", "player"],
+                            "enum": ["building", "prop", "item", "tree", "npc", "player", "decor"],
                         },
                         "name": {"type": "string", "description": "Spanish display name."},
                         "cell": {
@@ -338,9 +367,10 @@ GENERATE_SCENE_TOOL = {
 RESERVED_TERRAIN = {
     "g": "grass", "w": "water", "_": "path", "s": "stone",
     "b": "bridge", "d": "dirt", "a": "sand", "o": "wood",
+    "W": "muro",
 }
 
-VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player"}
+VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -398,9 +428,20 @@ def validate_scene_response(data: dict) -> dict:
     data["terrain"] = normalized
 
     # ── Terrain legend ───────────────────────────────────────────────────
-    legend = data.get("terrain_legend")
-    if not isinstance(legend, dict):
-        legend = {}
+    # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
+    # objeto declara colisión por char y debe sobrevivir el saneado (la resuelve
+    # formatDToWorld en nefan-core). Un valor de otro tipo se descarta.
+    raw_legend = data.get("terrain_legend")
+    legend: dict = {}
+    if isinstance(raw_legend, dict):
+        for ch, val in raw_legend.items():
+            if isinstance(val, str):
+                legend[ch] = val
+            elif isinstance(val, dict) and isinstance(val.get("name"), str):
+                entry = {"name": val["name"]}
+                if isinstance(val.get("solid"), bool):
+                    entry["solid"] = val["solid"]
+                legend[ch] = entry
     # Ensure every char used in terrain has an entry (default = grass for unknown).
     used_chars = set("".join(normalized))
     for ch in used_chars:
