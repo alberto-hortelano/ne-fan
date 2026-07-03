@@ -112,7 +112,9 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
   // ── Structures: muros cerrados + suelo + puertas, por construcción ────────
   const roomRects: Rect[] = [];
   const wallChars = new Set<string>(["W"]);
-  const structures = Array.isArray(raw.structures) ? (raw.structures as Record<string, unknown>[]) : [];
+  const structures = Array.isArray(raw.structures)
+    ? (raw.structures as (Partial<RoomStructure> & Record<string, unknown>)[])
+    : [];
   for (let si = 0; si < structures.length; si++) {
     const s = structures[si];
     if (!s || typeof s !== "object") throw new Error(`structures[${si}] no es un objeto`);
