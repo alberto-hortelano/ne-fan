@@ -18,6 +18,7 @@ import { KeyboardHandler } from "./input/keyboard-handler.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { ObjectiveDisplay } from "./ui/objective-display.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
+import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "./ui/error-log.js";
 import {
   createGameClient,
@@ -143,6 +144,8 @@ const input = new KeyboardHandler(canvas, (type) => {
   get playerPos() { return playerPos; },
   get scene() { return sceneData; },
   get dialogueVisible() { return dialoguePanel.isVisible; },
+  get edgeTravel() { return edgeTravel; },
+  get exits() { return currentExits; },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
 };
 
@@ -184,10 +187,18 @@ let currentExits: SceneExit[] = [];
 /** Cuando el jugador sale por un borde, se anota aquí el lado de SALIDA; la
  *  siguiente escena coloca al jugador en el borde OPUESTO (entra caminando, sin
  *  teletransporte al origen). null ⇒ usar __player_start / origen. */
-let pendingEntryEdge: "north" | "south" | "east" | "west" | null = null;
-/** Debounce para no disparar la transición de borde varias veces mientras llega
- *  la escena nueva. */
-let edgeTransitionUntil = 0;
+let pendingEntryEdge: Edge | null = null;
+/** Single-flight del viaje por borde: mientras está activo se congela el
+ *  movimiento (el jugador espera en el borde con el velo direccional) hasta
+ *  que la escena nueva carga, el bridge da error, o vence el timeout.
+ *  Sustituye al viejo debounce temporal. */
+let edgeTravel: { edge: Edge; placeId?: string; startedAt: number } | null = null;
+/** La generación de una frontera puede tardar minutos; pasado esto se libera
+ *  al jugador con un error (el bridge tiene su propio single-flight). */
+const EDGE_TRAVEL_TIMEOUT_MS = 5 * 60_000;
+/** Lado con varias salidas ya mostrado en el TravelPanel resaltado — evita
+ *  re-renderizar el panel cada frame mientras se empuja contra el borde. */
+let ambiguousEdgeShown: Edge | null = null;
 
 // Entity arrays
 let enemyEntities: Entity[] = [];
@@ -346,6 +357,10 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
       case "west":  playerPos.x = halfW - inset;  playerPos.z = clampLat(playerPos.z, halfD); break;
     }
     pendingEntryEdge = null;
+    // El viaje por borde terminó: liberar al jugador y fundir la entrada.
+    edgeTravel = null;
+    renderer.setEdgeLoading(null);
+    triggerSceneFade();
   } else if (playerStart) {
     playerPos.x = playerStart.x;
     playerPos.z = playerStart.z;
@@ -494,6 +509,54 @@ let terrainCollider: TerrainCollider | null = null;
  *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
  *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
 const EDGE_MARGIN = 6;
+
+// --- Viaje por borde (expansión continua del mundo) ---
+
+/** Viaje hacia un destino CONOCIDO del world map: congela al jugador, marca la
+ *  entrada por el borde opuesto y pide la escena (cacheada o lazy realize). */
+function startEdgeTravel(edge: Edge, exit: SceneExit): void {
+  edgeTravel = { edge, placeId: exit.place_id, startedAt: performance.now() };
+  pendingEntryEdge = edge;
+  renderer.setEdgeLoading(edge, `Hacia ${exit.name}`);
+  narrativeClient.enterPlace(exit.place_id);
+  log(`Saliendo hacia ${exit.name}...`);
+}
+
+/** Frontera: no hay destino conocido hacia ese lado — el motor narrativo crea
+ *  mundo on-the-fly (place + link + escena) mientras el jugador espera. */
+function startFrontier(edge: Edge): void {
+  edgeTravel = { edge, startedAt: performance.now() };
+  pendingEntryEdge = edge;
+  renderer.setEdgeLoading(edge, "Explorando lo desconocido");
+  narrativeClient.crossFrontier(edge);
+  log("El mundo continúa... generando");
+}
+
+/** Aborta el viaje por borde (error del bridge o timeout): libera al jugador
+ *  empujándolo hacia dentro para que soltar el freeze no re-dispare el cruce. */
+function failEdgeTravel(detail: string): void {
+  if (!edgeTravel) return;
+  switch (edgeTravel.edge) {
+    case "east": playerPos.x -= 2; break;
+    case "west": playerPos.x += 2; break;
+    case "south": playerPos.z -= 2; break;
+    case "north": playerPos.z += 2; break;
+  }
+  edgeTravel = null;
+  pendingEntryEdge = null;
+  renderer.setEdgeLoading(null);
+  errors.push("narrative", detail);
+  setLoaderState("error", "No se pudo continuar el mundo", detail);
+}
+
+/** Fundido corto al entrar en una escena nueva por un borde: opaco instantáneo
+ *  y desvanecimiento CSS de ~300ms — quita el "pop" del cambio de escena. */
+function triggerSceneFade(): void {
+  const el = document.getElementById("scene-fade");
+  if (!el) return;
+  el.classList.add("show");
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("show")));
+}
 
 /** Phase 2 — snap each solid object's collision AABB to the footprint SAM
  *  actually found painted (the cyan box in the B overlay), so collisions match
@@ -804,6 +867,13 @@ function gameLoop(now: number): void {
     return;
   }
 
+  // Timeout de seguridad del viaje por borde: si el motor no responde en
+  // EDGE_TRAVEL_TIMEOUT_MS, liberar al jugador con error (el bridge mantiene
+  // su propio single-flight, así que no hay riesgo de doble generación).
+  if (edgeTravel && now - edgeTravel.startedAt > EDGE_TRAVEL_TIMEOUT_MS) {
+    failEdgeTravel("El motor narrativo no respondió a tiempo (timeout).");
+  }
+
   // Zoom: aplica la intención de rueda/teclas al objetivo (pasos multiplicativos,
   // clampados por el renderer) y persigue el objetivo con suavizado exponencial
   // frame-independent. Centrado en el jugador automáticamente (el offset de la
@@ -855,8 +925,9 @@ function gameLoop(now: number): void {
     void reviewBlueprintAndApply().catch(() => {});
   }
 
-  // Movement (suppressed during dialogue)
-  if (!dialoguePanel.isVisible) {
+  // Movement (suppressed during dialogue and while an edge travel is in
+  // flight — the player waits frozen at the border under the loading veil).
+  if (!dialoguePanel.isVisible && !edgeTravel) {
     let inputFwd = 0, inputRight = 0;
     if (input.state.up) inputFwd += 1;
     if (input.state.down) inputFwd -= 1;
@@ -878,20 +949,21 @@ function gameLoop(now: number): void {
     }
 
     // Borde blando: ya no hay jaula. El jugador sale del rectángulo de escena
-    // al campo abierto hasta EDGE_MARGIN metros. Al alcanzar ese tope:
-    //  - si el lado cruzado tiene una salida del world-map (caso lineal: una
-    //    sola salida), se dispara una transición CONTINUA al lugar vecino y se
-    //    anota el lado para entrar por el borde opuesto (sin teletransporte).
-    //  - si no hay salida (o hay varias, ambiguas), sólo se retiene al jugador
-    //    (la "pared" existe sólo donde el mundo no continúa; el TravelPanel
-    //    sigue disponible para elegir destino).
+    // al campo abierto hasta EDGE_MARGIN metros. Al alcanzar el tope, el mundo
+    // CONTINÚA por ese lado — cuatro casos según lo que sepa el world map:
+    //  (a) una salida en ese lado → viajar (lazy realize / escena cacheada);
+    //  (b) varias salidas en ese lado → retener + TravelPanel resaltado;
+    //  (c) sin salidas en ese lado pero exactamente 1 exit total sin edge →
+    //      viajar (compat con mapas legacy sin edges);
+    //  (d) nada hacia ese lado → FRONTERA: el motor narrativo crea mundo
+    //      on-the-fly (place + link + escena) mientras el jugador espera.
     if (sceneData) {
       const dims = sceneData.dimensions as { width: number; depth: number };
       if (dims) {
         const limX = dims.width / 2 + EDGE_MARGIN;
         const limD = dims.depth / 2 + EDGE_MARGIN;
         // Lado cruzado (eje dominante). +x=este, -x=oeste, +z=sur, -z=norte.
-        let crossed: "north" | "south" | "east" | "west" | null = null;
+        let crossed: Edge | null = null;
         if (playerPos.x > limX) crossed = "east";
         else if (playerPos.x < -limX) crossed = "west";
         else if (playerPos.z > limD) crossed = "south";
@@ -900,13 +972,26 @@ function gameLoop(now: number): void {
         playerPos.x = Math.max(-limX, Math.min(limX, playerPos.x));
         playerPos.z = Math.max(-limD, Math.min(limD, playerPos.z));
 
-        if (crossed && activeSessionId && currentExits.length === 1 && now >= edgeTransitionUntil) {
-          edgeTransitionUntil = now + 8000;
-          pendingEntryEdge = crossed;
-          const exit = currentExits[0];
-          showLoader("Viajando...", `Hacia ${exit.name}`);
-          narrativeClient.enterPlace(exit.place_id);
-          log(`Saliendo hacia ${exit.name}...`);
+        if (crossed && activeSessionId) {
+          const onEdge = currentExits.filter((e) => e.edge === crossed);
+          const unassigned = currentExits.filter((e) => !e.edge);
+          if (onEdge.length === 1) {
+            startEdgeTravel(crossed, onEdge[0]);
+          } else if (onEdge.length > 1) {
+            if (ambiguousEdgeShown !== crossed) {
+              ambiguousEdgeShown = crossed;
+              travelPanel.setExits(currentExits, { highlightEdge: crossed });
+              log("Varios destinos hacia ese lado — elige en el panel");
+            }
+          } else if (currentExits.length === 1 && unassigned.length === 1) {
+            startEdgeTravel(crossed, unassigned[0]);
+          } else {
+            startFrontier(crossed);
+          }
+        } else if (!crossed && ambiguousEdgeShown) {
+          // El jugador volvió dentro del rectángulo: restaurar el panel normal.
+          ambiguousEdgeShown = null;
+          travelPanel.setExits(currentExits);
         }
       }
     }
@@ -1198,18 +1283,28 @@ narrativeClient.onNarrativeStatus((status) => {
   if (status.kind === "scene") {
     switch (status.phase) {
       case "generating":
-        showLoader(
-          "Generando escena...",
-          status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
-        );
+        // Durante un viaje por borde el feedback es el velo direccional (el
+        // jugador ve DÓNDE continúa el mundo), no el overlay central.
+        if (edgeTravel) {
+          renderer.setEdgeLoading(edgeTravel.edge, status.message ?? "Generando la zona");
+        } else {
+          showLoader(
+            "Generando escena...",
+            status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
+          );
+        }
         break;
       case "ready":
         hideLoader();
         break;
       case "error": {
         const detail = status.message ?? "Algo falló en el motor narrativo.";
-        errors.push("narrative", detail);
-        setLoaderState("error", "Error al generar la escena", detail);
+        if (edgeTravel) {
+          failEdgeTravel(detail);
+        } else {
+          errors.push("narrative", detail);
+          setLoaderState("error", "Error al generar la escena", detail);
+        }
         break;
       }
     }

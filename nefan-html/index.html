@@ -139,6 +139,18 @@
       flex: 1;
       cursor: crosshair;
     }
+    /* Fundido corto al entrar en una escena nueva por un borde: main.ts añade
+       .show (opaco sin transición) y lo quita al frame siguiente → fade-out. */
+    #scene-fade {
+      position: fixed;
+      inset: 0;
+      background: #08060e;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease-out;
+      z-index: 45;
+    }
+    #scene-fade.show { opacity: 1; transition: none; }
     #narrative-loader {
       position: fixed;
       inset: 0;
@@ -220,6 +232,12 @@
     #travel-panel .travel-exit:hover {
       background: #283430;
       color: #adf;
+    }
+    /* Salidas del lado que el jugador está empujando (caso ambiguo). */
+    #travel-panel .travel-exit--highlight {
+      border-color: #cb8;
+      background: #2c2a1e;
+      color: #edb;
     }
     #interact-prompt {
       display: none;
@@ -319,6 +337,7 @@
     <div id="dialogue-text"></div>
     <div id="dialogue-choices"></div>
   </div>
+  <div id="scene-fade"></div>
   <div id="narrative-loader" role="status" aria-live="polite">
     <div class="spinner"></div>
     <div class="title" id="narrative-loader-title">Generando escena...</div>

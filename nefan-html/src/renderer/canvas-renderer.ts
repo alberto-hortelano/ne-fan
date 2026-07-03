@@ -60,7 +60,12 @@ export interface SceneData {
     lights?: { position: number[]; color: number[]; range: number }[];
   };
   ambient_event?: string;
+  /** Salidas del world map (las adjunta el bridge). El renderer solo pinta el
+   *  nombre del destino junto a su borde; la navegación vive en main.ts. */
+  exits?: { name: string; edge?: "north" | "south" | "east" | "west" }[];
 }
+
+type EdgeSide = "north" | "south" | "east" | "west";
 
 export interface Entity {
   id: string;
@@ -268,6 +273,9 @@ export class CanvasRenderer {
   /** True only while rendering the offscreen schematic for capture — suppresses
    *  text labels, which would pollute the canny edge map. */
   private _capturing = false;
+  /** Velo de carga direccional: banda oscura en el lado del viewport por el
+   *  que el jugador cruzó, mientras el mundo se genera en esa dirección. */
+  private edgeLoading: { edge: EdgeSide; text: string } | null = null;
 
   constructor(canvas: HTMLCanvasElement, opts: CanvasRendererOptions = {}) {
     this.canvas = canvas;
@@ -400,6 +408,12 @@ export class CanvasRenderer {
   toggleDebugCollision(): boolean {
     this.debugCollision = !this.debugCollision;
     return this.debugCollision;
+  }
+
+  /** (Des)activa el velo de carga direccional. `text` se pinta en la banda
+   *  ("Explorando lo desconocido", "Hacia la aldea"...). */
+  setEdgeLoading(edge: EdgeSide | null, text = ""): void {
+    this.edgeLoading = edge ? { edge, text } : null;
   }
 
   /** Render the static schematic (terrain plate + object/building rectangles,
@@ -743,6 +757,10 @@ export class CanvasRenderer {
       }
     }
 
+    // Nombres de los destinos conocidos junto a su borde: orienta hacia dónde
+    // continúa el mundo sin abrir el TravelPanel.
+    this.drawEdgeLabels(halfW, halfD);
+
     // Luces ambientales pintadas como halos suaves.
     const lights = this.sceneData.lighting?.lights ?? [];
     for (const light of lights) {
@@ -779,6 +797,83 @@ export class CanvasRenderer {
     }
 
     if (this.debugCollision) this.drawCollisionDebug(objects);
+
+    // Velo de carga direccional — lo último, por encima de todo.
+    if (this.edgeLoading) this.drawEdgeLoading();
+  }
+
+  /** Texto tenue con el nombre del destino en el punto medio de cada borde con
+   *  exit orientado (0.8 m hacia fuera del rectángulo). Varias salidas en el
+   *  mismo borde se apilan con un offset de 14 px. */
+  private drawEdgeLabels(halfW: number, halfD: number): void {
+    const exits = this.sceneData?.exits;
+    if (!Array.isArray(exits) || exits.length === 0 || this._capturing) return;
+    const ctx = this.ctx;
+    ctx.font = "12px monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(200, 195, 170, 0.45)";
+    const stack: Record<string, number> = {};
+    for (const exit of exits) {
+      if (!exit.edge || !exit.name) continue;
+      const n = stack[exit.edge] ?? 0;
+      stack[exit.edge] = n + 1;
+      const out = 0.8;
+      let x = 0, z = 0;
+      switch (exit.edge) {
+        case "north": x = 0; z = -halfD - out; break;
+        case "south": x = 0; z = halfD + out; break;
+        case "east": x = halfW + out; z = 0; break;
+        case "west": x = -halfW - out; z = 0; break;
+      }
+      const [sx, sy] = this.toScreen(x, z);
+      ctx.fillText(`⇢ ${exit.name}`, sx, sy + n * 14);
+    }
+  }
+
+  /** Banda con gradiente oscuro en el lado del viewport por el que se cruzó,
+   *  con el texto de estado y puntos animados. Espacio de PANTALLA (cubre el
+   *  lado del viewport, no de la escena). */
+  private drawEdgeLoading(): void {
+    const { edge, text } = this.edgeLoading!;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const band = Math.round((edge === "east" || edge === "west" ? w : h) * 0.28);
+    let grad: CanvasGradient;
+    let tx = w / 2;
+    let ty = h / 2;
+    switch (edge) {
+      case "north":
+        grad = ctx.createLinearGradient(0, 0, 0, band);
+        ty = band * 0.45;
+        break;
+      case "south":
+        grad = ctx.createLinearGradient(0, h, 0, h - band);
+        ty = h - band * 0.45;
+        break;
+      case "west":
+        grad = ctx.createLinearGradient(0, 0, band, 0);
+        tx = band * 0.45;
+        break;
+      case "east":
+        grad = ctx.createLinearGradient(w, 0, w - band, 0);
+        tx = w - band * 0.45;
+        break;
+    }
+    grad.addColorStop(0, "rgba(8, 6, 14, 0.85)");
+    grad.addColorStop(1, "rgba(8, 6, 14, 0)");
+    ctx.fillStyle = grad;
+    switch (edge) {
+      case "north": ctx.fillRect(0, 0, w, band); break;
+      case "south": ctx.fillRect(0, h - band, w, band); break;
+      case "west": ctx.fillRect(0, 0, band, h); break;
+      case "east": ctx.fillRect(w - band, 0, band, h); break;
+    }
+    const dots = ".".repeat(1 + (Math.floor(performance.now() / 400) % 3));
+    ctx.fillStyle = "rgba(230, 224, 200, 0.9)";
+    ctx.font = "14px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(text + dots, tx, ty);
   }
 
   /** Overlay (B): outline every solid object's collision box (red, what blocks

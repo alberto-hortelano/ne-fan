@@ -16,20 +16,30 @@ export class TravelPanel {
     this.el = document.getElementById("travel-panel")!;
   }
 
-  setExits(exits: SceneExit[]): void {
+  setExits(
+    exits: SceneExit[],
+    opts?: { highlightEdge?: "north" | "south" | "east" | "west" },
+  ): void {
     this.el.innerHTML = "";
     if (!exits || exits.length === 0) {
       this.el.style.display = "none";
       return;
     }
+    const highlight = opts?.highlightEdge;
+    const EDGE_ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
     const title = document.createElement("div");
     title.className = "travel-title";
-    title.textContent = "Salidas";
+    title.textContent = highlight ? `Salidas hacia el ${EDGE_ES[highlight]}` : "Salidas";
     this.el.appendChild(title);
 
-    for (const exit of exits) {
+    // Con highlight, las salidas del lado cruzado van primero y resaltadas —
+    // NO se filtra: el jugador puede seguir eligiendo cualquier destino.
+    const ordered = highlight
+      ? [...exits].sort((a, b) => Number(b.edge === highlight) - Number(a.edge === highlight))
+      : exits;
+    for (const exit of ordered) {
       const btn = document.createElement("button");
-      btn.className = "travel-exit";
+      btn.className = "travel-exit" + (highlight && exit.edge === highlight ? " travel-exit--highlight" : "");
       btn.textContent = `→ ${exit.name} (${exit.link_kind})`;
       if (exit.description) btn.title = exit.description;
       btn.addEventListener("click", () => this.onTravel(exit.place_id));
