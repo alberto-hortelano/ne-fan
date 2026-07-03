@@ -29,8 +29,9 @@ describe("validateScene", () => {
     assert.deepEqual(r.errors, []);
     assert.equal(r.ok, true);
     assert.equal(r.stats.border_reachable, true);
-    assert.equal(r.stats.doors_total, 2);
-    assert.equal(r.stats.doors_reachable, 2);
+    // width 2 pedida → auto-ensanchada a 3 celdas por el expander (mpc 0.5).
+    assert.equal(r.stats.doors_total, 3);
+    assert.equal(r.stats.doors_reachable, 3);
     assert.equal(r.stats.npcs_reachable, 1);
   });
 

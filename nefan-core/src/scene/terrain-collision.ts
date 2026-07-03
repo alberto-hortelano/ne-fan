@@ -31,6 +31,11 @@ export interface TerrainCollider {
    *  todas las celdas cubiertas (≤3×3 con radios de jugador), no solo las 4
    *  esquinas: con mpc 0.5 y diámetro 0.8 una celda podría colarse entre ellas. */
   blocksCircle(x: number, z: number, radius: number): boolean;
+  /** ¿El movimiento from→to queda bloqueado? Bloquea solo las celdas sólidas
+   *  que solapa el destino Y NO solapa el origen: si el spawn (o un empujón)
+   *  te deja penetrando un muro puedes SALIR de él, pero nunca entrar más.
+   *  Evita el deadlock de bloquear ambos ejes estando ya en colisión. */
+  blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
 }
 
 export function createTerrainCollider(
@@ -69,6 +74,14 @@ export function createTerrainCollider(
   const isSolidCell = (col: number, row: number): boolean =>
     col >= 0 && row >= 0 && col < cols && row < rows && solid[row * cols + col] === 1;
 
+  /** ¿El AABB (x±radius, z±radius) solapa la celda (c, r)? */
+  const circleOverlapsCell = (x: number, z: number, radius: number, c: number, r: number): boolean => {
+    const cellX0 = c * mpc - halfW;
+    const cellZ0 = r * mpc - halfD;
+    return x + radius > cellX0 && x - radius < cellX0 + mpc &&
+      z + radius > cellZ0 && z - radius < cellZ0 + mpc;
+  };
+
   return {
     solidCellCount,
     isSolidCell,
@@ -80,6 +93,21 @@ export function createTerrainCollider(
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           if (isSolidCell(c, r)) return true;
+        }
+      }
+      return false;
+    },
+    blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean {
+      const c0 = Math.floor((toX - radius + halfW) / mpc);
+      const c1 = Math.floor((toX + radius + halfW) / mpc);
+      const r0 = Math.floor((toZ - radius + halfD) / mpc);
+      const r1 = Math.floor((toZ + radius + halfD) / mpc);
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          if (!isSolidCell(c, r)) continue;
+          // Celda que ya solapábamos en el origen → no bloquea la salida.
+          if (circleOverlapsCell(fromX, fromZ, radius, c, r)) continue;
+          return true;
         }
       }
       return false;

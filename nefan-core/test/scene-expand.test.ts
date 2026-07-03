@@ -36,8 +36,9 @@ describe("expandScenePrimitives", () => {
     assert.equal(grid[1].slice(2, 12), "WWWWWWWWWW");
     // Interior de suelo.
     assert.equal(grid[3].slice(3, 11), "oooooooo");
-    // Puerta sur: at=4 width=2 → cols 6-7 de la fila 7, resto muro.
-    assert.equal(grid[7].slice(2, 12), "WWWW__WWWW");
+    // Puerta sur: at=4 width=2 pedida, auto-ensanchada a 3 celdas (mpc 0.5 ⇒
+    // hueco mínimo ~1.1 m para el jugador) → cols 6-8 de la fila 7.
+    assert.equal(grid[7].slice(2, 12), "WWWW___WWW");
     // Laterales.
     assert.equal(grid[4][2], "W");
     assert.equal(grid[4][11], "W");

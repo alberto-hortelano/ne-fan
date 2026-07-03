@@ -89,8 +89,10 @@ STRUCTURES (build walls with these — NEVER hand-draw a W border)
 ]
 The engine stamps each room deterministically: CLOSED wall perimeter, floor
 inside, walkable door gaps ("_"). Walls are always solid; the wall char is
-auto-declared solid in the legend. Use ONE structure per enterable
-building/room and write only the BASE terrain (grass, paths) in the grid.
+auto-declared solid in the legend. Doors narrower than the player are
+auto-widened to a ~1.1 m clear gap (3 cells at mpc 0.5). Use ONE structure per
+enterable building/room and write only the BASE terrain (grass, paths) in the
+grid.
 
 VEGETATION ZONES (scatter, don't hand-place 20 trees)
 "vegetation_zones": [

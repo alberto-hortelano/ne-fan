@@ -81,6 +81,17 @@ describe("createTerrainCollider", () => {
     assert.ok(col.blocksCircle(0, 0, 0.4)); // celda central del grid 3×3
   });
 
+  it("blocksMove: allows walking OUT of a wall you already overlap, never deeper in", () => {
+    const col = createTerrainCollider(makeGrid())!;
+    // Origen penetrando el muro oeste (x=-1.6 solapa la celda col 0, x∈[-2,-1.5]).
+    // Salir hacia el este (alejándose del muro) NO bloquea…
+    assert.ok(!col.blocksMove(-1.6, 0, -1.3, 0, 0.4));
+    // …y desde fuera, entrar al muro bloquea.
+    assert.ok(col.blocksMove(-1.0, 0, -1.3, 0, 0.4));
+    // blocksCircle (posición absoluta) sigue viendo la penetración.
+    assert.ok(col.blocksCircle(-1.6, 0, 0.4));
+  });
+
   it("integrates with formatDToWorld: W and w solid by default, legend can override", () => {
     const scene = formatDToWorld({
       scene_id: "s",

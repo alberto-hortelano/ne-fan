@@ -136,6 +136,16 @@ const input = new KeyboardHandler(canvas, (type) => {
   });
 });
 
+// Hook de bench (narrative_lab / pruebas de navegador): estado vivo legible
+// desde la consola o la automatización. Solo lectura — no es API del juego.
+(window as unknown as { __nefan?: unknown }).__nefan = {
+  input,
+  get playerPos() { return playerPos; },
+  get scene() { return sceneData; },
+  get dialogueVisible() { return dialoguePanel.isVisible; },
+  probeCollide(x: number, z: number) { return collidesAt(x, z); },
+};
+
 // --- Zoom (px por metro) ---
 // El objetivo (zoomTarget) salta por pasos multiplicativos con la rueda/teclas;
 // currentZoom lo persigue con suavizado frame-independent (mismo patrón que la
@@ -542,16 +552,23 @@ function addDiscoveredObjects(occluders: Occluder[]): void {
 
 /** AABB collision of the player (inflated point) against solid terrain cells
  *  and solid scene objects. Items and decor are walkable; only terrain
- *  solid_chars (walls/water), buildings and props block. */
+ *  solid_chars (walls/water), buildings and props block.
+ *
+ *  Semántica "salir sí, entrar no": un obstáculo que YA solapa la posición
+ *  actual del jugador no bloquea (permite des-penetrar si el spawn o un
+ *  empujón te dejó dentro); solo bloquean los obstáculos NUEVOS del destino.
+ *  Sin esto, spawn solapado ⇒ ambos ejes bloqueados ⇒ jugador clavado. */
 function collidesAt(x: number, z: number): boolean {
-  if (terrainCollider?.blocksCircle(x, z, PLAYER_RADIUS)) return true;
+  if (terrainCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
   for (const obj of objectEntities) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
     const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
     const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
     if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
-      return true;
+      const alreadyInside =
+        Math.abs(playerPos.x - obj.pos.x) < hx && Math.abs(playerPos.z - obj.pos.z) < hz;
+      if (!alreadyInside) return true;
     }
   }
   return false;
@@ -1090,7 +1107,10 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-const sharedBridge = new BridgeClient();
+// Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
+// bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.
+const bridgeOverride = new URLSearchParams(location.search).get("bridge");
+const sharedBridge = bridgeOverride ? new BridgeClient(bridgeOverride) : new BridgeClient();
 const narrativeClient = new NarrativeClient(sharedBridge);
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);

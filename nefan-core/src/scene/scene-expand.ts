@@ -134,21 +134,35 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
       }
     }
 
-    // Puertas: huecos transitables en el perímetro.
+    // Puertas: huecos transitables en el perímetro. Anchura mínima por
+    // construcción: el jugador (~0.8 m de diámetro) necesita ≥1.1 m de hueco
+    // para pasar sin alinearse al píxel — una puerta más estrecha se
+    // auto-ensancha (a mpc 0.5 eso son 3 celdas; a mpc 2 basta 1).
+    const mpc = (raw.size as { meters_per_cell?: number }).meters_per_cell ?? 2;
+    const minDoorCells = Math.max(1, Math.ceil(1.1 / mpc));
     const doors = Array.isArray(s.doors) ? (s.doors as RoomDoor[]) : [];
     for (let di = 0; di < doors.length; di++) {
       const d = doors[di];
-      const dw = Math.max(1, d.width ?? 1);
+      const dw = Math.max(Math.max(1, d.width ?? 1), minDoorCells);
       const dchar = typeof d.char === "string" && d.char.length === 1 ? d.char : "_";
       const along = d.side === "north" || d.side === "south" ? w : h;
       if (!["north", "south", "east", "west"].includes(d.side)) {
         throw new Error(`structures[${si}].doors[${di}]: side="${d.side}" inválido`);
       }
-      if (!Number.isInteger(d.at) || d.at < 1 || d.at + dw > along - 1) {
+      if (!Number.isInteger(d.at) || d.at < 1 || d.at + Math.max(1, d.width ?? 1) > along - 1) {
         throw new Error(
-          `structures[${si}].doors[${di}]: at=${d.at} width=${dw} no cabe en el lado ${d.side} (1..${along - 2}, las esquinas no pueden ser puerta)`,
+          `structures[${si}].doors[${di}]: at=${d.at} width=${d.width ?? 1} no cabe en el lado ${d.side} (1..${along - 2}, las esquinas no pueden ser puerta)`,
         );
       }
+      // Si el ensanchado se sale del lado, se desplaza hacia dentro.
+      const at = Math.max(1, Math.min(d.at, along - 1 - dw));
+      if (at + dw > along - 1) {
+        throw new Error(
+          `structures[${si}].doors[${di}]: el lado ${d.side} (${along} celdas) es demasiado corto para una puerta transitable de ${dw} celdas`,
+        );
+      }
+      d.at = at;
+      d.width = dw;
       for (let k = 0; k < dw; k++) {
         if (d.side === "north") grid[r0][c0 + d.at + k] = dchar;
         else if (d.side === "south") grid[r0 + h - 1][c0 + d.at + k] = dchar;
@@ -181,8 +195,12 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     const cell = e.cell as [number, number] | undefined;
     const fp = (e.footprint as [number, number] | undefined) ?? [1, 1];
     if (!Array.isArray(cell)) continue;
-    for (let r = cell[1]; r < cell[1] + (fp[1] ?? 1); r++) {
-      for (let c = cell[0]; c < cell[0] + (fp[0] ?? 1); c++) occupied.add(key(c, r));
+    // Player y NPCs se mueven: margen de 1 celda alrededor para que un árbol
+    // adyacente no los deje atrapados (con mpc 0.5, el AABB inflado del
+    // jugador ya solapa la celda vecina).
+    const margin = e.kind === "player" || e.kind === "npc" ? 1 : 0;
+    for (let r = cell[1] - margin; r < cell[1] + (fp[1] ?? 1) + margin; r++) {
+      for (let c = cell[0] - margin; c < cell[0] + (fp[0] ?? 1) + margin; c++) occupied.add(key(c, r));
     }
   }
   // Delante de cada puerta no se planta (aproximación: celda "_" y sus vecinas).
