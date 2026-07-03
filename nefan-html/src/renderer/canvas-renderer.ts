@@ -246,6 +246,12 @@ export class CanvasRenderer {
   private sceneBounds: SceneBounds | null = null;
   /** Capa terrain_svg rasterizada (null hasta que decodifica o si no hay). */
   private terrainSvgImage: HTMLImageElement | null = null;
+  /** Terreno horneado (color base + grid + features + svg) en un canvas
+   *  offscreen, UNA vez por escena; render() lo pinta con un solo drawImage
+   *  por frame. Sin esto el terreno solo se veía en el schematic de img2img:
+   *  los muros con colisión eran invisibles en vivo y la "placa" de escena era
+   *  un rectángulo plano sin significado. */
+  private terrainLayer: HTMLCanvasElement | null = null;
   /** Occluder sprites cut out of the scene image (X). When present, render()
    *  switches from the fixed entity order to a depth-sorted pass so tall objects
    *  (walls/buildings) can draw over the player when he is behind them. Cleared
@@ -311,6 +317,7 @@ export class CanvasRenderer {
     // La cámara sigue al jugador (offset recomputado por frame en render()).
     // No se fija aquí: una escena abierta no se centra estáticamente.
     this.terrainSvgImage = null;
+    this.buildTerrainLayer();
     if (data.terrain_svg) this.loadTerrainSvg(data.terrain_svg);
   }
 
@@ -335,6 +342,8 @@ export class CanvasRenderer {
     img.onload = () => {
       URL.revokeObjectURL(url);
       this.terrainSvgImage = img;
+      // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
+      this.buildTerrainLayer();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -421,29 +430,7 @@ export class CanvasRenderer {
     this.offsetY = -rect.minZ * ppm;
     this._capturing = true;
     try {
-      const terrainColor =
-        rgb01ToCss(this.sceneData?.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
-      offCtx.fillStyle = terrainColor;
-      offCtx.fillRect(0, 0, w, h);
-
-      // Zonas de suelo (río/camino/puente/piedra…) del grid Format D. Pintadas
-      // encima del color plano para que el blueprint tenga formas de terreno.
-      this.paintTerrainGrid();
-
-      // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
-      // encima del grid: las features refinan lo que el grid solo aproxima.
-      this.paintTerrainFeatures();
-
-      // Capa SVG de terreno (opcional) estirada sobre la escena, entre el
-      // terreno y los objetos. Si aún no decodificó, se captura sin ella.
-      if (this.terrainSvgImage) {
-        const dims = this.sceneData?.dimensions;
-        if (dims) {
-          const [sx0, sy0] = this.toScreen(-dims.width / 2, -dims.depth / 2);
-          const [sx1, sy1] = this.toScreen(dims.width / 2, dims.depth / 2);
-          offCtx.drawImage(this.terrainSvgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
-        }
-      }
+      this.paintTerrainInto(w, h);
 
       const staticObjects = (this.sceneData?.objects ?? [])
         .filter((o) => o.category !== "creature")
@@ -460,6 +447,79 @@ export class CanvasRenderer {
       this._capturing = savedCapturing;
     }
     return off.toDataURL("image/png");
+  }
+
+  /** Pinta el terreno completo (color base + grid por celdas + features
+   *  vectoriales + capa SVG) en el ctx/transform ACTUAL. Compartido por
+   *  captureSchematic (blueprint de img2img) y buildTerrainLayer (capa
+   *  visible en vivo) — un solo origen de verdad de cómo se ve el suelo. */
+  private paintTerrainInto(w: number, h: number): void {
+    const ctx = this.ctx;
+    const terrainColor =
+      rgb01ToCss(this.sceneData?.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+    ctx.fillStyle = terrainColor;
+    ctx.fillRect(0, 0, w, h);
+
+    // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
+    this.paintTerrainGrid();
+
+    // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
+    // encima del grid: las features refinan lo que el grid solo aproxima.
+    this.paintTerrainFeatures();
+
+    // Capa SVG de terreno (opcional) estirada sobre la escena, entre el
+    // terreno y los objetos. Si aún no decodificó, se pinta sin ella (el
+    // onload de loadTerrainSvg rehace la capa horneada).
+    if (this.terrainSvgImage) {
+      const dims = this.sceneData?.dimensions;
+      if (dims) {
+        const [sx0, sy0] = this.toScreen(-dims.width / 2, -dims.depth / 2);
+        const [sx1, sy1] = this.toScreen(dims.width / 2, dims.depth / 2);
+        ctx.drawImage(this.terrainSvgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
+      }
+    }
+  }
+
+  /** Hornea la capa de terreno en un canvas offscreen a resolución fija por
+   *  escena (interiores pequeños nítidos, pueblos grandes acotados a ~2048px).
+   *  Coste: una vez por escena; render() la pinta con un drawImage por frame. */
+  private buildTerrainLayer(): void {
+    this.terrainLayer = null;
+    const dims = this.sceneData?.dimensions;
+    if (!dims || !(dims.width > 0) || !(dims.depth > 0)) return;
+    const ppm = Math.max(8, Math.min(64, 2048 / Math.max(dims.width, dims.depth)));
+    const w = Math.max(8, Math.round(dims.width * ppm));
+    const h = Math.max(8, Math.round(dims.depth * ppm));
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const offCtx = off.getContext("2d");
+    if (!offCtx) {
+      errors.push("render", "buildTerrainLayer: no se pudo crear el contexto 2D offscreen");
+      return;
+    }
+    // Mismo truco de swap que captureSchematic: el mundo (-halfW,-halfD) cae
+    // en el píxel (0,0) del offscreen.
+    const savedCtx = this.ctx;
+    const savedOx = this.offsetX;
+    const savedOy = this.offsetY;
+    const savedScale = this.scale;
+    const savedCapturing = this._capturing;
+    this.ctx = offCtx;
+    this.scale = ppm;
+    this.offsetX = (dims.width / 2) * ppm;
+    this.offsetY = (dims.depth / 2) * ppm;
+    this._capturing = true; // sin labels
+    try {
+      this.paintTerrainInto(w, h);
+    } finally {
+      this.ctx = savedCtx;
+      this.offsetX = savedOx;
+      this.offsetY = savedOy;
+      this.scale = savedScale;
+      this._capturing = savedCapturing;
+    }
+    this.terrainLayer = off;
   }
 
   /** Pinta el grid de terreno (Format D) por celdas en el ctx/transform ACTUAL
@@ -641,15 +701,22 @@ export class CanvasRenderer {
       const ih = (b.maxZ - b.minZ) * this.scale;
       ctx.drawImage(this.sceneImage, ix, iy, iw, ih);
     } else {
-      // Placa de escena: el rectángulo autorizado por el motor donde irán las
-      // imágenes IA. Sigue visible (con su color de terreno + borde sutil),
-      // pero ya no es el límite del mundo.
+      // Terreno de la escena: la capa horneada (muros/suelo/caminos/agua del
+      // grid + features) pintada sobre su rectángulo mundial. Fallback al
+      // color plano solo si la capa no pudo hornearse.
       const [fx, fy] = this.toScreen(-halfW, -halfD);
       const fw = dims.width * this.scale;
       const fh = dims.depth * this.scale;
-      const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
-      ctx.fillStyle = terrainColor;
-      ctx.fillRect(fx, fy, fw, fh);
+      if (this.terrainLayer) {
+        const prevSmooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false; // celdas nítidas estilo blueprint
+        ctx.drawImage(this.terrainLayer, fx, fy, fw, fh);
+        ctx.imageSmoothingEnabled = prevSmooth;
+      } else {
+        const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+        ctx.fillStyle = terrainColor;
+        ctx.fillRect(fx, fy, fw, fh);
+      }
       ctx.strokeStyle = SCENE_PLATE_BORDER;
       ctx.lineWidth = 1;
       ctx.strokeRect(fx, fy, fw, fh);
