@@ -71,6 +71,7 @@ const ctx: BridgeContext = {
   cacheInitialScene: CONFIG.dev.cache_initial_scene,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
+  posTracking: { cellKey: null, placeId: null },
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },

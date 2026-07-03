@@ -28,6 +28,7 @@ export interface PlaceUpsert {
   introduced_event_id?: string;
   triggers?: PlaceTriggerSpec[];
   visited?: boolean;
+  anchor?: Place["anchor"];
 }
 
 export interface LinkSpec {
@@ -87,6 +88,7 @@ export class WorldMapManager {
       triggers: spec.triggers ?? existing?.triggers ?? [],
       introduced_event_id: spec.introduced_event_id ?? existing?.introduced_event_id,
       visited: spec.visited ?? existing?.visited ?? false,
+      anchor: spec.anchor ?? existing?.anchor,
     };
     this.map.places[place.id] = place;
     return place;

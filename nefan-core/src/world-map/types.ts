@@ -66,6 +66,11 @@ export interface Place {
   triggers: PlaceTriggerSpec[];
   introduced_event_id?: string;
   visited: boolean;
+  /** Anclaje al plano continuo de tiles: el place VIVE en el tile (tx,ty),
+   *  opcionalmente acotado a un rect [col,row,w,h] en celdas del tile. El
+   *  bridge activa el place (y dispara sus triggers) cuando la POSICIÓN del
+   *  jugador entra en el anchor. */
+  anchor?: { tx: number; ty: number; rect?: [number, number, number, number] };
 }
 
 export interface PlaceLink {

@@ -340,6 +340,21 @@ export class NarrativeState {
         this.worldMap.setActivePlace(placeId);
       }
     }
+    // Anclajes de places al plano: un tile puede declarar dónde VIVEN los
+    // places dentro de él ({place_id, rect} en celdas). El bridge activará el
+    // place por posición al pisar su rect.
+    if (tile && Array.isArray(sceneData.place_anchors)) {
+      for (const a of sceneData.place_anchors as Array<{ place_id?: string; rect?: [number, number, number, number] }>) {
+        if (typeof a?.place_id !== "string") continue;
+        const place = this.worldMap.get(a.place_id);
+        if (!place) {
+          console.warn(`recordSceneLoaded: place_anchor "${a.place_id}" no existe en el world map — ignorado`);
+          continue;
+        }
+        place.anchor = { tx: tile.tx, ty: tile.ty, rect: Array.isArray(a.rect) ? a.rect : undefined };
+        this.worldMap.attachRealizedScene(a.place_id, sceneId);
+      }
+    }
     this.registerSceneNpcs(sceneId, sceneData);
     this.dirty = true;
   }

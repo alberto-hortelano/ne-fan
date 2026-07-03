@@ -196,6 +196,12 @@ async function handle(
     if (!body || typeof body.id !== "string" || typeof body.kind !== "string") {
       return bad("body requires at least { id, kind, parent_id, name }");
     }
+    if (body.anchor !== undefined) {
+      const a = body.anchor as { tx?: unknown; ty?: unknown };
+      if (!a || !Number.isInteger(a.tx) || !Number.isInteger(a.ty)) {
+        return bad("anchor requires integer { tx, ty } (optional rect [col,row,w,h])");
+      }
+    }
     try {
       const place = wm.upsertPlace(body);
       narrative.markDirty();

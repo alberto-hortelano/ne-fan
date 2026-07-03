@@ -100,6 +100,7 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
     cacheInitialScene: false,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
+    posTracking: { cellKey: null, placeId: null },
     subscribe(ws) {
       subscribers.add(ws);
     },
@@ -1043,5 +1044,60 @@ describe("bridge request_tile (plano continuo)", () => {
     await routeMessage({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 66, y: 0, z: 2 });
     assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
+  });
+});
+
+describe("bridge activación por posición (tiles + anchors)", () => {
+  it("pisar un tile lo activa y pisar el anchor de un place dispara sus triggers", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    const t00 = expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", biome: "grass", entities: [] });
+    const t10 = expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", biome: "grass", entities: [] });
+    narrative.recordSceneLoaded("tile_0_0", t00);
+    narrative.recordSceneLoaded("tile_1_0", t10, [], { activate: false });
+    narrative.worldMap.upsertPlace({
+      id: "claro",
+      kind: "landmark",
+      parent_id: "world",
+      name: "El Claro",
+      anchor: { tx: 1, ty: 0, rect: [40, 50, 20, 20] },
+    });
+    narrative.worldMap.addTrigger("claro", {
+      id: "bienvenida",
+      when: { type: "player_entered" },
+      consequences: [{ type: "story_update", delta: "Llegas al claro." }],
+    });
+
+    const { socket } = makeSocket();
+    const input = (x: number, z: number) => routeMessage(
+      { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
+      socket, ctx,
+    );
+
+    // Dentro del tile (0,0): nada cambia de más.
+    await input(0, 0);
+    assert.equal(narrative.world.active_scene_id, "tile_0_0");
+
+    // Cruzar al tile (1,0) fuera del anchor: se activa el tile, no el place.
+    await input(40, -20);
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    assert.ok(!narrative.story_so_far.includes("Llegas al claro."));
+
+    // Pisar el rect del anchor (celdas 40..59 × 50..59 → mundo x 52..62, z -7..-2).
+    await input(55, -4);
+    await waitFor(() => narrative.story_so_far.includes("Llegas al claro."));
+    assert.equal(narrative.worldMap.serialize().active_place_id, "claro");
+    const trigger = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "map_trigger",
+    );
+    assert.ok(trigger, "map_trigger difundido");
+
+    // Re-pisar el anchor no re-dispara player_entered en bucle (gate por celda
+    // + place ya activo).
+    const count = broadcasts.filter((m) => m.type === "narrative_event" && m.eventId === "map_trigger").length;
+    await input(55.2, -4);
+    await input(55.4, -4);
+    const count2 = broadcasts.filter((m) => m.type === "narrative_event" && m.eventId === "map_trigger").length;
+    assert.equal(count2, count, "sin re-disparos");
   });
 });

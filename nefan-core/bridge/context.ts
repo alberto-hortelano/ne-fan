@@ -59,6 +59,9 @@ export interface BridgeContext {
    *  petición a la vez; los prefetch de tiles se encolan (FIFO con dedupe y
    *  prioridad blocking) en vez de perderse. */
   sceneGen: SceneGenQueue;
+  /** Tracking de la activación por posición (tile/place bajo el jugador),
+   *  gateado por cambio de celda para no costar nada en el hot loop. */
+  posTracking: { cellKey: string | null; placeId: string | null };
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;

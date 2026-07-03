@@ -902,8 +902,17 @@ into context:
       approx_position: z.array(z.number()).optional().describe('[x, y] in the parent local 2D space (layout only, no fixed scale).'),
       approx_radius: z.number().optional().describe('Approximate size, layout only.'),
       attrs_json: z.string().optional().describe('JSON object of free attributes, e.g. {"population":300,"faction":"neutral"}.'),
+      anchor: z.object({
+        tx: z.number().int(),
+        ty: z.number().int(),
+        rect: z.array(z.number().int()).length(4).optional(),
+      }).optional().describe(
+        'Tile of the continuous plane where this place LIVES, optionally ' +
+        'bounded to a cell rect [col,row,w,h] inside the tile. The bridge ' +
+        'activates the place (and fires its triggers) when the player steps ' +
+        'into the anchor.'),
     },
-    async ({ id, kind, parent_id, name, description, approx_position, approx_radius, attrs_json }) => {
+    async ({ id, kind, parent_id, name, description, approx_position, approx_radius, attrs_json, anchor }) => {
       let attrs: Record<string, unknown> | undefined;
       if (attrs_json) {
         try {
@@ -913,7 +922,7 @@ into context:
         }
       }
       return reportBridge(await bridgePost('/map/place', {
-        id, kind, parent_id, name, description, approx_position, approx_radius, attrs,
+        id, kind, parent_id, name, description, approx_position, approx_radius, attrs, anchor,
       }));
     },
   );

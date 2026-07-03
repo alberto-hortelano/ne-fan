@@ -1,6 +1,7 @@
 /** Handlers del hot loop: input, load_room, respawn y scenario_event. */
 
 import { createCombatant } from "../../src/combat/combatant.js";
+import { activateByPosition } from "./tile.js";
 import { getEnemyStates, type BridgeContext, type ClientSocket } from "../context.js";
 import type {
   InputMessage,
@@ -28,6 +29,9 @@ export async function handleInput(
   // Mantén store.player.pos al día: los position hints de los spawns
   // narrativos (dialogue.ts) y fireMapTriggers se resuelven contra él.
   ctx.store.dispatch("player_moved", { pos: [playerPos.x, playerPos.y, playerPos.z] });
+  // Mundo continuo: el tile/place activos se deciden por POSICIÓN (gateado
+  // por cambio de celda dentro de activateByPosition).
+  await activateByPosition(ctx, playerPos.x, playerPos.z);
   const scenarioResult = ctx.scenario.isActive
     ? await ctx.scenario.tick(msg.delta, playerPos)
     : null;

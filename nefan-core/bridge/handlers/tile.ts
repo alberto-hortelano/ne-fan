@@ -2,10 +2,10 @@
  *  generados (re-render sin LLM) y generación encolada de tiles nuevos con el
  *  contexto de costuras de sus vecinos. */
 
-import { broadcastScene, type BridgeContext } from "../context.js";
+import { broadcastScene, fireMapTriggers, type BridgeContext } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
-import { tileKey, neighborTile, type TileCoord } from "../../src/scene/tile.js";
+import { TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
@@ -173,6 +173,57 @@ export async function handleRequestTile(
       tile: { tx, ty },
       edge: msg.edge,
     });
+  }
+}
+
+/** Activación por POSICIÓN (mundo continuo): al cambiar de celda, activar el
+ *  tile pisado y el place cuyo anchor contiene al jugador, disparando los map
+ *  triggers (player_entered/left/first_visit). Llamado desde el hot loop de
+ *  input — gateado por cambio de celda para que el coste sea ~0. */
+export async function activateByPosition(
+  ctx: BridgeContext,
+  x: number,
+  z: number,
+): Promise<void> {
+  const t = worldToTile(x, z);
+  const rect = tileWorldRect(t.tx, t.ty);
+  const cell = `${t.tx},${t.ty}:${Math.floor((x - rect.minX) / TILE_MPC)},${Math.floor((z - rect.minZ) / TILE_MPC)}`;
+  if (ctx.posTracking.cellKey === cell) return;
+  ctx.posTracking.cellKey = cell;
+
+  if (ctx.narrative.hasTile(t.tx, t.ty)) {
+    ctx.narrative.setActiveTile(t.tx, t.ty);
+  }
+
+  // Place anclado que contiene la posición (rect en celdas del tile; sin
+  // rect = todo el tile). El más específico (con rect) gana.
+  const col = Math.floor((x - rect.minX) / TILE_MPC);
+  const row = Math.floor((z - rect.minZ) / TILE_MPC);
+  let placeId: string | null = null;
+  let hasRect = false;
+  for (const place of Object.values(ctx.narrative.worldMap.map.places)) {
+    const a = place.anchor;
+    if (!a || a.tx !== t.tx || a.ty !== t.ty) continue;
+    if (a.rect) {
+      const [c0, r0, w, h] = a.rect;
+      if (col >= c0 && col < c0 + w && row >= r0 && row < r0 + h) {
+        placeId = place.id;
+        hasRect = true;
+      }
+    } else if (!hasRect && placeId === null) {
+      placeId = place.id;
+    }
+  }
+
+  if (placeId && placeId !== ctx.posTracking.placeId) {
+    const prev = ctx.narrative.worldMap.serialize().active_place_id;
+    ctx.posTracking.placeId = placeId;
+    ctx.narrative.worldMap.setActivePlace(placeId);
+    ctx.narrative.worldMap.markVisited(placeId);
+    ctx.narrative.markDirty();
+    await fireMapTriggers(ctx, prev, placeId);
+  } else if (!placeId) {
+    ctx.posTracking.placeId = null;
   }
 }
 
