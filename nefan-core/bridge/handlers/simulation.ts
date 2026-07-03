@@ -201,6 +201,7 @@ export function handleAddCombatants(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): void {
+  const projected = [...ctx.store.state.enemies];
   let added = 0;
   for (const enemy of msg.enemies) {
     if (ctx.sim.getCombatant(enemy.id)) continue;
@@ -208,9 +209,25 @@ export function handleAddCombatants(
       createCombatant(enemy.id, enemy.health, enemy.weaponId, enemy.position, { x: 0, y: 0, z: 1 }),
       enemy.personality,
     );
+    // Proyección al store (getEnemyStates itera store.enemies): CONCAT, no
+    // reemplazo — los enemigos de otros tiles siguen vivos.
+    if (!projected.some((p) => p.id === enemy.id)) {
+      projected.push({
+        id: enemy.id,
+        pos: [enemy.position.x, enemy.position.y, enemy.position.z],
+        hp: enemy.health,
+        max_hp: enemy.health,
+        weapon_id: enemy.weaponId,
+        combat_state: "idle",
+        alive: true,
+      });
+    }
     added++;
   }
-  if (added > 0) console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
+  if (added > 0) {
+    ctx.store.dispatch("enemies_projected", { enemies: projected });
+    console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
+  }
   const response: StateUpdateMessage = {
     type: "state_update",
     events: [],

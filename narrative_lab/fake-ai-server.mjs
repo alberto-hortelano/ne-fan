@@ -96,6 +96,107 @@ function openFieldScene(placeId, name, crossedEdge) {
 /** Escenas ya servidas (idempotencia en retries y re-entradas). */
 const sceneByPlace = new Map();
 
+// ── Tiles del plano continuo ─────────────────────────────────────────────
+// TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
+// HTTP 500 en tiles no-bootstrap (test de reintento del cliente).
+const TILE_DELAY_MS = Number(process.env.TILE_DELAY_MS ?? 0);
+const TILE_MODE = process.env.TILE_MODE ?? "";
+const tileByKey = new Map();
+
+/** Punto de una feature sobre la línea del borde (celdas, floats ok). */
+function edgePoint(edge, at) {
+  switch (edge) {
+    case "west": return [0, at];
+    case "east": return [128, at];
+    case "north": return [at, 0];
+    case "south": return [at, 128];
+  }
+}
+const OPP = { west: "east", east: "west", north: "south", south: "north" };
+
+/** Tile de bootstrap (0,0): la taberna estampada en el plano + camino al este. */
+function bootstrapTile() {
+  return {
+    tile: { tx: 0, ty: 0 },
+    scene_id: "tile_0_0",
+    place_id: "taberna_bench_place",
+    scene_description: "Claro de la taberna de bench en el plano continuo.",
+    biome: "grass",
+    structures: [
+      { type: "room", rect: [52, 48, 24, 16], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 11, width: 2 }] },
+    ],
+    terrain_features: [
+      { type: "path", points: [[64, 64], [64, 90], [128, 100]], width: 2, at_edges: [{ edge: "east", at: 100 }] },
+    ],
+    vegetation_zones: [{ type: "pino", area: [4, 4, 40, 30], density: 0.08 }],
+    entities: [
+      { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+    ],
+    place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
+    ambient_event: "El fuego crepita dentro.",
+  };
+}
+
+/** Tile normal: continúa cada crossing de los vecinos hasta el borde opuesto
+ *  (el camino atraviesa el tile y siembra crecimiento futuro). Sin crossings,
+ *  un camino oeste↔este por la fila 64. Determinista y memoizado. */
+function makeTile(gt) {
+  const { tx, ty, neighbors } = gt ?? {};
+  const feats = [];
+  for (const [edge, n] of Object.entries(neighbors ?? {})) {
+    for (const c of n.crossings ?? []) {
+      const type = c.type === "river" || c.type === "bridge" ? "river" : "path";
+      feats.push({
+        type,
+        points: [edgePoint(edge, c.at), [64, 64], edgePoint(OPP[edge], c.at)],
+        width: Math.max(2, c.width ?? 2),
+        at_edges: [{ edge, at: c.at }, { edge: OPP[edge], at: c.at }],
+      });
+    }
+  }
+  if (feats.length === 0) {
+    feats.push({
+      type: "path",
+      points: [[0, 64], [128, 64]],
+      width: 2,
+      at_edges: [{ edge: "west", at: 64 }, { edge: "east", at: 64 }],
+    });
+  }
+  return {
+    tile: { tx, ty },
+    scene_id: `tile_${tx}_${ty}`,
+    scene_description: `Campo de bench (${tx}, ${ty}).`,
+    biome: "grass",
+    terrain_features: feats,
+    vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
+    entities: [
+      { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1], glyph: "o" },
+    ],
+    ambient_event: "El viento peina la hierba.",
+  };
+}
+
+async function handleGenerateTile(gt) {
+  if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
+  if (TILE_MODE === "error" && !gt?.bootstrap) {
+    throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
+  }
+  if (gt?.bootstrap) {
+    // Como el motor real: crear el place del arranque en el world map.
+    await statePost("/map/place", {
+      id: "taberna_bench_place",
+      kind: "settlement",
+      parent_id: "world",
+      name: "Taberna del bench",
+    }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
+    return bootstrapTile();
+  }
+  const key = `tile_${gt.tx}_${gt.ty}`;
+  if (!tileByKey.has(key)) tileByKey.set(key, makeTile(gt));
+  return tileByKey.get(key);
+}
+
 async function statePost(path, body) {
   const res = await fetch(`${STATE_API}${path}`, {
     method: "POST",
@@ -153,6 +254,14 @@ const server = http.createServer((req, res) => {
           body = raw ? JSON.parse(raw) : {};
         } catch {
           return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        if (body.generate_tile) {
+          try {
+            return send(200, await handleGenerateTile(body.generate_tile));
+          } catch (err) {
+            console.error(`[fake-ai] tile falló:`, err.message);
+            return send(500, { detail: err.message });
+          }
         }
         if (body.frontier_request) {
           try {
