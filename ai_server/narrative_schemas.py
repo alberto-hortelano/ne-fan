@@ -162,6 +162,11 @@ VALIDATION CHECKLIST — before calling narrative_respond:
 - [ ] No two entities share an `id`.
 - [ ] No entity's footprint runs off the grid.
 - [ ] Every glyph differs from every terrain char.
+- [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
+      every structure door AND some map edge (the world continues there).
+The server re-checks playability with a flood-fill when you respond: if it
+rejects, FIX the listed issues (or call the map tools it names) and respond
+again — the request stays pending. You can also dry-run with scene_validate.
 
 EXAMPLE — claro del cazador, 16 cols × 10 rows:
 {

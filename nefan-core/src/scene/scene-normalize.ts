@@ -90,8 +90,9 @@ const SOLID_LEGEND_NAME = /muro|muralla|pared|tapia|wall|acantilado|cliff/i;
 
 /** Normaliza `terrain_legend` (valores string legacy u objeto `{name, solid}`)
  *  a un mapa char→nombre plano para el renderer, y resuelve qué chars bloquean
- *  movimiento. `solid: false` explícito quita un default (p.ej. agua vadeable). */
-function resolveTerrainLegend(rawLegend: unknown): {
+ *  movimiento. `solid: false` explícito quita un default (p.ej. agua vadeable).
+ *  Exportada para que scene-validate use la misma resolución de solidez. */
+export function resolveTerrainLegend(rawLegend: unknown): {
   legend: Record<string, string>;
   solidChars: string[];
 } {

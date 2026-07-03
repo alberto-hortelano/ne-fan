@@ -291,6 +291,11 @@ VALIDATION before responding:
 - [ ] no two entities share an id
 - [ ] no footprint runs off the grid
 - [ ] every glyph differs from every terrain char
+- [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
+      every structure door AND some map edge (the world continues there)
+narrative_respond re-checks playability server-side with a flood-fill: if it
+rejects, FIX the listed issues (or call the map tools it names) and respond
+again — the request stays pending. You can also dry-run with scene_validate.
 
 EXAMPLE — claro del cazador, 16 cols × 10 rows:
 {
@@ -390,7 +395,13 @@ you call narrative_respond. Two flags can appear in world_state:
 In BOTH cases, add a top-level "place_id" to the scene JSON naming the map
 place this scene realizes (e.g. "place_id": "robledo"). The engine binds the
 scene to that place. Use the map_* tools for everything map-related — do not
-invent a different map representation in the scene JSON.`;
+invent a different map representation in the scene JSON.
+
+EXTERIOR LINK RULE: the place a scene realizes must ALWAYS have at least one
+outgoing map_link (door/path to its containing exterior or a neighbour) —
+walking off the scene edge follows those links. When you realize an interior,
+create/link its exterior place FIRST (map_upsert_place + map_link), then
+respond. The scene pre-flight rejects a scene whose place has no links.`;
 
 const ROOM_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "room", legacy enclosed-room schema) ====
 You are the narrative engine for a Godot 4 dark fantasy RPG (legacy enclosed-room schema).
@@ -741,6 +752,32 @@ into context:
             };
           }
         }
+        // Pre-flight de jugabilidad para escenas: el bridge valida con
+        // flood-fill (muros cerrados con puerta alcanzable, spawn walkable,
+        // borde de mapa alcanzable, place enlazado en el world map). Si falla,
+        // NO limpiamos la petición pendiente: corrige la escena (o llama a
+        // map_upsert_place/map_link) y vuelve a llamar a narrative_respond.
+        // Bridge caído → se avisa y se deja pasar (el flujo de generación no
+        // depende del state API).
+        if (kind === 'scene') {
+          const check = await bridgePost('/scene/validate', { scene: parsed });
+          if (check.ok) {
+            const v = check.data as { ok: boolean; errors: string[]; warnings: string[] };
+            if (!v.ok) {
+              const lines = [
+                'Unplayable scene — fix these and call narrative_respond again (the request is still pending):',
+                ...v.errors.map((e) => `- ${e}`),
+              ];
+              if (v.warnings?.length) lines.push('Warnings:', ...v.warnings.map((w) => `- ${w}`));
+              return { content: [{ type: 'text', text: lines.join('\n') }], isError: true };
+            }
+            if (v.warnings?.length) {
+              console.error(`[narrative-mcp] scene warnings: ${v.warnings.join(' | ')}`);
+            }
+          } else {
+            console.error(`[narrative-mcp] scene pre-flight skipped (state API unreachable): ${check.error}`);
+          }
+        }
 
         const reqId = currentRequestId;
         currentRequestId = null;
@@ -780,6 +817,27 @@ into context:
     const text = JSON.stringify(result.ok ? result.data : { error: result.error, data: result.data }, null, 2);
     return { content: [{ type: 'text' as const, text }], isError: !result.ok };
   }
+
+  server.tool(
+    'scene_validate',
+    `Dry-run the playability validator on a Format D scene JSON BEFORE calling ` +
+    `narrative_respond. Runs the same server-side checks as the respond ` +
+    `pre-flight: expandable primitives, declared terrain chars, walkable player ` +
+    `spawn, flood-fill reachability (doors, map edge, NPCs), and the world-map ` +
+    `exterior link for place_id. Returns { ok, errors, warnings, stats }.`,
+    {
+      scene_json: z.string().describe('The Format D scene JSON string to validate.'),
+    },
+    async ({ scene_json }) => {
+      let scene: unknown;
+      try {
+        scene = JSON.parse(scene_json);
+      } catch {
+        return { content: [{ type: 'text', text: 'scene_json is not valid JSON' }], isError: true };
+      }
+      return reportBridge(await bridgePost('/scene/validate', { scene }));
+    },
+  );
 
   server.tool(
     'map_get',
