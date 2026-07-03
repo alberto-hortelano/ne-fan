@@ -222,8 +222,25 @@ export class BridgeClient {
     this.send({ type: "load_game", gameId });
   }
 
-  sendRespawn(): void {
-    this.send({ type: "respawn" });
+  sendRespawn(pos?: { x: number; y: number; z: number }): void {
+    this.send({ type: "respawn", pos });
+  }
+
+  /** Pide un tile del plano continuo (prefetch en 2º plano o blocking). */
+  sendRequestTile(tx: number, ty: number, reason: "prefetch" | "blocking", edge?: "north" | "south" | "east" | "west"): void {
+    this.send({ type: "request_tile", tx, ty, reason, edge });
+  }
+
+  /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile
+   *  nuevo) — no resetea nada, ids ya presentes se ignoran. */
+  sendAddCombatants(enemies: {
+    id: string;
+    position: { x: number; y: number; z: number };
+    health: number;
+    weaponId: string;
+    personality: EnemyPersonality;
+  }[]): void {
+    this.send({ type: "add_combatants", enemies });
   }
 
   sendScenarioEvent(event: string, data?: Record<string, unknown>): void {

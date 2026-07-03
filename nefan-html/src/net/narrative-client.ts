@@ -104,6 +104,12 @@ export class NarrativeClient {
     this.bridge.sendPlayerCrossedFrontier(edge);
   }
 
+  /** Pide el tile (tx,ty) del plano continuo. Si ya existe, el bridge lo
+   *  re-difunde al instante sin LLM; si no, lo genera (encolado). */
+  requestTile(tx: number, ty: number, reason: "prefetch" | "blocking", edge?: "north" | "south" | "east" | "west"): void {
+    this.bridge.sendRequestTile(tx, ty, reason, edge);
+  }
+
   /** Tell the narrative engine the player approached an NPC. The reply arrives
    *  via onNarrativeEvent, usually as a show_dialogue effect. */
   interactEntity(entityId: string, entityName: string): void {

@@ -67,6 +67,38 @@ export interface SceneData {
 
 type EdgeSide = "north" | "south" | "east" | "west";
 
+/** Rect mundial de una escena/tile (metros, plano continuo). */
+interface WorldRectM {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/** Un tile/escena registrado en el renderer: su rect global, el esquema, y
+ *  las capas visuales (horneada y/o imagen IA) que lo pintan. */
+interface RendererTile {
+  key: string;
+  tx?: number;
+  ty?: number;
+  rect: WorldRectM;
+  scene: SceneData;
+  /** Capa de terreno horneada (lazy, LRU re-horneable desde el esquema). */
+  terrainLayer: HTMLCanvasElement | null;
+  layerLastUsed: number;
+  /** Imagen IA (img2img) del tile, si se generó. */
+  sceneImage: HTMLImageElement | null;
+  svgImage: HTMLImageElement | null;
+}
+
+type SceneObject = NonNullable<SceneData["objects"]>[number];
+
+/** Resolución fija de las capas horneadas: 16 px/m → 1024² por tile de 64 m.
+ *  Constante para todos los tiles (el zoom re-escala con smoothing off). */
+const TILE_PPM = 16;
+/** Máximo de capas horneadas vivas; la más antigua se libera (re-horneable). */
+const MAX_BAKED_LAYERS = 24;
+
 export interface Entity {
   id: string;
   pos: Vec3;
@@ -238,25 +270,21 @@ export class CanvasRenderer {
   private scale = 40; // pixels per meter
   private offsetX = 0;
   private offsetY = 0;
+  /** Tiles/escenas ACUMULADOS del plano continuo (nunca se borran salvo
+   *  clearTiles). El mundo visible = tiles con rect dentro del viewport. */
+  private tiles = new Map<string, RendererTile>();
+  /** Escena "activa" (el tile bajo el jugador): la consumen los caminos
+   *  legacy (scene-image, captureSchematic de objetos, luces). */
   private sceneData: SceneData | null = null;
+  private activeKey: string | null = null;
+  /** Presupuesto de horneado: máx. 1 capa por frame para no hipar. */
+  private bakedThisFrame = false;
   private spriteRenderer: SpriteRenderer | undefined;
   private assetCache: AssetCache | undefined;
   private worldAngle = "isometric_30";
 
-  /** AI-generated top-down scene background. When set, it is drawn over its
-   *  `sceneBounds` rectangle instead of the flat terrain plate, and the static
-   *  object rectangles are hidden (they are now baked into the image) unless
-   *  `debugObjects` is on. Bounds are in world metres {minX,minZ,maxX,maxZ}. */
-  private sceneImage: HTMLImageElement | null = null;
-  private sceneBounds: SceneBounds | null = null;
-  /** Capa terrain_svg rasterizada (null hasta que decodifica o si no hay). */
-  private terrainSvgImage: HTMLImageElement | null = null;
-  /** Terreno horneado (color base + grid + features + svg) en un canvas
-   *  offscreen, UNA vez por escena; render() lo pinta con un solo drawImage
-   *  por frame. Sin esto el terreno solo se veía en el schematic de img2img:
-   *  los muros con colisión eran invisibles en vivo y la "placa" de escena era
-   *  un rectángulo plano sin significado. */
-  private terrainLayer: HTMLCanvasElement | null = null;
+  // (las capas visuales por tile viven en RendererTile: terrainLayer horneada
+  // con LRU, sceneImage IA y svgImage)
   /** Occluder sprites cut out of the scene image (X). When present, render()
    *  switches from the fixed entity order to a depth-sorted pass so tall objects
    *  (walls/buildings) can draw over the player when he is behind them. Cleared
@@ -320,19 +348,74 @@ export class CanvasRenderer {
     this.canvas.height = window.innerHeight - 30; // HUD height
   }
 
-  setScene(data: SceneData): void {
-    this.sceneData = data;
-    // La cámara sigue al jugador (offset recomputado por frame en render()).
-    // No se fija aquí: una escena abierta no se centra estáticamente.
-    this.terrainSvgImage = null;
-    this.buildTerrainLayer();
-    if (data.terrain_svg) this.loadTerrainSvg(data.terrain_svg);
+  /** Añade (o reemplaza) un tile/escena del plano. ADITIVO: los tiles previos
+   *  siguen pintándose — el mundo es continuo. La capa se hornea lazy en
+   *  render() (con LRU); el terrain_svg se rasteriza async por tile. */
+  addTile(key: string, scene: SceneData): void {
+    const wr = scene as unknown as { world_rect?: WorldRectM };
+    const t = scene as unknown as { tile?: { tx?: number; ty?: number } };
+    const rect: WorldRectM = wr.world_rect ?? {
+      minX: -scene.dimensions.width / 2,
+      minZ: -scene.dimensions.depth / 2,
+      maxX: scene.dimensions.width / 2,
+      maxZ: scene.dimensions.depth / 2,
+    };
+    const tile: RendererTile = {
+      key,
+      tx: t.tile?.tx,
+      ty: t.tile?.ty,
+      rect,
+      scene,
+      terrainLayer: null,
+      layerLastUsed: 0,
+      sceneImage: null,
+      svgImage: null,
+    };
+    this.tiles.set(key, tile);
+    if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
+    if (scene.terrain_svg) this.loadTerrainSvg(tile, scene.terrain_svg);
   }
 
-  /** Rasteriza la capa terrain_svg a una Image (async). Cuando decodifica,
-   *  captureSchematic la compone; hasta entonces el schematic sale sin ella
-   *  (degradación: el grid pintado sigue debajo). Decode fallido → errors.push. */
-  private loadTerrainSvg(svg: string): void {
+  /** Marca el tile bajo el jugador como escena "activa" (caminos legacy). */
+  setActiveTile(key: string): void {
+    const tile = this.tiles.get(key);
+    if (!tile) return;
+    this.activeKey = key;
+    this.sceneData = tile.scene;
+  }
+
+  clearTiles(): void {
+    this.tiles.clear();
+    this.sceneData = null;
+    this.activeKey = null;
+    this.occluders = [];
+  }
+
+  /** ¿El tile que contiene (x,z) tiene fondo IA instalado? */
+  private tileImageAt(x: number, z: number): boolean {
+    for (const t of this.tiles.values()) {
+      if (t.sceneImage && x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Claves de los tiles registrados (hook __nefan / bench). */
+  get tileKeys(): string[] {
+    return [...this.tiles.keys()];
+  }
+
+  /** API legacy (fixtures/change_scene): mundo de UNA escena. */
+  setScene(data: SceneData): void {
+    this.clearTiles();
+    this.addTile(String(data.scene_id ?? data.room_id ?? "scene"), data);
+  }
+
+  /** Rasteriza la capa terrain_svg de UN tile a una Image (async). Cuando
+   *  decodifica se invalida su capa horneada (se re-hornea con la SVG).
+   *  Decode fallido → errors.push. */
+  private loadTerrainSvg(tile: RendererTile, svg: string): void {
     // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
     // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
     let src = svg;
@@ -349,9 +432,9 @@ export class CanvasRenderer {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      this.terrainSvgImage = img;
+      tile.svgImage = img;
       // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
-      this.buildTerrainLayer();
+      tile.terrainLayer = null;
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -364,24 +447,26 @@ export class CanvasRenderer {
     return this.sceneData;
   }
 
-  /** Install the AI-painted scene background covering `bounds` (world metres).
+  /** Install the AI-painted background of the ACTIVE tile (bounds = su rect).
    *  Drawn under the entities every frame, scaling/scrolling with the camera. */
-  setSceneImage(img: HTMLImageElement, bounds: SceneBounds): void {
-    this.sceneImage = img;
-    this.sceneBounds = { ...bounds };
+  setSceneImage(img: HTMLImageElement, _bounds: SceneBounds): void {
+    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
+    if (!tile) return;
+    tile.sceneImage = img;
     // A new image invalidates any previous cutouts — they were cut from the old
     // pixels and would now be misaligned. Press X again to re-segment.
     this.occluders = [];
   }
 
   clearSceneImage(): void {
-    this.sceneImage = null;
-    this.sceneBounds = null;
+    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
+    if (tile) tile.sceneImage = null;
     this.occluders = [];
   }
 
   hasSceneImage(): boolean {
-    return this.sceneImage !== null;
+    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
+    return Boolean(tile?.sceneImage);
   }
 
   /** Install the occluder sprites cut out of the current scene image. */
@@ -416,6 +501,11 @@ export class CanvasRenderer {
     this.edgeLoading = edge ? { edge, text } : null;
   }
 
+  /** Flash breve (1.2 s) desde un borde: "el mundo continúa hacia ahí". */
+  setEdgeFlash(edge: EdgeSide): void {
+    this.edgeFlash = { edge, until: performance.now() + 1200 };
+  }
+
   /** Render the static schematic (terrain plate + object/building rectangles,
    *  NO characters, NO labels) for a world rectangle into an offscreen canvas
    *  and return it as a PNG data URL. This is the img2img conditioning image:
@@ -444,11 +534,19 @@ export class CanvasRenderer {
     this.offsetY = -rect.minZ * ppm;
     this._capturing = true;
     try {
-      this.paintTerrainInto(w, h);
+      // Fondo neutro + todos los tiles que intersecan el rect capturado (el
+      // transform es mundial, así que cada tile cae en su sitio).
+      offCtx.fillStyle = DEFAULT_TERRAIN_COLOR;
+      offCtx.fillRect(0, 0, w, h);
+      const touched = [...this.tiles.values()].filter(
+        (t) => t.rect.maxX > rect.minX && t.rect.minX < rect.maxX &&
+               t.rect.maxZ > rect.minZ && t.rect.minZ < rect.maxZ,
+      );
+      for (const tile of touched) this.paintTerrainInto(tile);
 
-      const staticObjects = (this.sceneData?.objects ?? [])
+      const staticObjects = touched
+        .flatMap((t): SceneObject[] => t.scene.objects ?? [])
         .filter((o) => o.category !== "creature")
-        .slice()
         .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
       for (const obj of staticObjects) {
         this.drawSceneBox(obj);
@@ -467,65 +565,58 @@ export class CanvasRenderer {
    *  vectoriales + capa SVG) en el ctx/transform ACTUAL. Compartido por
    *  captureSchematic (blueprint de img2img) y buildTerrainLayer (capa
    *  visible en vivo) — un solo origen de verdad de cómo se ve el suelo. */
-  private paintTerrainInto(w: number, h: number): void {
+  private paintTerrainInto(tile: RendererTile): void {
     const ctx = this.ctx;
+    // Color base del rect del tile (en coords mundo bajo el transform actual).
     const terrainColor =
-      rgb01ToCss(this.sceneData?.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+      rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+    const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
+    const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
     ctx.fillStyle = terrainColor;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
 
     // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
-    this.paintTerrainGrid();
+    this.paintTerrainGrid(tile);
 
     // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
     // encima del grid: las features refinan lo que el grid solo aproxima.
-    this.paintTerrainFeatures();
+    this.paintTerrainFeatures(tile);
 
-    // Capa SVG de terreno (opcional) estirada sobre la escena, entre el
+    // Capa SVG de terreno (opcional) estirada sobre el rect, entre el
     // terreno y los objetos. Si aún no decodificó, se pinta sin ella (el
-    // onload de loadTerrainSvg rehace la capa horneada).
-    if (this.terrainSvgImage) {
-      const dims = this.sceneData?.dimensions;
-      if (dims) {
-        const [sx0, sy0] = this.toScreen(-dims.width / 2, -dims.depth / 2);
-        const [sx1, sy1] = this.toScreen(dims.width / 2, dims.depth / 2);
-        ctx.drawImage(this.terrainSvgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
-      }
+    // onload invalida la capa horneada para re-hornear con la SVG).
+    if (tile.svgImage) {
+      ctx.drawImage(tile.svgImage, bx0, by0, bx1 - bx0, by1 - by0);
     }
   }
 
-  /** Hornea la capa de terreno en un canvas offscreen a resolución fija por
-   *  escena (interiores pequeños nítidos, pueblos grandes acotados a ~2048px).
-   *  Coste: una vez por escena; render() la pinta con un drawImage por frame. */
-  private buildTerrainLayer(): void {
-    this.terrainLayer = null;
-    const dims = this.sceneData?.dimensions;
-    if (!dims || !(dims.width > 0) || !(dims.depth > 0)) return;
-    const ppm = Math.max(8, Math.min(64, 2048 / Math.max(dims.width, dims.depth)));
-    const w = Math.max(8, Math.round(dims.width * ppm));
-    const h = Math.max(8, Math.round(dims.depth * ppm));
+  /** Hornea la capa de terreno de UN tile a resolución fija TILE_PPM, con
+   *  LRU: si hay demasiadas capas vivas se libera la más antigua (siempre
+   *  re-horneable desde el esquema). Máx. 1 horneado por frame. */
+  private bakeTerrainLayer(tile: RendererTile): void {
+    const w = Math.max(8, Math.round((tile.rect.maxX - tile.rect.minX) * TILE_PPM));
+    const h = Math.max(8, Math.round((tile.rect.maxZ - tile.rect.minZ) * TILE_PPM));
     const off = document.createElement("canvas");
     off.width = w;
     off.height = h;
     const offCtx = off.getContext("2d");
     if (!offCtx) {
-      errors.push("render", "buildTerrainLayer: no se pudo crear el contexto 2D offscreen");
+      errors.push("render", "bakeTerrainLayer: no se pudo crear el contexto 2D offscreen");
       return;
     }
-    // Mismo truco de swap que captureSchematic: el mundo (-halfW,-halfD) cae
-    // en el píxel (0,0) del offscreen.
+    // Swap de transform: la esquina NW del rect cae en el píxel (0,0).
     const savedCtx = this.ctx;
     const savedOx = this.offsetX;
     const savedOy = this.offsetY;
     const savedScale = this.scale;
     const savedCapturing = this._capturing;
     this.ctx = offCtx;
-    this.scale = ppm;
-    this.offsetX = (dims.width / 2) * ppm;
-    this.offsetY = (dims.depth / 2) * ppm;
+    this.scale = TILE_PPM;
+    this.offsetX = -tile.rect.minX * TILE_PPM;
+    this.offsetY = -tile.rect.minZ * TILE_PPM;
     this._capturing = true; // sin labels
     try {
-      this.paintTerrainInto(w, h);
+      this.paintTerrainInto(tile);
     } finally {
       this.ctx = savedCtx;
       this.offsetX = savedOx;
@@ -533,7 +624,14 @@ export class CanvasRenderer {
       this.scale = savedScale;
       this._capturing = savedCapturing;
     }
-    this.terrainLayer = off;
+    tile.terrainLayer = off;
+    tile.layerLastUsed = performance.now();
+    // LRU: liberar la capa más antigua si nos pasamos del presupuesto.
+    const baked = [...this.tiles.values()].filter((t) => t.terrainLayer);
+    if (baked.length > MAX_BAKED_LAYERS) {
+      baked.sort((a, b) => a.layerLastUsed - b.layerLastUsed);
+      baked[0].terrainLayer = null;
+    }
   }
 
   /** Pinta el grid de terreno (Format D) por celdas en el ctx/transform ACTUAL
@@ -541,22 +639,23 @@ export class CanvasRenderer {
    *  Cada celda es un cuadrado de `meters_per_cell` metros; el color sale del
    *  char reservado o del nombre de la leyenda. 'g' (grass) se omite: es el
    *  color de fondo ya pintado. Degrada al fondo plano si el grid es inconsistente. */
-  private paintTerrainGrid(): void {
-    const tg = this.sceneData?.terrain_grid;
-    const dims = this.sceneData?.dimensions;
-    if (!tg || !dims) return;
+  private paintTerrainGrid(tile: RendererTile): void {
+    const tg = tile.scene.terrain_grid;
+    if (!tg) return;
     const { grid, legend, cols, rows, meters_per_cell: mpc } = tg;
     if (!Array.isArray(grid) || grid.length !== rows || cols <= 0 || rows <= 0 || mpc <= 0) {
       errors.push("scene", `terrain_grid inconsistente (filas=${grid?.length} rows=${rows} cols=${cols} mpc=${mpc}); uso color plano`);
       return;
     }
     const ctx = this.ctx;
-    const halfW = dims.width / 2;
-    const halfD = dims.depth / 2;
+    // Anclaje GLOBAL: la esquina NW del grid es la del rect del tile (la misma
+    // convención que terrain_grid.origin en la colisión de nefan-core).
+    const originX = tile.rect.minX;
+    const originZ = tile.rect.minZ;
     // Base de la hierba en 0-255 para el ruido anti-flat: el modelo de imagen
     // copia las manchas de color plano tal cual, así que una variación sutil
     // determinista por celda le da "textura" que interpretar como suelo natural.
-    const base = this.sceneData?.terrain?.color;
+    const base = tile.scene.terrain?.color;
     const grassRgb: [number, number, number] =
       base && base.length >= 3
         ? [base[0] * 255, base[1] * 255, base[2] * 255]
@@ -567,8 +666,8 @@ export class CanvasRenderer {
       const cmax = Math.min(cols, row.length);
       for (let c = 0; c < cmax; c++) {
         const ch = row[c];
-        const x0 = -halfW + c * mpc;
-        const z0 = -halfD + r * mpc;
+        const x0 = originX + c * mpc;
+        const z0 = originZ + r * mpc;
         const [px0, py0] = this.toScreen(x0, z0);
         const [px1, py1] = this.toScreen(x0 + mpc, z0 + mpc);
         if (ch === "g") {
@@ -594,14 +693,13 @@ export class CanvasRenderer {
    *  extremos redondeados, suavizadas por punto medio (quadraticCurveTo, sin
    *  dependencias); `closed` → polígono relleno. Feature malformada o sin color
    *  resoluble → errors.push y se omite (nunca tumba la captura). */
-  private paintTerrainFeatures(): void {
-    const feats = this.sceneData?.terrain_features;
-    const dims = this.sceneData?.dimensions;
-    if (!Array.isArray(feats) || feats.length === 0 || !dims) return;
-    const mpc = this.sceneData?.terrain_grid?.meters_per_cell ?? 2;
+  private paintTerrainFeatures(tile: RendererTile): void {
+    const feats = tile.scene.terrain_features;
+    if (!Array.isArray(feats) || feats.length === 0) return;
+    const mpc = tile.scene.terrain_grid?.meters_per_cell ?? 2;
     const ctx = this.ctx;
-    const halfW = dims.width / 2;
-    const halfD = dims.depth / 2;
+    const originX = tile.rect.minX;
+    const originZ = tile.rect.minZ;
     for (const f of feats) {
       if (!f || !Array.isArray(f.points) || f.points.length < 2) {
         errors.push("scene", `terrain_feature "${f?.type}" con points malformados; omitida`);
@@ -624,7 +722,7 @@ export class CanvasRenderer {
           bad = true;
           break;
         }
-        pts.push(this.toScreen(-halfW + c * mpc, -halfD + r * mpc));
+        pts.push(this.toScreen(originX + c * mpc, originZ + r * mpc));
       }
       if (bad) {
         errors.push("scene", `terrain_feature "${f.type}" con puntos no numéricos; omitida`);
@@ -700,91 +798,107 @@ export class CanvasRenderer {
     ctx.fillStyle = OPEN_FIELD_COLOR;
     ctx.fillRect(0, 0, w, h);
 
-    if (!this.sceneData) return;
-    const dims = this.sceneData.dimensions;
-    const halfW = dims.width / 2;
-    const halfD = dims.depth / 2;
+    if (this.tiles.size === 0) return;
+    this.bakedThisFrame = false;
 
-    if (this.sceneImage && this.sceneBounds) {
-      // AI-painted scene: draw it over its world-space rectangle. Derived from
-      // `scale`, so it scrolls and zooms with the camera exactly like the
-      // geometry it replaces. No grid/plate on top — they'd hide the detail.
-      const b = this.sceneBounds;
-      const [ix, iy] = this.toScreen(b.minX, b.minZ);
-      const iw = (b.maxX - b.minX) * this.scale;
-      const ih = (b.maxZ - b.minZ) * this.scale;
-      ctx.drawImage(this.sceneImage, ix, iy, iw, ih);
-    } else {
-      // Terreno de la escena: la capa horneada (muros/suelo/caminos/agua del
-      // grid + features) pintada sobre su rectángulo mundial. Fallback al
-      // color plano solo si la capa no pudo hornearse.
-      const [fx, fy] = this.toScreen(-halfW, -halfD);
-      const fw = dims.width * this.scale;
-      const fh = dims.depth * this.scale;
-      if (this.terrainLayer) {
-        const prevSmooth = ctx.imageSmoothingEnabled;
-        ctx.imageSmoothingEnabled = false; // celdas nítidas estilo blueprint
-        ctx.drawImage(this.terrainLayer, fx, fy, fw, fh);
-        ctx.imageSmoothingEnabled = prevSmooth;
+    // Rect mundial visible (para culling de tiles).
+    const viewMinX = -this.offsetX / this.scale;
+    const viewMinZ = -this.offsetY / this.scale;
+    const viewMaxX = (w - this.offsetX) / this.scale;
+    const viewMaxZ = (h - this.offsetY) / this.scale;
+    const visible = [...this.tiles.values()].filter(
+      (t) => t.rect.maxX > viewMinX && t.rect.minX < viewMaxX &&
+             t.rect.maxZ > viewMinZ && t.rect.minZ < viewMaxZ,
+    );
+    const gridKeys = new Set<string>();
+    for (const t of this.tiles.values()) {
+      if (t.tx !== undefined && t.ty !== undefined) gridKeys.add(`${t.tx},${t.ty}`);
+    }
+
+    // ── Paso de tiles: capa horneada (o imagen IA) sobre su rect mundial ────
+    for (const tile of visible) {
+      const [fx, fy] = this.toScreen(tile.rect.minX, tile.rect.minZ);
+      const fw = (tile.rect.maxX - tile.rect.minX) * this.scale;
+      const fh = (tile.rect.maxZ - tile.rect.minZ) * this.scale;
+      if (tile.sceneImage) {
+        // Tile con fondo IA: la imagen sustituye a la capa horneada.
+        ctx.drawImage(tile.sceneImage, fx, fy, fw, fh);
       } else {
-        const terrainColor = rgb01ToCss(this.sceneData.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
-        ctx.fillStyle = terrainColor;
-        ctx.fillRect(fx, fy, fw, fh);
+        if (!tile.terrainLayer && !this.bakedThisFrame) {
+          this.bakeTerrainLayer(tile);
+          this.bakedThisFrame = true;
+        }
+        if (tile.terrainLayer) {
+          tile.layerLastUsed = performance.now();
+          const prevSmooth = ctx.imageSmoothingEnabled;
+          ctx.imageSmoothingEnabled = false; // celdas nítidas estilo blueprint
+          ctx.drawImage(tile.terrainLayer, fx, fy, fw, fh);
+          ctx.imageSmoothingEnabled = prevSmooth;
+        } else {
+          const terrainColor = rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+          ctx.fillStyle = terrainColor;
+          ctx.fillRect(fx, fy, fw, fh);
+        }
       }
+      // Borde de "fin del mundo conocido": SOLO en los lados sin vecino (las
+      // costuras entre tiles existentes no se marcan — el mundo es continuo).
       ctx.strokeStyle = SCENE_PLATE_BORDER;
       ctx.lineWidth = 1;
-      ctx.strokeRect(fx, fy, fw, fh);
-
-      // Grid continuo en world-space visible (no acotado a dimensions): da
-      // orientación uniforme sobre campo + placa y refuerza la continuidad.
-      ctx.strokeStyle = GRID_COLOR;
-      // 1px sólido (no 0.5): con cámara float las líneas caen en posiciones
-      // subpíxel; una línea <1px titilaría en opacidad al cruzar bordes de
-      // píxel, una de 1px solo se antialias y desliza limpia.
-      ctx.lineWidth = 1;
-      const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
-      const wl = Math.floor((-this.offsetX) / this.scale / step) * step;
-      const wr = (w - this.offsetX) / this.scale;
-      for (let gx = wl; gx <= wr; gx += step) {
-        const [sx] = this.toScreen(gx, 0);
-        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
-      }
-      const wt = Math.floor((-this.offsetY) / this.scale / step) * step;
-      const wb = (h - this.offsetY) / this.scale;
-      for (let gz = wt; gz <= wb; gz += step) {
-        const [, sy] = this.toScreen(0, gz);
-        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+      if (tile.tx === undefined || tile.ty === undefined) {
+        ctx.strokeRect(fx, fy, fw, fh);
+      } else {
+        ctx.beginPath();
+        if (!gridKeys.has(`${tile.tx},${tile.ty - 1}`)) { ctx.moveTo(fx, fy); ctx.lineTo(fx + fw, fy); }
+        if (!gridKeys.has(`${tile.tx},${tile.ty + 1}`)) { ctx.moveTo(fx, fy + fh); ctx.lineTo(fx + fw, fy + fh); }
+        if (!gridKeys.has(`${tile.tx - 1},${tile.ty}`)) { ctx.moveTo(fx, fy); ctx.lineTo(fx, fy + fh); }
+        if (!gridKeys.has(`${tile.tx + 1},${tile.ty}`)) { ctx.moveTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + fh); }
+        ctx.stroke();
       }
     }
 
-    // Nombres de los destinos conocidos junto a su borde: orienta hacia dónde
-    // continúa el mundo sin abrir el TravelPanel.
-    this.drawEdgeLabels(halfW, halfD);
-
-    // Luces ambientales pintadas como halos suaves.
-    const lights = this.sceneData.lighting?.lights ?? [];
-    for (const light of lights) {
-      const [lx, ly] = this.toScreen(light.position[0], light.position[2]);
-      const lr = (light.range ?? 5) * this.scale;
-      const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr);
-      const c = light.color;
-      grad.addColorStop(0, `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},0.15)`);
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(lx - lr, ly - lr, lr * 2, lr * 2);
+    // Grid continuo en world-space visible: orientación uniforme sobre campo
+    // y tiles, refuerza la continuidad del plano.
+    ctx.strokeStyle = GRID_COLOR;
+    // 1px sólido (no 0.5): con cámara float las líneas caen en posiciones
+    // subpíxel; una línea <1px titilaría en opacidad al cruzar bordes de
+    // píxel, una de 1px solo se antialias y desliza limpia.
+    ctx.lineWidth = 1;
+    const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
+    const wl = Math.floor(viewMinX / step) * step;
+    for (let gx = wl; gx <= viewMaxX; gx += step) {
+      const [sx] = this.toScreen(gx, 0);
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+    }
+    const wt = Math.floor(viewMinZ / step) * step;
+    for (let gz = wt; gz <= viewMaxZ; gz += step) {
+      const [, sy] = this.toScreen(0, gz);
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
     }
 
-    // Static scene elements (buildings/props/items/terrain patches) por categoría,
-    // ordenados por Z para que el fondo no tape el frente. Cuando hay imagen IA
-    // ya están pintados en ella; sólo se dibujan como overlay de debug.
-    if (!this.sceneImage || this.debugObjects) {
-      const staticObjects = (this.sceneData.objects ?? [])
-        .filter((o) => o.category !== "creature")
-        .slice()
-        .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
-      for (const obj of staticObjects) {
-        this.drawSceneBox(obj);
+    // Luces ambientales de los tiles visibles, como halos suaves.
+    for (const tile of visible) {
+      const lights = tile.scene.lighting?.lights ?? [];
+      for (const light of lights) {
+        const [lx, ly] = this.toScreen(light.position[0], light.position[2]);
+        const lr = (light.range ?? 5) * this.scale;
+        const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr);
+        const c = light.color;
+        grad.addColorStop(0, `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},0.15)`);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(lx - lr, ly - lr, lr * 2, lr * 2);
       }
+    }
+
+    // Static scene elements de los tiles visibles, ordenados por Z global.
+    // Un tile con imagen IA ya los lleva pintados (solo overlay de debug).
+    const staticObjects = visible
+      .filter((t) => !t.sceneImage || this.debugObjects)
+      .flatMap((t): SceneObject[] => t.scene.objects ?? [])
+      .filter((o) => o.category !== "creature")
+      .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
+    for (const obj of staticObjects) {
+      this.drawSceneBox(obj);
     }
 
     if (this.occluders.length > 0) {
@@ -800,39 +914,46 @@ export class CanvasRenderer {
 
     // Velo de carga direccional — lo último, por encima de todo.
     if (this.edgeLoading) this.drawEdgeLoading();
+    if (this.edgeFlash) this.drawEdgeFlash();
   }
 
-  /** Texto tenue con el nombre del destino en el punto medio de cada borde con
-   *  exit orientado (0.8 m hacia fuera del rectángulo). Varias salidas en el
-   *  mismo borde se apilan con un offset de 14 px. */
-  private drawEdgeLabels(halfW: number, halfD: number): void {
-    const exits = this.sceneData?.exits;
-    if (!Array.isArray(exits) || exits.length === 0 || this._capturing) return;
-    const ctx = this.ctx;
-    ctx.font = "12px monospace";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(200, 195, 170, 0.45)";
-    const stack: Record<string, number> = {};
-    for (const exit of exits) {
-      if (!exit.edge || !exit.name) continue;
-      const n = stack[exit.edge] ?? 0;
-      stack[exit.edge] = n + 1;
-      const out = 0.8;
-      let x = 0, z = 0;
-      switch (exit.edge) {
-        case "north": x = 0; z = -halfD - out; break;
-        case "south": x = 0; z = halfD + out; break;
-        case "east": x = halfW + out; z = 0; break;
-        case "west": x = -halfW - out; z = 0; break;
-      }
-      const [sx, sy] = this.toScreen(x, z);
-      ctx.fillText(`⇢ ${exit.name}`, sx, sy + n * 14);
-    }
-  }
 
   /** Banda con gradiente oscuro en el lado del viewport por el que se cruzó,
    *  con el texto de estado y puntos animados. Espacio de PANTALLA (cubre el
    *  lado del viewport, no de la escena). */
+  /** Flash direccional activo (borde + timestamp de fin), o null. */
+  private edgeFlash: { edge: EdgeSide; until: number } | null = null;
+
+  private drawEdgeFlash(): void {
+    const now = performance.now();
+    if (!this.edgeFlash || now >= this.edgeFlash.until) {
+      this.edgeFlash = null;
+      return;
+    }
+    const { edge, until } = this.edgeFlash;
+    const alpha = 0.55 * ((until - now) / 1200);
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const band = Math.round((edge === "east" || edge === "west" ? w : h) * 0.18);
+    let grad: CanvasGradient;
+    switch (edge) {
+      case "north": grad = ctx.createLinearGradient(0, 0, 0, band); break;
+      case "south": grad = ctx.createLinearGradient(0, h, 0, h - band); break;
+      case "west": grad = ctx.createLinearGradient(0, 0, band, 0); break;
+      case "east": grad = ctx.createLinearGradient(w, 0, w - band, 0); break;
+    }
+    grad.addColorStop(0, `rgba(214, 205, 160, ${alpha.toFixed(3)})`);
+    grad.addColorStop(1, "rgba(214, 205, 160, 0)");
+    ctx.fillStyle = grad;
+    switch (edge) {
+      case "north": ctx.fillRect(0, 0, w, band); break;
+      case "south": ctx.fillRect(0, h - band, w, band); break;
+      case "west": ctx.fillRect(0, 0, band, h); break;
+      case "east": ctx.fillRect(w - band, 0, band, h); break;
+    }
+  }
+
   private drawEdgeLoading(): void {
     const { edge, text } = this.edgeLoading!;
     const ctx = this.ctx;
@@ -885,23 +1006,23 @@ export class CanvasRenderer {
     ctx.save();
 
     // Solid terrain cells (walls/water — what terrainCollider blocks): filled
-    // translucent orange, distinct from the red object AABBs.
-    const tg = this.sceneData?.terrain_grid;
-    const tdims = this.sceneData?.dimensions;
-    if (tg?.solid_chars?.length && tdims) {
+    // translucent orange, distinct from the red object AABBs. Todos los tiles.
+    ctx.fillStyle = "rgba(255,140,0,0.30)";
+    for (const tile of this.tiles.values()) {
+      const tg = tile.scene.terrain_grid;
+      if (!tg?.solid_chars?.length) continue;
       const solidSet = new Set(tg.solid_chars);
       const mpc = tg.meters_per_cell;
-      const halfW = tdims.width / 2;
-      const halfD = tdims.depth / 2;
-      ctx.fillStyle = "rgba(255,140,0,0.30)";
+      const ox = tile.rect.minX;
+      const oz = tile.rect.minZ;
       for (let r = 0; r < tg.rows; r++) {
         const row = tg.grid[r];
         if (typeof row !== "string") continue;
         const cmax = Math.min(tg.cols, row.length);
         for (let c = 0; c < cmax; c++) {
           if (!solidSet.has(row[c])) continue;
-          const [x0, y0] = this.toScreen(-halfW + c * mpc, -halfD + r * mpc);
-          const [x1, y1] = this.toScreen(-halfW + (c + 1) * mpc, -halfD + (r + 1) * mpc);
+          const [x0, y0] = this.toScreen(ox + c * mpc, oz + r * mpc);
+          const [x1, y1] = this.toScreen(ox + (c + 1) * mpc, oz + (r + 1) * mpc);
           ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
         }
       }
@@ -1145,9 +1266,9 @@ export class CanvasRenderer {
     const category = e.category ?? "creature";
     if (category === "building" || category === "terrain" || category === "prop" || category === "item" || category === "decor") {
       // Static-shape entities (buildings/props/items) are baked into the AI
-      // scene image; skip their schematic box when one is present (same gate as
-      // the sceneData.objects loop). Creatures still draw on top below.
-      if (this.sceneImage && !this.debugObjects) return;
+      // scene image of THEIR tile; skip their schematic box when that tile has
+      // one (same gate as the static objects loop). Creatures draw on top.
+      if (!this.debugObjects && this.tileImageAt(e.pos.x, e.pos.z)) return;
       const sx = e.sizeXZ?.x ?? Math.max(0.5, e.radius / this.scale * 2);
       const sz = e.sizeXZ?.z ?? Math.max(0.5, e.radius / this.scale * 2);
       this.drawSceneBox({

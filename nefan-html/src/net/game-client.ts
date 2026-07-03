@@ -47,6 +47,9 @@ type EventHandler = (...args: unknown[]) => void;
 export interface GameClient {
   tick(delta: number, inputs: TickInputs): FrameResult;
   loadRoom(roomData: Record<string, unknown>, roomId: string, enemies: RoomEnemy[]): void;
+  /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
+   *  sim ni al player — el mundo es un plano continuo. */
+  addEnemies(enemies: RoomEnemy[]): void;
   loadGame(gameId: string): void;
   respawn(pos: Vec3): void;
   sendScenarioEvent(event: string, data?: Record<string, unknown>): void;
@@ -139,8 +142,18 @@ export class BridgeGameClient implements GameClient {
     this.bridge.sendLoadGame(gameId);
   }
 
-  respawn(_pos: Vec3): void {
-    this.bridge.sendRespawn();
+  addEnemies(enemies: RoomEnemy[]): void {
+    if (enemies.length === 0) return;
+    this.bridge.sendAddCombatants(
+      enemies.map(e => ({
+        id: e.id, position: e.position, health: e.health,
+        weaponId: e.weaponId, personality: e.personality,
+      })),
+    );
+  }
+
+  respawn(pos: Vec3): void {
+    this.bridge.sendRespawn(pos);
   }
 
   sendScenarioEvent(event: string, data?: Record<string, unknown>): void {
