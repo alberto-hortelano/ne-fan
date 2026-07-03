@@ -14,6 +14,9 @@
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
+import { computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
+import { TILE_CELLS } from "./tile.js";
+import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
   ok: boolean;
@@ -40,6 +43,26 @@ export interface PlaceContext {
   outgoing_links: number;
 }
 
+/** Contexto de validación de un TILE: qué cruces de los vecinos existentes
+ *  debe continuar, por dónde entra el jugador, y si es el tile de bootstrap
+ *  (el único que lleva entity player). Lo construye el state API desde los
+ *  `edges` de los vecinos en scenes_loaded — el validador queda puro. */
+export interface TileValidationContext {
+  required_crossings: Array<{ edge: Edge } & EdgeCrossing>;
+  entry?: { edge: Edge; at?: number };
+  bootstrap?: boolean;
+}
+
+/** Celda del grid sobre la línea del borde `edge` en la coordenada `at`. */
+function edgeCell(edge: Edge, at: number): [number, number] {
+  switch (edge) {
+    case "west": return [0, at];
+    case "east": return [TILE_CELLS - 1, at];
+    case "north": return [at, 0];
+    case "south": return [at, TILE_CELLS - 1];
+  }
+}
+
 /** Chars reservados siempre legales sin declarar (espejo de RESERVED_TERRAIN
  *  en ai_server/narrative_schemas.py). */
 const RESERVED_CHARS = new Set(["g", "w", "_", "s", "b", "d", "a", "o", "W"]);
@@ -59,37 +82,58 @@ const emptyStats = (cols = 0, rows = 0): SceneValidationResult["stats"] => ({
 export function validateScene(
   rawScene: Record<string, unknown>,
   placeContext?: (placeId: string) => PlaceContext | null,
+  tileContext?: TileValidationContext,
 ): SceneValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const isTile = rawScene.tile !== undefined;
 
-  // ── Forma Format D — sobre la escena CRUDA, antes de expandir (el expander
-  // normaliza filas con padding y taparía un rows/cols mal contado) ──────────
-  const size = rawScene.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
-  const cols = size?.cols;
-  const rows = size?.rows;
-  const rawTerrain = rawScene.terrain;
-  if (
-    typeof cols !== "number" || typeof rows !== "number" ||
-    !Number.isInteger(cols) || !Number.isInteger(rows) || cols < 3 || rows < 3 ||
-    !Array.isArray(rawTerrain)
-  ) {
-    return {
-      ok: false,
-      errors: ["la escena no es Format D: falta size.cols/rows enteros (≥3) o terrain[]"],
-      warnings,
-      stats: emptyStats(),
-    };
-  }
-  if (rawTerrain.length !== rows) {
-    errors.push(`terrain tiene ${rawTerrain.length} filas, size.rows dice ${rows}`);
-  }
-  for (let r = 0; r < Math.min(rows, rawTerrain.length); r++) {
-    const row = rawTerrain[r];
-    if (typeof row !== "string") {
-      errors.push(`terrain[${r}] no es string`);
-    } else if (row.length !== cols) {
-      errors.push(`terrain[${r}] tiene ${row.length} chars, size.cols dice ${cols}`);
+  let cols: number;
+  let rows: number;
+  if (isTile) {
+    // Tile (Format D v3): la forma la garantiza el expander (bioma + 128×128
+    // sintetizados); aquí solo las coords. size/terrain completos los rechaza
+    // el propio expander con mensaje accionable.
+    const t = rawScene.tile as { tx?: unknown; ty?: unknown };
+    if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
+      return {
+        ok: false,
+        errors: [`tile.tx/ty deben ser enteros, got ${JSON.stringify(rawScene.tile)}`],
+        warnings,
+        stats: emptyStats(),
+      };
+    }
+    cols = TILE_CELLS;
+    rows = TILE_CELLS;
+  } else {
+    // ── Forma Format D — sobre la escena CRUDA, antes de expandir (el expander
+    // normaliza filas con padding y taparía un rows/cols mal contado) ────────
+    const size = rawScene.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
+    const rawTerrain = rawScene.terrain;
+    if (
+      typeof size?.cols !== "number" || typeof size?.rows !== "number" ||
+      !Number.isInteger(size.cols) || !Number.isInteger(size.rows) || size.cols < 3 || size.rows < 3 ||
+      !Array.isArray(rawTerrain)
+    ) {
+      return {
+        ok: false,
+        errors: ["la escena no es Format D: falta size.cols/rows enteros (≥3) o terrain[]"],
+        warnings,
+        stats: emptyStats(),
+      };
+    }
+    cols = size.cols;
+    rows = size.rows;
+    if (rawTerrain.length !== rows) {
+      errors.push(`terrain tiene ${rawTerrain.length} filas, size.rows dice ${rows}`);
+    }
+    for (let r = 0; r < Math.min(rows, rawTerrain.length); r++) {
+      const row = rawTerrain[r];
+      if (typeof row !== "string") {
+        errors.push(`terrain[${r}] no es string`);
+      } else if (row.length !== cols) {
+        errors.push(`terrain[${r}] tiene ${row.length} chars, size.cols dice ${cols}`);
+      }
     }
   }
 
@@ -161,7 +205,16 @@ export function validateScene(
   stats.npcs_total = npcs.length;
 
   // ── Spawn del jugador ─────────────────────────────────────────────────────
-  if (!player) {
+  // Tiles normales NO llevan player: el jugador entra andando desde el vecino.
+  // Solo el tile de bootstrap (primera escena de la sesión) lo incluye.
+  if (isTile && !tileContext?.bootstrap) {
+    if (player) {
+      errors.push(
+        "los tiles no llevan entity kind \"player\" (el jugador entra andando desde el tile vecino); solo el tile inicial de bootstrap la incluye",
+      );
+      player = null;
+    }
+  } else if (!player) {
     errors.push('falta la entity kind "player" (spawn del jugador)');
   } else if (player[0] < 0 || player[1] < 0 || player[0] >= cols || player[1] >= rows) {
     errors.push(`el player está fuera del grid: [${player[0]}, ${player[1]}]`);
@@ -172,6 +225,54 @@ export function validateScene(
     );
     player = null;
   }
+
+  // ── Costuras (tiles): cada cruce de un vecino debe continuarse ────────────
+  // Los puntos de arranque del flood-fill de un tile son sus cruces reales.
+  const startCells: [number, number][] = [];
+  const requiredReachCells: Array<{ cell: [number, number]; label: string }> = [];
+  if (isTile) {
+    const actualEdges = computeTileEdges(scene);
+    const required = tileContext?.required_crossings ?? [];
+    const byEdge = new Map<Edge, Array<{ edge: Edge } & EdgeCrossing>>();
+    for (const req of required) {
+      const list = byEdge.get(req.edge) ?? [];
+      list.push(req);
+      byEdge.set(req.edge, list);
+    }
+    for (const [edge, reqs] of byEdge) {
+      const actual = actualEdges[edge].crossings;
+      const { missing } = matchCrossings(reqs, actual);
+      for (const m of missing) {
+        errors.push(
+          `el vecino ${edge} tiene un ${m.type} que muere en vuestra costura en la celda ${m.at}: ` +
+            `tu tile debe continuarlo con celdas transitables compatibles en el borde ${edge}, celdas ${m.at - 2}..${m.at + 2}`,
+        );
+      }
+      // Las continuaciones reales de los cruces requeridos son OBJETIVOS de
+      // alcanzabilidad (no arranques: sembrar el flood con todos los cruces
+      // los haría trivialmente alcanzables entre sí).
+      for (const req of reqs) {
+        const match = actual.find((a) => Math.abs(a.at - req.at) <= 2);
+        if (match) {
+          requiredReachCells.push({
+            cell: edgeCell(edge, match.at),
+            label: `cruce ${match.type} del borde ${edge} (celda ${match.at})`,
+          });
+        }
+      }
+    }
+    // Arranque del flood: la entrada explícita (borde por el que viene el
+    // jugador) o, en su defecto, la primera continuación de cruce.
+    if (tileContext?.entry) {
+      const { edge, at } = tileContext.entry;
+      const near = actualEdges[edge].crossings.find((a) => at === undefined || Math.abs(a.at - at) <= 2);
+      if (near) startCells.push(edgeCell(edge, near.at));
+    }
+    if (startCells.length === 0 && requiredReachCells.length > 0) {
+      startCells.push(requiredReachCells[0].cell);
+    }
+  }
+  if (player) startCells.unshift(player);
 
   // ── Flood-fill de alcanzabilidad desde el jugador ─────────────────────────
   // Puertas: celdas de hueco de las structures (si las hay).
@@ -194,10 +295,22 @@ export function validateScene(
   }
   stats.doors_total = doorCells.length;
 
-  if (player) {
+  const walkableStarts = startCells.filter(([c, r]) => c >= 0 && r >= 0 && c < cols && r < rows && walkable[r * cols + c]);
+  if (isTile && startCells.length === 0) {
+    // Tile aislado sin cruces requeridos ni entrada (p.ej. prefetch diagonal):
+    // no hay punto de entrada que validar — se acepta con aviso.
+    warnings.push("tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada");
+  }
+  if (walkableStarts.length > 0) {
     const reachable = new Uint8Array(cols * rows);
-    const queue: number[] = [player[1] * cols + player[0]];
-    reachable[queue[0]] = 1;
+    const queue: number[] = [];
+    for (const [c, r] of walkableStarts) {
+      const idx = r * cols + c;
+      if (!reachable[idx]) {
+        reachable[idx] = 1;
+        queue.push(idx);
+      }
+    }
     let head = 0;
     while (head < queue.length) {
       const idx = queue[head++];
@@ -215,19 +328,33 @@ export function validateScene(
     }
     stats.reachable_cells = queue.length;
 
-    // ¿Se puede salir del mapa? (alguna celda del borde alcanzable)
-    let borderReachable = false;
-    for (let c = 0; c < cols && !borderReachable; c++) {
-      if (reachable[c] || reachable[(rows - 1) * cols + c]) borderReachable = true;
-    }
-    for (let r = 0; r < rows && !borderReachable; r++) {
-      if (reachable[r * cols] || reachable[r * cols + cols - 1]) borderReachable = true;
-    }
-    stats.border_reachable = borderReachable;
-    if (!borderReachable) {
-      errors.push(
-        "ninguna celda del borde del mapa es alcanzable desde el player: no se puede salir de la zona (mundo abierto = siempre hay continuación)",
-      );
+    if (isTile) {
+      // La regla "se puede salir" de un tile es que sus cruces (las costuras
+      // con los vecinos) estén conectados entre sí y con la entrada.
+      let allCrossingsReachable = true;
+      for (const target of requiredReachCells) {
+        const [c, r] = target.cell;
+        if (!(c >= 0 && r >= 0 && c < cols && r < rows && reachable[r * cols + c])) {
+          allCrossingsReachable = false;
+          errors.push(`el ${target.label} no es alcanzable desde la entrada del tile`);
+        }
+      }
+      stats.border_reachable = allCrossingsReachable;
+    } else {
+      // ¿Se puede salir del mapa? (alguna celda del borde alcanzable)
+      let borderReachable = false;
+      for (let c = 0; c < cols && !borderReachable; c++) {
+        if (reachable[c] || reachable[(rows - 1) * cols + c]) borderReachable = true;
+      }
+      for (let r = 0; r < rows && !borderReachable; r++) {
+        if (reachable[r * cols] || reachable[r * cols + cols - 1]) borderReachable = true;
+      }
+      stats.border_reachable = borderReachable;
+      if (!borderReachable) {
+        errors.push(
+          "ninguna celda del borde del mapa es alcanzable desde el player: no se puede salir de la zona (mundo abierto = siempre hay continuación)",
+        );
+      }
     }
 
     // Puertas alcanzables (la celda del hueco es walkable, así que basta con
@@ -264,9 +391,10 @@ export function validateScene(
     }
   }
 
-  // ── Contexto exterior en el world map ─────────────────────────────────────
+  // ── Contexto exterior en el world map (solo escenas legacy: la salida de
+  // un tile es el propio plano continuo, no necesita links) ─────────────────
   const placeId = typeof scene.place_id === "string" ? scene.place_id : null;
-  if (placeId && placeContext) {
+  if (placeId && placeContext && !isTile) {
     const info = placeContext(placeId);
     if (!info || !info.exists) {
       errors.push(

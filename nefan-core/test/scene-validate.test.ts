@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { validateScene } from "../src/scene/scene-validate.js";
+import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 
 /** Escena jugable: room con puerta sur, player fuera junto al camino. */
 function makeScene(): Record<string, unknown> {
@@ -105,5 +105,101 @@ describe("validateScene", () => {
     // Sin placeContext (validación offline) la regla no aplica.
     const rOffline = validateScene(makeScene());
     assert.equal(rOffline.ok, true, rOffline.errors.join(" | "));
+  });
+});
+
+/** Tile de bosque con un camino oeste(41)→este(52) — el caso canónico. */
+function makeTile(features?: Record<string, unknown>[]): Record<string, unknown> {
+  return {
+    tile: { tx: 1, ty: 0 },
+    scene_id: "tile_1_0",
+    biome: "forest_floor",
+    terrain_features: features ?? [
+      {
+        type: "path",
+        points: [[0, 41], [64, 46], [128, 52]],
+        width: 2,
+        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
+      },
+    ],
+    entities: [],
+  };
+}
+
+const pathCrossing = (edge: "north" | "south" | "east" | "west", at: number) =>
+  ({ edge, type: "path" as const, at, width: 2 });
+
+describe("validateScene — tiles", () => {
+  it("acepta un tile cuyas costuras continúan los cruces requeridos", () => {
+    const ctx: TileValidationContext = {
+      required_crossings: [pathCrossing("west", 41), pathCrossing("east", 52)],
+    };
+    const r = validateScene(makeTile(), undefined, ctx);
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+    assert.equal(r.stats.border_reachable, true, "todos los cruces conectados");
+  });
+
+  it("cruce requerido sin continuación → error con el borde y las celdas esperadas", () => {
+    const ctx: TileValidationContext = {
+      required_crossings: [{ edge: "north", type: "river", at: 30, width: 3 }],
+    };
+    const r = validateScene(makeTile(), undefined, ctx);
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.errors.some((e) => e.includes("borde north") && e.includes("28..32")),
+      r.errors.join(" | "),
+    );
+  });
+
+  it("cruce continuado pero NO alcanzable desde la entrada → error", () => {
+    // El río vertical (pintado después) corta el camino por el medio: el
+    // cruce este existe en el borde pero no se llega desde el oeste.
+    const tile = makeTile([
+      {
+        type: "path",
+        points: [[0, 41], [64, 46], [128, 52]],
+        width: 2,
+        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
+      },
+      { type: "river", points: [[60, 0], [60, 128]], width: 4, at_edges: [{ edge: "north", at: 60 }, { edge: "south", at: 60 }] },
+    ]);
+    const ctx: TileValidationContext = {
+      required_crossings: [pathCrossing("west", 41), pathCrossing("east", 52)],
+      entry: { edge: "west", at: 41 },
+    };
+    const r = validateScene(tile, undefined, ctx);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("no es alcanzable")), r.errors.join(" | "));
+  });
+
+  it("player en un tile normal → error; en bootstrap es obligatorio", () => {
+    const withPlayer = makeTile();
+    (withPlayer.entities as Record<string, unknown>[]).push({
+      id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@",
+    });
+    const r1 = validateScene(withPlayer, undefined, { required_crossings: [] });
+    assert.ok(r1.errors.some((e) => e.includes("no llevan entity")), r1.errors.join(" | "));
+
+    const r2 = validateScene(makeTile(), undefined, { required_crossings: [], bootstrap: true });
+    assert.ok(r2.errors.some((e) => e.includes('falta la entity kind "player"')), r2.errors.join(" | "));
+
+    const r3 = validateScene(withPlayer, undefined, { required_crossings: [], bootstrap: true });
+    assert.equal(r3.ok, true, r3.errors.join(" | "));
+  });
+
+  it("tile sin cruces ni entrada → aviso, no error (prefetch diagonal)", () => {
+    const r = validateScene(makeTile([]), undefined, { required_crossings: [] });
+    assert.equal(r.ok, true, r.errors.join(" | "));
+    assert.ok(r.warnings.some((w) => w.includes("alcanzabilidad no verificada")));
+  });
+
+  it("los tiles no exigen la regla de link exterior aunque lleven place_id", () => {
+    const tile = makeTile();
+    tile.place_id = "claro_del_bosque";
+    const r = validateScene(tile, () => ({ exists: false, outgoing_links: 0 }), {
+      required_crossings: [pathCrossing("west", 41)],
+    });
+    assert.equal(r.ok, true, r.errors.join(" | "));
   });
 });
