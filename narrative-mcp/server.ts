@@ -134,6 +134,13 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
     { "type": "river"|"path"|"bridge"|"stone"|"dirt"|"sand"|"wood"|"<free name>",
       "points": [[col,row], ...], "width": <cells>, "closed": true|false }
   ],
+  "structures": [   // PREFERRED for any enterable room/building (see STRUCTURES)
+    { "type": "room", "rect": [<col>, <row>, <w>, <h>], "wall_char": "W", "floor_char": "o",
+      "doors": [ { "side": "north"|"south"|"east"|"west", "at": <cells>, "width": <cells> } ] }
+  ],
+  "vegetation_zones": [   // OPTIONAL — deterministic tree scatter (see VEGETATION ZONES)
+    { "type": "<plant name>", "area": [<col>, <row>, <w>, <h>], "density": 0.05-0.25 }
+  ],
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
@@ -151,9 +158,9 @@ So pick meters_per_cell to match the smallest thing that matters in the scene,
 keeping cols/rows within the string budget (≤ 80×60). Real size = cols × mpc.
 - INTERIOR (tavern, shop, room): meters_per_cell 0.5 → a [1,1] prop is a 0.5 m
   stool/keg (≈ the player). Size the room so cols×0.5 ≈ its real width: a tavern
-  ~10×7 m ⇒ ~20×14 cells. The room shell is the terrain walls (a W border),
-  NOT a "building" entity. Furniture is small (stools/kegs 1×1, tables 2×2 to
-  3×2, counters [5..8]×1).
+  ~10×7 m ⇒ ~20×14 cells PLUS exterior margin. The room shell is a \`structures\`
+  room (the engine stamps its walls), NOT a "building" entity. Furniture is
+  small (stools/kegs 1×1, tables 2×2 to 3×2, counters [5..8]×1).
 - OUTDOOR small (clearing, cabin yard): meters_per_cell 2 → real ~30–50 m.
 - OUTDOOR town/village:                 meters_per_cell 2 → real ~60–120 m.
 
@@ -179,6 +186,40 @@ SOLIDITY — collision (the player physically CANNOT cross solid cells)
 - Consequence: every walled room NEEDS a door gap (a walkable char like "_" in its
   W border) or the player is trapped inside — or locked out. Water that crosses the
   map needs a bridge if the far side matters.
+
+STRUCTURES (build walls with these — NEVER hand-draw a W border)
+"structures": [
+  { "type": "room",
+    "rect": [<col>, <row>, <w_cells>, <h_cells>],   // outer rectangle, walls included, min 3x3
+    "wall_char": "W", "floor_char": "o",            // optional; defaults W / o
+    "doors": [ { "side": "north"|"south"|"east"|"west",
+                 "at": <cells from the rect's top/left corner>,  // 1..side-2 (corners can't be doors)
+                 "width": <cells, default 1> } ] }  // 1+ doors or the room is sealed
+]
+The engine stamps each room deterministically: CLOSED wall perimeter, floor
+inside, walkable door gaps ("_"). Walls are always solid; the wall char is
+auto-declared solid in the legend. Use ONE structure per enterable
+building/room and write only the BASE terrain (grass, paths) in the grid.
+
+VEGETATION ZONES (scatter, don't hand-place 20 trees)
+"vegetation_zones": [
+  { "type": "pino", "area": [<col>, <row>, <w>, <h>], "density": 0.1 }
+]
+The engine scatters \`tree\` entities deterministically (seeded by scene_id) over
+walkable cells of the area, skipping rooms, doors and occupied cells. density =
+fraction of cells planted (0.05 sparse … 0.25 thick). Hand-placed trees are
+still fine for singular landmarks.
+
+DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
+the nearest wall cell (torches, hanging signs, banners).
+
+EXTERIOR CONTEXT (open world — a scene is NEVER just the inside of a box)
+- An interior scene still shows 3-6 cells of exterior around the building (the
+  yard, the street, a strip of trees) and the door opens onto it.
+- A path (terrain_features) connects the door to the map edge where the world
+  continues, towards the neighbouring world-map place.
+- The player must be able to WALK from their start position through the door
+  and off the map edge. A sealed box with nothing outside is WRONG.
 
 TERRAIN FEATURES (optional; USE THEM for anything linear or organic — they make
 far better maps than cell rows)
@@ -217,7 +258,7 @@ ENTITY RULES
 - Buildings (OUTDOOR scenes, mpc 2): ONE rectangular footprint each — a tavern
   seen from outside is one rectangle of 6×4 to 8×6 cells, NOT four wall slabs.
   (Indoors you are INSIDE the building, so there is no building entity; the
-  terrain W border is the wall.)
+  walls come from its \`structures\` room.)
 - Props are usually 1×1 (= mpc metres: 0.5 m indoors, 2 m outdoors). Indoor
   furniture stays 1×1/2×1; tables and counters a bit bigger. Carts/log piles 2×1.
 - NPCs and player are always 1×1.
@@ -281,42 +322,54 @@ EXAMPLE — claro del cazador, 16 cols × 10 rows:
   "ambient_event": "Una rama cruje en algún lugar tras los pinos y el humo de la chimenea huele a pino quemado."
 }
 
-EXAMPLE — INTERIOR de taberna, 20 cols × 14 rows, meters_per_cell 0.5 (= 10×7 m).
-Nota: el muro es el borde de terreno "W"; los taburetes [1,1] miden 0.5 m, ≈ el
-jugador (0.8 m). NO hay entidad "building" porque estamos DENTRO.
+EXAMPLE — INTERIOR de taberna CON EXTERIOR alrededor, 28 cols × 16 rows,
+meters_per_cell 0.5 (= 14×8 m). La sala es una entrada de \`structures\` — el
+motor estampa los muros W cerrados, el suelo de madera y el hueco de puerta
+transitable; tú escribes SOLO el terreno base (hierba). Un camino conecta la
+puerta con el borde sur, por donde continúa el mundo. NO hay entidad "building".
 {
   "scene_id": "taberna_interior",
-  "scene_description": "El interior cálido de una taberna: vigas bajas, un mostrador gastado y el fuego crepitando en un rincón. Una puerta al sur da a la calle.",
-  "size": { "cols": 20, "rows": 14, "meters_per_cell": 0.5 },
+  "scene_description": "El interior cálido de una taberna y el patio embarrado que la rodea. Una puerta al sur da al camino que baja hacia la aldea.",
+  "size": { "cols": 28, "rows": 16, "meters_per_cell": 0.5 },
   "terrain": [
-    "WWWWWWWWWWWWWWWWWWWW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WooooooooooooooooooW",
-    "WWWWWWWWW__WWWWWWWWW"
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggg"
   ],
-  "terrain_legend": { "W": { "name": "muro de piedra y madera", "solid": true }, "o": "tablones gastados", "_": "umbral de la puerta" },
+  "terrain_legend": {},
+  "structures": [
+    { "type": "room", "rect": [4, 2, 20, 10], "wall_char": "W", "floor_char": "o",
+      "doors": [ { "side": "south", "at": 9, "width": 2 } ] }
+  ],
+  "terrain_features": [
+    { "type": "path", "points": [[14, 12], [14, 16]], "width": 1.5 }
+  ],
+  "vegetation_zones": [
+    { "type": "pino", "area": [0, 12, 28, 4], "density": 0.08 }
+  ],
   "entities": [
-    { "id": "mostrador", "kind": "prop", "name": "mostrador de roble",        "cell": [3, 2],  "footprint": [6, 1], "glyph": "=" },
-    { "id": "barkeep",   "kind": "npc",  "name": "Tabernero corpulento",      "cell": [6, 3],  "footprint": [1, 1], "glyph": "n" },
-    { "id": "mesa_1",    "kind": "prop", "name": "mesa con jarras vacías",    "cell": [4, 7],  "footprint": [3, 2], "glyph": "m" },
-    { "id": "taburete_1","kind": "prop", "name": "taburete de madera",        "cell": [4, 10], "footprint": [1, 1], "glyph": "h" },
-    { "id": "taburete_2","kind": "prop", "name": "taburete de madera",        "cell": [6, 10], "footprint": [1, 1], "glyph": "h" },
-    { "id": "barril_1",  "kind": "prop", "name": "barril de cerveza",         "cell": [16, 2], "footprint": [1, 1], "glyph": "k" },
-    { "id": "antorcha_1","kind": "decor","name": "antorcha de pared",         "cell": [5, 0],  "footprint": [1, 1], "glyph": "i" },
-    { "id": "antorcha_2","kind": "decor","name": "antorcha de pared",         "cell": [14, 0], "footprint": [1, 1], "glyph": "i" },
-    { "id": "player",    "kind": "player","name": "Tú",                       "cell": [9, 11], "footprint": [1, 1], "glyph": "@" }
+    { "id": "mostrador", "kind": "prop", "name": "mostrador de roble",        "cell": [6, 3],  "footprint": [6, 1], "glyph": "=" },
+    { "id": "barkeep",   "kind": "npc",  "name": "Tabernero corpulento",      "cell": [9, 4],  "footprint": [1, 1], "glyph": "n" },
+    { "id": "mesa_1",    "kind": "prop", "name": "mesa con jarras vacías",    "cell": [7, 7],  "footprint": [3, 2], "glyph": "m" },
+    { "id": "barril_1",  "kind": "prop", "name": "barril de cerveza",         "cell": [21, 3], "footprint": [1, 1], "glyph": "k" },
+    { "id": "antorcha_1","kind": "decor","name": "antorcha de pared",         "cell": [8, 2],  "footprint": [1, 1], "glyph": "i", "attach": "wall" },
+    { "id": "antorcha_2","kind": "decor","name": "antorcha de pared",         "cell": [18, 2], "footprint": [1, 1], "glyph": "i", "attach": "wall" },
+    { "id": "player",    "kind": "player","name": "Tú",                       "cell": [13, 13],"footprint": [1, 1], "glyph": "@" }
   ],
-  "ambient_event": "El fuego crepita y alguien arrastra un taburete por los tablones."
+  "ambient_event": "El fuego crepita dentro y el viento arrastra olor a resina desde los pinos."
 }
 
 WORLD MAP (the scene request's world_state may carry map fields)

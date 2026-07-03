@@ -12,6 +12,7 @@ import {
   bindPluginsForResume,
 } from "../../src/plugins/loader.js";
 import { broadcastScene, type BridgeContext, type ClientSocket } from "../context.js";
+import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import type {
   DeleteSessionMessage,
   ListGamesMessage,
@@ -177,6 +178,10 @@ export async function handleStartSession(
         return;
       }
       const sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
+      // Expandir primitivas (structures/vegetation) ANTES de persistir y de
+      // cachear: lo guardado, cacheado y difundido es Format D plano. Un throw
+      // cae al catch y se difunde como narrative_status error.
+      res.scene = expandScenePrimitives(res.scene);
       ctx.narrative.recordSceneLoaded(sceneId, res.scene);
       await ctx.narrative.save();
       // Snapshot the bootstrap before broadcastScene mutates the scene

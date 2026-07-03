@@ -12,6 +12,8 @@
  *  dropped. A payload that is NOT Format D is returned verbatim (already-resolved
  *  world scene, e.g. legacy room JSON or a `change_scene` payload). */
 
+import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+
 /** The world-coordinate scene shape a renderer consumes. Loose by design — the
  *  renderer reads a known subset and ignores the rest (e.g. `__player_start`,
  *  `__format_d`). */
@@ -114,6 +116,9 @@ function resolveTerrainLegend(rawLegend: unknown): {
 /** Convert a Map Format D scene to a world-coordinate scene. If `raw` is not in
  *  Format D it is returned unchanged. */
 export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
+  // Red de seguridad para fixtures locales: las escenas del bridge llegan ya
+  // expandidas (__expanded); una escena cruda con primitivas se expande aquí.
+  if (hasUnexpandedPrimitives(raw)) raw = expandScenePrimitives(raw);
   const size = raw.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
   const terrain = raw.terrain;
   const entities = raw.entities;
