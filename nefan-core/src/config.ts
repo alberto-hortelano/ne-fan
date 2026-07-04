@@ -78,12 +78,9 @@ export interface NefanConfig {
     /** Path (relative to repo root) of the art-style reference image passed as
      *  the 2nd reference to Meshy so generated scenes match a target game look. */
     scene_style_image: string;
-    /** fal.ai SAM model id used to segment occluder sprites out of the scene
-     *  image (box-prompt mode). Needs FAL_KEY in the environment. */
-    segment_model: string;
-    /** fal.ai SAM3 model id for open-vocabulary discovery of props the image
-     *  model invented (Phase 3, text-prompted multi-instance). Needs FAL_KEY. */
-    discover_model: string;
+    /** fal.ai SAM2 auto-segment model id: segmentación automática completa de
+     *  la escena pintada (mundo derivado de imagen). Needs FAL_KEY. */
+    auto_segment_model: string;
     texture_lazy_load: boolean;
     /** Mount the /diagnostic/* router (skin_test_* endpoints used for manual
      *  parameter sweeps with curl). Off in production: the routes 404. */
@@ -128,8 +125,7 @@ export const CONFIG: NefanConfig = {
     texture_steps: 4,
     scene_model: "nano-banana-pro",
     scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
-    segment_model: "fal-ai/sam2/image",
-    discover_model: "fal-ai/sam-3/image",
+    auto_segment_model: "fal-ai/sam2/auto-segment",
     texture_lazy_load: true,
     expose_diagnostic: false,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
