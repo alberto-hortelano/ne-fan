@@ -5,11 +5,11 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
-import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
-import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
-import { SceneImageController } from "./scene/scene-image.js";
+import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
+import { SceneImageController, type TileAnalysis } from "./scene/scene-image.js";
 import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
@@ -231,10 +231,8 @@ const autoPipeline = new AutoImagePipeline({
     [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
   isControllerBusy: () => sceneImageController.isBusy(),
   generate: (k) => sceneImageController.generateForTile(k),
-  segment: (k) => sceneImageController.segmentOccludersForTile(k),
-  discover: (k) => sceneImageController.discoverObjectsForTile(k),
-  onSegmented: (occ) => refineCollisionsFromSegments(occ),
-  onDiscovered: (occ) => addDiscoveredObjects(occ),
+  analyze: (k) => sceneImageController.analyzeSceneForTile(k),
+  onAnalyzed: (k, a) => applyTileAnalysis(k, a),
   onStatus: renderAutoImgStatus,
   onDisabled: () => {
     autoimgToggle.checked = false;
@@ -405,6 +403,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } catch (err) {
     errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
   }
+  const prevEntry = tileStore.entries.get(key);
   tileStore.add({
     key,
     tx: isGridTile ? tile!.tx : undefined,
@@ -412,11 +411,21 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     rect,
     scene: data as Record<string, unknown>,
     collider,
+    // El análisis de imagen (colisión derivada) se instala después vía
+    // applyTileAnalysis; se restaura abajo si la escena no cambió.
+    imageCollider: null,
+    imageAnalyzed: false,
   });
   const { sceneChanged } = renderer.addTile(
     key,
     data as unknown as Parameters<typeof renderer.setScene>[0],
   );
+  // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
+  // preserva la imagen y su análisis visual — conservar también la colisión
+  // derivada. Con escena distinta la imagen se invalida y se re-analiza.
+  if (prevEntry?.imageAnalyzed && !sceneChanged) {
+    tileStore.markAnalyzed(key, prevEntry.imageCollider);
+  }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
   // nuevo). Cubre bootstrap, frontier, re-broadcast y resume.
@@ -624,59 +633,24 @@ function frontierBlocksMove(x: number, z: number): boolean {
   return destMissing.some((t) => !fromKeys.has(`${t.tx},${t.ty}`));
 }
 
-/** Phase 2 — snap each solid object's collision AABB to the footprint SAM
- *  actually found painted (the cyan box in the B overlay), so collisions match
- *  the image instead of the LLM-authored `scale`/`position`. Moves the centre to
- *  the segmented centre and resizes; `collidesAt` then blocks on the real shape.
- *  Degenerate masks (a near-empty crop, e.g. a flat rune) keep their authored
- *  box — a tiny footprint would otherwise make a real object walk-through. */
-const MIN_REFINED_FOOTPRINT_M = 0.6;
-function refineCollisionsFromSegments(occluders: Occluder[]): void {
-  let refined = 0;
-  for (const occ of occluders) {
-    const obj = objectEntities.find((o) => o.id === occ.id);
-    if (!obj) continue;
-    const w = occ.world;
-    const sx = w.maxX - w.minX;
-    const sz = w.maxZ - w.minZ;
-    if (sx < MIN_REFINED_FOOTPRINT_M || sz < MIN_REFINED_FOOTPRINT_M) continue;
-    obj.pos.x = (w.minX + w.maxX) / 2;
-    obj.pos.z = (w.minZ + w.maxZ) / 2;
-    obj.sizeXZ = { x: sx, z: sz };
-    refined++;
+/** Mundo derivado de la imagen: materializa el análisis de un tile. El grid
+ *  de segmentos sólidos pasa a ser el collider derivado del tile (la imagen
+ *  manda: los AABBs del esquema en ese tile dejan de bloquear), y el overlay
+ *  B lo pinta en violeta. Grid null = analizado sin sólidos (tile abierto). */
+function applyTileAnalysis(key: string, analysis: TileAnalysis): void {
+  let collider: TerrainCollider | null;
+  try {
+    collider = analysis.grid ? createTerrainCollider(analysis.grid) : null;
+  } catch (err) {
+    errors.push("scene", `grid derivado inconsistente en ${key}; colisión de imagen desactivada`, err);
+    return;
   }
-  if (refined > 0) {
-    console.log(`[collision] refined ${refined}/${occluders.length} AABBs to segmented footprint`);
-  }
-}
-
-/** Phase 3: register props the image model invented (discovered via SAM3) as
- *  real solid objects so `collidesAt` blocks them and the B overlay shows them.
- *  Their occluder sprite already gives z-index; here we add the collision AABB
- *  from the same segmented footprint. Re-discovery updates in place by id. */
-function addDiscoveredObjects(occluders: Occluder[]): void {
-  let added = 0;
-  for (const occ of occluders) {
-    const w = occ.world;
-    const sx = w.maxX - w.minX;
-    const sz = w.maxZ - w.minZ;
-    if (sx < MIN_REFINED_FOOTPRINT_M || sz < MIN_REFINED_FOOTPRINT_M) continue;
-    const pos = { x: (w.minX + w.maxX) / 2, y: 0, z: (w.minZ + w.maxZ) / 2 };
-    const sizeXZ = { x: sx, z: sz };
-    const existing = objectEntities.find((o) => o.id === occ.id);
-    if (existing) {
-      existing.pos = pos;
-      existing.sizeXZ = sizeXZ;
-      existing.category = "prop";
-    } else {
-      objectEntities.push({
-        id: occ.id, pos, radius: 5, color: "#9a8", label: occ.id,
-        alive: true, category: "prop", sizeXZ,
-      });
-      added++;
-    }
-  }
-  if (added > 0) console.log(`[collision] added ${added} discovered props with collision`);
+  tileStore.markAnalyzed(key, collider);
+  renderer.setTileAnalysis(key, analysis.grid);
+  console.log(
+    `[collision] ${key}: análisis aplicado — ` +
+    `${collider?.solidCellCount ?? 0} celdas sólidas, ${analysis.occluders.length} occluders`,
+  );
 }
 
 /** AABB collision of the player (inflated point) against solid terrain cells
@@ -695,15 +669,22 @@ function collidesAt(x: number, z: number): boolean {
     for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
       const tile = tileStore.get(t.tx, t.ty);
       if (tile?.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
+      // Colisión DERIVADA de la imagen (segmentos sólidos clasificados).
+      if (tile?.imageCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
     }
   } else {
     for (const entry of tileStore.entries.values()) {
       if (entry.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
+      if (entry.imageCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
     }
   }
   for (const obj of objectEntities) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
+    // La imagen manda: en un tile analizado, la colisión sale SOLO de los
+    // segmentos sólidos — el AABB del esquema deja de aplicar (los objetos
+    // que Meshy no pintó ahí ya no bloquean césped vacío).
+    if (tileStore.getAt(obj.pos.x, obj.pos.z)?.imageAnalyzed) continue;
     const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
     const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
     if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
@@ -982,29 +963,26 @@ function gameLoop(now: number): void {
       "O (outpaint) está deshabilitada en el mundo de tiles — usa Auto-img o G por tile",
     );
   }
-  // X segmenta los oclusores (muros/edificios) de la imagen del tile activo
-  // para que tapen al personaje (depth-sort). Requiere imagen previa (G/auto).
+  // X analiza la imagen del tile activo (mundo derivado de la imagen):
+  // auto-segmentación + clasificación por visión → occluders (tall) y
+  // colisión derivada (solid). Requiere imagen previa (G/auto).
   if (input.consumeSegmentScene()) {
     if (activeTileKey) {
-      void sceneImageController.segmentOccludersForTile(activeTileKey)
-        .then((occ) => refineCollisionsFromSegments(occ))
+      const k = activeTileKey;
+      void sceneImageController.analyzeSceneForTile(k)
+        .then((a) => applyTileAnalysis(k, a))
         .catch(() => {});
     }
   }
-  // B alterna el overlay de bordes de colisión (rojo) vs footprint segmentado
-  // (cian) sobre la imagen, para juzgar la precisión de las colisiones.
+  // B alterna el overlay de colisión (esquema, derivada de imagen, recortes)
+  // sobre la escena, para juzgar la precisión del análisis.
   if (input.consumeToggleCollisionDebug()) {
     const on = renderer.toggleDebugCollision();
     console.log(`[debug] collision overlay ${on ? "ON" : "OFF"}`);
   }
-  // N descubre props que la IA inventó (SAM3 open-vocab) y les da oclusión +
-  // colisión. Requiere haber generado antes con G (idealmente segmentado con X).
+  // N (descubrimiento) quedó integrada en el análisis completo de X.
   if (input.consumeDiscoverObjects()) {
-    if (activeTileKey) {
-      void sceneImageController.discoverObjectsForTile(activeTileKey)
-        .then((disc) => addDiscoveredObjects(disc))
-        .catch(() => {});
-    }
+    errors.push("scene", "N está integrada en X (análisis completo del tile) — usa X");
   }
   // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
   // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:

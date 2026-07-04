@@ -5,8 +5,9 @@
  *    tile's rect (terrain + object rectangles, no characters), sends it to
  *    ai_server `/generate_scene_image` and installs the painted result as the
  *    tile's background (1:1, top-down).
- *  - `segmentOccludersForTile` / `discoverObjectsForTile` cut z-sortable
- *    sprites out of the tile's image (known footprints / SAM3 discovery).
+ *  - `analyzeSceneForTile` derives the PLAYABLE world from the image (the
+ *    image is the truth): full auto-segmentation + vision classification of
+ *    every region → occluders (`tall`) and a derived collision grid (`solid`).
  *
  *  All operations are keyed by tile: crossing tiles mid-generation is
  *  harmless — the result lands on the tile it was requested for. A single
@@ -15,22 +16,32 @@
  *  the image is purely visual. Fail loud: every failure goes to the ErrorLog
  *  and rejects; no silent placeholder.
  */
-import { parseTileKey, tileKey } from "@nefan-core/src/scene/tile.js";
+import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import {
+  solidGridFromMasks,
+  IMAGE_SOLID_CHAR,
+  type AlphaMask,
+} from "@nefan-core/src/scene/image-collision.js";
+import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
 import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
 
-/** Scene objects that should occlude the player (tall, solid). Mirrors the set
- *  that blocks movement in main.ts `collidesAt` (buildings + props). */
-const OCCLUDER_CATEGORIES = new Set(["building", "prop"]);
+/** Un segmento jugable devuelto por /analyze_scene_image. */
+interface AnalyzedSegment {
+  id: string;
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  sprite_url: string;
+  image_bbox: [number, number, number, number]; // [x, y, w, h] px
+  img_w: number;
+  img_h: number;
+}
 
-interface SegmentResponse {
-  segments: {
-    id: string;
-    sprite_url: string;
-    image_bbox: [number, number, number, number]; // [x, y, w, h] px
-    img_w: number;
-    img_h: number;
-  }[];
+/** Resultado del análisis de un tile, listo para aplicar (main.ts). */
+export interface TileAnalysis {
+  occluders: Occluder[];
+  grid: TerrainGridData | null;
 }
 
 /** Target longest side (px) of the captured schematic / generated image. */
@@ -252,148 +263,115 @@ export class SceneImageController {
    *  image and install them as depth-sortable cutouts so they occlude the
    *  player. Each object's pixel box comes from its world footprint mapped 1:1
    *  onto the image; the server returns one RGBA sprite + tight bbox each. */
-  async segmentOccludersForTile(key: string): Promise<Occluder[]> {
+  /** Extrae el canal alpha de un sprite como AlphaMask (la máscara del
+   *  segmento viaja en el alpha del recorte RGBA). */
+  private spriteAlphaMask(sprite: HTMLImageElement, seg: AnalyzedSegment): AlphaMask {
+    const off = document.createElement("canvas");
+    off.width = sprite.naturalWidth;
+    off.height = sprite.naturalHeight;
+    const ctx = off.getContext("2d");
+    if (!ctx) throw new Error("spriteAlphaMask: no 2D context");
+    ctx.drawImage(sprite, 0, 0);
+    const rgba = ctx.getImageData(0, 0, off.width, off.height).data;
+    const alpha = new Uint8Array(off.width * off.height);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
+    return {
+      alpha,
+      width: off.width,
+      height: off.height,
+      imageBbox: seg.image_bbox,
+      imgW: seg.img_w,
+      imgH: seg.img_h,
+    };
+  }
+
+  /** Mundo derivado de la imagen: pide al ai_server el análisis completo del
+   *  tile (auto-segmentación + clasificación por visión) y lo convierte en
+   *  material jugable: occluders (`tall`) instalados en el renderer y grid de
+   *  colisión derivado (`solid`). El caller (applyTileAnalysis en main.ts)
+   *  materializa el grid en el collider del tile. */
+  async analyzeSceneForTile(key: string): Promise<TileAnalysis> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring segment");
-      return [];
+      console.log("[scene-image] busy, ignoring analyze");
+      return { occluders: [], grid: null };
     }
     const img = this.renderer.getTileImage(key);
     const b = this.renderer.getTileRect(key);
     if (!img || !b) {
-      errors.push("scene", `segment: tile ${key} sin imagen — G (o Auto-img) primero`);
-      return [];
+      errors.push("scene", `analyze: tile ${key} sin imagen — G (o Auto-img) primero`);
+      return { occluders: [], grid: null };
     }
-    const objects = this.renderer.getTileScene(key)?.objects ?? [];
-    const occ = objects.filter((o) => OCCLUDER_CATEGORIES.has(o.category));
-    if (occ.length === 0) {
-      console.log(`[scene-image] ${key}: no building/prop occluders to segment`);
-      return [];
-    }
-
     this.busy = true;
-    const W = img.naturalWidth;
-    const H = img.naturalHeight;
     const spanX = b.maxX - b.minX;
     const spanZ = b.maxZ - b.minZ;
     try {
-      // World footprint (position ± scale/2 on XZ) → pixel box in the image.
-      const occluders = occ.map((o) => {
-        const px = o.position?.[0] ?? 0;
-        const pz = o.position?.[2] ?? 0;
-        const sx = Math.max(0.2, o.scale?.[0] ?? 1);
-        const sz = Math.max(0.2, o.scale?.[2] ?? 1);
-        const x_min = Math.round(((px - sx / 2 - b.minX) / spanX) * W);
-        const x_max = Math.round(((px + sx / 2 - b.minX) / spanX) * W);
-        const y_min = Math.round(((pz - sz / 2 - b.minZ) / spanZ) * H);
-        const y_max = Math.round(((pz + sz / 2 - b.minZ) / spanZ) * H);
-        return { id: o.id, box_px: [x_min, y_min, x_max, y_max] };
-      });
-
+      const scene = this.renderer.getTileScene(key) as SceneSummary | null;
       const dataUrl = this.imageToDataUrl(img);
-      const res = await fetch(`${this.baseUrl}/segment_scene_image`, {
+      const res = await fetch(`${this.baseUrl}/analyze_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, occluders }),
+        body: JSON.stringify({
+          image_b64: dataUrl,
+          context: {
+            scene_description: scene?.scene_description ?? scene?.room_description ?? "",
+            zone_type: scene?.zone_type ?? "",
+          },
+        }),
       });
       if (!res.ok) {
-        throw new Error(`/segment_scene_image HTTP ${res.status}`);
+        throw new Error(`/analyze_scene_image HTTP ${res.status}`);
       }
-      const data = (await res.json()) as SegmentResponse;
+      const data = (await res.json()) as { segments: AnalyzedSegment[]; discarded: number };
 
-      const built: Occluder[] = [];
+      const occluders: Occluder[] = [];
+      const masks: AlphaMask[] = [];
+      let solids = 0;
       for (const seg of data.segments ?? []) {
         const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
         const [bx, by, bw, bh] = seg.image_bbox;
-        // Tight pixel bbox → world rectangle the cutout covers (1:1 mapping).
         const world: SceneBounds = {
           minX: b.minX + (bx / seg.img_w) * spanX,
           maxX: b.minX + ((bx + bw) / seg.img_w) * spanX,
           minZ: b.minZ + (by / seg.img_h) * spanZ,
           maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
-        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ, tileKey: key, kind: "segment" });
+        if (seg.tall) {
+          occluders.push({
+            id: `${key}:${seg.id}`,
+            img: sprite,
+            world,
+            baselineZ: world.maxZ,
+            tileKey: key,
+            kind: "image",
+            label: seg.label,
+          });
+        }
+        if (seg.solid) {
+          solids++;
+          masks.push(this.spriteAlphaMask(sprite, seg));
+        }
       }
-      this.renderer.setOccludersForTile(key, built);
-      console.log(`[scene-image] ${key}: segmented ${built.length}/${occ.length} occluders`);
-      return built;
+
+      const rows = solidGridFromMasks(masks, TILE_CELLS, TILE_CELLS);
+      const grid: TerrainGridData | null = rows
+        ? {
+            grid: rows,
+            cols: TILE_CELLS,
+            rows: TILE_CELLS,
+            meters_per_cell: TILE_MPC,
+            origin: [b.minX, b.minZ],
+            solid_chars: [IMAGE_SOLID_CHAR],
+          }
+        : null;
+
+      this.renderer.setOccludersForTile(key, occluders);
+      console.log(
+        `[scene-image] ${key}: analyzed — ${occluders.length} occluders, ` +
+        `${solids} sólidos, ${data.discarded ?? 0} suelo`,
+      );
+      return { occluders, grid };
     } catch (err) {
-      errors.push("scene", `segmentOccluders ${key} failed`, err);
-      throw err;
-    } finally {
-      this.busy = false;
-    }
-  }
-
-  /** Phase 3: discover props the image model invented (not in the schematic)
-   *  via SAM3 open-vocab, and add them as occluders. Returns the new occluders
-   *  so the caller can also give them collision. `known_boxes` (the building/prop
-   *  footprints) are sent so the server filters out objects we already handle.
-   *  Ids are prefixed with the tile key so discoveries never collide across
-   *  tiles (`discovered_0` exists once per SAM3 run). */
-  async discoverObjectsForTile(key: string): Promise<Occluder[]> {
-    if (this.busy) {
-      console.log("[scene-image] busy, ignoring discover");
-      return [];
-    }
-    const img = this.renderer.getTileImage(key);
-    const b = this.renderer.getTileRect(key);
-    if (!img || !b) {
-      errors.push("scene", `discover: tile ${key} sin imagen — G (o Auto-img) primero`);
-      return [];
-    }
-    this.busy = true;
-    const W = img.naturalWidth;
-    const H = img.naturalHeight;
-    const spanX = b.maxX - b.minX;
-    const spanZ = b.maxZ - b.minZ;
-    try {
-      // Pixel boxes of objects we already handle, so the server won't re-report them.
-      const objects = this.renderer.getTileScene(key)?.objects ?? [];
-      const knownBoxes = objects
-        .filter((o) => OCCLUDER_CATEGORIES.has(o.category))
-        .map((o) => {
-          const px = o.position?.[0] ?? 0;
-          const pz = o.position?.[2] ?? 0;
-          const sx = Math.max(0.2, o.scale?.[0] ?? 1);
-          const sz = Math.max(0.2, o.scale?.[2] ?? 1);
-          return [
-            Math.round(((px - sx / 2 - b.minX) / spanX) * W),
-            Math.round(((pz - sz / 2 - b.minZ) / spanZ) * H),
-            Math.round(((px + sx / 2 - b.minX) / spanX) * W),
-            Math.round(((pz + sz / 2 - b.minZ) / spanZ) * H),
-          ];
-        });
-
-      const dataUrl = this.imageToDataUrl(img);
-      const res = await fetch(`${this.baseUrl}/discover_scene_objects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, known_boxes: knownBoxes }),
-      });
-      if (!res.ok) {
-        throw new Error(`/discover_scene_objects HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as {
-        discovered: (SegmentResponse["segments"][number] & { score?: number; concept?: string })[];
-      };
-
-      const built: Occluder[] = [];
-      for (const seg of data.discovered ?? []) {
-        const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
-        const [bx, by, bw, bh] = seg.image_bbox;
-        const world: SceneBounds = {
-          minX: b.minX + (bx / seg.img_w) * spanX,
-          maxX: b.minX + ((bx + bw) / seg.img_w) * spanX,
-          minZ: b.minZ + (by / seg.img_h) * spanZ,
-          maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
-        };
-        built.push({ id: `${key}:${seg.id}`, img: sprite, world, baselineZ: world.maxZ, tileKey: key, kind: "discovered" });
-      }
-      this.renderer.addOccluders(built);
-      console.log(`[scene-image] ${key}: discovered ${built.length} new props`);
-      return built;
-    } catch (err) {
-      errors.push("scene", `discoverObjects ${key} failed`, err);
+      errors.push("scene", `analyzeScene ${key} failed`, err);
       throw err;
     } finally {
       this.busy = false;

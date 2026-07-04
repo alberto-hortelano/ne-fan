@@ -92,6 +92,22 @@ interface RendererTile {
   /** Imagen IA (img2img) del tile, si se generó. */
   sceneImage: HTMLImageElement | null;
   svgImage: HTMLImageElement | null;
+  /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
+   *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
+   *  Solo para el overlay B; la colisión real vive en el TileStore. */
+  imageGrid: ImageGridData | null;
+  imageAnalyzed: boolean;
+}
+
+/** Shape mínimo del grid derivado que pinta el overlay (espejo de
+ *  TerrainGridData en nefan-core, sin importar el módulo de colisión). */
+export interface ImageGridData {
+  grid: string[];
+  cols: number;
+  rows: number;
+  meters_per_cell: number;
+  origin?: [number, number];
+  solid_chars?: string[];
 }
 
 type SceneObject = NonNullable<SceneData["objects"]>[number];
@@ -249,9 +265,11 @@ export interface Occluder {
   baselineZ: number;
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
-  /** Origen del recorte: "segment" = objeto autorizado (X), "discovered" =
-   *  prop inventado por la imagen (N). Solo lo usa el overlay de debug (B). */
-  kind?: "segment" | "discovered";
+  /** Origen del recorte: "image" = segmento clasificado `tall` por visión
+   *  (mundo derivado de imagen). Solo lo usa el overlay de debug (B). */
+  kind?: "image";
+  /** Etiqueta de la clasificación por visión ("roble", "muro"...) — overlay B. */
+  label?: string;
 }
 
 export interface CanvasRendererOptions {
@@ -385,6 +403,8 @@ export class CanvasRenderer {
       layerLastUsed: same ? prev.layerLastUsed : 0,
       sceneImage: same ? prev.sceneImage : null,
       svgImage: same ? prev.svgImage : null,
+      imageGrid: same ? prev.imageGrid : null,
+      imageAnalyzed: same ? prev.imageAnalyzed : false,
     };
     this.tiles.set(key, tile);
     if (prev && !same) {
@@ -492,7 +512,19 @@ export class CanvasRenderer {
     if (!tile) return;
     tile.sceneImage = img;
     tile.terrainLayer = null;
+    // Imagen nueva → el análisis derivado de la anterior deja de valer.
+    tile.imageGrid = null;
+    tile.imageAnalyzed = false;
     this.occluders = this.occluders.filter((o) => o.tileKey !== key);
+  }
+
+  /** Registra el análisis derivado de la imagen de un tile (overlay B):
+   *  grid de segmentos sólidos (null = analizado sin sólidos). */
+  setTileAnalysis(key: string, grid: ImageGridData | null): void {
+    const tile = this.tiles.get(key);
+    if (!tile) return;
+    tile.imageGrid = grid;
+    tile.imageAnalyzed = true;
   }
 
   /** Sustituye los occluders de UN tile (X re-segmenta ese tile; los cutouts
@@ -1082,11 +1114,37 @@ export class CanvasRenderer {
       }
     }
 
+    // Colisión DERIVADA de la imagen (segmentos sólidos clasificados por
+    // visión): celdas violetas. Es la colisión que manda en tiles analizados.
+    ctx.fillStyle = "rgba(160,80,255,0.35)";
+    for (const tile of this.tiles.values()) {
+      const ig = tile.imageGrid;
+      if (!ig?.solid_chars?.length) continue;
+      const solidSet = new Set(ig.solid_chars);
+      const mpc = ig.meters_per_cell;
+      const ox = ig.origin?.[0] ?? tile.rect.minX;
+      const oz = ig.origin?.[1] ?? tile.rect.minZ;
+      for (let r = 0; r < ig.rows; r++) {
+        const row = ig.grid[r];
+        if (typeof row !== "string") continue;
+        const cmax = Math.min(ig.cols, row.length);
+        for (let c = 0; c < cmax; c++) {
+          if (!solidSet.has(row[c])) continue;
+          const [x0, y0] = this.toScreen(ox + c * mpc, oz + r * mpc);
+          const [x1, y1] = this.toScreen(ox + (c + 1) * mpc, oz + (r + 1) * mpc);
+          ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        }
+      }
+    }
+
     // Authored collision footprints (same set + rule as main.ts collidesAt):
     // filled translucent red + bright outline so they read over the painting.
+    // En tiles ANALIZADOS la imagen manda y estos AABBs ya no bloquean — se
+    // omiten para que el overlay muestre la colisión real.
     for (const o of objects) {
       if (o.category !== "building" && o.category !== "prop") continue;
       if (!o.sizeXZ) continue;
+      if (this.tileAnalyzedAt(o.pos.x, o.pos.z)) continue;
       const [cx, cy] = this.toScreen(o.pos.x, o.pos.z);
       const w = o.sizeXZ.x * this.scale;
       const h = o.sizeXZ.z * this.scale;
@@ -1097,9 +1155,8 @@ export class CanvasRenderer {
       ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
     }
 
-    // Recortes de la imagen (tras X/N): caja discontinua + baseline sólida
-    // (el borde sur = z-index del depth-sort) + etiqueta id·z. Cian = objeto
-    // autorizado segmentado (X); magenta = prop descubierto por SAM3 (N).
+    // Recortes `tall` clasificados por visión: caja discontinua cian +
+    // baseline sólida (el borde sur = z-index del depth-sort) + etiqueta.
     ctx.lineWidth = 3;
     ctx.font = "bold 11px monospace";
     ctx.textAlign = "left";
@@ -1108,7 +1165,7 @@ export class CanvasRenderer {
       const [ix, iy] = this.toScreen(w.minX, w.minZ);
       const iw = (w.maxX - w.minX) * this.scale;
       const ih = (w.maxZ - w.minZ) * this.scale;
-      const color = occ.kind === "discovered" ? "rgba(255,80,255,1)" : "rgba(60,255,255,1)";
+      const color = "rgba(60,255,255,1)";
       ctx.setLineDash([7, 5]);
       ctx.strokeStyle = color;
       ctx.strokeRect(ix, iy, iw, ih);
@@ -1124,7 +1181,8 @@ export class CanvasRenderer {
       // recortes pequeños (p. ej. troncos de árbol) las etiquetas se solapan
       // en una nube ilegible; la caja + baseline ya los marcan.
       if (iw >= 48) {
-        const name = occ.tileKey !== undefined ? occ.id.replace(`${occ.tileKey}:`, "") : occ.id;
+        const name = occ.label ??
+          (occ.tileKey !== undefined ? occ.id.replace(`${occ.tileKey}:`, "") : occ.id);
         const label = `${name} z=${occ.baselineZ.toFixed(1)}`;
         const tw = ctx.measureText(label).width;
         ctx.fillStyle = "rgba(10,10,14,0.75)";
@@ -1140,17 +1198,27 @@ export class CanvasRenderer {
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,40,40,1)";
     ctx.fillRect(12, 52, 14, 10);
-    ctx.fillText("colision autorizada (pos±scale/2)", 32, 61);
-    ctx.fillStyle = "rgba(60,255,255,1)";
+    ctx.fillText("colision del esquema (solo tiles sin analizar)", 32, 61);
+    ctx.fillStyle = "rgba(160,80,255,1)";
     ctx.fillRect(12, 70, 14, 10);
-    ctx.fillText("recorte segmentado (X) — linea solida = z-index", 32, 79);
-    ctx.fillStyle = "rgba(255,80,255,1)";
+    ctx.fillText("colision derivada de la imagen (solid)", 32, 79);
+    ctx.fillStyle = "rgba(60,255,255,1)";
     ctx.fillRect(12, 88, 14, 10);
-    ctx.fillText("prop descubierto (N) — linea solida = z-index", 32, 97);
+    ctx.fillText("recorte tall — linea solida = z-index", 32, 97);
     ctx.fillStyle = "rgba(255,140,0,1)";
     ctx.fillRect(12, 106, 14, 10);
-    ctx.fillText("terreno solido (muro/agua)", 32, 115);
+    ctx.fillText("terreno solido del esquema (muro/agua)", 32, 115);
     ctx.restore();
+  }
+
+  /** ¿El tile que contiene (x,z) tiene análisis de imagen aplicado? */
+  private tileAnalyzedAt(x: number, z: number): boolean {
+    for (const t of this.tiles.values()) {
+      if (t.imageAnalyzed && x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Depth-sorted pass used when occluder cutouts exist. Interleaves the
