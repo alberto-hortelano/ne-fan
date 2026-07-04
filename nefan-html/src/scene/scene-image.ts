@@ -38,10 +38,20 @@ interface AnalyzedSegment {
   img_h: number;
 }
 
+/** Un elemento jugable del análisis con su rect en MUNDO (para el bridge:
+ *  el motor narrativo recibe el mapa real resumido). */
+export interface AnalyzedElement {
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  rect: { minX: number; maxX: number; minZ: number; maxZ: number };
+}
+
 /** Resultado del análisis de un tile, listo para aplicar (main.ts). */
 export interface TileAnalysis {
   occluders: Occluder[];
   grid: TerrainGridData | null;
+  elements: AnalyzedElement[];
 }
 
 /** Target longest side (px) of the captured schematic / generated image. */
@@ -293,13 +303,13 @@ export class SceneImageController {
   async analyzeSceneForTile(key: string): Promise<TileAnalysis> {
     if (this.busy) {
       console.log("[scene-image] busy, ignoring analyze");
-      return { occluders: [], grid: null };
+      return { occluders: [], grid: null, elements: [] };
     }
     const img = this.renderer.getTileImage(key);
     const b = this.renderer.getTileRect(key);
     if (!img || !b) {
       errors.push("scene", `analyze: tile ${key} sin imagen — G (o Auto-img) primero`);
-      return { occluders: [], grid: null };
+      return { occluders: [], grid: null, elements: [] };
     }
     this.busy = true;
     const spanX = b.maxX - b.minX;
@@ -325,6 +335,7 @@ export class SceneImageController {
 
       const occluders: Occluder[] = [];
       const masks: AlphaMask[] = [];
+      const elements: AnalyzedElement[] = [];
       let solids = 0;
       for (const seg of data.segments ?? []) {
         const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
@@ -350,6 +361,7 @@ export class SceneImageController {
           solids++;
           masks.push(this.spriteAlphaMask(sprite, seg));
         }
+        elements.push({ label: seg.label, solid: seg.solid, tall: seg.tall, rect: { ...world } });
       }
 
       const rows = solidGridFromMasks(masks, TILE_CELLS, TILE_CELLS);
@@ -369,7 +381,7 @@ export class SceneImageController {
         `[scene-image] ${key}: analyzed — ${occluders.length} occluders, ` +
         `${solids} sólidos, ${data.discarded ?? 0} suelo`,
       );
-      return { occluders, grid };
+      return { occluders, grid, elements };
     } catch (err) {
       errors.push("scene", `analyzeScene ${key} failed`, err);
       throw err;

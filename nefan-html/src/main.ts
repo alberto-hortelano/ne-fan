@@ -7,6 +7,7 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
+import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
 import { SceneImageController, type TileAnalysis } from "./scene/scene-image.js";
@@ -651,6 +652,13 @@ function applyTileAnalysis(key: string, analysis: TileAnalysis): void {
     `[collision] ${key}: análisis aplicado — ` +
     `${collider?.solidCellCount ?? 0} celdas sólidas, ${analysis.occluders.length} occluders`,
   );
+  // El motor narrativo se ajusta al mapa REAL: reportar el análisis al bridge
+  // (persistencia en el save + resumen en el contexto del LLM). Solo tiles de
+  // grid con sesión activa — los fixtures locales no tienen dónde persistir.
+  const tc = parseTileKey(key);
+  if (tc && activeSessionId) {
+    narrativeClient.reportTileAnalysis(tc.tx, tc.ty, analysis.elements);
+  }
 }
 
 /** AABB collision of the player (inflated point) against solid terrain cells
