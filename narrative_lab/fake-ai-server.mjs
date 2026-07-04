@@ -242,6 +242,24 @@ async function handleFrontier(frontier) {
 // Guardado en memoria por sha256[:16] y servido por /cache/scene/{hash}.
 const sceneImages = new Map();
 
+// Sprites de recorte falsos: PNGs 1×1 semitransparentes (cian, naranja,
+// magenta, verde) que el cliente estira al bbox del occluder.
+const FAKE_SPRITES = [
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMIuHOnBwAGHQKV3JjdWwAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGN4tsCmBwAGgQJPjhIj/wAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGO4E3WnBwAGxwKfkjsaLAAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPIO5HXAwAFfQIxxipcbgAAAABJRU5ErkJggg==",
+].map((b64) => Buffer.from(b64, "base64"));
+
+/** Dimensiones de un PNG (IHDR: width/height big-endian en bytes 16..23). */
+function pngDims(imageB64) {
+  const b64 = String(imageB64 ?? "").replace(/^data:image\/png;base64,/, "");
+  if (!b64) return null;
+  const buf = Buffer.from(b64, "base64");
+  if (buf.length < 24 || buf.readUInt32BE(12) !== 0x49484452 /* "IHDR" */) return null;
+  return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+}
+
 const server = http.createServer((req, res) => {
   // CORS: el navegador (cliente 2D) llama cross-origin; el bridge server-side
   // lo ignora. ACAO en TODAS las respuestas + preflight OPTIONS.
@@ -262,6 +280,13 @@ const server = http.createServer((req, res) => {
     const hash = req.url.slice("/cache/scene/".length);
     const png = sceneImages.get(hash);
     if (!png) return send(404, { detail: `fake-ai: imagen ${hash} no encontrada` });
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(png);
+  }
+  if (req.method === "GET" && req.url?.startsWith("/fake/sprite/")) {
+    const idx = Number(req.url.slice("/fake/sprite/".length));
+    const png = FAKE_SPRITES[idx];
+    if (!png) return send(404, { detail: `fake-ai: sprite ${idx} no existe` });
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
   }
@@ -290,8 +315,67 @@ const server = http.createServer((req, res) => {
         );
         return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
       }
-      if (req.method === "POST" && req.url === "/segment_scene_image") return send(200, { segments: [] });
-      if (req.method === "POST" && req.url === "/discover_scene_objects") return send(200, { discovered: [] });
+      // Segmentación falsa: cada occluder pedido devuelve un sprite de color
+      // plano (1×1 estirado por el cliente) con bbox = caja pedida encogida un
+      // 8% por lado (simula el ajuste fino de SAM). Sirve para verificar a ojo
+      // el overlay B (recortes, baselines, z-index) sin gastar créditos fal.
+      if (req.method === "POST" && req.url === "/segment_scene_image") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const dims = pngDims(body.image_b64);
+        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
+        const segments = (body.occluders ?? []).map((occ, i) => {
+          const [x0, y0, x1, y1] = occ.box_px;
+          const inset = 0.08;
+          const bx = Math.round(x0 + (x1 - x0) * inset);
+          const by = Math.round(y0 + (y1 - y0) * inset);
+          const bw = Math.round((x1 - x0) * (1 - 2 * inset));
+          const bh = Math.round((y1 - y0) * (1 - 2 * inset));
+          return {
+            id: occ.id,
+            sprite_url: `/fake/sprite/${i % FAKE_SPRITES.length}`,
+            image_bbox: [bx, by, bw, bh],
+            img_w: dims.w,
+            img_h: dims.h,
+          };
+        });
+        console.error(`[fake-ai] segment: ${segments.length} occluders`);
+        return send(200, { segments });
+      }
+      // Descubrimiento falso: 2 props inventados en posiciones fijas (fracción
+      // del tamaño de la imagen) que no pisan el centro.
+      if (req.method === "POST" && req.url === "/discover_scene_objects") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const dims = pngDims(body.image_b64);
+        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
+        const { w, h } = dims;
+        const discovered = [
+          { id: "discovered_0", box: [0.10, 0.62, 0.16, 0.14], concept: "boulder" },
+          { id: "discovered_1", box: [0.72, 0.18, 0.12, 0.18], concept: "tree stump" },
+        ].map((d, i) => ({
+          id: d.id,
+          sprite_url: `/fake/sprite/${(i + 2) % FAKE_SPRITES.length}`,
+          image_bbox: [
+            Math.round(d.box[0] * w), Math.round(d.box[1] * h),
+            Math.round(d.box[2] * w), Math.round(d.box[3] * h),
+          ],
+          img_w: w,
+          img_h: h,
+          score: 0.9,
+          concept: d.concept,
+        }));
+        console.error(`[fake-ai] discover: ${discovered.length} props`);
+        return send(200, { discovered });
+      }
       if (req.method === "POST" && req.url === "/generate_scene") {
         let body = {};
         try {
