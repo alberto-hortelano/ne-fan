@@ -10,6 +10,7 @@ import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
+import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
@@ -195,6 +196,54 @@ const frontier = new FrontierManager();
 /** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
 let activeTileKey: string | null = null;
 
+// --- Auto-img: pipeline automático de imagen IA por tile (toggle del HUD) ---
+// Persistido en localStorage (patrón ZOOM_KEY). Con el toggle ON, cada tile
+// de grid sin imagen pasa por imagen→segmentación→descubrimiento en FIFO.
+const autoimgToggle = document.getElementById("autoimg-toggle") as HTMLInputElement;
+const autoimgStatus = document.getElementById("autoimg-status") as HTMLElement;
+const AUTOIMG_KEY = "nefan.autoimg";
+
+function renderAutoImgStatus(s: PipelineStatus): void {
+  if (s.paused) {
+    autoimgStatus.textContent = `pausado: ai_server no responde · cola ${s.queued}`;
+    autoimgStatus.className = "paused";
+  } else if (s.current) {
+    autoimgStatus.textContent = `${s.current.key} · ${s.current.phase}` +
+      (s.queued > 0 ? ` · cola ${s.queued}` : "");
+    autoimgStatus.className = "working";
+  } else if (s.enabled) {
+    autoimgStatus.textContent = "al día";
+    autoimgStatus.className = "";
+  } else {
+    autoimgStatus.textContent = "";
+    autoimgStatus.className = "";
+  }
+}
+
+const autoPipeline = new AutoImagePipeline({
+  hasImage: (k) => renderer.tileHasImage(k),
+  listGridTileKeys: () =>
+    [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
+  isControllerBusy: () => sceneImageController.isBusy(),
+  generate: (k) => sceneImageController.generateForTile(k),
+  segment: (k) => sceneImageController.segmentOccludersForTile(k),
+  discover: (k) => sceneImageController.discoverObjectsForTile(k),
+  onSegmented: (occ) => refineCollisionsFromSegments(occ),
+  onDiscovered: (occ) => addDiscoveredObjects(occ),
+  onStatus: renderAutoImgStatus,
+  onDisabled: () => {
+    autoimgToggle.checked = false;
+    localStorage.setItem(AUTOIMG_KEY, "0");
+  },
+  healthUrl: `${AI_SERVER_URL}/health`,
+});
+autoimgToggle.checked = localStorage.getItem(AUTOIMG_KEY) === "1";
+autoPipeline.setEnabled(autoimgToggle.checked);
+autoimgToggle.addEventListener("change", () => {
+  localStorage.setItem(AUTOIMG_KEY, autoimgToggle.checked ? "1" : "0");
+  autoPipeline.setEnabled(autoimgToggle.checked);
+});
+
 // Entity arrays
 let enemyEntities: Entity[] = [];
 let objectEntities: Entity[] = [];
@@ -307,6 +356,7 @@ async function loadSceneFile(globKey: string): Promise<void> {
 function resetWorld(): void {
   tileStore.clear();
   renderer.clearTiles();
+  autoPipeline.resetQueue();
   enemyEntities = [];
   objectEntities = [];
   npcEntities = [];
@@ -358,7 +408,14 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     scene: data as Record<string, unknown>,
     collider,
   });
-  renderer.addTile(key, data as unknown as Parameters<typeof renderer.setScene>[0]);
+  const { sceneChanged } = renderer.addTile(
+    key,
+    data as unknown as Parameters<typeof renderer.setScene>[0],
+  );
+  // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
+  // una generación en vuelo — se marca dirty y se regenera con el esquema
+  // nuevo). Cubre bootstrap, frontier, re-broadcast y resume.
+  if (isGridTile) autoPipeline.notifyTile(key, { invalidated: sceneChanged });
 
   // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
   // spawn explícito). En el resto de tiles el jugador entra andando.
