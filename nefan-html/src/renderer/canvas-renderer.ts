@@ -305,7 +305,7 @@ export class CanvasRenderer {
    *  what `collidesAt` blocks) and the segmented occluder footprints (cyan dashed,
    *  = what SAM actually found painted) over the scene, to judge how precise the
    *  collision is vs the image. Toggled with B. */
-  private debugCollision = false;
+  private debugCollision = true; // en desarrollo, ON por defecto; B lo apaga
   /** True only while rendering the offscreen schematic for capture — suppresses
    *  text labels, which would pollute the canny edge map. */
   private _capturing = false;
