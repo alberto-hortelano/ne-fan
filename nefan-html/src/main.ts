@@ -104,7 +104,10 @@ const config = loadConfig(combatConfigJson);
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const WORLD_ANGLE = "isometric_30";
-const AI_SERVER_URL = "http://127.0.0.1:8765";
+// Override de bench (simétrico a `?bridge=`): `?ai=http://127.0.0.1:18765`
+// apunta imagen/assets/auto-img a un ai_server alternativo (mock).
+const AI_SERVER_URL =
+  new URLSearchParams(location.search).get("ai") ?? "http://127.0.0.1:8765";
 const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
 const assetCache = new AssetCache(AI_SERVER_URL);
 const renderer = new CanvasRenderer(canvas, {
