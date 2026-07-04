@@ -179,6 +179,17 @@ function makeTile(gt) {
 }
 
 async function handleGenerateTile(gt) {
+  // Visibilidad del "mapa real": lo que el bridge resume de los análisis de
+  // imagen de los vecinos (mundo derivado). El motor real lo usa para
+  // continuar murallas/ríos; aquí solo se loguea.
+  for (const [edge, n] of Object.entries(gt?.neighbors ?? {})) {
+    if (n?.image_elements?.length) {
+      const desc = n.image_elements
+        .map((e) => `${e.label}${e.solid ? "·sólido" : ""}${e.tall ? "·alto" : ""}@${e.at[0]}..${e.at[1]}`)
+        .join(", ");
+      console.error(`[fake-ai] tile(${gt.tx},${gt.ty}) vecino ${edge} image_elements: ${desc}`);
+    }
+  }
   if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
   if (TILE_MODE === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
@@ -333,7 +344,9 @@ const server = http.createServer((req, res) => {
         const { w, h } = dims;
         const segments = [
           { id: "seg_0", label: "árbol", solid: true, tall: true, box: [0.15, 0.60, 0.14, 0.16] },
-          { id: "seg_1", label: "roca", solid: true, tall: false, box: [0.70, 0.66, 0.10, 0.08] },
+          // La roca TOCA el borde derecho (este): al generar el tile vecino,
+          // el bridge debe pasarla como image_elements de la costura.
+          { id: "seg_1", label: "roca", solid: true, tall: false, box: [0.91, 0.40, 0.09, 0.18] },
           { id: "seg_2", label: "estandarte", solid: false, tall: true, box: [0.64, 0.22, 0.06, 0.12] },
         ].map((s, i) => ({
           id: s.id,
