@@ -59,7 +59,7 @@ from sprite_generator import SpriteGenerator
 from controlnet_skin import ControlNetSkinGenerator, seed_for
 from scene_image_generator import SceneImageGenerator, SIDES
 from fal_client import FalSamClient
-from scene_segmenter import SceneSegmenter
+from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
 from asset_cache import AssetCache, AssetManifest
 
 import asyncio as _asyncio
@@ -462,6 +462,15 @@ class DiscoverSceneRequest(BaseModel):
     image_b64: str = Field(min_length=1)
     known_boxes: list[list[int]] = Field(default_factory=list)
     concepts: list[str] | None = None
+
+
+class AnalyzeSceneRequest(BaseModel):
+    """Mundo derivado de la imagen: segmentación automática completa + visión
+    clasifica cada región (solid/tall). El cliente deriva de la respuesta la
+    colisión y los occluders del tile. `context` viaja al modelo de visión
+    (p. ej. scene_description del tile)."""
+    image_b64: str = Field(min_length=1)
+    context: dict = Field(default_factory=dict)
 
 
 def _cache_dirs_by_type() -> dict[str, Path]:
@@ -990,6 +999,103 @@ async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
     segment_cache.put("discovery", "discovery", json.dumps(discovered).encode(),
                       context=ctx, subtype_override="discovery")
     return {"discovered": discovered}
+
+
+@app.post("/analyze_scene_image")
+async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
+    """Mundo derivado de la imagen: auto-segmenta TODA la escena (SAM2),
+    clasifica cada región por visión (Claude vía MCP, fallback API) y devuelve
+    solo los elementos jugables: `solid` (colisión) y/o `tall` (occluder con
+    z-index), cada uno con su sprite recortado de los píxeles originales.
+    Cacheado por (layout de imagen, modelos) — el resume es determinista."""
+    import asyncio
+    import hashlib
+
+    if scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable scene analysis",
+        )
+    if llm_client is None:
+        raise HTTPException(status_code=503, detail="llm_client unavailable — vision required")
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    ctx = {
+        "layout": layout,
+        "sam_model": scene_segmenter._fal.auto_segment_model,
+        "vision_model": llm_client.model,
+    }
+    key = segment_cache.hash_key("analysis", ctx)
+    cached = segment_cache.get_by_hash(key, "analysis")
+    if cached is not None:
+        return json.loads(cached)
+
+    # Fase 1: segmentación automática + overlay numerado (fal → 502 en fallo).
+    try:
+        analysis = await asyncio.to_thread(scene_segmenter.analyze_regions, png)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"scene auto-segmentation failed: {e}") from e
+    regions = analysis["regions"]
+    if not regions:
+        result = {"segments": [], "discarded": 0}
+        segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+                          context=ctx, subtype_override="analysis")
+        return result
+
+    # Fase 2: clasificación por visión (escena original + overlay numerado).
+    import base64 as b64mod
+    vision_context = {
+        "regions": [{"index": r["index"], "bbox": list(r["bbox_xyxy"])} for r in regions],
+        **body.context,
+    }
+    images = [
+        {"view": "scene", "media_type": "image/png",
+         "data_b64": b64mod.b64encode(png).decode()},
+        {"view": "overlay", "media_type": "image/png",
+         "data_b64": b64mod.b64encode(analysis["overlay_png"]).decode()},
+    ]
+    classified = await asyncio.to_thread(
+        llm_client.classify_scene_segments, images, vision_context,
+    )
+    if classified is None:
+        raise HTTPException(
+            status_code=503,
+            detail="scene classification unavailable — no MCP listener and no API client, or invalid response",
+        )
+
+    # Merge por índice: solo solid/tall generan sprite (el resto es suelo).
+    scene_rgb = scene_rgb_from_png(png)
+    by_index = {r["index"]: r for r in regions}
+    segments_out: list[dict] = []
+    discarded = 0
+    for cls in classified["segments"]:
+        region = by_index.get(cls["index"])
+        if region is None:
+            continue  # índice extra inventado — el validador ya exigió los reales
+        if not (cls["solid"] or cls["tall"]):
+            discarded += 1
+            continue
+        sprite = crop_sprite(scene_rgb, region["mask"], region["bbox_xyxy"])
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        segments_out.append({
+            "id": f"seg_{cls['index']}",
+            "label": cls["label"],
+            "solid": cls["solid"],
+            "tall": cls["tall"],
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
+        })
+
+    result = {"segments": segments_out, "discarded": discarded}
+    segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+                      context=ctx, subtype_override="analysis")
+    print(f"analyze_scene: {len(segments_out)} jugables, {discarded} suelo "
+          f"(de {len(regions)} regiones)", flush=True)
+    return result
 
 
 # Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative

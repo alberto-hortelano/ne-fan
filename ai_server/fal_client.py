@@ -30,10 +30,12 @@ class FalSamClient:
         self,
         segment_model: str = "fal-ai/sam2/image",
         discover_model: str = "fal-ai/sam-3/image",
+        auto_segment_model: str = "fal-ai/sam2/auto-segment",
         api_key: str | None = None,
     ):
         self.segment_model = segment_model
         self.discover_model = discover_model
+        self.auto_segment_model = auto_segment_model
         self.api_key = api_key or os.environ.get("FAL_KEY", "")
         if not self.api_key:
             raise ValueError("FAL_KEY not set")
@@ -95,6 +97,41 @@ class FalSamClient:
         if not isinstance(image, dict) or not image.get("url"):
             raise RuntimeError(f"fal SAM2 response missing image url: {data}")
         return self._fetch_bytes(image["url"], timeout)
+
+    def auto_segment(
+        self,
+        image_data_uri: str,
+        points_per_side: int = 32,
+        pred_iou_thresh: float = 0.88,
+        stability_score_thresh: float = 0.95,
+        min_mask_region_area: int = 100,
+        timeout: float = 180.0,
+    ) -> list[bytes]:
+        """Segmentación automática completa (SAM2 auto-segment): una máscara
+        PNG por región detectada, sin etiquetas. Base del mundo derivado de
+        imagen — las regiones se clasifican después por visión.
+
+        Raises on any failure or if fal returns no individual masks
+        (fail-loud: una escena pintada siempre tiene regiones)."""
+        payload = {
+            "image_url": image_data_uri,
+            "points_per_side": int(points_per_side),
+            "pred_iou_thresh": float(pred_iou_thresh),
+            "stability_score_thresh": float(stability_score_thresh),
+            "min_mask_region_area": int(min_mask_region_area),
+            "sync_mode": True,
+            "output_format": "png",
+        }
+        data = self._post(self.auto_segment_model, payload, timeout)
+        masks = data.get("individual_masks")
+        if not isinstance(masks, list) or not masks:
+            raise RuntimeError(f"fal SAM2 auto-segment returned no individual_masks: {data}")
+        out: list[bytes] = []
+        for i, m in enumerate(masks):
+            if not isinstance(m, dict) or not m.get("url"):
+                raise RuntimeError(f"fal SAM2 auto-segment mask {i} missing url: {m}")
+            out.append(self._fetch_bytes(m["url"], timeout))
+        return out
 
     def discover(
         self,
