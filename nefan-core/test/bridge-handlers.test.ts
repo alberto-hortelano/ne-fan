@@ -1101,3 +1101,45 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     assert.equal(count2, count, "sin re-disparos");
   });
 });
+
+describe("imageElementsAtSharedEdge — análisis del vecino en la costura", () => {
+  const record = (tx: number, ty: number, elements: unknown[]): never =>
+    ({
+      scene_data: {}, loaded_at: "x", asset_refs: [],
+      tile: { tx, ty },
+      analysis: { analyzed_at: "x", elements },
+    }) as never;
+
+  it("elementos que tocan el borde compartido salen con celdas a lo largo del borde", async () => {
+    const { imageElementsAtSharedEdge } = await import("../bridge/handlers/tile.js");
+    // Vecino al ESTE del tile nuevo: tile (1,0), rect x 32..96, z -32..32.
+    // Su borde compartido es el oeste (x=32).
+    const rec = record(1, 0, [
+      { label: "muralla", solid: true, tall: true, rect: { minX: 30, maxX: 60, minZ: 4, maxZ: 12 } },
+      { label: "roble", solid: true, tall: true, rect: { minX: 80, maxX: 90, minZ: 0, maxZ: 8 } },
+    ]);
+    const out = imageElementsAtSharedEdge(rec, "east");
+    assert.equal(out.length, 1, "solo la muralla toca la costura");
+    assert.equal(out[0].label, "muralla");
+    // z 4..12 → celdas (z+32)/0.5 = 72..88
+    assert.deepEqual(out[0].at, [72, 88]);
+  });
+
+  it("vecino al NORTE: banda sobre su borde sur y celdas a lo largo de x", async () => {
+    const { imageElementsAtSharedEdge } = await import("../bridge/handlers/tile.js");
+    // Vecino (0,-1): rect x -32..32, z -96..-32. Borde compartido = su sur (z=-32).
+    const rec = record(0, -1, [
+      { label: "río", solid: true, tall: false, rect: { minX: -10, maxX: 6, minZ: -96, maxZ: -30 } },
+    ]);
+    const out = imageElementsAtSharedEdge(rec, "north");
+    assert.equal(out.length, 1);
+    // x -10..6 → celdas (x+32)/0.5 = 44..76
+    assert.deepEqual(out[0].at, [44, 76]);
+  });
+
+  it("sin análisis → []", async () => {
+    const { imageElementsAtSharedEdge } = await import("../bridge/handlers/tile.js");
+    const rec = { scene_data: {}, loaded_at: "x", asset_refs: [], tile: { tx: 1, ty: 0 } } as never;
+    assert.deepEqual(imageElementsAtSharedEdge(rec, "east"), []);
+  });
+});

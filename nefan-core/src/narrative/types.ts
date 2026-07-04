@@ -35,6 +35,23 @@ export interface NarrativeWorldState {
   active_scene_id: string;
 }
 
+/** Un elemento jugable del ANÁLISIS de la imagen IA de un tile: lo que la
+ *  visión clasificó sobre lo realmente pintado. `rect` en coords MUNDO. */
+export interface AnalyzedElement {
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  rect: { minX: number; maxX: number; minZ: number; maxZ: number };
+}
+
+/** Análisis de la imagen de un tile (mundo derivado de la imagen): el mapa
+ *  REAL del tile, que puede diferir del esquema (el modelo de imagen inventa
+ *  estructuras). El motor narrativo lo recibe resumido como ground truth. */
+export interface TileAnalysisRecord {
+  analyzed_at: string;
+  elements: AnalyzedElement[];
+}
+
 export interface SceneRecord {
   scene_data: Record<string, unknown>;
   loaded_at: string;
@@ -45,6 +62,9 @@ export interface SceneRecord {
   /** Resumen de costuras por borde (computeTileEdges sobre el expandido) —
    *  contexto de vecinos para generar tiles adyacentes sin re-expandir. */
   edges?: TileEdges;
+  /** Análisis de la imagen IA del tile (opcional; lo envía el cliente 2D
+   *  tras analizar). Campo aditivo — no requiere bump de schema. */
+  analysis?: TileAnalysisRecord;
 }
 
 export interface EntityRecord {
@@ -152,6 +172,16 @@ export interface LlmContext {
   }>;
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string }>;
   rooms_visited: number;
+  /** Resumen del análisis de la imagen del tile ACTIVO (mundo derivado de la
+   *  imagen): lo que hay pintado DE VERDAD, incluidas estructuras que el
+   *  modelo de imagen inventó y no están en el esquema. Ground truth del
+   *  mundo jugable — sitúa la narrativa sobre esto, no sobre el esquema. */
+  scene_analysis?: {
+    scene_id: string;
+    /** "muralla (sólido, alto) x[-5..30] z[5..13]" — máx ~20 elementos. */
+    elements: string[];
+    total: number;
+  };
   /** Plugins declarativos activos, resumidos por sus derived_views (F6, §7.6).
    *  Sólo presente si hay plugins activos. El detalle se pide con plugin_inspect. */
   plugins?: PluginLlmView[];
@@ -193,6 +223,17 @@ export interface LlmContext {
       description: string;
       biome: string;
       crossings: Array<{ type: string; at: number; width: number }>;
+      /** Elementos REALES de la imagen pintada del vecino que tocan el borde
+       *  compartido (análisis por visión): el LLM debe continuar las
+       *  estructuras grandes (murallas, ríos) que cruzan la costura.
+       *  `at` = rango de celdas a lo largo del borde (misma coordenada en
+       *  ambos lados, como crossings). */
+      image_elements?: Array<{
+        label: string;
+        solid: boolean;
+        tall: boolean;
+        at: [number, number];
+      }>;
     }>>;
     /** Borde del TILE NUEVO por el que entra el jugador (opuesto al cruzado). */
     entry?: { edge: "north" | "south" | "east" | "west"; at?: number };
