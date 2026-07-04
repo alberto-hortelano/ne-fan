@@ -249,6 +249,9 @@ export interface Occluder {
   baselineZ: number;
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
+  /** Origen del recorte: "segment" = objeto autorizado (X), "discovered" =
+   *  prop inventado por la imagen (N). Solo lo usa el overlay de debug (B). */
+  kind?: "segment" | "discovered";
 }
 
 export interface CanvasRendererOptions {
@@ -507,6 +510,13 @@ export class CanvasRenderer {
 
   hasOccluders(): boolean {
     return this.occluders.length > 0;
+  }
+
+  /** Resumen de occluders para el hook de bench (__nefan). Solo lectura. */
+  debugOccluders(): { id: string; kind?: string; tileKey?: string; world: SceneBounds; baselineZ: number }[] {
+    return this.occluders.map((o) => ({
+      id: o.id, kind: o.kind, tileKey: o.tileKey, world: o.world, baselineZ: o.baselineZ,
+    }));
   }
 
   setDebugObjects(on: boolean): void {
@@ -1087,16 +1097,41 @@ export class CanvasRenderer {
       ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
     }
 
-    // Segmented actual footprints (only present after X): bright cyan dashed.
+    // Recortes de la imagen (tras X/N): caja discontinua + baseline sólida
+    // (el borde sur = z-index del depth-sort) + etiqueta id·z. Cian = objeto
+    // autorizado segmentado (X); magenta = prop descubierto por SAM3 (N).
     ctx.lineWidth = 3;
-    ctx.setLineDash([7, 5]);
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "left";
     for (const occ of this.occluders) {
       const w = occ.world;
       const [ix, iy] = this.toScreen(w.minX, w.minZ);
       const iw = (w.maxX - w.minX) * this.scale;
       const ih = (w.maxZ - w.minZ) * this.scale;
-      ctx.strokeStyle = "rgba(60,255,255,1)";
+      const color = occ.kind === "discovered" ? "rgba(255,80,255,1)" : "rgba(60,255,255,1)";
+      ctx.setLineDash([7, 5]);
+      ctx.strokeStyle = color;
       ctx.strokeRect(ix, iy, iw, ih);
+      // Baseline del depth-sort: por debajo de esta línea el jugador tapa al
+      // recorte; por encima, el recorte tapa al jugador.
+      const by = this.toScreen(0, occ.baselineZ)[1];
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(ix, by);
+      ctx.lineTo(ix + iw, by);
+      ctx.stroke();
+      // Etiqueta solo si la caja es legible en pantalla: con decenas de
+      // recortes pequeños (p. ej. troncos de árbol) las etiquetas se solapan
+      // en una nube ilegible; la caja + baseline ya los marcan.
+      if (iw >= 48) {
+        const name = occ.tileKey !== undefined ? occ.id.replace(`${occ.tileKey}:`, "") : occ.id;
+        const label = `${name} z=${occ.baselineZ.toFixed(1)}`;
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = "rgba(10,10,14,0.75)";
+        ctx.fillRect(ix, iy - 15, tw + 8, 14);
+        ctx.fillStyle = color;
+        ctx.fillText(label, ix + 4, iy - 4);
+      }
     }
     ctx.setLineDash([]);
 
@@ -1108,10 +1143,13 @@ export class CanvasRenderer {
     ctx.fillText("colision autorizada (pos±scale/2)", 32, 61);
     ctx.fillStyle = "rgba(60,255,255,1)";
     ctx.fillRect(12, 70, 14, 10);
-    ctx.fillText("footprint segmentado por SAM", 32, 79);
-    ctx.fillStyle = "rgba(255,140,0,1)";
+    ctx.fillText("recorte segmentado (X) — linea solida = z-index", 32, 79);
+    ctx.fillStyle = "rgba(255,80,255,1)";
     ctx.fillRect(12, 88, 14, 10);
-    ctx.fillText("terreno solido (muro/agua)", 32, 97);
+    ctx.fillText("prop descubierto (N) — linea solida = z-index", 32, 97);
+    ctx.fillStyle = "rgba(255,140,0,1)";
+    ctx.fillRect(12, 106, 14, 10);
+    ctx.fillText("terreno solido (muro/agua)", 32, 115);
     ctx.restore();
   }
 

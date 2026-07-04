@@ -311,7 +311,7 @@ export class SceneImageController {
           minZ: b.minZ + (by / seg.img_h) * spanZ,
           maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
-        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ, tileKey: key });
+        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ, tileKey: key, kind: "segment" });
       }
       this.renderer.setOccludersForTile(key, built);
       console.log(`[scene-image] ${key}: segmented ${built.length}/${occ.length} occluders`);
@@ -387,7 +387,7 @@ export class SceneImageController {
           minZ: b.minZ + (by / seg.img_h) * spanZ,
           maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
-        built.push({ id: `${key}:${seg.id}`, img: sprite, world, baselineZ: world.maxZ, tileKey: key });
+        built.push({ id: `${key}:${seg.id}`, img: sprite, world, baselineZ: world.maxZ, tileKey: key, kind: "discovered" });
       }
       this.renderer.addOccluders(built);
       console.log(`[scene-image] ${key}: discovered ${built.length} new props`);

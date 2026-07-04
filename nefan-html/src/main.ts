@@ -152,6 +152,7 @@ const input = new KeyboardHandler(canvas, (type) => {
   get exits() { return currentExits; },
   get tiles() { return [...tileStore.entries.keys()]; },
   get tileImages() { return renderer.tileKeys.filter((k) => renderer.tileHasImage(k)); },
+  get occluders() { return renderer.debugOccluders(); },
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
