@@ -22,6 +22,7 @@
 //                 errores fail-loud del handler de frontera en E2E.
 
 import http from "node:http";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const PORT = Number(process.env.PORT ?? 18765);
@@ -235,12 +236,35 @@ async function handleFrontier(frontier) {
   return sceneByPlace.get(newId);
 }
 
+// --- Imágenes de escena (mock del pipeline Meshy, sin créditos) ---
+// /generate_scene_image devuelve el PROPIO esquema como "imagen": el cliente
+// la instala 1:1 y cualquier desalineación del recorte/bandas se ve a ojo.
+// Guardado en memoria por sha256[:16] y servido por /cache/scene/{hash}.
+const sceneImages = new Map();
+
 const server = http.createServer((req, res) => {
+  // CORS: el navegador (cliente 2D) llama cross-origin; el bridge server-side
+  // lo ignora. ACAO en TODAS las respuestas + preflight OPTIONS.
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
   const send = (status, body) => {
-    res.writeHead(status, { "Content-Type": "application/json" });
+    res.writeHead(status, { "Content-Type": "application/json", ...cors });
     res.end(JSON.stringify(body));
   };
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, cors);
+    return res.end();
+  }
   if (req.method === "GET" && req.url === "/health") return send(200, { status: "ready" });
+  if (req.method === "GET" && req.url?.startsWith("/cache/scene/")) {
+    const hash = req.url.slice("/cache/scene/".length);
+    const png = sceneImages.get(hash);
+    if (!png) return send(404, { detail: `fake-ai: imagen ${hash} no encontrada` });
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(png);
+  }
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
@@ -248,6 +272,26 @@ const server = http.createServer((req, res) => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
       if (req.method === "POST" && req.url === "/notify_session") return send(200, { ok: true });
       if (req.method === "POST" && req.url === "/report_player_choice") return send(200, { consequences: [] });
+      if (req.method === "POST" && req.url === "/generate_scene_image") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const b64 = String(body.image_b64 ?? "").replace(/^data:image\/png;base64,/, "");
+        if (!b64) return send(422, { detail: "fake-ai: image_b64 requerido" });
+        const png = Buffer.from(b64, "base64");
+        const hash = createHash("sha256").update(png).digest("hex").slice(0, 16);
+        sceneImages.set(hash, png);
+        console.error(
+          `[fake-ai] scene_image ${hash} (${png.length}b` +
+          `${body.context_sides?.length ? `, contexto: ${body.context_sides.join("+")}` : ""})`,
+        );
+        return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
+      }
+      if (req.method === "POST" && req.url === "/segment_scene_image") return send(200, { segments: [] });
+      if (req.method === "POST" && req.url === "/discover_scene_objects") return send(200, { discovered: [] });
       if (req.method === "POST" && req.url === "/generate_scene") {
         let body = {};
         try {
