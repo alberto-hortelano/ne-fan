@@ -233,13 +233,12 @@ async def lifespan(app: FastAPI):
         manifest=asset_manifest,
     )
 
-    # Occluder segmentation is OPTIONAL: it needs FAL_KEY. If the user hasn't
-    # added it yet the server still starts; /segment_scene_image returns 503.
+    # El análisis de escena es OPCIONAL: necesita FAL_KEY. Sin ella el server
+    # arranca igual; /analyze_scene_image devuelve 503.
     try:
         scene_segmenter = SceneSegmenter(
             fal_client=FalSamClient(
-                segment_model=config["segment_model"],
-                discover_model=config["discover_model"],
+                auto_segment_model=config["auto_segment_model"],
             ),
         )
     except ValueError as e:
@@ -427,41 +426,6 @@ class OutpaintSceneRequest(BaseModel):
     expand_px: int = 256
     prompt: str = ""
     seed: int = -1
-
-
-class Occluder(BaseModel):
-    """A known scene object to cut out of the generated image. `box_px` is its
-    approximate pixel box in the scene image: [x_min, y_min, x_max, y_max]."""
-    id: str = Field(min_length=1)
-    box_px: list[int] = Field(min_length=4, max_length=4)
-
-
-class SegmentSceneRequest(BaseModel):
-    """Cut occluder sprites out of an AI-painted scene image (SAM via fal.ai).
-
-    `image_b64` is the same scene PNG the client is displaying; `occluders` are
-    the known building/prop objects with their pixel boxes. Returns one cropped
-    RGBA sprite per occluder for the client to depth-sort against the player."""
-    image_b64: str = Field(min_length=1)
-    occluders: list[Occluder] = Field(min_length=1)
-
-
-# Default vocabulary of solid dark-fantasy props the image model tends to invent.
-# Each concept is one SAM3 open-vocab call; keep the list focused (cost + noise).
-_DISCOVER_CONCEPTS = [
-    "statue", "barrel", "crate", "urn", "brazier",
-    "well", "cauldron", "tombstone", "stone pillar", "boulder",
-]
-
-
-class DiscoverSceneRequest(BaseModel):
-    """Phase 3: open-vocabulary discovery of props the image model invented that
-    were NOT in the schematic. `known_boxes` are the pixel boxes of objects we
-    already handle ([x_min,y_min,x_max,y_max]) so they are filtered out. Returns
-    new objects (sprite + footprint) for the client to give occlusion + collision."""
-    image_b64: str = Field(min_length=1)
-    known_boxes: list[list[int]] = Field(default_factory=list)
-    concepts: list[str] | None = None
 
 
 class AnalyzeSceneRequest(BaseModel):
@@ -876,129 +840,6 @@ async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
     }
 
 
-@app.post("/segment_scene_image")
-async def segment_scene_image_endpoint(body: SegmentSceneRequest):
-    """Segment known occluders (buildings/props) out of the scene image so the
-    client can depth-sort them against the player. One fal SAM call per occluder;
-    each cropped RGBA sprite is cached by (scene layout, occluder id, box, model)."""
-    import asyncio
-    import hashlib
-
-    if scene_segmenter is None:
-        raise HTTPException(
-            status_code=503,
-            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable occluder segmentation",
-        )
-
-    png = _decode_b64_png(body.image_b64)
-    layout = hashlib.sha256(png).hexdigest()[:16]
-    model = scene_segmenter._fal.model
-
-    # Split occluders into cache hits (served straight away) and misses (segment).
-    segments: list[dict] = []
-    misses: list[dict] = []
-    keys: dict[str, str] = {}
-    for occ in body.occluders:
-        box_str = ",".join(str(v) for v in occ.box_px)
-        context = {"scene": layout, "box": box_str, "model": model}
-        key = segment_cache.hash_key(occ.id, context)
-        keys[occ.id] = key
-        if segment_cache.has(occ.id, "segment", context):
-            bbox_meta = segment_cache.get_by_hash(key, "bbox")
-            if bbox_meta is not None:
-                segments.append({"id": occ.id, "key": key, "bbox_json": bbox_meta})
-                continue
-        misses.append({"id": occ.id, "box_px": occ.box_px, "context": context, "key": key})
-
-    if misses:
-        # 502 explícito: un error de fal subiría como 500 sin CORS y el cliente
-        # lo confunde con "ai_server caído" (pausa el auto-pipeline sin motivo).
-        try:
-            produced = await asyncio.to_thread(
-                scene_segmenter.segment_occluders,
-                png,
-                [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
-            )
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"occluder segmentation failed: {e}") from e
-        by_id = {p["id"]: p for p in produced}
-        for m in misses:
-            p = by_id.get(m["id"])
-            if p is None:
-                continue  # empty mask — segmenter logged the skip
-            ctx = m["context"]
-            segment_cache.put(m["id"], "segment", p["sprite_png_bytes"], context=ctx)
-            # Persist the placement metadata alongside the sprite so cache hits
-            # can answer without re-segmenting. Stored as a `bbox` map in the same
-            # hash dir (AssetCache forces a .png suffix; the bytes are JSON).
-            bbox_json = json.dumps({
-                "image_bbox": p["image_bbox"], "img_w": p["img_w"], "img_h": p["img_h"],
-            }).encode()
-            segment_cache.put(m["id"], "bbox", bbox_json, context=ctx, subtype_override="bbox")
-            segments.append({"id": m["id"], "key": m["key"], "bbox_json": bbox_json})
-
-    result = []
-    for s in segments:
-        meta = json.loads(s["bbox_json"])
-        result.append({
-            "id": s["id"],
-            "sprite_url": f"/cache/segment/{s['key']}",
-            "image_bbox": meta["image_bbox"],
-            "img_w": meta["img_w"],
-            "img_h": meta["img_h"],
-        })
-    return {"segments": result}
-
-
-@app.post("/discover_scene_objects")
-async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
-    """Discover props the image model invented (SAM3 open-vocab) and return them
-    as new objects (sprite + footprint) so the client can give them occlusion +
-    collision. Cached by (scene layout, concept set, model)."""
-    import asyncio
-    import hashlib
-
-    if scene_segmenter is None:
-        raise HTTPException(
-            status_code=503,
-            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable discovery",
-        )
-
-    png = _decode_b64_png(body.image_b64)
-    layout = hashlib.sha256(png).hexdigest()[:16]
-    concepts = body.concepts or _DISCOVER_CONCEPTS
-    model = scene_segmenter._fal.discover_model
-    ctx = {"layout": layout, "concepts": ",".join(concepts), "model": model}
-    key = segment_cache.hash_key("discovery", ctx)
-
-    cached = segment_cache.get_by_hash(key, "discovery")
-    if cached is not None:
-        return {"discovered": json.loads(cached)}
-
-    try:
-        produced = await asyncio.to_thread(
-            scene_segmenter.discover_objects, png, body.known_boxes, concepts,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"object discovery failed: {e}") from e
-
-    discovered = []
-    for p in produced:
-        sprite_hash = hashlib.sha256(p["sprite_png_bytes"]).hexdigest()[:16]
-        sprite_key = segment_cache.put(sprite_hash, "segment", p["sprite_png_bytes"])
-        discovered.append({
-            "id": p["id"],
-            "sprite_url": f"/cache/segment/{sprite_key}",
-            "image_bbox": p["image_bbox"],
-            "img_w": p["img_w"],
-            "img_h": p["img_h"],
-            "score": p["score"],
-            "concept": p["concept"],
-        })
-
-    segment_cache.put("discovery", "discovery", json.dumps(discovered).encode(),
-                      context=ctx, subtype_override="discovery")
-    return {"discovered": discovered}
 
 
 @app.post("/analyze_scene_image")
