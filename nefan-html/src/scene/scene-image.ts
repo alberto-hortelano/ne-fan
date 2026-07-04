@@ -15,6 +15,7 @@
  *  the image is purely visual. Fail loud: every failure goes to the ErrorLog
  *  and rejects; no silent placeholder.
  */
+import { parseTileKey, tileKey } from "@nefan-core/src/scene/tile.js";
 import { errors } from "../ui/error-log.js";
 import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
 
@@ -37,6 +38,12 @@ const CAPTURE_LONG_SIDE = 640;
 /** Pixels-per-metre clamp for the capture so tiny/huge scenes stay sane. */
 const MIN_PPM = 6;
 const MAX_PPM = 64;
+/** Metros de imagen REAL de cada vecino incluidos en la captura como banda de
+ *  contexto: el modelo la reproduce y continúa, y aquí se recorta del
+ *  resultado antes de instalar la imagen del tile. */
+const CONTEXT_M = 8;
+
+type ContextSide = "left" | "right" | "top" | "bottom";
 
 /** Resultado de /review_scene_blueprint: Claude mira el blueprint y devuelve
  *  aprobación + issues + overrides parciales de la escena Format D. */
@@ -106,7 +113,59 @@ export class SceneImageController {
     return off.toDataURL("image/png");
   }
 
-  /** Capture the tile's schematic and generate its scene image. */
+  /** Bandas de contexto: lados del tile cuyo vecino ya tiene imagen IA. El
+   *  rect de captura se expande CONTEXT_M hacia cada uno y la captura pinta
+   *  ahí la imagen real del vecino (coherencia de paleta/contenido). */
+  private neighborContext(key: string, rect: SceneBounds): {
+    expanded: SceneBounds;
+    contextSides: ContextSide[];
+    imageTileKeys: Set<string>;
+  } {
+    const expanded: SceneBounds = { ...rect };
+    const contextSides: ContextSide[] = [];
+    const tc = parseTileKey(key);
+    if (tc) {
+      const withImage = (tx: number, ty: number): boolean =>
+        this.renderer.tileHasImage(tileKey(tx, ty));
+      if (withImage(tc.tx - 1, tc.ty)) { expanded.minX -= CONTEXT_M; contextSides.push("left"); }
+      if (withImage(tc.tx + 1, tc.ty)) { expanded.maxX += CONTEXT_M; contextSides.push("right"); }
+      if (withImage(tc.tx, tc.ty - 1)) { expanded.minZ -= CONTEXT_M; contextSides.push("top"); }
+      if (withImage(tc.tx, tc.ty + 1)) { expanded.maxZ += CONTEXT_M; contextSides.push("bottom"); }
+    }
+    // Cualquier tile con imagen ≠ el objetivo se pinta como imagen en la
+    // captura (cubre también las esquinas diagonales del rect expandido).
+    const imageTileKeys = new Set(
+      this.renderer.tileKeys.filter((k) => k !== key && this.renderer.tileHasImage(k)),
+    );
+    return { expanded, contextSides, imageTileKeys };
+  }
+
+  /** Recorta del resultado (mapeado linealmente sobre `E`) la parte que cubre
+   *  el rect del tile `T`. Bordes con x1−x0 (no round(ancho)): sin drift. */
+  private async cropToTile(
+    img: HTMLImageElement,
+    E: SceneBounds,
+    T: SceneBounds,
+  ): Promise<HTMLImageElement> {
+    const sx = img.naturalWidth / (E.maxX - E.minX);
+    const sy = img.naturalHeight / (E.maxZ - E.minZ);
+    const x0 = Math.round((T.minX - E.minX) * sx);
+    const y0 = Math.round((T.minZ - E.minZ) * sy);
+    const x1 = Math.round((T.maxX - E.minX) * sx);
+    const y1 = Math.round((T.maxZ - E.minZ) * sy);
+    const off = document.createElement("canvas");
+    off.width = x1 - x0;
+    off.height = y1 - y0;
+    const ctx = off.getContext("2d");
+    if (!ctx) throw new Error("cropToTile: no 2D context");
+    ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+    // Volver a HTMLImageElement (no canvas): imageToDataUrl/naturalWidth de
+    // X/N siguen funcionando igual sobre la imagen instalada.
+    return this.loadImage(off.toDataURL("image/png"));
+  }
+
+  /** Capture the tile's schematic (with neighbor-image context strips when
+   *  available) and generate its scene image. */
   async generateForTile(key: string): Promise<void> {
     if (this.busy) {
       console.log("[scene-image] busy, ignoring generate");
@@ -121,12 +180,13 @@ export class SceneImageController {
     this.busy = true;
     try {
       const prompt = this.buildPrompt(scene as unknown as SceneSummary);
-      const ppm = this.ppmFor(rect);
-      const dataUrl = this.renderer.captureSchematic(rect, ppm);
+      const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, rect);
+      const ppm = this.ppmFor(expanded);
+      const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
       const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, prompt }),
+        body: JSON.stringify({ image_b64: dataUrl, prompt, context_sides: contextSides }),
       });
       if (!res.ok) {
         throw new Error(`/generate_scene_image HTTP ${res.status}`);
@@ -135,9 +195,15 @@ export class SceneImageController {
       if (!data.scene_url) {
         throw new Error(`/generate_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
       }
-      const img = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
+      let img = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
+      if (contextSides.length > 0) {
+        img = await this.cropToTile(img, expanded, rect);
+      }
       this.renderer.setTileImage(key, img);
-      console.log(`[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight})`);
+      console.log(
+        `[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight}` +
+        `${contextSides.length ? `, contexto: ${contextSides.join("+")}` : ""})`,
+      );
     } catch (err) {
       errors.push("scene", `generateForTile ${key} failed`, err);
       throw err;

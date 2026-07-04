@@ -534,8 +534,17 @@ export class CanvasRenderer {
    *  NO characters, NO labels) for a world rectangle into an offscreen canvas
    *  and return it as a PNG data URL. This is the img2img conditioning image:
    *  scene-local framing (not the camera-following viewport) so the result
-   *  maps 1:1 back onto `rect`. `ppm` = pixels per metre of the capture. */
-  captureSchematic(rect: SceneBounds, ppm: number): string {
+   *  maps 1:1 back onto `rect`. `ppm` = pixels per metre of the capture.
+   *
+   *  `opts.imageTileKeys`: tiles que se pintan con su imagen IA REAL en vez
+   *  del esquema (bandas de contexto para coherencia entre vecinos). Sus
+   *  objects se omiten del pase de rectángulos — ya están pintados en la
+   *  imagen. */
+  captureSchematic(
+    rect: SceneBounds,
+    ppm: number,
+    opts?: { imageTileKeys?: Set<string> },
+  ): string {
     const w = Math.max(8, Math.round((rect.maxX - rect.minX) * ppm));
     const h = Math.max(8, Math.round((rect.maxZ - rect.minZ) * ppm));
     const off = document.createElement("canvas");
@@ -566,9 +575,20 @@ export class CanvasRenderer {
         (t) => t.rect.maxX > rect.minX && t.rect.minX < rect.maxX &&
                t.rect.maxZ > rect.minZ && t.rect.minZ < rect.maxZ,
       );
-      for (const tile of touched) this.paintTerrainInto(tile);
+      const asImage = (t: RendererTile): boolean =>
+        Boolean(opts?.imageTileKeys?.has(t.key) && t.sceneImage);
+      for (const tile of touched) {
+        if (asImage(tile)) {
+          const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
+          const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
+          offCtx.drawImage(tile.sceneImage!, bx0, by0, bx1 - bx0, by1 - by0);
+        } else {
+          this.paintTerrainInto(tile);
+        }
+      }
 
       const staticObjects = touched
+        .filter((t) => !asImage(t))
         .flatMap((t): SceneObject[] => t.scene.objects ?? [])
         .filter((o) => o.category !== "creature")
         .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
