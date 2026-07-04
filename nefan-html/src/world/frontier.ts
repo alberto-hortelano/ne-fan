@@ -20,6 +20,10 @@ const VEIL_M = 8;
 const BLOCKING_M = 2;
 /** Pasado esto sin respuesta se olvida la petición (permite reintentar). */
 const TILE_TIMEOUT_MS = 5 * 60_000;
+/** Tras un error del bridge para un tile, no se re-pide hasta pasado esto.
+ *  Sin cooldown, un jugador parado junto a la frontera con el motor narrativo
+ *  caído re-pediría el tile en cada frame (spam de errores en bucle). */
+const ERROR_COOLDOWN_MS = 15_000;
 
 export interface VeilState {
   edge: Edge;
@@ -31,6 +35,8 @@ export class FrontierManager {
   private requested = new Map<string, number>();
   /** Tiles ya re-pedidos como blocking (para promover solo una vez). */
   private blockingSent = new Set<string>();
+  /** key del tile → timestamp del último error (cooldown antes de reintentar). */
+  private erroredAt = new Map<string, number>();
   /** Texto de estado por tile (lo actualizan los narrative_status). */
   private statusText = new Map<string, string>();
 
@@ -109,6 +115,9 @@ export class FrontierManager {
   ): void {
     const key = tileKey(tx, ty);
     if (this.requested.has(key)) return;
+    const failedAt = this.erroredAt.get(key);
+    if (failedAt !== undefined && now - failedAt < ERROR_COOLDOWN_MS) return;
+    this.erroredAt.delete(key);
     this.requested.set(key, now);
     request(tx, ty, edge, "prefetch");
   }
@@ -137,11 +146,14 @@ export class FrontierManager {
     return null;
   }
 
-  /** Error del bridge para un tile pedido: permite reintentar al reacercarse. */
+  /** Error del bridge para un tile pedido: permite reintentar tras un
+   *  cooldown (evita el bucle petición→error→petición pegado a la frontera). */
   onTileError(tx: number, ty: number): boolean {
     const key = tileKey(tx, ty);
     this.statusText.delete(key);
     this.blockingSent.delete(key);
+    // Misma base de tiempo que el `now` de tick() (performance.now del caller).
+    this.erroredAt.set(key, performance.now());
     return this.requested.delete(key);
   }
 
