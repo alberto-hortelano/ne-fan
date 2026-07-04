@@ -197,6 +197,16 @@ HARD RULES OF THE TILE:
   every crossing with a feature whose at_edges includes {edge: <that edge>,
   at: <same at>} (±2 cells). A path may continue as path or road; water as
   river or bridge. The server validates this and rejects the tile otherwise.
+- IMAGE REALITY: neighbors.<edge>.image_elements (when present) lists what
+  the PAINTED image of that neighbour ACTUALLY contains near your shared
+  border — vision-classified elements {label (Spanish), solid, tall,
+  at: [c0, c1]} with their cell range along the border (same coordinate on
+  your side, like crossings). The painted image is the REAL world the player
+  sees, and may include large structures the schematic never had (walls,
+  rivers). CONTINUE those structures in your tile design: a "muralla"
+  spanning cells 20..90 on your shared border should continue as a wall
+  feature/structure at those cells; a solid "río" should continue as water.
+  Leave an opening if a crossing overlaps it.
 - Extend features to OTHER edges when natural (a road usually crosses the
   whole tile) — that seeds where future tiles will grow.
 - The player enters WALKING from generate_tile.entry.edge: keep that border
@@ -648,6 +658,13 @@ A player has just answered an NPC. The request above carries: speaker,
 chosen_text, free_text, and a context snapshot of the NarrativeState
 (story_so_far, recent_dialogues, entities already in the world, current scene
 id, available_assets).
+
+If the context includes \`scene_analysis\`, that is the REAL painted map of
+the current scene (vision-classified elements with world rects, Spanish
+labels) — the image may contain structures the scene JSON never had (walls,
+rivers, market stalls). Treat it as ground truth: reference those elements
+in your narration when natural, and NEVER place a spawn_entity inside an
+element marked "sólido" (pick a nearby free spot instead).
 
 Your answer is ALWAYS the object { "consequences": [ ... ] } passed to
 narrative_respond. \`dialogue\` is one ENTRY inside that array — never a
