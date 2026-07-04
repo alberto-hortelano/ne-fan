@@ -83,6 +83,9 @@ interface RendererTile {
   ty?: number;
   rect: WorldRectM;
   scene: SceneData;
+  /** Huella del esquema con el que se registró el tile: si un re-registro trae
+   *  la misma escena, las capas visuales (imagen IA incluida) se preservan. */
+  sceneFingerprint: string;
   /** Capa de terreno horneada (lazy, LRU re-horneable desde el esquema). */
   terrainLayer: HTMLCanvasElement | null;
   layerLastUsed: number;
@@ -244,6 +247,8 @@ export interface Occluder {
   img: HTMLImageElement;
   world: SceneBounds;
   baselineZ: number;
+  /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
+  tileKey?: string;
 }
 
 export interface CanvasRendererOptions {
@@ -350,8 +355,11 @@ export class CanvasRenderer {
 
   /** Añade (o reemplaza) un tile/escena del plano. ADITIVO: los tiles previos
    *  siguen pintándose — el mundo es continuo. La capa se hornea lazy en
-   *  render() (con LRU); el terrain_svg se rasteriza async por tile. */
-  addTile(key: string, scene: SceneData): void {
+   *  render() (con LRU); el terrain_svg se rasteriza async por tile.
+   *  Re-registrar la misma clave con la MISMA escena (resume, re-broadcast)
+   *  preserva las capas visuales — incluida la imagen IA, que costó créditos;
+   *  con escena distinta se invalidan imagen, capas y occluders del tile. */
+  addTile(key: string, scene: SceneData): { sceneChanged: boolean } {
     const wr = scene as unknown as { world_rect?: WorldRectM };
     const t = scene as unknown as { tile?: { tx?: number; ty?: number } };
     const rect: WorldRectM = wr.world_rect ?? {
@@ -360,20 +368,28 @@ export class CanvasRenderer {
       maxX: scene.dimensions.width / 2,
       maxZ: scene.dimensions.depth / 2,
     };
+    const fingerprint = JSON.stringify(scene);
+    const prev = this.tiles.get(key);
+    const same = prev !== undefined && prev.sceneFingerprint === fingerprint;
     const tile: RendererTile = {
       key,
       tx: t.tile?.tx,
       ty: t.tile?.ty,
       rect,
       scene,
-      terrainLayer: null,
-      layerLastUsed: 0,
-      sceneImage: null,
-      svgImage: null,
+      sceneFingerprint: fingerprint,
+      terrainLayer: same ? prev.terrainLayer : null,
+      layerLastUsed: same ? prev.layerLastUsed : 0,
+      sceneImage: same ? prev.sceneImage : null,
+      svgImage: same ? prev.svgImage : null,
     };
     this.tiles.set(key, tile);
+    if (prev && !same) {
+      this.occluders = this.occluders.filter((o) => o.tileKey !== key);
+    }
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
-    if (scene.terrain_svg) this.loadTerrainSvg(tile, scene.terrain_svg);
+    if (scene.terrain_svg && !same) this.loadTerrainSvg(tile, scene.terrain_svg);
+    return { sceneChanged: prev !== undefined && !same };
   }
 
   /** Marca el tile bajo el jugador como escena "activa" (caminos legacy). */
@@ -447,31 +463,39 @@ export class CanvasRenderer {
     return this.sceneData;
   }
 
-  /** Install the AI-painted background of the ACTIVE tile (bounds = su rect).
-   *  Drawn under the entities every frame, scaling/scrolling with the camera. */
-  setSceneImage(img: HTMLImageElement, _bounds: SceneBounds): void {
-    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
+  /** Rect mundial de un tile registrado, o null si no existe. */
+  getTileRect(key: string): SceneBounds | null {
+    const tile = this.tiles.get(key);
+    return tile ? { ...tile.rect } : null;
+  }
+
+  getTileScene(key: string): SceneData | null {
+    return this.tiles.get(key)?.scene ?? null;
+  }
+
+  getTileImage(key: string): HTMLImageElement | null {
+    return this.tiles.get(key)?.sceneImage ?? null;
+  }
+
+  tileHasImage(key: string): boolean {
+    return Boolean(this.tiles.get(key)?.sceneImage);
+  }
+
+  /** Instala la imagen IA de UN tile (cubre exactamente su rect). Libera su
+   *  capa horneada (slot del LRU; re-horneable si la imagen se invalida) y
+   *  purga los occluders recortados de la imagen anterior de ese tile. */
+  setTileImage(key: string, img: HTMLImageElement): void {
+    const tile = this.tiles.get(key);
     if (!tile) return;
     tile.sceneImage = img;
-    // A new image invalidates any previous cutouts — they were cut from the old
-    // pixels and would now be misaligned. Press X again to re-segment.
-    this.occluders = [];
+    tile.terrainLayer = null;
+    this.occluders = this.occluders.filter((o) => o.tileKey !== key);
   }
 
-  clearSceneImage(): void {
-    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
-    if (tile) tile.sceneImage = null;
-    this.occluders = [];
-  }
-
-  hasSceneImage(): boolean {
-    const tile = this.activeKey ? this.tiles.get(this.activeKey) : undefined;
-    return Boolean(tile?.sceneImage);
-  }
-
-  /** Install the occluder sprites cut out of the current scene image. */
-  setOccluders(occluders: Occluder[]): void {
-    this.occluders = occluders.slice();
+  /** Sustituye los occluders de UN tile (X re-segmenta ese tile; los cutouts
+   *  de otros tiles siguen vivos — el mundo es un plano continuo). */
+  setOccludersForTile(key: string, occluders: Occluder[]): void {
+    this.occluders = this.occluders.filter((o) => o.tileKey !== key).concat(occluders);
   }
 
   /** Add occluders (discovered props, Phase 3) to the existing set, replacing

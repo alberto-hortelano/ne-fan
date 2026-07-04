@@ -259,8 +259,13 @@ async function reviewBlueprintAndApply(): Promise<void> {
     errors.push("scene", "review (R): la escena actual no es Format D — nada que revisar");
     return;
   }
+  const entry = activeTileKey ? tileStore.entries.get(activeTileKey) : null;
+  if (!entry) {
+    errors.push("scene", "review (R): no hay tile activo");
+    return;
+  }
   log("blueprint → revisión por visión (Claude)…");
-  const review = await sceneImageController.reviewBlueprint(fd);
+  const review = await sceneImageController.reviewBlueprint(fd, entry.rect);
   for (const issue of review.issues) log(`review: ${issue}`);
   if (review.approved && !review.fixes) {
     log("review: blueprint aprobado — listo para G");
@@ -521,10 +526,6 @@ function setActiveClientTile(key: string): void {
   activeTileKey = key;
   sceneData = entry.scene;
   renderer.setActiveTile(key);
-  sceneImageController.reset(
-    entry.rect,
-    entry.scene as unknown as Parameters<typeof sceneImageController.reset>[1],
-  );
   currentExits = (entry.scene.exits ?? []) as SceneExit[];
   travelPanel.setExits(currentExits);
 }
@@ -907,22 +908,26 @@ function gameLoop(now: number): void {
     renderer.setScale(currentZoom);
   }
 
-  // Generación IA del escenario (dev): G regenera la imagen del escenario
-  // actual desde el esquema; O hace outpaint hacia el borde más próximo al
-  // jugador. Async fire-and-forget — el controlador ya loguea fallos a
-  // ErrorLog; el .catch evita unhandled rejection.
+  // Generación IA del escenario (dev): G regenera la imagen del tile ACTIVO
+  // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
+  // a ErrorLog; el .catch evita unhandled rejection.
   if (input.consumeGenerateScene()) {
-    void sceneImageController.generateFull().catch(() => {});
+    if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   if (input.consumeOutpaintScene()) {
-    void sceneImageController.outpaintTowardPlayer(playerPos).catch(() => {});
+    errors.push(
+      "scene",
+      "O (outpaint) está deshabilitada en el mundo de tiles — usa Auto-img o G por tile",
+    );
   }
-  // X segmenta los oclusores (muros/edificios) de la imagen actual para que
-  // tapen al personaje (depth-sort). Requiere haber generado antes con G.
+  // X segmenta los oclusores (muros/edificios) de la imagen del tile activo
+  // para que tapen al personaje (depth-sort). Requiere imagen previa (G/auto).
   if (input.consumeSegmentScene()) {
-    void sceneImageController.segmentOccluders()
-      .then((occ) => refineCollisionsFromSegments(occ))
-      .catch(() => {});
+    if (activeTileKey) {
+      void sceneImageController.segmentOccludersForTile(activeTileKey)
+        .then((occ) => refineCollisionsFromSegments(occ))
+        .catch(() => {});
+    }
   }
   // B alterna el overlay de bordes de colisión (rojo) vs footprint segmentado
   // (cian) sobre la imagen, para juzgar la precisión de las colisiones.
@@ -933,9 +938,11 @@ function gameLoop(now: number): void {
   // N descubre props que la IA inventó (SAM3 open-vocab) y les da oclusión +
   // colisión. Requiere haber generado antes con G (idealmente segmentado con X).
   if (input.consumeDiscoverObjects()) {
-    void sceneImageController.discoverObjects()
-      .then((disc) => addDiscoveredObjects(disc))
-      .catch(() => {});
+    if (activeTileKey) {
+      void sceneImageController.discoverObjectsForTile(activeTileKey)
+        .then((disc) => addDiscoveredObjects(disc))
+        .catch(() => {});
+    }
   }
   // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
   // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:

@@ -1,16 +1,19 @@
 /** Scene-image controller: drives AI generation of the top-down scene
- *  background for the 2D client.
+ *  background for the 2D client, one TILE at a time (continuous world).
  *
- *  - `generateFull` captures the schematic the renderer paints (terrain +
- *    object rectangles, no characters), sends it to ai_server `/generate_scene_image`
- *    (img2img + ControlNet canny), and installs the painted result as the scene
- *    background covering the same world rectangle (1:1, top-down).
- *  - `outpaintTowardPlayer` extends that image outward on the edge nearest the
- *    player via `/outpaint_scene_image`, growing the world bounds so the world
- *    gets richer terrain as you walk.
+ *  - `generateForTile` captures the schematic the renderer paints for that
+ *    tile's rect (terrain + object rectangles, no characters), sends it to
+ *    ai_server `/generate_scene_image` and installs the painted result as the
+ *    tile's background (1:1, top-down).
+ *  - `segmentOccludersForTile` / `discoverObjectsForTile` cut z-sortable
+ *    sprites out of the tile's image (known footprints / SAM3 discovery).
  *
- *  Collisions and SceneData are untouched — the image is purely visual. Fail
- *  loud: every failure goes to the ErrorLog and rejects; no silent placeholder.
+ *  All operations are keyed by tile: crossing tiles mid-generation is
+ *  harmless — the result lands on the tile it was requested for. A single
+ *  `busy` flag serialises calls (Meshy in series), shared by the manual keys
+ *  (G/X/N) and the auto pipeline. Collisions and SceneData are untouched —
+ *  the image is purely visual. Fail loud: every failure goes to the ErrorLog
+ *  and rejects; no silent placeholder.
  */
 import { errors } from "../ui/error-log.js";
 import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
@@ -34,10 +37,6 @@ const CAPTURE_LONG_SIDE = 640;
 /** Pixels-per-metre clamp for the capture so tiny/huge scenes stay sane. */
 const MIN_PPM = 6;
 const MAX_PPM = 64;
-/** Each outpaint grows the crossed axis by this fraction of its current extent. */
-const OUTPAINT_FRACTION = 0.5;
-
-type Side = "left" | "right" | "top" | "bottom";
 
 /** Resultado de /review_scene_blueprint: Claude mira el blueprint y devuelve
  *  aprobación + issues + overrides parciales de la escena Format D. */
@@ -58,9 +57,6 @@ interface SceneSummary {
 }
 
 export class SceneImageController {
-  private bounds: SceneBounds | null = null;
-  private image: HTMLImageElement | null = null;
-  private prompt = "";
   private busy = false;
 
   constructor(
@@ -68,21 +64,8 @@ export class SceneImageController {
     private baseUrl: string = "http://127.0.0.1:8765",
   ) {}
 
-  /** Reset for a freshly loaded scene. `bounds` is the dims rectangle centred
-   *  on the origin. Clears any previous background. */
-  reset(bounds: SceneBounds, scene: SceneSummary | null): void {
-    this.bounds = { ...bounds };
-    this.image = null;
-    this.prompt = this.buildPrompt(scene);
-    this.renderer.clearSceneImage();
-  }
-
   isBusy(): boolean {
     return this.busy;
-  }
-
-  hasImage(): boolean {
-    return this.image !== null;
   }
 
   private buildPrompt(scene: SceneSummary | null): string {
@@ -96,7 +79,7 @@ export class SceneImageController {
   private async loadImage(url: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = "anonymous"; // needed so we can re-capture it for outpaint
+      img.crossOrigin = "anonymous"; // needed so we can re-capture it for segmentation
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error(`failed to load scene image ${url}`));
       img.src = url;
@@ -111,7 +94,7 @@ export class SceneImageController {
   }
 
   /** Re-export the current background image to a same-pixels PNG data URL so it
-   *  can be sent back to the server for outpainting. Requires the image to have
+   *  can be sent back to the server for segmentation. Requires the image to have
    *  loaded cross-origin clean (it did — server sends ACAO:*). */
   private imageToDataUrl(img: HTMLImageElement): string {
     const off = document.createElement("canvas");
@@ -123,25 +106,27 @@ export class SceneImageController {
     return off.toDataURL("image/png");
   }
 
-  /** Capture the schematic of the current bounds and generate the scene image. */
-  async generateFull(): Promise<void> {
+  /** Capture the tile's schematic and generate its scene image. */
+  async generateForTile(key: string): Promise<void> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring G");
+      console.log("[scene-image] busy, ignoring generate");
       return;
     }
-    if (!this.bounds) {
-      errors.push("scene", "generateFull called before reset() — no bounds");
+    const rect = this.renderer.getTileRect(key);
+    const scene = this.renderer.getTileScene(key);
+    if (!rect || !scene) {
+      errors.push("scene", `generateForTile: tile ${key} no registrado en el renderer`);
       return;
     }
     this.busy = true;
-    const bounds = { ...this.bounds };
     try {
-      const ppm = this.ppmFor(bounds);
-      const dataUrl = this.renderer.captureSchematic(bounds, ppm);
+      const prompt = this.buildPrompt(scene as unknown as SceneSummary);
+      const ppm = this.ppmFor(rect);
+      const dataUrl = this.renderer.captureSchematic(rect, ppm);
       const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, prompt: this.prompt }),
+        body: JSON.stringify({ image_b64: dataUrl, prompt }),
       });
       if (!res.ok) {
         throw new Error(`/generate_scene_image HTTP ${res.status}`);
@@ -151,35 +136,28 @@ export class SceneImageController {
         throw new Error(`/generate_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
       }
       const img = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
-      this.image = img;
-      this.bounds = bounds;
-      this.renderer.setSceneImage(img, bounds);
-      console.log(`[scene-image] full generated (${img.naturalWidth}x${img.naturalHeight})`);
+      this.renderer.setTileImage(key, img);
+      console.log(`[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight})`);
     } catch (err) {
-      errors.push("scene", "generateFull failed", err);
+      errors.push("scene", `generateForTile ${key} failed`, err);
       throw err;
     } finally {
       this.busy = false;
     }
   }
 
-  /** Captura el blueprint actual y pide a Claude (vía ai_server + MCP) que lo
+  /** Captura el blueprint de `rect` y pide a Claude (vía ai_server + MCP) que lo
    *  revise contra la escena Format D. No toca nada: devuelve el veredicto y
    *  el caller decide si aplica los fixes. Requiere terminal de Claude Code
    *  escuchando en el bridge (si no, el servidor responde 503 y aquí se
    *  reporta al ErrorLog). */
-  async reviewBlueprint(scene: Record<string, unknown>): Promise<BlueprintReview> {
+  async reviewBlueprint(scene: Record<string, unknown>, rect: SceneBounds): Promise<BlueprintReview> {
     if (this.busy) {
       throw new Error("scene-image controller busy");
     }
-    if (!this.bounds) {
-      errors.push("scene", "reviewBlueprint called before reset() — no bounds");
-      throw new Error("no bounds");
-    }
     this.busy = true;
     try {
-      const bounds = { ...this.bounds };
-      const dataUrl = this.renderer.captureSchematic(bounds, this.ppmFor(bounds));
+      const dataUrl = this.renderer.captureSchematic(rect, this.ppmFor(rect));
       const sceneId = (scene.scene_id as string) || "unknown";
       const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
         method: "POST",
@@ -204,92 +182,29 @@ export class SceneImageController {
     }
   }
 
-  /** Outpaint toward the scene edge nearest the player (world XZ metres). */
-  async outpaintTowardPlayer(player: { x: number; z: number }): Promise<void> {
-    if (this.busy) {
-      console.log("[scene-image] busy, ignoring O");
-      return;
-    }
-    if (!this.image || !this.bounds) {
-      errors.push("scene", "outpaint called with no scene image — press G first");
-      return;
-    }
-    const side = this.nearestSide(player, this.bounds);
-    this.busy = true;
-    const img = this.image;
-    const bounds = { ...this.bounds };
-    try {
-      const horizontal = side === "left" || side === "right";
-      const extent = horizontal ? bounds.maxX - bounds.minX : bounds.maxZ - bounds.minZ;
-      const addMeters = Math.max(8, extent * OUTPAINT_FRACTION);
-      const imgDim = horizontal ? img.naturalWidth : img.naturalHeight;
-      const expandPx = Math.max(64, Math.round((addMeters / extent) * imgDim));
-
-      const dataUrl = this.imageToDataUrl(img);
-      const res = await fetch(`${this.baseUrl}/outpaint_scene_image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_b64: dataUrl,
-          side,
-          expand_px: expandPx,
-          prompt: this.prompt,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`/outpaint_scene_image HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as { hash?: string; scene_url?: string; error?: string };
-      if (!data.scene_url) {
-        throw new Error(`/outpaint_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
-      }
-
-      // Grow bounds on the crossed side by the metres we asked the server to add.
-      const grown: SceneBounds = { ...bounds };
-      if (side === "left") grown.minX -= addMeters;
-      else if (side === "right") grown.maxX += addMeters;
-      else if (side === "top") grown.minZ -= addMeters;
-      else grown.maxZ += addMeters;
-
-      const newImg = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
-      this.image = newImg;
-      this.bounds = grown;
-      this.renderer.setSceneImage(newImg, grown);
-      console.log(
-        `[scene-image] outpaint ${side} +${addMeters.toFixed(1)}m ` +
-        `(${newImg.naturalWidth}x${newImg.naturalHeight})`,
-      );
-    } catch (err) {
-      errors.push("scene", `outpaint ${side} failed`, err);
-      throw err;
-    } finally {
-      this.busy = false;
-    }
-  }
-
-  /** Segment the known occluders (buildings/props) out of the current scene
+  /** Segment the known occluders (buildings/props) out of the tile's scene
    *  image and install them as depth-sortable cutouts so they occlude the
    *  player. Each object's pixel box comes from its world footprint mapped 1:1
    *  onto the image; the server returns one RGBA sprite + tight bbox each. */
-  async segmentOccluders(): Promise<Occluder[]> {
+  async segmentOccludersForTile(key: string): Promise<Occluder[]> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring X");
+      console.log("[scene-image] busy, ignoring segment");
       return [];
     }
-    if (!this.image || !this.bounds) {
-      errors.push("scene", "segment called with no scene image — press G first");
+    const img = this.renderer.getTileImage(key);
+    const b = this.renderer.getTileRect(key);
+    if (!img || !b) {
+      errors.push("scene", `segment: tile ${key} sin imagen — G (o Auto-img) primero`);
       return [];
     }
-    const objects = this.renderer.getSceneData()?.objects ?? [];
+    const objects = this.renderer.getTileScene(key)?.objects ?? [];
     const occ = objects.filter((o) => OCCLUDER_CATEGORIES.has(o.category));
     if (occ.length === 0) {
-      console.log("[scene-image] no building/prop occluders to segment");
+      console.log(`[scene-image] ${key}: no building/prop occluders to segment`);
       return [];
     }
 
     this.busy = true;
-    const img = this.image;
-    const b = { ...this.bounds };
     const W = img.naturalWidth;
     const H = img.naturalHeight;
     const spanX = b.maxX - b.minX;
@@ -330,13 +245,13 @@ export class SceneImageController {
           minZ: b.minZ + (by / seg.img_h) * spanZ,
           maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
-        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ });
+        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ, tileKey: key });
       }
-      this.renderer.setOccluders(built);
-      console.log(`[scene-image] segmented ${built.length}/${occ.length} occluders`);
+      this.renderer.setOccludersForTile(key, built);
+      console.log(`[scene-image] ${key}: segmented ${built.length}/${occ.length} occluders`);
       return built;
     } catch (err) {
-      errors.push("scene", "segmentOccluders failed", err);
+      errors.push("scene", `segmentOccluders ${key} failed`, err);
       throw err;
     } finally {
       this.busy = false;
@@ -346,26 +261,28 @@ export class SceneImageController {
   /** Phase 3: discover props the image model invented (not in the schematic)
    *  via SAM3 open-vocab, and add them as occluders. Returns the new occluders
    *  so the caller can also give them collision. `known_boxes` (the building/prop
-   *  footprints) are sent so the server filters out objects we already handle. */
-  async discoverObjects(): Promise<Occluder[]> {
+   *  footprints) are sent so the server filters out objects we already handle.
+   *  Ids are prefixed with the tile key so discoveries never collide across
+   *  tiles (`discovered_0` exists once per SAM3 run). */
+  async discoverObjectsForTile(key: string): Promise<Occluder[]> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring N");
+      console.log("[scene-image] busy, ignoring discover");
       return [];
     }
-    if (!this.image || !this.bounds) {
-      errors.push("scene", "discover called with no scene image — press G first");
+    const img = this.renderer.getTileImage(key);
+    const b = this.renderer.getTileRect(key);
+    if (!img || !b) {
+      errors.push("scene", `discover: tile ${key} sin imagen — G (o Auto-img) primero`);
       return [];
     }
     this.busy = true;
-    const img = this.image;
-    const b = { ...this.bounds };
     const W = img.naturalWidth;
     const H = img.naturalHeight;
     const spanX = b.maxX - b.minX;
     const spanZ = b.maxZ - b.minZ;
     try {
       // Pixel boxes of objects we already handle, so the server won't re-report them.
-      const objects = this.renderer.getSceneData()?.objects ?? [];
+      const objects = this.renderer.getTileScene(key)?.objects ?? [];
       const knownBoxes = objects
         .filter((o) => OCCLUDER_CATEGORIES.has(o.category))
         .map((o) => {
@@ -404,29 +321,16 @@ export class SceneImageController {
           minZ: b.minZ + (by / seg.img_h) * spanZ,
           maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
-        built.push({ id: seg.id, img: sprite, world, baselineZ: world.maxZ });
+        built.push({ id: `${key}:${seg.id}`, img: sprite, world, baselineZ: world.maxZ, tileKey: key });
       }
       this.renderer.addOccluders(built);
-      console.log(`[scene-image] discovered ${built.length} new props`);
+      console.log(`[scene-image] ${key}: discovered ${built.length} new props`);
       return built;
     } catch (err) {
-      errors.push("scene", "discoverObjects failed", err);
+      errors.push("scene", `discoverObjects ${key} failed`, err);
       throw err;
     } finally {
       this.busy = false;
     }
-  }
-
-  /** Pick the bounds edge the player is closest to (image-space side names). */
-  private nearestSide(player: { x: number; z: number }, b: SceneBounds): Side {
-    const dLeft = player.x - b.minX;
-    const dRight = b.maxX - player.x;
-    const dTop = player.z - b.minZ;
-    const dBottom = b.maxZ - player.z;
-    const min = Math.min(dLeft, dRight, dTop, dBottom);
-    if (min === dLeft) return "left";
-    if (min === dRight) return "right";
-    if (min === dTop) return "top";
-    return "bottom";
   }
 }
