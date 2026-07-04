@@ -2,8 +2,11 @@
 
 Two jobs, both on fal, same auth (FAL_KEY in the environment):
 
-  - `segment_box` (SAM2, `fal-ai/sam2/image`): cut a KNOWN object out of the
-    scene by feeding its approximate pixel box as a box prompt. One object/call.
+  - `segment_boxes` (SAM2, `fal-ai/sam2/image`): cut KNOWN objects out of the
+    scene by feeding their approximate pixel boxes as box prompts. The endpoint
+    accepts MANY boxes per call and returns one combined masked image (verified
+    empirically: 40 boxes → 40 independent objects, ~1 s, nothing outside the
+    boxes); the caller splits the combined mask back per box.
   - `discover` (SAM3, `fal-ai/sam-3/image`): open-vocabulary detection — given a
     text concept ("statue", "barrel", …) returns every matching INSTANCE with its
     own mask + score, so we can find props the image model invented that were not
@@ -62,22 +65,26 @@ class FalSamClient:
             r.raise_for_status()
             return r.content
 
-    def segment_box(
+    def segment_boxes(
         self,
         image_data_uri: str,
-        box: tuple[int, int, int, int],
-        timeout: float = 60.0,
+        boxes: list[tuple[int, int, int, int]],
+        timeout: float = 120.0,
     ) -> bytes:
-        """Segment the object inside `box` (x_min, y_min, x_max, y_max, pixels).
+        """Segment the objects inside `boxes` ([(x_min, y_min, x_max, y_max)] px)
+        in ONE call. Each box is an independent object prompt; the result is a
+        single image with ALL their masks applied — split it per box afterwards.
 
         Returns the PNG bytes of fal's segmented `image` output. Raises on any
         failure (fail-loud — never returns an empty/black mask silently)."""
-        x_min, y_min, x_max, y_max = box
+        if not boxes:
+            raise ValueError("segment_boxes: boxes must be non-empty")
         payload = {
             "image_url": image_data_uri,
             "box_prompts": [
-                {"x_min": int(x_min), "y_min": int(y_min),
-                 "x_max": int(x_max), "y_max": int(y_max)}
+                {"x_min": int(b[0]), "y_min": int(b[1]),
+                 "x_max": int(b[2]), "y_max": int(b[3])}
+                for b in boxes
             ],
             "apply_mask": True,
             "sync_mode": True,

@@ -7,8 +7,10 @@ ORIGINAL scene pixels (not fal's possibly-recoloured output) so the cutout
 matches the background exactly — the client can then re-draw it on top of the
 player for occlusion with no visible seam.
 
-No local GPU: segmentation runs on fal (costs ~$0.005 per occluder). One fal
-call per occluder; sequential.
+No local GPU: segmentation runs on fal. Boxes are BATCHED — SAM2 accepts many
+box prompts per call and masks each as an independent object (verified: 40
+boxes → 40 objects, ~1 s), so a 96-occluder scene costs 2 calls instead of 96.
+The combined mask is split back per occluder by intersecting with its box.
 
 Fail-loud: a fal/infrastructure error raises. An occluder whose mask comes back
 empty (SAM found nothing in the box) is a logged skip (expected degradation),
@@ -24,6 +26,10 @@ import numpy as np
 from PIL import Image
 
 from fal_client import FalSamClient
+
+# Cajas por llamada a fal. Verificado con 40 en ~1 s; 64 deja una escena de 96
+# occluders en 2 llamadas manteniendo margen frente a límites no documentados.
+MAX_BOXES_PER_CALL = 64
 
 
 def _to_data_uri(png_bytes: bytes) -> str:
@@ -90,7 +96,8 @@ class SceneSegmenter:
         scene_rgb = np.asarray(scene)  # HxWx3
         data_uri = _to_data_uri(scene_png_bytes)
 
-        out: list[dict] = []
+        # Validar y clampear todas las cajas antes de gastar ninguna llamada.
+        clamped: list[tuple[str, tuple[int, int, int, int]]] = []
         for occ in occluders:
             oid = str(occ.get("id", "?"))
             box = occ.get("box_px")
@@ -100,34 +107,50 @@ class SceneSegmenter:
             y_min = max(0, min(h - 1, int(box[1])))
             x_max = max(x_min + 1, min(w, int(box[2])))
             y_max = max(y_min + 1, min(h, int(box[3])))
+            clamped.append((oid, (x_min, y_min, x_max, y_max)))
 
+        # La máscara combinada se reparte intersectando con la caja de cada
+        # occluder (+margen: SAM puede pintar unos px fuera del prompt). Dos
+        # cajas que se solapen comparten esos píxeles en ambos recortes —
+        # inocuo, el sprite sigue siendo el trozo correcto de la imagen.
+        margin = 4
+        out: list[dict] = []
+        for i in range(0, len(clamped), MAX_BOXES_PER_CALL):
+            chunk = clamped[i:i + MAX_BOXES_PER_CALL]
             start = time.perf_counter()
-            result_png = self._fal.segment_box(data_uri, (x_min, y_min, x_max, y_max))
+            result_png = self._fal.segment_boxes(data_uri, [b for _, b in chunk])
             mask = _mask_from_fal(result_png, w, h)
             dt = time.perf_counter() - start
+            print(f"SceneSegmenter: batch {len(chunk)} boxes ({dt:.2f}s)", flush=True)
 
-            ys, xs = np.where(mask)
-            if ys.size == 0:
-                print(f"SceneSegmenter[{oid}]: empty mask in box {box} — skipping ({dt:.2f}s)", flush=True)
-                continue
+            for oid, (x_min, y_min, x_max, y_max) in chunk:
+                rx0 = max(0, x_min - margin)
+                ry0 = max(0, y_min - margin)
+                rx1 = min(w, x_max + margin)
+                ry1 = min(h, y_max + margin)
+                region = mask[ry0:ry1, rx0:rx1]
+                ys, xs = np.where(region)
+                if ys.size == 0:
+                    print(f"SceneSegmenter[{oid}]: empty mask in box {[x_min, y_min, x_max, y_max]} — skipping", flush=True)
+                    continue
 
-            bx0, bx1 = int(xs.min()), int(xs.max()) + 1
-            by0, by1 = int(ys.min()), int(ys.max()) + 1
-            crop_rgb = scene_rgb[by0:by1, bx0:bx1]
-            crop_mask = mask[by0:by1, bx0:bx1]
-            rgba = np.dstack([crop_rgb, (crop_mask * 255).astype(np.uint8)])
-            buf = io.BytesIO()
-            Image.fromarray(rgba, "RGBA").save(buf, "PNG")
+                bx0, bx1 = rx0 + int(xs.min()), rx0 + int(xs.max()) + 1
+                by0, by1 = ry0 + int(ys.min()), ry0 + int(ys.max()) + 1
+                crop_rgb = scene_rgb[by0:by1, bx0:bx1]
+                crop_mask = region[by0 - ry0:by1 - ry0, bx0 - rx0:bx1 - rx0]
+                rgba = np.dstack([crop_rgb, (crop_mask * 255).astype(np.uint8)])
+                buf = io.BytesIO()
+                Image.fromarray(rgba, "RGBA").save(buf, "PNG")
 
-            bbox = [bx0, by0, bx1 - bx0, by1 - by0]
-            print(f"SceneSegmenter[{oid}]: bbox {bbox} ({dt:.2f}s)", flush=True)
-            out.append({
-                "id": oid,
-                "sprite_png_bytes": buf.getvalue(),
-                "image_bbox": bbox,
-                "img_w": w,
-                "img_h": h,
-            })
+                bbox = [bx0, by0, bx1 - bx0, by1 - by0]
+                print(f"SceneSegmenter[{oid}]: bbox {bbox}", flush=True)
+                out.append({
+                    "id": oid,
+                    "sprite_png_bytes": buf.getvalue(),
+                    "image_bbox": bbox,
+                    "img_w": w,
+                    "img_h": h,
+                })
         return out
 
     def discover_objects(
