@@ -786,10 +786,15 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # No _gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
     # holding the lock would needlessly block texture/3D GPU work for ~30s.
     start = time.time()
-    result = await asyncio.to_thread(
-        scene_image_gen.generate_full, png, body.prompt, body.strength,
-        body.seed, body.guidance, body.controlnet_scale, body.context_sides,
-    )
+    # 502 explícito: un crash del backend remoto subiría como 500 sin pasar por
+    # el CORSMiddleware y el navegador lo enmascara como error de red.
+    try:
+        result = await asyncio.to_thread(
+            scene_image_gen.generate_full, png, body.prompt, body.strength,
+            body.seed, body.guidance, body.controlnet_scale, body.context_sides,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
     elapsed_ms = int((time.time() - start) * 1000)
 
     scene_cache.put(body.prompt, "scene", result["scene"], context=context)
@@ -839,10 +844,13 @@ async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
         return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
 
     start = time.time()
-    result = await asyncio.to_thread(
-        scene_image_gen.outpaint,
-        png, body.side, body.expand_px, body.prompt, body.seed,
-    )
+    try:
+        result = await asyncio.to_thread(
+            scene_image_gen.outpaint,
+            png, body.side, body.expand_px, body.prompt, body.seed,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"scene outpaint failed: {e}") from e
     elapsed_ms = int((time.time() - start) * 1000)
 
     scene_cache.put(body.prompt, "scene", result["scene"], context=context)
@@ -894,11 +902,16 @@ async def segment_scene_image_endpoint(body: SegmentSceneRequest):
         misses.append({"id": occ.id, "box_px": occ.box_px, "context": context, "key": key})
 
     if misses:
-        produced = await asyncio.to_thread(
-            scene_segmenter.segment_occluders,
-            png,
-            [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
-        )
+        # 502 explícito: un error de fal subiría como 500 sin CORS y el cliente
+        # lo confunde con "ai_server caído" (pausa el auto-pipeline sin motivo).
+        try:
+            produced = await asyncio.to_thread(
+                scene_segmenter.segment_occluders,
+                png,
+                [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"occluder segmentation failed: {e}") from e
         by_id = {p["id"]: p for p in produced}
         for m in misses:
             p = by_id.get(m["id"])
@@ -953,9 +966,12 @@ async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
     if cached is not None:
         return {"discovered": json.loads(cached)}
 
-    produced = await asyncio.to_thread(
-        scene_segmenter.discover_objects, png, body.known_boxes, concepts,
-    )
+    try:
+        produced = await asyncio.to_thread(
+            scene_segmenter.discover_objects, png, body.known_boxes, concepts,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"object discovery failed: {e}") from e
 
     discovered = []
     for p in produced:
