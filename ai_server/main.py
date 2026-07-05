@@ -59,7 +59,7 @@ from sprite_generator import SpriteGenerator
 from controlnet_skin import ControlNetSkinGenerator, seed_for
 from scene_image_generator import SceneImageGenerator, SIDES
 from fal_client import FalSamClient
-from scene_segmenter import SceneSegmenter
+from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
 from asset_cache import AssetCache, AssetManifest
 
 import asyncio as _asyncio
@@ -233,13 +233,12 @@ async def lifespan(app: FastAPI):
         manifest=asset_manifest,
     )
 
-    # Occluder segmentation is OPTIONAL: it needs FAL_KEY. If the user hasn't
-    # added it yet the server still starts; /segment_scene_image returns 503.
+    # El análisis de escena es OPCIONAL: necesita FAL_KEY. Sin ella el server
+    # arranca igual; /analyze_scene_image devuelve 503.
     try:
         scene_segmenter = SceneSegmenter(
             fal_client=FalSamClient(
-                segment_model=config["segment_model"],
-                discover_model=config["discover_model"],
+                auto_segment_model=config["auto_segment_model"],
             ),
         )
     except ValueError as e:
@@ -429,39 +428,13 @@ class OutpaintSceneRequest(BaseModel):
     seed: int = -1
 
 
-class Occluder(BaseModel):
-    """A known scene object to cut out of the generated image. `box_px` is its
-    approximate pixel box in the scene image: [x_min, y_min, x_max, y_max]."""
-    id: str = Field(min_length=1)
-    box_px: list[int] = Field(min_length=4, max_length=4)
-
-
-class SegmentSceneRequest(BaseModel):
-    """Cut occluder sprites out of an AI-painted scene image (SAM via fal.ai).
-
-    `image_b64` is the same scene PNG the client is displaying; `occluders` are
-    the known building/prop objects with their pixel boxes. Returns one cropped
-    RGBA sprite per occluder for the client to depth-sort against the player."""
+class AnalyzeSceneRequest(BaseModel):
+    """Mundo derivado de la imagen: segmentación automática completa + visión
+    clasifica cada región (solid/tall). El cliente deriva de la respuesta la
+    colisión y los occluders del tile. `context` viaja al modelo de visión
+    (p. ej. scene_description del tile)."""
     image_b64: str = Field(min_length=1)
-    occluders: list[Occluder] = Field(min_length=1)
-
-
-# Default vocabulary of solid dark-fantasy props the image model tends to invent.
-# Each concept is one SAM3 open-vocab call; keep the list focused (cost + noise).
-_DISCOVER_CONCEPTS = [
-    "statue", "barrel", "crate", "urn", "brazier",
-    "well", "cauldron", "tombstone", "stone pillar", "boulder",
-]
-
-
-class DiscoverSceneRequest(BaseModel):
-    """Phase 3: open-vocabulary discovery of props the image model invented that
-    were NOT in the schematic. `known_boxes` are the pixel boxes of objects we
-    already handle ([x_min,y_min,x_max,y_max]) so they are filtered out. Returns
-    new objects (sprite + footprint) for the client to give occlusion + collision."""
-    image_b64: str = Field(min_length=1)
-    known_boxes: list[list[int]] = Field(default_factory=list)
-    concepts: list[str] | None = None
+    context: dict = Field(default_factory=dict)
 
 
 def _cache_dirs_by_type() -> dict[str, Path]:
@@ -867,129 +840,103 @@ async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
     }
 
 
-@app.post("/segment_scene_image")
-async def segment_scene_image_endpoint(body: SegmentSceneRequest):
-    """Segment known occluders (buildings/props) out of the scene image so the
-    client can depth-sort them against the player. One fal SAM call per occluder;
-    each cropped RGBA sprite is cached by (scene layout, occluder id, box, model)."""
+
+
+@app.post("/analyze_scene_image")
+async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
+    """Mundo derivado de la imagen: auto-segmenta TODA la escena (SAM2),
+    clasifica cada región por visión (Claude vía MCP, fallback API) y devuelve
+    solo los elementos jugables: `solid` (colisión) y/o `tall` (occluder con
+    z-index), cada uno con su sprite recortado de los píxeles originales.
+    Cacheado por (layout de imagen, modelos) — el resume es determinista."""
     import asyncio
     import hashlib
 
     if scene_segmenter is None:
         raise HTTPException(
             status_code=503,
-            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable occluder segmentation",
+            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable scene analysis",
         )
+    if llm_client is None:
+        raise HTTPException(status_code=503, detail="llm_client unavailable — vision required")
 
     png = _decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
-    model = scene_segmenter._fal.model
-
-    # Split occluders into cache hits (served straight away) and misses (segment).
-    segments: list[dict] = []
-    misses: list[dict] = []
-    keys: dict[str, str] = {}
-    for occ in body.occluders:
-        box_str = ",".join(str(v) for v in occ.box_px)
-        context = {"scene": layout, "box": box_str, "model": model}
-        key = segment_cache.hash_key(occ.id, context)
-        keys[occ.id] = key
-        if segment_cache.has(occ.id, "segment", context):
-            bbox_meta = segment_cache.get_by_hash(key, "bbox")
-            if bbox_meta is not None:
-                segments.append({"id": occ.id, "key": key, "bbox_json": bbox_meta})
-                continue
-        misses.append({"id": occ.id, "box_px": occ.box_px, "context": context, "key": key})
-
-    if misses:
-        # 502 explícito: un error de fal subiría como 500 sin CORS y el cliente
-        # lo confunde con "ai_server caído" (pausa el auto-pipeline sin motivo).
-        try:
-            produced = await asyncio.to_thread(
-                scene_segmenter.segment_occluders,
-                png,
-                [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
-            )
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"occluder segmentation failed: {e}") from e
-        by_id = {p["id"]: p for p in produced}
-        for m in misses:
-            p = by_id.get(m["id"])
-            if p is None:
-                continue  # empty mask — segmenter logged the skip
-            ctx = m["context"]
-            segment_cache.put(m["id"], "segment", p["sprite_png_bytes"], context=ctx)
-            # Persist the placement metadata alongside the sprite so cache hits
-            # can answer without re-segmenting. Stored as a `bbox` map in the same
-            # hash dir (AssetCache forces a .png suffix; the bytes are JSON).
-            bbox_json = json.dumps({
-                "image_bbox": p["image_bbox"], "img_w": p["img_w"], "img_h": p["img_h"],
-            }).encode()
-            segment_cache.put(m["id"], "bbox", bbox_json, context=ctx, subtype_override="bbox")
-            segments.append({"id": m["id"], "key": m["key"], "bbox_json": bbox_json})
-
-    result = []
-    for s in segments:
-        meta = json.loads(s["bbox_json"])
-        result.append({
-            "id": s["id"],
-            "sprite_url": f"/cache/segment/{s['key']}",
-            "image_bbox": meta["image_bbox"],
-            "img_w": meta["img_w"],
-            "img_h": meta["img_h"],
-        })
-    return {"segments": result}
-
-
-@app.post("/discover_scene_objects")
-async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
-    """Discover props the image model invented (SAM3 open-vocab) and return them
-    as new objects (sprite + footprint) so the client can give them occlusion +
-    collision. Cached by (scene layout, concept set, model)."""
-    import asyncio
-    import hashlib
-
-    if scene_segmenter is None:
-        raise HTTPException(
-            status_code=503,
-            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable discovery",
-        )
-
-    png = _decode_b64_png(body.image_b64)
-    layout = hashlib.sha256(png).hexdigest()[:16]
-    concepts = body.concepts or _DISCOVER_CONCEPTS
-    model = scene_segmenter._fal.discover_model
-    ctx = {"layout": layout, "concepts": ",".join(concepts), "model": model}
-    key = segment_cache.hash_key("discovery", ctx)
-
-    cached = segment_cache.get_by_hash(key, "discovery")
+    ctx = {
+        "layout": layout,
+        "sam_model": scene_segmenter._fal.auto_segment_model,
+        "vision_model": llm_client.model,
+    }
+    key = segment_cache.hash_key("analysis", ctx)
+    cached = segment_cache.get_by_hash(key, "analysis")
     if cached is not None:
-        return {"discovered": json.loads(cached)}
+        return json.loads(cached)
 
+    # Fase 1: segmentación automática + overlay numerado (fal → 502 en fallo).
     try:
-        produced = await asyncio.to_thread(
-            scene_segmenter.discover_objects, png, body.known_boxes, concepts,
-        )
+        analysis = await asyncio.to_thread(scene_segmenter.analyze_regions, png)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"object discovery failed: {e}") from e
+        raise HTTPException(status_code=502, detail=f"scene auto-segmentation failed: {e}") from e
+    regions = analysis["regions"]
+    if not regions:
+        result = {"segments": [], "discarded": 0}
+        segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+                          context=ctx, subtype_override="analysis")
+        return result
 
-    discovered = []
-    for p in produced:
-        sprite_hash = hashlib.sha256(p["sprite_png_bytes"]).hexdigest()[:16]
-        sprite_key = segment_cache.put(sprite_hash, "segment", p["sprite_png_bytes"])
-        discovered.append({
-            "id": p["id"],
+    # Fase 2: clasificación por visión (escena original + overlay numerado).
+    import base64 as b64mod
+    vision_context = {
+        "regions": [{"index": r["index"], "bbox": list(r["bbox_xyxy"])} for r in regions],
+        **body.context,
+    }
+    images = [
+        {"view": "scene", "media_type": "image/png",
+         "data_b64": b64mod.b64encode(png).decode()},
+        {"view": "overlay", "media_type": "image/png",
+         "data_b64": b64mod.b64encode(analysis["overlay_png"]).decode()},
+    ]
+    classified = await asyncio.to_thread(
+        llm_client.classify_scene_segments, images, vision_context,
+    )
+    if classified is None:
+        raise HTTPException(
+            status_code=503,
+            detail="scene classification unavailable — no MCP listener and no API client, or invalid response",
+        )
+
+    # Merge por índice: solo solid/tall generan sprite (el resto es suelo).
+    scene_rgb = scene_rgb_from_png(png)
+    by_index = {r["index"]: r for r in regions}
+    segments_out: list[dict] = []
+    discarded = 0
+    for cls in classified["segments"]:
+        region = by_index.get(cls["index"])
+        if region is None:
+            continue  # índice extra inventado — el validador ya exigió los reales
+        if not (cls["solid"] or cls["tall"]):
+            discarded += 1
+            continue
+        sprite = crop_sprite(scene_rgb, region["mask"], region["bbox_xyxy"])
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        segments_out.append({
+            "id": f"seg_{cls['index']}",
+            "label": cls["label"],
+            "solid": cls["solid"],
+            "tall": cls["tall"],
             "sprite_url": f"/cache/segment/{sprite_key}",
-            "image_bbox": p["image_bbox"],
-            "img_w": p["img_w"],
-            "img_h": p["img_h"],
-            "score": p["score"],
-            "concept": p["concept"],
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
         })
 
-    segment_cache.put("discovery", "discovery", json.dumps(discovered).encode(),
-                      context=ctx, subtype_override="discovery")
-    return {"discovered": discovered}
+    result = {"segments": segments_out, "discarded": discarded}
+    segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+                      context=ctx, subtype_override="analysis")
+    print(f"analyze_scene: {len(segments_out)} jugables, {discarded} suelo "
+          f"(de {len(regions)} regiones)", flush=True)
+    return result
 
 
 # Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative

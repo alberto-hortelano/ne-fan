@@ -1069,6 +1069,96 @@ def validate_weapon_orient_response(data: dict) -> dict | None:
 
 
 # ============================================================================
+# Scene segment classification — el mundo derivado de la imagen: la visión
+# clasifica cada región segmentada como sólida (colisión) y/o alta (occluder).
+# ============================================================================
+
+SCENE_CLASSIFY_SYSTEM_PROMPT = """You classify segmented regions of a top-down painted RPG scene.
+
+You receive 2 images: the original scene, and the same scene with candidate
+regions outlined and numbered. The region list with pixel bboxes also arrives
+in the request text. The game world is DERIVED from this image: your answer
+becomes the real collision map and draw order.
+
+For EVERY numbered index classify the element under that region:
+- label: short Spanish noun ("roble", "muro", "barril", "camino", "sombra").
+- solid: true if a character on foot could NOT walk through it (walls,
+  buildings, tree trunks, boulders, deep water, fences, wagons). false for
+  paths, grass, rugs, shadows, flowers, puddles, ground decals.
+- tall: true if it is taller than a standing character, so it must be drawn
+  on top of one standing behind it (trees, walls, buildings, towers, tents).
+  false for low rocks, barrels, crates, low bushes, anything flat.
+
+When unsure about solid, prefer false for open ground textures and true for
+anything that reads as a built structure or large plant.
+
+Always respond via the classify_scene tool — never emit free-form text."""
+
+
+CLASSIFY_SCENE_TOOL = {
+    "name": "classify_scene",
+    "description": "Classify every numbered segmented region of the scene image.",
+    "input_schema": {
+        "type": "object",
+        "required": ["segments"],
+        "properties": {
+            "segments": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["index", "label", "solid", "tall"],
+                    "properties": {
+                        "index": {"type": "integer", "minimum": 0},
+                        "label": {"type": "string"},
+                        "solid": {"type": "boolean"},
+                        "tall": {"type": "boolean"},
+                    },
+                },
+            },
+        },
+    },
+}
+
+
+def validate_scene_classify_response(
+    data: dict, expected_indices: list[int] | None = None
+) -> dict | None:
+    """Valida una clasificación de regiones. Devuelve el dict normalizado
+    ({"segments": [...]}) o None si la forma es irrecuperable o falta algún
+    índice esperado (la colisión derivada exige clasificación COMPLETA)."""
+    if not isinstance(data, dict):
+        return None
+    segments = data.get("segments")
+    if not isinstance(segments, list):
+        return None
+    seen: set[int] = set()
+    normalized = []
+    for seg in segments:
+        if not isinstance(seg, dict):
+            return None
+        index = seg.get("index")
+        label = seg.get("label")
+        solid = seg.get("solid")
+        tall = seg.get("tall")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            return None
+        if index in seen:
+            return None
+        if not isinstance(label, str) or not label:
+            return None
+        if not isinstance(solid, bool) or not isinstance(tall, bool):
+            return None
+        seen.add(index)
+        normalized.append({"index": index, "label": label, "solid": solid, "tall": tall})
+    if expected_indices is not None:
+        missing = [i for i in expected_indices if i not in seen]
+        if missing:
+            print(f"scene_classify: faltan índices {missing} en la respuesta", flush=True)
+            return None
+    return {"segments": normalized}
+
+
+# ============================================================================
 # Narrative event reaction (Phase 3) — Claude reacts to player dialogue choices
 # by emitting consequences that the engine applies to the open world.
 # ============================================================================

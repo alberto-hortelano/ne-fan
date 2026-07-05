@@ -16,6 +16,7 @@ import {
   type SceneRecord,
   type SessionData,
   type SessionMetadata,
+  type TileAnalysisRecord,
   type Vec3Like,
   type NarrativeWorldState,
   toTuple,
@@ -105,6 +106,18 @@ export class NarrativeState {
       if (rec) out[edge] = rec;
     }
     return out;
+  }
+
+  /** Registra el análisis de imagen de un tile (mundo derivado de la imagen):
+   *  lo que la visión clasificó sobre lo realmente pintado. Devuelve false si
+   *  el tile no existe (el cliente analizó un tile que el bridge no registró
+   *  — p. ej. fixture local); el caller decide loguear. */
+  setTileAnalysis(tx: number, ty: number, analysis: TileAnalysisRecord): boolean {
+    const rec = this.getTile(tx, ty);
+    if (!rec) return false;
+    rec.analysis = analysis;
+    this.dirty = true;
+    return true;
   }
 
   /** Activa el tile (tx,ty) como escena actual (el jugador ha entrado en él
@@ -692,6 +705,7 @@ export class NarrativeState {
       })),
       recent_dialogues: recent,
       rooms_visited: Object.keys(this.scenes_loaded).length,
+      ...this.activeSceneAnalysisForLlm(),
       ...(this.plugins.length
         ? {
             plugins: buildPluginLlmViews(
@@ -709,6 +723,28 @@ export class NarrativeState {
   }
 
   // ── Internals ──
+
+  /** Resumen compacto del análisis de imagen del tile ACTIVO para el LLM
+   *  (máx 20 elementos como strings legibles) — el mapa REAL pintado, que
+   *  puede incluir estructuras que no están en el esquema. */
+  private activeSceneAnalysisForLlm(): Pick<LlmContext, "scene_analysis"> {
+    const rec = this.scenes_loaded[this.world.active_scene_id];
+    const analysis = rec?.analysis;
+    if (!analysis || analysis.elements.length === 0) return {};
+    const fmt = (n: number): string => String(Math.round(n));
+    const elements = analysis.elements.slice(0, 20).map((e) => {
+      const traits = [e.solid ? "sólido" : "", e.tall ? "alto" : ""].filter(Boolean).join(", ");
+      return `${e.label}${traits ? ` (${traits})` : ""} ` +
+        `x[${fmt(e.rect.minX)}..${fmt(e.rect.maxX)}] z[${fmt(e.rect.minZ)}..${fmt(e.rect.maxZ)}]`;
+    });
+    return {
+      scene_analysis: {
+        scene_id: this.world.active_scene_id,
+        elements,
+        total: analysis.elements.length,
+      },
+    };
+  }
 
   private nextEventId(): string {
     this.nextEventSeq += 1;

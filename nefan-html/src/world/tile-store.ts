@@ -29,6 +29,11 @@ export interface TileClientState {
   /** WorldScene normalizado (formatDToWorld), posiciones GLOBALES. */
   scene: Record<string, unknown>;
   collider: TerrainCollider | null;
+  /** Colisión DERIVADA de la imagen IA (segmentos sólidos clasificados por
+   *  visión). Con `imageAnalyzed`, la imagen manda: los AABBs de objetos del
+   *  esquema en este tile dejan de bloquear. */
+  imageCollider: TerrainCollider | null;
+  imageAnalyzed: boolean;
 }
 
 export class TileStore {
@@ -59,6 +64,17 @@ export class TileStore {
     if (Number.isInteger(tile.tx) && Number.isInteger(tile.ty)) {
       this.grid.set(tileKey(tile.tx!, tile.ty!), tile);
     }
+  }
+
+  /** Marca un tile como analizado (mundo derivado de imagen) e instala su
+   *  collider derivado (null = sin celdas sólidas, pero analizado igualmente:
+   *  los AABBs del esquema dejan de aplicar). Fail-loud si la clave no existe:
+   *  el análisis siempre corre sobre un tile registrado. */
+  markAnalyzed(key: string, collider: TerrainCollider | null): void {
+    const entry = this.entries.get(key);
+    if (!entry) throw new Error(`TileStore.markAnalyzed: tile ${key} no registrado`);
+    entry.imageCollider = collider;
+    entry.imageAnalyzed = true;
   }
 
   /** Solo para resetWorld (arranque/resume/fixtures). */

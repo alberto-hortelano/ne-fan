@@ -179,6 +179,17 @@ function makeTile(gt) {
 }
 
 async function handleGenerateTile(gt) {
+  // Visibilidad del "mapa real": lo que el bridge resume de los análisis de
+  // imagen de los vecinos (mundo derivado). El motor real lo usa para
+  // continuar murallas/ríos; aquí solo se loguea.
+  for (const [edge, n] of Object.entries(gt?.neighbors ?? {})) {
+    if (n?.image_elements?.length) {
+      const desc = n.image_elements
+        .map((e) => `${e.label}${e.solid ? "·sólido" : ""}${e.tall ? "·alto" : ""}@${e.at[0]}..${e.at[1]}`)
+        .join(", ");
+      console.error(`[fake-ai] tile(${gt.tx},${gt.ty}) vecino ${edge} image_elements: ${desc}`);
+    }
+  }
   if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
   if (TILE_MODE === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
@@ -315,40 +326,13 @@ const server = http.createServer((req, res) => {
         );
         return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
       }
-      // Segmentación falsa: cada occluder pedido devuelve un sprite de color
-      // plano (1×1 estirado por el cliente) con bbox = caja pedida encogida un
-      // 8% por lado (simula el ajuste fino de SAM). Sirve para verificar a ojo
-      // el overlay B (recortes, baselines, z-index) sin gastar créditos fal.
-      if (req.method === "POST" && req.url === "/segment_scene_image") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const dims = pngDims(body.image_b64);
-        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
-        const segments = (body.occluders ?? []).map((occ, i) => {
-          const [x0, y0, x1, y1] = occ.box_px;
-          const inset = 0.08;
-          const bx = Math.round(x0 + (x1 - x0) * inset);
-          const by = Math.round(y0 + (y1 - y0) * inset);
-          const bw = Math.round((x1 - x0) * (1 - 2 * inset));
-          const bh = Math.round((y1 - y0) * (1 - 2 * inset));
-          return {
-            id: occ.id,
-            sprite_url: `/fake/sprite/${i % FAKE_SPRITES.length}`,
-            image_bbox: [bx, by, bw, bh],
-            img_w: dims.w,
-            img_h: dims.h,
-          };
-        });
-        console.error(`[fake-ai] segment: ${segments.length} occluders`);
-        return send(200, { segments });
-      }
-      // Descubrimiento falso: 2 props inventados en posiciones fijas (fracción
-      // del tamaño de la imagen) que no pisan el centro.
-      if (req.method === "POST" && req.url === "/discover_scene_objects") {
+      // Análisis falso (mundo derivado de imagen): 3 segmentos fijos con
+      // sprites de color plano (1×1 estirado por el cliente): árbol
+      // (solid+tall), roca (solid), estandarte (tall). Posiciones en fracción
+      // del tamaño de la imagen, lejos del spawn central. Verifica a ojo el
+      // overlay B (celdas violetas, recortes con etiqueta/baseline) y la
+      // colisión derivada sin gastar créditos fal/visión.
+      if (req.method === "POST" && req.url === "/analyze_scene_image") {
         let body = {};
         try {
           body = raw ? JSON.parse(raw) : {};
@@ -358,23 +342,27 @@ const server = http.createServer((req, res) => {
         const dims = pngDims(body.image_b64);
         if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
         const { w, h } = dims;
-        const discovered = [
-          { id: "discovered_0", box: [0.10, 0.62, 0.16, 0.14], concept: "boulder" },
-          { id: "discovered_1", box: [0.72, 0.18, 0.12, 0.18], concept: "tree stump" },
-        ].map((d, i) => ({
-          id: d.id,
-          sprite_url: `/fake/sprite/${(i + 2) % FAKE_SPRITES.length}`,
+        const segments = [
+          { id: "seg_0", label: "árbol", solid: true, tall: true, box: [0.15, 0.60, 0.14, 0.16] },
+          // La roca TOCA el borde derecho (este): al generar el tile vecino,
+          // el bridge debe pasarla como image_elements de la costura.
+          { id: "seg_1", label: "roca", solid: true, tall: false, box: [0.91, 0.40, 0.09, 0.18] },
+          { id: "seg_2", label: "estandarte", solid: false, tall: true, box: [0.64, 0.22, 0.06, 0.12] },
+        ].map((s, i) => ({
+          id: s.id,
+          label: s.label,
+          solid: s.solid,
+          tall: s.tall,
+          sprite_url: `/fake/sprite/${i % FAKE_SPRITES.length}`,
           image_bbox: [
-            Math.round(d.box[0] * w), Math.round(d.box[1] * h),
-            Math.round(d.box[2] * w), Math.round(d.box[3] * h),
+            Math.round(s.box[0] * w), Math.round(s.box[1] * h),
+            Math.round(s.box[2] * w), Math.round(s.box[3] * h),
           ],
           img_w: w,
           img_h: h,
-          score: 0.9,
-          concept: d.concept,
         }));
-        console.error(`[fake-ai] discover: ${discovered.length} props`);
-        return send(200, { discovered });
+        console.error(`[fake-ai] analyze: ${segments.length} segmentos jugables`);
+        return send(200, { segments, discarded: 5 });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
         let body = {};

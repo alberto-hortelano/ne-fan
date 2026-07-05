@@ -109,6 +109,50 @@ function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; err
   return { ok: true };
 }
 
+/** Pre-flight de una respuesta scene_classify, espejo de
+ *  ai_server/narrative_schemas.py:validate_scene_classify_response. Misma
+ *  razón que validateNarrativeReaction: el 422 del ai_server no vuelve a esta
+ *  sesión. `expectedIndices` viene del context.regions de la petición. */
+function validateSceneClassify(
+  data: unknown,
+  expectedIndices: number[] | null,
+): { ok: true } | { ok: false; error: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
+  }
+  const o = data as Record<string, unknown>;
+  if (!Array.isArray(o.segments)) {
+    return { ok: false, error: 'missing `segments` list' };
+  }
+  const seen = new Set<number>();
+  for (let i = 0; i < o.segments.length; i++) {
+    const s = o.segments[i] as Record<string, unknown>;
+    if (typeof s !== 'object' || s === null) {
+      return { ok: false, error: `segments[${i}] must be an object` };
+    }
+    if (!Number.isInteger(s.index)) {
+      return { ok: false, error: `segments[${i}].index must be an integer` };
+    }
+    if (seen.has(s.index as number)) {
+      return { ok: false, error: `segments[${i}].index ${s.index} is duplicated` };
+    }
+    seen.add(s.index as number);
+    if (typeof s.label !== 'string' || s.label.length === 0) {
+      return { ok: false, error: `segments[${i}].label must be a non-empty string` };
+    }
+    if (typeof s.solid !== 'boolean' || typeof s.tall !== 'boolean') {
+      return { ok: false, error: `segments[${i}].solid and .tall must be booleans` };
+    }
+  }
+  if (expectedIndices) {
+    const missing = expectedIndices.filter((idx) => !seen.has(idx));
+    if (missing.length > 0) {
+      return { ok: false, error: `missing classifications for indices: ${missing.join(', ')} — every region must appear` };
+    }
+  }
+  return { ok: true };
+}
+
 // ── Per-kind response instructions ───────────────────────────────────────────
 // Single source of truth for "how to answer each request kind". These are
 // emitted INSIDE the narrative_listen return payload (adjacent to each request)
@@ -153,6 +197,16 @@ HARD RULES OF THE TILE:
   every crossing with a feature whose at_edges includes {edge: <that edge>,
   at: <same at>} (±2 cells). A path may continue as path or road; water as
   river or bridge. The server validates this and rejects the tile otherwise.
+- IMAGE REALITY: neighbors.<edge>.image_elements (when present) lists what
+  the PAINTED image of that neighbour ACTUALLY contains near your shared
+  border — vision-classified elements {label (Spanish), solid, tall,
+  at: [c0, c1]} with their cell range along the border (same coordinate on
+  your side, like crossings). The painted image is the REAL world the player
+  sees, and may include large structures the schematic never had (walls,
+  rivers). CONTINUE those structures in your tile design: a "muralla"
+  spanning cells 20..90 on your shared border should continue as a wall
+  feature/structure at those cells; a solid "río" should continue as water.
+  Leave an opening if a crossing overlaps it.
 - Extend features to OTHER edges when natural (a road usually crosses the
   whole tile) — that seeds where future tiles will grow.
 - The player enters WALKING from generate_tile.entry.edge: keep that border
@@ -575,11 +629,42 @@ You see one image of a character holding a weapon. Verify the weapon is
 correctly placed in the hand for combat stance. Call narrative_respond with:
 { "ok": bool, "issue": "string", "suggested_delta_euler": [rx, ry, rz] }`;
 
+const SCENE_CLASSIFY_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "scene_classify") ====
+You see 2 images of the SAME top-down painted game scene:
+1. the ORIGINAL scene image;
+2. the same scene with candidate regions OUTLINED and NUMBERED (the region
+   list with pixel bboxes also arrives in context.regions).
+
+The game world is derived from this image: your classification becomes the
+real collision map and draw order. For EVERY numbered index, classify the
+element under that region:
+- "label": short Spanish noun for what it is ("roble", "muro", "barril",
+  "camino", "sombra", "tejado"...).
+- "solid": true if a character ON FOOT could NOT walk through it — walls,
+  buildings, tree trunks, boulders, deep water, fences, wagons. false for
+  paths, grass, rugs, shadows, flowers, puddles, ground decals.
+- "tall": true if it is TALLER than a standing character, so it must be drawn
+  ON TOP of one standing behind it — trees, walls, buildings, towers, tents.
+  false for low rocks, barrels, crates, low bushes, anything flat.
+When unsure about solid, prefer false for open ground textures and true for
+anything that reads as a built structure or large plant.
+
+Respond with narrative_respond, passing EXACTLY:
+{ "segments": [ { "index": 0, "label": "roble", "solid": true, "tall": true }, ... ] }
+Every index from the overlay must appear exactly once. No extra fields.`;
+
 const NARRATIVE_EVENT_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "narrative_event") ====
 A player has just answered an NPC. The request above carries: speaker,
 chosen_text, free_text, and a context snapshot of the NarrativeState
 (story_so_far, recent_dialogues, entities already in the world, current scene
 id, available_assets).
+
+If the context includes \`scene_analysis\`, that is the REAL painted map of
+the current scene (vision-classified elements with world rects, Spanish
+labels) — the image may contain structures the scene JSON never had (walls,
+rivers, market stalls). Treat it as ground truth: reference those elements
+in your narration when natural, and NEVER place a spawn_entity inside an
+element marked "sólido" (pick a nearby free spot instead).
 
 Your answer is ALWAYS the object { "consequences": [ ... ] } passed to
 narrative_respond. \`dialogue\` is one ENTRY inside that array — never a
@@ -692,7 +777,10 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'blueprint_review' = 'room';
+  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'narrative_event' | 'blueprint_review' = 'room';
+  // Índices de región de la última petición scene_classify (para el pre-flight
+  // de completitud de la respuesta).
+  let currentClassifyIndices: number[] | null = null;
 
   server.tool(
     'narrative_listen',
@@ -711,6 +799,9 @@ Request kinds you may receive:
 - "room"            → legacy enclosed-room schema (only when format != scene).
 - "weapon_orient"   → orient a 3D weapon mesh from 3 orthographic renders.
 - "weapon_verify"   → check a weapon is correctly placed in a character's hand.
+- "scene_classify"  → classify segmented regions of a painted scene image
+                      (solid / tall per region — the collision map is derived
+                      from your answer).
 - "narrative_event" → the player answered an NPC. Return world consequences as
                       { "consequences": [ ... ] } — entries are dialogue /
                       story_update / spawn_entity / schedule_event /
@@ -735,6 +826,12 @@ into context:
 
         if (msg.type === 'vision_request') {
           currentKind = msg.kind;
+          // scene_classify: recordar los índices esperados para exigir una
+          // clasificación completa en narrative_respond.
+          const regions = (msg.context as { regions?: { index?: number }[] } | undefined)?.regions;
+          currentClassifyIndices = msg.kind === 'scene_classify' && Array.isArray(regions)
+            ? regions.map((r) => r.index).filter((i): i is number => Number.isInteger(i))
+            : null;
           // Build content blocks: text header + image blocks + footer
           const header = JSON.stringify({
             kind: msg.kind,
@@ -756,10 +853,13 @@ into context:
             });
             content.push({ type: 'text', text: `(view: ${img.view})` });
           }
+          const instructions =
+            msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS :
+            msg.kind === 'scene_classify' ? SCENE_CLASSIFY_INSTRUCTIONS :
+            WEAPON_ORIENT_INSTRUCTIONS;
           content.push({
             type: 'text',
-            text: 'Examine the views, then respond.\n\n' +
-              (msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS : WEAPON_ORIENT_INSTRUCTIONS),
+            text: `Examine the views, then respond.\n\n${instructions}`,
           });
           return { content };
         }
@@ -832,6 +932,7 @@ into context:
     '  room           → legacy enclosed-room JSON\n' +
     '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
+    '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
     '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {
@@ -875,6 +976,15 @@ into context:
             };
           }
         }
+        if (kind === 'scene_classify') {
+          const check = validateSceneClassify(parsed, currentClassifyIndices);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid scene classification — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
         // Pre-flight de jugabilidad para escenas: el bridge valida con
         // flood-fill (muros cerrados con puerta alcanzable, spawn walkable,
         // borde de mapa alcanzable, place enlazado en el world map). Si falla,
@@ -905,8 +1015,9 @@ into context:
         const reqId = currentRequestId;
         currentRequestId = null;
         currentKind = 'room';
+        currentClassifyIndices = null;
 
-        if (kind === 'weapon_orient' || kind === 'weapon_verify') {
+        if (kind === 'weapon_orient' || kind === 'weapon_verify' || kind === 'scene_classify') {
           bridge.sendVisionResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
         }

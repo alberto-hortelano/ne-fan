@@ -21,7 +21,7 @@ import {
 } from "./handlers/session.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
 import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
-import { handleRequestTile } from "./handlers/tile.js";
+import { handleRequestTile, handleTileAnalysis } from "./handlers/tile.js";
 
 export async function routeMessage(
   msg: ClientMessage,
@@ -79,6 +79,9 @@ export async function routeMessage(
       break;
     case "request_tile":
       await handleRequestTile(msg, ctx);
+      break;
+    case "tile_analysis":
+      await handleTileAnalysis(msg, ctx);
       break;
     case "interact_entity":
       await handleInteractEntity(msg, ctx);

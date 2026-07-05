@@ -31,8 +31,7 @@
     "texture_steps": 4,
     "scene_model": "nano-banana-pro",
     "scene_style_image": "skinning_lab/bases/battlemap-town-style.png",
-    "segment_model": "fal-ai/sam2/image",
-    "discover_model": "fal-ai/sam-3/image",
+    "auto_segment_model": "fal-ai/sam2/auto-segment",
     "texture_lazy_load": true,
     "expose_diagnostic": false,
     "cache_max_bytes": 2147483648

@@ -16,10 +16,13 @@ from narrative_schemas import (
     GENERATE_SCENE_TOOL,
     WEAPON_ORIENT_SYSTEM_PROMPT,
     WEAPON_ORIENT_TOOL,
+    SCENE_CLASSIFY_SYSTEM_PROMPT,
+    CLASSIFY_SCENE_TOOL,
     NARRATIVE_REACT_SYSTEM_PROMPT,
     NARRATIVE_REACT_TOOL,
     validate_scene_response,
     validate_weapon_orient_response,
+    validate_scene_classify_response,
     validate_narrative_reaction,
     validate_blueprint_review,
 )
@@ -445,6 +448,151 @@ class LLMClient:
             return None
 
         print("LLM: Vision API gave no tool_use response")
+        return None
+
+    # ------------------------------------------------------------------
+    # Vision: scene segment classification (mundo derivado de la imagen)
+    # ------------------------------------------------------------------
+
+    def classify_scene_segments(
+        self,
+        images: list,
+        context: dict | None = None,
+    ) -> dict | None:
+        """Clasifica las regiones segmentadas de una imagen de escena.
+
+        `images`: [{view, media_type, data_b64}] — la escena original y el
+        overlay numerado. `context.regions`: [{index, bbox}] de las regiones
+        candidatas. Devuelve {"segments": [{index, label, solid, tall}]}
+        validado y COMPLETO, o None si ningún backend puede atenderlo.
+        """
+        context = context or {}
+        expected = [
+            r["index"] for r in context.get("regions", [])
+            if isinstance(r, dict) and isinstance(r.get("index"), int)
+        ]
+        if not images or not expected:
+            return None
+
+        if self._ws_connected and self._ws:
+            result = self._classify_scene_via_mcp(images, context, expected)
+            if result is not None:
+                return result
+
+        if self.api_client:
+            return self._classify_scene_via_api(images, context, expected)
+
+        print("LLM: No vision backend available for scene classification")
+        return None
+
+    def _classify_scene_via_mcp(
+        self,
+        images: list,
+        context: dict,
+        expected_indices: list[int],
+    ) -> dict | None:
+        request_id = str(uuid.uuid4())
+        with self._pending_lock:
+            self._pending[request_id] = None
+
+        try:
+            self._ws.send(json.dumps({  # type: ignore
+                "type": "vision_request",
+                "request_id": request_id,
+                "kind": "scene_classify",
+                "images": images,
+                "context": context,
+            }))
+        except Exception as e:
+            print(f"LLM: scene_classify MCP send failed ({e})")
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+            return None
+
+        print(f"LLM: scene_classify request sent via MCP (id={request_id[:8]}, "
+              f"regions={len(expected_indices)})")
+
+        timeout = max(self.timeout, 180.0)
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
+                        print(f"LLM: scene_classify MCP rejected — {result.get('reason', 'unknown')}")
+                        return None
+                    validated = validate_scene_classify_response(result, expected_indices)
+                    if validated is None:
+                        print("LLM: scene_classify response failed validation")
+                        return None
+                    print(f"LLM: scene_classify response received ({time.time() - start:.1f}s, "
+                          f"{len(validated['segments'])} segments)")
+                    return validated
+            time.sleep(0.1)
+
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        print(f"LLM: scene_classify MCP timeout ({timeout}s)")
+        return None
+
+    def _classify_scene_via_api(
+        self,
+        images: list,
+        context: dict,
+        expected_indices: list[int],
+    ) -> dict | None:
+        if not self.api_client:
+            return None
+
+        regions_json = json.dumps(context.get("regions", []))
+        content: list = [{
+            "type": "text",
+            "text": (
+                f"Candidate regions (index + pixel bbox [x, y, w, h]):\n{regions_json}\n\n"
+                "The first image is the original scene; the second has the regions "
+                "outlined and numbered. Classify EVERY index via the classify_scene tool."
+            ),
+        }]
+        for img in images:
+            data_b64 = img.get("data_b64") if isinstance(img, dict) else None
+            if not data_b64:
+                continue
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.get("media_type", "image/png"),
+                    "data": data_b64,
+                },
+            })
+            content.append({
+                "type": "text",
+                "text": f"View: {img.get('view', 'unknown')}",
+            })
+
+        try:
+            response = self.api_client.messages.create(  # type: ignore
+                model=self.model,
+                max_tokens=4096,
+                system=SCENE_CLASSIFY_SYSTEM_PROMPT,
+                tools=[CLASSIFY_SCENE_TOOL],
+                tool_choice={"type": "tool", "name": "classify_scene"},
+                messages=[{"role": "user", "content": content}],
+            )
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "classify_scene":
+                    validated = validate_scene_classify_response(block.input, expected_indices)
+                    if validated is None:
+                        print("LLM: scene_classify API response failed validation")
+                        return None
+                    print(f"LLM: scene_classify API response ({len(validated['segments'])} segments)")
+                    return validated
+        except Exception as e:
+            print(f"LLM: scene_classify API error ({e})")
+            return None
+
+        print("LLM: scene_classify API gave no tool_use response")
         return None
 
     # ------------------------------------------------------------------

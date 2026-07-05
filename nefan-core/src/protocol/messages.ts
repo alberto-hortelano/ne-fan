@@ -142,6 +142,22 @@ export interface RequestTileMessage {
   edge?: Edge;
 }
 
+/** Análisis de la imagen IA de un tile (mundo derivado de la imagen): el
+ *  cliente lo envía tras clasificar los segmentos por visión. Solo
+ *  persistencia — el bridge lo guarda en el SceneRecord del tile y lo resume
+ *  al motor narrativo; no dispara LLM. `rect` en coords MUNDO globales. */
+export interface TileAnalysisMessage {
+  type: "tile_analysis";
+  tx: number;
+  ty: number;
+  elements: Array<{
+    label: string;
+    solid: boolean;
+    tall: boolean;
+    rect: { minX: number; maxX: number; minZ: number; maxZ: number };
+  }>;
+}
+
 /** Alta ADITIVA de combatientes en el sim (enemigos de un tile nuevo). No
  *  resetea nada: los combatientes de otros tiles siguen vivos. */
 export interface AddCombatantsMessage {
@@ -194,6 +210,7 @@ export type ClientMessage =
   | PlayerEnteredPlaceMessage
   | PlayerCrossedFrontierMessage
   | RequestTileMessage
+  | TileAnalysisMessage
   | AddCombatantsMessage
   | InteractEntityMessage;
 

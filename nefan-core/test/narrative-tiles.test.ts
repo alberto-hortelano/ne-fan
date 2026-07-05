@@ -143,3 +143,47 @@ describe("NarrativeState — migración v3→v4", () => {
     assert.equal(Object.keys(s2.scenes_loaded).length, 1);
   });
 });
+
+describe("NarrativeState — análisis de imagen por tile (mundo derivado)", () => {
+  const MURALLA = {
+    label: "muralla", solid: true, tall: true,
+    rect: { minX: -32, maxX: 32, minZ: 4, maxZ: 12 },
+  };
+  const ROBLE = {
+    label: "roble", solid: true, tall: true,
+    rect: { minX: -20, maxX: -14, minZ: -10, maxZ: -2 },
+  };
+
+  it("setTileAnalysis guarda en el SceneRecord y sobrevive a save/load", async () => {
+    const storage = new MemorySessionStorage();
+    const s = new NarrativeState(storage);
+    s.startNewSession("plugtest");
+    const sessionId = s.session_id;
+    s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
+    assert.ok(s.setTileAnalysis(0, 0, { analyzed_at: "2026-07-05T00:00:00Z", elements: [MURALLA] }));
+    assert.ok(!s.setTileAnalysis(9, 9, { analyzed_at: "x", elements: [] }), "tile inexistente → false");
+    await s.save();
+
+    const s2 = new NarrativeState(storage);
+    assert.ok(await s2.loadSession(sessionId));
+    assert.equal(s2.getTile(0, 0)!.analysis!.elements[0].label, "muralla");
+  });
+
+  it("serializeForLlm resume el análisis del tile ACTIVO como scene_analysis", () => {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("plugtest");
+    s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
+    s.recordSceneLoaded("tile_1_0", makeTileScene(1, 0), [], { activate: false });
+    s.setTileAnalysis(1, 0, { analyzed_at: "x", elements: [ROBLE] });
+
+    // El tile activo (0,0) no tiene análisis → sin scene_analysis.
+    assert.equal(s.serializeForLlm().scene_analysis, undefined);
+
+    s.setTileAnalysis(0, 0, { analyzed_at: "x", elements: [MURALLA, ROBLE] });
+    const ctx = s.serializeForLlm();
+    assert.ok(ctx.scene_analysis);
+    assert.equal(ctx.scene_analysis!.scene_id, "tile_0_0");
+    assert.equal(ctx.scene_analysis!.total, 2);
+    assert.match(ctx.scene_analysis!.elements[0], /muralla \(sólido, alto\) x\[-32\.\.32\] z\[4\.\.12\]/);
+  });
+});

@@ -1,8 +1,9 @@
 /** Pipeline automático de imagen IA por tile: cuando está activado (toggle
- *  Auto-img del HUD), cada tile de grid sin imagen pasa por las tres fases
- *  imagen → segmentación → descubrimiento (G→X→N) en una cola FIFO con UN
- *  job en vuelo (Meshy en serie). Convive con las teclas manuales G/X/N
- *  esperando a que el controller quede libre antes de cada fase.
+ *  Auto-img del HUD), cada tile de grid sin imagen pasa por las dos fases
+ *  imagen → análisis (G→X) en una cola FIFO con UN job en vuelo (Meshy en
+ *  serie). El análisis deriva el mundo jugable de la imagen: occluders (tall)
+ *  y colisión (solid), clasificados por visión. Convive con las teclas
+ *  manuales G/X esperando a que el controller quede libre antes de cada fase.
  *
  *  Errores:
  *  - Red caída (ai_server no responde): UNA entrada en el ErrorLog, el tile
@@ -10,14 +11,14 @@
  *    /health cada 10 s hasta que vuelva. La cola no se vacía, sin spam.
  *  - HTTP 503 (scene_image_gen sin backend): el pipeline se auto-desactiva
  *    (onDisabled desmarca el toggle) — reintentarlo no va a arreglarlo.
- *  - Cualquier otro fallo de imagen: log y siguiente tile. Fallos de X/N:
- *    log y seguir (la imagen ya está instalada).
+ *  - Cualquier otro fallo de imagen: log y siguiente tile. Fallo del
+ *    análisis: log y seguir (la imagen ya está instalada; X lo reintenta).
  *
  *  Sin dependencias de DOM: todo entra por deps inyectadas (testeable). */
 import { errors } from "../ui/error-log.js";
-import type { Occluder } from "../renderer/canvas-renderer.js";
+import type { TileAnalysis } from "./scene-image.js";
 
-export type PipelinePhase = "imagen" | "segmentación" | "descubrimiento";
+export type PipelinePhase = "imagen" | "análisis";
 
 export interface PipelineStatus {
   enabled: boolean;
@@ -32,10 +33,8 @@ export interface PipelineDeps {
   listGridTileKeys(): string[];
   isControllerBusy(): boolean;
   generate(key: string): Promise<void>;
-  segment(key: string): Promise<Occluder[]>;
-  discover(key: string): Promise<Occluder[]>;
-  onSegmented(occ: Occluder[]): void;
-  onDiscovered(occ: Occluder[]): void;
+  analyze(key: string): Promise<TileAnalysis>;
+  onAnalyzed(key: string, analysis: TileAnalysis): void;
   onStatus(s: PipelineStatus): void;
   /** El servidor rechazó de raíz (503): desmarcar el toggle en la UI. */
   onDisabled(): void;
@@ -215,14 +214,10 @@ export class AutoImagePipeline {
       }
       this.retries.delete(key);
 
-      // FASE 2: segmentación (X). Error → log y seguir: la imagen ya está.
-      if (!(await this.runPhase(key, "segmentación", async () => {
-        this.deps.onSegmented(await this.deps.segment(key));
-      }))) continue;
-
-      // FASE 3: descubrimiento (N).
-      await this.runPhase(key, "descubrimiento", async () => {
-        this.deps.onDiscovered(await this.deps.discover(key));
+      // FASE 2: análisis (X) — segmentación + clasificación + aplicación.
+      // Error → log y seguir: la imagen ya está y X lo puede reintentar.
+      await this.runPhase(key, "análisis", async () => {
+        this.deps.onAnalyzed(key, await this.deps.analyze(key));
       });
     }
     this.current = null;
