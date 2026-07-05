@@ -204,10 +204,19 @@ export class SceneImageController {
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, rect);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
+      // Con map_svg el blueprint es el plano vectorial rico: el servidor usa
+      // la instrucción de REPINTADO total (capas, cutaway) en vez de la de
+      // cajas de colores.
+      const blueprintKind = (scene as { map_svg?: string }).map_svg ? "svg" : "boxes";
       const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, prompt, context_sides: contextSides }),
+        body: JSON.stringify({
+          image_b64: dataUrl,
+          prompt,
+          context_sides: contextSides,
+          blueprint_kind: blueprintKind,
+        }),
       });
       if (!res.ok) {
         throw new Error(`/generate_scene_image HTTP ${res.status}`);
