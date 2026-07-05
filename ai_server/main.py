@@ -36,7 +36,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _SilenceHealthcheckFilter(logging.Filter):
@@ -383,9 +383,14 @@ class SceneImageRequest(BaseModel):
 
     `image_b64` is the base64-encoded PNG the Canvas renderer exports (terrain
     plate + object rectangles, no characters). The result is a painted top-down
-    scene that maps 1:1 onto the same world rectangle."""
+    scene that maps 1:1 onto the same world rectangle.
+
+    `context_sides`: edges of the capture whose outermost strip is REAL,
+    already-painted art from an adjacent tile (not schematic). The model is
+    instructed to reproduce those strips and continue them seamlessly."""
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
+    context_sides: list[str] = Field(default_factory=list)
     strength: float = 0.85
     seed: int = -1
     # Tuning knobs (dev). guidance ~6 for SDXL. controlnet_scale holds the
@@ -393,6 +398,14 @@ class SceneImageRequest(BaseModel):
     # freedom; higher hugs the boxes tighter, lower strays more).
     guidance: float = 6.0
     controlnet_scale: float = 0.5
+
+    @field_validator("context_sides")
+    @classmethod
+    def _valid_sides(cls, v: list[str]) -> list[str]:
+        bad = [s for s in v if s not in SIDES]
+        if bad:
+            raise ValueError(f"context_sides must be in {SIDES}, got {bad}")
+        return v
 
 
 class ReviewBlueprintRequest(BaseModel):
@@ -756,8 +769,15 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     png = _decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
     # `model` is in the key so switching backends/models never serves a stale
-    # image cached under a different generator.
-    context = {"layout": layout, "kind": "full", "model": scene_image_gen._model}
+    # image cached under a different generator. `sides` covers the (unlikely)
+    # case of identical pixels with a different context instruction; empty is
+    # dropped from the hash so pre-existing cache entries stay valid.
+    context = {
+        "layout": layout,
+        "kind": "full",
+        "model": scene_image_gen._model,
+        "sides": "+".join(sorted(body.context_sides)),
+    }
     key = scene_cache.hash_key(body.prompt, context)
 
     if scene_cache.has(body.prompt, "scene", context):
@@ -766,10 +786,15 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # No _gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
     # holding the lock would needlessly block texture/3D GPU work for ~30s.
     start = time.time()
-    result = await asyncio.to_thread(
-        scene_image_gen.generate_full, png, body.prompt, body.strength,
-        body.seed, body.guidance, body.controlnet_scale,
-    )
+    # 502 explícito: un crash del backend remoto subiría como 500 sin pasar por
+    # el CORSMiddleware y el navegador lo enmascara como error de red.
+    try:
+        result = await asyncio.to_thread(
+            scene_image_gen.generate_full, png, body.prompt, body.strength,
+            body.seed, body.guidance, body.controlnet_scale, body.context_sides,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
     elapsed_ms = int((time.time() - start) * 1000)
 
     scene_cache.put(body.prompt, "scene", result["scene"], context=context)
@@ -819,10 +844,13 @@ async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
         return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
 
     start = time.time()
-    result = await asyncio.to_thread(
-        scene_image_gen.outpaint,
-        png, body.side, body.expand_px, body.prompt, body.seed,
-    )
+    try:
+        result = await asyncio.to_thread(
+            scene_image_gen.outpaint,
+            png, body.side, body.expand_px, body.prompt, body.seed,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"scene outpaint failed: {e}") from e
     elapsed_ms = int((time.time() - start) * 1000)
 
     scene_cache.put(body.prompt, "scene", result["scene"], context=context)
@@ -874,11 +902,16 @@ async def segment_scene_image_endpoint(body: SegmentSceneRequest):
         misses.append({"id": occ.id, "box_px": occ.box_px, "context": context, "key": key})
 
     if misses:
-        produced = await asyncio.to_thread(
-            scene_segmenter.segment_occluders,
-            png,
-            [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
-        )
+        # 502 explícito: un error de fal subiría como 500 sin CORS y el cliente
+        # lo confunde con "ai_server caído" (pausa el auto-pipeline sin motivo).
+        try:
+            produced = await asyncio.to_thread(
+                scene_segmenter.segment_occluders,
+                png,
+                [{"id": m["id"], "box_px": m["box_px"]} for m in misses],
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"occluder segmentation failed: {e}") from e
         by_id = {p["id"]: p for p in produced}
         for m in misses:
             p = by_id.get(m["id"])
@@ -933,9 +966,12 @@ async def discover_scene_objects_endpoint(body: DiscoverSceneRequest):
     if cached is not None:
         return {"discovered": json.loads(cached)}
 
-    produced = await asyncio.to_thread(
-        scene_segmenter.discover_objects, png, body.known_boxes, concepts,
-    )
+    try:
+        produced = await asyncio.to_thread(
+            scene_segmenter.discover_objects, png, body.known_boxes, concepts,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"object discovery failed: {e}") from e
 
     discovered = []
     for p in produced:

@@ -23,6 +23,8 @@
  *  `narrative_status: error`. */
 
 import { SeededRng } from "../combat/enemy-ai.js";
+import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
+import type { Edge } from "../world-map/types.js";
 
 type Rect = [number, number, number, number]; // [col, row, w, h]
 
@@ -45,7 +47,10 @@ interface RoomStructure {
 
 interface VegetationZone {
   type: string;
-  area: Rect;
+  /** Rect [col,row,w,h] o "rest" (solo tiles): todo lo que siga siendo el
+   *  char del bioma — excluye automáticamente caminos rasterizados, agua,
+   *  parches, estructuras y celdas ocupadas. */
+  area: Rect | "rest";
   /** Fracción de celdas candidatas plantadas (0..1]. */
   density: number;
   glyph?: string;
@@ -76,6 +81,9 @@ function asRect(raw: unknown, ctx: string): Rect {
 /** ¿Tiene la escena primitivas pendientes de expandir? */
 export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
   if (raw.__expanded === true) return false;
+  // Un tile SIEMPRE se expande (el fill del bioma es obligatorio aunque no
+  // haya structures ni vegetación).
+  if (raw.tile !== undefined) return true;
   const hasStructures = Array.isArray(raw.structures) && raw.structures.length > 0;
   const hasVegetation = Array.isArray(raw.vegetation_zones) && (raw.vegetation_zones as unknown[]).length > 0;
   const hasWallDecor = Array.isArray(raw.entities) &&
@@ -83,11 +91,165 @@ export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
   return hasStructures || hasVegetation || hasWallDecor;
 }
 
+/** Char al que rasteriza cada tipo de feature en un tile. Tipos fuera de la
+ *  tabla quedan visual-only (como todas las features en escenas legacy). */
+const FEATURE_RASTER_CHAR: Record<string, string> = {
+  river: "w",
+  water: "w",
+  bridge: "b",
+  path: "_",
+  dirt: "_",
+  road: "s",
+  stone: "s",
+  paved: "s",
+};
+
+/** Punto de celda EXACTO del borde `edge` en la coordenada `at` (para el snap
+ *  de endpoints de features declarados con at_edges). */
+function edgePoint(edge: Edge, at: number): [number, number] {
+  switch (edge) {
+    case "west": return [0, at + 0.5];
+    case "east": return [TILE_CELLS, at + 0.5];
+    case "north": return [at + 0.5, 0];
+    case "south": return [at + 0.5, TILE_CELLS];
+  }
+}
+
+/** Pinta una polyline gruesa sobre el grid mutable: celda pintada si la
+ *  distancia de su centro al segmento ≤ width/2. Orden del array = orden de
+ *  pintado (río antes que puente, igual que el render visual). */
+function rasterizeFeature(grid: string[][], points: [number, number][], width: number, char: string): void {
+  const radius = Math.max(width, 1) / 2;
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const cMin = Math.max(0, Math.floor(Math.min(x0, x1) - radius - 1));
+    const cMax = Math.min(TILE_CELLS - 1, Math.ceil(Math.max(x0, x1) + radius + 1));
+    const rMin = Math.max(0, Math.floor(Math.min(y0, y1) - radius - 1));
+    const rMax = Math.min(TILE_CELLS - 1, Math.ceil(Math.max(y0, y1) + radius + 1));
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len2 = dx * dx + dy * dy;
+    for (let r = rMin; r <= rMax; r++) {
+      for (let c = cMin; c <= cMax; c++) {
+        const px = c + 0.5;
+        const py = r + 0.5;
+        const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+        const qx = x0 + t * dx;
+        const qy = y0 + t * dy;
+        const d2 = (px - qx) * (px - qx) + (py - qy) * (py - qy);
+        if (d2 <= radius * radius) grid[r][c] = char;
+      }
+    }
+  }
+}
+
+/** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
+ *  terrain_patches + snap de endpoints a at_edges + rasterización de features
+ *  al grid. Devuelve una copia con `size`/`terrain` sintetizados lista para la
+ *  expansión compartida (structures/vegetación/decor). Fail-loud en primitivas
+ *  imposibles — mismo contrato que el resto del expander. */
+function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
+  const t = raw.tile as { tx?: unknown; ty?: unknown };
+  if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
+    throw new Error(`tile.tx/ty deben ser enteros, got ${JSON.stringify(raw.tile)}`);
+  }
+  if (raw.size !== undefined || (Array.isArray(raw.terrain) && raw.terrain.length > 0)) {
+    throw new Error(
+      "un tile no lleva size/terrain completos: la base es `biome` + primitivas (terrain_patches para parches puntuales)",
+    );
+  }
+  const { char: biomeChar, name: biomeName } = resolveBiome(raw.biome);
+
+  const grid: string[][] = [];
+  for (let r = 0; r < TILE_CELLS; r++) grid.push(new Array<string>(TILE_CELLS).fill(biomeChar));
+
+  // Parches ASCII rectangulares sobre el fill (detalles puntuales).
+  const patches = Array.isArray(raw.terrain_patches) ? (raw.terrain_patches as Record<string, unknown>[]) : [];
+  for (let pi = 0; pi < patches.length; pi++) {
+    const p = patches[pi];
+    const at = p?.at as [number, number] | undefined;
+    const rows = p?.rows as string[] | undefined;
+    if (!Array.isArray(at) || at.length !== 2 || !Number.isInteger(at[0]) || !Number.isInteger(at[1]) ||
+        !Array.isArray(rows) || rows.length === 0 || !rows.every((row) => typeof row === "string" && row.length > 0)) {
+      throw new Error(`terrain_patches[${pi}] debe ser { at: [col,row], rows: ["…"] }`);
+    }
+    const [c0, r0] = at;
+    for (let r = 0; r < rows.length; r++) {
+      if (r0 + r < 0 || r0 + r >= TILE_CELLS || c0 < 0 || c0 + rows[r].length > TILE_CELLS) {
+        throw new Error(`terrain_patches[${pi}] se sale del tile (at [${c0},${r0}], fila ${r} de ${rows[r].length} chars)`);
+      }
+      for (let c = 0; c < rows[r].length; c++) grid[r0 + r][c0 + c] = rows[r][c];
+    }
+  }
+
+  // Features: snap de endpoints a los bordes declarados + rasterización.
+  const feats = Array.isArray(raw.terrain_features) ? (raw.terrain_features as Record<string, unknown>[]) : [];
+  const preparedFeats: Record<string, unknown>[] = [];
+  for (let fi = 0; fi < feats.length; fi++) {
+    const f = { ...feats[fi] };
+    const pts = (Array.isArray(f.points) ? (f.points as [number, number][]) : []).map((p) => [p[0], p[1]] as [number, number]);
+    if (pts.length < 2) {
+      throw new Error(`terrain_features[${fi}] necesita ≥2 points`);
+    }
+    const atEdges = Array.isArray(f.at_edges) ? (f.at_edges as { edge: Edge; at: number }[]) : [];
+    for (const ae of atEdges) {
+      if (!["north", "south", "east", "west"].includes(ae.edge) || !Number.isInteger(ae.at) || ae.at < 0 || ae.at >= TILE_CELLS) {
+        throw new Error(`terrain_features[${fi}].at_edges: { edge, at 0..${TILE_CELLS - 1} } inválido: ${JSON.stringify(ae)}`);
+      }
+      // El endpoint más cercano a ese borde se fuerza EXACTAMENTE a la celda
+      // declarada — la costura con el vecino depende de esto.
+      const target = edgePoint(ae.edge, ae.at);
+      const distToEdge = (p: [number, number]): number => {
+        switch (ae.edge) {
+          case "west": return p[0];
+          case "east": return TILE_CELLS - p[0];
+          case "north": return p[1];
+          case "south": return TILE_CELLS - p[1];
+        }
+      };
+      const endIdx = distToEdge(pts[0]) <= distToEdge(pts[pts.length - 1]) ? 0 : pts.length - 1;
+      pts[endIdx] = target;
+    }
+    // Auto-snap: un endpoint a ≤2 celdas de un borde se pega a él (conserva la
+    // otra coordenada) — evita caminos que "casi" llegan a la costura.
+    for (const idx of [0, pts.length - 1]) {
+      const [x, y] = pts[idx];
+      if (x > 0 && x <= 2) pts[idx] = [0, y];
+      else if (x < TILE_CELLS && x >= TILE_CELLS - 2) pts[idx] = [TILE_CELLS, y];
+      if (y > 0 && y <= 2) pts[idx] = [pts[idx][0], 0];
+      else if (y < TILE_CELLS && y >= TILE_CELLS - 2) pts[idx] = [pts[idx][0], TILE_CELLS];
+    }
+    f.points = pts;
+    preparedFeats.push(f);
+    const rasterChar = typeof f.type === "string" ? FEATURE_RASTER_CHAR[f.type] : undefined;
+    if (rasterChar) {
+      const width = typeof f.width === "number" && f.width > 0 ? f.width : 1;
+      rasterizeFeature(grid, pts, width, rasterChar);
+    }
+  }
+
+  // Leyenda: el char del bioma hereda su nombre de catálogo si la leyenda no
+  // lo declara ya (p.ej. forest_floor → g:"suelo de bosque").
+  const legend: Record<string, unknown> = { ...((raw.terrain_legend as Record<string, unknown>) ?? {}) };
+  if (legend[biomeChar] === undefined && biomeName !== biomeChar) legend[biomeChar] = biomeName;
+
+  return {
+    ...raw,
+    size: { cols: TILE_CELLS, rows: TILE_CELLS, meters_per_cell: TILE_MPC },
+    terrain: grid.map((row) => row.join("")),
+    terrain_legend: legend,
+    terrain_features: preparedFeats,
+  };
+}
+
 /** Expande structures/vegetation_zones/decor-attach sobre una escena Format D
  *  cruda y devuelve una copia plana marcada `__expanded`. Escena sin
- *  primitivas (o ya expandida) → se devuelve tal cual. */
+ *  primitivas (o ya expandida) → se devuelve tal cual. Un tile (Format D v3,
+ *  campo `tile`) pasa primero por prepareTileBase (bioma + parches + raster). */
 export function expandScenePrimitives(raw: Record<string, unknown>): Record<string, unknown> {
   if (!hasUnexpandedPrimitives(raw)) return raw;
+  if (raw.tile !== undefined) raw = prepareTileBase(raw);
 
   const size = raw.size as { cols?: number; rows?: number } | undefined;
   const cols = size?.cols;
@@ -219,12 +381,34 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
   // ── Vegetation zones: scatter determinista (seed = scene_id + índice) ─────
   const usedIds = new Set(entities.map((e) => String(e.id)));
   const zones = Array.isArray(raw.vegetation_zones) ? (raw.vegetation_zones as VegetationZone[]) : [];
+  // En tiles el scatter respeta el bioma y deja 1 celda de margen alrededor de
+  // los caminos/carreteras rasterizados (que los árboles no invadan la senda).
+  const biomeChar = raw.tile !== undefined ? resolveBiome(raw.biome).char : null;
+  let nearPath: Set<number> | null = null;
+  if (biomeChar !== null && zones.length > 0) {
+    nearPath = new Set<number>();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const ch = grid[r][c];
+        if (ch !== "_" && ch !== "s" && ch !== "b") continue;
+        for (const [dc, dr] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const cc = c + dc, rr = r + dr;
+          if (cc >= 0 && rr >= 0 && cc < cols && rr < rows) nearPath.add(key(cc, rr));
+        }
+      }
+    }
+  }
   for (let zi = 0; zi < zones.length; zi++) {
     const z = zones[zi];
     if (!z || typeof z !== "object" || typeof z.type !== "string" || !z.type) {
       throw new Error(`vegetation_zones[${zi}] necesita un type (nombre de la planta)`);
     }
-    const [c0, r0, w, h] = asRect(z.area, `vegetation_zones[${zi}]`);
+    if (z.area === "rest" && biomeChar === null) {
+      throw new Error(`vegetation_zones[${zi}]: area:"rest" solo está disponible en tiles (Format D v3)`);
+    }
+    const [c0, r0, w, h] = z.area === "rest"
+      ? [0, 0, cols, rows] as Rect
+      : asRect(z.area, `vegetation_zones[${zi}]`);
     if (c0 < 0 || r0 < 0 || c0 + w > cols || r0 + h > rows) {
       throw new Error(`vegetation_zones[${zi}]: area [${c0},${r0},${w},${h}] se sale del grid ${cols}x${rows}`);
     }
@@ -238,6 +422,10 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
       for (let c = c0; c < c0 + w; c++) {
         const ch = grid[r][c];
         if (wallChars.has(ch) || ch === "w") continue; // ni muros ni agua
+        // En tiles solo se planta sobre el propio bioma (excluye caminos,
+        // parches, suelos interiores…), con margen alrededor de sendas.
+        if (biomeChar !== null && ch !== biomeChar) continue;
+        if (nearPath?.has(key(c, r))) continue;
         if (occupied.has(key(c, r))) continue;
         candidates.push([c, r]);
       }

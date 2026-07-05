@@ -80,6 +80,7 @@ class SceneImageGenerator:
         seed: int = -1,           # unused (Meshy)
         guidance: float = 6.0,    # unused
         controlnet_scale: float = 0.5,  # unused
+        context_sides: list[str] | None = None,
     ) -> dict:
         sch = self._load_rgb(schematic_png_bytes)
         instruction = (
@@ -95,6 +96,16 @@ class SceneImageGenerator:
             "areas; add natural ground variation and texture everywhere. "
             f"Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
         )
+        if context_sides:
+            edges = ", ".join(context_sides)
+            instruction += (
+                f" CONTEXT STRIPS: the outermost strip along the {edges} edge(s) of "
+                "the FIRST reference is NOT schematic — it is finished painted art "
+                "from the adjacent, already-rendered map. Reproduce those strips "
+                "EXACTLY as given, unchanged and in the same position at the same "
+                "edges of your output, and paint everything else so it continues "
+                "them with no visible seam (same palette, same ground texture)."
+            )
         refs = [_to_data_uri(sch, "PNG"), self._style_uri]
         start = time.perf_counter()
         png, res = self._run(instruction, refs)

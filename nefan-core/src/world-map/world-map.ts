@@ -6,12 +6,14 @@
 import {
   HIGH_LEVEL_KINDS,
   WORLD_MAP_SCHEMA_VERSION,
+  type Edge,
   type Place,
   type PlaceLink,
   type PlaceKind,
   type PlaceTriggerSpec,
   type WorldMap,
 } from "./types.js";
+import { oppositeEdge } from "./edges.js";
 
 export interface PlaceUpsert {
   id: string;
@@ -26,6 +28,7 @@ export interface PlaceUpsert {
   introduced_event_id?: string;
   triggers?: PlaceTriggerSpec[];
   visited?: boolean;
+  anchor?: Place["anchor"];
 }
 
 export interface LinkSpec {
@@ -35,6 +38,8 @@ export interface LinkSpec {
   travel_hours?: number;
   description?: string;
   bidirectional?: boolean;
+  /** Lado de la escena de `from` donde está la salida (ver PlaceLink.edge). */
+  edge?: Edge;
 }
 
 export class WorldMapManager {
@@ -83,6 +88,7 @@ export class WorldMapManager {
       triggers: spec.triggers ?? existing?.triggers ?? [],
       introduced_event_id: spec.introduced_event_id ?? existing?.introduced_event_id,
       visited: spec.visited ?? existing?.visited ?? false,
+      anchor: spec.anchor ?? existing?.anchor,
     };
     this.map.places[place.id] = place;
     return place;
@@ -125,6 +131,12 @@ export class WorldMapManager {
       existing.travel_hours = spec.travel_hours;
       existing.description = spec.description;
       existing.bidirectional = spec.bidirectional ?? existing.bidirectional;
+      if (spec.edge) {
+        // spec.edge es relativo a spec.from; findLink puede haber encontrado
+        // el par almacenado en la orientación INVERSA — sin esta corrección
+        // un update invertido corrompería la dirección.
+        existing.edge = existing.from === spec.from ? spec.edge : oppositeEdge(spec.edge);
+      }
       return existing;
     }
     const link: PlaceLink = {
@@ -134,6 +146,7 @@ export class WorldMapManager {
       travel_hours: spec.travel_hours,
       description: spec.description,
       bidirectional: spec.bidirectional ?? true,
+      edge: spec.edge,
     };
     this.map.links.push(link);
     return link;

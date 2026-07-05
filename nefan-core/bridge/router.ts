@@ -7,6 +7,7 @@ import {
   handleInput,
   handleLoadRoom,
   handleRespawn,
+  handleAddCombatants,
   handleScenarioEvent,
 } from "./handlers/simulation.js";
 import {
@@ -19,7 +20,8 @@ import {
   handleStartSession,
 } from "./handlers/session.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
-import { handlePlayerEnteredPlace } from "./handlers/scene.js";
+import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
+import { handleRequestTile } from "./handlers/tile.js";
 
 export async function routeMessage(
   msg: ClientMessage,
@@ -34,7 +36,10 @@ export async function routeMessage(
       handleLoadRoom(msg, ws, ctx);
       break;
     case "respawn":
-      handleRespawn(ws, ctx);
+      handleRespawn(msg, ws, ctx);
+      break;
+    case "add_combatants":
+      handleAddCombatants(msg, ws, ctx);
       break;
     case "load_game":
       handleLoadGame(msg, ws, ctx);
@@ -68,6 +73,12 @@ export async function routeMessage(
       break;
     case "player_entered_place":
       await handlePlayerEnteredPlace(msg, ctx);
+      break;
+    case "player_crossed_frontier":
+      await handlePlayerCrossedFrontier(msg, ctx);
+      break;
+    case "request_tile":
+      await handleRequestTile(msg, ctx);
       break;
     case "interact_entity":
       await handleInteractEntity(msg, ctx);

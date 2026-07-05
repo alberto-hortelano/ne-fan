@@ -20,6 +20,8 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { routeMessage } from "../bridge/router.js";
+import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type {
   ServerMessage,
@@ -97,6 +99,8 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     cacheInitialScene: false,
     activePlugins: new Map(),
+    sceneGen: new SceneGenQueue(),
+    posTracking: { cellKey: null, placeId: null },
     subscribe(ws) {
       subscribers.add(ws);
     },
@@ -656,6 +660,35 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.ok(narrative.story_so_far.includes("Huele a estofado."));
   });
 
+  it("las exits de la escena difundida llevan edge (directo e inverso)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
+    narrative.worldMap.upsertPlace({ id: "bosque", kind: "landmark", parent_id: "world", name: "Bosque" });
+    // Desde la aldea se sale al bosque por el sur ⇒ desde el bosque, por el norte.
+    narrative.worldMap.addLink({ from: "aldea", to: "bosque", kind: "path", edge: "south" });
+    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
+    narrative.recordSceneLoaded("scene_bosque", { room_id: "scene_bosque", place_id: "bosque", room_description: "x" });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);
+    const fromAldea = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const aldeaScene = fromAldea?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(aldeaScene?.exits?.[0]?.place_id, "bosque");
+    assert.equal(aldeaScene?.exits?.[0]?.edge, "south");
+
+    broadcasts.length = 0;
+    await routeMessage({ type: "player_entered_place", placeId: "bosque" }, socket, ctx);
+    const fromBosque = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const bosqueScene = fromBosque?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(bosqueScene?.exits?.[0]?.place_id, "aldea");
+    assert.equal(bosqueScene?.exits?.[0]?.edge, "north");
+  });
+
   it("lugar sin escena → lazy realize vía generateScene y trigger tras la escena", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: {
@@ -685,5 +718,386 @@ describe("bridge player_entered_place + map triggers", () => {
       .filter((m): m is NarrativeStatusMessage => m.type === "narrative_status")
       .map((m) => m.phase);
     assert.deepEqual(phases, ["generating", "ready"]);
+  });
+});
+
+describe("bridge player_crossed_frontier", () => {
+  /** Sesión con un place activo "aldea" realizado, listo para cruzar fronteras. */
+  function seedAldea(narrative: NarrativeState): void {
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
+    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
+  }
+
+  it("camino feliz: el motor crea place+link, el bridge estampa el edge y difunde la escena", async () => {
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          assert.equal((llmCtx.frontier_request as { edge: string }).edge, "east");
+          // El fake imita al motor: crea el place y el link SIN edge (probamos
+          // que el bridge lo estampa con la geometría real del cruce).
+          nref!.worldMap.upsertPlace({ id: "bosque_este", kind: "landmark", parent_id: "world", name: "Bosque" });
+          nref!.worldMap.addLink({ from: "aldea", to: "bosque_este", kind: "path" });
+          return { ok: true, scene: { room_id: "scene_bosque", place_id: "bosque_este", room_description: "el bosque" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+
+    assert.equal(narrative.worldMap.get("bosque_este")?.realized_scene_id, "scene_bosque");
+    assert.equal(narrative.worldMap.serialize().active_place_id, "bosque_este");
+    // Edge estampado por el bridge sobre el link que dejó el motor.
+    const link = narrative.worldMap.getOutgoingLinks("aldea")[0];
+    assert.equal(link.edge, "east");
+    // La escena difundida lleva el exit de vuelta con el edge opuesto.
+    const sceneEvent = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    assert.equal(scene?.exits?.[0]?.place_id, "aldea");
+    assert.equal(scene?.exits?.[0]?.edge, "west");
+    assert.equal(ctx.sceneGen.current, null, "cola drenada");
+  });
+
+  it("el motor no crea el place → error accionable con map_upsert_place", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => ({
+          ok: true,
+          scene: { room_id: "scene_x", place_id: "no_existe", room_description: "x" },
+        }),
+      },
+    });
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "north" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("map_upsert_place"), err?.message);
+    assert.equal(ctx.sceneGen.current, null);
+  });
+
+  it("el motor no linkea el place nuevo → error accionable con map_link", async () => {
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          nref!.worldMap.upsertPlace({ id: "paramo", kind: "landmark", parent_id: "world", name: "Páramo" });
+          return { ok: true, scene: { room_id: "scene_p", place_id: "paramo", room_description: "x" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "south" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("map_link"), err?.message);
+  });
+
+  it("cola: la misma frontera repetida durante la generación se dedupea", async () => {
+    let release: (() => void) | null = null;
+    let nref: NarrativeState | null = null;
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          nref!.worldMap.upsertPlace({ id: "colina", kind: "landmark", parent_id: "world", name: "Colina" });
+          nref!.worldMap.addLink({ from: "aldea", to: "colina", kind: "path" });
+          return { ok: true, scene: { room_id: "scene_c", place_id: "colina", room_description: "x" } };
+        },
+      },
+    });
+    nref = narrative;
+    seedAldea(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() => release !== null);
+    // Misma frontera repetida mientras genera → dedupe + re-broadcast generating.
+    const before = broadcasts.length;
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1, "una sola llamada al motor");
+    assert.equal(
+      (broadcasts[before] as NarrativeStatusMessage)?.phase,
+      "generating",
+      "re-broadcast de generating para mantener el loader",
+    );
+    release!();
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    assert.equal(ctx.sceneGen.current, null);
+  });
+
+  it("lazy realize en vuelo → la frontera se dropea (y viceversa el guard cubre entered_place)", async () => {
+    let release: (() => void) | null = null;
+    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          return { ok: true, scene: { room_id: "scene_f", room_description: "x" } };
+        },
+      },
+    });
+    seedAldea(narrative);
+    narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "Forja" });
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => release !== null);
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1, "la frontera no dispara una segunda generación");
+    release!();
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+  });
+});
+
+describe("bridge request_tile (plano continuo)", () => {
+  /** Tile mínimo válido: bioma + camino que continúa los cruces pedidos. */
+  const tileScene = (features: Record<string, unknown>[] = []) => ({
+    biome: "grass",
+    scene_description: "campo de bench",
+    terrain_features: features,
+    entities: [],
+    ambient_event: "",
+  });
+
+  function seedTile00(narrative: NarrativeState): void {
+    narrative.startNewSession("plugtest");
+    // Tile (0,0) con un camino que muere en su borde ESTE en la fila 41.
+    const t = {
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      ...tileScene([
+        { type: "path", points: [[64, 41], [128, 41]], width: 2, at_edges: [{ edge: "east", at: 41 }] },
+      ]),
+    };
+    narrative.recordSceneLoaded("tile_0_0", expandScenePrimitives(t));
+  }
+
+  it("cache-hit: re-difunde el tile persistido sin llamar al motor", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    seedTile00(narrative);
+    broadcasts.length = 0;
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 0, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 0, "sin LLM");
+    const sceneEvent = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    assert.ok(sceneEvent, "re-broadcast del esquema persistido");
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.equal(ready?.kind, "tile");
+    assert.deepEqual(ready?.tile, { tx: 0, ty: 0 });
+  });
+
+  it("miss: genera con contexto de costuras y el prefetch NO roba la escena activa", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          const gt = llmCtx.generate_tile!;
+          assert.equal(gt.tx, 1);
+          assert.equal(gt.ty, 0);
+          // El vecino oeste (tile 0,0) expone su cruce con el MISMO at.
+          assert.equal(gt.neighbors.west?.crossings[0]?.at, 41);
+          // Continuarlo: camino de oeste a este.
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "prefetch", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready" && m.kind === "tile"),
+    );
+    assert.ok(narrative.hasTile(1, 0), "tile registrado");
+    assert.equal(narrative.world.active_scene_id, "tile_0_0", "prefetch sin activar");
+    // El registro persistió las costuras del tile nuevo.
+    assert.equal(narrative.getTile(1, 0)!.edges!.west.crossings[0]?.at, 41);
+  });
+
+  it("un tile que no continúa los cruces del vecino se rechaza (red server-side)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) }, // sin camino
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(err?.message?.includes("no es jugable"), err?.message);
+    assert.ok(!narrative.hasTile(1, 0));
+  });
+
+  it("player_crossed_frontier delega en el pipeline de tiles cuando el activo es un tile", async () => {
+    const { ctx, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async (llmCtx) => {
+          assert.ok(llmCtx.generate_tile, "usa generate_tile, no frontier_request");
+          assert.equal(llmCtx.frontier_request, undefined);
+          assert.equal(llmCtx.generate_tile!.entry?.edge, "west", "entra por el opuesto al cruzado");
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
+    await waitFor(() => narrative.hasTile(1, 0));
+    assert.equal(aiCalls.scene.length, 1);
+  });
+
+  it("blocking repetido mientras genera → generating re-difundido, una sola llamada", async () => {
+    let release: (() => void) | null = null;
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          await new Promise<void>((r) => { release = r; });
+          return {
+            ok: true,
+            scene: tileScene([
+              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
+            ]),
+          };
+        },
+      },
+    });
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => release !== null);
+    const before = broadcasts.length;
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 1);
+    const regen = broadcasts.slice(before).find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "generating",
+    );
+    assert.ok(regen, "re-broadcast de generating para el que espera");
+    release!();
+    await waitFor(() => narrative.hasTile(1, 0));
+  });
+
+  it("add_combatants es aditivo y respawn acepta pos", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "add_combatants",
+        enemies: [
+          {
+            id: "lobo_1",
+            position: { x: 70, y: 0, z: 5 },
+            health: 40,
+            weaponId: "unarmed",
+            personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3 },
+          },
+        ],
+      },
+      socket,
+      ctx,
+    );
+    assert.ok(sim.getCombatant("lobo_1"), "enemigo añadido");
+    assert.ok(sim.getCombatant("player"), "player intacto (sin reset)");
+    // Duplicado ignorado.
+    await routeMessage(
+      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
+      socket,
+      ctx,
+    );
+    assert.equal(sim.getCombatant("lobo_1")!.health, 40, "el duplicado no pisa el HP");
+
+    await routeMessage({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 66, y: 0, z: 2 });
+    assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
+  });
+});
+
+describe("bridge activación por posición (tiles + anchors)", () => {
+  it("pisar un tile lo activa y pisar el anchor de un place dispara sus triggers", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    const t00 = expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", biome: "grass", entities: [] });
+    const t10 = expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", biome: "grass", entities: [] });
+    narrative.recordSceneLoaded("tile_0_0", t00);
+    narrative.recordSceneLoaded("tile_1_0", t10, [], { activate: false });
+    narrative.worldMap.upsertPlace({
+      id: "claro",
+      kind: "landmark",
+      parent_id: "world",
+      name: "El Claro",
+      anchor: { tx: 1, ty: 0, rect: [40, 50, 20, 20] },
+    });
+    narrative.worldMap.addTrigger("claro", {
+      id: "bienvenida",
+      when: { type: "player_entered" },
+      consequences: [{ type: "story_update", delta: "Llegas al claro." }],
+    });
+
+    const { socket } = makeSocket();
+    const input = (x: number, z: number) => routeMessage(
+      { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
+      socket, ctx,
+    );
+
+    // Dentro del tile (0,0): nada cambia de más.
+    await input(0, 0);
+    assert.equal(narrative.world.active_scene_id, "tile_0_0");
+
+    // Cruzar al tile (1,0) fuera del anchor: se activa el tile, no el place.
+    await input(40, -20);
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    assert.ok(!narrative.story_so_far.includes("Llegas al claro."));
+
+    // Pisar el rect del anchor (celdas 40..59 × 50..59 → mundo x 52..62, z -7..-2).
+    await input(55, -4);
+    await waitFor(() => narrative.story_so_far.includes("Llegas al claro."));
+    assert.equal(narrative.worldMap.serialize().active_place_id, "claro");
+    const trigger = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "map_trigger",
+    );
+    assert.ok(trigger, "map_trigger difundido");
+
+    // Re-pisar el anchor no re-dispara player_entered en bucle (gate por celda
+    // + place ya activo).
+    const count = broadcasts.filter((m) => m.type === "narrative_event" && m.eventId === "map_trigger").length;
+    await input(55.2, -4);
+    await input(55.4, -4);
+    const count2 = broadcasts.filter((m) => m.type === "narrative_event" && m.eventId === "map_trigger").length;
+    assert.equal(count2, count, "sin re-disparos");
   });
 });

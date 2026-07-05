@@ -29,6 +29,17 @@ export type LinkKind =
   | "tunnel"
   | "door";
 
+/** Lado de una escena por el que se sale/entra. Mismos ejes que el cliente 2D:
+ *  east = +x, west = -x, south = +z, north = -z; en `approx_position` [x, y]
+ *  del espacio local del parent, y+ = south. */
+export type Edge = "north" | "south" | "east" | "west";
+
+export const EDGES: readonly Edge[] = ["north", "south", "east", "west"];
+
+export function isEdge(v: unknown): v is Edge {
+  return typeof v === "string" && (EDGES as readonly string[]).includes(v);
+}
+
 export type TriggerWhen =
   | { type: "player_entered" }
   | { type: "player_left" }
@@ -55,6 +66,11 @@ export interface Place {
   triggers: PlaceTriggerSpec[];
   introduced_event_id?: string;
   visited: boolean;
+  /** Anclaje al plano continuo de tiles: el place VIVE en el tile (tx,ty),
+   *  opcionalmente acotado a un rect [col,row,w,h] en celdas del tile. El
+   *  bridge activa el place (y dispara sus triggers) cuando la POSICIÓN del
+   *  jugador entra en el anchor. */
+  anchor?: { tx: number; ty: number; rect?: [number, number, number, number] };
 }
 
 export interface PlaceLink {
@@ -64,6 +80,12 @@ export interface PlaceLink {
   travel_hours?: number;
   description?: string;
   bidirectional: boolean;
+  /** Lado de la escena del place `from` donde está la salida hacia `to`.
+   *  Recorrer el link al revés (bidirectional, estando en `to`) pone la
+   *  salida en oppositeEdge(edge) de la escena de `to`. Ausente = sin
+   *  orientación conocida (resolveExitEdge puede inferirla por
+   *  approx_position). */
+  edge?: Edge;
 }
 
 export interface WorldMap {

@@ -26,6 +26,7 @@ import { inspectPlugin } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
 import { createStateHttpServer } from "./state-http-server.js";
 import { routeMessage } from "./router.js";
+import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { BridgeContext } from "./context.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ClientMessage, ServerMessage } from "../src/protocol/messages.js";
@@ -69,6 +70,8 @@ const ctx: BridgeContext = {
   gamesDir: GAMES_DIR,
   cacheInitialScene: CONFIG.dev.cache_initial_scene,
   activePlugins: new Map(),
+  sceneGen: new SceneGenQueue(),
+  posTracking: { cellKey: null, placeId: null },
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },

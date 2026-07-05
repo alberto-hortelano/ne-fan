@@ -5,9 +5,12 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
-import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
+import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type Entity, type Occluder } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
+import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
@@ -101,7 +104,10 @@ const config = loadConfig(combatConfigJson);
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const WORLD_ANGLE = "isometric_30";
-const AI_SERVER_URL = "http://127.0.0.1:8765";
+// Override de bench (simétrico a `?bridge=`): `?ai=http://127.0.0.1:18765`
+// apunta imagen/assets/auto-img a un ai_server alternativo (mock).
+const AI_SERVER_URL =
+  new URLSearchParams(location.search).get("ai") ?? "http://127.0.0.1:8765";
 const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
 const assetCache = new AssetCache(AI_SERVER_URL);
 const renderer = new CanvasRenderer(canvas, {
@@ -143,6 +149,12 @@ const input = new KeyboardHandler(canvas, (type) => {
   get playerPos() { return playerPos; },
   get scene() { return sceneData; },
   get dialogueVisible() { return dialoguePanel.isVisible; },
+  get exits() { return currentExits; },
+  get tiles() { return [...tileStore.entries.keys()]; },
+  get tileImages() { return renderer.tileKeys.filter((k) => renderer.tileHasImage(k)); },
+  get occluders() { return renderer.debugOccluders(); },
+  get currentTile() { return activeTileKey; },
+  get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
 };
 
@@ -181,13 +193,61 @@ let sceneData: Record<string, unknown> | null = null;
 /** Salidas del world-map de la escena actual (las adjunta el bridge). Se usan
  *  para la transición continua al cruzar un borde. */
 let currentExits: SceneExit[] = [];
-/** Cuando el jugador sale por un borde, se anota aquí el lado de SALIDA; la
- *  siguiente escena coloca al jugador en el borde OPUESTO (entra caminando, sin
- *  teletransporte al origen). null ⇒ usar __player_start / origen. */
-let pendingEntryEdge: "north" | "south" | "east" | "west" | null = null;
-/** Debounce para no disparar la transición de borde varias veces mientras llega
- *  la escena nueva. */
-let edgeTransitionUntil = 0;
+/** Mundo del cliente: colección ACUMULATIVA de tiles (nunca desaparecen). */
+const tileStore = new TileStore();
+/** Prefetch proactivo + velo direccional de fronteras. El jugador nunca se
+ *  congela: el bloqueo es solo direccional (colisión virtual del borde). */
+const frontier = new FrontierManager();
+/** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
+let activeTileKey: string | null = null;
+
+// --- Auto-img: pipeline automático de imagen IA por tile (toggle del HUD) ---
+// Persistido en localStorage (patrón ZOOM_KEY). Con el toggle ON, cada tile
+// de grid sin imagen pasa por imagen→segmentación→descubrimiento en FIFO.
+const autoimgToggle = document.getElementById("autoimg-toggle") as HTMLInputElement;
+const autoimgStatus = document.getElementById("autoimg-status") as HTMLElement;
+const AUTOIMG_KEY = "nefan.autoimg";
+
+function renderAutoImgStatus(s: PipelineStatus): void {
+  if (s.paused) {
+    autoimgStatus.textContent = `pausado: ai_server no responde · cola ${s.queued}`;
+    autoimgStatus.className = "paused";
+  } else if (s.current) {
+    autoimgStatus.textContent = `${s.current.key} · ${s.current.phase}` +
+      (s.queued > 0 ? ` · cola ${s.queued}` : "");
+    autoimgStatus.className = "working";
+  } else if (s.enabled) {
+    autoimgStatus.textContent = "al día";
+    autoimgStatus.className = "";
+  } else {
+    autoimgStatus.textContent = "";
+    autoimgStatus.className = "";
+  }
+}
+
+const autoPipeline = new AutoImagePipeline({
+  hasImage: (k) => renderer.tileHasImage(k),
+  listGridTileKeys: () =>
+    [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
+  isControllerBusy: () => sceneImageController.isBusy(),
+  generate: (k) => sceneImageController.generateForTile(k),
+  segment: (k) => sceneImageController.segmentOccludersForTile(k),
+  discover: (k) => sceneImageController.discoverObjectsForTile(k),
+  onSegmented: (occ) => refineCollisionsFromSegments(occ),
+  onDiscovered: (occ) => addDiscoveredObjects(occ),
+  onStatus: renderAutoImgStatus,
+  onDisabled: () => {
+    autoimgToggle.checked = false;
+    localStorage.setItem(AUTOIMG_KEY, "0");
+  },
+  healthUrl: `${AI_SERVER_URL}/health`,
+});
+autoimgToggle.checked = localStorage.getItem(AUTOIMG_KEY) === "1";
+autoPipeline.setEnabled(autoimgToggle.checked);
+autoimgToggle.addEventListener("change", () => {
+  localStorage.setItem(AUTOIMG_KEY, autoimgToggle.checked ? "1" : "0");
+  autoPipeline.setEnabled(autoimgToggle.checked);
+});
 
 // Entity arrays
 let enemyEntities: Entity[] = [];
@@ -253,8 +313,13 @@ async function reviewBlueprintAndApply(): Promise<void> {
     errors.push("scene", "review (R): la escena actual no es Format D — nada que revisar");
     return;
   }
+  const entry = activeTileKey ? tileStore.entries.get(activeTileKey) : null;
+  if (!entry) {
+    errors.push("scene", "review (R): no hay tile activo");
+    return;
+  }
   log("blueprint → revisión por visión (Claude)…");
-  const review = await sceneImageController.reviewBlueprint(fd);
+  const review = await sceneImageController.reviewBlueprint(fd, entry.rect);
   for (const issue of review.issues) log(`review: ${issue}`);
   if (review.approved && !review.fixes) {
     log("review: blueprint aprobado — listo para G");
@@ -292,74 +357,97 @@ async function loadSceneFile(globKey: string): Promise<void> {
   await loadSceneData(mod.default);
 }
 
-/** Apply an already-resolved scene JSON to the renderer + game client.
- *  Used tanto por el dropdown de escenarios locales como por el flujo narrativo
- *  (start_session / resume_session). Acepta el campo legacy `room_id` para
- *  saves antiguos. */
-async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
-  const data = formatDToWorld(rawData);
-  sceneData = data;
-
-  renderer.setScene(data as unknown as Parameters<typeof renderer.setScene>[0]);
-
-  // Colisión de terreno: los chars sólidos del grid (muros W, agua w) bloquean
-  // en collidesAt. Grid malformado → sin colisión de terreno pero jugable.
-  try {
-    terrainCollider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
-  } catch (err) {
-    terrainCollider = null;
-    errors.push("scene", "terrain_grid inconsistente; colisión de terreno desactivada", err);
-  }
-
-  // Reinicia el controlador de imagen de escena con el rectángulo de la nueva
-  // escena (centrado en el origen) y limpia cualquier fondo IA anterior. La
-  // generación se dispara después manualmente con G.
-  {
-    const d = data.dimensions as { width: number; depth: number } | undefined;
-    if (d) {
-      const hw = d.width / 2;
-      const hd = d.depth / 2;
-      sceneImageController.reset(
-        { minX: -hw, minZ: -hd, maxX: hw, maxZ: hd },
-        data as unknown as Parameters<typeof sceneImageController.reset>[1],
-      );
-    }
-  }
-
-  // Posición de entrada. Tres casos, en orden de prioridad:
-  //  1) pendingEntryEdge: venimos de cruzar un borde → entramos por el lado
-  //     OPUESTO preservando la posición lateral (transición continua, sin
-  //     teletransporte al origen).
-  //  2) __player_start: la escena Format D trae un punto de entrada explícito.
-  //  3) origen (carga directa / save antiguo).
-  const dims = data.dimensions as { width: number; depth: number } | undefined;
-  const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
-  if (pendingEntryEdge && dims) {
-    const halfW = dims.width / 2;
-    const halfD = dims.depth / 2;
-    const inset = 1.5;
-    const clampLat = (v: number, half: number) => Math.max(-half + inset, Math.min(half - inset, v));
-    switch (pendingEntryEdge) {
-      case "north": playerPos.z = halfD - inset; playerPos.x = clampLat(playerPos.x, halfW); break; // salió al N → entra por el S
-      case "south": playerPos.z = -halfD + inset; playerPos.x = clampLat(playerPos.x, halfW); break;
-      case "east":  playerPos.x = -halfW + inset; playerPos.z = clampLat(playerPos.z, halfD); break; // salió al E → entra por el O
-      case "west":  playerPos.x = halfW - inset;  playerPos.z = clampLat(playerPos.z, halfD); break;
-    }
-    pendingEntryEdge = null;
-  } else if (playerStart) {
-    playerPos.x = playerStart.x;
-    playerPos.z = playerStart.z;
-  } else {
-    playerPos.x = 0;
-    playerPos.z = 2;
-  }
-
-  // Extract enemies from objects with combat
-  const objects = (data.objects ?? []) as Record<string, unknown>[];
-  const enemies: RoomEnemy[] = [];
+/** Vacía el mundo del cliente (arranque de sesión, resume, fixtures). */
+function resetWorld(): void {
+  tileStore.clear();
+  renderer.clearTiles();
+  autoPipeline.resetQueue();
   enemyEntities = [];
   objectEntities = [];
+  npcEntities = [];
   colorIdx = 0;
+  activeTileKey = null;
+  sceneData = null;
+}
+
+/** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
+ *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
+async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
+  resetWorld();
+  await addTile(rawData);
+}
+
+/** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
+ *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
+ *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
+ *  sustituye (re-render al volver a un tile). */
+async function addTile(rawData: Record<string, unknown>): Promise<void> {
+  const data = formatDToWorld(rawData);
+  const tile = data.tile as { tx: number; ty: number } | undefined;
+  const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
+  const key = isGridTile
+    ? tileKey(tile!.tx, tile!.ty)
+    : String(data.scene_id ?? data.room_id ?? "scene");
+  const firstTile = tileStore.entries.size === 0;
+
+  // Rect mundial del tile (los tiles de grid lo derivan de la geometría core;
+  // las escenas legacy vienen centradas).
+  const wr = data.world_rect as { minX: number; minZ: number; maxX: number; maxZ: number } | undefined;
+  const dims = data.dimensions as { width: number; depth: number } | undefined;
+  const rect = isGridTile
+    ? tileWorldRect(tile!.tx, tile!.ty)
+    : wr ?? { minX: -(dims?.width ?? 20) / 2, minZ: -(dims?.depth ?? 20) / 2, maxX: (dims?.width ?? 20) / 2, maxZ: (dims?.depth ?? 20) / 2 };
+
+  // Colisión de terreno POR TILE (origin global desde terrain_grid.origin).
+  let collider: TileClientState["collider"] = null;
+  try {
+    collider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
+  } catch (err) {
+    errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
+  }
+  tileStore.add({
+    key,
+    tx: isGridTile ? tile!.tx : undefined,
+    ty: isGridTile ? tile!.ty : undefined,
+    rect,
+    scene: data as Record<string, unknown>,
+    collider,
+  });
+  const { sceneChanged } = renderer.addTile(
+    key,
+    data as unknown as Parameters<typeof renderer.setScene>[0],
+  );
+  // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
+  // una generación en vuelo — se marca dirty y se regenera con el esquema
+  // nuevo). Cubre bootstrap, frontier, re-broadcast y resume.
+  if (isGridTile) autoPipeline.notifyTile(key, { invalidated: sceneChanged });
+
+  // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
+  // spawn explícito). En el resto de tiles el jugador entra andando.
+  const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
+  if (!isGridTile) {
+    if (playerStart) {
+      playerPos.x = playerStart.x;
+      playerPos.z = playerStart.z;
+    } else {
+      playerPos.x = 0;
+      playerPos.z = 2;
+    }
+  } else if (firstTile && playerStart) {
+    playerPos.x = playerStart.x;
+    playerPos.z = playerStart.z;
+  }
+
+  // Purga entidades previas de esta clave (re-render de un tile ya visto) y
+  // extrae enemigos/objetos/NPCs con posiciones GLOBALES.
+  const inRect = (p: Vec3) => p.x >= rect.minX && p.x < rect.maxX && p.z >= rect.minZ && p.z < rect.maxZ;
+  const objects = (data.objects ?? []) as Record<string, unknown>[];
+  const ids = new Set(objects.map((o) => o.id as string));
+  const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
+  enemyEntities = enemyEntities.filter((e) => !ids.has(e.id) && !inRect(e.pos));
+  objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !inRect(o.pos));
+  npcEntities = npcEntities.filter((n) => !npcIds.has(n.id) && !inRect(n.pos));
+  const enemies: RoomEnemy[] = [];
 
   for (const obj of objects) {
     const pos: Vec3 = {
@@ -435,9 +523,9 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
     }
   }
 
-  // NPCs from room data
+  // NPCs from room data (append: los de otros tiles siguen vivos)
   const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
-  npcEntities = npcsData.map(npc => {
+  const newNpcs = npcsData.map(npc => {
     const entity: Entity = {
       id: npc.id as string,
       pos: {
@@ -455,22 +543,53 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
     };
     return entity;
   });
+  npcEntities.push(...newNpcs);
+
+  // Fail-loud del contrato de posiciones globales: una entidad de un tile de
+  // grid FUERA de su rect delata una conversión celda→mundo rota.
+  if (isGridTile) {
+    for (const e of [...newNpcs, ...enemyEntities.filter((en) => ids.has(en.id))]) {
+      if (!inRect(e.pos)) {
+        errors.push("scene", `entidad "${e.id}" de ${key} fuera de su rect: (${e.pos.x.toFixed(1)}, ${e.pos.z.toFixed(1)})`);
+      }
+    }
+  }
 
   // Build enemy HP bars
   rebuildEnemyBars();
 
-  // Travel panel — el bridge adjunta `exits` (salidas del world map). También
-  // las guardamos para la transición continua al cruzar un borde (gameLoop).
-  currentExits = (data.exits ?? []) as SceneExit[];
-  travelPanel.setExits(currentExits);
-
-  // Notify game client (load_room sigue siendo el mensaje del protocolo —
-  // sólo el cliente HTML ya no piensa en "salas").
-  if (gameClient) {
-    gameClient.loadRoom(data, (data.scene_id ?? data.room_id ?? "unknown") as string, enemies);
+  // Activación visual del primer tile / escena legacy (el resto de tiles se
+  // activa por POSICIÓN en gameLoop al pisarlos).
+  if (firstTile || !isGridTile) {
+    setActiveClientTile(key);
+  } else if (key === activeTileKey) {
+    // Re-render del tile activo (resume/re-broadcast): refrescar el puntero.
+    setActiveClientTile(key);
   }
 
-  log("Scene loaded: " + (data.scene_id ?? data.room_id ?? "unknown"));
+  // Sim: los tiles de grid añaden combatientes de forma ADITIVA (sin reset);
+  // las escenas legacy (fixtures) siguen reseteando la sala entera.
+  if (gameClient) {
+    if (isGridTile) {
+      gameClient.addEnemies(enemies);
+    } else {
+      gameClient.loadRoom(data, key, enemies);
+    }
+  }
+
+  log("Scene loaded: " + key);
+}
+
+/** Apunta la "escena activa" del cliente (imagen IA, exits, TravelPanel) al
+ *  tile bajo el jugador. */
+function setActiveClientTile(key: string): void {
+  const entry = tileStore.entries.get(key);
+  if (!entry) return;
+  activeTileKey = key;
+  sceneData = entry.scene;
+  renderer.setActiveTile(key);
+  currentExits = (entry.scene.exits ?? []) as SceneExit[];
+  travelPanel.setExits(currentExits);
 }
 
 function rebuildEnemyBars(): void {
@@ -487,13 +606,23 @@ function rebuildEnemyBars(): void {
 
 // --- Collision ---
 const PLAYER_RADIUS = 0.4;
-/** Colisión de celdas sólidas del terreno (muros/agua). Null en escenas sin
- *  grid o sin ninguna celda sólida. Se reconstruye en cada loadSceneData. */
-let terrainCollider: TerrainCollider | null = null;
-/** El jugador puede salir del rectángulo de escena hasta este margen (metros)
- *  hacia el campo abierto, sin caer al vacío infinito. Sustituye a la "jaula"
- *  dura; la Fase 4 reemplazará este tope por una transición donde haya salidas. */
-const EDGE_MARGIN = 6;
+
+/** Frontera del plano: un tile INEXISTENTE es un sólido virtual con semántica
+ *  "salir sí, entrar no" — bloquea el movimiento HACIA él pero nunca el de
+ *  vuelta. Con la resolución por ejes de gameLoop esto da el bloqueo
+ *  DIRECCIONAL gratis: pegado al borde este solo se bloquea +x; ±z y -x
+ *  siguen libres. Solo aplica cuando el mundo es de tiles de grid. */
+function frontierBlocksMove(x: number, z: number): boolean {
+  if (!tileStore.hasGridTiles) return false;
+  const destMissing = tileStore
+    .keysTouching(x, z, PLAYER_RADIUS)
+    .filter((t) => !tileStore.has(t.tx, t.ty));
+  if (destMissing.length === 0) return false;
+  const fromKeys = new Set(
+    tileStore.keysTouching(playerPos.x, playerPos.z, PLAYER_RADIUS).map((t) => `${t.tx},${t.ty}`),
+  );
+  return destMissing.some((t) => !fromKeys.has(`${t.tx},${t.ty}`));
+}
 
 /** Phase 2 — snap each solid object's collision AABB to the footprint SAM
  *  actually found painted (the cyan box in the B overlay), so collisions match
@@ -559,7 +688,19 @@ function addDiscoveredObjects(occluders: Occluder[]): void {
  *  empujón te dejó dentro); solo bloquean los obstáculos NUEVOS del destino.
  *  Sin esto, spawn solapado ⇒ ambos ejes bloqueados ⇒ jugador clavado. */
 function collidesAt(x: number, z: number): boolean {
-  if (terrainCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
+  if (frontierBlocksMove(x, z)) return true;
+  // Terreno sólido de los tiles que toca el AABB destino (≤4). Cada collider
+  // trabaja en coordenadas globales (terrain_grid.origin).
+  if (tileStore.hasGridTiles) {
+    for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
+      const tile = tileStore.get(t.tx, t.ty);
+      if (tile?.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
+    }
+  } else {
+    for (const entry of tileStore.entries.values()) {
+      if (entry.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
+    }
+  }
   for (const obj of objectEntities) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
@@ -766,9 +907,18 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "r") {
     const p = gameClient?.getCombatant("player");
     if (p && p.health <= 0) {
-      gameClient?.respawn({ x: 0, y: 0, z: 2 });
-      playerPos.x = 0;
-      playerPos.z = 2;
+      // Punto libre cercano: la posición actual si no colisiona; si no, el
+      // centro del tile actual; último recurso, el origen legacy.
+      let rp = { x: playerPos.x, y: 0, z: playerPos.z };
+      if (collidesAt(rp.x, rp.z)) {
+        const under = tileStore.getAt(playerPos.x, playerPos.z);
+        rp = under
+          ? { x: (under.rect.minX + under.rect.maxX) / 2, y: 0, z: (under.rect.minZ + under.rect.maxZ) / 2 }
+          : { x: 0, y: 0, z: 2 };
+      }
+      gameClient?.respawn(rp);
+      playerPos.x = rp.x;
+      playerPos.z = rp.z;
       log("Respawned!");
     }
   }
@@ -804,6 +954,8 @@ function gameLoop(now: number): void {
     return;
   }
 
+
+
   // Zoom: aplica la intención de rueda/teclas al objetivo (pasos multiplicativos,
   // clampados por el renderer) y persigue el objetivo con suavizado exponencial
   // frame-independent. Centrado en el jugador automáticamente (el offset de la
@@ -818,22 +970,26 @@ function gameLoop(now: number): void {
     renderer.setScale(currentZoom);
   }
 
-  // Generación IA del escenario (dev): G regenera la imagen del escenario
-  // actual desde el esquema; O hace outpaint hacia el borde más próximo al
-  // jugador. Async fire-and-forget — el controlador ya loguea fallos a
-  // ErrorLog; el .catch evita unhandled rejection.
+  // Generación IA del escenario (dev): G regenera la imagen del tile ACTIVO
+  // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
+  // a ErrorLog; el .catch evita unhandled rejection.
   if (input.consumeGenerateScene()) {
-    void sceneImageController.generateFull().catch(() => {});
+    if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   if (input.consumeOutpaintScene()) {
-    void sceneImageController.outpaintTowardPlayer(playerPos).catch(() => {});
+    errors.push(
+      "scene",
+      "O (outpaint) está deshabilitada en el mundo de tiles — usa Auto-img o G por tile",
+    );
   }
-  // X segmenta los oclusores (muros/edificios) de la imagen actual para que
-  // tapen al personaje (depth-sort). Requiere haber generado antes con G.
+  // X segmenta los oclusores (muros/edificios) de la imagen del tile activo
+  // para que tapen al personaje (depth-sort). Requiere imagen previa (G/auto).
   if (input.consumeSegmentScene()) {
-    void sceneImageController.segmentOccluders()
-      .then((occ) => refineCollisionsFromSegments(occ))
-      .catch(() => {});
+    if (activeTileKey) {
+      void sceneImageController.segmentOccludersForTile(activeTileKey)
+        .then((occ) => refineCollisionsFromSegments(occ))
+        .catch(() => {});
+    }
   }
   // B alterna el overlay de bordes de colisión (rojo) vs footprint segmentado
   // (cian) sobre la imagen, para juzgar la precisión de las colisiones.
@@ -844,9 +1000,11 @@ function gameLoop(now: number): void {
   // N descubre props que la IA inventó (SAM3 open-vocab) y les da oclusión +
   // colisión. Requiere haber generado antes con G (idealmente segmentado con X).
   if (input.consumeDiscoverObjects()) {
-    void sceneImageController.discoverObjects()
-      .then((disc) => addDiscoveredObjects(disc))
-      .catch(() => {});
+    if (activeTileKey) {
+      void sceneImageController.discoverObjectsForTile(activeTileKey)
+        .then((disc) => addDiscoveredObjects(disc))
+        .catch(() => {});
+    }
   }
   // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
   // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:
@@ -855,7 +1013,8 @@ function gameLoop(now: number): void {
     void reviewBlueprintAndApply().catch(() => {});
   }
 
-  // Movement (suppressed during dialogue)
+  // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
+  // generación de mundo: la frontera bloquea solo direccionalmente.
   if (!dialoguePanel.isVisible) {
     let inputFwd = 0, inputRight = 0;
     if (input.state.up) inputFwd += 1;
@@ -877,38 +1036,28 @@ function gameLoop(now: number): void {
       if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Borde blando: ya no hay jaula. El jugador sale del rectángulo de escena
-    // al campo abierto hasta EDGE_MARGIN metros. Al alcanzar ese tope:
-    //  - si el lado cruzado tiene una salida del world-map (caso lineal: una
-    //    sola salida), se dispara una transición CONTINUA al lugar vecino y se
-    //    anota el lado para entrar por el borde opuesto (sin teletransporte).
-    //  - si no hay salida (o hay varias, ambiguas), sólo se retiene al jugador
-    //    (la "pared" existe sólo donde el mundo no continúa; el TravelPanel
-    //    sigue disponible para elegir destino).
-    if (sceneData) {
-      const dims = sceneData.dimensions as { width: number; depth: number };
-      if (dims) {
-        const limX = dims.width / 2 + EDGE_MARGIN;
-        const limD = dims.depth / 2 + EDGE_MARGIN;
-        // Lado cruzado (eje dominante). +x=este, -x=oeste, +z=sur, -z=norte.
-        let crossed: "north" | "south" | "east" | "west" | null = null;
-        if (playerPos.x > limX) crossed = "east";
-        else if (playerPos.x < -limX) crossed = "west";
-        else if (playerPos.z > limD) crossed = "south";
-        else if (playerPos.z < -limD) crossed = "north";
-        // Soft-clamp: nunca se sale más allá del tope.
-        playerPos.x = Math.max(-limX, Math.min(limX, playerPos.x));
-        playerPos.z = Math.max(-limD, Math.min(limD, playerPos.z));
-
-        if (crossed && activeSessionId && currentExits.length === 1 && now >= edgeTransitionUntil) {
-          edgeTransitionUntil = now + 8000;
-          pendingEntryEdge = crossed;
-          const exit = currentExits[0];
-          showLoader("Viajando...", `Hacia ${exit.name}`);
-          narrativeClient.enterPlace(exit.place_id);
-          log(`Saliendo hacia ${exit.name}...`);
-        }
+    // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,
+    // velo direccional pegado al borde, promoción a blocking si espera.
+    if (activeSessionId && tileStore.hasGridTiles) {
+      const { veil, timedOut } = frontier.tick(
+        performance.now(),
+        playerPos.x,
+        playerPos.z,
+        tileStore,
+        (tx, ty, edge, reason) => narrativeClient.requestTile(tx, ty, reason, edge),
+      );
+      renderer.setEdgeLoading(veil?.edge ?? null, veil?.text ?? "");
+      for (const key of timedOut) {
+        errors.push("narrative", `El tile ${key} no llegó a tiempo (timeout); se reintentará al acercarse.`);
       }
+    }
+
+    // Activación por posición: al pisar otro tile, refrescar la "escena
+    // activa" del cliente (imagen IA, exits). El bridge hace lo propio con
+    // NarrativeState en su handler de input.
+    const under = tileStore.getAt(playerPos.x, playerPos.z);
+    if (under && under.key !== activeTileKey) {
+      setActiveClientTile(under.key);
     }
   }
 
@@ -1195,6 +1344,37 @@ function setLoaderState(state: "error", title: string, detail: string): void {
 if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
 
 narrativeClient.onNarrativeStatus((status) => {
+  // ── Tiles del plano continuo ──────────────────────────────────────────
+  // El feedback de un tile es DIRECCIONAL (velo/flash del FrontierManager),
+  // no el overlay central — salvo el bootstrap (mundo aún vacío).
+  if (status.kind === "tile") {
+    const t = status.tile;
+    switch (status.phase) {
+      case "generating":
+        if (t) frontier.onStatusText(t.tx, t.ty, status.message ?? "Generando el mundo");
+        if (!tileStore.hasGridTiles) {
+          showLoader("Generando mundo inicial...", status.message ?? "El motor narrativo está construyendo el mundo.");
+        }
+        break;
+      case "ready":
+        // La escena llega por scene_init (addTile dispara el flash allí).
+        hideLoader();
+        break;
+      case "error": {
+        const detail = status.message ?? "Algo falló generando el tile.";
+        errors.push("narrative", detail);
+        if (t) frontier.onTileError(t.tx, t.ty);
+        if (!tileStore.hasGridTiles) {
+          setLoaderState("error", "Error al generar el mundo", detail);
+        } else {
+          log(`⚠ ${detail.slice(0, 100)}`);
+        }
+        break;
+      }
+    }
+    return;
+  }
+
   if (status.kind === "scene") {
     switch (status.phase) {
       case "generating":
@@ -1301,8 +1481,24 @@ narrativeClient.onNarrativeEvent((event) => {
           | Record<string, unknown>
           | undefined;
         if (scene) {
-          void loadSceneData(scene);
-          log(`🌍 escena cargada: ${effect.entityId}`);
+          const t = scene.tile as { tx: number; ty: number } | undefined;
+          if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
+            // Tile del plano: ADITIVO (los anteriores no desaparecen).
+            void addTile(scene).then(() => {
+              const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
+              if (edge) {
+                renderer.setEdgeFlash(edge);
+                const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
+                log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
+              } else {
+                log(`🌍 tile listo: ${effect.entityId}`);
+              }
+            });
+          } else {
+            // Escena legacy (save v3 sin migrar, bypass load_game).
+            void loadSceneData(scene);
+            log(`🌍 escena cargada: ${effect.entityId}`);
+          }
         } else {
           materializeSpawn(effect);
         }
@@ -1380,17 +1576,32 @@ async function runTitleFlow(): Promise<void> {
       const skinPath = res.state.player.appearance.skin_path || "";
       await setPlayerAppearance(desiredModel, skinPath);
 
-      // Materialise the scene the player was last in. Without this the canvas
-      // stays empty after a resume — the bridge only broadcasts a scene to new
-      // sessions via narrative_event/spawn_entity.
+      // Materialise the world the player was in. Multi-tile: TODOS los tiles
+      // del save se re-añaden (el plano continuo sobrevive al resume); la
+      // escena activa se añade la última para quedar como activa si es legacy.
       const activeId = res.state.world?.active_scene_id;
-      const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown> }> | undefined;
-      const sceneData = activeId ? scenes?.[activeId]?.scene_data : undefined;
-      if (sceneData) {
-        await loadSceneData(sceneData);
-      } else {
-        log(`(sin escena en el save — esperando narrativa)`);
+      const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown>; tile?: unknown }> | undefined;
+      resetWorld();
+      let added = 0;
+      for (const [id, rec] of Object.entries(scenes ?? {})) {
+        if (!rec?.scene_data || !rec.tile || id === activeId) continue;
+        await addTile(rec.scene_data);
+        added++;
       }
+      const activeScene = activeId ? scenes?.[activeId]?.scene_data : undefined;
+      if (activeScene) {
+        await addTile(activeScene);
+        added++;
+      }
+      if (added === 0) log(`(sin escena en el save — esperando narrativa)`);
+      // La posición viene del save (el bridge la snapshotea en save_session).
+      const savedPos = res.state.player?.position;
+      if (Array.isArray(savedPos) && savedPos.length === 3) {
+        playerPos.x = savedPos[0];
+        playerPos.z = savedPos[2];
+      }
+      const underResume = tileStore.getAt(playerPos.x, playerPos.z);
+      if (underResume) setActiveClientTile(underResume.key);
     }
   } catch (err) {
     setLoaderState(

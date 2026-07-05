@@ -20,8 +20,10 @@ import {
 } from "../src/plugins/dispatcher.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
+import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
-import type { ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
+import { resolveExitEdge } from "../src/world-map/edges.js";
+import type { SceneExit, ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
 
 /** Superficie mínima de socket que usan los handlers — un WebSocket de `ws`
  *  la cumple, y los tests pueden pasar un capturador. */
@@ -53,6 +55,13 @@ export interface BridgeContext {
    *  Se reasigna al entrar a start_session/resume_session para que una sesión
    *  sin plugins no herede los de la anterior. */
   activePlugins: Map<string, PluginManifest>;
+  /** Cola de generación de escenas/tiles: el motor narrativo atiende una
+   *  petición a la vez; los prefetch de tiles se encolan (FIFO con dedupe y
+   *  prioridad blocking) en vez de perderse. */
+  sceneGen: SceneGenQueue;
+  /** Tracking de la activación por posición (tile/place bajo el jugador),
+   *  gateado por cambio de celda para no costar nada en el hot loop. */
+  posTracking: { cellKey: string | null; placeId: string | null };
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;
@@ -68,7 +77,7 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
     ctx.narrative.worldMap.serialize().active_place_id;
   if (!placeId) return;
   const links = ctx.narrative.worldMap.getOutgoingLinks(placeId);
-  scene.exits = links.map((l) => {
+  scene.exits = links.map((l): SceneExit => {
     const targetId = l.from === placeId ? l.to : l.from;
     return {
       place_id: targetId,
@@ -76,6 +85,9 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
       link_kind: l.kind,
       travel_hours: l.travel_hours,
       description: l.description,
+      // Lado de esta escena por el que sale el link (para la transición
+      // continua del cliente). null → undefined: exit sin orientación.
+      edge: resolveExitEdge(ctx.narrative.worldMap, placeId, l) ?? undefined,
     };
   });
 }
@@ -88,14 +100,30 @@ export function broadcastScene(
   sceneId: string,
   scene: Record<string, unknown>,
   elapsedMs?: number,
+  meta?: { edge?: import("../src/world-map/types.js").Edge },
 ): void {
   enrichSceneWithExits(ctx, scene);
   // Proyección canónica NarrativeState.entities → GameStore.enemies para la
-  // escena que se difunde. Los dos dispatch inline que quedan en
-  // handlers/simulation.ts proyectan fuentes NO narrativas (enemigos que el
-  // cliente declara en load_room y el ScenarioRunner legacy de load_game).
+  // escena que se difunde. Con tiles, la proyección cubre el VECINDARIO 3×3
+  // del tile difundido más la escena activa — los enemigos de los tiles
+  // adyacentes siguen vivos en el sim (el mundo es continuo, no una arena).
+  const sceneIds = new Set<string>([sceneId, ctx.narrative.world.active_scene_id]);
+  const rec = ctx.narrative.scenes_loaded[sceneId];
+  if (rec?.tile) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
+        if (n) {
+          const id = (n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined;
+          if (id) sceneIds.add(id);
+        }
+      }
+    }
+  }
   ctx.store.dispatch("enemies_projected", {
-    enemies: projectEnemiesFromEntities(ctx.narrative.entities, { sceneId }),
+    enemies: [...sceneIds].flatMap((id) =>
+      projectEnemiesFromEntities(ctx.narrative.entities, { sceneId: id }),
+    ),
   });
   ctx.broadcastNarrative({
     type: "narrative_event",
@@ -113,10 +141,16 @@ export function broadcastScene(
       },
     ],
   });
+  // El ready lleva las coords del tile (si lo es) para el velo/notificación
+  // direccional del cliente.
+  const rawTile = scene.tile as { tx?: number; ty?: number } | undefined;
+  const isTile = rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty);
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "ready",
-    kind: "scene",
+    kind: isTile ? "tile" : "scene",
+    tile: isTile ? { tx: rawTile.tx!, ty: rawTile.ty! } : undefined,
+    edge: meta?.edge,
     elapsedMs,
   });
 }

@@ -126,6 +126,42 @@ describe("WorldMapManager.addLink", () => {
     assert.equal(links[0].travel_hours, 5);
   });
 
+  it("persists edge on creation and round-trips through serialize", () => {
+    const m = makeManager();
+    m.upsertPlace({ id: "a", kind: "settlement", parent_id: "world", name: "A" });
+    m.upsertPlace({ id: "b", kind: "settlement", parent_id: "world", name: "B" });
+    m.addLink({ from: "a", to: "b", kind: "path", edge: "east" });
+    const links = m.serialize().links;
+    assert.equal(links[0].edge, "east");
+    const restored = WorldMapManager.fromSerialized(JSON.parse(JSON.stringify(m.serialize())));
+    assert.equal(restored.serialize().links[0].edge, "east");
+  });
+
+  it("update adopts a new edge, keeps the old one when absent", () => {
+    const m = makeManager();
+    m.upsertPlace({ id: "a", kind: "settlement", parent_id: "world", name: "A" });
+    m.upsertPlace({ id: "b", kind: "settlement", parent_id: "world", name: "B" });
+    m.addLink({ from: "a", to: "b", kind: "path", edge: "east" });
+    m.addLink({ from: "a", to: "b", kind: "road" }); // sin edge -> conserva
+    assert.equal(m.serialize().links[0].edge, "east");
+    m.addLink({ from: "a", to: "b", kind: "road", edge: "south" });
+    assert.equal(m.serialize().links[0].edge, "south");
+  });
+
+  it("update in REVERSED orientation stores the opposite edge", () => {
+    const m = makeManager();
+    m.upsertPlace({ id: "a", kind: "settlement", parent_id: "world", name: "A" });
+    m.upsertPlace({ id: "b", kind: "settlement", parent_id: "world", name: "B" });
+    m.addLink({ from: "a", to: "b", kind: "path", edge: "east" });
+    // map_link(b->a, edge:"west") describe el MISMO par: desde b la salida
+    // hacia a esta al oeste, o sea a->b sigue siendo east.
+    m.addLink({ from: "b", to: "a", kind: "path", edge: "west" });
+    const links = m.serialize().links;
+    assert.equal(links.length, 1);
+    assert.equal(links[0].from, "a");
+    assert.equal(links[0].edge, "east");
+  });
+
   it("rejects unknown endpoints and self-links", () => {
     const m = makeManager();
     m.upsertPlace({ id: "a", kind: "settlement", parent_id: "world", name: "A" });

@@ -12,9 +12,12 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
-import { validateScene } from "../src/scene/scene-validate.js";
+import type { SceneRecord } from "../src/narrative/types.js";
+import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
+import { oppositeEdge } from "../src/world-map/edges.js";
+import type { Edge } from "../src/world-map/types.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
-import type { PlaceTriggerSpec } from "../src/world-map/types.js";
+import { isEdge, type PlaceTriggerSpec } from "../src/world-map/types.js";
 import type { NpcDirector, NpcDirective } from "../src/world-map/npc-director.js";
 
 export interface StateHttpServerOptions {
@@ -127,15 +130,37 @@ async function handle(
     if (!body || typeof body.scene !== "object" || body.scene === null) {
       return bad("body requires { scene: <Format D scene JSON> }");
     }
-    const result = validateScene(body.scene as Record<string, unknown>, (placeId) => {
-      const place = wm.get(placeId);
-      if (!place) return { exists: false, outgoing_links: 0 };
-      return {
-        exists: true,
-        kind: place.kind,
-        outgoing_links: wm.getOutgoingLinks(placeId).length,
-      };
-    });
+    const scene = body.scene as Record<string, unknown>;
+    // Para tiles, el contexto de costuras lo construye el SERVIDOR desde los
+    // edges de los vecinos registrados — el motor no puede olvidarse de
+    // pasarlo y el pre-flight de narrative_respond no cambia.
+    let tileCtx: TileValidationContext | undefined;
+    const rawTile = scene.tile as { tx?: number; ty?: number } | undefined;
+    if (rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)) {
+      const required: TileValidationContext["required_crossings"] = [];
+      const neighbors = narrative.neighborsOf(rawTile.tx!, rawTile.ty!);
+      for (const [edge, rec] of Object.entries(neighbors) as [Edge, SceneRecord][]) {
+        // El borde del vecino que da a NUESTRO tile es el opuesto; el `at` es
+        // espejo sin transformación.
+        const shared = rec.edges?.[oppositeEdge(edge)];
+        for (const c of shared?.crossings ?? []) required.push({ edge, ...c });
+      }
+      const hasAnyTile = Object.values(narrative.scenes_loaded).some((r) => r.tile);
+      tileCtx = { required_crossings: required, bootstrap: !hasAnyTile };
+    }
+    const result = validateScene(
+      scene,
+      (placeId) => {
+        const place = wm.get(placeId);
+        if (!place) return { exists: false, outgoing_links: 0 };
+        return {
+          exists: true,
+          kind: place.kind,
+          outgoing_links: wm.getOutgoingLinks(placeId).length,
+        };
+      },
+      tileCtx,
+    );
     return ok(result);
   }
 
@@ -171,6 +196,12 @@ async function handle(
     if (!body || typeof body.id !== "string" || typeof body.kind !== "string") {
       return bad("body requires at least { id, kind, parent_id, name }");
     }
+    if (body.anchor !== undefined) {
+      const a = body.anchor as { tx?: unknown; ty?: unknown };
+      if (!a || !Number.isInteger(a.tx) || !Number.isInteger(a.ty)) {
+        return bad("anchor requires integer { tx, ty } (optional rect [col,row,w,h])");
+      }
+    }
     try {
       const place = wm.upsertPlace(body);
       narrative.markDirty();
@@ -184,6 +215,9 @@ async function handle(
     const body = (await readJson(req)) as LinkSpec;
     if (!body || typeof body.from !== "string" || typeof body.to !== "string") {
       return bad("body requires { from, to, kind }");
+    }
+    if (body.edge !== undefined && !isEdge(body.edge)) {
+      return bad(`edge must be one of north|south|east|west, got "${body.edge}"`);
     }
     try {
       const link = wm.addLink(body);

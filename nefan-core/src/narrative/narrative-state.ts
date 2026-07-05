@@ -22,7 +22,10 @@ import {
 } from "./types.js";
 import type { SessionStorage } from "./session-storage.js";
 import { WorldMapManager } from "../world-map/world-map.js";
-import type { WorldMap } from "../world-map/types.js";
+import type { Edge, WorldMap } from "../world-map/types.js";
+import { TILE_CELLS, TILE_MPC, neighborTile, tileKey, tileWorldRect, type TileCoord } from "../scene/tile.js";
+import { computeTileEdges } from "../scene/tile-edges.js";
+import { expandScenePrimitives } from "../scene/scene-expand.js";
 import type { PluginRecord, PluginManifest } from "../plugins/types.js";
 import { buildPluginLlmViews } from "../plugins/views.js";
 
@@ -76,8 +79,52 @@ export class NarrativeState {
 
   private nextEventSeq = 0;
   private dirty = false;
+  /** Índice en memoria tileKey → sceneId (reconstruido en load, actualizado en
+   *  recordSceneLoaded). No se persiste: se deriva de scenes_loaded[].tile. */
+  private tileIndex = new Map<string, string>();
 
   constructor(private storage: SessionStorage) {}
+
+  // ── Tiles ──
+
+  getTile(tx: number, ty: number): SceneRecord | undefined {
+    const sceneId = this.tileIndex.get(tileKey(tx, ty));
+    return sceneId ? this.scenes_loaded[sceneId] : undefined;
+  }
+
+  hasTile(tx: number, ty: number): boolean {
+    return this.tileIndex.has(tileKey(tx, ty));
+  }
+
+  /** Records de los 4 tiles adyacentes que existen, por borde. */
+  neighborsOf(tx: number, ty: number): Partial<Record<Edge, SceneRecord>> {
+    const out: Partial<Record<Edge, SceneRecord>> = {};
+    for (const edge of ["north", "south", "east", "west"] as Edge[]) {
+      const n = neighborTile(tx, ty, edge);
+      const rec = this.getTile(n.tx, n.ty);
+      if (rec) out[edge] = rec;
+    }
+    return out;
+  }
+
+  /** Activa el tile (tx,ty) como escena actual (el jugador ha entrado en él
+   *  por posición). No re-registra NPCs. Devuelve false si no existe. */
+  setActiveTile(tx: number, ty: number): boolean {
+    const sceneId = this.tileIndex.get(tileKey(tx, ty));
+    if (!sceneId) return false;
+    if (this.world.active_scene_id === sceneId) return true;
+    this.world.active_scene_id = sceneId;
+    this.player.current_scene_id = sceneId;
+    this.dirty = true;
+    return true;
+  }
+
+  private rebuildTileIndex(): void {
+    this.tileIndex.clear();
+    for (const [sceneId, rec] of Object.entries(this.scenes_loaded)) {
+      if (rec.tile) this.tileIndex.set(tileKey(rec.tile.tx, rec.tile.ty), sceneId);
+    }
+  }
 
   // ── Lifecycle ──
 
@@ -96,8 +143,93 @@ export class NarrativeState {
     this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
     this.plugins = [];
     this.nextEventSeq = 0;
+    this.tileIndex.clear();
     this.dirty = true;
     return this.session_id;
+  }
+
+  /** Migración v3→v4: envuelve la escena ACTIVA (Format D expandido, centrada
+   *  en el origen) como tile (0,0): el grid viejo se re-muestrea como
+   *  terrain_patch centrado (escala mpc/0.5), las entities se re-celdan con el
+   *  mismo offset, y los EntityRecord de esa escena pasan a posición global.
+   *  Las demás escenas quedan legacy (TravelPanel). */
+  private migrateActiveSceneToTile(): void {
+    const oldId = this.world.active_scene_id;
+    const rec = oldId ? this.scenes_loaded[oldId] : undefined;
+    if (!rec || rec.scene_data.tile !== undefined) return;
+    const old = rec.scene_data;
+    const size = old.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
+    const oldGrid = old.terrain;
+    if (!size || typeof size.cols !== "number" || typeof size.rows !== "number" || !Array.isArray(oldGrid)) {
+      console.warn(`NarrativeState: escena activa "${oldId}" no es Format D — se deja como legacy`);
+      return;
+    }
+    const cols = size.cols;
+    const rows = size.rows;
+    const mpc = size.meters_per_cell ?? 2;
+    const scale = Math.round(mpc / TILE_MPC); // 0.5→1, 1→2, 2→4
+    if (scale < 1 || cols * scale > TILE_CELLS || rows * scale > TILE_CELLS) {
+      console.warn(`NarrativeState: escena activa "${oldId}" no cabe en un tile — se deja como legacy`);
+      return;
+    }
+    const colOff = Math.floor((TILE_CELLS - cols * scale) / 2);
+    const rowOff = Math.floor((TILE_CELLS - rows * scale) / 2);
+
+    // Grid viejo re-muestreado (cada celda vieja → scale×scale celdas nuevas).
+    const patchRows: string[] = [];
+    for (let r = 0; r < rows; r++) {
+      const row = typeof oldGrid[r] === "string" ? (oldGrid[r] as string) : "g".repeat(cols);
+      let expanded = "";
+      for (let c = 0; c < cols; c++) expanded += (row[c] ?? "g").repeat(scale);
+      for (let k = 0; k < scale; k++) patchRows.push(expanded);
+    }
+
+    const entities = Array.isArray(old.entities)
+      ? (old.entities as Record<string, unknown>[]).map((e) => {
+          const cell = e.cell as [number, number] | undefined;
+          const fp = (e.footprint as [number, number] | undefined) ?? [1, 1];
+          if (!Array.isArray(cell)) return { ...e };
+          return {
+            ...e,
+            cell: [colOff + cell[0] * scale, rowOff + cell[1] * scale],
+            footprint: [Math.max(1, (fp[0] ?? 1) * scale), Math.max(1, (fp[1] ?? 1) * scale)],
+          };
+        })
+      : [];
+
+    const tileScene = expandScenePrimitives({
+      tile: { tx: 0, ty: 0 },
+      scene_id: tileKey(0, 0),
+      scene_description: old.scene_description ?? old.room_description ?? "",
+      biome: "grass",
+      terrain_patches: [{ at: [colOff, rowOff], rows: patchRows }],
+      terrain_legend: old.terrain_legend ?? {},
+      entities,
+      ambient_event: old.ambient_event ?? "",
+      place_id: old.place_id,
+    });
+
+    delete this.scenes_loaded[oldId];
+    // Los spawns dinámicos de la escena vieja (react_to_player…) migran de
+    // escena y a posición global (celda vieja → mundo, que con el tile (0,0)
+    // centrado es la misma posición física de siempre).
+    const halfW = (cols * mpc) / 2;
+    const halfD = (rows * mpc) / 2;
+    for (const e of this.entities) {
+      if (e.scene_id !== oldId) continue;
+      e.scene_id = tileKey(0, 0);
+      if (e.spawn_reason !== "scene_init") {
+        const [c, , r] = e.position;
+        e.position = [(c + 0.5) * mpc - halfW, 0, (r + 0.5) * mpc - halfD];
+      }
+    }
+    // Re-registro completo bajo la clave de tile (recalcula NPCs en global).
+    this.recordSceneLoaded(tileKey(0, 0), tileScene, rec.asset_refs);
+    // El place que apuntaba a la escena vieja pasa a apuntar al tile.
+    for (const place of Object.values(this.worldMap.map.places)) {
+      if (place.realized_scene_id === oldId) place.realized_scene_id = tileKey(0, 0);
+    }
+    console.log(`NarrativeState: save v3 migrado — escena "${oldId}" → ${tileKey(0, 0)}`);
   }
 
   async loadSession(sessionId: string, opts?: LoadSessionOptions): Promise<boolean> {
@@ -125,6 +257,13 @@ export class NarrativeState {
     // Migración v2→v3 trivial: los saves anteriores no tienen plugins.
     this.plugins = data.plugins ?? [];
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
+    // Migración v3→v4: la escena activa se envuelve como tile (0,0) del plano
+    // continuo. Con el tile centrado en el origen las posiciones mundo no
+    // cambian (el jugador y los NPC no se mueven).
+    if (data.schema_version < 4) {
+      this.migrateActiveSceneToTile();
+    }
+    this.rebuildTileIndex();
     this.dirty = data.schema_version < SCHEMA_VERSION;
     if (opts?.assetValidator) {
       const pruned = await validateAssetSnapshot(
@@ -168,19 +307,53 @@ export class NarrativeState {
     sceneId: string,
     sceneData: Record<string, unknown>,
     assetRefs: string[] = [],
+    opts: { activate?: boolean } = {},
   ): void {
-    this.scenes_loaded[sceneId] = {
+    const activate = opts.activate ?? true;
+    // Tile (Format D v3): coords derivadas del propio scene_data y costuras
+    // computadas del grid expandido — el registro es autosuficiente.
+    const rawTile = sceneData.tile as { tx?: unknown; ty?: unknown } | undefined;
+    const tile: TileCoord | undefined =
+      rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)
+        ? { tx: rawTile.tx as number, ty: rawTile.ty as number }
+        : undefined;
+    const record: SceneRecord = {
       scene_data: sceneData,
       loaded_at: nowIso(),
       asset_refs: assetRefs,
     };
-    this.world.active_scene_id = sceneId;
-    this.player.current_scene_id = sceneId;
+    if (tile) {
+      record.tile = tile;
+      record.edges = computeTileEdges(sceneData);
+      this.tileIndex.set(tileKey(tile.tx, tile.ty), sceneId);
+    }
+    this.scenes_loaded[sceneId] = record;
+    if (activate) {
+      this.world.active_scene_id = sceneId;
+      this.player.current_scene_id = sceneId;
+    }
     const placeId = typeof sceneData.place_id === "string" ? sceneData.place_id : sceneId;
     if (this.worldMap.get(placeId)) {
       this.worldMap.attachRealizedScene(placeId, sceneId);
-      this.worldMap.markVisited(placeId);
-      this.worldMap.setActivePlace(placeId);
+      if (activate) {
+        this.worldMap.markVisited(placeId);
+        this.worldMap.setActivePlace(placeId);
+      }
+    }
+    // Anclajes de places al plano: un tile puede declarar dónde VIVEN los
+    // places dentro de él ({place_id, rect} en celdas). El bridge activará el
+    // place por posición al pisar su rect.
+    if (tile && Array.isArray(sceneData.place_anchors)) {
+      for (const a of sceneData.place_anchors as Array<{ place_id?: string; rect?: [number, number, number, number] }>) {
+        if (typeof a?.place_id !== "string") continue;
+        const place = this.worldMap.get(a.place_id);
+        if (!place) {
+          console.warn(`recordSceneLoaded: place_anchor "${a.place_id}" no existe en el world map — ignorado`);
+          continue;
+        }
+        place.anchor = { tx: tile.tx, ty: tile.ty, rect: Array.isArray(a.rect) ? a.rect : undefined };
+        this.worldMap.attachRealizedScene(a.place_id, sceneId);
+      }
     }
     this.registerSceneNpcs(sceneId, sceneData);
     this.dirty = true;
@@ -195,6 +368,12 @@ export class NarrativeState {
     this.entities = this.entities.filter(
       (e) => !(e.scene_id === sceneId && e.spawn_reason === "scene_init"),
     );
+    // En tiles la posición registrada es GLOBAL (metros del plano continuo);
+    // en escenas legacy se conserva el histórico (celdas locales).
+    const rawTile = sceneData.tile as { tx?: number; ty?: number } | undefined;
+    const rect = rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)
+      ? tileWorldRect(rawTile.tx!, rawTile.ty!)
+      : null;
     const npcs: Array<{ id: string; name: string; pos: [number, number, number] }> = [];
 
     // Format D (open-world scenes): entities[] with kind "npc", cell [col,row].
@@ -222,7 +401,18 @@ export class NarrativeState {
             `scene ${sceneId}.entities[${i}] (npc ${e.id}) cell must be finite numbers, got [${col}, ${row}]`,
           );
         }
-        npcs.push({ id: e.id, name: e.name, pos: [col, 0, row] });
+        // Centro del footprint (los NPC suelen ser 1×1, pero los migrados de
+        // saves v3 escalan su footprint con el re-muestreo).
+        const fp = Array.isArray(e.footprint) ? (e.footprint as [number, number]) : [1, 1];
+        const fw = typeof fp[0] === "number" && fp[0] > 0 ? fp[0] : 1;
+        const fh = typeof fp[1] === "number" && fp[1] > 0 ? fp[1] : 1;
+        npcs.push({
+          id: e.id,
+          name: e.name,
+          pos: rect
+            ? [rect.minX + (col + fw / 2) * TILE_MPC, 0, rect.minZ + (row + fh / 2) * TILE_MPC]
+            : [col, 0, row],
+        });
       }
     }
 

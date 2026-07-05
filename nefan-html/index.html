@@ -54,6 +54,29 @@
       border-color: #fa0;
       color: #fa0;
     }
+    #hud .autoimg {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+      color: #aaa;
+      white-space: nowrap;
+    }
+    #hud .autoimg input {
+      accent-color: #da6;
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      margin: 0;
+    }
+    #autoimg-status {
+      font-size: 11px;
+      white-space: nowrap;
+      color: #9a8;
+    }
+    #autoimg-status.working { color: #da6; }
+    #autoimg-status.paused { color: #e88; }
     #room-selector {
       background: #222;
       color: #ccc;
@@ -139,6 +162,18 @@
       flex: 1;
       cursor: crosshair;
     }
+    /* Fundido corto al entrar en una escena nueva por un borde: main.ts añade
+       .show (opaco sin transición) y lo quita al frame siguiente → fade-out. */
+    #scene-fade {
+      position: fixed;
+      inset: 0;
+      background: #08060e;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease-out;
+      z-index: 45;
+    }
+    #scene-fade.show { opacity: 1; transition: none; }
     #narrative-loader {
       position: fixed;
       inset: 0;
@@ -220,6 +255,12 @@
     #travel-panel .travel-exit:hover {
       background: #283430;
       color: #adf;
+    }
+    /* Salidas del lado que el jugador está empujando (caso ambiguo). */
+    #travel-panel .travel-exit--highlight {
+      border-color: #cb8;
+      background: #2c2a1e;
+      color: #edb;
     }
     #interact-prompt {
       display: none;
@@ -307,6 +348,10 @@
       <span data-type="defensive">4:Def</span>
       <span data-type="precise">5:Precise</span>
     </div>
+    <label class="autoimg" title="Generación automática de imagen IA por tile (imagen → segmentación → z-index)">
+      <input type="checkbox" id="autoimg-toggle"><span>Auto-img</span>
+    </label>
+    <span id="autoimg-status"></span>
   </div>
   <canvas id="game"></canvas>
   <div id="combat-log"></div>
@@ -319,6 +364,7 @@
     <div id="dialogue-text"></div>
     <div id="dialogue-choices"></div>
   </div>
+  <div id="scene-fade"></div>
   <div id="narrative-loader" role="status" aria-live="polite">
     <div class="spinner"></div>
     <div class="title" id="narrative-loader-title">Generando escena...</div>

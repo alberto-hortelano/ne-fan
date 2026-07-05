@@ -222,8 +222,25 @@ export class BridgeClient {
     this.send({ type: "load_game", gameId });
   }
 
-  sendRespawn(): void {
-    this.send({ type: "respawn" });
+  sendRespawn(pos?: { x: number; y: number; z: number }): void {
+    this.send({ type: "respawn", pos });
+  }
+
+  /** Pide un tile del plano continuo (prefetch en 2º plano o blocking). */
+  sendRequestTile(tx: number, ty: number, reason: "prefetch" | "blocking", edge?: "north" | "south" | "east" | "west"): void {
+    this.send({ type: "request_tile", tx, ty, reason, edge });
+  }
+
+  /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile
+   *  nuevo) — no resetea nada, ids ya presentes se ignoran. */
+  sendAddCombatants(enemies: {
+    id: string;
+    position: { x: number; y: number; z: number };
+    health: number;
+    weaponId: string;
+    personality: EnemyPersonality;
+  }[]): void {
+    this.send({ type: "add_combatants", enemies });
   }
 
   sendScenarioEvent(event: string, data?: Record<string, unknown>): void {
@@ -270,6 +287,13 @@ export class BridgeClient {
    *  realizes the place's scene and broadcasts it as a narrative_event. */
   sendPlayerEnteredPlace(placeId: string): void {
     this.send({ type: "player_entered_place", placeId });
+  }
+
+  /** Tell the bridge the player walked off a scene edge with NO known
+   *  destination: the narrative engine extends the world in that direction
+   *  (place + link + scene, on the fly). */
+  sendPlayerCrossedFrontier(edge: "north" | "south" | "east" | "west"): void {
+    this.send({ type: "player_crossed_frontier", edge });
   }
 
   /** Tell the bridge the player walked up to an NPC and pressed interact. The

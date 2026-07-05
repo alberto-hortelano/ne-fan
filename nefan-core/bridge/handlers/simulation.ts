@@ -1,10 +1,13 @@
 /** Handlers del hot loop: input, load_room, respawn y scenario_event. */
 
 import { createCombatant } from "../../src/combat/combatant.js";
+import { activateByPosition } from "./tile.js";
 import { getEnemyStates, type BridgeContext, type ClientSocket } from "../context.js";
 import type {
   InputMessage,
+  AddCombatantsMessage,
   LoadRoomMessage,
+  RespawnMessage,
   ScenarioEventMessage,
   StateUpdateMessage,
 } from "../../src/protocol/messages.js";
@@ -26,6 +29,9 @@ export async function handleInput(
   // Mantén store.player.pos al día: los position hints de los spawns
   // narrativos (dialogue.ts) y fireMapTriggers se resuelven contra él.
   ctx.store.dispatch("player_moved", { pos: [playerPos.x, playerPos.y, playerPos.z] });
+  // Mundo continuo: el tile/place activos se deciden por POSICIÓN (gateado
+  // por cambio de celda dentro de activateByPosition).
+  await activateByPosition(ctx, playerPos.x, playerPos.z);
   const scenarioResult = ctx.scenario.isActive
     ? await ctx.scenario.tick(msg.delta, playerPos)
     : null;
@@ -174,8 +180,8 @@ export function handleLoadRoom(
   ctx.send(ws, roomResponse);
 }
 
-export function handleRespawn(ws: ClientSocket, ctx: BridgeContext): void {
-  const events = ctx.sim.respawn();
+export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
+  const events = ctx.sim.respawn(msg.pos);
   const response: StateUpdateMessage = {
     type: "state_update",
     events,
@@ -184,6 +190,51 @@ export function handleRespawn(ws: ClientSocket, ctx: BridgeContext): void {
   };
   ctx.send(ws, response);
   console.log("Bridge: player respawned");
+}
+
+/** Alta ADITIVA de combatientes (enemigos de un tile recién cargado en el
+ *  cliente). No resetea el sim ni toca bounds: los combatientes de otros
+ *  tiles siguen vivos — el mundo es un plano continuo, no una arena. Ids ya
+ *  presentes se ignoran (re-entrada a un tile). */
+export function handleAddCombatants(
+  msg: AddCombatantsMessage,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): void {
+  const projected = [...ctx.store.state.enemies];
+  let added = 0;
+  for (const enemy of msg.enemies) {
+    if (ctx.sim.getCombatant(enemy.id)) continue;
+    ctx.sim.addCombatant(
+      createCombatant(enemy.id, enemy.health, enemy.weaponId, enemy.position, { x: 0, y: 0, z: 1 }),
+      enemy.personality,
+    );
+    // Proyección al store (getEnemyStates itera store.enemies): CONCAT, no
+    // reemplazo — los enemigos de otros tiles siguen vivos.
+    if (!projected.some((p) => p.id === enemy.id)) {
+      projected.push({
+        id: enemy.id,
+        pos: [enemy.position.x, enemy.position.y, enemy.position.z],
+        hp: enemy.health,
+        max_hp: enemy.health,
+        weapon_id: enemy.weaponId,
+        combat_state: "idle",
+        alive: true,
+      });
+    }
+    added++;
+  }
+  if (added > 0) {
+    ctx.store.dispatch("enemies_projected", { enemies: projected });
+    console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
+  }
+  const response: StateUpdateMessage = {
+    type: "state_update",
+    events: [],
+    playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
+    enemies: getEnemyStates(ctx),
+  };
+  ctx.send(ws, response);
 }
 
 export async function handleScenarioEvent(
