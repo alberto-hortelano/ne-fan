@@ -54,12 +54,12 @@ MAX_REGION_AREA_FRAC = 0.35
 MAX_REGIONS = 48
 
 
-def scene_rgb_from_png(png_bytes: bytes) -> "np.ndarray":
+def scene_rgb_from_png(png_bytes: bytes) -> np.ndarray:
     """Píxeles RGB HxWx3 de una imagen de escena (para crop_sprite)."""
     return np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
 
 
-def crop_sprite(scene_rgb: "np.ndarray", mask: "np.ndarray", bbox_xyxy: tuple) -> dict:
+def crop_sprite(scene_rgb: np.ndarray, mask: np.ndarray, bbox_xyxy: tuple) -> dict:
     """Recorta el sprite RGBA de una región: píxeles ORIGINALES de la escena
     con la máscara como alpha, para que el recorte case con el fondo."""
     bx0, by0, bx1, by1 = bbox_xyxy
