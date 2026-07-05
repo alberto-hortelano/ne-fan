@@ -331,7 +331,6 @@ export class CanvasRenderer {
   private occluders: Occluder[] = [];
   /** When true, overlay the schematic object rectangles on top of the AI image
    *  to eyeball alignment between the painted scene and the collision boxes. */
-  private debugObjects = false;
   /** When true, outline the collision boxes (red, = authored `position±scale/2`,
    *  what `collidesAt` blocks) and the segmented occluder footprints (cyan dashed,
    *  = what SAM actually found painted) over the scene, to judge how precise the
@@ -583,10 +582,6 @@ export class CanvasRenderer {
     return this.occluders.map((o) => ({
       id: o.id, kind: o.kind, tileKey: o.tileKey, world: o.world, baselineZ: o.baselineZ,
     }));
-  }
-
-  setDebugObjects(on: boolean): void {
-    this.debugObjects = on;
   }
 
   /** Toggle the collision-vs-image debug overlay (B). Returns the new state. */
@@ -1025,7 +1020,7 @@ export class CanvasRenderer {
     // Un tile con imagen IA o con map_svg ya los lleva pintados (solo overlay
     // de debug).
     const staticObjects = visible
-      .filter((t) => (!t.sceneImage && !t.mapSvgImage) || this.debugObjects)
+      .filter((t) => !t.sceneImage && !t.mapSvgImage)
       .flatMap((t): SceneObject[] => t.scene.objects ?? [])
       .filter((o) => o.category !== "creature")
       .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
@@ -1484,7 +1479,7 @@ export class CanvasRenderer {
       // Static-shape entities (buildings/props/items) are baked into the AI
       // scene image of THEIR tile; skip their schematic box when that tile has
       // one (same gate as the static objects loop). Creatures draw on top.
-      if (!this.debugObjects && this.tileImageAt(e.pos.x, e.pos.z)) return;
+      if (this.tileImageAt(e.pos.x, e.pos.z)) return;
       const sx = e.sizeXZ?.x ?? Math.max(0.5, e.radius / this.scale * 2);
       const sz = e.sizeXZ?.z ?? Math.max(0.5, e.radius / this.scale * 2);
       this.drawSceneBox({

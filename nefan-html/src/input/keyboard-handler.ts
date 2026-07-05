@@ -35,11 +35,10 @@ export class KeyboardHandler {
    *  consumir por el game loop. +1 ≈ un paso de acercar, -1 de alejar. */
   private zoomAccum = 0;
 
-  /** Disparos one-shot de generación de escena IA (teclas G/O de dev). Se
+  /** Disparos one-shot de generación de escena IA (tecla G de dev). Se
    *  consumen en el game loop; el guard `e.repeat` evita re-disparar mientras
    *  la tecla está pulsada. */
   private generateRequested = false;
-  private outpaintRequested = false;
   private segmentRequested = false;
   private collisionDebugRequested = false;
   private discoverRequested = false;
@@ -67,10 +66,8 @@ export class KeyboardHandler {
         // Zoom por teclado: + / = acercan, - aleja (un paso por pulsación).
         case "+": case "=": this.zoomAccum += 1; break;
         case "-": this.zoomAccum -= 1; break;
-        // Generación de escena IA (dev): G regenera la imagen del escenario
-        // actual, O hace outpaint hacia el borde más cercano al jugador.
+        // Generación de escena IA (dev): G regenera la imagen del tile actual.
         case "g": if (!e.repeat) this.generateRequested = true; break;
-        case "o": if (!e.repeat) this.outpaintRequested = true; break;
         // X = eXtraer/segmentar oclusores (muros/edificios) de la imagen actual
         // para que tapen al personaje (depth-sort). S está ocupada por movimiento.
         case "x": if (!e.repeat) this.segmentRequested = true; break;
@@ -130,15 +127,6 @@ export class KeyboardHandler {
   consumeGenerateScene(): boolean {
     if (this.generateRequested) {
       this.generateRequested = false;
-      return true;
-    }
-    return false;
-  }
-
-  /** True once per O press (outpaint hacia el borde más próximo). */
-  consumeOutpaintScene(): boolean {
-    if (this.outpaintRequested) {
-      this.outpaintRequested = false;
       return true;
     }
     return false;

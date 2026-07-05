@@ -5,13 +5,18 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
-import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
-import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
-import { SceneImageController, type BlueprintReview, type TileAnalysis } from "./scene/scene-image.js";
-import { svgCollisionGrid } from "./scene/svg-collision.js";
+import { SceneImageController } from "./scene/scene-image.js";
+import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
+import {
+  CollisionSystem,
+  applySvgCollision,
+  applyTileAnalysis,
+  type DerivedCollisionDeps,
+} from "./world/collision.js";
 import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { AssetCache } from "./renderer/asset-cache.js";
@@ -117,9 +122,9 @@ const renderer = new CanvasRenderer(canvas, {
   assetCache,
   worldAngle: WORLD_ANGLE,
 });
-// Generación IA del fondo de escena (img2img desde el esquema del canvas +
-// outpainting). Disparada manualmente con G/O en dev. Puramente visual: no
-// toca colisiones ni SceneData.
+// Generación IA del fondo de escena (img2img desde el blueprint del tile).
+// Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
+// visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
 // Sprite sheets are loaded on demand from setPlayerAppearance once the
 // session starts. No pre-load: if the player ends up needing them, that
@@ -232,10 +237,10 @@ const autoPipeline = new AutoImagePipeline({
   listGridTileKeys: () =>
     [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
   isControllerBusy: () => sceneImageController.isBusy(),
-  review: (k) => reviewTileBlueprint(k),
+  review: (k) => reviewTileBlueprint(k, reviewDeps),
   generate: (k) => sceneImageController.generateForTile(k),
   analyze: (k) => sceneImageController.analyzeSceneForTile(k),
-  onAnalyzed: (k, a) => applyTileAnalysis(k, a),
+  onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
   onStatus: renderAutoImgStatus,
   onDisabled: () => {
     autoimgToggle.checked = false;
@@ -302,56 +307,17 @@ function populateSceneSelector(): void {
   sceneSelector.appendChild(narrativeGroup);
 }
 
-/** Aplica los fixes de un blueprint_review sobre una copia del Format D. */
-function applyReviewFixes(
-  fd: Record<string, unknown>,
-  fixes: NonNullable<BlueprintReview["fixes"]>,
-): Record<string, unknown> {
-  const fixed: Record<string, unknown> = { ...fd };
-  if (fixes.terrain) fixed.terrain = fixes.terrain;
-  if (fixes.terrain_features) fixed.terrain_features = fixes.terrain_features;
-  if (fixes.map_svg) fixed.map_svg = fixes.map_svg;
-  if (fixes.entity_moves?.length) {
-    const moves = new Map(fixes.entity_moves.map((m) => [m.id, m.cell]));
-    const ents = (fixed.entities as Record<string, unknown>[] | undefined) ?? [];
-    fixed.entities = ents.map((e) =>
-      moves.has(e.id as string) ? { ...e, cell: moves.get(e.id as string) } : e,
-    );
-  }
-  return fixed;
-}
-
-/** Fase "revisión" (auto-pipeline y tecla R en tiles): Claude mira el
- *  blueprint rasterizado del tile — con map_svg, el plano SVG — y devuelve
- *  fixes; el map_svg corregido (o aprobado sin cambios) se re-aplica en local
- *  vía addTile y se persiste al bridge con map_svg_update, que estampa
- *  map_svg_reviewed para que el resume no re-revise. Tiles sin map_svg o ya
- *  revisados: no-op. */
-async function reviewTileBlueprint(key: string): Promise<void> {
-  const entry = tileStore.entries.get(key);
-  const raw = (entry?.scene as { __format_d?: Record<string, unknown> } | undefined)?.__format_d;
-  const mapSvg = raw?.map_svg;
-  if (!entry || !raw || typeof mapSvg !== "string") return;
-  if (raw.map_svg_reviewed === true) return;
-  log(`blueprint ${key} → revisión por visión (Claude)…`);
-  const review = await sceneImageController.reviewBlueprint(raw, entry.rect, key);
-  for (const issue of review.issues) log(`review ${key}: ${issue}`);
-  const finalSvg = review.fixes?.map_svg ?? mapSvg;
-  // Estampar SIEMPRE map_svg_reviewed (con o sin fixes) y re-registrar: el
-  // save del bridge y el estado local deben coincidir campo a campo para que
-  // el resume preserve la imagen (fingerprint) y no re-revise.
-  const fixed = review.fixes ? applyReviewFixes(raw, review.fixes) : { ...raw };
-  fixed.map_svg = finalSvg;
-  fixed.map_svg_reviewed = true;
-  await addTile(fixed);
-  const tc = parseTileKey(key);
-  if (tc && activeSessionId) narrativeClient.reportMapSvg(tc.tx, tc.ty, finalSvg);
-  log(
-    review.fixes?.map_svg
-      ? `review ${key}: map_svg corregido aplicado (${review.issues.length} issue(s))`
-      : `review ${key}: blueprint aprobado`,
-  );
-}
+/** Deps de la fase "revisión" (scene/review.ts): re-registro vía addTile y
+ *  persistencia al bridge solo con sesión activa. */
+const reviewDeps: ReviewDeps = {
+  tileStore,
+  controller: sceneImageController,
+  addTile: (raw) => addTile(raw),
+  reportMapSvg: (tx, ty, svg) => {
+    if (activeSessionId) narrativeClient.reportMapSvg(tx, ty, svg);
+  },
+  log: (msg) => log(msg),
+};
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
  *  actual y aplica los fixes parciales que devuelva (terrain /
@@ -373,7 +339,7 @@ async function reviewBlueprintAndApply(): Promise<void> {
   // Tiles con map_svg: mismo camino que la fase automática (re-registro por
   // addTile + persistencia al bridge), sin recargar el mundo entero.
   if (typeof fd.map_svg === "string" && activeTileKey) {
-    await reviewTileBlueprint(activeTileKey);
+    await reviewTileBlueprint(activeTileKey, reviewDeps);
     return;
   }
   log("blueprint → revisión por visión (Claude)…");
@@ -486,7 +452,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (mapSvg) {
-    void applySvgCollision(key, mapSvg, rect);
+    void applySvgCollision(key, mapSvg, rect, derivedCollisionDeps);
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
@@ -675,121 +641,25 @@ function rebuildEnemyBars(): void {
   }
 }
 
-// --- Collision ---
-const PLAYER_RADIUS = 0.4;
+// --- Collision (lógica en world/collision.ts; aquí solo el cableado) ---
+const collision = new CollisionSystem({
+  tileStore,
+  getPlayerPos: () => playerPos,
+  getObstacles: () => objectEntities,
+});
+const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
-/** Frontera del plano: un tile INEXISTENTE es un sólido virtual con semántica
- *  "salir sí, entrar no" — bloquea el movimiento HACIA él pero nunca el de
- *  vuelta. Con la resolución por ejes de gameLoop esto da el bloqueo
- *  DIRECCIONAL gratis: pegado al borde este solo se bloquea +x; ±z y -x
- *  siguen libres. Solo aplica cuando el mundo es de tiles de grid. */
-function frontierBlocksMove(x: number, z: number): boolean {
-  if (!tileStore.hasGridTiles) return false;
-  const destMissing = tileStore
-    .keysTouching(x, z, PLAYER_RADIUS)
-    .filter((t) => !tileStore.has(t.tx, t.ty));
-  if (destMissing.length === 0) return false;
-  const fromKeys = new Set(
-    tileStore.keysTouching(playerPos.x, playerPos.z, PLAYER_RADIUS).map((t) => `${t.tx},${t.ty}`),
-  );
-  return destMissing.some((t) => !fromKeys.has(`${t.tx},${t.ty}`));
-}
-
-/** Colisión base del blueprint SVG: rasteriza #water+#solid (menos #deck) del
- *  map_svg y la instala como collider base del tile — activa desde que llega
- *  el tile, antes de imagen y análisis. El overlay B la pinta en azul. Si la
- *  derivación falla, los AABBs del esquema siguen aplicando (svgApplied=false). */
-async function applySvgCollision(
-  key: string,
-  mapSvg: string,
-  rect: { minX: number; minZ: number; maxX: number; maxZ: number },
-): Promise<void> {
-  try {
-    const grid = await svgCollisionGrid(mapSvg, rect);
-    const collider = grid ? createTerrainCollider(grid) : null;
-    tileStore.setSvgCollider(key, collider);
-    renderer.setTileSvgGrid(key, grid);
-    console.log(
-      `[collision] ${key}: map_svg aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
-    );
-  } catch (err) {
-    errors.push("scene", `map_svg de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
-  }
-}
-
-/** Mundo derivado de la imagen: materializa el análisis de un tile. El grid
- *  de segmentos sólidos pasa a ser el collider derivado del tile (la imagen
- *  manda: los AABBs del esquema en ese tile dejan de bloquear), y el overlay
- *  B lo pinta en violeta. Grid null = analizado sin sólidos (tile abierto). */
-function applyTileAnalysis(key: string, analysis: TileAnalysis): void {
-  let collider: TerrainCollider | null;
-  try {
-    collider = analysis.grid ? createTerrainCollider(analysis.grid) : null;
-  } catch (err) {
-    errors.push("scene", `grid derivado inconsistente en ${key}; colisión de imagen desactivada`, err);
-    return;
-  }
-  tileStore.markAnalyzed(key, collider);
-  renderer.setTileAnalysis(key, analysis.grid);
-  console.log(
-    `[collision] ${key}: análisis aplicado — ` +
-    `${collider?.solidCellCount ?? 0} celdas sólidas, ${analysis.occluders.length} occluders`,
-  );
-  // El motor narrativo se ajusta al mapa REAL: reportar el análisis al bridge
-  // (persistencia en el save + resumen en el contexto del LLM). Solo tiles de
-  // grid con sesión activa — los fixtures locales no tienen dónde persistir.
-  const tc = parseTileKey(key);
-  if (tc && activeSessionId) {
-    narrativeClient.reportTileAnalysis(tc.tx, tc.ty, analysis.elements);
-  }
-}
-
-/** AABB collision of the player (inflated point) against solid terrain cells
- *  and solid scene objects. Items and decor are walkable; only terrain
- *  solid_chars (walls/water), buildings and props block.
- *
- *  Semántica "salir sí, entrar no": un obstáculo que YA solapa la posición
- *  actual del jugador no bloquea (permite des-penetrar si el spawn o un
- *  empujón te dejó dentro); solo bloquean los obstáculos NUEVOS del destino.
- *  Sin esto, spawn solapado ⇒ ambos ejes bloqueados ⇒ jugador clavado. */
-function collidesAt(x: number, z: number): boolean {
-  if (frontierBlocksMove(x, z)) return true;
-  // Terreno sólido de los tiles que toca el AABB destino (≤4). Cada collider
-  // trabaja en coordenadas globales (terrain_grid.origin).
-  if (tileStore.hasGridTiles) {
-    for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
-      const tile = tileStore.get(t.tx, t.ty);
-      if (tile?.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-      // Colisión base del blueprint SVG (#water+#solid del map_svg).
-      if (tile?.svgCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-      // Colisión DERIVADA de la imagen (segmentos sólidos clasificados).
-      if (tile?.imageCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-    }
-  } else {
-    for (const entry of tileStore.entries.values()) {
-      if (entry.collider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-      if (entry.svgCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-      if (entry.imageCollider?.blocksMove(playerPos.x, playerPos.z, x, z, PLAYER_RADIUS)) return true;
-    }
-  }
-  for (const obj of objectEntities) {
-    if (!obj.sizeXZ) continue;
-    if (obj.category !== "building" && obj.category !== "prop") continue;
-    // La imagen (o el SVG) manda: en un tile analizado o con colisión SVG
-    // aplicada, los AABBs del esquema dejan de aplicar — la colisión sale de
-    // los muros/troncos reales, con sus puertas y huecos.
-    const owner = tileStore.getAt(obj.pos.x, obj.pos.z);
-    if (owner?.imageAnalyzed || owner?.svgApplied) continue;
-    const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
-    const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
-    if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
-      const alreadyInside =
-        Math.abs(playerPos.x - obj.pos.x) < hx && Math.abs(playerPos.z - obj.pos.z) < hz;
-      if (!alreadyInside) return true;
-    }
-  }
-  return false;
-}
+/** Deps de los instaladores de colisión derivada (svg/análisis): espejo
+ *  visual en el renderer + reporte al bridge solo con sesión activa (los
+ *  fixtures locales no tienen dónde persistir). */
+const derivedCollisionDeps: DerivedCollisionDeps = {
+  tileStore,
+  setTileSvgGrid: (key, grid) => renderer.setTileSvgGrid(key, grid),
+  setTileAnalysisGrid: (key, grid) => renderer.setTileAnalysis(key, grid),
+  reportAnalysis: (tx, ty, elements) => {
+    if (activeSessionId) narrativeClient.reportTileAnalysis(tx, ty, elements);
+  },
+};
 
 // --- Combat log ---
 function log(msg: string): void {
@@ -1052,12 +922,6 @@ function gameLoop(now: number): void {
   if (input.consumeGenerateScene()) {
     if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
-  if (input.consumeOutpaintScene()) {
-    errors.push(
-      "scene",
-      "O (outpaint) está deshabilitada en el mundo de tiles — usa Auto-img o G por tile",
-    );
-  }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
   // auto-segmentación + clasificación por visión → occluders (tall) y
   // colisión derivada (solid). Requiere imagen previa (G/auto).
@@ -1065,7 +929,7 @@ function gameLoop(now: number): void {
     if (activeTileKey) {
       const k = activeTileKey;
       void sceneImageController.analyzeSceneForTile(k)
-        .then((a) => applyTileAnalysis(k, a))
+        .then((a) => applyTileAnalysis(k, a, derivedCollisionDeps))
         .catch(() => {});
     }
   }

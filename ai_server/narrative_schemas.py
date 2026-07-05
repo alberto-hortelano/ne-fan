@@ -131,7 +131,7 @@ The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top
 - A river/road drawn as a feature should follow the same course as its `w`/`_` cells in the grid (grid = coarse base, feature = smooth refinement). Purely decorative curves may skip the grid cells and use only the feature.
 
 TERRAIN SVG (advanced, RARELY needed — use ONLY when grid + terrain_features cannot express the shape)
-`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all.
+`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all. TILES: do NOT use terrain_svg — the tile's "map_svg" (full layered blueprint) supersedes it entirely.
 
 ENTITY RULES
 - Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").

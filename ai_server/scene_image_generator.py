@@ -11,8 +11,7 @@ plus a text instruction derived from the scene description. `nano-banana-pro`
 (Gemini Pro Image) matches the style and keeps a flat top-down projection that
 maps 1:1 onto the XZ collision plane.
 
-No local GPU — generation runs on Meshy (costs credits). Outpaint extends the
-world by instructing the model to show more terrain on one side.
+No local GPU — generation runs on Meshy (costs credits).
 
 Caveat: Meshy image-to-image returns a 1024² square; non-square scenes are
 stretched to their bounds by the client (minor distortion, acceptable for now).
@@ -30,7 +29,7 @@ from PIL import Image
 
 from meshy_client import MeshyImageToImage
 
-# Image-space side names for outpaint. Kept for API compatibility with main.py.
+# Image-space side names of the capture's context strips (context_sides).
 SIDES = ("left", "right", "top", "bottom")
 
 _STYLE_RULES = (
@@ -76,10 +75,6 @@ class SceneImageGenerator:
         self,
         schematic_png_bytes: bytes,
         prompt: str,
-        strength: float = 0.85,   # unused; kept for API compatibility
-        seed: int = -1,           # unused (Meshy)
-        guidance: float = 6.0,    # unused
-        controlnet_scale: float = 0.5,  # unused
         context_sides: list[str] | None = None,
         blueprint_kind: str = "boxes",
     ) -> dict:
@@ -157,39 +152,3 @@ class SceneImageGenerator:
             "generation_time_ms": int(dt * 1000),
         }
 
-    def outpaint(
-        self,
-        current_png_bytes: bytes,
-        side: str,
-        expand_px: int = 256,
-        prompt: str = "",
-        seed: int = -1,
-    ) -> dict:
-        if side not in SIDES:
-            raise ValueError(f"side must be one of {SIDES}, got {side!r}")
-        cur = self._load_rgb(current_png_bytes)
-        instruction = (
-            "Top-down 2D RPG game map, flat overhead view. The FIRST reference image "
-            f"is an existing map; render a LARGER map that extends it toward the "
-            f"{side} side with more terrain of the same kind, keeping the existing "
-            "content and layout recognisable. "
-            f"Theme: {prompt.strip()}. {_STYLE_RULES}"
-        )
-        refs = [_to_data_uri(cur, "PNG", long_side=1024), self._style_uri]
-        start = time.perf_counter()
-        png, res = self._run(instruction, refs)
-        dt = time.perf_counter() - start
-        w, h = Image.open(io.BytesIO(png)).size
-        print(
-            f"SceneImageGen.outpaint[{side}]: {w}x{h} "
-            f"{res.get('consumed_credits')}cr -> {dt:.1f}s",
-            flush=True,
-        )
-        return {
-            "scene": png,
-            "side": side,
-            "expand_px": expand_px,
-            "width": w,
-            "height": h,
-            "generation_time_ms": int(dt * 1000),
-        }

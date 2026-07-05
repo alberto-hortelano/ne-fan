@@ -395,13 +395,6 @@ class SceneImageRequest(BaseModel):
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
     blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
-    strength: float = 0.85
-    seed: int = -1
-    # Tuning knobs (dev). guidance ~6 for SDXL. controlnet_scale holds the
-    # layout (~0.5 = furniture/structures land on the boxes but with artistic
-    # freedom; higher hugs the boxes tighter, lower strays more).
-    guidance: float = 6.0
-    controlnet_scale: float = 0.5
 
     @field_validator("context_sides")
     @classmethod
@@ -421,16 +414,6 @@ class ReviewBlueprintRequest(BaseModel):
     scene_id: str = Field(min_length=1)
     image_b64: str = Field(min_length=1)
     scene: dict
-
-
-class OutpaintSceneRequest(BaseModel):
-    """Extend an existing scene image outward on one side. `side` is in image
-    space (left=minX, right=maxX, top=minZ, bottom=maxZ)."""
-    image_b64: str = Field(min_length=1)
-    side: str = Field(min_length=1)
-    expand_px: int = 256
-    prompt: str = ""
-    seed: int = -1
 
 
 class AnalyzeSceneRequest(BaseModel):
@@ -773,9 +756,8 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # el CORSMiddleware y el navegador lo enmascara como error de red.
     try:
         result = await asyncio.to_thread(
-            scene_image_gen.generate_full, png, body.prompt, body.strength,
-            body.seed, body.guidance, body.controlnet_scale, body.context_sides,
-            body.blueprint_kind,
+            scene_image_gen.generate_full, png, body.prompt,
+            body.context_sides, body.blueprint_kind,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
@@ -797,60 +779,6 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         "height": result["height"],
         "generation_time_ms": elapsed_ms,
     }
-
-
-@app.post("/outpaint_scene_image")
-async def outpaint_scene_image_endpoint(body: OutpaintSceneRequest):
-    """Extend an existing scene image outward on one side via SD inpaint.
-    Cached by (prompt, base layout, side, expand_px)."""
-    import asyncio
-    import hashlib
-
-    if scene_image_gen is None:
-        raise HTTPException(status_code=503, detail="scene_image_gen unavailable")
-    if body.side not in SIDES:
-        raise HTTPException(
-            status_code=422, detail=f"side must be one of {SIDES}, got {body.side!r}"
-        )
-
-    png = _decode_b64_png(body.image_b64)
-    base_layout = hashlib.sha256(png).hexdigest()[:16]
-    context = {
-        "layout": base_layout,
-        "kind": "outpaint",
-        "side": body.side,
-        "expand_px": body.expand_px,
-        "model": scene_image_gen._model,
-    }
-    key = scene_cache.hash_key(body.prompt, context)
-
-    if scene_cache.has(body.prompt, "scene", context):
-        return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
-
-    start = time.time()
-    try:
-        result = await asyncio.to_thread(
-            scene_image_gen.outpaint,
-            png, body.side, body.expand_px, body.prompt, body.seed,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"scene outpaint failed: {e}") from e
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    scene_cache.put(body.prompt, "scene", result["scene"], context=context)
-
-    return {
-        "hash": key,
-        "cached": False,
-        "scene_url": f"/cache/scene/{key}",
-        "side": result["side"],
-        "expand_px": result["expand_px"],
-        "width": result["width"],
-        "height": result["height"],
-        "generation_time_ms": elapsed_ms,
-    }
-
-
 
 
 @app.post("/analyze_scene_image")
