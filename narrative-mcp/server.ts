@@ -182,6 +182,7 @@ Call narrative_respond with this JSON (Tile Format):
   "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP)
   "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
+  "map_svg": "<svg viewBox=\\"0 0 128 128\\">…</svg>",  // STRONGLY recommended — see MAP SVG below
   "ambient_event": "…"
 }
 
@@ -217,6 +218,56 @@ HARD RULES OF THE TILE:
   (see nearby_places, or one you just created with map_upsert_place), anchor
   it with its cell rect — its triggers fire when the player steps inside.
 
+MAP SVG — the painted blueprint of the tile (STRONGLY recommended):
+"map_svg" is a complete SVG plan of the tile. The client rasterises it as the
+layout blueprint the image model repaints AND derives the base collision map
+from its layers — this is where the tile stops being boxes and becomes a
+place, so invest your design effort here.
+
+Format (the server discards a map_svg that violates any of these):
+- viewBox EXACTLY "0 0 128 128" (units = cells), max 32 KB. Shape elements
+  only (path/rect/circle/ellipse/polygon/polyline/line + g/defs/symbol/use);
+  no <script>, no foreignObject, no href.
+- <g> layers in this exact order (paint order = z-order). ground, water,
+  solid, tall are REQUIRED (an empty <g id="water"/> is fine), deck is
+  optional:
+  <g id="ground">: everything walkable — a base fill covering the WHOLE tile
+    (biome colour), meadow-variation blobs, dirt roads, stone plazas, sandy
+    banks under the river, interior floors (wood).
+  <g id="water">: rivers, ponds, moats. NOT walkable. Draw rivers as a thick
+    stroked path following the SAME course as your water terrain_feature.
+  <g id="deck">: walkable surfaces OVER water: bridge planks, jetties,
+    stepping stones. (Collision punches these out of the water — a bridge in
+    #ground would be painted UNDER the river and disappear.)
+  <g id="solid">: what blocks walking — building WALLS as a stroked ring
+    (stroke-width ~1.4 cells, fill none) with GAPS for doors, tree TRUNKS
+    (small dots), boulders, fences, wells, furniture (bar counter, tables,
+    beds, barrels, forge, market stalls, carts).
+  <g id="tall">: what is taller than a character and draws OVER one standing
+    behind it — tree CANOPIES (circles above their trunk dots), awnings.
+    Trunk in #solid, canopy in #tall: collision and occlusion are different.
+- Put data-label="<Spanish noun>" on every meaningful shape in #solid/#tall
+  ("taberna", "roble", "pozo") — it guides the vision classifier later.
+
+Design doctrine (what makes the map GOOD):
+- CUTAWAY buildings, no roofs EVER: wall ring with door gaps, interior floor
+  in #ground, furniture in #solid. The player must see inside every building.
+- Roads first: lay the road/river network (continuing every crossing and
+  neighbour image_element), THEN snap buildings to the roads with a short
+  spur path to their door. A building nobody can reach is a bug.
+- Centerpiece → surroundings → filler: one anchor feature (plaza with a well,
+  a bridge, a shrine), support structures around it, then frame with
+  vegetation MASSES — clustered canopies leaving clearings and meadows, not
+  uniform scatter.
+- COHERENCE with the schema: the SVG draws the SAME world the JSON declares —
+  every terrain_feature follows its own points and reaches the border at its
+  at_edges cells; every structure/building entity keeps its footprint. The
+  SVG adds the detail the schema cannot express (interiors, curves, canopy
+  vs trunk), it never contradicts it.
+- NEVER: roofs; furniture floating outside walls; an element touching the
+  tile border unless it continues a crossing or image_element; water without
+  clearly drawn banks.
+
 EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
 is {type:"path", at:41}) and seeding an east exit:
 {
@@ -232,8 +283,12 @@ is {type:"path", at:41}) and seeding an east exit:
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
+  "map_svg": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><rect width=\\"128\\" height=\\"128\\" fill=\\"#3d5a2c\\"/><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#c2a86b\\" stroke-width=\\"4\\"/></g><g id=\\"water\\"/><g id=\\"solid\\"><ellipse cx=\\"81\\" cy=\\"31\\" rx=\\"1.5\\" ry=\\"1\\" fill=\\"#7f7f78\\" data-label=\\"roca\\"/><circle cx=\\"30\\" cy=\\"20\\" r=\\"0.5\\" fill=\\"#5a4632\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"0.5\\" fill=\\"#5a4632\\"/></g><g id=\\"tall\\"><circle cx=\\"30\\" cy=\\"20\\" r=\\"4.5\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"4\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/></g></svg>",
   "ambient_event": "Un cuervo grazna en lo alto de los pinos."
 }
+(a real forest tile draws its full tree masses in the SVG — dozens of
+trunk+canopy pairs clustered along the path and the tile edges; the example
+is abbreviated.)
 
 BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - FIRST lay down the initial world map with the map tools (map_upsert_place ×
