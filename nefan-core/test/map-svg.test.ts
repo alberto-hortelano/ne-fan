@@ -6,7 +6,7 @@ import { sanitizeMapSvg, MAP_SVG_MAX_BYTES } from "../src/scene/map-svg.js";
 /** SVG mínimo válido con las 4 capas obligatorias. */
 function validSvg(extra = ""): string {
   return (
-    '<svg viewBox="0 0 128 128">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">' +
     '<g id="ground"><rect width="128" height="128" fill="#3d5a2c"/></g>' +
     '<g id="water"/>' +
     '<g id="solid"><circle cx="30" cy="20" r="0.5" fill="#5a4632"/></g>' +
@@ -21,6 +21,13 @@ describe("sanitizeMapSvg", () => {
     const res = sanitizeMapSvg(`  ${validSvg()}\n`, 128, 128);
     assert.equal(res.ok, true);
     if (res.ok) assert.equal(res.svg, validSvg());
+  });
+
+  it("inyecta xmlns si falta (el navegador no rasteriza SVG sin namespace)", () => {
+    const sinNs = validSvg().replace(' xmlns="http://www.w3.org/2000/svg"', "");
+    const res = sanitizeMapSvg(sinNs, 128, 128);
+    assert.equal(res.ok, true);
+    if (res.ok) assert.match(res.svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   });
 
   it("acepta la capa deck opcional y comillas simples en los ids", () => {

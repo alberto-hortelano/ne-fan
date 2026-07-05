@@ -947,7 +947,7 @@ describe("bridge request_tile (plano continuo)", () => {
     seedTile00(narrative);
     const { socket } = makeSocket();
     const svg =
-      '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
     await routeMessage({ type: "map_svg_update", tx: 0, ty: 0, map_svg: svg }, socket, ctx);
     const rec = narrative.getTile(0, 0)!;
     assert.equal(rec.scene_data.map_svg, svg);

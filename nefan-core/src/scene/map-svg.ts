@@ -53,5 +53,9 @@ export function sanitizeMapSvg(svg: unknown, cols: number, rows: number): MapSvg
   if (missing.length > 0) {
     return { ok: false, error: `faltan capas obligatorias: ${missing.join(", ")}` };
   }
-  return { ok: true, svg: s };
+  // Sin xmlns el navegador no decodifica el SVG como imagen (Blob→Image) y
+  // DOMParser lo deja fuera del namespace SVG. Los LLM lo omiten a menudo:
+  // inyectarlo aquí en vez de rechazar.
+  const withNs = s.includes("xmlns=") ? s : s.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+  return { ok: true, svg: withNs };
 }

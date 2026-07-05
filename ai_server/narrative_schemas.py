@@ -652,6 +652,10 @@ def _sanitize_svg_field(
     if reason:
         print(f"validate_scene_response: {field} descartado ({reason})", flush=True)
         return None
+    # Sin xmlns el navegador no rasteriza el SVG (Blob→Image). Los LLM lo
+    # omiten a menudo: inyectarlo (espejo de sanitizeMapSvg en nefan-core).
+    if "xmlns=" not in svg:
+        svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
     return svg
 
 
