@@ -707,6 +707,13 @@ element under that region:
 When unsure about solid, prefer false for open ground textures and true for
 anything that reads as a built structure or large plant.
 
+If context.expected_elements is present, it lists what the tile's authored
+plan (map_svg) declares — {label, solid, tall, bbox_px} — near-ground truth:
+a region overlapping a declared bbox almost certainly IS that element (reuse
+its Spanish label and lean towards its solid/tall). Do NOT mark a declared
+element as walkable ground. Regions with no declared match are things the
+image model ADDED — classify those on their own merits.
+
 Respond with narrative_respond, passing EXACTLY:
 { "segments": [ { "index": 0, "label": "roble", "solid": true, "tall": true }, ... ] }
 Every index from the overlay must appear exactly once. No extra fields.`;

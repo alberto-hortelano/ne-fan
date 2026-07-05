@@ -51,6 +51,78 @@ async function rasterizeLayers(
   }
 }
 
+/** Elemento que el plano SVG declara (shape con data-label en #solid/#tall),
+ *  con su bbox en píxeles de la imagen pintada — guía para el clasificador de
+ *  visión del análisis. */
+export interface ExpectedElement {
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  /** [x, y, w, h] en píxeles de la imagen (imgW×imgH). */
+  bbox_px: [number, number, number, number];
+}
+
+/** Cap de elementos declarados enviados al clasificador (los mayores). */
+const MAX_EXPECTED = 64;
+
+/** Extrae los elementos declarados del map_svg. Necesita el SVG montado en el
+ *  DOM (getBBox solo funciona en árboles renderizados): se inserta oculto y
+ *  se retira. Un shape que no mide (getBBox lanza) se omite. */
+export function expectedElementsFromSvg(
+  mapSvg: string,
+  imgW: number,
+  imgH: number,
+): ExpectedElement[] {
+  const doc = new DOMParser().parseFromString(mapSvg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) {
+    throw new Error("map_svg no parsea como XML");
+  }
+  const host = document.createElement("div");
+  host.style.position = "absolute";
+  host.style.visibility = "hidden";
+  host.style.width = "0";
+  host.style.height = "0";
+  host.style.overflow = "hidden";
+  const svgEl = document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
+  host.appendChild(svgEl);
+  document.body.appendChild(host);
+  try {
+    const sx = imgW / TILE_CELLS;
+    const sy = imgH / TILE_CELLS;
+    const out: ExpectedElement[] = [];
+    for (const layer of ["solid", "tall"] as const) {
+      const g = svgEl.querySelector(`g[id="${layer}"]`);
+      if (!g) continue;
+      for (const el of g.querySelectorAll("[data-label]")) {
+        const label = el.getAttribute("data-label")?.trim();
+        if (!label) continue;
+        let b: DOMRect;
+        try {
+          b = (el as SVGGraphicsElement).getBBox();
+        } catch {
+          continue; // shape sin geometría medible
+        }
+        if (!(b.width > 0) || !(b.height > 0)) continue;
+        out.push({
+          label,
+          solid: layer === "solid",
+          tall: layer === "tall",
+          bbox_px: [
+            Math.round(b.x * sx),
+            Math.round(b.y * sy),
+            Math.round(b.width * sx),
+            Math.round(b.height * sy),
+          ],
+        });
+      }
+    }
+    out.sort((a, b) => b.bbox_px[2] * b.bbox_px[3] - a.bbox_px[2] * a.bbox_px[3]);
+    return out.slice(0, MAX_EXPECTED);
+  } finally {
+    host.remove();
+  }
+}
+
 /** Deriva el grid de colisión base del `map_svg` de un tile. Devuelve null si
  *  el SVG no contiene ninguna celda sólida (tile abierto sin agua ni muros). */
 export async function svgCollisionGrid(

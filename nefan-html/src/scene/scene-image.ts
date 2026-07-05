@@ -25,6 +25,7 @@ import {
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
 import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
+import { expectedElementsFromSvg, type ExpectedElement } from "./svg-collision.js";
 
 /** Un segmento jugable devuelto por /analyze_scene_image. */
 interface AnalyzedSegment {
@@ -347,8 +348,21 @@ export class SceneImageController {
     const spanX = b.maxX - b.minX;
     const spanZ = b.maxZ - b.minZ;
     try {
-      const scene = this.renderer.getTileScene(key) as SceneSummary | null;
+      const scene = this.renderer.getTileScene(key) as
+        | (SceneSummary & { map_svg?: string })
+        | null;
       const dataUrl = this.imageToDataUrl(img);
+      // Análisis guiado por el plano: los elementos que el map_svg declara
+      // (label + bbox en píxeles de la imagen) orientan al clasificador —
+      // etiqueta mejor y no marca suelo lo declarado. Fallo → sin guía.
+      let expected: ExpectedElement[] | undefined;
+      if (scene?.map_svg) {
+        try {
+          expected = expectedElementsFromSvg(scene.map_svg, img.naturalWidth, img.naturalHeight);
+        } catch (err) {
+          errors.push("scene", `expected_elements de ${key} falló; análisis sin guía del plano`, err);
+        }
+      }
       const res = await fetch(`${this.baseUrl}/analyze_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -357,6 +371,7 @@ export class SceneImageController {
           context: {
             scene_description: scene?.scene_description ?? scene?.room_description ?? "",
             zone_type: scene?.zone_type ?? "",
+            ...(expected?.length ? { expected_elements: expected } : {}),
           },
         }),
       });

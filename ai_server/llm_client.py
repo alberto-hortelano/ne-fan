@@ -548,13 +548,23 @@ class LLMClient:
             return None
 
         regions_json = json.dumps(context.get("regions", []))
+        header = (
+            f"Candidate regions (index + pixel bbox [x, y, w, h]):\n{regions_json}\n\n"
+            "The first image is the original scene; the second has the regions "
+            "outlined and numbered. Classify EVERY index via the classify_scene tool."
+        )
+        expected = context.get("expected_elements")
+        if expected:
+            header += (
+                "\n\nThe tile's authored plan declares these elements "
+                "({label, solid, tall, bbox_px}) — near-ground truth: a region "
+                "overlapping a declared bbox almost certainly IS that element "
+                "(reuse its label, lean towards its solid/tall; never mark it "
+                f"walkable ground):\n{json.dumps(expected)}"
+            )
         content: list = [{
             "type": "text",
-            "text": (
-                f"Candidate regions (index + pixel bbox [x, y, w, h]):\n{regions_json}\n\n"
-                "The first image is the original scene; the second has the regions "
-                "outlined and numbered. Classify EVERY index via the classify_scene tool."
-            ),
+            "text": header,
         }]
         for img in images:
             data_b64 = img.get("data_b64") if isinstance(img, dict) else None
