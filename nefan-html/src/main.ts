@@ -10,7 +10,8 @@ import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world
 import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
-import { SceneImageController, type BlueprintReview } from "./scene/scene-image.js";
+import { SceneImageController } from "./scene/scene-image.js";
+import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
   applySvgCollision,
@@ -237,7 +238,7 @@ const autoPipeline = new AutoImagePipeline({
   listGridTileKeys: () =>
     [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
   isControllerBusy: () => sceneImageController.isBusy(),
-  review: (k) => reviewTileBlueprint(k),
+  review: (k) => reviewTileBlueprint(k, reviewDeps),
   generate: (k) => sceneImageController.generateForTile(k),
   analyze: (k) => sceneImageController.analyzeSceneForTile(k),
   onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
@@ -307,56 +308,17 @@ function populateSceneSelector(): void {
   sceneSelector.appendChild(narrativeGroup);
 }
 
-/** Aplica los fixes de un blueprint_review sobre una copia del Format D. */
-function applyReviewFixes(
-  fd: Record<string, unknown>,
-  fixes: NonNullable<BlueprintReview["fixes"]>,
-): Record<string, unknown> {
-  const fixed: Record<string, unknown> = { ...fd };
-  if (fixes.terrain) fixed.terrain = fixes.terrain;
-  if (fixes.terrain_features) fixed.terrain_features = fixes.terrain_features;
-  if (fixes.map_svg) fixed.map_svg = fixes.map_svg;
-  if (fixes.entity_moves?.length) {
-    const moves = new Map(fixes.entity_moves.map((m) => [m.id, m.cell]));
-    const ents = (fixed.entities as Record<string, unknown>[] | undefined) ?? [];
-    fixed.entities = ents.map((e) =>
-      moves.has(e.id as string) ? { ...e, cell: moves.get(e.id as string) } : e,
-    );
-  }
-  return fixed;
-}
-
-/** Fase "revisión" (auto-pipeline y tecla R en tiles): Claude mira el
- *  blueprint rasterizado del tile — con map_svg, el plano SVG — y devuelve
- *  fixes; el map_svg corregido (o aprobado sin cambios) se re-aplica en local
- *  vía addTile y se persiste al bridge con map_svg_update, que estampa
- *  map_svg_reviewed para que el resume no re-revise. Tiles sin map_svg o ya
- *  revisados: no-op. */
-async function reviewTileBlueprint(key: string): Promise<void> {
-  const entry = tileStore.entries.get(key);
-  const raw = (entry?.scene as { __format_d?: Record<string, unknown> } | undefined)?.__format_d;
-  const mapSvg = raw?.map_svg;
-  if (!entry || !raw || typeof mapSvg !== "string") return;
-  if (raw.map_svg_reviewed === true) return;
-  log(`blueprint ${key} → revisión por visión (Claude)…`);
-  const review = await sceneImageController.reviewBlueprint(raw, entry.rect, key);
-  for (const issue of review.issues) log(`review ${key}: ${issue}`);
-  const finalSvg = review.fixes?.map_svg ?? mapSvg;
-  // Estampar SIEMPRE map_svg_reviewed (con o sin fixes) y re-registrar: el
-  // save del bridge y el estado local deben coincidir campo a campo para que
-  // el resume preserve la imagen (fingerprint) y no re-revise.
-  const fixed = review.fixes ? applyReviewFixes(raw, review.fixes) : { ...raw };
-  fixed.map_svg = finalSvg;
-  fixed.map_svg_reviewed = true;
-  await addTile(fixed);
-  const tc = parseTileKey(key);
-  if (tc && activeSessionId) narrativeClient.reportMapSvg(tc.tx, tc.ty, finalSvg);
-  log(
-    review.fixes?.map_svg
-      ? `review ${key}: map_svg corregido aplicado (${review.issues.length} issue(s))`
-      : `review ${key}: blueprint aprobado`,
-  );
-}
+/** Deps de la fase "revisión" (scene/review.ts): re-registro vía addTile y
+ *  persistencia al bridge solo con sesión activa. */
+const reviewDeps: ReviewDeps = {
+  tileStore,
+  controller: sceneImageController,
+  addTile: (raw) => addTile(raw),
+  reportMapSvg: (tx, ty, svg) => {
+    if (activeSessionId) narrativeClient.reportMapSvg(tx, ty, svg);
+  },
+  log: (msg) => log(msg),
+};
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
  *  actual y aplica los fixes parciales que devuelva (terrain /
@@ -378,7 +340,7 @@ async function reviewBlueprintAndApply(): Promise<void> {
   // Tiles con map_svg: mismo camino que la fase automática (re-registro por
   // addTile + persistencia al bridge), sin recargar el mundo entero.
   if (typeof fd.map_svg === "string" && activeTileKey) {
-    await reviewTileBlueprint(activeTileKey);
+    await reviewTileBlueprint(activeTileKey, reviewDeps);
     return;
   }
   log("blueprint → revisión por visión (Claude)…");
