@@ -246,6 +246,10 @@ export class BridgeClient {
     this.send({ type: "tile_analysis", tx, ty, elements });
   }
 
+  sendMapSvgUpdate(tx: number, ty: number, mapSvg: string): void {
+    this.send({ type: "map_svg_update", tx, ty, map_svg: mapSvg });
+  }
+
   /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile
    *  nuevo) — no resetea nada, ids ya presentes se ignoran. */
   sendAddCombatants(enemies: {

@@ -522,6 +522,12 @@ export class CanvasRenderer {
     return Boolean(this.tiles.get(key)?.sceneImage);
   }
 
+  /** ¿El map_svg del tile ya está rasterizado (decodifica async)? Los callers
+   *  que capturan el blueprint esperan a esto para no capturar el fallback. */
+  tileMapSvgReady(key: string): boolean {
+    return Boolean(this.tiles.get(key)?.mapSvgImage);
+  }
+
   /** Instala la imagen IA de UN tile (cubre exactamente su rect). Libera su
    *  capa horneada (slot del LRU; re-horneable si la imagen se invalida) y
    *  purga los occluders recortados de la imagen anterior de ese tile. */

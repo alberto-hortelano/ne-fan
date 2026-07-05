@@ -125,6 +125,12 @@ export class NarrativeClient {
     this.bridge.sendTileAnalysis(tx, ty, elements);
   }
 
+  /** Persiste el map_svg de un tile tras el retoque de visión (corregido o
+   *  aprobado sin cambios — estampa map_svg_reviewed en el save). */
+  reportMapSvg(tx: number, ty: number, mapSvg: string): void {
+    this.bridge.sendMapSvgUpdate(tx, ty, mapSvg);
+  }
+
   /** Tell the narrative engine the player approached an NPC. The reply arrives
    *  via onNarrativeEvent, usually as a show_dialogue effect. */
   interactEntity(entityId: string, entityName: string): void {

@@ -158,6 +158,17 @@ export interface TileAnalysisMessage {
   }>;
 }
 
+/** El retoque de visión (blueprint_review) corrigió el map_svg de un tile:
+ *  persistirlo en el SceneRecord (el bridge es el único escritor del save).
+ *  También se envía SIN cambios tras un review aprobado, para estampar
+ *  `map_svg_reviewed` y que el resume no re-revise. Solo persistencia. */
+export interface MapSvgUpdateMessage {
+  type: "map_svg_update";
+  tx: number;
+  ty: number;
+  map_svg: string;
+}
+
 /** Alta ADITIVA de combatientes en el sim (enemigos de un tile nuevo). No
  *  resetea nada: los combatientes de otros tiles siguen vivos. */
 export interface AddCombatantsMessage {
@@ -211,6 +222,7 @@ export type ClientMessage =
   | PlayerCrossedFrontierMessage
   | RequestTileMessage
   | TileAnalysisMessage
+  | MapSvgUpdateMessage
   | AddCombatantsMessage
   | InteractEntityMessage;
 

@@ -942,6 +942,28 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.equal(narrative.getTile(1, 0)!.edges!.west.crossings[0]?.at, 41);
   });
 
+  it("map_svg_update persiste el SVG revisado; uno inválido se rechaza sin tocar el record", async () => {
+    const { ctx, narrative } = makeCtx();
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    const svg =
+      '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
+    await routeMessage({ type: "map_svg_update", tx: 0, ty: 0, map_svg: svg }, socket, ctx);
+    const rec = narrative.getTile(0, 0)!;
+    assert.equal(rec.scene_data.map_svg, svg);
+    assert.equal(rec.scene_data.map_svg_reviewed, true);
+    // Sin la capa #tall el sanitizador lo rechaza y el persistido no cambia.
+    await routeMessage(
+      { type: "map_svg_update", tx: 0, ty: 0, map_svg: svg.replace('<g id="tall"/>', "") },
+      socket,
+      ctx,
+    );
+    assert.equal(narrative.getTile(0, 0)!.scene_data.map_svg, svg);
+    // Tile no registrado: se ignora con warn, sin lanzar.
+    await routeMessage({ type: "map_svg_update", tx: 5, ty: 5, map_svg: svg }, socket, ctx);
+    assert.ok(!narrative.hasTile(5, 5));
+  });
+
   it("un tile que no continúa los cruces del vecino se rechaza (red server-side)", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) }, // sin camino

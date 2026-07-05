@@ -86,9 +86,12 @@ function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; err
       return { ok: false, error: '`fixes` must be an object' };
     }
     const f = o.fixes as Record<string, unknown>;
-    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves']);
+    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'map_svg']);
     for (const k of Object.keys(f)) {
       if (!allowed.has(k)) return { ok: false, error: `fixes.${k} is not a valid fix; allowed: ${[...allowed].sort().join(', ')}` };
+    }
+    if (f.map_svg !== undefined && (typeof f.map_svg !== 'string' || !f.map_svg.trim().startsWith('<svg'))) {
+      return { ok: false, error: 'fixes.map_svg must be the FULL corrected SVG document (a string starting with <svg)' };
     }
     if (f.terrain !== undefined && (!Array.isArray(f.terrain) || f.terrain.some((r) => typeof r !== 'string'))) {
       return { ok: false, error: 'fixes.terrain must be the FULL list of terrain row strings' };
@@ -806,6 +809,15 @@ BEFORE credits are spent. Look for:
 - a described element (in scene_description) missing from the map;
 - large empty regions that contradict the description.
 
+When the scene has "map_svg" (the blueprint image IS that SVG rasterised),
+also look for its typical authoring bugs:
+- z-order: a bridge/jetty INVISIBLE because it was drawn in #ground before
+  the water — it must live in the <g id="deck"> layer, painted over #water;
+- a building wall ring with no door gap, or furniture floating outside walls;
+- a roof (buildings must be open CUTAWAY: walls + visible interior);
+- an element that should reach the tile border (crossing continuation) but
+  stops short, or one touching the border that shouldn't.
+
 Respond via narrative_respond with EXACTLY this JSON:
 {
   "approved": true | false,
@@ -813,14 +825,15 @@ Respond via narrative_respond with EXACTLY this JSON:
   "fixes": {                    // optional — PARTIAL overrides, only what changes
     "terrain": ["<row>", ...],              // FULL grid replacement (all rows, exact cols)
     "terrain_features": [ ... ],            // FULL replacement list (same schema as the scene)
-    "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ]
+    "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ],
+    "map_svg": "<svg …>"                    // FULL corrected SVG document (same layer rules), map_svg scenes only
   }
 }
 - approved=true with no issues → the client proceeds to generation untouched.
 - approved=false SHOULD include "fixes" so the client can repair and re-render
   without another round-trip. Fixes replace whole fields: if you fix one terrain
-  row you must return ALL rows; same for terrain_features.
-- Do NOT return a full scene; only the three fix fields above are applied.`;
+  row you must return ALL rows; same for terrain_features and map_svg.
+- Do NOT return a full scene; only the four fix fields above are applied.`;
 
 async function main() {
   const bridge = await WsBridge.create();

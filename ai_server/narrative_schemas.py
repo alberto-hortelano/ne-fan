@@ -1493,7 +1493,7 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        allowed = {"terrain", "terrain_features", "entity_moves"}
+        allowed = {"terrain", "terrain_features", "entity_moves", "map_svg"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:
             raise ValueError(
@@ -1553,6 +1553,22 @@ def validate_blueprint_review(data: dict | None) -> dict:
                     )
                 clean_moves.append({"id": m["id"], "cell": [m["cell"][0], m["cell"][1]]})
             fixes["entity_moves"] = clean_moves
+
+        raw_svg = raw_fixes.get("map_svg")
+        if raw_svg is not None:
+            # Fail-loud (no descartar en silencio): un SVG corregido inválido
+            # debe volver como 422 para que el modelo lo re-emita bien. Solo
+            # aplica a tiles, cuyo viewBox es siempre 0 0 128 128.
+            svg = _sanitize_svg_field(
+                raw_svg, 128, 128,
+                max_bytes=32_000, required_layers=MAP_SVG_LAYERS, field="fixes.map_svg",
+            )
+            if svg is None:
+                raise ValueError(
+                    "blueprint_review fixes.map_svg is not a valid map_svg document "
+                    '(viewBox "0 0 128 128", layers ground/water/solid/tall, ≤32KB, shapes only)'
+                )
+            fixes["map_svg"] = svg
 
         if fixes:
             out["fixes"] = fixes

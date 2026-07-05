@@ -9,7 +9,8 @@ import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
-import type { RequestTileMessage, TileAnalysisMessage } from "../../src/protocol/messages.js";
+import type { MapSvgUpdateMessage, RequestTileMessage, TileAnalysisMessage } from "../../src/protocol/messages.js";
+import { sanitizeMapSvg } from "../../src/scene/map-svg.js";
 
 const EDGE_ES: Record<Edge, string> = {
   north: "norte",
@@ -210,6 +211,34 @@ export async function handleTileAnalysis(
   }
   await ctx.narrative.save();
   console.log(`tile_analysis (${tx}, ${ty}): ${msg.elements.length} elementos persistidos`);
+}
+
+/** El retoque de visión corrigió (o aprobó) el map_svg de un tile: persistirlo
+ *  en el SceneRecord — el bridge es el único escritor del save, y el resume
+ *  debe reproducir el blueprint corregido (mismo SVG ⇒ mismo hash de imagen).
+ *  Solo persistencia; el cliente ya lo aplicó en local. */
+export async function handleMapSvgUpdate(
+  msg: MapSvgUpdateMessage,
+  ctx: BridgeContext,
+): Promise<void> {
+  const { tx, ty } = msg;
+  if (!Number.isInteger(tx) || !Number.isInteger(ty)) {
+    console.error(`map_svg_update inválido: (${tx}, ${ty})`);
+    return;
+  }
+  const res = sanitizeMapSvg(msg.map_svg, TILE_CELLS, TILE_CELLS);
+  if (!res.ok) {
+    // Fail-loud: un SVG que el validador del ai_server aceptó no debería
+    // fallar aquí — sería una divergencia entre sanitizadores espejo.
+    console.error(`map_svg_update (${tx}, ${ty}) rechazado: ${res.error}`);
+    return;
+  }
+  if (!ctx.narrative.setTileMapSvg(tx, ty, res.svg)) {
+    console.warn(`map_svg_update para tile (${tx}, ${ty}) no registrado — ignorado`);
+    return;
+  }
+  await ctx.narrative.save();
+  console.log(`map_svg_update (${tx}, ${ty}): map_svg revisado persistido (${res.svg.length}B)`);
 }
 
 export async function handleRequestTile(
