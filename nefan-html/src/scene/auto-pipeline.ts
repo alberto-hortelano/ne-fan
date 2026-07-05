@@ -1,9 +1,11 @@
 /** Pipeline automático de imagen IA por tile: cuando está activado (toggle
- *  Auto-img del HUD), cada tile de grid sin imagen pasa por las dos fases
- *  imagen → análisis (G→X) en una cola FIFO con UN job en vuelo (Meshy en
- *  serie). El análisis deriva el mundo jugable de la imagen: occluders (tall)
- *  y colisión (solid), clasificados por visión. Convive con las teclas
- *  manuales G/X esperando a que el controller quede libre antes de cada fase.
+ *  Auto-img del HUD), cada tile de grid sin imagen pasa por las fases
+ *  revisión → imagen → análisis (R→G→X) en una cola FIFO con UN job en vuelo
+ *  (Meshy en serie). La revisión (solo tiles con map_svg sin revisar) deja a
+ *  Claude retocar el plano SVG rasterizado ANTES de gastar créditos; el
+ *  análisis deriva el mundo jugable de la imagen: occluders (tall) y colisión
+ *  (solid), clasificados por visión. Convive con las teclas manuales R/G/X
+ *  esperando a que el controller quede libre antes de cada fase.
  *
  *  Errores:
  *  - Red caída (ai_server no responde): UNA entrada en el ErrorLog, el tile
@@ -18,7 +20,7 @@
 import { errors } from "../ui/error-log.js";
 import type { TileAnalysis } from "./scene-image.js";
 
-export type PipelinePhase = "imagen" | "análisis";
+export type PipelinePhase = "revisión" | "imagen" | "análisis";
 
 export interface PipelineStatus {
   enabled: boolean;
@@ -32,6 +34,10 @@ export interface PipelineDeps {
   /** Tiles de grid registrados, en orden de llegada (bootstrap primero). */
   listGridTileKeys(): string[];
   isControllerBusy(): boolean;
+  /** Retoque de visión del blueprint SVG. No-op inmediato en tiles sin
+   *  map_svg o ya revisados; sin listener MCP falla (503) y se sigue sin
+   *  retoque. */
+  review(key: string): Promise<void>;
   generate(key: string): Promise<void>;
   analyze(key: string): Promise<TileAnalysis>;
   onAnalyzed(key: string, analysis: TileAnalysis): void;
@@ -168,6 +174,20 @@ export class AutoImagePipeline {
     while (this.enabled && this.queue.length > 0) {
       const key = this.queue.shift()!;
       if (this.deps.hasImage(key)) continue;
+
+      // FASE 0: revisión del blueprint SVG (retoque de Claude ANTES de gastar
+      // créditos). No crítica: error no-red → log y se genera sin retoque.
+      const reviewed = await this.runPhase(key, "revisión", () => this.deps.review(key));
+      if (!reviewed) {
+        // Pipeline apagado o red caída: el tile aún no tiene imagen —
+        // devolverlo a la cola para cuando se reanude.
+        if (this.enabled) this.enqueue(key);
+        continue;
+      }
+      // El retoque re-registra el tile (map_svg corregido) y eso marca dirty;
+      // esa invalidación precede a la captura de la imagen, así que no obliga
+      // a regenerar. Solo cuenta lo que cambie DURANTE la generación.
+      this.dirty.delete(key);
 
       // FASE 1: imagen (la única que gasta créditos; errores con matices)
       this.current = { key, phase: "imagen" };

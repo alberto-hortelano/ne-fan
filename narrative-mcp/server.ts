@@ -86,9 +86,12 @@ function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; err
       return { ok: false, error: '`fixes` must be an object' };
     }
     const f = o.fixes as Record<string, unknown>;
-    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves']);
+    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'map_svg']);
     for (const k of Object.keys(f)) {
       if (!allowed.has(k)) return { ok: false, error: `fixes.${k} is not a valid fix; allowed: ${[...allowed].sort().join(', ')}` };
+    }
+    if (f.map_svg !== undefined && (typeof f.map_svg !== 'string' || !f.map_svg.trim().startsWith('<svg'))) {
+      return { ok: false, error: 'fixes.map_svg must be the FULL corrected SVG document (a string starting with <svg)' };
     }
     if (f.terrain !== undefined && (!Array.isArray(f.terrain) || f.terrain.some((r) => typeof r !== 'string'))) {
       return { ok: false, error: 'fixes.terrain must be the FULL list of terrain row strings' };
@@ -182,6 +185,7 @@ Call narrative_respond with this JSON (Tile Format):
   "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP)
   "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
+  "map_svg": "<svg viewBox=\\"0 0 128 128\\">…</svg>",  // STRONGLY recommended — see MAP SVG below
   "ambient_event": "…"
 }
 
@@ -217,6 +221,56 @@ HARD RULES OF THE TILE:
   (see nearby_places, or one you just created with map_upsert_place), anchor
   it with its cell rect — its triggers fire when the player steps inside.
 
+MAP SVG — the painted blueprint of the tile (STRONGLY recommended):
+"map_svg" is a complete SVG plan of the tile. The client rasterises it as the
+layout blueprint the image model repaints AND derives the base collision map
+from its layers — this is where the tile stops being boxes and becomes a
+place, so invest your design effort here.
+
+Format (the server discards a map_svg that violates any of these):
+- viewBox EXACTLY "0 0 128 128" (units = cells), max 32 KB. Shape elements
+  only (path/rect/circle/ellipse/polygon/polyline/line + g/defs/symbol/use);
+  no <script>, no foreignObject, no href.
+- <g> layers in this exact order (paint order = z-order). ground, water,
+  solid, tall are REQUIRED (an empty <g id="water"/> is fine), deck is
+  optional:
+  <g id="ground">: everything walkable — a base fill covering the WHOLE tile
+    (biome colour), meadow-variation blobs, dirt roads, stone plazas, sandy
+    banks under the river, interior floors (wood).
+  <g id="water">: rivers, ponds, moats. NOT walkable. Draw rivers as a thick
+    stroked path following the SAME course as your water terrain_feature.
+  <g id="deck">: walkable surfaces OVER water: bridge planks, jetties,
+    stepping stones. (Collision punches these out of the water — a bridge in
+    #ground would be painted UNDER the river and disappear.)
+  <g id="solid">: what blocks walking — building WALLS as a stroked ring
+    (stroke-width ~1.4 cells, fill none) with GAPS for doors, tree TRUNKS
+    (small dots), boulders, fences, wells, furniture (bar counter, tables,
+    beds, barrels, forge, market stalls, carts).
+  <g id="tall">: what is taller than a character and draws OVER one standing
+    behind it — tree CANOPIES (circles above their trunk dots), awnings.
+    Trunk in #solid, canopy in #tall: collision and occlusion are different.
+- Put data-label="<Spanish noun>" on every meaningful shape in #solid/#tall
+  ("taberna", "roble", "pozo") — it guides the vision classifier later.
+
+Design doctrine (what makes the map GOOD):
+- CUTAWAY buildings, no roofs EVER: wall ring with door gaps, interior floor
+  in #ground, furniture in #solid. The player must see inside every building.
+- Roads first: lay the road/river network (continuing every crossing and
+  neighbour image_element), THEN snap buildings to the roads with a short
+  spur path to their door. A building nobody can reach is a bug.
+- Centerpiece → surroundings → filler: one anchor feature (plaza with a well,
+  a bridge, a shrine), support structures around it, then frame with
+  vegetation MASSES — clustered canopies leaving clearings and meadows, not
+  uniform scatter.
+- COHERENCE with the schema: the SVG draws the SAME world the JSON declares —
+  every terrain_feature follows its own points and reaches the border at its
+  at_edges cells; every structure/building entity keeps its footprint. The
+  SVG adds the detail the schema cannot express (interiors, curves, canopy
+  vs trunk), it never contradicts it.
+- NEVER: roofs; furniture floating outside walls; an element touching the
+  tile border unless it continues a crossing or image_element; water without
+  clearly drawn banks.
+
 EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
 is {type:"path", at:41}) and seeding an east exit:
 {
@@ -232,8 +286,12 @@ is {type:"path", at:41}) and seeding an east exit:
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
+  "map_svg": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><rect width=\\"128\\" height=\\"128\\" fill=\\"#3d5a2c\\"/><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#c2a86b\\" stroke-width=\\"4\\"/></g><g id=\\"water\\"/><g id=\\"solid\\"><ellipse cx=\\"81\\" cy=\\"31\\" rx=\\"1.5\\" ry=\\"1\\" fill=\\"#7f7f78\\" data-label=\\"roca\\"/><circle cx=\\"30\\" cy=\\"20\\" r=\\"0.5\\" fill=\\"#5a4632\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"0.5\\" fill=\\"#5a4632\\"/></g><g id=\\"tall\\"><circle cx=\\"30\\" cy=\\"20\\" r=\\"4.5\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"4\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/></g></svg>",
   "ambient_event": "Un cuervo grazna en lo alto de los pinos."
 }
+(a real forest tile draws its full tree masses in the SVG — dozens of
+trunk+canopy pairs clustered along the path and the tile edges; the example
+is abbreviated.)
 
 BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - FIRST lay down the initial world map with the map tools (map_upsert_place ×
@@ -649,6 +707,13 @@ element under that region:
 When unsure about solid, prefer false for open ground textures and true for
 anything that reads as a built structure or large plant.
 
+If context.expected_elements is present, it lists what the tile's authored
+plan (map_svg) declares — {label, solid, tall, bbox_px} — near-ground truth:
+a region overlapping a declared bbox almost certainly IS that element (reuse
+its Spanish label and lean towards its solid/tall). Do NOT mark a declared
+element as walkable ground. Regions with no declared match are things the
+image model ADDED — classify those on their own merits.
+
 Respond with narrative_respond, passing EXACTLY:
 { "segments": [ { "index": 0, "label": "roble", "solid": true, "tall": true }, ... ] }
 Every index from the overlay must appear exactly once. No extra fields.`;
@@ -751,6 +816,15 @@ BEFORE credits are spent. Look for:
 - a described element (in scene_description) missing from the map;
 - large empty regions that contradict the description.
 
+When the scene has "map_svg" (the blueprint image IS that SVG rasterised),
+also look for its typical authoring bugs:
+- z-order: a bridge/jetty INVISIBLE because it was drawn in #ground before
+  the water — it must live in the <g id="deck"> layer, painted over #water;
+- a building wall ring with no door gap, or furniture floating outside walls;
+- a roof (buildings must be open CUTAWAY: walls + visible interior);
+- an element that should reach the tile border (crossing continuation) but
+  stops short, or one touching the border that shouldn't.
+
 Respond via narrative_respond with EXACTLY this JSON:
 {
   "approved": true | false,
@@ -758,14 +832,15 @@ Respond via narrative_respond with EXACTLY this JSON:
   "fixes": {                    // optional — PARTIAL overrides, only what changes
     "terrain": ["<row>", ...],              // FULL grid replacement (all rows, exact cols)
     "terrain_features": [ ... ],            // FULL replacement list (same schema as the scene)
-    "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ]
+    "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ],
+    "map_svg": "<svg …>"                    // FULL corrected SVG document (same layer rules), map_svg scenes only
   }
 }
 - approved=true with no issues → the client proceeds to generation untouched.
 - approved=false SHOULD include "fixes" so the client can repair and re-render
   without another round-trip. Fixes replace whole fields: if you fix one terrain
-  row you must return ALL rows; same for terrain_features.
-- Do NOT return a full scene; only the three fix fields above are applied.`;
+  row you must return ALL rows; same for terrain_features and map_svg.
+- Do NOT return a full scene; only the four fix fields above are applied.`;
 
 async function main() {
   const bridge = await WsBridge.create();

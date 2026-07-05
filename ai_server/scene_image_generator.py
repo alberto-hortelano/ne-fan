@@ -81,21 +81,55 @@ class SceneImageGenerator:
         guidance: float = 6.0,    # unused
         controlnet_scale: float = 0.5,  # unused
         context_sides: list[str] | None = None,
+        blueprint_kind: str = "boxes",
     ) -> dict:
         sch = self._load_rgb(schematic_png_bytes)
-        instruction = (
-            "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "
-            "image as the LAYOUT blueprint. The background colour zones are ground "
-            "types — blue = water/river, brown strip = a bridge, tan = path/road, "
-            "grey = stone/paving, green = grass. Curved coloured lines are real "
-            "watercourses and roads: follow their exact course and width. The "
-            "coloured shapes mark objects and hint their form: rectangles = "
-            "buildings/walls/crates, circles = round things (barrels, wells, round "
-            "towers, fountains), triangles = tents/spires. Keep every element in "
-            "the SAME position, size and shape. Avoid large flat single-colour "
-            "areas; add natural ground variation and texture everywhere. "
-            f"Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
-        )
+        if blueprint_kind == "svg":
+            # Blueprint map_svg: plano vectorial rico. Dos diales validados
+            # empíricamente (experimento svg_test): la FIDELIDAD al plano viene
+            # sola; el REPINTADO total hay que exigirlo o el modelo devuelve el
+            # vector casi tal cual. Convención cutaway: sin techos, interiores
+            # visibles. Specs negativas contra las invenciones observadas.
+            instruction = (
+                "Top-down 2D RPG game map, flat overhead view. The FIRST reference "
+                "image is ONLY a schematic LAYOUT plan drawn with flat placeholder "
+                "colours — it is NOT final art. Fully REPAINT the whole map in the "
+                "painterly, richly textured style of the SECOND reference image: "
+                "dense textured grass with tufts and colour variation, detailed "
+                "tree canopies with individual foliage clumps, highlights and drop "
+                "shadows, water with ripples, depth and high-contrast banks, worn "
+                "dirt roads with edges blending into grass, individually drawn "
+                "cobblestones, wooden floors with plank grain. The finished map "
+                "must NOT look flat, vector-like or diagram-like anywhere. "
+                "The plan legend: green = grass (two tones = meadow variation), "
+                "dark green circles = individual tree canopies, blue = water with "
+                "banks, tan = dirt roads and paths, grey = stone paving, "
+                "dark-brown outlines = building WALLS seen from above, lighter "
+                "areas inside the walls = interior floors. Buildings are drawn in "
+                "CUTAWAY view: they have NO roofs — render them open-roofed with "
+                "their walls and interiors fully visible exactly as drawn "
+                "(furniture, floors, door gaps in the wall outlines). Keep every "
+                "element in the SAME position, size and shape; follow the EXACT "
+                "course and width of the water and of every road; keep bridges "
+                "and walkways painted ON TOP of the water. Do NOT add roofs. "
+                "Do NOT move, remove or merge buildings. Do NOT invent new "
+                "buildings, walls, bridges or watercourses that are not in the "
+                f"blueprint. Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
+            )
+        else:
+            instruction = (
+                "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "
+                "image as the LAYOUT blueprint. The background colour zones are ground "
+                "types — blue = water/river, brown strip = a bridge, tan = path/road, "
+                "grey = stone/paving, green = grass. Curved coloured lines are real "
+                "watercourses and roads: follow their exact course and width. The "
+                "coloured shapes mark objects and hint their form: rectangles = "
+                "buildings/walls/crates, circles = round things (barrels, wells, round "
+                "towers, fountains), triangles = tents/spires. Keep every element in "
+                "the SAME position, size and shape. Avoid large flat single-colour "
+                "areas; add natural ground variation and texture everywhere. "
+                f"Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
+            )
         if context_sides:
             edges = ", ".join(context_sides)
             instruction += (
@@ -112,7 +146,7 @@ class SceneImageGenerator:
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(
-            f"SceneImageGen.full: '{prompt[:40]}' {w}x{h} "
+            f"SceneImageGen.full[{blueprint_kind}]: '{prompt[:40]}' {w}x{h} "
             f"{res.get('consumed_credits')}cr -> {dt:.1f}s",
             flush=True,
         )

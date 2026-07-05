@@ -115,6 +115,32 @@ function edgePoint(edge, at) {
 }
 const OPP = { west: "east", east: "west", north: "south", south: "north" };
 
+/** map_svg del bootstrap: taberna CUTAWAY (anillo de muro con puerta sur),
+ *  camino que copia la feature, estanque al oeste y — a propósito — la capa
+ *  #deck VACÍA: el mock de /review_scene_blueprint devuelve el fix que añade
+ *  el embarcadero sobre el agua, para ejercitar el retoque E2E (aplicar +
+ *  persistir + perforar la colisión del agua). */
+const BOOTSTRAP_MAP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">' +
+  '<g id="ground">' +
+  '<rect width="128" height="128" fill="#4a6b32"/>' +
+  '<path d="M64,64 L64,90 C80,96 110,98 128,100" fill="none" stroke="#c2a86b" stroke-width="4"/>' +
+  '<rect x="53.4" y="49.4" width="21.2" height="13.9" fill="#a67c4e"/>' +
+  "</g>" +
+  '<g id="water"><ellipse cx="30" cy="90" rx="9" ry="5.5" fill="#4d7fa8" data-label="estanque"/></g>' +
+  '<g id="deck"/>' +
+  '<g id="solid">' +
+  '<path d="M 63,63.3 L 53.4,63.3 L 53.4,49.4 L 74.6,49.4 L 74.6,63.3 L 65,63.3" fill="none" stroke="#5f4630" stroke-width="1.4" data-label="taberna"/>' +
+  '<rect x="55" y="51" width="6" height="1.5" fill="#7c5a33" data-label="mostrador"/>' +
+  '<circle cx="20" cy="20" r="1.2" fill="#5a4632"/>' +
+  '<circle cx="100" cy="40" r="1.2" fill="#5a4632"/>' +
+  "</g>" +
+  '<g id="tall">' +
+  '<circle cx="20" cy="20" r="5" fill="#2c4a22" data-label="pino"/>' +
+  '<circle cx="100" cy="40" r="4.5" fill="#2c4a22" data-label="pino"/>' +
+  "</g>" +
+  "</svg>";
+
 /** Tile de bootstrap (0,0): la taberna estampada en el plano + camino al este. */
 function bootstrapTile() {
   return {
@@ -135,6 +161,7 @@ function bootstrapTile() {
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
     ],
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
+    map_svg: BOOTSTRAP_MAP_SVG,
     ambient_event: "El fuego crepita dentro.",
   };
 }
@@ -325,6 +352,34 @@ const server = http.createServer((req, res) => {
           `${body.context_sides?.length ? `, contexto: ${body.context_sides.join("+")}` : ""})`,
         );
         return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
+      }
+      // Retoque falso del blueprint SVG: si el map_svg trae la capa #deck
+      // vacía (el bug plantado en BOOTSTRAP_MAP_SVG), el fix añade el
+      // embarcadero sobre el estanque; si no, se aprueba. Ejercita la fase
+      // "revisión" completa: aplicar, perforar el agua y persistir al bridge.
+      if (req.method === "POST" && req.url === "/review_scene_blueprint") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const svg = body.scene?.map_svg;
+        if (typeof svg === "string" && svg.includes('<g id="deck"/>')) {
+          console.error("[fake-ai] review: deck vacío → fix con embarcadero");
+          return send(200, {
+            approved: false,
+            issues: ["el embarcadero no está dibujado sobre el estanque (capa deck vacía)"],
+            fixes: {
+              map_svg: svg.replace(
+                '<g id="deck"/>',
+                '<g id="deck"><rect x="36" y="87.5" width="7" height="3" fill="#8a6238" data-label="embarcadero"/></g>',
+              ),
+            },
+          });
+        }
+        console.error("[fake-ai] review: aprobado");
+        return send(200, { approved: true, issues: [] });
       }
       // Análisis falso (mundo derivado de imagen): 3 segmentos fijos con
       // sprites de color plano (1×1 estirado por el cliente): árbol

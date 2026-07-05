@@ -31,6 +31,12 @@ export class WsBridge {
   // calling narrative_listen? Used to fail-fast on unattended requests.
   private mcpEverConnected = false;
   private lastListenAt = 0;
+  // Petición entregada a narrative_listen y aún sin narrative_respond: el
+  // listener está OCUPADO generándola (un tile con map_svg puede llevar
+  // minutos), no ausente. Sin esto, una petición que llegue justo tras un
+  // respond tardío (p. ej. el blueprint_review que el cliente dispara al
+  // recibir el tile) se rechazaba como "idle" con la sesión viva.
+  private inFlightSince = 0;
 
   // Pending responses: Claude responds, Python receives
   private pendingResponses = new Map<string, PendingResponse>();
@@ -184,12 +190,22 @@ export class WsBridge {
   }
 
   /** True if a Claude Code MCP client is currently waiting on narrative_listen
-   * (waiter set) OR has called it within the last 60 seconds. */
+   * (waiter set), is BUSY generating a delivered request (in-flight, con tope
+   * de 10 min por si el modelo murió sin responder), or has listened/responded
+   * within the last 60 seconds. */
   private isListenerActive(): boolean {
     if (this.requestWaiter !== null) return true;
     if (!this.mcpEverConnected) return false;
+    if (this.inFlightSince > 0 && Date.now() - this.inFlightSince < 600_000) return true;
     const sinceLast = Date.now() - this.lastListenAt;
     return sinceLast < 60_000;
+  }
+
+  /** Un narrative_respond acaba de llegar: el listener está vivo y va a
+   *  re-escuchar en segundos — refrescar actividad y cerrar el in-flight. */
+  private markResponded(): void {
+    this.inFlightSince = 0;
+    this.lastListenAt = Date.now();
   }
 
   private sendNoListenerError(msg: RequestMsg): void {
@@ -254,11 +270,15 @@ export class WsBridge {
     this.lastListenAt = Date.now();
 
     const queued = this.requestQueue.shift();
-    if (queued !== undefined) return Promise.resolve(queued);
+    if (queued !== undefined) {
+      this.inFlightSince = Date.now();
+      return Promise.resolve(queued);
+    }
 
     return new Promise((resolve, reject) => {
       this.requestWaiter = (msg: RequestMsg) => {
         this.lastListenAt = Date.now();
+        this.inFlightSince = Date.now();
         resolve(msg);
       };
       this.requestRejecter = reject;
@@ -272,6 +292,7 @@ export class WsBridge {
       return;
     }
 
+    this.markResponded();
     this.client.send(JSON.stringify({
       type: 'room_response',
       request_id: requestId,
@@ -286,6 +307,7 @@ export class WsBridge {
       return;
     }
 
+    this.markResponded();
     this.client.send(JSON.stringify({
       type: 'vision_response',
       request_id: requestId,
@@ -300,6 +322,7 @@ export class WsBridge {
       return;
     }
 
+    this.markResponded();
     this.client.send(JSON.stringify({
       type: 'blueprint_review_response',
       request_id: requestId,
@@ -314,6 +337,7 @@ export class WsBridge {
       return;
     }
 
+    this.markResponded();
     this.client.send(JSON.stringify({
       type: 'narrative_event_response',
       request_id: requestId,
@@ -329,6 +353,7 @@ export class WsBridge {
     }
     this.requestWaiter = null;
     this.requestRejecter = null;
+    this.inFlightSince = 0;
     this.client = null;
     if (this.wss) {
       for (const ws of this.wss.clients) ws.close();

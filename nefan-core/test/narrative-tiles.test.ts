@@ -169,6 +169,24 @@ describe("NarrativeState — análisis de imagen por tile (mundo derivado)", () 
     assert.equal(s2.getTile(0, 0)!.analysis!.elements[0].label, "muralla");
   });
 
+  it("setTileMapSvg persiste el SVG revisado + map_svg_reviewed y sobrevive a save/load", async () => {
+    const storage = new MemorySessionStorage();
+    const s = new NarrativeState(storage);
+    s.startNewSession("plugtest");
+    const sessionId = s.session_id;
+    s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
+    const svg = '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
+    assert.ok(s.setTileMapSvg(0, 0, svg));
+    assert.ok(!s.setTileMapSvg(9, 9, svg), "tile inexistente → false");
+    await s.save();
+
+    const s2 = new NarrativeState(storage);
+    assert.ok(await s2.loadSession(sessionId));
+    const rec = s2.getTile(0, 0)!;
+    assert.equal(rec.scene_data.map_svg, svg);
+    assert.equal(rec.scene_data.map_svg_reviewed, true);
+  });
+
   it("serializeForLlm resume el análisis del tile ACTIVO como scene_analysis", () => {
     const s = new NarrativeState(new MemorySessionStorage());
     s.startNewSession("plugtest");

@@ -386,10 +386,15 @@ class SceneImageRequest(BaseModel):
 
     `context_sides`: edges of the capture whose outermost strip is REAL,
     already-painted art from an adjacent tile (not schematic). The model is
-    instructed to reproduce those strips and continue them seamlessly."""
+    instructed to reproduce those strips and continue them seamlessly.
+
+    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes)
+    or "svg" (rich map_svg blueprint: the instruction asks for a full painterly
+    REPAINT with cutaway buildings instead of the box legend)."""
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
+    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
     strength: float = 0.85
     seed: int = -1
     # Tuning knobs (dev). guidance ~6 for SDXL. controlnet_scale holds the
@@ -751,6 +756,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         "model": scene_image_gen._model,
         "sides": "+".join(sorted(body.context_sides)),
     }
+    # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
+    # no debe servir una imagen cacheada bajo la instrucción antigua. "boxes"
+    # se omite (como sides vacío) para no invalidar la caché preexistente.
+    if body.blueprint_kind != "boxes":
+        context["blueprint"] = body.blueprint_kind
     key = scene_cache.hash_key(body.prompt, context)
 
     if scene_cache.has(body.prompt, "scene", context):
@@ -765,6 +775,7 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         result = await asyncio.to_thread(
             scene_image_gen.generate_full, png, body.prompt, body.strength,
             body.seed, body.guidance, body.controlnet_scale, body.context_sides,
+            body.blueprint_kind,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e

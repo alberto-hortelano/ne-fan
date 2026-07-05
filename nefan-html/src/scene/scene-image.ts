@@ -25,6 +25,7 @@ import {
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
 import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
+import { expectedElementsFromSvg, type ExpectedElement } from "./svg-collision.js";
 
 /** Un segmento jugable devuelto por /analyze_scene_image. */
 interface AnalyzedSegment {
@@ -75,6 +76,8 @@ export interface BlueprintReview {
     terrain?: string[];
     terrain_features?: Record<string, unknown>[];
     entity_moves?: { id: string; cell: [number, number] }[];
+    /** Documento map_svg COMPLETO corregido (retoque del blueprint SVG). */
+    map_svg?: string;
   };
 }
 
@@ -112,6 +115,20 @@ export class SceneImageController {
       img.onerror = () => reject(new Error(`failed to load scene image ${url}`));
       img.src = url;
     });
+  }
+
+  /** Espera (≤3 s) a que el map_svg del tile esté rasterizado antes de
+   *  capturar el blueprint: la decodificación es async y capturar antes daría
+   *  el fallback de grid+cajas en vez del plano SVG. Timeout → warn y seguir. */
+  private async waitForMapSvg(key: string): Promise<void> {
+    const deadline = performance.now() + 3_000;
+    while (!this.renderer.tileMapSvgReady(key)) {
+      if (performance.now() > deadline) {
+        errors.push("scene", `map_svg de ${key} no rasterizó a tiempo; blueprint sin plano SVG`);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   /** Compute pixels-per-metre so the longest side ≈ CAPTURE_LONG_SIDE. */
@@ -201,13 +218,23 @@ export class SceneImageController {
     this.busy = true;
     try {
       const prompt = this.buildPrompt(scene as unknown as SceneSummary);
+      // Con map_svg el blueprint es el plano vectorial rico: el servidor usa
+      // la instrucción de REPINTADO total (capas, cutaway) en vez de la de
+      // cajas de colores. Esperar a su raster para no capturar el fallback.
+      const blueprintKind = (scene as { map_svg?: string }).map_svg ? "svg" : "boxes";
+      if (blueprintKind === "svg") await this.waitForMapSvg(key);
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, rect);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
       const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: dataUrl, prompt, context_sides: contextSides }),
+        body: JSON.stringify({
+          image_b64: dataUrl,
+          prompt,
+          context_sides: contextSides,
+          blueprint_kind: blueprintKind,
+        }),
       });
       if (!res.ok) {
         throw new Error(`/generate_scene_image HTTP ${res.status}`);
@@ -237,13 +264,19 @@ export class SceneImageController {
    *  revise contra la escena Format D. No toca nada: devuelve el veredicto y
    *  el caller decide si aplica los fixes. Requiere terminal de Claude Code
    *  escuchando en el bridge (si no, el servidor responde 503 y aquí se
-   *  reporta al ErrorLog). */
-  async reviewBlueprint(scene: Record<string, unknown>, rect: SceneBounds): Promise<BlueprintReview> {
+   *  reporta al ErrorLog). `tileKey` (si la escena tiene map_svg) espera a que
+   *  el plano SVG esté rasterizado antes de capturar. */
+  async reviewBlueprint(
+    scene: Record<string, unknown>,
+    rect: SceneBounds,
+    tileKey?: string,
+  ): Promise<BlueprintReview> {
     if (this.busy) {
       throw new Error("scene-image controller busy");
     }
     this.busy = true;
     try {
+      if (tileKey && typeof scene.map_svg === "string") await this.waitForMapSvg(tileKey);
       const dataUrl = this.renderer.captureSchematic(rect, this.ppmFor(rect));
       const sceneId = (scene.scene_id as string) || "unknown";
       const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
@@ -315,8 +348,21 @@ export class SceneImageController {
     const spanX = b.maxX - b.minX;
     const spanZ = b.maxZ - b.minZ;
     try {
-      const scene = this.renderer.getTileScene(key) as SceneSummary | null;
+      const scene = this.renderer.getTileScene(key) as
+        | (SceneSummary & { map_svg?: string })
+        | null;
       const dataUrl = this.imageToDataUrl(img);
+      // Análisis guiado por el plano: los elementos que el map_svg declara
+      // (label + bbox en píxeles de la imagen) orientan al clasificador —
+      // etiqueta mejor y no marca suelo lo declarado. Fallo → sin guía.
+      let expected: ExpectedElement[] | undefined;
+      if (scene?.map_svg) {
+        try {
+          expected = expectedElementsFromSvg(scene.map_svg, img.naturalWidth, img.naturalHeight);
+        } catch (err) {
+          errors.push("scene", `expected_elements de ${key} falló; análisis sin guía del plano`, err);
+        }
+      }
       const res = await fetch(`${this.baseUrl}/analyze_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -325,6 +371,7 @@ export class SceneImageController {
           context: {
             scene_description: scene?.scene_description ?? scene?.room_description ?? "",
             zone_type: scene?.zone_type ?? "",
+            ...(expected?.length ? { expected_elements: expected } : {}),
           },
         }),
       });

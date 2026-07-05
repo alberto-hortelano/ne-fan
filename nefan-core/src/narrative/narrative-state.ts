@@ -120,6 +120,19 @@ export class NarrativeState {
     return true;
   }
 
+  /** Persiste el map_svg de un tile tras el retoque de visión (o lo estampa
+   *  como revisado sin cambios). El SVG llega ya sanitizado por el handler.
+   *  Devuelve false si el tile no existe. */
+  setTileMapSvg(tx: number, ty: number, mapSvg: string): boolean {
+    const rec = this.getTile(tx, ty);
+    if (!rec) return false;
+    rec.scene_data.map_svg = mapSvg;
+    // Marca de revisado: el pipeline del cliente no re-revisa en resume.
+    rec.scene_data.map_svg_reviewed = true;
+    this.dirty = true;
+    return true;
+  }
+
   /** Activa el tile (tx,ty) como escena actual (el jugador ha entrado en él
    *  por posición). No re-registra NPCs. Devuelve false si no existe. */
   setActiveTile(tx: number, ty: number): boolean {

@@ -267,7 +267,9 @@ swamp>, "terrain_patches" (optional ASCII stamps {at:[col,row], rows:[...]}),
 "terrain_features" (edge-to-edge, each with "at_edges": [{edge, at}]),
 "structures", "vegetation_zones" (area may be "rest" = everything still bare
 biome), "entities" (cells 0..127, NO "player" unless bootstrap),
-"place_anchors" [{place_id, rect}], "ambient_event" }. NEVER write "size" or
+"place_anchors" [{place_id, rect}], "map_svg" (recommended: full SVG blueprint
+of the tile, viewBox "0 0 128 128", layers g#ground/#water/#deck/#solid/#tall,
+cutaway buildings without roofs), "ambient_event" }. NEVER write "size" or
 a full "terrain[]" — the biome fill + primitives generate the grid. SEAMS:
 every crossing listed in neighbors.<edge> (mirrored "at") MUST be continued
 by a feature with matching at_edges (±2 cells); the player enters walking
@@ -432,6 +434,17 @@ GENERATE_SCENE_TOOL = {
                     "cannot express the shape."
                 ),
             },
+            "map_svg": {
+                "type": "string",
+                "description": (
+                    "Tiles only, strongly recommended. Complete SVG blueprint of the "
+                    'tile: viewBox EXACTLY "0 0 128 128", max 32KB, shape elements '
+                    "only, with the layers <g id=\"ground\">, <g id=\"water\">, "
+                    "optional <g id=\"deck\"> (walkable over water: bridges, jetties), "
+                    "<g id=\"solid\">, <g id=\"tall\"> in that paint order. See the "
+                    "MAP SVG section of the system prompt."
+                ),
+            },
             "structures": {
                 "type": "array",
                 "description": (
@@ -581,6 +594,69 @@ RESERVED_TERRAIN = {
 }
 
 VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
+
+# Capas obligatorias del blueprint SVG (map_svg). Espejo de MAP_SVG_LAYERS en
+# nefan-core/src/scene/map-svg.ts.
+MAP_SVG_LAYERS = ("ground", "water", "solid", "tall")
+
+
+def _sanitize_svg_field(
+    svg,
+    cols: int,
+    rows: int,
+    *,
+    max_bytes: int,
+    required_layers: tuple = (),
+    field: str,
+):
+    """Valida un documento SVG de capa de escena (terrain_svg / map_svg).
+
+    Devuelve el SVG limpio o None con traza del motivo. Solo formas puras:
+    rechaza script/foreignObject/href, exige viewBox exacto "0 0 cols rows"
+    y, si se piden, las capas <g id="..."> obligatorias.
+    """
+    if not isinstance(svg, str) or not svg.strip():
+        return None
+    svg = svg.strip()
+    reason = None
+    if len(svg.encode("utf-8")) > max_bytes:
+        reason = f"supera {max_bytes // 1000}KB"
+    elif not svg.startswith("<svg"):
+        reason = "no empieza por <svg"
+    else:
+        low = svg.lower()
+        if "<script" in low or "foreignobject" in low or "href=" in low:
+            reason = "contiene script/foreignObject/href"
+        else:
+            import re as _re
+
+            vb = _re.search(r'viewBox\s*=\s*"([\d.\s-]+)"', svg)
+            parts = vb.group(1).split() if vb else []
+            ok = (
+                len(parts) == 4
+                and float(parts[0]) == 0
+                and float(parts[1]) == 0
+                and abs(float(parts[2]) - cols) < 0.01
+                and abs(float(parts[3]) - rows) < 0.01
+            )
+            if not ok:
+                reason = f'viewBox debe ser "0 0 {cols} {rows}"'
+            else:
+                missing = [
+                    layer
+                    for layer in required_layers
+                    if f'id="{layer}"' not in svg and f"id='{layer}'" not in svg
+                ]
+                if missing:
+                    reason = f"faltan capas obligatorias: {', '.join(missing)}"
+    if reason:
+        print(f"validate_scene_response: {field} descartado ({reason})", flush=True)
+        return None
+    # Sin xmlns el navegador no rasteriza el SVG (Blob→Image). Los LLM lo
+    # omiten a menudo: inyectarlo (espejo de sanitizeMapSvg en nefan-core).
+    if "xmlns=" not in svg:
+        svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
+    return svg
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -777,39 +853,28 @@ def validate_scene_response(data: dict) -> dict:
     # ── Terrain SVG (capa opcional avanzada) ─────────────────────────────
     # Solo formas puras: se descarta (con traza) si excede 20 KB, si el viewBox
     # no casa con el size, o si contiene script/foreignObject/href.
-    svg = data.get("terrain_svg")
-    if isinstance(svg, str) and svg.strip():
-        svg = svg.strip()
-        reason = None
-        if len(svg.encode("utf-8")) > 20_000:
-            reason = "supera 20KB"
-        elif not svg.startswith("<svg"):
-            reason = "no empieza por <svg"
-        else:
-            low = svg.lower()
-            if "<script" in low or "foreignobject" in low or "href=" in low:
-                reason = "contiene script/foreignObject/href"
-            else:
-                import re as _re
-
-                vb = _re.search(r'viewBox\s*=\s*"([\d.\s-]+)"', svg)
-                parts = vb.group(1).split() if vb else []
-                ok = (
-                    len(parts) == 4
-                    and float(parts[0]) == 0
-                    and float(parts[1]) == 0
-                    and abs(float(parts[2]) - cols) < 0.01
-                    and abs(float(parts[3]) - rows) < 0.01
-                )
-                if not ok:
-                    reason = f'viewBox debe ser "0 0 {cols} {rows}"'
-        if reason:
-            print(f"validate_scene_response: terrain_svg descartado ({reason})", flush=True)
-            data.pop("terrain_svg", None)
-        else:
-            data["terrain_svg"] = svg
+    svg = _sanitize_svg_field(data.get("terrain_svg"), cols, rows, max_bytes=20_000, field="terrain_svg")
+    if svg:
+        data["terrain_svg"] = svg
     else:
         data.pop("terrain_svg", None)
+
+    # ── Map SVG (blueprint del tile por capas semánticas) ────────────────
+    # Espejo de sanitizeMapSvg en nefan-core/src/scene/map-svg.ts: mismo
+    # criterio en ambos lados o un SVG aceptado aquí lo rechazaría el bridge
+    # al persistir el retoque. Exige las 4 capas g#ground/#water/#solid/#tall.
+    svg = _sanitize_svg_field(
+        data.get("map_svg"),
+        cols,
+        rows,
+        max_bytes=32_000,
+        required_layers=MAP_SVG_LAYERS,
+        field="map_svg",
+    )
+    if svg:
+        data["map_svg"] = svg
+    else:
+        data.pop("map_svg", None)
 
     # ── Entities ─────────────────────────────────────────────────────────
     raw_entities = data.get("entities")
@@ -1432,7 +1497,7 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        allowed = {"terrain", "terrain_features", "entity_moves"}
+        allowed = {"terrain", "terrain_features", "entity_moves", "map_svg"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:
             raise ValueError(
@@ -1492,6 +1557,22 @@ def validate_blueprint_review(data: dict | None) -> dict:
                     )
                 clean_moves.append({"id": m["id"], "cell": [m["cell"][0], m["cell"][1]]})
             fixes["entity_moves"] = clean_moves
+
+        raw_svg = raw_fixes.get("map_svg")
+        if raw_svg is not None:
+            # Fail-loud (no descartar en silencio): un SVG corregido inválido
+            # debe volver como 422 para que el modelo lo re-emita bien. Solo
+            # aplica a tiles, cuyo viewBox es siempre 0 0 128 128.
+            svg = _sanitize_svg_field(
+                raw_svg, 128, 128,
+                max_bytes=32_000, required_layers=MAP_SVG_LAYERS, field="fixes.map_svg",
+            )
+            if svg is None:
+                raise ValueError(
+                    "blueprint_review fixes.map_svg is not a valid map_svg document "
+                    '(viewBox "0 0 128 128", layers ground/water/solid/tall, ≤32KB, shapes only)'
+                )
+            fixes["map_svg"] = svg
 
         if fixes:
             out["fixes"] = fixes

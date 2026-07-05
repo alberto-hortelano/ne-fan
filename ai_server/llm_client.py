@@ -265,7 +265,9 @@ class LLMClient:
         try:
             response = self.api_client.messages.create(  # type: ignore
                 model=self.model,
-                max_tokens=4096,
+                # 16k: un tile con map_svg (blueprint SVG de ~10 KB) + JSON no
+                # cabe en 4096. El camino MCP no pasa por aquí.
+                max_tokens=16384,
                 system=GENERATE_SCENE_SYSTEM_PROMPT,
                 tools=[GENERATE_SCENE_TOOL],
                 tool_choice={"type": "tool", "name": "generate_scene"},
@@ -546,13 +548,23 @@ class LLMClient:
             return None
 
         regions_json = json.dumps(context.get("regions", []))
+        header = (
+            f"Candidate regions (index + pixel bbox [x, y, w, h]):\n{regions_json}\n\n"
+            "The first image is the original scene; the second has the regions "
+            "outlined and numbered. Classify EVERY index via the classify_scene tool."
+        )
+        expected = context.get("expected_elements")
+        if expected:
+            header += (
+                "\n\nThe tile's authored plan declares these elements "
+                "({label, solid, tall, bbox_px}) — near-ground truth: a region "
+                "overlapping a declared bbox almost certainly IS that element "
+                "(reuse its label, lean towards its solid/tall; never mark it "
+                f"walkable ground):\n{json.dumps(expected)}"
+            )
         content: list = [{
             "type": "text",
-            "text": (
-                f"Candidate regions (index + pixel bbox [x, y, w, h]):\n{regions_json}\n\n"
-                "The first image is the original scene; the second has the regions "
-                "outlined and numbered. Classify EVERY index via the classify_scene tool."
-            ),
+            "text": header,
         }]
         for img in images:
             data_b64 = img.get("data_b64") if isinstance(img, dict) else None
