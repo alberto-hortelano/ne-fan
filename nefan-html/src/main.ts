@@ -123,9 +123,9 @@ const renderer = new CanvasRenderer(canvas, {
   assetCache,
   worldAngle: WORLD_ANGLE,
 });
-// Generación IA del fondo de escena (img2img desde el esquema del canvas +
-// outpainting). Disparada manualmente con G/O en dev. Puramente visual: no
-// toca colisiones ni SceneData.
+// Generación IA del fondo de escena (img2img desde el blueprint del tile).
+// Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
+// visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
 // Sprite sheets are loaded on demand from setPlayerAppearance once the
 // session starts. No pre-load: if the player ends up needing them, that
@@ -922,12 +922,6 @@ function gameLoop(now: number): void {
   // a ErrorLog; el .catch evita unhandled rejection.
   if (input.consumeGenerateScene()) {
     if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
-  }
-  if (input.consumeOutpaintScene()) {
-    errors.push(
-      "scene",
-      "O (outpaint) está deshabilitada en el mundo de tiles — usa Auto-img o G por tile",
-    );
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
   // auto-segmentación + clasificación por visión → occluders (tall) y

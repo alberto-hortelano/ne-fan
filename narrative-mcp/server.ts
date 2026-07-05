@@ -445,6 +445,8 @@ express the shape): "terrain_svg" is an SVG string of pure shapes drawn over the
 terrain, under the entities. viewBox EXACTLY "0 0 <cols> <rows>" (units = cells),
 max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line) — no
 <script>, no foreignObject, no href. Most scenes need no SVG at all.
+TILES: do NOT use terrain_svg — the tile's "map_svg" (full layered blueprint,
+see MAP SVG in the tile section) supersedes it entirely.
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need
