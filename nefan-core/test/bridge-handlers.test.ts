@@ -912,7 +912,7 @@ describe("bridge request_tile (plano continuo)", () => {
   });
 
   it("miss: genera con contexto de costuras y el prefetch NO roba la escena activa", async () => {
-    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+    const { ctx, broadcasts, narrative } = makeCtx({
       ai: {
         generateScene: async (llmCtx) => {
           const gt = llmCtx.generate_tile!;
@@ -960,7 +960,7 @@ describe("bridge request_tile (plano continuo)", () => {
   });
 
   it("player_crossed_frontier delega en el pipeline de tiles cuando el activo es un tile", async () => {
-    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+    const { ctx, narrative, aiCalls } = makeCtx({
       ai: {
         generateScene: async (llmCtx) => {
           assert.ok(llmCtx.generate_tile, "usa generate_tile, no frontier_request");
