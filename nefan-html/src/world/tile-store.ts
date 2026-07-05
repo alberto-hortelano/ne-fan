@@ -34,6 +34,13 @@ export interface TileClientState {
    *  esquema en este tile dejan de bloquear. */
   imageCollider: TerrainCollider | null;
   imageAnalyzed: boolean;
+  /** Colisión base derivada del map_svg (capas #water+#solid, perforadas por
+   *  #deck). Disponible en cuanto llega el tile — antes de imagen y análisis.
+   *  Se UNE al resto de colliders. Con `svgApplied`, los AABBs del esquema
+   *  dejan de bloquear (el SVG ya dibuja esos edificios con muros y puertas);
+   *  si la derivación falla, el flag queda a false y los AABBs siguen. */
+  svgCollider: TerrainCollider | null;
+  svgApplied: boolean;
 }
 
 export class TileStore {
@@ -75,6 +82,16 @@ export class TileStore {
     if (!entry) throw new Error(`TileStore.markAnalyzed: tile ${key} no registrado`);
     entry.imageCollider = collider;
     entry.imageAnalyzed = true;
+  }
+
+  /** Instala la colisión base derivada del map_svg del tile (null = svg sin
+   *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
+   *  Fail-loud si la clave no existe: se deriva justo tras registrar el tile. */
+  setSvgCollider(key: string, collider: TerrainCollider | null): void {
+    const entry = this.entries.get(key);
+    if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);
+    entry.svgCollider = collider;
+    entry.svgApplied = true;
   }
 
   /** Solo para resetWorld (arranque/resume/fixtures). */

@@ -43,6 +43,11 @@ export interface SceneData {
    *  que terrain_features; ai_server la sanea (sin script/foreignObject/href).
    *  Se rasteriza async al cargar la escena y se compone en el schematic. */
   terrain_svg?: string;
+  /** Blueprint SVG completo del tile por capas semánticas (g#ground/#water/
+   *  #deck?/#solid/#tall). Sustituye al pintado grid+features+cajas en el
+   *  schematic y en la capa viva; la colisión base se deriva de sus capas
+   *  (svg-collision.ts). Sanitizado río arriba (ai_server / bridge). */
+  map_svg?: string;
   objects: {
     id: string;
     position: number[];
@@ -92,11 +97,19 @@ interface RendererTile {
   /** Imagen IA (img2img) del tile, si se generó. */
   sceneImage: HTMLImageElement | null;
   svgImage: HTMLImageElement | null;
+  /** Blueprint SVG (map_svg) rasterizado: cuando existe, ES el dibujo del
+   *  tile — el schematic y la capa viva lo pintan en vez de grid+features+
+   *  cajas de objetos. */
+  mapSvgImage: HTMLImageElement | null;
   /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
    *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
    *  Solo para el overlay B; la colisión real vive en el TileStore. */
   imageGrid: ImageGridData | null;
   imageAnalyzed: boolean;
+  /** Colisión base derivada del map_svg (overlay B): grid de celdas sólidas
+   *  (null = svg sin sólidos) y flag de aplicado (desactiva AABBs rojos). */
+  svgGrid: ImageGridData | null;
+  svgApplied: boolean;
 }
 
 /** Shape mínimo del grid derivado que pinta el overlay (espejo de
@@ -403,15 +416,19 @@ export class CanvasRenderer {
       layerLastUsed: same ? prev.layerLastUsed : 0,
       sceneImage: same ? prev.sceneImage : null,
       svgImage: same ? prev.svgImage : null,
+      mapSvgImage: same ? prev.mapSvgImage : null,
       imageGrid: same ? prev.imageGrid : null,
       imageAnalyzed: same ? prev.imageAnalyzed : false,
+      svgGrid: same ? prev.svgGrid : null,
+      svgApplied: same ? prev.svgApplied : false,
     };
     this.tiles.set(key, tile);
     if (prev && !same) {
       this.occluders = this.occluders.filter((o) => o.tileKey !== key);
     }
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
-    if (scene.terrain_svg && !same) this.loadTerrainSvg(tile, scene.terrain_svg);
+    if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
+    if (scene.map_svg && !same) this.loadSvgLayer(tile, scene.map_svg, "mapSvgImage");
     return { sceneChanged: prev !== undefined && !same };
   }
 
@@ -451,10 +468,11 @@ export class CanvasRenderer {
     this.addTile(String(data.scene_id ?? data.room_id ?? "scene"), data);
   }
 
-  /** Rasteriza la capa terrain_svg de UN tile a una Image (async). Cuando
-   *  decodifica se invalida su capa horneada (se re-hornea con la SVG).
-   *  Decode fallido → errors.push. */
-  private loadTerrainSvg(tile: RendererTile, svg: string): void {
+  /** Rasteriza una capa SVG de UN tile a una Image (async): `svgImage`
+   *  (terrain_svg, refino visual) o `mapSvgImage` (map_svg, el blueprint
+   *  completo). Cuando decodifica se invalida su capa horneada (se re-hornea
+   *  con la SVG). Decode fallido → errors.push. */
+  private loadSvgLayer(tile: RendererTile, svg: string, target: "svgImage" | "mapSvgImage"): void {
     // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
     // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
     let src = svg;
@@ -471,13 +489,13 @@ export class CanvasRenderer {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      tile.svgImage = img;
+      tile[target] = img;
       // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
       tile.terrainLayer = null;
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      errors.push("scene", "terrain_svg no decodifica como imagen; se omite la capa SVG");
+      errors.push("scene", `${target === "svgImage" ? "terrain_svg" : "map_svg"} no decodifica como imagen; se omite la capa SVG`);
     };
     img.src = url;
   }
@@ -525,6 +543,16 @@ export class CanvasRenderer {
     if (!tile) return;
     tile.imageGrid = grid;
     tile.imageAnalyzed = true;
+  }
+
+  /** Registra la colisión base derivada del map_svg (overlay B): grid de
+   *  celdas sólidas (null = svg sin sólidos). Su aplicación también apaga los
+   *  AABBs rojos del esquema en ese tile. */
+  setTileSvgGrid(key: string, grid: ImageGridData | null): void {
+    const tile = this.tiles.get(key);
+    if (!tile) return;
+    tile.svgGrid = grid;
+    tile.svgApplied = true;
   }
 
   /** Sustituye los occluders de UN tile (X re-segmenta ese tile; los cutouts
@@ -629,8 +657,10 @@ export class CanvasRenderer {
         }
       }
 
+      // Tiles con map_svg no pintan cajas: el SVG ya dibuja sus edificios y
+      // props (una caja encima duplicaría el elemento en el blueprint).
       const staticObjects = touched
-        .filter((t) => !asImage(t))
+        .filter((t) => !asImage(t) && !t.mapSvgImage)
         .flatMap((t): SceneObject[] => t.scene.objects ?? [])
         .filter((o) => o.category !== "creature")
         .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
@@ -660,6 +690,15 @@ export class CanvasRenderer {
     const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
     ctx.fillStyle = terrainColor;
     ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+
+    // Blueprint SVG completo (map_svg): ES el dibujo del tile — cubre todo el
+    // rect con su propio suelo, agua, muros y copas. Grid, features y
+    // terrain_svg quedan detrás sin aportar (se saltan). Hasta que decodifica
+    // (async) se pinta el fallback de grid+features.
+    if (tile.mapSvgImage) {
+      ctx.drawImage(tile.mapSvgImage, bx0, by0, bx1 - bx0, by1 - by0);
+      return;
+    }
 
     // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
     this.paintTerrainGrid(tile);
@@ -977,9 +1016,10 @@ export class CanvasRenderer {
     }
 
     // Static scene elements de los tiles visibles, ordenados por Z global.
-    // Un tile con imagen IA ya los lleva pintados (solo overlay de debug).
+    // Un tile con imagen IA o con map_svg ya los lleva pintados (solo overlay
+    // de debug).
     const staticObjects = visible
-      .filter((t) => !t.sceneImage || this.debugObjects)
+      .filter((t) => (!t.sceneImage && !t.mapSvgImage) || this.debugObjects)
       .flatMap((t): SceneObject[] => t.scene.objects ?? [])
       .filter((o) => o.category !== "creature")
       .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
@@ -1114,37 +1154,28 @@ export class CanvasRenderer {
       }
     }
 
+    // Colisión BASE derivada del map_svg (capas #water+#solid): celdas azules.
+    // Activa desde que llega el tile, antes de imagen y análisis.
+    ctx.fillStyle = "rgba(80,140,255,0.35)";
+    for (const tile of this.tiles.values()) {
+      this.fillGridCells(tile, tile.svgGrid);
+    }
+
     // Colisión DERIVADA de la imagen (segmentos sólidos clasificados por
     // visión): celdas violetas. Es la colisión que manda en tiles analizados.
     ctx.fillStyle = "rgba(160,80,255,0.35)";
     for (const tile of this.tiles.values()) {
-      const ig = tile.imageGrid;
-      if (!ig?.solid_chars?.length) continue;
-      const solidSet = new Set(ig.solid_chars);
-      const mpc = ig.meters_per_cell;
-      const ox = ig.origin?.[0] ?? tile.rect.minX;
-      const oz = ig.origin?.[1] ?? tile.rect.minZ;
-      for (let r = 0; r < ig.rows; r++) {
-        const row = ig.grid[r];
-        if (typeof row !== "string") continue;
-        const cmax = Math.min(ig.cols, row.length);
-        for (let c = 0; c < cmax; c++) {
-          if (!solidSet.has(row[c])) continue;
-          const [x0, y0] = this.toScreen(ox + c * mpc, oz + r * mpc);
-          const [x1, y1] = this.toScreen(ox + (c + 1) * mpc, oz + (r + 1) * mpc);
-          ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        }
-      }
+      this.fillGridCells(tile, tile.imageGrid);
     }
 
     // Authored collision footprints (same set + rule as main.ts collidesAt):
     // filled translucent red + bright outline so they read over the painting.
-    // En tiles ANALIZADOS la imagen manda y estos AABBs ya no bloquean — se
-    // omiten para que el overlay muestre la colisión real.
+    // En tiles con SVG aplicado o ANALIZADOS, la colisión derivada manda y
+    // estos AABBs ya no bloquean — se omiten para mostrar la colisión real.
     for (const o of objects) {
       if (o.category !== "building" && o.category !== "prop") continue;
       if (!o.sizeXZ) continue;
-      if (this.tileAnalyzedAt(o.pos.x, o.pos.z)) continue;
+      if (this.schemaAabbsDisabledAt(o.pos.x, o.pos.z)) continue;
       const [cx, cy] = this.toScreen(o.pos.x, o.pos.z);
       const w = o.sizeXZ.x * this.scale;
       const h = o.sizeXZ.z * this.scale;
@@ -1198,23 +1229,52 @@ export class CanvasRenderer {
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,40,40,1)";
     ctx.fillRect(12, 52, 14, 10);
-    ctx.fillText("colision del esquema (solo tiles sin analizar)", 32, 61);
-    ctx.fillStyle = "rgba(160,80,255,1)";
+    ctx.fillText("colision del esquema (solo tiles sin svg/analisis)", 32, 61);
+    ctx.fillStyle = "rgba(80,140,255,1)";
     ctx.fillRect(12, 70, 14, 10);
-    ctx.fillText("colision derivada de la imagen (solid)", 32, 79);
-    ctx.fillStyle = "rgba(60,255,255,1)";
+    ctx.fillText("colision base del map_svg (agua+solidos)", 32, 79);
+    ctx.fillStyle = "rgba(160,80,255,1)";
     ctx.fillRect(12, 88, 14, 10);
-    ctx.fillText("recorte tall — linea solida = z-index", 32, 97);
-    ctx.fillStyle = "rgba(255,140,0,1)";
+    ctx.fillText("colision derivada de la imagen (solid)", 32, 97);
+    ctx.fillStyle = "rgba(60,255,255,1)";
     ctx.fillRect(12, 106, 14, 10);
-    ctx.fillText("terreno solido del esquema (muro/agua)", 32, 115);
+    ctx.fillText("recorte tall — linea solida = z-index", 32, 115);
+    ctx.fillStyle = "rgba(255,140,0,1)";
+    ctx.fillRect(12, 124, 14, 10);
+    ctx.fillText("terreno solido del esquema (muro/agua)", 32, 133);
     ctx.restore();
   }
 
-  /** ¿El tile que contiene (x,z) tiene análisis de imagen aplicado? */
-  private tileAnalyzedAt(x: number, z: number): boolean {
+  /** Pinta las celdas sólidas de un grid derivado (svg o imagen) con el
+   *  fillStyle ACTUAL del contexto. */
+  private fillGridCells(tile: RendererTile, ig: ImageGridData | null): void {
+    if (!ig?.solid_chars?.length) return;
+    const ctx = this.ctx;
+    const solidSet = new Set(ig.solid_chars);
+    const mpc = ig.meters_per_cell;
+    const ox = ig.origin?.[0] ?? tile.rect.minX;
+    const oz = ig.origin?.[1] ?? tile.rect.minZ;
+    for (let r = 0; r < ig.rows; r++) {
+      const row = ig.grid[r];
+      if (typeof row !== "string") continue;
+      const cmax = Math.min(ig.cols, row.length);
+      for (let c = 0; c < cmax; c++) {
+        if (!solidSet.has(row[c])) continue;
+        const [x0, y0] = this.toScreen(ox + c * mpc, oz + r * mpc);
+        const [x1, y1] = this.toScreen(ox + (c + 1) * mpc, oz + (r + 1) * mpc);
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+    }
+  }
+
+  /** ¿El tile que contiene (x,z) tiene los AABBs del esquema desactivados
+   *  (análisis de imagen aplicado o colisión base del map_svg instalada)? */
+  private schemaAabbsDisabledAt(x: number, z: number): boolean {
     for (const t of this.tiles.values()) {
-      if (t.imageAnalyzed && x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ) {
+      if (
+        (t.imageAnalyzed || t.svgApplied) &&
+        x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ
+      ) {
         return true;
       }
     }
