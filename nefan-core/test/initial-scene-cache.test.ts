@@ -25,8 +25,8 @@ describe("InitialSceneCache", () => {
     const dir = makeTempDir();
     try {
       const cache = new InitialSceneCache(dir);
-      assert.equal(cache.has("tavern_intro"), false);
-      assert.equal(cache.get("tavern_intro"), null);
+      assert.equal(cache.has("toledo_1200"), false);
+      assert.equal(cache.get("toledo_1200"), null);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -45,12 +45,12 @@ describe("InitialSceneCache", () => {
         name: "Robledo",
       });
 
-      cache.set("tavern_intro", sampleScene(), mgr.serialize());
+      cache.set("toledo_1200", sampleScene(), mgr.serialize());
 
-      assert.equal(cache.has("tavern_intro"), true);
-      const got = cache.get("tavern_intro");
+      assert.equal(cache.has("toledo_1200"), true);
+      const got = cache.get("toledo_1200");
       assert.ok(got);
-      assert.equal(got.game_id, "tavern_intro");
+      assert.equal(got.game_id, "toledo_1200");
       assert.equal(got.schema_version, 1);
       assert.equal(got.scene.room_id, "robledo_plaza");
       assert.equal(got.world_map.places["robledo"]?.name, "Robledo");
@@ -65,7 +65,7 @@ describe("InitialSceneCache", () => {
       const cache = new InitialSceneCache(dir);
       const scene = sampleScene();
       const mgr = new WorldMapManager(WorldMapManager.createEmpty("Mundo"));
-      cache.set("tavern_intro", scene, mgr.serialize());
+      cache.set("toledo_1200", scene, mgr.serialize());
 
       // Mutate the originals — must not bleed into the on-disk snapshot.
       (scene as Record<string, unknown>).room_id = "MUTATED";
@@ -76,7 +76,7 @@ describe("InitialSceneCache", () => {
         name: "Leaked",
       });
 
-      const got = cache.get("tavern_intro");
+      const got = cache.get("toledo_1200");
       assert.ok(got);
       assert.equal(got.scene.room_id, "robledo_plaza");
       assert.equal(got.world_map.places["leaked"], undefined);
@@ -155,10 +155,10 @@ describe("InitialSceneCache", () => {
     try {
       const cache = new InitialSceneCache(dir);
       const mgr = new WorldMapManager(WorldMapManager.createEmpty("Mundo"));
-      cache.set("tavern_intro", sampleScene(), mgr.serialize());
+      cache.set("toledo_1200", sampleScene(), mgr.serialize());
       cache.set("dragon_origins", sampleScene(), mgr.serialize());
       const names = cache.list().sort();
-      assert.deepEqual(names, ["dragon_origins", "tavern_intro"]);
+      assert.deepEqual(names, ["dragon_origins", "toledo_1200"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       // existsSync only as a sanity guard that rmSync cleaned up.

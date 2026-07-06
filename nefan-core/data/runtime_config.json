@@ -36,5 +36,9 @@
     "texture_lazy_load": true,
     "expose_diagnostic": false,
     "cache_max_bytes": 2147483648
+  },
+  "content": {
+    "games_dir": "nefan-core/data/games",
+    "styles_dir": "nefan-core/data/styles"
   }
 }

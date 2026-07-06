@@ -10,7 +10,10 @@
  *  - state cycle:      Claude → narrative-mcp → THIS server (new)
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { extname, join } from "node:path";
 
+import { SAFE_ID } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
@@ -24,6 +27,10 @@ export interface StateHttpServerOptions {
   port: number;
   narrative: NarrativeState;
   npcDirector: NpcDirector;
+  /** Directorio de style packs (data/styles). Sus archivos se sirven como
+   *  estáticos en GET /styles/{style_id}/{file} para la title screen —
+   *  funciona sin ai_server (preset 4). */
+  stylesDir: string;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
@@ -52,6 +59,12 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
 
   const server = createServer((req, res) => {
+    // Estáticos de estilo (imágenes binarias): rama propia, fuera del ciclo
+    // JSON de handle().
+    if ((req.method ?? "GET") === "GET" && (req.url ?? "").startsWith("/styles/")) {
+      serveStyleFile(req, res, opts.stylesDir);
+      return;
+    }
     handle(req, res, narrative, npcDirector, opts.plugins)
       .then(async (result) => {
         if (result.mutated) {
@@ -413,4 +426,43 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     "Content-Length": Buffer.byteLength(payload),
   });
   res.end(payload);
+}
+
+const STYLE_FILE_MIME: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".json": "application/json",
+};
+
+/** GET /styles/{style_id}/{file} — sirve las imágenes/manifest de un style
+ *  pack. Los dos segmentos se validan contra SAFE_ID/extensión conocida, así
+ *  que no hay traversal posible (`..` no pasa el regex). */
+function serveStyleFile(req: IncomingMessage, res: ServerResponse, stylesDir: string): void {
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  const parts = url.pathname.split("/").filter(Boolean); // ["styles", id, file]
+  const styleId = parts[1] ?? "";
+  const file = parts[2] ?? "";
+  const ext = extname(file).toLowerCase();
+  const mime = STYLE_FILE_MIME[ext];
+  const safeFile = SAFE_ID.test(file); // sin "/" ni "..": el regex solo admite [A-Za-z0-9_.-]
+  if (parts.length !== 3 || !SAFE_ID.test(styleId) || !safeFile || !mime || file.includes("..")) {
+    sendJson(res, 400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
+    return;
+  }
+  const path = join(stylesDir, styleId, file);
+  if (!existsSync(path) || !statSync(path).isFile()) {
+    sendJson(res, 404, { ok: false, error: `style file not found: ${styleId}/${file}` });
+    return;
+  }
+  const body = readFileSync(path);
+  res.writeHead(200, {
+    "Content-Type": mime,
+    "Content-Length": body.byteLength,
+    // Las tarjetas del título se re-piden en cada visita; las imágenes de un
+    // pack solo cambian al regenerar el estilo.
+    "Cache-Control": "max-age=300",
+  });
+  res.end(body);
 }

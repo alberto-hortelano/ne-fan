@@ -12,9 +12,9 @@ function makeState() {
 describe("NarrativeState lifecycle", () => {
   it("startNewSession populates session_id and defaults", () => {
     const s = makeState();
-    const id = s.startNewSession("tavern_intro");
+    const id = s.startNewSession("toledo_1200");
     assert.ok(id.length > 0);
-    assert.equal(s.game_id, "tavern_intro");
+    assert.equal(s.game_id, "toledo_1200");
     assert.equal(s.player.level, 1);
     assert.equal(s.story_so_far, "");
     assert.deepEqual(s.entities, []);
@@ -24,7 +24,7 @@ describe("NarrativeState lifecycle", () => {
   it("save persists schema version and roundtrips through loadSession", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
-    const id = s1.startNewSession("tavern_intro");
+    const id = s1.startNewSession("toledo_1200");
     s1.appendStory("Once upon a time...");
     s1.recordEntitySpawned("npc_1", "npc", "scene_1", [1, 0, 2], { name: "Aldo" });
     s1.recordDialogueEvent("Aldo", "Hola", ["a", "b"], 1, "");
@@ -33,7 +33,7 @@ describe("NarrativeState lifecycle", () => {
     const s2 = new NarrativeState(storage);
     const ok = await s2.loadSession(id);
     assert.equal(ok, true);
-    assert.equal(s2.game_id, "tavern_intro");
+    assert.equal(s2.game_id, "toledo_1200");
     assert.equal(s2.story_so_far, "Once upon a time...");
     assert.equal(s2.entities.length, 1);
     assert.equal(s2.entities[0].id, "npc_1");
@@ -243,7 +243,7 @@ describe("NarrativeState.worldMap", () => {
     const legacy = {
       schema_version: 1,
       session_id: "old_sess",
-      game_id: "tavern_intro",
+      game_id: "toledo_1200",
       created_at: "",
       updated_at: "",
       world: { name: "Vall", atmosphere: "", style_token: "", active_scene_id: "tavern" },
@@ -280,7 +280,7 @@ describe("NarrativeState.worldMap", () => {
   it("migrates a v2 session (no plugins) into v3 on load", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
-    s1.startNewSession("tavern_intro");
+    s1.startNewSession("toledo_1200");
     const v2 = { ...s1.toSessionData(), schema_version: 2 } as Record<string, unknown>;
     delete v2.plugins;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -298,7 +298,7 @@ describe("NarrativeState.worldMap", () => {
   it("round-trips plugin records through save/load", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
-    s1.startNewSession("tavern_intro");
+    s1.startNewSession("toledo_1200");
     s1.plugins.push({
       id: "a".repeat(64),
       name: "test_counter",

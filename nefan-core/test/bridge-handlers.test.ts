@@ -35,6 +35,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, "..", "data");
 const REAL_GAMES_DIR = resolve(DATA_DIR, "games");
 const FIXTURE_GAMES = fileURLToPath(new URL("fixtures/games", import.meta.url));
+const REAL_STYLES_DIR = resolve(DATA_DIR, "styles");
 
 const combatConfig = loadConfig(
   JSON.parse(readFileSync(resolve(DATA_DIR, "combat_config.json"), "utf-8")),
@@ -57,7 +58,7 @@ interface FakeAi {
   reportPlayerChoice?: NarrativeAiClient["reportPlayerChoice"];
 }
 
-function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
+function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = {}) {
   const store = new GameStore();
   const sim = new GameSimulation(combatConfig, store, 12345);
   sim.addCombatant(
@@ -95,6 +96,7 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
     mapTriggers: new MapTriggerEvaluator(narrative),
     initialSceneCache: new InitialSceneCache(join(tmpdir(), "nefan-test-scene-cache-unused")),
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
+    stylesDir: opts.stylesDir ?? REAL_STYLES_DIR,
     cacheInitialScene: false,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
@@ -138,7 +140,9 @@ describe("bridge routing básico", () => {
     assert.equal(sent.length, 1);
     const msg = sent[0] as Extract<ServerMessage, { type: "games_listed" }>;
     assert.equal(msg.requestId, "r1");
-    assert.ok(msg.games.some((g) => g.game_id === "tavern_intro"));
+    assert.ok(msg.games.some((g) => g.game_id === "toledo_1200"));
+    assert.ok(msg.games.every((g) => g.world_brief.length > 100));
+    assert.ok(msg.styles.some((st) => st.style_id === "medievo_crudo"));
   });
 
   it("load_room resetea al player y proyecta los enemigos", async () => {

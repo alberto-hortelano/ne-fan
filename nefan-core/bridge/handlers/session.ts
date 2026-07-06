@@ -1,10 +1,8 @@
 /** Handlers de ciclo de vida de sesión: listado de juegos/sesiones, start,
  *  resume, delete y save. */
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { createCombatant } from "../../src/combat/combatant.js";
+import { listGames, listStyles } from "../../src/games/loader.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
 import {
   loadGamePluginManifests,
@@ -24,40 +22,17 @@ import type {
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
 
-export function listGames(
-  gamesDir: string,
-): Array<{ game_id: string; title: string; description?: string }> {
-  if (!existsSync(gamesDir)) {
-    throw new Error(`games directory not found: ${gamesDir}`);
-  }
-  const out: Array<{ game_id: string; title: string; description?: string }> = [];
-  for (const entry of readdirSync(gamesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const gameJson = resolve(gamesDir, entry.name, "game.json");
-    if (!existsSync(gameJson)) continue;
-    let def: { game_id?: string; title?: string; description?: string };
-    try {
-      def = JSON.parse(readFileSync(gameJson, "utf-8"));
-    } catch (err) {
-      throw new Error(`game.json malformed (${gameJson}): ${(err as Error).message}`, {
-        cause: err,
-      });
-    }
-    out.push({
-      game_id: def.game_id ?? entry.name,
-      title: def.title ?? entry.name,
-      description: def.description,
-    });
-  }
-  return out;
-}
-
 export function handleListGames(
   msg: ListGamesMessage,
   ws: ClientSocket,
   ctx: BridgeContext,
 ): void {
-  ctx.send(ws, { type: "games_listed", requestId: msg.requestId, games: listGames(ctx.gamesDir) });
+  ctx.send(ws, {
+    type: "games_listed",
+    requestId: msg.requestId,
+    games: listGames(ctx.gamesDir),
+    styles: listStyles(ctx.stylesDir),
+  });
 }
 
 export async function handleListSessions(
