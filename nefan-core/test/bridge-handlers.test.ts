@@ -271,6 +271,29 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(llmCtx.world.style_id, "estilo_test");
   });
 
+  it("start_session respeta el styleId elegido y rechaza estilos inexistentes", async () => {
+    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", styleId: "acuarela_luminosa" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true);
+    assert.equal(started.state?.world.style_id, "acuarela_luminosa");
+
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r2", gameId: "toledo_1200", styleId: "no_existe" },
+      s2,
+      ctx,
+    );
+    const started2 = sent2[0] as SessionStartedMessage;
+    assert.equal(started2.ok, false);
+    assert.match(started2.error ?? "", /game_load_failed/);
+  });
+
   it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

@@ -1,15 +1,18 @@
-/** Title screen + character editor.
+/** Title screen: saves → selección de mundo → editor de personaje.
  *
  * One overlay that handles the whole pre-game flow:
  *   1. Lists every saved session with metadata (read from the bridge).
  *   2. Lets the player resume a session, delete it, or start a new game.
- *   3. New game opens the character editor (Mixamo model picker + skin prompt)
- *      then resolves with the chosen game_id and appearance.
+ *   3. New game shows the WORLD SELECT: one card per game (cover del estilo
+ *      servida por el State API del bridge + descripción) with a style
+ *      override selector.
+ *   4. Then the character editor (Mixamo model picker + skin prompt), and
+ *      resolves with {gameId, styleId, appearance}.
  *
  * The screen is purely a UI; the caller (main.ts) decides what to do with the
  * resolved choice (call narrativeClient.startSession or .resumeSession).
  */
-import type { NarrativeClient, GameInfo } from "../net/narrative-client.js";
+import type { NarrativeClient, GameInfo, StyleInfo } from "../net/narrative-client.js";
 import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
@@ -20,8 +23,14 @@ export type TitleAction =
   | {
       kind: "new_game";
       gameId: string;
+      /** Estilo visual elegido ("" = el por defecto del juego). */
+      styleId: string;
       appearance: { model_id: string; skin_path: string };
     };
+
+/** State API del bridge (:9878) — sirve las covers de los estilos como
+ *  estáticos, con o sin ai_server. */
+const STATE_API_URL = "http://127.0.0.1:9878";
 
 const MIXAMO_MODELS: { id: string; name: string }[] = [
   { id: "y_bot", name: "Y Bot (base)" },
@@ -126,18 +135,83 @@ export class TitleScreen {
     }
 
     newBtn.addEventListener("click", () => {
-      void this.renderCharacterEditor();
+      void this.renderWorldSelect();
     });
   }
 
-  private async renderCharacterEditor(): Promise<void> {
+  /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
+   *  y selector de estilo con el del juego preseleccionado. */
+  private async renderWorldSelect(): Promise<void> {
     // listGames must succeed — there's no scripted fallback any more. If it
     // throws, the title-screen surfaces the error and stops here.
-    const games: GameInfo[] = await this.narrative.listGames();
+    const { games, styles } = await this.narrative.listGames();
     if (games.length === 0) {
       throw new Error("no games available in bridge — check nefan-core/data/games/");
     }
+    const styleById = new Map(styles.map((st) => [st.style_id, st]));
+    let selectedGame = games[0];
 
+    this.content.innerHTML = `
+      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Elige un mundo</h1>
+      <p style="margin-bottom:16px;color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
+      <div id="ts-worlds" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px"></div>
+      <label style="display:block;margin-bottom:18px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>
+        <select id="ts-style" style="${SELECT_CSS}"></select>
+        <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
+      </label>
+      <div style="display:flex;gap:12px">
+        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
+        <button id="ts-continue" style="${BTN_PRIMARY_CSS}">Continuar →</button>
+      </div>
+    `;
+    const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
+    const styleSel = this.content.querySelector("#ts-style") as HTMLSelectElement;
+    const styleDesc = this.content.querySelector("#ts-style-desc") as HTMLElement;
+
+    worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
+
+    const refreshStyleOptions = (): void => {
+      styleSel.innerHTML = styles
+        .map((st) => {
+          const def = st.style_id === selectedGame.style_id ? " (del mundo)" : "";
+          return `<option value="${escapeAttr(st.style_id)}">${escapeHtml(st.name)}${def}</option>`;
+        })
+        .join("");
+      styleSel.value = selectedGame.style_id;
+      styleDesc.textContent = styleById.get(selectedGame.style_id)?.description ?? "";
+    };
+    const refreshSelection = (): void => {
+      for (const card of worldsEl.querySelectorAll<HTMLElement>("[data-game-id]")) {
+        const active = card.dataset.gameId === selectedGame.game_id;
+        card.style.borderColor = active ? "#da6" : "#2a2a30";
+        card.style.background = active ? "#201c14" : "#181820";
+      }
+    };
+    for (const card of worldsEl.querySelectorAll<HTMLElement>("[data-game-id]")) {
+      card.addEventListener("click", () => {
+        const game = games.find((g) => g.game_id === card.dataset.gameId);
+        if (!game) return;
+        selectedGame = game;
+        refreshSelection();
+        refreshStyleOptions();
+      });
+    }
+    styleSel.addEventListener("change", () => {
+      styleDesc.textContent = styleById.get(styleSel.value)?.description ?? "";
+    });
+    refreshSelection();
+    refreshStyleOptions();
+
+    (this.content.querySelector("#ts-back") as HTMLButtonElement)
+      .addEventListener("click", () => void this.renderHome());
+    (this.content.querySelector("#ts-continue") as HTMLButtonElement)
+      .addEventListener("click", () => {
+        void this.renderCharacterEditor(selectedGame, styleSel.value);
+      });
+  }
+
+  private renderCharacterEditor(game: GameInfo, styleId: string): void {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
 
@@ -163,13 +237,8 @@ export class TitleScreen {
          </div>`;
 
     this.content.innerHTML = `
-      <h1 style="font-size:28px;color:#da6;margin-bottom:18px">Crear personaje</h1>
-      <label style="display:block;margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Historia</div>
-        <select id="ts-game" style="${SELECT_CSS}">
-          ${games.map((g) => `<option value="${g.game_id}">${g.title}</option>`).join("")}
-        </select>
-      </label>
+      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear personaje</h1>
+      <p style="margin-bottom:18px;color:#888;font-size:12px">Mundo: <span style="color:#bdf">${escapeHtml(game.title)}</span></p>
       ${modelBlock}
       ${skinBlock}
       <div style="display:flex;gap:12px">
@@ -179,15 +248,15 @@ export class TitleScreen {
     `;
     const back = this.content.querySelector("#ts-back") as HTMLButtonElement;
     const start = this.content.querySelector("#ts-start") as HTMLButtonElement;
-    const gameSel = this.content.querySelector("#ts-game") as HTMLSelectElement;
     const modelSel = this.content.querySelector("#ts-model") as HTMLSelectElement | null;
     const skinInput = this.content.querySelector("#ts-skin") as HTMLInputElement | null;
 
-    back.addEventListener("click", () => void this.renderHome());
+    back.addEventListener("click", () => void this.renderWorldSelect());
     start.addEventListener("click", () => {
       this.resolve?.({
         kind: "new_game",
-        gameId: gameSel.value,
+        gameId: game.game_id,
+        styleId,
         appearance: {
           model_id: modelSel ? modelSel.value : "",
           skin_path: skinInput ? skinInput.value.trim() : "",
@@ -195,6 +264,22 @@ export class TitleScreen {
       });
     });
   }
+}
+
+function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
+  const cover = style?.cover_url
+    ? `<img src="${escapeAttr(STATE_API_URL + style.cover_url)}" alt="" style="width:120px;height:80px;object-fit:cover;flex:none;border:1px solid #333">`
+    : `<div style="width:120px;height:80px;flex:none;border:1px solid #333;background:linear-gradient(135deg,#23202b,#161419);display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;text-align:center;padding:4px">${escapeHtml(style?.name ?? g.style_id)}</div>`;
+  return `
+    <div data-game-id="${escapeAttr(g.game_id)}" style="display:flex;gap:14px;padding:12px;background:#181820;border:2px solid #2a2a30;cursor:pointer;border-radius:4px">
+      ${cover}
+      <div style="flex:1;min-width:0">
+        <div style="color:#dcb;font-size:16px;margin-bottom:4px">${escapeHtml(g.title)}</div>
+        <div style="color:#999;font-size:12px;line-height:1.5">${escapeHtml(g.description)}</div>
+        <div style="color:#666;font-size:11px;margin-top:5px">Estilo: ${escapeHtml(style?.name ?? g.style_id)}</div>
+      </div>
+    </div>
+  `;
 }
 
 function sessionRowHtml(s: SessionMetadata): string {
