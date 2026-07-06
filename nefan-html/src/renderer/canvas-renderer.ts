@@ -142,6 +142,12 @@ export interface Entity {
   maxHp?: number;
   alive: boolean;
   attacking?: boolean;
+  /** Tipo de ataque en curso (del sim) — selecciona la anim del sprite. */
+  attackType?: string;
+  /** Descripción narrativa usada como prompt del skin IA del sprite. */
+  skinPrompt?: string;
+  /** Anim pedida por el NpcDirector (NpcUpdate.animation). */
+  requestedAnim?: string;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
   category?: string;
@@ -1467,6 +1473,12 @@ export class CanvasRenderer {
     const [ex, ey] = this.toScreen(e.pos.x, e.pos.z);
 
     if (!e.alive) {
+      // Con sprite, el cadáver es la anim `death` clampeada en su último
+      // frame (la deja así la máquina de estados de character-sprites).
+      if (e.sprite !== undefined) {
+        this.drawSprite(e.sprite, e.forward, ex, ey);
+        return;
+      }
       ctx.fillStyle = "#555";
       ctx.globalAlpha = 0.4;
       ctx.beginPath(); ctx.arc(ex, ey, e.radius, 0, Math.PI * 2); ctx.fill();
@@ -1495,12 +1507,25 @@ export class CanvasRenderer {
     }
 
     if (e.hp !== undefined && e.maxHp !== undefined) {
-      this.drawHpBar(ex, ey - (e.radius + 6), e.hp, e.maxHp, e.color);
+      const barY = e.sprite !== undefined ? ey - 70 : ey - (e.radius + 6);
+      this.drawHpBar(ex, barY, e.hp, e.maxHp, e.color);
     }
   }
 
   private drawCreatureMarker(cx: number, cy: number, e: Entity): void {
     const ctx = this.ctx;
+    // Dos modos explícitos, como drawPlayer: sprite definido → sheet (la anim
+    // de ataque sustituye al highlight amarillo); undefined → círculo.
+    if (e.sprite !== undefined) {
+      this.drawSprite(e.sprite, e.forward, cx, cy);
+      if (e.label) {
+        ctx.fillStyle = "#d8c79a";
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(e.label.slice(0, 30), cx, cy - 74);
+      }
+      return;
+    }
     const r = Math.max(CHARACTER_RADIUS_M * this.scale, e.radius);
     ctx.fillStyle = e.attacking ? "#ff4" : (e.color || CATEGORY_FILL.creature);
     ctx.strokeStyle = CATEGORY_STROKE.creature;
@@ -1523,8 +1548,20 @@ export class CanvasRenderer {
   }
 
   private drawNpc(npc: Entity): void {
+    // visible=false del NpcDirector (el NPC se fue a otro sitio) → no dibujar.
+    if (npc.alive === false) return;
     const [nx, ny] = this.toScreen(npc.pos.x, npc.pos.z);
     const ctx = this.ctx;
+    if (npc.sprite !== undefined) {
+      this.drawSprite(npc.sprite, npc.forward, nx, ny);
+      if (npc.name) {
+        ctx.fillStyle = "#9be";
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(npc.name, nx, ny - 74);
+      }
+      return;
+    }
     const r = Math.max(CHARACTER_RADIUS_M * this.scale, npc.radius);
     ctx.fillStyle = NPC_COLOR;
     ctx.strokeStyle = "#a5cef0";

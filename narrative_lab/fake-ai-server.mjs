@@ -23,7 +23,8 @@
 
 import http from "node:http";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 18765);
 const STATE_API = process.env.STATE_API ?? "http://127.0.0.1:9878";
@@ -31,6 +32,16 @@ const FRONTIER_MODE = process.env.FRONTIER_MODE ?? "";
 // Retardo artificial en fronteras (ms) — simula los minutos del motor real
 // para poder observar el velo/freeze en E2E. 0 = instantáneo.
 const FRONTIER_DELAY_MS = Number(process.env.FRONTIER_DELAY_MS ?? 0);
+
+// ── Skin de sprite sheets (bench del cliente 2D, sin GPU) ────────────────
+// POST /skin_sprite_sheet: en vez del img2img real, el "skin" son los frames
+// de OTRO modelo (SKIN_SPRITE_MODEL, default paladin — solo tiene idle) para
+// que la sustitución base→skin sea VISIBLE en el cliente. Las anims sin
+// sheet del modelo responden 500, ejercitando la cancelación de la cola de
+// skins del cliente (character-sprites.ts).
+const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
+let fakeDevCacheEnabled = false;
+const SPRITES_DIR = fileURLToPath(new URL("../nefan-html/public/sprites/", import.meta.url));
 
 const BUILTIN_SCENE = {
   scene_id: "taberna_bench",
@@ -314,6 +325,11 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   if (req.method === "GET" && req.url === "/health") return send(200, { status: "ready" });
+  // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
+  // el fake no llama APIs de pago, pero el checkbox del cliente debe operar.
+  if (req.method === "GET" && req.url === "/dev/api_cache") {
+    return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
+  }
   if (req.method === "GET" && req.url?.startsWith("/cache/scene/")) {
     const hash = req.url.slice("/cache/scene/".length);
     const png = sceneImages.get(hash);
@@ -328,6 +344,16 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
   }
+  if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
+    const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
+    if (!/^[a-z0-9_]+\/[a-z0-9_]+\/dir_\d+_frame_\d{3}\.png$/.test(rel)) {
+      return send(400, { detail: `fake-ai: ruta de frame inválida ${rel}` });
+    }
+    const file = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${rel}`;
+    if (!existsSync(file)) return send(404, { detail: `fake-ai: frame ${rel} no existe` });
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(readFileSync(file));
+  }
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
@@ -335,6 +361,43 @@ const server = http.createServer((req, res) => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
       if (req.method === "POST" && req.url === "/notify_session") return send(200, { ok: true });
       if (req.method === "POST" && req.url === "/report_player_choice") return send(200, { consequences: [] });
+      if (req.method === "POST" && req.url === "/dev/api_cache") {
+        try {
+          fakeDevCacheEnabled = !!JSON.parse(raw || "{}").enabled;
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
+      }
+      if (req.method === "POST" && req.url === "/skin_sprite_sheet") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const anim = String(body.anim ?? "");
+        const angle = String(body.angle ?? "");
+        if (!anim || !angle || !body.prompt) {
+          return send(422, { detail: "fake-ai: anim/angle/prompt requeridos" });
+        }
+        const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${anim}/${angle}/meta.json`;
+        if (!existsSync(metaPath)) {
+          return send(500, {
+            detail: `fake-ai: ${SKIN_SPRITE_MODEL} no tiene sheet ${anim}/${angle} ` +
+              `(esperado en bench: el cliente cancela la cola de ese skin)`,
+          });
+        }
+        const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+        const frame_urls = Array.from({ length: meta.directions }, (_, d) =>
+          Array.from({ length: meta.frame_count }, (_, f) =>
+            `/cache/sprite_sheet/fake/${anim}/${angle}/dir_${d}_frame_${String(f).padStart(3, "0")}.png`));
+        console.error(
+          `[fake-ai] skin_sprite_sheet ${anim}/${angle} ← "${String(body.prompt).slice(0, 40)}" ` +
+          `(sirviendo frames de ${SKIN_SPRITE_MODEL})`,
+        );
+        return send(200, { ok: true, meta, frame_urls });
+      }
       if (req.method === "POST" && req.url === "/generate_scene_image") {
         let body = {};
         try {

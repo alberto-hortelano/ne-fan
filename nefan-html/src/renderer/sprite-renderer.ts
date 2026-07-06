@@ -147,7 +147,9 @@ export class SpriteRenderer {
     return promise;
   }
 
-  private skinKey(model: string, skinPrompt: string): string {
+  /** Synthetic model id for the skinned variant of `model` — public so
+   *  CharacterSpriteManager can resolve per-frame which model to draw. */
+  skinKey(model: string, skinPrompt: string): string {
     // Encode the prompt into the synthetic model id so identical (model,
     // prompt) pairs share the cache. The SpriteRenderer never reads this
     // string — it's only a key — so keeping it human-readable is fine.
@@ -195,6 +197,13 @@ export class SpriteRenderer {
     } finally {
       this.inflight.delete(key);
     }
+  }
+
+  /** Whether the sheet is fully cached and ready to draw. Unlike `getCached`
+   *  this never throws: "not requested" and "mid-load" both return false.
+   *  Used to decide per-frame whether a skinned variant can replace the base. */
+  hasCached(model: string, anim: string, angle: string): boolean {
+    return this.cache.has(`${model}/${anim}/${angle}`);
   }
 
   /** Returns the sheet synchronously if already cached. Throws if no load

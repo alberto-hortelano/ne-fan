@@ -99,7 +99,13 @@ class SceneSegmenter:
         data_uri = _to_data_uri(scene_png_bytes)
 
         start = time.perf_counter()
-        mask_pngs = self._fal.auto_segment(data_uri)
+        # DevApiCache: en modo dev devuelve las máscaras de la última escena
+        # segmentada (0 llamadas fal).
+        from dev_api_cache import DEV_API_CACHE
+
+        mask_pngs, _cached = DEV_API_CACHE.through_sync(
+            "fal_segment", lambda: self._fal.auto_segment(data_uri)
+        )
         dt = time.perf_counter() - start
         print(f"SceneSegmenter.analyze: {len(mask_pngs)} masks ({dt:.2f}s)", flush=True)
 

@@ -78,16 +78,25 @@ class ModelGenerator:
 
         start = time.perf_counter()
 
-        # Preferred backend: Meshy API
+        # Preferred backend: Meshy API (vía DevApiCache: en modo dev devuelve
+        # el último GLB generado sin gastar créditos)
         if self._meshy is not None:
+            from dev_api_cache import DEV_API_CACHE
+
             target_polycount = 5000 if quality == "normal" else 2000
             try:
-                glb_bytes = self._meshy.text_to_3d(
-                    prompt=prompt,
-                    art_style="realistic",
-                    topology="triangle",
-                    target_polycount=target_polycount,
+                def _call() -> list:
+                    return [self._meshy.text_to_3d(
+                        prompt=prompt,
+                        art_style="realistic",
+                        topology="triangle",
+                        target_polycount=target_polycount,
+                    )]
+
+                blobs, _cached = DEV_API_CACHE.through_sync(
+                    "meshy_3d_model", _call, note=prompt
                 )
+                glb_bytes = blobs[0]
                 elapsed = time.perf_counter() - start
                 print(f"ModelGen[meshy]: '{prompt[:50]}' -> {elapsed:.1f}s")
                 return glb_bytes
