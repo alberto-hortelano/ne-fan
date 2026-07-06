@@ -11,11 +11,16 @@
 
 export interface NefanConfig {
   graphics: {
-    /** Pre-rendered Mixamo sprite sheets on disk for the player. When false,
-     *  the player is drawn as a coloured circle and no sheets are loaded. */
-    player_sprites: boolean;
-    /** img2img AI skin pass on top of the Mixamo sheet via ai_server's
-     *  /skin_sprite_sheet endpoint. Requires player_sprites = true. */
+    /** Pre-rendered Mixamo sprite sheets on disk for ALL characters (player,
+     *  NPCs, enemies). When true, the y_bot base set is mandatory (missing
+     *  sheets are a hard error at startup); per-entity AI skins are an async
+     *  upgrade on top. When false, characters are drawn as coloured circles
+     *  and no sheets are loaded. */
+    character_sprites: boolean;
+    /** img2img AI skin pass on top of the y_bot sheet via ai_server's
+     *  /skin_sprite_sheet endpoint, driven by each entity's narrative
+     *  description. Requires character_sprites = true. ai_server being down
+     *  degrades to the y_bot base (one error-log entry, no retry loop). */
     ai_skin: boolean;
     /** AI 2D sprites for entities via /generate_sprite (asset-cache). */
     ai_sprites: boolean;
@@ -75,6 +80,10 @@ export interface NefanConfig {
     /** Meshy image-to-image model for scene generation (best top-down:
      *  nano-banana-pro). Also valid: nano-banana, nano-banana-2, gpt-image-2. */
     scene_model: string;
+    /** Meshy image-to-image model for character sprite skinning (hero-shot +
+     *  atlas de keyframes por anim×dir — pipeline validado en skinning_lab;
+     *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
+    sprite_skin_model: string;
     /** Path (relative to repo root) of the art-style reference image passed as
      *  the 2nd reference to Meshy so generated scenes match a target game look. */
     scene_style_image: string;
@@ -94,8 +103,8 @@ export interface NefanConfig {
 
 export const CONFIG: NefanConfig = {
   graphics: {
-    player_sprites: false,
-    ai_skin: false,
+    character_sprites: true,
+    ai_skin: true,
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
@@ -124,6 +133,7 @@ export const CONFIG: NefanConfig = {
     texture_resolution: 512,
     texture_steps: 4,
     scene_model: "nano-banana-pro",
+    sprite_skin_model: "nano-banana-2",
     scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",
     texture_lazy_load: true,

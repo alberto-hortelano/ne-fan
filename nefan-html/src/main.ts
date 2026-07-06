@@ -19,6 +19,13 @@ import {
 } from "./world/collision.js";
 import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
+import {
+  BASE_ANIMS,
+  BASE_MODEL,
+  CharacterSpriteManager,
+  newAnimState,
+  type CharacterAnimState,
+} from "./renderer/character-sprites.js";
 import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
@@ -55,26 +62,29 @@ const TOPDOWN_SPEED_SCALE = 2.2;
 const SPEED = (playerCfg.walk_speed ?? 3.0) * TOPDOWN_SPEED_SCALE;
 const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * TOPDOWN_SPEED_SCALE;
 
-/** Player visual state. When CONFIG.graphics.player_sprites is false the
- *  player is drawn as a coloured circle and these stay null. When true,
- *  setPlayerAppearance must succeed before the first frame is rendered. */
+/** Player visual state. When CONFIG.graphics.character_sprites is false the
+ *  player is drawn as a coloured circle and playerModel stays null. When
+ *  true, setPlayerAppearance resolves the base model (y_bot salvo que el
+ *  elegido tenga el set completo en disco) y encola su skin IA. */
 let playerModel: string | null = null;
 let playerSkinPrompt = "";
-let playerAnimStartedAt = performance.now();
+let playerAlive = true;
+const playerAnim: CharacterAnimState = newAnimState();
 
-/** Load (and optionally AI-skin) the Mixamo sheet that represents the player.
+/** Resolve the player's visual base and queue its AI skin.
  *
- *  - CONFIG.graphics.player_sprites === false  → does nothing. The renderer
+ *  - CONFIG.graphics.character_sprites === false → does nothing. The renderer
  *    draws a circle and that's the contract.
- *  - CONFIG.graphics.player_sprites === true   → demands the requested model
- *    exists on disk. If the sheet fails to load, throws and pushes to
- *    ErrorLog. No silent fallback to paladin.
+ *  - character_sprites === true → la base es y_bot (obligatoria, fail-loud
+ *    vía baseSheetsReady). Si `modelId` tiene el set COMPLETO de sheets en
+ *    disco, sustituye a y_bot; si no, se usa la base (ya no es un error:
+ *    el skin IA es la vía canónica de personalización).
  *  - CONFIG.graphics.ai_skin === false but skinPrompt is non-empty → throws.
  *    Caller asked for something the config does not allow. */
 async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise<void> {
-  if (!CONFIG.graphics.player_sprites) {
+  if (!CONFIG.graphics.character_sprites) {
     if (skinPrompt) {
-      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.player_sprites=true`;
+      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.character_sprites=true`;
       errors.push("config", msg);
       throw new Error(msg);
     }
@@ -83,17 +93,26 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
     return;
   }
 
-  if (!modelId) {
-    const msg = "appearance.model_id is empty but graphics.player_sprites=true";
-    errors.push("player", msg);
-    throw new Error(msg);
+  await baseSheetsReady;
+
+  let base = BASE_MODEL;
+  if (modelId && modelId !== BASE_MODEL) {
+    try {
+      // Secuencial y abortando al primer fallo: un modelo sin sheets solo
+      // genera UNA entrada en el error-log (la del fetch), no diez.
+      for (const anim of BASE_ANIMS) {
+        await spriteRenderer.loadAnimation(modelId, anim, WORLD_ANGLE);
+      }
+      base = modelId;
+    } catch {
+      log(`modelo "${modelId}" sin sheets completos — base ${BASE_MODEL}`);
+    }
   }
 
+  playerModel = base;
   playerSkinPrompt = skinPrompt;
-  playerAnimStartedAt = performance.now();
-
-  await spriteRenderer.loadAnimation(modelId, "idle", WORLD_ANGLE);
-  playerModel = modelId;
+  playerAnim.anim = "idle";
+  playerAnim.animStartedAt = performance.now();
 
   if (skinPrompt) {
     if (!CONFIG.graphics.ai_skin) {
@@ -101,8 +120,10 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
       errors.push("config", msg);
       throw new Error(msg);
     }
-    await spriteRenderer.loadSkinnedAnimation(modelId, "idle", WORLD_ANGLE, skinPrompt);
-    log(`skin aplicado: ${skinPrompt.slice(0, 40)}`);
+    // Generación progresiva en background: cada anim sustituye a la base
+    // y_bot cuando su sheet skinneado está listo (modelFor por frame).
+    characterSprites.requestSkin(skinPrompt);
+    log(`skin IA encolada: ${skinPrompt.slice(0, 40)}`);
   }
 }
 
@@ -116,6 +137,21 @@ const WORLD_ANGLE = "isometric_30";
 const AI_SERVER_URL =
   new URLSearchParams(location.search).get("ai") ?? "http://127.0.0.1:8765";
 const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
+const characterSprites = new CharacterSpriteManager(spriteRenderer, WORLD_ANGLE);
+/** true cuando el set base y_bot está cargado: el gameLoop solo puebla
+ *  `entity.sprite` a partir de ese momento (antes, círculos). */
+let baseSheetsLoaded = false;
+/** Precarga del set base y_bot — obligatorio con character_sprites=true.
+ *  setPlayerAppearance espera esta promise; si falta un sheet, la sesión no
+ *  arranca (fail-loud) y el error queda registrado. */
+const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
+  ? characterSprites.preloadBase().then(() => {
+      baseSheetsLoaded = true;
+    })
+  : Promise.resolve();
+baseSheetsReady.catch((err) =>
+  errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
+);
 const assetCache = new AssetCache(AI_SERVER_URL);
 const renderer = new CanvasRenderer(canvas, {
   spriteRenderer,
@@ -126,9 +162,9 @@ const renderer = new CanvasRenderer(canvas, {
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
-// Sprite sheets are loaded on demand from setPlayerAppearance once the
-// session starts. No pre-load: if the player ends up needing them, that
-// happens behind an explicit CONFIG.graphics.player_sprites=true check.
+// El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
+// CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
+// se cargan bajo demanda desde setPlayerAppearance / requestSkin.
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
@@ -208,10 +244,10 @@ const frontier = new FrontierManager();
 /** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
 let activeTileKey: string | null = null;
 
-// --- Auto-img: pipeline automático de imagen IA por tile (toggle del HUD) ---
-// Persistido en localStorage (patrón ZOOM_KEY). Con el toggle ON, cada tile
-// de grid sin imagen pasa por imagen→segmentación→descubrimiento en FIFO.
-const autoimgToggle = document.getElementById("autoimg-toggle") as HTMLInputElement;
+// --- Auto-img: pipeline automático de imagen IA por tile ---
+// Persistido en localStorage (patrón ZOOM_KEY). Ya SIN toggle visible: su
+// hueco de la top bar lo ocupa Dev-cache. Se sigue controlando por
+// localStorage["nefan.autoimg"] y su progreso se muestra en #autoimg-status.
 const autoimgStatus = document.getElementById("autoimg-status") as HTMLElement;
 const AUTOIMG_KEY = "nefan.autoimg";
 
@@ -243,16 +279,49 @@ const autoPipeline = new AutoImagePipeline({
   onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
   onStatus: renderAutoImgStatus,
   onDisabled: () => {
-    autoimgToggle.checked = false;
     localStorage.setItem(AUTOIMG_KEY, "0");
   },
   healthUrl: `${AI_SERVER_URL}/health`,
 });
-autoimgToggle.checked = localStorage.getItem(AUTOIMG_KEY) === "1";
-autoPipeline.setEnabled(autoimgToggle.checked);
-autoimgToggle.addEventListener("change", () => {
-  localStorage.setItem(AUTOIMG_KEY, autoimgToggle.checked ? "1" : "0");
-  autoPipeline.setEnabled(autoimgToggle.checked);
+autoPipeline.setEnabled(localStorage.getItem(AUTOIMG_KEY) === "1");
+
+// --- Dev-cache: toggle del cache de modo dev del ai_server -----------------
+// Con él activo, cada API de IA de pago (Meshy i2i, Meshy 3D, fal) devuelve
+// su ÚLTIMA respuesta cacheada en vez de llamar de verdad — cero créditos
+// mientras se itera. El estado vive y persiste en el ai_server
+// (cache/dev_api_cache/state.json); el checkbox solo lo refleja.
+const devcacheToggle = document.getElementById("devcache-toggle") as HTMLInputElement;
+
+async function initDevCacheToggle(): Promise<void> {
+  try {
+    const res = await fetch(`${AI_SERVER_URL}/dev/api_cache`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const st = (await res.json()) as { enabled?: boolean };
+    devcacheToggle.checked = !!st.enabled;
+  } catch {
+    // ai_server apagado: sin servidor no hay APIs que cachear — el toggle no
+    // aplica. Deshabilitado explícitamente, no un fallback silencioso.
+    devcacheToggle.disabled = true;
+    devcacheToggle.parentElement!.title = "ai_server no responde — dev-cache no disponible";
+  }
+}
+void initDevCacheToggle();
+
+devcacheToggle.addEventListener("change", () => {
+  const enabled = devcacheToggle.checked;
+  void fetch(`${AI_SERVER_URL}/dev/api_cache`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      log(`dev-cache ${enabled ? "ON — las APIs de IA sirven su última respuesta (0 créditos)" : "OFF — llamadas reales"}`);
+    })
+    .catch((err) => {
+      devcacheToggle.checked = !enabled;
+      errors.push("config", "no se pudo cambiar dev-cache en ai_server", err);
+    });
 });
 
 // Entity arrays
@@ -261,6 +330,71 @@ let objectEntities: Entity[] = [];
 let npcEntities: Entity[] = [];
 const ENEMY_COLORS = ["#c44", "#4a4", "#48c", "#ca4"];
 let colorIdx = 0;
+
+// --- Animación por entidad (NPCs/enemigos) ---
+// La máquina de estados vive fuera de Entity: el track guarda la anim en
+// curso, la última posición (para detectar movimiento — el bridge mueve a
+// NPCs/enemigos, el cliente solo ve deltas de pos) y el one-shot pendiente
+// disparado por eventos de combate (hit_react).
+interface CharTrack {
+  state: CharacterAnimState;
+  lastX: number;
+  lastZ: number;
+  lastMovedAt: number;
+  oneShot?: string;
+}
+const charTracks = new Map<string, CharTrack>();
+
+function trackFor(e: Entity, now: number): CharTrack {
+  let track = charTracks.get(e.id);
+  if (!track) {
+    track = { state: newAnimState(now), lastX: e.pos.x, lastZ: e.pos.z, lastMovedAt: 0 };
+    charTracks.set(e.id, track);
+  }
+  return track;
+}
+
+/** Umbral de movimiento por frame (m) y ventana de gracia (ms): las pos de
+ *  NPCs/enemigos llegan a ráfagas del bridge, no cada rAF — sin la ventana
+ *  la anim oscilaría walk↔idle entre state_updates. */
+const MOVE_EPS = 0.02;
+const MOVE_GRACE_MS = 150;
+
+function trackMoving(track: CharTrack, pos: Vec3, now: number): boolean {
+  const dx = pos.x - track.lastX;
+  const dz = pos.z - track.lastZ;
+  if (dx * dx + dz * dz > MOVE_EPS * MOVE_EPS) track.lastMovedAt = now;
+  track.lastX = pos.x;
+  track.lastZ = pos.z;
+  return now - track.lastMovedAt < MOVE_GRACE_MS;
+}
+
+/** Puebla `e.sprite` para este frame según el estado de la entidad. */
+function updateEntitySprite(e: Entity, now: number, opts: { npc: boolean }): void {
+  const track = trackFor(e, now);
+  const moving = trackMoving(track, e.pos, now);
+  characterSprites.updateAnim(
+    track.state,
+    {
+      // Los NPCs no mueren: visible=false significa "se fue" (drawNpc lo
+      // omite), no un cadáver.
+      alive: opts.npc ? true : e.alive,
+      moving,
+      attacking: e.attacking,
+      attackType: e.attackType,
+      oneShot: track.oneShot,
+      requestedAnim: opts.npc ? e.requestedAnim : undefined,
+    },
+    now,
+  );
+  track.oneShot = undefined;
+  e.sprite = {
+    model: characterSprites.modelFor(e.skinPrompt, track.state.anim),
+    anim: track.state.anim,
+    angle: WORLD_ANGLE,
+    animStartedAt: track.state.animStartedAt,
+  };
+}
 
 // Attack area visualization state
 let attackVisual: {
@@ -380,6 +514,7 @@ function resetWorld(): void {
   enemyEntities = [];
   objectEntities = [];
   npcEntities = [];
+  charTracks.clear();
   colorIdx = 0;
   activeTileKey = null;
   sceneData = null;
@@ -539,13 +674,16 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
         },
       });
       const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+      const enemyPrompt = (obj.description ?? obj.id) as string;
       const enemyEntity: Entity = {
         id: obj.id as string, pos, radius: 8, color,
-        label: (obj.description ?? obj.id) as string,
+        label: enemyPrompt,
         hp: combat.health as number, maxHp: combat.health as number, alive: true,
         category: category ?? "creature",
         sizeXZ,
+        skinPrompt: enemyPrompt,
       };
+      characterSprites.requestSkin(enemyPrompt);
       enemyEntities.push(enemyEntity);
     } else {
       const objectEntity: Entity = {
@@ -563,6 +701,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // NPCs from room data (append: los de otros tiles siguen vivos)
   const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
   const newNpcs = npcsData.map(npc => {
+    const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
     const entity: Entity = {
       id: npc.id as string,
       pos: {
@@ -577,7 +716,9 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       name: (npc.name ?? npc.id) as string,
       alive: true,
       category: "creature",
+      skinPrompt: npcPrompt,
     };
+    characterSprites.requestSkin(npcPrompt);
     return entity;
   });
   npcEntities.push(...newNpcs);
@@ -705,6 +846,11 @@ function processScenario(scenario: ScenarioUpdate): void {
   }
   if (scenario.spawn_npc) {
     const npc = scenario.spawn_npc;
+    // El scenario no trae descripción; el prompt sale de nombre + tipo
+    // ("Grom, blacksmith dwarf" da mejor skin que solo "Grom").
+    const npcPrompt = npc.character_type
+      ? `${npc.name}, ${npc.character_type.replace(/_/g, " ")}`
+      : npc.name;
     npcEntities.push({
       id: npc.id,
       pos: {
@@ -718,7 +864,10 @@ function processScenario(scenario: ScenarioUpdate): void {
       label: npc.name,
       name: npc.name,
       alive: true,
+      skinPrompt: npcPrompt,
+      requestedAnim: npc.animation,
     });
+    characterSprites.requestSkin(npcPrompt);
     log("NPC appeared: " + npc.name);
   }
   if (scenario.despawn_npc) {
@@ -728,6 +877,7 @@ function processScenario(scenario: ScenarioUpdate): void {
   if (scenario.spawn_enemy) {
     const enemy = scenario.spawn_enemy;
     const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+    const enemyPrompt = (enemy.character_type || enemy.id).replace(/_/g, " ");
     enemyEntities.push({
       id: enemy.id,
       pos: {
@@ -740,7 +890,9 @@ function processScenario(scenario: ScenarioUpdate): void {
       hp: enemy.combat.health,
       maxHp: enemy.combat.health,
       alive: true,
+      skinPrompt: enemyPrompt,
     });
+    characterSprites.requestSkin(enemyPrompt);
     rebuildEnemyBars();
     log("Enemy spawned: " + enemy.id);
   }
@@ -768,11 +920,14 @@ function processScenario(scenario: ScenarioUpdate): void {
       if (obj.combat) {
         const combat = obj.combat as Record<string, unknown>;
         const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
+        const enemyPrompt = (obj.description ?? obj.id) as string;
         sceneEnemies.push({
           id: obj.id as string, pos, radius: 8, color,
-          label: (obj.description ?? obj.id) as string,
+          label: enemyPrompt,
           hp: combat.health as number, maxHp: combat.health as number, alive: true,
+          skinPrompt: enemyPrompt,
         });
+        characterSprites.requestSkin(enemyPrompt);
       } else {
         objectEntities.push({
           id: obj.id as string, pos, radius: 5,
@@ -784,19 +939,24 @@ function processScenario(scenario: ScenarioUpdate): void {
     enemyEntities = sceneEnemies;
 
     const npcsData = (next.npcs ?? []) as Record<string, unknown>[];
-    npcEntities = npcsData.map(npc => ({
-      id: npc.id as string,
-      pos: {
-        x: (npc.position as number[])?.[0] ?? 0,
-        y: (npc.position as number[])?.[1] ?? 0,
-        z: (npc.position as number[])?.[2] ?? 0,
-      },
-      forward: { x: 0, y: 0, z: -1 },
-      radius: 7, color: "#68c",
-      label: (npc.name ?? npc.id) as string,
-      name: (npc.name ?? npc.id) as string,
-      alive: true,
-    }));
+    npcEntities = npcsData.map(npc => {
+      const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
+      characterSprites.requestSkin(npcPrompt);
+      return {
+        id: npc.id as string,
+        pos: {
+          x: (npc.position as number[])?.[0] ?? 0,
+          y: (npc.position as number[])?.[1] ?? 0,
+          z: (npc.position as number[])?.[2] ?? 0,
+        },
+        forward: { x: 0, y: 0, z: -1 },
+        radius: 7, color: "#68c",
+        label: (npc.name ?? npc.id) as string,
+        name: (npc.name ?? npc.id) as string,
+        alive: true,
+        skinPrompt: npcPrompt,
+      };
+    });
 
     rebuildEnemyBars();
     travelPanel.setExits((next.exits ?? []) as SceneExit[]);
@@ -1036,9 +1196,13 @@ function gameLoop(now: number): void {
     attackType: attackRequested ? input.state.selectedAttack : undefined,
   });
 
-  // Process combat events for attack visualization
+  // Process combat events for attack visualization + triggers de animación
+  let playerOneShot: string | undefined;
   for (const e of result.events) {
     if (e.type === "attack_started" && e.combatantId === "player") {
+      // La anim del ataque arranca con el evento del sim (mismo camino que
+      // el 3D: estado → animación), no con el click.
+      playerOneShot = input.state.selectedAttack;
       attackVisual = {
         active: true,
         mode: "windup",
@@ -1070,18 +1234,24 @@ function gameLoop(now: number): void {
       const targetId = e.targetId as string;
       const dmg = e.damage as number;
       if (targetId === "player") {
+        // El ataque en curso (one-shot) tiene prioridad sobre el respingo.
+        if (playerOneShot === undefined) playerOneShot = "hit_react";
         log(`Player hit: -${dmg.toFixed(1)} HP`);
       } else {
+        const track = charTracks.get(targetId);
+        if (track) track.oneShot = "hit_react";
         log(`${targetId} hit: -${dmg.toFixed(1)} HP`);
       }
     } else if (e.type === "died") {
       const who = e.combatantId as string;
       if (who === "player") {
+        playerAlive = false;
         log("YOU DIED — press R to respawn");
       } else {
         log(`${who} killed!`);
       }
     } else if (e.type === "player_respawned") {
+      playerAlive = true;
       log("Respawned!");
     }
   }
@@ -1107,6 +1277,7 @@ function gameLoop(now: number): void {
       ee.hp = enemyState.hp;
       ee.alive = enemyState.alive;
       ee.attacking = enemyState.state === "winding_up" || enemyState.state === "attacking";
+      ee.attackType = enemyState.attackType;
     }
   }
 
@@ -1122,6 +1293,7 @@ function gameLoop(now: number): void {
         if (npcState.facing) {
           npc.forward = { x: npcState.facing.x, y: 0, z: npcState.facing.z };
         }
+        npc.requestedAnim = npcState.animation;
         if (npcState.visible === false) {
           npc.alive = false;
         } else {
@@ -1148,17 +1320,37 @@ function gameLoop(now: number): void {
     if (text) text.textContent = Math.ceil(ee.hp ?? 0).toString();
   }
 
-  // Render. Sprite is supplied only when player_sprites is on AND the sheet
-  // has been loaded by setPlayerAppearance. Otherwise the renderer draws the
-  // primary path (a circle) — explicitly, not as a fallback.
-  const playerSprite = CONFIG.graphics.player_sprites && playerModel !== null
-    ? {
-        model: spriteRenderer.skinnedKey(playerModel, playerSkinPrompt),
-        anim: "idle",
-        angle: WORLD_ANGLE,
-        animStartedAt: playerAnimStartedAt,
-      }
-    : undefined;
+  // Render. Los sprites se poblan solo cuando character_sprites está activo
+  // Y el set base y_bot terminó de cargar (antes, círculos — explícitamente,
+  // no como fallback). Cada entidad avanza su máquina de estados de anim y
+  // resuelve por frame si dibuja la base o su variante skinneada por IA.
+  const spritesOn = CONFIG.graphics.character_sprites && baseSheetsLoaded;
+  let playerSprite: Entity["sprite"];
+  if (spritesOn && playerModel !== null) {
+    const playerMoving =
+      !dialoguePanel.isVisible &&
+      (input.state.up || input.state.down || input.state.left || input.state.right);
+    characterSprites.updateAnim(
+      playerAnim,
+      {
+        alive: playerAlive,
+        moving: playerMoving,
+        sprinting: input.state.sprint,
+        oneShot: playerOneShot,
+      },
+      now,
+    );
+    playerSprite = {
+      model: characterSprites.modelFor(playerSkinPrompt, playerAnim.anim, playerModel),
+      anim: playerAnim.anim,
+      angle: WORLD_ANGLE,
+      animStartedAt: playerAnim.animStartedAt,
+    };
+  }
+  if (spritesOn) {
+    for (const ee of enemyEntities) updateEntitySprite(ee, now, { npc: false });
+    for (const npc of npcEntities) updateEntitySprite(npc, now, { npc: true });
+  }
   renderer.render(
     {
       pos: playerPos,
@@ -1366,6 +1558,9 @@ function materializeSpawn(effect: {
   const spriteHash = typeof effect.data.sprite_hash === "string" ? effect.data.sprite_hash : undefined;
 
   if (effect.entityKind === "npc") {
+    // El caso central del skin IA: la descripción del motor narrativo es el
+    // prompt con el que se repinta la base y_bot frame a frame.
+    const npcPrompt = effect.description || (effect.name ?? effect.entityId);
     npcEntities.push({
       id: effect.entityId,
       pos,
@@ -1377,7 +1572,9 @@ function materializeSpawn(effect: {
       alive: true,
       category: "creature",
       spriteHash,
+      skinPrompt: npcPrompt,
     });
+    characterSprites.requestSkin(npcPrompt);
     log(`✨ ${effect.name ?? "NPC"} aparece`);
     return;
   }
@@ -1507,8 +1704,8 @@ async function runTitleFlow(): Promise<void> {
       activeSessionId = res.state.session_id;
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
-      // resume: trust the save's appearance verbatim. If model_id is empty
-      // and player_sprites is on, setPlayerAppearance will refuse to start.
+      // resume: trust the save's appearance verbatim. Un model_id sin sheets
+      // completos (o vacío) cae a la base y_bot dentro de setPlayerAppearance.
       const desiredModel = res.state.player.appearance.model_id;
       const skinPath = res.state.player.appearance.skin_path || "";
       await setPlayerAppearance(desiredModel, skinPath);

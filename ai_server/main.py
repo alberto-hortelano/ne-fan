@@ -56,7 +56,9 @@ from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
 from sprite_generator import SpriteGenerator
-from controlnet_skin import ControlNetSkinGenerator, seed_for
+from controlnet_skin import ControlNetSkinGenerator
+from dev_api_cache import DEV_API_CACHE
+from sprite_skin_meshy import SpriteSkinMeshy
 from scene_image_generator import SceneImageGenerator, SIDES
 from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
@@ -70,6 +72,7 @@ texture_gen: TextureGenerator | None = None
 model_gen: ModelGenerator | None = None
 skin_gen: SkinGenerator | None = None
 controlnet_skin_gen: ControlNetSkinGenerator | None = None
+sprite_skin_gen: "SpriteSkinMeshy | None" = None
 sprite_gen: SpriteGenerator | None = None
 scene_image_gen: SceneImageGenerator | None = None
 scene_segmenter: SceneSegmenter | None = None
@@ -443,6 +446,26 @@ def _touch_asset(hash_key: str) -> None:
         asset_manifest.touch(hash_key)
 
 
+class DevApiCacheRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/dev/api_cache")
+async def dev_api_cache_status():
+    """Estado del cache de modo dev (toggle de la top bar del cliente 2D):
+    on/off + último payload guardado por canal de API."""
+    return DEV_API_CACHE.status()
+
+
+@app.post("/dev/api_cache")
+async def dev_api_cache_toggle(body: DevApiCacheRequest):
+    """Enciende/apaga el modo dev: con él activo, cada API de IA de pago
+    (Meshy i2i, Meshy 3D, fal) devuelve su última respuesta cacheada en vez
+    de llamar de verdad. Persiste en disco (sobrevive reinicios)."""
+    DEV_API_CACHE.set_enabled(body.enabled)
+    return DEV_API_CACHE.status()
+
+
 @app.get("/health")
 async def health():
     cache_total = asset_manifest.total_bytes() if asset_manifest else 0
@@ -525,10 +548,13 @@ async def generate_model_endpoint(body: ModelRequest):
     """Generate a 3D model (GLB) from a prompt."""
     import asyncio
 
-    key = model_cache.hash_key(body.prompt)
+    # namespace_context: en modo dev-cache el GLB deriva de una respuesta
+    # rancia de Meshy — no debe pisar el slot real de este prompt.
+    model_ctx = DEV_API_CACHE.namespace_context()
+    key = model_cache.hash_key(body.prompt, model_ctx)
 
     # Check cache
-    if model_cache.has(body.prompt, "model"):
+    if model_cache.has(body.prompt, "model", model_ctx):
         return {
             "hash": key,
             "cached": True,
@@ -543,7 +569,7 @@ async def generate_model_endpoint(body: ModelRequest):
         )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    model_cache.put(body.prompt, "model", glb_bytes)
+    model_cache.put(body.prompt, "model", glb_bytes, model_ctx)
 
     return {
         "hash": key,
@@ -744,6 +770,9 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
+    # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
+    # namespacear la clave para no contaminar el cache real de este layout.
+    context = DEV_API_CACHE.namespace_context(context)
     key = scene_cache.hash_key(body.prompt, context)
 
     if scene_cache.has(body.prompt, "scene", context):
@@ -801,11 +830,11 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
 
     png = _decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
-    ctx = {
+    ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
         "sam_model": scene_segmenter._fal.auto_segment_model,
         "vision_model": llm_client.model,
-    }
+    })
     key = segment_cache.hash_key("analysis", ctx)
     cached = segment_cache.get_by_hash(key, "analysis")
     if cached is not None:
@@ -885,96 +914,100 @@ SPRITE_SHEETS_DIR = Path(__file__).resolve().parent.parent / "nefan-html" / "pub
 SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_sheets"
 
 
-def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str) -> str:
+def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str, ai_model: str) -> str:
     """Hash that invalidates whenever the underlying Mixamo sheet is
     re-rendered. Including the base meta.json mtime guarantees the skinned
     cache rebuilds on top of the latest frames; otherwise a re-render of the
-    base would silently keep the stale skinned variant alive.
+    base would silently keep the stale skinned variant alive. The Meshy model
+    and the keyframe profile are part of the key: cambiar de nano-banana-2 a
+    -pro (o retunear ANIM_PROFILES) debe regenerar, no servir el cache viejo.
     """
     import hashlib
+    from sprite_skin_meshy import ANIM_PROFILES, DEFAULT_PROFILE
     base_meta = SPRITE_SHEETS_DIR / model / anim / angle / "meta.json"
     base_stamp = str(int(base_meta.stat().st_mtime)) if base_meta.exists() else "0"
-    payload = "\n".join([model, anim, angle, prompt.strip().lower(), base_stamp])
+    n_kf, fps = ANIM_PROFILES.get(anim, DEFAULT_PROFILE)
+    payload = "\n".join(
+        [model, anim, angle, prompt.strip().lower(), base_stamp, ai_model, f"kf{n_kf}@{fps}",
+         # En modo dev-cache los frames derivan de una respuesta rancia: clave
+         # aparte para no contaminar el cache real de este prompt.
+         DEV_API_CACHE.namespace_suffix()]
+    )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 @app.post("/skin_sprite_sheet")
 async def skin_sprite_sheet_endpoint(request: Request):
-    """Apply img2img with `prompt` to every frame of a pre-rendered Mixamo
-    sheet at `nefan-html/public/sprites/{model}/{anim}/{angle}/` and serve the
-    resulting frames from `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
+    """Skinnea una anim de un sheet Mixamo con el prompt del personaje vía
+    Meshy (hero-shot de identidad + atlas de keyframes por dirección — el
+    pipeline validado en skinning_lab; la vía local SD+ControlNet quedó
+    descartada) y sirve los frames desde
+    `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
 
-    Body: {model, anim, angle, prompt, strength?, gamma?}
-    Returns: {ok, hash, meta, frame_urls: [[url, ...], ...]}
+    Body: {model, anim, angle, prompt}
+    Returns: {ok, hash, meta, frame_urls: [[url, ...], ...]} — OJO: el meta
+    devuelto es el del sheet SKINNEADO (keyframes reducidos + fps de perfil),
+    no el del base. El cliente reproduce con este meta.
     """
-    import asyncio
-    from PIL import Image
+    global sprite_skin_gen
 
     body = await request.json()
     model = str(body.get("model", "")).strip()
     anim = str(body.get("anim", "idle")).strip()
     angle = str(body.get("angle", "isometric_30")).strip()
     prompt = str(body.get("prompt", "")).strip()
-    # 0.40 is the strength sweet spot we landed on with ControlNet+canny:
-    # high enough to repaint clothing/skin, low enough that the silhouette
-    # the canny edges encode still drives the result. Tuned alongside
-    # controlnet_scale=0.5 in ControlNetSkinGenerator.
-    strength = float(body.get("strength", 0.40))
 
     if not (model and prompt):
         raise HTTPException(status_code=400, detail="missing model or prompt")
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
-    meta_path = sheet_dir / "meta.json"
-    if not meta_path.exists():
+    if not (sheet_dir / "meta.json").exists():
         raise HTTPException(status_code=404, detail=f"sheet not found: {model}/{anim}/{angle}")
 
-    with open(meta_path) as f:
-        meta = json.load(f)
+    if sprite_skin_gen is None:
+        try:
+            sprite_skin_gen = SpriteSkinMeshy(
+                SPRITE_SHEETS_DIR, SKINNED_SHEETS_DIR, config["sprite_skin_model"]
+            )
+        except ValueError as e:
+            # MESHY_API_KEY ausente o modelo desconocido: el cliente degrada a
+            # la base y_bot (una entrada de error-log, sin reintentos).
+            raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}") from e
 
-    key = _skin_sheet_key(model, anim, angle, prompt)
+    key = _skin_sheet_key(model, anim, angle, prompt, sprite_skin_gen.ai_model)
     out_dir = SKINNED_SHEETS_DIR / key
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Build the URL list eagerly so the client can start downloading frames
-    # the moment they hit disk. Each cached frame is reused on subsequent
-    # requests with the same (model, anim, angle, prompt) tuple.
-    directions = int(meta.get("directions", 1))
-    frame_count = int(meta.get("frame_count", 1))
-    frame_urls: list[list[str]] = []
-
-    def frame_path(d: int, f: int) -> Path:
-        return out_dir / f"dir_{d}_frame_{f:03d}.png"
-
-    def src_path(d: int, f: int) -> Path:
-        return sheet_dir / f"dir_{d}_frame_{f:03d}.png"
-
-    # ControlNet (canny) anchors the silhouette across every frame, and the
-    # seed is derived from (model, anim, prompt) so the same character is
-    # sampled for every frame instead of re-rolling clothing 116 times.
-    seed = seed_for(prompt, salt=f"{model}|{anim}|{angle}")
-
-    def render_one(src: Path, dst: Path) -> None:
-        base = Image.open(src).convert("RGBA")
-        png_bytes = controlnet_skin_gen.generate_to_bytes(
-            base, prompt, seed=seed, strength=strength
-        )
-        dst.write_bytes(png_bytes)
+    out_meta_path = out_dir / "meta.json"
 
     start = time.time()
-    async with _gpu_lock:
-        for d in range(directions):
-            row: list[str] = []
-            for f in range(frame_count):
-                dst = frame_path(d, f)
-                if not dst.exists():
-                    src = src_path(d, f)
-                    if not src.exists():
-                        continue
-                    await asyncio.to_thread(render_one, src, dst)
-                row.append(f"/cache/sprite_sheet/{key}/dir_{d}_frame_{f:03d}.png")
-            frame_urls.append(row)
+    if out_meta_path.exists():
+        # meta.json se escribe el ÚLTIMO (skin_anim es todo-o-nada): su
+        # presencia garantiza que todos los frames están en disco.
+        with open(out_meta_path) as f:
+            meta = json.load(f)
+    else:
+        try:
+            meta = await sprite_skin_gen.skin_anim(model, anim, angle, prompt, out_dir)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Meshy sprite skin failed ({model}/{anim}): {type(e).__name__}: {e}",
+            ) from e
+        print(
+            f"SpriteSkin: {model}/{anim} ← \"{prompt[:40]}\" "
+            f"({meta['directions']} dirs × {meta['frame_count']} kf, "
+            f"${meta['skin']['cost_usd']}, {int(time.time() - start)}s)"
+        )
     elapsed_ms = int((time.time() - start) * 1000)
+
+    frame_urls = [
+        [
+            f"/cache/sprite_sheet/{key}/dir_{d}_frame_{f:03d}.png"
+            for f in range(int(meta["frame_count"]))
+        ]
+        for d in range(int(meta["directions"]))
+    ]
 
     return {
         "ok": True,

@@ -66,7 +66,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
+      # pillow + httpx: deps ligeras de los tests de sprite_skin_meshy
+      # (atlas/keyframes). El resto de la suite sigue siendo stdlib-only.
+      - run: pip install ruff pillow httpx
       - run: ruff check ai_server
       - run: python -m compileall -q ai_server
       - run: python -m unittest discover -s ai_server/tests

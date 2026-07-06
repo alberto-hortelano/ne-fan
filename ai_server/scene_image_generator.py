@@ -68,8 +68,21 @@ class SceneImageGenerator:
         return Image.open(io.BytesIO(png_bytes)).convert("RGB")
 
     def _run(self, prompt: str, refs: list[str]) -> tuple[bytes, dict]:
-        """Drive the async Meshy client from a sync context (called via to_thread)."""
-        return asyncio.run(self._meshy.run_one(self._model, prompt, refs))
+        """Drive the async Meshy client from a sync context (called via to_thread).
+
+        Pasa por DevApiCache: en modo dev devuelve la última escena generada
+        (0 créditos); la task dict se sustituye por un stub sin credits."""
+        from dev_api_cache import DEV_API_CACHE
+
+        task_holder: list[dict] = []
+
+        def _call() -> list[bytes]:
+            png, task = asyncio.run(self._meshy.run_one(self._model, prompt, refs))
+            task_holder.append(task)
+            return [png]
+
+        blobs, _cached = DEV_API_CACHE.through_sync("meshy_i2i_scene", _call, note=prompt)
+        return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
     def generate_full(
         self,

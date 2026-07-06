@@ -24,6 +24,7 @@ export type TitleAction =
     };
 
 const MIXAMO_MODELS: { id: string; name: string }[] = [
+  { id: "y_bot", name: "Y Bot (base)" },
   { id: "paladin", name: "Paladín" },
   { id: "eve", name: "Eve" },
   { id: "warrok", name: "Warrok" },
@@ -137,7 +138,7 @@ export class TitleScreen {
       throw new Error("no games available in bridge — check nefan-core/data/games/");
     }
 
-    const spritesOn = CONFIG.graphics.player_sprites;
+    const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
 
     const modelBlock = spritesOn
@@ -148,7 +149,7 @@ export class TitleScreen {
            </select>
          </label>`
       : `<div style="margin-bottom:14px;color:#666;font-size:11px;font-style:italic">
-           Modelo Mixamo deshabilitado (activa <code>graphics.player_sprites</code> en config.ts para usarlo).
+           Modelo Mixamo deshabilitado (activa <code>graphics.character_sprites</code> en config.ts para usarlo).
          </div>`;
 
     const skinBlock = skinOn
