@@ -972,7 +972,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
         except ValueError as e:
             # MESHY_API_KEY ausente o modelo desconocido: el cliente degrada a
             # la base y_bot (una entrada de error-log, sin reintentos).
-            raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}")
+            raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}") from e
 
     key = _skin_sheet_key(model, anim, angle, prompt, sprite_skin_gen.ai_model)
     out_dir = SKINNED_SHEETS_DIR / key
@@ -993,7 +993,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
             raise HTTPException(
                 status_code=502,
                 detail=f"Meshy sprite skin failed ({model}/{anim}): {type(e).__name__}: {e}",
-            )
+            ) from e
         print(
             f"SpriteSkin: {model}/{anim} ← \"{prompt[:40]}\" "
             f"({meta['directions']} dirs × {meta['frame_count']} kf, "

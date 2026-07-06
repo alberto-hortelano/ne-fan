@@ -72,7 +72,7 @@ class AtlasRoundtripTest(unittest.TestCase):
 
             frames = split_atlas(atlas, layout, len(paths), frame_size)
             self.assertEqual(len(frames), len(paths))
-            for frame, color in zip(frames, colors):
+            for frame, color in zip(frames, colors, strict=True):
                 self.assertEqual(frame.getpixel((16, 16)), color)
 
     def test_split_resizes_offsized_atlas(self):

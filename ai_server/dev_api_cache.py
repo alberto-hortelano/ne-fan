@@ -22,8 +22,8 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable
 
 
 def _safe_channel(channel: str) -> str:
