@@ -1,4 +1,4 @@
-/** WebSocket bridge — runs GameSimulation + ScenarioRunner, communicates with Godot on :9877.
+/** WebSocket bridge — runs GameSimulation + NarrativeState, communicates with Godot on :9877.
  *
  *  Este archivo es sólo bootstrap: construye las instancias, el BridgeContext
  *  y el wiring de transporte (WS + state HTTP API). La lógica de cada mensaje
@@ -14,7 +14,6 @@ import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
-import { ScenarioRunner } from "../src/scenario/scenario-runner.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { FsSessionStorage } from "../src/narrative/session-storage.js";
 import { AiClient } from "../src/narrative/ai-client.js";
@@ -61,7 +60,6 @@ const narrativeSubscribers = new Set<WebSocket>();
 const ctx: BridgeContext = {
   sim,
   store,
-  scenario: new ScenarioRunner(),
   narrative,
   sessionStorage,
   aiClient: new AiClient({ baseUrl: AI_SERVER_URL }),

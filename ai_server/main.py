@@ -339,36 +339,27 @@ class ReportPlayerChoiceRequest(BaseModel):
 
 
 class GenerateSceneRequest(BaseModel):
-    """/generate_scene accepts two request shapes:
-    - the bridge's LlmContext (nefan-core/src/narrative/types.ts):
-      session_id, game_id, world, player + extras
-    - ScenarioRunner's load_game bypass: premise, setting, scene_id,
-      scene_description
-    Extra fields pass through to the narrative engine untouched so the TS
-    side can add context without a lockstep deploy; the validator only
-    enforces that one complete shape is present."""
+    """/generate_scene takes the bridge's LlmContext
+    (nefan-core/src/narrative/types.ts): session_id, game_id, world, player
+    + extras. Extra fields pass through to the narrative engine untouched so
+    the TS side can add context without a lockstep deploy; the validator only
+    enforces that the shape is complete."""
     model_config = ConfigDict(extra="allow")
 
-    # LlmContext shape
     session_id: str | None = None
     game_id: str | None = None
     world: dict | None = None
     player: dict | None = None
-    # ScenarioRunner bypass shape
-    premise: str | None = None
-    scene_id: str | None = None
 
     @model_validator(mode="after")
-    def _require_one_shape(self) -> "GenerateSceneRequest":
+    def _require_context(self) -> "GenerateSceneRequest":
         is_context = bool(
             self.session_id and self.game_id
             and self.world is not None and self.player is not None
         )
-        is_bypass = bool(self.premise and self.scene_id)
-        if not (is_context or is_bypass):
+        if not is_context:
             raise ValueError(
-                "expected either an LlmContext (session_id, game_id, world, player) "
-                "or a ScenarioRunner payload (premise, scene_id)"
+                "expected an LlmContext (session_id, game_id, world, player)"
             )
         return self
 

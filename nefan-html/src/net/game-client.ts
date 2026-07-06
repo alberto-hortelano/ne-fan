@@ -4,7 +4,6 @@
 
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
-import type { NpcUpdate, ScenarioUpdate } from "@nefan-core/src/scenario/scenario-types.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
@@ -21,8 +20,6 @@ export interface FrameResult {
     forward?: { x: number; y: number; z: number };
     attackType?: string;
   }[];
-  npcs?: NpcUpdate[];
-  scenario?: ScenarioUpdate;
 }
 
 export interface TickInputs {
@@ -41,7 +38,7 @@ export interface RoomEnemy {
   personality: EnemyPersonality;
 }
 
-export type GameClientEvent = "scenario_update" | "connected" | "disconnected";
+export type GameClientEvent = "connected" | "disconnected";
 type EventHandler = (...args: unknown[]) => void;
 
 export interface GameClient {
@@ -50,9 +47,7 @@ export interface GameClient {
   /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
    *  sim ni al player — el mundo es un plano continuo. */
   addEnemies(enemies: RoomEnemy[]): void;
-  loadGame(gameId: string): void;
   respawn(pos: Vec3): void;
-  sendScenarioEvent(event: string, data?: Record<string, unknown>): void;
   getCombatant(id: string): { health: number; maxHealth: number; weaponId: string } | undefined;
   isConnected: boolean;
   isBridge: boolean;
@@ -81,11 +76,9 @@ export class BridgeGameClient implements GameClient {
         events: msg.events ?? [],
         playerHp: msg.playerHp,
         enemies: msg.enemies ?? [],
-        npcs: msg.npcs,
-        scenario: msg.scenario,
       };
       this.pendingFrame = frame;
-      this.lastState = { ...frame, scenario: undefined }; // Keep last state without one-shot scenario
+      this.lastState = frame;
     });
 
     bridge.on("connected", () => {
@@ -138,10 +131,6 @@ export class BridgeGameClient implements GameClient {
     );
   }
 
-  loadGame(gameId: string): void {
-    this.bridge.sendLoadGame(gameId);
-  }
-
   addEnemies(enemies: RoomEnemy[]): void {
     if (enemies.length === 0) return;
     this.bridge.sendAddCombatants(
@@ -154,10 +143,6 @@ export class BridgeGameClient implements GameClient {
 
   respawn(pos: Vec3): void {
     this.bridge.sendRespawn(pos);
-  }
-
-  sendScenarioEvent(event: string, data?: Record<string, unknown>): void {
-    this.bridge.sendScenarioEvent(event, data);
   }
 
   getCombatant(id: string) {

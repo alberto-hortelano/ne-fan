@@ -14,7 +14,6 @@ import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
-import { ScenarioRunner } from "../src/scenario/scenario-runner.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
@@ -90,7 +89,6 @@ function makeCtx(opts: { gamesDir?: string; ai?: FakeAi } = {}) {
   const ctx: BridgeContext = {
     sim,
     store,
-    scenario: new ScenarioRunner(),
     narrative,
     sessionStorage: storage,
     aiClient,

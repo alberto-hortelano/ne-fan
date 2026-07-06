@@ -160,7 +160,7 @@ export class BridgeClient {
 
   /** Send a frame to the bridge. When disconnected the message is dropped;
    *  unless `opts.quietOnDisconnect` is set we log it to ErrorLog so a lost
-   *  one-shot (load_game, dialogue_choice…) is visible. High-frequency calls
+   *  one-shot (start_session, dialogue_choice…) is visible. High-frequency calls
    *  like `sendInput` pass `quietOnDisconnect: true` — losing one frame is
    *  harmless and we'd otherwise flood the log. */
   private send(msg: Record<string, unknown>, opts: { quietOnDisconnect?: boolean } = {}): void {
@@ -218,10 +218,6 @@ export class BridgeClient {
     this.send({ type: "load_room", roomId, enemies, dimensions });
   }
 
-  sendLoadGame(gameId: string): void {
-    this.send({ type: "load_game", gameId });
-  }
-
   sendRespawn(pos?: { x: number; y: number; z: number }): void {
     this.send({ type: "respawn", pos });
   }
@@ -260,10 +256,6 @@ export class BridgeClient {
     personality: EnemyPersonality;
   }[]): void {
     this.send({ type: "add_combatants", enemies });
-  }
-
-  sendScenarioEvent(event: string, data?: Record<string, unknown>): void {
-    this.send({ type: "scenario_event", event, data });
   }
 
   // ── Narrative requests (correlated by requestId) ──

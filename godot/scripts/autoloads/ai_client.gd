@@ -1,6 +1,8 @@
 ## HTTP client for ai_server endpoints.
 extends Node
 
+# Consecuencias narrativas inyectadas para tests (RemoteControl
+# _cmd_inject_consequences); el flujo canónico llega por el bridge.
 signal narrative_consequences(event_id: String, consequences: Array)
 
 const SERVER_URL = "http://127.0.0.1:8765"
@@ -12,44 +14,6 @@ func _service_enabled(service_id: String) -> bool:
 	if not settings:
 		return true
 	return settings.is_enabled(service_id)
-
-
-func report_player_choice(event_id: String, speaker: String, chosen_text: String,
-		free_text: String, narrative_context: Dictionary) -> void:
-	"""Tell the narrative engine that the player made a dialogue choice. The
-	engine may respond with consequences (story_update, spawn_entity, ...)
-	which we re-emit on the narrative_consequences signal so main.gd can apply
-	them in-world."""
-	if not _service_enabled("ai_server"):
-		return
-	var http := HTTPRequest.new()
-	add_child(http)
-	http.timeout = 60.0
-	var json_str := JSON.stringify({
-		"event_id": event_id,
-		"speaker": speaker,
-		"chosen_text": chosen_text,
-		"free_text": free_text,
-		"context": narrative_context,
-	})
-	var headers := PackedStringArray(["Content-Type: application/json"])
-	http.request_completed.connect(func(_r, code, _h, body: PackedByteArray):
-		http.queue_free()
-		if code != 200:
-			push_warning("AIClient: report_player_choice HTTP %d" % code)
-			return
-		var data = JSON.parse_string(body.get_string_from_utf8())
-		if data == null or not data is Dictionary:
-			return
-		var consequences: Array = data.get("consequences", [])
-		if consequences.size() > 0:
-			print("AIClient: %d narrative consequences for event %s" % [consequences.size(), event_id])
-		narrative_consequences.emit(event_id, consequences)
-	)
-	var err := http.request(SERVER_URL + "/report_player_choice", headers, HTTPClient.METHOD_POST, json_str)
-	if err != OK:
-		push_warning("AIClient: report_player_choice request failed: %d" % err)
-		http.queue_free()
 
 
 func notify_session_start(session_id: String, game_id: String, is_resume: bool) -> void:

@@ -297,8 +297,6 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 5. El bridge aplica las consequences (dispatchConsequences + tick de plugins), guarda, y difunde `narrative_event` con los effects
 6. Godot los materializa vía señales (`narrative_dialogue`/`narrative_spawn`/`narrative_story_delta`…); el espejo GD solo refleja en memoria
 
-**Bypass legacy** (`load_game`, deprecated): beats scripted del ScenarioRunner sin LLM ni sesión canónica — solo para F4/`game_test.py`. Ahí el diálogo sigue yendo por `AIClient.report_player_choice` (HTTP directo).
-
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
@@ -313,7 +311,7 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **Visibilidad para el motor narrativo (F6)**: `serializeForLlm()` añade un bloque `plugins: [{id, name, version, views}]` con las `derived_views` de cada plugin activo evaluadas (resumen, no el slice entero); una vista que lance se marca `{_error}` sin tumbar el turno. La tool MCP `plugin_inspect(plugin_id, view?)` (→ `GET /plugins/{id}/inspect?view=`) da el detalle: con `view` la derived_view concreta, sin `view` el slice completo + `available_views`. Lógica pura en `src/plugins/views.ts` (`buildPluginLlmViews`/`inspectPlugin`); resuelve el manifest del `activePlugins` del bridge (shipped) o del embebido en el `PluginRecord` (IA).
 - **Evolución / migración (F7)**: en resume, si el manifest del FS sube de `version` (mismo `name`, hash distinto), `bindPluginsForResume` ejecuta la cadena `migrate[v]` (`runMigrationStep`, **slice-only**: escribir fuera de slice o emitir eventos lanza) para convertir el slice del save al shape nuevo, en vez de abortar. Las fixtures de la versión nueva ya las valida `loadGamePluginManifests` al cargar. Fail-loud ante hueco en la cadena, degradación (FS < save) o cambio sin bump de versión. El record migrado adopta id/version/slice nuevos preservando `name`/`origin`; el siguiente resume casa por id (idempotente). La guarda slice-only se duplica en `validateManifestStatic`. Evolución en runtime (vía `plugin_register` con versión mayor) aún pendiente.
 - **Commerce shipped (F8)**: plugin de ejemplo real en `nefan-core/data/games/tavern_intro/plugins/commerce.json`. El bridge lo carga/activa en `start_session`. El motor narrativo lo conduce con `plugin_event`: `market_open {market_id, name, stock}` registra un mercado en runtime (los mercaderes spawnean tras la génesis; las `projections` sólo siembran los presentes al iniciar); `trade_offered {market_id, item_id, price}` descuenta stock+oro, añade al inventario y emite `trade_completed` (no-op si falta stock u oro). Es el patrón a replicar para otros sistemas (reputación, crafting…). End-to-end en `test/plugin-commerce.test.ts`.
-- **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Ojo: el flujo Godot (bypass `load_game`) aún no ejercita plugins; viven en la sesión del bridge (`start_session`/`resume_session`).
+- **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Los plugins viven en la sesión del bridge (`start_session`/`resume_session`).
 - **Pendiente** (único, opcional): evolución en runtime vía `plugin_register` (versión mayor que reemplace al plugin vigente con su `migrate`); hoy la migración sólo opera en resume.
 
 ## Sistema de combate
@@ -375,7 +373,7 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 
 **Reuse de assets**: cualquier `texture_prompt`/`model_prompt` admite un hermano `texture_hash`/`model_hash`. Si Claude lo proporciona (copiándolo de `available_assets`), Godot carga del cache local sin regenerar.
 
-**Spawn dinámico**: vía `scenario_spawn_npc`/`spawn_objects`/`spawn_enemy` (logic_bridge) o vía consequences `spawn_entity` que devuelve `react_to_player`. Las entidades se materializan en el mundo en runtime sin recargar la escena.
+**Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (señal `narrative_spawn` en Godot, `materializeSpawn` en HTML). Las entidades se materializan en el mundo en runtime sin recargar la escena.
 
 **Legacy room schema**: `data/rooms/*.json` antiguos (crypt, tavern, corridor) usan un schema más simple con `surfaces.floor/ceiling/walls`, `exits` y dimensiones pequeñas. Se cargan con F1/F2/F3 sólo para tests visuales — no son la unidad de gameplay.
 
@@ -397,7 +395,7 @@ Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []
 
 - **GDScript**: `push_error(...)` para invariantes rotos (frame mal formado, autoload ausente). `push_warning(...)` para degradación esperable (servicio opcional caído). `print(...)` sólo para trazas informativas que no son errores. Para preconditions duras de un lookup, usar `NodeAccess.must_get_node(root, path, "ctx")` (push_error + retorna null) en vez de `get_node_or_null` desnudo.
 - **TS/HTML**: `errors.push("source", msg, err)` (`nefan-html/src/ui/error-log.ts`) en cualquier `catch` recuperable. Lanzar de nuevo si el caller necesita decidir. Devolver `Result<T,E>` (discriminated union `{ok:true,...} | {ok:false,error}`) cuando "vacío" y "error" son indistinguibles si se colapsan.
-- **TS/bridge**: cualquier `.catch()` sobre una promise que el cliente está esperando debe broadcastear `narrative_status: error` además de loguear — patrón en `nefan-core/bridge/ws-server.ts` (case `dialogue_choice` y `load_game`).
+- **TS/bridge**: cualquier `.catch()` sobre una promise que el cliente está esperando debe broadcastear `narrative_status: error` además de loguear — patrón en `nefan-core/bridge/handlers/dialogue.ts` (`dialogue_choice`).
 - **Python/FastAPI**: `raise HTTPException(status_code=..., detail=...)`, **nunca** `return {"error": ...}` con 200 OK. Pydantic `BaseModel` por endpoint para que campos ausentes salgan como 422 estructurado. Modelo de referencia: `/report_player_choice` en `ai_server/main.py`.
 
 Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.auto_disconnect(self, autoload.signal, callback)` para que la subscripción muera con el nodo. Autoload→autoload se documenta en línea (`# OK: autoload, vida == app`).

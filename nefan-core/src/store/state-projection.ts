@@ -4,11 +4,8 @@
  *  Why a projection: NarrativeState is the source of truth for "who exists in
  *  the world and where" — it survives save/resume, feeds the LLM context,
  *  and persists across scene reloads. GameStore.enemies is the per-tick view
- *  the HUD/renderer consumes. Today these two lists drift: scenarios spawn
- *  enemies into the simulation and re-emit `room_changed` with the full
- *  list, while NarrativeState.entities is populated through a parallel path
- *  (registerSceneNpcs + scenario_spawn_npc). Centralizing the projection
- *  here keeps the audit invariant in one place. */
+ *  the HUD/renderer consumes. Centralizing the projection here keeps the
+ *  audit invariant (entities ⇒ enemies) in one place. */
 import type { EntityRecord } from "../narrative/types.js";
 import type { EnemyState } from "../types.js";
 
@@ -28,7 +25,7 @@ export interface ProjectEnemiesOptions {
  *
  *  The function reads HP/weapon from two conventions in `entity.data`:
  *    - top-level: `{health, max_health, weapon_id}` (legacy)
- *    - nested:    `{combat: {health, weapon_id}}` (scenario spawn shape)
+ *    - nested:    `{combat: {health, weapon_id}}` (spawn_entity consequences)
  *  Both are accepted so callers don't have to reshape their data before
  *  registering the entity. */
 export function projectEnemiesFromEntities(

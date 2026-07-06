@@ -8,13 +8,11 @@ import {
   handleLoadRoom,
   handleRespawn,
   handleAddCombatants,
-  handleScenarioEvent,
 } from "./handlers/simulation.js";
 import {
   handleDeleteSession,
   handleListGames,
   handleListSessions,
-  handleLoadGame,
   handleResumeSession,
   handleSaveSession,
   handleStartSession,
@@ -40,12 +38,6 @@ export async function routeMessage(
       break;
     case "add_combatants":
       handleAddCombatants(msg, ws, ctx);
-      break;
-    case "load_game":
-      handleLoadGame(msg, ws, ctx);
-      break;
-    case "scenario_event":
-      await handleScenarioEvent(msg, ws, ctx);
       break;
     case "ping":
       ctx.send(ws, { type: "pong" });

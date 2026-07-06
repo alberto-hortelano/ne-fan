@@ -1,5 +1,5 @@
 /** Handlers de ciclo de vida de sesión: listado de juegos/sesiones, start,
- *  resume, delete, save y el bypass legacy load_game. */
+ *  resume, delete y save. */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -19,11 +19,9 @@ import type {
   DeleteSessionMessage,
   ListGamesMessage,
   ListSessionsMessage,
-  LoadGameMessage,
   ResumeSessionMessage,
   SaveSessionMessage,
   StartSessionMessage,
-  StateUpdateMessage,
 } from "../../src/protocol/messages.js";
 
 export function listGames(
@@ -325,80 +323,4 @@ export async function handleSaveSession(
   }
   const ok = await ctx.narrative.save();
   ctx.send(ws, { type: "session_saved", requestId: msg.requestId, ok });
-}
-
-export function handleLoadGame(msg: LoadGameMessage, ws: ClientSocket, ctx: BridgeContext): void {
-  // Reset simulation
-  ctx.sim.reset();
-  ctx.scenario
-    .loadGame(ctx.gamesDir, msg.gameId)
-    .then(async (sceneData) => {
-      if (!sceneData) {
-        // No initial scene materialized — the scenario runner expected
-        // one but loadSceneData returned null. Reply directly to the
-        // requesting socket: `load_game` is the legacy bypass path so
-        // the caller is not necessarily in `narrativeSubscribers`, and
-        // a `broadcastNarrative` would not reach them.
-        const message = `load_game '${msg.gameId}': scenario produced no initial scene`;
-        console.warn(`Bridge: ${message}`);
-        ctx.send(ws, {
-          type: "narrative_status",
-          phase: "error",
-          kind: "scene",
-          message,
-        });
-        return;
-      }
-
-      // Set up player
-      const playerHp = 100;
-      ctx.store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
-      ctx.sim.addCombatant(
-        createCombatant("player", playerHp, "unarmed", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
-      );
-
-      // Send scene data first so Godot rebuilds the room
-      const sceneResponse: StateUpdateMessage = {
-        type: "state_update",
-        events: [{ type: "player_respawned", hp: playerHp }],
-        playerHp,
-        enemies: [],
-        scenario: { change_scene: sceneData },
-      };
-      ctx.send(ws, sceneResponse);
-
-      // Run an initial tick to execute first beat actions (spawn NPCs, dialogue, etc.)
-      const initialTick = await ctx.scenario.tick(0, { x: 0, y: 0, z: 0 });
-
-      // Send beat actions after a short delay so Godot has time to build the scene
-      if (initialTick.scenarioUpdates.length > 0) {
-        setTimeout(() => {
-          for (const u of initialTick.scenarioUpdates) {
-            const beatResponse: StateUpdateMessage = {
-              type: "state_update",
-              events: [],
-              playerHp,
-              enemies: [],
-              npcs: initialTick.npcs,
-              scenario: u,
-            };
-            ctx.send(ws, beatResponse);
-          }
-        }, 500);
-      }
-
-      console.log(`Bridge: game '${msg.gameId}' loaded`);
-    })
-    .catch((err: unknown) => {
-      // Reply directly to the requesting socket — see the !sceneData
-      // branch above for why we don't `broadcastNarrative` here.
-      const message = `load_game '${msg.gameId}' failed: ${(err as Error).message ?? String(err)}`;
-      console.error(`Bridge: ${message}`);
-      ctx.send(ws, {
-        type: "narrative_status",
-        phase: "error",
-        kind: "scene",
-        message,
-      });
-    });
 }
