@@ -31,8 +31,20 @@ export interface NarrativePlayerState {
 export interface NarrativeWorldState {
   name: string;
   atmosphere: string;
+  /** Token de texto del estilo visual (prompts de imagen). Viene del
+   *  style.json del estilo congelado en la sesión. */
   style_token: string;
   active_scene_id: string;
+  /** Resumen del mundo (world_brief del game.json, ~1.200 chars). Viaja al
+   *  LLM en CADA turno vía serializeForLlm; el documento completo (world.md)
+   *  solo va en el bootstrap y bajo demanda (tool world_doc_get). */
+  description: string;
+  /** Estilo visual CONGELADO al crear la sesión: editar el pack después no
+   *  afecta a partidas en curso (costuras entre tiles ya pintados). */
+  style_id: string;
+  /** sha256 del world.md con el que se creó la sesión — clave de caches
+   *  (initial_scene_cache) y detección de ediciones del mundo. */
+  world_doc_hash: string;
 }
 
 /** Un elemento jugable del ANÁLISIS de la imagen IA de un tile: lo que la
@@ -172,6 +184,10 @@ export interface LlmContext {
   }>;
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string }>;
   rooms_visited: number;
+  /** Documento COMPLETO del mundo (world.md). Solo se adjunta en el request
+   *  de bootstrap de una sesión nueva — en turnos posteriores el motor usa
+   *  world.description y la tool world_doc_get. */
+  world_document?: string;
   /** Resumen del análisis de la imagen del tile ACTIVO (mundo derivado de la
    *  imagen): lo que hay pintado DE VERDAD, incluidas estructuras que el
    *  modelo de imagen inventó y no están en el esquema. Ground truth del

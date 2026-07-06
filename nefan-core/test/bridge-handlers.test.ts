@@ -35,6 +35,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, "..", "data");
 const REAL_GAMES_DIR = resolve(DATA_DIR, "games");
 const FIXTURE_GAMES = fileURLToPath(new URL("fixtures/games", import.meta.url));
+const FIXTURE_STYLES = fileURLToPath(new URL("fixtures/styles", import.meta.url));
 const REAL_STYLES_DIR = resolve(DATA_DIR, "styles");
 
 const combatConfig = loadConfig(
@@ -96,7 +97,7 @@ function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = 
     mapTriggers: new MapTriggerEvaluator(narrative),
     initialSceneCache: new InitialSceneCache(join(tmpdir(), "nefan-test-scene-cache-unused")),
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
-    stylesDir: opts.stylesDir ?? REAL_STYLES_DIR,
+    stylesDir: opts.stylesDir ?? FIXTURE_STYLES,
     cacheInitialScene: false,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
@@ -134,7 +135,7 @@ describe("bridge routing básico", () => {
   });
 
   it("list_games devuelve los juegos del directorio real", async () => {
-    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR });
+    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "list_games", requestId: "r1" }, socket, ctx);
     assert.equal(sent.length, 1);
@@ -219,6 +220,12 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(started.ok, true);
     assert.equal(started.isResume, false);
     assert.ok(started.sessionId);
+    // La identidad del mundo queda poblada desde game.json/style.json.
+    assert.equal(started.state?.world.name, "Juego de pruebas");
+    assert.equal(started.state?.world.style_id, "estilo_test");
+    assert.equal(started.state?.world.style_token, "test style token");
+    assert.ok(started.state?.world.description.length ?? 0 > 50);
+    assert.match(started.state?.world.world_doc_hash ?? "", /^[0-9a-f]{64}$/);
     // Los 3 manifests del fixture plugtest quedan activos con su projection.
     assert.equal(ctx.activePlugins.size, 3);
     assert.equal(narrative.plugins.length, 3);
@@ -241,6 +248,40 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(sceneEvent.effects[0].kind, "spawn_entity");
     // La escena quedó registrada y persistida.
     assert.ok(narrative.scenes_loaded["scene_test"]);
+  });
+
+  it("start_session adjunta world_document al bootstrap y world.description en el contexto", async () => {
+    const { ctx, broadcasts, aiCalls } = makeCtx();
+    const { socket } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    assert.equal(aiCalls.scene.length, 1);
+    const llmCtx = aiCalls.scene[0] as {
+      world_document?: string;
+      world: { description: string; style_id: string };
+    };
+    assert.match(String(llmCtx.world_document ?? ""), /Mundo de pruebas/);
+    assert.ok(llmCtx.world.description.length > 50);
+    assert.equal(llmCtx.world.style_id, "estilo_test");
+  });
+
+  it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "no_existe" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, false);
+    assert.match(started.error ?? "", /game_load_failed/);
   });
 
   it("start_session difunde narrative_status: error si la generación falla", async () => {

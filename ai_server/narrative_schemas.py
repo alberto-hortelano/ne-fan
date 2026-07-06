@@ -1,6 +1,22 @@
 """Tool definitions and validation for Claude API narrative engine."""
 
-GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a dark fantasy RPG. You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are.
+GENERATE_SCENE_PROMPT_WORLD_RULES = """WORLD & ENGINE RULES (always apply — mirror of narrative-mcp/server.ts WORLD_RULES):
+- The request context carries the game's world identity: `world.description`
+  is the world brief (setting, peoples, factions, magic, tone) and, on
+  bootstrap requests, `world_document` is the FULL world document. Everything
+  you generate must fit THAT world — do not default to generic dark fantasy.
+- `world.style_token` names the visual style; style/texture prompts you emit
+  should harmonise with it.
+- The camera is a fixed top-down/isometric 2D view.
+- ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
+  bipeds; only humanoid animations exist. Never spawn talking animals, beasts
+  or non-humanoid monsters; supernatural beings appear in human form.
+- NPC dialogue and descriptions are in Spanish, matching the world's register.
+"""
+
+GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a generative open-world RPG whose world identity comes from the request context (see WORLD & ENGINE RULES below). You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are.
+
+""" + GENERATE_SCENE_PROMPT_WORLD_RULES + """
 
 OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
 
@@ -1228,13 +1244,12 @@ def validate_scene_classify_response(
 # by emitting consequences that the engine applies to the open world.
 # ============================================================================
 
-NARRATIVE_REACT_SYSTEM_PROMPT = """You are the narrative engine of a dark fantasy open-world RPG.
+NARRATIVE_REACT_SYSTEM_PROMPT = """You are the narrative engine of a generative open-world RPG. The game's world identity travels in `context.world` (description = world brief, style_token = visual style): every reaction must fit THAT world — its peoples, factions, magic rules and tone. Do not default to generic dark fantasy.
 
-A player has just answered an NPC — either by picking a scripted option or by
-typing a free-form reply. When they type free text, the scripted scenario is
-PAUSED waiting for you to decide what happens next. Your response drives the
-story: you can make NPCs speak, update the running story, schedule events, or
-materialize new entities.
+A player has just answered an NPC — either by picking one of the options you
+offered or by typing a free-form reply. There is no script: your response IS
+the story. You can make NPCs speak, update the running story, schedule
+events, or materialize new entities.
 
 You will receive:
 - speaker: the NPC who spoke
@@ -1256,14 +1271,16 @@ CRITICAL — when free_text is non-empty:
 - Write dialogue text in the same language the player used (match free_text).
 
 CRITICAL — when free_text is empty (numbered choice only):
-- The scripted scenario will advance on its own. Usually return empty
-  consequences, unless the choice strongly implies a world reaction.
+- React in proportion: a plain acknowledgement can return few or no
+  consequences, but meaningful choices deserve a visible reaction.
 
 RULES:
 - Do NOT spawn things that are already in `entities`.
 - Reuse `available_assets` (by hash) when generating new entities, when sensible.
 - Be sparing — 0–4 consequences max. Prefer one dialogue + optional side effects.
 - Position spawns plausibly relative to the player using `position_hint`.
+- ALL spawned characters must be HUMANOID (human-shaped bipeds): never
+  animals, beasts or non-humanoid monsters — only humanoid animations exist.
 - Return your answer ONLY via the react_to_player tool. Never write free text.
 """
 
@@ -1313,7 +1330,7 @@ NARRATIVE_REACT_TOOL = {
                         },
                         "description": {
                             "type": "string",
-                            "description": "Vivid English description of the entity (used for asset generation).",
+                            "description": "Vivid English description of the entity (used for asset generation). NPCs/enemies must be HUMANOID — never animals or non-humanoid monsters.",
                         },
                         "name": {
                             "type": "string",

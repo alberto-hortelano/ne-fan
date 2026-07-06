@@ -1,0 +1,7 @@
+{
+  "game_id": "plugtest",
+  "title": "Juego de pruebas",
+  "description": "Fixture de tests del bridge: juego mínimo válido con plugins.",
+  "style_id": "estilo_test",
+  "world_brief": "Mundo mínimo de pruebas para los tests del bridge. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. "
+}

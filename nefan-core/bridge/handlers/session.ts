@@ -1,8 +1,16 @@
 /** Handlers de ciclo de vida de sesión: listado de juegos/sesiones, start,
  *  resume, delete y save. */
 
+import { createHash } from "node:crypto";
+
 import { createCombatant } from "../../src/combat/combatant.js";
-import { listGames, listStyles } from "../../src/games/loader.js";
+import {
+  listGames,
+  listStyles,
+  loadGameMeta,
+  loadStyleManifest,
+  loadWorldDoc,
+} from "../../src/games/loader.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
 import {
   loadGamePluginManifests,
@@ -49,8 +57,34 @@ export async function handleStartSession(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
-  ctx.activePlugins = new Map();
-  ctx.narrative.startNewSession(msg.gameId);
+  // El juego debe existir y validar ANTES de crear la sesión — arrancar un
+  // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
+  let worldKey: string;
+  try {
+    const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
+    const style = loadStyleManifest(ctx.stylesDir, meta.style_id);
+    const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
+    const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
+    worldKey = `${worldDocHash}:${style.style_id}`;
+    ctx.activePlugins = new Map();
+    ctx.narrative.startNewSession(msg.gameId);
+    ctx.narrative.setWorldInfo({
+      name: meta.title,
+      description: meta.world_brief,
+      style_id: style.style_id,
+      style_token: style.style_token,
+      world_doc_hash: worldDocHash,
+    });
+  } catch (err) {
+    console.error("Bridge: game load failed on start_session:", err);
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `game_load_failed: ${(err as Error).message ?? err}`,
+    });
+    return;
+  }
   if (msg.appearance) {
     ctx.narrative.updatePlayerAppearance(msg.appearance.model_id, msg.appearance.skin_path);
   }
@@ -99,7 +133,7 @@ export async function handleStartSession(
   // Dev-only shortcut: replay a cached bootstrap (world_map + first
   // scene) for the same gameId instead of paying the ~90 s LLM cost.
   // Gated by CONFIG.dev.cache_initial_scene; off in production.
-  const cached = ctx.cacheInitialScene ? ctx.initialSceneCache.get(msg.gameId) : null;
+  const cached = ctx.cacheInitialScene ? ctx.initialSceneCache.get(msg.gameId, worldKey) : null;
   if (cached) {
     console.log(
       `Bridge: initial_scene_cache HIT for gameId="${msg.gameId}" ` +
@@ -135,14 +169,18 @@ export async function handleStartSession(
   ctx.sceneGen.enqueue({
     key: "bootstrap",
     blocking: true,
-    run: () => runBootstrapTile(ctx, sessionGameId),
+    run: () => runBootstrapTile(ctx, sessionGameId, worldKey),
   });
 }
 
 /** Genera el tile (0,0) de una sesión nueva — corre dentro de la cola. El
  *  motor siembra el world map (map tools) y responde el tile de arranque con
  *  la escena inicial (taberna…), player y place_anchors. */
-async function runBootstrapTile(ctx: BridgeContext, sessionGameId: string): Promise<void> {
+async function runBootstrapTile(
+  ctx: BridgeContext,
+  sessionGameId: string,
+  worldKey = "",
+): Promise<void> {
   const sceneStart = Date.now();
   const fail = (message: string): void =>
     ctx.broadcastNarrative({
@@ -159,6 +197,9 @@ async function runBootstrapTile(ctx: BridgeContext, sessionGameId: string): Prom
     // (3-5 places + sites + links) via the map tools before it builds the
     // starting tile. Progressive expansion happens tile a tile.
     llmCtx.bootstrap_world_map = true;
+    // Solo en el bootstrap viaja el documento COMPLETO del mundo; el resto de
+    // turnos llevan world.description y la tool world_doc_get da el detalle.
+    llmCtx.world_document = loadWorldDoc(ctx.gamesDir, sessionGameId);
     llmCtx.generate_tile = {
       tx: 0,
       ty: 0,
@@ -196,7 +237,7 @@ async function runBootstrapTile(ctx: BridgeContext, sessionGameId: string): Prom
     // re-attaches exits from the restored world map.
     if (ctx.cacheInitialScene) {
       try {
-        ctx.initialSceneCache.set(sessionGameId, res.scene, ctx.narrative.worldMap.serialize());
+        ctx.initialSceneCache.set(sessionGameId, res.scene, ctx.narrative.worldMap.serialize(), worldKey);
         console.log(`Bridge: initial_scene_cache SET for gameId="${sessionGameId}"`);
       } catch (cacheErr) {
         console.warn(

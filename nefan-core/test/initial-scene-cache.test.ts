@@ -52,6 +52,8 @@ describe("InitialSceneCache", () => {
       assert.ok(got);
       assert.equal(got.game_id, "toledo_1200");
       assert.equal(got.schema_version, 1);
+      // world_key distinto (world.md editado o estilo cambiado) invalida.
+      assert.equal(cache.get("toledo_1200", "otrohash:estilo"), null);
       assert.equal(got.scene.room_id, "robledo_plaza");
       assert.equal(got.world_map.places["robledo"]?.name, "Robledo");
     } finally {
