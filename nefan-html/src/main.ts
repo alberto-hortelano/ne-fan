@@ -160,6 +160,14 @@ const renderer = new CanvasRenderer(canvas, {
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
+
+/** Propaga el estilo visual de la sesión (world.style_id, congelado en el
+ *  save) a los generadores de imagen: escena y skins de personaje. */
+function applySessionStyle(styleId: string): void {
+  sceneImageController.setStyle(styleId);
+  spriteRenderer.setStyle(styleId);
+  if (styleId) log(`Estilo visual: ${styleId}`);
+}
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
 // se cargan bajo demanda desde setPlayerAppearance / requestSkin.
@@ -1502,12 +1510,14 @@ async function runTitleFlow(): Promise<void> {
       );
       const res = await narrativeClient.startSession(action.gameId, action.appearance);
       activeSessionId = res.sessionId;
+      applySessionStyle(res.state.world?.style_id ?? "");
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
+      applySessionStyle(res.state.world?.style_id ?? "");
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets

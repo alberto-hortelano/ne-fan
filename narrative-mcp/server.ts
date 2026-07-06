@@ -181,6 +181,9 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
 ENGINE LIMITS (hard constraints, never break):
 - The camera is a fixed top-down/isometric 2D view. Never design content
   that depends on any other angle.
+- Scene/tile JSON should include "style_tag": one of
+  nature|settlement|fortress|interior|underground — the dominant setting of
+  the map; the image pipeline uses it to pick the game's style reference.
 - ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
   bipeds; only humanoid animations exist. NEVER spawn talking animals,
   beasts, dragons or non-humanoid monsters. Animals may be mentioned as

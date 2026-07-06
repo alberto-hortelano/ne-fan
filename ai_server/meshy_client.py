@@ -11,6 +11,27 @@ import time
 import httpx
 
 
+# Límites de prompt por endpoint. 600 está DOCUMENTADO para los endpoints 3D
+# (text-to-3d / image-to-3d); para image-to-image (nano-banana*) la doc no
+# publica límite — 2000 da margen a las instrucciones de escena. Si la API
+# rechazara un prompt largo, el 4xx sube fail-loud con el mensaje de Meshy.
+TEXT_TO_3D_PROMPT_MAX = 600
+IMAGE_TO_IMAGE_PROMPT_MAX = 2000
+
+
+def _clamp_prompt(prompt: str, limit: int, endpoint: str) -> str:
+    """Trunca con AVISO RUIDOSO: perder instrucciones en silencio produce
+    imágenes que ignoran el estilo/las reglas sin pista de por qué."""
+    if len(prompt) <= limit:
+        return prompt
+    print(
+        f"MeshyClient WARNING: prompt de {len(prompt)} chars truncado a {limit} "
+        f"para {endpoint} — las instrucciones finales SE PIERDEN",
+        flush=True,
+    )
+    return prompt[:limit]
+
+
 class MeshyClient:
     BASE_URL = "https://api.meshy.ai"
 
@@ -64,7 +85,7 @@ class MeshyClient:
     ) -> str:
         payload = {
             "mode": "preview",
-            "prompt": prompt[:600],
+            "prompt": _clamp_prompt(prompt, TEXT_TO_3D_PROMPT_MAX, "text-to-3d"),
             "art_style": art_style,
             "topology": topology,
             "target_polycount": target_polycount,
@@ -180,7 +201,7 @@ class MeshyImageToImage:
 
         payload = {
             "ai_model": ai_model,
-            "prompt": prompt[:600],
+            "prompt": _clamp_prompt(prompt, IMAGE_TO_IMAGE_PROMPT_MAX, "image-to-image"),
             "reference_image_urls": reference_image_urls,
         }
         if generate_multi_view:

@@ -90,7 +90,12 @@ class SceneImageGenerator:
         prompt: str,
         context_sides: list[str] | None = None,
         blueprint_kind: str = "boxes",
+        style_ref_uri: str | None = None,
+        style_token: str = "",
     ) -> dict:
+        """`style_ref_uri`: referencia de estilo del pack del juego (data URI);
+        None degrada a la referencia global fija. `style_token` complementa a
+        la imagen con la dirección de arte en texto."""
         sch = self._load_rgb(schematic_png_bytes)
         if blueprint_kind == "svg":
             # Blueprint map_svg: plano vectorial rico. Dos diales validados
@@ -122,7 +127,9 @@ class SceneImageGenerator:
                 "and walkways painted ON TOP of the water. Do NOT add roofs. "
                 "Do NOT move, remove or merge buildings. Do NOT invent new "
                 "buildings, walls, bridges or watercourses that are not in the "
-                f"blueprint. Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
+                f"blueprint. Render the scene as: {prompt.strip()}. "
+                + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
+                + _STYLE_RULES
             )
         else:
             instruction = (
@@ -136,7 +143,9 @@ class SceneImageGenerator:
                 "towers, fountains), triangles = tents/spires. Keep every element in "
                 "the SAME position, size and shape. Avoid large flat single-colour "
                 "areas; add natural ground variation and texture everywhere. "
-                f"Render the scene as: {prompt.strip()}. {_STYLE_RULES}"
+                f"Render the scene as: {prompt.strip()}. "
+                + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
+                + _STYLE_RULES
             )
         if context_sides:
             edges = ", ".join(context_sides)
@@ -148,7 +157,7 @@ class SceneImageGenerator:
                 "edges of your output, and paint everything else so it continues "
                 "them with no visible seam (same palette, same ground texture)."
             )
-        refs = [_to_data_uri(sch, "PNG"), self._style_uri]
+        refs = [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
         start = time.perf_counter()
         png, res = self._run(instruction, refs)
         dt = time.perf_counter() - start

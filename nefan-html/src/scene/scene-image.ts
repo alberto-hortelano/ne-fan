@@ -89,11 +89,18 @@ interface SceneSummary {
 
 export class SceneImageController {
   private busy = false;
+  /** Estilo visual de la sesión activa (world.style_id, congelado en el
+   *  save). "" = sin sesión aún ⇒ el servidor usa su referencia global. */
+  private styleId = "";
 
   constructor(
     private renderer: CanvasRenderer,
     private baseUrl: string = "http://127.0.0.1:8765",
   ) {}
+
+  setStyle(styleId: string): void {
+    this.styleId = styleId;
+  }
 
   isBusy(): boolean {
     return this.busy;
@@ -234,6 +241,10 @@ export class SceneImageController {
           prompt,
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
+          style_id: this.styleId,
+          // Categoría de referencia que etiquetó el motor narrativo para este
+          // tile; el servidor tiene fallback si falta.
+          style_tag: (scene as { style_tag?: string }).style_tag ?? "",
         }),
       });
       if (!res.ok) {
