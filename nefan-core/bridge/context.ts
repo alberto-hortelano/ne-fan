@@ -35,7 +35,7 @@ export interface ClientSocket {
 /** Lo que los handlers necesitan del AiClient — permite fakes en tests. */
 export type NarrativeAiClient = Pick<
   AiClient,
-  "notifySessionStart" | "generateScene" | "reportPlayerChoice"
+  "notifySessionStart" | "generateScene" | "reportPlayerChoice" | "developWorld"
 >;
 
 export interface BridgeContext {

@@ -30,7 +30,7 @@ export interface VisionRequestMsg {
 export interface NarrativeEventMsg {
   type: 'narrative_event';
   request_id: string;
-  kind: 'dialogue_choice';
+  kind: 'dialogue_choice' | 'develop_world';
   event_id: string;
   speaker: string;
   chosen_text: string;

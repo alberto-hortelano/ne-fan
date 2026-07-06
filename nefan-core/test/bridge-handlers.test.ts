@@ -4,7 +4,7 @@
  *  (broadcast narrative_status: error) y los map triggers. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -30,6 +30,7 @@ import type {
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import type { Consequence } from "../src/narrative/types.js";
+import { listGames as listGamesFs } from "../src/games/loader.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, "..", "data");
@@ -57,6 +58,7 @@ function makeSocket(): { socket: ClientSocket; sent: ServerMessage[] } {
 interface FakeAi {
   generateScene?: NarrativeAiClient["generateScene"];
   reportPlayerChoice?: NarrativeAiClient["reportPlayerChoice"];
+  developWorld?: NarrativeAiClient["developWorld"];
 }
 
 function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = {}) {
@@ -69,7 +71,7 @@ function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = 
   const narrative = new NarrativeState(storage);
   const broadcasts: ServerMessage[] = [];
   const subscribers = new Set<ClientSocket>();
-  const aiCalls: Record<string, unknown[]> = { notify: [], scene: [], choice: [] };
+  const aiCalls: Record<string, unknown[]> = { notify: [], scene: [], choice: [], develop: [] };
 
   const aiClient: NarrativeAiClient = {
     async notifySessionStart(sessionId, gameId, isResume) {
@@ -85,6 +87,21 @@ function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = 
       aiCalls.choice.push(payload);
       if (opts.ai?.reportPlayerChoice) return opts.ai.reportPlayerChoice(payload);
       return { ok: true, consequences: [] };
+    },
+    async developWorld(draftText: string) {
+      aiCalls.develop.push(draftText);
+      if (opts.ai?.developWorld) return opts.ai.developWorld(draftText);
+      return {
+        ok: true as const,
+        game: {
+          game_id: "mundo_prueba",
+          title: "Mundo de Prueba",
+          description: "Un mundo inventado por el jugador.",
+          style_id: "estilo_test",
+          world_brief: "b".repeat(150),
+          world_md: "# Mundo de Prueba\n" + "lore ".repeat(500),
+        },
+      };
     },
   };
 
@@ -269,6 +286,45 @@ describe("bridge ciclo de sesión", () => {
     assert.match(String(llmCtx.world_document ?? ""), /Mundo de pruebas/);
     assert.ok(llmCtx.world.description.length > 50);
     assert.equal(llmCtx.world.style_id, "estilo_test");
+  });
+
+  it("create_game desarrolla el borrador y escribe data/games/user_*", async () => {
+    const tmpGames = mkdtempSync(join(tmpdir(), "nefan-create-game-"));
+    try {
+      const { ctx } = makeCtx({ gamesDir: tmpGames });
+      const { socket, sent } = makeSocket();
+      await routeMessage(
+        { type: "create_game", requestId: "r1", draftText: "Un mundo de islas voladoras con clanes rivales." },
+        socket,
+        ctx,
+      );
+      const created = sent[0] as Extract<ServerMessage, { type: "game_created" }>;
+      assert.equal(created.ok, true);
+      assert.equal(created.gameId, "user_mundo_prueba");
+      assert.equal(created.title, "Mundo de Prueba");
+      // El mundo queda listado y carga con el loader canónico (game.json + world.md).
+      const games = listGamesFs(tmpGames);
+      assert.ok(games.some((g) => g.game_id === "user_mundo_prueba"));
+
+      // Segundo mundo con el mismo slug ⇒ dedupe con sufijo.
+      const { socket: s2, sent: sent2 } = makeSocket();
+      await routeMessage(
+        { type: "create_game", requestId: "r2", draftText: "Otro borrador cualquiera con más de veinte chars." },
+        s2,
+        ctx,
+      );
+      const created2 = sent2[0] as Extract<ServerMessage, { type: "game_created" }>;
+      assert.equal(created2.gameId, "user_mundo_prueba_2");
+
+      // Borrador vacío ⇒ fail-loud sin tocar el LLM.
+      const { socket: s3, sent: sent3 } = makeSocket();
+      await routeMessage({ type: "create_game", requestId: "r3", draftText: "  " }, s3, ctx);
+      const created3 = sent3[0] as Extract<ServerMessage, { type: "game_created" }>;
+      assert.equal(created3.ok, false);
+      assert.match(created3.error ?? "", /draft_too_short/);
+    } finally {
+      rmSync(tmpGames, { recursive: true, force: true });
+    }
   });
 
   it("start_session respeta el styleId elegido y rechaza estilos inexistentes", async () => {

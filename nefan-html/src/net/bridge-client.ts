@@ -9,6 +9,7 @@ import type {
   SessionsListedMessage,
   SessionStartedMessage,
   GamesListedMessage,
+  GameCreatedMessage,
   SessionDeletedMessage,
   SessionSavedMessage,
 } from "@nefan-core/src/protocol/messages.js";
@@ -266,6 +267,12 @@ export class BridgeClient {
 
   listGames(): Promise<GamesListedMessage> {
     return this.request<GamesListedMessage>({ type: "list_games" });
+  }
+
+  /** Desarrollar un mundo de usuario tarda como un bootstrap (~1-3 min):
+   *  timeout largo explícito. */
+  createGame(draftText: string): Promise<GameCreatedMessage> {
+    return this.request<GameCreatedMessage>({ type: "create_game", draftText }, 400_000);
   }
 
   startSession(

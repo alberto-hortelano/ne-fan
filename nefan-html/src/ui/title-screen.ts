@@ -163,6 +163,7 @@ export class TitleScreen {
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
         <button id="ts-continue" style="${BTN_PRIMARY_CSS}">Continuar →</button>
+        <button id="ts-create-world" style="${BTN_SECONDARY_CSS};margin-left:auto">✚ Crear mundo</button>
       </div>
     `;
     const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
@@ -209,6 +210,74 @@ export class TitleScreen {
       .addEventListener("click", () => {
         void this.renderCharacterEditor(selectedGame, styleSel.value);
       });
+    (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
+      .addEventListener("click", () => void this.renderCreateWorld());
+  }
+
+  /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
+   *  desarrolla con el motor narrativo (tarda 1-3 min) y aparece como un
+   *  mundo más en el selector. */
+  private renderCreateWorld(): void {
+    this.content.innerHTML = `
+      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear mundo</h1>
+      <p style="margin-bottom:16px;color:#888;font-size:12px">
+        Describe tu mundo (reinos, pueblos, magia, tono…) o sube un archivo .md/.txt.
+        El motor narrativo lo completará y desarrollará — cuanto más des, más tuyo será el resultado.
+      </p>
+      <label style="display:block;margin-bottom:12px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Borrador del mundo</div>
+        <textarea id="ts-draft" rows="10" placeholder="ej: Un archipiélago de islas voladoras ancladas por cadenas gigantes. Clanes de pastores de nubes..." style="${INPUT_CSS};resize:vertical;min-height:160px"></textarea>
+      </label>
+      <label style="display:block;margin-bottom:18px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">…o sube un archivo</div>
+        <input id="ts-draft-file" type="file" accept=".md,.txt,text/plain,text/markdown" style="color:#999;font-size:12px">
+      </label>
+      <div id="ts-create-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
+      <div style="display:flex;gap:12px">
+        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
+        <button id="ts-create" style="${BTN_PRIMARY_CSS}">Crear mundo</button>
+      </div>
+    `;
+    const draftEl = this.content.querySelector("#ts-draft") as HTMLTextAreaElement;
+    const fileEl = this.content.querySelector("#ts-draft-file") as HTMLInputElement;
+    const statusEl = this.content.querySelector("#ts-create-status") as HTMLElement;
+    const backBtn = this.content.querySelector("#ts-back") as HTMLButtonElement;
+    const createBtn = this.content.querySelector("#ts-create") as HTMLButtonElement;
+
+    fileEl.addEventListener("change", () => {
+      const file = fileEl.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        draftEl.value = String(reader.result ?? "");
+        statusEl.textContent = `Archivo cargado: ${file.name} (${draftEl.value.length} caracteres).`;
+      };
+      reader.onerror = () => {
+        statusEl.innerHTML = `<span style="color:#a44">No se pudo leer ${escapeHtml(file.name)}.</span>`;
+      };
+      reader.readAsText(file);
+    });
+
+    backBtn.addEventListener("click", () => void this.renderWorldSelect());
+    createBtn.addEventListener("click", async () => {
+      const draft = draftEl.value.trim();
+      if (draft.length < 20) {
+        statusEl.innerHTML = `<span style="color:#a44">El borrador es demasiado corto — describe el mundo con al menos unas frases.</span>`;
+        return;
+      }
+      createBtn.disabled = true;
+      backBtn.disabled = true;
+      statusEl.innerHTML = `<span style="color:#da6">🌍 El motor narrativo está desarrollando tu mundo (1-3 min)... no cierres esta pantalla.</span>`;
+      try {
+        const created = await this.narrative.createGame(draft);
+        statusEl.innerHTML = `<span style="color:#4a4">Mundo creado: ${escapeHtml(created.title)}.</span>`;
+        await this.renderWorldSelect();
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:#a44">No se pudo crear el mundo: ${escapeHtml((err as Error).message)}</span>`;
+        createBtn.disabled = false;
+        backBtn.disabled = false;
+      }
+    });
   }
 
   private renderCharacterEditor(game: GameInfo, styleId: string): void {

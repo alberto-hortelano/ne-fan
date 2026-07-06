@@ -112,6 +112,24 @@ class StylePackResolver:
         )
         return None
 
+    def list_styles(self) -> list[dict]:
+        """Estilos disponibles (id, nombre, descripción) — para que el motor
+        narrativo sugiera uno al desarrollar un mundo de usuario."""
+        out: list[dict] = []
+        if not self._styles_dir.exists():
+            return out
+        for child in sorted(self._styles_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            manifest = self._manifest(child.name)
+            if manifest:
+                out.append({
+                    "style_id": str(manifest.get("style_id", child.name)),
+                    "name": str(manifest.get("name", child.name)),
+                    "description": str(manifest.get("description", "")),
+                })
+        return out
+
     def _load_image(self, style_id: str, file: str) -> tuple[str, str] | None:
         path = self._styles_dir / style_id / file
         if not path.exists():

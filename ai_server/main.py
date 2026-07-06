@@ -370,6 +370,12 @@ class GenerateSceneRequest(BaseModel):
         return self
 
 
+class DevelopWorldRequest(BaseModel):
+    """Borrador de mundo del jugador (textarea o archivo .md/.txt) que el
+    motor narrativo desarrolla contra la plantilla de 10 secciones."""
+    draft_text: str = Field(min_length=20, max_length=64_000)
+
+
 class AnalyzeWeaponRequest(BaseModel):
     images: list[str] = Field(min_length=1)
     weapon_type: str = "generic"
@@ -1060,6 +1066,39 @@ async def get_skinned_sheet_frame(hash_key: str, filename: str):
     if not path.exists():
         return Response(status_code=404, content="Not found")
     return Response(content=path.read_bytes(), media_type="image/png")
+
+
+@app.post("/develop_world")
+async def develop_world_endpoint(body: DevelopWorldRequest):
+    """Desarrolla el borrador de mundo de un jugador (kind MCP develop_world).
+    Sin backend LLM o sin listener: 503 fail-loud (no hay fallback scripted)."""
+    import asyncio
+
+    if llm_client is None:
+        raise HTTPException(status_code=503, detail="LLM backend not initialised")
+    styles = style_packs.list_styles() if style_packs is not None else []
+    result = await asyncio.to_thread(llm_client.develop_world, body.draft_text, styles)
+    if result is None:
+        raise HTTPException(
+            status_code=503,
+            detail="develop_world unavailable: no MCP listener (arranca Claude Code con narrative_listen) o timeout",
+        )
+    game = result.get("game") if isinstance(result.get("game"), dict) else result
+    required = ("game_id", "title", "description", "world_brief", "world_md")
+    missing = [k for k in required if not isinstance(game.get(k), str) or not game.get(k)]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"develop_world response missing fields: {missing}",
+        )
+    return {"game": {
+        "game_id": game["game_id"],
+        "title": game["title"],
+        "description": game["description"],
+        "style_id": str(game.get("style_id", "")),
+        "world_brief": game["world_brief"],
+        "world_md": game["world_md"],
+    }}
 
 
 @app.post("/report_player_choice")

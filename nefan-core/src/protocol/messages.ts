@@ -84,6 +84,15 @@ export interface DialogueChoiceMessage {
   chosenText: string;
 }
 
+/** Crear un mundo de usuario: el borrador (textarea o archivo .md/.txt) se
+ *  desarrolla con el motor narrativo contra la plantilla y el bridge escribe
+ *  data/games/user_{slug}/. Respuesta: game_created. */
+export interface CreateGameMessage {
+  type: "create_game";
+  requestId: string;
+  draftText: string;
+}
+
 export interface ListGamesMessage {
   type: "list_games";
   requestId: string;
@@ -198,6 +207,7 @@ export type ClientMessage =
   | ResumeSessionMessage
   | DeleteSessionMessage
   | DialogueChoiceMessage
+  | CreateGameMessage
   | ListGamesMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
@@ -292,6 +302,15 @@ export interface GamesListedMessage {
   }>;
 }
 
+export interface GameCreatedMessage {
+  type: "game_created";
+  requestId: string;
+  ok: boolean;
+  gameId?: string;
+  title?: string;
+  error?: string;
+}
+
 export interface SessionDeletedMessage {
   type: "session_deleted";
   requestId: string;
@@ -312,5 +331,6 @@ export type ServerMessage =
   | NarrativeEventMessage
   | NarrativeStatusMessage
   | GamesListedMessage
+  | GameCreatedMessage
   | SessionDeletedMessage
   | SessionSavedMessage;
