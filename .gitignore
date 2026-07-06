@@ -66,3 +66,7 @@ export_presets.cfg
 node_modules/
 narrative-mcp/dist/
 nefan-core/dist/
+
+# Contenido creado por el jugador (mundos y estilos subidos) — no se versiona
+nefan-core/data/games/user_*/
+nefan-core/data/styles/user_*/
