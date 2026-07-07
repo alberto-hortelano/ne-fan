@@ -112,8 +112,14 @@ export class CharacterSpriteManager {
    *  AUTO_SKIN_ANIMS al spawnear; el resto lo encola modelFor bajo demanda.
    *  Idempotente por prompt (dos NPCs con la misma descripción comparten
    *  skin). No-op con ai_skin=false o prompt vacío. */
+  /** Cortacircuitos de sesión: el PRIMER fallo de backend (red o 5xx)
+   *  desactiva la generación de skins para toda la sesión con un único
+   *  mensaje — sin él, cada NPC × animación repetía el mismo error (tormenta
+   *  de 502 en consola con Meshy caído o sin créditos). */
+  private skinsDisabled = false;
+
   requestSkin(prompt: string): void {
-    if (!CONFIG.graphics.ai_skin || !prompt) return;
+    if (!CONFIG.graphics.ai_skin || !prompt || this.skinsDisabled) return;
     const skinnedModel = this.sprites.skinKey(BASE_MODEL, prompt);
     if (this.skins.has(skinnedModel)) return;
     const state: SkinState = { prompt, failed: false, queued: new Set() };
@@ -124,7 +130,7 @@ export class CharacterSpriteManager {
   private enqueueAnim(skinnedModel: string, state: SkinState, anim: string): void {
     state.queued.add(anim);
     this.chain = this.chain.then(async () => {
-      if (state.failed) return;
+      if (state.failed || this.skinsDisabled) return;
       try {
         const sheet = await this.sprites.loadSkinnedAnimation(
           BASE_MODEL, anim, this.angle, state.prompt,
@@ -138,11 +144,21 @@ export class CharacterSpriteManager {
         // base y_bot. Una entrada por skin; el flag corta lo ya encolado y
         // bloquea futuros lazy de este prompt (sin bucles de reintento).
         state.failed = true;
-        errors.push(
-          "sprite",
-          `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
-          err,
-        );
+        const status = (err as { status?: number }).status;
+        const backendDown = status === undefined || status >= 500;
+        if (backendDown && !this.skinsDisabled) {
+          this.skinsDisabled = true;
+          errors.push(
+            "sprite",
+            `skins IA desactivados para la sesión (los personajes usan la base y_bot). Motivo: ${(err as Error).message}`,
+          );
+        } else if (!backendDown) {
+          errors.push(
+            "sprite",
+            `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
+            err,
+          );
+        }
       }
     });
   }

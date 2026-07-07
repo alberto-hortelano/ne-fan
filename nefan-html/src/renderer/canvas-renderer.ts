@@ -1704,13 +1704,23 @@ export class CanvasRenderer {
     const sheet = this.spriteRenderer.getCached(sprite.model, sprite.anim, sprite.angle);
     if (!sheet) return false; // sheet still loading
     const fwd = forward ?? { x: 0, y: 0, z: 1 };
+    // El frame (hacia dónde "mira" el sprite) se elige por el octante EN
+    // PANTALLA: en iso la cámara está girada 45° respecto al mundo — sin esta
+    // rotación el personaje mira 45° a un lado de su desplazamiento. Solo
+    // rotación (sin el aplastamiento 2:1): importa el octante, no la métrica.
+    let fx = fwd.x;
+    let fz = fwd.z;
+    if (this.projection.kind === "isometric") {
+      fx = fwd.x - fwd.z;
+      fz = fwd.x + fwd.z;
+    }
     const t = sprite.animStartedAt !== undefined
       ? (performance.now() - sprite.animStartedAt) / 1000
       : performance.now() / 1000;
     // Escala el sprite con el zoom: a scale=SPRITE_BASE_PPM el factor es 1
     // (tamaño actual) y crece/encoge con el zoom para no desacoplarse de los
     // círculos/objetos, que ya van en metros·scale.
-    return this.spriteRenderer.draw(this.ctx, sheet, fwd.x, fwd.z, t, cx, cy, {
+    return this.spriteRenderer.draw(this.ctx, sheet, fx, fz, t, cx, cy, {
       scale: this.scale / SPRITE_BASE_PPM,
     });
   }

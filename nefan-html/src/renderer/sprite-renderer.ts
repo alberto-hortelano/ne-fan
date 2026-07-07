@@ -134,7 +134,12 @@ export class SpriteRenderer {
           }),
         });
         if (!res.ok) {
-          throw new Error(`ai_server /skin_sprite_sheet HTTP ${res.status}`);
+          const body = await res.text().catch(() => "");
+          const err = new Error(
+            `ai_server /skin_sprite_sheet HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
+          ) as Error & { status?: number };
+          err.status = res.status;
+          throw err;
         }
         const data = (await res.json()) as { ok?: boolean; meta?: SpriteSheetMeta; frame_urls?: string[][]; error?: string };
         if (!data.ok || !data.meta || !data.frame_urls) {
@@ -151,7 +156,9 @@ export class SpriteRenderer {
         this.cache.set(cacheKey, sheet);
         return sheet;
       } catch (err) {
-        errors.push("sprite", `skin failed for ${cacheKey}`, err);
+        // Sin errors.push aquí: character-sprites registra el fallo UNA vez
+        // con contexto (y decide desactivar los skins de la sesión) — loguear
+        // en ambas capas duplicaba cada fallo en consola.
         throw err;
       } finally {
         this.skinInflight.delete(cacheKey);
@@ -233,10 +240,9 @@ export class SpriteRenderer {
     const sheet = this.cache.get(key);
     if (sheet) return sheet;
     if (this.inflight.has(key)) return null;
-    // Aviso de consola, NO errors.push: es una carrera esperable (la entidad
-    // dibuja antes de que la precarga pida este sheet) y se autocorrige — no
-    // debe engordar el panel de errores del jugador.
-    console.warn(`[sprite] sheet ${key} sin loadAnimation previo — cargando ahora (lazy)`);
+    // Carga lazy SILENCIOSA: es una carrera esperable (la entidad dibuja
+    // antes de que la precarga pida este sheet) y se autocorrige al frame
+    // siguiente — no es un error ni merece ruido en consola.
     this.loadAnimation(model, anim, angle).catch(() => {
       // fetchSheet ya registró el motivo; el catch evita unhandled rejection.
     });
