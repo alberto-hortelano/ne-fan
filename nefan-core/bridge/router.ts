@@ -20,7 +20,7 @@ import {
 } from "./handlers/session.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
 import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
-import { handleMapSvgUpdate, handleRequestTile, handleTileAnalysis } from "./handlers/tile.js";
+import { handleMapPlanUpdate, handleRequestTile, handleTileAnalysis } from "./handlers/tile.js";
 
 export async function routeMessage(
   msg: ClientMessage,
@@ -79,8 +79,8 @@ export async function routeMessage(
     case "tile_analysis":
       await handleTileAnalysis(msg, ctx);
       break;
-    case "map_svg_update":
-      await handleMapSvgUpdate(msg, ctx);
+    case "map_plan_update":
+      await handleMapPlanUpdate(msg, ctx);
       break;
     case "interact_entity":
       await handleInteractEntity(msg, ctx);

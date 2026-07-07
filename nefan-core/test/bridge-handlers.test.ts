@@ -1119,25 +1119,34 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.equal(narrative.getTile(1, 0)!.edges!.west.crossings[0]?.at, 41);
   });
 
-  it("map_svg_update persiste el SVG revisado; uno inválido se rechaza sin tocar el record", async () => {
+  it("map_plan_update persiste el plan revisado; uno inválido se rechaza sin tocar el record", async () => {
     const { ctx, narrative } = makeCtx();
     seedTile00(narrative);
     const { socket } = makeSocket();
     const svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
-    await routeMessage({ type: "map_svg_update", tx: 0, ty: 0, map_svg: svg }, socket, ctx);
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><g id="ground"/><g id="water"/></svg>';
+    const volumes = [{ id: "roble", label: "roble", type: "tree", at: [10, 10] }];
+    await routeMessage({ type: "map_plan_update", tx: 0, ty: 0, map_ground: svg, volumes }, socket, ctx);
     const rec = narrative.getTile(0, 0)!;
-    assert.equal(rec.scene_data.map_svg, svg);
-    assert.equal(rec.scene_data.map_svg_reviewed, true);
-    // Sin la capa #tall el sanitizador lo rechaza y el persistido no cambia.
+    assert.equal(rec.scene_data.map_ground, svg);
+    assert.deepEqual(rec.scene_data.volumes, volumes);
+    assert.equal(rec.scene_data.map_plan_reviewed, true);
+    // Sin la capa #water el sanitizador lo rechaza y el persistido no cambia.
     await routeMessage(
-      { type: "map_svg_update", tx: 0, ty: 0, map_svg: svg.replace('<g id="tall"/>', "") },
+      { type: "map_plan_update", tx: 0, ty: 0, map_ground: svg.replace('<g id="water"/>', "") },
       socket,
       ctx,
     );
-    assert.equal(narrative.getTile(0, 0)!.scene_data.map_svg, svg);
+    assert.equal(narrative.getTile(0, 0)!.scene_data.map_ground, svg);
+    // Volumes inválidos (id duplicado) también se rechazan enteros.
+    await routeMessage(
+      { type: "map_plan_update", tx: 0, ty: 0, volumes: [...volumes, ...volumes] },
+      socket,
+      ctx,
+    );
+    assert.deepEqual(narrative.getTile(0, 0)!.scene_data.volumes, volumes);
     // Tile no registrado: se ignora con warn, sin lanzar.
-    await routeMessage({ type: "map_svg_update", tx: 5, ty: 5, map_svg: svg }, socket, ctx);
+    await routeMessage({ type: "map_plan_update", tx: 5, ty: 5, map_ground: svg }, socket, ctx);
     assert.ok(!narrative.hasTile(5, 5));
   });
 

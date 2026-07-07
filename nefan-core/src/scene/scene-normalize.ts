@@ -247,13 +247,14 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     terrain_svg: typeof raw.terrain_svg === "string" && raw.terrain_svg.trim().startsWith("<svg")
       ? raw.terrain_svg
       : undefined,
-    // Blueprint SVG completo por capas semánticas (ground/water/solid/tall).
-    // Validado por ai_server (y por sanitizeMapSvg en el bridge al persistir
-    // retoques); aquí passthrough — el cliente lo rasteriza como blueprint y
-    // deriva la colisión base de #water+#solid.
-    map_svg: typeof raw.map_svg === "string" && raw.map_svg.trim().startsWith("<svg")
-      ? raw.map_svg
+    // Plan del tile (arte plano del suelo + volúmenes tipados). Validado por
+    // ai_server (y por sanitizeGroundSvg/parseVolumes en el bridge al
+    // persistir retoques); aquí passthrough — el cliente compone el blueprint
+    // con la perspectiva de la sesión y deriva la colisión de agua + huellas.
+    map_ground: typeof raw.map_ground === "string" && raw.map_ground.trim().startsWith("<svg")
+      ? raw.map_ground
       : undefined,
+    volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
     objects,
     npcs,
     ambient_event: raw.ambient_event,

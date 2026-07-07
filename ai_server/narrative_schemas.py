@@ -154,7 +154,7 @@ The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top
 - A river/road drawn as a feature should follow the same course as its `w`/`_` cells in the grid (grid = coarse base, feature = smooth refinement). Purely decorative curves may skip the grid cells and use only the feature.
 
 TERRAIN SVG (advanced, RARELY needed — use ONLY when grid + terrain_features cannot express the shape)
-`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all. TILES: do NOT use terrain_svg — the tile's "map_svg" (full layered blueprint) supersedes it entirely.
+`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all. TILES: do NOT use terrain_svg — the tile's map plan ("map_ground" + "volumes") supersedes it entirely.
 
 ENTITY RULES
 - Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").
@@ -290,9 +290,13 @@ swamp>, "terrain_patches" (optional ASCII stamps {at:[col,row], rows:[...]}),
 "terrain_features" (edge-to-edge, each with "at_edges": [{edge, at}]),
 "structures", "vegetation_zones" (area may be "rest" = everything still bare
 biome), "entities" (cells 0..127, NO "player" unless bootstrap),
-"place_anchors" [{place_id, rect}], "map_svg" (recommended: full SVG blueprint
-of the tile, viewBox "0 0 128 128", layers g#ground/#water/#deck/#solid/#tall,
-cutaway buildings without roofs), "ambient_event" }. NEVER write "size" or
+"place_anchors" [{place_id, rect}], "map_ground" (recommended: ground-plane
+SVG of the tile, viewBox "0 0 128 128", layers g#ground/#water + optional
+g#deck — FLAT art only), "volumes" (everything with height as typed objects:
+building/wall/tower/gate/tree/bush/rock/fountain/prop with footprint cells +
+height; the engine composes and projects them to the session perspective and
+derives collision from the footprints; enterable buildings use cutaway:true),
+"ambient_event" }. NEVER write "size" or
 a full "terrain[]" — the biome fill + primitives generate the grid. SEAMS:
 every crossing listed in neighbors.<edge> (mirrored "at") MUST be continued
 by a feature with matching at_edges (±2 cells); the player enters walking
@@ -457,16 +461,26 @@ GENERATE_SCENE_TOOL = {
                     "cannot express the shape."
                 ),
             },
-            "map_svg": {
+            "map_ground": {
                 "type": "string",
                 "description": (
-                    "Tiles only, strongly recommended. Complete SVG blueprint of the "
-                    'tile: viewBox EXACTLY "0 0 128 128", max 32KB, shape elements '
-                    "only, with the layers <g id=\"ground\">, <g id=\"water\">, "
-                    "optional <g id=\"deck\"> (walkable over water: bridges, jetties), "
-                    "<g id=\"solid\">, <g id=\"tall\"> in that paint order. See the "
-                    "MAP SVG section of the system prompt."
+                    "Tiles only, strongly recommended. Ground-plane SVG of the tile "
+                    '(FLAT art only): viewBox EXACTLY "0 0 128 128", max 32KB, shape '
+                    "elements only, with the layers <g id=\"ground\">, <g id=\"water\"> "
+                    "and optional <g id=\"deck\"> (walkable over water). Anything with "
+                    "height goes in `volumes` instead."
                 ),
+            },
+            "volumes": {
+                "type": "array",
+                "description": (
+                    "Tiles only, strongly recommended. Everything with HEIGHT as typed "
+                    "objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) "
+                    "with footprint in cells + height; the engine projects them to the "
+                    "session perspective and derives collision from the footprints. "
+                    "See the MAP PLAN section of the system prompt."
+                ),
+                "items": {"type": "object"},
             },
             "structures": {
                 "type": "array",
@@ -618,9 +632,81 @@ RESERVED_TERRAIN = {
 
 VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
 
-# Capas obligatorias del blueprint SVG (map_svg). Espejo de MAP_SVG_LAYERS en
-# nefan-core/src/scene/map-svg.ts.
-MAP_SVG_LAYERS = ("ground", "water", "solid", "tall")
+# Capas obligatorias del arte plano del suelo (map_ground). Espejo de
+# GROUND_SVG_LAYERS en nefan-core/src/scene/map-svg.ts. La capa `deck`
+# (transitable sobre agua) es opcional.
+GROUND_SVG_LAYERS = ("ground", "water")
+
+# Tipos de volumen del plan de tile. Espejo de VolumeSchema en
+# nefan-core/src/scene/blueprint/volumes.ts (zod es la fuente de verdad; aquí
+# validamos shape suficiente para no persistir basura — el bridge re-valida).
+VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop"}
+MAX_VOLUMES = 160
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _cell_pair(v) -> bool:
+    return isinstance(v, list) and len(v) == 2 and all(_num(n) for n in v)
+
+
+def validate_volumes(raw, *, field: str = "volumes"):
+    """Valida el array `volumes` del plan de tile. Devuelve la lista limpia o
+    None con traza del motivo (el caller degrada descartando el campo).
+    Espejo laxo de parseVolumes (nefan-core/src/scene/blueprint/volumes.ts)."""
+    if not isinstance(raw, list):
+        print(f"validate_scene: {field} descartado (no es lista)")
+        return None
+    if len(raw) > MAX_VOLUMES:
+        print(f"validate_scene: {field} descartado ({len(raw)} > {MAX_VOLUMES})")
+        return None
+    seen_ids = set()
+    for i, v in enumerate(raw):
+        ctx = f"{field}[{i}]"
+        if not isinstance(v, dict):
+            print(f"validate_scene: {ctx} no es objeto — {field} descartado")
+            return None
+        vid = v.get("id")
+        label = v.get("label")
+        vtype = v.get("type")
+        if not isinstance(vid, str) or not vid or vid in seen_ids:
+            print(f"validate_scene: {ctx} id inválido/duplicado — {field} descartado")
+            return None
+        seen_ids.add(vid)
+        if not isinstance(label, str) or not label:
+            print(f"validate_scene: {ctx} sin label — {field} descartado")
+            return None
+        if vtype not in VOLUME_TYPES:
+            print(f"validate_scene: {ctx} type desconocido {vtype!r} — {field} descartado")
+            return None
+        if vtype == "building":
+            r = v.get("rect")
+            if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
+                print(f"validate_scene: {ctx} building sin rect válido — {field} descartado")
+                return None
+        elif vtype == "wall":
+            pts = v.get("points")
+            if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(pp) for pp in pts)):
+                print(f"validate_scene: {ctx} wall sin points válidos — {field} descartado")
+                return None
+        elif vtype == "gate":
+            if not _cell_pair(v.get("at")) or v.get("orient") not in ("x", "y"):
+                print(f"validate_scene: {ctx} gate sin at/orient válidos — {field} descartado")
+                return None
+        elif vtype == "prop":
+            has_at = _cell_pair(v.get("at"))
+            r = v.get("rect")
+            has_rect = isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)
+            if has_at == has_rect or v.get("shape") not in ("box", "cylinder"):
+                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — {field} descartado")
+                return None
+        else:  # tower/tree/bush/rock/fountain
+            if not _cell_pair(v.get("at")):
+                print(f"validate_scene: {ctx} {vtype} sin at válido — {field} descartado")
+                return None
+    return raw
 
 
 def _sanitize_svg_field(
@@ -632,7 +718,7 @@ def _sanitize_svg_field(
     required_layers: tuple = (),
     field: str,
 ):
-    """Valida un documento SVG de capa de escena (terrain_svg / map_svg).
+    """Valida un documento SVG de capa de escena (terrain_svg / map_ground).
 
     Devuelve el SVG limpio o None con traza del motivo. Solo formas puras:
     rechaza script/foreignObject/href, exige viewBox exacto "0 0 cols rows"
@@ -889,22 +975,32 @@ def validate_scene_response(data: dict) -> dict:
     else:
         data.pop("terrain_svg", None)
 
-    # ── Map SVG (blueprint del tile por capas semánticas) ────────────────
-    # Espejo de sanitizeMapSvg en nefan-core/src/scene/map-svg.ts: mismo
-    # criterio en ambos lados o un SVG aceptado aquí lo rechazaría el bridge
-    # al persistir el retoque. Exige las 4 capas g#ground/#water/#solid/#tall.
+    # ── Map plan (map_ground + volumes) ──────────────────────────────────
+    # Espejo de sanitizeGroundSvg/parseVolumes en nefan-core: mismo criterio
+    # en ambos lados o un plan aceptado aquí lo rechazaría el bridge al
+    # persistir el retoque. map_ground exige las capas g#ground/#water.
+    if "map_svg" in data:
+        # Formato legacy anterior al compositor: ya no se acepta.
+        print("validate_scene: map_svg legacy descartado (usa map_ground + volumes)")
+        data.pop("map_svg", None)
     svg = _sanitize_svg_field(
-        data.get("map_svg"),
+        data.get("map_ground"),
         cols,
         rows,
         max_bytes=32_000,
-        required_layers=MAP_SVG_LAYERS,
-        field="map_svg",
+        required_layers=GROUND_SVG_LAYERS,
+        field="map_ground",
     )
     if svg:
-        data["map_svg"] = svg
+        data["map_ground"] = svg
     else:
-        data.pop("map_svg", None)
+        data.pop("map_ground", None)
+    if "volumes" in data:
+        vols = validate_volumes(data.get("volumes"))
+        if vols is not None:
+            data["volumes"] = vols
+        else:
+            data.pop("volumes", None)
 
     # ── Entities ─────────────────────────────────────────────────────────
     raw_entities = data.get("entities")
@@ -1528,7 +1624,7 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        allowed = {"terrain", "terrain_features", "entity_moves", "map_svg"}
+        allowed = {"terrain", "terrain_features", "entity_moves", "map_ground", "volumes"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:
             raise ValueError(
@@ -1589,21 +1685,31 @@ def validate_blueprint_review(data: dict | None) -> dict:
                 clean_moves.append({"id": m["id"], "cell": [m["cell"][0], m["cell"][1]]})
             fixes["entity_moves"] = clean_moves
 
-        raw_svg = raw_fixes.get("map_svg")
+        raw_svg = raw_fixes.get("map_ground")
         if raw_svg is not None:
             # Fail-loud (no descartar en silencio): un SVG corregido inválido
             # debe volver como 422 para que el modelo lo re-emita bien. Solo
             # aplica a tiles, cuyo viewBox es siempre 0 0 128 128.
             svg = _sanitize_svg_field(
                 raw_svg, 128, 128,
-                max_bytes=32_000, required_layers=MAP_SVG_LAYERS, field="fixes.map_svg",
+                max_bytes=32_000, required_layers=GROUND_SVG_LAYERS, field="fixes.map_ground",
             )
             if svg is None:
                 raise ValueError(
-                    "blueprint_review fixes.map_svg is not a valid map_svg document "
-                    '(viewBox "0 0 128 128", layers ground/water/solid/tall, ≤32KB, shapes only)'
+                    "blueprint_review fixes.map_ground is not a valid map_ground document "
+                    '(viewBox "0 0 128 128", layers ground/water, ≤32KB, shapes only)'
                 )
-            fixes["map_svg"] = svg
+            fixes["map_ground"] = svg
+
+        raw_vols = raw_fixes.get("volumes")
+        if raw_vols is not None:
+            vols = validate_volumes(raw_vols, field="fixes.volumes")
+            if vols is None:
+                raise ValueError(
+                    "blueprint_review fixes.volumes is not a valid volumes array "
+                    "(typed objects with unique id, Spanish label and per-type footprint)"
+                )
+            fixes["volumes"] = vols
 
         if fixes:
             out["fixes"] = fixes

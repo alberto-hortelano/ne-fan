@@ -124,15 +124,21 @@ export class NarrativeState {
     return true;
   }
 
-  /** Persiste el map_svg de un tile tras el retoque de visión (o lo estampa
-   *  como revisado sin cambios). El SVG llega ya sanitizado por el handler.
-   *  Devuelve false si el tile no existe. */
-  setTileMapSvg(tx: number, ty: number, mapSvg: string): boolean {
+  /** Persiste el plan de un tile (arte del suelo y/o volúmenes) tras el
+   *  retoque de visión — o lo estampa como revisado sin cambios. Los campos
+   *  llegan ya sanitizados por el handler. Devuelve false si el tile no
+   *  existe. */
+  setTileMapPlan(
+    tx: number,
+    ty: number,
+    plan: { map_ground?: string; volumes?: unknown[] },
+  ): boolean {
     const rec = this.getTile(tx, ty);
     if (!rec) return false;
-    rec.scene_data.map_svg = mapSvg;
+    if (plan.map_ground !== undefined) rec.scene_data.map_ground = plan.map_ground;
+    if (plan.volumes !== undefined) rec.scene_data.volumes = plan.volumes;
     // Marca de revisado: el pipeline del cliente no re-revisa en resume.
-    rec.scene_data.map_svg_reviewed = true;
+    rec.scene_data.map_plan_reviewed = true;
     this.dirty = true;
     return true;
   }

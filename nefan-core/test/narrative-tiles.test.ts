@@ -169,22 +169,29 @@ describe("NarrativeState — análisis de imagen por tile (mundo derivado)", () 
     assert.equal(s2.getTile(0, 0)!.analysis!.elements[0].label, "muralla");
   });
 
-  it("setTileMapSvg persiste el SVG revisado + map_svg_reviewed y sobrevive a save/load", async () => {
+  it("setTileMapPlan persiste el plan revisado + map_plan_reviewed y sobrevive a save/load", async () => {
     const storage = new MemorySessionStorage();
     const s = new NarrativeState(storage);
     s.startNewSession("plugtest");
     const sessionId = s.session_id;
     s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
-    const svg = '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/><g id="solid"/><g id="tall"/></svg>';
-    assert.ok(s.setTileMapSvg(0, 0, svg));
-    assert.ok(!s.setTileMapSvg(9, 9, svg), "tile inexistente → false");
+    const svg = '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/></svg>';
+    const volumes = [{ id: "roble", label: "roble", type: "tree", at: [10, 10] }];
+    assert.ok(s.setTileMapPlan(0, 0, { map_ground: svg, volumes }));
+    assert.ok(!s.setTileMapPlan(9, 9, { map_ground: svg }), "tile inexistente → false");
     await s.save();
 
     const s2 = new NarrativeState(storage);
     assert.ok(await s2.loadSession(sessionId));
     const rec = s2.getTile(0, 0)!;
-    assert.equal(rec.scene_data.map_svg, svg);
-    assert.equal(rec.scene_data.map_svg_reviewed, true);
+    assert.equal(rec.scene_data.map_ground, svg);
+    assert.deepEqual(rec.scene_data.volumes, volumes);
+    assert.equal(rec.scene_data.map_plan_reviewed, true);
+
+    // Retoque parcial: solo volumes — el ground persistido no cambia.
+    assert.ok(s2.setTileMapPlan(0, 0, { volumes: [] }));
+    assert.equal(s2.getTile(0, 0)!.scene_data.map_ground, svg);
+    assert.deepEqual(s2.getTile(0, 0)!.scene_data.volumes, []);
   });
 
   it("serializeForLlm resume el análisis del tile ACTIVO como scene_analysis", () => {

@@ -86,12 +86,15 @@ function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; err
       return { ok: false, error: '`fixes` must be an object' };
     }
     const f = o.fixes as Record<string, unknown>;
-    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'map_svg']);
+    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'map_ground', 'volumes']);
     for (const k of Object.keys(f)) {
       if (!allowed.has(k)) return { ok: false, error: `fixes.${k} is not a valid fix; allowed: ${[...allowed].sort().join(', ')}` };
     }
-    if (f.map_svg !== undefined && (typeof f.map_svg !== 'string' || !f.map_svg.trim().startsWith('<svg'))) {
-      return { ok: false, error: 'fixes.map_svg must be the FULL corrected SVG document (a string starting with <svg)' };
+    if (f.map_ground !== undefined && (typeof f.map_ground !== 'string' || !f.map_ground.trim().startsWith('<svg'))) {
+      return { ok: false, error: 'fixes.map_ground must be the FULL corrected SVG document (a string starting with <svg)' };
+    }
+    if (f.volumes !== undefined && !Array.isArray(f.volumes)) {
+      return { ok: false, error: 'fixes.volumes must be the FULL replacement volumes array' };
     }
     if (f.terrain !== undefined && (!Array.isArray(f.terrain) || f.terrain.some((r) => typeof r !== 'string'))) {
       return { ok: false, error: 'fixes.terrain must be the FULL list of terrain row strings' };
@@ -219,7 +222,8 @@ Call narrative_respond with this JSON (Tile Format):
   "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP)
   "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
-  "map_svg": "<svg viewBox=\\"0 0 128 128\\">…</svg>",  // STRONGLY recommended — see MAP SVG below
+  "map_ground": "<svg viewBox=\\"0 0 128 128\\">…</svg>",  // ground-plane art — see MAP PLAN below
+  "volumes": [ … ],                                    // everything with HEIGHT — see MAP PLAN below
   "ambient_event": "…"
 }
 
@@ -255,55 +259,73 @@ HARD RULES OF THE TILE:
   (see nearby_places, or one you just created with map_upsert_place), anchor
   it with its cell rect — its triggers fire when the player steps inside.
 
-MAP SVG — the painted blueprint of the tile (STRONGLY recommended):
-"map_svg" is a complete SVG plan of the tile. The client rasterises it as the
-layout blueprint the image model repaints AND derives the base collision map
-from its layers — this is where the tile stops being boxes and becomes a
-place, so invest your design effort here.
+MAP PLAN — the tile's semantic blueprint (STRONGLY recommended):
+The plan has two halves: flat ground art + typed volumes. You declare WHAT
+exists in flat world cells; the engine's blueprint composer projects it to
+the session's frozen perspective (world.perspective: top-down with visible
+south faces, or 2:1 isometric), derives the walk collision from the declared
+FOOTPRINTS and guides the vision classifier with the projected bboxes. Never
+draw projected/foreshortened geometry yourself — this is where the tile stops
+being boxes and becomes a place, so invest your design effort here.
 
-Format (the server discards a map_svg that violates any of these):
+1) "map_ground" — the GROUND-PLANE art, a complete SVG:
 - viewBox EXACTLY "0 0 128 128" (units = cells), max 32 KB. Shape elements
   only (path/rect/circle/ellipse/polygon/polyline/line + g/defs/symbol/use);
   no <script>, no foreignObject, no href.
-- <g> layers in this exact order (paint order = z-order). ground, water,
-  solid, tall are REQUIRED (an empty <g id="water"/> is fine), deck is
-  optional:
-  <g id="ground">: everything walkable — a base fill covering the WHOLE tile
-    (biome colour), meadow-variation blobs, dirt roads, stone plazas, sandy
-    banks under the river, interior floors (wood).
-  <g id="water">: rivers, ponds, moats. NOT walkable. Draw rivers as a thick
-    stroked path following the SAME course as your water terrain_feature.
-  <g id="deck">: walkable surfaces OVER water: bridge planks, jetties,
-    stepping stones. (Collision punches these out of the water — a bridge in
-    #ground would be painted UNDER the river and disappear.)
-  <g id="solid">: what blocks walking — building WALLS as a stroked ring
-    (stroke-width ~1.4 cells, fill none) with GAPS for doors, tree TRUNKS
-    (small dots), boulders, fences, wells, furniture (bar counter, tables,
-    beds, barrels, forge, market stalls, carts).
-  <g id="tall">: what is taller than a character and draws OVER one standing
-    behind it — tree CANOPIES (circles above their trunk dots), awnings.
-    Trunk in #solid, canopy in #tall: collision and occlusion are different.
-- Put data-label="<Spanish noun>" on every meaningful shape in #solid/#tall
-  ("taberna", "roble", "pozo") — it guides the vision classifier later.
+- <g> layers in this exact order:
+  <g id="ground">: REQUIRED — a base fill covering the WHOLE tile (biome
+    colour), meadow-variation blobs, dirt roads, stone plazas, sandy banks,
+    interior floors (wood).
+  <g id="water">: REQUIRED (may be empty) — rivers/ponds/moats as thick
+    stroked paths following the SAME course as your water terrain_features.
+    NOT walkable.
+  <g id="deck">: optional — walkable surfaces OVER water: bridge planks,
+    jetties, stepping stones (collision punches these out of the water).
+- ONLY flat ground art here. NO walls, trees, furniture or anything with
+  height — those are volumes.
 
-Design doctrine (what makes the map GOOD):
-- CUTAWAY buildings, no roofs EVER: wall ring with door gaps, interior floor
-  in #ground, furniture in #solid. The player must see inside every building.
-- Roads first: lay the road/river network (continuing every crossing and
-  neighbour image_element), THEN snap buildings to the roads with a short
-  spur path to their door. A building nobody can reach is a bug.
-- Centerpiece → surroundings → filler: one anchor feature (plaza with a well,
-  a bridge, a shrine), support structures around it, then frame with
-  vegetation MASSES — clustered canopies leaving clearings and meadows, not
-  uniform scatter.
-- COHERENCE with the schema: the SVG draws the SAME world the JSON declares —
-  every terrain_feature follows its own points and reaches the border at its
-  at_edges cells; every structure/building entity keeps its footprint. The
-  SVG adds the detail the schema cannot express (interiors, curves, canopy
-  vs trunk), it never contradicts it.
-- NEVER: roofs; furniture floating outside walls; an element touching the
-  tile border unless it continues a crossing or image_element; water without
-  clearly drawn banks.
+2) "volumes" — everything with HEIGHT, as typed objects (max 160):
+Common fields: "id" (unique slug), "label" (Spanish noun — it guides the
+vision classifier later), "type". Coordinates in cells (0..128); heights in
+cells too (a character is ~3.6 cells tall). Types:
+- building { rect:[col,row,w,d], wall_h?=5, roof?:{kind:"gable"|"hip"|"shed"|
+  "flat"|"none", axis?:"x"|"y", material?:"slate"|"tile"|"thatch"|"wood",
+  color?:"#rrggbb"}, walls?:{material:"timber"|"stone"|"wood"|"plaster",
+  color?}, doors?:[{edge:"n"|"s"|"e"|"w", at:<cells from the NW corner along
+  that edge>, w?=4}], cutaway?:true }
+  cutaway=true = ENTERABLE building: no roof, low front walls, interior
+  visible from the camera. Furniture inside = prop volumes within the rect.
+  Buildings the player can enter MUST be cutaway; pure scenery keeps a roof.
+- wall { points:[[c,r],…], width?=3, h?=7, crenellated? } — city walls,
+  garden fences (low h). Extend to the tile border when the wall continues
+  in a neighbour (crossing/image_element continuity).
+- tower { at:[c,r], r?=6, h?=11, crenellated? }
+- gate { at:[c,r], w?=8, h?=10, orient:"x"|"y", banners? } — an arched gate
+  ON a wall run; its passage is collision-FREE. Wherever a road crosses a
+  wall there MUST be a gate (orient = the axis the host wall runs along).
+- tree { at, s?=1, species? } · bush { at, s? } · rock { at, s? } ·
+  fountain { at, r?=5 }
+- prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
+  passable?:true } — tables, barrels, crates, wells, market stalls, carts,
+  signs… passable=true for rugs/awnings that must not block movement.
+COLLISION comes from these footprints: a building with no door is a sealed
+box (bug); doors/gates ARE the openings. Trees block only at the trunk.
+
+Design doctrine (what makes the plan GOOD):
+- Roads first: lay the road/river network in map_ground (continuing every
+  crossing and neighbour image_element), THEN snap buildings to the roads
+  with a door facing them. A building nobody can reach is a bug.
+- Centerpiece → surroundings → filler: one anchor feature (plaza with a
+  fountain, a bridge, a shrine), support structures around it, then frame
+  with vegetation MASSES — clustered trees leaving clearings, not uniform
+  scatter.
+- COHERENCE with the schema: volumes and map_ground draw the SAME world the
+  JSON declares — every terrain_feature follows its own points and reaches
+  its at_edges cells; every structure keeps its footprint. The plan adds the
+  detail the schema cannot express (interiors, curves, materials).
+- The engine auto-derives volumes from vegetation_zones/structures when you
+  give none — declare explicit volumes where you want CONTROL (materials,
+  doors, cutaway interiors, landmarks) and let the fallback fill forests.
 
 EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
 is {type:"path", at:41}) and seeding an east exit:
@@ -320,12 +342,17 @@ is {type:"path", at:41}) and seeding an east exit:
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
-  "map_svg": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><rect width=\\"128\\" height=\\"128\\" fill=\\"#3d5a2c\\"/><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#c2a86b\\" stroke-width=\\"4\\"/></g><g id=\\"water\\"/><g id=\\"solid\\"><ellipse cx=\\"81\\" cy=\\"31\\" rx=\\"1.5\\" ry=\\"1\\" fill=\\"#7f7f78\\" data-label=\\"roca\\"/><circle cx=\\"30\\" cy=\\"20\\" r=\\"0.5\\" fill=\\"#5a4632\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"0.5\\" fill=\\"#5a4632\\"/></g><g id=\\"tall\\"><circle cx=\\"30\\" cy=\\"20\\" r=\\"4.5\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/><circle cx=\\"50\\" cy=\\"70\\" r=\\"4\\" fill=\\"#2c4a22\\" data-label=\\"pino\\"/></g></svg>",
+  "map_ground": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><rect width=\\"128\\" height=\\"128\\" fill=\\"#3d5a2c\\"/><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#c2a86b\\" stroke-width=\\"4\\"/></g><g id=\\"water\\"/></svg>",
+  "volumes": [
+    { "id": "roca_musgo", "label": "roca", "type": "rock", "at": [81, 31], "s": 1.4 },
+    { "id": "pino_1", "label": "pino", "type": "tree", "at": [30, 20], "species": "pino" },
+    { "id": "pino_2", "label": "pino", "type": "tree", "at": [50, 70], "species": "pino" }
+  ],
   "ambient_event": "Un cuervo grazna en lo alto de los pinos."
 }
-(a real forest tile draws its full tree masses in the SVG — dozens of
-trunk+canopy pairs clustered along the path and the tile edges; the example
-is abbreviated.)
+(a real forest tile leans on the vegetation_zones fallback for its tree
+masses and declares explicit volumes only for landmarks; the example is
+abbreviated.)
 
 BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - FIRST lay down the initial world map with the map tools (map_upsert_place ×
@@ -479,8 +506,8 @@ express the shape): "terrain_svg" is an SVG string of pure shapes drawn over the
 terrain, under the entities. viewBox EXACTLY "0 0 <cols> <rows>" (units = cells),
 max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line) — no
 <script>, no foreignObject, no href. Most scenes need no SVG at all.
-TILES: do NOT use terrain_svg — the tile's "map_svg" (full layered blueprint,
-see MAP SVG in the tile section) supersedes it entirely.
+TILES: do NOT use terrain_svg — the tile's map plan ("map_ground" +
+"volumes", see MAP PLAN in the tile section) supersedes it entirely.
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need
@@ -744,7 +771,7 @@ When unsure about solid, prefer false for open ground textures and true for
 anything that reads as a built structure or large plant.
 
 If context.expected_elements is present, it lists what the tile's authored
-plan (map_svg) declares — {label, solid, tall, bbox_px} — near-ground truth:
+plan (its volumes) declares — {label, solid, tall, bbox_px} — near-ground truth:
 a region overlapping a declared bbox almost certainly IS that element (reuse
 its Spanish label and lean towards its solid/tall). Do NOT mark a declared
 element as walkable ground. Regions with no declared match are things the
@@ -887,14 +914,18 @@ BEFORE credits are spent. Look for:
 - a described element (in scene_description) missing from the map;
 - large empty regions that contradict the description.
 
-When the scene has "map_svg" (the blueprint image IS that SVG rasterised),
-also look for its typical authoring bugs:
-- z-order: a bridge/jetty INVISIBLE because it was drawn in #ground before
-  the water — it must live in the <g id="deck"> layer, painted over #water;
-- a building wall ring with no door gap, or furniture floating outside walls;
-- a roof (buildings must be open CUTAWAY: walls + visible interior);
+When the scene has a map plan ("map_ground" + "volumes"; the blueprint image
+IS the composer's projection of it), also look for its typical authoring bugs:
+- a bridge/jetty INVISIBLE because it was drawn in #ground under the water —
+  it must live in the <g id="deck"> layer of map_ground;
+- a building with no door, a gate missing where a road crosses a wall, or
+  furniture (props) floating outside the building they belong to;
+- an ENTERABLE building that is not cutaway (interior invisible), or a pure
+  scenery building left roofless;
 - an element that should reach the tile border (crossing continuation) but
   stops short, or one touching the border that shouldn't.
+The projection (top-down faces / isometric) is the composer's job: do NOT
+flag perspective or shading — fix WHAT exists and WHERE, in flat cells.
 
 Respond via narrative_respond with EXACTLY this JSON:
 {
@@ -904,14 +935,15 @@ Respond via narrative_respond with EXACTLY this JSON:
     "terrain": ["<row>", ...],              // FULL grid replacement (all rows, exact cols)
     "terrain_features": [ ... ],            // FULL replacement list (same schema as the scene)
     "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ],
-    "map_svg": "<svg …>"                    // FULL corrected SVG document (same layer rules), map_svg scenes only
+    "map_ground": "<svg …>",                // FULL corrected ground SVG (same layer rules), plan scenes only
+    "volumes": [ … ]                        // FULL corrected volumes array, plan scenes only
   }
 }
 - approved=true with no issues → the client proceeds to generation untouched.
 - approved=false SHOULD include "fixes" so the client can repair and re-render
   without another round-trip. Fixes replace whole fields: if you fix one terrain
-  row you must return ALL rows; same for terrain_features and map_svg.
-- Do NOT return a full scene; only the four fix fields above are applied.`;
+  row you must return ALL rows; same for terrain_features, map_ground and volumes.
+- Do NOT return a full scene; only the five fix fields above are applied.`;
 
 async function main() {
   const bridge = await WsBridge.create();

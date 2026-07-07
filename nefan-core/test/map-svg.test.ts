@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { sanitizeMapSvg, MAP_SVG_MAX_BYTES } from "../src/scene/map-svg.js";
+import { sanitizeGroundSvg, sanitizeMapSvg, MAP_SVG_MAX_BYTES } from "../src/scene/map-svg.js";
 
 /** SVG mínimo válido con las 4 capas obligatorias. */
 function validSvg(extra = ""): string {
@@ -73,5 +73,35 @@ describe("sanitizeMapSvg", () => {
     assert.equal(sanitizeMapSvg("", 128, 128).ok, false);
     assert.equal(sanitizeMapSvg(undefined, 128, 128).ok, false);
     assert.equal(sanitizeMapSvg("<div>no</div>", 128, 128).ok, false);
+  });
+});
+
+describe("sanitizeGroundSvg", () => {
+  const ground = (extra = ""): string =>
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">' +
+    '<g id="ground"><rect width="128" height="128" fill="#547233"/></g>' +
+    '<g id="water"/>' +
+    extra +
+    "</svg>";
+
+  it("acepta un map_ground con solo ground+water (deck opcional)", () => {
+    assert.equal(sanitizeGroundSvg(ground(), 128, 128).ok, true);
+    assert.equal(sanitizeGroundSvg(ground('<g id="deck"/>'), 128, 128).ok, true);
+  });
+
+  it("rechaza si falta water", () => {
+    const res = sanitizeGroundSvg(
+      '<svg viewBox="0 0 128 128"><g id="ground"/></svg>',
+      128,
+      128,
+    );
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.match(res.error, /water/);
+  });
+
+  it("NO exige las capas solid/tall del map_svg legacy", () => {
+    // el mismo documento sin solid/tall lo rechazaría sanitizeMapSvg
+    assert.equal(sanitizeMapSvg(ground(), 128, 128).ok, false);
+    assert.equal(sanitizeGroundSvg(ground(), 128, 128).ok, true);
   });
 });
