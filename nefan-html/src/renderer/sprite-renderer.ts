@@ -46,6 +46,10 @@ const ANIM_LOOPS: ReadonlySet<string> = new Set([
 ]);
 
 export class SpriteRenderer {
+  /** Estilo visual de la sesión activa (world.style_id); "" ⇒ el servidor
+   *  skinnea sin referencia de estilo del juego. */
+  private styleId = "";
+
   private cache = new Map<string, SpriteSheet>();
   private inflight = new Map<string, Promise<SpriteSheet>>();
   private skinInflight = new Map<string, Promise<SpriteSheet>>();
@@ -54,6 +58,15 @@ export class SpriteRenderer {
     private baseUrl: string = "/sprites",
     private aiServerUrl: string = "http://127.0.0.1:8765",
   ) {}
+
+  /** Fija el estilo del juego activo. Cambiarlo invalida el cache local de
+   *  skins: el mismo prompt con otro estilo es otra imagen. */
+  setStyle(styleId: string): void {
+    if (styleId === this.styleId) return;
+    this.styleId = styleId;
+    this.cache.clear();
+    this.skinInflight.clear();
+  }
 
   /** Fetch meta.json and start loading every frame image. Subsequent calls for
    * the same triple resolve to the cached sheet. Throws on any failure — no
@@ -117,6 +130,7 @@ export class SpriteRenderer {
             anim,
             angle,
             prompt: skinPrompt,
+            style_id: this.styleId,
           }),
         });
         if (!res.ok) {
@@ -154,7 +168,9 @@ export class SpriteRenderer {
     // prompt) pairs share the cache. The SpriteRenderer never reads this
     // string — it's only a key — so keeping it human-readable is fine.
     const slug = skinPrompt.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
-    return `${model}__${slug}`;
+    // El estilo entra en la clave: el mismo personaje con otro style pack es
+    // otra imagen (el cache local no debe cruzar estilos).
+    return this.styleId ? `${model}__${this.styleId}__${slug}` : `${model}__${slug}`;
   }
 
   private async fetchSheet(

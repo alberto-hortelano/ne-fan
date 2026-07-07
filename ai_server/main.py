@@ -60,6 +60,7 @@ from controlnet_skin import ControlNetSkinGenerator
 from dev_api_cache import DEV_API_CACHE
 from sprite_skin_meshy import SpriteSkinMeshy
 from scene_image_generator import SceneImageGenerator, SIDES
+from style_packs import StylePackResolver
 from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
 from asset_cache import AssetCache, AssetManifest
@@ -76,6 +77,7 @@ sprite_skin_gen: "SpriteSkinMeshy | None" = None
 sprite_gen: SpriteGenerator | None = None
 scene_image_gen: SceneImageGenerator | None = None
 scene_segmenter: SceneSegmenter | None = None
+style_packs: "StylePackResolver | None" = None
 asset_cache: AssetCache | None = None
 model_cache: AssetCache | None = None
 skin_cache: AssetCache | None = None
@@ -117,7 +119,7 @@ def load_config(config_path: Path | None = None) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter, style_packs
     config = load_config()
 
     # Shared manifest sits at the cache root and tracks every asset across types.
@@ -229,6 +231,10 @@ async def lifespan(app: FastAPI):
         style_image_path=str(_repo_root / config["scene_style_image"]),
         model=config["scene_model"],
     )
+    # Packs de estilo por juego (imágenes de referencia por categoría).
+    # Degradación esperable si aún no hay packs: resolve() devuelve None y las
+    # peticiones usan la referencia global de arriba.
+    style_packs = StylePackResolver()
 
     segment_cache = AssetCache(
         cache_dir=config["segment_cache_dir"],
@@ -389,6 +395,11 @@ class SceneImageRequest(BaseModel):
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
     blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
+    # Estilo del juego: id del pack (congelado en la sesión) y categoría de
+    # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
+    # referencia global fija de siempre.
+    style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
+    style_tag: str = Field(default="", pattern="^(nature|settlement|fortress|interior|underground)?$")
 
     @field_validator("context_sides")
     @classmethod
@@ -756,6 +767,14 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         "model": scene_image_gen._model,
         "sides": "+".join(sorted(body.context_sides)),
     }
+    # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
+    # imagen utilizable se degrada a la global — y la clave de cache NO lleva
+    # estilo, para no fragmentar el cache preexistente.
+    style_ref = None
+    if body.style_id and style_packs is not None:
+        style_ref = style_packs.resolve(body.style_id, body.style_tag or "settlement")
+        if style_ref is not None:
+            context["style"] = f"{style_ref.style_id}/{style_ref.category}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
     # no debe servir una imagen cacheada bajo la instrucción antigua. "boxes"
     # se omite (como sides vacío) para no invalidar la caché preexistente.
@@ -778,6 +797,8 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         result = await asyncio.to_thread(
             scene_image_gen.generate_full, png, body.prompt,
             body.context_sides, body.blueprint_kind,
+            style_ref.data_uri if style_ref else None,
+            style_ref.style_token if style_ref else "",
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
@@ -905,7 +926,9 @@ SPRITE_SHEETS_DIR = Path(__file__).resolve().parent.parent / "nefan-html" / "pub
 SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_sheets"
 
 
-def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str, ai_model: str) -> str:
+def _skin_sheet_key(
+    model: str, anim: str, angle: str, prompt: str, ai_model: str, style_key: str = ""
+) -> str:
     """Hash that invalidates whenever the underlying Mixamo sheet is
     re-rendered. Including the base meta.json mtime guarantees the skinned
     cache rebuilds on top of the latest frames; otherwise a re-render of the
@@ -920,6 +943,7 @@ def _skin_sheet_key(model: str, anim: str, angle: str, prompt: str, ai_model: st
     n_kf, fps = ANIM_PROFILES.get(anim, DEFAULT_PROFILE)
     payload = "\n".join(
         [model, anim, angle, prompt.strip().lower(), base_stamp, ai_model, f"kf{n_kf}@{fps}",
+         style_key,
          # En modo dev-cache los frames derivan de una respuesta rancia: clave
          # aparte para no contaminar el cache real de este prompt.
          DEV_API_CACHE.namespace_suffix()]
@@ -947,9 +971,20 @@ async def skin_sprite_sheet_endpoint(request: Request):
     anim = str(body.get("anim", "idle")).strip()
     angle = str(body.get("angle", "isometric_30")).strip()
     prompt = str(body.get("prompt", "")).strip()
+    # Estilo del juego (opcional): pack + rol del personaje para elegir la
+    # referencia (commoner/noble/warrior). Sin pack o sin imagen ⇒ sin ref.
+    style_id = str(body.get("style_id", "")).strip()
+    style_role = str(body.get("style_role", "commoner")).strip() or "commoner"
 
     if not (model and prompt):
         raise HTTPException(status_code=400, detail="missing model or prompt")
+    if style_role not in ("commoner", "noble", "warrior"):
+        raise HTTPException(status_code=400, detail=f"invalid style_role: {style_role}")
+
+    style_ref = None
+    if style_id and style_packs is not None:
+        style_ref = style_packs.resolve(style_id, f"character_{style_role}")
+    style_key = f"{style_ref.style_id}:{style_ref.content_hash}" if style_ref else ""
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
     if not (sheet_dir / "meta.json").exists():
@@ -965,7 +1000,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
             # la base y_bot (una entrada de error-log, sin reintentos).
             raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}") from e
 
-    key = _skin_sheet_key(model, anim, angle, prompt, sprite_skin_gen.ai_model)
+    key = _skin_sheet_key(model, anim, angle, prompt, sprite_skin_gen.ai_model, style_key)
     out_dir = SKINNED_SHEETS_DIR / key
     out_meta_path = out_dir / "meta.json"
 
@@ -977,7 +1012,12 @@ async def skin_sprite_sheet_endpoint(request: Request):
             meta = json.load(f)
     else:
         try:
-            meta = await sprite_skin_gen.skin_anim(model, anim, angle, prompt, out_dir)
+            meta = await sprite_skin_gen.skin_anim(
+                model, anim, angle, prompt, out_dir,
+                style_uri=style_ref.data_uri if style_ref else "",
+                style_key=style_key,
+                style_token=style_ref.style_token if style_ref else "",
+            )
         except HTTPException:
             raise
         except Exception as e:

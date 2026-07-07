@@ -8,6 +8,9 @@ GENERATE_SCENE_PROMPT_WORLD_RULES = """WORLD & ENGINE RULES (always apply — mi
 - `world.style_token` names the visual style; style/texture prompts you emit
   should harmonise with it.
 - The camera is a fixed top-down/isometric 2D view.
+- Scene/tile JSON should include "style_tag": one of
+  nature|settlement|fortress|interior|underground — the dominant setting of
+  the map, used to pick the game's style reference image when painting it.
 - ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
   bipeds; only humanoid animations exist. Never spawn talking animals, beasts
   or non-humanoid monsters; supernatural beings appear in human form.
@@ -694,6 +697,13 @@ def validate_scene_response(data: dict) -> dict:
     data["scene_id"] = scene_id
     # Keep `room_id` as alias so older clients keep working.
     data["room_id"] = scene_id
+    # style_tag: categoría de referencia de estilo para el repintado IA.
+    # Valor fuera del enum se descarta con aviso (mejor sin tag que un 422 en
+    # /generate_scene_image cuando el cliente lo reenvíe).
+    _valid_style_tags = {"nature", "settlement", "fortress", "interior", "underground"}
+    if data.get("style_tag") and data["style_tag"] not in _valid_style_tags:
+        print(f"validate_scene: style_tag inválido '{data['style_tag']}' — descartado", flush=True)
+        data.pop("style_tag", None)
     data["scene_description"] = (
         data.get("scene_description") or data.get("room_description") or "Un paraje desolado."
     )

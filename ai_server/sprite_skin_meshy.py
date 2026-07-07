@@ -165,19 +165,32 @@ class SpriteSkinMeshy:
         # deben generar dos identidades distintas en paralelo.
         self._hero_locks: dict[str, asyncio.Lock] = {}
 
-    def hero_key(self, prompt: str, base_model: str) -> str:
+    def hero_key(self, prompt: str, base_model: str, style_key: str = "") -> str:
         # namespace_suffix: un hero rancio de modo dev no debe ocupar el slot
-        # real de este prompt.
+        # real de este prompt. style_key ("{style_id}:{hash}") separa el mismo
+        # personaje pintado con estilos de juego distintos.
         payload = "\n".join(
-            [prompt.strip().lower(), base_model, self.ai_model, DEV_API_CACHE.namespace_suffix()]
+            [prompt.strip().lower(), base_model, self.ai_model, style_key,
+             DEV_API_CACHE.namespace_suffix()]
         )
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     async def hero_shot(
-        self, prompt: str, base_model: str, angle: str, client: httpx.AsyncClient
+        self,
+        prompt: str,
+        base_model: str,
+        angle: str,
+        client: httpx.AsyncClient,
+        style_uri: str = "",
+        style_key: str = "",
+        style_token: str = "",
     ) -> Path:
-        """Genera (o recupera del cache) el hero-shot del personaje."""
-        key = self.hero_key(prompt, base_model)
+        """Genera (o recupera del cache) el hero-shot del personaje.
+
+        `style_uri`/`style_token`: referencia de personaje del style pack del
+        juego — el hero adopta ese estilo y las direcciones lo heredan del
+        hero (el atlas no necesita ref extra)."""
+        key = self.hero_key(prompt, base_model, style_key)
         hero_path = self.heroes_dir / f"{key}.png"
         lock = self._hero_locks.setdefault(key, asyncio.Lock())
         async with lock:
@@ -187,11 +200,20 @@ class SpriteSkinMeshy:
             if not base_frame.exists():
                 raise FileNotFoundError(f"base frame missing: {base_frame}")
 
+            hero_prompt = prompt.strip() + HERO_PROMPT_SUFFIX
+            refs = [_png_to_data_uri(base_frame)]
+            if style_uri:
+                refs.append(style_uri)
+                hero_prompt += (
+                    ". Match the EXACT art style of the SECOND reference image"
+                    + (f" ({style_token.strip()})" if style_token else "")
+                )
+
             async def _call() -> list[bytes]:
                 png, _ = await self.api.run_one(
                     self.ai_model,
-                    prompt.strip() + HERO_PROMPT_SUFFIX,
-                    [_png_to_data_uri(base_frame)],
+                    hero_prompt,
+                    refs,
                     client=client,
                 )
                 return [png]
@@ -248,7 +270,15 @@ class SpriteSkinMeshy:
         await asyncio.to_thread(_strip_and_save)
 
     async def skin_anim(
-        self, base_model: str, anim: str, angle: str, prompt: str, out_dir: Path
+        self,
+        base_model: str,
+        anim: str,
+        angle: str,
+        prompt: str,
+        out_dir: Path,
+        style_uri: str = "",
+        style_key: str = "",
+        style_token: str = "",
     ) -> dict:
         """Skinnea una anim completa (todas sus direcciones) y escribe frames
         + meta.json en `out_dir`. Devuelve el meta (frames/fps REDUCIDOS según
@@ -267,7 +297,9 @@ class SpriteSkinMeshy:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(connect=15, read=300, write=300, pool=10)
         ) as client:
-            hero_path = await self.hero_shot(prompt, base_model, angle, client)
+            hero_path = await self.hero_shot(
+                prompt, base_model, angle, client, style_uri, style_key, style_token
+            )
             hero_uri = _png_to_data_uri(hero_path)
 
             async def guarded(d: int) -> None:
@@ -291,6 +323,7 @@ class SpriteSkinMeshy:
             "skin": {
                 "prompt": prompt,
                 "ai_model": self.ai_model,
+                "style_key": style_key,
                 "background": "rembg_u2net",
                 "keyframe_indices": indices,
                 "cost_usd": round(
