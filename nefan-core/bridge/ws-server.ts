@@ -4,7 +4,7 @@
  *  y el wiring de transporte (WS + state HTTP API). La lógica de cada mensaje
  *  vive en bridge/handlers/* y se enruta en bridge/router.ts. */
 
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import { WebSocketServer, WebSocket } from "ws";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -70,6 +70,11 @@ const ctx: BridgeContext = {
     // recibir cabeceras) mataba /generate_scene con "fetch failed" mientras
     // el motor narrativo seguía escribiendo. El AbortController del cliente
     // (llm_timeout_s + margen) es quien acota la espera.
+    //
+    // OJO: fetch y Agent deben venir del MISMO undici (el paquete npm). El
+    // fetch GLOBAL de Node usa su undici interno y rechaza un Agent ajeno al
+    // instante con "fetch failed: invalid onRequestStart method".
+    fetchImpl: undiciFetch as unknown as typeof fetch,
     dispatcher: new Agent({ headersTimeout: 0, bodyTimeout: 0 }),
   }),
   mapTriggers: new MapTriggerEvaluator(narrative),

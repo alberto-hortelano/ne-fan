@@ -32,6 +32,10 @@ const FRONTIER_MODE = process.env.FRONTIER_MODE ?? "";
 // Retardo artificial en fronteras (ms) — simula los minutos del motor real
 // para poder observar el velo/freeze en E2E. 0 = instantáneo.
 const FRONTIER_DELAY_MS = Number(process.env.FRONTIER_DELAY_MS ?? 0);
+// Retardo artificial de TODO /generate_scene (ms), ANTES de responder nada
+// (ni cabeceras): reproduce las esperas de minutos del motor real. Regresión
+// del headersTimeout de undici (300 s) en el fetch del bridge.
+const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 
 // ── Skin de sprite sheets (bench del cliente 2D, sin GPU) ────────────────
 // POST /skin_sprite_sheet: en vez del img2img real, el "skin" son los frames
@@ -488,6 +492,10 @@ const server = http.createServer((req, res) => {
         return send(200, { segments, discarded: 5 });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
+        if (SCENE_DELAY_MS > 0) {
+          console.error(`[fake-ai] /generate_scene retenido ${SCENE_DELAY_MS} ms (SCENE_DELAY_MS)`);
+          await new Promise((r) => setTimeout(r, SCENE_DELAY_MS));
+        }
         let body = {};
         try {
           body = raw ? JSON.parse(raw) : {};
