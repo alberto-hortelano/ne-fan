@@ -1,10 +1,12 @@
-/** Colisión base derivada del blueprint SVG (`map_svg`).
+/** Colisión de agua derivada del arte plano del suelo (`map_ground`).
  *
- *  Rasteriza SOLO las capas que bloquean el paso (`#water` + `#solid`) a un
- *  canvas offscreen, perfora la capa opcional `#deck` (transitable SOBRE el
- *  agua: puentes, embarcaderos) con `destination-out`, y agrega el alpha a un
- *  grid de celdas con `solidGridFromMasks` — el mismo camino que la colisión
- *  derivada de la imagen, así ambas son consistentes por construcción.
+ *  Rasteriza SOLO la capa `#water` (sin proyectar — idéntica en ambas
+ *  perspectivas) a un canvas offscreen, la perfora con la capa opcional
+ *  `#deck` (transitable SOBRE el agua: puentes, embarcaderos) con
+ *  `destination-out`, y agrega el alpha a un grid de celdas con
+ *  `solidGridFromMasks` — el mismo camino que la colisión derivada de la
+ *  imagen, así ambas son consistentes por construcción. Las huellas de los
+ *  volúmenes van aparte (volumeCollisionGrid, analítica).
  *
  *  Fail-loud: SVG que no parsea o no decodifica → throw (el caller decide si
  *  degrada a la colisión del esquema y lo registra en el ErrorLog). */
@@ -18,9 +20,8 @@ import type { WorldRect } from "@nefan-core/src/scene/tile.js";
  *  la misma densidad que el análisis de imagen (imagen 1024² / grid 128). */
 const PX_PER_CELL = 8;
 
-/** Capas del map_svg que participan en la colisión. El resto (#ground,
- *  #tall) es visual. */
-const BLOCKING_LAYERS = new Set(["water", "solid"]);
+/** Capas del map_ground que participan en la colisión (#ground es visual). */
+const BLOCKING_LAYERS = new Set(["water"]);
 const PUNCH_LAYER = "deck";
 
 /** Rasteriza el SVG con solo las capas `visible` mostradas. */
@@ -51,9 +52,9 @@ async function rasterizeLayers(
   }
 }
 
-/** Elemento que el plano SVG declara (shape con data-label en #solid/#tall),
- *  con su bbox en píxeles de la imagen pintada — guía para el clasificador de
- *  visión del análisis. */
+/** Elemento que el plan del tile declara, con su bbox en píxeles de la
+ *  imagen pintada — guía para el clasificador de visión del análisis. Lo
+ *  construye scene-image desde los elementos del blueprint compuesto. */
 export interface ExpectedElement {
   label: string;
   solid: boolean;
@@ -62,69 +63,9 @@ export interface ExpectedElement {
   bbox_px: [number, number, number, number];
 }
 
-/** Cap de elementos declarados enviados al clasificador (los mayores). */
-const MAX_EXPECTED = 64;
-
-/** Extrae los elementos declarados del map_svg. Necesita el SVG montado en el
- *  DOM (getBBox solo funciona en árboles renderizados): se inserta oculto y
- *  se retira. Un shape que no mide (getBBox lanza) se omite. */
-export function expectedElementsFromSvg(
-  mapSvg: string,
-  imgW: number,
-  imgH: number,
-): ExpectedElement[] {
-  const doc = new DOMParser().parseFromString(mapSvg, "image/svg+xml");
-  if (doc.querySelector("parsererror")) {
-    throw new Error("map_svg no parsea como XML");
-  }
-  const host = document.createElement("div");
-  host.style.position = "absolute";
-  host.style.visibility = "hidden";
-  host.style.width = "0";
-  host.style.height = "0";
-  host.style.overflow = "hidden";
-  const svgEl = document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
-  host.appendChild(svgEl);
-  document.body.appendChild(host);
-  try {
-    const sx = imgW / TILE_CELLS;
-    const sy = imgH / TILE_CELLS;
-    const out: ExpectedElement[] = [];
-    for (const layer of ["solid", "tall"] as const) {
-      const g = svgEl.querySelector(`g[id="${layer}"]`);
-      if (!g) continue;
-      for (const el of g.querySelectorAll("[data-label]")) {
-        const label = el.getAttribute("data-label")?.trim();
-        if (!label) continue;
-        let b: DOMRect;
-        try {
-          b = (el as SVGGraphicsElement).getBBox();
-        } catch {
-          continue; // shape sin geometría medible
-        }
-        if (!(b.width > 0) || !(b.height > 0)) continue;
-        out.push({
-          label,
-          solid: layer === "solid",
-          tall: layer === "tall",
-          bbox_px: [
-            Math.round(b.x * sx),
-            Math.round(b.y * sy),
-            Math.round(b.width * sx),
-            Math.round(b.height * sy),
-          ],
-        });
-      }
-    }
-    out.sort((a, b) => b.bbox_px[2] * b.bbox_px[3] - a.bbox_px[2] * a.bbox_px[3]);
-    return out.slice(0, MAX_EXPECTED);
-  } finally {
-    host.remove();
-  }
-}
-
-/** Deriva el grid de colisión base del `map_svg` de un tile. Devuelve null si
- *  el SVG no contiene ninguna celda sólida (tile abierto sin agua ni muros). */
+/** Deriva el grid de colisión de agua del `map_ground` de un tile (capa
+ *  #water perforada por #deck). Devuelve null si no hay ninguna celda sólida
+ *  (tile sin agua). */
 export async function svgCollisionGrid(
   mapSvg: string,
   rect: WorldRect,

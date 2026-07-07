@@ -4,24 +4,17 @@
  *  `map_ground` (capas `g#ground` + `g#water`, `g#deck` opcional; celdas de
  *  mundo sin proyectar) y los elementos con altura como `volumes` — el
  *  compositor (`blueprint/`) proyecta ambos a la perspectiva de la sesión.
- *  `map_svg` (4 capas, con `#solid`/`#tall` dibujados a mano) es el formato
- *  legacy anterior al compositor.
- *
  *  Este módulo es el espejo TS del validador de ai_server
  *  (`narrative_schemas.py`): lo usa el bridge al persistir un plan corregido
  *  por el retoque de visión — mismo criterio en ambos lados o un SVG aceptado
  *  por uno sería rechazado por el otro. */
 
-/** Capas obligatorias del map_svg legacy, en orden de pintado. Existe además
- *  una capa opcional `deck` (transitable SOBRE el agua: puentes,
- *  embarcaderos, pasaderas) que se pinta entre `water` y `solid` — la
- *  rasterización de colisión la usa para perforar el agua (destination-out). */
-export const MAP_SVG_LAYERS = ["ground", "water", "solid", "tall"] as const;
-
-/** Capas obligatorias del `map_ground` (formato de plan actual): SOLO el
- *  plano del suelo, sin proyectar. Los elementos con altura viajan aparte en
- *  `volumes` y el compositor (`blueprint/`) los proyecta a la perspectiva de
- *  la sesión. `deck` sigue siendo opcional. */
+/** Capas obligatorias del `map_ground`: SOLO el plano del suelo, sin
+ *  proyectar. Los elementos con altura viajan aparte en `volumes` y el
+ *  compositor (`blueprint/`) los proyecta a la perspectiva de la sesión.
+ *  Existe además una capa opcional `deck` (transitable SOBRE el agua:
+ *  puentes, embarcaderos, pasaderas) — la rasterización de colisión la usa
+ *  para perforar el agua (destination-out). */
 export const GROUND_SVG_LAYERS = ["ground", "water"] as const;
 
 /** Cap de tamaño (bytes UTF-8). Más generoso que terrain_svg (20 KB): un
@@ -38,10 +31,6 @@ export function sanitizeGroundSvg(svg: unknown, cols: number, rows: number): Map
   return sanitizeLayeredSvg(svg, cols, rows, GROUND_SVG_LAYERS);
 }
 
-/** Valida un documento `map_svg` legacy (4 capas dibujadas a mano). */
-export function sanitizeMapSvg(svg: unknown, cols: number, rows: number): MapSvgResult {
-  return sanitizeLayeredSvg(svg, cols, rows, MAP_SVG_LAYERS);
-}
 
 function sanitizeLayeredSvg(
   svg: unknown,
@@ -50,7 +39,7 @@ function sanitizeLayeredSvg(
   layers: readonly string[],
 ): MapSvgResult {
   if (typeof svg !== "string" || !svg.trim()) {
-    return { ok: false, error: "map_svg vacío o no es string" };
+    return { ok: false, error: "map_ground vacío o no es string" };
   }
   const s = svg.trim();
   if (new TextEncoder().encode(s).length > MAP_SVG_MAX_BYTES) {
