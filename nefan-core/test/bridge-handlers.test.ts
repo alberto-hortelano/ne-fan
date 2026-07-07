@@ -385,6 +385,33 @@ describe("bridge ciclo de sesión", () => {
     assert.match(started3.error ?? "", /perspectiva desconocida/);
   });
 
+  it("start_session congela el modo de render (default image, vector explícito, inválido aborta)", async () => {
+    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", renderMode: "vector" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true);
+    assert.equal(started.state?.world.render_mode, "vector");
+
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r2", gameId: "toledo_1200" }, s2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).state?.world.render_mode, "image");
+
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r3", gameId: "toledo_1200", renderMode: "ascii" },
+      s3,
+      ctx,
+    );
+    const started3 = sent3[0] as SessionStartedMessage;
+    assert.equal(started3.ok, false);
+    assert.match(started3.error ?? "", /modo de render desconocido/);
+  });
+
   it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

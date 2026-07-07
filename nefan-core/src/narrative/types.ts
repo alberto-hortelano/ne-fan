@@ -50,6 +50,11 @@ export interface NarrativeWorldState {
    *  componen con ella. Campo aditivo: saves previos la dejan en "" y el
    *  cliente la trata como "topdown". */
   perspective: string;
+  /** Modo de render del mundo 2D ("image" | "vector"), CONGELADO al crear la
+   *  sesión. "image" = el modelo de imagen repinta los blueprints (créditos);
+   *  "vector" = se juega con los blueprints compuestos. Campo aditivo: saves
+   *  previos ("") conservan el comportamiento legacy (toggle local). */
+  render_mode: string;
 }
 
 /** Un elemento jugable del ANÁLISIS de la imagen IA de un tile: lo que la

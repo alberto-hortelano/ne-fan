@@ -154,6 +154,13 @@ export async function handleStartSession(
     if (!isPerspective(perspective)) {
       throw new Error(`perspectiva desconocida "${perspective}" (esperaba topdown|isometric)`);
     }
+    // Modo de render: imagen IA (créditos) o mundo vectorial (blueprints
+    // compuestos). Congelado como el estilo: mezclar tiles pintados y
+    // vectoriales rompe la continuidad visual entre vecinos.
+    const renderMode = msg.renderMode || "image";
+    if (renderMode !== "image" && renderMode !== "vector") {
+      throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
+    }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
     // La perspectiva forma parte de la identidad del bootstrap cacheado: los
@@ -168,6 +175,7 @@ export async function handleStartSession(
       style_token: style.style_token,
       world_doc_hash: worldDocHash,
       perspective,
+      render_mode: renderMode,
     });
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);

@@ -71,12 +71,13 @@ export class NarrativeClient {
     appearance?: { model_id: string; skin_path: string },
     styleId?: string,
     perspective?: string,
+    renderMode?: string,
   ): Promise<{
     sessionId: string;
     gameId: string;
     state: SessionData;
   }> {
-    const res = await this.bridge.startSession(gameId, appearance, styleId, perspective);
+    const res = await this.bridge.startSession(gameId, appearance, styleId, perspective, renderMode);
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }

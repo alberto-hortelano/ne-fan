@@ -27,6 +27,8 @@ export type TitleAction =
       styleId: string;
       /** Perspectiva del mundo 2D, congelada en la sesión como el estilo. */
       perspective: "topdown" | "isometric";
+      /** Modo de render, congelado en la sesión: imagen IA o vectorial. */
+      renderMode: "image" | "vector";
       appearance: { model_id: string; skin_path: string };
     };
 
@@ -189,6 +191,19 @@ export class TitleScreen {
           </button>
         </div>
       </div>
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Gráficos <span style="color:#666">(fijo para toda la partida)</span></div>
+        <div id="ts-rendermode" style="display:flex;gap:8px">
+          <button data-rendermode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Imagen IA</div>
+            <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (gasta créditos)</div>
+          </button>
+          <button data-rendermode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Vectorial</div>
+            <div style="font-size:10px;color:#888">El mundo se ve con los planos del motor narrativo, sin coste</div>
+          </button>
+        </div>
+      </div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
         <button id="ts-continue" style="${BTN_PRIMARY_CSS}">Continuar →</button>
@@ -216,6 +231,22 @@ export class TitleScreen {
       });
     }
     refreshPerspective();
+    const renderModeEl = this.content.querySelector("#ts-rendermode") as HTMLElement;
+    let selectedRenderMode: "image" | "vector" = "image";
+    const refreshRenderMode = (): void => {
+      for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
+        const active = btn.dataset.rendermode === selectedRenderMode;
+        btn.style.borderColor = active ? "#da6" : "#2a2a30";
+        btn.style.background = active ? "#201c14" : "#181820";
+      }
+    };
+    for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
+      btn.addEventListener("click", () => {
+        selectedRenderMode = btn.dataset.rendermode === "vector" ? "vector" : "image";
+        refreshRenderMode();
+      });
+    }
+    refreshRenderMode();
 
     worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
@@ -257,7 +288,7 @@ export class TitleScreen {
       .addEventListener("click", () => void this.renderHome());
     (this.content.querySelector("#ts-continue") as HTMLButtonElement)
       .addEventListener("click", () => {
-        void this.renderCharacterEditor(selectedGame, styleSel.value, selectedPerspective);
+        void this.renderCharacterEditor(selectedGame, styleSel.value, selectedPerspective, selectedRenderMode);
       });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
@@ -442,7 +473,12 @@ export class TitleScreen {
     });
   }
 
-  private renderCharacterEditor(game: GameInfo, styleId: string, perspective: "topdown" | "isometric"): void {
+  private renderCharacterEditor(
+    game: GameInfo,
+    styleId: string,
+    perspective: "topdown" | "isometric",
+    renderMode: "image" | "vector",
+  ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
 
@@ -489,6 +525,7 @@ export class TitleScreen {
         gameId: game.game_id,
         styleId,
         perspective,
+        renderMode,
         appearance: {
           model_id: modelSel ? modelSel.value : "",
           skin_path: skinInput ? skinInput.value.trim() : "",
