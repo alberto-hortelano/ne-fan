@@ -1,6 +1,8 @@
 # Never Ending Fantasy — Guia de desarrollo
 
-RPG dark fantasy de **mundo abierto generativo** con motor Godot 4.6+. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. Las "salas" cerradas (`data/rooms/*.json`, cargadas en local con F1/F2/F3) son **legacy de tests** — no son la unidad de gameplay canónica y ya no pasan por el LLM.
+RPG de **mundo abierto generativo** con motor Godot 4.6+ y cliente 2D HTML. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. Las "salas" cerradas (`data/rooms/*.json`, cargadas en local con F1/F2/F3) son **legacy de tests** — no son la unidad de gameplay canónica y ya no pasan por el LLM.
+
+**Juegos = mundos.** Un juego es `nefan-core/data/games/{id}/`: `game.json` (título, descripción, `style_id` por defecto, `world_brief` ~1.2k chars) + `world.md` (documento completo del mundo en 10 secciones: identidad, geografía, historia, pueblos, facciones, magia, vida cotidiana, semillas de conflicto, el jugador, registro) + `plugins/`. NO hay historia predefinida ni beats scripted: la historia la improvisa el motor narrativo dentro del mundo. Juegos base: `alta_fantasia` (Miravanda), `cuentos_oscuros` (Valdesombra), `toledo_1200` (histórico). Un **estilo** es `data/styles/{id}/`: `style.json` (`style_token`, cover, refs) + imágenes de referencia por categoría (nature/settlement/fortress/interior/underground + 3 de personaje) que ai_server pasa a Meshy según lo que pinte (`style_tag` del scene JSON). El estilo se elige en el título y queda CONGELADO en el save. El jugador puede crear su mundo (borrador → kind MCP `develop_world` → `data/games/user_*`) y subir su estilo (imágenes → `/styles/upload` → confirmación de coste → `/styles/{id}/complete` genera las categorías que falten; CLI equivalente: `python ai_server/tools/build_style_pack.py`). Schemas en `nefan-core/src/games/loader.ts` (fuente de verdad).
 
 ## Arrancar el juego
 
@@ -171,7 +173,8 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
   data/
     combat_config.json     Config compartida (symlink desde godot/data/)
     rooms/                 Escenarios JSON (incluye open_world_test.json y rooms legacy de tests)
-    games/{id}/plugins/    Manifests JSON de plugins shipped (cargados en start_session)
+    games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
+    styles/{id}/           Estilo: style.json + imágenes de referencia por categoría
   test/                    ~245 tests (combat, animation, simulation, narrativa, plugins)
 
 godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
@@ -260,6 +263,9 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 | `/generate_model` | POST | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | POST | Skin de personaje (PNG, ~10s) |
 | `/analyze_weapon` | POST | Vision IA para orientar armas (vía MCP bridge) |
+| `/develop_world` | POST | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
+| `/styles/upload` | POST | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
+| `/styles/{id}/complete` | POST | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
 | `/notify_session` | POST | Godot informa de inicio/reanudación de sesión narrativa |
 | `/report_player_choice` | POST | Godot reporta elección de diálogo → Claude devuelve consequences |
 | `/assets` | GET | Listar assets indexados del manifest (con prompt original) |
@@ -289,6 +295,8 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 5. ai_server la devuelve al bridge, que la registra en su NarrativeState y la difunde como `narrative_event` (effect `spawn_entity` con `data.scene`)
 6. Godot (señal `narrative_scene`) construye la escena con `room_builder` + `object_spawner` (que respeta `texture_hash`/`model_hash` para reuso)
 
+**Identidad de mundo en el contexto**: `world.description` (el brief) viaja en CADA turno vía `serializeForLlm`; el `world.md` completo solo en el bootstrap (`world_document`) y bajo demanda con la tool MCP `world_doc_get` (→ `GET /world_doc` del State API). Las restricciones de motor (cámara top-down fija, SOLO personajes humanoides, sin beats, `style_tag` por escena) viven en `WORLD_RULES` (narrative-mcp/server.ts) con espejo en `narrative_schemas.py`.
+
 **Reactividad narrativa (diálogo → spawn dinámico)**:
 1. El jugador pulsa `E` sobre un NPC (→ `interact_entity`), elige opción `1/2/3` o pulsa `T` y escribe respuesta libre (→ `dialogue_choice`)
 2. El bridge registra el evento en su NarrativeState y llama `reportPlayerChoice` → POST `/report_player_choice` en ai_server
@@ -310,7 +318,7 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **Génesis por IA (F5)**: tools MCP `plugin_register` (manifest JSON → `POST /plugins/register` del state API → `registerRuntimePlugin`: zod + hash + validación estática + replay de fixtures, **al menos una obligatoria** en runtime) y `plugin_list` (`GET /plugins`). El manifest queda embebido en el save (`PluginRecord.manifest`) y el resume lo rebindea sin archivo en disco.
 - **Visibilidad para el motor narrativo (F6)**: `serializeForLlm()` añade un bloque `plugins: [{id, name, version, views}]` con las `derived_views` de cada plugin activo evaluadas (resumen, no el slice entero); una vista que lance se marca `{_error}` sin tumbar el turno. La tool MCP `plugin_inspect(plugin_id, view?)` (→ `GET /plugins/{id}/inspect?view=`) da el detalle: con `view` la derived_view concreta, sin `view` el slice completo + `available_views`. Lógica pura en `src/plugins/views.ts` (`buildPluginLlmViews`/`inspectPlugin`); resuelve el manifest del `activePlugins` del bridge (shipped) o del embebido en el `PluginRecord` (IA).
 - **Evolución / migración (F7)**: en resume, si el manifest del FS sube de `version` (mismo `name`, hash distinto), `bindPluginsForResume` ejecuta la cadena `migrate[v]` (`runMigrationStep`, **slice-only**: escribir fuera de slice o emitir eventos lanza) para convertir el slice del save al shape nuevo, en vez de abortar. Las fixtures de la versión nueva ya las valida `loadGamePluginManifests` al cargar. Fail-loud ante hueco en la cadena, degradación (FS < save) o cambio sin bump de versión. El record migrado adopta id/version/slice nuevos preservando `name`/`origin`; el siguiente resume casa por id (idempotente). La guarda slice-only se duplica en `validateManifestStatic`. Evolución en runtime (vía `plugin_register` con versión mayor) aún pendiente.
-- **Commerce shipped (F8)**: plugin de ejemplo real en `nefan-core/data/games/tavern_intro/plugins/commerce.json`. El bridge lo carga/activa en `start_session`. El motor narrativo lo conduce con `plugin_event`: `market_open {market_id, name, stock}` registra un mercado en runtime (los mercaderes spawnean tras la génesis; las `projections` sólo siembran los presentes al iniciar); `trade_offered {market_id, item_id, price}` descuenta stock+oro, añade al inventario y emite `trade_completed` (no-op si falta stock u oro). Es el patrón a replicar para otros sistemas (reputación, crafting…). End-to-end en `test/plugin-commerce.test.ts`.
+- **Commerce shipped (F8)**: plugin de ejemplo real en `nefan-core/data/games/toledo_1200/plugins/commerce.json`. El bridge lo carga/activa en `start_session`. El motor narrativo lo conduce con `plugin_event`: `market_open {market_id, name, stock}` registra un mercado en runtime (los mercaderes spawnean tras la génesis; las `projections` sólo siembran los presentes al iniciar); `trade_offered {market_id, item_id, price}` descuenta stock+oro, añade al inventario y emite `trade_completed` (no-op si falta stock u oro). Es el patrón a replicar para otros sistemas (reputación, crafting…). End-to-end en `test/plugin-commerce.test.ts`.
 - **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Los plugins viven en la sesión del bridge (`start_session`/`resume_session`).
 - **Pendiente** (único, opcional): evolución en runtime vía `plugin_register` (versión mayor que reemplace al plugin vigente con su `migrate`); hoy la migración sólo opera en resume.
 
