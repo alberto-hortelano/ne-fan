@@ -750,6 +750,41 @@ Respond with narrative_respond, passing EXACTLY:
 { "segments": [ { "index": 0, "label": "roble", "solid": true, "tall": true }, ... ] }
 Every index from the overlay must appear exactly once. No extra fields.`;
 
+const DEVELOP_WORLD_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "develop_world") ====
+A player submitted a DRAFT of their own game world (context.draft_text). Your
+job: develop it into a COMPLETE world document following the house template,
+preserving and amplifying the player's ideas (never replacing them — if the
+draft says "islas voladoras con clanes", the world is about flying islands
+and clans). Everything in SPANISH (España), polished prose.
+
+Call narrative_respond ONCE with this JSON:
+
+{
+  "game_id": "<short slug for the world, a-z0-9_>",
+  "title": "<display title>",
+  "description": "<1-2 frases para la tarjeta del título>",
+  "style_id": "<the style_id from context.available_styles that best fits>",
+  "world_brief": "<resumen de ~1.100-1.300 caracteres: identidad, pueblos, magia, facciones, tono>",
+  "world_md": "<el documento COMPLETO en markdown>"
+}
+
+world_md MUST have exactly these 10 sections (## per section), 9k-12k chars:
+1. Identidad — nombre, tono, temas, género.
+2. Geografía — regiones, lugares, escala jugable.
+3. Historia del mundo — trasfondo que explica el presente (NO trama).
+4. Pueblos y razas — todos representables como humanoides.
+5. Poderes y facciones — con tensiones y objetivos.
+6. Magia y lo sobrenatural — qué existe, reglas, límites duros.
+7. Vida cotidiana — economía, ley, oficios, viajes.
+8. Conflictos latentes — 5-8 semillas SIN trama fijada.
+9. El jugador — roles, punto de partida, qué sabe/no sabe.
+10. Registro y lenguaje — cómo hablan los NPCs + 15-20 nombres de ejemplo.
+
+Hard rules (same engine limits as always): ALL interactive beings humanoid
+(bake it into the lore if the draft has beasts/spirits: they take human
+form); no chosen ones, no fixed plot — the world is a stage, the story
+emerges in play; top-down 2D presentation.`;
+
 const NARRATIVE_EVENT_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "narrative_event") ====
 A player has just answered an NPC. The request above carries: speaker,
 chosen_text, free_text, and a context snapshot of the NarrativeState
@@ -884,7 +919,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'narrative_event' | 'blueprint_review' = 'room';
+  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
@@ -909,6 +944,8 @@ Request kinds you may receive:
 - "scene_classify"  → classify segmented regions of a painted scene image
                       (solid / tall per region — the collision map is derived
                       from your answer).
+- "develop_world"   → a player-submitted world draft to develop into a full
+                      world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
                       { "consequences": [ ... ] } — entries are dialogue /
                       story_update / spawn_entity / schedule_event /
@@ -980,6 +1017,22 @@ into context:
               { type: 'image', data: msg.image.data_b64, mimeType: msg.image.media_type },
               { type: 'text', text: `Scene JSON that produced it:\n${sceneJson}\n\n${BLUEPRINT_REVIEW_INSTRUCTIONS}` },
             ],
+          };
+        }
+
+        if (msg.type === 'narrative_event' && msg.kind === 'develop_world') {
+          currentKind = 'develop_world';
+          const ctx = msg.context as { draft_text?: string; available_styles?: unknown } | undefined;
+          const payload = JSON.stringify({
+            kind: 'develop_world',
+            draft_text: ctx?.draft_text ?? '',
+            available_styles: ctx?.available_styles ?? [],
+          }, null, 2);
+          return {
+            content: [{
+              type: 'text',
+              text: `World draft to develop:\n${payload}\n\n${DEVELOP_WORLD_INSTRUCTIONS}`,
+            }],
           };
         }
 
@@ -1074,6 +1127,24 @@ into context:
             };
           }
         }
+        if (kind === 'develop_world') {
+          const missing = ['game_id', 'title', 'description', 'world_brief', 'world_md']
+            .filter((k) => typeof (parsed as Record<string, unknown>)[k] !== 'string' || !(parsed as Record<string, unknown>)[k]);
+          const sections = typeof (parsed as { world_md?: string }).world_md === 'string'
+            ? ((parsed as { world_md: string }).world_md.match(/^## /gm) ?? []).length
+            : 0;
+          const errs: string[] = [];
+          if (missing.length) errs.push(`missing string fields: ${missing.join(', ')}`);
+          if (sections < 10) errs.push(`world_md has ${sections} "## " sections, needs 10`);
+          const brief = (parsed as { world_brief?: string }).world_brief ?? '';
+          if (brief.length < 400) errs.push(`world_brief too short (${brief.length} chars, aim ~1200)`);
+          if (errs.length) {
+            return {
+              content: [{ type: 'text', text: `Invalid develop_world response — fix and call narrative_respond again: ${errs.join(' · ')}` }],
+              isError: true,
+            };
+          }
+        }
         if (kind === 'blueprint_review') {
           const check = validateBlueprintReview(parsed);
           if (!check.ok) {
@@ -1129,9 +1200,9 @@ into context:
           return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
         }
 
-        if (kind === 'narrative_event') {
+        if (kind === 'narrative_event' || kind === 'develop_world') {
           bridge.sendNarrativeEventResponse(reqId, parsed);
-          return { content: [{ type: 'text', text: `Narrative event response sent for request ${reqId}` }] };
+          return { content: [{ type: 'text', text: `${kind} response sent for request ${reqId}` }] };
         }
 
         if (kind === 'blueprint_review') {

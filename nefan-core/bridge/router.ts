@@ -10,6 +10,7 @@ import {
   handleAddCombatants,
 } from "./handlers/simulation.js";
 import {
+  handleCreateGame,
   handleDeleteSession,
   handleListGames,
   handleListSessions,
@@ -44,6 +45,9 @@ export async function routeMessage(
       break;
     case "list_games":
       handleListGames(msg, ws, ctx);
+      break;
+    case "create_game":
+      await handleCreateGame(msg, ws, ctx);
       break;
     case "list_sessions":
       await handleListSessions(msg, ws, ctx);

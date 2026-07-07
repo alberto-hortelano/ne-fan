@@ -51,6 +51,16 @@ export class NarrativeClient {
     return { games: res.games, styles: res.styles };
   }
 
+  /** Crea un mundo de usuario a partir de un borrador. El bridge lo
+   *  desarrolla con el motor narrativo y lo escribe en data/games. */
+  async createGame(draftText: string): Promise<{ gameId: string; title: string }> {
+    const res = await this.bridge.createGame(draftText);
+    if (!res.ok || !res.gameId) {
+      throw new Error(res.error ?? "create_game failed");
+    }
+    return { gameId: res.gameId, title: res.title ?? res.gameId };
+  }
+
   async listSessions(): Promise<SessionMetadata[]> {
     const res = await this.bridge.listSessions();
     return res.sessions;

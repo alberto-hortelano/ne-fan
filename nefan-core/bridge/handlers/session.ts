@@ -2,9 +2,12 @@
  *  resume, delete y save. */
 
 import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { createCombatant } from "../../src/combat/combatant.js";
 import {
+  GameMetaSchema,
   listGames,
   listStyles,
   loadGameMeta,
@@ -22,6 +25,7 @@ import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
 import type {
+  CreateGameMessage,
   DeleteSessionMessage,
   ListGamesMessage,
   ListSessionsMessage,
@@ -40,6 +44,84 @@ export function handleListGames(
     requestId: msg.requestId,
     games: listGames(ctx.gamesDir),
     styles: listStyles(ctx.stylesDir),
+  });
+}
+
+/** Mundo subido por el jugador: el borrador se desarrolla con el motor
+ *  narrativo (POST /develop_world → MCP kind develop_world) y el resultado se
+ *  escribe como data/games/user_{slug}/. Fail-loud en cada paso — un mundo a
+ *  medias no debe aparecer en el listado. */
+export async function handleCreateGame(
+  msg: CreateGameMessage,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): Promise<void> {
+  const fail = (error: string): void => {
+    console.error(`Bridge: create_game failed: ${error}`);
+    ctx.send(ws, { type: "game_created", requestId: msg.requestId, ok: false, error });
+  };
+  const draft = (msg.draftText ?? "").trim();
+  if (draft.length < 20) {
+    return fail("draft_too_short: describe el mundo con al menos unas frases");
+  }
+  if (draft.length > 64_000) {
+    return fail("draft_too_long: máximo ~64k caracteres");
+  }
+
+  const res = await ctx.aiClient.developWorld(draft);
+  if (!res.ok) {
+    return fail(`develop_world: ${res.error}`);
+  }
+  const game = res.game;
+
+  // Slug propio con prefijo user_ (el id que sugiera el LLM es solo una
+  // base); dedupe con sufijo numérico si ya existe.
+  const base = `user_${String(game.game_id || game.title || "mundo")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "mundo"}`;
+  let gameId = base;
+  for (let i = 2; existsSync(join(ctx.gamesDir, gameId)); i++) {
+    gameId = `${base}_${i}`;
+  }
+
+  // El estilo sugerido debe existir; si no, el primero disponible.
+  const styles = listStyles(ctx.stylesDir);
+  if (styles.length === 0) {
+    return fail("no_styles_available: no hay estilos en data/styles");
+  }
+  const styleId = styles.some((st) => st.style_id === game.style_id)
+    ? game.style_id
+    : styles[0].style_id;
+
+  const meta = GameMetaSchema.safeParse({
+    game_id: gameId,
+    title: game.title,
+    description: game.description,
+    style_id: styleId,
+    world_brief: game.world_brief,
+  });
+  if (!meta.success) {
+    return fail(`develop_world produced invalid game meta: ${meta.error.message.slice(0, 500)}`);
+  }
+  if (typeof game.world_md !== "string" || game.world_md.length < 2000) {
+    return fail("develop_world produced a world_md too short (<2000 chars)");
+  }
+
+  const dir = join(ctx.gamesDir, gameId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "game.json"), JSON.stringify(meta.data, null, 2) + "\n", "utf-8");
+  writeFileSync(join(dir, "world.md"), game.world_md, "utf-8");
+  console.log(`Bridge: mundo de usuario creado: ${gameId} ("${meta.data.title}")`);
+  ctx.send(ws, {
+    type: "game_created",
+    requestId: msg.requestId,
+    ok: true,
+    gameId,
+    title: meta.data.title,
   });
 }
 

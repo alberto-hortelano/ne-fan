@@ -692,6 +692,58 @@ class LLMClient:
         print(f"LLM: narrative event MCP timeout ({timeout}s)")
         return None
 
+    def develop_world(self, draft_text: str, available_styles: list[dict]) -> dict | None:
+        """Desarrolla el borrador de mundo de un jugador contra la plantilla
+        de 10 secciones (kind develop_world vía MCP). Devuelve el dict del
+        juego o None (sin listener / timeout) — el endpoint decide el 503."""
+        if not self._ws_connected:
+            return None
+        request_id = str(uuid.uuid4())
+        with self._pending_lock:
+            self._pending[request_id] = None
+        try:
+            self._ws.send(json.dumps({  # type: ignore
+                "type": "narrative_event",
+                "request_id": request_id,
+                "kind": "develop_world",
+                "event_id": request_id,
+                "speaker": "",
+                "chosen_text": "",
+                "free_text": "",
+                "context": {
+                    "draft_text": draft_text,
+                    "available_styles": available_styles,
+                },
+            }))
+        except Exception as e:
+            print(f"LLM: develop_world MCP send failed ({e})")
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+            return None
+        print(f"LLM: develop_world sent via MCP (id={request_id[:8]}, draft={len(draft_text)} chars)")
+
+        # Desarrollar un mundo entero tarda como un bootstrap: timeout largo.
+        timeout = max(self.timeout, 300.0)
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
+                        print("LLM: develop_world rejected — no MCP listener")
+                        return None
+                    if not isinstance(result, dict):
+                        return None
+                    print(f"LLM: develop_world received ({time.time() - start:.1f}s)")
+                    return result
+            time.sleep(0.1)
+
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        print(f"LLM: develop_world MCP timeout ({timeout}s)")
+        return None
+
     def _report_choice_via_api(
         self,
         event_id: str,

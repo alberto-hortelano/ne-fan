@@ -129,6 +129,29 @@ export class AiClient {
     }
   }
 
+  /** Pide al motor narrativo que complete/desarrolle el borrador de mundo de
+   *  un jugador contra la plantilla de 10 secciones. Tarda como un bootstrap
+   *  (~1-3 min): timeout largo. */
+  async developWorld(draftText: string): Promise<
+    | { ok: true; game: { game_id: string; title: string; description: string; style_id: string; world_brief: string; world_md: string } }
+    | { ok: false; error: string }
+  > {
+    try {
+      const res = await this.request("POST", "/develop_world", { draft_text: draftText }, 360_000);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
+      }
+      const data = (await res.json()) as {
+        game?: { game_id: string; title: string; description: string; style_id: string; world_brief: string; world_md: string };
+      };
+      if (!data.game) return { ok: false, error: "develop_world returned no game" };
+      return { ok: true, game: data.game };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
   async generateSprite2D(opts: {
     prompt: string;
     angle?: SpriteAngle;
