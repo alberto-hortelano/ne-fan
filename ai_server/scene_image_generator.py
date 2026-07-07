@@ -92,42 +92,60 @@ class SceneImageGenerator:
         blueprint_kind: str = "boxes",
         style_ref_uri: str | None = None,
         style_token: str = "",
+        perspective: str = "topdown",
     ) -> dict:
         """`style_ref_uri`: referencia de estilo del pack del juego (data URI);
         None degrada a la referencia global fija. `style_token` complementa a
-        la imagen con la dirección de arte en texto."""
+        la imagen con la dirección de arte en texto. `perspective` es la
+        proyección congelada de la sesión: el blueprint compuesto ya viene
+        proyectado — la leyenda describe cómo leer sus caras/volúmenes."""
         sch = self._load_rgb(schematic_png_bytes)
         if blueprint_kind == "svg":
-            # Blueprint map_svg: plano vectorial rico. Dos diales validados
-            # empíricamente (experimento svg_test): la FIDELIDAD al plano viene
-            # sola; el REPINTADO total hay que exigirlo o el modelo devuelve el
-            # vector casi tal cual. Convención cutaway: sin techos, interiores
-            # visibles. Specs negativas contra las invenciones observadas.
+            # Blueprint compuesto: plano vectorial rico YA PROYECTADO en la
+            # perspectiva de la sesión. Dos diales validados empíricamente
+            # (experimento svg_test): la FIDELIDAD al plano viene sola; el
+            # REPINTADO total hay que exigirlo o el modelo devuelve el vector
+            # casi tal cual. Specs negativas contra las invenciones observadas.
+            if perspective == "isometric":
+                view = (
+                    "2:1 isometric video-game map (classic RPG angle). The plan is "
+                    "ALREADY projected: every building shows its top plus TWO "
+                    "visible facades (south-west facades lit, south-east facades "
+                    "in shade — keep that light direction), trees show a trunk "
+                    "with the canopy above, towers are cylinders. "
+                )
+            else:
+                view = (
+                    "Top-down 3/4 RPG game map. The plan is ALREADY projected: "
+                    "vertical surfaces show their SOUTH face below their top "
+                    "(walls and buildings have a visible facade strip, trees show "
+                    "a trunk under the canopy). Keep that projection exactly. "
+                )
             instruction = (
-                "Top-down 2D RPG game map, flat overhead view. The FIRST reference "
-                "image is ONLY a schematic LAYOUT plan drawn with flat placeholder "
-                "colours — it is NOT final art. Fully REPAINT the whole map in the "
-                "painterly, richly textured style of the SECOND reference image: "
-                "dense textured grass with tufts and colour variation, detailed "
-                "tree canopies with individual foliage clumps, highlights and drop "
-                "shadows, water with ripples, depth and high-contrast banks, worn "
-                "dirt roads with edges blending into grass, individually drawn "
-                "cobblestones, wooden floors with plank grain. The finished map "
-                "must NOT look flat, vector-like or diagram-like anywhere. "
-                "The plan legend: green = grass (two tones = meadow variation), "
-                "dark green circles = individual tree canopies, blue = water with "
-                "banks, tan = dirt roads and paths, grey = stone paving, "
-                "dark-brown outlines = building WALLS seen from above, lighter "
-                "areas inside the walls = interior floors. Buildings are drawn in "
-                "CUTAWAY view: they have NO roofs — render them open-roofed with "
-                "their walls and interiors fully visible exactly as drawn "
-                "(furniture, floors, door gaps in the wall outlines). Keep every "
-                "element in the SAME position, size and shape; follow the EXACT "
-                "course and width of the water and of every road; keep bridges "
-                "and walkways painted ON TOP of the water. Do NOT add roofs. "
-                "Do NOT move, remove or merge buildings. Do NOT invent new "
+                view
+                + "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
+                "with flat placeholder colours — it is NOT final art. Fully REPAINT "
+                "the whole map in the painterly, richly textured style of the "
+                "SECOND reference image: dense textured grass with tufts and "
+                "colour variation, detailed tree canopies with individual foliage "
+                "clumps, highlights and drop shadows, water with ripples, depth "
+                "and high-contrast banks, worn dirt roads with edges blending into "
+                "grass, individually drawn cobblestones, wooden floors with plank "
+                "grain, stone walls with individual masonry blocks, roof tiles "
+                "drawn one by one. The finished map must NOT look flat, "
+                "vector-like or diagram-like anywhere. "
+                "Buildings drawn open (no roof, interior floors and furniture "
+                "visible over low front walls) are CUTAWAY interiors — keep them "
+                "open exactly as drawn; buildings drawn with a roof keep their "
+                "roof. Keep every element in the SAME position, size, shape and "
+                "height; follow the EXACT course and width of the water and of "
+                "every road; keep bridges and walkways painted ON TOP of the "
+                "water. Do NOT move, remove or merge buildings. Do NOT invent new "
                 "buildings, walls, bridges or watercourses that are not in the "
-                f"blueprint. Render the scene as: {prompt.strip()}. "
+                "blueprint. IMPORTANT: leave every fully transparent pixel of the "
+                "first reference EXACTLY transparent-black — paint only where the "
+                "plan has content. "
+                f"Render the scene as: {prompt.strip()}. "
                 + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
                 + _STYLE_RULES
             )
@@ -163,7 +181,7 @@ class SceneImageGenerator:
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(
-            f"SceneImageGen.full[{blueprint_kind}]: '{prompt[:40]}' {w}x{h} "
+            f"SceneImageGen.full[{blueprint_kind}/{perspective}]: '{prompt[:40]}' {w}x{h} "
             f"{res.get('consumed_credits')}cr -> {dt:.1f}s",
             flush=True,
         )

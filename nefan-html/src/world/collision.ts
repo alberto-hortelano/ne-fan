@@ -17,6 +17,7 @@
 import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import { svgCollisionGrid } from "../scene/svg-collision.js";
+import { volumeCollisionGrid, type Volume } from "@nefan-core/src/scene/blueprint/index.js";
 import type { TileAnalysis } from "../scene/scene-image.js";
 import { errors } from "../ui/error-log.js";
 import type { TileStore } from "./tile-store.js";
@@ -129,23 +130,46 @@ export interface DerivedCollisionDeps {
  *  map_svg y la instala como collider base del tile — activa desde que llega
  *  el tile, antes de imagen y análisis. Si la derivación falla, los AABBs del
  *  esquema siguen aplicando (svgApplied queda a false). */
-export async function applySvgCollision(
+export async function applyPlanCollision(
   key: string,
-  mapSvg: string,
+  plan: { map_ground?: string; volumes?: Volume[] },
   rect: { minX: number; minZ: number; maxX: number; maxZ: number },
   deps: DerivedCollisionDeps,
 ): Promise<void> {
   try {
-    const grid = await svgCollisionGrid(mapSvg, rect);
+    // Agua (menos pasarelas) del arte plano del suelo — raster SIN proyectar,
+    // idéntico en ambas perspectivas.
+    const waterGrid = plan.map_ground ? await svgCollisionGrid(plan.map_ground, rect) : null;
+    // Huellas analíticas de los volúmenes (muros con puertas, troncos…).
+    const volumeGrid = plan.volumes?.length ? volumeCollisionGrid(plan.volumes, rect) : null;
+    const grid = unionGrids(waterGrid, volumeGrid);
     const collider = grid ? createTerrainCollider(grid) : null;
     deps.tileStore.setSvgCollider(key, collider);
     deps.setTileSvgGrid(key, grid);
     console.log(
-      `[collision] ${key}: map_svg aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
+      `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );
   } catch (err) {
-    errors.push("scene", `map_svg de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
+    errors.push("scene", `plan de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
   }
+}
+
+/** Unión de dos grids de colisión del mismo tile (celda sólida si lo es en
+ *  cualquiera de los dos). */
+function unionGrids(a: TerrainGridData | null, b: TerrainGridData | null): TerrainGridData | null {
+  if (!a) return b;
+  if (!b) return a;
+  const solidA = new Set(a.solid_chars ?? ["S"]);
+  const solidB = new Set(b.solid_chars ?? ["S"]);
+  const rows: string[] = [];
+  for (let r = 0; r < a.rows; r++) {
+    let row = "";
+    for (let c = 0; c < a.cols; c++) {
+      row += solidA.has(a.grid[r][c]) || solidB.has(b.grid[r][c]) ? "S" : "g";
+    }
+    rows.push(row);
+  }
+  return { ...a, grid: rows, solid_chars: ["S"] };
 }
 
 /** Mundo derivado de la imagen: materializa el análisis de un tile. El grid

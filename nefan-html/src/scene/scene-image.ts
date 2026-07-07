@@ -24,8 +24,8 @@ import {
 } from "@nefan-core/src/scene/image-collision.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
-import type { CanvasRenderer, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
-import { expectedElementsFromSvg, type ExpectedElement } from "./svg-collision.js";
+import type { CanvasRenderer, ComposedTilePlan, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
+import type { ExpectedElement } from "./svg-collision.js";
 
 /** Un segmento jugable devuelto por /analyze_scene_image. */
 interface AnalyzedSegment {
@@ -94,6 +94,7 @@ export class SceneImageController {
   /** Estilo visual de la sesión activa (world.style_id, congelado en el
    *  save). "" = sin sesión aún ⇒ el servidor usa su referencia global. */
   private styleId = "";
+  private perspective: "topdown" | "isometric" = "topdown";
 
   constructor(
     private renderer: CanvasRenderer,
@@ -102,6 +103,12 @@ export class SceneImageController {
 
   setStyle(styleId: string): void {
     this.styleId = styleId;
+  }
+
+  /** Perspectiva congelada de la sesión ("topdown" | "isometric"): viaja al
+   *  prompt de imagen y a la clave de caché. */
+  setPerspective(perspective: string): void {
+    this.perspective = perspective === "isometric" ? "isometric" : "topdown";
   }
 
   isBusy(): boolean {
@@ -126,14 +133,14 @@ export class SceneImageController {
     });
   }
 
-  /** Espera (≤3 s) a que el map_svg del tile esté rasterizado antes de
-   *  capturar el blueprint: la decodificación es async y capturar antes daría
-   *  el fallback de grid+cajas en vez del plano SVG. Timeout → warn y seguir. */
-  private async waitForMapSvg(key: string): Promise<void> {
+  /** Espera (≤3 s) a que el blueprint compuesto del tile esté rasterizado
+   *  antes de capturar: la decodificación es async y capturar antes daría el
+   *  fallback de grid+cajas en vez del plano. Timeout → warn y seguir. */
+  private async waitForPlan(key: string): Promise<void> {
     const deadline = performance.now() + 3_000;
-    while (!this.renderer.tileMapSvgReady(key)) {
+    while (!this.renderer.tilePlanReady(key)) {
       if (performance.now() > deadline) {
-        errors.push("scene", `map_svg de ${key} no rasterizó a tiempo; blueprint sin plano SVG`);
+        errors.push("scene", `blueprint de ${key} no rasterizó a tiempo; captura sin plano`);
         return;
       }
       await new Promise((r) => setTimeout(r, 50));
@@ -211,6 +218,25 @@ export class SceneImageController {
     return this.loadImage(off.toDataURL("image/png"));
   }
 
+  /** Enmascara la imagen generada con el alpha del blueprint compuesto: la
+   *  imagen instalada solo conserva los píxeles que el plan declaró (rombo/
+   *  cuadrado del tile + voladizo de alturas). Meshy devuelve un rect opaco —
+   *  sin esto el voladizo pintaría un rectángulo sobre el vecino. */
+  private async maskByBlueprint(img: HTMLImageElement, key: string): Promise<HTMLImageElement> {
+    const plan = this.renderer.getTilePlanImage(key);
+    if (!plan) return img;
+    const off = document.createElement("canvas");
+    off.width = img.naturalWidth;
+    off.height = img.naturalHeight;
+    const ctx = off.getContext("2d");
+    if (!ctx) throw new Error("maskByBlueprint: no 2D context");
+    ctx.drawImage(img, 0, 0);
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.drawImage(plan, 0, 0, off.width, off.height);
+    ctx.globalCompositeOperation = "source-over";
+    return this.loadImage(off.toDataURL("image/png"));
+  }
+
   /** Capture the tile's schematic (with neighbor-image context strips when
    *  available) and generate its scene image. */
   async generateForTile(key: string): Promise<void> {
@@ -227,12 +253,19 @@ export class SceneImageController {
     this.busy = true;
     try {
       const prompt = this.buildPrompt(scene as unknown as SceneSummary);
-      // Con map_svg el blueprint es el plano vectorial rico: el servidor usa
-      // la instrucción de REPINTADO total (capas, cutaway) en vez de la de
-      // cajas de colores. Esperar a su raster para no capturar el fallback.
-      const blueprintKind = (scene as { map_svg?: string }).map_svg ? "svg" : "boxes";
-      if (blueprintKind === "svg") await this.waitForMapSvg(key);
-      const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, rect);
+      const composed = (scene as { __composed?: ComposedTilePlan }).__composed;
+      // Con plan compuesto el blueprint es el plano vectorial rico: el
+      // servidor usa la instrucción de REPINTADO total en vez de la de cajas
+      // de colores. Esperar a su raster para no capturar el fallback.
+      const blueprintKind = composed ? "svg" : "boxes";
+      if (composed) await this.waitForPlan(key);
+      // El rect capturado incluye SIEMPRE el voladizo norte del blueprint
+      // (alturas proyectadas): la imagen resultante cubre el mismo canvas
+      // extendido y el compositing por profundidad del renderer lo pisa
+      // sobre el vecino de detrás.
+      const overhang = composed?.overhang_m ?? 0;
+      const tileExt: SceneBounds = { ...rect, minZ: rect.minZ - overhang };
+      const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, tileExt);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
       const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
@@ -244,6 +277,9 @@ export class SceneImageController {
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
           style_id: this.styleId,
+          // Perspectiva congelada de la sesión: cambia la leyenda del prompt
+          // de imagen (caras sur / iso 2:1) y la clave de caché.
+          perspective: this.perspective,
           // Categoría de referencia que etiquetó el motor narrativo para este
           // tile; el servidor tiene fallback si falta.
           style_tag: (scene as { style_tag?: string }).style_tag ?? "",
@@ -258,9 +294,14 @@ export class SceneImageController {
       }
       let img = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
       if (contextSides.length > 0) {
-        img = await this.cropToTile(img, expanded, rect);
+        img = await this.cropToTile(img, expanded, tileExt);
       }
-      this.renderer.setTileImage(key, img);
+      // Silueta del blueprint como máscara: lo pintado fuera del tile (y de
+      // su voladizo real) se recorta — el vecino pinta lo suyo.
+      if (composed) {
+        img = await this.maskByBlueprint(img, key);
+      }
+      this.renderer.setTileImage(key, img, overhang);
       console.log(
         `[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight}` +
         `${contextSides.length ? `, contexto: ${contextSides.join("+")}` : ""})`,
@@ -289,8 +330,16 @@ export class SceneImageController {
     }
     this.busy = true;
     try {
-      if (tileKey && typeof scene.map_svg === "string") await this.waitForMapSvg(tileKey);
-      const dataUrl = this.renderer.captureSchematic(rect, this.ppmFor(rect));
+      const hasPlan = typeof scene.map_ground === "string" || Array.isArray(scene.volumes);
+      if (tileKey && hasPlan) await this.waitForPlan(tileKey);
+      // La imagen revisada incluye el voladizo del blueprint compuesto.
+      const composed = tileKey
+        ? (this.renderer.getTileScene(tileKey) as { __composed?: ComposedTilePlan } | null)?.__composed
+        : undefined;
+      const reviewRect: SceneBounds = composed
+        ? { ...rect, minZ: rect.minZ - composed.overhang_m }
+        : rect;
+      const dataUrl = this.renderer.captureSchematic(reviewRect, this.ppmFor(reviewRect));
       const sceneId = (scene.scene_id as string) || "unknown";
       const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
         method: "POST",
@@ -358,24 +407,27 @@ export class SceneImageController {
       return { occluders: [], grid: null, elements: [] };
     }
     this.busy = true;
-    const spanX = b.maxX - b.minX;
-    const spanZ = b.maxZ - b.minZ;
     try {
       const scene = this.renderer.getTileScene(key) as
-        | (SceneSummary & { map_svg?: string })
+        | (SceneSummary & { __composed?: ComposedTilePlan })
         | null;
+      const composed = scene?.__composed;
+      // La imagen instalada cubre el rect del tile MÁS el voladizo norte del
+      // blueprint: el mapeo imagen↔mundo usa el rect extendido.
+      const overhang = composed?.overhang_m ?? 0;
+      const bE: SceneBounds = { ...b, minZ: b.minZ - overhang };
+      const spanX = bE.maxX - bE.minX;
+      const spanZ = bE.maxZ - bE.minZ;
       const dataUrl = this.imageToDataUrl(img);
-      // Análisis guiado por el plano: los elementos que el map_svg declara
-      // (label + bbox en píxeles de la imagen) orientan al clasificador —
-      // etiqueta mejor y no marca suelo lo declarado. Fallo → sin guía.
-      let expected: ExpectedElement[] | undefined;
-      if (scene?.map_svg) {
-        try {
-          expected = expectedElementsFromSvg(scene.map_svg, img.naturalWidth, img.naturalHeight);
-        } catch (err) {
-          errors.push("scene", `expected_elements de ${key} falló; análisis sin guía del plano`, err);
-        }
-      }
+      // Análisis guiado por el plan: los volúmenes declarados (label + bbox
+      // proyectado en píxeles) orientan al clasificador — etiqueta mejor y no
+      // marca suelo lo declarado. Salen del compositor, no de getBBox.
+      const expectedInfo = composed
+        ? expectedFromComposed(composed, img.naturalWidth, img.naturalHeight)
+        : [];
+      const expected: ExpectedElement[] | undefined = expectedInfo.length
+        ? expectedInfo.map((e) => e.wire)
+        : undefined;
       const res = await fetch(`${this.baseUrl}/analyze_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -396,22 +448,31 @@ export class SceneImageController {
       const occluders: Occluder[] = [];
       const masks: AlphaMask[] = [];
       const elements: AnalyzedElement[] = [];
+      /** Celdas sólidas de segmentos NO declarados (franja en su baseline). */
+      const stripCells = new Set<number>();
       let solids = 0;
       for (const seg of data.segments ?? []) {
         const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
         const [bx, by, bw, bh] = seg.image_bbox;
         const world: SceneBounds = {
-          minX: b.minX + (bx / seg.img_w) * spanX,
-          maxX: b.minX + ((bx + bw) / seg.img_w) * spanX,
-          minZ: b.minZ + (by / seg.img_h) * spanZ,
-          maxZ: b.minZ + ((by + bh) / seg.img_h) * spanZ,
+          minX: bE.minX + (bx / seg.img_w) * spanX,
+          maxX: bE.minX + ((bx + bw) / seg.img_w) * spanX,
+          minZ: bE.minZ + (by / seg.img_h) * spanZ,
+          maxZ: bE.minZ + ((by + bh) / seg.img_h) * spanZ,
         };
+        // Segmento casado con un volumen declarado: su huella (mundo) es la
+        // verdad — bajo perspectiva la pintura de una cara cae al norte de la
+        // base real y NO debe convertirse en colisión.
+        const match = matchExpected(seg.image_bbox, expectedInfo);
         if (seg.tall) {
+          const baselineZ = match
+            ? b.minZ + match.element.footprint_cells[3] * TILE_MPC
+            : world.maxZ;
           occluders.push({
             id: `${key}:${seg.id}`,
             img: sprite,
             world,
-            baselineZ: world.maxZ,
+            baselineZ,
             tileKey: key,
             kind: "image",
             label: seg.label,
@@ -419,12 +480,20 @@ export class SceneImageController {
         }
         if (seg.solid) {
           solids++;
-          masks.push(this.spriteAlphaMask(sprite, seg));
+          if (composed) {
+            // Plan: casado → la huella ya bloquea vía applyPlanCollision;
+            // no casado → franja sólida de 1 m en su línea de suelo.
+            if (!match) markBaselineStrip(stripCells, world, b);
+          } else {
+            masks.push(this.spriteAlphaMask(sprite, seg));
+          }
         }
         elements.push({ label: seg.label, solid: seg.solid, tall: seg.tall, rect: { ...world } });
       }
 
-      const rows = solidGridFromMasks(masks, TILE_CELLS, TILE_CELLS);
+      const rows = composed
+        ? rowsFromCells(stripCells)
+        : solidGridFromMasks(masks, TILE_CELLS, TILE_CELLS);
       const grid: TerrainGridData | null = rows
         ? {
             grid: rows,
@@ -449,4 +518,87 @@ export class SceneImageController {
       this.busy = false;
     }
   }
+}
+
+/** Elemento declarado con su bbox proyectado en píxeles de la imagen. */
+interface ExpectedInfo {
+  element: ComposedTilePlan["elements"][number];
+  pxBbox: [number, number, number, number];
+  wire: ExpectedElement;
+}
+
+/** Convierte los elementos del blueprint compuesto a la guía del clasificador
+ *  (bbox en píxeles de la imagen instalada). Solo solid/tall interesan. */
+function expectedFromComposed(composed: ComposedTilePlan, imgW: number, imgH: number): ExpectedInfo[] {
+  const vb = composed.view_box;
+  const sx = imgW / vb.width;
+  const sy = imgH / vb.height;
+  const out: ExpectedInfo[] = [];
+  for (const e of composed.elements) {
+    if (!e.solid && !e.tall) continue;
+    const px: [number, number, number, number] = [
+      Math.round((e.bbox[0] - vb.minX) * sx),
+      Math.round((e.bbox[1] - vb.minY) * sy),
+      Math.round(e.bbox[2] * sx),
+      Math.round(e.bbox[3] * sy),
+    ];
+    out.push({
+      element: e,
+      pxBbox: px,
+      wire: { label: e.label, solid: e.solid, tall: e.tall, bbox_px: px },
+    });
+  }
+  out.sort((a, b) => b.pxBbox[2] * b.pxBbox[3] - a.pxBbox[2] * a.pxBbox[3]);
+  return out.slice(0, 64);
+}
+
+/** Casa un segmento con el volumen declarado que más lo solapa (≥40% del área
+ *  del menor de los dos bboxes), o null si es un añadido del modelo de imagen. */
+function matchExpected(
+  segBbox: [number, number, number, number],
+  expected: ExpectedInfo[],
+): ExpectedInfo | null {
+  const [sx, sy, sw, sh] = segBbox;
+  let best: ExpectedInfo | null = null;
+  let bestRatio = 0.4;
+  for (const e of expected) {
+    const [ex, ey, ew, eh] = e.pxBbox;
+    const ix = Math.max(0, Math.min(sx + sw, ex + ew) - Math.max(sx, ex));
+    const iy = Math.max(0, Math.min(sy + sh, ey + eh) - Math.max(sy, ey));
+    const inter = ix * iy;
+    if (inter <= 0) continue;
+    const ratio = inter / Math.max(1, Math.min(sw * sh, ew * eh));
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** Marca como sólidas las celdas de una franja de 1 m en la línea de suelo de
+ *  un segmento no declarado (su borde inferior en topdown). Celdas fuera del
+ *  tile (voladizo del vecino) se descartan. */
+function markBaselineStrip(cells: Set<number>, world: SceneBounds, tile: SceneBounds): void {
+  const z1 = world.maxZ;
+  const z0 = z1 - 1;
+  const c0 = Math.max(0, Math.floor((world.minX - tile.minX) / TILE_MPC));
+  const c1 = Math.min(TILE_CELLS - 1, Math.ceil((world.maxX - tile.minX) / TILE_MPC) - 1);
+  const r0 = Math.max(0, Math.floor((z0 - tile.minZ) / TILE_MPC));
+  const r1 = Math.min(TILE_CELLS - 1, Math.ceil((z1 - tile.minZ) / TILE_MPC) - 1);
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) cells.add(r * TILE_CELLS + c);
+  }
+}
+
+/** Filas del grid (chars S/g) desde el set de celdas, o null si está vacío. */
+function rowsFromCells(cells: Set<number>): string[] | null {
+  if (cells.size === 0) return null;
+  const rows: string[] = [];
+  for (let r = 0; r < TILE_CELLS; r++) {
+    let row = "";
+    for (let c = 0; c < TILE_CELLS; c++) row += cells.has(r * TILE_CELLS + c) ? "S" : "g";
+    rows.push(row);
+  }
+  return rows;
 }
