@@ -908,6 +908,10 @@ function log(msg: string): void {
   while (combatLog.children.length > 8) combatLog.lastChild?.remove();
 }
 
+/** Último error de render registrado — dedup para no inundar el ErrorLog a
+ *  60 fps con la misma excepción. */
+let lastRenderError = "";
+
 // --- Mouse look ---
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
@@ -1264,18 +1268,30 @@ function gameLoop(now: number): void {
     for (const ee of enemyEntities) updateEntitySprite(ee, now, { npc: false });
     for (const npc of npcEntities) updateEntitySprite(npc, now, { npc: true });
   }
-  renderer.render(
-    {
-      pos: playerPos,
-      forward: playerForward,
-      hp: result.playerHp,
-      maxHp: playerMaxHp,
-      sprite: playerSprite,
-    },
-    enemyEntities,
-    objectEntities,
-    npcEntities,
-  );
+  // Blindaje: una excepción de UN frame no debe matar el rAF (juego
+  // congelado en negro para siempre). Se registra (dedup por mensaje) y el
+  // siguiente frame lo reintenta — los fallos transitorios (sheet a medio
+  // cargar, imagen invalidada) se autocorrigen.
+  try {
+    renderer.render(
+      {
+        pos: playerPos,
+        forward: playerForward,
+        hp: result.playerHp,
+        maxHp: playerMaxHp,
+        sprite: playerSprite,
+      },
+      enemyEntities,
+      objectEntities,
+      npcEntities,
+    );
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    if (msg !== lastRenderError) {
+      lastRenderError = msg;
+      errors.push("render", `excepción en render (el loop sigue): ${msg}`, err);
+    }
+  }
 
   // Draw attack area overlay
   if (attackVisual?.active) {

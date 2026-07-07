@@ -222,18 +222,22 @@ export class SpriteRenderer {
     return this.cache.has(`${model}/${anim}/${angle}`);
   }
 
-  /** Returns the sheet synchronously if already cached. Throws if no load
-   *  has been started — callers must call `loadAnimation` first. Mid-load
-   *  it returns null (the same frame can be re-rendered next tick once the
-   *  image decodes), distinguishing "still loading" from "not requested". */
+  /** Returns the sheet synchronously if already cached; null mid-load (the
+   *  frame se re-renderiza al tick siguiente cuando decodifique). Si nadie
+   *  llamó a `loadAnimation` aún (p. ej. un NPC narrativo dibuja durante la
+   *  ventana en que preloadBase todavía no pidió ese sheet), la ARRANCA aquí
+   *  y devuelve null — un warning, nunca un throw: una excepción en el
+   *  camino de render mataría el rAF y congelaría el juego entero. */
   getCached(model: string, anim: string, angle: string): SpriteSheet | null {
     const key = `${model}/${anim}/${angle}`;
     const sheet = this.cache.get(key);
     if (sheet) return sheet;
     if (this.inflight.has(key)) return null;
-    const msg = `sprite sheet ${key} requested without prior loadAnimation`;
-    errors.push("sprite", msg);
-    throw new Error(msg);
+    errors.push("sprite", `sprite sheet ${key} sin loadAnimation previo — cargando ahora (lazy)`);
+    this.loadAnimation(model, anim, angle).catch(() => {
+      // fetchSheet ya registró el motivo; el catch evita unhandled rejection.
+    });
+    return null;
   }
 
   /** Map a forward XZ vector to one of `dirCount` discrete facings. Convention
