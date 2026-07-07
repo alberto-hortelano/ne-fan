@@ -25,6 +25,10 @@ const SAFE_GAME_ID = /^[A-Za-z0-9_.-]+$/;
 export interface CachedBootstrap {
   schema_version: number;
   game_id: string;
+  /** Clave del contenido del mundo con el que se cacheó el bootstrap
+   *  ("{world_doc_hash}:{style_id}"). Editar world.md o cambiar de estilo
+   *  invalida la entrada (get devuelve null). "" en entradas antiguas. */
+  world_key: string;
   scene: Record<string, unknown>;
   world_map: WorldMap;
   cached_at: string;
@@ -37,7 +41,7 @@ export class InitialSceneCache {
     return existsSync(this.pathFor(gameId));
   }
 
-  get(gameId: string): CachedBootstrap | null {
+  get(gameId: string, worldKey = ""): CachedBootstrap | null {
     const path = this.pathFor(gameId);
     if (!existsSync(path)) return null;
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as CachedBootstrap;
@@ -48,14 +52,22 @@ export class InitialSceneCache {
           `Delete ${path} to invalidate.`,
       );
     }
+    if ((parsed.world_key ?? "") !== worldKey) {
+      console.log(
+        `InitialSceneCache: stale entry for "${gameId}" ` +
+          `(world_key "${parsed.world_key ?? ""}" != "${worldKey}") — ignoring`,
+      );
+      return null;
+    }
     return parsed;
   }
 
-  set(gameId: string, scene: Record<string, unknown>, worldMap: WorldMap): void {
+  set(gameId: string, scene: Record<string, unknown>, worldMap: WorldMap, worldKey = ""): void {
     mkdirSync(this.cacheDir, { recursive: true });
     const entry: CachedBootstrap = {
       schema_version: SCHEMA_VERSION,
       game_id: gameId,
+      world_key: worldKey,
       // Deep-copy via JSON so later mutations on the in-memory scene (e.g.
       // broadcastScene attaching `exits`) don't bleed into the snapshot.
       scene: JSON.parse(JSON.stringify(scene)) as Record<string, unknown>,

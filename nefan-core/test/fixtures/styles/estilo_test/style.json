@@ -1,0 +1,8 @@
+{
+  "style_id": "estilo_test",
+  "name": "Estilo de pruebas",
+  "description": "Fixture de estilo para tests.",
+  "style_token": "test style token",
+  "cover": "cover.jpg",
+  "refs": []
+}

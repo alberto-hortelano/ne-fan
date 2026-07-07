@@ -259,8 +259,9 @@ class LLMClient:
 
     def _generate_scene_via_api(self, scene_request: dict) -> dict:
         """Call Claude API directly with generate_scene tool."""
-        premise = scene_request.get("premise", "")
-        setting = scene_request.get("setting", {})
+        world = scene_request.get("world", {}) or {}
+        world_brief = world.get("description", "")
+        world_document = scene_request.get("world_document", "")
 
         try:
             response = self.api_client.messages.create(  # type: ignore
@@ -274,10 +275,10 @@ class LLMClient:
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"Generate an outdoor scene for this setting:\n\n"
-                        f"PREMISE:\n{premise}\n\n"
-                        f"SETTING:\n{json.dumps(setting, indent=2)}\n\n"
-                        f"SCENE DESCRIPTION:\n{scene_request.get('scene_description', 'an outdoor area')}\n\n"
+                        f"Generate an outdoor scene for this world:\n\n"
+                        f"WORLD BRIEF:\n{world_brief}\n\n"
+                        + (f"WORLD DOCUMENT:\n{world_document}\n\n" if world_document else "")
+                        + f"SCENE DESCRIPTION:\n{scene_request.get('scene_description', 'an outdoor area')}\n\n"
                         f"Include buildings, terrain details, props, and atmospheric elements. "
                         f"Do NOT include NPCs - they are managed separately."
                     ),

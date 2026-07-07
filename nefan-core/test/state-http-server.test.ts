@@ -38,6 +38,7 @@ before(async () => {
     narrative,
     npcDirector: new NpcDirector(narrative),
     stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
+    gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
     onMutation: async () => {
       mutations += 1;
     },
@@ -99,6 +100,14 @@ describe("state HTTP API", () => {
     assert.equal(body.ok, true);
     assert.equal(body.has_session, true);
     assert.equal(body.game_id, "plugtest");
+  });
+
+  it("GET /world_doc devuelve el world.md del juego activo", async () => {
+    const { status, body } = await get("/world_doc");
+    // La sesión activa es "plugtest", cuyo world.md vive en fixtures, no en
+    // data/games — el endpoint responde 404 explicando el motivo (fail-loud).
+    assert.equal(status, 404);
+    assert.match(String((body as { error?: string }).error), /world\.md unavailable/);
   });
 
   it("ruta desconocida → 404 con error", async () => {

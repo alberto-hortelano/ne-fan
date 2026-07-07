@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
-import { SAFE_ID } from "../src/games/loader.js";
+import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
@@ -31,6 +31,9 @@ export interface StateHttpServerOptions {
    *  estáticos en GET /styles/{style_id}/{file} para la title screen —
    *  funciona sin ai_server (preset 4). */
   stylesDir: string;
+  /** Directorio de juegos (data/games) — GET /world_doc lee de ahí el
+   *  world.md del juego de la sesión activa (tool MCP world_doc_get). */
+  gamesDir: string;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
@@ -65,7 +68,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
       serveStyleFile(req, res, opts.stylesDir);
       return;
     }
-    handle(req, res, narrative, npcDirector, opts.plugins)
+    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir)
       .then(async (result) => {
         if (result.mutated) {
           try {
@@ -93,6 +96,7 @@ async function handle(
   narrative: NarrativeState,
   npcDirector: NpcDirector,
   plugins: StateHttpServerOptions["plugins"],
+  gamesDir: string,
 ): Promise<RouteResult> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -308,6 +312,22 @@ async function handle(
       entity_id: parts[1],
       inventory: narrative.getInventory(parts[1]),
     });
+  }
+
+  // ── Documento del mundo (bajo demanda para el motor narrativo) ──
+  if (method === "GET" && path === "/world_doc") {
+    if (!narrative.session_id || !narrative.game_id) {
+      return notFound("no active session — world_doc belongs to a game session");
+    }
+    try {
+      return ok({
+        game_id: narrative.game_id,
+        world_name: narrative.world.name,
+        world_doc: loadWorldDoc(gamesDir, narrative.game_id),
+      });
+    } catch (err) {
+      return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
+    }
   }
 
   // ── NPC high-level movement ──

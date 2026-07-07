@@ -163,6 +163,33 @@ function validateSceneClassify(
 // instead of living only in the (long, truncatable) narrative_listen tool
 // description. Keep wording in sync with ai_server/narrative_schemas.py.
 
+const WORLD_RULES = `==== WORLD & ENGINE RULES (always apply) ====
+WORLD FIDELITY — the request's world_state carries the game's world identity:
+- world.description is the world brief (setting, peoples, factions, magic,
+  tone). EVERYTHING you generate — scenes, NPCs, dialogue, consequences —
+  must fit that world. Do NOT default to generic dark fantasy: each game
+  defines its own world.
+- world_document (present only on bootstrap requests) is the FULL world
+  document. Read it before seeding the world map. On later turns call the
+  world_doc_get tool whenever you need detail: naming NPCs, picking factions,
+  what magic can or cannot do, NPC speech register.
+- world.style_token names the visual style; texture/style prompts you emit
+  should harmonise with it.
+- NPC dialogue and descriptions are always in Spanish, matching the register
+  described in the world document ("Registro y lenguaje").
+
+ENGINE LIMITS (hard constraints, never break):
+- The camera is a fixed top-down/isometric 2D view. Never design content
+  that depends on any other angle.
+- ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
+  bipeds; only humanoid animations exist. NEVER spawn talking animals,
+  beasts, dragons or non-humanoid monsters. Animals may be mentioned as
+  background flavour but never speak, act or fight. Supernatural beings
+  appear in human form.
+- There are no scripted story beats: the story emerges from your
+  consequences, the world document's conflict seeds and the player's
+  choices.`;
+
 const TILE_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "scene" — TILE of the continuous world) ====
 world_state.generate_tile is present: you are generating ONE TILE of a
 continuous, unbroken world plane. Tiles are 64×64 m (128×128 cells of 0.5 m),
@@ -967,7 +994,7 @@ into context:
           return {
             content: [{
               type: 'text',
-              text: `Narrative event:\n${payload}\n\n${NARRATIVE_EVENT_INSTRUCTIONS}`,
+              text: `Narrative event:\n${payload}\n\n${NARRATIVE_EVENT_INSTRUCTIONS}\n\n${WORLD_RULES}`,
             }],
           };
         }
@@ -984,9 +1011,9 @@ into context:
         );
         const instructions = kindLabel !== 'scene'
           ? ROOM_INSTRUCTIONS
-          : isTileRequest
+          : (isTileRequest
             ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
-            : SCENE_INSTRUCTIONS;
+            : SCENE_INSTRUCTIONS) + '\n\n' + WORLD_RULES;
         return {
           content: [{
             type: 'text',
@@ -1147,6 +1174,19 @@ into context:
         return { content: [{ type: 'text', text: 'scene_json is not valid JSON' }], isError: true };
       }
       return reportBridge(await bridgePost('/scene/validate', { scene }));
+    },
+  );
+
+  server.tool(
+    'world_doc_get',
+    `Read the FULL world document (world.md) of the active game: kingdoms, ` +
+    `peoples, factions, magic rules, daily life, conflict seeds, NPC speech ` +
+    `register. The per-turn context only carries the world brief ` +
+    `(world.description) — call this whenever you need detail: naming NPCs, ` +
+    `picking factions, checking what magic can or cannot do, matching tone.`,
+    {},
+    async () => {
+      return reportBridge(await bridgeGet('/world_doc'));
     },
   );
 

@@ -50,6 +50,9 @@ const DEFAULT_WORLD: NarrativeWorldState = {
   atmosphere: "",
   style_token: "",
   active_scene_id: "",
+  description: "",
+  style_id: "",
+  world_doc_hash: "",
 };
 
 const DEFAULT_PLAYER: NarrativePlayerState = {
@@ -174,6 +177,25 @@ export class NarrativeState {
     return this.session_id;
   }
 
+  /** Fija la identidad del mundo de la sesión (título, brief, estilo
+   *  congelado y hash del world.md). Lo llama el bridge en start_session con
+   *  los datos del game.json/style.json — la fuente de verdad es el FS, el
+   *  save la congela. */
+  setWorldInfo(info: {
+    name: string;
+    description: string;
+    style_id: string;
+    style_token: string;
+    world_doc_hash: string;
+  }): void {
+    this.world.name = info.name;
+    this.world.description = info.description;
+    this.world.style_id = info.style_id;
+    this.world.style_token = info.style_token;
+    this.world.world_doc_hash = info.world_doc_hash;
+    this.dirty = true;
+  }
+
   /** Migración v3→v4: envuelve la escena ACTIVA (Format D expandido, centrada
    *  en el origen) como tile (0,0): el grid viejo se re-muestrea como
    *  terrain_patch centrado (escala mpc/0.5), las entities se re-celdan con el
@@ -269,7 +291,9 @@ export class NarrativeState {
     this.game_id = data.game_id;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
-    this.world = data.world;
+    // Spread sobre defaults: los saves v4 anteriores a la era de mundos no
+    // traen description/style_id/world_doc_hash (campos aditivos, sin bump).
+    this.world = { ...DEFAULT_WORLD, ...data.world };
     this.player = data.player;
     this.story_so_far = data.story_so_far;
     this.scenes_loaded = data.scenes_loaded;
