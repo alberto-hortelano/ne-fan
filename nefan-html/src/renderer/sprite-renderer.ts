@@ -233,7 +233,10 @@ export class SpriteRenderer {
     const sheet = this.cache.get(key);
     if (sheet) return sheet;
     if (this.inflight.has(key)) return null;
-    errors.push("sprite", `sprite sheet ${key} sin loadAnimation previo — cargando ahora (lazy)`);
+    // Aviso de consola, NO errors.push: es una carrera esperable (la entidad
+    // dibuja antes de que la precarga pida este sheet) y se autocorrige — no
+    // debe engordar el panel de errores del jugador.
+    console.warn(`[sprite] sheet ${key} sin loadAnimation previo — cargando ahora (lazy)`);
     this.loadAnimation(model, anim, angle).catch(() => {
       // fetchSheet ya registró el motivo; el catch evita unhandled rejection.
     });

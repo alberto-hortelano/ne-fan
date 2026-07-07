@@ -15,6 +15,7 @@ import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/sce
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
+import { viewProjectionFor, type ViewProjection } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
@@ -183,6 +184,7 @@ function applySessionPerspective(perspective: string): void {
   sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
   sceneImageController.setPerspective(sessionPerspective);
   renderer.setProjection(sessionPerspective);
+  viewProjection = viewProjectionFor(sessionPerspective);
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
 
@@ -271,6 +273,9 @@ attackBtns.forEach(btn => {
 // --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
+/** Proyección de vista de la sesión — el input WASD se mapea con ella para
+ *  que W siempre sea "arriba de la pantalla" (en iso, el noroeste del mundo). */
+let viewProjection: ViewProjection = viewProjectionFor("topdown");
 const playerMaxHp = 100;
 const playerWeaponId = "short_sword";
 let sceneData: Record<string, unknown> | null = null;
@@ -912,6 +917,26 @@ function log(msg: string): void {
  *  60 fps con la misma excepción. */
 let lastRenderError = "";
 
+// Hook de bench (solo dev): estado vivo para los drivers E2E de Chrome —
+// permite verificar movimiento/colisión sin depender de leer píxeles.
+if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
+  (window as unknown as Record<string, unknown>).__nefan = {
+    state: () => ({
+      pos: { ...playerPos },
+      forward: { ...playerForward },
+      input: { ...input.state },
+      dialogueActive: input.dialogueActive,
+      perspective: sessionPerspective,
+      blocked: {
+        n: collidesAt(playerPos.x, playerPos.z - 0.5),
+        s: collidesAt(playerPos.x, playerPos.z + 0.5),
+        w: collidesAt(playerPos.x - 0.5, playerPos.z),
+        e: collidesAt(playerPos.x + 0.5, playerPos.z),
+      },
+    }),
+  };
+}
+
 // --- Mouse look ---
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
@@ -1065,16 +1090,23 @@ function gameLoop(now: number): void {
 
     const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
     if (inputFwd !== 0 || inputRight !== 0) {
-      const len = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
-      const fwd = playerForward;
-      const right = { x: -fwd.z, z: fwd.x };
-      const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
-      const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
+      // WASD en espacio de PANTALLA: W sube el monitor en ambas perspectivas
+      // (en iso eso es el noroeste del mundo — sin esto el personaje se movía
+      // en diagonal respecto a las teclas). La proyección mapea pantalla →
+      // mundo; se renormaliza para que la diagonal no sea más rápida.
+      const [mx, mz] = viewProjection.inputDirToWorld(inputRight, -inputFwd);
+      const mlen = Math.hypot(mx, mz) || 1;
+      const moveX = mx / mlen;
+      const moveZ = mz / mlen;
       const dx = moveX * speed * delta;
       const dz = moveZ * speed * delta;
       // Resolución por ejes contra objetos sólidos → desliza por las paredes.
       if (!collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
       if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
+      // El personaje encara hacia donde anda (sprite y ataques); el ratón
+      // sigue pudiendo re-orientar cuando está quieto.
+      playerForward = { x: moveX, y: 0, z: moveZ };
+      playerYaw = Math.atan2(moveX, moveZ);
     }
 
     // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,
