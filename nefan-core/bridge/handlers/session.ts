@@ -62,7 +62,9 @@ export async function handleStartSession(
   let worldKey: string;
   try {
     const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
-    const style = loadStyleManifest(ctx.stylesDir, meta.style_id);
+    // Estilo: el elegido por el jugador o el por defecto del juego. Un
+    // styleId inexistente aborta (fail-loud), no degrada en silencio.
+    const style = loadStyleManifest(ctx.stylesDir, msg.styleId || meta.style_id);
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
     worldKey = `${worldDocHash}:${style.style_id}`;

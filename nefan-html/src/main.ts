@@ -1508,7 +1508,7 @@ async function runTitleFlow(): Promise<void> {
         "Iniciando partida...",
         "Pidiendo al motor narrativo que construya la escena inicial.",
       );
-      const res = await narrativeClient.startSession(action.gameId, action.appearance);
+      const res = await narrativeClient.startSession(action.gameId, action.appearance, action.styleId || undefined);
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
       historyBrowser.setSession(res.sessionId);

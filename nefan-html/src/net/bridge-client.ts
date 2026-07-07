@@ -268,8 +268,12 @@ export class BridgeClient {
     return this.request<GamesListedMessage>({ type: "list_games" });
   }
 
-  startSession(gameId: string, appearance?: { model_id: string; skin_path: string }): Promise<SessionStartedMessage> {
-    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance });
+  startSession(
+    gameId: string,
+    appearance?: { model_id: string; skin_path: string },
+    styleId?: string,
+  ): Promise<SessionStartedMessage> {
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId });
   }
 
   resumeSession(sessionId: string): Promise<SessionStartedMessage> {

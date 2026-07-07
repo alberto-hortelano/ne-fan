@@ -46,9 +46,9 @@ export class NarrativeClient {
     return () => this.statusListeners.delete(fn);
   }
 
-  async listGames(): Promise<GameInfo[]> {
+  async listGames(): Promise<{ games: GameInfo[]; styles: StyleInfo[] }> {
     const res = await this.bridge.listGames();
-    return res.games;
+    return { games: res.games, styles: res.styles };
   }
 
   async listSessions(): Promise<SessionMetadata[]> {
@@ -56,12 +56,16 @@ export class NarrativeClient {
     return res.sessions;
   }
 
-  async startSession(gameId: string, appearance?: { model_id: string; skin_path: string }): Promise<{
+  async startSession(
+    gameId: string,
+    appearance?: { model_id: string; skin_path: string },
+    styleId?: string,
+  ): Promise<{
     sessionId: string;
     gameId: string;
     state: SessionData;
   }> {
-    const res = await this.bridge.startSession(gameId, appearance);
+    const res = await this.bridge.startSession(gameId, appearance, styleId);
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }

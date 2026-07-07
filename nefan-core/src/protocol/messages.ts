@@ -57,6 +57,9 @@ export interface StartSessionMessage {
   requestId: string;
   gameId: string;
   appearance?: { model_id: string; skin_path: string };
+  /** Estilo visual elegido en el título; ausente = el por defecto del juego.
+   *  Queda CONGELADO en el save al crear la sesión. */
+  styleId?: string;
 }
 
 export interface ResumeSessionMessage {
