@@ -7,6 +7,10 @@ GENERATE_SCENE_PROMPT_WORLD_RULES = """WORLD & ENGINE RULES (always apply — mi
   you generate must fit THAT world — do not default to generic dark fantasy.
 - `world.style_token` names the visual style; style/texture prompts you emit
   should harmonise with it.
+- `world.perspective` is the session's frozen 2D projection ("topdown" |
+  "isometric"). It is INFORMATIVE only: you always declare maps in flat world
+  cells and the engine's blueprint composer projects them — never draw
+  projected/foreshortened geometry yourself.
 - The camera is a fixed top-down/isometric 2D view.
 - Scene/tile JSON should include "style_tag": one of
   nature|settlement|fortress|interior|underground — the dominant setting of
