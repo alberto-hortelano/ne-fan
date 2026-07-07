@@ -1,7 +1,7 @@
 /** HTTP client for ai_server narrative endpoints.
  *
- * Replaces godot/scripts/autoloads/ai_client.gd and the inline fetch in
- * scenario-runner.ts. Single source of truth for both clients.
+ * Single source of truth for narrative HTTP calls from the bridge
+ * (both clients talk to the bridge, never to ai_server directly).
  */
 import type { Consequence, LlmContext } from "./types.js";
 

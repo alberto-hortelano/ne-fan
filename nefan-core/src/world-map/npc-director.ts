@@ -7,8 +7,7 @@
  *  - directive        : a standing high-level order (patrol / defend / ...)
  *
  * Travel is narrative-paced: moveNpcToPlace marks the NPC in_transit, and the
- * narrative engine declares arrival via arriveNpc (no game clock). The legacy
- * ScenarioRunner / NpcController (game.json beats) is untouched.
+ * narrative engine declares arrival via arriveNpc (no game clock).
  */
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import type { EntityRecord } from "../narrative/types.js";

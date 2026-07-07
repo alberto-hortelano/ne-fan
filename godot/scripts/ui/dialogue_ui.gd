@@ -13,7 +13,6 @@ var _vbox: VBoxContainer
 var _speaker_label: Label
 var _text_label: Label
 var _choices_container: VBoxContainer
-var _objective_label: Label
 var _free_text_hint: Label
 var _free_text_input: LineEdit
 
@@ -92,20 +91,6 @@ func _ready() -> void:
 	_panel.visible = false
 	add_child(_panel)
 
-	# Objective label (top-right)
-	_objective_label = Label.new()
-	_objective_label.anchors_preset = Control.PRESET_TOP_RIGHT
-	_objective_label.offset_right = -20
-	_objective_label.offset_top = 60
-	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_objective_label.add_theme_font_size_override("font_size", 16)
-	_objective_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0, 0.9))
-	_objective_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	_objective_label.add_theme_constant_override("shadow_offset_x", 1)
-	_objective_label.add_theme_constant_override("shadow_offset_y", 1)
-	_objective_label.visible = false
-	add_child(_objective_label)
-
 
 func _process(delta: float) -> void:
 	if not _active:
@@ -154,9 +139,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				choice_idx = 1
 			elif key.keycode == KEY_3:
 				choice_idx = 2
-			if choice_idx >= 0 and choice_idx < _choices.size():
-				_hide_dialogue()
-				dialogue_choice_made.emit(choice_idx, "")
+			if choose(choice_idx):
 				get_viewport().set_input_as_handled()
 				return
 
@@ -236,9 +219,24 @@ func show_dialogue(speaker: String, text: String, choices: Array = []) -> void:
 	# Keep mouse captured — dialogue uses keyboard only (E/Space/1-3, T for free text)
 
 
-func show_objective(text: String) -> void:
-	_objective_label.text = text
-	_objective_label.visible = text != ""
+func advance() -> bool:
+	"""Avanza/cierra programáticamente un diálogo SIN opciones (mismo camino
+	que E/Espacio). Usado por RemoteControl para tests automatizados."""
+	if not _active or _choices.size() > 0:
+		return false
+	_hide_dialogue()
+	dialogue_advanced.emit()
+	return true
+
+
+func choose(choice_index: int) -> bool:
+	"""Elige programáticamente una opción del diálogo activo (mismo camino que
+	las teclas 1-3). Usado por RemoteControl para tests automatizados."""
+	if not _active or choice_index < 0 or choice_index >= _choices.size():
+		return false
+	_hide_dialogue()
+	dialogue_choice_made.emit(choice_index, "")
+	return true
 
 
 func _hide_dialogue() -> void:
@@ -254,9 +252,8 @@ func _hide_dialogue() -> void:
 
 
 func hide_all() -> void:
-	"""Hide both dialogue panel and objective label. Called on room/game transitions."""
+	"""Hide the dialogue panel. Called on room/game transitions."""
 	_hide_dialogue()
-	_objective_label.visible = false
 
 
 func is_active() -> bool:

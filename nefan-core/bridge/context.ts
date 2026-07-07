@@ -6,7 +6,6 @@
 
 import type { GameSimulation } from "../src/simulation/game-loop.js";
 import type { GameStore } from "../src/store/game-store.js";
-import type { ScenarioRunner } from "../src/scenario/scenario-runner.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { AiClient } from "../src/narrative/ai-client.js";
@@ -42,7 +41,6 @@ export type NarrativeAiClient = Pick<
 export interface BridgeContext {
   sim: GameSimulation;
   store: GameStore;
-  scenario: ScenarioRunner;
   narrative: NarrativeState;
   sessionStorage: SessionStorage;
   aiClient: NarrativeAiClient;

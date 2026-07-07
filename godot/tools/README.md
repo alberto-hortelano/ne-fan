@@ -12,7 +12,6 @@ ver CLAUDE.md "Modo headless").
 | `remote.py` | **Vigente** | Cliente CLI genérico: envía cualquier comando JSON al puerto 9876. |
 | `anim_debug.py` | Vigente con matices | Capturas multi-ángulo de una animación (`anim_debug.py medium --angles side`). Sigue el flujo de ANIMATION_MAPPING.md. |
 | `attack_mapping.py` | **Desalineado** — revisar antes de fiarse | Mide reach/arco/impacto de animaciones para poblar `animation_intrinsics.json`. Escrito cuando la lógica de combate vivía en Godot; hoy los parámetros efectivos vienen precalculados de nefan-core (`combat_effective_params.json`) y el selector de clips (`_select_best_animation`) elige por atributos físicos. Verificar sus medidas frame a frame contra el detector (confunde wind-ups con golpes). |
-| `game_test.py` | Desalineado — usa el flujo `load_game` legacy | Ciclo de vida de partida, pausa y combate visual. El arranque canónico hoy es `start_session` vía bridge (open-world), no `load_game`. |
 | `visual_stress_test.py` | Legacy de rooms | Estrés del generador de rooms cerradas (`test_rooms/stress/*`). Las rooms son legacy de tests, no la unidad de gameplay. |
 
 ## Notas de arquitectura

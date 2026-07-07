@@ -37,7 +37,7 @@ var _combat_hud  # CombatHUD
 var _player_combatant: Node  # Combatant
 var _current_room: Node3D = null
 var _transitioning := false
-var _scenario_active := false
+var _session_active := false
 var _returning_to_title := false
 var _pause_menu: CanvasLayer = null
 var _paused := false
@@ -162,17 +162,6 @@ func _ready() -> void:
 	history_browser.name = "HistoryBrowser"
 	add_child(history_browser)
 
-	# Scenario signals from LogicBridge
-	# OK: main es la escena raíz, vida == app — no necesita auto_disconnect
-	LogicBridge.scenario_dialogue.connect(_on_scenario_dialogue)
-	LogicBridge.scenario_objective.connect(_on_scenario_objective)
-	LogicBridge.scenario_change_scene.connect(_on_scenario_change_scene)
-	LogicBridge.scenario_spawn_npc.connect(_on_scenario_spawn_npc)
-	LogicBridge.scenario_despawn_npc.connect(_on_scenario_despawn_npc)
-	LogicBridge.scenario_spawn_enemy.connect(_on_scenario_spawn_enemy)
-	LogicBridge.scenario_give_weapon.connect(_on_scenario_give_weapon)
-	LogicBridge.scenario_spawn_objects.connect(_on_scenario_spawn_objects)
-
 	# Canonical session signals from LogicBridge (start_session/resume_session)
 	# OK: main es la escena raíz, vida == app — no necesita auto_disconnect
 	LogicBridge.session_started.connect(_on_bridge_session_started)
@@ -209,14 +198,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1: _load_room_from_file(0)
 			KEY_F2: _load_room_from_file(1)
 			KEY_F3: _load_room_from_file(2)
-			KEY_F4:
-				_reset_game_state()
-				_scenario_active = true
-				_player.visible = true
-				_player.set_physics_process(true)
-				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-				LogicBridge.send_load_game("tavern_intro")
-				_hud.show_brief_message("Cargando escenario...")
 			KEY_F12: _dev_menu.toggle()
 			KEY_R:
 				if _player_combatant.health <= 0.0:
@@ -429,7 +410,7 @@ func _reset_game_state() -> void:
 	_hud.hide_prompt()
 	_hud.hide_text_panel()
 	# Scenario
-	_scenario_active = false
+	_session_active = false
 	GameStore.state.world.rooms_visited.clear()
 	# Combat
 	_combat_hud.set_target(null)
@@ -526,7 +507,7 @@ func _scan_room_dir(dir_path: String, recurse: bool = false) -> void:
 
 
 func _on_dev_room_selected(file_path: String) -> void:
-	_scenario_active = false
+	_session_active = false
 	if _dialogue_ui:
 		_dialogue_ui.hide_all()
 	load_room_by_path(file_path)
@@ -591,23 +572,10 @@ func load_room_by_path(file_path: String) -> void:
 func _load_room_from_file(index: int) -> void:
 	if index < 0 or index >= _room_files.size():
 		return
-	_scenario_active = false
+	_session_active = false
 	if _dialogue_ui:
 		_dialogue_ui.hide_all()
 	load_room_by_path(_room_files[index])
-
-
-# --- Exit transitions ---
-
-func _on_exit_entered(body: Node3D, area: Area3D) -> void:
-	# Exits are events for the scenario runner. In dev/test rooms (F1/F2/F3)
-	# there is no scenario, so exits become no-ops — to move between test
-	# rooms, use the function keys or the dev menu (F12). The old per-exit
-	# AIClient.generate_room path was removed with the GameState cleanup.
-	if body != _player or _transitioning:
-		return
-	var exit_wall: String = area.get_meta("wall", "north")
-	LogicBridge.send_scenario_event("exit_entered", {"exitWall": exit_wall})
 
 
 # --- Room building ---
@@ -635,9 +603,6 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 
 	_current_room = _room_builder.build_room(data)
 	add_child(_current_room)
-
-	for area in _room_builder.exit_areas:
-		area.body_entered.connect(_on_exit_entered.bind(area))
 
 	# Set player reference for ChunkManager (if outdoor chunked terrain)
 	var chunk_mgr = _current_room.get_node_or_null("ChunkManager")
@@ -817,7 +782,7 @@ func _apply_player_appearance(model_id: String, skin_path: String) -> void:
 
 func _start_game(game_id: String, scene_path: String, resume_session_id: String = "") -> void:
 	_reset_game_state()
-	_scenario_active = true
+	_session_active = true
 	_player.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -859,7 +824,7 @@ func _on_bridge_session_started(ok: bool, p_session_id: String, _p_game_id: Stri
 	print("main: bridge session %s (%s)" % [p_session_id, "resume" if is_resume else "new"])
 	# Asegura el estado in-game: un resume puede llegar sin pasar por
 	# _start_game (F9 / remote "load" tras una muerte que volvió al título).
-	_scenario_active = true
+	_session_active = true
 	_player.visible = true
 	if has_node("TitleScreen"):
 		get_node("TitleScreen").queue_free()
@@ -987,7 +952,7 @@ func _materialize_entity_record(ent: Dictionary) -> void:
 
 
 func _on_narrative_scene(scene_id: String, scene_data: Dictionary) -> void:
-	if not _scenario_active:
+	if not _session_active:
 		return
 	# El bridge ya registró la escena en SU NarrativeState (el canónico); el
 	# espejo GD la refleja en memoria para el history browser y F9. save()
@@ -997,13 +962,13 @@ func _on_narrative_scene(scene_id: String, scene_data: Dictionary) -> void:
 
 
 func _on_narrative_dialogue(speaker: String, text: String, choices: Array) -> void:
-	if not _scenario_active or text == "":
+	if not _session_active or text == "":
 		return
 	_dialogue_flow.show_dialogue(speaker, text, choices)
 
 
 func _on_narrative_spawn(effect: Dictionary) -> void:
-	if not _scenario_active or not _current_room:
+	if not _session_active or not _current_room:
 		return
 	var pos: Array = effect.get("position", [0.0, 0.0, 0.0])
 	var data: Dictionary = effect.get("data", {})
@@ -1031,7 +996,7 @@ func _on_narrative_spawn(effect: Dictionary) -> void:
 
 
 func _on_narrative_status(phase: String, kind: String, message: String) -> void:
-	if not _scenario_active:
+	if not _session_active:
 		return
 	match phase:
 		"generating":
@@ -1054,7 +1019,7 @@ func _on_narrative_story_delta(delta: String) -> void:
 
 
 func _on_narrative_ambient(message: String) -> void:
-	if not _scenario_active or message == "":
+	if not _session_active or message == "":
 		return
 	_hud.show_brief_message(message, 4.0)
 
@@ -1068,129 +1033,6 @@ func _on_bridge_session_saved(ok: bool) -> void:
 
 
 # --- Scenario handlers ---
-
-
-func _on_scenario_dialogue(speaker: String, text: String, choices: Array) -> void:
-	if not _scenario_active:
-		return
-	_dialogue_flow.show_dialogue(speaker, text, choices)
-
-
-func _on_scenario_objective(text: String) -> void:
-	if not _scenario_active:
-		return
-	_dialogue_ui.show_objective(text)
-
-
-func _on_scenario_change_scene(scene_data: Dictionary) -> void:
-	if not _scenario_active:
-		return
-	_apply_room(scene_data, Vector3(0, 1, 0), true)
-	# Record into the narrative session for save/resume
-	var scene_id: String = scene_data.get("room_id", scene_data.get("scene_id", ""))
-	if scene_id != "":
-		NarrativeState.record_scene_loaded(scene_id, scene_data, [])
-
-
-func _on_scenario_spawn_npc(data: Dictionary) -> void:
-	if not _scenario_active or not _current_room:
-		return
-	var spawner = ObjectSpawnerScript.new()
-	var npc_data := {
-		"id": data.get("id", "npc"),
-		"name": data.get("name", "Stranger"),
-		"character_type": data.get("character_type", "peasant_male"),
-		"animation": data.get("animation", "idle"),
-		"position": data.get("position", [0, 0, 0]),
-		"scale": [0.5, 1.8, 0.5],
-		"description": data.get("name", ""),
-	}
-	spawner.spawn_npcs([npc_data], _current_room)
-	print("Scenario: spawned NPC '%s' (%s)" % [data.get("name", ""), data.get("character_type", "")])
-	NarrativeState.record_entity_spawned(
-		npc_data["id"], "npc", NarrativeState.world.get("active_scene_id", ""),
-		npc_data["position"], data, "scenario"
-	)
-
-
-func _on_scenario_despawn_npc(npc_id: String) -> void:
-	if not _scenario_active or not _current_room:
-		return
-	var node := _current_room.get_node_or_null(npc_id)
-	if node:
-		node.queue_free()
-		print("Scenario: despawned NPC '%s'" % npc_id)
-	NarrativeState.record_entity_despawned(npc_id)
-
-
-func _on_scenario_spawn_enemy(data: Dictionary) -> void:
-	if not _scenario_active or not _current_room:
-		return
-	var spawner = ObjectSpawnerScript.new()
-	var combat_data: Dictionary = data.get("combat", {})
-	var pos: Array = data.get("position", [0, 0, 0])
-	var obj_data := {
-		"id": data.get("id", "enemy"),
-		"mesh": "capsule",
-		"position": pos,
-		"rotation": [0, 0, 0],
-		"scale": [0.6, 1.8, 0.6],
-		"category": "creature",
-		"description": "enemy",
-		"character_model": "",
-		"combat": {
-			"health": combat_data.get("health", 80),
-			"weapon_id": combat_data.get("weapon_id", "unarmed"),
-			"personality": combat_data.get("personality", {}),
-		},
-	}
-	# Map character_type to model path via the shared registry
-	var char_type: String = data.get("character_type", "")
-	if char_type != "":
-		var model_path: String = NpcModelRegistryScript.get_model_path(char_type)
-		if model_path != "":
-			obj_data["character_model"] = model_path
-		else:
-			push_warning("Scenario: unknown enemy character_type '%s' — using capsule" % char_type)
-	spawner.spawn_objects([obj_data], _current_room)
-
-	# Register with combat manager
-	for child in _current_room.get_children():
-		if child.name == data.get("id", ""):
-			var c = child.get_node_or_null("Combatant")
-			if c:
-				_combat_manager.register_combatant(c)
-	print("Scenario: spawned enemy '%s'" % data.get("id", ""))
-	NarrativeState.record_entity_spawned(
-		obj_data["id"], "enemy", NarrativeState.world.get("active_scene_id", ""),
-		obj_data["position"], data, "scenario"
-	)
-
-
-func _on_scenario_give_weapon(weapon_id: String) -> void:
-	if not _scenario_active:
-		return
-	if _player_combatant:
-		_player_combatant.weapon_id = weapon_id
-		GameStore.dispatch("weapon_changed", {"weapon_id": weapon_id})
-		_hud.show_brief_message("Obtienes: %s" % weapon_id)
-		print("Scenario: gave weapon '%s'" % weapon_id)
-
-
-func _on_scenario_spawn_objects(objects: Array) -> void:
-	if not _scenario_active or not _current_room:
-		return
-	var spawner := ObjectSpawnerScript.new()
-	spawner.spawn_objects(objects, _current_room)
-	print("Scenario: spawned %d dynamic objects" % objects.size())
-	for obj in objects:
-		var obj_id: String = obj.get("id", "")
-		if obj_id == "":
-			continue
-		NarrativeState.record_entity_spawned(
-			obj_id, "object", NarrativeState.world.get("active_scene_id", ""),
-			obj.get("position", [0, 0, 0]), obj, "scenario"
-		)
 
 
 func _apply_spawn_entity_consequence(c: Dictionary, event_id: String) -> void:

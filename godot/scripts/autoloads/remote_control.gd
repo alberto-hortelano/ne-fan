@@ -95,12 +95,24 @@ func _handle(line: String) -> String:
 		"load_game":
 			return _cmd_load_game(json)
 		"dialogue_advance":
-			LogicBridge.send_scenario_event("dialogue_advanced")
-			return '{"ok":true}'
+			# Cierra un diálogo sin opciones (mismo camino que E/Espacio).
+			var main_adv := get_tree().current_scene
+			var adv_ui: Node = main_adv.get_node_or_null("DialogueUI") if main_adv else null
+			if adv_ui and adv_ui.has_method("advance") and bool(adv_ui.call("advance")):
+				return '{"ok":true}'
+			return '{"error":"no active choiceless dialogue"}'
 		"dialogue_choice":
+			# Conduce la DialogueUI real (mismo camino que la tecla 1-3 del
+			# jugador): la elección viaja por el flujo canónico del bridge.
+			# El diálogo llega async (interact_entity → bridge → narrative_event);
+			# si aún no está activo devuelve error — el caller debe hacer poll
+			# de dialogue_state antes de elegir.
 			var ci: int = json.get("choice", 0)
-			LogicBridge.send_scenario_event("dialogue_choice", {"choiceIndex": ci})
-			return '{"ok":true,"choice":%d}' % ci
+			var main_dlg := get_tree().current_scene
+			var dlg_ui: Node = main_dlg.get_node_or_null("DialogueUI") if main_dlg else null
+			if dlg_ui and dlg_ui.has_method("choose") and bool(dlg_ui.call("choose", ci)):
+				return '{"ok":true,"choice":%d}' % ci
+			return '{"error":"no active dialogue or invalid choice"}'
 		"save":
 			# En sesión canónica el escritor es el bridge (async: el resultado
 			# llega por session_saved); en offline, save local síncrono.
@@ -444,8 +456,8 @@ func _cmd_load_room_path(args: Dictionary) -> String:
 	if path.is_empty():
 		return '{"error":"missing path"}'
 	var main_scene := get_tree().current_scene
-	# Deactivate scenario when loading a dev room directly
-	main_scene._scenario_active = false
+	# Cargar una room de dev desactiva la sesión narrativa activa
+	main_scene._session_active = false
 	if main_scene.has_method("load_room_by_path"):
 		main_scene.call("load_room_by_path", path)
 		return '{"ok":true,"path":"%s"}' % path
@@ -472,9 +484,7 @@ func _cmd_load_game(args: Dictionary) -> String:
 				editor.queue_free()
 			main_scene._on_appearance_confirmed("pete", "")
 	else:
-		if main_scene:
-			main_scene._scenario_active = true
-		LogicBridge.send_load_game(game_id)
+		return '{"error":"main scene has no _on_title_game_selected"}'
 	return '{"ok":true,"game_id":"%s"}' % game_id
 
 
@@ -516,20 +526,17 @@ func _cmd_dialogue_state() -> String:
 	var active := false
 	if ui and ui.has_method("is_active"):
 		active = ui.is_active()
-	var speaker: String = main_scene.get("_last_dialogue_speaker") if "_last_dialogue_speaker" in main_scene else ""
-	var text: String = main_scene.get("_last_dialogue_text") if "_last_dialogue_text" in main_scene else ""
-	var choices: Array = main_scene.get("_last_dialogue_choices") if "_last_dialogue_choices" in main_scene else []
-	var pending_event: String = main_scene.get("_pending_free_text_event_id") if "_pending_free_text_event_id" in main_scene else ""
-	var pending: bool = main_scene.get("_pending_free_text_pending") if "_pending_free_text_pending" in main_scene else false
-	var claude_dialogue: bool = main_scene.get("_claude_injected_dialogue") if "_claude_injected_dialogue" in main_scene else false
+	# El último diálogo mostrado vive en el nodo DialogueFlow (hijo de main).
+	var flow := main_scene.get_node_or_null("DialogueFlow")
+	var speaker: String = flow.get("_last_dialogue_speaker") if flow else ""
+	var text: String = flow.get("_last_dialogue_text") if flow else ""
+	var choices_v: Variant = flow.get("_last_dialogue_choices") if flow else []
+	var choices: Array = choices_v if choices_v is Array else []
 	var data := {
 		"active": active,
 		"speaker": speaker,
 		"text": text,
 		"choice_count": choices.size(),
-		"pending_event_id": pending_event,
-		"free_text_pending": pending,
-		"claude_dialogue": claude_dialogue,
 	}
 	return JSON.stringify(data)
 

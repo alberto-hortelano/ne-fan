@@ -2,7 +2,6 @@
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
 import type { Edge } from "../world-map/types.js";
-import type { NpcUpdate, ScenarioUpdate } from "../scenario/scenario-types.js";
 import type {
   Consequence,
   ConsequenceEffect,
@@ -46,24 +45,6 @@ export interface RespawnMessage {
 
 export interface PingMessage {
   type: "ping";
-}
-
-/** @deprecated Bypass legacy del ScenarioRunner — no crea sesión canónica ni
- *  toca NarrativeState/plugins. Consumidores restantes: F4 en Godot,
- *  `remote_control.gd` (game_test.py, beats scripted sin LLM) y el dropdown
- *  `game:` del cliente HTML. El flujo canónico es start_session/resume_session. */
-export interface LoadGameMessage {
-  type: "load_game";
-  gameId: string;
-}
-
-export interface ScenarioEventMessage {
-  type: "scenario_event";
-  event: "dialogue_advanced" | "dialogue_choice" | "exit_entered";
-  data?: {
-    choiceIndex?: number;
-    exitWall?: string;
-  };
 }
 
 export interface ListSessionsMessage {
@@ -209,8 +190,6 @@ export type ClientMessage =
   | LoadRoomMessage
   | RespawnMessage
   | PingMessage
-  | LoadGameMessage
-  | ScenarioEventMessage
   | ListSessionsMessage
   | StartSessionMessage
   | ResumeSessionMessage
@@ -241,8 +220,6 @@ export interface StateUpdateMessage {
     forward?: { x: number; y: number; z: number };
     attackType?: string;
   }[];
-  npcs?: NpcUpdate[];
-  scenario?: ScenarioUpdate;
 }
 
 export interface PongMessage {

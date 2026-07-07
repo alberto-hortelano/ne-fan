@@ -33,7 +33,6 @@ import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
 import { HistoryBrowser } from "./ui/history-browser.js";
 import { KeyboardHandler } from "./input/keyboard-handler.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
-import { ObjectiveDisplay } from "./ui/objective-display.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
 import { errors } from "./ui/error-log.js";
 import {
@@ -42,7 +41,6 @@ import {
   type FrameResult,
   type RoomEnemy,
 } from "./net/game-client.js";
-import type { ScenarioUpdate } from "@nefan-core/src/scenario/scenario-types.js";
 
 import combatConfigJson from "@nefan-core/data/combat_config.json";
 import { CONFIG } from "@nefan-core/src/config.js";
@@ -174,7 +172,6 @@ const sceneSelector = document.getElementById("room-selector") as HTMLSelectElem
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
 const dialoguePanel = new DialoguePanel();
-const objectiveDisplay = new ObjectiveDisplay();
 const travelPanel = new TravelPanel();
 const interactPromptEl = document.getElementById("interact-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
@@ -231,7 +228,7 @@ attackBtns.forEach(btn => {
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
 const playerMaxHp = 100;
-let playerWeaponId = "short_sword";
+const playerWeaponId = "short_sword";
 let sceneData: Record<string, unknown> | null = null;
 /** Salidas del world-map de la escena actual (las adjunta el bridge). Se usan
  *  para la transición continua al cruzar un borde. */
@@ -430,15 +427,6 @@ function populateSceneSelector(): void {
     }
     sceneSelector.appendChild(sceneGroup);
   }
-
-  // Narrative games — vía bridge + Claude.
-  const narrativeGroup = document.createElement("optgroup");
-  narrativeGroup.label = "Narrative";
-  const tavernOpt = document.createElement("option");
-  tavernOpt.value = "game:tavern_intro";
-  tavernOpt.textContent = "tavern_intro";
-  narrativeGroup.appendChild(tavernOpt);
-  sceneSelector.appendChild(narrativeGroup);
 }
 
 /** Deps de la fase "revisión" (scene/review.ts): re-registro vía addTile y
@@ -833,159 +821,10 @@ function getSelectedParams(): EffectiveParams {
   return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
 }
 
-// --- Scenario update processing ---
-
-function processScenario(scenario: ScenarioUpdate): void {
-  if (scenario.dialogue) {
-    const dlg = scenario.dialogue;
-    dialoguePanel.show(dlg.speaker, dlg.text, dlg.choices);
-    input.dialogueActive = true;
-  }
-  if (scenario.objective) {
-    objectiveDisplay.show(scenario.objective);
-  }
-  if (scenario.spawn_npc) {
-    const npc = scenario.spawn_npc;
-    // El scenario no trae descripción; el prompt sale de nombre + tipo
-    // ("Grom, blacksmith dwarf" da mejor skin que solo "Grom").
-    const npcPrompt = npc.character_type
-      ? `${npc.name}, ${npc.character_type.replace(/_/g, " ")}`
-      : npc.name;
-    npcEntities.push({
-      id: npc.id,
-      pos: {
-        x: npc.position[0],
-        y: npc.position[1],
-        z: npc.position[2],
-      },
-      forward: { x: 0, y: 0, z: -1 },
-      radius: 7,
-      color: "#68c",
-      label: npc.name,
-      name: npc.name,
-      alive: true,
-      skinPrompt: npcPrompt,
-      requestedAnim: npc.animation,
-    });
-    characterSprites.requestSkin(npcPrompt);
-    log("NPC appeared: " + npc.name);
-  }
-  if (scenario.despawn_npc) {
-    npcEntities = npcEntities.filter(n => n.id !== scenario.despawn_npc);
-    log("NPC left: " + scenario.despawn_npc);
-  }
-  if (scenario.spawn_enemy) {
-    const enemy = scenario.spawn_enemy;
-    const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-    const enemyPrompt = (enemy.character_type || enemy.id).replace(/_/g, " ");
-    enemyEntities.push({
-      id: enemy.id,
-      pos: {
-        x: enemy.position[0],
-        y: enemy.position[1],
-        z: enemy.position[2],
-      },
-      radius: 8, color,
-      label: enemy.id,
-      hp: enemy.combat.health,
-      maxHp: enemy.combat.health,
-      alive: true,
-      skinPrompt: enemyPrompt,
-    });
-    characterSprites.requestSkin(enemyPrompt);
-    rebuildEnemyBars();
-    log("Enemy spawned: " + enemy.id);
-  }
-  if (scenario.give_weapon) {
-    playerWeaponId = scenario.give_weapon;
-    log("Weapon acquired: " + scenario.give_weapon);
-  }
-  if (scenario.change_scene) {
-    const next = scenario.change_scene as Record<string, unknown>;
-    sceneData = next;
-    renderer.setScene(next as unknown as Parameters<typeof renderer.setScene>[0]);
-    playerPos.x = 0;
-    playerPos.z = 2;
-
-    // Parse objects/npcs from scene data
-    const objects = (next.objects ?? []) as Record<string, unknown>[];
-    objectEntities = [];
-    const sceneEnemies: Entity[] = [];
-    for (const obj of objects) {
-      const pos: Vec3 = {
-        x: (obj.position as number[])[0],
-        y: (obj.position as number[])[1],
-        z: (obj.position as number[])[2],
-      };
-      if (obj.combat) {
-        const combat = obj.combat as Record<string, unknown>;
-        const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-        const enemyPrompt = (obj.description ?? obj.id) as string;
-        sceneEnemies.push({
-          id: obj.id as string, pos, radius: 8, color,
-          label: enemyPrompt,
-          hp: combat.health as number, maxHp: combat.health as number, alive: true,
-          skinPrompt: enemyPrompt,
-        });
-        characterSprites.requestSkin(enemyPrompt);
-      } else {
-        objectEntities.push({
-          id: obj.id as string, pos, radius: 5,
-          color: (obj.category as string) === "item" ? "#aa8" : "#666",
-          label: (obj.description ?? "") as string, alive: true,
-        });
-      }
-    }
-    enemyEntities = sceneEnemies;
-
-    const npcsData = (next.npcs ?? []) as Record<string, unknown>[];
-    npcEntities = npcsData.map(npc => {
-      const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
-      characterSprites.requestSkin(npcPrompt);
-      return {
-        id: npc.id as string,
-        pos: {
-          x: (npc.position as number[])?.[0] ?? 0,
-          y: (npc.position as number[])?.[1] ?? 0,
-          z: (npc.position as number[])?.[2] ?? 0,
-        },
-        forward: { x: 0, y: 0, z: -1 },
-        radius: 7, color: "#68c",
-        label: (npc.name ?? npc.id) as string,
-        name: (npc.name ?? npc.id) as string,
-        alive: true,
-        skinPrompt: npcPrompt,
-      };
-    });
-
-    rebuildEnemyBars();
-    travelPanel.setExits((next.exits ?? []) as SceneExit[]);
-    log("Scene changed: " + (next.scene_id ?? next.room_id ?? "unknown"));
-  }
-  if (scenario.spawn_objects) {
-    for (const obj of scenario.spawn_objects) {
-      objectEntities.push({
-        id: obj.id,
-        pos: { x: obj.position[0], y: obj.position[1], z: obj.position[2] },
-        radius: 5,
-        color: obj.category === "item" ? "#aa8" : "#666",
-        label: obj.description,
-        alive: true,
-      });
-    }
-  }
-}
-
 // --- Dialogue callbacks ---
 
 dialoguePanel.onAdvanced = () => {
   input.dialogueActive = false;
-  gameClient?.sendScenarioEvent("dialogue_advanced");
-};
-
-dialoguePanel.onChoice = (index: number) => {
-  input.dialogueActive = false;
-  gameClient?.sendScenarioEvent("dialogue_choice", { choiceIndex: index });
 };
 
 // --- Scene selector handler ---
@@ -993,18 +832,7 @@ dialoguePanel.onChoice = (index: number) => {
 sceneSelector.addEventListener("change", () => {
   const value = sceneSelector.value;
   if (!value) return;
-
-  if (value.startsWith("game:")) {
-    const gameId = value.slice(5);
-    if (gameClient?.isBridge) {
-      gameClient.loadGame(gameId);
-      log("Loading game: " + gameId);
-    } else {
-      log("Bridge required for narrative games");
-    }
-  } else {
-    loadSceneFile(value);
-  }
+  loadSceneFile(value);
 });
 
 // --- Respawn ---
@@ -1281,33 +1109,6 @@ function gameLoop(now: number): void {
     }
   }
 
-  // Sync NPCs from result (bridge mode)
-  if (result.npcs) {
-    for (const npcState of result.npcs) {
-      const npc = npcEntities.find(n => n.id === npcState.id);
-      if (npc) {
-        if (npcState.pos) {
-          npc.pos.x = npcState.pos.x;
-          npc.pos.z = npcState.pos.z;
-        }
-        if (npcState.facing) {
-          npc.forward = { x: npcState.facing.x, y: 0, z: npcState.facing.z };
-        }
-        npc.requestedAnim = npcState.animation;
-        if (npcState.visible === false) {
-          npc.alive = false;
-        } else {
-          npc.alive = true;
-        }
-      }
-    }
-  }
-
-  // Process scenario updates (bridge mode)
-  if (result.scenario) {
-    processScenario(result.scenario);
-  }
-
   // Update HUD
   const pHpPct = Math.max(0, result.playerHp / playerMaxHp * 100);
   playerHpBar.style.width = pHpPct + "%";
@@ -1395,6 +1196,7 @@ const historyBrowser = new HistoryBrowser(narrativeClient);
 let activeSessionId: string | null = null;
 
 dialoguePanel.onChoice = (idx, text) => {
+  input.dialogueActive = false;
   if (!activeSessionId) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -1406,6 +1208,7 @@ dialoguePanel.onChoice = (idx, text) => {
 };
 
 dialoguePanel.onFreeText = (freeText) => {
+  input.dialogueActive = false;
   if (!activeSessionId) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -1602,6 +1405,9 @@ narrativeClient.onNarrativeEvent((event) => {
         dialoguePanel.show(effect.speaker, effect.text, effect.choices.map((c) =>
           typeof c === "string" ? c : c.text,
         ));
+        // Suprime movimiento/ataque del KeyboardHandler mientras el panel está
+        // abierto (las teclas 1-3/T las gestiona el propio panel).
+        input.dialogueActive = true;
         break;
       case "story_delta":
         log(`📖 ${effect.delta.slice(0, 80)}`);
@@ -1629,7 +1435,7 @@ narrativeClient.onNarrativeEvent((event) => {
               }
             });
           } else {
-            // Escena legacy (save v3 sin migrar, bypass load_game).
+            // Escena legacy (save v3 sin migrar).
             void loadSceneData(scene);
             log(`🌍 escena cargada: ${effect.entityId}`);
           }
