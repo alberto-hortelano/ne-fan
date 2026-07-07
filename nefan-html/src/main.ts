@@ -1364,6 +1364,16 @@ function showLoader(title: string, detail: string): void {
   }, 500);
 }
 
+/** Actualiza SOLO el detalle del loader con un latido de progreso del motor
+ *  (sin resetear el cronómetro ni pisar un estado de error). No-op si el
+ *  loader no está visible — el progreso también llega en momentos sin
+ *  overlay (p. ej. tiles de frontera en segundo plano). */
+function updateLoaderProgress(message: string): void {
+  if (!loaderEl || !loaderEl.classList.contains("visible")) return;
+  if (loaderEl.classList.contains("error")) return;
+  if (loaderDetail) loaderDetail.textContent = message;
+}
+
 function hideLoader(): void {
   if (!loaderEl) return;
   loaderEl.classList.remove("visible", "error");
@@ -1388,6 +1398,14 @@ function setLoaderState(state: "error", title: string, detail: string): void {
 if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
 
 narrativeClient.onNarrativeStatus((status) => {
+  // ── Latido de progreso del motor narrativo ────────────────────────────
+  // Un paso observable (petición recogida, tool de estado llamada): el
+  // loader deja de ser una espera muda de minutos y narra qué está pasando.
+  if (status.phase === "progress") {
+    if (status.message) updateLoaderProgress(status.message);
+    return;
+  }
+
   // ── Tiles del plano continuo ──────────────────────────────────────────
   // El feedback de un tile es DIRECCIONAL (velo/flash del FrontierManager),
   // no el overlay central — salvo el bootstrap (mundo aún vacío).

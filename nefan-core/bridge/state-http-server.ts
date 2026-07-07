@@ -36,6 +36,10 @@ export interface StateHttpServerOptions {
   gamesDir: string;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
+  /** Latido de progreso del motor narrativo (POST /narrative_progress desde
+   *  narrative-mcp): el bridge lo difunde como narrative_status "progress"
+   *  para que el loader del cliente muestre qué está pasando. */
+  onProgress: (message: string) => void;
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
    *  dispatcher (`activePlugins`) es estado del bridge. */
   plugins: {
@@ -68,7 +72,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
       serveStyleFile(req, res, opts.stylesDir);
       return;
     }
-    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir)
+    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress)
       .then(async (result) => {
         if (result.mutated) {
           try {
@@ -97,6 +101,7 @@ async function handle(
   npcDirector: NpcDirector,
   plugins: StateHttpServerOptions["plugins"],
   gamesDir: string,
+  onProgress: StateHttpServerOptions["onProgress"],
 ): Promise<RouteResult> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -136,6 +141,17 @@ async function handle(
     } catch (err) {
       return bad((err as Error).message);
     }
+  }
+
+  // ── Progreso del motor narrativo ──
+  // narrative-mcp lo envía en cada paso observable (tool MCP llamada,
+  // petición recogida). Sin sesión que mutar: solo difusión al cliente.
+  if (method === "POST" && path === "/narrative_progress") {
+    const body = (await readJson(req)) as { message?: unknown };
+    const message = typeof body?.message === "string" ? body.message.slice(0, 300) : "";
+    if (!message) return bad("body requires { message: string }");
+    onProgress(message);
+    return { status: 200, body: { ok: true } };
   }
 
   // ── Escenas ──

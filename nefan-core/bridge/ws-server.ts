@@ -110,6 +110,14 @@ createStateHttpServer({
   onMutation: async () => {
     await narrative.save();
   },
+  onProgress: (message) => {
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "progress",
+      kind: "scene",
+      message,
+    });
+  },
   plugins: {
     register: (raw) => {
       const result = registerRuntimePlugin(narrative, ctx.activePlugins, raw);

@@ -10,6 +10,30 @@ const BRIDGE_HTTP_URL =
   process.env.NEFAN_STATE_HTTP_URL || "http://127.0.0.1:9878";
 const TIMEOUT_MS = 8_000;
 
+/** Hook de actividad: server.ts lo instala para convertir CADA llamada de
+ *  tool de estado en un latido de progreso (resetea el timeout de ai_server
+ *  y alimenta el loader del cliente). */
+let activityHook: ((method: string, path: string) => void) | null = null;
+
+export function setActivityHook(fn: (method: string, path: string) => void): void {
+  activityHook = fn;
+}
+
+/** Envía un mensaje de progreso al State API del bridge (fire-and-forget,
+ *  SIN pasar por el hook — evita recursión) para que lo difunda al cliente. */
+export function postProgress(message: string): void {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3_000);
+  void fetch(`${BRIDGE_HTTP_URL}/narrative_progress`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+    signal: ctrl.signal,
+  })
+    .catch(() => {})
+    .finally(() => clearTimeout(timer));
+}
+
 export interface BridgeResult {
   ok: boolean;
   status: number;
@@ -22,6 +46,7 @@ async function request(
   path: string,
   body?: unknown,
 ): Promise<BridgeResult> {
+  activityHook?.(method, path);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {

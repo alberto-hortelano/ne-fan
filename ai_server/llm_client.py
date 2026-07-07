@@ -75,6 +75,12 @@ class LLMClient:
         # Motivo real del último fallo del camino MCP (timeout/rechazo) para
         # que el 503/504 no mienta con "no MCP listener".
         self._last_mcp_failure: str = ""
+        # Última señal de vida por request_id: los narrative_progress del
+        # bridge MCP (una tool llamada, la petición recogida…) la refrescan y
+        # el timeout de escena pasa a ser de INACTIVIDAD — un bootstrap puede
+        # tardar 10+ min mientras dé señales.
+        self._activity: dict[str, float] = {}
+        self._last_progress_msg: dict[str, str] = {}
         self._ws: websocket.WebSocketApp | None = None
         self._ws_connected = False
 
@@ -141,6 +147,14 @@ class LLMClient:
                     with self._pending_lock:
                         if req_id in self._pending:
                             self._pending[req_id] = msg.get("result", {})
+                elif msg_type == "narrative_progress":
+                    req_id = msg.get("request_id", "")
+                    message = str(msg.get("message", ""))[:300]
+                    with self._pending_lock:
+                        if req_id in self._pending:
+                            self._activity[req_id] = time.time()
+                            self._last_progress_msg[req_id] = message
+                            print(f"LLM: progreso [{req_id[:8]}…] {message}")
                 elif msg_type == "bridge_status_response":
                     req_id = msg["request_id"]
                     with self._pending_lock:
@@ -293,11 +307,19 @@ class LLMClient:
         print(f"LLM: Scene request via MCP (id={request_id[:8]}...)")
 
         start = time.time()
-        while time.time() - start < self.timeout:
+        with self._pending_lock:
+            self._activity[request_id] = start
+        while True:
             with self._pending_lock:
+                # Timeout de INACTIVIDAD: cada narrative_progress del motor
+                # (tool llamada, petición recogida) lo resetea. Solo expira
+                # si el motor lleva `timeout` segundos sin dar señales.
+                last_activity = self._activity.get(request_id, start)
                 result = self._pending.get(request_id)
                 if result is not None:
                     del self._pending[request_id]
+                    self._activity.pop(request_id, None)
+                    self._last_progress_msg.pop(request_id, None)
                     # Structured error from the bridge (e.g. no_mcp_listener).
                     # Without this check, validate_scene_response pads the
                     # error dict into a placeholder scene and the caller gets
@@ -314,18 +336,27 @@ class LLMClient:
                     print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
                           f"{time.time() - start:.1f}s)")
                     return validated
+            if time.time() - last_activity >= self.timeout:
+                break
             time.sleep(0.1)
 
         with self._pending_lock:
             self._pending.pop(request_id, None)
+            last_msg = self._last_progress_msg.pop(request_id, "")
+            self._activity.pop(request_id, None)
             # Recordar el id: si el modelo responde tarde, on_message guarda
             # la escena bajo retry_key en vez de descartarla.
             self._timed_out_scenes[request_id] = retry_key
             while len(self._timed_out_scenes) > 16:
                 self._timed_out_scenes.pop(next(iter(self._timed_out_scenes)))
-        print(f"LLM: MCP scene timeout ({self.timeout}s) [{retry_key}]")
+        print(
+            f"LLM: MCP scene timeout — {self.timeout:.0f}s SIN señales del motor "
+            f"(total {time.time() - start:.0f}s) [{retry_key}]"
+            + (f" — último progreso: {last_msg}" if last_msg else "")
+        )
         self._last_mcp_failure = (
-            f"timeout tras {self.timeout:.0f}s esperando al motor narrativo"
+            f"timeout: {self.timeout:.0f}s sin señales del motor narrativo"
+            + (f" (último progreso: {last_msg})" if last_msg else "")
         )
         return None
 

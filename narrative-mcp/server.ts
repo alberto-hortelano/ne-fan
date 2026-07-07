@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { WsBridge } from './ws-bridge.js';
-import { bridgeGet, bridgePost, type BridgeResult } from './bridge-http-client.js';
+import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')
  *  BEFORE it is forwarded to the Python ai_server. The ai_server applies the
@@ -945,6 +945,21 @@ Respond via narrative_respond with EXACTLY this JSON:
   row you must return ALL rows; same for terrain_features, map_ground and volumes.
 - Do NOT return a full scene; only the five fix fields above are applied.`;
 
+/** Mensajes humanos para el latido de progreso según la ruta del State API
+ *  que el motor acaba de llamar. Genérico para rutas nuevas. */
+function describeStateCall(method: string, path: string): string {
+  if (path.startsWith('/map/place')) return 'construyendo el mapa del mundo (lugar)…';
+  if (path.startsWith('/map/link')) return 'construyendo el mapa del mundo (conexión)…';
+  if (path.startsWith('/map/trigger')) return 'colocando disparadores del mapa…';
+  if (path.startsWith('/map')) return 'consultando el mapa del mundo…';
+  if (path === '/world_doc') return 'leyendo el documento del mundo…';
+  if (path === '/scene/validate') return 'validando la escena generada…';
+  if (path.startsWith('/plugins')) return 'trabajando con los sistemas de juego (plugins)…';
+  if (path.startsWith('/npc')) return 'dirigiendo a los personajes…';
+  if (path.startsWith('/entity') || path.startsWith('/inventory')) return 'consultando entidades e inventario…';
+  return `el motor consulta el estado (${method} ${path})…`;
+}
+
 async function main() {
   const bridge = await WsBridge.create();
 
@@ -959,6 +974,17 @@ async function main() {
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
+
+  // ── Latido de progreso ──────────────────────────────────────────────────
+  // Cada paso observable del motor (recoger la petición, llamar una tool de
+  // estado) se reporta por DOS canales: WS a ai_server (resetea su timeout de
+  // inactividad — el motor sigue vivo aunque tarde 10 min) y HTTP al State
+  // API del bridge (texto del loader del cliente). Best-effort ambos.
+  const reportProgress = (message: string): void => {
+    if (currentRequestId) bridge.sendProgress(currentRequestId, message);
+    postProgress(message);
+  };
+  setActivityHook((method, path) => reportProgress(describeStateCall(method, path)));
 
   server.tool(
     'narrative_listen',
@@ -1003,6 +1029,7 @@ into context:
       try {
         const msg = await bridge.waitForRequest();
         currentRequestId = msg.request_id;
+        reportProgress('el motor narrativo ha recogido la petición y está trabajando…');
 
         if (msg.type === 'vision_request') {
           currentKind = msg.kind;
