@@ -11,7 +11,6 @@ import {
   parseVolumes,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
-import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
@@ -183,6 +182,7 @@ let sessionPerspective: "topdown" | "isometric" = "topdown";
 function applySessionPerspective(perspective: string): void {
   sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
   sceneImageController.setPerspective(sessionPerspective);
+  renderer.setProjection(sessionPerspective);
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
@@ -590,24 +590,9 @@ function composeTilePlan(
     composed: {
       svg: composed.svg,
       view_box: composed.viewBox,
-      // Voladizo en metros: celdas del margen superior × 0.5 m/celda. En
-      // topdown 1 unidad de usuario = 1 celda; en iso el margen ya viene en
-      // unidades de canvas — se convierte con la escala vertical de celda.
-      overhang_m: overhangMeters(composed),
       elements: composed.elements,
     },
   };
-}
-
-/** Metros de mundo que el canvas compuesto sobresale por encima del borde
- *  norte del tile. */
-function overhangMeters(composed: { viewBox: { minY: number; height: number } ; perspective: string }): number {
-  const marginUnits = -composed.viewBox.minY;
-  if (marginUnits <= 0) return 0;
-  // Unidades de usuario por celda en vertical: 1 (topdown) o 2·ISO_SY·… — la
-  // relación exacta la da el alto total: height = celdas_visibles · upc.
-  const upc = composed.perspective === "isometric" ? 0.5 : 1; // 128 celdas → 64 uds (iso) / 128 uds (topdown)
-  return (marginUnits / upc) * TILE_MPC;
 }
 
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del

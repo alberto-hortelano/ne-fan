@@ -259,12 +259,11 @@ export class SceneImageController {
       // de colores. Esperar a su raster para no capturar el fallback.
       const blueprintKind = composed ? "svg" : "boxes";
       if (composed) await this.waitForPlan(key);
-      // El rect capturado incluye SIEMPRE el voladizo norte del blueprint
-      // (alturas proyectadas): la imagen resultante cubre el mismo canvas
-      // extendido y el compositing por profundidad del renderer lo pisa
-      // sobre el vecino de detrás.
-      const overhang = composed?.overhang_m ?? 0;
-      const tileExt: SceneBounds = { ...rect, minZ: rect.minZ - overhang };
+      // La captura cubre el canvas de VISTA del tile (voladizo de alturas
+      // incluido): la imagen resultante cubre el mismo canvas y el
+      // compositing por profundidad del renderer la pisa sobre el vecino.
+      const tv = this.renderer.getProjection().tileViewRect(rect, composed?.view_box ?? null);
+      const tileExt: SceneBounds = { minX: tv.x, minZ: tv.y, maxX: tv.x + tv.w, maxZ: tv.y + tv.h };
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, tileExt);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
@@ -301,7 +300,7 @@ export class SceneImageController {
       if (composed) {
         img = await this.maskByBlueprint(img, key);
       }
-      this.renderer.setTileImage(key, img, overhang);
+      this.renderer.setTileImage(key, img);
       console.log(
         `[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight}` +
         `${contextSides.length ? `, contexto: ${contextSides.join("+")}` : ""})`,
@@ -336,9 +335,11 @@ export class SceneImageController {
       const composed = tileKey
         ? (this.renderer.getTileScene(tileKey) as { __composed?: ComposedTilePlan } | null)?.__composed
         : undefined;
-      const reviewRect: SceneBounds = composed
-        ? { ...rect, minZ: rect.minZ - composed.overhang_m }
-        : rect;
+      let reviewRect: SceneBounds = rect;
+      if (composed) {
+        const tv = this.renderer.getProjection().tileViewRect(rect, composed.view_box);
+        reviewRect = { minX: tv.x, minZ: tv.y, maxX: tv.x + tv.w, maxZ: tv.y + tv.h };
+      }
       const dataUrl = this.renderer.captureSchematic(reviewRect, this.ppmFor(reviewRect));
       const sceneId = (scene.scene_id as string) || "unknown";
       const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
@@ -412,10 +413,11 @@ export class SceneImageController {
         | (SceneSummary & { __composed?: ComposedTilePlan })
         | null;
       const composed = scene?.__composed;
-      // La imagen instalada cubre el rect del tile MÁS el voladizo norte del
-      // blueprint: el mapeo imagen↔mundo usa el rect extendido.
-      const overhang = composed?.overhang_m ?? 0;
-      const bE: SceneBounds = { ...b, minZ: b.minZ - overhang };
+      const proj = this.renderer.getProjection();
+      // La imagen instalada cubre el canvas de VISTA del tile (voladizo
+      // incluido): el mapeo imagen↔vista es lineal; a mundo se desproyecta.
+      const tv = proj.tileViewRect(b, composed?.view_box ?? null);
+      const bE: SceneBounds = { minX: tv.x, minZ: tv.y, maxX: tv.x + tv.w, maxZ: tv.y + tv.h };
       const spanX = bE.maxX - bE.minX;
       const spanZ = bE.maxZ - bE.minZ;
       const dataUrl = this.imageToDataUrl(img);
@@ -454,25 +456,44 @@ export class SceneImageController {
       for (const seg of data.segments ?? []) {
         const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
         const [bx, by, bw, bh] = seg.image_bbox;
-        const world: SceneBounds = {
+        // Rect del segmento en VISTA (lineal sobre el canvas del tile).
+        const view: SceneBounds = {
           minX: bE.minX + (bx / seg.img_w) * spanX,
           maxX: bE.minX + ((bx + bw) / seg.img_w) * spanX,
           minZ: bE.minZ + (by / seg.img_h) * spanZ,
           maxZ: bE.minZ + ((by + bh) / seg.img_h) * spanZ,
+        };
+        // Rect de MUNDO (para el bridge y las costuras): bbox de las esquinas
+        // desproyectadas — exacto en topdown, envolvente en iso.
+        const corners = [
+          proj.viewToWorld(view.minX, view.minZ),
+          proj.viewToWorld(view.maxX, view.minZ),
+          proj.viewToWorld(view.minX, view.maxZ),
+          proj.viewToWorld(view.maxX, view.maxZ),
+        ];
+        const world: SceneBounds = {
+          minX: Math.min(...corners.map((c) => c[0])),
+          maxX: Math.max(...corners.map((c) => c[0])),
+          minZ: Math.min(...corners.map((c) => c[1])),
+          maxZ: Math.max(...corners.map((c) => c[1])),
         };
         // Segmento casado con un volumen declarado: su huella (mundo) es la
         // verdad — bajo perspectiva la pintura de una cara cae al norte de la
         // base real y NO debe convertirse en colisión.
         const match = matchExpected(seg.image_bbox, expectedInfo);
         if (seg.tall) {
-          const baselineZ = match
-            ? b.minZ + match.element.footprint_cells[3] * TILE_MPC
-            : world.maxZ;
+          let baselineView = view.maxZ; // borde inferior ≈ contacto con suelo
+          if (match) {
+            const fc = match.element.footprint_cells;
+            const midX = b.minX + ((fc[0] + fc[2]) / 2) * TILE_MPC;
+            const baseZ = b.minZ + fc[3] * TILE_MPC;
+            baselineView = proj.worldToView(midX, baseZ)[1];
+          }
           occluders.push({
             id: `${key}:${seg.id}`,
             img: sprite,
-            world,
-            baselineZ,
+            view,
+            baselineView,
             tileKey: key,
             kind: "image",
             label: seg.label,
@@ -483,7 +504,7 @@ export class SceneImageController {
           if (composed) {
             // Plan: casado → la huella ya bloquea vía applyPlanCollision;
             // no casado → franja sólida de 1 m en su línea de suelo.
-            if (!match) markBaselineStrip(stripCells, world, b);
+            if (!match) markBaselineStrip(stripCells, view, b, proj);
           } else {
             masks.push(this.spriteAlphaMask(sprite, seg));
           }
@@ -576,18 +597,29 @@ function matchExpected(
   return best;
 }
 
-/** Marca como sólidas las celdas de una franja de 1 m en la línea de suelo de
- *  un segmento no declarado (su borde inferior en topdown). Celdas fuera del
- *  tile (voladizo del vecino) se descartan. */
-function markBaselineStrip(cells: Set<number>, world: SceneBounds, tile: SceneBounds): void {
-  const z1 = world.maxZ;
-  const z0 = z1 - 1;
-  const c0 = Math.max(0, Math.floor((world.minX - tile.minX) / TILE_MPC));
-  const c1 = Math.min(TILE_CELLS - 1, Math.ceil((world.maxX - tile.minX) / TILE_MPC) - 1);
-  const r0 = Math.max(0, Math.floor((z0 - tile.minZ) / TILE_MPC));
-  const r1 = Math.min(TILE_CELLS - 1, Math.ceil((z1 - tile.minZ) / TILE_MPC) - 1);
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) cells.add(r * TILE_CELLS + c);
+/** Marca como sólidas las celdas de una franja de ~1 m en la línea de suelo
+ *  de un segmento no declarado: muestrea el borde inferior de su rect de
+ *  VISTA, lo desproyecta a mundo y marca un bloque 2×2 por muestra. Celdas
+ *  fuera del tile (voladizo del vecino) se descartan. */
+function markBaselineStrip(
+  cells: Set<number>,
+  view: SceneBounds,
+  tile: SceneBounds,
+  proj: { viewToWorld(vx: number, vy: number): [number, number] },
+): void {
+  const samples = Math.max(4, Math.ceil((view.maxX - view.minX) / TILE_MPC));
+  for (let i = 0; i <= samples; i++) {
+    const vx = view.minX + ((view.maxX - view.minX) * i) / samples;
+    const [wx, wz] = proj.viewToWorld(vx, view.maxZ);
+    const c = Math.floor((wx - tile.minX) / TILE_MPC);
+    const r = Math.floor((wz - tile.minZ) / TILE_MPC);
+    for (let dr = -1; dr <= 0; dr++) {
+      for (let dc = -1; dc <= 0; dc++) {
+        const cc = c + dc;
+        const rr = r + dr;
+        if (cc >= 0 && rr >= 0 && cc < TILE_CELLS && rr < TILE_CELLS) cells.add(rr * TILE_CELLS + cc);
+      }
+    }
   }
 }
 

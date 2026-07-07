@@ -6,6 +6,7 @@ import type { Vec3 } from "@nefan-core/src/types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
+import { viewProjectionFor, type ViewProjection, type ViewRect } from "./projection.js";
 
 export interface SceneData {
   /** Acepta `scene_id` o el legado `room_id` por compatibilidad de saves antiguos. */
@@ -103,12 +104,10 @@ interface RendererTile {
   svgImage: HTMLImageElement | null;
   /** Blueprint COMPUESTO rasterizado: cuando existe, ES el dibujo del tile —
    *  el schematic y la capa viva lo pintan en vez de grid+features+cajas.
-   *  Cubre el rect del tile MÁS `planOverhangM` metros por el norte. */
+   *  Su viewBox define el canvas del tile en vista (voladizo incluido); la
+   *  imagen IA enmascarada cubre el MISMO canvas. */
   planImage: HTMLImageElement | null;
-  planOverhangM: number;
-  /** Voladizo de la imagen IA instalada (la imagen enmascarada cubre el
-   *  mismo canvas extendido que el blueprint que la generó). */
-  imageOverhangM: number;
+  planViewBox: ComposedTilePlan["view_box"] | null;
   /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
    *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
    *  Solo para el overlay B; la colisión real vive en el TileStore. */
@@ -121,13 +120,12 @@ interface RendererTile {
 }
 
 /** Blueprint compuesto de un tile (salida del compositor de nefan-core,
- *  serializable — viaja dentro de SceneData). `overhang_m` = metros de
- *  voladizo por ENCIMA del borde norte del rect (las alturas proyectadas
- *  sobresalen hacia arriba; el compositing por profundidad pisa al vecino). */
+ *  serializable — viaja dentro de SceneData). Su view_box define el canvas
+ *  del tile en vista, voladizo de alturas incluido (el compositing por
+ *  profundidad lo pisa sobre el vecino de detrás). */
 export interface ComposedTilePlan {
   svg: string;
   view_box: { minX: number; minY: number; width: number; height: number };
-  overhang_m: number;
   elements: Array<{
     id: string;
     label: string;
@@ -303,14 +301,15 @@ export interface SceneBounds {
   maxZ: number;
 }
 
-/** An occluder sprite cut out of the AI scene image: its bitmap, the world
- *  rectangle it covers, and the south-edge Z used as its depth-sort baseline so
- *  it can be drawn over (or under) the player depending on who is "in front". */
+/** An occluder sprite cut out of the AI scene image: its bitmap, the VIEW
+ *  rectangle it covers (en topdown vista == mundo XZ) and the view-Y of its
+ *  ground contact, used as depth-sort baseline so it can be drawn over (or
+ *  under) the player depending on who is "in front". */
 export interface Occluder {
   id: string;
   img: HTMLImageElement;
-  world: SceneBounds;
-  baselineZ: number;
+  view: SceneBounds;
+  baselineView: number;
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
   /** Origen del recorte: "image" = segmento clasificado `tall` por visión
@@ -356,6 +355,10 @@ export class CanvasRenderer {
   private spriteRenderer: SpriteRenderer | undefined;
   private assetCache: AssetCache | undefined;
   private worldAngle = "isometric_30";
+  /** Proyección de vista de la sesión (congelada). En topdown vista == mundo
+   *  y todo se comporta como siempre; en iso la vista es la 2:1 de los
+   *  blueprints compuestos. */
+  private projection: ViewProjection = viewProjectionFor("topdown");
 
   // (las capas visuales por tile viven en RendererTile: terrainLayer horneada
   // con LRU, sceneImage IA y svgImage)
@@ -391,6 +394,28 @@ export class CanvasRenderer {
 
   setWorldAngle(angle: string): void {
     this.worldAngle = angle;
+  }
+
+  /** Instala la proyección de la sesión (una vez, al iniciar/reanudar).
+   *  Invalida las capas horneadas: su geometría depende de la proyección. */
+  setProjection(kind: "topdown" | "isometric"): void {
+    if (this.projection.kind === kind) return;
+    this.projection = viewProjectionFor(kind);
+    for (const t of this.tiles.values()) t.terrainLayer = null;
+  }
+
+  getProjection(): ViewProjection {
+    return this.projection;
+  }
+
+  /** Rect de VISTA del canvas de un tile (blueprint compuesto / imagen IA). */
+  private tileView(tile: RendererTile): ViewRect {
+    return this.projection.tileViewRect(tile.rect, tile.planViewBox);
+  }
+
+  /** Vista → píxeles de pantalla (la escala/offset operan en vista). */
+  private viewToScreen(vx: number, vy: number): [number, number] {
+    return [this.offsetX + vx * this.scale, this.offsetY + vy * this.scale];
   }
 
   getWorldAngle(): string {
@@ -451,8 +476,7 @@ export class CanvasRenderer {
       sceneImage: same ? prev.sceneImage : null,
       svgImage: same ? prev.svgImage : null,
       planImage: same ? prev.planImage : null,
-      planOverhangM: scene.__composed?.overhang_m ?? 0,
-      imageOverhangM: same ? prev.imageOverhangM : 0,
+      planViewBox: scene.__composed?.view_box ?? null,
       imageGrid: same ? prev.imageGrid : null,
       imageAnalyzed: same ? prev.imageAnalyzed : false,
       svgGrid: same ? prev.svgGrid : null,
@@ -574,11 +598,10 @@ export class CanvasRenderer {
   /** Instala la imagen IA de UN tile (cubre exactamente su rect). Libera su
    *  capa horneada (slot del LRU; re-horneable si la imagen se invalida) y
    *  purga los occluders recortados de la imagen anterior de ese tile. */
-  setTileImage(key: string, img: HTMLImageElement, overhangM = 0): void {
+  setTileImage(key: string, img: HTMLImageElement): void {
     const tile = this.tiles.get(key);
     if (!tile) return;
     tile.sceneImage = img;
-    tile.imageOverhangM = overhangM;
     tile.terrainLayer = null;
     // Imagen nueva → el análisis derivado de la anterior deja de valer.
     tile.imageGrid = null;
@@ -623,9 +646,9 @@ export class CanvasRenderer {
   }
 
   /** Resumen de occluders para el hook de bench (__nefan). Solo lectura. */
-  debugOccluders(): { id: string; kind?: string; tileKey?: string; world: SceneBounds; baselineZ: number }[] {
+  debugOccluders(): { id: string; kind?: string; tileKey?: string; view: SceneBounds; baselineView: number }[] {
     return this.occluders.map((o) => ({
-      id: o.id, kind: o.kind, tileKey: o.tileKey, world: o.world, baselineZ: o.baselineZ,
+      id: o.id, kind: o.kind, tileKey: o.tileKey, view: o.view, baselineView: o.baselineView,
     }));
   }
 
@@ -683,26 +706,26 @@ export class CanvasRenderer {
     this.offsetY = -rect.minZ * ppm;
     this._capturing = true;
     try {
-      // Fondo neutro + todos los tiles que intersecan el rect capturado (el
-      // transform es mundial, así que cada tile cae en su sitio).
+      // Fondo neutro + todos los tiles cuyo canvas de VISTA interseca el rect
+      // capturado (el rect de entrada está en coords de vista; en topdown
+      // vista == mundo, el contrato de siempre).
       offCtx.fillStyle = DEFAULT_TERRAIN_COLOR;
       offCtx.fillRect(0, 0, w, h);
       const touched = [...this.tiles.values()]
-        .filter(
-          (t) => t.rect.maxX > rect.minX && t.rect.minX < rect.maxX &&
-                 t.rect.maxZ + Math.max(t.planOverhangM, t.imageOverhangM) > rect.minZ &&
-                 t.rect.minZ < rect.maxZ,
-        )
+        .filter((t) => {
+          const v = this.tileView(t);
+          return v.x + v.w > rect.minX && v.x < rect.maxX && v.y + v.h > rect.minZ && v.y < rect.maxZ;
+        })
         // Orden del pintor: el voladizo norte de un tile pisa a su vecino de
-        // detrás — pintar de norte a sur.
-        .sort((a, b) => (a.ty ?? -1e9) - (b.ty ?? -1e9) || (a.tx ?? 0) - (b.tx ?? 0));
+        // detrás.
+        .sort((a, b) => this.projection.tileDepth(a.tx ?? -1e6, a.ty ?? -1e6) - this.projection.tileDepth(b.tx ?? -1e6, b.ty ?? -1e6));
       const asImage = (t: RendererTile): boolean =>
         Boolean(opts?.imageTileKeys?.has(t.key) && t.sceneImage);
       for (const tile of touched) {
         if (asImage(tile)) {
-          const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.imageOverhangM);
-          const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
-          offCtx.drawImage(tile.sceneImage!, bx0, by0, bx1 - bx0, by1 - by0);
+          const v = this.tileView(tile);
+          const [bx0, by0] = this.viewToScreen(v.x, v.y);
+          offCtx.drawImage(tile.sceneImage!, bx0, by0, v.w * ppm, v.h * ppm);
         } else {
           this.paintTerrainInto(tile);
         }
@@ -734,23 +757,26 @@ export class CanvasRenderer {
    *  visible en vivo) — un solo origen de verdad de cómo se ve el suelo. */
   private paintTerrainInto(tile: RendererTile): void {
     const ctx = this.ctx;
-    // Color base del rect del tile (en coords mundo bajo el transform actual).
-    const terrainColor =
-      rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
-    const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
-    const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
-    ctx.fillStyle = terrainColor;
-    ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+    const v = this.tileView(tile);
+    const [vx0, vy0] = this.viewToScreen(v.x, v.y);
+    const vw = v.w * this.scale;
+    const vh = v.h * this.scale;
 
-    // Blueprint compuesto: ES el dibujo del tile — cubre todo el rect (más el
-    // voladizo norte de las alturas) con su propio suelo, agua, muros y
+    // Blueprint compuesto: ES el dibujo del tile — cubre su canvas de vista
+    // (voladizo de alturas incluido) con su propio suelo, agua, muros y
     // copas. Grid, features y terrain_svg quedan detrás sin aportar (se
     // saltan). Hasta que decodifica (async) se pinta el fallback.
     if (tile.planImage) {
-      const [, py0] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.planOverhangM);
-      ctx.drawImage(tile.planImage, bx0, py0, bx1 - bx0, by1 - py0);
+      ctx.drawImage(tile.planImage, vx0, vy0, vw, vh);
       return;
     }
+    // Fallback: color base sobre el canvas de vista. El pintado legacy de
+    // grid/features/cajas solo es correcto en topdown (vista == mundo).
+    const terrainColor =
+      rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
+    ctx.fillStyle = terrainColor;
+    ctx.fillRect(vx0, vy0, vw, vh);
+    if (this.projection.kind !== "topdown") return;
 
     // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
     this.paintTerrainGrid(tile);
@@ -763,7 +789,9 @@ export class CanvasRenderer {
     // terreno y los objetos. Si aún no decodificó, se pinta sin ella (el
     // onload invalida la capa horneada para re-hornear con la SVG).
     if (tile.svgImage) {
-      ctx.drawImage(tile.svgImage, bx0, by0, bx1 - bx0, by1 - by0);
+      const [sx0, sy0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
+      const [sx1, sy1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
+      ctx.drawImage(tile.svgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
     }
   }
 
@@ -771,9 +799,10 @@ export class CanvasRenderer {
    *  LRU: si hay demasiadas capas vivas se libera la más antigua (siempre
    *  re-horneable desde el esquema). Máx. 1 horneado por frame. */
   private bakeTerrainLayer(tile: RendererTile): void {
-    // La capa incluye el voladizo norte del blueprint compuesto (alturas).
-    const w = Math.max(8, Math.round((tile.rect.maxX - tile.rect.minX) * TILE_PPM));
-    const h = Math.max(8, Math.round((tile.rect.maxZ - tile.rect.minZ + tile.planOverhangM) * TILE_PPM));
+    // La capa cubre el canvas de VISTA del tile (voladizo incluido).
+    const v = this.tileView(tile);
+    const w = Math.max(8, Math.round(v.w * TILE_PPM));
+    const h = Math.max(8, Math.round(v.h * TILE_PPM));
     const off = document.createElement("canvas");
     off.width = w;
     off.height = h;
@@ -790,8 +819,8 @@ export class CanvasRenderer {
     const savedCapturing = this._capturing;
     this.ctx = offCtx;
     this.scale = TILE_PPM;
-    this.offsetX = -tile.rect.minX * TILE_PPM;
-    this.offsetY = -(tile.rect.minZ - tile.planOverhangM) * TILE_PPM;
+    this.offsetX = -v.x * TILE_PPM;
+    this.offsetY = -v.y * TILE_PPM;
     this._capturing = true; // sin labels
     try {
       this.paintTerrainInto(tile);
@@ -936,10 +965,8 @@ export class CanvasRenderer {
 
   /** Convert world XZ to screen XY (top-down, Z goes up on screen) */
   private toScreen(x: number, z: number): [number, number] {
-    return [
-      this.offsetX + x * this.scale,
-      this.offsetY + z * this.scale,
-    ];
+    const [vx, vy] = this.projection.worldToView(x, z);
+    return [this.offsetX + vx * this.scale, this.offsetY + vy * this.scale];
   }
 
   render(
@@ -968,8 +995,9 @@ export class CanvasRenderer {
     // pese a un movimiento físicamente suave. Con offset float el mundo scrollea
     // de forma continua; el grid sutil se antialias a subpíxel (imperceptible).
     // Ref: jitter de cámara pixel-art = cuantización del offset, no del input.
-    this.offsetX = w / 2 - player.pos.x * this.scale;
-    this.offsetY = h / 2 - player.pos.z * this.scale;
+    const [pvx, pvy] = this.projection.worldToView(player.pos.x, player.pos.z);
+    this.offsetX = w / 2 - pvx * this.scale;
+    this.offsetY = h / 2 - pvy * this.scale;
 
     // Suelo abierto en todo el viewport: fuera de la escena no hay vacío negro,
     // sino campo que se extiende (sensación de mundo continuo, sin chunks).
@@ -985,28 +1013,26 @@ export class CanvasRenderer {
     const viewMaxX = (w - this.offsetX) / this.scale;
     const viewMaxZ = (h - this.offsetY) / this.scale;
     const visible = [...this.tiles.values()]
-      .filter(
-        (t) => t.rect.maxX > viewMinX && t.rect.minX < viewMaxX &&
-               t.rect.maxZ + Math.max(t.planOverhangM, t.imageOverhangM) > viewMinZ &&
-               t.rect.minZ < viewMaxZ,
-      )
+      .filter((t) => {
+        const v = this.tileView(t);
+        return v.x + v.w > viewMinX && v.x < viewMaxX && v.y + v.h > viewMinZ && v.y < viewMaxZ;
+      })
       // Orden del pintor: el voladizo norte pisa al vecino de detrás.
-      .sort((a, b) => (a.ty ?? -1e9) - (b.ty ?? -1e9) || (a.tx ?? 0) - (b.tx ?? 0));
+      .sort((a, b) => this.projection.tileDepth(a.tx ?? -1e6, a.ty ?? -1e6) - this.projection.tileDepth(b.tx ?? -1e6, b.ty ?? -1e6));
     const gridKeys = new Set<string>();
     for (const t of this.tiles.values()) {
       if (t.tx !== undefined && t.ty !== undefined) gridKeys.add(`${t.tx},${t.ty}`);
     }
 
-    // ── Paso de tiles: capa horneada (o imagen IA) sobre su rect mundial ────
+    // ── Paso de tiles: capa horneada (o imagen IA) sobre su canvas de vista ─
     for (const tile of visible) {
-      const [fx, fy] = this.toScreen(tile.rect.minX, tile.rect.minZ);
-      const fw = (tile.rect.maxX - tile.rect.minX) * this.scale;
-      const fh = (tile.rect.maxZ - tile.rect.minZ) * this.scale;
+      const v = this.tileView(tile);
+      const [fx, fy] = this.viewToScreen(v.x, v.y);
+      const fw = v.w * this.scale;
+      const fh = v.h * this.scale;
       if (tile.sceneImage) {
-        // Tile con fondo IA: la imagen sustituye a la capa horneada (cubre
-        // el rect más su voladizo norte).
-        const [, iy] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.imageOverhangM);
-        ctx.drawImage(tile.sceneImage, fx, iy, fw, fy + fh - iy);
+        // Tile con fondo IA: la imagen sustituye a la capa horneada.
+        ctx.drawImage(tile.sceneImage, fx, fy, fw, fh);
       } else {
         if (!tile.terrainLayer && !this.bakedThisFrame) {
           this.bakeTerrainLayer(tile);
@@ -1016,8 +1042,7 @@ export class CanvasRenderer {
           tile.layerLastUsed = performance.now();
           const prevSmooth = ctx.imageSmoothingEnabled;
           ctx.imageSmoothingEnabled = false; // celdas nítidas estilo blueprint
-          const [, ly] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.planOverhangM);
-          ctx.drawImage(tile.terrainLayer, fx, ly, fw, fy + fh - ly);
+          ctx.drawImage(tile.terrainLayer, fx, fy, fw, fh);
           ctx.imageSmoothingEnabled = prevSmooth;
         } else {
           const terrainColor = rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
@@ -1027,18 +1052,30 @@ export class CanvasRenderer {
       }
       // Borde de "fin del mundo conocido": SOLO en los lados sin vecino (las
       // costuras entre tiles existentes no se marcan — el mundo es continuo).
+      // Se traza sobre los bordes de MUNDO del tile proyectados (en iso son
+      // diagonales del rombo).
       ctx.strokeStyle = SCENE_PLATE_BORDER;
       ctx.lineWidth = 1;
+      const c = {
+        nw: this.toScreen(tile.rect.minX, tile.rect.minZ),
+        ne: this.toScreen(tile.rect.maxX, tile.rect.minZ),
+        se: this.toScreen(tile.rect.maxX, tile.rect.maxZ),
+        sw: this.toScreen(tile.rect.minX, tile.rect.maxZ),
+      };
+      const edge = (a: [number, number], b: [number, number]): void => {
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+      };
+      ctx.beginPath();
       if (tile.tx === undefined || tile.ty === undefined) {
-        ctx.strokeRect(fx, fy, fw, fh);
+        edge(c.nw, c.ne); edge(c.ne, c.se); edge(c.se, c.sw); edge(c.sw, c.nw);
       } else {
-        ctx.beginPath();
-        if (!gridKeys.has(`${tile.tx},${tile.ty - 1}`)) { ctx.moveTo(fx, fy); ctx.lineTo(fx + fw, fy); }
-        if (!gridKeys.has(`${tile.tx},${tile.ty + 1}`)) { ctx.moveTo(fx, fy + fh); ctx.lineTo(fx + fw, fy + fh); }
-        if (!gridKeys.has(`${tile.tx - 1},${tile.ty}`)) { ctx.moveTo(fx, fy); ctx.lineTo(fx, fy + fh); }
-        if (!gridKeys.has(`${tile.tx + 1},${tile.ty}`)) { ctx.moveTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + fh); }
-        ctx.stroke();
+        if (!gridKeys.has(`${tile.tx},${tile.ty - 1}`)) edge(c.nw, c.ne);
+        if (!gridKeys.has(`${tile.tx},${tile.ty + 1}`)) edge(c.sw, c.se);
+        if (!gridKeys.has(`${tile.tx - 1},${tile.ty}`)) edge(c.nw, c.sw);
+        if (!gridKeys.has(`${tile.tx + 1},${tile.ty}`)) edge(c.ne, c.se);
       }
+      ctx.stroke();
     }
 
     // Grid continuo en world-space visible: orientación uniforme sobre campo
@@ -1049,15 +1086,27 @@ export class CanvasRenderer {
     // píxel, una de 1px solo se antialias y desliza limpia.
     ctx.lineWidth = 1;
     const step = Math.max(1, Math.ceil(18 / this.scale)); // ≥~18px entre líneas
-    const wl = Math.floor(viewMinX / step) * step;
-    for (let gx = wl; gx <= viewMaxX; gx += step) {
-      const [sx] = this.toScreen(gx, 0);
-      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+    // Rango de MUNDO visible: esquinas del viewport desproyectadas (en iso el
+    // viewport cubre un rombo de mundo — el bbox de las 4 esquinas lo acota).
+    const corners = [
+      this.projection.viewToWorld(viewMinX, viewMinZ),
+      this.projection.viewToWorld(viewMaxX, viewMinZ),
+      this.projection.viewToWorld(viewMinX, viewMaxZ),
+      this.projection.viewToWorld(viewMaxX, viewMaxZ),
+    ];
+    const wMinX = Math.min(...corners.map((cx) => cx[0]));
+    const wMaxX = Math.max(...corners.map((cx) => cx[0]));
+    const wMinZ = Math.min(...corners.map((cx) => cx[1]));
+    const wMaxZ = Math.max(...corners.map((cx) => cx[1]));
+    for (let gx = Math.floor(wMinX / step) * step; gx <= wMaxX; gx += step) {
+      const a = this.toScreen(gx, wMinZ);
+      const b = this.toScreen(gx, wMaxZ);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
-    const wt = Math.floor(viewMinZ / step) * step;
-    for (let gz = wt; gz <= viewMaxZ; gz += step) {
-      const [, sy] = this.toScreen(0, gz);
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    for (let gz = Math.floor(wMinZ / step) * step; gz <= wMaxZ; gz += step) {
+      const a = this.toScreen(wMinX, gz);
+      const b = this.toScreen(wMaxX, gz);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
 
     // Luces ambientales de los tiles visibles, como halos suaves.
@@ -1252,17 +1301,17 @@ export class CanvasRenderer {
     ctx.font = "bold 11px monospace";
     ctx.textAlign = "left";
     for (const occ of this.occluders) {
-      const w = occ.world;
-      const [ix, iy] = this.toScreen(w.minX, w.minZ);
-      const iw = (w.maxX - w.minX) * this.scale;
-      const ih = (w.maxZ - w.minZ) * this.scale;
+      const v = occ.view;
+      const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+      const iw = (v.maxX - v.minX) * this.scale;
+      const ih = (v.maxZ - v.minZ) * this.scale;
       const color = "rgba(60,255,255,1)";
       ctx.setLineDash([7, 5]);
       ctx.strokeStyle = color;
       ctx.strokeRect(ix, iy, iw, ih);
       // Baseline del depth-sort: por debajo de esta línea el jugador tapa al
       // recorte; por encima, el recorte tapa al jugador.
-      const by = this.toScreen(0, occ.baselineZ)[1];
+      const by = this.viewToScreen(0, occ.baselineView)[1];
       ctx.setLineDash([]);
       ctx.beginPath();
       ctx.moveTo(ix, by);
@@ -1274,7 +1323,7 @@ export class CanvasRenderer {
       if (iw >= 48) {
         const name = occ.label ??
           (occ.tileKey !== undefined ? occ.id.replace(`${occ.tileKey}:`, "") : occ.id);
-        const label = `${name} z=${occ.baselineZ.toFixed(1)}`;
+        const label = `${name} y=${occ.baselineView.toFixed(1)}`;
         const tw = ctx.measureText(label).width;
         ctx.fillStyle = "rgba(10,10,14,0.75)";
         ctx.fillRect(ix, iy - 15, tw + 8, 14);
@@ -1361,25 +1410,26 @@ export class CanvasRenderer {
   ): void {
     const items: { baseline: number; draw: () => void }[] = [];
     for (const occ of this.occluders) {
-      const w = occ.world;
-      const [ix, iy] = this.toScreen(w.minX, w.minZ);
-      const iw = (w.maxX - w.minX) * this.scale;
-      const ih = (w.maxZ - w.minZ) * this.scale;
+      const v = occ.view;
+      const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+      const iw = (v.maxX - v.minX) * this.scale;
+      const ih = (v.maxZ - v.minZ) * this.scale;
       items.push({
-        baseline: this.toScreen(0, occ.baselineZ)[1],
+        baseline: this.viewToScreen(0, occ.baselineView)[1],
         draw: () => this.ctx.drawImage(occ.img, ix, iy, iw, ih),
       });
     }
+    // Entidades: baseline = su Y de vista (en iso depende de x y z).
     for (const npc of npcs) {
-      items.push({ baseline: this.toScreen(0, npc.pos.z)[1], draw: () => this.drawNpc(npc) });
+      items.push({ baseline: this.toScreen(npc.pos.x, npc.pos.z)[1], draw: () => this.drawNpc(npc) });
     }
     for (const e of enemies) {
-      items.push({ baseline: this.toScreen(0, e.pos.z)[1], draw: () => this.drawEntity(e) });
+      items.push({ baseline: this.toScreen(e.pos.x, e.pos.z)[1], draw: () => this.drawEntity(e) });
     }
     for (const obj of objects) {
-      items.push({ baseline: this.toScreen(0, obj.pos.z)[1], draw: () => this.drawEntity(obj) });
+      items.push({ baseline: this.toScreen(obj.pos.x, obj.pos.z)[1], draw: () => this.drawEntity(obj) });
     }
-    items.push({ baseline: this.toScreen(0, player.pos.z)[1], draw: () => this.drawPlayer(player) });
+    items.push({ baseline: this.toScreen(player.pos.x, player.pos.z)[1], draw: () => this.drawPlayer(player) });
 
     items.sort((a, b) => a.baseline - b.baseline);
     for (const it of items) it.draw();
@@ -1753,10 +1803,10 @@ export class CanvasRenderer {
 
   /** Convert screen click to world XZ */
   screenToWorld(screenX: number, screenY: number): Vec3 {
-    return {
-      x: (screenX - this.offsetX) / this.scale,
-      y: 0,
-      z: (screenY - this.offsetY) / this.scale,
-    };
+    const [x, z] = this.projection.viewToWorld(
+      (screenX - this.offsetX) / this.scale,
+      (screenY - this.offsetY) / this.scale,
+    );
+    return { x, y: 0, z };
   }
 }
