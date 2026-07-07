@@ -21,7 +21,7 @@ function counterManifest(): Record<string, unknown> {
 
 function freshSession(): { state: NarrativeState; active: Map<string, PluginManifest> } {
   const state = new NarrativeState(new MemorySessionStorage());
-  state.startNewSession("tavern_intro");
+  state.startNewSession("toledo_1200");
   return { state, active: new Map() };
 }
 
@@ -115,7 +115,7 @@ describe("registerRuntimePlugin", () => {
   it("survives save → resume (embedded manifest) and keeps dispatching", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
-    s1.startNewSession("tavern_intro");
+    s1.startNewSession("toledo_1200");
     const active1 = new Map<string, PluginManifest>();
     const { id } = registerRuntimePlugin(s1, active1, counterManifest());
     const tick1 = dispatchPluginEvents(s1, active1, [

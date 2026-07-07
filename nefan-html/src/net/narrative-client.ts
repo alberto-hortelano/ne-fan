@@ -10,11 +10,13 @@ import type {
   ConsequenceEffect,
 } from "@nefan-core/src/narrative/types.js";
 import type {
+  GamesListedMessage,
   NarrativeEventMessage,
   NarrativeStatusMessage,
 } from "@nefan-core/src/protocol/messages.js";
 
-export type GameInfo = { game_id: string; title: string; description?: string };
+export type GameInfo = GamesListedMessage["games"][number];
+export type StyleInfo = GamesListedMessage["styles"][number];
 
 export type NarrativeEventListener = (event: NarrativeEventMessage) => void;
 export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;

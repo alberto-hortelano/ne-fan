@@ -1,0 +1,49 @@
+{
+  "style_id": "sombra_de_cuento",
+  "name": "Sombra de cuento",
+  "description": "Ilustración de cuento antiguo: paleta terrosa apagada, sombras profundas, niebla y trazo de grabado. Lo siniestro asoma en lo cotidiano.",
+  "style_token": "dark folk-tale illustration, muted earthy palette, deep shadows, mist, old woodcut etching mood, eerie rural gothic, top-down",
+  "cover": "cover.jpg",
+  "refs": [
+    {
+      "category": "nature",
+      "file": "nature.jpg",
+      "tags": []
+    },
+    {
+      "category": "settlement",
+      "file": "settlement.jpg",
+      "tags": []
+    },
+    {
+      "category": "fortress",
+      "file": "fortress.jpg",
+      "tags": []
+    },
+    {
+      "category": "interior",
+      "file": "interior.jpg",
+      "tags": []
+    },
+    {
+      "category": "underground",
+      "file": "underground.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_commoner",
+      "file": "character_commoner.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_noble",
+      "file": "character_noble.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_warrior",
+      "file": "character_warrior.jpg",
+      "tags": []
+    }
+  ]
+}

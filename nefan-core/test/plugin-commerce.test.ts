@@ -1,5 +1,5 @@
-/** F8 (next.md §7.7) — el plugin commerce v1 SHIPPED de tavern_intro, end-to-end
- *  sin WS: carga real desde data/games/tavern_intro/plugins, génesis, market_open
+/** F8 (next.md §7.7) — el plugin commerce v1 SHIPPED de toledo_1200, end-to-end
+ *  sin WS: carga real desde data/games/toledo_1200/plugins, génesis, market_open
  *  en runtime, trade_offered → trade_completed, persistencia en save/resume. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +17,7 @@ import { dispatchPluginEvents } from "../src/plugins/dispatcher.js";
 const GAMES_DIR = fileURLToPath(new URL("../data/games", import.meta.url));
 
 function loadCommerce() {
-  const loaded = loadGamePluginManifests(GAMES_DIR, "tavern_intro");
+  const loaded = loadGamePluginManifests(GAMES_DIR, "toledo_1200");
   const commerce = loaded.find((l) => l.manifest.name === "commerce");
   assert.ok(commerce, "commerce.json debe cargar (zod + estática + fixtures OK)");
   return { loaded, id: commerce!.id };
@@ -27,17 +27,17 @@ describe("commerce plugin shipped (F8)", () => {
   it("carga del FS, valida shape/estática/fixtures y siembra mercados vacíos en génesis", () => {
     const { loaded, id } = loadCommerce();
     const state = new NarrativeState(new MemorySessionStorage());
-    state.startNewSession("tavern_intro");
+    state.startNewSession("toledo_1200");
     const active = activatePluginsForNewSession(state, loaded);
     assert.ok(active.has(id));
-    // tavern_intro no tiene mercaderes al inicio ⇒ mercados vacíos (no error).
+    // toledo_1200 no tiene mercaderes al inicio ⇒ mercados vacíos (no error).
     assert.deepEqual(state.getPluginRecord(id)?.slice, { markets: {} });
   });
 
   it("market_open registra un mercado en runtime y aparece en serializeForLlm", () => {
     const { loaded, id } = loadCommerce();
     const state = new NarrativeState(new MemorySessionStorage());
-    state.startNewSession("tavern_intro");
+    state.startNewSession("toledo_1200");
     const active = activatePluginsForNewSession(state, loaded);
 
     const tick = dispatchPluginEvents(state, active, [
@@ -61,7 +61,7 @@ describe("commerce plugin shipped (F8)", () => {
   it("trade_offered descuenta stock+oro, añade al inventario y emite trade_completed", () => {
     const { loaded, id } = loadCommerce();
     const state = new NarrativeState(new MemorySessionStorage());
-    state.startNewSession("tavern_intro");
+    state.startNewSession("toledo_1200");
     const active = activatePluginsForNewSession(state, loaded);
     state.player.gold = 100;
 
@@ -86,7 +86,7 @@ describe("commerce plugin shipped (F8)", () => {
   it("trade_offered con oro insuficiente o mercado inexistente es no-op (when falso)", () => {
     const { loaded, id } = loadCommerce();
     const state = new NarrativeState(new MemorySessionStorage());
-    state.startNewSession("tavern_intro");
+    state.startNewSession("toledo_1200");
     const active = activatePluginsForNewSession(state, loaded);
     state.player.gold = 10;
     dispatchPluginEvents(state, active, [
@@ -113,7 +113,7 @@ describe("commerce plugin shipped (F8)", () => {
     const storage = new MemorySessionStorage();
     const { loaded, id } = loadCommerce();
     const s1 = new NarrativeState(storage);
-    s1.startNewSession("tavern_intro");
+    s1.startNewSession("toledo_1200");
     const active1 = activatePluginsForNewSession(s1, loaded);
     s1.player.gold = 100;
     dispatchPluginEvents(s1, active1, [
@@ -126,7 +126,7 @@ describe("commerce plugin shipped (F8)", () => {
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);
-    const active2 = bindPluginsForResume(s2, loadGamePluginManifests(GAMES_DIR, "tavern_intro"));
+    const active2 = bindPluginsForResume(s2, loadGamePluginManifests(GAMES_DIR, "toledo_1200"));
     assert.ok(active2.has(id), "el plugin shipped se rebindea por id desde el FS");
     const slice = s2.getPluginRecord(id)?.slice as { markets: Record<string, { stock: Record<string, number> }> };
     assert.equal(slice.markets.blacksmith_01.stock.iron_sword, 2);

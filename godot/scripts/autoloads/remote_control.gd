@@ -511,7 +511,7 @@ func _cmd_set_appearance(args: Dictionary) -> String:
 	if main_scene.has_method("_apply_player_appearance"):
 		main_scene._apply_player_appearance(model_id, skin_path)
 	if main_scene.has_method("_start_game"):
-		main_scene._start_game("tavern_intro", "res://test_rooms/millhaven.json")
+		main_scene._start_game("alta_fantasia", "res://test_rooms/millhaven.json")
 	return '{"ok":true,"model_id":"%s","skin_path":"%s"}' % [model_id, skin_path]
 
 

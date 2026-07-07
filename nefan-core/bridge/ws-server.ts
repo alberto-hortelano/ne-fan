@@ -38,6 +38,7 @@ const PORT = Number(process.env.NEFAN_BRIDGE_PORT ?? 9877);
 // State HTTP API for the narrative engine's tools (map / entities / inventory).
 const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? 9878);
 const GAMES_DIR = resolve(dataDir, "games");
+const STYLES_DIR = resolve(dataDir, "styles");
 
 // Saves live in a shared filesystem location accessible to every client
 // (HTML cannot read user:// from Godot). Override with NEFAN_SAVES_DIR.
@@ -66,6 +67,7 @@ const ctx: BridgeContext = {
   mapTriggers: new MapTriggerEvaluator(narrative),
   initialSceneCache: new InitialSceneCache(resolve(dataDir, "initial_scene_cache")),
   gamesDir: GAMES_DIR,
+  stylesDir: STYLES_DIR,
   cacheInitialScene: CONFIG.dev.cache_initial_scene,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
@@ -103,6 +105,7 @@ createStateHttpServer({
   port: STATE_HTTP_PORT,
   narrative,
   npcDirector,
+  stylesDir: STYLES_DIR,
   onMutation: async () => {
     await narrative.save();
   },

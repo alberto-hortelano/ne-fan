@@ -52,7 +52,7 @@ describe("FsSessionStorage fail-loud", () => {
       join(root, "healthy", "state.json"),
       JSON.stringify({
         session_id: "healthy",
-        game_id: "tavern_intro",
+        game_id: "toledo_1200",
         updated_at: "2026-01-01T00:00:00Z",
         story_so_far: "",
         scenes_loaded: {},

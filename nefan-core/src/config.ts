@@ -99,6 +99,15 @@ export interface NefanConfig {
      *  del manifest) hasta bajar del límite. 0 = sin límite. */
     cache_max_bytes: number;
   };
+  /** Contenido de juego compartido entre bridge y ai_server (paths relativos
+   *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
+   *  ai_server, para resolver los style packs (imágenes de referencia). */
+  content: {
+    /** data/games — un dir por juego (game.json + world.md + plugins/). */
+    games_dir: string;
+    /** data/styles — un dir por estilo (style.json + imágenes de referencia). */
+    styles_dir: string;
+  };
 }
 
 export const CONFIG: NefanConfig = {
@@ -139,5 +148,9 @@ export const CONFIG: NefanConfig = {
     texture_lazy_load: true,
     expose_diagnostic: false,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+  },
+  content: {
+    games_dir: "nefan-core/data/games",
+    styles_dir: "nefan-core/data/styles",
   },
 };

@@ -9,12 +9,26 @@ const SignalLifecycle = preload("res://scripts/util/signal_lifecycle.gd")
 signal game_selected(game_id: String, scene_path: String, session_id: String)
 
 ## Each entry: { id, title, scene_path, description }
+# NOTA: lista espejo de nefan-core/data/games (el selector dinámico con
+# tarjetas es una tanda futura para Godot; el cliente HTML ya lista del bridge).
 var _games: Array[Dictionary] = [
 	{
-		"id": "tavern_intro",
-		"title": "The Calling",
+		"id": "alta_fantasia",
+		"title": "Miravanda",
 		"scene_path": "res://test_rooms/millhaven.json",
-		"description": "Eres un sirviente en la taberna La Rueda Rota. Unos extraños llegan buscandote.",
+		"description": "Alta fantasía luminosa: la magia es un río que migra y todo hechizo es un trato.",
+	},
+	{
+		"id": "cuentos_oscuros",
+		"title": "La Comarca de Valdesombra",
+		"scene_path": "res://test_rooms/millhaven.json",
+		"description": "Cuento oscuro: aldeas que viven de prestado junto a un bosque que es frontera con lo Otro.",
+	},
+	{
+		"id": "toledo_1200",
+		"title": "Toledo, 1200",
+		"scene_path": "res://test_rooms/millhaven.json",
+		"description": "Intriga histórica en el Toledo de las tres culturas, tras el desastre de Alarcos.",
 	},
 ]
 

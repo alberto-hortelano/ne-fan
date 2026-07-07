@@ -270,7 +270,23 @@ export interface NarrativeStatusMessage {
 export interface GamesListedMessage {
   type: "games_listed";
   requestId: string;
-  games: Array<{ game_id: string; title: string; description?: string }>;
+  games: Array<{
+    game_id: string;
+    title: string;
+    description: string;
+    /** Estilo visual por defecto del juego (el jugador puede cambiarlo). */
+    style_id: string;
+    /** Resumen del mundo (~1.200 chars) — la tarjeta puede mostrar un extracto. */
+    world_brief: string;
+  }>;
+  /** Estilos disponibles para el selector; cover_url se sirve en el State
+   *  API del bridge (GET /styles/{id}/{file}, puerto :9878). */
+  styles: Array<{
+    style_id: string;
+    name: string;
+    description: string;
+    cover_url?: string;
+  }>;
 }
 
 export interface SessionDeletedMessage {

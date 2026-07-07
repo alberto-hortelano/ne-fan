@@ -47,6 +47,9 @@ export interface BridgeContext {
   mapTriggers: MapTriggerEvaluator;
   initialSceneCache: InitialSceneCache;
   gamesDir: string;
+  /** Directorio de style packs (data/styles) — manifests + imágenes de
+   *  referencia; el State API los sirve como estáticos. */
+  stylesDir: string;
   /** CONFIG.dev.cache_initial_scene inyectado (tests lo apagan). */
   cacheInitialScene: boolean;
   /** Manifests de los plugins activos de la sesión en curso (id → manifest).
