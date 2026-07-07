@@ -534,7 +534,10 @@ async def generate_scene(body: GenerateSceneRequest):
             llm_client.generate_scene, body.model_dump(exclude_none=True)
         )
     except NarrativeUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
+        # 504 para timeout (el modelo puede seguir escribiendo; el reintento
+        # del mismo tile recupera la respuesta tardía), 503 para el resto.
+        status = 504 if "timeout" in str(e).lower() else 503
+        raise HTTPException(status_code=status, detail=str(e)) from e
 
 
 @app.post("/generate_texture")

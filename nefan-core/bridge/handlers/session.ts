@@ -414,6 +414,32 @@ export async function handleResumeSession(
     isResume: true,
     state: ctx.narrative.toSessionData(),
   });
+  // Sesión sin NINGUNA escena = el bootstrap de su creación falló (timeout
+  // del motor narrativo, MCP caído…). Reanudar ES el reintento: re-encolar
+  // el bootstrap con la MISMA sesión — si la respuesta tardía del intento
+  // anterior llegó a ai_server, la sirve al instante sin re-generar.
+  if (Object.keys(ctx.narrative.scenes_loaded).length === 0) {
+    console.log(
+      `Bridge: resume de sesión sin escenas (${ctx.narrative.session_id}) — reintentando bootstrap`,
+    );
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "generating",
+      kind: "tile",
+      tile: { tx: 0, ty: 0 },
+      message: "Reintentando la generación del mundo inicial...",
+    });
+    const resumeGameId = ctx.narrative.game_id;
+    ctx.sceneGen.enqueue({
+      // Key propia: con "bootstrap" el dedupe de la cola puede descartar el
+      // reintento si el job fallido del arranque aún figura en vuelo (su
+      // finally corre un microtask después del broadcast de error).
+      key: "bootstrap_retry",
+      blocking: true,
+      // Sin worldKey: el initial-scene-cache es solo para el arranque dev.
+      run: () => runBootstrapTile(ctx, resumeGameId),
+    });
+  }
 }
 
 export async function handleDeleteSession(

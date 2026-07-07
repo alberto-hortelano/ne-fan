@@ -66,6 +66,15 @@ class LLMClient:
         # Pending responses from MCP bridge
         self._pending: dict[str, dict | None] = {}
         self._pending_lock = threading.Lock()
+        # Peticiones de escena que agotaron el timeout, por request_id →
+        # clave de reintento (session:tile). Si la respuesta llega tarde se
+        # guarda en _late_scenes y el SIGUIENTE request del mismo tile la
+        # devuelve al instante en vez de re-generar (minutos de LLM salvados).
+        self._timed_out_scenes: dict[str, str] = {}
+        self._late_scenes: dict[str, dict] = {}
+        # Motivo real del último fallo del camino MCP (timeout/rechazo) para
+        # que el 503/504 no mienta con "no MCP listener".
+        self._last_mcp_failure: str = ""
         self._ws: websocket.WebSocketApp | None = None
         self._ws_connected = False
 
@@ -102,6 +111,21 @@ class LLMClient:
                     with self._pending_lock:
                         if req_id in self._pending:
                             self._pending[req_id] = msg["room_data"]
+                        elif req_id in self._timed_out_scenes:
+                            # Respuesta TARDÍA (el caller ya recibió timeout):
+                            # conservarla — el siguiente request del mismo
+                            # tile/sesión la devuelve sin re-generar.
+                            retry_key = self._timed_out_scenes.pop(req_id)
+                            self._late_scenes[retry_key] = msg["room_data"]
+                            while len(self._late_scenes) > 8:
+                                self._late_scenes.pop(next(iter(self._late_scenes)))
+                            print(
+                                f"LLM: respuesta de escena TARDÍA (id={req_id[:8]}…) "
+                                f"guardada para reintento [{retry_key}] — "
+                                "el timeout ya había expirado (sube llm_timeout_s)"
+                            )
+                        else:
+                            print(f"LLM: room_response desconocido descartado (id={req_id[:8]}…)")
                 elif msg_type == "vision_response":
                     req_id = msg["request_id"]
                     with self._pending_lock:
@@ -202,9 +226,12 @@ class LLMClient:
 
     def generate_scene(self, scene_request: dict) -> dict:
         """Generate an outdoor scene. Tries MCP, then API. Raises
-        NarrativeUnavailable if neither backend can satisfy the request."""
+        NarrativeUnavailable if neither backend can satisfy the request —
+        with the REAL reason (timeout ≠ sin listener)."""
         scene_request = self._inject_available_assets(dict(scene_request))
+        mcp_attempted = False
         if self._ws_connected and self._ws:
+            mcp_attempted = True
             result = self._generate_scene_via_mcp(scene_request)
             if result is not None:
                 return result
@@ -212,14 +239,47 @@ class LLMClient:
         if self.api_client:
             return self._generate_scene_via_api(scene_request)
 
+        if mcp_attempted:
+            raise NarrativeUnavailable(
+                f"generate_scene: {self._last_mcp_failure or 'el camino MCP falló'} "
+                "(sin API client de fallback). Si el motor narrativo seguía "
+                "escribiendo, su respuesta se guardará y un reintento del mismo "
+                "tile la recupera; para bootstraps largos sube llm_timeout_s."
+            )
         raise NarrativeUnavailable(
             "generate_scene: no MCP listener and no API client configured"
         )
 
+    @staticmethod
+    def _scene_retry_key(scene_request: dict) -> str:
+        """Clave estable de reintento de una petición de escena: sesión +
+        tile (o place realizado). Dos requests con la misma clave piden el
+        MISMO contenido — una respuesta tardía de la primera vale para la
+        segunda."""
+        session = str(scene_request.get("session_id", ""))
+        gt = scene_request.get("generate_tile") or {}
+        if isinstance(gt, dict) and "tx" in gt:
+            return f"{session}:tile_{gt.get('tx')}_{gt.get('ty')}"
+        rp = scene_request.get("realize_place") or {}
+        if isinstance(rp, dict) and rp.get("id"):
+            return f"{session}:place_{rp.get('id')}"
+        return f"{session}:scene"
+
     def _generate_scene_via_mcp(self, scene_request: dict) -> dict | None:
         """Send scene generation request through MCP bridge."""
         request_id = str(uuid.uuid4())
+        retry_key = self._scene_retry_key(scene_request)
 
+        with self._pending_lock:
+            # Reintento de un tile cuya respuesta llegó tras el timeout: la
+            # escena YA está generada — devolverla sin molestar al modelo.
+            late = self._late_scenes.pop(retry_key, None)
+        if late is not None:
+            print(f"LLM: sirviendo respuesta tardía guardada para [{retry_key}]")
+            try:
+                return validate_scene_response(late)
+            except Exception as e:  # noqa: BLE001 — degrada a re-generar
+                print(f"LLM: respuesta tardía inválida ({e}); se re-genera")
         with self._pending_lock:
             self._pending[request_id] = None
 
@@ -245,6 +305,10 @@ class LLMClient:
                     if isinstance(result, dict) and result.get("error"):
                         reason = result.get("reason", "unknown")
                         print(f"LLM: Scene MCP rejected — {reason}")
+                        self._last_mcp_failure = (
+                            f"el bridge MCP rechazó la petición ({reason}) — "
+                            "¿hay una terminal de Claude Code con narrative_listen?"
+                        )
                         return None
                     validated = validate_scene_response(result)
                     print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
@@ -254,7 +318,15 @@ class LLMClient:
 
         with self._pending_lock:
             self._pending.pop(request_id, None)
-        print(f"LLM: MCP scene timeout ({self.timeout}s)")
+            # Recordar el id: si el modelo responde tarde, on_message guarda
+            # la escena bajo retry_key en vez de descartarla.
+            self._timed_out_scenes[request_id] = retry_key
+            while len(self._timed_out_scenes) > 16:
+                self._timed_out_scenes.pop(next(iter(self._timed_out_scenes)))
+        print(f"LLM: MCP scene timeout ({self.timeout}s) [{retry_key}]")
+        self._last_mcp_failure = (
+            f"timeout tras {self.timeout:.0f}s esperando al motor narrativo"
+        )
         return None
 
     def _generate_scene_via_api(self, scene_request: dict) -> dict:
