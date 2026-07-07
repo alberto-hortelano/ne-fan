@@ -105,7 +105,12 @@ start_bridge() {
 
 start_narrative_mcp() {
     port_busy "$PORT_NARR" && kill_port "$PORT_NARR"
-    if [[ ! -f "$PROJECT_DIR/narrative-mcp/dist/server.js" ]]; then
+    # Recompilar si dist falta O está desfasado respecto a las fuentes: un
+    # dist viejo ejecuta silenciosamente código de otro día (p. ej. sin los
+    # latidos de progreso) y es indistinguible de un bug en runtime.
+    local narr_src_newest
+    narr_src_newest=$(find "$PROJECT_DIR/narrative-mcp" -maxdepth 1 -name "*.ts" -newer "$PROJECT_DIR/narrative-mcp/dist/server.js" 2>/dev/null | head -1)
+    if [[ ! -f "$PROJECT_DIR/narrative-mcp/dist/server.js" || -n "$narr_src_newest" ]]; then
         echo "🛠  narrative-mcp: building..."
         ( cd "$PROJECT_DIR/narrative-mcp" && npm run build ) || return 1
     fi
