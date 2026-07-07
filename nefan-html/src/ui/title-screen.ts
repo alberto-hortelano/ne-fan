@@ -31,6 +31,20 @@ export type TitleAction =
 /** State API del bridge (:9878) — sirve las covers de los estilos como
  *  estáticos, con o sin ai_server. */
 const STATE_API_URL = "http://127.0.0.1:9878";
+/** ai_server (:8765) — subida de estilos y generación de las categorías que
+ *  falten (Meshy). Sin ai_server, "Subir estilo" falla con error visible. */
+const AI_SERVER_HTTP = "http://127.0.0.1:8765";
+
+const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
+  { id: "nature", label: "Naturaleza" },
+  { id: "settlement", label: "Pueblo" },
+  { id: "fortress", label: "Fortaleza" },
+  { id: "interior", label: "Interior" },
+  { id: "underground", label: "Subterráneo" },
+  { id: "character_commoner", label: "Personaje plebeyo" },
+  { id: "character_noble", label: "Personaje noble" },
+  { id: "character_warrior", label: "Personaje guerrero" },
+];
 
 const MIXAMO_MODELS: { id: string; name: string }[] = [
   { id: "y_bot", name: "Y Bot (base)" },
@@ -164,6 +178,7 @@ export class TitleScreen {
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
         <button id="ts-continue" style="${BTN_PRIMARY_CSS}">Continuar →</button>
         <button id="ts-create-world" style="${BTN_SECONDARY_CSS};margin-left:auto">✚ Crear mundo</button>
+        <button id="ts-upload-style" style="${BTN_SECONDARY_CSS}">🎨 Subir estilo</button>
       </div>
     `;
     const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
@@ -212,6 +227,119 @@ export class TitleScreen {
       });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
+    (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
+      .addEventListener("click", () => void this.renderUploadStyle());
+  }
+
+  /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
+   *  categorías que falten se generan con IA usando las subidas como
+   *  referencia — PREVIA confirmación explícita del coste. */
+  private renderUploadStyle(): void {
+    this.content.innerHTML = `
+      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Subir estilo</h1>
+      <p style="margin-bottom:16px;color:#888;font-size:12px">
+        Sube una o más imágenes de referencia (cuantas más categorías cubras, más fiel será el estilo).
+        Las que falten se generarán con IA a partir de las tuyas — se te pedirá confirmación con el coste.
+      </p>
+      <label style="display:block;margin-bottom:12px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Nombre del estilo</div>
+        <input id="ts-style-name" type="text" placeholder="ej: Tinta y pergamino" style="${INPUT_CSS}">
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        ${STYLE_CATEGORY_LABELS.map((c) => `
+          <label style="font-size:11px;color:#999">
+            ${c.label}
+            <input data-category="${c.id}" type="file" accept="image/*" style="display:block;color:#777;font-size:11px;margin-top:2px">
+          </label>`).join("")}
+      </div>
+      <div id="ts-style-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
+      <div style="display:flex;gap:12px">
+        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
+        <button id="ts-upload" style="${BTN_PRIMARY_CSS}">Subir</button>
+        <button id="ts-complete" style="${BTN_PRIMARY_CSS};display:none">Generar imágenes</button>
+      </div>
+    `;
+    const nameEl = this.content.querySelector("#ts-style-name") as HTMLInputElement;
+    const statusEl = this.content.querySelector("#ts-style-status") as HTMLElement;
+    const backBtn = this.content.querySelector("#ts-back") as HTMLButtonElement;
+    const uploadBtn = this.content.querySelector("#ts-upload") as HTMLButtonElement;
+    const completeBtn = this.content.querySelector("#ts-complete") as HTMLButtonElement;
+    let pendingStyleId = "";
+
+    backBtn.addEventListener("click", () => void this.renderWorldSelect());
+
+    uploadBtn.addEventListener("click", async () => {
+      const name = nameEl.value.trim();
+      if (name.length < 2) {
+        statusEl.innerHTML = `<span style="color:#a44">Ponle un nombre al estilo.</span>`;
+        return;
+      }
+      const inputs = [...this.content.querySelectorAll<HTMLInputElement>("input[data-category]")];
+      const images: Array<{ category: string; image_b64: string }> = [];
+      for (const input of inputs) {
+        const file = input.files?.[0];
+        if (!file) continue;
+        const b64 = await new Promise<string>((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result ?? ""));
+          r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
+          r.readAsDataURL(file);
+        });
+        images.push({ category: input.dataset.category!, image_b64: b64 });
+      }
+      if (images.length === 0) {
+        statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
+        return;
+      }
+      uploadBtn.disabled = true;
+      statusEl.textContent = "Subiendo imágenes al ai_server...";
+      try {
+        const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, images }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const data = (await res.json()) as {
+          style_id: string; uploaded: string[]; missing: string[]; estimated_cost_usd: number;
+        };
+        pendingStyleId = data.style_id;
+        if (data.missing.length === 0) {
+          statusEl.innerHTML = `<span style="color:#4a4">Estilo ${escapeHtml(data.style_id)} completo.</span>`;
+          await this.renderWorldSelect();
+          return;
+        }
+        statusEl.innerHTML = `<span style="color:#da6">Subidas ${data.uploaded.length}. Faltan ${data.missing.length} categorías `
+          + `(${data.missing.join(", ")}). Generarlas costará ~$${data.estimated_cost_usd.toFixed(2)} en créditos Meshy.</span>`;
+        uploadBtn.style.display = "none";
+        completeBtn.style.display = "";
+        completeBtn.textContent = `Generar ${data.missing.length} imágenes (~$${data.estimated_cost_usd.toFixed(2)})`;
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
+        uploadBtn.disabled = false;
+      }
+    });
+
+    completeBtn.addEventListener("click", async () => {
+      completeBtn.disabled = true;
+      backBtn.disabled = true;
+      statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las categorías que faltan (varios minutos)...</span>`;
+      try {
+        const res = await fetch(`${AI_SERVER_HTTP}/styles/${encodeURIComponent(pendingStyleId)}/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const data = (await res.json()) as { generated: string[]; cost_usd: number };
+        statusEl.innerHTML = `<span style="color:#4a4">Generadas ${data.generated.length} imágenes ($${data.cost_usd.toFixed(2)}).</span>`;
+        await this.renderWorldSelect();
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:#a44">Generación fallida: ${escapeHtml((err as Error).message)}</span>`;
+        completeBtn.disabled = false;
+        backBtn.disabled = false;
+      }
+    });
   }
 
   /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
