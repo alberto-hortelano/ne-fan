@@ -330,6 +330,36 @@ describe("blueprint/derive", () => {
     }
   });
 
+  it("las entities del scatter de la expansión NO derivan y el resto se capa", () => {
+    // Un save real llega EXPANDIDO: cientos de trees estampados por
+    // scene-expand (flag `scattered` en escenas nuevas; en saves antiguos
+    // solo el patrón de id `{slug}_z{zi}_{i}`). Derivarlos colgaba el
+    // cliente (miles de elementos SVG + occluders).
+    const scatterOld = Array.from({ length: 400 }, (_, i) => ({
+      id: `pino_z0_${i}`, kind: "tree", name: "pino", cell: [i % 120, Math.floor(i / 4)], footprint: [1, 1],
+    }));
+    const scatterNew = Array.from({ length: 300 }, (_, i) => ({
+      id: `abeto_x_${i}`, kind: "tree", name: "abeto", cell: [i % 120, 40 + Math.floor(i / 8)], footprint: [1, 1], scattered: true,
+    }));
+    const derived = deriveVolumesFromSchema(
+      {
+        scene_id: "tile_0_0",
+        entities: [
+          ...scatterOld,
+          ...scatterNew,
+          { id: "casa_1", kind: "building", name: "casa", cell: [20, 100], footprint: [16, 12] },
+          { id: "roble_autor", kind: "tree", name: "roble del autor", cell: [100, 100], footprint: [4, 4] },
+        ],
+      },
+      [],
+    );
+    const ids = derived.map((v) => v.id);
+    assert.ok(ids.includes("derived_ent_casa_1"), "la casa debe derivar");
+    assert.ok(ids.includes("derived_ent_roble_autor"), "el árbol del autor debe derivar");
+    assert.ok(!ids.some((id) => /_z\d+_\d+$/.test(id)), "trees del scatter derivados");
+    assert.ok(derived.length <= 82, `derivados sin capar: ${derived.length}`);
+  });
+
   it("una entity que solapa un volumen declarado no se deriva", () => {
     const declared: Volume[] = [{ id: "b", label: "casa", type: "building", rect: [18, 18, 20, 16] }];
     const derived = deriveVolumesFromSchema(

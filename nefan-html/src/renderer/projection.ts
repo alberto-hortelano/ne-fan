@@ -46,9 +46,6 @@ export interface ViewProjection {
   tileViewRect(rect: WorldRectM, viewBox?: SvgViewBox | null): ViewRect;
   /** Clave del orden del pintor entre tiles (menor = más al fondo). */
   tileDepth(tx: number, ty: number): number;
-  /** Dirección de pantalla (dx→derecha, dy→abajo) → dirección de mundo XZ
-   *  normalizada. WASD siente "arriba de la pantalla" en ambas perspectivas. */
-  inputDirToWorld(dx: number, dy: number): [number, number];
 }
 
 class TopdownViewProjection implements ViewProjection {
@@ -71,9 +68,6 @@ class TopdownViewProjection implements ViewProjection {
   }
   tileDepth(tx: number, ty: number): number {
     return ty * 4096 + tx;
-  }
-  inputDirToWorld(dx: number, dy: number): [number, number] {
-    return [dx, dy];
   }
 }
 
@@ -101,15 +95,6 @@ class IsoViewProjection implements ViewProjection {
   }
   tileDepth(tx: number, ty: number): number {
     return (tx + ty) * 4096 + (tx - ty);
-  }
-  inputDirToWorld(dx: number, dy: number): [number, number] {
-    // Inversa de worldToView sobre la dirección, renormalizada: subir en
-    // pantalla = noroeste del mundo.
-    const x = dx / 2 + dy;
-    const z = dy - dx / 2;
-    const len = Math.hypot(x, z) || 1;
-    const inLen = Math.hypot(dx, dy) || 1;
-    return [(x / len) * inLen, (z / len) * inLen];
   }
 }
 

@@ -15,7 +15,6 @@ import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/sce
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
-import { viewProjectionFor, type ViewProjection } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
@@ -184,7 +183,6 @@ function applySessionPerspective(perspective: string): void {
   sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
   sceneImageController.setPerspective(sessionPerspective);
   renderer.setProjection(sessionPerspective);
-  viewProjection = viewProjectionFor(sessionPerspective);
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
 
@@ -273,9 +271,6 @@ attackBtns.forEach(btn => {
 // --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
-/** Proyección de vista de la sesión — el input WASD se mapea con ella para
- *  que W siempre sea "arriba de la pantalla" (en iso, el noroeste del mundo). */
-let viewProjection: ViewProjection = viewProjectionFor("topdown");
 const playerMaxHp = 100;
 const playerWeaponId = "short_sword";
 let sceneData: Record<string, unknown> | null = null;
@@ -1092,23 +1087,22 @@ function gameLoop(now: number): void {
 
     const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
     if (inputFwd !== 0 || inputRight !== 0) {
-      // WASD en espacio de PANTALLA: W sube el monitor en ambas perspectivas
-      // (en iso eso es el noroeste del mundo — sin esto el personaje se movía
-      // en diagonal respecto a las teclas). La proyección mapea pantalla →
-      // mundo; se renormaliza para que la diagonal no sea más rápida.
-      const [mx, mz] = viewProjection.inputDirToWorld(inputRight, -inputFwd);
+      // WASD RELATIVO al personaje (Souls-like, como el cliente 3D): el ratón
+      // orienta (playerYaw, pointer lock) y las teclas se expresan en su
+      // marco — W avanza hacia donde mira, S camina DE ESPALDAS, A/D son
+      // strafe lateral. El movimiento nunca toca la orientación: por eso se
+      // puede retroceder o desplazarse de lado sin dejar de encarar al
+      // enemigo. Se renormaliza para que la diagonal no sea más rápida.
+      const rx = -playerForward.z; // right = forward rotado 90° horario
+      const rz = playerForward.x;
+      const mx = playerForward.x * inputFwd + rx * inputRight;
+      const mz = playerForward.z * inputFwd + rz * inputRight;
       const mlen = Math.hypot(mx, mz) || 1;
-      const moveX = mx / mlen;
-      const moveZ = mz / mlen;
-      const dx = moveX * speed * delta;
-      const dz = moveZ * speed * delta;
+      const dx = (mx / mlen) * speed * delta;
+      const dz = (mz / mlen) * speed * delta;
       // Resolución por ejes contra objetos sólidos → desliza por las paredes.
       if (!collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
       if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
-      // El personaje encara hacia donde anda (sprite y ataques); el ratón
-      // sigue pudiendo re-orientar cuando está quieto.
-      playerForward = { x: moveX, y: 0, z: moveZ };
-      playerYaw = Math.atan2(moveX, moveZ);
     }
 
     // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,

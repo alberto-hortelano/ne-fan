@@ -14,23 +14,37 @@
     // dispara ~1 vez/s y el loop parece muerto), los de un worker dedicado
     // no. Sin el flag no cambia nada.
     if (new URLSearchParams(location.search).get("raf") === "timer") {
-      const workerSrc = "setInterval(() => postMessage(0), 33);";
+      // Ping-pong, NO setInterval: el siguiente tick se pide DESPUÉS de
+      // ejecutar el batch. Con setInterval, un frame que tarde >33 ms deja
+      // mensajes acumulándose en la cola del main thread y la página queda
+      // saturada para siempre (ni CDP puede entrar).
+      const workerSrc = "onmessage = () => setTimeout(() => postMessage(0), 33);";
       const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })));
       let nextId = 1;
       let pending = new Map();
+      let scheduled = false;
       worker.onmessage = () => {
+        scheduled = false;
         const batch = pending;
         pending = new Map();
         const now = performance.now();
         for (const cb of batch.values()) cb(now);
+        if (pending.size > 0 && !scheduled) {
+          scheduled = true;
+          worker.postMessage(0);
+        }
       };
       window.requestAnimationFrame = (cb) => {
         const id = nextId++;
         pending.set(id, cb);
+        if (!scheduled) {
+          scheduled = true;
+          worker.postMessage(0);
+        }
         return id;
       };
       window.cancelAnimationFrame = (id) => { pending.delete(id); };
-      console.warn("[bench] rAF sustituido por tick de Worker (33ms) — ?raf=timer");
+      console.warn("[bench] rAF sustituido por tick de Worker (33ms, ping-pong) — ?raf=timer");
     }
   </script>
   <style>

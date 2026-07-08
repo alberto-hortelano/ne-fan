@@ -45,7 +45,25 @@ interface RawEntity {
   footprint?: unknown;
   name?: string;
   shape?: string;
+  /** true = generada por el scatter de scene-expand (no derivar volumen). */
+  scattered?: boolean;
 }
+
+/** Cap de volúmenes derivados de entities por tile. Las escenas del bridge
+ *  llegan EXPANDIDAS (el scatter de vegetación estampa cientos de entities
+ *  tree en el grid); sin cap, un save así producía miles de elementos SVG y
+ *  occluders y colgaba el cliente. Los edificios van primero (recortan
+ *  los volúmenes que más importan). */
+const MAX_ENTITY_VOLUMES = 80;
+
+/** Entities del scatter de scene-expand: flag `scattered` (escenas nuevas) o
+ *  el patrón de id `{slug}_z{zi}_{i}` (backstop para saves ya guardados sin
+ *  el flag). */
+function isScatterEntity(ent: RawEntity): boolean {
+  return ent.scattered === true || /_z\d+_\d+$/.test(String(ent.id ?? ""));
+}
+
+const ENTITY_KIND_PRIORITY: Record<string, number> = { building: 0, prop: 1, decor: 2, tree: 3 };
 
 export interface DeriveInput {
   scene_id?: string;
@@ -115,11 +133,19 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
   // ── Entities estáticas del esquema → su volumen equivalente ──────────────
   // building = edificio NO enterable (con techo — los enterables son
   // structures); tree/prop/decor = su primitiva. Los ids llevan el id de la
-  // entity para poder correlacionar (occluders, debug).
-  const entities = Array.isArray(raw.entities) ? raw.entities : [];
+  // entity para poder correlacionar (occluders, debug). Las del scatter de
+  // la expansión se saltan (su vegetación visual sale de vegetation_zones) y
+  // el total se capa — ver MAX_ENTITY_VOLUMES.
+  const entities = (Array.isArray(raw.entities) ? raw.entities : [])
+    .filter((ent) => {
+      const kind = ent?.kind;
+      if (kind !== "building" && kind !== "tree" && kind !== "prop" && kind !== "decor") return false;
+      return !isScatterEntity(ent);
+    })
+    .sort((a, b) => (ENTITY_KIND_PRIORITY[a.kind!] ?? 9) - (ENTITY_KIND_PRIORITY[b.kind!] ?? 9))
+    .slice(0, MAX_ENTITY_VOLUMES);
   for (const ent of entities) {
-    const kind = ent?.kind;
-    if (kind !== "building" && kind !== "tree" && kind !== "prop" && kind !== "decor") continue;
+    const kind = ent.kind!; // el filter garantiza building/tree/prop/decor
     const cell = ent.cell;
     const fp = ent.footprint;
     if (!Array.isArray(cell) || cell.length < 2 || !Array.isArray(fp) || fp.length < 2) continue;
