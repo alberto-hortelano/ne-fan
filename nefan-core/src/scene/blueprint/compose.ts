@@ -28,8 +28,10 @@ import type { Volume } from "./volumes.js";
  *  v3: detalle procedural del suelo (manchas de bioma, flores, piedritas)
  *  bajo el arte del LLM — el suelo deja de ser un color plano.
  *  v4: los muros traseros del cutaway se emiten en dos grupos (back_n /
- *  back_w) — tramos de occluder con huella fina para el depth-sort. */
-export const COMPOSER_VERSION = 4;
+ *  back_w) — tramos de occluder con huella fina para el depth-sort.
+ *  v5: árbol en dos grupos (tronco / copa — la copa es occluder AÉREO) y
+ *  sombras pegadas a la base de los volúmenes. */
+export const COMPOSER_VERSION = 5;
 
 export interface BlueprintPlan {
   /** SVG plano del suelo (viewBox "0 0 128 128"), ya pasado por
@@ -78,6 +80,10 @@ export interface ComposedOccluder {
    *  depth-sort del cliente compara la posición de cada entidad contra ella
    *  (delante ⇔ este o sur de la huella); para árboles es SOLO el tronco. */
   footprint_cells: [number, number, number, number];
+  /** true = tramo AÉREO (copa de árbol): está por encima de la altura de un
+   *  personaje y se pinta SIEMPRE encima de las entidades, sin importar su
+   *  posición en el suelo. */
+  overhead?: boolean;
 }
 
 export interface ComposedBlueprint {
@@ -198,7 +204,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     render: Volume;
     vid: string;
     seed: string;
-    phase: "floor" | "back_n" | "back_w" | "base" | "front";
+    phase: "floor" | "back_n" | "back_w" | "base" | "front" | "trunk" | "canopy";
     depth: number;
     /** Punto de mundo (u,v) del contacto más profundo del tramo — baseline. */
     depthPt: [number, number];
@@ -208,6 +214,8 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     /** false = el tramo no se recorta como occluder aunque el volumen sea
      *  tall (el suelo del cutaway pintado encima taparía sus muebles). */
     occludes?: boolean;
+    /** true = tramo aéreo (copa): occluder que se pinta sobre las entidades. */
+    overhead?: boolean;
   }
   const entries: Entry[] = [];
   for (const v of plan.volumes) {
@@ -237,14 +245,19 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
       });
       continue;
     }
-    // Huella del comparador: para árboles SOLO el tronco (volumeFootprint da
-    // el suyo, ya fino); para el resto la huella del volumen.
-    const footprint: [number, number, number, number] =
-      v.type === "tree"
-        ? [v.at[0] - 0.9 * (v.s ?? 1), v.at[1] - 0.9 * (v.s ?? 1), v.at[0] + 0.9 * (v.s ?? 1), v.at[1] + 0.9 * (v.s ?? 1)]
-        : fp.cells;
+    if (v.type === "tree") {
+      // Árbol en dos tramos: tronco (occluder normal, huella fina) y copa —
+      // tramo AÉREO que el cliente pinta encima de las entidades siempre
+      // (está a 4-12 m; quien pasa por debajo queda cubierto).
+      const s = v.s ?? 1;
+      const trunkFp: [number, number, number, number] = [v.at[0] - 0.9 * s, v.at[1] - 0.9 * s, v.at[0] + 0.9 * s, v.at[1] + 0.9 * s];
+      const d = proj.depth(fp.depthPoint[0], fp.depthPoint[1]);
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:trunk`, phase: "trunk", depth: d, depthPt: fp.depthPoint, footprint: trunkFp });
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:canopy`, phase: "canopy", depth: d + 0.01, depthPt: fp.depthPoint, footprint: trunkFp, overhead: true });
+      continue;
+    }
     const bias = v.type === "tower" || v.type === "gate" ? 4 : 0;
-    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias, depthPt: fp.depthPoint, footprint });
+    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias, depthPt: fp.depthPoint, footprint: fp.cells });
   }
   entries.sort((a, b) => a.depth - b.depth || a.vid.localeCompare(b.vid) || a.seed.localeCompare(b.seed));
 
@@ -253,7 +266,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
   const tallByVid = new Map(plan.volumes.map((v) => [v.id, classify(v).tall]));
   const occluders: ComposedOccluder[] = [];
   out.push('<g id="volumes">');
-  for (const { render, vid, seed, depthPt, phase, occludes, footprint } of entries) {
+  for (const { render, vid, seed, depthPt, phase, occludes, footprint, overhead } of entries) {
     // bbox FRESCO por entry: el occluder del tramo necesita el suyo; el del
     // elemento (visión) se acumula uniendo los tramos.
     const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
@@ -289,6 +302,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
           bbox: [round2(bx), round2(by), round2(bw), round2(bh)],
           baseline_y: round2(proj.pt(depthPt[0], depthPt[1])[1]),
           footprint_cells: [round2(footprint[0]), round2(footprint[1]), round2(footprint[2]), round2(footprint[3])],
+          ...(overhead ? { overhead: true } : {}),
         });
       }
     }

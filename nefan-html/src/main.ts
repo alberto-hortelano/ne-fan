@@ -1103,8 +1103,11 @@ function gameLoop(now: number): void {
       const dx = (mx / mlen) * speed * delta;
       const dz = (mz / mlen) * speed * delta;
       // Resolución por ejes contra objetos sólidos → desliza por las paredes.
-      if (!collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
-      if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
+      // Si el ORIGEN ya es sólido (save antiguo dentro de una huella que hoy
+      // bloquea), el movimiento se permite: puede salir, nunca queda atrapado.
+      const stuck = collidesAt(playerPos.x, playerPos.z);
+      if (stuck || !collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
+      if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
     // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,

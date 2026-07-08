@@ -240,9 +240,15 @@ describe("blueprint/compose", () => {
       assert.deepEqual(backN.footprint_cells, [8, 12, 46, 13.2], `${perspective}: huella back_n`);
       assert.deepEqual(backW.footprint_cells, [8, 12, 9.2, 46], `${perspective}: huella back_w`);
       assert.deepEqual(front.footprint_cells, [8, 44.8, 46, 46], `${perspective}: huella front`);
-      // Árbol: la huella del comparador es SOLO el tronco, no la copa.
-      const tree = a.occluders.find((o) => o.vid === "roble_1")!;
-      const [tu0, tv0, tu1, tv1] = tree.footprint_cells;
+      // Árbol: dos tramos — tronco (occluder normal, huella fina) y copa
+      // AÉREA (overhead: se pinta sobre las entidades siempre).
+      const treeOccs = a.occluders.filter((o) => o.vid === "roble_1");
+      assert.deepEqual(treeOccs.map((o) => o.id).sort(), ["roble_1:canopy", "roble_1:trunk"], perspective);
+      const trunk = treeOccs.find((o) => o.id === "roble_1:trunk")!;
+      const canopy = treeOccs.find((o) => o.id === "roble_1:canopy")!;
+      assert.equal(trunk.overhead, undefined, `${perspective}: el tronco no es aéreo`);
+      assert.equal(canopy.overhead, true, `${perspective}: la copa es aérea`);
+      const [tu0, tv0, tu1, tv1] = trunk.footprint_cells;
       assert.ok(tu1 - tu0 < 3 && tv1 - tv0 < 3, `${perspective}: huella del árbol no es el tronco`);
       for (const o of a.occluders) {
         const [, y, w, h] = o.bbox;

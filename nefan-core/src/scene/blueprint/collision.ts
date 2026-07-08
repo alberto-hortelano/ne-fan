@@ -75,11 +75,19 @@ function markBand(grid: Grid, points: [number, number][], width: number): void {
   }
 }
 
-/** Anillo de muros de un edificio (grosor 1.5 celdas) con huecos de puerta. */
+/** Colisión de un edificio.
+ *  - CON techo: es escenografía — huella COMPLETAMENTE sólida, sus puertas
+ *    son decorativas (un jugador que "entrara" desaparecería bajo el techo
+ *    sin ver nada). Enterable ⇒ cutaway.
+ *  - Cutaway: anillo de muros (grosor 1.5 celdas) con huecos de puerta. */
 function markBuilding(grid: Grid, v: Extract<Volume, { type: "building" }>): void {
   const [u0, v0, w, d] = v.rect;
   const u1 = u0 + w;
   const v1 = v0 + d;
+  if (!v.cutaway) {
+    markRect(grid, u0, v0, u1, v1);
+    return;
+  }
   const t = 1.5;
   markRect(grid, u0, v0, u1, v0 + t); // norte
   markRect(grid, u0, v1 - t, u1, v1); // sur

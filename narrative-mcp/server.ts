@@ -320,8 +320,12 @@ cells too (a character is ~3.6 cells tall). Types:
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
   passable?:true } — tables, barrels, crates, wells, market stalls, carts,
   signs… passable=true for rugs/awnings that must not block movement.
-COLLISION comes from these footprints: a building with no door is a sealed
-box (bug); doors/gates ARE the openings. Trees block only at the trunk.
+COLLISION comes from these footprints. A ROOFED building is pure scenery:
+its whole footprint is solid and its doors are decorative paint — the player
+can NEVER walk in (they would vanish under the roof). Any building the story
+needs the player to enter MUST be cutaway:true, and then a cutaway with no
+door is a sealed box (bug); doors/gates ARE the openings. Trees block only
+at the trunk.
 
 Design doctrine (what makes the plan GOOD):
 - Roads first: lay the road/river network in map_ground (continuing every

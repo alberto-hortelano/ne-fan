@@ -38,6 +38,11 @@ interface SvgViewBox {
 
 export interface ViewProjection {
   readonly kind: "topdown" | "isometric";
+  /** Metros de VISTA por metro de ALTURA de mundo — espejo de los factores
+   *  del compositor (topdown: h celdas → h user × 0.5 m = 1.0; iso:
+   *  ISO_HS=0.375 user/celda × 2 celdas/m × 1 m/user = 0.75). Dimensiona los
+   *  sprites de personaje para que casen con muros/puertas del blueprint. */
+  readonly verticalScale: number;
   worldToView(x: number, z: number): [number, number];
   viewToWorld(vx: number, vy: number): [number, number];
   /** Rect de VISTA que cubre el canvas del tile (su blueprint compuesto y la
@@ -50,6 +55,7 @@ export interface ViewProjection {
 
 class TopdownViewProjection implements ViewProjection {
   readonly kind = "topdown" as const;
+  readonly verticalScale = 1.0;
   worldToView(x: number, z: number): [number, number] {
     return [x, z];
   }
@@ -73,6 +79,7 @@ class TopdownViewProjection implements ViewProjection {
 
 class IsoViewProjection implements ViewProjection {
   readonly kind = "isometric" as const;
+  readonly verticalScale = 0.75;
   worldToView(x: number, z: number): [number, number] {
     return [x - z, (x + z) / 2];
   }

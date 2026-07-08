@@ -150,6 +150,8 @@ export interface ComposedTilePlan {
     baseline_y: number;
     /** Huella del tramo en celdas de mundo [minU, minV, maxU, maxV]. */
     footprint_cells: [number, number, number, number];
+    /** true = tramo aéreo (copa): se pinta encima de las entidades. */
+    overhead?: boolean;
   }>;
 }
 
@@ -231,11 +233,13 @@ const CHARACTER_RADIUS_M = 0.4;
  *  hasta 160 (~4×) y aleja hasta 12 (~0.3×). setScale clampa a este rango. */
 const MIN_SCALE = 12;
 const MAX_SCALE = 160;
-/** Tamaño base (px) del lado de una sheet de sprite que se ve bien a scale=40.
- *  Permite que el sprite escale con el zoom: factor = this.scale / este valor.
- *  A 40px/m el factor es 1 (tamaño actual); tunear si los sprites quedan
- *  grandes/pequeños respecto a los círculos. */
-const SPRITE_BASE_PPM = 40;
+/** Metros de PLANO DE IMAGEN que encuadra un frame de sprite sheet: el
+ *  `ortho: 2.4` de la cámara ortográfica del renderer Godot
+ *  (godot/scripts/dev/sprite_sheet_renderer.gd) — un humanoide de ~1.8 m
+ *  cabe con margen. Con el pitch de −30° de los sheets isometric_30, la
+ *  vertical de mundo se proyecta ×cos(30°); dividir por ese coseno recupera
+ *  metros de MUNDO, que la proyección de vista escala con verticalScale. */
+const SHEET_FRAME_WORLD_M = 2.4;
 
 const CATEGORY_FILL: Record<string, string> = {
   building: "#5a4a38",
@@ -335,6 +339,9 @@ export interface Occluder {
   footprintWorld?: SceneBounds;
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
+  /** true = tramo AÉREO (copa de árbol): por encima de la altura de un
+   *  personaje — se pinta SIEMPRE encima de las entidades. */
+  overhead?: boolean;
   /** Origen del recorte: "image" = segmento clasificado `tall` por visión
    *  (mundo derivado de imagen); "plan" = tramo de volumen del blueprint
    *  compuesto (rasterizado del SVG, sin imagen IA). */
@@ -566,6 +573,7 @@ export class CanvasRenderer {
               maxZ: full.y + (by + bh - vb.minY) * sy,
             },
             baselineView: full.y + (occ.baseline_y - vb.minY) * sy,
+            ...(occ.overhead ? { overhead: true } : {}),
             footprintWorld: {
               minX: tile.rect.minX + fu0 * TILE_MPC,
               minZ: tile.rect.minZ + fv0 * TILE_MPC,
@@ -1519,7 +1527,10 @@ export class CanvasRenderer {
   ): void {
     // Occluders por profundidad de baseline — el mismo orden del pintor con
     // el que el compositor pintó el planImage base (consistencia estática).
-    const occs = [...this.occluders].sort((a, b) => a.baselineView - b.baselineView);
+    // Los tramos AÉREOS (copas: por encima de la altura de un personaje) se
+    // apartan y se pintan AL FINAL, sobre todas las entidades.
+    const occs = this.occluders.filter((o) => !o.overhead).sort((a, b) => a.baselineView - b.baselineView);
+    const overhead = this.occluders.filter((o) => o.overhead).sort((a, b) => a.baselineView - b.baselineView);
     const baselineScreen = occs.map((o) => this.viewToScreen(0, o.baselineView)[1]);
 
     // Cada entidad se pinta justo ANTES del primer occluder que la tapa
@@ -1546,17 +1557,19 @@ export class CanvasRenderer {
     for (const obj of objects) place(obj.pos.x, obj.pos.z, () => this.drawEntity(obj));
     place(player.pos.x, player.pos.z, () => this.drawPlayer(player));
 
+    const paint = (occ: Occluder): void => {
+      const v = occ.view;
+      const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+      this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
+    };
     for (let i = 0; i <= occs.length; i++) {
       const bucket = buckets[i];
       bucket.sort((a, b) => a.screenY - b.screenY);
       for (const s of bucket) s.draw();
-      if (i < occs.length) {
-        const occ = occs[i];
-        const v = occ.view;
-        const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
-        this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
-      }
+      if (i < occs.length) paint(occs[i]);
     }
+    // Capa aérea: las copas cubren a quien pase por debajo.
+    for (const occ of overhead) paint(occ);
   }
 
   /** Draw a static scene element (building/prop/item) using its authored
@@ -1734,7 +1747,7 @@ export class CanvasRenderer {
     }
 
     if (e.hp !== undefined && e.maxHp !== undefined) {
-      const barY = e.sprite !== undefined ? ey - 70 : ey - (e.radius + 6);
+      const barY = e.sprite !== undefined ? ey - this.spriteFrameScreenH() * 0.78 : ey - (e.radius + 6);
       this.drawHpBar(ex, barY, e.hp, e.maxHp, e.color);
     }
   }
@@ -1749,7 +1762,7 @@ export class CanvasRenderer {
         ctx.fillStyle = "#d8c79a";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText(e.label.slice(0, 30), cx, cy - 74);
+        ctx.fillText(e.label.slice(0, 30), cx, cy - this.spriteFrameScreenH() * 0.82);
       }
       return;
     }
@@ -1785,7 +1798,7 @@ export class CanvasRenderer {
         ctx.fillStyle = "#9be";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText(npc.name, nx, ny - 74);
+        ctx.fillText(npc.name, nx, ny - this.spriteFrameScreenH() * 0.82);
       }
       return;
     }
@@ -1841,12 +1854,20 @@ export class CanvasRenderer {
     const t = sprite.animStartedAt !== undefined
       ? (performance.now() - sprite.animStartedAt) / 1000
       : performance.now() / 1000;
-    // Escala el sprite con el zoom: a scale=SPRITE_BASE_PPM el factor es 1
-    // (tamaño actual) y crece/encoge con el zoom para no desacoplarse de los
-    // círculos/objetos, que ya van en metros·scale.
+    // Escala del sprite EN METROS DE MUNDO: el frame del sheet encuadra
+    // SHEET_FRAME_WORLD_M de plano de imagen (cámara ortográfica del renderer
+    // Godot) — se dibuja al alto en px que ese encuadre ocupa en la vista
+    // actual (verticalScale de la proyección × zoom). Así el personaje de
+    // ~1.8 m queda a escala con muros (2.5 m) y puertas del blueprint.
     return this.spriteRenderer.draw(this.ctx, sheet, fx, fz, t, cx, cy, {
-      scale: this.scale / SPRITE_BASE_PPM,
+      scale: this.spriteFrameScreenH() / sheet.frame_height,
     });
+  }
+
+  /** Alto EN PANTALLA (px) del frame completo de un sprite de personaje a la
+   *  escala/proyección actuales. Labels y barras de HP se anclan con esto. */
+  spriteFrameScreenH(): number {
+    return SHEET_FRAME_WORLD_M / Math.cos(Math.PI / 6) * this.projection.verticalScale * this.scale;
   }
 
   private drawHpBar(cx: number, cy: number, hp: number, maxHp: number, color: string): void {
