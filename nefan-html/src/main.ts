@@ -597,6 +597,7 @@ function composeTilePlan(
       scene_id: key,
       structures: raw.structures as never,
       vegetation_zones: raw.vegetation_zones as never,
+      entities: raw.entities as never,
       terrain_features: raw.terrain_features as never,
     },
     declared,
@@ -615,6 +616,7 @@ function composeTilePlan(
       svg: composed.svg,
       view_box: composed.viewBox,
       elements: composed.elements,
+      occluders: composed.occluders,
     },
   };
 }

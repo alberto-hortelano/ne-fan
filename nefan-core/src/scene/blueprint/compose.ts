@@ -22,8 +22,10 @@ import { fmt, innerSvg, seededRng } from "./svg.js";
 import { TILE_CELLS } from "../tile.js";
 import type { Volume } from "./volumes.js";
 
-/** Subir en cada cambio de bytes de salida del compositor. */
-export const COMPOSER_VERSION = 1;
+/** Subir en cada cambio de bytes de salida del compositor.
+ *  v2: las entities estáticas del esquema (building/tree/prop/decor) derivan
+ *  volumen — el blueprint de tiles existentes cambia. */
+export const COMPOSER_VERSION = 2;
 
 export interface BlueprintPlan {
   /** SVG plano del suelo (viewBox "0 0 128 128"), ya pasado por
@@ -50,10 +52,33 @@ export interface ComposedElement {
   footprint_cells: [number, number, number, number];
 }
 
+/** Sprite vectorial recortable de UN tramo de volumen alto: SVG standalone
+ *  (mismas unidades de usuario que el blueprint) + bbox + baseline. El
+ *  cliente lo rasteriza y lo usa como occluder de depth-sort cuando no hay
+ *  imagen IA (modo vectorial / interim hasta el análisis). Un muro largo
+ *  emite un occluder POR TRAMO (cada uno con su baseline local); un edificio
+ *  cutaway emite base (suelo+muros traseros) y front (muros bajos) por
+ *  separado. */
+export interface ComposedOccluder {
+  /** Único dentro del tile (id del volumen + sufijo de tramo/fase). */
+  id: string;
+  /** Volumen padre (correlaciona con `elements`). */
+  vid: string;
+  label: string;
+  /** SVG standalone listo para rasterizar (viewBox = bbox con margen). */
+  svg: string;
+  /** [x, y, w, h] en unidades de usuario del blueprint compuesto. */
+  bbox: [number, number, number, number];
+  /** Y (unidades de usuario) del punto de contacto más profundo del tramo. */
+  baseline_y: number;
+}
+
 export interface ComposedBlueprint {
   svg: string;
   viewBox: { minX: number; minY: number; width: number; height: number };
   elements: ComposedElement[];
+  /** Tramos recortables de los volúmenes `tall` (depth-sort sin imagen IA). */
+  occluders: ComposedOccluder[];
   perspective: Perspective;
   composer_version: number;
 }
@@ -118,13 +143,15 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     seed: string;
     phase: "base" | "front";
     depth: number;
+    /** Punto de mundo (u,v) del contacto más profundo del tramo — baseline. */
+    depthPt: [number, number];
   }
   const entries: Entry[] = [];
   for (const v of plan.volumes) {
     const fp = volumeFootprint(v);
     if (v.type === "building" && v.cutaway) {
-      entries.push({ render: v, vid: v.id, seed: `${v.id}:base`, phase: "base", depth: proj.depth(fp.cells[2], fp.cells[1]) });
-      entries.push({ render: v, vid: v.id, seed: `${v.id}:front`, phase: "front", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) });
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:base`, phase: "base", depth: proj.depth(fp.cells[2], fp.cells[1]), depthPt: [fp.cells[2], fp.cells[1]] });
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:front`, phase: "front", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]), depthPt: fp.depthPoint });
       continue;
     }
     if (v.type === "wall") {
@@ -132,23 +159,58 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
       chunks.forEach((points, i) => {
         const sub: Volume = { ...v, points };
         const sfp = volumeFootprint(sub);
-        entries.push({ render: sub, vid: v.id, seed: `${v.id}:${i}`, phase: "base", depth: proj.depth(sfp.depthPoint[0], sfp.depthPoint[1]) });
+        entries.push({ render: sub, vid: v.id, seed: `${v.id}:${i}`, phase: "base", depth: proj.depth(sfp.depthPoint[0], sfp.depthPoint[1]), depthPt: sfp.depthPoint });
       });
       continue;
     }
     const bias = v.type === "tower" || v.type === "gate" ? 4 : 0;
-    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias });
+    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias, depthPt: fp.depthPoint });
   }
   entries.sort((a, b) => a.depth - b.depth || a.vid.localeCompare(b.vid) || a.seed.localeCompare(b.seed));
 
   const bboxByVid = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
   const labelByVid = new Map(plan.volumes.map((v) => [v.id, v.label]));
+  const tallByVid = new Map(plan.volumes.map((v) => [v.id, classify(v).tall]));
+  const occluders: ComposedOccluder[] = [];
   out.push('<g id="volumes">');
-  for (const { render, vid, seed, phase } of entries) {
-    const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: bboxByVid.get(vid) ?? null };
+  for (const { render, vid, seed, depthPt, phase } of entries) {
+    // bbox FRESCO por entry: el occluder del tramo necesita el suyo; el del
+    // elemento (visión) se acumula uniendo los tramos.
+    const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
     renderVolume(ctx, render, phase);
-    if (ctx.out.length > 0) out.push(`<g data-vid="${vid}" data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`);
-    if (ctx.bbox) bboxByVid.set(vid, ctx.bbox);
+    if (ctx.out.length === 0) continue;
+    const markup = `<g data-vid="${vid}" data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`;
+    out.push(markup);
+    if (ctx.bbox) {
+      const acc = bboxByVid.get(vid);
+      bboxByVid.set(
+        vid,
+        acc
+          ? {
+              minX: Math.min(acc.minX, ctx.bbox.minX),
+              minY: Math.min(acc.minY, ctx.bbox.minY),
+              maxX: Math.max(acc.maxX, ctx.bbox.maxX),
+              maxY: Math.max(acc.maxY, ctx.bbox.maxY),
+            }
+          : { ...ctx.bbox },
+      );
+      if (tallByVid.get(vid)) {
+        // Margen de 1 unidad: strokes/antialias no se cortan en el borde.
+        const p = 1;
+        const bx = ctx.bbox.minX - p;
+        const by = ctx.bbox.minY - p;
+        const bw = ctx.bbox.maxX - ctx.bbox.minX + 2 * p;
+        const bh = ctx.bbox.maxY - ctx.bbox.minY + 2 * p;
+        occluders.push({
+          id: seed,
+          vid,
+          label: labelByVid.get(vid) ?? vid,
+          svg: `<svg viewBox="${fmt(bx)} ${fmt(by)} ${fmt(bw)} ${fmt(bh)}" xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
+          bbox: [round2(bx), round2(by), round2(bw), round2(bh)],
+          baseline_y: round2(proj.pt(depthPt[0], depthPt[1])[1]),
+        });
+      }
+    }
   }
   out.push("</g>");
 
@@ -171,7 +233,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     `<svg viewBox="${fmt(vb.minX)} ${fmt(vb.minY)} ${fmt(vb.width)} ${fmt(vb.height)}" xmlns="http://www.w3.org/2000/svg">` +
     out.join("") +
     "</svg>";
-  return { svg, viewBox: vb, elements, perspective, composer_version: COMPOSER_VERSION };
+  return { svg, viewBox: vb, elements, occluders, perspective, composer_version: COMPOSER_VERSION };
 }
 
 /** Trocea una polilínea en tramos de 2 puntos de longitud ≤ maxLen (los

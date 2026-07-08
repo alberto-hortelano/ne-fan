@@ -155,12 +155,11 @@ export class SpriteRenderer {
         const sheet: SpriteSheet = { ...meta, model: skinnedModel, frames };
         this.cache.set(cacheKey, sheet);
         return sheet;
-      } catch (err) {
-        // Sin errors.push aquí: character-sprites registra el fallo UNA vez
-        // con contexto (y decide desactivar los skins de la sesión) — loguear
-        // en ambas capas duplicaba cada fallo en consola.
-        throw err;
       } finally {
+        // Sin catch/errors.push aquí: los fallos se propagan tal cual y
+        // character-sprites los registra UNA vez con contexto (y decide
+        // desactivar los skins de la sesión) — loguear en ambas capas
+        // duplicaba cada fallo en consola.
         this.skinInflight.delete(cacheKey);
       }
     })();

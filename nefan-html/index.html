@@ -6,14 +6,31 @@
   <title>Never Ending Fantasy — 2D</title>
   <script>
     // Bench (solo dev): `?raf=timer` sustituye requestAnimationFrame por un
-    // pump de setTimeout ANTES de cargar la app, para que el game loop siga
-    // corriendo con la pestaña en segundo plano (el navegador pausa el rAF de
-    // pestañas ocultas y los drivers E2E de Chrome no pueden activar la
-    // pestaña). Sin el flag no cambia nada.
+    // pump ANTES de cargar la app, para que el game loop siga corriendo con
+    // la pestaña en segundo plano (el navegador pausa el rAF de pestañas
+    // ocultas y los drivers E2E de Chrome no pueden activar la pestaña). El
+    // tick lo genera un Web Worker: los timers de la PÁGINA se throttlean a
+    // ≥1 s con la pestaña oculta (con visibility "hidden" un setTimeout(33)
+    // dispara ~1 vez/s y el loop parece muerto), los de un worker dedicado
+    // no. Sin el flag no cambia nada.
     if (new URLSearchParams(location.search).get("raf") === "timer") {
-      window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 33);
-      window.cancelAnimationFrame = (id) => clearTimeout(id);
-      console.warn("[bench] rAF sustituido por setTimeout(33ms) — ?raf=timer");
+      const workerSrc = "setInterval(() => postMessage(0), 33);";
+      const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })));
+      let nextId = 1;
+      let pending = new Map();
+      worker.onmessage = () => {
+        const batch = pending;
+        pending = new Map();
+        const now = performance.now();
+        for (const cb of batch.values()) cb(now);
+      };
+      window.requestAnimationFrame = (cb) => {
+        const id = nextId++;
+        pending.set(id, cb);
+        return id;
+      };
+      window.cancelAnimationFrame = (id) => { pending.delete(id); };
+      console.warn("[bench] rAF sustituido por tick de Worker (33ms) — ?raf=timer");
     }
   </script>
   <style>

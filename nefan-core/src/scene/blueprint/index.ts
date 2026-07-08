@@ -7,7 +7,7 @@
  *  bridge (validación). */
 
 export { composeBlueprint, COMPOSER_VERSION } from "./compose.js";
-export type { BlueprintPlan, ComposedBlueprint, ComposedElement } from "./compose.js";
+export type { BlueprintPlan, ComposedBlueprint, ComposedElement, ComposedOccluder } from "./compose.js";
 export { volumeCollisionGrid } from "./collision.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";

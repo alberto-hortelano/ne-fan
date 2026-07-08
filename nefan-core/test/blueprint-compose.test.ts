@@ -211,6 +211,33 @@ describe("blueprint/compose", () => {
     const { svg } = composeBlueprint({ volumes: [], biome: "sand" }, "topdown", "t");
     assert.ok(svg.includes('fill="#cbb87e"'));
   });
+
+  it("occluders: un tramo por entry tall, SVG standalone, deterministas", () => {
+    for (const perspective of ["topdown", "isometric"] as const) {
+      const a = composeBlueprint(PLAN, perspective, "tile_0_0");
+      const b = composeBlueprint(PLAN, perspective, "tile_0_0");
+      assert.deepEqual(a.occluders, b.occluders, perspective);
+      const vids = new Set(a.occluders.map((o) => o.vid));
+      // Todos los volúmenes tall tienen occluder; los no-tall no.
+      for (const e of a.elements) {
+        assert.equal(vids.has(e.id), e.tall, `${perspective}/${e.id}`);
+      }
+      // La muralla (128 celdas) se trocea: varios occluders con baselines locales.
+      const wallOccs = a.occluders.filter((o) => o.vid === "muralla_sur");
+      assert.ok(wallOccs.length > 2, `${perspective}: muralla sin trocear (${wallOccs.length})`);
+      // El cutaway emite base y front por separado.
+      const tabernaOccs = a.occluders.filter((o) => o.vid === "taberna");
+      assert.deepEqual(tabernaOccs.map((o) => o.id).sort(), ["taberna:base", "taberna:front"], perspective);
+      for (const o of a.occluders) {
+        const [, y, w, h] = o.bbox;
+        assert.ok(w > 0 && h > 0, `${perspective}/${o.id}: bbox vacío`);
+        assert.ok(o.svg.startsWith("<svg viewBox=") && o.svg.endsWith("</svg>"), `${perspective}/${o.id}: svg malformado`);
+        assert.ok(o.svg.includes(`data-vid="${o.vid}"`));
+        // baseline dentro del rango vertical del bbox (con margen del pad)
+        assert.ok(o.baseline_y >= y - 0.5 && o.baseline_y <= y + h + 2, `${perspective}/${o.id}: baseline fuera`);
+      }
+    }
+  });
 });
 
 describe("blueprint/derive", () => {
@@ -257,6 +284,59 @@ describe("blueprint/derive", () => {
       const inside = u > 37 && u < 73 && v > 37 && v < 73;
       assert.ok(!inside, `árbol dentro de la estructura en ${u},${v}`);
     }
+  });
+
+  it("entities estáticas → su volumen (building con techo, tree, prop, decor passable)", () => {
+    const derived = deriveVolumesFromSchema(
+      {
+        scene_id: "tile_0_0",
+        entities: [
+          { id: "casa_1", kind: "building", cell: [20, 20], footprint: [16, 12], name: "casa del herrero" },
+          { id: "roble_x", kind: "tree", cell: [80, 80], footprint: [4, 4], name: "roble viejo" },
+          { id: "barril_x", kind: "prop", cell: [50, 90], footprint: [2, 2], name: "barril", shape: "cylinder" },
+          { id: "alfombra", kind: "decor", cell: [60, 100], footprint: [4, 3], name: "alfombra" },
+          { id: "espada", kind: "item", cell: [70, 70], footprint: [1, 1], name: "espada" },
+          { id: "aldeano", kind: "npc", cell: [90, 90], footprint: [1, 1], name: "aldeano" },
+        ],
+      },
+      [],
+    );
+    const byId = new Map(derived.map((v) => [v.id, v]));
+    const casa = byId.get("derived_ent_casa_1");
+    assert.ok(casa && casa.type === "building");
+    if (casa && casa.type === "building") {
+      assert.deepEqual(casa.rect, [20, 20, 16, 12]);
+      assert.equal(casa.cutaway, undefined); // no enterable → con techo
+      assert.equal(casa.roof?.kind, "gable");
+      assert.equal(casa.label, "casa del herrero");
+    }
+    const roble = byId.get("derived_ent_roble_x");
+    assert.ok(roble && roble.type === "tree");
+    const barril = byId.get("derived_ent_barril_x");
+    assert.ok(barril && barril.type === "prop");
+    if (barril && barril.type === "prop") assert.equal(barril.shape, "cylinder");
+    const alfombra = byId.get("derived_ent_alfombra");
+    assert.ok(alfombra && alfombra.type === "prop");
+    if (alfombra && alfombra.type === "prop") assert.equal(alfombra.passable, true);
+    // items y npcs NO derivan volumen
+    assert.equal(byId.has("derived_ent_espada"), false);
+    assert.equal(byId.has("derived_ent_aldeano"), false);
+    // el derivado valida y compone en ambas perspectivas
+    const parsed = parseVolumes(derived);
+    assert.equal(parsed.ok, true, parsed.ok ? "" : parsed.error);
+    for (const perspective of ["topdown", "isometric"] as const) {
+      const c = composeBlueprint({ volumes: derived, biome: "grass" }, perspective, "tile_0_0");
+      assert.ok(c.svg.includes('data-vid="derived_ent_casa_1"'), perspective);
+    }
+  });
+
+  it("una entity que solapa un volumen declarado no se deriva", () => {
+    const declared: Volume[] = [{ id: "b", label: "casa", type: "building", rect: [18, 18, 20, 16] }];
+    const derived = deriveVolumesFromSchema(
+      { scene_id: "t", entities: [{ id: "casa_1", kind: "building", cell: [20, 20], footprint: [16, 12], name: "casa" }] },
+      declared,
+    );
+    assert.equal(derived.length, 0);
   });
 
   it("el resultado derivado compone y valida", () => {

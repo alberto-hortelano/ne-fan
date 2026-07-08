@@ -137,6 +137,17 @@ export interface ComposedTilePlan {
     /** Huella en celdas de mundo [minU, minV, maxU, maxV]. */
     footprint_cells: [number, number, number, number];
   }>;
+  /** Tramos recortables de los volúmenes altos (SVG standalone + bbox +
+   *  baseline, unidades de usuario). El renderer los rasteriza como occluders
+   *  de depth-sort mientras el tile no tenga imagen IA analizada. */
+  occluders: Array<{
+    id: string;
+    vid: string;
+    label: string;
+    svg: string;
+    bbox: [number, number, number, number];
+    baseline_y: number;
+  }>;
 }
 
 /** Shape mínimo del grid derivado que pinta el overlay (espejo de
@@ -313,8 +324,9 @@ export interface Occluder {
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
   /** Origen del recorte: "image" = segmento clasificado `tall` por visión
-   *  (mundo derivado de imagen). Solo lo usa el overlay de debug (B). */
-  kind?: "image";
+   *  (mundo derivado de imagen); "plan" = tramo de volumen del blueprint
+   *  compuesto (rasterizado del SVG, sin imagen IA). */
+  kind?: "image" | "plan";
   /** Etiqueta de la clasificación por visión ("roble", "muro"...) — overlay B. */
   label?: string;
 }
@@ -488,8 +500,66 @@ export class CanvasRenderer {
     }
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
     if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
-    if (scene.__composed && !same) this.loadSvgLayer(tile, scene.__composed.svg, "planImage");
+    if (scene.__composed && !same) {
+      this.loadSvgLayer(tile, scene.__composed.svg, "planImage");
+      this.loadPlanOccluders(tile, scene.__composed);
+    }
     return { sceneChanged: prev !== undefined && !same };
+  }
+
+  /** Rasteriza los tramos de volúmenes altos del blueprint compuesto y los
+   *  instala como occluders de depth-sort — el jugador queda tapado por el
+   *  árbol/muro/edificio que tiene delante aunque el tile no tenga imagen IA
+   *  (modo vectorial, o interim hasta que el análisis instale los suyos).
+   *  Cada occluder pinta LOS MISMOS píxeles que la capa base en su misma
+   *  posición (patrón de los recortes de imagen): invisible salvo que haya
+   *  una entidad en medio. */
+  private loadPlanOccluders(tile: RendererTile, composed: ComposedTilePlan): void {
+    if (!Array.isArray(composed.occluders) || composed.occluders.length === 0) return;
+    const vb = composed.view_box;
+    const key = tile.key;
+    for (const occ of composed.occluders) {
+      const [bx, by, bw, bh] = occ.bbox;
+      if (!(bw > 0) || !(bh > 0)) continue;
+      // Misma resolución que el planImage (16 px por unidad de usuario).
+      const src = `<svg width="${Math.max(1, Math.round(bw * 16))}" height="${Math.max(1, Math.round(bh * 16))}" ${occ.svg.slice("<svg ".length)}`;
+      const blob = new Blob([src], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        // El tile fue reemplazado, o ya tiene imagen IA (que pinta los
+        // volúmenes y trae sus propios occluders del análisis) → descartar.
+        const current = this.tiles.get(key);
+        if (current !== tile || tile.sceneImage || tile.imageAnalyzed) return;
+        // bbox/baseline en unidades de usuario → coords de VISTA: mapeo
+        // lineal del viewBox del blueprint sobre el canvas de vista del tile.
+        const full = this.projection.tileViewRect(tile.rect, vb);
+        const sx = full.w / vb.width;
+        const sy = full.h / vb.height;
+        this.addOccluders([
+          {
+            id: `plan:${key}:${occ.id}`,
+            tileKey: key,
+            kind: "plan",
+            label: occ.label,
+            img,
+            view: {
+              minX: full.x + (bx - vb.minX) * sx,
+              minZ: full.y + (by - vb.minY) * sy,
+              maxX: full.x + (bx + bw - vb.minX) * sx,
+              maxZ: full.y + (by + bh - vb.minY) * sy,
+            },
+            baselineView: full.y + (occ.baseline_y - vb.minY) * sy,
+          },
+        ]);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        errors.push("scene", `occluder del blueprint (${occ.label}) no decodifica; se omite su depth-sort`);
+      };
+      img.src = url;
+    }
   }
 
   /** Marca el tile bajo el jugador como escena "activa" (caminos legacy). */
@@ -507,10 +577,13 @@ export class CanvasRenderer {
     this.occluders = [];
   }
 
-  /** ¿El tile que contiene (x,z) tiene fondo IA instalado? */
-  private tileImageAt(x: number, z: number): boolean {
+  /** ¿El tile que contiene (x,z) tiene arte instalado (imagen IA o blueprint
+   *  compuesto)? Con arte, las entidades estáticas no pintan su caja del
+   *  esquema — el arte ya dibuja sus volúmenes (una caja sin proyectar encima
+   *  duplicaría el elemento y en iso ni siquiera estaría alineada). */
+  private tileArtAt(x: number, z: number): boolean {
     for (const t of this.tiles.values()) {
-      if (t.sceneImage && x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ) {
+      if ((t.sceneImage || t.planImage) && x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ) {
         return true;
       }
     }
@@ -1594,7 +1667,7 @@ export class CanvasRenderer {
       // Static-shape entities (buildings/props/items) are baked into the AI
       // scene image of THEIR tile; skip their schematic box when that tile has
       // one (same gate as the static objects loop). Creatures draw on top.
-      if (this.tileImageAt(e.pos.x, e.pos.z)) return;
+      if (this.tileArtAt(e.pos.x, e.pos.z)) return;
       const sx = e.sizeXZ?.x ?? Math.max(0.5, e.radius / this.scale * 2);
       const sz = e.sizeXZ?.z ?? Math.max(0.5, e.radius / this.scale * 2);
       this.drawSceneBox({

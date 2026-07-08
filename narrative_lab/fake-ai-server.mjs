@@ -178,6 +178,10 @@ function bootstrapTile() {
     entities: [
       { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+      // Casa declarada como ENTITY (sin volume ni structure): el compositor
+      // debe derivarle un edificio con techo — regresión del bug "casas como
+      // cuadrados sin proyectar en iso".
+      { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14], glyph: "C" },
     ],
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
     map_ground: BOOTSTRAP_MAP_GROUND,

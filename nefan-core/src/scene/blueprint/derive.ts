@@ -1,8 +1,9 @@
 /** Fallback de volúmenes desde el esquema del tile: cuando el motor
  *  narrativo no declara `volumes` (o los declara parciales), el compositor
  *  sintetiza los que el esquema ya implica — `structures` → edificios
- *  cutaway, `vegetation_zones` → árboles/matas dispersos. Así TODO tile tiene
- *  blueprint con volumen coherente y el modo legacy "boxes" desaparece.
+ *  cutaway, `entities` estáticas (building/tree/prop/decor) → su volumen
+ *  equivalente, `vegetation_zones` → árboles/matas dispersos. Así TODO tile
+ *  tiene blueprint con volumen coherente y el modo legacy "boxes" desaparece.
  *
  *  Determinista: el scatter usa SeededRng derivado de `scene_id` + índice de
  *  zona (mismo criterio que la expansión de vegetación de scene-expand). Los
@@ -37,10 +38,23 @@ interface RawFeature {
   width?: number;
 }
 
+interface RawEntity {
+  id?: string;
+  kind?: string;
+  cell?: unknown;
+  footprint?: unknown;
+  name?: string;
+  shape?: string;
+}
+
 export interface DeriveInput {
   scene_id?: string;
   structures?: RawStructure[];
   vegetation_zones?: RawZone[];
+  /** Entities del esquema — las estáticas (building/tree/prop/decor) derivan
+   *  su volumen para que el blueprint las pinte proyectadas (sin esto, el
+   *  cliente caería a cajas sin proyectar sobre el plan). */
+  entities?: RawEntity[];
   /** Caminos/ríos del esquema — el scatter de vegetación no los pisa. */
   terrain_features?: RawFeature[];
 }
@@ -95,6 +109,45 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
       cutaway: true,
       doors,
     });
+    blockers.push(rect);
+  }
+
+  // ── Entities estáticas del esquema → su volumen equivalente ──────────────
+  // building = edificio NO enterable (con techo — los enterables son
+  // structures); tree/prop/decor = su primitiva. Los ids llevan el id de la
+  // entity para poder correlacionar (occluders, debug).
+  const entities = Array.isArray(raw.entities) ? raw.entities : [];
+  for (const ent of entities) {
+    const kind = ent?.kind;
+    if (kind !== "building" && kind !== "tree" && kind !== "prop" && kind !== "decor") continue;
+    const cell = ent.cell;
+    const fp = ent.footprint;
+    if (!Array.isArray(cell) || cell.length < 2 || !Array.isArray(fp) || fp.length < 2) continue;
+    const [c, r] = cell as number[];
+    const [w, d] = fp as number[];
+    if (![c, r, w, d].every((n) => typeof n === "number" && Number.isFinite(n)) || w <= 0 || d <= 0) continue;
+    const rect: [number, number, number, number] = [
+      Math.max(0, Math.min(TILE_CELLS - 1, c)),
+      Math.max(0, Math.min(TILE_CELLS - 1, r)),
+      Math.min(w, TILE_CELLS),
+      Math.min(d, TILE_CELLS),
+    ];
+    if (blockers.some((b) => overlaps(b, rect))) continue; // el LLM/structures ya lo cubren
+    const label = typeof ent.name === "string" && ent.name ? ent.name : kind;
+    const id = `derived_ent_${ent.id ?? `${c}_${r}`}`;
+    if (kind === "tree") {
+      const s = Math.min(2.5, Math.max(0.5, Math.max(w, d) / 4));
+      out.push({ id, label, type: "tree", at: [round1(c + w / 2), round1(r + d / 2)], s: round1(s) });
+    } else if (kind === "building") {
+      out.push({ id, label, type: "building", rect, roof: { kind: "gable" } });
+    } else {
+      const shape = ent.shape === "cylinder" || ent.shape === "sphere" ? "cylinder" : "box";
+      out.push(
+        kind === "decor"
+          ? { id, label, type: "prop", rect, shape, h: 1, passable: true }
+          : { id, label, type: "prop", rect, shape, h: 3 },
+      );
+    }
     blockers.push(rect);
   }
 
