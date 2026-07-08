@@ -3,6 +3,7 @@
  *  Sin paredes, sin exits — el concepto sala se fue. */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
+import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
@@ -147,6 +148,8 @@ export interface ComposedTilePlan {
     svg: string;
     bbox: [number, number, number, number];
     baseline_y: number;
+    /** Huella del tramo en celdas de mundo [minU, minV, maxU, maxV]. */
+    footprint_cells: [number, number, number, number];
   }>;
 }
 
@@ -325,6 +328,11 @@ export interface Occluder {
   img: HTMLImageElement;
   view: SceneBounds;
   baselineView: number;
+  /** Huella de MUNDO (metros XZ) del tramo — cuando existe, el depth-sort
+   *  compara la posición de cada entidad contra ella (entidad delante ⇔
+   *  x ≥ maxX o z ≥ maxZ), geométricamente exacto para huellas AABB con la
+   *  cámara al SE. Sin ella (occluders de imagen) se usa la baseline. */
+  footprintWorld?: SceneBounds;
   /** Tile del que se recortó el sprite; undefined = legacy mono-escena. */
   tileKey?: string;
   /** Origen del recorte: "image" = segmento clasificado `tall` por visión
@@ -541,6 +549,9 @@ export class CanvasRenderer {
         const full = this.projection.tileViewRect(tile.rect, vb);
         const sx = full.w / vb.width;
         const sy = full.h / vb.height;
+        // Huella del tramo: celdas del tile → metros de MUNDO (ancla NW del
+        // rect del tile) — el comparador del depth-sort opera en mundo.
+        const [fu0, fv0, fu1, fv1] = occ.footprint_cells;
         this.addOccluders([
           {
             id: `plan:${key}:${occ.id}`,
@@ -555,6 +566,12 @@ export class CanvasRenderer {
               maxZ: full.y + (by + bh - vb.minY) * sy,
             },
             baselineView: full.y + (occ.baseline_y - vb.minY) * sy,
+            footprintWorld: {
+              minX: tile.rect.minX + fu0 * TILE_MPC,
+              minZ: tile.rect.minZ + fv0 * TILE_MPC,
+              maxX: tile.rect.minX + fu1 * TILE_MPC,
+              maxZ: tile.rect.minZ + fv1 * TILE_MPC,
+            },
           },
         ]);
       };
@@ -723,9 +740,9 @@ export class CanvasRenderer {
   }
 
   /** Resumen de occluders para el hook de bench (__nefan). Solo lectura. */
-  debugOccluders(): { id: string; kind?: string; tileKey?: string; view: SceneBounds; baselineView: number }[] {
+  debugOccluders(): { id: string; kind?: string; tileKey?: string; view: SceneBounds; baselineView: number; footprintWorld?: SceneBounds }[] {
     return this.occluders.map((o) => ({
-      id: o.id, kind: o.kind, tileKey: o.tileKey, view: o.view, baselineView: o.baselineView,
+      id: o.id, kind: o.kind, tileKey: o.tileKey, view: o.view, baselineView: o.baselineView, footprintWorld: o.footprintWorld,
     }));
   }
 
@@ -1473,6 +1490,21 @@ export class CanvasRenderer {
    *  so a wall whose base is in front of the player covers him, and one behind
    *  him does not. The scene image is still the background; the cutouts here are
    *  the SAME pixels redrawn at the same place, so the overlap is seamless. */
+  /** ¿La entidad en (x, z) se pinta DELANTE de este occluder?
+   *  - Con huella de mundo (occluders del plan): exacto para AABBs con la
+   *    cámara al SE — delante ⇔ al este (x ≥ maxX) o al sur (z ≥ maxZ) de la
+   *    huella del TRAMO; al norte/oeste o DENTRO (bajo el arco de una
+   *    puerta) ⇒ el tramo la tapa. ε absorbe el radio de colisión.
+   *  - Sin huella (occluders de imagen): criterio escalar por baseline. */
+  private entityInFront(x: number, z: number, screenY: number, occ: Occluder, occBaselineScreen: number): boolean {
+    const fp = occ.footprintWorld;
+    if (fp) {
+      const EPS = 0.05;
+      return x >= fp.maxX - EPS || z >= fp.maxZ - EPS;
+    }
+    return screenY >= occBaselineScreen;
+  }
+
   private drawDepthSorted(
     player: {
       pos: Vec3;
@@ -1485,31 +1517,46 @@ export class CanvasRenderer {
     objects: Entity[],
     npcs: Entity[],
   ): void {
-    const items: { baseline: number; draw: () => void }[] = [];
-    for (const occ of this.occluders) {
-      const v = occ.view;
-      const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
-      const iw = (v.maxX - v.minX) * this.scale;
-      const ih = (v.maxZ - v.minZ) * this.scale;
-      items.push({
-        baseline: this.viewToScreen(0, occ.baselineView)[1],
-        draw: () => this.ctx.drawImage(occ.img, ix, iy, iw, ih),
-      });
-    }
-    // Entidades: baseline = su Y de vista (en iso depende de x y z).
-    for (const npc of npcs) {
-      items.push({ baseline: this.toScreen(npc.pos.x, npc.pos.z)[1], draw: () => this.drawNpc(npc) });
-    }
-    for (const e of enemies) {
-      items.push({ baseline: this.toScreen(e.pos.x, e.pos.z)[1], draw: () => this.drawEntity(e) });
-    }
-    for (const obj of objects) {
-      items.push({ baseline: this.toScreen(obj.pos.x, obj.pos.z)[1], draw: () => this.drawEntity(obj) });
-    }
-    items.push({ baseline: this.toScreen(player.pos.x, player.pos.z)[1], draw: () => this.drawPlayer(player) });
+    // Occluders por profundidad de baseline — el mismo orden del pintor con
+    // el que el compositor pintó el planImage base (consistencia estática).
+    const occs = [...this.occluders].sort((a, b) => a.baselineView - b.baselineView);
+    const baselineScreen = occs.map((o) => this.viewToScreen(0, o.baselineView)[1]);
 
-    items.sort((a, b) => a.baseline - b.baseline);
-    for (const it of items) it.draw();
+    // Cada entidad se pinta justo ANTES del primer occluder que la tapa
+    // (key = su índice; n si ninguno la tapa). Entre entidades del mismo
+    // hueco, por su Y de pantalla (puntos — el criterio escalar es exacto).
+    interface Slot {
+      screenY: number;
+      draw: () => void;
+    }
+    const buckets: Slot[][] = Array.from({ length: occs.length + 1 }, () => []);
+    const place = (x: number, z: number, draw: () => void): void => {
+      const screenY = this.toScreen(x, z)[1];
+      let key = occs.length;
+      for (let i = 0; i < occs.length; i++) {
+        if (!this.entityInFront(x, z, screenY, occs[i], baselineScreen[i])) {
+          key = i;
+          break;
+        }
+      }
+      buckets[key].push({ screenY, draw });
+    };
+    for (const npc of npcs) place(npc.pos.x, npc.pos.z, () => this.drawNpc(npc));
+    for (const e of enemies) place(e.pos.x, e.pos.z, () => this.drawEntity(e));
+    for (const obj of objects) place(obj.pos.x, obj.pos.z, () => this.drawEntity(obj));
+    place(player.pos.x, player.pos.z, () => this.drawPlayer(player));
+
+    for (let i = 0; i <= occs.length; i++) {
+      const bucket = buckets[i];
+      bucket.sort((a, b) => a.screenY - b.screenY);
+      for (const s of bucket) s.draw();
+      if (i < occs.length) {
+        const occ = occs[i];
+        const v = occ.view;
+        const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+        this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
+      }
+    }
   }
 
   /** Draw a static scene element (building/prop/item) using its authored

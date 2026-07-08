@@ -225,14 +225,32 @@ describe("blueprint/compose", () => {
       // La muralla (128 celdas) se trocea: varios occluders con baselines locales.
       const wallOccs = a.occluders.filter((o) => o.vid === "muralla_sur");
       assert.ok(wallOccs.length > 2, `${perspective}: muralla sin trocear (${wallOccs.length})`);
-      // El cutaway emite base y front por separado.
+      // El cutaway emite cada muro trasero y el frontal por separado (el
+      // suelo NO ocluye — taparía los muebles interiores).
       const tabernaOccs = a.occluders.filter((o) => o.vid === "taberna");
-      assert.deepEqual(tabernaOccs.map((o) => o.id).sort(), ["taberna:base", "taberna:front"], perspective);
+      assert.deepEqual(
+        tabernaOccs.map((o) => o.id).sort(),
+        ["taberna:back_n", "taberna:back_w", "taberna:front"],
+        perspective,
+      );
+      // Huellas FINAS de los tramos del cutaway (rect [8,12,38,34]):
+      const backN = tabernaOccs.find((o) => o.id === "taberna:back_n")!;
+      const backW = tabernaOccs.find((o) => o.id === "taberna:back_w")!;
+      const front = tabernaOccs.find((o) => o.id === "taberna:front")!;
+      assert.deepEqual(backN.footprint_cells, [8, 12, 46, 13.2], `${perspective}: huella back_n`);
+      assert.deepEqual(backW.footprint_cells, [8, 12, 9.2, 46], `${perspective}: huella back_w`);
+      assert.deepEqual(front.footprint_cells, [8, 44.8, 46, 46], `${perspective}: huella front`);
+      // Árbol: la huella del comparador es SOLO el tronco, no la copa.
+      const tree = a.occluders.find((o) => o.vid === "roble_1")!;
+      const [tu0, tv0, tu1, tv1] = tree.footprint_cells;
+      assert.ok(tu1 - tu0 < 3 && tv1 - tv0 < 3, `${perspective}: huella del árbol no es el tronco`);
       for (const o of a.occluders) {
         const [, y, w, h] = o.bbox;
         assert.ok(w > 0 && h > 0, `${perspective}/${o.id}: bbox vacío`);
         assert.ok(o.svg.startsWith("<svg viewBox=") && o.svg.endsWith("</svg>"), `${perspective}/${o.id}: svg malformado`);
         assert.ok(o.svg.includes(`data-vid="${o.vid}"`));
+        const [fu0, fv0, fu1, fv1] = o.footprint_cells;
+        assert.ok(fu1 > fu0 && fv1 > fv0, `${perspective}/${o.id}: huella vacía`);
         // baseline dentro del rango vertical del bbox (con margen del pad)
         assert.ok(o.baseline_y >= y - 0.5 && o.baseline_y <= y + h + 2, `${perspective}/${o.id}: baseline fuera`);
       }

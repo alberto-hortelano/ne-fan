@@ -26,8 +26,10 @@ import type { Volume } from "./volumes.js";
  *  v2: las entities estáticas del esquema (building/tree/prop/decor) derivan
  *  volumen — el blueprint de tiles existentes cambia.
  *  v3: detalle procedural del suelo (manchas de bioma, flores, piedritas)
- *  bajo el arte del LLM — el suelo deja de ser un color plano. */
-export const COMPOSER_VERSION = 3;
+ *  bajo el arte del LLM — el suelo deja de ser un color plano.
+ *  v4: los muros traseros del cutaway se emiten en dos grupos (back_n /
+ *  back_w) — tramos de occluder con huella fina para el depth-sort. */
+export const COMPOSER_VERSION = 4;
 
 export interface BlueprintPlan {
   /** SVG plano del suelo (viewBox "0 0 128 128"), ya pasado por
@@ -59,8 +61,7 @@ export interface ComposedElement {
  *  cliente lo rasteriza y lo usa como occluder de depth-sort cuando no hay
  *  imagen IA (modo vectorial / interim hasta el análisis). Un muro largo
  *  emite un occluder POR TRAMO (cada uno con su baseline local); un edificio
- *  cutaway emite base (suelo+muros traseros) y front (muros bajos) por
- *  separado. */
+ *  cutaway emite cada muro trasero y los frontales bajos por separado. */
 export interface ComposedOccluder {
   /** Único dentro del tile (id del volumen + sufijo de tramo/fase). */
   id: string;
@@ -73,6 +74,10 @@ export interface ComposedOccluder {
   bbox: [number, number, number, number];
   /** Y (unidades de usuario) del punto de contacto más profundo del tramo. */
   baseline_y: number;
+  /** Huella del TRAMO en celdas de mundo [minU, minV, maxU, maxV] — el
+   *  depth-sort del cliente compara la posición de cada entidad contra ella
+   *  (delante ⇔ este o sur de la huella); para árboles es SOLO el tronco. */
+  footprint_cells: [number, number, number, number];
 }
 
 export interface ComposedBlueprint {
@@ -181,9 +186,9 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
 
   // Orden del pintor: profundidad del punto de contacto más profundo.
   // Ajustes que evitan los fallos clásicos del criterio "max corner":
-  //  - Edificios cutaway en dos pasadas: suelo+muros traseros a la
-  //    profundidad de su borde norte (los muebles interiores quedan encima)
-  //    y muros frontales bajos a la del borde sur.
+  //  - Edificios cutaway en cuatro pasadas: suelo (sin occluder), cada muro
+  //    trasero por separado (huella fina — juntos, su AABB en L cubría el
+  //    interior y tapaba al personaje) y muros frontales bajos al borde sur.
   //  - Muros largos troceados en segmentos (~14 celdas) que se ordenan
   //    localmente — si no, una muralla que cruza el tile tendría la
   //    profundidad de su extremo y taparía torres y edificios enteros.
@@ -193,10 +198,13 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     render: Volume;
     vid: string;
     seed: string;
-    phase: "floor" | "base" | "front";
+    phase: "floor" | "back_n" | "back_w" | "base" | "front";
     depth: number;
     /** Punto de mundo (u,v) del contacto más profundo del tramo — baseline. */
     depthPt: [number, number];
+    /** Huella del TRAMO en celdas [minU, minV, maxU, maxV] — comparador del
+     *  depth-sort del cliente. Árboles: SOLO el tronco (la copa no ordena). */
+    footprint: [number, number, number, number];
     /** false = el tramo no se recorta como occluder aunque el volumen sea
      *  tall (el suelo del cutaway pintado encima taparía sus muebles). */
     occludes?: boolean;
@@ -205,22 +213,38 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
   for (const v of plan.volumes) {
     const fp = volumeFootprint(v);
     if (v.type === "building" && v.cutaway) {
-      entries.push({ render: v, vid: v.id, seed: `${v.id}:floor`, phase: "floor", depth: proj.depth(fp.cells[2], fp.cells[1]) - 0.01, depthPt: [fp.cells[2], fp.cells[1]], occludes: false });
-      entries.push({ render: v, vid: v.id, seed: `${v.id}:base`, phase: "base", depth: proj.depth(fp.cells[2], fp.cells[1]), depthPt: [fp.cells[2], fp.cells[1]] });
-      entries.push({ render: v, vid: v.id, seed: `${v.id}:front`, phase: "front", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]), depthPt: fp.depthPoint });
+      const [u0, v0, w, d] = v.rect;
+      const t = 1.2; // grosor de los muros traseros (renderBuilding)
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:floor`, phase: "floor", depth: proj.depth(fp.cells[2], fp.cells[1]) - 0.01, depthPt: [fp.cells[2], fp.cells[1]], footprint: fp.cells, occludes: false });
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:back_n`, phase: "back_n", depth: proj.depth(fp.cells[2], fp.cells[1]), depthPt: [fp.cells[2], fp.cells[1]], footprint: [u0, v0, u0 + w, v0 + t] });
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:back_w`, phase: "back_w", depth: proj.depth(fp.cells[2], fp.cells[1]) + 0.01, depthPt: [fp.cells[2], fp.cells[1]], footprint: [u0, v0, u0 + t, v0 + d] });
+      // frontal: franjas sur + este bajas (huella = la unión de ambas menos
+      // el interior — como AABB, la franja sur domina el criterio)
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:front`, phase: "front", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]), depthPt: fp.depthPoint, footprint: [u0, v0 + d - t, u0 + w, v0 + d] });
       continue;
     }
     if (v.type === "wall") {
+      const half = (v.width ?? 3) / 2;
       const chunks = chunkPolyline(v.points as [number, number][], 14);
       chunks.forEach((points, i) => {
         const sub: Volume = { ...v, points };
         const sfp = volumeFootprint(sub);
-        entries.push({ render: sub, vid: v.id, seed: `${v.id}:${i}`, phase: "base", depth: proj.depth(sfp.depthPoint[0], sfp.depthPoint[1]), depthPt: sfp.depthPoint });
+        const minU = Math.min(points[0][0], points[1][0]) - half;
+        const maxU = Math.max(points[0][0], points[1][0]) + half;
+        const minV = Math.min(points[0][1], points[1][1]) - half;
+        const maxV = Math.max(points[0][1], points[1][1]) + half;
+        entries.push({ render: sub, vid: v.id, seed: `${v.id}:${i}`, phase: "base", depth: proj.depth(sfp.depthPoint[0], sfp.depthPoint[1]), depthPt: sfp.depthPoint, footprint: [minU, minV, maxU, maxV] });
       });
       continue;
     }
+    // Huella del comparador: para árboles SOLO el tronco (volumeFootprint da
+    // el suyo, ya fino); para el resto la huella del volumen.
+    const footprint: [number, number, number, number] =
+      v.type === "tree"
+        ? [v.at[0] - 0.9 * (v.s ?? 1), v.at[1] - 0.9 * (v.s ?? 1), v.at[0] + 0.9 * (v.s ?? 1), v.at[1] + 0.9 * (v.s ?? 1)]
+        : fp.cells;
     const bias = v.type === "tower" || v.type === "gate" ? 4 : 0;
-    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias, depthPt: fp.depthPoint });
+    entries.push({ render: v, vid: v.id, seed: v.id, phase: "base", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]) + bias, depthPt: fp.depthPoint, footprint });
   }
   entries.sort((a, b) => a.depth - b.depth || a.vid.localeCompare(b.vid) || a.seed.localeCompare(b.seed));
 
@@ -229,7 +253,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
   const tallByVid = new Map(plan.volumes.map((v) => [v.id, classify(v).tall]));
   const occluders: ComposedOccluder[] = [];
   out.push('<g id="volumes">');
-  for (const { render, vid, seed, depthPt, phase, occludes } of entries) {
+  for (const { render, vid, seed, depthPt, phase, occludes, footprint } of entries) {
     // bbox FRESCO por entry: el occluder del tramo necesita el suyo; el del
     // elemento (visión) se acumula uniendo los tramos.
     const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
@@ -264,6 +288,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
           svg: `<svg viewBox="${fmt(bx)} ${fmt(by)} ${fmt(bw)} ${fmt(bh)}" xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
           bbox: [round2(bx), round2(by), round2(bw), round2(bh)],
           baseline_y: round2(proj.pt(depthPt[0], depthPt[1])[1]),
+          footprint_cells: [round2(footprint[0]), round2(footprint[1]), round2(footprint[2]), round2(footprint[3])],
         });
       }
     }

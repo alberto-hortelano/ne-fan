@@ -931,6 +931,8 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
         e: collidesAt(playerPos.x + 0.5, playerPos.z),
       },
     }),
+    occluders: () => renderer.debugOccluders(),
+    npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
   };
 }
 
@@ -1341,6 +1343,14 @@ function gameLoop(now: number): void {
 // --- Init ---
 
 populateSceneSelector();
+
+// Override de bench: `?perspective=isometric` fuerza la proyección al cargar
+// (los fixtures locales del dropdown no tienen sesión y sin esto siempre se
+// verían en topdown). La perspectiva de una sesión real la pisa al iniciar.
+const perspectiveOverride = new URLSearchParams(location.search).get("perspective");
+if (perspectiveOverride === "isometric" || perspectiveOverride === "topdown") {
+  applySessionPerspective(perspectiveOverride);
+}
 
 // Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
 // bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.

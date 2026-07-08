@@ -388,11 +388,12 @@ function splitSpans(len: number, holes: [number, number][]): [number, number][] 
 /** Fase de render de un edificio cutaway:
  *  - "floor": SOLO el suelo interior (+sombra) — NO se recorta como occluder
  *    (un suelo pintado encima taparía los muebles `prop` del interior).
- *  - "base": los muros traseros a altura completa (occluder: tapan lo que
- *    quede al norte).
+ *  - "back_n" / "back_w": cada muro trasero a altura completa POR SEPARADO —
+ *    cada uno es un occluder con huella FINA (juntos formaban una L cuyo AABB
+ *    cubría el interior y tapaba al personaje pegado a ellos).
  *  - "front": muros frontales bajos + escalones, a la profundidad del borde
  *    SUR. Los edificios con techo se pintan en una sola fase ("base"). */
-export type BuildingPhase = "floor" | "base" | "front";
+export type BuildingPhase = "floor" | "back_n" | "back_w" | "base" | "front";
 
 export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: BuildingPhase = "base"): void {
   const [u0, v0, w, d] = b.rect;
@@ -418,10 +419,14 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
       }
       return;
     }
-    if (phase === "base") {
-      // muros traseros a altura completa (cara interior visible hacia cámara)
+    if (phase === "back_n") {
+      // muro trasero norte a altura completa (cara interior hacia cámara)
       face(ctx, [u0, v0 + 1.2], [u1, v0 + 1.2], wallH, colors.shade);
       quadUVH(ctx, [[u0, v0, wallH], [u1, v0, wallH], [u1, v0 + 1.2, wallH], [u0, v0 + 1.2, wallH]], colors.top);
+      return;
+    }
+    if (phase === "back_w") {
+      // muro trasero oeste a altura completa
       face(ctx, [u0 + 1.2, v0 + 1.2], [u0 + 1.2, v1], wallH, colors.lit);
       quadUVH(ctx, [[u0, v0, wallH], [u0 + 1.2, v0 + 1.2, wallH], [u0 + 1.2, v1, wallH], [u0, v1, wallH]], colors.top);
       return;
