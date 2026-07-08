@@ -293,33 +293,43 @@ export function renderGate(ctx: RenderCtx, g: GateVolume): void {
     const p1: [number, number] = [camEdge[0][0] + (camEdge[1][0] - camEdge[0][0]) * (t0 + 0.13), camEdge[0][1] + (camEdge[1][1] - camEdge[0][1]) * (t0 + 0.13)];
     faceSpan(ctx, p0, p1, h, h + 1.6, PALETTE.merlon);
   }
-  // arco: hueco oscuro en la cara de cámara, camino visible al fondo
-  const [gx, gy] = ctx.proj.pt(au, av + (g.orient === "x" ? depthHalf : 0), 0);
-  const [gx2] = g.orient === "y" ? ctx.proj.pt(au + depthHalf, av, 0) : [gx];
-  const ax = g.orient === "x" ? gx : gx2;
+  // arco: hueco oscuro EN el plano de la cara de cámara. Los pies del vano
+  // son puntos de MUNDO proyectados — el hueco es un quad alineado con la
+  // cara (en iso la cara es diagonal; un rect vertical de pantalla quedaba
+  // descentrado y flotando) coronado por una semielipse rotada con la misma
+  // pendiente.
   const iso = ctx.proj.kind === "isometric";
-  const halfW = (g.orient === "x" ? w / 2 : w / 2) * (iso ? Math.SQRT2 * ISO_SX * 0.75 : 0.55);
-  const archH = h * (iso ? 0.375 : 1) * 0.62;
+  const footA: [number, number] = g.orient === "x" ? [au - w / 2, av + depthHalf] : [au + depthHalf, av - w / 2];
+  const footB: [number, number] = g.orient === "x" ? [au + w / 2, av + depthHalf] : [au + depthHalf, av + w / 2];
+  const archH = h * 0.58;
+  quadUVH(ctx, [[footA[0], footA[1], archH], [footB[0], footB[1], archH], [footB[0], footB[1], 0], [footA[0], footA[1], 0]], "#211d17");
+  const [tx1, ty1] = ctx.proj.pt(footA[0], footA[1], archH);
+  const [tx2, ty2] = ctx.proj.pt(footB[0], footB[1], archH);
+  const mx = (tx1 + tx2) / 2;
+  const my = (ty1 + ty2) / 2;
+  const rxA = Math.hypot(tx2 - tx1, ty2 - ty1) / 2;
+  const angle = (Math.atan2(ty2 - ty1, tx2 - tx1) * 180) / Math.PI;
+  const ryA = rxA * (iso ? 0.55 : 0.8);
   ctx.out.push(
-    path(
-      `M${fmt(ax - halfW)},${fmt(gy)} L${fmt(ax - halfW)},${fmt(gy - archH)} A${fmt(halfW)},${fmt(halfW * 0.8)} 0 0 1 ${fmt(ax + halfW)},${fmt(gy - archH)} L${fmt(ax + halfW)},${fmt(gy)} Z`,
-      "#211d17",
-    ),
+    `<ellipse cx="${fmt(mx)}" cy="${fmt(my)}" rx="${fmt(rxA)}" ry="${fmt(ryA)}" fill="#211d17" transform="rotate(${fmt(angle)} ${fmt(mx)} ${fmt(my)})"/>`,
   );
-  ctx.out.push(`<rect x="${fmt(ax - halfW * 0.7)}" y="${fmt(gy - 1.4)}" width="${fmt(halfW * 1.4)}" height="1.4" fill="${PALETTE.dirtDark}" opacity="0.6"/>`);
-  ctx.out.push(
-    path(`M${fmt(ax - halfW)},${fmt(gy - archH)} A${fmt(halfW)},${fmt(halfW * 0.8)} 0 0 1 ${fmt(ax + halfW)},${fmt(gy - archH)}`, "none", `stroke="#8b8678" stroke-width="0.9"`),
-  );
+  // umbral de tierra a los pies del vano
+  const [fx1, fy1] = ctx.proj.pt(footA[0], footA[1], 0);
+  const [fx2, fy2] = ctx.proj.pt(footB[0], footB[1], 0);
+  ctx.out.push(line([fx1, fy1], [fx2, fy2], PALETTE.dirtDark, 1.2, 'opacity="0.5"'));
   if (g.banners !== false) {
-    for (const s of [-1, 1]) {
-      const px = ax + s * (halfW + 1.6);
+    // estandartes colgando a media altura del cuerpo, a ambos lados del arco
+    // (posiciones de PANTALLA relativas al arco, ya proyectado)
+    for (const s of [-1, 1] as const) {
+      const px = mx + s * (rxA + 2.2);
+      const py = my - ryA * 0.4;
       ctx.out.push(
         path(
-          `M${fmt(px - 0.95)},${fmt(gy - archH - 3.4)} L${fmt(px + 0.95)},${fmt(gy - archH - 3.4)} L${fmt(px + 0.95)},${fmt(gy - archH + 0.6)} L${fmt(px)},${fmt(gy - archH - 0.3)} L${fmt(px - 0.95)},${fmt(gy - archH + 0.6)} Z`,
+          `M${fmt(px - 0.95)},${fmt(py - 3.4)} L${fmt(px + 0.95)},${fmt(py - 3.4)} L${fmt(px + 0.95)},${fmt(py + 0.6)} L${fmt(px)},${fmt(py - 0.3)} L${fmt(px - 0.95)},${fmt(py + 0.6)} Z`,
           "#a03028",
         ),
       );
-      ctx.out.push(circle(px, gy - archH - 2.2, 0.42, "#c9a24b"));
+      ctx.out.push(circle(px, py - 2.2, 0.42, "#c9a24b"));
     }
   }
 }
@@ -375,12 +385,14 @@ function splitSpans(len: number, holes: [number, number][]): [number, number][] 
   return out.filter(([a, b]) => b - a > 0.2);
 }
 
-/** Fase de render de un edificio cutaway: el suelo y los muros traseros se
- *  pintan a la profundidad del borde NORTE (los muebles interiores —
- *  `prop`s del plan — quedan encima), y los muros frontales bajos a la del
- *  borde SUR (tapan la base de lo que quede detrás). Los edificios con techo
- *  se pintan en una sola fase ("base"). */
-export type BuildingPhase = "base" | "front";
+/** Fase de render de un edificio cutaway:
+ *  - "floor": SOLO el suelo interior (+sombra) — NO se recorta como occluder
+ *    (un suelo pintado encima taparía los muebles `prop` del interior).
+ *  - "base": los muros traseros a altura completa (occluder: tapan lo que
+ *    quede al norte).
+ *  - "front": muros frontales bajos + escalones, a la profundidad del borde
+ *    SUR. Los edificios con techo se pintan en una sola fase ("base"). */
+export type BuildingPhase = "floor" | "base" | "front";
 
 export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: BuildingPhase = "base"): void {
   const [u0, v0, w, d] = b.rect;
@@ -391,7 +403,7 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
   const roofKind = b.cutaway ? "none" : (b.roof?.kind ?? "gable");
 
   if (b.cutaway) {
-    if (phase === "base") {
+    if (phase === "floor") {
       quadUVH(
         ctx,
         [[u0 + 1.2, v0 + 1.2, 0], [u1 + 1.8, v0 + 1.2, 0], [u1 + 1.8, v1 + 1.8, 0], [u0 + 1.2, v1 + 1.8, 0]],
@@ -404,6 +416,9 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
         const vv = v0 + i * 2.2;
         ctx.out.push(line(ctx.proj.pt(u0, vv, 0), ctx.proj.pt(u1, vv, 0), "#6a4b2b", 0.25));
       }
+      return;
+    }
+    if (phase === "base") {
       // muros traseros a altura completa (cara interior visible hacia cámara)
       face(ctx, [u0, v0 + 1.2], [u1, v0 + 1.2], wallH, colors.shade);
       quadUVH(ctx, [[u0, v0, wallH], [u1, v0, wallH], [u1, v0 + 1.2, wallH], [u0, v0 + 1.2, wallH]], colors.top);

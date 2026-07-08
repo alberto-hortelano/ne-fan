@@ -205,11 +205,15 @@ export interface Entity {
 const DEFAULT_TERRAIN_COLOR = "#1d2a18";
 /** Open field painted across the whole viewport so the world feels continuous
  *  beyond the authored scene rectangle (no black void at the edges). */
-const OPEN_FIELD_COLOR = "#16210f";
+/** Tono del mundo sin explorar: pariente oscuro del bioma base, no un negro
+ *  que parta la imagen en dos (el borde del tile ya marca el límite). */
+const OPEN_FIELD_COLOR = "#2c3d1e";
 /** Subtle border around the authored scene rectangle — the "plate" of geometry
  *  on which AI-generated images are later layered. */
 const SCENE_PLATE_BORDER = "rgba(120,140,90,0.25)";
-const GRID_COLOR = "#2a2a25";
+/** Rejilla de orientación: apenas una insinuación — sobre los blueprints
+ *  compuestos una rejilla marcada arruina el arte del suelo. */
+const GRID_COLOR = "rgba(0,0,0,0.05)";
 const PLAYER_COLOR = "#4a9";
 const NPC_COLOR = "#68c";
 

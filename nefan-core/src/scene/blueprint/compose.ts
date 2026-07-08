@@ -14,18 +14,20 @@
  *  detalle procedural usa SeededRng por volumen. Subir COMPOSER_VERSION al
  *  cambiar CUALQUIER byte de salida — viaja en la clave de caché. */
 
-import { BIOME_COLORS } from "./palette.js";
+import { BIOME_COLORS, darken, lighten } from "./palette.js";
 import type { Perspective, Projection } from "./projection.js";
 import { projectionFor } from "./projection.js";
 import { renderVolume, volumeFootprint, type RenderCtx } from "./render.js";
-import { fmt, innerSvg, seededRng } from "./svg.js";
+import { circle, ellipse, fmt, innerSvg, seededRng, uniform } from "./svg.js";
 import { TILE_CELLS } from "../tile.js";
 import type { Volume } from "./volumes.js";
 
 /** Subir en cada cambio de bytes de salida del compositor.
  *  v2: las entities estáticas del esquema (building/tree/prop/decor) derivan
- *  volumen — el blueprint de tiles existentes cambia. */
-export const COMPOSER_VERSION = 2;
+ *  volumen — el blueprint de tiles existentes cambia.
+ *  v3: detalle procedural del suelo (manchas de bioma, flores, piedritas)
+ *  bajo el arte del LLM — el suelo deja de ser un color plano. */
+export const COMPOSER_VERSION = 3;
 
 export interface BlueprintPlan {
   /** SVG plano del suelo (viewBox "0 0 128 128"), ya pasado por
@@ -104,10 +106,60 @@ function classify(v: Volume): { solid: boolean; tall: boolean } {
   }
 }
 
-function groundLayer(plan: BlueprintPlan, proj: Projection): string {
+/** Flores por bioma (círculos diminutos): tonos que leen como vegetación
+ *  floreciendo sin gritar. Biomas áridos/nevados no llevan. */
+const BIOME_FLOWERS: Record<string, string[]> = {
+  grass: ["#d8c458", "#c8d2df", "#c98a9a"],
+  meadow: ["#d8c458", "#c8d2df", "#c98a9a", "#b48ac9"],
+  forest_floor: ["#c8d2df", "#a9b86a"],
+  swamp: ["#a9b86a"],
+};
+
+/** Detalle procedural del suelo — la base de calidad NO depende del arte del
+ *  LLM: manchas orgánicas del bioma en dos tonos, piedritas y flores
+ *  dispersas (el estilo de las demos del blueprint lab). Va DEBAJO del
+ *  map_ground: los caminos/plazas del LLM pintan encima y las flores no los
+ *  invaden. Determinista por seedKey (caché de imagen intacta por tile). */
+function groundDetail(base: string, biome: string, seedKey: string): string {
+  const rng = seededRng(`${seedKey}:ground`);
+  const light = lighten(base, 0.09);
+  const dark = darken(base, 0.13);
+  const out: string[] = [];
+  // Manchas grandes de variación (elipses solapadas, 2 tonos, sutiles).
+  for (let i = 0; i < 10; i++) {
+    const cx = uniform(rng, 6, TILE_CELLS - 6);
+    const cy = uniform(rng, 6, TILE_CELLS - 6);
+    const rx = uniform(rng, 8, 14);
+    const ry = rx * uniform(rng, 0.55, 0.8);
+    const tone = i % 2 === 0 ? light : dark;
+    const op = uniform(rng, 0.28, 0.48);
+    out.push(ellipse(cx, cy, rx, ry, tone, `opacity="${op.toFixed(2)}"`));
+  }
+  // Piedritas (elipses pequeñas en gris piedra).
+  for (let i = 0; i < 6; i++) {
+    const cx = uniform(rng, 3, TILE_CELLS - 3);
+    const cy = uniform(rng, 3, TILE_CELLS - 3);
+    const r = uniform(rng, 0.7, 1.3);
+    out.push(ellipse(cx, cy, r, r * 0.7, i % 2 === 0 ? "#8f887a" : "#7d7869", 'opacity="0.75"'));
+  }
+  // Flores/motas de color del bioma.
+  const flowers = BIOME_FLOWERS[biome] ?? [];
+  if (flowers.length > 0) {
+    for (let i = 0; i < 16; i++) {
+      const cx = uniform(rng, 2, TILE_CELLS - 2);
+      const cy = uniform(rng, 2, TILE_CELLS - 2);
+      out.push(circle(cx, cy, 0.45, flowers[i % flowers.length], 'opacity="0.85"'));
+    }
+  }
+  return out.join("");
+}
+
+function groundLayer(plan: BlueprintPlan, proj: Projection, seedKey: string): string {
   const parts: string[] = [];
-  const base = BIOME_COLORS[plan.biome ?? "grass"] ?? BIOME_COLORS.grass;
+  const biome = plan.biome ?? "grass";
+  const base = BIOME_COLORS[biome] ?? BIOME_COLORS.grass;
   parts.push(`<rect x="0" y="0" width="${TILE_CELLS}" height="${TILE_CELLS}" fill="${base}"/>`);
+  parts.push(groundDetail(base, biome, seedKey));
   if (plan.map_ground) parts.push(innerSvg(plan.map_ground));
   const transform = proj.groundTransform ? ` transform="${proj.groundTransform}"` : "";
   // El clip aplica en coords locales del grupo (tras la transform): recorta el
@@ -125,7 +177,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
   const proj = projectionFor(perspective);
   const vb = proj.viewBox;
   const out: string[] = [];
-  out.push(groundLayer(plan, proj));
+  out.push(groundLayer(plan, proj, seedKey));
 
   // Orden del pintor: profundidad del punto de contacto más profundo.
   // Ajustes que evitan los fallos clásicos del criterio "max corner":
@@ -141,15 +193,19 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     render: Volume;
     vid: string;
     seed: string;
-    phase: "base" | "front";
+    phase: "floor" | "base" | "front";
     depth: number;
     /** Punto de mundo (u,v) del contacto más profundo del tramo — baseline. */
     depthPt: [number, number];
+    /** false = el tramo no se recorta como occluder aunque el volumen sea
+     *  tall (el suelo del cutaway pintado encima taparía sus muebles). */
+    occludes?: boolean;
   }
   const entries: Entry[] = [];
   for (const v of plan.volumes) {
     const fp = volumeFootprint(v);
     if (v.type === "building" && v.cutaway) {
+      entries.push({ render: v, vid: v.id, seed: `${v.id}:floor`, phase: "floor", depth: proj.depth(fp.cells[2], fp.cells[1]) - 0.01, depthPt: [fp.cells[2], fp.cells[1]], occludes: false });
       entries.push({ render: v, vid: v.id, seed: `${v.id}:base`, phase: "base", depth: proj.depth(fp.cells[2], fp.cells[1]), depthPt: [fp.cells[2], fp.cells[1]] });
       entries.push({ render: v, vid: v.id, seed: `${v.id}:front`, phase: "front", depth: proj.depth(fp.depthPoint[0], fp.depthPoint[1]), depthPt: fp.depthPoint });
       continue;
@@ -173,7 +229,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
   const tallByVid = new Map(plan.volumes.map((v) => [v.id, classify(v).tall]));
   const occluders: ComposedOccluder[] = [];
   out.push('<g id="volumes">');
-  for (const { render, vid, seed, depthPt, phase } of entries) {
+  for (const { render, vid, seed, depthPt, phase, occludes } of entries) {
     // bbox FRESCO por entry: el occluder del tramo necesita el suyo; el del
     // elemento (visión) se acumula uniendo los tramos.
     const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
@@ -194,7 +250,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
             }
           : { ...ctx.bbox },
       );
-      if (tallByVid.get(vid)) {
+      if (tallByVid.get(vid) && occludes !== false) {
         // Margen de 1 unidad: strokes/antialias no se cortan en el borde.
         const p = 1;
         const bx = ctx.bbox.minX - p;
