@@ -743,6 +743,18 @@ export class CanvasRenderer {
     this.occluders = this.occluders.filter((o) => o.tileKey !== key);
   }
 
+  /** Instala la PLACA de fondo del tile: la imagen de escena SIN los objetos
+   *  altos (huecos inpainted por el servidor). Sustituye la imagen base SIN
+   *  purgar occluders ni análisis — los cutouts son precisamente quienes
+   *  pintan los objetos, y al fundirse por proximidad se ve la placa (lo que
+   *  realmente hay debajo) en vez de una copia congelada del objeto. */
+  setTilePlate(key: string, img: HTMLImageElement): void {
+    const tile = this.tiles.get(key);
+    if (!tile) return;
+    tile.sceneImage = img;
+    tile.terrainLayer = null;
+  }
+
   /** Registra el análisis derivado de la imagen de un tile (overlay B):
    *  grid de segmentos sólidos (null = analizado sin sólidos). */
   setTileAnalysis(key: string, grid: ImageGridData | null): void {

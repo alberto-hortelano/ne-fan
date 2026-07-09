@@ -373,6 +373,12 @@ const FAKE_SPRITES = [
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPIO5HXAwAFfQIxxipcbgAAAABJRU5ErkJggg==",
 ].map((b64) => Buffer.from(b64, "base64"));
 
+/** Placa de fondo falsa: 1×1 verde hierba (el cliente lo estira al tile). */
+const FAKE_PLATE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMIKTIGAAIXAPrbayeaAAAAAElFTkSuQmCC",
+  "base64",
+);
+
 /** Dimensiones de un PNG (IHDR: width/height big-endian en bytes 16..23). */
 function pngDims(imageB64) {
   const b64 = String(imageB64 ?? "").replace(/^data:image\/png;base64,/, "");
@@ -416,6 +422,10 @@ const server = http.createServer((req, res) => {
     if (!png) return send(404, { detail: `fake-ai: sprite ${idx} no existe` });
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
+  }
+  if (req.method === "GET" && req.url === "/fake/plate") {
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(FAKE_PLATE);
   }
   if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
     const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
@@ -554,6 +564,24 @@ const server = http.createServer((req, res) => {
         }));
         console.error(`[fake-ai] analyze: ${segments.length} segmentos jugables`);
         return send(200, { segments, discarded: 5 });
+      }
+      // Placa de fondo falsa (inpainting de huecos): un 1×1 verde hierba que
+      // el cliente estira como imagen base del tile. Basta para verificar el
+      // flujo entero (máscara → endpoint → instalación) y a ojo: al fundirse
+      // un cutout por proximidad se ve el verde plano de la placa, no una
+      // copia del objeto.
+      if (req.method === "POST" && req.url === "/inpaint_scene_plate") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        if (!pngDims(body.image_b64) || !pngDims(body.mask_b64)) {
+          return send(422, { detail: "fake-ai: image_b64 y mask_b64 deben ser PNG" });
+        }
+        console.error("[fake-ai] inpaint_scene_plate: placa 1×1 verde");
+        return send(200, { hash: "fakeplate", cached: false, plate_url: "/fake/plate" });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
         if (SCENE_DELAY_MS > 0) {
