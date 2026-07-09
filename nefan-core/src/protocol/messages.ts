@@ -65,6 +65,12 @@ export interface StartSessionMessage {
    *  en el save — cambia la proyección de TODOS los blueprints/tiles, así que
    *  no puede variar a mitad de partida. */
   perspective?: string;
+  /** Modo de render del mundo 2D elegido en el título: "image" (el modelo de
+   *  imagen repinta cada blueprint — gasta créditos) | "vector" (el mundo se
+   *  ve con los blueprints compuestos del plan del motor narrativo — gratis).
+   *  Ausente = "image". Congelado en el save: mezclar tiles pintados y
+   *  vectoriales rompe la continuidad visual entre vecinos. */
+  renderMode?: string;
 }
 
 export interface ResumeSessionMessage {

@@ -185,6 +185,25 @@ function applySessionPerspective(perspective: string): void {
   renderer.setProjection(sessionPerspective);
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
+
+/** Modo de render de la sesión activa, congelado en el save:
+ *  - "image": el pipeline Auto-img repinta cada blueprint con el modelo de
+ *    imagen (créditos) — se enciende solo al entrar en la sesión.
+ *  - "vector": el mundo se juega con los blueprints compuestos; el pipeline
+ *    queda apagado y la generación manual (G) bloqueada.
+ *  - "" (saves previos al campo): comportamiento legacy — manda el toggle
+ *    persistido en localStorage. */
+let sessionRenderMode: "image" | "vector" | "" = "";
+function applySessionRenderMode(renderMode: string): void {
+  sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
+  if (sessionRenderMode === "vector") {
+    autoPipeline.setEnabled(false);
+    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA)");
+  } else if (sessionRenderMode === "image") {
+    autoPipeline.setEnabled(true);
+    log("Gráficos: imagen IA (Auto-img activo)");
+  }
+}
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
 // se cargan bajo demanda desde setPlayerAppearance / requestSkin.
@@ -999,7 +1018,9 @@ function gameLoop(now: number): void {
   // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
   // a ErrorLog; el .catch evita unhandled rejection.
   if (input.consumeGenerateScene()) {
-    if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
+    if (sessionRenderMode === "vector") {
+      log("G ignorada: la partida es vectorial (elegido al crearla)");
+    } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
   // auto-segmentación + clasificación por visión → occluders (tall) y
@@ -1596,10 +1617,12 @@ async function runTitleFlow(): Promise<void> {
         action.appearance,
         action.styleId || undefined,
         action.perspective,
+        action.renderMode,
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionPerspective(res.state.world?.perspective ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "");
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
@@ -1608,6 +1631,7 @@ async function runTitleFlow(): Promise<void> {
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionPerspective(res.state.world?.perspective ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "");
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
