@@ -500,6 +500,40 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(resumed.state?.world.perspective, "isometric");
   });
 
+  it("resume de una sesión SIN escenas reintenta el bootstrap (recuperación de timeout)", async () => {
+    // Bootstrap que falla (timeout del motor narrativo): la sesión queda
+    // guardada sin escenas. Reanudarla debe re-encolar el bootstrap — y esta
+    // vez el motor responde (en producción, la respuesta tardía cacheada).
+    let failScene = true;
+    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
+      ai: {
+        generateScene: async () =>
+          failScene
+            ? { ok: false as const, error: "HTTP 504: timeout tras 900s" }
+            : { ok: true as const, scene: { room_id: "scene_test", room_description: "una escena" } },
+      },
+    });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => aiCalls.scene.length === 1);
+    await waitFor(() =>
+      broadcasts.some((b) => b.type === "narrative_status" && (b as NarrativeStatusMessage).phase === "error"),
+    );
+    assert.equal(Object.keys(narrative.scenes_loaded).length, 0, "bootstrap fallido → sin escenas");
+
+    failScene = false;
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).ok, true);
+    await waitFor(() => aiCalls.scene.length === 2);
+    await waitFor(() => Object.keys(narrative.scenes_loaded).length > 0);
+  });
+
   it("list_sessions y delete_session operan sobre el storage", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

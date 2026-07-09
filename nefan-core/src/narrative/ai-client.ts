@@ -3,6 +3,7 @@
  * Single source of truth for narrative HTTP calls from the bridge
  * (both clients talk to the bridge, never to ai_server directly).
  */
+import { CONFIG } from "../config.js";
 import type { Consequence, LlmContext } from "./types.js";
 
 export interface AiClientOptions {
@@ -77,9 +78,16 @@ export class AiClient {
 
   async generateScene(context: LlmContext): Promise<SceneGenerationResult> {
     try {
-      // Long timeout: ai_server waits up to ~300s for the LLM (Claude Code Max
-      // can take several minutes when reasoning). Add a margin on top.
-      const res = await this.request("POST", "/generate_scene", context, 360_000);
+      // Long timeout: ai_server waits up to llm_timeout_s for the LLM (Claude
+      // Code Max puede tardar varios minutos escribiendo el plan del tile).
+      // Margen de 60 s por encima para que el 504 del servidor llegue antes
+      // de que el bridge aborte por su cuenta.
+      const res = await this.request(
+        "POST",
+        "/generate_scene",
+        context,
+        CONFIG.ai_server.llm_timeout_s * 1000 + 60_000,
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
