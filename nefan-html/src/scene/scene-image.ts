@@ -218,6 +218,66 @@ export class SceneImageController {
     return this.loadImage(off.toDataURL("image/png"));
   }
 
+  /** Placa de fondo del tile: construye la máscara UNIÓN de los recortes
+   *  `tall` (el alpha de cada sprite en su bbox de imagen, dilatado ~4 px
+   *  para cubrir el borde del recorte), pide al servidor el inpainting de los
+   *  huecos (continuar solo el suelo, sin añadir nada) e instala el resultado
+   *  como imagen base del tile SIN tocar occluders ni análisis. */
+  private async installPlateForTile(
+    key: string,
+    img: HTMLImageElement,
+    tallCutouts: { sprite: HTMLImageElement; bbox: [number, number, number, number] }[],
+  ): Promise<void> {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    // Acumular el alpha de los recortes (dilatación barata: 9 pasadas con
+    // offset ±4 px), y volcarlo a blanco-sobre-negro (máscara L del server).
+    const acc = document.createElement("canvas");
+    acc.width = w;
+    acc.height = h;
+    const actx = acc.getContext("2d");
+    if (!actx) throw new Error("installPlateForTile: no 2D context");
+    for (const t of tallCutouts) {
+      const [bx, by, bw, bh] = t.bbox;
+      for (const dx of [-4, 0, 4]) {
+        for (const dy of [-4, 0, 4]) {
+          actx.drawImage(t.sprite, bx + dx, by + dy, bw, bh);
+        }
+      }
+    }
+    actx.globalCompositeOperation = "source-in";
+    actx.fillStyle = "#fff";
+    actx.fillRect(0, 0, w, h);
+    const mask = document.createElement("canvas");
+    mask.width = w;
+    mask.height = h;
+    const mctx = mask.getContext("2d");
+    if (!mctx) throw new Error("installPlateForTile: no 2D context");
+    mctx.fillStyle = "#000";
+    mctx.fillRect(0, 0, w, h);
+    mctx.drawImage(acc, 0, 0);
+
+    const res = await fetch(`${this.baseUrl}/inpaint_scene_plate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_b64: this.imageToDataUrl(img),
+        mask_b64: mask.toDataURL("image/png"),
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`/inpaint_scene_plate HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as { plate_url?: string };
+    if (!data.plate_url) throw new Error("/inpaint_scene_plate sin plate_url");
+    let plate = await this.loadImage(`${this.baseUrl}${data.plate_url}`);
+    // El servidor aplana a RGB (el alpha del rombo/voladizo vuelve negro):
+    // re-enmascarar con el blueprint compuesto, como la imagen original.
+    plate = await this.maskByBlueprint(plate, key);
+    this.renderer.setTilePlate(key, plate);
+    console.log(`[scene-image] ${key}: placa de fondo instalada (${tallCutouts.length} recortes)`);
+  }
+
   /** Enmascara la imagen generada con el alpha del blueprint compuesto: la
    *  imagen instalada solo conserva los píxeles que el plan declaró (rombo/
    *  cuadrado del tile + voladizo de alturas). Meshy devuelve un rect opaco —
@@ -450,6 +510,8 @@ export class SceneImageController {
       const occluders: Occluder[] = [];
       const masks: AlphaMask[] = [];
       const elements: AnalyzedElement[] = [];
+      /** Recortes `tall` (sprite + bbox de imagen): máscara de la placa. */
+      const tallCutouts: { sprite: HTMLImageElement; bbox: [number, number, number, number] }[] = [];
       /** Celdas sólidas de segmentos NO declarados (franja en su baseline). */
       const stripCells = new Set<number>();
       let solids = 0;
@@ -498,6 +560,7 @@ export class SceneImageController {
             kind: "image",
             label: seg.label,
           });
+          tallCutouts.push({ sprite, bbox: seg.image_bbox });
         }
         if (seg.solid) {
           solids++;
@@ -531,6 +594,18 @@ export class SceneImageController {
         `[scene-image] ${key}: analyzed — ${occluders.length} occluders, ` +
         `${solids} sólidos, ${data.discarded ?? 0} suelo`,
       );
+
+      // Placa de fondo: la escena SIN los objetos altos (huecos inpainted en
+      // el servidor, local y sin créditos). Instalada como base, el fade por
+      // proximidad de un cutout revela el suelo real tras el objeto. Fallo NO
+      // fatal: sin placa queda el x-ray del personaje.
+      if (tallCutouts.length > 0) {
+        try {
+          await this.installPlateForTile(key, img, tallCutouts);
+        } catch (err) {
+          errors.push("scene", `placa de fondo de ${key} falló (queda x-ray del personaje)`, err);
+        }
+      }
       return { occluders, grid, elements };
     } catch (err) {
       errors.push("scene", `analyzeScene ${key} failed`, err);

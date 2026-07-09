@@ -57,6 +57,7 @@ from llm_client import LLMClient, NarrativeUnavailable
 from texture_generator import TextureGenerator
 from model_generator import ModelGenerator
 from skin_generator import SkinGenerator
+from plate_inpainter import PlateInpainter, PLATE_ALGO
 from sprite_generator import SpriteGenerator
 from controlnet_skin import ControlNetSkinGenerator
 from dev_api_cache import DEV_API_CACHE
@@ -76,6 +77,7 @@ texture_gen: TextureGenerator | None = None
 model_gen: ModelGenerator | None = None
 skin_gen: SkinGenerator | None = None
 controlnet_skin_gen: ControlNetSkinGenerator | None = None
+plate_inpainter: PlateInpainter | None = None
 sprite_skin_gen: "SpriteSkinMeshy | None" = None
 sprite_gen: SpriteGenerator | None = None
 scene_image_gen: SceneImageGenerator | None = None
@@ -122,7 +124,7 @@ def load_config(config_path: Path | None = None) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter, style_packs
+    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter, style_packs, plate_inpainter
     config = load_config()
 
     # Shared manifest sits at the cache root and tracks every asset across types.
@@ -211,6 +213,9 @@ async def lifespan(app: FastAPI):
     controlnet_skin_gen = ControlNetSkinGenerator(
         texture_gen_ref=texture_gen,
         default_strength=0.40,
+    )
+    plate_inpainter = PlateInpainter(
+        texture_gen_ref=texture_gen,
     )
 
     sprite_cache = AssetCache(
@@ -455,6 +460,15 @@ class AnalyzeSceneRequest(BaseModel):
     (p. ej. scene_description del tile)."""
     image_b64: str = Field(min_length=1)
     context: dict = Field(default_factory=dict)
+
+
+class ScenePlateRequest(BaseModel):
+    """Placa de fondo del tile: la imagen de escena + la máscara unión de los
+    segmentos `tall` recortados (blanco = hueco). El inpainting local rellena
+    los huecos continuando solo el suelo, sin añadir nada — la capa base que
+    el fade por proximidad de los cutouts revela detrás de un objeto alto."""
+    image_b64: str = Field(min_length=1)
+    mask_b64: str = Field(min_length=1)
 
 
 def _cache_dirs_by_type() -> dict[str, Path]:
@@ -954,6 +968,43 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     return result
 
 
+@app.post("/inpaint_scene_plate")
+async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
+    """Placa de fondo: inpainting LOCAL (SD 1.5, sin créditos) de los huecos
+    que dejan los objetos altos recortados de la imagen de escena. Devuelve la
+    escena sin los objetos — lo que realmente hay debajo. Cacheado por hash de
+    (imagen, máscara): el resume es determinista y gratis."""
+    import asyncio
+    import hashlib
+
+    if plate_inpainter is None:
+        raise HTTPException(status_code=503, detail="plate_inpainter unavailable")
+
+    image_png = _decode_b64_png(body.image_b64)
+    mask_png = _decode_b64_png(body.mask_b64)
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": hashlib.sha256(image_png).hexdigest()[:16],
+        "mask": hashlib.sha256(mask_png).hexdigest()[:16],
+        "algo": PLATE_ALGO,
+    })
+    key = scene_cache.hash_key("plate", ctx)
+    if scene_cache.get_by_hash(key, "plate") is not None:
+        return {"hash": key, "cached": True, "plate_url": f"/cache/plate/{key}"}
+
+    start = time.time()
+    async with _gpu_lock:
+        plate = await asyncio.to_thread(plate_inpainter.generate, image_png, mask_png)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    scene_cache.put("plate", "plate", plate, context=ctx, subtype_override="plate")
+    return {
+        "hash": key,
+        "cached": False,
+        "plate_url": f"/cache/plate/{key}",
+        "generation_time_ms": elapsed_ms,
+    }
+
+
 # Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative
 # to the project root so the ai_server can read them off disk and run img2img
 # over each frame.
@@ -1392,6 +1443,16 @@ async def get_cached_skin(hash_key: str):
 async def get_cached_scene(hash_key: str):
     """Serve a cached scene background PNG (full or outpainted)."""
     data = scene_cache.get_by_hash(hash_key, "scene")
+    if data is None:
+        return Response(status_code=404, content="Not found")
+    _touch_asset(hash_key)
+    return Response(content=data, media_type="image/png")
+
+
+@app.get("/cache/plate/{hash_key}")
+async def get_cached_plate(hash_key: str):
+    """Serve a cached scene background plate (scene minus tall objects)."""
+    data = scene_cache.get_by_hash(hash_key, "plate")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)

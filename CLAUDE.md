@@ -279,6 +279,7 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 | **Claude Sonnet 4.5** | Genera escenas open-world, reacciona a las elecciones del jugador esculpiendo el mundo (spawn dinámico de edificios/NPCs/objetos), orienta armas vía visión | llm_client.py via MCP bridge o API |
 | **SD 1.5** + LCM-LoRA + TAESD | Texturas PBR seamless tiling (4 pasos, fp16) | texture_generator.py |
 | **SD 1.5** | Imagenes referencia para modelos 3D | model_generator.py |
+| **LaMa** (big-lama, TorchScript) | Placa de fondo: elimina los objetos altos de la imagen de escena y continúa el suelo (fade de occluders revela lo de debajo), <1s/tile | plate_inpainter.py |
 | **rembg** (u2net) | Quitar fondo de referencias de modelo | model_generator.py |
 
 VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
