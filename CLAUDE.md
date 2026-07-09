@@ -307,6 +307,51 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
+## Perspectiva 2D y plan de tile (map_ground + volumes)
+
+El cliente 2D renderiza el mundo por tiles en una de DOS perspectivas, elegida
+por el jugador al empezar (junto al mundo y al estilo) y **congelada en el
+save** como `world.perspective` (`"topdown"` cenital con caras | `"isometric"`
+2:1). Resume la restaura; no puede cambiar a mitad de partida (cambiaría la
+proyección de todos los blueprints). `game.json` admite `default_perspective`.
+
+**El motor narrativo NO dibuja la proyección.** Cada tile declara un plan
+semántico y el **compositor determinista** (`nefan-core/src/scene/blueprint/`)
+lo proyecta:
+
+- `map_ground`: SVG plano del suelo (viewBox "0 0 128 128", capas
+  `g#ground`+`g#water`, `g#deck` opcional) — celdas de mundo SIN proyectar,
+  libertad artística total. En iso se incrusta con una única transform afín.
+- `volumes`: todo lo que tiene altura, tipado — `building` (con `roof`,
+  `walls`, `doors`, `cutaway:true` para edificios enterables), `wall`,
+  `tower`, `gate` (vano transitable), `tree`, `bush`, `rock`, `fountain`,
+  `prop`. Huella en celdas + altura; `label` en español guía al clasificador.
+  Sin volumes explícitos, el compositor los deriva del esquema
+  (`vegetation_zones` → árboles, `structures` → cutaway).
+- `composeBlueprint(plan, perspective, tileKey)` → SVG proyectado (orden del
+  pintor, caras SO iluminadas / SE en sombra en iso, voladizo norte para las
+  alturas) + `elements` (bbox proyectado + baseline + huella por volumen).
+  **Determinista byte a byte** (SeededRng; `COMPOSER_VERSION` en la clave de
+  caché de imagen): el resume hace cache-hit.
+
+**Consecuencias en el pipeline** (cliente 2D):
+- Colisión = agua del `map_ground` (raster sin proyectar) ∪ huellas
+  analíticas (`volumeCollisionGrid`) — espacio de MUNDO, idéntica en ambas
+  perspectivas; NUNCA de píxeles proyectados.
+- La imagen de Meshy se **enmascara con el alpha del blueprint** antes de
+  instalarse (el rombo/voladizo recorta lo del vecino); los tiles se pintan
+  por profundidad (`ty` / `tx+ty`).
+- El renderer trabaja en **espacio de vista** (`renderer/projection.ts`):
+  en topdown vista == mundo; en iso `vx = x−z, vy = (x+z)/2` (la 2:1 exacta
+  del blueprint, 1 unidad SVG = 1 m de vista). Simulación e input no cambian.
+- `expected_elements` del análisis salen del compositor; los segmentos
+  casados toman baseline/colisión de su huella declarada; los no casados
+  (añadidos del modelo de imagen) aportan una franja en su línea de suelo.
+- El retoque de visión (`blueprint_review`) corrige `{map_ground, volumes}`
+  (documentos COMPLETOS) y se persiste con `map_plan_update`.
+
+Godot (cliente 3D) no participa: la perspectiva solo afecta al mundo 2D.
+
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 
 Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
@@ -424,6 +469,7 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 - **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluido del SpringArm collision.
 - **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
 - **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
+- **Doble perspectiva 2D (cenital con caras / isométrica)** elegida al inicio y congelada en el save; el LLM declara planes semánticos (`map_ground`+`volumes`) y el compositor de nefan-core proyecta. Colisión desde huellas, nunca desde píxeles pintados.
 
 ## Hardware
 
