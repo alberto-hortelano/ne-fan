@@ -1,19 +1,28 @@
-/** Sanitizado del blueprint SVG por capas semánticas (`map_svg`).
+/** Sanitizado de los SVG por capas semánticas del plan de tile.
  *
- *  El motor narrativo puede emitir el plano completo del tile como un SVG con
- *  cuatro capas obligatorias (`g#ground`, `g#water`, `g#solid`, `g#tall`). El
- *  cliente lo rasteriza como blueprint para el modelo de imagen y deriva de
- *  `#water`+`#solid` la colisión base. Este módulo es el espejo TS del
- *  validador de ai_server (`narrative_schemas.py`): lo usa el bridge al
- *  persistir un `map_svg` corregido por el retoque de visión — mismo criterio
- *  en ambos lados o un SVG aceptado por uno sería rechazado por el otro.
- */
+ *  Formato actual: el motor narrativo emite el arte plano del suelo como
+ *  `map_ground` (capas `g#ground` + `g#water`, `g#deck` opcional; celdas de
+ *  mundo sin proyectar) y los elementos con altura como `volumes` — el
+ *  compositor (`blueprint/`) proyecta ambos a la perspectiva de la sesión.
+ *  `map_svg` (4 capas, con `#solid`/`#tall` dibujados a mano) es el formato
+ *  legacy anterior al compositor.
+ *
+ *  Este módulo es el espejo TS del validador de ai_server
+ *  (`narrative_schemas.py`): lo usa el bridge al persistir un plan corregido
+ *  por el retoque de visión — mismo criterio en ambos lados o un SVG aceptado
+ *  por uno sería rechazado por el otro. */
 
-/** Capas obligatorias, en orden de pintado. Existe además una capa opcional
- *  `deck` (transitable SOBRE el agua: puentes, embarcaderos, pasaderas) que
- *  se pinta entre `water` y `solid` — la rasterización de colisión la usa
- *  para perforar el agua (destination-out). */
+/** Capas obligatorias del map_svg legacy, en orden de pintado. Existe además
+ *  una capa opcional `deck` (transitable SOBRE el agua: puentes,
+ *  embarcaderos, pasaderas) que se pinta entre `water` y `solid` — la
+ *  rasterización de colisión la usa para perforar el agua (destination-out). */
 export const MAP_SVG_LAYERS = ["ground", "water", "solid", "tall"] as const;
+
+/** Capas obligatorias del `map_ground` (formato de plan actual): SOLO el
+ *  plano del suelo, sin proyectar. Los elementos con altura viajan aparte en
+ *  `volumes` y el compositor (`blueprint/`) los proyecta a la perspectiva de
+ *  la sesión. `deck` sigue siendo opcional. */
+export const GROUND_SVG_LAYERS = ["ground", "water"] as const;
 
 /** Cap de tamaño (bytes UTF-8). Más generoso que terrain_svg (20 KB): un
  *  plano de aldea con interiores cutaway ronda los 10 KB. */
@@ -21,11 +30,25 @@ export const MAP_SVG_MAX_BYTES = 32_000;
 
 export type MapSvgResult = { ok: true; svg: string } | { ok: false; error: string };
 
-/** Valida un documento `map_svg`. `cols`/`rows` es el viewBox esperado (celdas
- *  del tile, 128×128). Devuelve el SVG recortado de espacios o el motivo de
- *  rechazo — el caller decide si degrada (validador de escena) o falla
- *  (persistencia de un retoque). */
+/** Valida un documento `map_ground` (arte plano del suelo del plan de tile).
+ *  `cols`/`rows` es el viewBox esperado (celdas del tile, 128×128). Devuelve
+ *  el SVG recortado de espacios o el motivo de rechazo — el caller decide si
+ *  degrada (validador de escena) o falla (persistencia de un retoque). */
+export function sanitizeGroundSvg(svg: unknown, cols: number, rows: number): MapSvgResult {
+  return sanitizeLayeredSvg(svg, cols, rows, GROUND_SVG_LAYERS);
+}
+
+/** Valida un documento `map_svg` legacy (4 capas dibujadas a mano). */
 export function sanitizeMapSvg(svg: unknown, cols: number, rows: number): MapSvgResult {
+  return sanitizeLayeredSvg(svg, cols, rows, MAP_SVG_LAYERS);
+}
+
+function sanitizeLayeredSvg(
+  svg: unknown,
+  cols: number,
+  rows: number,
+  layers: readonly string[],
+): MapSvgResult {
   if (typeof svg !== "string" || !svg.trim()) {
     return { ok: false, error: "map_svg vacío o no es string" };
   }
@@ -47,7 +70,7 @@ export function sanitizeMapSvg(svg: unknown, cols: number, rows: number): MapSvg
     Math.abs(Number(parts[2]) - cols) < 0.01 &&
     Math.abs(Number(parts[3]) - rows) < 0.01;
   if (!okViewBox) return { ok: false, error: `viewBox debe ser "0 0 ${cols} ${rows}"` };
-  const missing = MAP_SVG_LAYERS.filter(
+  const missing = layers.filter(
     (layer) => !s.includes(`id="${layer}"`) && !s.includes(`id='${layer}'`),
   );
   if (missing.length > 0) {

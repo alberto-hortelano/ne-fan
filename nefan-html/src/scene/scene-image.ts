@@ -76,8 +76,10 @@ export interface BlueprintReview {
     terrain?: string[];
     terrain_features?: Record<string, unknown>[];
     entity_moves?: { id: string; cell: [number, number] }[];
-    /** Documento map_svg COMPLETO corregido (retoque del blueprint SVG). */
-    map_svg?: string;
+    /** Documento map_ground COMPLETO corregido (arte plano del suelo). */
+    map_ground?: string;
+    /** Array COMPLETO de volúmenes corregido. */
+    volumes?: Record<string, unknown>[];
   };
 }
 

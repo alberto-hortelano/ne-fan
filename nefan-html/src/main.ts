@@ -453,8 +453,8 @@ const reviewDeps: ReviewDeps = {
   tileStore,
   controller: sceneImageController,
   addTile: (raw) => addTile(raw),
-  reportMapSvg: (tx, ty, svg) => {
-    if (activeSessionId) narrativeClient.reportMapSvg(tx, ty, svg);
+  reportMapPlan: (tx, ty, plan) => {
+    if (activeSessionId) narrativeClient.reportMapPlan(tx, ty, plan);
   },
   log: (msg) => log(msg),
 };

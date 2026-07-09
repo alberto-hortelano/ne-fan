@@ -156,15 +156,19 @@ export interface TileAnalysisMessage {
   }>;
 }
 
-/** El retoque de visión (blueprint_review) corrigió el map_svg de un tile:
- *  persistirlo en el SceneRecord (el bridge es el único escritor del save).
- *  También se envía SIN cambios tras un review aprobado, para estampar
- *  `map_svg_reviewed` y que el resume no re-revise. Solo persistencia. */
-export interface MapSvgUpdateMessage {
-  type: "map_svg_update";
+/** El retoque de visión (blueprint_review) corrigió el plan de un tile
+ *  (arte del suelo y/o volúmenes): persistirlo en el SceneRecord (el bridge
+ *  es el único escritor del save). También se envía SIN cambios tras un
+ *  review aprobado, para estampar `map_plan_reviewed` y que el resume no
+ *  re-revise. Solo persistencia. */
+export interface MapPlanUpdateMessage {
+  type: "map_plan_update";
   tx: number;
   ty: number;
-  map_svg: string;
+  /** SVG plano del suelo corregido (documento COMPLETO), si cambió. */
+  map_ground?: string;
+  /** Array COMPLETO de volúmenes corregido, si cambió. */
+  volumes?: unknown[];
 }
 
 /** Alta ADITIVA de combatientes en el sim (enemigos de un tile nuevo). No
@@ -219,7 +223,7 @@ export type ClientMessage =
   | PlayerCrossedFrontierMessage
   | RequestTileMessage
   | TileAnalysisMessage
-  | MapSvgUpdateMessage
+  | MapPlanUpdateMessage
   | AddCombatantsMessage
   | InteractEntityMessage;
 
