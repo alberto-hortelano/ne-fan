@@ -1,0 +1,279 @@
+{
+  "scene_id": "zorder_test",
+  "scene_description": "Fixture de test del depth-sort: NPCs etiquetados alrededor de una casa con techo, un árbol grande y un cutaway.",
+  "tile": {
+    "tx": 0,
+    "ty": 0
+  },
+  "biome": "grass",
+  "map_ground": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 128 128\"><g id=\"ground\"/><g id=\"water\"/></svg>",
+  "volumes": [
+    {
+      "id": "casa",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        56,
+        44,
+        20,
+        14
+      ],
+      "roof": {
+        "kind": "gable",
+        "material": "tile"
+      },
+      "walls": {
+        "material": "timber"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 8,
+          "w": 4
+        }
+      ]
+    },
+    {
+      "id": "arbol",
+      "label": "roble grande",
+      "type": "tree",
+      "at": [
+        40,
+        84
+      ],
+      "s": 1.6
+    },
+    {
+      "id": "cabana",
+      "label": "cabaña",
+      "type": "building",
+      "rect": [
+        84,
+        80,
+        16,
+        12
+      ],
+      "cutaway": true,
+      "doors": [
+        {
+          "edge": "s",
+          "at": 6,
+          "w": 4
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "id": "casa_n",
+      "kind": "npc",
+      "name": "casa N (detras)",
+      "cell": [
+        66,
+        41
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_s",
+      "kind": "npc",
+      "name": "casa S (delante)",
+      "cell": [
+        66,
+        61
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_e",
+      "kind": "npc",
+      "name": "casa E (delante)",
+      "cell": [
+        79,
+        51
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_w",
+      "kind": "npc",
+      "name": "casa W (detras)",
+      "cell": [
+        53,
+        51
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_ne",
+      "kind": "npc",
+      "name": "casa NE (delante)",
+      "cell": [
+        79,
+        41
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_se",
+      "kind": "npc",
+      "name": "casa SE (delante)",
+      "cell": [
+        79,
+        61
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_sw",
+      "kind": "npc",
+      "name": "casa SW (delante)",
+      "cell": [
+        53,
+        61
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "casa_nw",
+      "kind": "npc",
+      "name": "casa NW (detras)",
+      "cell": [
+        53,
+        41
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "arbol_n",
+      "kind": "npc",
+      "name": "arbol N (detras)",
+      "cell": [
+        40,
+        74
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "arbol_s",
+      "kind": "npc",
+      "name": "arbol S (delante)",
+      "cell": [
+        40,
+        88
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "arbol_e",
+      "kind": "npc",
+      "name": "arbol E (delante)",
+      "cell": [
+        44,
+        85
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "arbol_w",
+      "kind": "npc",
+      "name": "arbol W (detras)",
+      "cell": [
+        36.5,
+        83
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "dentro",
+      "kind": "npc",
+      "name": "interior cabana (delante del muro N)",
+      "cell": [
+        90,
+        84
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "dentro_sur",
+      "kind": "npc",
+      "name": "interior pegado al muro S (pies tapados)",
+      "cell": [
+        87,
+        91
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Tú",
+      "cell": [
+        66,
+        70
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "@"
+    }
+  ],
+  "ambient_event": "Escena de test de z-order."
+}

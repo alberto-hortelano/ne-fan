@@ -38,6 +38,11 @@ interface SvgViewBox {
 
 export interface ViewProjection {
   readonly kind: "topdown" | "isometric";
+  /** Metros de VISTA por metro de ALTURA de mundo — espejo de los factores
+   *  del compositor (topdown: h celdas → h user × 0.5 m = 1.0; iso:
+   *  ISO_HS=0.375 user/celda × 2 celdas/m × 1 m/user = 0.75). Dimensiona los
+   *  sprites de personaje para que casen con muros/puertas del blueprint. */
+  readonly verticalScale: number;
   worldToView(x: number, z: number): [number, number];
   viewToWorld(vx: number, vy: number): [number, number];
   /** Rect de VISTA que cubre el canvas del tile (su blueprint compuesto y la
@@ -46,13 +51,11 @@ export interface ViewProjection {
   tileViewRect(rect: WorldRectM, viewBox?: SvgViewBox | null): ViewRect;
   /** Clave del orden del pintor entre tiles (menor = más al fondo). */
   tileDepth(tx: number, ty: number): number;
-  /** Dirección de pantalla (dx→derecha, dy→abajo) → dirección de mundo XZ
-   *  normalizada. WASD siente "arriba de la pantalla" en ambas perspectivas. */
-  inputDirToWorld(dx: number, dy: number): [number, number];
 }
 
 class TopdownViewProjection implements ViewProjection {
   readonly kind = "topdown" as const;
+  readonly verticalScale = 1.0;
   worldToView(x: number, z: number): [number, number] {
     return [x, z];
   }
@@ -72,13 +75,11 @@ class TopdownViewProjection implements ViewProjection {
   tileDepth(tx: number, ty: number): number {
     return ty * 4096 + tx;
   }
-  inputDirToWorld(dx: number, dy: number): [number, number] {
-    return [dx, dy];
-  }
 }
 
 class IsoViewProjection implements ViewProjection {
   readonly kind = "isometric" as const;
+  readonly verticalScale = 0.75;
   worldToView(x: number, z: number): [number, number] {
     return [x - z, (x + z) / 2];
   }
@@ -101,15 +102,6 @@ class IsoViewProjection implements ViewProjection {
   }
   tileDepth(tx: number, ty: number): number {
     return (tx + ty) * 4096 + (tx - ty);
-  }
-  inputDirToWorld(dx: number, dy: number): [number, number] {
-    // Inversa de worldToView sobre la dirección, renormalizada: subir en
-    // pantalla = noroeste del mundo.
-    const x = dx / 2 + dy;
-    const z = dy - dx / 2;
-    const len = Math.hypot(x, z) || 1;
-    const inLen = Math.hypot(dx, dy) || 1;
-    return [(x / len) * inLen, (z / len) * inLen];
   }
 }
 

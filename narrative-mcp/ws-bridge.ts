@@ -285,6 +285,18 @@ export class WsBridge {
     });
   }
 
+  /** Latido de progreso hacia ai_server: resetea su timeout de inactividad
+   *  para la petición en curso. Silencioso sin cliente (no es un error: el
+   *  progreso es best-effort). */
+  sendProgress(requestId: string, message: string): void {
+    if (!this.client || this.client.readyState !== this.client.OPEN) return;
+    this.client.send(JSON.stringify({
+      type: 'narrative_progress',
+      request_id: requestId,
+      message,
+    }));
+  }
+
   /** Send room data back to Python. Called by narrative_respond tool. */
   sendResponse(requestId: string, roomData: Record<string, unknown>): void {
     if (!this.client || this.client.readyState !== this.client.OPEN) {

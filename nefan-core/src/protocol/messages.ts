@@ -284,7 +284,10 @@ export interface NarrativeEventMessage {
  *  "error" (LLM call failed — surfaced verbatim, no silent placeholder). */
 export interface NarrativeStatusMessage {
   type: "narrative_status";
-  phase: "generating" | "ready" | "error";
+  /** "progress" = latido del motor narrativo mientras genera (una tool MCP
+   *  llamada, un paso dado): resetea el timeout de inactividad de ai_server
+   *  y alimenta el texto del loader del cliente. */
+  phase: "generating" | "progress" | "ready" | "error";
   kind: "scene" | "consequences" | "tile";
   message?: string;
   elapsedMs?: number;

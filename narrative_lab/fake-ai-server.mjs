@@ -32,6 +32,10 @@ const FRONTIER_MODE = process.env.FRONTIER_MODE ?? "";
 // Retardo artificial en fronteras (ms) — simula los minutos del motor real
 // para poder observar el velo/freeze en E2E. 0 = instantáneo.
 const FRONTIER_DELAY_MS = Number(process.env.FRONTIER_DELAY_MS ?? 0);
+// Retardo artificial de TODO /generate_scene (ms), ANTES de responder nada
+// (ni cabeceras): reproduce las esperas de minutos del motor real. Regresión
+// del headersTimeout de undici (300 s) en el fetch del bridge.
+const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 
 // ── Skin de sprite sheets (bench del cliente 2D, sin GPU) ────────────────
 // POST /skin_sprite_sheet: en vez del img2img real, el "skin" son los frames
@@ -132,28 +136,88 @@ const OPP = { west: "east", east: "west", north: "south", south: "north" };
  *  agua, para ejercitar el retoque E2E) + volúmenes tipados (taberna cutaway
  *  con puerta sur, mostrador, pinos). El cliente compone el blueprint con la
  *  perspectiva de la sesión.  */
+// Sin rect de fondo: el compositor pone el bioma con su textura (manchas,
+// flores) y el arte del LLM dibuja SOLO features encima. El bootstrap es el
+// PUEBLO de las demos del blueprint lab (taberna cutaway amueblada, plaza
+// empedrada con fuente, casa de entramado, muralla sur con torres y puerta,
+// mercado) — el bench de calidad visual del compositor, comparable 1:1 con
+// referencia.html. Camino con doble trazo, plaza con adoquines.
+const COBBLES = Array.from({ length: 14 }, (_, i) => {
+  const a = (i / 14) * Math.PI * 2;
+  const r = 3 + (i % 3) * 3.4;
+  const cx = (64 + Math.cos(a) * r * 1.9).toFixed(1);
+  const cy = (80 + Math.sin(a) * r).toFixed(1);
+  const tone = ["#8f887a", "#b0a999", "#988f7e"][i % 3];
+  return `<ellipse cx="${cx}" cy="${cy}" rx="1.4" ry="0.9" fill="${tone}" opacity="0.85"/>`;
+}).join("");
 const BOOTSTRAP_MAP_GROUND =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">' +
   '<g id="ground">' +
-  '<rect width="128" height="128" fill="#4a6b32"/>' +
-  '<path d="M64,64 L64,90 C80,96 110,98 128,100" fill="none" stroke="#c2a86b" stroke-width="4"/>' +
+  // camino N-S que cruza el pueblo y sale por la puerta sur de la muralla
+  '<path d="M64,30 L64,128" fill="none" stroke="#8a7650" stroke-width="5.4" stroke-linecap="round" opacity="0.6"/>' +
+  '<path d="M64,30 L64,128" fill="none" stroke="#a29b8b" stroke-width="4" stroke-linecap="round"/>' +
+  // ramal este hacia el vecino
+  '<path d="M64,80 C84,84 110,86 128,88" fill="none" stroke="#8a7650" stroke-width="4.6" stroke-linecap="round" opacity="0.6"/>' +
+  '<path d="M64,80 C84,84 110,86 128,88" fill="none" stroke="#a89162" stroke-width="3.4" stroke-linecap="round"/>' +
+  // plaza empedrada con adoquines
+  '<ellipse cx="64" cy="80" rx="15" ry="8.5" fill="#8f887a"/>' +
+  '<ellipse cx="64" cy="80" rx="14" ry="7.8" fill="#a29b8b"/>' +
+  COBBLES +
+  // tierra pisada ante la puerta de la taberna y orilla del estanque
+  '<ellipse cx="65" cy="66" rx="6" ry="3" fill="#a89162" opacity="0.55"/>' +
+  '<ellipse cx="26" cy="94" rx="12" ry="8" fill="#b8ab8a" opacity="0.5"/>' +
   "</g>" +
-  '<g id="water"><ellipse cx="30" cy="90" rx="9" ry="5.5" fill="#4d7fa8"/></g>' +
+  '<g id="water"><ellipse cx="25" cy="92" rx="9" ry="5.5" fill="#4d7fa8"/></g>' +
   '<g id="deck"/>' +
   "</svg>";
 
 const BOOTSTRAP_VOLUMES = [
+  // ── taberna cutaway amueblada ──
   {
     id: "taberna",
     label: "taberna",
     type: "building",
     rect: [52, 48, 24, 16],
     cutaway: true,
+    walls: { material: "wood" },
     doors: [{ edge: "s", at: 11, w: 4 }],
   },
   { id: "mostrador", label: "mostrador", type: "prop", rect: [55, 51, 6, 2], shape: "box", h: 2.4 },
+  { id: "mesa_1", label: "mesa", type: "prop", at: [59, 57], shape: "cylinder", h: 1.7, color: "#9a7040" },
+  { id: "mesa_2", label: "mesa", type: "prop", at: [66, 55], shape: "cylinder", h: 1.7, color: "#9a7040" },
+  { id: "mesa_3", label: "mesa", type: "prop", at: [71, 59], shape: "cylinder", h: 1.7, color: "#9a7040" },
+  { id: "barril_tab_1", label: "barril", type: "prop", at: [54, 60], shape: "cylinder", h: 2.2, color: "#7a5a34" },
+  { id: "barril_tab_2", label: "barril", type: "prop", at: [56.5, 61], shape: "cylinder", h: 2.2, color: "#7a5a34" },
+  // ── plaza con fuente ──
+  { id: "fuente", label: "fuente", type: "fountain", at: [64, 80], r: 4.5 },
+  // ── casa de entramado con tejado de pizarra ──
+  {
+    id: "casa_entramado",
+    label: "casa de entramado",
+    type: "building",
+    rect: [84, 38, 22, 14],
+    wall_h: 5.5,
+    roof: { kind: "gable", material: "slate" },
+    walls: { material: "timber" },
+    doors: [{ edge: "s", at: 9, w: 4 }],
+  },
+  // ── mercado junto a la plaza ──
+  { id: "puesto_mercado", label: "puesto de mercado", type: "prop", rect: [80, 74, 7, 4], shape: "box", h: 3, color: "#8a6a40" },
+  { id: "caja_mercado", label: "caja de fruta", type: "prop", at: [88.5, 76.5], shape: "box", h: 1.2, color: "#a8853f" },
+  { id: "carro", label: "carro de mano", type: "prop", rect: [44, 76, 6, 3.4], shape: "box", h: 2, color: "#77572f" },
+  // ── muralla sur con torres y puerta (el camino la cruza) ──
+  { id: "muralla_sur", label: "muralla", type: "wall", points: [[0, 108], [128, 108]], width: 5, h: 7, crenellated: true },
+  { id: "torre_o", label: "torre", type: "tower", at: [38, 108], r: 6.5, h: 11 },
+  { id: "torre_e", label: "torre", type: "tower", at: [90, 108], r: 6.5, h: 11 },
+  { id: "puerta_sur", label: "puerta de la ciudad", type: "gate", at: [64, 108], w: 9, h: 10, orient: "x", banners: true },
+  // ── vegetación y rocas de carácter ──
+  { id: "roble_1", label: "roble", type: "tree", at: [30, 34], s: 1.15 },
+  { id: "roble_2", label: "roble", type: "tree", at: [98, 62], s: 1.0 },
   { id: "pino_1", label: "pino", type: "tree", at: [20, 20], species: "pino" },
-  { id: "pino_2", label: "pino", type: "tree", at: [100, 40], species: "pino" },
+  { id: "pino_2", label: "pino", type: "tree", at: [108, 26], species: "pino" },
+  { id: "mata_1", label: "arbusto", type: "bush", at: [46, 68], s: 1.0 },
+  { id: "mata_2", label: "arbusto", type: "bush", at: [84, 90], s: 0.9 },
+  { id: "roca_1", label: "roca", type: "rock", at: [14, 74], s: 1.3 },
 ];
 
 /** Tile de bootstrap (0,0): la taberna estampada en el plano + camino al este. */
@@ -174,6 +238,10 @@ function bootstrapTile() {
     entities: [
       { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+      // Casa declarada como ENTITY (sin volume ni structure): el compositor
+      // debe derivarle un edificio con techo — regresión del bug "casas como
+      // cuadrados sin proyectar en iso".
+      { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14], glyph: "C" },
     ],
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
     map_ground: BOOTSTRAP_MAP_GROUND,
@@ -488,6 +556,10 @@ const server = http.createServer((req, res) => {
         return send(200, { segments, discarded: 5 });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
+        if (SCENE_DELAY_MS > 0) {
+          console.error(`[fake-ai] /generate_scene retenido ${SCENE_DELAY_MS} ms (SCENE_DELAY_MS)`);
+          await new Promise((r) => setTimeout(r, SCENE_DELAY_MS));
+        }
         let body = {};
         try {
           body = raw ? JSON.parse(raw) : {};

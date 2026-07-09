@@ -72,9 +72,20 @@ class LLMClient:
         # devuelve al instante en vez de re-generar (minutos de LLM salvados).
         self._timed_out_scenes: dict[str, str] = {}
         self._late_scenes: dict[str, dict] = {}
+        # Single-flight por clave de reintento: si el transporte del bridge
+        # muere (p. ej. su fetch aborta) y reintenta el MISMO tile mientras el
+        # motor aún genera, el segundo request se ENGANCHA a la generación en
+        # vuelo en vez de mandar un duplicado al modelo.
+        self._inflight_scenes: dict[str, str] = {}
         # Motivo real del último fallo del camino MCP (timeout/rechazo) para
         # que el 503/504 no mienta con "no MCP listener".
         self._last_mcp_failure: str = ""
+        # Última señal de vida por request_id: los narrative_progress del
+        # bridge MCP (una tool llamada, la petición recogida…) la refrescan y
+        # el timeout de escena pasa a ser de INACTIVIDAD — un bootstrap puede
+        # tardar 10+ min mientras dé señales.
+        self._activity: dict[str, float] = {}
+        self._last_progress_msg: dict[str, str] = {}
         self._ws: websocket.WebSocketApp | None = None
         self._ws_connected = False
 
@@ -141,6 +152,14 @@ class LLMClient:
                     with self._pending_lock:
                         if req_id in self._pending:
                             self._pending[req_id] = msg.get("result", {})
+                elif msg_type == "narrative_progress":
+                    req_id = msg.get("request_id", "")
+                    message = str(msg.get("message", ""))[:300]
+                    with self._pending_lock:
+                        if req_id in self._pending:
+                            self._activity[req_id] = time.time()
+                            self._last_progress_msg[req_id] = message
+                            print(f"LLM: progreso [{req_id[:8]}…] {message}")
                 elif msg_type == "bridge_status_response":
                     req_id = msg["request_id"]
                     with self._pending_lock:
@@ -271,17 +290,49 @@ class LLMClient:
         retry_key = self._scene_retry_key(scene_request)
 
         with self._pending_lock:
-            # Reintento de un tile cuya respuesta llegó tras el timeout: la
-            # escena YA está generada — devolverla sin molestar al modelo.
+            # Reintento de un tile cuya respuesta llegó tras el timeout (o
+            # cuyo primer request murió en el transporte): la escena YA está
+            # generada — devolverla sin molestar al modelo.
             late = self._late_scenes.pop(retry_key, None)
+            inflight_id = None if late is not None else self._inflight_scenes.get(retry_key)
         if late is not None:
-            print(f"LLM: sirviendo respuesta tardía guardada para [{retry_key}]")
+            print(f"LLM: sirviendo respuesta guardada para [{retry_key}]")
             try:
                 return validate_scene_response(late)
             except Exception as e:  # noqa: BLE001 — degrada a re-generar
-                print(f"LLM: respuesta tardía inválida ({e}); se re-genera")
+                print(f"LLM: respuesta guardada inválida ({e}); se re-genera")
+        if inflight_id is not None:
+            # Enganche: otra petición del MISMO contenido sigue en vuelo (el
+            # bridge reintentó tras perder su conexión). Esperar su resultado
+            # con el mismo timeout de inactividad, sin duplicar la generación.
+            print(f"LLM: petición duplicada de [{retry_key}] — enganchada a la generación en vuelo (id={inflight_id[:8]}…)")
+            attach_start = time.time()
+            while True:
+                with self._pending_lock:
+                    done = self._late_scenes.pop(retry_key, None)
+                    still_inflight = self._inflight_scenes.get(retry_key) == inflight_id
+                    last_activity = self._activity.get(inflight_id, attach_start)
+                if done is not None:
+                    try:
+                        return validate_scene_response(done)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"LLM: resultado enganchado inválido ({e})")
+                        return None
+                if not still_inflight:
+                    # El vuelo original terminó sin dejar resultado (timeout
+                    # o rechazo): reflejar su fallo, el caller decide.
+                    print(f"LLM: la generación en vuelo de [{retry_key}] terminó sin resultado")
+                    return None
+                if time.time() - last_activity >= self.timeout:
+                    print(f"LLM: enganche a [{retry_key}] agotó la inactividad")
+                    self._last_mcp_failure = (
+                        f"timeout: {self.timeout:.0f}s sin señales del motor narrativo"
+                    )
+                    return None
+                time.sleep(0.2)
         with self._pending_lock:
             self._pending[request_id] = None
+            self._inflight_scenes[retry_key] = request_id
 
         self._ws.send(json.dumps({  # type: ignore
             "type": "room_request",
@@ -293,11 +344,29 @@ class LLMClient:
         print(f"LLM: Scene request via MCP (id={request_id[:8]}...)")
 
         start = time.time()
-        while time.time() - start < self.timeout:
+        with self._pending_lock:
+            self._activity[request_id] = start
+        while True:
             with self._pending_lock:
+                # Timeout de INACTIVIDAD: cada narrative_progress del motor
+                # (tool llamada, petición recogida) lo resetea. Solo expira
+                # si el motor lleva `timeout` segundos sin dar señales.
+                last_activity = self._activity.get(request_id, start)
                 result = self._pending.get(request_id)
                 if result is not None:
                     del self._pending[request_id]
+                    self._activity.pop(request_id, None)
+                    self._last_progress_msg.pop(request_id, None)
+                    if self._inflight_scenes.get(retry_key) == request_id:
+                        del self._inflight_scenes[retry_key]
+                    # Guardar el resultado bruto: si el transporte del caller
+                    # murió (fetch abortado), el reintento del bridge lo
+                    # recoge de aquí sin re-generar. Cap compartido con las
+                    # respuestas tardías.
+                    if isinstance(result, dict) and not result.get("error"):
+                        self._late_scenes[retry_key] = result
+                        while len(self._late_scenes) > 8:
+                            self._late_scenes.pop(next(iter(self._late_scenes)))
                     # Structured error from the bridge (e.g. no_mcp_listener).
                     # Without this check, validate_scene_response pads the
                     # error dict into a placeholder scene and the caller gets
@@ -314,18 +383,29 @@ class LLMClient:
                     print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
                           f"{time.time() - start:.1f}s)")
                     return validated
+            if time.time() - last_activity >= self.timeout:
+                break
             time.sleep(0.1)
 
         with self._pending_lock:
             self._pending.pop(request_id, None)
+            last_msg = self._last_progress_msg.pop(request_id, "")
+            self._activity.pop(request_id, None)
+            if self._inflight_scenes.get(retry_key) == request_id:
+                del self._inflight_scenes[retry_key]
             # Recordar el id: si el modelo responde tarde, on_message guarda
             # la escena bajo retry_key en vez de descartarla.
             self._timed_out_scenes[request_id] = retry_key
             while len(self._timed_out_scenes) > 16:
                 self._timed_out_scenes.pop(next(iter(self._timed_out_scenes)))
-        print(f"LLM: MCP scene timeout ({self.timeout}s) [{retry_key}]")
+        print(
+            f"LLM: MCP scene timeout — {self.timeout:.0f}s SIN señales del motor "
+            f"(total {time.time() - start:.0f}s) [{retry_key}]"
+            + (f" — último progreso: {last_msg}" if last_msg else "")
+        )
         self._last_mcp_failure = (
-            f"timeout tras {self.timeout:.0f}s esperando al motor narrativo"
+            f"timeout: {self.timeout:.0f}s sin señales del motor narrativo"
+            + (f" (último progreso: {last_msg})" if last_msg else "")
         )
         return None
 

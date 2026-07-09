@@ -592,6 +592,7 @@ function composeTilePlan(
       scene_id: key,
       structures: raw.structures as never,
       vegetation_zones: raw.vegetation_zones as never,
+      entities: raw.entities as never,
       terrain_features: raw.terrain_features as never,
     },
     declared,
@@ -610,6 +611,7 @@ function composeTilePlan(
       svg: composed.svg,
       view_box: composed.viewBox,
       elements: composed.elements,
+      occluders: composed.occluders,
     },
   };
 }
@@ -908,6 +910,32 @@ function log(msg: string): void {
   while (combatLog.children.length > 8) combatLog.lastChild?.remove();
 }
 
+/** Último error de render registrado — dedup para no inundar el ErrorLog a
+ *  60 fps con la misma excepción. */
+let lastRenderError = "";
+
+// Hook de bench (solo dev): estado vivo para los drivers E2E de Chrome —
+// permite verificar movimiento/colisión sin depender de leer píxeles.
+if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
+  (window as unknown as Record<string, unknown>).__nefan = {
+    state: () => ({
+      pos: { ...playerPos },
+      forward: { ...playerForward },
+      input: { ...input.state },
+      dialogueActive: input.dialogueActive,
+      perspective: sessionPerspective,
+      blocked: {
+        n: collidesAt(playerPos.x, playerPos.z - 0.5),
+        s: collidesAt(playerPos.x, playerPos.z + 0.5),
+        w: collidesAt(playerPos.x - 0.5, playerPos.z),
+        e: collidesAt(playerPos.x + 0.5, playerPos.z),
+      },
+    }),
+    occluders: () => renderer.debugOccluders(),
+    npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+  };
+}
+
 // --- Mouse look ---
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
@@ -1061,16 +1089,25 @@ function gameLoop(now: number): void {
 
     const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
     if (inputFwd !== 0 || inputRight !== 0) {
-      const len = Math.sqrt(inputFwd * inputFwd + inputRight * inputRight);
-      const fwd = playerForward;
-      const right = { x: -fwd.z, z: fwd.x };
-      const moveX = (fwd.x * inputFwd + right.x * inputRight) / len;
-      const moveZ = (fwd.z * inputFwd + right.z * inputRight) / len;
-      const dx = moveX * speed * delta;
-      const dz = moveZ * speed * delta;
+      // WASD RELATIVO al personaje (Souls-like, como el cliente 3D): el ratón
+      // orienta (playerYaw, pointer lock) y las teclas se expresan en su
+      // marco — W avanza hacia donde mira, S camina DE ESPALDAS, A/D son
+      // strafe lateral. El movimiento nunca toca la orientación: por eso se
+      // puede retroceder o desplazarse de lado sin dejar de encarar al
+      // enemigo. Se renormaliza para que la diagonal no sea más rápida.
+      const rx = -playerForward.z; // right = forward rotado 90° horario
+      const rz = playerForward.x;
+      const mx = playerForward.x * inputFwd + rx * inputRight;
+      const mz = playerForward.z * inputFwd + rz * inputRight;
+      const mlen = Math.hypot(mx, mz) || 1;
+      const dx = (mx / mlen) * speed * delta;
+      const dz = (mz / mlen) * speed * delta;
       // Resolución por ejes contra objetos sólidos → desliza por las paredes.
-      if (!collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
-      if (!collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
+      // Si el ORIGEN ya es sólido (save antiguo dentro de una huella que hoy
+      // bloquea), el movimiento se permite: puede salir, nunca queda atrapado.
+      const stuck = collidesAt(playerPos.x, playerPos.z);
+      if (stuck || !collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
+      if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
     // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,
@@ -1264,18 +1301,30 @@ function gameLoop(now: number): void {
     for (const ee of enemyEntities) updateEntitySprite(ee, now, { npc: false });
     for (const npc of npcEntities) updateEntitySprite(npc, now, { npc: true });
   }
-  renderer.render(
-    {
-      pos: playerPos,
-      forward: playerForward,
-      hp: result.playerHp,
-      maxHp: playerMaxHp,
-      sprite: playerSprite,
-    },
-    enemyEntities,
-    objectEntities,
-    npcEntities,
-  );
+  // Blindaje: una excepción de UN frame no debe matar el rAF (juego
+  // congelado en negro para siempre). Se registra (dedup por mensaje) y el
+  // siguiente frame lo reintenta — los fallos transitorios (sheet a medio
+  // cargar, imagen invalidada) se autocorrigen.
+  try {
+    renderer.render(
+      {
+        pos: playerPos,
+        forward: playerForward,
+        hp: result.playerHp,
+        maxHp: playerMaxHp,
+        sprite: playerSprite,
+      },
+      enemyEntities,
+      objectEntities,
+      npcEntities,
+    );
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    if (msg !== lastRenderError) {
+      lastRenderError = msg;
+      errors.push("render", `excepción en render (el loop sigue): ${msg}`, err);
+    }
+  }
 
   // Draw attack area overlay
   if (attackVisual?.active) {
@@ -1297,6 +1346,14 @@ function gameLoop(now: number): void {
 // --- Init ---
 
 populateSceneSelector();
+
+// Override de bench: `?perspective=isometric` fuerza la proyección al cargar
+// (los fixtures locales del dropdown no tienen sesión y sin esto siempre se
+// verían en topdown). La perspectiva de una sesión real la pisa al iniciar.
+const perspectiveOverride = new URLSearchParams(location.search).get("perspective");
+if (perspectiveOverride === "isometric" || perspectiveOverride === "topdown") {
+  applySessionPerspective(perspectiveOverride);
+}
 
 // Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
 // bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.
@@ -1364,6 +1421,16 @@ function showLoader(title: string, detail: string): void {
   }, 500);
 }
 
+/** Actualiza SOLO el detalle del loader con un latido de progreso del motor
+ *  (sin resetear el cronómetro ni pisar un estado de error). No-op si el
+ *  loader no está visible — el progreso también llega en momentos sin
+ *  overlay (p. ej. tiles de frontera en segundo plano). */
+function updateLoaderProgress(message: string): void {
+  if (!loaderEl || !loaderEl.classList.contains("visible")) return;
+  if (loaderEl.classList.contains("error")) return;
+  if (loaderDetail) loaderDetail.textContent = message;
+}
+
 function hideLoader(): void {
   if (!loaderEl) return;
   loaderEl.classList.remove("visible", "error");
@@ -1388,6 +1455,14 @@ function setLoaderState(state: "error", title: string, detail: string): void {
 if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
 
 narrativeClient.onNarrativeStatus((status) => {
+  // ── Latido de progreso del motor narrativo ────────────────────────────
+  // Un paso observable (petición recogida, tool de estado llamada): el
+  // loader deja de ser una espera muda de minutos y narra qué está pasando.
+  if (status.phase === "progress") {
+    if (status.message) updateLoaderProgress(status.message);
+    return;
+  }
+
   // ── Tiles del plano continuo ──────────────────────────────────────────
   // El feedback de un tile es DIRECCIONAL (velo/flash del FrontierManager),
   // no el overlay central — salvo el bootstrap (mundo aún vacío).

@@ -211,6 +211,57 @@ describe("blueprint/compose", () => {
     const { svg } = composeBlueprint({ volumes: [], biome: "sand" }, "topdown", "t");
     assert.ok(svg.includes('fill="#cbb87e"'));
   });
+
+  it("occluders: un tramo por entry tall, SVG standalone, deterministas", () => {
+    for (const perspective of ["topdown", "isometric"] as const) {
+      const a = composeBlueprint(PLAN, perspective, "tile_0_0");
+      const b = composeBlueprint(PLAN, perspective, "tile_0_0");
+      assert.deepEqual(a.occluders, b.occluders, perspective);
+      const vids = new Set(a.occluders.map((o) => o.vid));
+      // Todos los volúmenes tall tienen occluder; los no-tall no.
+      for (const e of a.elements) {
+        assert.equal(vids.has(e.id), e.tall, `${perspective}/${e.id}`);
+      }
+      // La muralla (128 celdas) se trocea: varios occluders con baselines locales.
+      const wallOccs = a.occluders.filter((o) => o.vid === "muralla_sur");
+      assert.ok(wallOccs.length > 2, `${perspective}: muralla sin trocear (${wallOccs.length})`);
+      // El cutaway emite cada muro trasero y el frontal por separado (el
+      // suelo NO ocluye — taparía los muebles interiores).
+      const tabernaOccs = a.occluders.filter((o) => o.vid === "taberna");
+      assert.deepEqual(
+        tabernaOccs.map((o) => o.id).sort(),
+        ["taberna:back_n", "taberna:back_w", "taberna:front"],
+        perspective,
+      );
+      // Huellas FINAS de los tramos del cutaway (rect [8,12,38,34]):
+      const backN = tabernaOccs.find((o) => o.id === "taberna:back_n")!;
+      const backW = tabernaOccs.find((o) => o.id === "taberna:back_w")!;
+      const front = tabernaOccs.find((o) => o.id === "taberna:front")!;
+      assert.deepEqual(backN.footprint_cells, [8, 12, 46, 13.2], `${perspective}: huella back_n`);
+      assert.deepEqual(backW.footprint_cells, [8, 12, 9.2, 46], `${perspective}: huella back_w`);
+      assert.deepEqual(front.footprint_cells, [8, 44.8, 46, 46], `${perspective}: huella front`);
+      // Árbol: dos tramos — tronco (occluder normal, huella fina) y copa
+      // AÉREA (overhead: se pinta sobre las entidades siempre).
+      const treeOccs = a.occluders.filter((o) => o.vid === "roble_1");
+      assert.deepEqual(treeOccs.map((o) => o.id).sort(), ["roble_1:canopy", "roble_1:trunk"], perspective);
+      const trunk = treeOccs.find((o) => o.id === "roble_1:trunk")!;
+      const canopy = treeOccs.find((o) => o.id === "roble_1:canopy")!;
+      assert.equal(trunk.overhead, undefined, `${perspective}: el tronco no es aéreo`);
+      assert.equal(canopy.overhead, true, `${perspective}: la copa es aérea`);
+      const [tu0, tv0, tu1, tv1] = trunk.footprint_cells;
+      assert.ok(tu1 - tu0 < 3 && tv1 - tv0 < 3, `${perspective}: huella del árbol no es el tronco`);
+      for (const o of a.occluders) {
+        const [, y, w, h] = o.bbox;
+        assert.ok(w > 0 && h > 0, `${perspective}/${o.id}: bbox vacío`);
+        assert.ok(o.svg.startsWith("<svg viewBox=") && o.svg.endsWith("</svg>"), `${perspective}/${o.id}: svg malformado`);
+        assert.ok(o.svg.includes(`data-vid="${o.vid}"`));
+        const [fu0, fv0, fu1, fv1] = o.footprint_cells;
+        assert.ok(fu1 > fu0 && fv1 > fv0, `${perspective}/${o.id}: huella vacía`);
+        // baseline dentro del rango vertical del bbox (con margen del pad)
+        assert.ok(o.baseline_y >= y - 0.5 && o.baseline_y <= y + h + 2, `${perspective}/${o.id}: baseline fuera`);
+      }
+    }
+  });
 });
 
 describe("blueprint/derive", () => {
@@ -257,6 +308,89 @@ describe("blueprint/derive", () => {
       const inside = u > 37 && u < 73 && v > 37 && v < 73;
       assert.ok(!inside, `árbol dentro de la estructura en ${u},${v}`);
     }
+  });
+
+  it("entities estáticas → su volumen (building con techo, tree, prop, decor passable)", () => {
+    const derived = deriveVolumesFromSchema(
+      {
+        scene_id: "tile_0_0",
+        entities: [
+          { id: "casa_1", kind: "building", cell: [20, 20], footprint: [16, 12], name: "casa del herrero" },
+          { id: "roble_x", kind: "tree", cell: [80, 80], footprint: [4, 4], name: "roble viejo" },
+          { id: "barril_x", kind: "prop", cell: [50, 90], footprint: [2, 2], name: "barril", shape: "cylinder" },
+          { id: "alfombra", kind: "decor", cell: [60, 100], footprint: [4, 3], name: "alfombra" },
+          { id: "espada", kind: "item", cell: [70, 70], footprint: [1, 1], name: "espada" },
+          { id: "aldeano", kind: "npc", cell: [90, 90], footprint: [1, 1], name: "aldeano" },
+        ],
+      },
+      [],
+    );
+    const byId = new Map(derived.map((v) => [v.id, v]));
+    const casa = byId.get("derived_ent_casa_1");
+    assert.ok(casa && casa.type === "building");
+    if (casa && casa.type === "building") {
+      assert.deepEqual(casa.rect, [20, 20, 16, 12]);
+      assert.equal(casa.cutaway, undefined); // no enterable → con techo
+      assert.equal(casa.roof?.kind, "gable");
+      assert.equal(casa.label, "casa del herrero");
+    }
+    const roble = byId.get("derived_ent_roble_x");
+    assert.ok(roble && roble.type === "tree");
+    const barril = byId.get("derived_ent_barril_x");
+    assert.ok(barril && barril.type === "prop");
+    if (barril && barril.type === "prop") assert.equal(barril.shape, "cylinder");
+    const alfombra = byId.get("derived_ent_alfombra");
+    assert.ok(alfombra && alfombra.type === "prop");
+    if (alfombra && alfombra.type === "prop") assert.equal(alfombra.passable, true);
+    // items y npcs NO derivan volumen
+    assert.equal(byId.has("derived_ent_espada"), false);
+    assert.equal(byId.has("derived_ent_aldeano"), false);
+    // el derivado valida y compone en ambas perspectivas
+    const parsed = parseVolumes(derived);
+    assert.equal(parsed.ok, true, parsed.ok ? "" : parsed.error);
+    for (const perspective of ["topdown", "isometric"] as const) {
+      const c = composeBlueprint({ volumes: derived, biome: "grass" }, perspective, "tile_0_0");
+      assert.ok(c.svg.includes('data-vid="derived_ent_casa_1"'), perspective);
+    }
+  });
+
+  it("las entities del scatter de la expansión NO derivan y el resto se capa", () => {
+    // Un save real llega EXPANDIDO: cientos de trees estampados por
+    // scene-expand (flag `scattered` en escenas nuevas; en saves antiguos
+    // solo el patrón de id `{slug}_z{zi}_{i}`). Derivarlos colgaba el
+    // cliente (miles de elementos SVG + occluders).
+    const scatterOld = Array.from({ length: 400 }, (_, i) => ({
+      id: `pino_z0_${i}`, kind: "tree", name: "pino", cell: [i % 120, Math.floor(i / 4)], footprint: [1, 1],
+    }));
+    const scatterNew = Array.from({ length: 300 }, (_, i) => ({
+      id: `abeto_x_${i}`, kind: "tree", name: "abeto", cell: [i % 120, 40 + Math.floor(i / 8)], footprint: [1, 1], scattered: true,
+    }));
+    const derived = deriveVolumesFromSchema(
+      {
+        scene_id: "tile_0_0",
+        entities: [
+          ...scatterOld,
+          ...scatterNew,
+          { id: "casa_1", kind: "building", name: "casa", cell: [20, 100], footprint: [16, 12] },
+          { id: "roble_autor", kind: "tree", name: "roble del autor", cell: [100, 100], footprint: [4, 4] },
+        ],
+      },
+      [],
+    );
+    const ids = derived.map((v) => v.id);
+    assert.ok(ids.includes("derived_ent_casa_1"), "la casa debe derivar");
+    assert.ok(ids.includes("derived_ent_roble_autor"), "el árbol del autor debe derivar");
+    assert.ok(!ids.some((id) => /_z\d+_\d+$/.test(id)), "trees del scatter derivados");
+    assert.ok(derived.length <= 82, `derivados sin capar: ${derived.length}`);
+  });
+
+  it("una entity que solapa un volumen declarado no se deriva", () => {
+    const declared: Volume[] = [{ id: "b", label: "casa", type: "building", rect: [18, 18, 20, 16] }];
+    const derived = deriveVolumesFromSchema(
+      { scene_id: "t", entities: [{ id: "casa_1", kind: "building", cell: [20, 20], footprint: [16, 12], name: "casa" }] },
+      declared,
+    );
+    assert.equal(derived.length, 0);
   });
 
   it("el resultado derivado compone y valida", () => {

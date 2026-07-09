@@ -450,6 +450,11 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
         cell: [c, r],
         footprint: [1, 1],
         glyph: typeof z.glyph === "string" && z.glyph.length === 1 ? z.glyph : "T",
+        // Marca de scatter: el compositor de blueprints NO deriva volumen de
+        // estas (la vegetación visual sale de vegetation_zones con su propio
+        // scatter ralo — un árbol del blueprint son ~10 celdas de copa, no 1;
+        // derivar cientos de trees del grid colgaba el cliente).
+        scattered: true,
       });
     }
   }

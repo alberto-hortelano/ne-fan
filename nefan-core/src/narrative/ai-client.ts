@@ -10,6 +10,13 @@ export interface AiClientOptions {
   baseUrl?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /** Dispatcher de undici para las esperas largas (opaco aquí: el módulo
+   *  debe seguir siendo importable desde el navegador). El bridge inyecta un
+   *  Agent con headersTimeout/bodyTimeout desactivados — el fetch de Node
+   *  corta a los 300 s si el servidor no envía CABECERAS, y /generate_scene
+   *  no responde nada hasta que el motor narrativo termina (minutos). El
+   *  límite real lo gobierna nuestro AbortController. */
+  dispatcher?: unknown;
 }
 
 export interface SceneGenerationResult {
@@ -44,11 +51,13 @@ export class AiClient {
   private baseUrl: string;
   private timeoutMs: number;
   private fetchImpl: typeof fetch;
+  private dispatcher: unknown;
 
   constructor(opts: AiClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? "http://127.0.0.1:8765";
     this.timeoutMs = opts.timeoutMs ?? 60_000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.dispatcher = opts.dispatcher;
   }
 
   async health(): Promise<{ ok: boolean; status?: string }> {
@@ -222,7 +231,9 @@ export class AiClient {
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,
-      });
+        // Passthrough a undici (ignorado por fetchs que no lo soporten).
+        ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
+      } as RequestInit);
     } finally {
       clearTimeout(timeout);
     }

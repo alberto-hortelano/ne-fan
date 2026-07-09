@@ -28,6 +28,7 @@ let baseUrl: string;
 let narrative: NarrativeState;
 let activePlugins: Map<string, PluginManifest>;
 let mutations = 0;
+let progressMessages: string[] = [];
 
 before(async () => {
   narrative = new NarrativeState(new MemorySessionStorage());
@@ -41,6 +42,9 @@ before(async () => {
     gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
     onMutation: async () => {
       mutations += 1;
+    },
+    onProgress: (message) => {
+      progressMessages.push(message);
     },
     plugins: {
       register: (raw) => {
@@ -114,6 +118,25 @@ describe("state HTTP API", () => {
     const { status, body } = await get("/no/such/route");
     assert.equal(status, 404);
     assert.equal(body.ok, false);
+  });
+
+  it("POST /narrative_progress difunde el latido (y valida el body)", async () => {
+    progressMessages = [];
+    const res = await fetch(`${baseUrl}/narrative_progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "construyendo el mapa del mundo…" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(progressMessages, ["construyendo el mapa del mundo…"]);
+
+    const bad = await fetch(`${baseUrl}/narrative_progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(bad.status, 400);
+    assert.equal(progressMessages.length, 1);
   });
 
   it("POST /map/place + GET /map/place/{id} + onMutation", async () => {

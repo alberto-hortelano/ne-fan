@@ -91,8 +91,10 @@ function groundEllipse(ctx: RenderCtx, u: number, v: number, r: number, fill: st
   ctx.out.push(ellipse(cx, cy + dy, rx, ry, fill, extra));
 }
 
+/** Sombra de contacto: elipse PEGADA a la base (el volumen la pisa y solo
+ *  asoma un borde al SE) — desplazada parecía que todo flotaba. */
 function shadow(ctx: RenderCtx, u: number, v: number, r: number): void {
-  groundEllipse(ctx, u + 0.8, v + 0.5, r, PALETTE.shadow, 'opacity="0.14"');
+  groundEllipse(ctx, u + 0.3, v + 0.2, r, PALETTE.shadow, 'opacity="0.14"');
 }
 
 /** Cilindro: cortina de la semicircunferencia de cámara + tapa elíptica. */
@@ -138,19 +140,30 @@ function jointLines(ctx: RenderCtx, a: [number, number], b: [number, number], h:
 
 // ---------------------------------------------------------------- árboles
 
-export function renderTree(ctx: RenderCtx, t: TreeVolume): void {
+/** Fase del árbol: "trunk" = sombra + tronco (occluder normal por huella);
+ *  "canopy" = SOLO la copa — occluder AÉREO: está a 4-12 m de altura y se
+ *  pinta encima de las entidades siempre, un personaje que pase por debajo
+ *  queda cubierto aunque esté "delante" del tronco en el suelo. */
+export type TreePhase = "trunk" | "canopy";
+
+export function renderTree(ctx: RenderCtx, t: TreeVolume, phase: TreePhase = "trunk"): void {
   const s = t.s ?? 1;
   const [bx, by] = ctx.proj.pt(t.at[0], t.at[1]);
   const o = ctx.out;
   const th = 5 * s;
-  groundEllipse(ctx, t.at[0] + 0.9, t.at[1] + 0.5, 2.6 * s, PALETTE.shadow, 'opacity="0.16"');
-  o.push(
-    path(
-      `M${fmt(bx - 1.4 * s)},${fmt(by)} L${fmt(bx - 0.8 * s)},${fmt(by - 1.2 * s)} L${fmt(bx - 0.8 * s)},${fmt(by - th)} L${fmt(bx + 0.8 * s)},${fmt(by - th)} L${fmt(bx + 0.8 * s)},${fmt(by - 1.2 * s)} L${fmt(bx + 1.4 * s)},${fmt(by)} Z`,
-      PALETTE.trunk,
-    ),
-  );
-  o.push(`<rect x="${fmt(bx + 0.1 * s)}" y="${fmt(by - th)}" width="${fmt(0.7 * s)}" height="${fmt(th - 0.2 * s)}" fill="${PALETTE.trunkDark}"/>`);
+  if (phase === "trunk") {
+    groundEllipse(ctx, t.at[0] + 0.4, t.at[1] + 0.25, 2.2 * s, PALETTE.shadow, 'opacity="0.16"');
+    o.push(
+      path(
+        `M${fmt(bx - 1.4 * s)},${fmt(by)} L${fmt(bx - 0.8 * s)},${fmt(by - 1.2 * s)} L${fmt(bx - 0.8 * s)},${fmt(by - th)} L${fmt(bx + 0.8 * s)},${fmt(by - th)} L${fmt(bx + 0.8 * s)},${fmt(by - 1.2 * s)} L${fmt(bx + 1.4 * s)},${fmt(by)} Z`,
+        PALETTE.trunk,
+      ),
+    );
+    o.push(`<rect x="${fmt(bx + 0.1 * s)}" y="${fmt(by - th)}" width="${fmt(0.7 * s)}" height="${fmt(th - 0.2 * s)}" fill="${PALETTE.trunkDark}"/>`);
+    track(ctx, bx - 1.5 * s, by - th);
+    track(ctx, bx + 1.5 * s, by + 1);
+    return;
+  }
   const cy = by - th - 2.6 * s;
   const blobs: [number, number, number][] = [[0, 0, 5.2], [-3.4, 1.4, 3.6], [3.4, 1.2, 3.7], [-1.8, -2.6, 3.4], [2, -2.4, 3.2]];
   for (const [dx, dy, r] of blobs) o.push(circle(bx + dx * s, cy + dy * s, r * s, PALETTE.canopy));
@@ -164,12 +177,12 @@ export function renderTree(ctx: RenderCtx, t: TreeVolume): void {
     o.push(circle(bx + dx * s, cy + dy * s, r * s, PALETTE.canopyLight));
   }
   track(ctx, bx - 6.8 * s, cy - 5.8 * s);
-  track(ctx, bx + 6.8 * s, by + 1);
+  track(ctx, bx + 6.8 * s, cy + 5.6 * s);
 }
 
 export function renderBush(ctx: RenderCtx, at: [number, number], s: number): void {
   const [bx, by] = ctx.proj.pt(at[0], at[1]);
-  groundEllipse(ctx, at[0] + 0.5, at[1] + 0.3, 1.9 * s, PALETTE.shadow, 'opacity="0.13"');
+  groundEllipse(ctx, at[0] + 0.25, at[1] + 0.15, 1.9 * s, PALETTE.shadow, 'opacity="0.13"');
   for (const [dx, dy, r] of [[0, -1.2, 2.4], [-2, -0.6, 1.8], [2, -0.7, 1.8]] as const) {
     ctx.out.push(circle(bx + dx * s, by + dy * s, r * s, PALETTE.canopy));
   }
@@ -180,7 +193,7 @@ export function renderBush(ctx: RenderCtx, at: [number, number], s: number): voi
 
 export function renderRock(ctx: RenderCtx, at: [number, number], s: number): void {
   const [bx, by] = ctx.proj.pt(at[0], at[1]);
-  groundEllipse(ctx, at[0] + 0.4, at[1] + 0.3, 2.2 * s, PALETTE.shadow, 'opacity="0.13"');
+  groundEllipse(ctx, at[0] + 0.2, at[1] + 0.15, 2.2 * s, PALETTE.shadow, 'opacity="0.13"');
   groundEllipse(ctx, at[0], at[1], 2.1 * s, "#57503f", "", -0.6 * s);
   groundEllipse(ctx, at[0] - 0.5 * s, at[1] - 0.4 * s, 1.3 * s, "#6d6552", "", -1.1 * s);
   ctx.out.push(line([bx - 1.4 * s, by - 1.4 * s], [bx + 1.2 * s, by - 1.6 * s], "#7d7561", 0.3));
@@ -215,7 +228,7 @@ export function renderWall(ctx: RenderCtx, w: WallVolume): void {
   const cam = offsetPolyline(pts, width / 2);
   const far = offsetPolyline(pts, -width / 2);
   // sombra al pie
-  quadUVH(ctx, [...cam.map(([u, v]) => [u, v, 0] as UVH), ...[...cam].reverse().map(([u, v]) => [u + 0.6, v + 1.6, 0] as UVH)], PALETTE.shadow, 'opacity="0.14"');
+  quadUVH(ctx, [...cam.map(([u, v]) => [u, v, 0] as UVH), ...[...cam].reverse().map(([u, v]) => [u + 0.3, v + 0.8, 0] as UVH)], PALETTE.shadow, 'opacity="0.14"');
   // caras de cámara por segmento (color por orientación)
   for (let i = 0; i < cam.length - 1; i++) {
     const a = cam[i];
@@ -253,7 +266,7 @@ export function renderTower(ctx: RenderCtx, t: TowerVolume): void {
   const r = t.r ?? 6;
   const h = t.h ?? 11;
   const colors = wallColors("stone");
-  shadow(ctx, t.at[0] + 0.6, t.at[1] + 0.6, r + 1);
+  shadow(ctx, t.at[0] + 0.3, t.at[1] + 0.3, r + 1);
   cylinder(ctx, t.at[0], t.at[1], r, h, colors);
   // coronación: anillo almenado + suelo interior
   const [cx, cy] = ctx.proj.pt(t.at[0], t.at[1], h);
@@ -293,33 +306,43 @@ export function renderGate(ctx: RenderCtx, g: GateVolume): void {
     const p1: [number, number] = [camEdge[0][0] + (camEdge[1][0] - camEdge[0][0]) * (t0 + 0.13), camEdge[0][1] + (camEdge[1][1] - camEdge[0][1]) * (t0 + 0.13)];
     faceSpan(ctx, p0, p1, h, h + 1.6, PALETTE.merlon);
   }
-  // arco: hueco oscuro en la cara de cámara, camino visible al fondo
-  const [gx, gy] = ctx.proj.pt(au, av + (g.orient === "x" ? depthHalf : 0), 0);
-  const [gx2] = g.orient === "y" ? ctx.proj.pt(au + depthHalf, av, 0) : [gx];
-  const ax = g.orient === "x" ? gx : gx2;
+  // arco: hueco oscuro EN el plano de la cara de cámara. Los pies del vano
+  // son puntos de MUNDO proyectados — el hueco es un quad alineado con la
+  // cara (en iso la cara es diagonal; un rect vertical de pantalla quedaba
+  // descentrado y flotando) coronado por una semielipse rotada con la misma
+  // pendiente.
   const iso = ctx.proj.kind === "isometric";
-  const halfW = (g.orient === "x" ? w / 2 : w / 2) * (iso ? Math.SQRT2 * ISO_SX * 0.75 : 0.55);
-  const archH = h * (iso ? 0.375 : 1) * 0.62;
+  const footA: [number, number] = g.orient === "x" ? [au - w / 2, av + depthHalf] : [au + depthHalf, av - w / 2];
+  const footB: [number, number] = g.orient === "x" ? [au + w / 2, av + depthHalf] : [au + depthHalf, av + w / 2];
+  const archH = h * 0.58;
+  quadUVH(ctx, [[footA[0], footA[1], archH], [footB[0], footB[1], archH], [footB[0], footB[1], 0], [footA[0], footA[1], 0]], "#211d17");
+  const [tx1, ty1] = ctx.proj.pt(footA[0], footA[1], archH);
+  const [tx2, ty2] = ctx.proj.pt(footB[0], footB[1], archH);
+  const mx = (tx1 + tx2) / 2;
+  const my = (ty1 + ty2) / 2;
+  const rxA = Math.hypot(tx2 - tx1, ty2 - ty1) / 2;
+  const angle = (Math.atan2(ty2 - ty1, tx2 - tx1) * 180) / Math.PI;
+  const ryA = rxA * (iso ? 0.55 : 0.8);
   ctx.out.push(
-    path(
-      `M${fmt(ax - halfW)},${fmt(gy)} L${fmt(ax - halfW)},${fmt(gy - archH)} A${fmt(halfW)},${fmt(halfW * 0.8)} 0 0 1 ${fmt(ax + halfW)},${fmt(gy - archH)} L${fmt(ax + halfW)},${fmt(gy)} Z`,
-      "#211d17",
-    ),
+    `<ellipse cx="${fmt(mx)}" cy="${fmt(my)}" rx="${fmt(rxA)}" ry="${fmt(ryA)}" fill="#211d17" transform="rotate(${fmt(angle)} ${fmt(mx)} ${fmt(my)})"/>`,
   );
-  ctx.out.push(`<rect x="${fmt(ax - halfW * 0.7)}" y="${fmt(gy - 1.4)}" width="${fmt(halfW * 1.4)}" height="1.4" fill="${PALETTE.dirtDark}" opacity="0.6"/>`);
-  ctx.out.push(
-    path(`M${fmt(ax - halfW)},${fmt(gy - archH)} A${fmt(halfW)},${fmt(halfW * 0.8)} 0 0 1 ${fmt(ax + halfW)},${fmt(gy - archH)}`, "none", `stroke="#8b8678" stroke-width="0.9"`),
-  );
+  // umbral de tierra a los pies del vano
+  const [fx1, fy1] = ctx.proj.pt(footA[0], footA[1], 0);
+  const [fx2, fy2] = ctx.proj.pt(footB[0], footB[1], 0);
+  ctx.out.push(line([fx1, fy1], [fx2, fy2], PALETTE.dirtDark, 1.2, 'opacity="0.5"'));
   if (g.banners !== false) {
-    for (const s of [-1, 1]) {
-      const px = ax + s * (halfW + 1.6);
+    // estandartes colgando a media altura del cuerpo, a ambos lados del arco
+    // (posiciones de PANTALLA relativas al arco, ya proyectado)
+    for (const s of [-1, 1] as const) {
+      const px = mx + s * (rxA + 2.2);
+      const py = my - ryA * 0.4;
       ctx.out.push(
         path(
-          `M${fmt(px - 0.95)},${fmt(gy - archH - 3.4)} L${fmt(px + 0.95)},${fmt(gy - archH - 3.4)} L${fmt(px + 0.95)},${fmt(gy - archH + 0.6)} L${fmt(px)},${fmt(gy - archH - 0.3)} L${fmt(px - 0.95)},${fmt(gy - archH + 0.6)} Z`,
+          `M${fmt(px - 0.95)},${fmt(py - 3.4)} L${fmt(px + 0.95)},${fmt(py - 3.4)} L${fmt(px + 0.95)},${fmt(py + 0.6)} L${fmt(px)},${fmt(py - 0.3)} L${fmt(px - 0.95)},${fmt(py + 0.6)} Z`,
           "#a03028",
         ),
       );
-      ctx.out.push(circle(px, gy - archH - 2.2, 0.42, "#c9a24b"));
+      ctx.out.push(circle(px, py - 2.2, 0.42, "#c9a24b"));
     }
   }
 }
@@ -339,7 +362,7 @@ function renderBoxPrism(ctx: RenderCtx, r: [number, number, number, number], h: 
   const v1 = v0 + d;
   quadUVH(
     ctx,
-    [[u0 + 1.2, v0 + 1.2, 0], [u1 + 1.6, v0 + 1.2, 0], [u1 + 1.6, v1 + 1.6, 0], [u0 + 1.2, v1 + 1.6, 0]],
+    [[u0 + 0.3, v0 + 0.3, 0], [u1 + 0.9, v0 + 0.3, 0], [u1 + 0.9, v1 + 0.9, 0], [u0 + 0.3, v1 + 0.9, 0]],
     PALETTE.shadow,
     'opacity="0.12"',
   );
@@ -375,12 +398,15 @@ function splitSpans(len: number, holes: [number, number][]): [number, number][] 
   return out.filter(([a, b]) => b - a > 0.2);
 }
 
-/** Fase de render de un edificio cutaway: el suelo y los muros traseros se
- *  pintan a la profundidad del borde NORTE (los muebles interiores —
- *  `prop`s del plan — quedan encima), y los muros frontales bajos a la del
- *  borde SUR (tapan la base de lo que quede detrás). Los edificios con techo
- *  se pintan en una sola fase ("base"). */
-export type BuildingPhase = "base" | "front";
+/** Fase de render de un edificio cutaway:
+ *  - "floor": SOLO el suelo interior (+sombra) — NO se recorta como occluder
+ *    (un suelo pintado encima taparía los muebles `prop` del interior).
+ *  - "back_n" / "back_w": cada muro trasero a altura completa POR SEPARADO —
+ *    cada uno es un occluder con huella FINA (juntos formaban una L cuyo AABB
+ *    cubría el interior y tapaba al personaje pegado a ellos).
+ *  - "front": muros frontales bajos + escalones, a la profundidad del borde
+ *    SUR. Los edificios con techo se pintan en una sola fase ("base"). */
+export type BuildingPhase = "floor" | "back_n" | "back_w" | "base" | "front";
 
 export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: BuildingPhase = "base"): void {
   const [u0, v0, w, d] = b.rect;
@@ -391,10 +417,10 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
   const roofKind = b.cutaway ? "none" : (b.roof?.kind ?? "gable");
 
   if (b.cutaway) {
-    if (phase === "base") {
+    if (phase === "floor") {
       quadUVH(
         ctx,
-        [[u0 + 1.2, v0 + 1.2, 0], [u1 + 1.8, v0 + 1.2, 0], [u1 + 1.8, v1 + 1.8, 0], [u0 + 1.2, v1 + 1.8, 0]],
+        [[u0 + 0.3, v0 + 0.3, 0], [u1 + 1.0, v0 + 0.3, 0], [u1 + 1.0, v1 + 1.0, 0], [u0 + 0.3, v1 + 1.0, 0]],
         PALETTE.shadow,
         'opacity="0.12"',
       );
@@ -404,9 +430,16 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
         const vv = v0 + i * 2.2;
         ctx.out.push(line(ctx.proj.pt(u0, vv, 0), ctx.proj.pt(u1, vv, 0), "#6a4b2b", 0.25));
       }
-      // muros traseros a altura completa (cara interior visible hacia cámara)
+      return;
+    }
+    if (phase === "back_n") {
+      // muro trasero norte a altura completa (cara interior hacia cámara)
       face(ctx, [u0, v0 + 1.2], [u1, v0 + 1.2], wallH, colors.shade);
       quadUVH(ctx, [[u0, v0, wallH], [u1, v0, wallH], [u1, v0 + 1.2, wallH], [u0, v0 + 1.2, wallH]], colors.top);
+      return;
+    }
+    if (phase === "back_w") {
+      // muro trasero oeste a altura completa
       face(ctx, [u0 + 1.2, v0 + 1.2], [u0 + 1.2, v1], wallH, colors.lit);
       quadUVH(ctx, [[u0, v0, wallH], [u0 + 1.2, v0 + 1.2, wallH], [u0 + 1.2, v1, wallH], [u0, v1, wallH]], colors.top);
       return;
@@ -431,7 +464,7 @@ export function renderBuilding(ctx: RenderCtx, b: BuildingVolume, phase: Buildin
 
   quadUVH(
     ctx,
-    [[u0 + 1.2, v0 + 1.2, 0], [u1 + 1.8, v0 + 1.2, 0], [u1 + 1.8, v1 + 1.8, 0], [u0 + 1.2, v1 + 1.8, 0]],
+    [[u0 + 0.3, v0 + 0.3, 0], [u1 + 1.0, v0 + 0.3, 0], [u1 + 1.0, v1 + 1.0, 0], [u0 + 0.3, v1 + 1.0, 0]],
     PALETTE.shadow,
     'opacity="0.12"',
   );
@@ -617,10 +650,13 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
 
 /** Dispatch del renderer por tipo. `phase` solo aplica a edificios cutaway
  *  (dos pasadas en profundidades distintas). */
-export function renderVolume(ctx: RenderCtx, v: Volume, phase: BuildingPhase = "base"): void {
+/** Fase de un tramo de volumen (edificios y árboles multi-fase). */
+export type VolumePhase = BuildingPhase | TreePhase;
+
+export function renderVolume(ctx: RenderCtx, v: Volume, phase: VolumePhase = "base"): void {
   switch (v.type) {
     case "tree":
-      renderTree(ctx, v);
+      renderTree(ctx, v, phase === "canopy" ? "canopy" : "trunk");
       break;
     case "bush":
       renderBush(ctx, v.at, v.s ?? 1);
@@ -629,7 +665,7 @@ export function renderVolume(ctx: RenderCtx, v: Volume, phase: BuildingPhase = "
       renderRock(ctx, v.at, v.s ?? 1);
       break;
     case "building":
-      renderBuilding(ctx, v, phase);
+      renderBuilding(ctx, v, phase === "canopy" || phase === "trunk" ? "base" : phase);
       break;
     case "wall":
       renderWall(ctx, v);

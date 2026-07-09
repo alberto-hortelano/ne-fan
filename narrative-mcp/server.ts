@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { WsBridge } from './ws-bridge.js';
-import { bridgeGet, bridgePost, type BridgeResult } from './bridge-http-client.js';
+import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')
  *  BEFORE it is forwarded to the Python ai_server. The ai_server applies the
@@ -273,9 +273,11 @@ being boxes and becomes a place, so invest your design effort here.
   only (path/rect/circle/ellipse/polygon/polyline/line + g/defs/symbol/use);
   no <script>, no foreignObject, no href.
 - <g> layers in this exact order:
-  <g id="ground">: REQUIRED — a base fill covering the WHOLE tile (biome
-    colour), meadow-variation blobs, dirt roads, stone plazas, sandy banks,
-    interior floors (wood).
+  <g id="ground">: REQUIRED — the ground FEATURES on a TRANSPARENT
+    background: dirt roads, stone plazas, sandy banks, interior floors
+    (wood), clearings. Do NOT paint a full-tile base rect: the composer
+    already lays the biome base with organic variation (blobs, flowers,
+    pebbles) underneath your art, and a full-tile fill would erase it.
   <g id="water">: REQUIRED (may be empty) — rivers/ponds/moats as thick
     stroked paths following the SAME course as your water terrain_features.
     NOT walkable.
@@ -283,6 +285,16 @@ being boxes and becomes a place, so invest your design effort here.
     jetties, stepping stones (collision punches these out of the water).
 - ONLY flat ground art here. NO walls, trees, furniture or anything with
   height — those are volumes.
+- STYLE of good ground art (invest here — flat shapes, layered):
+  · Roads: TWO strokes on the same path — a darker/wider edge stroke under a
+    lighter fill stroke (e.g. #8a7650 w=5.4 under #a29b8b w=4), linecap
+    round. Dirt tracks in warm tan (#a89162/#8a7650), stone roads in grey.
+  · Plazas/courtyards: a base ellipse or polygon in cobble grey (#a29b8b)
+    topped with a dozen small cobble ellipses in 2-3 tones (#8f887a,
+    #b0a999) at opacity .8 — reads as paving.
+  · Banks/transitions: soft ellipses at opacity .4-.6 bridging two grounds
+    (sand #b8ab8a around water, packed dirt near doors).
+  · Interior floors: warm wood (#7c5a36) rect with 2-3 darker plank lines.
 
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
 Common fields: "id" (unique slug), "label" (Spanish noun — it guides the
@@ -308,8 +320,12 @@ cells too (a character is ~3.6 cells tall). Types:
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
   passable?:true } — tables, barrels, crates, wells, market stalls, carts,
   signs… passable=true for rugs/awnings that must not block movement.
-COLLISION comes from these footprints: a building with no door is a sealed
-box (bug); doors/gates ARE the openings. Trees block only at the trunk.
+COLLISION comes from these footprints. A ROOFED building is pure scenery:
+its whole footprint is solid and its doors are decorative paint — the player
+can NEVER walk in (they would vanish under the roof). Any building the story
+needs the player to enter MUST be cutaway:true, and then a cutaway with no
+door is a sealed box (bug); doors/gates ARE the openings. Trees block only
+at the trunk.
 
 Design doctrine (what makes the plan GOOD):
 - Roads first: lay the road/river network in map_ground (continuing every
@@ -342,7 +358,7 @@ is {type:"path", at:41}) and seeding an east exit:
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
-  "map_ground": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><rect width=\\"128\\" height=\\"128\\" fill=\\"#3d5a2c\\"/><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#c2a86b\\" stroke-width=\\"4\\"/></g><g id=\\"water\\"/></svg>",
+  "map_ground": "<svg viewBox=\\"0 0 128 128\\"><g id=\\"ground\\"><ellipse cx=\\"40\\" cy=\\"80\\" rx=\\"18\\" ry=\\"12\\" fill=\\"#48682f\\" opacity=\\"0.6\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#6e5c3e\\" stroke-width=\\"5.4\\" stroke-linecap=\\"round\\" opacity=\\"0.6\\"/><path d=\\"M0,41 Q70,45 128,50\\" fill=\\"none\\" stroke=\\"#a89162\\" stroke-width=\\"4\\" stroke-linecap=\\"round\\"/></g><g id=\\"water\\"/></svg>",
   "volumes": [
     { "id": "roca_musgo", "label": "roca", "type": "rock", "at": [81, 31], "s": 1.4 },
     { "id": "pino_1", "label": "pino", "type": "tree", "at": [30, 20], "species": "pino" },
@@ -945,6 +961,21 @@ Respond via narrative_respond with EXACTLY this JSON:
   row you must return ALL rows; same for terrain_features, map_ground and volumes.
 - Do NOT return a full scene; only the five fix fields above are applied.`;
 
+/** Mensajes humanos para el latido de progreso según la ruta del State API
+ *  que el motor acaba de llamar. Genérico para rutas nuevas. */
+function describeStateCall(method: string, path: string): string {
+  if (path.startsWith('/map/place')) return 'construyendo el mapa del mundo (lugar)…';
+  if (path.startsWith('/map/link')) return 'construyendo el mapa del mundo (conexión)…';
+  if (path.startsWith('/map/trigger')) return 'colocando disparadores del mapa…';
+  if (path.startsWith('/map')) return 'consultando el mapa del mundo…';
+  if (path === '/world_doc') return 'leyendo el documento del mundo…';
+  if (path === '/scene/validate') return 'validando la escena generada…';
+  if (path.startsWith('/plugins')) return 'trabajando con los sistemas de juego (plugins)…';
+  if (path.startsWith('/npc')) return 'dirigiendo a los personajes…';
+  if (path.startsWith('/entity') || path.startsWith('/inventory')) return 'consultando entidades e inventario…';
+  return `el motor consulta el estado (${method} ${path})…`;
+}
+
 async function main() {
   const bridge = await WsBridge.create();
 
@@ -959,6 +990,17 @@ async function main() {
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
+
+  // ── Latido de progreso ──────────────────────────────────────────────────
+  // Cada paso observable del motor (recoger la petición, llamar una tool de
+  // estado) se reporta por DOS canales: WS a ai_server (resetea su timeout de
+  // inactividad — el motor sigue vivo aunque tarde 10 min) y HTTP al State
+  // API del bridge (texto del loader del cliente). Best-effort ambos.
+  const reportProgress = (message: string): void => {
+    if (currentRequestId) bridge.sendProgress(currentRequestId, message);
+    postProgress(message);
+  };
+  setActivityHook((method, path) => reportProgress(describeStateCall(method, path)));
 
   server.tool(
     'narrative_listen',
@@ -1003,6 +1045,7 @@ into context:
       try {
         const msg = await bridge.waitForRequest();
         currentRequestId = msg.request_id;
+        reportProgress('el motor narrativo ha recogido la petición y está trabajando…');
 
         if (msg.type === 'vision_request') {
           currentKind = msg.kind;

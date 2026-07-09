@@ -134,7 +134,12 @@ export class SpriteRenderer {
           }),
         });
         if (!res.ok) {
-          throw new Error(`ai_server /skin_sprite_sheet HTTP ${res.status}`);
+          const body = await res.text().catch(() => "");
+          const err = new Error(
+            `ai_server /skin_sprite_sheet HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
+          ) as Error & { status?: number };
+          err.status = res.status;
+          throw err;
         }
         const data = (await res.json()) as { ok?: boolean; meta?: SpriteSheetMeta; frame_urls?: string[][]; error?: string };
         if (!data.ok || !data.meta || !data.frame_urls) {
@@ -150,10 +155,11 @@ export class SpriteRenderer {
         const sheet: SpriteSheet = { ...meta, model: skinnedModel, frames };
         this.cache.set(cacheKey, sheet);
         return sheet;
-      } catch (err) {
-        errors.push("sprite", `skin failed for ${cacheKey}`, err);
-        throw err;
       } finally {
+        // Sin catch/errors.push aquí: los fallos se propagan tal cual y
+        // character-sprites los registra UNA vez con contexto (y decide
+        // desactivar los skins de la sesión) — loguear en ambas capas
+        // duplicaba cada fallo en consola.
         this.skinInflight.delete(cacheKey);
       }
     })();
@@ -222,18 +228,24 @@ export class SpriteRenderer {
     return this.cache.has(`${model}/${anim}/${angle}`);
   }
 
-  /** Returns the sheet synchronously if already cached. Throws if no load
-   *  has been started — callers must call `loadAnimation` first. Mid-load
-   *  it returns null (the same frame can be re-rendered next tick once the
-   *  image decodes), distinguishing "still loading" from "not requested". */
+  /** Returns the sheet synchronously if already cached; null mid-load (the
+   *  frame se re-renderiza al tick siguiente cuando decodifique). Si nadie
+   *  llamó a `loadAnimation` aún (p. ej. un NPC narrativo dibuja durante la
+   *  ventana en que preloadBase todavía no pidió ese sheet), la ARRANCA aquí
+   *  y devuelve null — un warning, nunca un throw: una excepción en el
+   *  camino de render mataría el rAF y congelaría el juego entero. */
   getCached(model: string, anim: string, angle: string): SpriteSheet | null {
     const key = `${model}/${anim}/${angle}`;
     const sheet = this.cache.get(key);
     if (sheet) return sheet;
     if (this.inflight.has(key)) return null;
-    const msg = `sprite sheet ${key} requested without prior loadAnimation`;
-    errors.push("sprite", msg);
-    throw new Error(msg);
+    // Carga lazy SILENCIOSA: es una carrera esperable (la entidad dibuja
+    // antes de que la precarga pida este sheet) y se autocorrige al frame
+    // siguiente — no es un error ni merece ruido en consola.
+    this.loadAnimation(model, anim, angle).catch(() => {
+      // fetchSheet ya registró el motivo; el catch evita unhandled rejection.
+    });
+    return null;
   }
 
   /** Map a forward XZ vector to one of `dirCount` discrete facings. Convention

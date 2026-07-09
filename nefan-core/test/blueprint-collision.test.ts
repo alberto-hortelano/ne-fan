@@ -27,13 +27,14 @@ describe("blueprint/collision", () => {
     assert.equal(volumeCollisionGrid(vols, RECT), null);
   });
 
-  it("building: anillo de muros con hueco de puerta, interior libre", () => {
+  it("building cutaway: anillo de muros con hueco de puerta, interior libre", () => {
     const vols: Volume[] = [
       {
         id: "casa",
         label: "casa",
         type: "building",
         rect: [20, 20, 20, 16],
+        cutaway: true,
         doors: [{ edge: "s", at: 8, w: 4 }],
       },
     ];
@@ -47,6 +48,25 @@ describe("blueprint/collision", () => {
     assert.ok(solidAt(g.grid, 24, 35), "muro sur (fuera de la puerta)");
     assert.ok(!solidAt(g.grid, 30, 35), "hueco de puerta sur (at=8..12 → col 28..32)");
     assert.ok(!solidAt(g.grid, 30, 28), "interior libre");
+  });
+
+  it("building CON techo: escenografía — huella completamente sólida, la puerta es decorativa", () => {
+    const vols: Volume[] = [
+      {
+        id: "casa",
+        label: "casa",
+        type: "building",
+        rect: [20, 20, 20, 16],
+        roof: { kind: "gable" },
+        doors: [{ edge: "s", at: 8, w: 4 }],
+      },
+    ];
+    const g = volumeCollisionGrid(vols, RECT)!;
+    assert.ok(g);
+    assert.ok(solidAt(g.grid, 30, 28), "interior sólido");
+    assert.ok(solidAt(g.grid, 30, 35), "sin hueco de puerta");
+    assert.ok(solidAt(g.grid, 20, 20) && solidAt(g.grid, 39, 35), "esquinas sólidas");
+    assert.ok(!solidAt(g.grid, 19, 28) && !solidAt(g.grid, 40, 28), "fuera de la huella libre");
   });
 
   it("wall + gate: la banda bloquea y el vano queda libre", () => {
