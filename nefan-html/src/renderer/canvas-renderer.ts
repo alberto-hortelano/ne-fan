@@ -43,11 +43,15 @@ export interface SceneData {
    *  que terrain_features; ai_server la sanea (sin script/foreignObject/href).
    *  Se rasteriza async al cargar la escena y se compone en el schematic. */
   terrain_svg?: string;
-  /** Blueprint SVG completo del tile por capas semánticas (g#ground/#water/
-   *  #deck?/#solid/#tall). Sustituye al pintado grid+features+cajas en el
-   *  schematic y en la capa viva; la colisión base se deriva de sus capas
-   *  (svg-collision.ts). Sanitizado río arriba (ai_server / bridge). */
-  map_svg?: string;
+  /** Plan del tile: arte plano del suelo (capas g#ground/#water/#deck?) y
+   *  volúmenes tipados. Sanitizados río arriba (ai_server / bridge). */
+  map_ground?: string;
+  volumes?: unknown[];
+  /** Blueprint COMPUESTO en la perspectiva de la sesión + metadatos —
+   *  inyectado por addTile (main.ts) con el compositor de nefan-core.
+   *  Sustituye al pintado grid+features+cajas en el schematic y en la capa
+   *  viva; la colisión base se deriva de agua + huellas (world/collision.ts). */
+  __composed?: ComposedTilePlan;
   objects: {
     id: string;
     position: number[];
@@ -97,19 +101,44 @@ interface RendererTile {
   /** Imagen IA (img2img) del tile, si se generó. */
   sceneImage: HTMLImageElement | null;
   svgImage: HTMLImageElement | null;
-  /** Blueprint SVG (map_svg) rasterizado: cuando existe, ES el dibujo del
-   *  tile — el schematic y la capa viva lo pintan en vez de grid+features+
-   *  cajas de objetos. */
-  mapSvgImage: HTMLImageElement | null;
+  /** Blueprint COMPUESTO rasterizado: cuando existe, ES el dibujo del tile —
+   *  el schematic y la capa viva lo pintan en vez de grid+features+cajas.
+   *  Cubre el rect del tile MÁS `planOverhangM` metros por el norte. */
+  planImage: HTMLImageElement | null;
+  planOverhangM: number;
+  /** Voladizo de la imagen IA instalada (la imagen enmascarada cubre el
+   *  mismo canvas extendido que el blueprint que la generó). */
+  imageOverhangM: number;
   /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
    *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
    *  Solo para el overlay B; la colisión real vive en el TileStore. */
   imageGrid: ImageGridData | null;
   imageAnalyzed: boolean;
-  /** Colisión base derivada del map_svg (overlay B): grid de celdas sólidas
-   *  (null = svg sin sólidos) y flag de aplicado (desactiva AABBs rojos). */
+  /** Colisión base derivada del plan (overlay B): grid de celdas sólidas
+   *  (null = plan sin sólidos) y flag de aplicado (desactiva AABBs rojos). */
   svgGrid: ImageGridData | null;
   svgApplied: boolean;
+}
+
+/** Blueprint compuesto de un tile (salida del compositor de nefan-core,
+ *  serializable — viaja dentro de SceneData). `overhang_m` = metros de
+ *  voladizo por ENCIMA del borde norte del rect (las alturas proyectadas
+ *  sobresalen hacia arriba; el compositing por profundidad pisa al vecino). */
+export interface ComposedTilePlan {
+  svg: string;
+  view_box: { minX: number; minY: number; width: number; height: number };
+  overhang_m: number;
+  elements: Array<{
+    id: string;
+    label: string;
+    solid: boolean;
+    tall: boolean;
+    /** [x, y, w, h] en unidades de usuario del SVG compuesto. */
+    bbox: [number, number, number, number];
+    baseline_y: number;
+    /** Huella en celdas de mundo [minU, minV, maxU, maxV]. */
+    footprint_cells: [number, number, number, number];
+  }>;
 }
 
 /** Shape mínimo del grid derivado que pinta el overlay (espejo de
@@ -421,7 +450,9 @@ export class CanvasRenderer {
       layerLastUsed: same ? prev.layerLastUsed : 0,
       sceneImage: same ? prev.sceneImage : null,
       svgImage: same ? prev.svgImage : null,
-      mapSvgImage: same ? prev.mapSvgImage : null,
+      planImage: same ? prev.planImage : null,
+      planOverhangM: scene.__composed?.overhang_m ?? 0,
+      imageOverhangM: same ? prev.imageOverhangM : 0,
       imageGrid: same ? prev.imageGrid : null,
       imageAnalyzed: same ? prev.imageAnalyzed : false,
       svgGrid: same ? prev.svgGrid : null,
@@ -433,7 +464,7 @@ export class CanvasRenderer {
     }
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
     if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
-    if (scene.map_svg && !same) this.loadSvgLayer(tile, scene.map_svg, "mapSvgImage");
+    if (scene.__composed && !same) this.loadSvgLayer(tile, scene.__composed.svg, "planImage");
     return { sceneChanged: prev !== undefined && !same };
   }
 
@@ -474,10 +505,10 @@ export class CanvasRenderer {
   }
 
   /** Rasteriza una capa SVG de UN tile a una Image (async): `svgImage`
-   *  (terrain_svg, refino visual) o `mapSvgImage` (map_svg, el blueprint
-   *  completo). Cuando decodifica se invalida su capa horneada (se re-hornea
-   *  con la SVG). Decode fallido → errors.push. */
-  private loadSvgLayer(tile: RendererTile, svg: string, target: "svgImage" | "mapSvgImage"): void {
+   *  (terrain_svg, refino visual) o `planImage` (el blueprint compuesto).
+   *  Cuando decodifica se invalida su capa horneada (se re-hornea con la
+   *  SVG). Decode fallido → errors.push. */
+  private loadSvgLayer(tile: RendererTile, svg: string, target: "svgImage" | "planImage"): void {
     // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
     // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
     let src = svg;
@@ -500,7 +531,7 @@ export class CanvasRenderer {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      errors.push("scene", `${target === "svgImage" ? "terrain_svg" : "map_svg"} no decodifica como imagen; se omite la capa SVG`);
+      errors.push("scene", `${target === "svgImage" ? "terrain_svg" : "blueprint compuesto"} no decodifica como imagen; se omite la capa SVG`);
     };
     img.src = url;
   }
@@ -527,19 +558,27 @@ export class CanvasRenderer {
     return Boolean(this.tiles.get(key)?.sceneImage);
   }
 
-  /** ¿El map_svg del tile ya está rasterizado (decodifica async)? Los callers
-   *  que capturan el blueprint esperan a esto para no capturar el fallback. */
-  tileMapSvgReady(key: string): boolean {
-    return Boolean(this.tiles.get(key)?.mapSvgImage);
+  /** ¿El blueprint compuesto del tile ya está rasterizado (decodifica
+   *  async)? Los callers que capturan el blueprint esperan a esto para no
+   *  capturar el fallback. */
+  tilePlanReady(key: string): boolean {
+    return Boolean(this.tiles.get(key)?.planImage);
+  }
+
+  /** Blueprint compuesto rasterizado de un tile (enmascarado de la imagen
+   *  IA), o null si no hay o aún decodifica. */
+  getTilePlanImage(key: string): HTMLImageElement | null {
+    return this.tiles.get(key)?.planImage ?? null;
   }
 
   /** Instala la imagen IA de UN tile (cubre exactamente su rect). Libera su
    *  capa horneada (slot del LRU; re-horneable si la imagen se invalida) y
    *  purga los occluders recortados de la imagen anterior de ese tile. */
-  setTileImage(key: string, img: HTMLImageElement): void {
+  setTileImage(key: string, img: HTMLImageElement, overhangM = 0): void {
     const tile = this.tiles.get(key);
     if (!tile) return;
     tile.sceneImage = img;
+    tile.imageOverhangM = overhangM;
     tile.terrainLayer = null;
     // Imagen nueva → el análisis derivado de la anterior deja de valer.
     tile.imageGrid = null;
@@ -556,7 +595,7 @@ export class CanvasRenderer {
     tile.imageAnalyzed = true;
   }
 
-  /** Registra la colisión base derivada del map_svg (overlay B): grid de
+  /** Registra la colisión base derivada del plan (overlay B): grid de
    *  celdas sólidas (null = svg sin sólidos). Su aplicación también apaga los
    *  AABBs rojos del esquema en ese tile. */
   setTileSvgGrid(key: string, grid: ImageGridData | null): void {
@@ -648,15 +687,20 @@ export class CanvasRenderer {
       // transform es mundial, así que cada tile cae en su sitio).
       offCtx.fillStyle = DEFAULT_TERRAIN_COLOR;
       offCtx.fillRect(0, 0, w, h);
-      const touched = [...this.tiles.values()].filter(
-        (t) => t.rect.maxX > rect.minX && t.rect.minX < rect.maxX &&
-               t.rect.maxZ > rect.minZ && t.rect.minZ < rect.maxZ,
-      );
+      const touched = [...this.tiles.values()]
+        .filter(
+          (t) => t.rect.maxX > rect.minX && t.rect.minX < rect.maxX &&
+                 t.rect.maxZ + Math.max(t.planOverhangM, t.imageOverhangM) > rect.minZ &&
+                 t.rect.minZ < rect.maxZ,
+        )
+        // Orden del pintor: el voladizo norte de un tile pisa a su vecino de
+        // detrás — pintar de norte a sur.
+        .sort((a, b) => (a.ty ?? -1e9) - (b.ty ?? -1e9) || (a.tx ?? 0) - (b.tx ?? 0));
       const asImage = (t: RendererTile): boolean =>
         Boolean(opts?.imageTileKeys?.has(t.key) && t.sceneImage);
       for (const tile of touched) {
         if (asImage(tile)) {
-          const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
+          const [bx0, by0] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.imageOverhangM);
           const [bx1, by1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
           offCtx.drawImage(tile.sceneImage!, bx0, by0, bx1 - bx0, by1 - by0);
         } else {
@@ -664,10 +708,10 @@ export class CanvasRenderer {
         }
       }
 
-      // Tiles con map_svg no pintan cajas: el SVG ya dibuja sus edificios y
-      // props (una caja encima duplicaría el elemento en el blueprint).
+      // Tiles con blueprint compuesto no pintan cajas: el plan ya dibuja sus
+      // edificios y props (una caja encima duplicaría el elemento).
       const staticObjects = touched
-        .filter((t) => !asImage(t) && !t.mapSvgImage)
+        .filter((t) => !asImage(t) && !t.planImage)
         .flatMap((t): SceneObject[] => t.scene.objects ?? [])
         .filter((o) => o.category !== "creature")
         .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
@@ -698,12 +742,13 @@ export class CanvasRenderer {
     ctx.fillStyle = terrainColor;
     ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
 
-    // Blueprint SVG completo (map_svg): ES el dibujo del tile — cubre todo el
-    // rect con su propio suelo, agua, muros y copas. Grid, features y
-    // terrain_svg quedan detrás sin aportar (se saltan). Hasta que decodifica
-    // (async) se pinta el fallback de grid+features.
-    if (tile.mapSvgImage) {
-      ctx.drawImage(tile.mapSvgImage, bx0, by0, bx1 - bx0, by1 - by0);
+    // Blueprint compuesto: ES el dibujo del tile — cubre todo el rect (más el
+    // voladizo norte de las alturas) con su propio suelo, agua, muros y
+    // copas. Grid, features y terrain_svg quedan detrás sin aportar (se
+    // saltan). Hasta que decodifica (async) se pinta el fallback.
+    if (tile.planImage) {
+      const [, py0] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.planOverhangM);
+      ctx.drawImage(tile.planImage, bx0, py0, bx1 - bx0, by1 - py0);
       return;
     }
 
@@ -726,8 +771,9 @@ export class CanvasRenderer {
    *  LRU: si hay demasiadas capas vivas se libera la más antigua (siempre
    *  re-horneable desde el esquema). Máx. 1 horneado por frame. */
   private bakeTerrainLayer(tile: RendererTile): void {
+    // La capa incluye el voladizo norte del blueprint compuesto (alturas).
     const w = Math.max(8, Math.round((tile.rect.maxX - tile.rect.minX) * TILE_PPM));
-    const h = Math.max(8, Math.round((tile.rect.maxZ - tile.rect.minZ) * TILE_PPM));
+    const h = Math.max(8, Math.round((tile.rect.maxZ - tile.rect.minZ + tile.planOverhangM) * TILE_PPM));
     const off = document.createElement("canvas");
     off.width = w;
     off.height = h;
@@ -745,7 +791,7 @@ export class CanvasRenderer {
     this.ctx = offCtx;
     this.scale = TILE_PPM;
     this.offsetX = -tile.rect.minX * TILE_PPM;
-    this.offsetY = -tile.rect.minZ * TILE_PPM;
+    this.offsetY = -(tile.rect.minZ - tile.planOverhangM) * TILE_PPM;
     this._capturing = true; // sin labels
     try {
       this.paintTerrainInto(tile);
@@ -938,10 +984,14 @@ export class CanvasRenderer {
     const viewMinZ = -this.offsetY / this.scale;
     const viewMaxX = (w - this.offsetX) / this.scale;
     const viewMaxZ = (h - this.offsetY) / this.scale;
-    const visible = [...this.tiles.values()].filter(
-      (t) => t.rect.maxX > viewMinX && t.rect.minX < viewMaxX &&
-             t.rect.maxZ > viewMinZ && t.rect.minZ < viewMaxZ,
-    );
+    const visible = [...this.tiles.values()]
+      .filter(
+        (t) => t.rect.maxX > viewMinX && t.rect.minX < viewMaxX &&
+               t.rect.maxZ + Math.max(t.planOverhangM, t.imageOverhangM) > viewMinZ &&
+               t.rect.minZ < viewMaxZ,
+      )
+      // Orden del pintor: el voladizo norte pisa al vecino de detrás.
+      .sort((a, b) => (a.ty ?? -1e9) - (b.ty ?? -1e9) || (a.tx ?? 0) - (b.tx ?? 0));
     const gridKeys = new Set<string>();
     for (const t of this.tiles.values()) {
       if (t.tx !== undefined && t.ty !== undefined) gridKeys.add(`${t.tx},${t.ty}`);
@@ -953,8 +1003,10 @@ export class CanvasRenderer {
       const fw = (tile.rect.maxX - tile.rect.minX) * this.scale;
       const fh = (tile.rect.maxZ - tile.rect.minZ) * this.scale;
       if (tile.sceneImage) {
-        // Tile con fondo IA: la imagen sustituye a la capa horneada.
-        ctx.drawImage(tile.sceneImage, fx, fy, fw, fh);
+        // Tile con fondo IA: la imagen sustituye a la capa horneada (cubre
+        // el rect más su voladizo norte).
+        const [, iy] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.imageOverhangM);
+        ctx.drawImage(tile.sceneImage, fx, iy, fw, fy + fh - iy);
       } else {
         if (!tile.terrainLayer && !this.bakedThisFrame) {
           this.bakeTerrainLayer(tile);
@@ -964,7 +1016,8 @@ export class CanvasRenderer {
           tile.layerLastUsed = performance.now();
           const prevSmooth = ctx.imageSmoothingEnabled;
           ctx.imageSmoothingEnabled = false; // celdas nítidas estilo blueprint
-          ctx.drawImage(tile.terrainLayer, fx, fy, fw, fh);
+          const [, ly] = this.toScreen(tile.rect.minX, tile.rect.minZ - tile.planOverhangM);
+          ctx.drawImage(tile.terrainLayer, fx, ly, fw, fy + fh - ly);
           ctx.imageSmoothingEnabled = prevSmooth;
         } else {
           const terrainColor = rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
@@ -1023,10 +1076,10 @@ export class CanvasRenderer {
     }
 
     // Static scene elements de los tiles visibles, ordenados por Z global.
-    // Un tile con imagen IA o con map_svg ya los lleva pintados (solo overlay
-    // de debug).
+    // Un tile con imagen IA o con blueprint compuesto ya los lleva pintados
+    // (solo overlay de debug).
     const staticObjects = visible
-      .filter((t) => !t.sceneImage && !t.mapSvgImage)
+      .filter((t) => !t.sceneImage && !t.planImage)
       .flatMap((t): SceneObject[] => t.scene.objects ?? [])
       .filter((o) => o.category !== "creature")
       .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
@@ -1161,7 +1214,7 @@ export class CanvasRenderer {
       }
     }
 
-    // Colisión BASE derivada del map_svg (capas #water+#solid): celdas azules.
+    // Colisión BASE del plan (agua del map_ground + huellas de volumes): celdas azules.
     // Activa desde que llega el tile, antes de imagen y análisis.
     ctx.fillStyle = "rgba(80,140,255,0.35)";
     for (const tile of this.tiles.values()) {
@@ -1239,7 +1292,7 @@ export class CanvasRenderer {
     ctx.fillText("colision del esquema (solo tiles sin svg/analisis)", 32, 61);
     ctx.fillStyle = "rgba(80,140,255,1)";
     ctx.fillRect(12, 70, 14, 10);
-    ctx.fillText("colision base del map_svg (agua+solidos)", 32, 79);
+    ctx.fillText("colision base del plan (agua+huellas)", 32, 79);
     ctx.fillStyle = "rgba(160,80,255,1)";
     ctx.fillRect(12, 88, 14, 10);
     ctx.fillText("colision derivada de la imagen (solid)", 32, 97);
@@ -1275,7 +1328,7 @@ export class CanvasRenderer {
   }
 
   /** ¿El tile que contiene (x,z) tiene los AABBs del esquema desactivados
-   *  (análisis de imagen aplicado o colisión base del map_svg instalada)? */
+   *  (análisis de imagen aplicado o colisión base del plan instalada)? */
   private schemaAabbsDisabledAt(x: number, z: number): boolean {
     for (const t of this.tiles.values()) {
       if (

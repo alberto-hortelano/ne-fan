@@ -5,15 +5,22 @@ import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import {
+  composeBlueprint,
+  deriveVolumesFromSchema,
+  parseVolumes,
+  type Volume,
+} from "@nefan-core/src/scene/blueprint/index.js";
+import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
-import { CanvasRenderer, type Entity } from "./renderer/canvas-renderer.js";
+import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
-  applySvgCollision,
+  applyPlanCollision,
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
@@ -175,7 +182,7 @@ function applySessionStyle(styleId: string): void {
 let sessionPerspective: "topdown" | "isometric" = "topdown";
 function applySessionPerspective(perspective: string): void {
   sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
-  void sessionPerspective; // consumidores llegan con el pipeline de composición
+  sceneImageController.setPerspective(sessionPerspective);
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
@@ -461,8 +468,8 @@ const reviewDeps: ReviewDeps = {
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
  *  actual y aplica los fixes parciales que devuelva (terrain /
- *  terrain_features / entity_moves / map_svg) sobre el Format D, recargando la
- *  escena. El jugador conserva su posición (es un paso de dev pre-generación). */
+ *  terrain_features / entity_moves / map_ground / volumes) sobre el Format D,
+ *  recargando la escena. El jugador conserva su posición (dev pre-generación). */
 async function reviewBlueprintAndApply(): Promise<void> {
   const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
     | Record<string, unknown>
@@ -476,9 +483,9 @@ async function reviewBlueprintAndApply(): Promise<void> {
     errors.push("scene", "review (R): no hay tile activo");
     return;
   }
-  // Tiles con map_svg: mismo camino que la fase automática (re-registro por
-  // addTile + persistencia al bridge), sin recargar el mundo entero.
-  if (typeof fd.map_svg === "string" && activeTileKey) {
+  // Tiles con plan (map_ground/volumes): mismo camino que la fase automática
+  // (re-registro por addTile + persistencia al bridge), sin recargar el mundo.
+  if ((typeof fd.map_ground === "string" || Array.isArray(fd.volumes)) && activeTileKey) {
     await reviewTileBlueprint(activeTileKey, reviewDeps);
     return;
   }
@@ -533,6 +540,76 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   await addTile(rawData);
 }
 
+/** Plan compuesto de un tile: campos del plan + blueprint proyectado. */
+interface TilePlanInfo {
+  map_ground?: string;
+  volumes: Volume[];
+  composed: ComposedTilePlan;
+}
+
+/** Compone el blueprint del tile con la perspectiva de la sesión. Los
+ *  volúmenes declarados por el LLM se completan con los derivados del esquema
+ *  (vegetation_zones → árboles, structures → edificios cutaway). Devuelve
+ *  null en escenas legacy sin plan ni primitivas derivables. */
+function composeTilePlan(
+  raw: Record<string, unknown>,
+  data: Record<string, unknown>,
+  key: string,
+  isGridTile: boolean,
+): TilePlanInfo | null {
+  if (!isGridTile) return null;
+  const mapGround = typeof data.map_ground === "string" ? data.map_ground : undefined;
+  let declared: Volume[] = [];
+  if (Array.isArray(data.volumes)) {
+    const parsed = parseVolumes(data.volumes);
+    if (parsed.ok) {
+      declared = parsed.volumes;
+    } else {
+      errors.push("scene", `volumes de ${key} inválidos (${parsed.error}); se usan solo los derivados`);
+    }
+  }
+  const derived = deriveVolumesFromSchema(
+    {
+      scene_id: key,
+      structures: raw.structures as never,
+      vegetation_zones: raw.vegetation_zones as never,
+      terrain_features: raw.terrain_features as never,
+    },
+    declared,
+  );
+  const volumes = [...declared, ...derived];
+  if (!mapGround && volumes.length === 0) return null;
+  const composed = composeBlueprint(
+    { map_ground: mapGround, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
+    sessionPerspective,
+    key,
+  );
+  return {
+    map_ground: mapGround,
+    volumes,
+    composed: {
+      svg: composed.svg,
+      view_box: composed.viewBox,
+      // Voladizo en metros: celdas del margen superior × 0.5 m/celda. En
+      // topdown 1 unidad de usuario = 1 celda; en iso el margen ya viene en
+      // unidades de canvas — se convierte con la escala vertical de celda.
+      overhang_m: overhangMeters(composed),
+      elements: composed.elements,
+    },
+  };
+}
+
+/** Metros de mundo que el canvas compuesto sobresale por encima del borde
+ *  norte del tile. */
+function overhangMeters(composed: { viewBox: { minY: number; height: number } ; perspective: string }): number {
+  const marginUnits = -composed.viewBox.minY;
+  if (marginUnits <= 0) return 0;
+  // Unidades de usuario por celda en vertical: 1 (topdown) o 2·ISO_SY·… — la
+  // relación exacta la da el alto total: height = celdas_visibles · upc.
+  const upc = composed.perspective === "isometric" ? 0.5 : 1; // 128 celdas → 64 uds (iso) / 128 uds (topdown)
+  return (marginUnits / upc) * TILE_MPC;
+}
+
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
@@ -561,6 +638,16 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } catch (err) {
     errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
   }
+  // Plan del tile → blueprint COMPUESTO con la perspectiva de la sesión.
+  // Los volumes del LLM se completan con los derivados del esquema
+  // (vegetación, estructuras); el compositor es determinista (mismo plan ⇒
+  // mismos bytes ⇒ hit de la caché de imagen en resume).
+  const planInfo = composeTilePlan(rawData, data as Record<string, unknown>, key, isGridTile);
+  if (planInfo) {
+    (data as Record<string, unknown>).__plan = planInfo;
+    (data as Record<string, unknown>).__composed = planInfo.composed;
+  }
+
   const prevEntry = tileStore.entries.get(key);
   tileStore.add({
     key,
@@ -587,13 +674,14 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   if (prevEntry?.imageAnalyzed && !sceneChanged) {
     tileStore.markAnalyzed(key, prevEntry.imageCollider);
   }
-  // Colisión base del blueprint SVG: restaurar si la escena no cambió;
-  // derivar (async, ~ms) si es nueva o cambió.
-  const mapSvg = (data as { map_svg?: string }).map_svg;
+  // Colisión base del plan: restaurar si la escena no cambió; derivar
+  // (async, ~ms) si es nueva o cambió. Agua del map_ground + huellas de
+  // volumes — espacio de mundo, idéntica en ambas perspectivas.
+  const plan = (data as { __plan?: TilePlanInfo }).__plan;
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
-  } else if (mapSvg) {
-    void applySvgCollision(key, mapSvg, rect, derivedCollisionDeps);
+  } else if (plan) {
+    void applyPlanCollision(key, { map_ground: plan.map_ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
