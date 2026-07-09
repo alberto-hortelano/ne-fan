@@ -1,91 +1,79 @@
-"""Placa de fondo de escena: inpainting local de los huecos de los objetos altos.
+"""Placa de fondo de escena: eliminación de los objetos altos con LaMa.
 
 El cliente 2D recorta de la imagen de escena los segmentos `tall` (occluders
 con z-index) y manda aquí la imagen original + la máscara unión de esos
 recortes (blanco = hueco). El resultado es la escena SIN los objetos: el suelo
-continuado, con la instrucción de no añadir nada. Instalada como capa base del
-tile, el fade por proximidad de los cutouts revela "lo que realmente hay
-debajo" de un edificio o un árbol, no una copia congelada del propio objeto.
+continuado, sin añadir nada. Instalada como capa base del tile, el fade por
+proximidad de los cutouts revela "lo que realmente hay debajo" de un edificio
+o un árbol, no una copia congelada del propio objeto.
 
-Reutiliza los pesos SD 1.5 + LCM-LoRA ya cargados por TextureGenerator
-(AutoPipelineForInpainting.from_pipe, mismo patrón que SkinGenerator): no
-duplica los ~3 GB de VRAM y queda serializado por el GPU lock del caller.
+Backend: LaMa (big-lama, TorchScript ~196 MB) — un modelo específico de
+object removal, no de difusión: propaga la textura Y las estructuras del
+entorno hacia el hueco (un camino que pasa por debajo de un edificio sale
+continuado). Determinista sin seed, <1 s por tile en la RTX 3060 y ~1 GB de
+VRAM solo mientras se usa. Se descartó SD 1.5 compartido (from_pipe): el
+checkpoint base no es inpaint-trained y rellenaba los huecos ignorando el
+entorno incluso con pre-relleno por convolución normalizada.
 """
 
 import io
 import time
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 
 
 # Versión del algoritmo de placa: entra en la clave de caché del endpoint —
 # subirla invalida placas generadas con un relleno anterior.
-PLATE_ALGO = "prefill-v2"
+PLATE_ALGO = "lama-v1"
 
-PLATE_PROMPT = (
-    "empty ground, plain terrain, seamless continuation of the surrounding "
-    "ground surface, game background, nothing on the ground"
+# big-lama exportado a TorchScript (release de simple-lama-inpainting; el
+# modelo original es de la propia LaMa, saic-mdal/lama). torch.hub lo cachea
+# en ~/.cache/torch/hub/checkpoints.
+LAMA_URL = (
+    "https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt"
 )
-# Con LCM el guidance debe quedarse bajo (1.0-2.0); >1.0 para que el negative
-# prompt tenga efecto.
-PLATE_NEGATIVE = (
-    "trees, tree, foliage, buildings, houses, walls, towers, rocks, objects, "
-    "props, people, characters, animals, structures, furniture"
-)
-# SD 1.5 rinde a 512² (resolución de entrenamiento); el relleno se reescala y
-# se compone SOLO dentro de la máscara — fuera de ella los píxeles originales
-# quedan intactos, así que la pérdida de detalle no se ve.
-WORK_SIZE = 512
-# El pipeline comparte el checkpoint BASE (no inpaint-trained): a strength
-# alta regeneraría el hueco solo desde el prompt, ignorando el entorno. Por
-# eso el hueco se PRE-RELLENA con el color local del entorno (convolución
-# normalizada) y SD solo armoniza/texturiza encima a strength media.
-FILL_BLUR_RADIUS = 64
-INPAINT_STRENGTH = 0.55
-
-
-def _prefill_holes(image: Image.Image, mask: Image.Image) -> Image.Image:
-    """Rellena los huecos (máscara blanca) con la media local del ENTORNO no
-    enmascarado — convolución normalizada: blur(img·(1−m)) / blur(1−m). El
-    color/estructura de alrededor (hierba, un camino que entra) se propaga
-    hacia dentro del hueco; SD después solo añade textura coherente."""
-    arr = np.asarray(image, dtype=np.float32)
-    m = (np.asarray(mask, dtype=np.float32) / 255.0)[..., None]
-    premul = Image.fromarray((arr * (1.0 - m)).astype(np.uint8))
-    inv = Image.fromarray(((1.0 - m[..., 0]) * 255.0).astype(np.uint8))
-    pb = np.asarray(premul.filter(ImageFilter.GaussianBlur(FILL_BLUR_RADIUS)), dtype=np.float32)
-    ib = np.asarray(inv.filter(ImageFilter.GaussianBlur(FILL_BLUR_RADIUS)), dtype=np.float32)[..., None] / 255.0
-    fill = np.clip(pb / np.maximum(ib, 1e-3), 0, 255)
-    out = arr * (1.0 - m) + fill * m
-    return Image.fromarray(out.astype(np.uint8))
 
 
 class PlateInpainter:
-    def __init__(self, texture_gen_ref):
+    def __init__(self, texture_gen_ref=None):
+        # texture_gen_ref se conserva por simetría con el resto de
+        # generadores, pero LaMa no comparte pesos con SD: solo se usa para
+        # heredar el device si está disponible.
         self._texture_gen = texture_gen_ref
-        self._pipe = None
+        self._model = None
+        self._device = None
 
-    def _ensure_pipeline(self) -> None:
-        if self._pipe is not None:
+    def _ensure_model(self) -> None:
+        if self._model is not None:
             return
-        # Fuerza la carga de TextureGen si aún no cargó (lazy).
-        self._texture_gen._load_pipeline()
+        import torch
 
-        from diffusers import AutoPipelineForInpainting
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        # El blob es TorchScript (no un state_dict, load_state_dict_from_url
+        # no vale): se resuelve la ruta cacheada a mano con el layout de
+        # torch.hub y se descarga solo si falta.
+        from pathlib import Path
+        from urllib.parse import urlparse
 
-        self._pipe = AutoPipelineForInpainting.from_pipe(self._texture_gen.pipe)
-        print("PlateInpainter: inpaint pipeline ready (shared weights with TextureGen)")
+        hub_dir = Path(torch.hub.get_dir()) / "checkpoints"
+        hub_dir.mkdir(parents=True, exist_ok=True)
+        dest = hub_dir / Path(urlparse(LAMA_URL).path).name
+        if not dest.exists():
+            print(f"PlateInpainter: descargando big-lama a {dest}…", flush=True)
+            torch.hub.download_url_to_file(LAMA_URL, str(dest), progress=False)
+        self._model = torch.jit.load(str(dest), map_location=self._device).eval()
+        print(f"PlateInpainter: big-lama listo en {self._device}")
 
     def generate(self, image_png: bytes, mask_png: bytes, seed: int = 0) -> bytes:
-        """Rellena los huecos (blanco de la máscara) continuando solo el suelo.
+        """Rellena los huecos (blanco de la máscara) continuando el entorno.
 
         Devuelve PNG de las mismas dimensiones que la imagen de entrada, con
-        los píxeles originales intactos fuera de la máscara. Seed fija por
-        defecto: mismo (imagen, máscara) ⇒ misma placa (la caché por hash del
-        caller cuenta con ello).
+        los píxeles originales intactos fuera de la máscara. LaMa es
+        determinista: mismo (imagen, máscara) ⇒ misma placa (la caché por
+        hash del caller cuenta con ello). `seed` se ignora (compat firma).
         """
-        self._ensure_pipeline()
+        self._ensure_model()
         import torch
 
         image = Image.open(io.BytesIO(image_png)).convert("RGB")
@@ -93,30 +81,32 @@ class PlateInpainter:
         if mask.size != image.size:
             mask = mask.resize(image.size, Image.NEAREST)
 
-        small_img = image.resize((WORK_SIZE, WORK_SIZE), Image.LANCZOS)
-        small_mask = mask.resize((WORK_SIZE, WORK_SIZE), Image.NEAREST)
-        prefilled = _prefill_holes(small_img, small_mask)
+        # A tensores [0..1]; LaMa exige lados múltiplos de 8 → pad reflejado.
+        img_t = torch.from_numpy(np.asarray(image)).permute(2, 0, 1).float() / 255.0
+        mask_t = (torch.from_numpy(np.asarray(mask)).float() / 255.0 > 0.5).float()[None]
+        h, w = img_t.shape[1:]
+        ph = (8 - h % 8) % 8
+        pw = (8 - w % 8) % 8
+        if ph or pw:
+            img_t = torch.nn.functional.pad(img_t[None], (0, pw, 0, ph), mode="reflect")[0]
+            mask_t = torch.nn.functional.pad(mask_t[None], (0, pw, 0, ph), mode="reflect")[0]
 
-        generator = torch.Generator(device=self._texture_gen.device).manual_seed(seed)
         start = time.perf_counter()
         with torch.no_grad():
-            result = self._pipe(
-                prompt=PLATE_PROMPT,
-                negative_prompt=PLATE_NEGATIVE,
-                image=prefilled,
-                mask_image=small_mask,
-                strength=INPAINT_STRENGTH,
-                num_inference_steps=8,
-                guidance_scale=1.8,
-                generator=generator,
-            ).images[0]
+            out = self._model(
+                img_t[None].to(self._device), mask_t[None].to(self._device)
+            )[0]
+        filled_arr = (
+            out.permute(1, 2, 0).clamp(0, 1).mul(255).byte().cpu().numpy()[:h, :w]
+        )
+        filled = Image.fromarray(filled_arr)
 
-        # Componer a resolución original: relleno solo DENTRO del hueco.
-        filled = result.resize(image.size, Image.LANCZOS)
-        out = Image.composite(filled, image, mask)
+        # Garantía dura: fuera de la máscara, los píxeles ORIGINALES byte a
+        # byte; el relleno solo dentro del hueco.
+        result = Image.composite(filled, image, mask)
         elapsed = time.perf_counter() - start
-        print(f"PlateInpainter: {image.size[0]}x{image.size[1]} -> {elapsed:.2f}s")
+        print(f"PlateInpainter: {image.size[0]}x{image.size[1]} -> {elapsed:.2f}s (lama)")
 
         buf = io.BytesIO()
-        out.save(buf, format="PNG")
+        result.save(buf, format="PNG")
         return buf.getvalue()
