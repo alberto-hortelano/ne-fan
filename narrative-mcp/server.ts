@@ -315,7 +315,8 @@ cells too (a character is ~3.6 cells tall). Types:
 - gate { at:[c,r], w?=8, h?=10, orient:"x"|"y", banners? } — an arched gate
   ON a wall run; its passage is collision-FREE. Wherever a road crosses a
   wall there MUST be a gate (orient = the axis the host wall runs along).
-- tree { at, s?=1, species? } · bush { at, s? } · rock { at, s? } ·
+- tree { at, s?=1 (0.4..1.8 — bigger is clamped: the canopy would swallow
+  the tile), species? } · bush { at, s? } · rock { at, s? } ·
   fountain { at, r?=5 }
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
   passable?:true } — tables, barrels, crates, wells, market stalls, carts,

@@ -8,7 +8,6 @@ export interface InputState {
   sprint: boolean;
   attackRequested: boolean;
   selectedAttack: string;
-  clickTarget: { x: number; y: number } | null;
   interact: boolean;
 }
 
@@ -24,7 +23,7 @@ export class KeyboardHandler {
   state: InputState = {
     up: false, down: false, left: false, right: false,
     sprint: false, attackRequested: false,
-    selectedAttack: "quick", clickTarget: null,
+    selectedAttack: "quick",
     interact: false,
   };
 

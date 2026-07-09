@@ -30,8 +30,16 @@ import type { Volume } from "./volumes.js";
  *  v4: los muros traseros del cutaway se emiten en dos grupos (back_n /
  *  back_w) — tramos de occluder con huella fina para el depth-sort.
  *  v5: árbol en dos grupos (tronco / copa — la copa es occluder AÉREO) y
- *  sombras pegadas a la base de los volúmenes. */
-export const COMPOSER_VERSION = 5;
+ *  sombras pegadas a la base de los volúmenes.
+ *  v6: la copa es traslúcida (opacity + data-part="canopy") — deja ver el
+ *  suelo y a quien pase debajo; el cliente la excluye de la capa base y la
+ *  pinta solo como occluder aéreo, así el alpha se aplica una vez. La escala
+ *  de árbol queda acotada a TREE_MAX_S (parseVolumes clampa). */
+export const COMPOSER_VERSION = 6;
+
+/** Opacidad de la copa del árbol: cubre sin ocultar del todo lo que hay
+ *  debajo (las copas tapan mucha superficie de tile). */
+export const CANOPY_OPACITY = 0.65;
 
 export interface BlueprintPlan {
   /** SVG plano del suelo (viewBox "0 0 128 128"), ya pasado por
@@ -272,7 +280,8 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
     renderVolume(ctx, render, phase);
     if (ctx.out.length === 0) continue;
-    const markup = `<g data-vid="${vid}" data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`;
+    const canopyAttrs = phase === "canopy" ? ` data-part="canopy" opacity="${CANOPY_OPACITY}"` : "";
+    const markup = `<g data-vid="${vid}"${canopyAttrs} data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`;
     out.push(markup);
     if (ctx.bbox) {
       const acc = bboxByVid.get(vid);

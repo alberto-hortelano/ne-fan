@@ -51,6 +51,23 @@ export interface ViewProjection {
   tileViewRect(rect: WorldRectM, viewBox?: SvgViewBox | null): ViewRect;
   /** Clave del orden del pintor entre tiles (menor = más al fondo). */
   tileDepth(tx: number, ty: number): number;
+  /** Snapea una dirección de MUNDO al eje de ANIMACIÓN más cercano: los
+   *  sprites tienen 8 facings (octantes de cámara), y el giro/movimiento del
+   *  personaje solo vive sobre esos 8 ejes — el sprite mira EXACTAMENTE hacia
+   *  donde se desplaza. El octante se elige en espacio de cámara (en iso la
+   *  cámara está girada 45° respecto al mundo), así que en iso los 4 ejes
+   *  diagonales de pantalla son los ejes X/Z del mundo — las líneas de la
+   *  cuadrícula — y los 4 cardinales las diagonales de celda. Devuelve la
+   *  dirección de mundo unitaria del eje. */
+  snapForwardToAxis(wx: number, wz: number): [number, number];
+}
+
+const OCTANT = Math.PI / 4;
+
+/** Snap de (x, z) al octante más cercano en su propio espacio (unitario). */
+function snapToOctant(x: number, z: number): [number, number] {
+  const a = Math.round(Math.atan2(x, z) / OCTANT) * OCTANT;
+  return [Math.sin(a), Math.cos(a)];
 }
 
 class TopdownViewProjection implements ViewProjection {
@@ -74,6 +91,11 @@ class TopdownViewProjection implements ViewProjection {
   }
   tileDepth(tx: number, ty: number): number {
     return ty * 4096 + tx;
+  }
+  snapForwardToAxis(wx: number, wz: number): [number, number] {
+    // Cámara alineada con el mundo: los ejes de animación son los octantes
+    // de mundo tal cual.
+    return snapToOctant(wx, wz);
   }
 }
 
@@ -102,6 +124,18 @@ class IsoViewProjection implements ViewProjection {
   }
   tileDepth(tx: number, ty: number): number {
     return (tx + ty) * 4096 + (tx - ty);
+  }
+  snapForwardToAxis(wx: number, wz: number): [number, number] {
+    // A espacio de cámara (rotación pura de 45°, la misma que usa la
+    // selección de octante del sprite — sin el aplastamiento 2:1), snap al
+    // octante, y de vuelta a mundo normalizado. Los octantes diagonales de
+    // cámara caen en los ejes X/Z de mundo: andar en diagonal sigue las
+    // líneas de la cuadrícula sin desvío.
+    const [cx, cz] = snapToOctant(wx - wz, wx + wz);
+    const x = (cx + cz) / 2;
+    const z = (cz - cx) / 2;
+    const len = Math.hypot(x, z) || 1;
+    return [x / len, z / len];
   }
 }
 
