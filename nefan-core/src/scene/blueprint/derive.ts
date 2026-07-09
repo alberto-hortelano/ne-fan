@@ -13,7 +13,7 @@
 import { TILE_CELLS } from "../tile.js";
 import { volumeFootprint } from "./render.js";
 import { fnv1a, seededRng, uniform } from "./svg.js";
-import type { Volume } from "./volumes.js";
+import { TREE_MAX_S, type Volume } from "./volumes.js";
 
 interface RawDoor {
   side?: string;
@@ -162,7 +162,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
     const label = typeof ent.name === "string" && ent.name ? ent.name : kind;
     const id = `derived_ent_${ent.id ?? `${c}_${r}`}`;
     if (kind === "tree") {
-      const s = Math.min(2.5, Math.max(0.5, Math.max(w, d) / 4));
+      const s = Math.min(TREE_MAX_S, Math.max(0.5, Math.max(w, d) / 4));
       out.push({ id, label, type: "tree", at: [round1(c + w / 2), round1(r + d / 2)], s: round1(s) });
     } else if (kind === "building") {
       out.push({ id, label, type: "building", rect, roof: { kind: "gable" } });

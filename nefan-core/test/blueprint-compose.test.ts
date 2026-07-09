@@ -14,6 +14,7 @@ import {
   isPerspective,
   parseVolumes,
   projectionFor,
+  TREE_MAX_S,
 } from "../src/scene/blueprint/index.js";
 import type { BlueprintPlan, Volume } from "../src/scene/blueprint/index.js";
 
@@ -77,6 +78,18 @@ describe("blueprint/volumes", () => {
   it("rechaza tipos desconocidos", () => {
     const res = parseVolumes([{ id: "x", label: "x", type: "dragon", at: [4, 4] }]);
     assert.equal(res.ok, false);
+  });
+
+  it("clampa la escala de árbol a TREE_MAX_S sin rechazar el plan", () => {
+    const res = parseVolumes([
+      { id: "roble_xxl", label: "roble", type: "tree", at: [40, 40], s: 2.5 },
+      { id: "roble_ok", label: "roble", type: "tree", at: [80, 80], s: 1.2 },
+    ]);
+    assert.equal(res.ok, true);
+    if (res.ok) {
+      assert.equal((res.volumes[0] as { s?: number }).s, TREE_MAX_S);
+      assert.equal((res.volumes[1] as { s?: number }).s, 1.2);
+    }
   });
 });
 

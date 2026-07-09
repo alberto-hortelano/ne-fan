@@ -520,7 +520,15 @@ export class CanvasRenderer {
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
     if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
     if (scene.__composed && !same) {
-      this.loadSvgLayer(tile, scene.__composed.svg, "planImage");
+      // Las copas de árbol (data-part="canopy", traslúcidas) se excluyen de
+      // la capa base: las pinta SIEMPRE su occluder aéreo (loadPlanOccluders)
+      // encima de las entidades — si también estuvieran en la base, el alpha
+      // se aplicaría dos veces y la copa se vería más opaca de lo compuesto.
+      const baseSvg = scene.__composed.svg.replace(
+        />/,
+        "><style>[data-part=canopy]{display:none}</style>",
+      );
+      this.loadSvgLayer(tile, baseSvg, "planImage");
       this.loadPlanOccluders(tile, scene.__composed);
     }
     return { sceneChanged: prev !== undefined && !same };

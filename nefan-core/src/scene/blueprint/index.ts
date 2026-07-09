@@ -13,5 +13,5 @@ export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";
 export { projectionFor, isPerspective, PERSPECTIVES } from "./projection.js";
 export type { Perspective, Projection } from "./projection.js";
-export { parseVolumes, VolumesSchema, VolumeSchema, MAX_VOLUMES } from "./volumes.js";
+export { parseVolumes, VolumesSchema, VolumeSchema, MAX_VOLUMES, TREE_MAX_S } from "./volumes.js";
 export type { Volume } from "./volumes.js";

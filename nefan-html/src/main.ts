@@ -2,7 +2,7 @@
  *  Dual mode: connects to nefan-core bridge (WebSocket) or falls back to local simulation. */
 
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
-import { distance, normalized, sub } from "@nefan-core/src/vec3.js";
+import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import {
@@ -15,6 +15,7 @@ import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/sce
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
+import { viewProjectionFor } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
@@ -179,10 +180,15 @@ function applySessionStyle(styleId: string): void {
  *  en el save. Saves previos sin el campo ⇒ "topdown". La consumen el
  *  compositor de blueprints y (en PRs siguientes) el renderer/proyección. */
 let sessionPerspective: "topdown" | "isometric" = "topdown";
+/** Proyección de vista de la sesión — también snapea el giro del jugador a
+ *  los 8 ejes de animación (ver refreshPlayerForward). */
+let sessionProjection = viewProjectionFor(sessionPerspective);
 function applySessionPerspective(perspective: string): void {
   sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
+  sessionProjection = viewProjectionFor(sessionPerspective);
   sceneImageController.setPerspective(sessionPerspective);
   renderer.setProjection(sessionPerspective);
+  refreshPlayerForward(); // los ejes de animación dependen de la perspectiva
   if (perspective) log(`Perspectiva: ${sessionPerspective}`);
 }
 
@@ -933,12 +939,28 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     }),
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    // Gira al jugador desde el bench (el mousemove real exige pointer lock,
+    // imposible en automatización). Mismo camino que el ratón: yaw → snap.
+    setYaw: (yaw: number) => {
+      playerYaw = yaw;
+      refreshPlayerForward();
+    },
   };
 }
 
 // --- Mouse look ---
 const MOUSE_SENSITIVITY = 0.004;
 let playerYaw = Math.PI; // facing -Z initially
+
+/** El giro NO es libre: el ratón acumula un yaw continuo, pero el forward
+ *  efectivo (facing del sprite Y marco del WASD relativo) se snapea al eje de
+ *  ANIMACIÓN más cercano de los 8 — sprite y desplazamiento coinciden
+ *  siempre. En isométrica los ejes diagonales son los ejes X/Z del mundo:
+ *  andar en diagonal sigue las líneas de la cuadrícula sin desvío. */
+function refreshPlayerForward(): void {
+  const [fx, fz] = sessionProjection.snapForwardToAxis(Math.sin(playerYaw), Math.cos(playerYaw));
+  playerForward = { x: fx, y: 0, z: fz };
+}
 
 canvas.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
@@ -949,7 +971,7 @@ canvas.addEventListener("click", () => {
 document.addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== canvas) return;
   playerYaw -= e.movementX * MOUSE_SENSITIVITY;
-  playerForward = normalized({ x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) });
+  refreshPlayerForward();
 });
 
 // --- Utility ---
@@ -1095,6 +1117,11 @@ function gameLoop(now: number): void {
       // strafe lateral. El movimiento nunca toca la orientación: por eso se
       // puede retroceder o desplazarse de lado sin dejar de encarar al
       // enemigo. Se renormaliza para que la diagonal no sea más rápida.
+      // playerForward está SNAPEADO a los 8 ejes de animación
+      // (refreshPlayerForward) y las combinaciones de teclas bisecan ejes
+      // adyacentes (45°), así que TODA dirección de desplazamiento cae en uno
+      // de los 8 ejes — en isométrica, o sobre las líneas de la cuadrícula
+      // (diagonales de pantalla) o de vértice a vértice (horizontal/vertical).
       const rx = -playerForward.z; // right = forward rotado 90° horario
       const rz = playerForward.x;
       const mx = playerForward.x * inputFwd + rx * inputRight;

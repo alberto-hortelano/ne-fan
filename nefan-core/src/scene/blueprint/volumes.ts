@@ -103,6 +103,11 @@ export const GateSchema = z
   })
   .strict();
 
+/** Tope EFECTIVO de escala de árbol: por encima la copa domina el tile (a
+ *  s=2.5 ronda los 13 m de diámetro). El schema sigue aceptando hasta 2.5
+ *  para no rechazar planes/saves existentes — parseVolumes clampa. */
+export const TREE_MAX_S = 1.8;
+
 export const TreeSchema = z
   .object({ ...base, type: z.literal("tree"), at, s: z.number().min(0.4).max(2.5).optional(), species: z.string().max(32).optional() })
   .strict();
@@ -180,5 +185,10 @@ export function parseVolumes(raw: unknown): ParseVolumesResult {
       return { ok: false, error: `volumes: prop "${v.id}" necesita exactamente uno de \`at\` o \`rect\`` };
     }
   }
-  return { ok: true, volumes: parsed.data };
+  // Tope de escala de árbol: clamp (no rechazo) — todos los consumidores
+  // (render, huella del compose, colisión) ven el MISMO valor acotado.
+  const volumes = parsed.data.map((v) =>
+    v.type === "tree" && (v.s ?? 1) > TREE_MAX_S ? { ...v, s: TREE_MAX_S } : v,
+  );
+  return { ok: true, volumes };
 }

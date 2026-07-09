@@ -51,6 +51,7 @@ vendor/
 godot/recordings/
 
 # Personal scratch space
+todo.md
 sandbox/
 scene_gen_tests/
 
