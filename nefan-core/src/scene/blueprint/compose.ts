@@ -34,8 +34,12 @@ import type { Volume } from "./volumes.js";
  *  v6: la copa es traslúcida (opacity + data-part="canopy") — deja ver el
  *  suelo y a quien pase debajo; el cliente la excluye de la capa base y la
  *  pinta solo como occluder aéreo, así el alpha se aplica una vez. La escala
- *  de árbol queda acotada a TREE_MAX_S (parseVolumes clampa). */
-export const COMPOSER_VERSION = 6;
+ *  de árbol queda acotada a TREE_MAX_S (parseVolumes clampa).
+ *  v7: todo tramo que emite occluder va marcado data-part="tall" — el cliente
+ *  lo excluye de la capa base (como la copa) y lo pinta solo vía su cutout en
+ *  el depth-sort, para poder fundirlo por proximidad del jugador revelando el
+ *  suelo real que hay debajo. */
+export const COMPOSER_VERSION = 7;
 
 /** Opacidad de la copa del árbol: cubre sin ocultar del todo lo que hay
  *  debajo (las copas tapan mucha superficie de tile). */
@@ -280,8 +284,17 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     const ctx: RenderCtx = { proj, rng: seededRng(`${seedKey}:${seed}`), out: [], bbox: null };
     renderVolume(ctx, render, phase);
     if (ctx.out.length === 0) continue;
-    const canopyAttrs = phase === "canopy" ? ` data-part="canopy" opacity="${CANOPY_OPACITY}"` : "";
-    const markup = `<g data-vid="${vid}"${canopyAttrs} data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`;
+    // Marca del tramo para el cliente: "canopy" (traslúcida) y "tall" (tramos
+    // con occluder) se excluyen de la capa base — los pinta solo su cutout en
+    // el depth-sort, y así pueden fundirse por proximidad revelando el suelo.
+    const isTall = tallByVid.get(vid) === true && occludes !== false;
+    const partAttrs =
+      phase === "canopy"
+        ? ` data-part="canopy" opacity="${CANOPY_OPACITY}"`
+        : isTall
+          ? ` data-part="tall"`
+          : "";
+    const markup = `<g data-vid="${vid}"${partAttrs} data-label="${escapeAttr(labelByVid.get(vid) ?? vid)}">${ctx.out.join("")}</g>`;
     out.push(markup);
     if (ctx.bbox) {
       const acc = bboxByVid.get(vid);

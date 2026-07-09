@@ -229,6 +229,25 @@ const NPC_COLOR = "#68c";
  *  mayor que un taburete (~0.5m de lado). */
 const CHARACTER_RADIUS_M = 0.4;
 
+/** Fade de occluders por proximidad del jugador: cuando un tramo lo TAPA
+ *  (el jugador tiene z-index menor) y está cerca, su cutout se funde para
+ *  dejar ver al personaje y el suelo de debajo; al alejarse recupera. Las
+ *  copas (overhead) tapan siempre, así que fundan solo por cercanía. */
+const OCCLUDER_FADE_NEAR_M = 1.5; // a esta distancia o menos, fade máximo
+const OCCLUDER_FADE_FAR_M = 6; // a esta distancia o más, sin fade
+const OCCLUDER_FADE_MIN = 0.45; // alpha mínimo del cutout fundido
+const OCCLUDER_FADE_RATE = 8; // velocidad del lerp temporal (1/s)
+/** Margen (m de vista) alrededor del bbox del cutout para considerar que
+ *  realmente está sobre el personaje en pantalla. */
+const OCCLUDER_FADE_MARGIN_M = 0.5;
+
+/** Distancia de un punto a un rect AABB (0 dentro). Ejes del rect. */
+function distPointToRect(x: number, y: number, r: SceneBounds): number {
+  const dx = Math.max(r.minX - x, 0, x - r.maxX);
+  const dy = Math.max(r.minZ - y, 0, y - r.maxZ);
+  return Math.hypot(dx, dy);
+}
+
 /** Límites del zoom (píxeles por metro). El default es 40; el usuario acerca
  *  hasta 160 (~4×) y aleja hasta 12 (~0.3×). setScale clampa a este rango. */
 const MIN_SCALE = 12;
@@ -398,6 +417,10 @@ export class CanvasRenderer {
    *  (walls/buildings) can draw over the player when he is behind them. Cleared
    *  whenever the scene image changes (the cutouts no longer match). */
   private occluders: Occluder[] = [];
+  /** Alpha vivo por occluder (id → alpha), lerpeado hacia su objetivo cada
+   *  frame — el fade por proximidad entra y sale suave. */
+  private occFade = new Map<string, number>();
+  private lastFadeTs = 0;
   /** When true, overlay the schematic object rectangles on top of the AI image
    *  to eyeball alignment between the painted scene and the collision boxes. */
   /** When true, outline the collision boxes (red, = authored `position±scale/2`,
@@ -520,13 +543,14 @@ export class CanvasRenderer {
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
     if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
     if (scene.__composed && !same) {
-      // Las copas de árbol (data-part="canopy", traslúcidas) se excluyen de
-      // la capa base: las pinta SIEMPRE su occluder aéreo (loadPlanOccluders)
-      // encima de las entidades — si también estuvieran en la base, el alpha
-      // se aplicaría dos veces y la copa se vería más opaca de lo compuesto.
+      // Los tramos con cutout se excluyen de la capa base y los pinta SIEMPRE
+      // su occluder en el depth-sort (loadPlanOccluders): las copas
+      // (data-part="canopy", traslúcidas) para no aplicar su alpha dos veces,
+      // y los tramos altos (data-part="tall": edificios, muros, troncos…)
+      // para que el fade por proximidad revele el suelo real de debajo.
       const baseSvg = scene.__composed.svg.replace(
         />/,
-        "><style>[data-part=canopy]{display:none}</style>",
+        "><style>[data-part=canopy],[data-part=tall]{display:none}</style>",
       );
       this.loadSvgLayer(tile, baseSvg, "planImage");
       this.loadPlanOccluders(tile, scene.__composed);
@@ -755,10 +779,12 @@ export class CanvasRenderer {
     return this.occluders.length > 0;
   }
 
-  /** Resumen de occluders para el hook de bench (__nefan). Solo lectura. */
-  debugOccluders(): { id: string; kind?: string; tileKey?: string; view: SceneBounds; baselineView: number; footprintWorld?: SceneBounds }[] {
+  /** Resumen de occluders para el hook de bench (__nefan). Solo lectura.
+   *  `fade` es el alpha vivo del fade por proximidad (1 = opaco). */
+  debugOccluders(): { id: string; kind?: string; tileKey?: string; view: SceneBounds; baselineView: number; footprintWorld?: SceneBounds; fade: number }[] {
     return this.occluders.map((o) => ({
       id: o.id, kind: o.kind, tileKey: o.tileKey, view: o.view, baselineView: o.baselineView, footprintWorld: o.footprintWorld,
+      fade: this.occFade.get(o.id) ?? 1,
     }));
   }
 
@@ -1541,6 +1567,44 @@ export class CanvasRenderer {
     const overhead = this.occluders.filter((o) => o.overhead).sort((a, b) => a.baselineView - b.baselineView);
     const baselineScreen = occs.map((o) => this.viewToScreen(0, o.baselineView)[1]);
 
+    // --- Fade por proximidad ---
+    const now = performance.now();
+    const dt = this.lastFadeTs > 0 ? Math.min(0.25, (now - this.lastFadeTs) / 1000) : 0;
+    this.lastFadeTs = now;
+    if (this.occFade.size > this.occluders.length) {
+      const alive = new Set(this.occluders.map((o) => o.id));
+      for (const id of this.occFade.keys()) if (!alive.has(id)) this.occFade.delete(id);
+    }
+    const [pvx, pvy] = this.projection.worldToView(player.pos.x, player.pos.z);
+    const playerScreenY = this.toScreen(player.pos.x, player.pos.z)[1];
+    // Índice del primer occluder que TAPA al jugador: los tramos desde ahí se
+    // pintan después que él (su z-index es mayor) — solo esos son candidatos
+    // a fundirse. Mismo criterio que place()/entityInFront.
+    let playerKey = occs.length;
+    for (let i = 0; i < occs.length; i++) {
+      if (!this.entityInFront(player.pos.x, player.pos.z, playerScreenY, occs[i], baselineScreen[i])) {
+        playerKey = i;
+        break;
+      }
+    }
+    /** Alpha objetivo del cutout: 1 salvo que tape al jugador, su bbox de
+     *  vista lo cubra en pantalla y esté cerca (ramp NEAR..FAR). La cercanía
+     *  de un tramo con huella se mide en MUNDO contra ella (acercarse al muro
+     *  lo va fundiendo); la de un tramo AÉREO (copa) o sin huella, en vista
+     *  contra su propio bbox — la copa cuelga lejos de su tronco en términos
+     *  de suelo, lo que importa es que cubra al personaje en pantalla. */
+    const fadeTarget = (occ: Occluder, covers: boolean): number => {
+      if (!covers) return 1;
+      const v = occ.view;
+      const M = OCCLUDER_FADE_MARGIN_M;
+      if (pvx < v.minX - M || pvx > v.maxX + M || pvy < v.minZ - M || pvy > v.maxZ + M) return 1;
+      const d = !occ.overhead && occ.footprintWorld
+        ? distPointToRect(player.pos.x, player.pos.z, occ.footprintWorld)
+        : distPointToRect(pvx, pvy, v);
+      const t = Math.max(0, Math.min(1, (OCCLUDER_FADE_FAR_M - d) / (OCCLUDER_FADE_FAR_M - OCCLUDER_FADE_NEAR_M)));
+      return 1 - t * (1 - OCCLUDER_FADE_MIN);
+    };
+
     // Cada entidad se pinta justo ANTES del primer occluder que la tapa
     // (key = su índice; n si ninguno la tapa). Entre entidades del mismo
     // hueco, por su Y de pantalla (puntos — el criterio escalar es exacto).
@@ -1565,19 +1629,27 @@ export class CanvasRenderer {
     for (const obj of objects) place(obj.pos.x, obj.pos.z, () => this.drawEntity(obj));
     place(player.pos.x, player.pos.z, () => this.drawPlayer(player));
 
-    const paint = (occ: Occluder): void => {
+    const paint = (occ: Occluder, covers: boolean): void => {
+      const target = fadeTarget(occ, covers);
+      const cur = this.occFade.get(occ.id) ?? 1;
+      const fade = dt > 0 ? cur + (target - cur) * Math.min(1, dt * OCCLUDER_FADE_RATE) : cur;
+      this.occFade.set(occ.id, fade);
       const v = occ.view;
       const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+      const prevAlpha = this.ctx.globalAlpha;
+      this.ctx.globalAlpha = fade;
       this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
+      this.ctx.globalAlpha = prevAlpha;
     };
     for (let i = 0; i <= occs.length; i++) {
       const bucket = buckets[i];
       bucket.sort((a, b) => a.screenY - b.screenY);
       for (const s of bucket) s.draw();
-      if (i < occs.length) paint(occs[i]);
+      // El tramo i tapa al jugador ⇔ se pinta después que su bucket.
+      if (i < occs.length) paint(occs[i], i >= playerKey);
     }
-    // Capa aérea: las copas cubren a quien pase por debajo.
-    for (const occ of overhead) paint(occ);
+    // Capa aérea: las copas cubren a quien pase por debajo — siempre tapan.
+    for (const occ of overhead) paint(occ, true);
   }
 
   /** Draw a static scene element (building/prop/item) using its authored
