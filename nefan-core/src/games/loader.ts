@@ -55,6 +55,9 @@ export const GameMetaSchema = z
     description: z.string().min(1),
     /** Estilo visual por defecto (el jugador puede cambiarlo al empezar). */
     style_id: SafeId,
+    /** Perspectiva 2D por defecto ("topdown" | "isometric"); el jugador puede
+     *  cambiarla al empezar. Ausente = "topdown". */
+    default_perspective: z.enum(["topdown", "isometric"]).optional(),
     /** Resumen del mundo (~1.200 chars) inyectado en CADA turno del LLM. */
     world_brief: z.string().min(100),
   })

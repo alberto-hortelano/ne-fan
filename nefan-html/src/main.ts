@@ -168,6 +168,16 @@ function applySessionStyle(styleId: string): void {
   spriteRenderer.setStyle(styleId);
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
+
+/** Perspectiva 2D de la sesión activa ("topdown" | "isometric"), congelada
+ *  en el save. Saves previos sin el campo ⇒ "topdown". La consumen el
+ *  compositor de blueprints y (en PRs siguientes) el renderer/proyección. */
+let sessionPerspective: "topdown" | "isometric" = "topdown";
+function applySessionPerspective(perspective: string): void {
+  sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
+  void sessionPerspective; // consumidores llegan con el pipeline de composición
+  if (perspective) log(`Perspectiva: ${sessionPerspective}`);
+}
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
 // se cargan bajo demanda desde setPlayerAppearance / requestSkin.
@@ -1508,9 +1518,15 @@ async function runTitleFlow(): Promise<void> {
         "Iniciando partida...",
         "Pidiendo al motor narrativo que construya la escena inicial.",
       );
-      const res = await narrativeClient.startSession(action.gameId, action.appearance, action.styleId || undefined);
+      const res = await narrativeClient.startSession(
+        action.gameId,
+        action.appearance,
+        action.styleId || undefined,
+        action.perspective,
+      );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
+      applySessionPerspective(res.state.world?.perspective ?? "");
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
@@ -1518,6 +1534,7 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
+      applySessionPerspective(res.state.world?.perspective ?? "");
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets

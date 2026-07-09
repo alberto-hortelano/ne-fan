@@ -350,6 +350,41 @@ describe("bridge ciclo de sesión", () => {
     assert.match(started2.error ?? "", /game_load_failed/);
   });
 
+  it("start_session congela la perspectiva elegida (y por defecto topdown)", async () => {
+    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", perspective: "isometric" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true);
+    assert.equal(started.state?.world.perspective, "isometric");
+
+    // sin perspective ⇒ default del juego o "topdown"
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r2", gameId: "toledo_1200" },
+      s2,
+      ctx,
+    );
+    const started2 = sent2[0] as SessionStartedMessage;
+    assert.equal(started2.ok, true);
+    assert.equal(started2.state?.world.perspective, "topdown");
+
+    // valor desconocido ⇒ aborta fail-loud
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r3", gameId: "toledo_1200", perspective: "primera_persona" },
+      s3,
+      ctx,
+    );
+    const started3 = sent3[0] as SessionStartedMessage;
+    assert.equal(started3.ok, false);
+    assert.match(started3.error ?? "", /perspectiva desconocida/);
+  });
+
   it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
@@ -416,6 +451,26 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(resumed.isResume, true);
     assert.equal(ctx.activePlugins.size, 3);
     assert.equal(narrative.session_id, sessionId);
+  });
+
+  it("resume restaura la perspectiva congelada (inmutable a mitad de partida)", async () => {
+    const { ctx, narrative } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", perspective: "isometric" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
+    // Proceso nuevo: la perspectiva sale del save, no del request.
+    narrative.startNewSession("toledo_1200");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true);
+    assert.equal(resumed.state?.world.perspective, "isometric");
   });
 
   it("list_sessions y delete_session operan sobre el storage", async () => {

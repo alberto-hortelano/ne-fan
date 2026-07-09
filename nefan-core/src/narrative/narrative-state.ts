@@ -53,6 +53,7 @@ const DEFAULT_WORLD: NarrativeWorldState = {
   description: "",
   style_id: "",
   world_doc_hash: "",
+  perspective: "",
 };
 
 const DEFAULT_PLAYER: NarrativePlayerState = {
@@ -187,12 +188,14 @@ export class NarrativeState {
     style_id: string;
     style_token: string;
     world_doc_hash: string;
+    perspective: string;
   }): void {
     this.world.name = info.name;
     this.world.description = info.description;
     this.world.style_id = info.style_id;
     this.world.style_token = info.style_token;
     this.world.world_doc_hash = info.world_doc_hash;
+    this.world.perspective = info.perspective;
     this.dirty = true;
   }
 

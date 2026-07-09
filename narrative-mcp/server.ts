@@ -175,6 +175,10 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
   what magic can or cannot do, NPC speech register.
 - world.style_token names the visual style; texture/style prompts you emit
   should harmonise with it.
+- world.perspective is the session's frozen 2D projection ("topdown" |
+  "isometric"). It is INFORMATIVE only: you always declare maps in flat
+  world cells and the engine's blueprint composer projects them — never
+  draw projected/foreshortened geometry yourself.
 - NPC dialogue and descriptions are always in Spanish, matching the register
   described in the world document ("Registro y lenguaje").
 
