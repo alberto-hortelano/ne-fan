@@ -5,6 +5,8 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
+import { createAmbientNpcBehavior } from "../src/simulation/npc-behavior.js";
+import { SeededRng } from "../src/combat/enemy-ai.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
@@ -244,5 +246,71 @@ describe("GameSimulation", () => {
 
     assert.deepEqual(run1, run2, "same seed should produce same results");
     // run3 MIGHT differ (different seed), but not guaranteed for all scenarios
+  });
+
+  it("npc behavior: un campesino huye de una pelea del sim", () => {
+    const sim = new GameSimulation(config, undefined, 42);
+    const behavior = createAmbientNpcBehavior({
+      rng: new SeededRng(42),
+      world: {
+        blocksMove: () => false,
+        blocksCircle: () => false,
+        resolvePlaceTarget: () => null,
+        getEntityPosition: () => null,
+      },
+    });
+    sim.setNpcBehavior(behavior);
+
+    const player = createCombatant("player", 100, "short_sword",
+      { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    const enemy = createCombatant("skeleton_01", 60, "unarmed",
+      { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 });
+    sim.addCombatant(player);
+    sim.addCombatant(enemy, {
+      aggression: 0.9,
+      preferred_attacks: ["quick"],
+      reaction_time: 0.3,
+    });
+
+    const npcRecord = {
+      id: "aldeano_01",
+      type: "npc",
+      scene_id: "tile_0_0",
+      spawned_at: "2026-01-01T00:00:00.000Z",
+      spawn_reason: "scene_init",
+      spawn_event_id: "",
+      position: [4, 0, 0] as [number, number, number],
+      data: { role: "peasant" },
+      asset_refs: [],
+    };
+    behavior.addNpc(npcRecord);
+
+    const npcEvents: string[] = [];
+    for (let i = 0; i < 300; i++) {
+      const result = sim.tick(0.016, {
+        playerPosition: player.position,
+        playerForward: player.forward,
+        playerMoving: false,
+        attackRequested: i === 5,
+        attackType: i === 5 ? "quick" : undefined,
+      });
+      npcEvents.push(...result.npcEvents.map((e) => e.type));
+    }
+
+    assert.ok(npcEvents.includes("npc_fled_combat"), "el campesino debe huir de la pelea");
+    const dist = Math.hypot(npcRecord.position[0], npcRecord.position[2]);
+    assert.ok(dist > 4.5, `debe alejarse del combate (dist=${dist})`);
+  });
+
+  it("sin behavior system, npcEvents va vacío y nada cambia", () => {
+    const sim = new GameSimulation(config, undefined, 42);
+    const player = createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 0 });
+    sim.addCombatant(player);
+    const result = sim.tick(0.016, {
+      playerPosition: player.position,
+      playerForward: player.forward,
+      playerMoving: false,
+    });
+    assert.deepEqual(result.npcEvents, []);
   });
 });

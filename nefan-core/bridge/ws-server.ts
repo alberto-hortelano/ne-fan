@@ -19,6 +19,7 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { FsSessionStorage } from "../src/narrative/session-storage.js";
 import { AiClient } from "../src/narrative/ai-client.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { createSimCollisionProvider } from "./sim-collision.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
@@ -55,6 +56,7 @@ const sim = new GameSimulation(config, store, Date.now());
 const sessionStorage = new FsSessionStorage(SAVES_DIR);
 const narrative = new NarrativeState(sessionStorage);
 const npcDirector = new NpcDirector(narrative);
+const simCollision = createSimCollisionProvider(narrative);
 
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();
@@ -79,6 +81,8 @@ const ctx: BridgeContext = {
     dispatcher: new Agent({ headersTimeout: 0, bodyTimeout: 0 }),
   }),
   mapTriggers: new MapTriggerEvaluator(narrative),
+  npcDirector,
+  simCollision,
   initialSceneCache: new InitialSceneCache(resolve(dataDir, "initial_scene_cache")),
   gamesDir: GAMES_DIR,
   stylesDir: STYLES_DIR,

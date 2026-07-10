@@ -70,6 +70,57 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     // Tile (1,0): rect [32..96, -32..32]; celda (0,0) centro → (32.25, -31.75).
     assert.deepEqual(npc.position, [32.25, 0, -31.75]);
   });
+
+  it("role y behavior del NPC de escena fluyen a entity.data", () => {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("plugtest");
+    s.recordSceneLoaded(
+      "tile_0_0",
+      makeTileScene(0, 0, {
+        entities: [{
+          id: "guardia_1", kind: "npc", name: "Guardia", cell: [10, 10],
+          footprint: [1, 1], glyph: "n", role: "guard",
+          behavior: { perception_radius: 20 },
+        }],
+      }),
+    );
+    const npc = s.entities.find((e) => e.id === "guardia_1")!;
+    assert.equal(npc.data.role, "guard");
+    assert.deepEqual(npc.data.behavior, { perception_radius: 20 });
+  });
+
+  it("re-registrar una escena preserva posición y data de sus NPCs vivos", () => {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("plugtest");
+    const scene = makeTileScene(0, 0, {
+      entities: [
+        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+        { id: "viejo", kind: "npc", name: "Viejo", cell: [20, 20], footprint: [1, 1], glyph: "n" },
+      ],
+    });
+    s.recordSceneLoaded("tile_0_0", scene);
+    const npc = s.entities.find((e) => e.id === "aldeana")!;
+    // La vida ambiental la movió y el LLM le dejó una directiva.
+    npc.position = [5, 0, 5];
+    npc.data.directive = { type: "wander" };
+
+    // Re-broadcast del mismo tile (re-entrada): no duplica ni resetea.
+    s.recordSceneLoaded("tile_0_0", scene);
+    const after = s.entities.filter((e) => e.id === "aldeana");
+    assert.equal(after.length, 1);
+    assert.deepEqual(after[0].position, [5, 0, 5], "la posición viva no se pisa");
+    assert.deepEqual(after[0].data.directive, { type: "wander" }, "la directiva sobrevive");
+
+    // Un NPC que YA no está en la escena sí se retira.
+    const scene2 = makeTileScene(0, 0, {
+      entities: [
+        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+      ],
+    });
+    s.recordSceneLoaded("tile_0_0", scene2);
+    assert.equal(s.entities.some((e) => e.id === "viejo"), false);
+    assert.equal(s.entities.filter((e) => e.id === "aldeana").length, 1);
+  });
 });
 
 describe("NarrativeState — migración v3→v4", () => {

@@ -21,7 +21,14 @@ import {
   activatePluginsForNewSession,
   bindPluginsForResume,
 } from "../../src/plugins/loader.js";
-import { broadcastScene, type BridgeContext, type ClientSocket } from "../context.js";
+import {
+  broadcastScene,
+  createSessionNpcBehavior,
+  npcSync,
+  type BridgeContext,
+  type ClientSocket,
+} from "../context.js";
+import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { isPerspective } from "../../src/scene/blueprint/index.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
@@ -158,6 +165,7 @@ export async function handleStartSession(
   // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
   let worldKey: string;
   let combatId: string;
+  let npcBehaviorId: string | undefined;
   try {
     const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
     // Estilo: el elegido por el jugador o el por defecto del juego. Un
@@ -183,6 +191,14 @@ export async function handleStartSession(
     if (!combatRegistry.has(combatId)) {
       throw new Error(
         `sistema de combate desconocido "${combatId}" (esperaba ${combatRegistry.ids().join("|")})`,
+      );
+    }
+    // Vida ambiental de NPCs: no se congela en el save (v1, una sola
+    // implementación) pero el id se valida igual de fail-loud.
+    npcBehaviorId = meta.systems?.npc_behavior;
+    if (npcBehaviorId !== undefined && !npcBehaviorRegistry.has(npcBehaviorId)) {
+      throw new Error(
+        `sistema npc_behavior desconocido "${npcBehaviorId}" (esperaba ${npcBehaviorRegistry.ids().join("|")})`,
       );
     }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
@@ -234,6 +250,7 @@ export async function handleStartSession(
   // combatientes (y el HP herido) de la sesión anterior del proceso.
   ctx.sim.reset();
   ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
+  ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
   const freshHp = ctx.narrative.player.health;
   const freshPos = ctx.narrative.player.position;
   ctx.sim.addCombatant(
@@ -427,10 +444,36 @@ export async function handleResumeSession(
     });
     return;
   }
+  // Vida ambiental: no congelada en el save (v1, una sola implementación) —
+  // se lee del game.json vigente. El game dir existe (el bind de plugins de
+  // arriba ya lo leyó); un id fuera del registro aborta como el de combate.
+  let npcBehaviorId: string | undefined;
+  try {
+    npcBehaviorId = loadGameMeta(ctx.gamesDir, ctx.narrative.game_id).systems?.npc_behavior;
+  } catch (err) {
+    console.error("Bridge: game load failed on resume_session:", err);
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `game_load_failed: ${(err as Error).message ?? err}`,
+    });
+    return;
+  }
+  if (npcBehaviorId !== undefined && !npcBehaviorRegistry.has(npcBehaviorId)) {
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `npc_behavior_unknown: "${npcBehaviorId}" (esperaba ${npcBehaviorRegistry.ids().join("|")})`,
+    });
+    return;
+  }
   // Resembrar el sim desde el save: sin esto arrastra los combatientes de la
   // sesión anterior y el HP guardado nunca vuelve al runtime.
   ctx.sim.reset();
   ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
+  ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
   const savedPos = ctx.narrative.player.position;
   const savedHp = ctx.narrative.player.health;
   ctx.sim.addCombatant(
@@ -443,6 +486,9 @@ export async function handleResumeSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp: savedHp, pos: [...savedPos] });
+  // Los NPC del save vuelven a la vida ambiental donde se quedaron (su
+  // posición vive en el EntityRecord persistido).
+  npcSync(ctx);
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, ctx.narrative.game_id, true);
   ctx.subscribe(ws);
   ctx.send(ws, {

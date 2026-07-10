@@ -66,6 +66,8 @@ export const GameMetaSchema = z
     systems: z
       .object({
         combat: SafeId.optional(),
+        /** Vida ambiental de NPCs (default "ambient"). */
+        npc_behavior: SafeId.optional(),
       })
       .strict()
       .optional(),

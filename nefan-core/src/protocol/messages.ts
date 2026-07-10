@@ -248,6 +248,22 @@ export interface StateUpdateMessage {
     forward?: { x: number; y: number; z: number };
     attackType?: string;
   }[];
+  /** Vida ambiental: NPCs conducidos por el NpcBehaviorSystem del sim.
+   *  Ausente si la sesión no tiene behavior system (clientes viejos ignoran
+   *  el campo). El cliente actualiza pos/forward de sus entidades por id; su
+   *  tracker de movimiento dispara la anim walk/run solo. */
+  npcs?: {
+    id: string;
+    pos: { x: number; y: number; z: number };
+    forward: { x: number; y: number; z: number };
+    moving: boolean;
+    /** true → anim run (huida); false → walk. */
+    run: boolean;
+    /** Animación one-shot pedida (p. ej. "quick" como amenaza del guardia). */
+    anim?: string;
+    /** Modo del FSM (idle/wander/goto/visit/flee/intervene/react) — trazas. */
+    state: string;
+  }[];
 }
 
 export interface PongMessage {

@@ -8,6 +8,7 @@ import { StandardCombatSystem } from "../combat/standard-combat-system.js";
 import { EnemyAI, SeededRng } from "../combat/enemy-ai.js";
 import * as Combatant from "../combat/combatant.js";
 import { distanceXZ } from "../vec3.js";
+import type { NpcBehaviorEvent, NpcBehaviorSystem } from "./npc-behavior.js";
 
 export interface FrameInputs {
   playerPosition: Vec3;
@@ -19,6 +20,8 @@ export interface FrameInputs {
 
 export interface FrameResult {
   events: CombatEvent[];
+  /** Transiciones de la vida ambiental de NPCs (vacío sin behavior system). */
+  npcEvents: NpcBehaviorEvent[];
 }
 
 export class GameSimulation {
@@ -28,6 +31,7 @@ export class GameSimulation {
   private enemyAIs = new Map<string, EnemyAI>();
   private rng: SeededRng;
   private roomBounds: { halfW: number; halfD: number } | null = null;
+  private npcBehavior: NpcBehaviorSystem | null = null;
 
   constructor(config: CombatConfig, store?: GameStore, seed?: number, combat?: CombatSystem) {
     this.store = store ?? new GameStore();
@@ -49,6 +53,17 @@ export class GameSimulation {
   /** Sistema de combate vigente (catálogo de ataques para clientes/tests). */
   get combatSystem(): CombatSystem {
     return this.combat;
+  }
+
+  /** Instala (o retira, con null) el sistema de vida ambiental de NPCs.
+   *  Se selecciona en start/resume de sesión (systems.npc_behavior). */
+  setNpcBehavior(system: NpcBehaviorSystem | null): void {
+    this.npcBehavior = system;
+  }
+
+  /** Sistema de comportamiento vigente (para que el bridge sincronice NPCs). */
+  get npcBehaviorSystem(): NpcBehaviorSystem | null {
+    return this.npcBehavior;
   }
 
   /** Set room bounds so AI movement is clamped to the arena. */
@@ -146,7 +161,20 @@ export class GameSimulation {
     const combatEvents = this.combat.resolve(delta, this.combatants);
     allEvents.push(...combatEvents);
 
-    // 5. Dispatch significant events to store
+    // 5. Vida ambiental de NPCs: reflejos locales (huir/intervenir/pasear)
+    // alimentados con los eventos de combate del tick.
+    let npcEvents: NpcBehaviorEvent[] = [];
+    if (this.npcBehavior) {
+      const combatantPositions = new Map<string, Vec3>();
+      for (const [id, c] of this.combatants) combatantPositions.set(id, c.position);
+      npcEvents = this.npcBehavior.tick(delta, {
+        playerPos: inputs.playerPosition,
+        combatEvents: allEvents,
+        combatantPositions,
+      });
+    }
+
+    // 6. Dispatch significant events to store
     for (const e of combatEvents) {
       if (e.type === "attack_landed") {
         const targetId = e.targetId as string;
@@ -174,7 +202,7 @@ export class GameSimulation {
       }
     }
 
-    return { events: allEvents };
+    return { events: allEvents, npcEvents };
   }
 
   respawn(spawnPos?: Vec3): CombatEvent[] {
@@ -226,5 +254,6 @@ export class GameSimulation {
     this.combatants.clear();
     this.enemyAIs.clear();
     this.combat.reset();
+    this.npcBehavior?.clear();
   }
 }

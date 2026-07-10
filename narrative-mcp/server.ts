@@ -913,6 +913,7 @@ Pass this JSON to narrative_respond:
     { "type": "spawn_entity", "entity_kind": "npc"|"building"|"object",
       "description": "vivid English description for asset gen",
       "name": "optional NPC name", "position_hint": "near_player|distant_east|...",
+      "role": "optional NPC ambient role: peasant|guard|villager|merchant",
       "texture_hash": "optional reused asset hash",
       "model_hash": "optional reused asset hash" },
     { "type": "schedule_event", "description": "what to schedule",
@@ -945,7 +946,22 @@ inventory_remove (give/take items), npc_move_to_place / npc_arrive / npc_set_dir
 re-direct NPCs), map_upsert_place / map_link / map_add_trigger (extend the
 world map the story just mentioned), plugin_inspect / plugin_register (read or
 add declarative systems). Use these for bookkeeping; use \`consequences\` for
-what the player should SEE happen.`;
+what the player should SEE happen.
+
+AMBIENT NPC LIFE (the game engine runs it — you set intent, never per-step
+movement): every NPC wanders near its spawn, turns to face an approaching
+player, and reacts to nearby fights by role (\`role\` at spawn: peasant/
+villager/merchant flee, guard runs in and threatens; context may include
+recent \`ambient_events\` — background colour, no reaction required).
+npc_set_directive changes the STANDING behaviour; executable directive types:
+- "wander" {radius?} — stroll around its current spot (default);
+- "patrol" — wander with double radius;
+- "goto_place" {target_place_id} — walk there if the place is anchored nearby
+  (otherwise travel stays narrative-paced and YOU declare arrival);
+- "visit_npc" {target_npc_id} — walk to another NPC and stay with them;
+- "hold" — stand still.
+Unknown directive types are ignored with a log (the NPC keeps wandering), so
+prefer this vocabulary.`;
 
 const BLUEPRINT_REVIEW_INSTRUCTIONS = `==== HOW TO RESPOND (kind: "blueprint_review") ====
 You are LOOKING at the blueprint image the image model (Meshy) will receive for
@@ -1613,9 +1629,11 @@ into context:
   server.tool(
     'npc_move_to_place',
     `Command an NPC to travel to a world-map place. The NPC is marked in_transit ` +
-    `immediately; it does NOT arrive on its own. Declare its arrival later with ` +
-    `npc_arrive when the story is ready for it (travel is narrative-paced, there ` +
-    `is no game clock). Use this to keep NPCs moving with the story — e.g. send a ` +
+    `immediately. If the destination is anchored nearby (same area of the tile ` +
+    `plane), the game engine walks the NPC there physically and declares the ` +
+    `arrival itself — you will see it in ambient_events. Otherwise travel is ` +
+    `narrative-paced: declare the arrival later with npc_arrive when the story ` +
+    `is ready. Use this to keep NPCs moving with the story — e.g. send a ` +
     `messenger to the port, march a patrol toward the ruins.`,
     {
       npc_id: z.string().describe('Entity id of the NPC.'),
@@ -1639,17 +1657,21 @@ into context:
 
   server.tool(
     'npc_set_directive',
-    `Set or clear a standing high-level order on an NPC (e.g. patrol a zone, ` +
-    `defend a place, attack on sight). The directive is stored on the NPC; it ` +
-    `records intent — pass clear=true to remove it.`,
+    `Set or clear a standing high-level order on an NPC. The game engine ` +
+    `EXECUTES these directive types as ambient behaviour: "wander" {radius?}, ` +
+    `"patrol" (double-radius wander), "goto_place" {target_place_id}, ` +
+    `"visit_npc" {target_npc_id}, "hold". Other verbs are stored as intent but ` +
+    `ignored by the engine (the NPC keeps wandering), so prefer that ` +
+    `vocabulary. Pass clear=true to remove the directive.`,
     {
       npc_id: z.string(),
-      type: z.string().optional().describe('Directive verb, e.g. "patrol", "defend", "attack". Required unless clear=true.'),
-      target_place_id: z.string().optional().describe('Place the directive applies to, if any.'),
-      params_json: z.string().optional().describe('Optional JSON object of extra directive params.'),
+      type: z.string().optional().describe('Directive verb: wander | patrol | goto_place | visit_npc | hold. Required unless clear=true.'),
+      target_place_id: z.string().optional().describe('Place the directive applies to (goto_place).'),
+      target_npc_id: z.string().optional().describe('Entity id of the NPC to visit (visit_npc).'),
+      params_json: z.string().optional().describe('Optional JSON object of extra directive params (e.g. {"radius": 10} for wander).'),
       clear: z.boolean().optional().describe('Pass true to remove the NPC\'s directive.'),
     },
-    async ({ npc_id, type, target_place_id, params_json, clear }) => {
+    async ({ npc_id, type, target_place_id, target_npc_id, params_json, clear }) => {
       if (clear) {
         return reportBridge(await bridgePost(`/npc/${encodeURIComponent(npc_id)}/directive`, { directive: null }));
       }
@@ -1664,7 +1686,7 @@ into context:
           return { content: [{ type: 'text', text: 'params_json is not valid JSON' }], isError: true };
         }
       }
-      const directive = { type, target_place_id, ...params };
+      const directive = { type, target_place_id, target_npc_id, ...params };
       return reportBridge(await bridgePost(`/npc/${encodeURIComponent(npc_id)}/directive`, { directive }));
     },
   );

@@ -189,8 +189,13 @@ export interface Entity {
   attackType?: string;
   /** Descripción narrativa usada como prompt del skin IA del sprite. */
   skinPrompt?: string;
-  /** Anim pedida por el NpcDirector (NpcUpdate.animation). */
+  /** Anim pedida por la vida ambiental (state_update.npcs[].anim). */
   requestedAnim?: string;
+  /** true mientras el NPC huye (state_update.npcs[].run) → anim run. */
+  npcRun?: boolean;
+  /** Tile del que procede el NPC (clave del scene data que lo declaró) —
+   *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
+  tileKey?: string;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
   category?: string;

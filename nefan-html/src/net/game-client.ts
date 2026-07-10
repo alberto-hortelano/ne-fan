@@ -4,6 +4,7 @@
 
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
+import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
@@ -20,6 +21,8 @@ export interface FrameResult {
     forward?: { x: number; y: number; z: number };
     attackType?: string;
   }[];
+  /** Vida ambiental de NPCs del bridge (state_update.npcs). */
+  npcs?: StateUpdateMessage["npcs"];
 }
 
 export interface TickInputs {
@@ -76,6 +79,7 @@ export class BridgeGameClient implements GameClient {
         events: msg.events ?? [],
         playerHp: msg.playerHp,
         enemies: msg.enemies ?? [],
+        npcs: msg.npcs,
       };
       this.pendingFrame = frame;
       this.lastState = frame;
