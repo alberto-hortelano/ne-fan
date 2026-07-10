@@ -1,10 +1,11 @@
-/** Prefetch proactivo + bloqueo direccional de fronteras del plano de tiles.
+/** Prefetch con confirmación + bloqueo direccional de fronteras del plano.
  *
- *  El jugador NUNCA se congela: al acercarse a un borde sin tile se pide la
- *  generación en segundo plano; si llega al borde antes de que exista, la
- *  colisión lo retiene SOLO en esa dirección (puede retroceder y moverse) y
- *  el velo direccional explica el porqué. Al completarse el tile se notifica
- *  desde esa dirección (flash + toast). */
+ *  El jugador NUNCA se congela: al acercarse a un borde sin tile se le
+ *  PROPONE generar el vecino (la generación gasta LLM/créditos, así que no se
+ *  dispara sola) y solo tras confirmar se pide en segundo plano; si llega al
+ *  borde antes de que exista, la colisión lo retiene SOLO en esa dirección
+ *  (puede retroceder y moverse) y el velo direccional explica el porqué. Al
+ *  completarse el tile se notifica desde esa dirección (flash + toast). */
 
 import { neighborTile, worldToTile, tileWorldRect } from "@nefan-core/src/scene/tile.js";
 import { oppositeEdge } from "@nefan-core/src/world-map/edges.js";
@@ -30,6 +31,14 @@ export interface VeilState {
   text: string;
 }
 
+/** Tile vecino sin generar cerca del jugador, a la espera de confirmación. */
+export interface TileProposal {
+  key: string;
+  tx: number;
+  ty: number;
+  edge: Edge;
+}
+
 export class FrontierManager {
   /** key del tile → timestamp de la petición (dedupe + timeout). */
   private requested = new Map<string, number>();
@@ -39,16 +48,22 @@ export class FrontierManager {
   private erroredAt = new Map<string, number>();
   /** Texto de estado por tile (lo actualizan los narrative_status). */
   private statusText = new Map<string, string>();
+  /** Tiles que el jugador rechazó generar. Se limpian al alejarse del borde,
+   *  así la propuesta reaparece si vuelve (rechazo ≠ veto permanente). */
+  private declined = new Set<string>();
+  /** Propuesta activa (recalculada cada tick; borde más cercano gana). */
+  private proposal: TileProposal | null = null;
 
-  /** Llamar cada frame con la posición del jugador. Pide tiles que faltan
-   *  cerca y devuelve el velo a pintar (o null) + timeouts vencidos. */
+  /** Llamar cada frame con la posición del jugador. Propone tiles que faltan
+   *  cerca (pendientes de confirmar con confirmProposal) y devuelve el velo a
+   *  pintar (o null) + timeouts vencidos. */
   tick(
     now: number,
     px: number,
     pz: number,
     tiles: TileStore,
     request: (tx: number, ty: number, edge: Edge, reason: "prefetch" | "blocking") => void,
-  ): { veil: VeilState | null; timedOut: string[] } {
+  ): { veil: VeilState | null; timedOut: string[]; proposal: TileProposal | null } {
     const timedOut: string[] = [];
     for (const [key, startedAt] of this.requested) {
       if (now - startedAt > TILE_TIMEOUT_MS) {
@@ -58,7 +73,10 @@ export class FrontierManager {
         timedOut.push(key);
       }
     }
-    if (!tiles.hasGridTiles) return { veil: null, timedOut };
+    if (!tiles.hasGridTiles) {
+      this.proposal = null;
+      return { veil: null, timedOut, proposal: null };
+    }
 
     const t = worldToTile(px, pz);
     const rect = tileWorldRect(t.tx, t.ty);
@@ -71,18 +89,27 @@ export class FrontierManager {
 
     let veil: VeilState | null = null;
     let veilDist = Infinity;
+    let proposal: TileProposal | null = null;
+    let proposalDist = Infinity;
     const nearEdges: Edge[] = [];
+    const nearKeys = new Set<string>();
     for (const edge of ["north", "south", "east", "west"] as Edge[]) {
       const n = neighborTile(t.tx, t.ty, edge);
       if (tiles.has(n.tx, n.ty)) continue;
       const d = distTo[edge];
+      const key = tileKey(n.tx, n.ty);
       if (d < PREFETCH_M) {
         nearEdges.push(edge);
-        this.requestOnce(now, n.tx, n.ty, edge, request);
+        nearKeys.add(key);
+        // La generación gasta LLM/créditos: se PROPONE (borde más cercano
+        // gana) y solo se pide tras confirmProposal(). Nunca se auto-dispara.
+        if (this.canPropose(now, key) && d < proposalDist) {
+          proposalDist = d;
+          proposal = { key, tx: n.tx, ty: n.ty, edge };
+        }
       }
       // Pegado al borde esperando: promover la petición a blocking (una vez).
       if (d < BLOCKING_M) {
-        const key = tileKey(n.tx, n.ty);
         if (this.requested.has(key) && !this.blockingSent.has(key)) {
           this.blockingSent.add(key);
           request(n.tx, n.ty, edge, "blocking");
@@ -90,20 +117,58 @@ export class FrontierManager {
       }
       if (d < VEIL_M && d < veilDist) {
         veilDist = d;
-        const key = tileKey(n.tx, n.ty);
-        veil = { edge, text: this.statusText.get(key) ?? "Explorando lo desconocido" };
+        veil = {
+          edge,
+          text: this.requested.has(key)
+            ? (this.statusText.get(key) ?? "Explorando lo desconocido")
+            : "Zona sin generar",
+        };
       }
     }
-    // Esquina: dos bordes cercanos sin tile → pedir también el diagonal para
-    // que no quede un hueco visible al caminar en diagonal.
-    if (nearEdges.length === 2) {
+    // Esquina: dos bordes cercanos CONFIRMADOS → pedir también el diagonal
+    // para que no quede un hueco visible al caminar en diagonal. La esquina
+    // no se pregunta aparte: la cubre la confirmación de sus dos bordes.
+    if (nearEdges.length === 2 && nearEdges.every((e) => {
+      const n = neighborTile(t.tx, t.ty, e);
+      return this.requested.has(tileKey(n.tx, n.ty));
+    })) {
       const dx = nearEdges.includes("east") ? 1 : nearEdges.includes("west") ? -1 : 0;
       const dy = nearEdges.includes("south") ? 1 : nearEdges.includes("north") ? -1 : 0;
       if (dx !== 0 && dy !== 0 && !tiles.has(t.tx + dx, t.ty + dy)) {
         this.requestOnce(now, t.tx + dx, t.ty + dy, dx > 0 ? "east" : "west", request);
       }
     }
-    return { veil, timedOut };
+    // Rechazos de tiles ya lejanos se olvidan: al volver se re-propone.
+    for (const key of this.declined) {
+      if (!nearKeys.has(key)) this.declined.delete(key);
+    }
+    this.proposal = proposal;
+    return { veil, timedOut, proposal };
+  }
+
+  /** El jugador acepta la propuesta activa: se pide la generación del tile. */
+  confirmProposal(
+    now: number,
+    request: (tx: number, ty: number, edge: Edge, reason: "prefetch" | "blocking") => void,
+  ): void {
+    if (!this.proposal) return;
+    const { tx, ty, edge } = this.proposal;
+    this.proposal = null;
+    this.requestOnce(now, tx, ty, edge, request);
+  }
+
+  /** El jugador rechaza la propuesta activa: no se re-propone hasta que se
+   *  aleje del borde y vuelva. */
+  declineProposal(): void {
+    if (!this.proposal) return;
+    this.declined.add(this.proposal.key);
+    this.proposal = null;
+  }
+
+  private canPropose(now: number, key: string): boolean {
+    if (this.requested.has(key) || this.declined.has(key)) return false;
+    const failedAt = this.erroredAt.get(key);
+    return failedAt === undefined || now - failedAt >= ERROR_COOLDOWN_MS;
   }
 
   private requestOnce(
@@ -158,8 +223,12 @@ export class FrontierManager {
   }
 
   /** Estado para el hook __nefan / bench. */
-  debugState(): { requested: string[] } {
-    return { requested: [...this.requested.keys()] };
+  debugState(): { requested: string[]; declined: string[]; proposal: TileProposal | null } {
+    return {
+      requested: [...this.requested.keys()],
+      declined: [...this.declined],
+      proposal: this.proposal,
+    };
   }
 }
 

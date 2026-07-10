@@ -305,6 +305,24 @@
       color: #da6;
       font-size: 13px;
     }
+    /* Confirmación antes de generar un tile nuevo (gasta LLM/créditos). */
+    #tile-confirm-prompt {
+      display: none;
+      position: fixed;
+      bottom: 150px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 15, 12, 0.9);
+      border: 1px solid #486;
+      border-radius: 4px;
+      padding: 6px 14px;
+      z-index: 15;
+      color: #9dc;
+      font-size: 13px;
+    }
+    #tile-confirm-prompt b {
+      color: #cfa;
+    }
     #error-log {
       position: fixed;
       top: 40px;
@@ -386,6 +404,7 @@
   <div id="combat-log"></div>
   <div id="travel-panel"></div>
   <div id="interact-prompt"></div>
+  <div id="tile-confirm-prompt"></div>
   <div id="error-log"></div>
   <div id="dialogue-panel">
     <div id="dialogue-speaker"></div>
