@@ -1,5 +1,5 @@
 /** Plugin economy shipped — movimientos de oro del jugador y deudas, end-to-end
- *  sin WS: carga real desde data/games/{id}/plugins, grant/pago/robo con clamp,
+ *  sin WS: carga real desde data/plugins (común a todos los juegos), grant/pago/robo con clamp,
  *  ciclo de deuda completo, ring buffer del ledger, vistas para el LLM,
  *  payloads defectuosos, coexistencia con commerce y save/resume. */
 import { describe, it } from "node:test";
@@ -49,8 +49,8 @@ function emittedTypes(tick: ReturnType<typeof dispatchPluginEvents>): string[] {
 }
 
 describe("economy plugin shipped", () => {
-  it("carga y activa en los tres juegos base con slice inicial vacío", () => {
-    for (const gameId of ["toledo_1200", "alta_fantasia", "cuentos_oscuros"]) {
+  it("carga desde data/plugins común y activa en todos los juegos con slice inicial vacío", () => {
+    for (const gameId of ["toledo_1200", "alta_fantasia", "cuentos_oscuros", "dev_combate_basico"]) {
       const { state, id } = makeSession(gameId);
       assert.deepEqual(
         economySlice(state, id),

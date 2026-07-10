@@ -1,7 +1,10 @@
 /** Loader de plugins de developer (next.md §7.3, génesis "developer").
  *
- * Lee `data/games/{gameId}/plugins/*.json`, valida cada manifest (zod →
- * hash → validación estática → replay de fixtures) y:
+ * Lee los manifests comunes de `data/plugins/*.json` (aplican a TODOS los
+ * juegos) y los específicos de `data/games/{gameId}/plugins/*.json`; un
+ * manifest local con el mismo `name` que uno común lo REEMPLAZA (permite
+ * personalizar un sistema por mundo sin duplicar el JSON). Cada manifest se
+ * valida igual (zod → hash → validación estática → replay de fixtures) y:
  *  - en sesión NUEVA, ejecuta las projections sobre el estado actual y
  *    registra cada plugin en NarrativeState (slice inicial poblado);
  *  - en RESUME, casa los registros del save contra los manifests del FS por
@@ -17,7 +20,7 @@
  *    (génesis sólo en sesión nueva).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import { runProjections, replayFixture, runMigrationStep } from "./dsl/evaluate.js";
@@ -53,16 +56,32 @@ export interface LoadedPlugin {
   file: string;
 }
 
-/** Carga y valida todos los manifests del juego (orden alfabético de archivo).
- *  Directorio ausente ⇒ []. Cualquier manifest inválido aborta la carga
- *  entera con PluginLoadError — fail-loud, sin activaciones parciales. */
+/** Carga y valida los manifests que aplican al juego: los comunes de
+ *  `{gamesDir}/../plugins` más los locales de `{gamesDir}/{gameId}/plugins`;
+ *  un local con el mismo `name` reemplaza al común. Directorios ausentes ⇒ [].
+ *  Cualquier manifest inválido aborta la carga entera con PluginLoadError —
+ *  fail-loud, sin activaciones parciales. */
 export function loadGamePluginManifests(gamesDir: string, gameId: string): LoadedPlugin[] {
-  const dir = join(gamesDir, gameId, "plugins");
+  const shared = loadManifestsFromDir(resolve(gamesDir, "..", "plugins"));
+  const local = loadManifestsFromDir(join(gamesDir, gameId, "plugins"));
+
+  const localNames = new Set(local.map((lp) => lp.manifest.name));
+  const merged = [...shared.filter((lp) => !localNames.has(lp.manifest.name)), ...local];
+
+  // Mismo name ya está resuelto por el override; dos manifests con names
+  // distintos no pueden colisionar en id (el name entra en el hash).
+  return merged;
+}
+
+/** Carga y valida todos los manifests de un directorio (orden alfabético de
+ *  archivo). Directorio ausente ⇒ []. */
+function loadManifestsFromDir(dir: string): LoadedPlugin[] {
   if (!existsSync(dir)) return [];
 
   const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
   const loaded: LoadedPlugin[] = [];
   const seenIds = new Map<string, string>();
+  const seenNames = new Map<string, string>();
 
   for (const file of files) {
     const fullPath = join(dir, file);
@@ -112,7 +131,16 @@ export function loadGamePluginManifests(gamesDir: string, gameId: string): Loade
     if (duplicate) {
       throw new PluginLoadError(fullPath, `id duplicado con ${duplicate}`);
     }
+    const nameClash = seenNames.get(manifest.name);
+    if (nameClash) {
+      throw new PluginLoadError(
+        fullPath,
+        `name '${manifest.name}' duplicado con ${nameClash} en el mismo directorio — ` +
+          `el override por name sólo aplica entre data/plugins/ y el juego`,
+      );
+    }
     seenIds.set(id, file);
+    seenNames.set(manifest.name, file);
     loaded.push({ id, manifest: { ...manifest, id }, file: fullPath });
   }
 
@@ -188,7 +216,7 @@ export function bindPluginsForResume(
     }
     throw new PluginIntegrityError(
       `el plugin '${record.name}' (${record.id.slice(0, 12)}…) del save no tiene manifest en disco — ` +
-        `restaura el JSON en data/games/{gameId}/plugins/.`,
+        `restaura el JSON en data/plugins/ (común) o data/games/{gameId}/plugins/.`,
       record.name,
       record.id,
       null,

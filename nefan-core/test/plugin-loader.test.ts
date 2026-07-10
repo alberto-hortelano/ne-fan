@@ -17,17 +17,28 @@ import {
 
 const FIXTURE_GAMES = fileURLToPath(new URL("fixtures/games", import.meta.url));
 
-/** Crea un juego temporal con los manifests dados (nombre → contenido). */
-function tmpGame(manifests: Record<string, unknown>): { gamesDir: string; gameId: string } {
-  const gamesDir = mkdtempSync(join(tmpdir(), "nefan-plugins-"));
+/** Crea un juego temporal con los manifests dados (nombre → contenido) y,
+ *  opcionalmente, manifests comunes en el `plugins/` hermano de games/. El
+ *  root temporal anida `games/` para aislar el directorio común del test. */
+function tmpGame(
+  manifests: Record<string, unknown>,
+  sharedManifests: Record<string, unknown> = {},
+): { gamesDir: string; gameId: string } {
+  const root = mkdtempSync(join(tmpdir(), "nefan-plugins-"));
+  const gamesDir = join(root, "games");
   const gameId = "tmpgame";
-  const pluginsDir = join(gamesDir, gameId, "plugins");
-  mkdirSync(pluginsDir, { recursive: true });
-  for (const [file, content] of Object.entries(manifests)) {
-    writeFileSync(
-      join(pluginsDir, file),
-      typeof content === "string" ? content : JSON.stringify(content, null, 2),
-    );
+  const writeAll = (dir: string, entries: Record<string, unknown>) => {
+    mkdirSync(dir, { recursive: true });
+    for (const [file, content] of Object.entries(entries)) {
+      writeFileSync(
+        join(dir, file),
+        typeof content === "string" ? content : JSON.stringify(content, null, 2),
+      );
+    }
+  };
+  writeAll(join(gamesDir, gameId, "plugins"), manifests);
+  if (Object.keys(sharedManifests).length > 0) {
+    writeAll(join(root, "plugins"), sharedManifests);
   }
   return { gamesDir, gameId };
 }
@@ -106,6 +117,52 @@ describe("loadGamePluginManifests", () => {
     assert.throws(
       () => loadGamePluginManifests(gamesDir, gameId),
       (err: unknown) => err instanceof PluginLoadError && /duplicado/.test(err.message),
+    );
+  });
+
+  it("loads shared plugins from the data/plugins sibling for every game", () => {
+    const shared = counterManifest();
+    const { gamesDir, gameId } = tmpGame({}, { "test_counter.json": shared });
+    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    assert.deepEqual(loaded.map((lp) => lp.manifest.name), ["test_counter"]);
+    // Un juego sin directorio local también recibe los comunes.
+    const other = loadGamePluginManifests(gamesDir, "otro_juego_sin_plugins");
+    assert.deepEqual(other.map((lp) => lp.manifest.name), ["test_counter"]);
+  });
+
+  it("a game-local manifest with the same name overrides the shared one", () => {
+    const shared = counterManifest();
+    const local = counterManifest();
+    local.description = "variante local del contador para este mundo";
+    const { gamesDir, gameId } = tmpGame(
+      { "test_counter.json": local },
+      { "test_counter.json": shared },
+    );
+    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].manifest.description, "variante local del contador para este mundo");
+  });
+
+  it("merges shared and local plugins with shared first", () => {
+    const shared = counterManifest();
+    const local = counterManifest();
+    local.name = "otro_contador";
+    const { gamesDir, gameId } = tmpGame(
+      { "otro_contador.json": local },
+      { "test_counter.json": shared },
+    );
+    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    assert.deepEqual(loaded.map((lp) => lp.manifest.name), ["test_counter", "otro_contador"]);
+  });
+
+  it("rejects two manifests with the same name inside one directory", () => {
+    const a = counterManifest();
+    const b = counterManifest();
+    b.version = 2; // contenido distinto (id distinto) pero mismo name
+    const { gamesDir, gameId } = tmpGame({ "a.json": a, "b.json": b });
+    assert.throws(
+      () => loadGamePluginManifests(gamesDir, gameId),
+      (err: unknown) => err instanceof PluginLoadError && /name 'test_counter' duplicado/.test(err.message),
     );
   });
 });
