@@ -1,0 +1,8 @@
+{
+  "game_id": "combatbad",
+  "title": "Combate desconocido",
+  "description": "Fixture de tests del bridge: systems.combat apunta a un id inexistente.",
+  "style_id": "estilo_test",
+  "world_brief": "Mundo mínimo de pruebas para el fail-loud de sistemas de combate desconocidos. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. ",
+  "systems": { "combat": "noexiste" }
+}

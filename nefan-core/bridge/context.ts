@@ -5,6 +5,7 @@
  *  fakes (socket capturador, AiClient falso) sin abrir sockets reales. */
 
 import type { GameSimulation } from "../src/simulation/game-loop.js";
+import type { CombatConfig } from "../src/types.js";
 import type { GameStore } from "../src/store/game-store.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../src/narrative/session-storage.js";
@@ -40,6 +41,9 @@ export type NarrativeAiClient = Pick<
 
 export interface BridgeContext {
   sim: GameSimulation;
+  /** Config de combate del bootstrap — los handlers de sesión la usan para
+   *  instanciar el CombatSystem que declare el game.json (systems.combat). */
+  combatConfig: CombatConfig;
   store: GameStore;
   narrative: NarrativeState;
   sessionStorage: SessionStorage;

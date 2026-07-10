@@ -1,0 +1,8 @@
+{
+  "game_id": "combatbasic",
+  "title": "Combate básico",
+  "description": "Fixture de tests del bridge: juego con systems.combat = basic.",
+  "style_id": "estilo_test",
+  "world_brief": "Mundo mínimo de pruebas para los tests del sistema de combate básico. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. ",
+  "systems": { "combat": "basic" }
+}

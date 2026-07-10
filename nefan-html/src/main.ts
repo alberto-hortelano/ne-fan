@@ -4,6 +4,8 @@
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
+import { combatRegistry } from "@nefan-core/src/combat/registry.js";
+import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import {
   composeBlueprint,
@@ -38,7 +40,10 @@ import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
 import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
 import { HistoryBrowser } from "./ui/history-browser.js";
-import { KeyboardHandler } from "./input/keyboard-handler.js";
+import { inputRegistry } from "./input/registry.js";
+import type { InputProvider } from "./input/input-provider.js";
+import { DevToolsInput } from "./input/dev-tools-input.js";
+import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
 import { errors } from "./ui/error-log.js";
@@ -217,7 +222,7 @@ const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
-const attackBtns = document.querySelectorAll(".attack-selector span");
+const attackSelectorEl = document.querySelector(".attack-selector") as HTMLElement;
 const sceneSelector = document.getElementById("room-selector") as HTMLSelectElement;
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
@@ -227,10 +232,26 @@ const interactPromptEl = document.getElementById("interact-prompt") as HTMLEleme
 const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
 
-const input = new KeyboardHandler(canvas, (type) => {
-  attackBtns.forEach(btn => {
-    btn.classList.toggle("active", (btn as HTMLElement).dataset.type === type);
+// Proveedor de input (plugin): default teclado+ratón; ?input=scripted instala
+// el driver programático de bench. Un id desconocido no arranca — fail-loud.
+const requestedInputId = new URLSearchParams(location.search).get("input") ?? undefined;
+let input: InputProvider;
+try {
+  input = inputRegistry.create(requestedInputId, { canvas });
+} catch (err) {
+  errors.push("input", `proveedor de input inválido (?input=${requestedInputId})`, err);
+  throw err;
+}
+input.onAttackTypeChanged = (type) => {
+  attackSelectorEl.querySelectorAll("span").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.type === type);
   });
+};
+
+// Teclas de desarrollo (G/X/B/N/R): fijas, independientes del provider.
+const devInput = new DevToolsInput({
+  isDialogueActive: () => input.dialogueActive,
+  isTileProposalActive: () => input.tileProposalActive,
 });
 
 // Hook de bench (narrative_lab / pruebas de navegador): estado vivo legible
@@ -265,15 +286,32 @@ let zoomTarget = renderer.clampScale(loadSavedZoom());
 let currentZoom = zoomTarget;
 renderer.setScale(currentZoom);
 
-// Click attack type selection
-attackBtns.forEach(btn => {
-  btn.addEventListener("click", () => {
-    const type = (btn as HTMLElement).dataset.type!;
-    input.state.selectedAttack = type;
-    attackBtns.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+// --- Sistema de combate de la sesión (catálogo → HUD + teclas) ---
+// Espejo de applySessionPerspective: el id viene congelado en el save
+// (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
+// y el mapeo 1..N se regeneran desde el catálogo que declara el sistema.
+let attackCatalog: readonly AttackSpec[] = [];
+/** Id efectivo del sistema de combate de la sesión ("" = sin sesión). */
+let sessionCombatSystemId = "";
+
+function applySessionCombatSystem(id: string): void {
+  sessionCombatSystemId = id;
+  attackCatalog = combatRegistry.create(id || undefined, config).attacks;
+  attackSelectorEl.innerHTML = "";
+  attackCatalog.forEach((spec, i) => {
+    const span = document.createElement("span");
+    span.dataset.type = spec.id;
+    span.textContent = `${i + 1}:${spec.label}`;
+    if (i === 0) span.classList.add("active");
+    // El provider es el dueño de la selección; el click es un origen más de
+    // intención y el toggle visual lo hace onAttackTypeChanged.
+    span.addEventListener("click", () => input.selectAttack(spec.id));
+    attackSelectorEl.appendChild(span);
   });
-});
+  input.setAttackBindings(attackCatalog.map((a) => a.id));
+  if (id) log(`Combate: ${attackCatalog.length === 1 ? "básico" : id} (${attackCatalog.length} ataque${attackCatalog.length === 1 ? "" : "s"})`);
+}
+applySessionCombatSystem(""); // arranque sin sesión: catálogo estándar
 
 // --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
@@ -938,6 +976,8 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       input: { ...input.state },
       dialogueActive: input.dialogueActive,
       perspective: sessionPerspective,
+      combatSystem: sessionCombatSystemId,
+      attackCatalog: attackCatalog.map((a) => a.id),
       blocked: {
         n: collidesAt(playerPos.x, playerPos.z - 0.5),
         s: collidesAt(playerPos.x, playerPos.z + 0.5),
@@ -947,20 +987,22 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     }),
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
-    // Gira al jugador desde el bench (el mousemove real exige pointer lock,
-    // imposible en automatización). Mismo camino que el ratón: yaw → snap.
+    // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
+    // flechas de dirección. Mismo camino que el giro real: yaw → snap.
     setYaw: (yaw: number) => {
       playerYaw = yaw;
       refreshPlayerForward();
     },
+    // Driver programático del provider "scripted" (?input=scripted) — API
+    // limpia para el bench en vez de sintetizar KeyboardEvents.
+    inputDriver: input instanceof ScriptedInputProvider ? input : undefined,
   };
 }
 
-// --- Mouse look ---
-const MOUSE_SENSITIVITY = 0.004;
+// --- Orientación con flechas de dirección ---
 let playerYaw = Math.PI; // facing -Z initially
 
-/** El giro NO es libre: el ratón acumula un yaw continuo, pero el forward
+/** El giro NO es libre: las flechas fijan un yaw objetivo, pero el forward
  *  efectivo (facing del sprite Y marco del WASD relativo) se snapea al eje de
  *  ANIMACIÓN más cercano de los 8 — sprite y desplazamiento coinciden
  *  siempre. En isométrica los ejes diagonales son los ejes X/Z del mundo:
@@ -970,23 +1012,53 @@ function refreshPlayerForward(): void {
   playerForward = { x: fx, y: 0, z: fz };
 }
 
+/** Flechas = direcciones de PANTALLA (↑ mira hacia arriba del canvas, se
+ *  combinan en diagonales). Se pasan a dirección de MUNDO con la proyección
+ *  de la sesión (viewToWorld es lineal, vale para vectores): en topdown
+ *  coinciden; en isométrica ↑ apunta al noroeste del mundo, etc. */
+function applyTurnKeys(): void {
+  let vx = 0, vy = 0;
+  if (input.state.turnUp) vy -= 1;
+  if (input.state.turnDown) vy += 1;
+  if (input.state.turnLeft) vx -= 1;
+  if (input.state.turnRight) vx += 1;
+  if (vx === 0 && vy === 0) return;
+  const [wx, wz] = sessionProjection.viewToWorld(vx, vy);
+  playerYaw = Math.atan2(wx, wz);
+  refreshPlayerForward();
+}
+
+// El pointer lock se conserva para atacar con LMB (y ocultar el cursor);
+// el ratón ya NO orienta al personaje.
 canvas.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
     canvas.requestPointerLock();
   }
 });
 
-document.addEventListener("mousemove", (e) => {
-  if (document.pointerLockElement !== canvas) return;
-  playerYaw -= e.movementX * MOUSE_SENSITIVITY;
-  refreshPlayerForward();
-});
-
 // --- Utility ---
 
 function getSelectedParams(): EffectiveParams {
-  const weaponData = config.weapons[playerWeaponId] ?? config.weapons["unarmed"];
-  return getEffectiveParams(input.state.selectedAttack, config.attack_types, weaponData);
+  const type = input.state.selectedAttack;
+  if (config.attack_types[type]) {
+    const weaponData = config.weapons[playerWeaponId] ?? config.weapons["unarmed"];
+    return getEffectiveParams(type, config.attack_types, weaponData);
+  }
+  // Ataques fuera de combat_config.json (p.ej. "strike" del combate básico):
+  // params sintéticos desde el catálogo — solo alimentan el feedback visual
+  // del aro de ataque (el daño real lo resuelve el sistema en el bridge).
+  const spec = attackCatalog.find((a) => a.id === type);
+  if (!spec) {
+    throw new Error(`getSelectedParams: attack '${type}' is neither in combat_config nor in the session catalog`);
+  }
+  return {
+    optimal_distance: spec.displayRange / 2,
+    distance_tolerance: spec.displayRange / 2, // el aro cubre [0, displayRange]
+    area_radius: spec.displayRange,
+    base_damage: 0,
+    damage_reduction: 0,
+    wind_up_time: 0,
+  };
 }
 
 // --- Dialogue callbacks ---
@@ -1005,26 +1077,25 @@ sceneSelector.addEventListener("change", () => {
 
 // --- Respawn ---
 
-window.addEventListener("keydown", (e) => {
-  if (e.key === "r") {
-    const p = gameClient?.getCombatant("player");
-    if (p && p.health <= 0) {
-      // Punto libre cercano: la posición actual si no colisiona; si no, el
-      // centro del tile actual; último recurso, el origen legacy.
-      let rp = { x: playerPos.x, y: 0, z: playerPos.z };
-      if (collidesAt(rp.x, rp.z)) {
-        const under = tileStore.getAt(playerPos.x, playerPos.z);
-        rp = under
-          ? { x: (under.rect.minX + under.rect.maxX) / 2, y: 0, z: (under.rect.minZ + under.rect.maxZ) / 2 }
-          : { x: 0, y: 0, z: 2 };
-      }
-      gameClient?.respawn(rp);
-      playerPos.x = rp.x;
-      playerPos.z = rp.z;
-      log("Respawned!");
-    }
+/** R (one-shot del provider): revive al player si está muerto. La condición
+ *  de negocio vive aquí; el provider solo transporta la intención. */
+function handleRespawnRequest(): void {
+  const p = gameClient?.getCombatant("player");
+  if (!p || p.health > 0) return;
+  // Punto libre cercano: la posición actual si no colisiona; si no, el
+  // centro del tile actual; último recurso, el origen legacy.
+  let rp = { x: playerPos.x, y: 0, z: playerPos.z };
+  if (collidesAt(rp.x, rp.z)) {
+    const under = tileStore.getAt(playerPos.x, playerPos.z);
+    rp = under
+      ? { x: (under.rect.minX + under.rect.maxX) / 2, y: 0, z: (under.rect.minZ + under.rect.maxZ) / 2 }
+      : { x: 0, y: 0, z: 2 };
   }
-});
+  gameClient?.respawn(rp);
+  playerPos.x = rp.x;
+  playerPos.z = rp.z;
+  log("Respawned!");
+}
 
 // --- Connection status UI ---
 
@@ -1072,10 +1143,13 @@ function gameLoop(now: number): void {
     renderer.setScale(currentZoom);
   }
 
+  // R: respawn (solo surte efecto con el player muerto).
+  if (input.consumeRespawn()) handleRespawnRequest();
+
   // Generación IA del escenario (dev): G regenera la imagen del tile ACTIVO
   // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
   // a ErrorLog; el .catch evita unhandled rejection.
-  if (input.consumeGenerateScene()) {
+  if (devInput.consumeGenerateScene()) {
     if (sessionRenderMode === "vector") {
       log("G ignorada: la partida es vectorial (elegido al crearla)");
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
@@ -1083,7 +1157,7 @@ function gameLoop(now: number): void {
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
   // auto-segmentación + clasificación por visión → occluders (tall) y
   // colisión derivada (solid). Requiere imagen previa (G/auto).
-  if (input.consumeSegmentScene()) {
+  if (devInput.consumeSegmentScene()) {
     if (activeTileKey) {
       const k = activeTileKey;
       void sceneImageController.analyzeSceneForTile(k)
@@ -1093,18 +1167,18 @@ function gameLoop(now: number): void {
   }
   // B alterna el overlay de colisión (esquema, derivada de imagen, recortes)
   // sobre la escena, para juzgar la precisión del análisis.
-  if (input.consumeToggleCollisionDebug()) {
+  if (devInput.consumeToggleCollisionDebug()) {
     const on = renderer.toggleDebugCollision();
     console.log(`[debug] collision overlay ${on ? "ON" : "OFF"}`);
   }
   // N (descubrimiento) quedó integrada en el análisis completo de X.
-  if (input.consumeDiscoverObjects()) {
+  if (devInput.consumeDiscoverObjects()) {
     errors.push("scene", "N está integrada en X (análisis completo del tile) — usa X");
   }
   // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
   // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:
   // requiere terminal de Claude Code escuchando; si no, el error va al log.
-  if (input.consumeReviewBlueprint()) {
+  if (devInput.consumeReviewBlueprint()) {
     void reviewBlueprintAndApply().catch(() => {});
   }
 
@@ -1116,6 +1190,8 @@ function gameLoop(now: number): void {
     tileConfirmPromptEl.style.display = "none";
   }
   if (!dialoguePanel.isVisible) {
+    applyTurnKeys();
+
     let inputFwd = 0, inputRight = 0;
     if (input.state.up) inputFwd += 1;
     if (input.state.down) inputFwd -= 1;
@@ -1124,12 +1200,12 @@ function gameLoop(now: number): void {
 
     const speed = input.state.sprint ? SPRINT_SPEED : SPEED;
     if (inputFwd !== 0 || inputRight !== 0) {
-      // WASD RELATIVO al personaje (Souls-like, como el cliente 3D): el ratón
-      // orienta (playerYaw, pointer lock) y las teclas se expresan en su
-      // marco — W avanza hacia donde mira, S camina DE ESPALDAS, A/D son
-      // strafe lateral. El movimiento nunca toca la orientación: por eso se
-      // puede retroceder o desplazarse de lado sin dejar de encarar al
-      // enemigo. Se renormaliza para que la diagonal no sea más rápida.
+      // WASD RELATIVO al personaje (Souls-like, como el cliente 3D): las
+      // flechas orientan (playerYaw) y las teclas se expresan en su marco —
+      // W avanza hacia donde mira, S camina DE ESPALDAS, A/D son strafe
+      // lateral. El movimiento nunca toca la orientación: por eso se puede
+      // retroceder o desplazarse de lado sin dejar de encarar al enemigo.
+      // Se renormaliza para que la diagonal no sea más rápida.
       // playerForward está SNAPEADO a los 8 ejes de animación
       // (refreshPlayerForward) y las combinaciones de teclas bisecan ejes
       // adyacentes (45°), así que TODA dirección de desplazamiento cae en uno
@@ -1652,7 +1728,7 @@ narrativeClient.onNarrativeEvent((event) => {
         dialoguePanel.show(effect.speaker, effect.text, effect.choices.map((c) =>
           typeof c === "string" ? c : c.text,
         ));
-        // Suprime movimiento/ataque del KeyboardHandler mientras el panel está
+        // Suprime movimiento/ataque del InputProvider mientras el panel está
         // abierto (las teclas 1-3/T las gestiona el propio panel).
         input.dialogueActive = true;
         break;
@@ -1758,6 +1834,7 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionPerspective(res.state.world?.perspective ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionCombatSystem(res.state.world?.combat_system ?? "");
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
@@ -1767,6 +1844,7 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionPerspective(res.state.world?.perspective ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionCombatSystem(res.state.world?.combat_system ?? "");
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets

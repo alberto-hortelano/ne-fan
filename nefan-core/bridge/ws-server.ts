@@ -61,6 +61,7 @@ const narrativeSubscribers = new Set<WebSocket>();
 
 const ctx: BridgeContext = {
   sim,
+  combatConfig: config,
   store,
   narrative,
   sessionStorage,

@@ -60,6 +60,15 @@ export const GameMetaSchema = z
     default_perspective: z.enum(["topdown", "isometric"]).optional(),
     /** Resumen del mundo (~1.200 chars) inyectado en CADA turno del LLM. */
     world_brief: z.string().min(100),
+    /** Sistemas de juego intercambiables (registros de src/systems/). Ausente
+     *  = defaults (combat: "standard"). La validación semántica del id la
+     *  hace el bridge contra el registro — el loader es FS/zod puro. */
+    systems: z
+      .object({
+        combat: SafeId.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type GameMeta = z.infer<typeof GameMetaSchema>;

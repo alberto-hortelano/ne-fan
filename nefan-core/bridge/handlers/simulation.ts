@@ -1,6 +1,7 @@
 /** Handlers del hot loop: input, load_room, respawn y add_combatants. */
 
 import { createCombatant } from "../../src/combat/combatant.js";
+import { combatRegistry } from "../../src/combat/registry.js";
 import { activateByPosition } from "./tile.js";
 import { getEnemyStates, type BridgeContext, type ClientSocket } from "../context.js";
 import type {
@@ -52,6 +53,12 @@ export function handleLoadRoom(
   const playerHp = inSession ? livePlayer!.health : playerMaxHp;
   // Reset simulation for new room
   ctx.sim.reset();
+  // Sin sesión (fixtures legacy), el cliente asume el catálogo ESTÁNDAR: el
+  // sim debe coincidir — si conservara el sistema de la sesión anterior
+  // (p.ej. basic), un ataque "quick" del cliente lanzaría en cada tick.
+  if (ctx.narrative.session_id === "") {
+    ctx.sim.setCombatSystem(combatRegistry.create(undefined, ctx.combatConfig));
+  }
   ctx.store.dispatch("player_respawned", { hp: playerHp, pos: [0, 0, 0] });
   ctx.sim.addCombatant(
     createCombatant(

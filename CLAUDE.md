@@ -368,6 +368,15 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 - **Mirror GD** (`godot/scripts/autoloads/narrative_state.gd`): lee schema 1..3 y escribe v3 preservando en `_extra_fields` los campos que no modela (`world_map`, `plugins`) — un save del bridge sobrevive intacto a F5/F9 desde Godot. Los plugins viven en la sesión del bridge (`start_session`/`resume_session`).
 - **Pendiente** (único, opcional): evolución en runtime vía `plugin_register` (versión mayor que reemplace al plugin vigente con su `migrate`); hoy la migración sólo opera en resume.
 
+## Sistemas intercambiables (systems registry)
+
+Distintos de los plugins declarativos: **módulos TS de hot loop** con varias implementaciones tras una interfaz, registrados en un `createSystemRegistry` (`nefan-core/src/systems/registry.ts`). Regla común: id ausente → default (la implementación actual); id desconocido → error con la lista de disponibles (fail-loud).
+
+- **Combate** (`nefan-core/src/combat/registry.ts`): interfaz `CombatSystem` (catálogo `attacks`, `normalizeAttack`, `windUpTime`, `addPendingImpact`, `resolve`) inyectada en `GameSimulation`; la orquestación y la state machine de `combatant.ts` son compartidas, así el protocolo del bridge no cambia entre implementaciones. Implementaciones: `standard` (envuelve CombatManager/resolver, fórmula completa) y `basic` (un solo ataque "strike", daño fijo 15 a ≤2 m, sin armas ni matriz). Selección: `game.json` → `systems: {combat: "basic"}` (schema en `games/loader.ts`), validada y CONGELADA en el save (`world.combat_system`) en `start_session`; el resume la restaura (save sin campo = estándar; id retirado = resume abortado). `load_room` sin sesión vuelve al estándar (los fixtures asumen ese catálogo). Juego dev de prueba: `data/games/dev_combate_basico`.
+- **Cliente 2D**: el HUD de ataques se genera desde el catálogo del sistema de la sesión (`applySessionCombatSystem` en main.ts) — con `basic` hay un solo botón "1:Golpe" y las teclas 1..N se remapean.
+- **Input del cliente 2D** (`nefan-html/src/input/registry.ts`): interfaz `InputProvider` (estado continuo + one-shots consumibles + `setAttackBindings`/`selectAttack`). Implementaciones: `keyboard` (default) y `scripted` (driver programático para bench E2E, expuesto como `window.__nefan.inputDriver`). Selección por query param `?input=` (capacidad del cliente, no del mundo). Las teclas dev (G/X/B/N/R-review) viven en `DevToolsInput`, fijo y fuera del provider.
+- **Candidatos futuros** (mismo patrón): PlayerController (prerequisito para touch/gamepad), EnemyAI (`systems.enemy_ai`), Renderer 2D, transporte narrativo. CollisionSystem y el pipeline de imagen ya son inyectables vía `*Deps`; formalizar registro sólo si aparece una 2ª implementación.
+
 ## Sistema de combate
 
 **Formula:** `calidad = factor_distancia * factor_precision * factor_tactico * base_damage * weapon_mod`

@@ -55,6 +55,10 @@ export interface NarrativeWorldState {
    *  "vector" = se juega con los blueprints compuestos. Campo aditivo: saves
    *  previos ("") conservan el comportamiento legacy (toggle local). */
   render_mode: string;
+  /** Sistema de combate (id del combatRegistry: "standard" | "basic"),
+   *  CONGELADO al crear la sesión desde game.json.systems.combat. Campo
+   *  aditivo: saves previos ("") = "standard". */
+  combat_system: string;
 }
 
 /** Un elemento jugable del ANÁLISIS de la imagen IA de un tile: lo que la

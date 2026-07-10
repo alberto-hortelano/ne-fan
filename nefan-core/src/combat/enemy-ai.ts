@@ -1,9 +1,9 @@
 /** Enemy AI — movement, attack decisions, blocking, dodging.
  *  FSM: APPROACH → COMBAT → RETREAT. Configurable difficulty + aggression. */
 
-import type { CombatantState, EnemyPersonality, CombatConfig, CombatEvent } from "../types.js";
+import type { CombatantState, EnemyPersonality, CombatEvent } from "../types.js";
 import { distanceXZ, sub, normalized, scale, add } from "../vec3.js";
-import { getEffectiveWindUp } from "./combat-data.js";
+import type { CombatSystem } from "./combat-system.js";
 import { buildPersonality } from "./difficulty-presets.js";
 import * as Combatant from "./combatant.js";
 
@@ -59,16 +59,16 @@ export class EnemyAI {
   private timer = 0;
   private cooldownTimer = 0;
   private rng: SeededRng;
-  private config: CombatConfig;
+  private system: CombatSystem;
 
   constructor(
     combatantId: string,
     personality: EnemyPersonality,
-    config: CombatConfig,
+    system: CombatSystem,
     rng?: SeededRng,
   ) {
     this.combatantId = combatantId;
-    this.config = config;
+    this.system = system;
     this.rng = rng ?? new SeededRng();
 
     // Merge difficulty/aggression presets with personality overrides
@@ -168,42 +168,39 @@ export class EnemyAI {
     // Aggression roll
     if (this.rng.next() > this.aggression) return [];
 
-    // Block chance — choose defensive instead of attacking
-    if (this.rng.next() < this.blockChance) {
-      const weaponData = this.config.weapons[self.weaponId]
-        ?? this.config.weapons["unarmed"];
-      const defType = this.config.attack_types["defensive"];
-      if (defType) {
-        const windUp = getEffectiveWindUp(defType, weaponData, "defensive");
-        this.cooldownTimer = this.reactionTime * this.attackCooldownMult;
-        return Combatant.startAttack(self, "defensive", windUp);
-      }
+    // Block chance — choose defensive instead of attacking. En sistemas sin
+    // "defensive" (combate básico) la tirada se consume igual (determinismo
+    // del RNG sembrado) pero nunca bloquea.
+    if (this.rng.next() < this.blockChance && this.system.normalizeAttack("defensive") !== null) {
+      const windUp = this.system.windUpTime("defensive", self.weaponId);
+      this.cooldownTimer = this.reactionTime * this.attackCooldownMult;
+      return Combatant.startAttack(self, "defensive", windUp);
     }
 
     // Pick attack
     const chosen = this.pickAttack(dist);
-    if (!chosen) return [];
-
-    const weaponData = this.config.weapons[self.weaponId]
-      ?? this.config.weapons["unarmed"];
-    const attackType = this.config.attack_types[chosen];
-    if (!attackType) return [];
-
-    const windUp = getEffectiveWindUp(attackType, weaponData, chosen);
+    const windUp = this.system.windUpTime(chosen, self.weaponId);
     this.cooldownTimer = this.reactionTime * this.attackCooldownMult;
     return Combatant.startAttack(self, chosen, windUp);
   }
 
   private pickAttack(dist: number): string {
-    const candidates = [...this.preferredAttacks];
-    if (candidates.length === 0) candidates.push("medium");
+    // Solo ataques que el sistema vigente conozca; si la personalidad no
+    // aporta ninguno válido, el primero del catálogo (en básico: "strike").
+    const candidates = this.preferredAttacks
+      .map((id) => this.system.normalizeAttack(id))
+      .filter((id): id is string => id !== null);
+    if (candidates.length === 0 && this.system.normalizeAttack("medium") !== null) {
+      candidates.push("medium");
+    }
 
-    if (dist < 1.5 && this.config.attack_types["quick"]) {
+    if (dist < 1.5 && this.system.normalizeAttack("quick") !== null) {
       candidates.push("quick");
-    } else if (dist > 2.5 && this.config.attack_types["heavy"]) {
+    } else if (dist > 2.5 && this.system.normalizeAttack("heavy") !== null) {
       candidates.push("heavy");
     }
 
+    if (candidates.length === 0) candidates.push(this.system.attacks[0].id);
     return candidates[this.rng.nextInt(candidates.length)];
   }
 }
