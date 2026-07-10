@@ -367,16 +367,33 @@ describe("NarrativeState state queries", () => {
 });
 
 describe("NarrativeState.serializeForLlm", () => {
-  it("produces compact context with last 5 dialogues", () => {
+  it("produces compact context with last 10 dialogues", () => {
     const s = makeState();
     s.startNewSession("g");
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 12; i++) {
       s.recordDialogueEvent(`speaker${i}`, `text${i}`, [`a${i}`, `b${i}`], 0);
     }
     const ctx = s.serializeForLlm();
-    assert.equal(ctx.recent_dialogues.length, 5);
+    assert.equal(ctx.recent_dialogues.length, 10);
     assert.equal(ctx.recent_dialogues[0].speaker, "speaker2");
     assert.equal(ctx.recent_dialogues[0].chosen, "a2");
+  });
+
+  it("exposes the chosen text of bridge dialogue_choice events (choices vacías) y la réplica del NPC", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    // El bridge registra las elecciones con el texto elegido en `text` y
+    // choices: [] (handleDialogueChoice) — el motor debe ver qué se eligió.
+    const evtId = s.recordDialogueEvent("Yishaq", "Pregunto por los libros", [], 2);
+    s.recordNarrativeConsequence(evtId, {
+      type: "dialogue",
+      speaker: "Yishaq",
+      text: "Curiosa cosa: sois el segundo que pregunta.",
+    });
+    const ctx = s.serializeForLlm();
+    const last = ctx.recent_dialogues.at(-1)!;
+    assert.equal(last.chosen, "Pregunto por los libros");
+    assert.equal(last.npc_reply, "Curiosa cosa: sois el segundo que pregunta.");
   });
 
   it("compacts entities to id/type/scene/position/spawn_reason", () => {

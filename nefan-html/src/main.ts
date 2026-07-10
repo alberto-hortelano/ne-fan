@@ -1118,12 +1118,25 @@ let lastTime = performance.now();
 // Evita reenviar interact_entity mientras el motor narrativo aún responde.
 let interactCooldownUntil = 0;
 
+// Chrome congela requestAnimationFrame en pestañas ocultas (document.hidden),
+// lo que pausa la simulación entera — un problema real para testing
+// automatizado y para partidas desatendidas con el bridge. Fallback: cuando la
+// pestaña está oculta el loop sigue con setTimeout a ~15 fps (render barato,
+// la simulación usa delta real); al volver a ser visible retoma rAF.
+function scheduleNextFrame(): void {
+  if (document.hidden) {
+    setTimeout(() => gameLoop(performance.now()), 66);
+  } else {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
 function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
   if (!gameClient) {
-    requestAnimationFrame(gameLoop);
+    scheduleNextFrame();
     return;
   }
 
@@ -1476,7 +1489,7 @@ function gameLoop(now: number): void {
     );
   }
 
-  requestAnimationFrame(gameLoop);
+  scheduleNextFrame();
 }
 
 // --- Init ---
@@ -1893,4 +1906,4 @@ async function runTitleFlow(): Promise<void> {
   }
 }
 
-requestAnimationFrame(gameLoop);
+scheduleNextFrame();

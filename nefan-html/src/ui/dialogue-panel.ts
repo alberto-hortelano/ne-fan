@@ -54,11 +54,11 @@ export class DialoguePanel {
           this.onFreeText(value);
         }
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
       } else if (e.key === "Escape") {
         this._closeFreeText();
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
       }
     });
 
@@ -70,7 +70,7 @@ export class DialoguePanel {
       if (e.key === "t" || e.key === "T") {
         this._openFreeText();
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         return;
       }
 
@@ -82,7 +82,7 @@ export class DialoguePanel {
           this.hide();
           this.onChoice(idx, text);
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
         }
       } else {
         // Advance mode: E, Space, Enter
@@ -96,7 +96,7 @@ export class DialoguePanel {
             this.onAdvanced();
           }
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
         }
       }
     });

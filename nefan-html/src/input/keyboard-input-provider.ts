@@ -44,6 +44,11 @@ export class KeyboardInputProvider implements InputProvider {
       // Dialogue mode suppresses combat/movement keys
       // (dialogue-panel.ts handles its own keys with stopPropagation)
       if (this.dialogueActive) return;
+      // stopPropagation NO corta otros listeners del mismo window: si el
+      // panel de diálogo ya consumió esta tecla (elección 1-3 que cierra el
+      // diálogo y apaga dialogueActive en el mismo evento), sin esta guarda
+      // la tecla se filtraba al selector de ataque del HUD.
+      if (e.defaultPrevented) return;
       // Synthetic events (autofill, IME, etc.) can fire without `key`.
       if (typeof e.key !== "string") return;
 

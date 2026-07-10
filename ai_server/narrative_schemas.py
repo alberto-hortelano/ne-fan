@@ -19,6 +19,28 @@ GENERATE_SCENE_PROMPT_WORLD_RULES = """WORLD & ENGINE RULES (always apply — mi
   bipeds; only humanoid animations exist. Never spawn talking animals, beasts
   or non-humanoid monsters; supernatural beings appear in human form.
 - NPC dialogue and descriptions are in Spanish, matching the world's register.
+
+NARRATIVE DIRECTION (how to run a story worth playing):
+- NPCs have their OWN agendas, loyalties and fears. Nobody dumps everything
+  they know: information, favours and trust are currency — make the player
+  EARN them (payment, leverage, risk, reciprocity). An NPC may lie, deflect
+  or half-answer when it serves their interest.
+- FOLLOW THE PLAYER, don't rail-road. When they ignore your hook, deviate or
+  invent something (a debt, an acquaintance, a lie), pick it up and WEAVE it
+  into the world's threads instead of steering back. Off-script play is the
+  point of this engine.
+- Actions have believable consequences: threats close doors, generosity opens
+  them, lies eventually surface. Let aggressive or foolish choices COST
+  something — a world without pushback is boring.
+- Escalate quietly: every few turns introduce a complication that raises the
+  stakes (a rival got there first, a patron grows suspicious, a deadline
+  moves up) via schedule_event / spawn_entity — without erasing player agency.
+- NO generic fetch-quests. A task is only worth giving if it is entangled
+  with someone's agenda and has a cost or a secret attached.
+- MEMORY DISCIPLINE: story_so_far + story_update deltas are the engine's ONLY
+  long-term memory (dialogue history keeps just the last few exchanges).
+  Record every fact you'll need later — names, debts, pacts, who knows what —
+  as story_update deltas, or the world WILL contradict itself.
 """
 
 GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a generative open-world RPG whose world identity comes from the request context (see WORLD & ENGINE RULES below). You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are.
@@ -1381,8 +1403,22 @@ CRITICAL — when free_text is non-empty:
 - Write dialogue text in the same language the player used (match free_text).
 
 CRITICAL — when free_text is empty (numbered choice only):
-- React in proportion: a plain acknowledgement can return few or no
-  consequences, but meaningful choices deserve a visible reaction.
+- React in PROPORTION to what the choice means. If it asks a question, makes
+  a commitment, an offer or a threat, the NPC MUST answer via a `dialogue`
+  consequence (with follow-up choices when the conversation continues) — an
+  empty response here reads as the game ignoring the player.
+- Return an empty consequences array ONLY for trivial closers ("me voy",
+  "adiós", silent nods) where the conversation naturally ends.
+- Record a story_update whenever the choice changes what anyone knows, owes
+  or intends — those deltas are your only long-term memory.
+
+NARRATIVE DIRECTION: NPCs have their own agendas and never dump all they know
+(information, favours and trust are currency the player must earn); follow the
+player's deviations and weave them into the world's threads instead of
+rail-roading; let threats, lies and generosity have believable costs and
+consequences; escalate stakes every few turns with a quiet complication; no
+generic fetch-quests — a task is only worth giving if it is entangled with
+someone's agenda and carries a cost or a secret.
 
 RULES:
 - Do NOT spawn things that are already in `entities`.

@@ -196,7 +196,7 @@ export interface LlmContext {
     position: [number, number, number];
     spawn_reason: string;
   }>;
-  recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string }>;
+  recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string; npc_reply?: string }>;
   rooms_visited: number;
   /** Documento COMPLETO del mundo (world.md). Solo se adjunta en el request
    *  de bootstrap de una sesión nueva — en turnos posteriores el motor usa
