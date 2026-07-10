@@ -13,7 +13,7 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
-import { FrontierManager } from "./world/frontier.js";
+import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
 import { viewProjectionFor } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
@@ -224,6 +224,7 @@ const connectionStatus = document.getElementById("connection-status") as HTMLEle
 const dialoguePanel = new DialoguePanel();
 const travelPanel = new TravelPanel();
 const interactPromptEl = document.getElementById("interact-prompt") as HTMLElement;
+const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
 
 const input = new KeyboardHandler(canvas, (type) => {
@@ -288,6 +289,13 @@ const tileStore = new TileStore();
 /** Prefetch proactivo + velo direccional de fronteras. El jugador nunca se
  *  congela: el bloqueo es solo direccional (colisión virtual del borde). */
 const frontier = new FrontierManager();
+/** Nombre en español del borde hacia el que se propone generar un tile. */
+const EDGE_ES: Record<FrontierEdge, string> = {
+  north: "norte",
+  south: "sur",
+  east: "este",
+  west: "oeste",
+};
 /** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
 let activeTileKey: string | null = null;
 
@@ -1102,6 +1110,11 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
+  if (dialoguePanel.isVisible) {
+    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas).
+    input.tileProposalActive = false;
+    tileConfirmPromptEl.style.display = "none";
+  }
   if (!dialoguePanel.isVisible) {
     let inputFwd = 0, inputRight = 0;
     if (input.state.up) inputFwd += 1;
@@ -1137,20 +1150,40 @@ function gameLoop(now: number): void {
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Frontera del plano: prefetch proactivo al acercarse a bordes sin tile,
-    // velo direccional pegado al borde, promoción a blocking si espera.
+    // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
+    // el vecino (gasta LLM/créditos — el jugador confirma con Y o rechaza con
+    // N), velo direccional pegado al borde, promoción a blocking si espera.
     if (activeSessionId && tileStore.hasGridTiles) {
-      const { veil, timedOut } = frontier.tick(
+      const requestTile = (tx: number, ty: number, edge: FrontierEdge, reason: "prefetch" | "blocking"): void =>
+        narrativeClient.requestTile(tx, ty, reason, edge);
+      const { veil, timedOut, proposal } = frontier.tick(
         performance.now(),
         playerPos.x,
         playerPos.z,
         tileStore,
-        (tx, ty, edge, reason) => narrativeClient.requestTile(tx, ty, reason, edge),
+        requestTile,
       );
       renderer.setEdgeLoading(veil?.edge ?? null, veil?.text ?? "");
       for (const key of timedOut) {
         errors.push("narrative", `El tile ${key} no llegó a tiempo (timeout); se reintentará al acercarse.`);
       }
+      input.tileProposalActive = proposal !== null;
+      if (proposal) {
+        tileConfirmPromptEl.innerHTML =
+          `¿Explorar hacia el ${EDGE_ES[proposal.edge]}? Se generará una zona nueva — <b>[Y]</b> sí · <b>[N]</b> no`;
+        tileConfirmPromptEl.style.display = "block";
+        if (input.consumeTileConfirm()) {
+          frontier.confirmProposal(performance.now(), requestTile);
+          log(`Generando la zona al ${EDGE_ES[proposal.edge]} (${proposal.key})...`);
+        } else if (input.consumeTileDecline()) {
+          frontier.declineProposal();
+        }
+      } else {
+        tileConfirmPromptEl.style.display = "none";
+      }
+    } else {
+      input.tileProposalActive = false;
+      tileConfirmPromptEl.style.display = "none";
     }
 
     // Activación por posición: al pisar otro tile, refrescar la "escena

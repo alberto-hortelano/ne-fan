@@ -30,6 +30,10 @@ export class KeyboardHandler {
   /** When true, movement and combat keys are suppressed (dialogue active). */
   dialogueActive = false;
 
+  /** True mientras hay una propuesta de tile en pantalla: Y/N responden a
+   *  ella (y N deja de significar "descubrir props"). Lo fija el game loop. */
+  tileProposalActive = false;
+
   /** Intención de zoom acumulada con signo (rueda + teclas), pendiente de
    *  consumir por el game loop. +1 ≈ un paso de acercar, -1 de alejar. */
   private zoomAccum = 0;
@@ -42,6 +46,8 @@ export class KeyboardHandler {
   private collisionDebugRequested = false;
   private discoverRequested = false;
   private reviewRequested = false;
+  private tileConfirmRequested = false;
+  private tileDeclineRequested = false;
 
   private onAttackTypeChanged?: (type: string) => void;
 
@@ -72,8 +78,17 @@ export class KeyboardHandler {
         case "x": if (!e.repeat) this.segmentRequested = true; break;
         // B = toggle de los Bordes de colisión pintados sobre la imagen (debug).
         case "b": if (!e.repeat) this.collisionDebugRequested = true; break;
-        // N = descubrir props Nuevos que la IA inventó (SAM3 open-vocab).
-        case "n": if (!e.repeat) this.discoverRequested = true; break;
+        // N = descubrir props Nuevos que la IA inventó (SAM3 open-vocab);
+        // con propuesta de tile en pantalla, N la rechaza.
+        case "n":
+          if (e.repeat) break;
+          if (this.tileProposalActive) this.tileDeclineRequested = true;
+          else this.discoverRequested = true;
+          break;
+        // Y = aceptar la propuesta de generar el tile vecino.
+        case "y":
+          if (!e.repeat && this.tileProposalActive) this.tileConfirmRequested = true;
+          break;
         // R = Revisar el blueprint con Claude (visión vía MCP) antes de
         // generar con G. Opt-in: requiere terminal de Claude Code escuchando.
         case "r": if (!e.repeat) this.reviewRequested = true; break;
@@ -162,6 +177,24 @@ export class KeyboardHandler {
   consumeDiscoverObjects(): boolean {
     if (this.discoverRequested) {
       this.discoverRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per Y press con propuesta de tile activa (aceptar). */
+  consumeTileConfirm(): boolean {
+    if (this.tileConfirmRequested) {
+      this.tileConfirmRequested = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** True once per N press con propuesta de tile activa (rechazar). */
+  consumeTileDecline(): boolean {
+    if (this.tileDeclineRequested) {
+      this.tileDeclineRequested = false;
       return true;
     }
     return false;
