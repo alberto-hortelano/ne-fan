@@ -138,10 +138,27 @@ describe("games loader", () => {
     );
   });
 
+  it("systems.combat parsea; claves extra en systems se rechazan (strict)", () => {
+    const base = {
+      game_id: "x",
+      title: "t",
+      description: "d",
+      style_id: "s",
+      world_brief: BRIEF,
+    };
+    assert.equal(GameMetaSchema.parse(base).systems, undefined);
+    assert.equal(
+      GameMetaSchema.parse({ ...base, systems: { combat: "basic" } }).systems?.combat,
+      "basic",
+    );
+    assert.throws(() => GameMetaSchema.parse({ ...base, systems: { combate: "basic" } }));
+    assert.throws(() => GameMetaSchema.parse({ ...base, systems: { combat: "id con espacios" } }));
+  });
+
   it("los juegos y estilos shipped del repo validan", () => {
     const games = listGames(REAL_GAMES);
     const ids = games.map((g) => g.game_id);
-    assert.deepEqual(ids, ["alta_fantasia", "cuentos_oscuros", "toledo_1200"]);
+    assert.deepEqual(ids, ["alta_fantasia", "cuentos_oscuros", "dev_combate_basico", "toledo_1200"]);
     for (const g of games) {
       assert.ok(g.world_brief.length >= 100, `${g.game_id} brief too short`);
       // Su estilo por defecto debe existir y validar.

@@ -1,0 +1,8 @@
+{
+  "game_id": "dev_combate_basico",
+  "title": "Dev: combate básico",
+  "description": "Mundo de desarrollo para probar el sistema de combate básico (un solo ataque, daño fijo). No es contenido de juego.",
+  "style_id": "medievo_crudo",
+  "world_brief": "**Propósito**: mundo mínimo de DESARROLLO para ejercitar el sistema de combate básico (systems.combat = basic): un único ataque «Golpe» con daño fijo y alcance corto, sin armas ni matriz táctica.\n\n**Lugar**: una pradera templada con un caserío abandonado y un bosquecillo al norte. Sin historia previa: lo que ocurra lo improvisa el motor narrativo.\n\n**Habitantes**: un puñado de aldeanos genéricos y algún merodeador hostil cerca de las ruinas, útiles como sacos de pruebas de combate.\n\n**Tono**: neutro y funcional. El objetivo es verificar mecánicas (HUD de un solo ataque, daño fijo, muerte y respawn), no contar nada memorable.",
+  "systems": { "combat": "basic" }
+}

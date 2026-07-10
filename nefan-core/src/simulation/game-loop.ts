@@ -3,10 +3,10 @@
 
 import type { CombatantState, CombatConfig, CombatEvent, EnemyPersonality, Vec3 } from "../types.js";
 import { GameStore } from "../store/game-store.js";
-import { CombatManager } from "../combat/combat-manager.js";
+import type { CombatSystem } from "../combat/combat-system.js";
+import { StandardCombatSystem } from "../combat/standard-combat-system.js";
 import { EnemyAI, SeededRng } from "../combat/enemy-ai.js";
 import * as Combatant from "../combat/combatant.js";
-import { getEffectiveParams } from "../combat/combat-data.js";
 import { distanceXZ } from "../vec3.js";
 
 export interface FrameInputs {
@@ -23,18 +23,32 @@ export interface FrameResult {
 
 export class GameSimulation {
   readonly store: GameStore;
-  private combatManager: CombatManager;
+  private combat: CombatSystem;
   private combatants = new Map<string, CombatantState>();
   private enemyAIs = new Map<string, EnemyAI>();
-  private config: CombatConfig;
   private rng: SeededRng;
   private roomBounds: { halfW: number; halfD: number } | null = null;
 
-  constructor(config: CombatConfig, store?: GameStore, seed?: number) {
-    this.config = config;
+  constructor(config: CombatConfig, store?: GameStore, seed?: number, combat?: CombatSystem) {
     this.store = store ?? new GameStore();
-    this.combatManager = new CombatManager(config);
+    this.combat = combat ?? new StandardCombatSystem(config);
     this.rng = new SeededRng(seed);
+  }
+
+  /** Sustituye el sistema de combate activo (selección por game.json en
+   *  start/resume de sesión). Llamar tras reset() y ANTES de re-sembrar
+   *  combatientes: las EnemyAI capturan el sistema al construirse. */
+  setCombatSystem(combat: CombatSystem): void {
+    if (this.enemyAIs.size > 0) {
+      throw new Error("GameSimulation.setCombatSystem: call reset() first (enemy AIs capture the combat system)");
+    }
+    this.combat = combat;
+    combat.reset();
+  }
+
+  /** Sistema de combate vigente (catálogo de ataques para clientes/tests). */
+  get combatSystem(): CombatSystem {
+    return this.combat;
   }
 
   /** Set room bounds so AI movement is clamped to the arena. */
@@ -47,7 +61,7 @@ export class GameSimulation {
     if (personality) {
       this.enemyAIs.set(
         state.id,
-        new EnemyAI(state.id, personality, this.config, this.rng),
+        new EnemyAI(state.id, personality, this.combat, this.rng),
       );
     }
   }
@@ -73,14 +87,13 @@ export class GameSimulation {
 
       // Handle attack request
       if (inputs.attackRequested && inputs.attackType) {
-        const weaponData = this.config.weapons[player.weaponId]
-          ?? this.config.weapons["unarmed"];
-        const params = getEffectiveParams(
-          inputs.attackType,
-          this.config.attack_types,
-          weaponData,
-        );
-        const events = Combatant.startAttack(player, inputs.attackType, params.wind_up_time);
+        const norm = this.combat.normalizeAttack(inputs.attackType);
+        if (norm === null) {
+          throw new Error(
+            `GameSimulation: unknown attack type '${inputs.attackType}' for combat system '${this.combat.id}'`,
+          );
+        }
+        const events = Combatant.startAttack(player, norm, this.combat.windUpTime(norm, player.weaponId));
         allEvents.push(...events);
       }
     }
@@ -120,7 +133,7 @@ export class GameSimulation {
       const events = Combatant.tick(c, delta);
       for (const e of events) {
         if (e.type === "attack_impacted") {
-          this.combatManager.addPendingImpact(
+          this.combat.addPendingImpact(
             e.combatantId as string,
             e.attackType as string,
           );
@@ -130,7 +143,7 @@ export class GameSimulation {
     }
 
     // 4. Resolve combat batch
-    const combatEvents = this.combatManager.tick(delta, this.combatants);
+    const combatEvents = this.combat.resolve(delta, this.combatants);
     allEvents.push(...combatEvents);
 
     // 5. Dispatch significant events to store
@@ -186,7 +199,7 @@ export class GameSimulation {
     }
 
     // Clear pending combat
-    this.combatManager.reset();
+    this.combat.reset();
 
     // Notify store
     this.store.dispatch("player_respawned", {
@@ -212,6 +225,6 @@ export class GameSimulation {
   reset(): void {
     this.combatants.clear();
     this.enemyAIs.clear();
-    this.combatManager.reset();
+    this.combat.reset();
   }
 }

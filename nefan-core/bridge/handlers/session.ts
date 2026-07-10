@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createCombatant } from "../../src/combat/combatant.js";
+import { combatRegistry } from "../../src/combat/registry.js";
 import {
   GameMetaSchema,
   listGames,
@@ -143,6 +144,7 @@ export async function handleStartSession(
   // El juego debe existir y validar ANTES de crear la sesión — arrancar un
   // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
   let worldKey: string;
+  let combatId: string;
   try {
     const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
     // Estilo: el elegido por el jugador o el por defecto del juego. Un
@@ -161,6 +163,15 @@ export async function handleStartSession(
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }
+    // Sistema de combate: el que declare game.json (systems.combat) o el
+    // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
+    // fuera del registro aborta (fail-loud), no degrada en silencio.
+    combatId = meta.systems?.combat ?? combatRegistry.defaultId;
+    if (!combatRegistry.has(combatId)) {
+      throw new Error(
+        `sistema de combate desconocido "${combatId}" (esperaba ${combatRegistry.ids().join("|")})`,
+      );
+    }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
     // La perspectiva forma parte de la identidad del bootstrap cacheado: los
@@ -176,6 +187,7 @@ export async function handleStartSession(
       world_doc_hash: worldDocHash,
       perspective,
       render_mode: renderMode,
+      combat_system: combatId,
     });
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);
@@ -208,6 +220,7 @@ export async function handleStartSession(
   // Sesión nueva ⇒ runtime nuevo: sin este reset el sim arrastra los
   // combatientes (y el HP herido) de la sesión anterior del proceso.
   ctx.sim.reset();
+  ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
   const freshHp = ctx.narrative.player.health;
   const freshPos = ctx.narrative.player.position;
   ctx.sim.addCombatant(
@@ -388,9 +401,23 @@ export async function handleResumeSession(
     });
     return;
   }
+  // Sistema de combate congelado en el save (saves previos sin campo →
+  // estándar). Un id fuera del registro aborta el resume — fail-loud, igual
+  // que un plugin narrativo desaparecido.
+  const combatId = ctx.narrative.world.combat_system || combatRegistry.defaultId;
+  if (!combatRegistry.has(combatId)) {
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `combat_system_unknown: "${combatId}" (esperaba ${combatRegistry.ids().join("|")})`,
+    });
+    return;
+  }
   // Resembrar el sim desde el save: sin esto arrastra los combatientes de la
   // sesión anterior y el HP guardado nunca vuelve al runtime.
   ctx.sim.reset();
+  ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
   const savedPos = ctx.narrative.player.position;
   const savedHp = ctx.narrative.player.health;
   ctx.sim.addCombatant(

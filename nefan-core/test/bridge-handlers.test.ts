@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
+import { combatRegistry } from "../src/combat/registry.js";
 import { GameStore } from "../src/store/game-store.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
@@ -107,6 +108,7 @@ function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = 
 
   const ctx: BridgeContext = {
     sim,
+    combatConfig,
     store,
     narrative,
     sessionStorage: storage,
@@ -410,6 +412,102 @@ describe("bridge ciclo de sesión", () => {
     const started3 = sent3[0] as SessionStartedMessage;
     assert.equal(started3.ok, false);
     assert.match(started3.error ?? "", /modo de render desconocido/);
+  });
+
+  it("start_session congela el sistema de combate de game.json (default standard)", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "combatbasic" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true);
+    assert.equal(started.state?.world.combat_system, "basic");
+    assert.equal(sim.combatSystem.id, "basic");
+    assert.equal(sim.combatSystem.attacks.length, 1);
+
+    // El input con "strike" simula; con un ataque estándar el sim lanza.
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 0, y: 0, z: 0 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+          attackRequested: true,
+          attackType: "strike",
+        },
+      },
+      s2,
+      ctx,
+    );
+    const update = sent2[0] as StateUpdateMessage;
+    assert.equal(update.type, "state_update");
+    assert.ok(update.events.some((e) => e.type === "attack_started"));
+
+    // Sin systems en game.json ⇒ estándar.
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s3, ctx);
+    assert.equal((sent3[0] as SessionStartedMessage).state?.world.combat_system, "standard");
+    assert.equal(sim.combatSystem.id, "standard");
+  });
+
+  it("load_room sin sesión vuelve al combate estándar (los fixtures asumen ese catálogo)", async () => {
+    const { ctx, sim } = makeCtx();
+    ctx.sim.reset();
+    ctx.sim.setCombatSystem(combatRegistry.create("basic", combatConfig));
+    const { socket } = makeSocket();
+    await routeMessage({ type: "load_room", roomId: "crypt_001", enemies: [] }, socket, ctx);
+    assert.equal(sim.combatSystem.id, "standard");
+  });
+
+  it("start_session con systems.combat desconocido aborta (fail-loud)", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "combatbad" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, false);
+    assert.match(started.error ?? "", /sistema de combate desconocido "noexiste"/);
+  });
+
+  it("resume restaura el sistema de combate congelado; un id desconocido en el save aborta", async () => {
+    const { ctx, narrative, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "combatbasic" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
+    // Proceso nuevo: el sistema sale del save, no del game.json.
+    narrative.startNewSession("plugtest");
+    ctx.sim.reset();
+    ctx.sim.setCombatSystem(combatRegistry.create("standard", combatConfig));
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true);
+    assert.equal(resumed.state?.world.combat_system, "basic");
+    assert.equal(sim.combatSystem.id, "basic");
+
+    // Save con un id que ya no existe en el registro ⇒ resume abortado.
+    narrative.world.combat_system = "retirado";
+    await routeMessage({ type: "save_session", requestId: "r4" }, s2, ctx);
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r5", sessionId }, s3, ctx);
+    const bad = sent3[0] as SessionStartedMessage;
+    assert.equal(bad.ok, false);
+    assert.match(bad.error ?? "", /combat_system_unknown: "retirado"/);
   });
 
   it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
