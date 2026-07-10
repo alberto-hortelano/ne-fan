@@ -128,7 +128,7 @@ Si una mecánica supera este techo (ej. pathfinding, simulación física, búsqu
 
 ### 7.3 Ciclo de vida de un plugin
 
-**Génesis (developer)**: archivo `nefan-core/data/games/{gameId}/plugins/{name}.json`. Se carga en `start_session` y `resume_session`. El hash se calcula al cargar; si difiere del esperado, error de integridad.
+**Génesis (developer)**: archivo `nefan-core/data/games/{gameId}/plugins/{name}.json`, o —amendment 2026-07-10— `nefan-core/data/plugins/{name}.json` para plugins **comunes a todos los juegos** (p. ej. `economy`); un manifest local del juego con el mismo `name` reemplaza al común para ese juego (dos manifests con el mismo `name` en el MISMO directorio son error de carga). Se carga en `start_session` y `resume_session`. El hash se calcula al cargar; si difiere del esperado, error de integridad.
 
 **Génesis (motor narrativo)**: tool MCP `plugin_register(manifest)`. El bridge:
 1. Valida con zod el shape del manifest.
