@@ -350,6 +350,29 @@ describe("NarrativeState state queries", () => {
     assert.equal(s.addInventoryItem("ghost", { id: "x" }), false);
   });
 
+  it("removeInventoryItem removes by item id from entity and player", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {
+      inventory: [{ id: "hammer" }, { id: "iron_key" }],
+    });
+    s.addInventoryItem("player", { id: "coin", name: "Moneda" });
+
+    assert.equal(s.removeInventoryItem("boris", "hammer"), true);
+    assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
+    assert.equal(s.removeInventoryItem("player", "coin"), true);
+    assert.deepEqual(s.getInventory("player"), []);
+
+    // No-match y entidad inexistente devuelven false sin tocar nada.
+    assert.equal(s.removeInventoryItem("boris", "hammer"), false);
+    assert.equal(s.removeInventoryItem("ghost", "hammer"), false);
+    assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
+    // Items sin campo `id` nunca casan (inventario sin tipar).
+    s.addInventoryItem("player", "una nota suelta");
+    assert.equal(s.removeInventoryItem("player", "una nota suelta"), false);
+    assert.deepEqual(s.getInventory("player"), ["una nota suelta"]);
+  });
+
   it("addInventoryItem persists through save/load", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
@@ -367,16 +390,33 @@ describe("NarrativeState state queries", () => {
 });
 
 describe("NarrativeState.serializeForLlm", () => {
-  it("produces compact context with last 5 dialogues", () => {
+  it("produces compact context with last 10 dialogues", () => {
     const s = makeState();
     s.startNewSession("g");
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 12; i++) {
       s.recordDialogueEvent(`speaker${i}`, `text${i}`, [`a${i}`, `b${i}`], 0);
     }
     const ctx = s.serializeForLlm();
-    assert.equal(ctx.recent_dialogues.length, 5);
+    assert.equal(ctx.recent_dialogues.length, 10);
     assert.equal(ctx.recent_dialogues[0].speaker, "speaker2");
     assert.equal(ctx.recent_dialogues[0].chosen, "a2");
+  });
+
+  it("exposes the chosen text of bridge dialogue_choice events (choices vacías) y la réplica del NPC", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    // El bridge registra las elecciones con el texto elegido en `text` y
+    // choices: [] (handleDialogueChoice) — el motor debe ver qué se eligió.
+    const evtId = s.recordDialogueEvent("Yishaq", "Pregunto por los libros", [], 2);
+    s.recordNarrativeConsequence(evtId, {
+      type: "dialogue",
+      speaker: "Yishaq",
+      text: "Curiosa cosa: sois el segundo que pregunta.",
+    });
+    const ctx = s.serializeForLlm();
+    const last = ctx.recent_dialogues.at(-1)!;
+    assert.equal(last.chosen, "Pregunto por los libros");
+    assert.equal(last.npc_reply, "Curiosa cosa: sois el segundo que pregunta.");
   });
 
   it("compacts entities to id/type/scene/position/spawn_reason", () => {

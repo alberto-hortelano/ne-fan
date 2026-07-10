@@ -133,7 +133,20 @@ export async function handleListSessions(
   ctx: BridgeContext,
 ): Promise<void> {
   const sessions = await ctx.sessionStorage.list();
-  ctx.send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions });
+  // Poda de saves basura: un bootstrap fallido deja un save "0 escenas" en
+  // disco (start_session persiste antes de generar). El de la sesión ACTIVA
+  // se conserva — reanudarla ES el reintento del bootstrap (ver
+  // handleResumeSession); los demás son restos de sesiones abandonadas.
+  const alive: typeof sessions = [];
+  for (const s of sessions) {
+    if (s.scene_count === 0 && s.session_id !== ctx.narrative.session_id) {
+      const ok = await ctx.sessionStorage.delete(s.session_id);
+      if (!ok) console.error(`Bridge: no se pudo podar el save vacío ${s.session_id}`);
+      continue;
+    }
+    alive.push(s);
+  }
+  ctx.send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions: alive });
 }
 
 export async function handleStartSession(

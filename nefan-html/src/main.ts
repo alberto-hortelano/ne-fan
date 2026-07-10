@@ -1115,15 +1115,32 @@ function updateConnectionStatus(connected: boolean, isBridge: boolean): void {
 // --- Game Loop ---
 
 let lastTime = performance.now();
-// Evita reenviar interact_entity mientras el motor narrativo aún responde.
-let interactCooldownUntil = 0;
+// Evita reenviar interact_entity mientras el motor narrativo aún responde:
+// con un cooldown fijo corto, una segunda pulsación de E antes de que llegue
+// la respuesta duplicaba el saludo en recent_dialogues del LLM. El guard se
+// limpia cuando llega la respuesta (narrative_event o error del motor), con
+// tope de 30 s por si no llega nada.
+let interactPendingUntil = 0;
+
+// Chrome congela requestAnimationFrame en pestañas ocultas (document.hidden),
+// lo que pausa la simulación entera — un problema real para testing
+// automatizado y para partidas desatendidas con el bridge. Fallback: cuando la
+// pestaña está oculta el loop sigue con setTimeout a ~15 fps (render barato,
+// la simulación usa delta real); al volver a ser visible retoma rAF.
+function scheduleNextFrame(): void {
+  if (document.hidden) {
+    setTimeout(() => gameLoop(performance.now()), 66);
+  } else {
+    requestAnimationFrame(gameLoop);
+  }
+}
 
 function gameLoop(now: number): void {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
   if (!gameClient) {
-    requestAnimationFrame(gameLoop);
+    scheduleNextFrame();
     return;
   }
 
@@ -1290,8 +1307,8 @@ function gameLoop(now: number): void {
   }
 
   const interactPressed = input.consumeInteract();
-  if (interactPressed && npcInRange && !dialoguePanel.isVisible && now >= interactCooldownUntil) {
-    interactCooldownUntil = now + 3000;
+  if (interactPressed && npcInRange && !dialoguePanel.isVisible && now >= interactPendingUntil) {
+    interactPendingUntil = now + 30000;
     const name = (npcInRange.name ?? npcInRange.id) as string;
     narrativeClient.interactEntity(npcInRange.id, name);
     log(`Hablando con ${name}...`);
@@ -1476,7 +1493,7 @@ function gameLoop(now: number): void {
     );
   }
 
-  requestAnimationFrame(gameLoop);
+  scheduleNextFrame();
 }
 
 // --- Init ---
@@ -1657,6 +1674,7 @@ narrativeClient.onNarrativeStatus((status) => {
   // se traga en silencio — el jugador no ve diálogo ni motivo. Lo surgimos al
   // error-log y a un overlay descartable.
   if (status.phase === "error") {
+    interactPendingUntil = 0;
     const detail = status.message ?? "El motor narrativo rechazó la reacción.";
     errors.push("narrative", detail);
     setLoaderState("error", "El motor narrativo rechazó la respuesta", detail);
@@ -1722,6 +1740,7 @@ function materializeSpawn(effect: {
 }
 
 narrativeClient.onNarrativeEvent((event) => {
+  interactPendingUntil = 0;
   for (const effect of event.effects) {
     switch (effect.kind) {
       case "show_dialogue":
@@ -1893,4 +1912,4 @@ async function runTitleFlow(): Promise<void> {
   }
 }
 
-requestAnimationFrame(gameLoop);
+scheduleNextFrame();

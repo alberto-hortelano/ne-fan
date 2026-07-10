@@ -228,15 +228,25 @@ class LLMClient:
         }
         print(f"LLM: active session set to {session_id} (game={game_id}, resume={is_resume})")
 
-    def _inject_available_assets(self, payload: dict, limit: int = 100) -> dict:
+    def _inject_available_assets(self, payload: dict, limit: int = 30) -> dict:
         """Add `available_assets` and active session info to a request payload
         so the narrative engine knows what's already generated and which
-        playthrough is in flight. Mutates and returns the payload."""
+        playthrough is in flight. Mutates and returns the payload.
+
+        Sólo assets REUSABLES por el motor (texturas/modelos/escenas con un
+        prompt humano): los `segment` del análisis de visión y los assets cuyo
+        prompt es otro hash/etiqueta interna no le dicen nada al LLM y estaban
+        inflando cada turno con ~100 entradas opacas."""
         if self.asset_manifest is not None:
             try:
-                assets = self.asset_manifest.list_assets(limit=limit)
-                if assets:
-                    payload["available_assets"] = assets
+                assets = self.asset_manifest.list_assets(limit=200)
+                reusable = [
+                    a for a in assets
+                    if a.get("type") != "segment"
+                    and len(str(a.get("prompt", ""))) > 20
+                ][:limit]
+                if reusable:
+                    payload["available_assets"] = reusable
             except Exception as e:
                 print(f"LLM: failed to list assets for narrative payload: {e}")
         if self.session_info is not None:

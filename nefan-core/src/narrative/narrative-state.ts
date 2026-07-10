@@ -590,6 +590,22 @@ export class NarrativeState {
     return true;
   }
 
+  /** Remove the first inventory item whose `id` matches. Returns false if
+   * the entity doesn't exist or no item carries that id — the items are
+   * untyped (`unknown[]`), so entries without an `id` field never match. */
+  removeInventoryItem(entityId: string, itemId: string): boolean {
+    const inv = this.getInventory(entityId);
+    if (entityId !== "player" && !this.getEntity(entityId)) return false;
+    const idx = inv.findIndex(
+      (item) => typeof item === "object" && item !== null &&
+        (item as Record<string, unknown>).id === itemId,
+    );
+    if (idx === -1) return false;
+    inv.splice(idx, 1);
+    this.dirty = true;
+    return true;
+  }
+
   /** Notify that state was mutated out-of-band (e.g. by a narrative engine
    * tool through the bridge HTTP API: world map, NPC directives, triggers),
    * so the next save() persists it. */
@@ -732,13 +748,32 @@ export class NarrativeState {
    *   `activePlugins` del bridge). Sin él, sólo se proyectan los plugins cuyo
    *   manifest está embebido en el record (los generados por IA). */
   serializeForLlm(manifests?: Map<string, PluginManifest>): LlmContext {
-    const recent = this.dialogue_history.slice(-5).map((d) => {
+    const recent = this.dialogue_history.slice(-10).map((d) => {
       let chosen = "";
       if (d.chosen_index >= 0 && d.chosen_index < d.choices.length) {
         const c = d.choices[d.chosen_index];
         chosen = typeof c === "string" ? c : c?.text ?? "";
       }
-      return { speaker: d.speaker, chosen, free_text: d.free_text };
+      // Los eventos de dialogue_choice llegan del bridge con el texto elegido
+      // en `text` y choices vacías — sin este fallback el motor recibía
+      // chosen: "" y no sabía qué había elegido el jugador.
+      if (!chosen && d.free_text === "" && d.text) chosen = d.text;
+      // La réplica del NPC vive en las consequences del evento; sin exponerla
+      // el motor no recuerda lo que el propio NPC dijo hace 2 turnos.
+      const reply = d.narrative_consequences.find(
+        (c): c is Extract<Consequence, { type: "dialogue" }> => c.type === "dialogue",
+      );
+      return {
+        speaker: d.speaker,
+        chosen,
+        free_text: d.free_text,
+        ...(reply
+          ? {
+              npc_reply:
+                reply.text.length > 300 ? `${reply.text.slice(0, 300)}…` : reply.text,
+            }
+          : {}),
+      };
     });
     return {
       session_id: this.session_id,
