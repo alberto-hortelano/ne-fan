@@ -590,6 +590,22 @@ export class NarrativeState {
     return true;
   }
 
+  /** Remove the first inventory item whose `id` matches. Returns false if
+   * the entity doesn't exist or no item carries that id — the items are
+   * untyped (`unknown[]`), so entries without an `id` field never match. */
+  removeInventoryItem(entityId: string, itemId: string): boolean {
+    const inv = this.getInventory(entityId);
+    if (entityId !== "player" && !this.getEntity(entityId)) return false;
+    const idx = inv.findIndex(
+      (item) => typeof item === "object" && item !== null &&
+        (item as Record<string, unknown>).id === itemId,
+    );
+    if (idx === -1) return false;
+    inv.splice(idx, 1);
+    this.dirty = true;
+    return true;
+  }
+
   /** Notify that state was mutated out-of-band (e.g. by a narrative engine
    * tool through the bridge HTTP API: world map, NPC directives, triggers),
    * so the next save() persists it. */

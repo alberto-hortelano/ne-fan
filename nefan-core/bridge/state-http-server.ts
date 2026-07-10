@@ -330,6 +330,31 @@ async function handle(
     });
   }
 
+  if (
+    method === "POST" &&
+    parts[0] === "entity" &&
+    parts[1] &&
+    parts[2] === "inventory" &&
+    parts[3] === "remove" &&
+    parts.length === 4
+  ) {
+    const body = (await readJson(req)) as { item_id?: unknown };
+    if (!body || typeof body.item_id !== "string" || !body.item_id) {
+      return bad("body requires { item_id: string }");
+    }
+    const removed = narrative.removeInventoryItem(parts[1], body.item_id);
+    if (!removed) {
+      return notFound(
+        `entity "${parts[1]}" not found or no inventory item with id "${body.item_id}"`,
+      );
+    }
+    return mutated({
+      ok: true,
+      entity_id: parts[1],
+      inventory: narrative.getInventory(parts[1]),
+    });
+  }
+
   // ── Documento del mundo (bajo demanda para el motor narrativo) ──
   if (method === "GET" && path === "/world_doc") {
     if (!narrative.session_id || !narrative.game_id) {

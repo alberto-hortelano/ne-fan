@@ -67,6 +67,19 @@ export class DialoguePanel {
       if (!this._visible) return;
       if (this._freeTextOpen) return;  // input element handles its own keys
 
+      // Mientras el typewriter corre las opciones no existen aún: una tecla
+      // de acción completa el texto en vez de actuar (elegir sin haber
+      // podido leer la línea entera).
+      const isActionKey =
+        e.key === "e" || e.key === "E" || e.key === " " || e.key === "Enter" ||
+        e.key === "t" || e.key === "T" || (e.key >= "1" && e.key <= "9");
+      if (this._typewriterTimer && isActionKey) {
+        this._finishTypewriter();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+
       if (e.key === "t" || e.key === "T") {
         this._openFreeText();
         e.preventDefault();
@@ -87,14 +100,8 @@ export class DialoguePanel {
       } else {
         // Advance mode: E, Space, Enter
         if (e.key === "e" || e.key === "E" || e.key === " " || e.key === "Enter") {
-          // If still typing, show full text immediately
-          if (this._typewriterTimer) {
-            this._stopTypewriter();
-            this.textEl.textContent = this._fullText;
-          } else {
-            this.hide();
-            this.onAdvanced();
-          }
+          this.hide();
+          this.onAdvanced();
           e.preventDefault();
           e.stopImmediatePropagation();
         }
@@ -135,24 +142,35 @@ export class DialoguePanel {
         this.textEl.textContent += this._fullText[this._charIndex];
         this._charIndex++;
       } else {
-        this._stopTypewriter();
+        this._finishTypewriter();
       }
     }, 25); // ~40 chars/sec
 
-    // Choices
+    // Las choices se renderizan al completarse el typewriter
+    // (_finishTypewriter) — verlas antes deja elegir sin haber leído la
+    // línea y hace parecer el texto truncado.
     this.choicesEl.innerHTML = "";
-    if (this._choices.length > 0) {
-      for (let i = 0; i < this._choices.length; i++) {
-        const btn = document.createElement("span");
-        btn.className = "dialogue-choice";
-        btn.textContent = `[${i + 1}] ${this._choices[i]}`;
-        const text = this._choices[i];
-        btn.addEventListener("click", () => {
-          this.hide();
-          this.onChoice(i, text);
-        });
-        this.choicesEl.appendChild(btn);
-      }
+  }
+
+  /** Completa el texto de golpe y revela las opciones. */
+  private _finishTypewriter(): void {
+    this._stopTypewriter();
+    this.textEl.textContent = this._fullText;
+    this._renderChoices();
+  }
+
+  private _renderChoices(): void {
+    this.choicesEl.innerHTML = "";
+    for (let i = 0; i < this._choices.length; i++) {
+      const btn = document.createElement("span");
+      btn.className = "dialogue-choice";
+      btn.textContent = `[${i + 1}] ${this._choices[i]}`;
+      const text = this._choices[i];
+      btn.addEventListener("click", () => {
+        this.hide();
+        this.onChoice(i, text);
+      });
+      this.choicesEl.appendChild(btn);
     }
   }
 

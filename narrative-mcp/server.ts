@@ -940,8 +940,8 @@ If you produce an alias, narrative_respond rejects it here (and ai_server would
 return HTTP 422). Fix the response shape, not the validator.
 
 OTHER ACTIONS during this turn (optional, alongside consequences): you may also
-call the state tools to mutate authoritative state directly — inventory_add
-(give/take items), npc_move_to_place / npc_arrive / npc_set_directive (move or
+call the state tools to mutate authoritative state directly — inventory_add /
+inventory_remove (give/take items), npc_move_to_place / npc_arrive / npc_set_directive (move or
 re-direct NPCs), map_upsert_place / map_link / map_add_trigger (extend the
 world map the story just mentioned), plugin_inspect / plugin_register (read or
 add declarative systems). Use these for bookkeeping; use \`consequences\` for
@@ -1067,7 +1067,7 @@ to query or mutate authoritative game state without dumping the whole world
 into context:
 - map_get / map_upsert_place / map_link / map_add_trigger  — the world map.
 - plugin_list / plugin_inspect / plugin_register           — declarative systems.
-- entity_get / inventory_get / inventory_add               — entities & items.
+- entity_get / inventory_get / inventory_add / inventory_remove — entities & items.
 - npc_arrive / npc_move_to_place / npc_set_directive       — NPC placement & behaviour.`,
     {},
     async () => {
@@ -1591,6 +1591,23 @@ into context:
       }
       return reportBridge(await bridgePost(`/entity/${encodeURIComponent(entity_id)}/inventory`, { item }));
     },
+  );
+
+  server.tool(
+    'inventory_remove',
+    `Remove one item from an entity's inventory by its "id" field. Use this ` +
+    `when the story consumes, hands over or destroys an item — e.g. the player ` +
+    `pays with a purse, gives a letter away, an NPC surrenders a key. Pass ` +
+    `"player" to take the item from the player. Errors if no item has that id ` +
+    `(check with inventory_get first).`,
+    {
+      entity_id: z.string().describe('Entity id, or "player".'),
+      item_id: z.string().describe('The "id" field of the inventory item to remove.'),
+    },
+    async ({ entity_id, item_id }) =>
+      reportBridge(
+        await bridgePost(`/entity/${encodeURIComponent(entity_id)}/inventory/remove`, { item_id }),
+      ),
   );
 
   server.tool(

@@ -350,6 +350,29 @@ describe("NarrativeState state queries", () => {
     assert.equal(s.addInventoryItem("ghost", { id: "x" }), false);
   });
 
+  it("removeInventoryItem removes by item id from entity and player", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {
+      inventory: [{ id: "hammer" }, { id: "iron_key" }],
+    });
+    s.addInventoryItem("player", { id: "coin", name: "Moneda" });
+
+    assert.equal(s.removeInventoryItem("boris", "hammer"), true);
+    assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
+    assert.equal(s.removeInventoryItem("player", "coin"), true);
+    assert.deepEqual(s.getInventory("player"), []);
+
+    // No-match y entidad inexistente devuelven false sin tocar nada.
+    assert.equal(s.removeInventoryItem("boris", "hammer"), false);
+    assert.equal(s.removeInventoryItem("ghost", "hammer"), false);
+    assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
+    // Items sin campo `id` nunca casan (inventario sin tipar).
+    s.addInventoryItem("player", "una nota suelta");
+    assert.equal(s.removeInventoryItem("player", "una nota suelta"), false);
+    assert.deepEqual(s.getInventory("player"), ["una nota suelta"]);
+  });
+
   it("addInventoryItem persists through save/load", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
