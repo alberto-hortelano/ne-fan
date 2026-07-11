@@ -124,7 +124,7 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
   playerAnim.anim = "idle";
   playerAnim.animStartedAt = performance.now();
 
-  if (skinPrompt) {
+  if (skinPrompt && characterSprites.skinsAllowed) {
     if (!CONFIG.graphics.ai_skin) {
       const msg = `appearance.skin_path="${skinPrompt}" requires graphics.ai_skin=true`;
       errors.push("config", msg);
@@ -207,9 +207,12 @@ function applySessionPerspective(perspective: string): void {
 let sessionRenderMode: "image" | "vector" | "" = "";
 function applySessionRenderMode(renderMode: string): void {
   sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
+  // Los skins IA de personajes siguen al modo del mundo: en vectorial todos
+  // los personajes usan la base y_bot (sin encolar repintados de Meshy).
+  characterSprites.setSkinsAllowed(sessionRenderMode !== "vector");
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
-    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA)");
+    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA; personajes en base y_bot)");
   } else if (sessionRenderMode === "image") {
     autoPipeline.setEnabled(true);
     log("Gráficos: imagen IA (Auto-img activo)");
