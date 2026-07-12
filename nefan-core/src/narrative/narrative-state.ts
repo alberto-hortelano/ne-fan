@@ -83,6 +83,10 @@ export class NarrativeState {
   asset_index_snapshot: AssetEntry[] = [];
   worldMap: WorldMapManager = new WorldMapManager(WorldMapManager.createEmpty());
   plugins: PluginRecord[] = [];
+  /** Log compacto de vida ambiental (guardia intervino, campesino huyó…) —
+   *  transiciones del NpcBehaviorSystem, NUNCA per-tick. El LLM recibe las
+   *  últimas 10 en serializeForLlm como `ambient_events`. */
+  ambient_log: string[] = [];
 
   private nextEventSeq = 0;
   private dirty = false;
@@ -180,10 +184,21 @@ export class NarrativeState {
     this.asset_index_snapshot = [];
     this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
     this.plugins = [];
+    this.ambient_log = [];
     this.nextEventSeq = 0;
     this.tileIndex.clear();
     this.dirty = true;
     return this.session_id;
+  }
+
+  /** Añade una entrada al log ambiental (cap 30 — los saves no crecen sin
+   *  límite; el LLM solo consume las últimas 10). */
+  appendAmbient(msg: string): void {
+    this.ambient_log.push(msg);
+    if (this.ambient_log.length > 30) {
+      this.ambient_log.splice(0, this.ambient_log.length - 30);
+    }
+    this.markDirty();
   }
 
   /** Fija la identidad del mundo de la sesión (título, brief, estilo
@@ -275,17 +290,21 @@ export class NarrativeState {
     delete this.scenes_loaded[oldId];
     // Los spawns dinámicos de la escena vieja (react_to_player…) migran de
     // escena y a posición global (celda vieja → mundo, que con el tile (0,0)
-    // centrado es la misma posición física de siempre).
+    // centrado es la misma posición física de siempre). Los scene_init se
+    // RETIRAN: el re-registro de abajo los recrea con posición global desde
+    // las celdas re-muestreadas (registerSceneNpcs preserva records vivos,
+    // así que la migración debe soltarlos explícitamente — un save v3 no
+    // tiene role/directive que perder).
     const halfW = (cols * mpc) / 2;
     const halfD = (rows * mpc) / 2;
-    for (const e of this.entities) {
-      if (e.scene_id !== oldId) continue;
+    this.entities = this.entities.filter((e) => {
+      if (e.scene_id !== oldId) return true;
+      if (e.spawn_reason === "scene_init") return false;
       e.scene_id = tileKey(0, 0);
-      if (e.spawn_reason !== "scene_init") {
-        const [c, , r] = e.position;
-        e.position = [(c + 0.5) * mpc - halfW, 0, (r + 0.5) * mpc - halfD];
-      }
-    }
+      const [c, , r] = e.position;
+      e.position = [(c + 0.5) * mpc - halfW, 0, (r + 0.5) * mpc - halfD];
+      return true;
+    });
     // Re-registro completo bajo la clave de tile (recalcula NPCs en global).
     this.recordSceneLoaded(tileKey(0, 0), tileScene, rec.asset_refs);
     // El place que apuntaba a la escena vieja pasa a apuntar al tile.
@@ -321,6 +340,8 @@ export class NarrativeState {
     this.worldMap = new WorldMapManager(wm);
     // Migración v2→v3 trivial: los saves anteriores no tienen plugins.
     this.plugins = data.plugins ?? [];
+    // Campo aditivo (sin bump de schema): saves previos no traen log ambiental.
+    this.ambient_log = data.ambient_log ?? [];
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     // Migración v3→v4: la escena activa se envuelve como tile (0,0) del plano
     // continuo. Con el tile centrado en el origen las posiciones mundo no
@@ -429,17 +450,16 @@ export class NarrativeState {
    *  talks to one. Without this the entities list is empty and every
    *  interact_entity / dialogue choice comes back with 0 consequences. */
   private registerSceneNpcs(sceneId: string, sceneData: Record<string, unknown>): void {
-    // Re-entering a cached scene must not duplicate its NPCs.
-    this.entities = this.entities.filter(
-      (e) => !(e.scene_id === sceneId && e.spawn_reason === "scene_init"),
-    );
     // En tiles la posición registrada es GLOBAL (metros del plano continuo);
     // en escenas legacy se conserva el histórico (celdas locales).
     const rawTile = sceneData.tile as { tx?: number; ty?: number } | undefined;
     const rect = rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)
       ? tileWorldRect(rawTile.tx!, rawTile.ty!)
       : null;
-    const npcs: Array<{ id: string; name: string; pos: [number, number, number] }> = [];
+    const npcs: Array<{
+      id: string; name: string; pos: [number, number, number];
+      extra: Record<string, unknown>;
+    }> = [];
 
     // Format D (open-world scenes): entities[] with kind "npc", cell [col,row].
     const fdEntities = sceneData.entities;
@@ -477,6 +497,7 @@ export class NarrativeState {
           pos: rect
             ? [rect.minX + (col + fw / 2) * TILE_MPC, 0, rect.minZ + (row + fh / 2) * TILE_MPC]
             : [col, 0, row],
+          extra: npcBehaviorExtras(e),
         });
       }
     }
@@ -505,17 +526,36 @@ export class NarrativeState {
             `scene ${sceneId}.npcs[${i}] (${e.id}) position must be finite numbers, got [${x},${y},${z}]`,
           );
         }
-        npcs.push({ id: e.id, name: e.name, pos: [x, y, z] });
+        npcs.push({ id: e.id, name: e.name, pos: [x, y, z], extra: npcBehaviorExtras(e) });
       }
     }
 
+    // Re-entrar a una escena cacheada no debe duplicar sus NPCs, pero tampoco
+    // RESETEARLOS: un record existente conserva posición (el behavior system
+    // los mueve), role, directive y current_place_id. Solo se retiran los
+    // scene_init que ya no figuran en la escena, y se crean los nuevos.
+    const ids = new Set(npcs.map((n) => n.id));
+    const before = this.entities.length;
+    this.entities = this.entities.filter(
+      (e) => !(e.scene_id === sceneId && e.spawn_reason === "scene_init" && !ids.has(e.id)),
+    );
+    if (this.entities.length !== before) this.dirty = true;
+
     for (const npc of npcs) {
+      const existing = this.entities.find((e) => e.id === npc.id);
+      if (existing) {
+        if (npc.name && existing.data.name !== npc.name) {
+          existing.data.name = npc.name;
+          this.dirty = true;
+        }
+        continue;
+      }
       this.recordEntitySpawned(
         npc.id,
         "npc",
         sceneId,
         { x: npc.pos[0], y: npc.pos[1], z: npc.pos[2] },
-        { name: npc.name },
+        { name: npc.name, ...npc.extra },
         "scene_init",
       );
     }
@@ -740,6 +780,7 @@ export class NarrativeState {
       asset_index_snapshot: this.asset_index_snapshot,
       world_map: this.worldMap.serialize(),
       plugins: this.plugins,
+      ambient_log: this.ambient_log,
       _next_event_seq: this.nextEventSeq,
     };
   }
@@ -792,6 +833,7 @@ export class NarrativeState {
       })),
       recent_dialogues: recent,
       rooms_visited: Object.keys(this.scenes_loaded).length,
+      ...(this.ambient_log.length ? { ambient_events: this.ambient_log.slice(-10) } : {}),
       ...this.activeSceneAnalysisForLlm(),
       ...(this.plugins.length
         ? {
@@ -912,4 +954,16 @@ function migrateWorldMapFromV1(data: SessionData): WorldMap {
     map.active_place_id = active;
   }
   return map;
+}
+
+/** Campos de comportamiento ambiental que un NPC de escena puede declarar
+ *  (Format D o legacy) y que deben fluir a EntityRecord.data para el
+ *  NpcBehaviorSystem: `role` (peasant/guard/…) y `behavior` (overrides). */
+function npcBehaviorExtras(e: Record<string, unknown>): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  if (typeof e.role === "string" && e.role) extra.role = e.role;
+  if (e.behavior && typeof e.behavior === "object" && !Array.isArray(e.behavior)) {
+    extra.behavior = e.behavior;
+  }
+  return extra;
 }

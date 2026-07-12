@@ -80,7 +80,8 @@ OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
       "cell":      [<col>, <row>],       // 0-indexed; top-left of footprint
       "footprint": [<width_cells>, <height_cells>],
       "glyph":     "<one ASCII char, must be different from terrain chars>",
-      "shape":     "box" | "cylinder" | "sphere" | "cone"   // optional; default box
+      "shape":     "box" | "cylinder" | "sphere" | "cone",  // optional; default box
+      "role":      "peasant" | "guard" | "villager" | "merchant"  // optional, kind:"npc" only — ambient behaviour
     },
     ...
   ],
@@ -205,6 +206,11 @@ GLYPH RULES (critical for ASCII debug rendering)
 NPCs
 - Yes, include the NPCs that belong to this scene as `kind: "npc"` entities. The narrative engine reads them by id.
 - Use Spanish first names (Boris, Greta, Mirla, Tomás, Halmar, Yannis, etc.) and a short title ("Boris el Herrero").
+- Optional `role` drives AMBIENT behaviour (the game engine executes it, no LLM cost):
+  NPCs wander near their spawn, turn to face an approaching player, and react to
+  nearby fights — "peasant"/"villager"/"merchant" flee, "guard" runs in and threatens.
+  Unknown roles degrade to "villager". Give guards to garrisons and gates, peasants
+  to fields and markets.
 
 ASSET REUSE
 - The request may include `available_assets`: a list of cached textures/models with hashes and prompts. If a cached prompt matches what you'd want for an entity, add `"texture_hash": "<hash>"` or `"model_hash": "<hash>"` to that entity. Optional but encouraged for visual consistency across scenes.
@@ -1481,6 +1487,15 @@ NARRATIVE_REACT_TOOL = {
                         "name": {
                             "type": "string",
                             "description": "Display name for an NPC entity.",
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": (
+                                "NPC ambient-behaviour role: peasant | guard | villager | "
+                                "merchant. The game engine executes it (wander, face the "
+                                "player, flee from fights; guards intervene). Unknown "
+                                "roles degrade to villager."
+                            ),
                         },
                         "position_hint": {
                             "type": "string",

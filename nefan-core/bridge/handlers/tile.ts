@@ -2,7 +2,7 @@
  *  generados (re-render sin LLM) y generación encolada de tiles nuevos con el
  *  contexto de costuras de sus vecinos. */
 
-import { broadcastScene, fireMapTriggers, type BridgeContext } from "../context.js";
+import { broadcastScene, fireMapTriggers, npcSync, type BridgeContext } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
 import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile, type TileCoord } from "../../src/scene/tile.js";
@@ -211,6 +211,7 @@ export async function handleTileAnalysis(
     return;
   }
   await ctx.narrative.save();
+  ctx.simCollision.invalidate(tileKey(tx, ty));
   console.log(`tile_analysis (${tx}, ${ty}): ${msg.elements.length} elementos persistidos`);
 }
 
@@ -253,6 +254,7 @@ export async function handleMapPlanUpdate(
     return;
   }
   await ctx.narrative.save();
+  ctx.simCollision.invalidate(tileKey(tx, ty));
   console.log(
     `map_plan_update (${tx}, ${ty}): plan revisado persistido` +
       ` (ground=${ground ? `${ground.length}B` : "sin cambios"}, volumes=${volumes ? volumes.length : "sin cambios"})`,
@@ -315,6 +317,9 @@ export async function activateByPosition(
 
   if (ctx.narrative.hasTile(t.tx, t.ty)) {
     ctx.narrative.setActiveTile(t.tx, t.ty);
+    // El vecindario 3×3 de la vida ambiental sigue al tile activo. Gateado
+    // por cambio de celda (arriba), no cuesta nada en el hot loop.
+    npcSync(ctx);
   }
 
   // Place anclado que contiene la posición (rect en celdas del tile; sin

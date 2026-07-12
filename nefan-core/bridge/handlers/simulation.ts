@@ -3,7 +3,14 @@
 import { createCombatant } from "../../src/combat/combatant.js";
 import { combatRegistry } from "../../src/combat/registry.js";
 import { activateByPosition } from "./tile.js";
-import { getEnemyStates, type BridgeContext, type ClientSocket } from "../context.js";
+import {
+  getEnemyStates,
+  getNpcStates,
+  npcLabel,
+  type BridgeContext,
+  type ClientSocket,
+} from "../context.js";
+import type { NpcBehaviorEvent } from "../../src/simulation/npc-behavior.js";
 import type {
   InputMessage,
   AddCombatantsMessage,
@@ -31,12 +38,50 @@ export async function handleInput(
   // por cambio de celda dentro de activateByPosition).
   await activateByPosition(ctx, playerPos.x, playerPos.z);
 
+  // Transiciones de la vida ambiental → log para el LLM + cierre del transit
+  // del NpcDirector. Son eventos one-shot del FSM (no per-tick), así que el
+  // volumen es bajo; el save llega con el siguiente save normal.
+  for (const ev of result.npcEvents) applyNpcEvent(ctx, ev);
+
   ctx.send(ws, {
     type: "state_update",
     events: result.events,
     playerHp: ctx.sim.getCombatant("player")?.health ?? 0,
     enemies: getEnemyStates(ctx),
+    npcs: getNpcStates(ctx),
   });
+}
+
+function applyNpcEvent(ctx: BridgeContext, ev: NpcBehaviorEvent): void {
+  const who = npcLabel(ctx, ev.npcId);
+  switch (ev.type) {
+    case "npc_reached_place": {
+      // Si el NPC estaba in_transit hacia ese place (npc_move_to_place), la
+      // llegada física la declara el sim — no hace falta esperar al LLM.
+      const info = ctx.npcDirector.getNpcPlace(ev.npcId);
+      if (info?.in_transit && info.in_transit.to === ev.placeId) {
+        const res = ctx.npcDirector.arriveNpc(ev.npcId);
+        if (!res.ok) console.warn(`Bridge: arriveNpc(${ev.npcId}) falló: ${res.error}`);
+      }
+      const placeName = ev.placeId
+        ? ctx.narrative.worldMap.get(ev.placeId)?.name ?? ev.placeId
+        : "su destino";
+      ctx.narrative.appendAmbient(`${who} llegó a ${placeName}`);
+      return;
+    }
+    case "npc_reached_npc":
+      ctx.narrative.appendAmbient(`${who} fue a ver a ${npcLabel(ctx, ev.targetId ?? "")}`);
+      return;
+    case "npc_fled_combat":
+      ctx.narrative.appendAmbient(`${who} huyó de una pelea cercana`);
+      return;
+    case "npc_intervened":
+      ctx.narrative.appendAmbient(`${who} intervino en una pelea cercana`);
+      return;
+    case "npc_resumed":
+      ctx.narrative.appendAmbient(`${who} retomó su rutina al calmarse la pelea`);
+      return;
+  }
 }
 
 export function handleLoadRoom(

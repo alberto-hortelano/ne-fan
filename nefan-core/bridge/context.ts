@@ -11,8 +11,14 @@ import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { AiClient } from "../src/narrative/ai-client.js";
 import type { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
+import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import type { PluginManifest } from "../src/plugins/types.js";
+import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
+import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
+import { SeededRng } from "../src/combat/enemy-ai.js";
+import { resolvePlaceTarget } from "../src/world-map/place-target.js";
+import type { SimCollisionProvider } from "./sim-collision.js";
 import {
   dispatchPluginEvents,
   type PluginAppliedEffect,
@@ -49,6 +55,11 @@ export interface BridgeContext {
   sessionStorage: SessionStorage;
   aiClient: NarrativeAiClient;
   mapTriggers: MapTriggerEvaluator;
+  /** Estado de mapa de los NPC (place/transit/directive) — la capa de
+   *  intención que el NpcBehaviorSystem ejecuta. */
+  npcDirector: NpcDirector;
+  /** Colisión server-side por tile para el movimiento de NPCs. */
+  simCollision: SimCollisionProvider;
   initialSceneCache: InitialSceneCache;
   gamesDir: string;
   /** Directorio de style packs (data/styles) — manifests + imágenes de
@@ -158,6 +169,9 @@ export function broadcastScene(
     edge: meta?.edge,
     elapsedMs,
   });
+  // La escena difundida puede traer NPCs nuevos (registrados por
+  // recordSceneLoaded) — engancharlos a la vida ambiental.
+  npcSync(ctx);
 }
 
 /** Nivel 3 del tick (§7.4): pasa los plugin_events recolectados por
@@ -218,6 +232,79 @@ export async function fireMapTriggers(
     consequences,
     effects: [...dispatched.effects, ...pluginFx],
   });
+}
+
+/** Crea el NpcBehaviorSystem de la sesión con el adapter real del bridge
+ *  (colisión server-side + world map + entities). id ausente → default
+ *  "ambient"; id desconocido → throw (fail-loud, el caller decide abortar). */
+export function createSessionNpcBehavior(
+  ctx: BridgeContext,
+  id: string | undefined,
+): NpcBehaviorSystem {
+  return npcBehaviorRegistry.create(id, {
+    rng: new SeededRng(Date.now()),
+    world: {
+      blocksMove: (fx, fz, tx, tz, r) => ctx.simCollision.blocksMove(fx, fz, tx, tz, r),
+      blocksCircle: (x, z, r) => ctx.simCollision.blocksCircle(x, z, r),
+      resolvePlaceTarget: (placeId) => resolvePlaceTarget(ctx.narrative, placeId),
+      getEntityPosition: (entityId) => {
+        const e = ctx.narrative.getEntity(entityId);
+        return e ? { x: e.position[0], y: e.position[1], z: e.position[2] } : null;
+      },
+    },
+  });
+}
+
+/** Reconcilia el behavior system con NarrativeState.entities: gestiona los
+ *  NPC cuyo scene_id cae en el vecindario 3×3 del tile activo (más la escena
+ *  activa); los que salen se retiran y quedan congelados en su última
+ *  posición (ya persistida en el EntityRecord). Llamar tras cargar/activar
+ *  escenas y tras spawns dinámicos — nunca per-tick. */
+export function npcSync(ctx: BridgeContext): void {
+  const behavior = ctx.sim.npcBehaviorSystem;
+  if (!behavior) return;
+  const activeId = ctx.narrative.world.active_scene_id;
+  const sceneIds = new Set<string>();
+  if (activeId) sceneIds.add(activeId);
+  const rec = activeId ? ctx.narrative.scenes_loaded[activeId] : undefined;
+  if (rec?.tile) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
+        const id = n ? ((n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined) : undefined;
+        if (id) sceneIds.add(id);
+      }
+    }
+  }
+  const want = new Set<string>();
+  for (const e of ctx.narrative.entities) {
+    if (e.type !== "npc" || !sceneIds.has(e.scene_id)) continue;
+    want.add(e.id);
+    behavior.addNpc(e);
+  }
+  for (const id of behavior.ids()) {
+    if (!want.has(id)) behavior.removeNpc(id);
+  }
+}
+
+/** Nombre legible de un NPC para el log ambiental (data.name o el id). */
+export function npcLabel(ctx: BridgeContext, npcId: string): string {
+  const name = ctx.narrative.getEntity(npcId)?.data.name;
+  return typeof name === "string" && name ? name : npcId;
+}
+
+export function getNpcStates(ctx: BridgeContext): StateUpdateMessage["npcs"] {
+  const behavior = ctx.sim.npcBehaviorSystem;
+  if (!behavior) return undefined;
+  return behavior.states().map((s) => ({
+    id: s.id,
+    pos: s.pos,
+    forward: s.forward,
+    moving: s.moving,
+    run: s.run,
+    anim: s.anim,
+    state: s.mode,
+  }));
 }
 
 export function getEnemyStates(ctx: BridgeContext): StateUpdateMessage["enemies"] {

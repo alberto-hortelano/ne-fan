@@ -118,8 +118,21 @@ export class CharacterSpriteManager {
    *  de 502 en consola con Meshy caído o sin créditos). */
   private skinsDisabled = false;
 
+  /** Decisión de la sesión (no un fallo): el modo de render "vector" apaga
+   *  los skins IA — todos los personajes se dibujan con la base y_bot, sin
+   *  encolar ni gastar llamadas al modelo de imagen. */
+  private allowed = true;
+
+  get skinsAllowed(): boolean {
+    return this.allowed;
+  }
+
+  setSkinsAllowed(allowed: boolean): void {
+    this.allowed = allowed;
+  }
+
   requestSkin(prompt: string): void {
-    if (!CONFIG.graphics.ai_skin || !prompt || this.skinsDisabled) return;
+    if (!this.allowed || !CONFIG.graphics.ai_skin || !prompt || this.skinsDisabled) return;
     const skinnedModel = this.sprites.skinKey(BASE_MODEL, prompt);
     if (this.skins.has(skinnedModel)) return;
     const state: SkinState = { prompt, failed: false, queued: new Set() };
@@ -172,7 +185,7 @@ export class CharacterSpriteManager {
    *  anim fuera de AUTO_SKIN_ANIMS (un ataque, death…), aquí se encola su
    *  generación lazy — estará lista para las siguientes veces. */
   modelFor(skinPrompt: string | undefined, anim: string, baseModel: string = BASE_MODEL): string {
-    if (!skinPrompt || !CONFIG.graphics.ai_skin) return baseModel;
+    if (!this.allowed || !skinPrompt || !CONFIG.graphics.ai_skin) return baseModel;
     const skinned = this.sprites.skinKey(BASE_MODEL, skinPrompt);
     if (this.readySkins.has(`${skinned}/${anim}`)) return skinned;
     const state = this.skins.get(skinned);

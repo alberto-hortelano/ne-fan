@@ -134,6 +134,10 @@ export type Consequence =
       texture_hash?: string;
       model_hash?: string;
       character_type?: string;
+      /** Rol de comportamiento ambiental (peasant | guard | villager |
+       *  merchant). Fluye a entity.data y lo consume el NpcBehaviorSystem;
+       *  un rol desconocido degrada a villager con warning. */
+      role?: string;
       [key: string]: unknown;
     }
   | { type: "schedule_event"; description: string; trigger?: string; [key: string]: unknown }
@@ -159,6 +163,10 @@ export interface SessionData {
   world_map: WorldMap;
   /** v3 — registro de plugins activos (§7.6 de next.md). */
   plugins: PluginRecord[];
+  /** Log de vida ambiental de NPCs (campo aditivo — saves previos no lo
+   *  traen; default []). Cap 30 entradas, escrito por el bridge desde los
+   *  NpcBehaviorEvents del sim. */
+  ambient_log?: string[];
   _next_event_seq: number;
 }
 
@@ -198,6 +206,9 @@ export interface LlmContext {
   }>;
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string; npc_reply?: string }>;
   rooms_visited: number;
+  /** Vida ambiental reciente (últimas 10): "guard_02 intervino en una pelea",
+   *  "aldeana_1 llegó a plaza_mercado"… Contexto, no requiere reacción. */
+  ambient_events?: string[];
   /** Documento COMPLETO del mundo (world.md). Solo se adjunta en el request
    *  de bootstrap de una sesión nueva — en turnos posteriores el motor usa
    *  world.description y la tool world_doc_get. */

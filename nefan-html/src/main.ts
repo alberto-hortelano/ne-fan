@@ -124,7 +124,7 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
   playerAnim.anim = "idle";
   playerAnim.animStartedAt = performance.now();
 
-  if (skinPrompt) {
+  if (skinPrompt && characterSprites.skinsAllowed) {
     if (!CONFIG.graphics.ai_skin) {
       const msg = `appearance.skin_path="${skinPrompt}" requires graphics.ai_skin=true`;
       errors.push("config", msg);
@@ -207,9 +207,12 @@ function applySessionPerspective(perspective: string): void {
 let sessionRenderMode: "image" | "vector" | "" = "";
 function applySessionRenderMode(renderMode: string): void {
   sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
+  // Los skins IA de personajes siguen al modo del mundo: en vectorial todos
+  // los personajes usan la base y_bot (sin encolar repintados de Meshy).
+  characterSprites.setSkinsAllowed(sessionRenderMode !== "vector");
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
-    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA)");
+    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA; personajes en base y_bot)");
   } else if (sessionRenderMode === "image") {
     autoPipeline.setEnabled(true);
     log("Gráficos: imagen IA (Auto-img activo)");
@@ -473,6 +476,8 @@ function updateEntitySprite(e: Entity, now: number, opts: { npc: boolean }): voi
       // omite), no un cadáver.
       alive: opts.npc ? true : e.alive,
       moving,
+      // NPCs huyendo (flee) corren; el resto de su locomoción es walk.
+      sprinting: opts.npc ? e.npcRun : undefined,
       attacking: e.attacking,
       attackType: e.attackType,
       oneShot: track.oneShot,
@@ -770,7 +775,10 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
   enemyEntities = enemyEntities.filter((e) => !ids.has(e.id) && !inRect(e.pos));
   objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !inRect(o.pos));
-  npcEntities = npcEntities.filter((n) => !npcIds.has(n.id) && !inRect(n.pos));
+  // NPCs: purga por IDENTIDAD de tile, nunca por rect — un NPC de otro tile
+  // que paseó hasta aquí (vida ambiental del bridge) no debe borrarse. Solo
+  // caen los que pertenecían a ESTE tile y ya no figuran en su scene data.
+  npcEntities = npcEntities.filter((n) => !(n.tileKey === key && !npcIds.has(n.id)));
   const enemies: RoomEnemy[] = [];
 
   for (const obj of objects) {
@@ -850,12 +858,22 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     }
   }
 
-  // NPCs from room data (append: los de otros tiles siguen vivos)
+  // NPCs from room data (append: los de otros tiles siguen vivos). Un id ya
+  // presente CONSERVA su Entity: la posición autoritativa es la del bridge
+  // (vida ambiental) — recrearlo lo teletransportaría a su spawn del scene
+  // data (stale) y perdería el skin en vuelo.
   const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
-  const newNpcs = npcsData.map(npc => {
+  const newNpcs: Entity[] = [];
+  for (const npc of npcsData) {
+    const npcId = npc.id as string;
+    const existing = npcEntities.find((n) => n.id === npcId);
+    if (existing) {
+      existing.tileKey = key;
+      continue;
+    }
     const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
     const entity: Entity = {
-      id: npc.id as string,
+      id: npcId,
       pos: {
         x: (npc.position as number[])?.[0] ?? 0,
         y: (npc.position as number[])?.[1] ?? 0,
@@ -869,10 +887,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       alive: true,
       category: "creature",
       skinPrompt: npcPrompt,
+      tileKey: key,
     };
     characterSprites.requestSkin(npcPrompt);
-    return entity;
-  });
+    newNpcs.push(entity);
+  }
   npcEntities.push(...newNpcs);
 
   // Fail-loud del contrato de posiciones globales: una entidad de un tile de
@@ -1392,6 +1411,18 @@ function gameLoop(now: number): void {
     if (attackVisual.fadeTimer <= 0) {
       attackVisual = null;
     }
+  }
+
+  // Sync ambient NPCs from result: el bridge es autoritativo sobre pos y
+  // forward; trackMoving detecta el delta y dispara walk/run solo. Un id sin
+  // Entity local es de un tile aún no cargado en el cliente — se ignora.
+  for (const npcState of result.npcs ?? []) {
+    const ne = npcEntities.find((n) => n.id === npcState.id);
+    if (!ne) continue;
+    ne.pos = { x: npcState.pos.x, y: npcState.pos.y, z: npcState.pos.z };
+    ne.forward = { x: npcState.forward.x, y: npcState.forward.y, z: npcState.forward.z };
+    ne.requestedAnim = npcState.anim;
+    ne.npcRun = npcState.run;
   }
 
   // Sync enemy entities from result

@@ -11,6 +11,7 @@
  */
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import type { EntityRecord } from "../narrative/types.js";
+import { resolvePlaceTarget } from "./place-target.js";
 
 export interface NpcTransit {
   /** Destination place id. */
@@ -102,6 +103,17 @@ export class NpcDirector {
     if (!transit) return { ok: false, error: `npc "${npcId}" is not in transit` };
     npc.data.current_place_id = transit.to;
     npc.data.in_transit = null;
+    // Coherencia física del viaje narrative-paced: si el destino resuelve a
+    // coordenadas y el NPC sigue lejos (el sim NO lo llevó andando), su
+    // posición salta al place. Si llegó a pie (npc_reached_place), ya está
+    // encima y no hay salto visible.
+    const target = resolvePlaceTarget(this.state, transit.to);
+    if (target) {
+      const dist = Math.hypot(npc.position[0] - target.x, npc.position[2] - target.z);
+      if (dist > 3) {
+        npc.position = [target.x, npc.position[1], target.z];
+      }
+    }
     this.state.markDirty();
     return { ok: true, info: placeInfo(npc) };
   }

@@ -3,7 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
-import { runPluginTick, type BridgeContext } from "../context.js";
+import { npcSync, runPluginTick, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
   InteractEntityMessage,
@@ -46,6 +46,9 @@ async function reportAndDispatch(
   });
   const pluginFx = runPluginTick(ctx, eventId, dispatched.pluginEvents);
   await ctx.narrative.save();
+  // Un spawn_entity dinámico puede haber creado NPCs — engancharlos a la
+  // vida ambiental sin esperar al siguiente cambio de tile.
+  npcSync(ctx);
   ctx.broadcastNarrative({
     type: "narrative_event",
     eventId,
