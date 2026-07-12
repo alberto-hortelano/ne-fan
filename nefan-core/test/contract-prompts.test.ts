@@ -29,6 +29,28 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "blueprint_review.md": ["map_ground", "volumes"],
 };
 
+const TOOLS_DIR = fileURLToPath(new URL("../data/contract/tools", import.meta.url));
+
+/** Tool definitions (Anthropic tool-use) del fallback API de ai_server:
+ *  archivo → `name` interno de la tool (histórico, no coincide siempre). */
+const CONTRACT_TOOLS: Record<string, string> = {
+  generate_scene: "generate_scene",
+  weapon_orient: "orient_weapon",
+  classify_scene: "classify_scene",
+  narrative_react: "react_to_player",
+};
+
+describe("contrato narrativo — tool schemas compartidos", () => {
+  for (const [file, toolName] of Object.entries(CONTRACT_TOOLS)) {
+    it(`${file}.json parsea y declara name + input_schema`, () => {
+      const raw = readFileSync(resolve(TOOLS_DIR, `${file}.json`), "utf-8");
+      const tool = JSON.parse(raw) as { name?: string; input_schema?: { type?: string } };
+      assert.equal(tool.name, toolName);
+      assert.equal(tool.input_schema?.type, "object");
+    });
+  }
+});
+
 describe("contrato narrativo — prompts compartidos", () => {
   for (const [file, markers] of Object.entries(CONTRACT_MARKERS)) {
     it(`${file} existe y conserva sus identificadores de contrato`, () => {

@@ -1,0 +1,445 @@
+{
+  "name": "generate_scene",
+  "description": "Generates a top-down 2D map in Map Format D: a terrain grid (ASCII strings) plus a list of named entities with cell + footprint. The narrative engine reads it to know what is where; the game engine renders it. See system prompt for the full schema and a worked example.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "tile": {
+        "type": "object",
+        "description": "Continuous-plane tile coords (tile responses only).",
+        "properties": {
+          "tx": {
+            "type": "integer"
+          },
+          "ty": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tx",
+          "ty"
+        ]
+      },
+      "biome": {
+        "type": "string",
+        "description": "Tile base fill: grass|forest_floor|meadow|sand|dirt|stone|snow|swamp (tiles only)."
+      },
+      "terrain_patches": {
+        "type": "array",
+        "description": "Optional ASCII detail stamps over the biome fill (tiles only).",
+        "maxItems": 24,
+        "items": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "at",
+            "rows"
+          ]
+        }
+      },
+      "place_anchors": {
+        "type": "array",
+        "description": "World-map places physically living in this tile (tiles only).",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "place_id": {
+              "type": "string"
+            },
+            "rect": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "required": [
+            "place_id"
+          ]
+        }
+      },
+      "scene_id": {
+        "type": "string",
+        "description": "Unique slug identifying this map (e.g. 'tavern_clearing', 'robledo_village')."
+      },
+      "place_id": {
+        "type": "string",
+        "description": "Optional. The world-map place id this scene realizes; the engine binds the scene to that place."
+      },
+      "scene_description": {
+        "type": "string",
+        "description": "2-3 sentence description of the scene, in Spanish."
+      },
+      "size": {
+        "type": "object",
+        "properties": {
+          "cols": {
+            "type": "integer",
+            "minimum": 12,
+            "maximum": 80
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 60
+          },
+          "meters_per_cell": {
+            "type": "number",
+            "description": "0.5 for interiors (furniture-scale), 2 for outdoor scenes. See system prompt."
+          }
+        },
+        "required": [
+          "cols",
+          "rows",
+          "meters_per_cell"
+        ]
+      },
+      "terrain": {
+        "type": "array",
+        "description": "Exactly `rows` strings, each EXACTLY `cols` characters wide. Each char is a terrain glyph (g=grass, w=water, _=path, s=stone, b=bridge, d=dirt, a=sand, o=wood, or any char you define in terrain_legend).",
+        "items": {
+          "type": "string"
+        }
+      },
+      "terrain_legend": {
+        "type": "object",
+        "description": "Mapping from terrain char to terrain name. Reserved chars don't need to appear here. Add any custom terrain chars you used. A value can also be {\"name\": ..., \"solid\": true|false} to declare that char blocks movement (walls, water). W and w are solid by default; b (bridge) is walkable.",
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "solid": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          ]
+        }
+      },
+      "terrain_features": {
+        "type": "array",
+        "description": "Optional. Smooth vector shapes painted over the grid: thick polylines (meandering river, curving road) or filled polygons (closed=true). points are [col,row] cell coords (floats allowed), width in cells. Array order = paint order (river first, bridge after).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass or a free Spanish name resolved by keywords."
+            },
+            "points": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "minItems": 2,
+              "description": "[col,row] cell coordinates; floats allowed."
+            },
+            "width": {
+              "type": "number",
+              "minimum": 0.1,
+              "description": "Stroke width in cells (default 1). Ignored for closed polygons."
+            },
+            "closed": {
+              "type": "boolean",
+              "description": "true = filled polygon (3+ points)."
+            },
+            "color": {
+              "type": "string",
+              "description": "Optional #rrggbb override."
+            },
+            "at_edges": {
+              "type": "array",
+              "description": "Tile seams: exact border cells this feature enters/exits at.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "edge": {
+                    "type": "string",
+                    "enum": [
+                      "north",
+                      "south",
+                      "east",
+                      "west"
+                    ]
+                  },
+                  "at": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "edge",
+                  "at"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "points"
+          ]
+        },
+        "maxItems": 24
+      },
+      "terrain_svg": {
+        "type": "string",
+        "description": "Optional, rarely needed. SVG of pure shapes over the terrain: viewBox EXACTLY \"0 0 <cols> <rows>\" (cell units), max 20KB, no script/foreignObject/href. Use only when grid + terrain_features cannot express the shape."
+      },
+      "map_ground": {
+        "type": "string",
+        "description": "Tiles only, strongly recommended. Ground-plane SVG of the tile (FLAT art only): viewBox EXACTLY \"0 0 128 128\", max 32KB, shape elements only, with the layers <g id=\"ground\">, <g id=\"water\"> and optional <g id=\"deck\"> (walkable over water). Anything with height goes in `volumes` instead."
+      },
+      "volumes": {
+        "type": "array",
+        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them to the session perspective and derives collision from the footprints. See the MAP PLAN section of the system prompt.",
+        "items": {
+          "type": "object"
+        }
+      },
+      "structures": {
+        "type": "array",
+        "description": "Enterable rooms/buildings stamped deterministically by the engine: closed wall perimeter + floor + door gaps. NEVER hand-draw W borders when a structure can do it. rect = [col,row,w,h] outer rectangle (walls included, min 3x3); doors carve walkable gaps.",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "room"
+              ]
+            },
+            "rect": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 4,
+              "maxItems": 4,
+              "description": "[col, row, width_cells, height_cells], walls included."
+            },
+            "wall_char": {
+              "type": "string",
+              "description": "Terrain char for the walls (default W, always solid)."
+            },
+            "floor_char": {
+              "type": "string",
+              "description": "Terrain char for the interior floor (default o)."
+            },
+            "doors": {
+              "type": "array",
+              "description": "1+ door gaps or the room is sealed.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "north",
+                      "south",
+                      "east",
+                      "west"
+                    ]
+                  },
+                  "at": {
+                    "type": "integer",
+                    "description": "Cells from the rect's top/left corner along that side (1..side-2; corners cannot be doors)."
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "side",
+                  "at"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "rect"
+          ]
+        }
+      },
+      "vegetation_zones": {
+        "type": "array",
+        "description": "Deterministic tree scatter (seeded by scene_id) over walkable cells of the area, skipping rooms, doors and occupied cells. Use instead of hand-placing many trees; hand-placed trees remain fine for landmarks.",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Plant name in Spanish (pino, roble, matorral)."
+            },
+            "area": {
+              "description": "[col, row, width_cells, height_cells], or \"rest\" (tiles only: everything still bare biome).",
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "rest"
+                  ]
+                }
+              ]
+            },
+            "density": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "Fraction of cells planted: 0.05 sparse, 0.25 thick."
+            },
+            "glyph": {
+              "type": "string",
+              "description": "Single ASCII char (default T)."
+            }
+          },
+          "required": [
+            "type",
+            "area",
+            "density"
+          ]
+        }
+      },
+      "entities": {
+        "type": "array",
+        "description": "Every thing on the map that is NOT terrain.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Unique slug (lowercase + underscore)."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "building",
+                "prop",
+                "item",
+                "tree",
+                "npc",
+                "player",
+                "decor"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "description": "Spanish display name."
+            },
+            "cell": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[col, row] of the top-left of the footprint."
+            },
+            "footprint": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[width_cells, height_cells]; usually [1,1] for props/NPCs."
+            },
+            "glyph": {
+              "type": "string",
+              "description": "A single printable ASCII char, distinct from terrain chars."
+            },
+            "shape": {
+              "type": "string",
+              "enum": [
+                "box",
+                "cylinder",
+                "sphere",
+                "cone"
+              ],
+              "description": "Optional footprint shape hint (default box). cylinder = round (barrel/well/round tower/urn/fountain), sphere = boulder/dome, cone = tent/spire/pile, box = buildings/walls/crates."
+            },
+            "texture_hash": {
+              "type": "string",
+              "description": "Optional. Reuse a cached texture by 16-char hash from available_assets."
+            },
+            "model_hash": {
+              "type": "string",
+              "description": "Optional. Reuse a cached 3D model by hash."
+            },
+            "attach": {
+              "type": "string",
+              "enum": [
+                "wall"
+              ],
+              "description": "decor only: snap to the nearest wall cell (torches, signs, banners)."
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "cell",
+            "footprint",
+            "glyph"
+          ]
+        },
+        "maxItems": 80
+      },
+      "ambient_event": {
+        "type": "string",
+        "description": "One Spanish sentence of atmospheric flavour (wind, birdsong, smell of stew, etc.)."
+      }
+    },
+    "required": [
+      "scene_id",
+      "scene_description",
+      "entities",
+      "ambient_event"
+    ]
+  }
+}

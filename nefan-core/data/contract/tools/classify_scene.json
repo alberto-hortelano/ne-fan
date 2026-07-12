@@ -1,0 +1,39 @@
+{
+  "name": "classify_scene",
+  "description": "Classify every numbered segmented region of the scene image.",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "segments"
+    ],
+    "properties": {
+      "segments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "index",
+            "label",
+            "solid",
+            "tall"
+          ],
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "label": {
+              "type": "string"
+            },
+            "solid": {
+              "type": "boolean"
+            },
+            "tall": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}
