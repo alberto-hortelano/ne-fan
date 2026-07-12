@@ -19,7 +19,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { SeededRng } from "../../combat/enemy-ai.js";
+import { SeededRng } from "../../rng.js";
 import { canonicalJson } from "../hash.js";
 import type { Predicate, ValueExpr } from "../types.js";
 import { DslError } from "./errors.js";

@@ -14,9 +14,10 @@ import type { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import type { PluginManifest } from "../src/plugins/types.js";
+import type { SceneRecord } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
-import { SeededRng } from "../src/combat/enemy-ai.js";
+import { SeededRng } from "../src/rng.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
 import type { SimCollisionProvider } from "./sim-collision.js";
 import {
@@ -84,6 +85,25 @@ export interface BridgeContext {
   broadcastNarrative(msg: ServerMessage): void;
 }
 
+/** Añade a `sceneIds` los ids de escena del vecindario 3×3 alrededor del tile
+ *  de `rec` (no-op si `rec` no es un tile). Criterio compartido por la
+ *  proyección de enemigos y la vida ambiental de NPCs: el mundo es continuo y
+ *  lo "cercano" es el tile más sus 8 adyacentes. */
+export function addNeighborhoodSceneIds(
+  ctx: BridgeContext,
+  rec: SceneRecord | undefined,
+  sceneIds: Set<string>,
+): void {
+  if (!rec?.tile) return;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
+      const id = n ? ((n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined) : undefined;
+      if (id) sceneIds.add(id);
+    }
+  }
+}
+
 /** Attach the current place's outgoing links to the scene as `exits`, so the
  *  2D client can show a travel panel without pulling the whole world map.
  *  Mutates `scene` in place (same object recordSceneLoaded stored by ref). */
@@ -124,18 +144,7 @@ export function broadcastScene(
   // del tile difundido más la escena activa — los enemigos de los tiles
   // adyacentes siguen vivos en el sim (el mundo es continuo, no una arena).
   const sceneIds = new Set<string>([sceneId, ctx.narrative.world.active_scene_id]);
-  const rec = ctx.narrative.scenes_loaded[sceneId];
-  if (rec?.tile) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
-        if (n) {
-          const id = (n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined;
-          if (id) sceneIds.add(id);
-        }
-      }
-    }
-  }
+  addNeighborhoodSceneIds(ctx, ctx.narrative.scenes_loaded[sceneId], sceneIds);
   ctx.store.dispatch("enemies_projected", {
     enemies: [...sceneIds].flatMap((id) =>
       projectEnemiesFromEntities(ctx.narrative.entities, { sceneId: id }),
@@ -266,16 +275,7 @@ export function npcSync(ctx: BridgeContext): void {
   const activeId = ctx.narrative.world.active_scene_id;
   const sceneIds = new Set<string>();
   if (activeId) sceneIds.add(activeId);
-  const rec = activeId ? ctx.narrative.scenes_loaded[activeId] : undefined;
-  if (rec?.tile) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
-        const id = n ? ((n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined) : undefined;
-        if (id) sceneIds.add(id);
-      }
-    }
-  }
+  addNeighborhoodSceneIds(ctx, activeId ? ctx.narrative.scenes_loaded[activeId] : undefined, sceneIds);
   const want = new Set<string>();
   for (const e of ctx.narrative.entities) {
     if (e.type !== "npc" || !sceneIds.has(e.scene_id)) continue;

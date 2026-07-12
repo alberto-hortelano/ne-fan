@@ -35,6 +35,7 @@ import type {
 } from "../src/protocol/messages.js";
 import type { Consequence } from "../src/narrative/types.js";
 import { listGames as listGamesFs } from "../src/games/loader.js";
+import { NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, "..", "data");
@@ -1595,7 +1596,11 @@ describe("bridge vida ambiental de NPCs", () => {
     assert.equal(info?.current_place_id, "plaza");
     const entity = narrative.getEntity("aldeano_1")!;
     const dist = Math.hypot(entity.position[0] - 1, entity.position[2] - 1);
-    assert.ok(dist < 3, `el NPC debe estar cerca de la plaza (dist=${dist.toFixed(1)})`);
+    // Tras llegar, la plaza pasa a ser su nueva "casa" y el micro-wander lo
+    // aleja hasta wander_radius del centro — el límite se deriva del rol para
+    // que el test no compita con el RNG del wander (era flaky con dist < 3).
+    const maxDrift = NPC_ROLE_PRESETS.villager.wander_radius + 1;
+    assert.ok(dist < maxDrift, `el NPC debe estar cerca de la plaza (dist=${dist.toFixed(1)}, max=${maxDrift})`);
     const llm = narrative.serializeForLlm();
     assert.ok(
       llm.ambient_events?.some((e) => e.includes("Aldeana") && e.includes("La Plaza")),

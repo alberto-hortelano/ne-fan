@@ -5,7 +5,8 @@ import type { CombatantState, CombatConfig, CombatEvent, EnemyPersonality, Vec3 
 import { GameStore } from "../store/game-store.js";
 import type { CombatSystem } from "../combat/combat-system.js";
 import { StandardCombatSystem } from "../combat/standard-combat-system.js";
-import { EnemyAI, SeededRng } from "../combat/enemy-ai.js";
+import { EnemyAI } from "../combat/enemy-ai.js";
+import { SeededRng } from "../rng.js";
 import * as Combatant from "../combat/combatant.js";
 import { distanceXZ } from "../vec3.js";
 import type { NpcBehaviorEvent, NpcBehaviorSystem } from "./npc-behavior.js";

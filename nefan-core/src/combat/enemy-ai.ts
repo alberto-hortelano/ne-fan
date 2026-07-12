@@ -6,35 +6,7 @@ import { distanceXZ, sub, normalized, scale, add } from "../vec3.js";
 import type { CombatSystem } from "./combat-system.js";
 import { buildPersonality } from "./difficulty-presets.js";
 import * as Combatant from "./combatant.js";
-
-/** Simple seeded PRNG (xoshiro128) for deterministic replay */
-export class SeededRng {
-  private s: Uint32Array;
-
-  constructor(seed: number = Date.now()) {
-    this.s = new Uint32Array(4);
-    this.s[0] = seed >>> 0;
-    this.s[1] = (seed * 1812433253 + 1) >>> 0;
-    this.s[2] = (this.s[1] * 1812433253 + 1) >>> 0;
-    this.s[3] = (this.s[2] * 1812433253 + 1) >>> 0;
-  }
-
-  next(): number {
-    const result = (this.s[0] + this.s[3]) >>> 0;
-    const t = (this.s[1] << 9) >>> 0;
-    this.s[2] ^= this.s[0];
-    this.s[3] ^= this.s[1];
-    this.s[1] ^= this.s[2];
-    this.s[0] ^= this.s[3];
-    this.s[2] ^= t;
-    this.s[3] = ((this.s[3] << 11) | (this.s[3] >>> 21)) >>> 0;
-    return (result >>> 0) / 4294967296;
-  }
-
-  nextInt(max: number): number {
-    return Math.floor(this.next() * max);
-  }
-}
+import { SeededRng } from "../rng.js";
 
 export class EnemyAI {
   readonly combatantId: string;

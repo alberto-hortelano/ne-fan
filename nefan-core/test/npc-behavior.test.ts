@@ -10,7 +10,7 @@ import {
 } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
 import { resolveRoleParams, NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
-import { SeededRng } from "../src/combat/enemy-ai.js";
+import { SeededRng } from "../src/rng.js";
 import type { EntityRecord } from "../src/narrative/types.js";
 import type { Vec3 } from "../src/types.js";
 
