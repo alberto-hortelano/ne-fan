@@ -6,7 +6,6 @@ Start with: python ai_server/main.py [--port 8765]
 import base64
 import io
 import json
-import logging
 import os
 import time
 import argparse
@@ -1236,7 +1235,7 @@ async def styles_upload(body: StyleUploadRequest):
 
     from meshy_client import MeshyImageToImage
     missing = missing_categories(styles_dir, style_id)
-    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if config else 0.18
+    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if deps.config else 0.18
     return {
         "style_id": style_id,
         "uploaded": uploaded,
