@@ -1175,7 +1175,7 @@ async def styles_upload(body: StyleUploadRequest):
     import unicodedata
 
     from style_pack_builder import missing_categories
-    from deps.style_packs import _styles_dir_from_config
+    from style_packs import _styles_dir_from_config
 
     styles_dir = _styles_dir_from_config()
     base = "user_" + (_re.sub(
@@ -1252,7 +1252,7 @@ async def styles_complete(style_id: str, body: StyleCompleteRequest):
     import re as _re
 
     from style_pack_builder import generate_missing, missing_categories
-    from deps.style_packs import _styles_dir_from_config
+    from style_packs import _styles_dir_from_config
 
     if not _re.fullmatch(r"[A-Za-z0-9_.-]+", style_id):
         raise HTTPException(status_code=422, detail="invalid style_id")
