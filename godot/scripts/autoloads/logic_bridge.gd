@@ -1,6 +1,7 @@
 ## WebSocket client to nefan-core logic bridge (localhost:9877).
 ## Sends player inputs each physics frame, receives combat state.
-## Falls back to local combat when bridge is not available.
+## Sin bridge el combate queda deshabilitado (los ataques animan pero no
+## aplican daño): la lógica de combate vive en nefan-core, no hay fallback local.
 extends Node
 
 const NodeAccess = preload("res://scripts/util/node_access.gd")
@@ -93,7 +94,7 @@ func _process(delta: float) -> void:
 		_connected = false
 		_enabled = false
 		if was_connected:
-			push_warning("LogicBridge: disconnected from bridge — combat falls back to local logic")
+			push_warning("LogicBridge: disconnected from bridge — combat disabled (attacks deal no damage)")
 			connection_changed.emit(false)
 
 

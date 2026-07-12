@@ -10,9 +10,14 @@ extends RefCounted
 const EFFECTIVE_PARAMS_PATH := "res://data/combat_effective_params.json"
 
 static var _effective_params: Dictionary = {}
+# Cache por path: varios scripts llaman load_config() en _ready y el JSON no
+# cambia en runtime — no re-parsear el mismo archivo una vez por consumidor.
+static var _config_cache: Dictionary = {}
 
 
 static func load_config(path: String = "res://data/combat_config.json") -> Dictionary:
+	if _config_cache.has(path):
+		return _config_cache[path]
 	var file := FileAccess.open(path, FileAccess.READ)
 	if not file:
 		push_error("CombatData: cannot open %s" % path)
@@ -22,6 +27,7 @@ static func load_config(path: String = "res://data/combat_config.json") -> Dicti
 	if data == null or not data is Dictionary:
 		push_error("CombatData: invalid JSON in %s" % path)
 		return {}
+	_config_cache[path] = data
 	return data
 
 

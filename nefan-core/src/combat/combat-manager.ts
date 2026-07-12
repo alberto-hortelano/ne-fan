@@ -1,5 +1,6 @@
 /** Orchestrates combat: batch resolution of simultaneous attacks.
- *  Port of godot/scripts/combat/combat_manager.gd */
+ *  Canonical implementation — godot/scripts/combat/combat_manager.gd is a
+ *  display-only registry fed by the bridge. */
 
 import type { CombatantState, CombatEvent, CombatConfig } from "../types.js";
 import { resolveAttack, applyDefensiveReduction } from "./combat-resolver.js";

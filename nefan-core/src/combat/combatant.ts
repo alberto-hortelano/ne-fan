@@ -1,5 +1,6 @@
 /** Combat state machine — tick-based, no engine dependencies.
- *  Port of godot/scripts/combat/combatant.gd */
+ *  Canonical implementation — godot/scripts/combat/combatant.gd is
+ *  display-only (HP + señales), fed by the bridge. */
 
 import type { CombatantState, CombatEvent, Vec3 } from "../types.js";
 
