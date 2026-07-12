@@ -4,8 +4,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { NarrativeState } from "../src/narrative/narrative-state.js";
-import { MemorySessionStorage } from "../src/narrative/session-storage.js";
+import { makeNarrativeState } from "./helpers.js";
 import {
   PluginManifestSchema,
   type PluginManifest,
@@ -142,7 +141,7 @@ describe("plugin views (F6)", () => {
   });
 
   it("NarrativeState.serializeForLlm inyecta el bloque plugins sólo si los hay", () => {
-    const state = new NarrativeState(new MemorySessionStorage());
+    const state = makeNarrativeState().narrative;
     state.startNewSession("plugtest");
 
     // Sin plugins: no aparece la clave.
