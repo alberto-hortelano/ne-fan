@@ -1,0 +1,9 @@
+{
+  "description": "consequences es un objeto, no una lista",
+  "expect": "reject",
+  "payload": {
+    "consequences": {
+      "type": "dialogue"
+    }
+  }
+}

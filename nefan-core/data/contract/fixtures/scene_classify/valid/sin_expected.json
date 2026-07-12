@@ -1,0 +1,14 @@
+{
+  "description": "sin expected_indices no se exige completitud",
+  "expect": "accept",
+  "payload": {
+    "segments": [
+      {
+        "index": 3,
+        "label": "roca",
+        "solid": true,
+        "tall": false
+      }
+    ]
+  }
+}

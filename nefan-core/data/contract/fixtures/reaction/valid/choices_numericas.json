@@ -1,0 +1,17 @@
+{
+  "description": "choices no-string: PY las coerciona, TS las filtra — ambos aceptan",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "Guardia",
+        "text": "Alto ahí.",
+        "choices": [
+          1,
+          2
+        ]
+      }
+    ]
+  }
+}

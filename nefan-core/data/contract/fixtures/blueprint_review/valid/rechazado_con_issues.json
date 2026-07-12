@@ -1,0 +1,26 @@
+{
+  "description": "approved=false con issues y fixes completos",
+  "expect": "accept",
+  "payload": {
+    "approved": false,
+    "issues": [
+      "el muro corta la puerta"
+    ],
+    "fixes": {
+      "terrain": [
+        "gggg",
+        "g__g",
+        "gggg"
+      ],
+      "entity_moves": [
+        {
+          "id": "npc_1",
+          "cell": [
+            2,
+            1
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "label vacío",
+  "expect": "reject",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "",
+        "solid": true,
+        "tall": true
+      }
+    ]
+  }
+}

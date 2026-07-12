@@ -1,0 +1,12 @@
+{
+  "description": "dialogue sin speaker",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "text": "Hola"
+      }
+    ]
+  }
+}

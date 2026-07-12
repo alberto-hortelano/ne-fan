@@ -1,0 +1,20 @@
+{
+  "description": "índice duplicado",
+  "expect": "reject",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "a",
+        "solid": true,
+        "tall": true
+      },
+      {
+        "index": 0,
+        "label": "b",
+        "solid": false,
+        "tall": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "description": "noop solo (el mundo sigue su curso)",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "noop"
+      }
+    ]
+  }
+}

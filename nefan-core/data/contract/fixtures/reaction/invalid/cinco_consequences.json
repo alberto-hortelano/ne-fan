@@ -1,0 +1,23 @@
+{
+  "description": "más de 4 consequences",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "noop"
+      },
+      {
+        "type": "noop"
+      },
+      {
+        "type": "noop"
+      },
+      {
+        "type": "noop"
+      },
+      {
+        "type": "noop"
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "schedule_event con trigger",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "schedule_event",
+        "description": "Una patrulla llega al anochecer",
+        "trigger": "next_scene"
+      }
+    ]
+  }
+}

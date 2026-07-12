@@ -1,0 +1,19 @@
+{
+  "description": "story_update + spawn_entity npc con name y position_hint",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "story_update",
+        "delta": "El herrero acepta el encargo."
+      },
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "description": "un aprendiz nervioso",
+        "name": "Telmo",
+        "position_hint": "near_player"
+      }
+    ]
+  }
+}
