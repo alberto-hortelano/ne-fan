@@ -6,6 +6,7 @@ Start with: python ai_server/main.py [--port 8765]
 import base64
 import io
 import json
+import logging
 import os
 import time
 import argparse
@@ -69,29 +70,10 @@ from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
 from asset_cache import AssetCache, AssetManifest
 
-import asyncio as _asyncio
+from deps import deps
 
-# Global instances
-llm_client: LLMClient | None = None
-texture_gen: TextureGenerator | None = None
-model_gen: ModelGenerator | None = None
-skin_gen: SkinGenerator | None = None
-controlnet_skin_gen: ControlNetSkinGenerator | None = None
-plate_inpainter: PlateInpainter | None = None
-sprite_skin_gen: "SpriteSkinMeshy | None" = None
-sprite_gen: SpriteGenerator | None = None
-scene_image_gen: SceneImageGenerator | None = None
-scene_segmenter: SceneSegmenter | None = None
-style_packs: "StylePackResolver | None" = None
-asset_cache: AssetCache | None = None
-model_cache: AssetCache | None = None
-skin_cache: AssetCache | None = None
-sprite_cache: AssetCache | None = None
-scene_cache: AssetCache | None = None
-segment_cache: AssetCache | None = None
-asset_manifest: AssetManifest | None = None
-config: dict = {}
-_gpu_lock = _asyncio.Lock()  # Serialize ALL GPU operations
+logger = logging.getLogger("ai_server")
+
 
 
 RUNTIME_CONFIG_PATH = (
@@ -111,7 +93,7 @@ def load_config(config_path: Path | None = None) -> dict:
             f"runtime_config.json not found at {path}. "
             "Run `cd nefan-core && npx tsx scripts/dump-config.ts` to regenerate it."
         )
-    print(f"Config loaded from: {path}")
+    logger.info(f"Config loaded from: {path}")
     with open(path) as f:
         full = json.load(f)
     ai = full.get("ai_server")
@@ -124,171 +106,170 @@ def load_config(config_path: Path | None = None) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global llm_client, texture_gen, model_gen, skin_gen, sprite_gen, asset_cache, model_cache, skin_cache, sprite_cache, scene_cache, segment_cache, asset_manifest, config, controlnet_skin_gen, scene_image_gen, scene_segmenter, style_packs, plate_inpainter
-    config = load_config()
+    deps.config = load_config()
 
     # Shared manifest sits at the cache root and tracks every asset across types.
     from pathlib import Path as _P
-    cache_root = _P(config["cache_root"])
+    cache_root = _P(deps.config["cache_root"])
     manifest_path = cache_root / "manifest.json"
-    asset_manifest = AssetManifest(manifest_path)
-    print(f"AssetManifest: {manifest_path.resolve()} ({asset_manifest.total_count()} entries)")
+    deps.asset_manifest = AssetManifest(manifest_path)
+    logger.info(f"AssetManifest: {manifest_path.resolve()} ({deps.asset_manifest.total_count()} entries)")
 
     # First-run recovery: scan existing cache directories so previously generated
     # assets become discoverable to the narrative engine.
-    if asset_manifest.total_count() == 0:
+    if deps.asset_manifest.total_count() == 0:
         added_total = 0
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "textures",
             asset_type="texture",
             subtypes_by_filename={"albedo.png": "albedo", "normal.png": "normal", "roughness.png": "roughness"},
         )
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "models",
             asset_type="model",
             subtypes_by_filename={"model.glb": "model"},
         )
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "skins",
             asset_type="skin",
             subtypes_by_filename={"skin.png": "skin"},
         )
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "sprites",
             asset_type="sprite",
             subtypes_by_filename={"sprite.png": "sprite"},
         )
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "scenes",
             asset_type="scene",
             subtypes_by_filename={"scene.png": "scene"},
         )
-        added_total += asset_manifest.scan_directory(
+        added_total += deps.asset_manifest.scan_directory(
             cache_root / "segments",
             asset_type="segment",
             subtypes_by_filename={"segment.png": "segment"},
         )
         if added_total > 0:
-            print(f"AssetManifest: recovered {added_total} pre-existing assets")
+            logger.info(f"AssetManifest: recovered {added_total} pre-existing assets")
 
-    llm_client = LLMClient(
-        model=config["llm_model"],
-        timeout=float(config["llm_timeout_s"]),
-        asset_manifest=asset_manifest,
+    deps.llm_client = LLMClient(
+        model=deps.config["llm_model"],
+        timeout=float(deps.config["llm_timeout_s"]),
+        asset_manifest=deps.asset_manifest,
     )
 
-    asset_cache = AssetCache(
-        cache_dir=config["texture_cache_dir"],
+    deps.asset_cache = AssetCache(
+        cache_dir=deps.config["texture_cache_dir"],
         asset_type="texture",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
-    texture_gen = TextureGenerator(
-        width=config["texture_resolution"],
-        height=config["texture_resolution"],
-        steps=config["texture_steps"],
-        lazy=config["texture_lazy_load"],
+    deps.texture_gen = TextureGenerator(
+        width=deps.config["texture_resolution"],
+        height=deps.config["texture_resolution"],
+        steps=deps.config["texture_steps"],
+        lazy=deps.config["texture_lazy_load"],
     )
 
-    model_cache = AssetCache(
-        cache_dir=config["model_cache_dir"],
+    deps.model_cache = AssetCache(
+        cache_dir=deps.config["model_cache_dir"],
         asset_type="model",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
-    model_gen = ModelGenerator(
-        texture_gen_ref=texture_gen,
+    deps.model_gen = ModelGenerator(
+        texture_gen_ref=deps.texture_gen,
         lazy=True,
     )
 
-    skin_cache = AssetCache(
-        cache_dir=config["skin_cache_dir"],
+    deps.skin_cache = AssetCache(
+        cache_dir=deps.config["skin_cache_dir"],
         asset_type="skin",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
-    skin_gen = SkinGenerator(
-        texture_gen_ref=texture_gen,
+    deps.skin_gen = SkinGenerator(
+        texture_gen_ref=deps.texture_gen,
     )
-    controlnet_skin_gen = ControlNetSkinGenerator(
-        texture_gen_ref=texture_gen,
+    deps.controlnet_skin_gen = ControlNetSkinGenerator(
+        texture_gen_ref=deps.texture_gen,
         default_strength=0.40,
     )
-    plate_inpainter = PlateInpainter(
-        texture_gen_ref=texture_gen,
+    deps.plate_inpainter = PlateInpainter(
+        texture_gen_ref=deps.texture_gen,
     )
 
-    sprite_cache = AssetCache(
-        cache_dir=config["sprite_cache_dir"],
+    deps.sprite_cache = AssetCache(
+        cache_dir=deps.config["sprite_cache_dir"],
         asset_type="sprite",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
-    sprite_gen = SpriteGenerator(
-        texture_gen_ref=texture_gen,
+    deps.sprite_gen = SpriteGenerator(
+        texture_gen_ref=deps.texture_gen,
     )
 
-    scene_cache = AssetCache(
-        cache_dir=config["scene_cache_dir"],
+    deps.scene_cache = AssetCache(
+        cache_dir=deps.config["scene_cache_dir"],
         asset_type="scene",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
     _repo_root = Path(__file__).resolve().parent.parent
-    scene_image_gen = SceneImageGenerator(
-        style_image_path=str(_repo_root / config["scene_style_image"]),
-        model=config["scene_model"],
+    deps.scene_image_gen = SceneImageGenerator(
+        style_image_path=str(_repo_root / deps.config["scene_style_image"]),
+        model=deps.config["scene_model"],
     )
     # Packs de estilo por juego (imágenes de referencia por categoría).
     # Degradación esperable si aún no hay packs: resolve() devuelve None y las
     # peticiones usan la referencia global de arriba.
-    style_packs = StylePackResolver()
+    deps.style_packs = StylePackResolver()
 
-    segment_cache = AssetCache(
-        cache_dir=config["segment_cache_dir"],
+    deps.segment_cache = AssetCache(
+        cache_dir=deps.config["segment_cache_dir"],
         asset_type="segment",
-        manifest=asset_manifest,
+        manifest=deps.asset_manifest,
     )
 
     # El análisis de escena es OPCIONAL: necesita FAL_KEY. Sin ella el server
     # arranca igual; /analyze_scene_image devuelve 503.
     try:
-        scene_segmenter = SceneSegmenter(
+        deps.scene_segmenter = SceneSegmenter(
             fal_client=FalSamClient(
-                auto_segment_model=config["auto_segment_model"],
+                auto_segment_model=deps.config["auto_segment_model"],
             ),
         )
     except ValueError as e:
-        scene_segmenter = None
-        print(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)", flush=True)
+        deps.scene_segmenter = None
+        logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
 
-    if config["expose_diagnostic"]:
+    if deps.config["expose_diagnostic"]:
         from routers.diagnostic import build_diagnostic_router
         app.include_router(build_diagnostic_router(
             sprite_sheets_dir=SPRITE_SHEETS_DIR,
-            gpu_lock=_gpu_lock,
-            skin_gen=skin_gen,
-            controlnet_skin_gen=controlnet_skin_gen,
+            gpu_lock=deps.gpu_lock,
+            skin_gen=deps.skin_gen,
+            controlnet_skin_gen=deps.controlnet_skin_gen,
         ))
-        print("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
+        logger.info("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
 
     # Techo de tamaño del cache (LRU por last_used del manifest). Sin él, el
     # cache crece sin cota (llegó a 340 MB en dev). 0 = sin límite.
-    max_cache_bytes = int(config["cache_max_bytes"])
+    max_cache_bytes = int(deps.config["cache_max_bytes"])
     if max_cache_bytes > 0:
-        summary = asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
+        summary = deps.asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
         if summary["pruned"] > 0:
-            print(
+            logger.info(
                 f"AssetManifest: pruned {summary['pruned']} assets "
                 f"({summary['freed_bytes'] / 1e6:.1f} MB freed, "
                 f"{summary['total_bytes'] / 1e6:.1f} MB remain)"
             )
 
-    print(f"\nAI Server ready. HTTP :{config['port']}")
+    logger.info(f"\nAI Server ready. HTTP :{deps.config['port']}")
     yield
-    llm_client = None
-    texture_gen = None
-    model_gen = None
+    deps.llm_client = None
+    deps.texture_gen = None
+    deps.model_gen = None
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
@@ -474,19 +455,19 @@ class ScenePlateRequest(BaseModel):
 def _cache_dirs_by_type() -> dict[str, Path]:
     """asset_type → raíz del cache de ese tipo (el blob vive en {dir}/{hash})."""
     return {
-        "texture": Path(config["texture_cache_dir"]),
-        "model": Path(config["model_cache_dir"]),
-        "skin": Path(config["skin_cache_dir"]),
-        "sprite": Path(config["sprite_cache_dir"]),
-        "scene": Path(config["scene_cache_dir"]),
-        "segment": Path(config["segment_cache_dir"]),
+        "texture": Path(deps.config["texture_cache_dir"]),
+        "model": Path(deps.config["model_cache_dir"]),
+        "skin": Path(deps.config["skin_cache_dir"]),
+        "sprite": Path(deps.config["sprite_cache_dir"]),
+        "scene": Path(deps.config["scene_cache_dir"]),
+        "segment": Path(deps.config["segment_cache_dir"]),
     }
 
 
 def _touch_asset(hash_key: str) -> None:
     """Marca un asset como usado para el LRU del prune (no-op sin manifest)."""
-    if asset_manifest is not None:
-        asset_manifest.touch(hash_key)
+    if deps.asset_manifest is not None:
+        deps.asset_manifest.touch(hash_key)
 
 
 class DevApiCacheRequest(BaseModel):
@@ -511,12 +492,12 @@ async def dev_api_cache_toggle(body: DevApiCacheRequest):
 
 @app.get("/health")
 async def health():
-    cache_total = asset_manifest.total_bytes() if asset_manifest else 0
-    cache_max = int(config.get("cache_max_bytes", 0)) if config else 0
+    cache_total = deps.asset_manifest.total_bytes() if deps.asset_manifest else 0
+    cache_max = int(deps.config.get("cache_max_bytes", 0)) if deps.config else 0
     return {
-        "status": "ready" if llm_client else "loading",
+        "status": "ready" if deps.llm_client else "loading",
         "mode": "narrative",
-        "texture_pipeline": "loaded" if (texture_gen and texture_gen.is_loaded) else "lazy",
+        "texture_pipeline": "loaded" if (deps.texture_gen and deps.texture_gen.is_loaded) else "lazy",
         "cache_total_bytes": cache_total,
         "cache_max_bytes": cache_max,
         "cache_over_limit": bool(cache_max and cache_total > cache_max),
@@ -526,12 +507,12 @@ async def health():
 @app.post("/cache/prune")
 async def prune_cache():
     """Fuerza una pasada de eviction LRU hasta bajar de cache_max_bytes."""
-    if asset_manifest is None:
+    if deps.asset_manifest is None:
         raise HTTPException(status_code=503, detail="manifest not ready")
-    max_cache_bytes = int(config["cache_max_bytes"])
+    max_cache_bytes = int(deps.config["cache_max_bytes"])
     if max_cache_bytes <= 0:
         raise HTTPException(status_code=400, detail="cache_max_bytes is 0 (no limit configured)")
-    summary = asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
+    summary = deps.asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
     return {"ok": True, **summary}
 
 
@@ -540,12 +521,12 @@ async def generate_scene(body: GenerateSceneRequest):
     """Accept the LlmContext from the bridge, return open-world scene JSON."""
     import asyncio
 
-    if llm_client is None:
-        raise HTTPException(status_code=503, detail="llm_client unavailable")
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable")
 
     try:
         return await asyncio.to_thread(
-            llm_client.generate_scene, body.model_dump(exclude_none=True)
+            deps.llm_client.generate_scene, body.model_dump(exclude_none=True)
         )
     except NarrativeUnavailable as e:
         # 504 para timeout (el modelo puede seguir escribiendo; el reintento
@@ -559,10 +540,10 @@ async def generate_texture_endpoint(body: TextureRequest):
     """Generate PBR texture set from a prompt. Returns URLs to cached PNGs."""
     import asyncio
 
-    key = asset_cache.hash_key(body.prompt)
+    key = deps.asset_cache.hash_key(body.prompt)
 
     # Check cache first
-    if asset_cache.has_all(body.prompt, ["albedo", "normal"]):
+    if deps.asset_cache.has_all(body.prompt, ["albedo", "normal"]):
         return {
             "hash": key,
             "cached": True,
@@ -572,13 +553,13 @@ async def generate_texture_endpoint(body: TextureRequest):
 
     # Generate (serialized — CUDA doesn't support concurrent access)
     start = time.time()
-    async with _gpu_lock:
-        result = await asyncio.to_thread(texture_gen.generate, body.prompt, body.seed)
+    async with deps.gpu_lock:
+        result = await asyncio.to_thread(deps.texture_gen.generate, body.prompt, body.seed)
     elapsed_ms = int((time.time() - start) * 1000)
 
     # Store in cache
-    asset_cache.put(body.prompt, "albedo", result["albedo"])
-    asset_cache.put(body.prompt, "normal", result["normal"])
+    deps.asset_cache.put(body.prompt, "albedo", result["albedo"])
+    deps.asset_cache.put(body.prompt, "normal", result["normal"])
 
     return {
         "hash": key,
@@ -597,10 +578,10 @@ async def generate_model_endpoint(body: ModelRequest):
     # namespace_context: en modo dev-cache el GLB deriva de una respuesta
     # rancia de Meshy — no debe pisar el slot real de este prompt.
     model_ctx = DEV_API_CACHE.namespace_context()
-    key = model_cache.hash_key(body.prompt, model_ctx)
+    key = deps.model_cache.hash_key(body.prompt, model_ctx)
 
     # Check cache
-    if model_cache.has(body.prompt, "model", model_ctx):
+    if deps.model_cache.has(body.prompt, "model", model_ctx):
         return {
             "hash": key,
             "cached": True,
@@ -609,13 +590,13 @@ async def generate_model_endpoint(body: ModelRequest):
 
     # Generate (serialized with textures via GPU lock)
     start = time.time()
-    async with _gpu_lock:
+    async with deps.gpu_lock:
         glb_bytes = await asyncio.to_thread(
-            model_gen.generate, body.prompt, body.scale, body.seed, body.quality
+            deps.model_gen.generate, body.prompt, body.scale, body.seed, body.quality
         )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    model_cache.put(body.prompt, "model", glb_bytes, model_ctx)
+    deps.model_cache.put(body.prompt, "model", glb_bytes, model_ctx)
 
     return {
         "hash": key,
@@ -631,9 +612,9 @@ async def backend_status_endpoint():
     import asyncio
 
     # Meshy 3D
-    if model_gen and getattr(model_gen, "_meshy", None):
+    if deps.model_gen and getattr(deps.model_gen, "_meshy", None):
         meshy_status = {"state": "ready", "message": "API key configurada"}
-    elif model_gen and getattr(model_gen, "_triposg_available", False):
+    elif deps.model_gen and getattr(deps.model_gen, "_triposg_available", False):
         meshy_status = {
             "state": "fallback",
             "message": "Meshy no configurado (usando TripoSG local)",
@@ -645,11 +626,11 @@ async def backend_status_endpoint():
         }
 
     # AI Vision (MCP bridge listener preferred, direct API as fallback)
-    if not llm_client:
+    if not deps.llm_client:
         vision_status = {"state": "down", "message": "LLM client no disponible"}
     else:
-        bridge = await asyncio.to_thread(llm_client.get_bridge_status)
-        has_api: bool = llm_client.has_api_fallback()
+        bridge = await asyncio.to_thread(deps.llm_client.get_bridge_status)
+        has_api: bool = deps.llm_client.has_api_fallback()
 
         def api_or_down(down_msg: str) -> dict:
             if has_api:
@@ -685,11 +666,11 @@ async def analyze_weapon_endpoint(body: AnalyzeWeaponRequest):
     `/report_player_choice` already uses, see next.md §2.1."""
     import asyncio
 
-    if llm_client is None:
-        raise HTTPException(status_code=503, detail="llm_client unavailable")
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable")
 
     result = await asyncio.to_thread(
-        llm_client.analyze_weapon, body.images, body.weapon_type, body.kind, body.context
+        deps.llm_client.analyze_weapon, body.images, body.weapon_type, body.kind, body.context
     )
 
     if result is None:
@@ -703,9 +684,9 @@ async def generate_skin_endpoint(body: SkinRequest):
     """Generate a character skin variant via img2img on the base Paladin UV."""
     import asyncio
 
-    key = skin_cache.hash_key(body.prompt)
+    key = deps.skin_cache.hash_key(body.prompt)
 
-    if skin_cache.has(body.prompt, "skin"):
+    if deps.skin_cache.has(body.prompt, "skin"):
         return {
             "hash": key,
             "cached": True,
@@ -713,13 +694,13 @@ async def generate_skin_endpoint(body: SkinRequest):
         }
 
     start = time.time()
-    async with _gpu_lock:
+    async with deps.gpu_lock:
         result = await asyncio.to_thread(
-            skin_gen.generate, body.prompt, body.strength, body.gamma, body.seed
+            deps.skin_gen.generate, body.prompt, body.strength, body.gamma, body.seed
         )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    skin_cache.put(body.prompt, "skin", result["skin"])
+    deps.skin_cache.put(body.prompt, "skin", result["skin"])
 
     return {
         "hash": key,
@@ -744,9 +725,9 @@ async def generate_sprite_endpoint(body: SpriteRequest):
     if body.style_token:
         context["style_token"] = body.style_token
 
-    key = sprite_cache.hash_key(body.prompt, context)
+    key = deps.sprite_cache.hash_key(body.prompt, context)
 
-    if sprite_cache.has(body.prompt, "sprite", context):
+    if deps.sprite_cache.has(body.prompt, "sprite", context):
         return {
             "hash": key,
             "cached": True,
@@ -755,14 +736,14 @@ async def generate_sprite_endpoint(body: SpriteRequest):
         }
 
     start = time.time()
-    async with _gpu_lock:
+    async with deps.gpu_lock:
         result = await asyncio.to_thread(
-            sprite_gen.generate, body.prompt, body.width, body.height,
+            deps.sprite_gen.generate, body.prompt, body.width, body.height,
             body.seed, body.angle, body.style_token,
         )
     elapsed_ms = int((time.time() - start) * 1000)
 
-    sprite_cache.put(
+    deps.sprite_cache.put(
         body.prompt, "sprite", result["sprite"],
         context=context, subtype_override="sprite_2d",
     )
@@ -796,8 +777,8 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     import asyncio
     import hashlib
 
-    if scene_image_gen is None:
-        raise HTTPException(status_code=503, detail="scene_image_gen unavailable")
+    if deps.scene_image_gen is None:
+        raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
 
     png = _decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
@@ -808,15 +789,15 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     context = {
         "layout": layout,
         "kind": "full",
-        "model": scene_image_gen._model,
+        "model": deps.scene_image_gen._model,
         "sides": "+".join(sorted(body.context_sides)),
     }
     # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
     # imagen utilizable se degrada a la global — y la clave de cache NO lleva
     # estilo, para no fragmentar el cache preexistente.
     style_ref = None
-    if body.style_id and style_packs is not None:
-        style_ref = style_packs.resolve(body.style_id, body.style_tag or "settlement")
+    if body.style_id and deps.style_packs is not None:
+        style_ref = deps.style_packs.resolve(body.style_id, body.style_tag or "settlement")
         if style_ref is not None:
             context["style"] = f"{style_ref.style_id}/{style_ref.category}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
@@ -831,19 +812,19 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)
-    key = scene_cache.hash_key(body.prompt, context)
+    key = deps.scene_cache.hash_key(body.prompt, context)
 
-    if scene_cache.has(body.prompt, "scene", context):
+    if deps.scene_cache.has(body.prompt, "scene", context):
         return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
 
-    # No _gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
+    # No deps.gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
     # holding the lock would needlessly block texture/3D GPU work for ~30s.
     start = time.time()
     # 502 explícito: un crash del backend remoto subiría como 500 sin pasar por
     # el CORSMiddleware y el navegador lo enmascara como error de red.
     try:
         result = await asyncio.to_thread(
-            scene_image_gen.generate_full, png, body.prompt,
+            deps.scene_image_gen.generate_full, png, body.prompt,
             body.context_sides, body.blueprint_kind,
             style_ref.data_uri if style_ref else None,
             style_ref.style_token if style_ref else "",
@@ -853,11 +834,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
     elapsed_ms = int((time.time() - start) * 1000)
 
-    scene_cache.put(body.prompt, "scene", result["scene"], context=context)
+    deps.scene_cache.put(body.prompt, "scene", result["scene"], context=context)
     # Guardar también el schematic de entrada (el blueprint que pintó el cliente
     # desde la escena del motor narrativo) para inspección/debug. Directo a disco
     # sin registrar en el manifest: no es un asset reusable por el LLM.
-    blueprint_path = scene_cache.get_path(key, "blueprint")
+    blueprint_path = deps.scene_cache.get_path(key, "blueprint")
     blueprint_path.parent.mkdir(parents=True, exist_ok=True)
     blueprint_path.write_bytes(png)
 
@@ -881,35 +862,35 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     import asyncio
     import hashlib
 
-    if scene_segmenter is None:
+    if deps.scene_segmenter is None:
         raise HTTPException(
             status_code=503,
-            detail="scene_segmenter unavailable — set FAL_KEY in .env to enable scene analysis",
+            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable scene analysis",
         )
-    if llm_client is None:
-        raise HTTPException(status_code=503, detail="llm_client unavailable — vision required")
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
 
     png = _decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
     ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
-        "sam_model": scene_segmenter._fal.auto_segment_model,
-        "vision_model": llm_client.model,
+        "sam_model": deps.scene_segmenter._fal.auto_segment_model,
+        "vision_model": deps.llm_client.model,
     })
-    key = segment_cache.hash_key("analysis", ctx)
-    cached = segment_cache.get_by_hash(key, "analysis")
+    key = deps.segment_cache.hash_key("analysis", ctx)
+    cached = deps.segment_cache.get_by_hash(key, "analysis")
     if cached is not None:
         return json.loads(cached)
 
     # Fase 1: segmentación automática + overlay numerado (fal → 502 en fallo).
     try:
-        analysis = await asyncio.to_thread(scene_segmenter.analyze_regions, png)
+        analysis = await asyncio.to_thread(deps.scene_segmenter.analyze_regions, png)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene auto-segmentation failed: {e}") from e
     regions = analysis["regions"]
     if not regions:
         result = {"segments": [], "discarded": 0}
-        segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+        deps.segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
                           context=ctx, subtype_override="analysis")
         return result
 
@@ -926,7 +907,7 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
          "data_b64": b64mod.b64encode(analysis["overlay_png"]).decode()},
     ]
     classified = await asyncio.to_thread(
-        llm_client.classify_scene_segments, images, vision_context,
+        deps.llm_client.classify_scene_segments, images, vision_context,
     )
     if classified is None:
         raise HTTPException(
@@ -948,7 +929,7 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
             continue
         sprite = crop_sprite(scene_rgb, region["mask"], region["bbox_xyxy"])
         sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
-        sprite_key = segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        sprite_key = deps.segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
         segments_out.append({
             "id": f"seg_{cls['index']}",
             "label": cls["label"],
@@ -961,10 +942,10 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
         })
 
     result = {"segments": segments_out, "discarded": discarded}
-    segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
+    deps.segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
                       context=ctx, subtype_override="analysis")
-    print(f"analyze_scene: {len(segments_out)} jugables, {discarded} suelo "
-          f"(de {len(regions)} regiones)", flush=True)
+    logger.info(f"analyze_scene: {len(segments_out)} jugables, {discarded} suelo "
+          f"(de {len(regions)} regiones)")
     return result
 
 
@@ -977,8 +958,8 @@ async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
     import asyncio
     import hashlib
 
-    if plate_inpainter is None:
-        raise HTTPException(status_code=503, detail="plate_inpainter unavailable")
+    if deps.plate_inpainter is None:
+        raise HTTPException(status_code=503, detail="deps.plate_inpainter unavailable")
 
     image_png = _decode_b64_png(body.image_b64)
     mask_png = _decode_b64_png(body.mask_b64)
@@ -987,16 +968,16 @@ async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
         "mask": hashlib.sha256(mask_png).hexdigest()[:16],
         "algo": PLATE_ALGO,
     })
-    key = scene_cache.hash_key("plate", ctx)
-    if scene_cache.get_by_hash(key, "plate") is not None:
+    key = deps.scene_cache.hash_key("plate", ctx)
+    if deps.scene_cache.get_by_hash(key, "plate") is not None:
         return {"hash": key, "cached": True, "plate_url": f"/cache/plate/{key}"}
 
     start = time.time()
-    async with _gpu_lock:
-        plate = await asyncio.to_thread(plate_inpainter.generate, image_png, mask_png)
+    async with deps.gpu_lock:
+        plate = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, mask_png)
     elapsed_ms = int((time.time() - start) * 1000)
 
-    scene_cache.put("plate", "plate", plate, context=ctx, subtype_override="plate")
+    deps.scene_cache.put("plate", "plate", plate, context=ctx, subtype_override="plate")
     return {
         "hash": key,
         "cached": False,
@@ -1050,7 +1031,6 @@ async def skin_sprite_sheet_endpoint(request: Request):
     devuelto es el del sheet SKINNEADO (keyframes reducidos + fps de perfil),
     no el del base. El cliente reproduce con este meta.
     """
-    global sprite_skin_gen
 
     body = await request.json()
     model = str(body.get("model", "")).strip()
@@ -1068,25 +1048,25 @@ async def skin_sprite_sheet_endpoint(request: Request):
         raise HTTPException(status_code=400, detail=f"invalid style_role: {style_role}")
 
     style_ref = None
-    if style_id and style_packs is not None:
-        style_ref = style_packs.resolve(style_id, f"character_{style_role}")
+    if style_id and deps.style_packs is not None:
+        style_ref = deps.style_packs.resolve(style_id, f"character_{style_role}")
     style_key = f"{style_ref.style_id}:{style_ref.content_hash}" if style_ref else ""
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
     if not (sheet_dir / "meta.json").exists():
         raise HTTPException(status_code=404, detail=f"sheet not found: {model}/{anim}/{angle}")
 
-    if sprite_skin_gen is None:
+    if deps.sprite_skin_gen is None:
         try:
-            sprite_skin_gen = SpriteSkinMeshy(
-                SPRITE_SHEETS_DIR, SKINNED_SHEETS_DIR, config["sprite_skin_model"]
+            deps.sprite_skin_gen = SpriteSkinMeshy(
+                SPRITE_SHEETS_DIR, SKINNED_SHEETS_DIR, deps.config["sprite_skin_model"]
             )
         except ValueError as e:
             # MESHY_API_KEY ausente o modelo desconocido: el cliente degrada a
             # la base y_bot (una entrada de error-log, sin reintentos).
             raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}") from e
 
-    key = _skin_sheet_key(model, anim, angle, prompt, sprite_skin_gen.ai_model, style_key)
+    key = _skin_sheet_key(model, anim, angle, prompt, deps.sprite_skin_gen.ai_model, style_key)
     out_dir = SKINNED_SHEETS_DIR / key
     out_meta_path = out_dir / "meta.json"
 
@@ -1098,7 +1078,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
             meta = json.load(f)
     else:
         try:
-            meta = await sprite_skin_gen.skin_anim(
+            meta = await deps.sprite_skin_gen.skin_anim(
                 model, anim, angle, prompt, out_dir,
                 style_uri=style_ref.data_uri if style_ref else "",
                 style_key=style_key,
@@ -1111,7 +1091,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
                 status_code=502,
                 detail=f"Meshy sprite skin failed ({model}/{anim}): {type(e).__name__}: {e}",
             ) from e
-        print(
+        logger.info(
             f"SpriteSkin: {model}/{anim} ← \"{prompt[:40]}\" "
             f"({meta['directions']} dirs × {meta['frame_count']} kf, "
             f"${meta['skin']['cost_usd']}, {int(time.time() - start)}s)"
@@ -1154,10 +1134,10 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
     Sin backend LLM o sin listener: 503 fail-loud (no hay fallback scripted)."""
     import asyncio
 
-    if llm_client is None:
+    if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="LLM backend not initialised")
-    styles = style_packs.list_styles() if style_packs is not None else []
-    result = await asyncio.to_thread(llm_client.develop_world, body.draft_text, styles)
+    styles = deps.style_packs.list_styles() if deps.style_packs is not None else []
+    result = await asyncio.to_thread(deps.llm_client.develop_world, body.draft_text, styles)
     if result is None:
         raise HTTPException(
             status_code=503,
@@ -1196,7 +1176,7 @@ async def styles_upload(body: StyleUploadRequest):
     import unicodedata
 
     from style_pack_builder import missing_categories
-    from style_packs import _styles_dir_from_config
+    from deps.style_packs import _styles_dir_from_config
 
     styles_dir = _styles_dir_from_config()
     base = "user_" + (_re.sub(
@@ -1256,7 +1236,7 @@ async def styles_upload(body: StyleUploadRequest):
 
     from meshy_client import MeshyImageToImage
     missing = missing_categories(styles_dir, style_id)
-    per_image = MeshyImageToImage.cost_usd(config["sprite_skin_model"]) if config else 0.18
+    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if config else 0.18
     return {
         "style_id": style_id,
         "uploaded": uploaded,
@@ -1273,7 +1253,7 @@ async def styles_complete(style_id: str, body: StyleCompleteRequest):
     import re as _re
 
     from style_pack_builder import generate_missing, missing_categories
-    from style_packs import _styles_dir_from_config
+    from deps.style_packs import _styles_dir_from_config
 
     if not _re.fullmatch(r"[A-Za-z0-9_.-]+", style_id):
         raise HTTPException(status_code=422, detail="invalid style_id")
@@ -1286,7 +1266,7 @@ async def styles_complete(style_id: str, body: StyleCompleteRequest):
     if not missing:
         return {"generated": [], "cost_usd": 0.0, "message": "pack ya completo"}
     try:
-        result = await generate_missing(styles_dir, style_id, config["sprite_skin_model"])
+        result = await generate_missing(styles_dir, style_id, deps.config["sprite_skin_model"])
     except ValueError as e:
         raise HTTPException(status_code=503, detail=f"Meshy no disponible: {e}") from e
     except Exception as e:
@@ -1301,14 +1281,14 @@ async def report_player_choice(body: ReportPlayerChoiceRequest):
     produces an invalid response, this endpoint returns HTTP 503 / 422 so the
     bridge surfaces the error to the client."""
     import asyncio
-    if llm_client is None:
+    if deps.llm_client is None:
         raise HTTPException(
             status_code=503,
-            detail="ai_server has no llm_client configured — no MCP listener, no API key",
+            detail="ai_server has no deps.llm_client configured — no MCP listener, no API key",
         )
     try:
         result = await asyncio.to_thread(
-            llm_client.report_player_choice,
+            deps.llm_client.report_player_choice,
             body.event_id,
             body.speaker,
             body.chosen_text,
@@ -1338,10 +1318,10 @@ async def review_scene_blueprint(body: ReviewBlueprintRequest):
     { approved, issues, fixes? }. Fail-loud: sin listener MCP → 503; timeout →
     504; respuesta inválida del LLM → 422. Nunca 200 con error."""
     import asyncio
-    if llm_client is None:
+    if deps.llm_client is None:
         raise HTTPException(
             status_code=503,
-            detail="ai_server has no llm_client configured — no MCP listener",
+            detail="ai_server has no deps.llm_client configured — no MCP listener",
         )
     # El bloque de imagen MCP exige base64 puro; aceptar también data URLs.
     image_b64 = body.image_b64
@@ -1349,7 +1329,7 @@ async def review_scene_blueprint(body: ReviewBlueprintRequest):
         _, _, image_b64 = image_b64.partition(",")
     try:
         result = await asyncio.to_thread(
-            llm_client.review_blueprint,
+            deps.llm_client.review_blueprint,
             image_b64,
             body.scene,
             {"scene_id": body.scene_id},
@@ -1369,8 +1349,8 @@ async def review_scene_blueprint(body: ReviewBlueprintRequest):
 async def notify_session(body: NotifySessionRequest):
     """Godot calls this when the player starts or resumes a narrative session.
     The session metadata is propagated to Claude on the next bridge request."""
-    if llm_client is not None:
-        llm_client.set_session(body.session_id, body.game_id, body.is_resume)
+    if deps.llm_client is not None:
+        deps.llm_client.set_session(body.session_id, body.game_id, body.is_resume)
     return {
         "ok": True,
         "session_id": body.session_id,
@@ -1383,11 +1363,11 @@ async def notify_session(body: NotifySessionRequest):
 async def list_assets(asset_type: str | None = None, limit: int = 50):
     """List indexed assets from the shared manifest. Used by the narrative engine
     to discover what's already been generated and avoid re-generation."""
-    if asset_manifest is None:
+    if deps.asset_manifest is None:
         return {"assets": [], "total": 0}
     return {
-        "assets": asset_manifest.list_assets(asset_type=asset_type, limit=limit),
-        "total": asset_manifest.total_count(),
+        "assets": deps.asset_manifest.list_assets(asset_type=asset_type, limit=limit),
+        "total": deps.asset_manifest.total_count(),
     }
 
 
@@ -1395,9 +1375,9 @@ async def list_assets(asset_type: str | None = None, limit: int = 50):
 async def asset_by_hash(hash_key: str):
     """Look up all manifest entries for a specific hash (may include several
     subtypes — e.g. a texture has both albedo and normal)."""
-    if asset_manifest is None:
+    if deps.asset_manifest is None:
         return Response(status_code=404, content="No manifest")
-    matches = asset_manifest.find_by_hash(hash_key)
+    matches = deps.asset_manifest.find_by_hash(hash_key)
     if not matches:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1421,7 +1401,7 @@ async def asset_by_hash(hash_key: str):
 @app.get("/cache/sprite/{hash_key}")
 async def get_cached_sprite(hash_key: str):
     """Serve a cached sprite PNG (RGBA with transparency)."""
-    data = sprite_cache.get_by_hash(hash_key, "sprite")
+    data = deps.sprite_cache.get_by_hash(hash_key, "sprite")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1431,7 +1411,7 @@ async def get_cached_sprite(hash_key: str):
 @app.get("/cache/skin/{hash_key}")
 async def get_cached_skin(hash_key: str):
     """Serve a cached skin PNG."""
-    data = skin_cache.get_by_hash(hash_key, "skin")
+    data = deps.skin_cache.get_by_hash(hash_key, "skin")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1442,7 +1422,7 @@ async def get_cached_skin(hash_key: str):
 @app.get("/cache/scene/{hash_key}")
 async def get_cached_scene(hash_key: str):
     """Serve a cached scene background PNG (full or outpainted)."""
-    data = scene_cache.get_by_hash(hash_key, "scene")
+    data = deps.scene_cache.get_by_hash(hash_key, "scene")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1452,7 +1432,7 @@ async def get_cached_scene(hash_key: str):
 @app.get("/cache/plate/{hash_key}")
 async def get_cached_plate(hash_key: str):
     """Serve a cached scene background plate (scene minus tall objects)."""
-    data = scene_cache.get_by_hash(hash_key, "plate")
+    data = deps.scene_cache.get_by_hash(hash_key, "plate")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1462,7 +1442,7 @@ async def get_cached_plate(hash_key: str):
 @app.get("/cache/segment/{hash_key}")
 async def get_cached_segment(hash_key: str):
     """Serve a cached occluder sprite PNG (RGBA cutout from the scene image)."""
-    data = segment_cache.get_by_hash(hash_key, "segment")
+    data = deps.segment_cache.get_by_hash(hash_key, "segment")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1472,7 +1452,7 @@ async def get_cached_segment(hash_key: str):
 @app.get("/cache/model/{hash_key}")
 async def get_cached_model(hash_key: str):
     """Serve a cached GLB model."""
-    data = model_cache.get_by_hash(hash_key, "model")
+    data = deps.model_cache.get_by_hash(hash_key, "model")
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1485,7 +1465,7 @@ async def get_cached_asset(map_type: str, hash_key: str):
     if map_type not in ("albedo", "normal", "roughness"):
         return Response(status_code=400, content="Invalid map type")
 
-    data = asset_cache.get_by_hash(hash_key, map_type)
+    data = deps.asset_cache.get_by_hash(hash_key, map_type)
     if data is None:
         return Response(status_code=404, content="Not found")
     _touch_asset(hash_key)
@@ -1495,7 +1475,7 @@ async def get_cached_asset(map_type: str, hash_key: str):
 @app.get("/cache/check/{hash_key}")
 async def check_cache(hash_key: str):
     """Check if a texture set is cached."""
-    cache_dir = asset_cache.cache_dir / hash_key
+    cache_dir = deps.asset_cache.cache_dir / hash_key
     if not cache_dir.exists():
         return {"exists": False, "maps": []}
     maps = [f.stem for f in cache_dir.iterdir() if f.suffix == ".png"]
@@ -1503,6 +1483,7 @@ async def check_cache(hash_key: str):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="NE-Fan AI Server")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
