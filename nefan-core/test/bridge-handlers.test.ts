@@ -29,7 +29,6 @@ import {
   makeCtx,
   makeSocket,
   waitFor,
-  type FakeAi,
   REAL_GAMES_DIR,
   REAL_STYLES_DIR,
 } from "./helpers.js";
