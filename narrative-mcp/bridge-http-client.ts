@@ -6,8 +6,10 @@
  * through the AI server over WebSocket.
  */
 
+import { RUNTIME_CONFIG } from "./runtime-config.js";
+
 const BRIDGE_HTTP_URL =
-  process.env.NEFAN_STATE_HTTP_URL || "http://127.0.0.1:9878";
+  process.env.NEFAN_STATE_HTTP_URL || `http://127.0.0.1:${RUNTIME_CONFIG.ports.state_api}`;
 const TIMEOUT_MS = 8_000;
 
 /** Hook de actividad: server.ts lo instala para convertir CADA llamada de

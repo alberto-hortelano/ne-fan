@@ -36,9 +36,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve paths relative to project root (works from both src/ and dist/)
 const projectRoot = resolve(__dirname, "..");
 const dataDir = resolve(projectRoot, "data").replace("/dist/data", "/data");
-const PORT = Number(process.env.NEFAN_BRIDGE_PORT ?? 9877);
+const PORT = Number(process.env.NEFAN_BRIDGE_PORT ?? CONFIG.ports.bridge);
 // State HTTP API for the narrative engine's tools (map / entities / inventory).
-const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? 9878);
+const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? CONFIG.ports.state_api);
 const GAMES_DIR = resolve(dataDir, "games");
 const STYLES_DIR = resolve(dataDir, "styles");
 

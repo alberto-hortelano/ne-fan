@@ -15,6 +15,7 @@ import type {
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
+import { CONFIG } from "@nefan-core/src/config.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -49,7 +50,7 @@ export class BridgeClient {
   private pending = new Map<string, PendingRequest>();
   private nextRequestId = 0;
 
-  constructor(url = "ws://127.0.0.1:9877") {
+  constructor(url = `ws://127.0.0.1:${CONFIG.ports.bridge}`) {
     this.url = url;
     this.connect();
   }

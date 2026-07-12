@@ -99,6 +99,23 @@ export interface NefanConfig {
      *  del manifest) hasta bajar del límite. 0 = sin límite. */
     cache_max_bytes: number;
   };
+  /** Puertos del stack — fuente única. Los consumidores TS importan CONFIG;
+   *  los servicios no-TS (narrative-mcp, ai_server) leen el snapshot
+   *  runtime_config.json. Las env vars de cada servicio siguen mandando como
+   *  override (NEFAN_BRIDGE_PORT, NARRATIVE_WS_PORT…). El puerto HTTP del
+   *  ai_server vive en su propio bloque (ai_server.port). */
+  ports: {
+    /** WebSocket bridge de nefan-core (ws-server.ts). */
+    bridge: number;
+    /** State HTTP API del bridge (tools del motor narrativo). */
+    state_api: number;
+    /** WebSocket del narrative-mcp (ai_server ↔ motor). */
+    narrative_ws: number;
+    /** Remote control TCP de Godot (testing automatizado). */
+    godot_remote: number;
+    /** Vite dev server del cliente HTML 2D. */
+    html: number;
+  };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
    *  ai_server, para resolver los style packs (imágenes de referencia). */
@@ -150,6 +167,13 @@ export const CONFIG: NefanConfig = {
     texture_lazy_load: true,
     expose_diagnostic: false,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+  },
+  ports: {
+    bridge: 9877,
+    state_api: 9878,
+    narrative_ws: 3737,
+    godot_remote: 9876,
+    html: 3000,
   },
   content: {
     games_dir: "nefan-core/data/games",

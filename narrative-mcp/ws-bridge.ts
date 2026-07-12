@@ -1,7 +1,8 @@
 import { WebSocketServer, WebSocket as WsWebSocket, type WebSocket } from 'ws';
 import type { ClientMsg, PeerMsg, RequestMsg } from './protocol.js';
+import { RUNTIME_CONFIG } from './runtime-config.js';
 
-const PORT = Number(process.env.NARRATIVE_WS_PORT) || 3737;
+const PORT = Number(process.env.NARRATIVE_WS_PORT) || RUNTIME_CONFIG.ports.narrative_ws;
 
 interface PendingResponse {
   resolve: (data: Record<string, unknown>) => void;

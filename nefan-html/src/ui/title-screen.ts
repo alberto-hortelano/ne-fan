@@ -34,7 +34,7 @@ export type TitleAction =
 
 /** State API del bridge (:9878) — sirve las covers de los estilos como
  *  estáticos, con o sin ai_server. */
-const STATE_API_URL = "http://127.0.0.1:9878";
+const STATE_API_URL = `http://127.0.0.1:${CONFIG.ports.state_api}`;
 /** ai_server (:8765) — subida de estilos y generación de las categorías que
  *  falten (Meshy). Sin ai_server, "Subir estilo" falla con error visible. */
 const AI_SERVER_HTTP = "http://127.0.0.1:8765";
