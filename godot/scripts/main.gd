@@ -1,6 +1,5 @@
 extends Node3D
 
-const RoomBuilderScript = preload("res://scripts/room/room_builder.gd")
 const SceneBuilderScript = preload("res://scripts/room/scene_builder.gd")
 const TextureLoaderScript = preload("res://scripts/ai_assets/texture_loader.gd")
 const ModelLoaderScript = preload("res://scripts/ai_assets/model_loader.gd")
@@ -29,7 +28,7 @@ var _dev_menu: CanvasLayer
 var _camera_controller: Node3D
 var _dialogue_ui: Node  # DialogueUI
 
-var _room_builder = RoomBuilderScript.new()
+var _scene_builder = SceneBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
 var _model_loader = ModelLoaderScript.new()
 var _hud: CanvasLayer
@@ -199,9 +198,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
-			KEY_F1: _load_room_from_file(0)
-			KEY_F2: _load_room_from_file(1)
-			KEY_F3: _load_room_from_file(2)
 			KEY_F12: _dev_menu.toggle()
 			KEY_R:
 				if _player_combatant.health <= 0.0:
@@ -464,18 +460,11 @@ func return_to_title() -> void:
 func _scan_rooms() -> void:
 	_room_files.clear()
 	var game: Array[String] = []
-	var style: Array[String] = []
 	var dev: Array[String] = []
 	_scan_room_dir("res://test_rooms", false)
-	# Separate into categories
-	var all := _room_files.duplicate()
+	for f: String in _room_files:
+		game.append(f)
 	_room_files.clear()
-	for f: String in all:
-		var fname: String = f.get_file()
-		if fname.begins_with("style_"):
-			style.append(f)
-		else:
-			game.append(f)
 	_scan_room_dir("res://test_rooms/dev", false)
 	for f: String in _room_files:
 		dev.append(f)
@@ -485,12 +474,10 @@ func _scan_rooms() -> void:
 	for f: String in _room_files:
 		stress.append(f)
 	game.sort()
-	style.sort()
 	dev.sort()
 	stress.sort()
 	_room_files = []
 	_room_files.append_array(game)
-	_room_files.append_array(style)
 	_room_files.append_array(dev)
 	_room_files.append_array(stress)
 	print("Scanned %d rooms" % _room_files.size())
@@ -606,13 +593,8 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 		_current_room = null
 		await get_tree().process_frame
 
-	_current_room = _room_builder.build_room(data)
+	_current_room = _scene_builder.build_scene(data)
 	add_child(_current_room)
-
-	# Set player reference for ChunkManager (if outdoor chunked terrain)
-	var chunk_mgr = _current_room.get_node_or_null("ChunkManager")
-	if chunk_mgr:
-		chunk_mgr.set_player(_player)
 
 	# AI assets (async, progressive)
 	_texture_loader.load_room_textures(_current_room)

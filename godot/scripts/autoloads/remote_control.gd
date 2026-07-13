@@ -471,7 +471,7 @@ func _cmd_load_game(args: Dictionary) -> String:
 	var skip_editor: bool = args.get("skip_editor", false)
 	var main_scene := get_tree().current_scene
 	if main_scene and main_scene.has_method("_on_title_game_selected"):
-		var scene_path: String = args.get("scene_path", "res://test_rooms/millhaven.json")
+		var scene_path: String = args.get("scene_path", "res://test_rooms/robledo_village.json")
 		main_scene._on_title_game_selected(game_id, scene_path)
 		# Remove title screen if it exists
 		var title := main_scene.get_node_or_null("TitleScreen")
@@ -511,7 +511,7 @@ func _cmd_set_appearance(args: Dictionary) -> String:
 	if main_scene.has_method("_apply_player_appearance"):
 		main_scene._apply_player_appearance(model_id, skin_path)
 	if main_scene.has_method("_start_game"):
-		main_scene._start_game("alta_fantasia", "res://test_rooms/millhaven.json")
+		main_scene._start_game("alta_fantasia", "res://test_rooms/robledo_village.json")
 	return '{"ok":true,"model_id":"%s","skin_path":"%s"}' % [model_id, skin_path]
 
 

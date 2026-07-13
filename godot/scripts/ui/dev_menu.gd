@@ -93,8 +93,8 @@ func set_rooms(room_files: Array[String]) -> void:
 		var cat := "game"
 		if "/dev/" in file_path:
 			cat = "dev"
-		elif "style_" in fname:
-			cat = "style"
+		elif "/stress/" in file_path:
+			cat = "stress"
 
 		if cat != current_cat:
 			current_cat = cat
