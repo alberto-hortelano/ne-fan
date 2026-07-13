@@ -3,9 +3,8 @@
 Start with: python ai_server/main.py [--port 8765]
 """
 
-import base64
-import io
 import json
+import logging
 import os
 import time
 import argparse
@@ -32,12 +31,9 @@ def _load_env_file(env_path: Path) -> None:
 _env_file = Path(__file__).resolve().parent.parent / ".env"
 _load_env_file(_env_file)
 
-import logging
-
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -64,12 +60,15 @@ from dev_api_cache import DEV_API_CACHE
 from sprite_skin_meshy import SpriteSkinMeshy
 from scene_image_generator import SceneImageGenerator, SIDES
 from style_packs import StylePackResolver
-from PIL import Image
 from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter, crop_sprite, scene_rgb_from_png
 from asset_cache import AssetCache, AssetManifest
+from asset_paths import SPRITE_SHEETS_DIR, SKINNED_SHEETS_DIR
 
 from deps import deps
+from routers.cache_assets import _cache_dirs_by_type
+from routers.cache_assets import router as cache_assets_router
+from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
 
@@ -283,6 +282,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Routers por dominio (importan `deps` directamente, sin ciclos con main).
+app.include_router(cache_assets_router)
+app.include_router(styles_router)
+
 
 # ── Request models ──
 # Pydantic models replace the previous `await request.json()` + body.get(...)
@@ -364,21 +367,6 @@ class DevelopWorldRequest(BaseModel):
     draft_text: str = Field(min_length=20, max_length=64_000)
 
 
-class StyleUploadRequest(BaseModel):
-    """Subida de un estilo de usuario: nombre + imágenes por categoría en
-    base64 (JSON, no multipart — evita la dependencia python-multipart)."""
-    name: str = Field(min_length=2, max_length=60)
-    description: str = Field(default="", max_length=500)
-    style_token: str = Field(default="", max_length=300)
-    images: list[dict] = Field(min_length=1, max_length=9)
-
-
-class StyleCompleteRequest(BaseModel):
-    """Confirmación explícita del usuario para generar las categorías que
-    faltan (coste real en créditos Meshy)."""
-    confirm: bool = False
-
-
 class AnalyzeWeaponRequest(BaseModel):
     images: list[str] = Field(min_length=1)
     weapon_type: str = "generic"
@@ -451,44 +439,6 @@ class ScenePlateRequest(BaseModel):
     mask_b64: str = Field(min_length=1)
 
 
-def _cache_dirs_by_type() -> dict[str, Path]:
-    """asset_type → raíz del cache de ese tipo (el blob vive en {dir}/{hash})."""
-    return {
-        "texture": Path(deps.config["texture_cache_dir"]),
-        "model": Path(deps.config["model_cache_dir"]),
-        "skin": Path(deps.config["skin_cache_dir"]),
-        "sprite": Path(deps.config["sprite_cache_dir"]),
-        "scene": Path(deps.config["scene_cache_dir"]),
-        "segment": Path(deps.config["segment_cache_dir"]),
-    }
-
-
-def _touch_asset(hash_key: str) -> None:
-    """Marca un asset como usado para el LRU del prune (no-op sin manifest)."""
-    if deps.asset_manifest is not None:
-        deps.asset_manifest.touch(hash_key)
-
-
-class DevApiCacheRequest(BaseModel):
-    enabled: bool
-
-
-@app.get("/dev/api_cache")
-async def dev_api_cache_status():
-    """Estado del cache de modo dev (toggle de la top bar del cliente 2D):
-    on/off + último payload guardado por canal de API."""
-    return DEV_API_CACHE.status()
-
-
-@app.post("/dev/api_cache")
-async def dev_api_cache_toggle(body: DevApiCacheRequest):
-    """Enciende/apaga el modo dev: con él activo, cada API de IA de pago
-    (Meshy i2i, Meshy 3D, fal) devuelve su última respuesta cacheada en vez
-    de llamar de verdad. Persiste en disco (sobrevive reinicios)."""
-    DEV_API_CACHE.set_enabled(body.enabled)
-    return DEV_API_CACHE.status()
-
-
 @app.get("/health")
 async def health():
     cache_total = deps.asset_manifest.total_bytes() if deps.asset_manifest else 0
@@ -501,18 +451,6 @@ async def health():
         "cache_max_bytes": cache_max,
         "cache_over_limit": bool(cache_max and cache_total > cache_max),
     }
-
-
-@app.post("/cache/prune")
-async def prune_cache():
-    """Fuerza una pasada de eviction LRU hasta bajar de cache_max_bytes."""
-    if deps.asset_manifest is None:
-        raise HTTPException(status_code=503, detail="manifest not ready")
-    max_cache_bytes = int(deps.config["cache_max_bytes"])
-    if max_cache_bytes <= 0:
-        raise HTTPException(status_code=400, detail="cache_max_bytes is 0 (no limit configured)")
-    summary = deps.asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
-    return {"ok": True, **summary}
 
 
 @app.post("/generate_scene")
@@ -985,13 +923,6 @@ async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
     }
 
 
-# Where the HTML 2D client serves Mixamo sprite sheets from. Resolved relative
-# to the project root so the ai_server can read them off disk and run img2img
-# over each frame.
-SPRITE_SHEETS_DIR = Path(__file__).resolve().parent.parent / "nefan-html" / "public" / "sprites"
-SKINNED_SHEETS_DIR = Path(__file__).resolve().parent.parent / "cache" / "sprite_sheets"
-
-
 def _skin_sheet_key(
     model: str, anim: str, angle: str, prompt: str, ai_model: str, style_key: str = ""
 ) -> str:
@@ -1114,19 +1045,6 @@ async def skin_sprite_sheet_endpoint(request: Request):
     }
 
 
-@app.get("/cache/sprite_sheet/{hash_key}/{filename}")
-async def get_skinned_sheet_frame(hash_key: str, filename: str):
-    """Serve a single frame of a skinned sprite sheet."""
-    # Tight path validation — only the canonical filename pattern is allowed.
-    import re
-    if not re.fullmatch(r"dir_\d+_frame_\d{3}\.png", filename):
-        return Response(status_code=400, content="Invalid filename")
-    path = SKINNED_SHEETS_DIR / hash_key / filename
-    if not path.exists():
-        return Response(status_code=404, content="Not found")
-    return Response(content=path.read_bytes(), media_type="image/png")
-
-
 @app.post("/develop_world")
 async def develop_world_endpoint(body: DevelopWorldRequest):
     """Desarrolla el borrador de mundo de un jugador (kind MCP develop_world).
@@ -1158,119 +1076,6 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
         "world_brief": game["world_brief"],
         "world_md": game["world_md"],
     }}
-
-
-_STYLE_CATEGORIES = (
-    "nature", "settlement", "fortress", "interior", "underground",
-    "character_commoner", "character_noble", "character_warrior",
-)
-
-
-@app.post("/styles/upload")
-async def styles_upload(body: StyleUploadRequest):
-    """Crea data/styles/user_{slug}/ con las imágenes subidas y devuelve qué
-    categorías faltan + coste estimado de completarlas. NO genera nada aún:
-    la generación requiere confirmación explícita (/styles/{id}/complete)."""
-    import re as _re
-    import unicodedata
-
-    from style_pack_builder import missing_categories
-    from style_packs import _styles_dir_from_config
-
-    styles_dir = _styles_dir_from_config()
-    base = "user_" + (_re.sub(
-        r"[^a-z0-9]+", "_",
-        unicodedata.normalize("NFD", body.name.lower()).encode("ascii", "ignore").decode(),
-    ).strip("_")[:40] or "estilo")
-    style_id = base
-    i = 2
-    while (styles_dir / style_id).exists():
-        style_id = f"{base}_{i}"
-        i += 1
-
-    pack_dir = styles_dir / style_id
-    pack_dir.mkdir(parents=True)
-    uploaded: list[str] = []
-    for img in body.images:
-        category = str(img.get("category", ""))
-        if category not in _STYLE_CATEGORIES:
-            raise HTTPException(status_code=422, detail=f"invalid category: {category}")
-        if category in uploaded:
-            raise HTTPException(status_code=422, detail=f"duplicate category: {category}")
-        b64 = str(img.get("image_b64", ""))
-        if "," in b64[:64]:  # tolerar data URIs
-            b64 = b64.split(",", 1)[1]
-        try:
-            raw = base64.b64decode(b64, validate=True)
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"bad base64 for {category}") from e
-        if len(raw) > 12 * 1024 * 1024:
-            raise HTTPException(status_code=422, detail=f"image too large for {category} (>12MB)")
-        try:
-            pil = Image.open(io.BytesIO(raw)).convert("RGB")
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"not a decodable image: {category}") from e
-        w, h = pil.size
-        scale = min(1.0, 1024 / max(w, h))
-        if scale < 1.0:
-            pil = pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        pil.save(pack_dir / f"{category}.jpg", "JPEG", quality=90)
-        uploaded.append(category)
-
-    manifest = {
-        "style_id": style_id,
-        "name": body.name,
-        "description": body.description or f"Estilo subido por el jugador: {body.name}.",
-        "style_token": body.style_token
-            or f"consistent hand-crafted art style of the reference images ({body.name})",
-        "cover": "cover.jpg",
-        "refs": [{"category": c, "file": f"{c}.jpg", "tags": []} for c in _STYLE_CATEGORIES],
-    }
-    (pack_dir / "style.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    # Cover provisional: la primera imagen subida (se sobreescribe al completar
-    # si aparece un entorno mejor).
-    (pack_dir / "cover.jpg").write_bytes((pack_dir / f"{uploaded[0]}.jpg").read_bytes())
-
-    from meshy_client import MeshyImageToImage
-    missing = missing_categories(styles_dir, style_id)
-    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if deps.config else 0.18
-    return {
-        "style_id": style_id,
-        "uploaded": uploaded,
-        "missing": missing,
-        "cost_per_image_usd": per_image,
-        "estimated_cost_usd": round(len(missing) * per_image, 2),
-    }
-
-
-@app.post("/styles/{style_id}/complete")
-async def styles_complete(style_id: str, body: StyleCompleteRequest):
-    """Genera las categorías que faltan de un pack de usuario usando sus
-    imágenes como referencia de estilo. Requiere confirm=true (coste real)."""
-    import re as _re
-
-    from style_pack_builder import generate_missing, missing_categories
-    from style_packs import _styles_dir_from_config
-
-    if not _re.fullmatch(r"[A-Za-z0-9_.-]+", style_id):
-        raise HTTPException(status_code=422, detail="invalid style_id")
-    if not body.confirm:
-        raise HTTPException(status_code=422, detail="confirm=true required (esta llamada gasta créditos)")
-    styles_dir = _styles_dir_from_config()
-    if not (styles_dir / style_id / "style.json").exists():
-        raise HTTPException(status_code=404, detail=f"style not found: {style_id}")
-    missing = missing_categories(styles_dir, style_id)
-    if not missing:
-        return {"generated": [], "cost_usd": 0.0, "message": "pack ya completo"}
-    try:
-        result = await generate_missing(styles_dir, style_id, deps.config["sprite_skin_model"])
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=f"Meshy no disponible: {e}") from e
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"style generation failed: {e}") from e
-    return result
 
 
 @app.post("/report_player_choice")
@@ -1356,129 +1161,6 @@ async def notify_session(body: NotifySessionRequest):
         "game_id": body.game_id,
         "is_resume": body.is_resume,
     }
-
-
-@app.get("/assets")
-async def list_assets(asset_type: str | None = None, limit: int = 50):
-    """List indexed assets from the shared manifest. Used by the narrative engine
-    to discover what's already been generated and avoid re-generation."""
-    if deps.asset_manifest is None:
-        return {"assets": [], "total": 0}
-    return {
-        "assets": deps.asset_manifest.list_assets(asset_type=asset_type, limit=limit),
-        "total": deps.asset_manifest.total_count(),
-    }
-
-
-@app.get("/assets/by_hash/{hash_key}")
-async def asset_by_hash(hash_key: str):
-    """Look up all manifest entries for a specific hash (may include several
-    subtypes — e.g. a texture has both albedo and normal)."""
-    if deps.asset_manifest is None:
-        return Response(status_code=404, content="No manifest")
-    matches = deps.asset_manifest.find_by_hash(hash_key)
-    if not matches:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    enriched = []
-    for m in matches:
-        entry = dict(m)
-        atype = m.get("type", "")
-        subtype = m.get("subtype", "")
-        if atype == "texture":
-            entry["cache_url"] = f"/cache/{subtype}/{hash_key}"
-        elif atype == "model":
-            entry["cache_url"] = f"/cache/model/{hash_key}"
-        elif atype == "skin":
-            entry["cache_url"] = f"/cache/skin/{hash_key}"
-        elif atype == "sprite":
-            entry["cache_url"] = f"/cache/sprite/{hash_key}"
-        enriched.append(entry)
-    return {"matches": enriched}
-
-
-@app.get("/cache/sprite/{hash_key}")
-async def get_cached_sprite(hash_key: str):
-    """Serve a cached sprite PNG (RGBA with transparency)."""
-    data = deps.sprite_cache.get_by_hash(hash_key, "sprite")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-@app.get("/cache/skin/{hash_key}")
-async def get_cached_skin(hash_key: str):
-    """Serve a cached skin PNG."""
-    data = deps.skin_cache.get_by_hash(hash_key, "skin")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-
-@app.get("/cache/scene/{hash_key}")
-async def get_cached_scene(hash_key: str):
-    """Serve a cached scene background PNG (full or outpainted)."""
-    data = deps.scene_cache.get_by_hash(hash_key, "scene")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-@app.get("/cache/plate/{hash_key}")
-async def get_cached_plate(hash_key: str):
-    """Serve a cached scene background plate (scene minus tall objects)."""
-    data = deps.scene_cache.get_by_hash(hash_key, "plate")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-@app.get("/cache/segment/{hash_key}")
-async def get_cached_segment(hash_key: str):
-    """Serve a cached occluder sprite PNG (RGBA cutout from the scene image)."""
-    data = deps.segment_cache.get_by_hash(hash_key, "segment")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-@app.get("/cache/model/{hash_key}")
-async def get_cached_model(hash_key: str):
-    """Serve a cached GLB model."""
-    data = deps.model_cache.get_by_hash(hash_key, "model")
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="model/gltf-binary")
-
-
-@app.get("/cache/{map_type}/{hash_key}")
-async def get_cached_asset(map_type: str, hash_key: str):
-    """Serve a cached texture PNG."""
-    if map_type not in ("albedo", "normal", "roughness"):
-        return Response(status_code=400, content="Invalid map type")
-
-    data = deps.asset_cache.get_by_hash(hash_key, map_type)
-    if data is None:
-        return Response(status_code=404, content="Not found")
-    _touch_asset(hash_key)
-    return Response(content=data, media_type="image/png")
-
-
-@app.get("/cache/check/{hash_key}")
-async def check_cache(hash_key: str):
-    """Check if a texture set is cached."""
-    cache_dir = deps.asset_cache.cache_dir / hash_key
-    if not cache_dir.exists():
-        return {"exists": False, "maps": []}
-    maps = [f.stem for f in cache_dir.iterdir() if f.suffix == ".png"]
-    return {"exists": bool(maps), "maps": maps}
 
 
 if __name__ == "__main__":
