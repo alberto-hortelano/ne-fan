@@ -9,7 +9,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { NarrativeState } from "../src/narrative/narrative-state.js";
-import { MemorySessionStorage } from "../src/narrative/session-storage.js";
+import { makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
@@ -31,7 +31,7 @@ let mutations = 0;
 let progressMessages: string[] = [];
 
 before(async () => {
-  narrative = new NarrativeState(new MemorySessionStorage());
+  narrative = makeNarrativeState().narrative;
   narrative.startNewSession("plugtest");
   activePlugins = new Map();
   server = createStateHttpServer({

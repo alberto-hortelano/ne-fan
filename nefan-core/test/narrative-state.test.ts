@@ -4,9 +4,10 @@ import assert from "node:assert/strict";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SCHEMA_VERSION } from "../src/narrative/types.js";
+import { makeNarrativeState } from "./helpers.js";
 
 function makeState() {
-  return new NarrativeState(new MemorySessionStorage());
+  return makeNarrativeState().narrative;
 }
 
 describe("NarrativeState lifecycle", () => {
