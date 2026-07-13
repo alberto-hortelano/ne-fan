@@ -1,0 +1,7 @@
+{
+  "description": "payload no string",
+  "expect": "reject",
+  "payload": {
+    "svg": 42
+  }
+}

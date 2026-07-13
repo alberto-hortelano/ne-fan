@@ -1,0 +1,7 @@
+{
+  "description": "no empieza por <svg",
+  "expect": "reject",
+  "payload": {
+    "svg": "M0,0 L10,10"
+  }
+}

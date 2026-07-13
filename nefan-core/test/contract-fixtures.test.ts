@@ -16,6 +16,8 @@ import {
   validateBlueprintReview,
   validateSceneClassify,
 } from "../../narrative-mcp/validators.js";
+import { sanitizeGroundSvg } from "../src/scene/map-svg.js";
+import { TILE_CELLS } from "../src/scene/tile.js";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../data/contract/fixtures", import.meta.url));
 
@@ -24,6 +26,8 @@ interface Fixture {
   expect: "accept" | "reject";
   payload: unknown;
   expected_indices?: number[];
+  /** Para sanitizadores que normalizan: output exacto esperado tras aceptar. */
+  expected_output?: string;
 }
 
 function loadFixtures(kind: string): Array<{ name: string; fx: Fixture }> {
@@ -42,10 +46,12 @@ function loadFixtures(kind: string): Array<{ name: string; fx: Fixture }> {
   return out;
 }
 
-const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean }> = {
+const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }> = {
   reaction: (fx) => validateNarrativeReaction(fx.payload),
   blueprint_review: (fx) => validateBlueprintReview(fx.payload),
   scene_classify: (fx) => validateSceneClassify(fx.payload, fx.expected_indices ?? null),
+  ground_svg: (fx) =>
+    sanitizeGroundSvg((fx.payload as { svg: unknown }).svg, TILE_CELLS, TILE_CELLS),
 };
 
 for (const [kind, run] of Object.entries(VALIDATORS)) {
@@ -59,6 +65,9 @@ for (const [kind, run] of Object.entries(VALIDATORS)) {
           expected,
           `esperaba ${fx.expect}, obtuve ${JSON.stringify(result)} — si el cambio de regla es intencional, actualiza el validador Python Y la fixture`,
         );
+        if (fx.expected_output !== undefined && result.ok) {
+          assert.equal(result.svg, fx.expected_output, "la normalización TS difiere del output esperado");
+        }
       });
     }
   });

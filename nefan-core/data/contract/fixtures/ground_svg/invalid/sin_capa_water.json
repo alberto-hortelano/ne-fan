@@ -1,0 +1,7 @@
+{
+  "description": "falta la capa water",
+  "expect": "reject",
+  "payload": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 128 128\"><g id=\"ground\"/></svg>"
+  }
+}
