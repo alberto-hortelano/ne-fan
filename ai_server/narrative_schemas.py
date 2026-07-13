@@ -1,336 +1,35 @@
-"""Tool definitions and validation for Claude API narrative engine."""
+"""Tool definitions and validation for Claude API narrative engine.
 
-GENERATE_SCENE_PROMPT_WORLD_RULES = """WORLD & ENGINE RULES (always apply — mirror of narrative-mcp/server.ts WORLD_RULES):
-- The request context carries the game's world identity: `world.description`
-  is the world brief (setting, peoples, factions, magic, tone) and, on
-  bootstrap requests, `world_document` is the FULL world document. Everything
-  you generate must fit THAT world — do not default to generic dark fantasy.
-- `world.style_token` names the visual style; style/texture prompts you emit
-  should harmonise with it.
-- `world.perspective` is the session's frozen 2D projection ("topdown" |
-  "isometric"). It is INFORMATIVE only: you always declare maps in flat world
-  cells and the engine's blueprint composer projects them — never draw
-  projected/foreshortened geometry yourself.
-- The camera is a fixed top-down/isometric 2D view.
-- Scene/tile JSON should include "style_tag": one of
-  nature|settlement|fortress|interior|underground — the dominant setting of
-  the map, used to pick the game's style reference image when painting it.
-- ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
-  bipeds; only humanoid animations exist. Never spawn talking animals, beasts
-  or non-humanoid monsters; supernatural beings appear in human form.
-- NPC dialogue and descriptions are in Spanish, matching the world's register.
-
-NARRATIVE DIRECTION (how to run a story worth playing):
-- NPCs have their OWN agendas, loyalties and fears. Nobody dumps everything
-  they know: information, favours and trust are currency — make the player
-  EARN them (payment, leverage, risk, reciprocity). An NPC may lie, deflect
-  or half-answer when it serves their interest.
-- FOLLOW THE PLAYER, don't rail-road. When they ignore your hook, deviate or
-  invent something (a debt, an acquaintance, a lie), pick it up and WEAVE it
-  into the world's threads instead of steering back. Off-script play is the
-  point of this engine.
-- Actions have believable consequences: threats close doors, generosity opens
-  them, lies eventually surface. Let aggressive or foolish choices COST
-  something — a world without pushback is boring.
-- Escalate quietly: every few turns introduce a complication that raises the
-  stakes (a rival got there first, a patron grows suspicious, a deadline
-  moves up) via schedule_event / spawn_entity — without erasing player agency.
-- NO generic fetch-quests. A task is only worth giving if it is entangled
-  with someone's agenda and has a cost or a secret attached.
-- MEMORY DISCIPLINE: story_so_far + story_update deltas are the engine's ONLY
-  long-term memory (dialogue history keeps just the last few exchanges).
-  Record every fact you'll need later — names, debts, pacts, who knows what —
-  as story_update deltas, or the world WILL contradict itself.
+Los PROMPTS canónicos viven en nefan-core/data/contract/prompts/*.md,
+compartidos con narrative-mcp (que los sirve tal cual al motor MCP). Este
+módulo solo COMPONE los system prompts del fallback por API directa a partir
+de esos archivos — editar el texto allí, nunca aquí. Fail-loud si faltan.
 """
 
-GENERATE_SCENE_SYSTEM_PROMPT = """You are the world builder of Never Ending Fantasy, a generative open-world RPG whose world identity comes from the request context (see WORLD & ENGINE RULES below). You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are.
+import os
+from pathlib import Path
 
-""" + GENERATE_SCENE_PROMPT_WORLD_RULES + """
+_PROMPTS_DIR = Path(
+    os.environ.get(
+        "NEFAN_CONTRACT_PROMPTS",
+        Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "contract" / "prompts",
+    )
+)
 
-OUTPUT SHAPE — "Map Format D" — ALWAYS this exact structure, nothing else:
 
-{
-  "scene_id": "<slug, e.g. 'tavern_clearing' or 'forest_path'>",
-  "place_id": "<optional: the world-map place id this scene realizes>",
-  "scene_description": "<2-3 sentences in Spanish describing the scene>",
-  "size":  { "cols": <int>, "rows": <int>, "meters_per_cell": <0.5 interior | 2 exterior> },
-  "terrain": [
-    "<string of EXACTLY `cols` chars>",
-    ...   // EXACTLY `rows` strings total
-  ],
-  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
-  "terrain_features": [   // OPTIONAL — smooth vector shapes over the grid (see TERRAIN FEATURES)
-    { "type": "river" | "path" | "bridge" | "stone" | "dirt" | "sand" | "wood" | "<free name>",
-      "points": [[<col>, <row>], ...],   // cell coords, floats allowed
-      "width": <cells>,                  // polyline stroke width; default 1
-      "closed": true | false }           // true = filled polygon
-  ],
-  "structures": [   // PREFERRED for any enterable room/building (see STRUCTURES)
-    { "type": "room", "rect": [<col>, <row>, <w>, <h>], "wall_char": "W", "floor_char": "o",
-      "doors": [ { "side": "north"|"south"|"east"|"west", "at": <cells>, "width": <cells> } ] }
-  ],
-  "vegetation_zones": [   // OPTIONAL — deterministic tree scatter (see VEGETATION ZONES)
-    { "type": "<plant name>", "area": [<col>, <row>, <w>, <h>], "density": 0.05-0.25 }
-  ],
-  "entities": [
-    {
-      "id":        "<unique slug, e.g. 'tavern_main', 'tree_n1', 'boris'>",
-      "kind":      "building" | "prop" | "item" | "tree" | "npc" | "player" | "decor",
-      "name":      "<spanish display name>",
-      "cell":      [<col>, <row>],       // 0-indexed; top-left of footprint
-      "footprint": [<width_cells>, <height_cells>],
-      "glyph":     "<one ASCII char, must be different from terrain chars>",
-      "shape":     "box" | "cylinder" | "sphere" | "cone",  // optional; default box
-      "role":      "peasant" | "guard" | "villager" | "merchant"  // optional, kind:"npc" only — ambient behaviour
-    },
-    ...
-  ],
-  "ambient_event": "<one Spanish sentence of atmospheric flavour>"
-}
+def _prompt(name: str) -> str:
+    return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
-COORDINATE SYSTEM
-- Top-left is (0,0). Col grows EAST, row grows SOUTH.
 
-SCALE — meters_per_cell (CHOOSE IT per scene; do NOT default to 2)
-- A [1,1] footprint is meters_per_cell metres across, and the player is ~0.8 m.
-  Pick meters_per_cell to match the smallest thing that matters, keeping cols/rows
-  within budget (≤ 80×60). Real size = cols × meters_per_cell.
-- INTERIOR (tavern, shop, room): meters_per_cell 0.5 → a [1,1] prop is a 0.5 m
-  stool/keg (≈ the player). Size so cols×0.5 ≈ real width: a tavern ~10×7 m ⇒
-  ~20×14 cells PLUS exterior margin. The room shell is a `structures` room (the
-  engine stamps its walls), NOT a building entity.
-- OUTDOOR small (clearing, cabin yard): meters_per_cell 2 → real ~30–50 m.
-- OUTDOOR town/village: meters_per_cell 2 → real ~60–120 m.
+GENERATE_SCENE_PROMPT_WORLD_RULES = _prompt("world_rules.md")
 
-GRID SIZES in CELLS (string budget; metres = cells × meters_per_cell)
-- Interior room: 16×12 to 28×20 (mpc 0.5 ⇒ 8–14 m).
-- Small clearing/cabin: 16×10 to 24×16 (mpc 2 ⇒ 32–48 m).
-- Town square / village: 32×24 to 48×30 (mpc 2).
-- Big town: 48×30 to 60×40 (mpc 2).
-- Never larger than 80×60.
-
-TERRAIN CHARS — reserved (you do not need to declare these in terrain_legend, but it doesn't hurt)
-- "g" grass (default)         - "_" path / dirt road        - "s" stone / paved
-- "w" water (river / pond)    - "b" bridge (wood over water)
-- "d" dirt / tilled soil      - "a" sand (river bank)       - "o" wood (planks / dock)
-- "W" wall (SOLID)
-You may invent additional chars (lowercase letters or "~", "-", ":") and document them in terrain_legend.
-
-SOLIDITY — collision (the player physically CANNOT cross solid cells)
-- "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.
-- A custom char is declared solid with the object form of terrain_legend:
-  "R": { "name": "roca desprendida", "solid": true }. Plain string values are walkable.
-- Consequence: every walled room NEEDS a door gap (a walkable char like "_" in its
-  W border) or the player is trapped inside — or locked out. Water that crosses the
-  map needs a bridge if the far side matters.
-
-STRUCTURES (build walls with these — NEVER hand-draw a W border)
-"structures": [
-  { "type": "room",
-    "rect": [<col>, <row>, <w_cells>, <h_cells>],   // outer rectangle, walls included, min 3x3
-    "wall_char": "W", "floor_char": "o",            // optional; defaults W / o
-    "doors": [ { "side": "north"|"south"|"east"|"west",
-                 "at": <cells from the rect's top/left corner>,  // 1..side-2 (corners can't be doors)
-                 "width": <cells, default 1> } ] }  // 1+ doors or the room is sealed
-]
-The engine stamps each room deterministically: CLOSED wall perimeter, floor
-inside, walkable door gaps ("_"). Walls are always solid; the wall char is
-auto-declared solid in the legend. Doors narrower than the player are
-auto-widened to a ~1.1 m clear gap (3 cells at mpc 0.5). Use ONE structure per
-enterable building/room and write only the BASE terrain (grass, paths) in the
-grid.
-
-VEGETATION ZONES (scatter, don't hand-place 20 trees)
-"vegetation_zones": [
-  { "type": "pino", "area": [<col>, <row>, <w>, <h>], "density": 0.1 }
-]
-The engine scatters `tree` entities deterministically (seeded by scene_id) over
-walkable cells of the area, skipping rooms, doors and occupied cells. density =
-fraction of cells planted (0.05 sparse … 0.25 thick). Hand-placed trees are
-still fine for singular landmarks.
-
-DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
-the nearest wall cell (torches, hanging signs, banners).
-
-EXTERIOR CONTEXT (open world — a scene is NEVER just the inside of a box)
-- An interior scene still shows 3-6 cells of exterior around the building (the
-  yard, the street, a strip of trees) and the door opens onto it.
-- A path (terrain_features) connects the door to the map edge where the world
-  continues, towards the neighbouring world-map place.
-- The player must be able to WALK from their start position through the door
-  and off the map edge. A sealed box with nothing outside is WRONG.
-
-FRONTIER REQUESTS
-The request may carry "frontier_request": { from_place_id, from_place_name,
-edge }. The player walked off that edge of the previous scene and the world
-continues there. Respond with a NEW scene whose "place_id" names the new
-adjacent place; put the player entity near the grid side OPPOSITE to the
-crossed edge (crossed east => player near the west side), and make the
-terrain visibly continue back toward it.
-
-TERRAIN FEATURES (optional; USE THEM for anything linear or organic — far better maps than cell rows)
-The grid paints broad zones; `terrain_features` draw SMOOTH VECTOR SHAPES on top: a meandering river, a curving road, a round plaza. Each feature is a thick polyline (default) or a filled polygon ("closed": true).
-- "points": [col,row] cell coordinates, FLOATS ALLOWED ([12.5, 3.0]). 2+ points for a polyline, 3+ for a polygon.
-- "width": stroke width in CELLS (rivers 2-4, roads 1-2, streams 0.5-1).
-- "type": river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass, or a free Spanish name ("arroyo", "sendero") resolved by keywords. "color": "#rrggbb" forces a colour.
-- PAINT ORDER = array order: river FIRST, then the bridge across it, then roads ending at the bridge.
-- A river/road drawn as a feature should follow the same course as its `w`/`_` cells in the grid (grid = coarse base, feature = smooth refinement). Purely decorative curves may skip the grid cells and use only the feature.
-
-TERRAIN SVG (advanced, RARELY needed — use ONLY when grid + terrain_features cannot express the shape)
-`"terrain_svg"`: an SVG string of pure shapes drawn over the terrain, under the entities. Requirements: viewBox EXACTLY "0 0 <cols> <rows>" (units = cells), max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line with fill/stroke) — no <script>, no foreignObject, no href. Most scenes need no SVG at all. TILES: do NOT use terrain_svg — the tile's map plan ("map_ground" + "volumes") supersedes it entirely.
-
-ENTITY RULES
-- Every entity has a UNIQUE `id`. Two trees in different places need different ids (`tree_n1`, `tree_w2`) even with the same `name` ("roble").
-- `cell` is the TOP-LEFT of the footprint. `cell + footprint` must stay inside the grid.
-- Buildings (OUTDOOR scenes, mpc 2): ONE rectangular footprint (a tavern seen from outside is one rectangle, not four wall slabs). Typical 4×3 to 8×6 cells. Indoors there is NO building entity — you are inside it; the walls come from its `structures` room.
-- Props are usually 1×1 (= mpc metres: 0.5 m indoors, 2 m outdoors). Indoor furniture stays 1×1/2×1; tables and counters a bit bigger. Carts/log piles 2×1 or 3×2.
-- NPCs and player are always 1×1.
-- Place NPCs at their work spot (smith near the smithy, innkeeper at the inn's door).
-- The player sits where the narrative says the player ENTERS the scene.
-- "decor" = purely aesthetic set dressing: wall torches, banners, rugs, cobwebs,
-  hanging signs, stains. Visible on the map but NO collision and NO interaction.
-  Use decor (never prop) for anything the player should walk past freely; a prop
-  is a physical obstacle (table, barrel, cart).
-
-SHAPE (optional but encouraged — hints the rendered footprint, makes better maps)
-- "cylinder": round things seen from above — barrel, well, cauldron, urn, jar, brazier, ROUND tower, fountain, column. (Trees are round by default; no need to set it.) The most common one.
-- "sphere": boulder, dome, orb, haystack.
-- "cone": tent, spire, pointed roof, pile.
-- "box" (or omit): buildings, walls, crates, tables, carts, rectangular things.
-
-GLYPH RULES (critical for ASCII debug rendering)
-- Glyph must be a SINGLE printable ASCII char.
-- Glyph must NOT equal any terrain char in the same map (so an entity over grass "g" cannot have glyph "g").
-- Glyphs CAN repeat across entities of the same kind (e.g. all trees use "T") because each entity has its own id. The narrative engine uses the id, not the glyph.
-
-NPCs
-- Yes, include the NPCs that belong to this scene as `kind: "npc"` entities. The narrative engine reads them by id.
-- Use Spanish first names (Boris, Greta, Mirla, Tomás, Halmar, Yannis, etc.) and a short title ("Boris el Herrero").
-- Optional `role` drives AMBIENT behaviour (the game engine executes it, no LLM cost):
-  NPCs wander near their spawn, turn to face an approaching player, and react to
-  nearby fights — "peasant"/"villager"/"merchant" flee, "guard" runs in and threatens.
-  Unknown roles degrade to "villager". Give guards to garrisons and gates, peasants
-  to fields and markets.
-
-ASSET REUSE
-- The request may include `available_assets`: a list of cached textures/models with hashes and prompts. If a cached prompt matches what you'd want for an entity, add `"texture_hash": "<hash>"` or `"model_hash": "<hash>"` to that entity. Optional but encouraged for visual consistency across scenes.
-
-VALIDATION CHECKLIST — before calling narrative_respond:
-- [ ] All `terrain` rows are strings of EXACTLY `size.cols` chars.
-- [ ] Number of `terrain` rows equals `size.rows`.
-- [ ] Every char that appears in `terrain` is reserved OR documented in `terrain_legend`.
-- [ ] Every entity has all required fields.
-- [ ] No two entities share an `id`.
-- [ ] No entity's footprint runs off the grid.
-- [ ] Every glyph differs from every terrain char.
-- [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
-      every structure door AND some map edge (the world continues there).
-The server re-checks playability with a flood-fill when you respond: if it
-rejects, FIX the listed issues (or call the map tools it names) and respond
-again — the request stays pending. You can also dry-run with scene_validate.
-
-EXAMPLE — claro del cazador, 16 cols × 10 rows:
-{
-  "scene_id": "claro_cazador",
-  "scene_description": "Un claro pequeño en lo profundo del bosque. Una cabaña baja humea perezosamente y un sendero pisado lleva al sur.",
-  "size": { "cols": 16, "rows": 10, "meters_per_cell": 2 },
-  "terrain": [
-    "gggggggggggggggg",
-    "gggggggggggggggg",
-    "gggggggggggggggg",
-    "gggggggggggggggg",
-    "gggggggggggggggg",
-    "gggggggg__gggggg",
-    "gggggggg__gggggg",
-    "gggggggg__gggggg",
-    "gggggggg__gggggg",
-    "gggggggg__gggggg"
-  ],
-  "terrain_legend": { "g": "grass", "_": "path" },
-  "entities": [
-    { "id": "cabin",      "kind": "building", "name": "Cabaña del Cazador", "cell": [7, 2], "footprint": [6, 3], "glyph": "H" },
-    { "id": "fire_pit",   "kind": "prop",     "name": "hoguera",            "cell": [10, 6], "footprint": [1, 1], "glyph": "f" },
-    { "id": "tree_n1",    "kind": "tree",     "name": "pino",               "cell": [2, 1],  "footprint": [1, 1], "glyph": "T" },
-    { "id": "tree_n2",    "kind": "tree",     "name": "pino",               "cell": [13, 1], "footprint": [1, 1], "glyph": "T" },
-    { "id": "tree_s",     "kind": "tree",     "name": "roble",              "cell": [3, 8],  "footprint": [1, 1], "glyph": "T" },
-    { "id": "hunter",     "kind": "npc",      "name": "Tarald el Cazador",  "cell": [11, 5], "footprint": [1, 1], "glyph": "n" },
-    { "id": "player",     "kind": "player",   "name": "Tú",                 "cell": [9, 9],  "footprint": [1, 1], "glyph": "@" }
-  ],
-  "ambient_event": "Una rama cruje en algún lugar tras los pinos y el humo de la chimenea huele a pino quemado."
-}
-
-EXAMPLE — INTERIOR de taberna CON EXTERIOR alrededor, 28 cols × 16 rows,
-meters_per_cell 0.5 (= 14×8 m). The room is a `structures` entry — the engine
-stamps the closed W walls, the wooden floor and the walkable door gap; you
-write ONLY the base terrain (grass). A path connects the door to the south
-edge, where the world continues. There is NO "building" entity.
-{
-  "scene_id": "taberna_interior",
-  "scene_description": "El interior cálido de una taberna y el patio embarrado que la rodea. Una puerta al sur da al camino que baja hacia la aldea.",
-  "size": { "cols": 28, "rows": 16, "meters_per_cell": 0.5 },
-  "terrain": [
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg",
-    "gggggggggggggggggggggggggggg"
-  ],
-  "terrain_legend": {},
-  "structures": [
-    { "type": "room", "rect": [4, 2, 20, 10], "wall_char": "W", "floor_char": "o",
-      "doors": [ { "side": "south", "at": 9, "width": 2 } ] }
-  ],
-  "terrain_features": [
-    { "type": "path", "points": [[14, 12], [14, 16]], "width": 1.5 }
-  ],
-  "vegetation_zones": [
-    { "type": "pino", "area": [0, 12, 28, 4], "density": 0.08 }
-  ],
-  "entities": [
-    { "id": "mostrador",  "kind": "prop",  "name": "mostrador de roble",     "cell": [6, 3],  "footprint": [6, 1], "glyph": "=" },
-    { "id": "barkeep",    "kind": "npc",   "name": "Tabernero corpulento",   "cell": [9, 4],  "footprint": [1, 1], "glyph": "n" },
-    { "id": "mesa_1",     "kind": "prop",  "name": "mesa con jarras vacías", "cell": [7, 7],  "footprint": [3, 2], "glyph": "m" },
-    { "id": "barril_1",   "kind": "prop",  "name": "barril de cerveza",      "cell": [21, 3], "footprint": [1, 1], "glyph": "k" },
-    { "id": "antorcha_1", "kind": "decor", "name": "antorcha de pared",      "cell": [8, 2],  "footprint": [1, 1], "glyph": "i", "attach": "wall" },
-    { "id": "antorcha_2", "kind": "decor", "name": "antorcha de pared",      "cell": [18, 2], "footprint": [1, 1], "glyph": "i", "attach": "wall" },
-    { "id": "player",     "kind": "player","name": "Tú",                     "cell": [13, 13],"footprint": [1, 1], "glyph": "@" }
-  ],
-  "ambient_event": "El fuego crepita dentro y el viento arrastra olor a resina desde los pinos."
-}
-
-TILES (continuous world plane)
-When the request carries "generate_tile" { tx, ty, neighbors, entry,
-nearby_places, bootstrap }, respond with a TILE instead of a scene: 64x64 m,
-128x128 cells at 0.5 m/cell. Shape: { "tile": {tx,ty}, "scene_id":
-"tile_<tx>_<ty>", "biome": <grass|forest_floor|meadow|sand|dirt|stone|snow|
-swamp>, "terrain_patches" (optional ASCII stamps {at:[col,row], rows:[...]}),
-"terrain_features" (edge-to-edge, each with "at_edges": [{edge, at}]),
-"structures", "vegetation_zones" (area may be "rest" = everything still bare
-biome), "entities" (cells 0..127, NO "player" unless bootstrap),
-"place_anchors" [{place_id, rect}], "map_ground" (recommended: ground-plane
-SVG of the tile, viewBox "0 0 128 128", layers g#ground/#water + optional
-g#deck — FLAT art only), "volumes" (everything with height as typed objects:
-building/wall/tower/gate/tree/bush/rock/fountain/prop with footprint cells +
-height; the engine composes and projects them to the session perspective and
-derives collision from the footprints; enterable buildings use cutaway:true),
-"ambient_event" }. NEVER write "size" or
-a full "terrain[]" — the biome fill + primitives generate the grid. SEAMS:
-every crossing listed in neighbors.<edge> (mirrored "at") MUST be continued
-by a feature with matching at_edges (±2 cells); the player enters walking
-from entry.edge. Bootstrap tiles carry the starting location, a player
-entity and place_anchors.
-"""
+GENERATE_SCENE_SYSTEM_PROMPT = (
+    """You are the world builder of Never Ending Fantasy, a generative open-world RPG whose world identity comes from the request context (see WORLD & ENGINE RULES below). You produce TOP-DOWN 2D MAPS as a structured grid plus a list of named entities. The game engine takes your output and renders it; the narrative engine reads it to reason about where things are."""
+    + "\n\n"
+    + _prompt("scene_instructions.md")
+    + "\n\n"
+    + GENERATE_SCENE_PROMPT_WORLD_RULES
+)
 
 GENERATE_SCENE_TOOL = {
     "name": "generate_scene",
@@ -1148,28 +847,7 @@ def validate_scene_response(data: dict) -> dict:
 # Weapon orientation (vision-guided)
 # ----------------------------------------------------------------------
 
-WEAPON_ORIENT_SYSTEM_PROMPT = """You orient 3D weapon meshes for a third-person RPG.
-
-Input: 3 orthographic renders of an isolated weapon model on white background:
-- front: camera at +Z looking toward origin (X axis right, Y axis up)
-- side:  camera at +X looking toward origin (Z axis right, Y axis up)
-- top:   camera at +Y looking down (X axis right, -Z into screen)
-
-The mesh is centered on its bounding box. Positions you return are normalized
-to [0,1]^3 where (0,0,0) is the bbox min and (1,1,1) is the bbox max.
-
-Identify:
-1. grip_point_normalized: where the hand wraps the weapon (cylindrical wrapped
-   area for swords, center of back face for shields, bottom of haft for axes/maces).
-2. blade_direction: unit vector from grip toward tip/edge/front of the weapon.
-3. up_direction: unit vector perpendicular to blade_direction, the "up" face
-   (back of sword blade, front of shield, top of axe head).
-
-Right-handed coordinates throughout. All unit vectors must be normalized.
-Confidence: 0.9+ if grip and blade are clearly visible; 0.5-0.8 if uncertain;
-<0.5 if mesh looks broken or you cannot identify the weapon.
-
-Always respond via the orient_weapon tool — never emit free-form text."""
+WEAPON_ORIENT_SYSTEM_PROMPT = _prompt("weapon_orient.md")
 
 
 WEAPON_ORIENT_TOOL = {
@@ -1292,26 +970,7 @@ def validate_weapon_orient_response(data: dict) -> dict | None:
 # clasifica cada región segmentada como sólida (colisión) y/o alta (occluder).
 # ============================================================================
 
-SCENE_CLASSIFY_SYSTEM_PROMPT = """You classify segmented regions of a top-down painted RPG scene.
-
-You receive 2 images: the original scene, and the same scene with candidate
-regions outlined and numbered. The region list with pixel bboxes also arrives
-in the request text. The game world is DERIVED from this image: your answer
-becomes the real collision map and draw order.
-
-For EVERY numbered index classify the element under that region:
-- label: short Spanish noun ("roble", "muro", "barril", "camino", "sombra").
-- solid: true if a character on foot could NOT walk through it (walls,
-  buildings, tree trunks, boulders, deep water, fences, wagons). false for
-  paths, grass, rugs, shadows, flowers, puddles, ground decals.
-- tall: true if it is taller than a standing character, so it must be drawn
-  on top of one standing behind it (trees, walls, buildings, towers, tents).
-  false for low rocks, barrels, crates, low bushes, anything flat.
-
-When unsure about solid, prefer false for open ground textures and true for
-anything that reads as a built structure or large plant.
-
-Always respond via the classify_scene tool — never emit free-form text."""
+SCENE_CLASSIFY_SYSTEM_PROMPT = _prompt("scene_classify.md")
 
 
 CLASSIFY_SCENE_TOOL = {
@@ -1382,59 +1041,13 @@ def validate_scene_classify_response(
 # by emitting consequences that the engine applies to the open world.
 # ============================================================================
 
-NARRATIVE_REACT_SYSTEM_PROMPT = """You are the narrative engine of a generative open-world RPG. The game's world identity travels in `context.world` (description = world brief, style_token = visual style): every reaction must fit THAT world — its peoples, factions, magic rules and tone. Do not default to generic dark fantasy.
-
-A player has just answered an NPC — either by picking one of the options you
-offered or by typing a free-form reply. There is no script: your response IS
-the story. You can make NPCs speak, update the running story, schedule
-events, or materialize new entities.
-
-You will receive:
-- speaker: the NPC who spoke
-- chosen_text: which canned option they picked (may be empty if they typed)
-- free_text: a free-form reply they typed (may be empty)
-- context: a compact NarrativeState snapshot (story_so_far, recent_dialogues,
-  entities already in the world, current scene id, available_assets)
-
-CRITICAL — when free_text is non-empty:
-- The player has gone off-script. You MUST respond with at least one `dialogue`
-  consequence so a visible NPC reacts in-world. Stay in character.
-- The `dialogue` speaker should normally be an NPC that is already present in
-  `entities` (use the same display name). It can be the `speaker` you received
-  or another NPC in the scene.
-- You may also add other consequences (story_update, spawn_entity) when the
-  player expressed intent. Example: free_text says "I want a sword from a
-  forge" → add a spawn_entity (forge building) AND a dialogue line where an
-  NPC acknowledges "There's an old forge at the edge of town, follow me".
-- Write dialogue text in the same language the player used (match free_text).
-
-CRITICAL — when free_text is empty (numbered choice only):
-- React in PROPORTION to what the choice means. If it asks a question, makes
-  a commitment, an offer or a threat, the NPC MUST answer via a `dialogue`
-  consequence (with follow-up choices when the conversation continues) — an
-  empty response here reads as the game ignoring the player.
-- Return an empty consequences array ONLY for trivial closers ("me voy",
-  "adiós", silent nods) where the conversation naturally ends.
-- Record a story_update whenever the choice changes what anyone knows, owes
-  or intends — those deltas are your only long-term memory.
-
-NARRATIVE DIRECTION: NPCs have their own agendas and never dump all they know
-(information, favours and trust are currency the player must earn); follow the
-player's deviations and weave them into the world's threads instead of
-rail-roading; let threats, lies and generosity have believable costs and
-consequences; escalate stakes every few turns with a quiet complication; no
-generic fetch-quests — a task is only worth giving if it is entangled with
-someone's agenda and carries a cost or a secret.
-
-RULES:
-- Do NOT spawn things that are already in `entities`.
-- Reuse `available_assets` (by hash) when generating new entities, when sensible.
-- Be sparing — 0–4 consequences max. Prefer one dialogue + optional side effects.
-- Position spawns plausibly relative to the player using `position_hint`.
-- ALL spawned characters must be HUMANOID (human-shaped bipeds): never
-  animals, beasts or non-humanoid monsters — only humanoid animations exist.
-- Return your answer ONLY via the react_to_player tool. Never write free text.
-"""
+NARRATIVE_REACT_SYSTEM_PROMPT = (
+    """You are the narrative engine of a generative open-world RPG. The game's world identity travels in `context.world` (description = world brief, style_token = visual style): every reaction must fit THAT world — its peoples, factions, magic rules and tone. Do not default to generic dark fantasy."""
+    + "\n\n"
+    + _prompt("narrative_event.md")
+    + "\n\n"
+    + GENERATE_SCENE_PROMPT_WORLD_RULES
+)
 
 NARRATIVE_REACT_TOOL = {
     "name": "react_to_player",
