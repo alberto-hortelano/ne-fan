@@ -705,7 +705,15 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // Los volumes del LLM se completan con los derivados del esquema
   // (vegetación, estructuras); el compositor es determinista (mismo plan ⇒
   // mismos bytes ⇒ hit de la caché de imagen en resume).
-  const planInfo = composeTilePlan(rawData, data as Record<string, unknown>, key, isGridTile);
+  // El plan lee campos del Format D crudo (structures/vegetation_zones/biome)
+  // que la world scene no emite. Con el bridge normalizando en el wire,
+  // rawData ya ES la world scene — el crudo viaja en __format_d.
+  const planInfo = composeTilePlan(
+    (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
+    data as Record<string, unknown>,
+    key,
+    isGridTile,
+  );
   if (planInfo) {
     (data as Record<string, unknown>).__plan = planInfo;
     (data as Record<string, unknown>).__composed = planInfo.composed;

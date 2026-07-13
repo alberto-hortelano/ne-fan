@@ -118,6 +118,11 @@ export function resolveTerrainLegend(rawLegend: unknown): {
 /** Convert a Map Format D scene to a world-coordinate scene. If `raw` is not in
  *  Format D it is returned unchanged. */
 export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
+  // Idempotencia: una world scene ya normalizada (lleva __format_d) pasa
+  // intacta. Sin esta guarda, un tile normalizado re-entraría en la expansión
+  // (conserva `tile` pero no `biome`) y lanzaría — el bridge normaliza en el
+  // wire y el cliente HTML vuelve a llamar aquí para sus fixtures locales.
+  if (raw.__format_d !== undefined) return raw;
   // Red de seguridad para fixtures locales: las escenas del bridge llegan ya
   // expandidas (__expanded); una escena cruda con primitivas se expande aquí.
   if (hasUnexpandedPrimitives(raw)) raw = expandScenePrimitives(raw);
