@@ -403,6 +403,10 @@
               ],
               "description": "Optional footprint shape hint (default box). cylinder = round (barrel/well/round tower/urn/fountain), sphere = boulder/dome, cone = tent/spire/pile, box = buildings/walls/crates."
             },
+            "h": {
+              "type": "number",
+              "description": "Optional real-world height in METRES (NOT cells — footprint stays in cells). Guide: house 2.5-4, tower/church 5-8, tree 3-8, prop 0.5-2, item/decor ~0.5. Omit to use the per-kind default (building 2.5, tree 4, prop 1, item/decor 0.5)."
+            },
             "texture_hash": {
               "type": "string",
               "description": "Optional. Reuse a cached texture by 16-char hash from available_assets."

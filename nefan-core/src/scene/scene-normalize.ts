@@ -30,6 +30,9 @@ type FormatDEntity = {
   /** Pista de forma para el render (box|cylinder|sphere|cone). Opcional; el
    *  cliente 2D la usa para dibujar círculos/triángulos en el schematic. */
   shape?: string;
+  /** Altura en METROS (no en celdas — el footprint sí va en celdas). Opcional;
+   *  sin ella se aplica el default por kind (KIND_DEFAULT_HEIGHT). */
+  h?: number;
   texture_hash?: string;
   model_hash?: string;
 };
@@ -78,6 +81,23 @@ function normalizeTerrainFeatures(raw: unknown): TerrainFeature[] {
 }
 
 const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item", "decor"]);
+
+/** Altura por defecto (METROS) cuando la entity no declara `h`. Alineada con
+ *  los defaults de los volumes del blueprint (building wall_h 5 celdas =
+ *  2.5 m, prop h 2 celdas = 1 m). Clave = kind (un tree emite category
+ *  "prop" pero su altura sale de aquí). Compartida por ambos clientes vía
+ *  formatDToWorld; el 2D la usa además para los spawns narrativos. */
+export const KIND_DEFAULT_HEIGHT: Record<string, number> = {
+  building: 2.5,
+  tree: 4,
+  prop: 1,
+  item: 0.5,
+  decor: 0.5,
+};
+
+/** Techo duro de altura por entity (metros) — un `h` disparatado del LLM se
+ *  recorta en vez de tumbar la escena. */
+const MAX_ENTITY_HEIGHT_M = 20;
 
 /** Chars de terreno sólidos por defecto: "W" muro (reservado para interiores)
  *  y "w" agua (los puentes "b" son transitables). La leyenda puede añadir o
@@ -203,10 +223,16 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     if (!ent.name) {
       throw new Error(`scene entities[${i}] (${ent.id}) missing name`);
     }
+    // Altura en metros: `h` de la entity si es sano (tolerante, como shape:
+    // un valor inválido cae al default por kind en vez de tumbar la escena).
+    const entH =
+      typeof ent.h === "number" && Number.isFinite(ent.h) && ent.h > 0
+        ? Math.min(ent.h, MAX_ENTITY_HEIGHT_M)
+        : (KIND_DEFAULT_HEIGHT[ent.kind] ?? 1);
     const obj: Record<string, unknown> = {
       id: ent.id,
       position: [x, 0, z],
-      scale: [w * mpc, 1, h * mpc],
+      scale: [w * mpc, entH, h * mpc],
       category,
       description: ent.name,
     };
