@@ -1,5 +1,6 @@
 /** Centralized state store. Read anywhere, write only via dispatch().
- *  Direct port of godot/scripts/autoloads/game_store.gd */
+ *  Canonical implementation — godot/scripts/autoloads/game_store.gd is the
+ *  display-side projection of the events this store emits. */
 
 import type { GameState } from "../types.js";
 import { applyReducer } from "./reducers.js";

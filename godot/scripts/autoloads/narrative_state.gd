@@ -388,48 +388,6 @@ func is_dirty() -> bool:
 
 
 # ----------------------------------------------------------------------
-# Serialization for the LLM (subset of state)
-# ----------------------------------------------------------------------
-
-func serialize_for_llm(verbosity: String = "compact") -> Dictionary:
-	"""Compact view used by the narrative engine in room/scene/event requests."""
-	var recent_dialogues: Array = []
-	var n: int = mini(dialogue_history.size(), 5)
-	for i in range(dialogue_history.size() - n, dialogue_history.size()):
-		var d: Dictionary = dialogue_history[i]
-		var chosen: String = ""
-		var idx: int = int(d.get("chosen_index", -1))
-		var ch_arr: Array = d.get("choices", [])
-		if idx >= 0 and idx < ch_arr.size():
-			chosen = String(ch_arr[idx])
-		recent_dialogues.append({
-			"speaker": d.get("speaker", ""),
-			"chosen": chosen,
-			"free_text": d.get("free_text", ""),
-		})
-	var compact_entities: Array = []
-	for e in entities:
-		compact_entities.append({
-			"id": e.get("id", ""),
-			"type": e.get("type", ""),
-			"scene_id": e.get("scene_id", ""),
-			"position": e.get("position", []),
-			"spawn_reason": e.get("spawn_reason", ""),
-		})
-	return {
-		"session_id": session_id,
-		"game_id": game_id,
-		"world": world,
-		"player": player,
-		"story_so_far": story_so_far,
-		"current_scene_id": world.get("active_scene_id", ""),
-		"entities": compact_entities,
-		"recent_dialogues": recent_dialogues,
-		"rooms_visited": scenes_loaded.size(),
-	}
-
-
-# ----------------------------------------------------------------------
 # Internals
 # ----------------------------------------------------------------------
 

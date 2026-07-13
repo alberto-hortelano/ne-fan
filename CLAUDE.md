@@ -42,7 +42,7 @@ cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate usa lógica local de Godot.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y rooms F1/F2/F3. Para combate y narrativa usar los presets 1–3.
 
 ## Controles in-game
 

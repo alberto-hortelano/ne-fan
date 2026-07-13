@@ -1,6 +1,6 @@
 /** Apply narrative consequences to NarrativeState and emit renderer-agnostic
- * effects. Port of godot/scripts/main.gd:_on_narrative_consequences (lines
- * 1110-1173) plus _apply_spawn_entity_consequence (lines 1176-1222). */
+ * effects. Canonical implementation — Godot materializes the resulting
+ * effects via señales (narrative_spawn/narrative_dialogue/...). */
 import type { NarrativeState } from "./narrative-state.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
 import { toTuple } from "./types.js";

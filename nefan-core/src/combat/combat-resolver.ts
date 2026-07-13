@@ -1,5 +1,5 @@
 /** Pure math functions for combat resolution. No state, no side effects.
- *  Direct port of godot/scripts/combat/combat_resolver.gd */
+ *  Canonical implementation — Godot has no combat logic (display only). */
 
 import type { Vec3, EffectiveParams } from "../types.js";
 import { distance, sub, cross, normalized } from "../vec3.js";
