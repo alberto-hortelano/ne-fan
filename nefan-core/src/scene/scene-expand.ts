@@ -22,7 +22,7 @@
  *  que corrija; si llega hasta el bridge, el catch existente la difunde como
  *  `narrative_status: error`. */
 
-import { SeededRng } from "../combat/enemy-ai.js";
+import { SeededRng, fnv1a } from "../rng.js";
 import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
@@ -54,17 +54,6 @@ interface VegetationZone {
   /** Fracción de celdas candidatas plantadas (0..1]. */
   density: number;
   glyph?: string;
-}
-
-/** Hash FNV-1a de 32 bits — determinista y sin dependencias de node:crypto
- *  (este módulo también corre en el navegador vía formatDToWorld). */
-function fnv1a(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
 }
 
 function slug(s: string): string {

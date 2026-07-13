@@ -19,7 +19,7 @@
 
 import type { Vec3, CombatEvent } from "../types.js";
 import type { EntityRecord } from "../narrative/types.js";
-import { SeededRng } from "../combat/enemy-ai.js";
+import { SeededRng } from "../rng.js";
 import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";

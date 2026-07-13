@@ -156,6 +156,32 @@ export async function handleListSessions(
   ctx.send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions: alive });
 }
 
+/** Resembra el sim para la sesión vigente: runtime nuevo (sin este reset el
+ *  sim arrastra los combatientes y el HP de la sesión anterior del proceso) +
+ *  player con el HP/posición del NarrativeState (defaults en start, save en
+ *  resume — misma fuente). Común a start_session y resume_session. */
+function reseedSimForSession(
+  ctx: BridgeContext,
+  combatId: string,
+  npcBehaviorId: string | undefined,
+): void {
+  ctx.sim.reset();
+  ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
+  ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
+  const hp = ctx.narrative.player.health;
+  const pos = ctx.narrative.player.position;
+  ctx.sim.addCombatant(
+    createCombatant(
+      "player",
+      hp,
+      ctx.store.state.player.weapon_id,
+      { x: pos[0], y: pos[1], z: pos[2] },
+      { x: 0, y: 0, z: -1 },
+    ),
+  );
+  ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
+}
+
 export async function handleStartSession(
   msg: StartSessionMessage,
   ws: ClientSocket,
@@ -246,23 +272,7 @@ export async function handleStartSession(
     });
     return;
   }
-  // Sesión nueva ⇒ runtime nuevo: sin este reset el sim arrastra los
-  // combatientes (y el HP herido) de la sesión anterior del proceso.
-  ctx.sim.reset();
-  ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
-  ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
-  const freshHp = ctx.narrative.player.health;
-  const freshPos = ctx.narrative.player.position;
-  ctx.sim.addCombatant(
-    createCombatant(
-      "player",
-      freshHp,
-      ctx.store.state.player.weapon_id,
-      { x: freshPos[0], y: freshPos[1], z: freshPos[2] },
-      { x: 0, y: 0, z: -1 },
-    ),
-  );
-  ctx.store.dispatch("player_respawned", { hp: freshHp, pos: [...freshPos] });
+  reseedSimForSession(ctx, combatId, npcBehaviorId);
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, msg.gameId, false);
   await ctx.narrative.save();
   ctx.subscribe(ws);
@@ -469,23 +479,7 @@ export async function handleResumeSession(
     });
     return;
   }
-  // Resembrar el sim desde el save: sin esto arrastra los combatientes de la
-  // sesión anterior y el HP guardado nunca vuelve al runtime.
-  ctx.sim.reset();
-  ctx.sim.setCombatSystem(combatRegistry.create(combatId, ctx.combatConfig));
-  ctx.sim.setNpcBehavior(createSessionNpcBehavior(ctx, npcBehaviorId));
-  const savedPos = ctx.narrative.player.position;
-  const savedHp = ctx.narrative.player.health;
-  ctx.sim.addCombatant(
-    createCombatant(
-      "player",
-      savedHp,
-      ctx.store.state.player.weapon_id,
-      { x: savedPos[0], y: savedPos[1], z: savedPos[2] },
-      { x: 0, y: 0, z: -1 },
-    ),
-  );
-  ctx.store.dispatch("player_respawned", { hp: savedHp, pos: [...savedPos] });
+  reseedSimForSession(ctx, combatId, npcBehaviorId);
   // Los NPC del save vuelven a la vida ambiental donde se quedaron (su
   // posición vive en el EntityRecord persistido).
   npcSync(ctx);

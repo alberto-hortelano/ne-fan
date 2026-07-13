@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createAmbientNpcBehavior } from "../src/simulation/npc-behavior.js";
-import { SeededRng } from "../src/combat/enemy-ai.js";
+import { SeededRng } from "../src/rng.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";

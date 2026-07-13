@@ -9,7 +9,7 @@
  *  `compose.ts` (profundidad de la huella); dentro de un volumen el orden es
  *  sombra → caras → tapa → detalle. */
 
-import type { SeededRng } from "../../combat/enemy-ai.js";
+import type { SeededRng } from "../../rng.js";
 import { PALETTE, type FaceColors, roofColors, wallColors } from "./palette.js";
 import type { Projection } from "./projection.js";
 import { ISO_SX, ISO_SY } from "./projection.js";

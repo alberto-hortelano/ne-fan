@@ -4,7 +4,9 @@
  *  caché de imagen de ai_server, así que dos composiciones del mismo plan
  *  deben producir bytes idénticos (sin Date.now/Math.random). */
 
-import { SeededRng } from "../../combat/enemy-ai.js";
+import { SeededRng, fnv1a, seededRng } from "../../rng.js";
+
+export { fnv1a, seededRng };
 
 /** Formato compacto y estable de números (2 decimales, sin ceros colgantes). */
 export function fmt(n: number): string {
@@ -40,23 +42,6 @@ export function rectEl(x: number, y: number, w: number, h: number, fill: string,
 
 export function path(d: string, fill: string, extra = ""): string {
   return `<path d="${d}" fill="${fill}"${extra ? ` ${extra}` : ""}/>`;
-}
-
-/** Hash FNV-1a 32-bit (mismo criterio que scene-expand: determinista y sin
- *  node:crypto — este módulo corre también en el navegador). */
-export function fnv1a(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-/** RNG determinista para el detalle procedural (juntas, adoquines, matas),
- *  sembrado por clave estable (tileKey + volume id). */
-export function seededRng(seedKey: string): SeededRng {
-  return new SeededRng(fnv1a(seedKey));
 }
 
 /** Uniforme en [lo, hi) sobre un SeededRng. */
