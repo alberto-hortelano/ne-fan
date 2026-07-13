@@ -1484,7 +1484,8 @@ async def check_cache(hash_key: str):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="NE-Fan AI Server")
-    parser.add_argument("--port", type=int, default=8765)
+    # Default del snapshot (fuente única de puertos: nefan-core/src/config.ts).
+    parser.add_argument("--port", type=int, default=int(load_config()["port"]))
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
 

@@ -177,7 +177,7 @@ export function createGameClient(
   }
   return new Promise<GameClient>((resolve, reject) => {
     const timer = setTimeout(() => {
-      const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ws://localhost:9877?`;
+      const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ws://localhost:${CONFIG.ports.bridge}?`;
       errors.push("session", msg);
       reject(new Error(msg));
     }, timeoutMs);

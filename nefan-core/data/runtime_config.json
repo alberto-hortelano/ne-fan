@@ -37,6 +37,13 @@
     "expose_diagnostic": false,
     "cache_max_bytes": 2147483648
   },
+  "ports": {
+    "bridge": 9877,
+    "state_api": 9878,
+    "narrative_ws": 3737,
+    "godot_remote": 9876,
+    "html": 3000
+  },
   "content": {
     "games_dir": "nefan-core/data/games",
     "styles_dir": "nefan-core/data/styles"
