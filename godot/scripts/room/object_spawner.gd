@@ -8,6 +8,7 @@ const CATEGORY_COLORS = {
 	"building": Color(0.4, 0.4, 0.45),
 	"terrain": Color(0.3, 0.5, 0.25),
 	"creature": Color(0.7, 0.2, 0.2),
+	"decor": Color(0.45, 0.45, 0.4),
 }
 const NPC_COLOR = Color(0.4, 0.3, 0.7)
 const DEFAULT_COLOR = Color(0.5, 0.5, 0.5)
@@ -37,7 +38,9 @@ func spawn_npcs(npcs: Array, room: Node3D) -> void:
 
 
 func _create_object(data: Dictionary) -> StaticBody3D:
-	var mesh_name: String = data.get("mesh", "box")
+	# Las world scenes normalizadas (formatDToWorld) emiten `shape`; las
+	# fixtures y objetos legacy usan `mesh`. Mismo catálogo de primitivas.
+	var mesh_name: String = data.get("mesh", data.get("shape", "box"))
 	var scale_arr: Array = data.get("scale", [0.5, 0.5, 0.5])
 	var pos_arr: Array = data.get("position", [0, 0, 0])
 	var rot_arr: Array = data.get("rotation", [0, 0, 0])
@@ -59,7 +62,13 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 	mesh_inst.mesh = _create_mesh(mesh_name, sx, sy, sz)
 
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = CATEGORY_COLORS.get(category, DEFAULT_COLOR)
+	# `color` explícito por objeto (fixtures: tintes de pared) pisa el color
+	# de categoría; es sólo el placeholder pre-textura.
+	if data.has("color"):
+		var color_arr: Array = data.get("color", [0.5, 0.5, 0.5])
+		mat.albedo_color = Color(float(color_arr[0]), float(color_arr[1]), float(color_arr[2]))
+	else:
+		mat.albedo_color = CATEGORY_COLORS.get(category, DEFAULT_COLOR)
 	mesh_inst.material_override = mat
 	body.add_child(mesh_inst)
 
@@ -81,6 +90,8 @@ func _create_object(data: Dictionary) -> StaticBody3D:
 	body.set_meta("scale_z", sz)
 	if data.has("texture_prompt"):
 		body.set_meta("texture_prompt", data.get("texture_prompt"))
+	if data.has("tiling"):
+		body.set_meta("tiling", data.get("tiling"))
 	if data.has("texture_hash"):
 		body.set_meta("texture_hash", data.get("texture_hash"))
 	if data.has("model_prompt"):

@@ -5,6 +5,7 @@ const ObjectSpawnerScript = preload("res://scripts/room/object_spawner.gd")
 const LightPlacerScript = preload("res://scripts/room/light_placer.gd")
 const ExitBuilderScript = preload("res://scripts/room/exit_builder.gd")
 const OutdoorBuilderScript = preload("res://scripts/room/outdoor_builder.gd")
+const SceneBuilderScript = preload("res://scripts/room/scene_builder.gd")
 
 const WALL_THICKNESS = 0.15
 const FLOOR_COLOR = Color(0.3, 0.28, 0.25)
@@ -20,17 +21,23 @@ var object_spawner = ObjectSpawnerScript.new()
 var light_placer = LightPlacerScript.new()
 var exit_builder = ExitBuilderScript.new()
 var outdoor_builder = OutdoorBuilderScript.new()
+var scene_builder = SceneBuilderScript.new()
 var exit_areas: Array[Area3D] = []
 
 
+## Router de transición: outdoor y `surfaces` (legacy) sobreviven mientras
+## quedan fixtures antiguas; el destino único es scene_builder (world scene
+## normalizada del bridge o fixture en ese formato).
 func build_room(data: Dictionary) -> Node3D:
 	exit_areas.clear()
 
-	var zone_type: String = data.get("zone_type", "indoor")
+	var zone_type: String = data.get("zone_type", "")
 	if zone_type == "outdoor":
 		var result := outdoor_builder.build_outdoor(data)
 		exit_areas = outdoor_builder.exit_areas
 		return result
+	if not data.has("surfaces"):
+		return scene_builder.build_scene(data)
 
 	var room := Node3D.new()
 	room.name = data.get("room_id", "Room")

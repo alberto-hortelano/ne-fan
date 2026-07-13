@@ -456,7 +456,13 @@ func _apply_state_update(msg: Dictionary) -> void:
 					_player_combatant.state = 0
 					_player_combatant.current_attack_type = ""
 				if _player:
-					_player.position = Vector3(0, 1, 4)
+					# Respawn en el spawn de la escena actual (main lo fija en
+					# _apply_room desde __player_start); fallback legacy (0,1,4).
+					var main_scene := get_tree().current_scene
+					var spawn := Vector3(0, 1, 4)
+					if main_scene != null and "_current_spawn" in main_scene:
+						spawn = main_scene._current_spawn
+					_player.position = spawn
 					_player.velocity = Vector3.ZERO
 				var psync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "logic_bridge player_respawned") if _player else null
 				if psync:

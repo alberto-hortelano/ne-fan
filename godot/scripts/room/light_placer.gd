@@ -174,18 +174,20 @@ func place_outdoor_lights(lighting_data: Dictionary, sky_data: Dictionary,
 
 
 func _place_default_light(room: Node3D) -> void:
-	var light := OmniLight3D.new()
-	light.name = "DefaultLight"
-	light.position = Vector3(0, 3, 0)
-	light.light_color = Color(1.0, 0.9, 0.7)
-	light.light_energy = 1.5
-	light.omni_range = 12.0
+	# Default para escenas sin `lighting{}` (las world scenes del motor
+	# narrativo no lo traen): sol direccional neutro — un omni de rango 12 m
+	# dejaría a oscuras una escena de 120×80 m.
+	var light := DirectionalLight3D.new()
+	light.name = "DefaultSun"
+	light.light_color = Color(1.0, 0.95, 0.85)
+	light.light_energy = 1.0
+	light.rotation_degrees = Vector3(-45, 30, 0)
 	light.shadow_enabled = true
 	room.add_child(light)
 
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.05, 0.03, 0.02)
+	env.background_color = Color(0.35, 0.45, 0.6)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.6, 0.55, 0.5)
 	env.ambient_light_energy = 0.3 * DEV_AMBIENT_BOOST
