@@ -687,8 +687,8 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 	# Surface room metadata in the HUD. The canonical session record is owned
 	# by NarrativeState — recorded by the scenario change_scene handler and by
 	# the open-world scene loader; the HUD update belongs here because it is
-	# the only universally applicable side-effect (dev rooms, scenario rooms,
-	# F1/F2/F3 all hit this path).
+	# the only universally applicable side-effect (dev rooms, narrative scenes
+	# and resume all hit this path).
 	_hud.show_room_info(
 		String(data.get("scene_id", data.get("room_id", "unknown"))),
 		String(data.get("scene_description", data.get("room_description", ""))),
