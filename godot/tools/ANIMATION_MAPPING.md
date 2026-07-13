@@ -139,7 +139,7 @@ python3 godot/tools/movement_test.py idle_state attack_animation
 
 La sala `root_motion_debug` tiene:
 - Suelo con marcas de distancia a 2m y 4m en cruz
-- Sin techo (ceiling: null) para vista cenital
+- Escena world scene sin techo, para vista cenital
 - Sin enemigos
 - Luz ambient alta
 

@@ -1,39 +1,46 @@
 {
+  "scene_id": "stress_01_celda",
   "room_id": "stress_01_celda",
+  "scene_description": "Una celda de piedra fria y humeda. Un unico haz de luz entra por una grieta en el techo.",
   "room_description": "Una celda de piedra fria y humeda. Un unico haz de luz entra por una grieta en el techo.",
-  "dimensions": { "width": 5.0, "height": 3.0, "depth": 5.0 },
-  "surfaces": {
-    "floor": {
-      "texture_prompt": "cold damp stone dungeon floor, dark grey, seamless tiling",
-      "tiling": [2, 2]
-    },
-    "ceiling": {
-      "texture_prompt": "rough hewn stone ceiling, cracks, dripping water, seamless tiling",
-      "tiling": [2, 2]
-    },
-    "walls": [
-      { "side": "north", "texture_prompt": "rough grey stone dungeon wall, scratches, seamless tiling", "tiling": [2, 1] },
-      { "side": "east",  "texture_prompt": "rough grey stone dungeon wall, damp stains, seamless tiling", "tiling": [2, 1] },
-      { "side": "south", "texture_prompt": "rough grey stone dungeon wall, iron door frame, seamless tiling", "tiling": [2, 1] },
-      { "side": "west",  "texture_prompt": "rough grey stone dungeon wall, scratch marks, seamless tiling", "tiling": [2, 1] }
+  "dimensions": {
+    "width": 5.0,
+    "depth": 5.0
+  },
+  "terrain": {
+    "color": [
+      0.3,
+      0.28,
+      0.25
+    ],
+    "texture_prompt": "cold damp stone dungeon floor, dark grey, seamless tiling",
+    "tiling": [
+      2,
+      2
     ]
   },
-  "exits": [
-    {
-      "wall": "south",
-      "offset": 0.0,
-      "size": [1.8, 2.5],
-      "description": "puerta de hierro oxidada",
-      "target_hint": "corridor"
-    }
-  ],
   "lighting": {
-    "ambient": { "color": [0.03, 0.03, 0.04], "intensity": 0.2 },
+    "ambient": {
+      "color": [
+        0.03,
+        0.03,
+        0.04
+      ],
+      "intensity": 0.2
+    },
     "lights": [
       {
         "type": "point",
-        "position": [0, 2.5, 0],
-        "color": [1.0, 0.8, 0.4],
+        "position": [
+          0,
+          2.5,
+          0
+        ],
+        "color": [
+          1.0,
+          0.8,
+          0.4
+        ],
         "intensity": 1.5,
         "range": 5.0
       }
@@ -45,9 +52,21 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "burning torch, wooden handle, dark fantasy",
-      "position": [2.0, 1.5, -2.0],
-      "rotation": [0, 0, 0],
-      "scale": [0.08, 0.4, 0.08],
+      "position": [
+        2.0,
+        1.5,
+        -2.0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        0.08,
+        0.4,
+        0.08
+      ],
       "description": "antorcha sujeta a la pared con soporte de hierro",
       "category": "prop",
       "state": "burning"
@@ -57,12 +76,206 @@
       "mesh": "box",
       "generate_3d": false,
       "texture_prompt": "old wooden crate, iron nails, dark stained",
-      "position": [-1.5, 0, -1.5],
-      "rotation": [0, 12, 0],
-      "scale": [0.5, 0.4, 0.5],
+      "position": [
+        -1.5,
+        0,
+        -1.5
+      ],
+      "rotation": [
+        0,
+        12,
+        0
+      ],
+      "scale": [
+        0.5,
+        0.4,
+        0.5
+      ],
       "description": "caja de madera vieja con clavos de hierro",
       "category": "prop",
       "state": "intact"
+    },
+    {
+      "id": "wall_north",
+      "mesh": "box",
+      "position": [
+        0,
+        0.0,
+        -2.5
+      ],
+      "scale": [
+        5.0,
+        3.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north",
+      "texture_prompt": "rough grey stone dungeon wall, scratches, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_l",
+      "mesh": "box",
+      "position": [
+        -1.7,
+        0.0,
+        2.5
+      ],
+      "scale": [
+        1.6,
+        3.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (l)",
+      "texture_prompt": "rough grey stone dungeon wall, iron door frame, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_r",
+      "mesh": "box",
+      "position": [
+        1.7,
+        0.0,
+        2.5
+      ],
+      "scale": [
+        1.6,
+        3.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (r)",
+      "texture_prompt": "rough grey stone dungeon wall, iron door frame, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_t",
+      "mesh": "box",
+      "position": [
+        0.0,
+        2.5,
+        2.5
+      ],
+      "scale": [
+        1.8,
+        0.5,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (t)",
+      "texture_prompt": "rough grey stone dungeon wall, iron door frame, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_east",
+      "mesh": "box",
+      "position": [
+        2.5,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        3.0,
+        5.0
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east",
+      "texture_prompt": "rough grey stone dungeon wall, damp stains, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_west",
+      "mesh": "box",
+      "position": [
+        -2.5,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        3.0,
+        5.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west",
+      "texture_prompt": "rough grey stone dungeon wall, scratch marks, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "ceiling",
+      "mesh": "box",
+      "position": [
+        0,
+        3.0,
+        0
+      ],
+      "scale": [
+        5.0,
+        0.15,
+        5.0
+      ],
+      "category": "building",
+      "color": [
+        0.2,
+        0.2,
+        0.22
+      ],
+      "description": "techo",
+      "texture_prompt": "rough hewn stone ceiling, cracks, dripping water, seamless tiling",
+      "tiling": [
+        2,
+        2
+      ]
     }
   ],
   "npcs": [],

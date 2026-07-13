@@ -50,6 +50,16 @@ describe("bridge request_tile (plano continuo)", () => {
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
     assert.ok(sceneEvent, "re-broadcast del esquema persistido");
+    // El wire lleva la world scene normalizada (contrato de render único);
+    // la persistencia interna sigue en Format D crudo.
+    const wireScene = (sceneEvent.effects[0].data as { scene: Record<string, unknown> }).scene;
+    assert.ok(Array.isArray(wireScene.objects), "objects[] en metros");
+    assert.ok(wireScene.dimensions, "dimensions derivadas");
+    assert.ok(wireScene.__format_d, "el crudo viaja en __format_d");
+    assert.equal(wireScene.size, undefined, "sin size top-level (no es Format D)");
+    const persisted = narrative.scenes_loaded["tile_0_0"].scene_data;
+    assert.ok(persisted.size, "la persistencia sigue en Format D crudo");
+    assert.equal(persisted.__format_d, undefined);
     const ready = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
     );

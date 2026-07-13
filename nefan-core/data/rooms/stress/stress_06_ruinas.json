@@ -1,83 +1,97 @@
 {
+  "scene_id": "stress_06_ruinas",
   "room_id": "stress_06_ruinas",
+  "scene_description": "Ruinas de una fortaleza cuyas paredes se han derrumbado parcialmente. El cielo nocturno es visible a traves de los muros rotos. Vegetacion salvaje crece entre las piedras.",
   "room_description": "Ruinas de una fortaleza cuyas paredes se han derrumbado parcialmente. El cielo nocturno es visible a traves de los muros rotos. Vegetacion salvaje crece entre las piedras.",
-  "dimensions": { "width": 25.0, "height": 8.0, "depth": 25.0 },
-  "surfaces": {
-    "floor": {
-      "texture_prompt": "ruined fortress floor, broken stone tiles with grass growing through cracks, dirt and rubble, seamless tiling",
-      "tiling": [6, 6]
-    },
-    "ceiling": {
-      "texture_prompt": "open night sky, stars visible, wispy dark clouds, no ceiling, looking straight up at starry sky, seamless tiling",
-      "tiling": [2, 2]
-    },
-    "walls": [
-      { "side": "north", "texture_prompt": "ruined fortress wall, partially collapsed revealing dark sky, broken battlements, vines growing on stone, seamless tiling", "tiling": [6, 2] },
-      { "side": "east",  "texture_prompt": "intact fortress wall section, arrow slits, weathered stone, dark fantasy, seamless tiling", "tiling": [6, 2] },
-      { "side": "south", "texture_prompt": "fortress gatehouse ruins, collapsed portcullis, rubble pile, dark sky visible through gaps, seamless tiling", "tiling": [6, 2] },
-      { "side": "west",  "texture_prompt": "completely collapsed fortress wall, just rubble and sky, field of broken stone, seamless tiling", "tiling": [6, 2] }
+  "dimensions": {
+    "width": 25.0,
+    "depth": 25.0
+  },
+  "terrain": {
+    "color": [
+      0.3,
+      0.28,
+      0.25
+    ],
+    "texture_prompt": "ruined fortress floor, broken stone tiles with grass growing through cracks, dirt and rubble, seamless tiling",
+    "tiling": [
+      6,
+      6
     ]
   },
-  "exits": [
-    {
-      "wall": "south",
-      "offset": 0.0,
-      "size": [4.0, 5.0],
-      "description": "brecha en el muro sur entre escombros",
-      "target_hint": "approach road"
-    },
-    {
-      "wall": "east",
-      "offset": 0.0,
-      "size": [2.0, 3.0],
-      "description": "puerta reforzada que aun se mantiene",
-      "target_hint": "tower interior"
-    },
-    {
-      "wall": "north",
-      "offset": 5.0,
-      "size": [2.5, 3.5],
-      "description": "escaleras descendentes entre las ruinas",
-      "target_hint": "fortress dungeon"
-    },
-    {
-      "wall": "west",
-      "offset": 0.0,
-      "size": [5.0, 6.0],
-      "description": "muro completamente derrumbado, campo abierto",
-      "target_hint": "open battlefield"
-    }
-  ],
   "lighting": {
-    "ambient": { "color": [0.08, 0.08, 0.12], "intensity": 0.6 },
+    "ambient": {
+      "color": [
+        0.08,
+        0.08,
+        0.12
+      ],
+      "intensity": 0.6
+    },
     "lights": [
       {
         "type": "spot",
-        "position": [0, 7.5, -5],
-        "direction": [0, -1, 0.2],
-        "color": [0.5, 0.5, 0.8],
+        "position": [
+          0,
+          7.5,
+          -5
+        ],
+        "direction": [
+          0,
+          -1,
+          0.2
+        ],
+        "color": [
+          0.5,
+          0.5,
+          0.8
+        ],
         "intensity": 4.0,
         "range": 15.0,
         "angle": 50.0
       },
       {
         "type": "point",
-        "position": [-6, 1.5, -6],
-        "color": [1.0, 0.6, 0.2],
+        "position": [
+          -6,
+          1.5,
+          -6
+        ],
+        "color": [
+          1.0,
+          0.6,
+          0.2
+        ],
         "intensity": 2.0,
         "range": 6.0
       },
       {
         "type": "point",
-        "position": [8, 2.0, 4],
-        "color": [0.3, 0.8, 0.5],
+        "position": [
+          8,
+          2.0,
+          4
+        ],
+        "color": [
+          0.3,
+          0.8,
+          0.5
+        ],
         "intensity": 1.5,
         "range": 5.0
       },
       {
         "type": "point",
-        "position": [0, 1.0, 0],
-        "color": [1.0, 0.5, 0.1],
+        "position": [
+          0,
+          1.0,
+          0
+        ],
+        "color": [
+          1.0,
+          0.5,
+          0.1
+        ],
         "intensity": 2.5,
         "range": 7.0
       }
@@ -89,9 +103,21 @@
       "mesh": "box",
       "generate_3d": false,
       "texture_prompt": "pile of broken stone fortress rubble, masonry debris, dark",
-      "position": [-8.0, 0, 8.0],
-      "rotation": [5, 30, 3],
-      "scale": [4.0, 1.5, 3.0],
+      "position": [
+        -8.0,
+        0,
+        8.0
+      ],
+      "rotation": [
+        5,
+        30,
+        3
+      ],
+      "scale": [
+        4.0,
+        1.5,
+        3.0
+      ],
       "description": "enorme pila de escombros de la muralla derrumbada",
       "category": "terrain",
       "state": "damaged"
@@ -101,8 +127,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "broken stone column, fortress ruin, cracked at top",
-      "position": [-4.0, 0, -4.0],
-      "scale": [0.6, 4.0, 0.6],
+      "position": [
+        -4.0,
+        0,
+        -4.0
+      ],
+      "scale": [
+        0.6,
+        4.0,
+        0.6
+      ],
       "description": "columna de piedra rota a mitad de altura",
       "category": "building",
       "state": "damaged"
@@ -112,8 +146,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "intact fortress stone column, weathered, covered in lichen",
-      "position": [4.0, 0, -4.0],
-      "scale": [0.6, 7.0, 0.6],
+      "position": [
+        4.0,
+        0,
+        -4.0
+      ],
+      "scale": [
+        0.6,
+        7.0,
+        0.6
+      ],
       "description": "columna intacta pero erosionada",
       "category": "building"
     },
@@ -122,8 +164,16 @@
       "mesh": "torus",
       "generate_3d": false,
       "texture_prompt": "stone well rim, ancient, moss covered, circular stone ring",
-      "position": [0, 0, 0],
-      "scale": [1.2, 0.4, 1.2],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1.2,
+        0.4,
+        1.2
+      ],
       "description": "borde de pozo de piedra antiguo cubierto de musgo",
       "category": "building",
       "state": "damaged",
@@ -135,9 +185,21 @@
       "mesh": "box",
       "generate_3d": false,
       "texture_prompt": "stone pedestal base, broken statue feet remaining, inscriptions",
-      "position": [6.0, 0, -8.0],
-      "rotation": [0, 15, 0],
-      "scale": [1.0, 0.5, 1.0],
+      "position": [
+        6.0,
+        0,
+        -8.0
+      ],
+      "rotation": [
+        0,
+        15,
+        0
+      ],
+      "scale": [
+        1.0,
+        0.5,
+        1.0
+      ],
       "description": "pedestal con los pies de una estatua destruida",
       "category": "building",
       "state": "damaged"
@@ -147,8 +209,16 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "wild vine cluster, dark leaves and red berries, overgrown ruins",
-      "position": [-10.0, 0, -2.0],
-      "scale": [2.0, 1.5, 2.0],
+      "position": [
+        -10.0,
+        0,
+        -2.0
+      ],
+      "scale": [
+        2.0,
+        1.5,
+        2.0
+      ],
       "description": "masa de enredaderas con hojas oscuras y bayas rojas",
       "category": "terrain"
     },
@@ -157,9 +227,21 @@
       "mesh": "plane",
       "display": "flat_image",
       "texture_prompt": "torn medieval war banner, faded heraldry, dragon emblem, tattered fabric, transparent background, isolated object",
-      "position": [4.0, 3.0, -4.0],
-      "rotation": [10, 0, 5],
-      "scale": [1.0, 0.01, 2.0],
+      "position": [
+        4.0,
+        3.0,
+        -4.0
+      ],
+      "rotation": [
+        10,
+        0,
+        5
+      ],
+      "scale": [
+        1.0,
+        0.01,
+        2.0
+      ],
       "description": "estandarte de guerra desgarrado con el emblema del dragon",
       "category": "prop",
       "state": "damaged"
@@ -169,8 +251,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "dead campfire ashes, charred wood, stone ring, cold",
-      "position": [0, 0, 5.0],
-      "scale": [0.5, 0.15, 0.5],
+      "position": [
+        0,
+        0,
+        5.0
+      ],
+      "scale": [
+        0.5,
+        0.15,
+        0.5
+      ],
       "description": "restos de una fogata apagada",
       "category": "prop",
       "state": "damaged"
@@ -180,9 +270,21 @@
       "mesh": "torus",
       "generate_3d": true,
       "model_prompt": "golden amulet with red gemstone, ancient, cracked crystal, dark fantasy artifact",
-      "position": [0.3, 0.5, 0.2],
-      "rotation": [90, 0, 0],
-      "scale": [0.08, 0.02, 0.08],
+      "position": [
+        0.3,
+        0.5,
+        0.2
+      ],
+      "rotation": [
+        90,
+        0,
+        0
+      ],
+      "scale": [
+        0.08,
+        0.02,
+        0.08
+      ],
       "description": "amuleto dorado con gema roja, parcialmente enterrado en cenizas",
       "category": "item",
       "mood": "mysterious",
@@ -193,11 +295,361 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "dead gnarled tree trunk, no leaves, twisted bark, dark fantasy",
-      "position": [-3.0, 0, 8.0],
-      "rotation": [0, 0, 5],
-      "scale": [0.5, 5.0, 0.5],
+      "position": [
+        -3.0,
+        0,
+        8.0
+      ],
+      "rotation": [
+        0,
+        0,
+        5
+      ],
+      "scale": [
+        0.5,
+        5.0,
+        0.5
+      ],
       "description": "arbol muerto y retorcido",
       "category": "terrain"
+    },
+    {
+      "id": "wall_north_l",
+      "mesh": "box",
+      "position": [
+        -4.375,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        16.25,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (l)",
+      "texture_prompt": "ruined fortress wall, partially collapsed revealing dark sky, broken battlements, vines growing on stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_r",
+      "mesh": "box",
+      "position": [
+        9.375,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        6.25,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (r)",
+      "texture_prompt": "ruined fortress wall, partially collapsed revealing dark sky, broken battlements, vines growing on stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_t",
+      "mesh": "box",
+      "position": [
+        5.0,
+        3.5,
+        -12.5
+      ],
+      "scale": [
+        2.5,
+        4.5,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (t)",
+      "texture_prompt": "ruined fortress wall, partially collapsed revealing dark sky, broken battlements, vines growing on stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_l",
+      "mesh": "box",
+      "position": [
+        -7.25,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        10.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (l)",
+      "texture_prompt": "fortress gatehouse ruins, collapsed portcullis, rubble pile, dark sky visible through gaps, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_r",
+      "mesh": "box",
+      "position": [
+        7.25,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        10.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (r)",
+      "texture_prompt": "fortress gatehouse ruins, collapsed portcullis, rubble pile, dark sky visible through gaps, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_t",
+      "mesh": "box",
+      "position": [
+        0.0,
+        5.0,
+        12.5
+      ],
+      "scale": [
+        4.0,
+        3.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (t)",
+      "texture_prompt": "fortress gatehouse ruins, collapsed portcullis, rubble pile, dark sky visible through gaps, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_l",
+      "mesh": "box",
+      "position": [
+        12.5,
+        0.0,
+        -6.75
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        11.5
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (l)",
+      "texture_prompt": "intact fortress wall section, arrow slits, weathered stone, dark fantasy, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_r",
+      "mesh": "box",
+      "position": [
+        12.5,
+        0.0,
+        6.75
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        11.5
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (r)",
+      "texture_prompt": "intact fortress wall section, arrow slits, weathered stone, dark fantasy, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_t",
+      "mesh": "box",
+      "position": [
+        12.5,
+        3.0,
+        0.0
+      ],
+      "scale": [
+        0.15,
+        5.0,
+        2.0
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (t)",
+      "texture_prompt": "intact fortress wall section, arrow slits, weathered stone, dark fantasy, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_l",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        0.0,
+        -7.5
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        10.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (l)",
+      "texture_prompt": "completely collapsed fortress wall, just rubble and sky, field of broken stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_r",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        0.0,
+        7.5
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        10.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (r)",
+      "texture_prompt": "completely collapsed fortress wall, just rubble and sky, field of broken stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_t",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        6.0,
+        0.0
+      ],
+      "scale": [
+        0.15,
+        2.0,
+        5.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (t)",
+      "texture_prompt": "completely collapsed fortress wall, just rubble and sky, field of broken stone, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "ceiling",
+      "mesh": "box",
+      "position": [
+        0,
+        7.999999999999999,
+        0
+      ],
+      "scale": [
+        25.0,
+        0.15,
+        25.0
+      ],
+      "category": "building",
+      "color": [
+        0.2,
+        0.2,
+        0.22
+      ],
+      "description": "techo",
+      "texture_prompt": "open night sky, stars visible, wispy dark clouds, no ceiling, looking straight up at starry sky, seamless tiling",
+      "tiling": [
+        2,
+        2
+      ]
     }
   ],
   "npcs": [
@@ -206,9 +658,21 @@
       "name": "Corvus",
       "character_type": "peasant_male",
       "animation": "look_around",
-      "position": [-6.0, 0, -6.0],
-      "rotation": [0, 45, 0],
-      "scale": [0.5, 1.75, 0.5],
+      "position": [
+        -6.0,
+        0,
+        -6.0
+      ],
+      "rotation": [
+        0,
+        45,
+        0
+      ],
+      "scale": [
+        0.5,
+        1.75,
+        0.5
+      ],
       "description": "saqueador harapiento con un cuervo en el hombro y un saco de objetos robados",
       "dialogue_hint": "Comercia con objetos encontrados en las ruinas. Sabe de una entrada secreta al sotano."
     }

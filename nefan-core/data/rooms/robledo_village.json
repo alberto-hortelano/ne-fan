@@ -1,0 +1,884 @@
+{
+  "scene_id": "robledo_village",
+  "room_id": "robledo_village",
+  "scene_description": "El pueblo de Robledo se extiende junto al río Negro. La calle principal cruza un puente de madera y desemboca en una plaza pavimentada con un pozo en el centro. Las casas de los vecinos huelen a estofado.",
+  "room_description": "El pueblo de Robledo se extiende junto al río Negro. La calle principal cruza un puente de madera y desemboca en una plaza pavimentada con un pozo en el centro. Las casas de los vecinos huelen a estofado.",
+  "dimensions": {
+    "width": 120,
+    "depth": 80,
+    "height": 3
+  },
+  "world_rect": {
+    "minX": -60,
+    "minZ": -40,
+    "maxX": 60,
+    "maxZ": 40
+  },
+  "terrain": {
+    "color": [
+      0.18,
+      0.22,
+      0.14
+    ]
+  },
+  "terrain_grid": {
+    "grid": [
+      "ggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggggg",
+      "ggggggggggggggggggggggggggggggggggggggwwwggggggggggggggggggg",
+      "ggggggggggggggggggggggggggggggggggggggwwwggggggggggggggggggg",
+      "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg",
+      "ggggddddddgggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+      "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+      "ggggddddddgggggggggggg_gggggggggggggggawwwgggggggggggggggggg",
+      "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+      "ggggddddddgggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+      "ggggddddddgggggggggggg_gggggggggggggggawwwgggggggggggggggggg",
+      "gggggggggggggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+      "gggggggggggggggggggggg_ggggggggggggggggwwwgggggggggggggggggg",
+      "gggggggggggggggggggggg_ggggggggggggggawwwggggggggggggggggggg",
+      "gggggggggggggggggggggg_gggggggggggggggwwwggggggggggggggggggg",
+      "gggggggggggggggggggggg_ggggggggggggggwwwgggggggggggggggggggg",
+      "gggggggggggggggggggggg_gggggggggggggawwwgggggggggggggggggggg",
+      "gggggggggggggggggggggg_gggggggggggggwwwooogggggggggggggggggg",
+      "ggggggggggggggggggggsssssssgggggggggwwwooogggggggggggggggggg",
+      "ggggggggggggggggggggsssssssgggggggawwwoooggggggggggggggggggg",
+      "____________________sssssss_______bbbbb_____________________",
+      "ggggggggggggggggggggsssssssggggggggwwwgggggggggggggggggggggg",
+      "ggggggggggggggggggggsssssssgggggggawwwgggggggggggggggggggggg",
+      "gggggggggggggggggggggg_gg_gggggggggwwwgggggggggggggggggggggg",
+      "gggggggggggggggggggggg_gg_gggggggggwwwgggggggggggggggggggggg",
+      "gggggggggggggggggggggg_gg_ggggggggawwwgggggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_gggggggggwwwgggggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_ggggggggggwwwggggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_gggggggggawwwggggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_gggggggggggwwwgggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_gggggggggggwwwgggggddddddddddddddg",
+      "gggggggggggggggggggggg_gg_gggggggggggawwwggggddddddddddddddg",
+      "ggggggggggggggggggggggggg_ggggggggggggwwwggggddddddddddddddg",
+      "ggggggggggggggggggggggggg_gggggggggggggwwwgggddddddddddddddg",
+      "ggggggggggggggggggggggggggggggggggggggawwwgggddddddddddddddg",
+      "gggggggggggggggggggggggggggggggggggggggwwwgggddddddddddddddg",
+      "gggggggggggggggggggggggggggggggggggggggwwwgggddddddddddddddg",
+      "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg",
+      "gggggggggggggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+      "gggggggggggggggggggggggggggggggggggggggwwwgggggggggggggggggg",
+      "ggggggggggggggggggggggggggggggggggggggawwwgggggggggggggggggg"
+    ],
+    "legend": {
+      "g": "grass",
+      "w": "water",
+      "_": "path",
+      "s": "stone",
+      "b": "bridge",
+      "d": "dirt",
+      "a": "sand",
+      "o": "wood"
+    },
+    "cols": 60,
+    "rows": 40,
+    "meters_per_cell": 2,
+    "origin": [
+      -60,
+      -40
+    ],
+    "solid_chars": [
+      "W",
+      "w"
+    ]
+  },
+  "terrain_features": [],
+  "objects": [
+    {
+      "id": "chapel",
+      "position": [
+        -26,
+        0,
+        -27
+      ],
+      "scale": [
+        12,
+        1,
+        10
+      ],
+      "category": "building",
+      "description": "Capilla de San Beda"
+    },
+    {
+      "id": "tavern_main",
+      "position": [
+        1,
+        0,
+        -9
+      ],
+      "scale": [
+        14,
+        1,
+        10
+      ],
+      "category": "building",
+      "description": "La Taberna del Cuervo"
+    },
+    {
+      "id": "house_north",
+      "position": [
+        -46,
+        0,
+        -12
+      ],
+      "scale": [
+        12,
+        1,
+        8
+      ],
+      "category": "building",
+      "description": "Casa del Sastre"
+    },
+    {
+      "id": "house_south",
+      "position": [
+        -46,
+        0,
+        14
+      ],
+      "scale": [
+        12,
+        1,
+        8
+      ],
+      "category": "building",
+      "description": "Casa Vieja"
+    },
+    {
+      "id": "smithy",
+      "position": [
+        -31,
+        0,
+        9
+      ],
+      "scale": [
+        10,
+        1,
+        10
+      ],
+      "category": "building",
+      "description": "Herrería"
+    },
+    {
+      "id": "carpentry",
+      "position": [
+        1,
+        0,
+        10
+      ],
+      "scale": [
+        10,
+        1,
+        8
+      ],
+      "category": "building",
+      "description": "Carpintería"
+    },
+    {
+      "id": "inn",
+      "position": [
+        -14,
+        0,
+        21
+      ],
+      "scale": [
+        16,
+        1,
+        10
+      ],
+      "category": "building",
+      "description": "Posada del Olmo"
+    },
+    {
+      "id": "mill",
+      "position": [
+        34,
+        0,
+        -7
+      ],
+      "scale": [
+        12,
+        1,
+        10
+      ],
+      "category": "building",
+      "description": "Molino"
+    },
+    {
+      "id": "stable",
+      "position": [
+        12,
+        0,
+        30
+      ],
+      "scale": [
+        12,
+        1,
+        8
+      ],
+      "category": "building",
+      "description": "Establo"
+    },
+    {
+      "id": "watchtower",
+      "position": [
+        -55,
+        0,
+        35
+      ],
+      "scale": [
+        6,
+        1,
+        6
+      ],
+      "category": "building",
+      "description": "Atalaya"
+    },
+    {
+      "id": "well_plaza",
+      "position": [
+        -13,
+        0,
+        -1
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pozo"
+    },
+    {
+      "id": "fountain",
+      "position": [
+        -9,
+        0,
+        -3
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "fuente de piedra"
+    },
+    {
+      "id": "market_stall_1",
+      "position": [
+        -18,
+        0,
+        -5
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "puesto de pan"
+    },
+    {
+      "id": "market_stall_2",
+      "position": [
+        -10,
+        0,
+        -5
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "puesto de fruta"
+    },
+    {
+      "id": "lantern_plaza",
+      "position": [
+        -17,
+        0,
+        3
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "item",
+      "description": "farolillo plaza"
+    },
+    {
+      "id": "anvil",
+      "position": [
+        -25,
+        0,
+        7
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "yunque"
+    },
+    {
+      "id": "smith_barrel",
+      "position": [
+        -25,
+        0,
+        11
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "barril de templar"
+    },
+    {
+      "id": "log_pile_1",
+      "position": [
+        8,
+        0,
+        7
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pila de troncos"
+    },
+    {
+      "id": "log_pile_2",
+      "position": [
+        8,
+        0,
+        11
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pila de tablones"
+    },
+    {
+      "id": "cart",
+      "position": [
+        8,
+        0,
+        15
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "carro"
+    },
+    {
+      "id": "water_wheel",
+      "position": [
+        27,
+        0,
+        -6
+      ],
+      "scale": [
+        2,
+        1,
+        4
+      ],
+      "category": "prop",
+      "description": "rueda hidráulica"
+    },
+    {
+      "id": "flour_sacks",
+      "position": [
+        41,
+        0,
+        -3
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "sacos de harina"
+    },
+    {
+      "id": "grave_1",
+      "position": [
+        -37,
+        0,
+        -29
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "lápida"
+    },
+    {
+      "id": "grave_2",
+      "position": [
+        -33,
+        0,
+        -27
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "lápida"
+    },
+    {
+      "id": "grave_3",
+      "position": [
+        -37,
+        0,
+        -25
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "lápida"
+    },
+    {
+      "id": "grave_4",
+      "position": [
+        -35,
+        0,
+        -23
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "lápida"
+    },
+    {
+      "id": "grave_5",
+      "position": [
+        -33,
+        0,
+        -21
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "tumba antigua"
+    },
+    {
+      "id": "haystack_1",
+      "position": [
+        21,
+        0,
+        27
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "fardo de heno"
+    },
+    {
+      "id": "haystack_2",
+      "position": [
+        21,
+        0,
+        31
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "fardo de heno"
+    },
+    {
+      "id": "cow",
+      "position": [
+        10,
+        0,
+        35
+      ],
+      "scale": [
+        4,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "vaca"
+    },
+    {
+      "id": "chicken_1",
+      "position": [
+        -37,
+        0,
+        -5
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "gallina"
+    },
+    {
+      "id": "chicken_2",
+      "position": [
+        -35,
+        0,
+        -3
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "gallina"
+    },
+    {
+      "id": "dog",
+      "position": [
+        -25,
+        0,
+        15
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "perro pastor"
+    },
+    {
+      "id": "tree_n1",
+      "position": [
+        -15,
+        0,
+        -37
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_n2",
+      "position": [
+        -3,
+        0,
+        -35
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_n3",
+      "position": [
+        7,
+        0,
+        -31
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pino",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_w1",
+      "position": [
+        -57,
+        0,
+        -19
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_w2",
+      "position": [
+        -57,
+        0,
+        -11
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pino",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_s1",
+      "position": [
+        -35,
+        0,
+        33
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_s2",
+      "position": [
+        -23,
+        0,
+        37
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pino",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_s3",
+      "position": [
+        -9,
+        0,
+        35
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_se",
+      "position": [
+        31,
+        0,
+        37
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "abedul",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_e1",
+      "position": [
+        55,
+        0,
+        -23
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "pino",
+      "shape": "cylinder"
+    },
+    {
+      "id": "tree_e2",
+      "position": [
+        51,
+        0,
+        1
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "prop",
+      "description": "roble",
+      "shape": "cylinder"
+    },
+    {
+      "id": "sign_welcome",
+      "position": [
+        -53,
+        0,
+        -3
+      ],
+      "scale": [
+        2,
+        1,
+        2
+      ],
+      "category": "item",
+      "description": "Cartel: Bienvenidos a Robledo"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "blacksmith",
+      "name": "Boris el Herrero",
+      "position": [
+        -25,
+        0,
+        5
+      ]
+    },
+    {
+      "id": "innkeeper",
+      "name": "Greta la Posadera",
+      "position": [
+        -15,
+        0,
+        17
+      ]
+    },
+    {
+      "id": "mayor",
+      "name": "Alcaldesa Mirla",
+      "position": [
+        -13,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "child",
+      "name": "Niño Tomé",
+      "position": [
+        -9,
+        0,
+        3
+      ]
+    },
+    {
+      "id": "priest",
+      "name": "Padre Lucas",
+      "position": [
+        -27,
+        0,
+        -21
+      ]
+    },
+    {
+      "id": "carpenter_npc",
+      "name": "Tomás Carpintero",
+      "position": [
+        1,
+        0,
+        15
+      ]
+    },
+    {
+      "id": "tavern_keeper",
+      "name": "Berta Tabernera",
+      "position": [
+        -1,
+        0,
+        -3
+      ]
+    },
+    {
+      "id": "miller",
+      "name": "Halmar el Molinero",
+      "position": [
+        35,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "stable_boy",
+      "name": "Mozo Yannis",
+      "position": [
+        13,
+        0,
+        25
+      ]
+    },
+    {
+      "id": "farmer",
+      "name": "Granjera Eleva",
+      "position": [
+        41,
+        0,
+        21
+      ]
+    },
+    {
+      "id": "guard",
+      "name": "Guardia Roric",
+      "position": [
+        -55,
+        0,
+        37
+      ]
+    }
+  ],
+  "ambient_event": "El viento del río trae olor a pan recién hecho y al barniz tibio de la carpintería.",
+  "__player_start": {
+    "x": -57,
+    "z": -1
+  }
+}

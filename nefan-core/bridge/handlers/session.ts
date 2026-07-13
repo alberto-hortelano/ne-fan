@@ -25,6 +25,7 @@ import {
   broadcastScene,
   createSessionNpcBehavior,
   npcSync,
+  sessionDataForClient,
   type BridgeContext,
   type ClientSocket,
 } from "../context.js";
@@ -281,7 +282,7 @@ export async function handleStartSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: false,
-    state: ctx.narrative.toSessionData(),
+    state: sessionDataForClient(ctx.narrative.toSessionData()),
   });
   // Dev-only shortcut: replay a cached bootstrap (world_map + first
   // scene) for the same gameId instead of paying the ~90 s LLM cost.
@@ -409,7 +410,7 @@ export async function handleResumeSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: true,
-    state: ctx.narrative.toSessionData(),
+    state: sessionDataForClient(ctx.narrative.toSessionData()),
   });
   // Sesión sin NINGUNA escena = el bootstrap de su creación falló (timeout
   // del motor narrativo, MCP caído…). Reanudar ES el reintento: re-encolar

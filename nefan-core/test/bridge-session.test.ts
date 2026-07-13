@@ -344,6 +344,39 @@ describe("bridge ciclo de sesión", () => {
     assert.ok(err?.message?.includes("MCP caído"));
   });
 
+  it("resume normaliza scene_data en el wire y deja la persistencia en Format D crudo", async () => {
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    // Escena Format D mínima registrada como haría el motor narrativo.
+    narrative.recordSceneLoaded("fd_scene", {
+      scene_id: "fd_scene",
+      scene_description: "prueba",
+      size: { cols: 4, rows: 4, meters_per_cell: 2 },
+      terrain: ["gggg", "gggg", "gggg", "gggg"],
+      entities: [
+        { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1], glyph: "c" },
+      ],
+      ambient_event: "",
+    });
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true);
+    const wire = resumed.state!.scenes_loaded["fd_scene"].scene_data;
+    assert.ok(Array.isArray(wire.objects), "wire: objects[] en metros");
+    assert.ok(wire.__format_d, "wire: el crudo viaja en __format_d");
+    assert.equal(wire.size, undefined, "wire: sin size top-level");
+    // El estado interno (y por tanto el próximo save) sigue crudo.
+    const internal = ctx.narrative.scenes_loaded["fd_scene"].scene_data;
+    assert.ok(internal.size, "persistencia: Format D crudo");
+    assert.equal(internal.__format_d, undefined);
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

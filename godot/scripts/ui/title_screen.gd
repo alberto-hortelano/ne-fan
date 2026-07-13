@@ -15,19 +15,19 @@ var _games: Array[Dictionary] = [
 	{
 		"id": "alta_fantasia",
 		"title": "Miravanda",
-		"scene_path": "res://test_rooms/millhaven.json",
+		"scene_path": "res://test_rooms/robledo_village.json",
 		"description": "Alta fantasía luminosa: la magia es un río que migra y todo hechizo es un trato.",
 	},
 	{
 		"id": "cuentos_oscuros",
 		"title": "La Comarca de Valdesombra",
-		"scene_path": "res://test_rooms/millhaven.json",
+		"scene_path": "res://test_rooms/robledo_village.json",
 		"description": "Cuento oscuro: aldeas que viven de prestado junto a un bosque que es frontera con lo Otro.",
 	},
 	{
 		"id": "toledo_1200",
 		"title": "Toledo, 1200",
-		"scene_path": "res://test_rooms/millhaven.json",
+		"scene_path": "res://test_rooms/robledo_village.json",
 		"description": "Intriga histórica en el Toledo de las tres culturas, tras el desastre de Alarcos.",
 	},
 ]

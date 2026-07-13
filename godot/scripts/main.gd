@@ -1,6 +1,6 @@
 extends Node3D
 
-const RoomBuilderScript = preload("res://scripts/room/room_builder.gd")
+const SceneBuilderScript = preload("res://scripts/room/scene_builder.gd")
 const TextureLoaderScript = preload("res://scripts/ai_assets/texture_loader.gd")
 const ModelLoaderScript = preload("res://scripts/ai_assets/model_loader.gd")
 const GameHUDScript = preload("res://scripts/ui/game_hud.gd")
@@ -28,7 +28,7 @@ var _dev_menu: CanvasLayer
 var _camera_controller: Node3D
 var _dialogue_ui: Node  # DialogueUI
 
-var _room_builder = RoomBuilderScript.new()
+var _scene_builder = SceneBuilderScript.new()
 var _texture_loader = TextureLoaderScript.new()
 var _model_loader = ModelLoaderScript.new()
 var _hud: CanvasLayer
@@ -36,6 +36,9 @@ var _combat_manager: Node  # CombatManager
 var _combat_hud  # CombatHUD
 var _player_combatant: Node  # Combatant
 var _current_room: Node3D = null
+# Spawn de la escena actual (__player_start / world_rect / origen) — lo fija
+# _apply_room; lo usan los respawns (main y logic_bridge) en vez de hardcodes.
+var _current_spawn := Vector3(0, 1, 4)
 var _transitioning := false
 var _session_active := false
 var _returning_to_title := false
@@ -195,9 +198,6 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
-			KEY_F1: _load_room_from_file(0)
-			KEY_F2: _load_room_from_file(1)
-			KEY_F3: _load_room_from_file(2)
 			KEY_F12: _dev_menu.toggle()
 			KEY_R:
 				if _player_combatant.health <= 0.0:
@@ -239,7 +239,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					var active_id: String = NarrativeState.world.get("active_scene_id", "")
 					if active_id != "" and NarrativeState.scenes_loaded.has(active_id):
 						var scene_record: Dictionary = NarrativeState.scenes_loaded[active_id]
-						_apply_room(scene_record.get("scene_data", {}), Vector3(0, 1, 0), false)
+						var f9_scene: Dictionary = scene_record.get("scene_data", {})
+						_apply_room(f9_scene, SceneBuilderScript.spawn_position(f9_scene), false)
 
 
 # --- Interaction ---
@@ -323,7 +324,7 @@ func respawn_player() -> void:
 	_player_combatant.state = 0  # IDLE
 	_player_combatant.current_attack_type = ""
 	GameStore.dispatch("player_respawned", {"hp": _player_combatant.max_health})
-	_player.position = Vector3(0, 1, 4)
+	_player.position = _current_spawn
 	_player.velocity = Vector3.ZERO
 	var player_sync: Node = NodeAccess.must_get_node(_player, "CombatAnimationSync", "main.respawn_player")
 	if player_sync:
@@ -459,18 +460,11 @@ func return_to_title() -> void:
 func _scan_rooms() -> void:
 	_room_files.clear()
 	var game: Array[String] = []
-	var style: Array[String] = []
 	var dev: Array[String] = []
 	_scan_room_dir("res://test_rooms", false)
-	# Separate into categories
-	var all := _room_files.duplicate()
+	for f: String in _room_files:
+		game.append(f)
 	_room_files.clear()
-	for f: String in all:
-		var fname: String = f.get_file()
-		if fname.begins_with("style_"):
-			style.append(f)
-		else:
-			game.append(f)
 	_scan_room_dir("res://test_rooms/dev", false)
 	for f: String in _room_files:
 		dev.append(f)
@@ -480,12 +474,10 @@ func _scan_rooms() -> void:
 	for f: String in _room_files:
 		stress.append(f)
 	game.sort()
-	style.sort()
 	dev.sort()
 	stress.sort()
 	_room_files = []
 	_room_files.append_array(game)
-	_room_files.append_array(style)
 	_room_files.append_array(dev)
 	_room_files.append_array(stress)
 	print("Scanned %d rooms" % _room_files.size())
@@ -566,7 +558,7 @@ func load_room_by_path(file_path: String) -> void:
 	file.close()
 	if data == null:
 		return
-	_apply_room(data, Vector3(0, 1, 0), false)
+	_apply_room(data, SceneBuilderScript.spawn_position(data), false)
 
 
 func _load_room_from_file(index: int) -> void:
@@ -601,13 +593,8 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 		_current_room = null
 		await get_tree().process_frame
 
-	_current_room = _room_builder.build_room(data)
+	_current_room = _scene_builder.build_scene(data)
 	add_child(_current_room)
-
-	# Set player reference for ChunkManager (if outdoor chunked terrain)
-	var chunk_mgr = _current_room.get_node_or_null("ChunkManager")
-	if chunk_mgr:
-		chunk_mgr.set_player(_player)
 
 	# AI assets (async, progressive)
 	_texture_loader.load_room_textures(_current_room)
@@ -644,6 +631,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 
 	# Position player and re-enable physics
 	# Wait a frame for collision shapes to register before enabling physics
+	_current_spawn = player_pos
 	_player.position = player_pos
 	_player.velocity = Vector3.ZERO
 	await get_tree().physics_frame
@@ -656,7 +644,7 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 	# so a room_changed without enemies no longer wipes the list — see
 	# next.md §1.3 and nefan-core/src/store/state-projection.ts.
 	GameStore.dispatch("room_changed", {
-		"room_id": data.get("room_id", "unknown"),
+		"room_id": data.get("scene_id", data.get("room_id", "unknown")),
 		"room_data": data,
 	})
 	var enemies_state: Array = []
@@ -694,16 +682,16 @@ func _apply_room(data: Dictionary, player_pos: Vector3, fade: bool = false, rese
 				}
 			})
 	var dims: Dictionary = data.get("dimensions", {})
-	LogicBridge.send_room_loaded(data.get("room_id", "unknown"), bridge_enemies, dims)
+	LogicBridge.send_room_loaded(data.get("scene_id", data.get("room_id", "unknown")), bridge_enemies, dims)
 
 	# Surface room metadata in the HUD. The canonical session record is owned
 	# by NarrativeState — recorded by the scenario change_scene handler and by
 	# the open-world scene loader; the HUD update belongs here because it is
-	# the only universally applicable side-effect (dev rooms, scenario rooms,
-	# F1/F2/F3 all hit this path).
+	# the only universally applicable side-effect (dev rooms, narrative scenes
+	# and resume all hit this path).
 	_hud.show_room_info(
-		String(data.get("room_id", "unknown")),
-		String(data.get("room_description", "")),
+		String(data.get("scene_id", data.get("room_id", "unknown"))),
+		String(data.get("scene_description", data.get("room_description", ""))),
 	)
 
 	# Fade in
@@ -958,7 +946,7 @@ func _on_narrative_scene(scene_id: String, scene_data: Dictionary) -> void:
 	# espejo GD la refleja en memoria para el history browser y F9. save()
 	# está bloqueado por bridge_authoritative, así que no hay doble escritor.
 	NarrativeState.record_scene_loaded(scene_id, scene_data, [])
-	_apply_room(scene_data, Vector3(0, 1, 0), true, false)
+	_apply_room(scene_data, SceneBuilderScript.spawn_position(scene_data), true, false)
 
 
 func _on_narrative_dialogue(speaker: String, text: String, choices: Array) -> void:

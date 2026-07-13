@@ -28,6 +28,27 @@ function makeFormatD(): Record<string, unknown> {
 }
 
 describe("formatDToWorld", () => {
+  it("es idempotente: una world scene ya normalizada pasa intacta", () => {
+    const w = formatDToWorld(makeFormatD());
+    assert.equal(formatDToWorld(w), w, "misma referencia, sin re-normalizar");
+  });
+
+  it("es idempotente también para tiles (conservan `tile` pero no `biome`)", () => {
+    const w = formatDToWorld({
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      biome: "grass",
+      scene_description: "campo",
+      terrain_features: [],
+      entities: [],
+      ambient_event: "",
+    });
+    assert.ok(Array.isArray(w.objects), "primera pasada normaliza");
+    // Sin la guarda __format_d, esta segunda pasada re-entraría en la
+    // expansión de tile (tile presente, biome ya consumido) y lanzaría.
+    assert.equal(formatDToWorld(w), w);
+  });
+
   it("converts size to centred world dimensions", () => {
     const w = formatDToWorld(makeFormatD());
     assert.deepEqual(w.dimensions, { width: 20, depth: 12, height: 3 });

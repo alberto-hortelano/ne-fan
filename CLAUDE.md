@@ -1,6 +1,6 @@
 # Never Ending Fantasy — Guia de desarrollo
 
-RPG de **mundo abierto generativo** con motor Godot 4.6+ y cliente 2D HTML. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. Las "salas" cerradas (`data/rooms/*.json`, cargadas en local con F1/F2/F3) son **legacy de tests** — no son la unidad de gameplay canónica y ya no pasan por el LLM.
+RPG de **mundo abierto generativo** con motor Godot 4.6+ y cliente 2D HTML. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. La escena viaja en UN formato compartido: el motor produce Format D, el bridge lo normaliza a world scene (`formatDToWorld`) y ambos clientes (2D y 3D) pintan esa misma forma. Los JSON de `data/rooms/` son fixtures de test en formato world scene (menú F12).
 
 **Juegos = mundos.** Un juego es `nefan-core/data/games/{id}/`: `game.json` (título, descripción, `style_id` por defecto, `world_brief` ~1.2k chars) + `world.md` (documento completo del mundo en 10 secciones: identidad, geografía, historia, pueblos, facciones, magia, vida cotidiana, semillas de conflicto, el jugador, registro) + `plugins/`. NO hay historia predefinida ni beats scripted: la historia la improvisa el motor narrativo dentro del mundo. Juegos base: `alta_fantasia` (Miravanda), `cuentos_oscuros` (Valdesombra), `toledo_1200` (histórico). Un **estilo** es `data/styles/{id}/`: `style.json` (`style_token`, cover, refs) + imágenes de referencia por categoría (nature/settlement/fortress/interior/underground + 3 de personaje) que ai_server pasa a Meshy según lo que pinte (`style_tag` del scene JSON). El estilo se elige en el título y queda CONGELADO en el save. El jugador puede crear su mundo (borrador → kind MCP `develop_world` → `data/games/user_*`) y subir su estilo (imágenes → `/styles/upload` → confirmación de coste → `/styles/{id}/complete` genera las categorías que falten; CLI equivalente: `python ai_server/tools/build_style_pack.py`). Schemas en `nefan-core/src/games/loader.ts` (fuente de verdad).
 
@@ -42,7 +42,7 @@ cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y rooms F1/F2/F3. Para combate y narrativa usar los presets 1–3.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_village`). Para combate y narrativa usar los presets 1–3.
 
 ## Controles in-game
 
@@ -55,7 +55,6 @@ El juego arranca sin ai_server ni bridge — texturas no se generan y el combate
 | E | Interactuar con objeto/NPC |
 | 1-5 | Seleccionar tipo ataque (quick/heavy/medium/defensive/precise) |
 | LMB | Ejecutar ataque |
-| F1/F2/F3 | Cargar escenarios de test legacy (crypt/tavern/corridor — solo para devtest) |
 | H | Toggle History Browser (timeline navegable de la sesión narrativa) |
 | F5 | Guardar partida |
 | F9 | Cargar partida |
@@ -172,7 +171,8 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
     ws-server.ts           WebSocket bridge para Godot (:9877)
   data/
     combat_config.json     Config compartida (symlink desde godot/data/)
-    rooms/                 Escenarios JSON (incluye open_world_test.json y rooms legacy de tests)
+    rooms/                 Fixtures de test en formato world scene (dev/, stress/, robledo_village.json del dump)
+    scenes/                Escenas Format D de ejemplo/fixture (robledo_village, zorder_test) — fuente del dump
     games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
     plugins/               Plugins shipped comunes a TODOS los juegos (economy); un plugins/ local con mismo name lo pisa
     styles/{id}/           Estilo: style.json + imágenes de referencia por categoría
@@ -191,11 +191,10 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
       session_recorder.gd  Snapshots periodicos para replay (F10)
       session_player.gd    Reproduce grabaciones (F11)
       texture_cache.gd     Texturas PBR, cachea en disco
-    room/                  (legacy: builders para escenas y rooms, ambos pasan por aquí)
-      room_builder.gd      JSON -> geometria (rooms cerradas legacy y scenes open-world)
-      object_spawner.gd    JSON -> objetos + NPCs + debug capsules (consume texture_hash/model_hash)
-      light_placer.gd      JSON -> luces
-      exit_builder.gd      Area3D triggers
+    room/
+      scene_builder.gd     World scene normalizada -> geometria (suelo en world_rect, __player_start, fail-loud ante Format D crudo)
+      object_spawner.gd    JSON -> objetos + NPCs + debug capsules (consume texture_hash/model_hash, shape|mesh, color)
+      light_placer.gd      lighting{} de fixtures -> luces; default sol direccional
     combat/
       combat_animator.gd   AnimationTree + StateMachine, Hips XZ lock, skin
       combat_animation_sync.gd  Estado -> animacion (Souls-Like pattern)
@@ -294,8 +293,8 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 2. ai_server envía request vía WebSocket a narrative-mcp (:3737), añadiendo `available_assets` (lista del manifest) y `session` info
 3. Claude Code (en otra terminal) llama `narrative_listen()` → recibe el world_state
 4. Claude genera la escena JSON completa, opcionalmente referenciando assets cacheados por hash → llama `narrative_respond(scene_json)`
-5. ai_server la devuelve al bridge, que la registra en su NarrativeState y la difunde como `narrative_event` (effect `spawn_entity` con `data.scene`)
-6. Godot (señal `narrative_scene`) construye la escena con `room_builder` + `object_spawner` (que respeta `texture_hash`/`model_hash` para reuso)
+5. ai_server la devuelve al bridge, que la registra en su NarrativeState (Format D crudo), la **normaliza con `formatDToWorld`** y la difunde como `narrative_event` (effect `spawn_entity` con `data.scene` = world scene; el resume normaliza igual vía `sessionDataForClient`)
+6. Godot (señal `narrative_scene`) construye la escena con `scene_builder` + `object_spawner` (que respeta `texture_hash`/`model_hash` para reuso); el player spawnea en `__player_start`
 
 **Identidad de mundo en el contexto**: `world.description` (el brief) viaja en CADA turno vía `serializeForLlm`; el `world.md` completo solo en el bootstrap (`world_document`) y bajo demanda con la tool MCP `world_doc_get` (→ `GET /world_doc` del State API). Las restricciones de motor (cámara top-down fija, SOLO personajes humanoides, sin beats, `style_tag` por escena) viven en `WORLD_RULES` (narrative-mcp/server.ts) con espejo en `narrative_schemas.py`.
 
@@ -396,52 +395,43 @@ Distintos de los plugins declarativos: **módulos TS de hot loop** con varias im
 
 **Datos:** Todo en `godot/data/combat_config.json` — editable sin recompilar.
 
-## Scene JSON schema (open-world, canónico)
+## Formatos de escena (canónicos, compartidos por 2D y 3D)
 
-`generate_scene` produce escenas open-world con terreno chunked, vegetación procedural, edificios construidos a partir de objetos, e iluminación. Ejemplo simplificado:
+Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
+
+**1. Format D** — lo que produce el motor narrativo (`generate_scene`): rejilla 2D (`size{cols,rows,meters_per_cell}` + `terrain[]` strings + `terrain_legend`) con `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `texture_hash?`), y en tiles v3 `tile{tx,ty}` + `biome` + `map_ground`/`volumes`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
+
+**2. World scene** — el contrato de render que consumen AMBOS clientes: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
 ```json
 {
-  "room_id": "ashwood_clearing",
-  "room_description": "Un claro brumoso rodeado de árboles negros...",
-  "zone_type": "outdoor",
-  "dimensions": { "width": 60, "height": 30, "depth": 60 },
-  "terrain": {
-    "type": "chunked",
-    "texture_prompt": "moss-covered forest floor with twigs, seamless",
-    "texture_hash": "a3f1...optional"
-  },
-  "sky": { "time_of_day": "dusk" },
-  "fog": { "enabled": true, "density": 0.012, "color": [0.08, 0.07, 0.10] },
-  "vegetation": {
-    "grass": { "count": 1500, "radius": 25 },
-    "trees": { "count": 12, "ring_inner_radius": 18, "ring_outer_radius": 28 }
-  },
-  "lighting": {
-    "ambient": { "color": [0.15, 0.12, 0.10], "intensity": 0.35 },
-    "lights": []
-  },
+  "scene_id": "robledo_village",
+  "scene_description": "El pueblo de Robledo...",
+  "dimensions": { "width": 120, "depth": 80, "height": 3 },
+  "world_rect": { "minX": -60, "minZ": -40, "maxX": 60, "maxZ": 40 },
+  "terrain": { "color": [0.18, 0.22, 0.14] },
+  "terrain_grid": { "grid": ["..."], "legend": {}, "solid_chars": ["W", "w"] },
   "objects": [
-    {
-      "id": "tavern_wall_n", "mesh": "box",
-      "position": [0, 1.5, 4], "scale": [8, 3, 0.2],
-      "texture_prompt": "weathered planks",
-      "texture_hash": "b8c2... (optional, reuse cached)",
-      "category": "building",
-      "description": "muro norte de la taberna"
-    }
+    { "id": "tavern", "shape": "box", "position": [-2, 0, -2], "scale": [8, 1, 4],
+      "category": "building", "texture_hash": "b8c2...opcional", "description": "Taberna" }
   ],
-  "ambient_event": "el viento agita las hojas..."
+  "npcs": [ { "id": "barkeep", "name": "Tabernero", "position": [0, 0, -2] } ],
+  "__player_start": { "x": -57, "z": -1 },
+  "ambient_event": "..."
 }
 ```
+
+Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del objeto). En Godot la construye `scene_builder.gd` (suelo centrado en `world_rect`, default de sol direccional); en HTML el renderer 2D. Godot NUNCA porta la conversión celdas→metros — si le llega un Format D sin normalizar hace push_error (fail-loud).
+
+**Fixtures de test** (`nefan-core/data/rooms/{dev,stress}/*.json`): world scenes escritas a mano — admiten además `lighting{ambient,lights[]}` (si falta, default), `mesh` (alias de `shape`, catálogo box/sphere/capsule/cylinder/cone/plane/torus), `color:[r,g,b]` por objeto (placeholder pre-textura), `terrain.texture_prompt`/`tiling`, y `combat{health,weapon_id,personality}` en objects para spawnear combatientes. `data/rooms/robledo_village.json` se genera con `npm run dump-scene` desde la escena Format D compartida con el 2D (se commitea; es el arranque offline del 3D).
 
 **Reuse de assets**: cualquier `texture_prompt`/`model_prompt` admite un hermano `texture_hash`/`model_hash`. Si Claude lo proporciona (copiándolo de `available_assets`), Godot carga del cache local sin regenerar.
 
 **Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (señal `narrative_spawn` en Godot, `materializeSpawn` en HTML). Las entidades se materializan en el mundo en runtime sin recargar la escena.
 
-**Legacy room schema**: `data/rooms/*.json` antiguos (crypt, tavern, corridor) usan un schema más simple con `surfaces.floor/ceiling/walls`, `exits` y dimensiones pequeñas. Se cargan con F1/F2/F3 sólo para tests visuales — no son la unidad de gameplay.
+Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde), decor (gris apagado).
 
-Meshes: box, sphere, capsule, cylinder, cone, plane, torus. Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde).
+Limitación v1 asumida: Format D no expresa alturas — las world scenes del motor llegan con `scale.y = 1` (edificios de 1 m en 3D, paridad literal con el 2D). Follow-up opcional: altura visual por categoría en `object_spawner`.
 
 ## Convenciones de codigo
 
@@ -466,7 +456,8 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 
 ## Decisiones de diseno importantes
 
-- **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador. Las "salas" cerradas son legacy de tests, no la unidad de gameplay.
+- **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador.
+- **Un solo formato de escena para ambos clientes.** El motor produce Format D; el bridge lo normaliza a world scene con `formatDToWorld` (nefan-core) antes de emitir, y 2D y 3D pintan esa misma forma. Nada exclusivo de un cliente en el schema de escena; Godot no proyecta celdas (fail-loud ante Format D crudo).
 - **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Con bridge conectado, la sesión es la del bridge (plugins incluidos): el mirror GD se hidrata en memoria (`bridge_authoritative`) y su `save()` está bloqueado; pos/HP se snapshotean en `save_session` y el resume restaura posición, HP y entities. Offline, el mirror GD guarda en local. El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
 - **Asset library indexada** — `cache/manifest.json` traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.

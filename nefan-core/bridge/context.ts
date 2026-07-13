@@ -14,7 +14,7 @@ import type { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import type { SceneRecord } from "../src/narrative/types.js";
+import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
 import { SeededRng } from "../src/rng.js";
@@ -26,6 +26,7 @@ import {
   type PluginEventInput,
 } from "../src/plugins/dispatcher.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
+import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
@@ -139,6 +140,11 @@ export function broadcastScene(
   meta?: { edge?: import("../src/world-map/types.js").Edge },
 ): void {
   enrichSceneWithExits(ctx, scene);
+  // Contrato de render único: los clientes reciben la world scene normalizada
+  // (objects/npcs en metros, __player_start, world_rect, __format_d con el
+  // crudo). La persistencia (scenes_loaded, saves, serializeForLlm) sigue en
+  // Format D crudo — sólo se normaliza el wire.
+  const worldScene = formatDToWorld(scene);
   // Proyección canónica NarrativeState.entities → GameStore.enemies para la
   // escena que se difunde. Con tiles, la proyección cubre el VECINDARIO 3×3
   // del tile difundido más la escena activa — los enemigos de los tiles
@@ -161,7 +167,7 @@ export function broadcastScene(
         entityKind: "object",
         description: String(scene.room_description ?? scene.scene_description ?? sceneId),
         position: [0, 0, 0],
-        data: { scene },
+        data: { scene: worldScene },
         eventId: "scene_init",
       },
     ],
@@ -181,6 +187,18 @@ export function broadcastScene(
   // La escena difundida puede traer NPCs nuevos (registrados por
   // recordSceneLoaded) — engancharlos a la vida ambiental.
   npcSync(ctx);
+}
+
+/** SessionData para el wire: cada scene_data sale normalizada a world scene
+ *  (mismo contrato que broadcastScene). Clona los records por escena porque
+ *  `toSessionData()` devuelve referencias vivas al estado interno — normalizar
+ *  in place corrompería la persistencia, que debe seguir en Format D crudo. */
+export function sessionDataForClient(data: SessionData): SessionData {
+  const scenes: Record<string, SceneRecord> = {};
+  for (const [id, rec] of Object.entries(data.scenes_loaded)) {
+    scenes[id] = { ...rec, scene_data: formatDToWorld(rec.scene_data) };
+  }
+  return { ...data, scenes_loaded: scenes };
 }
 
 /** Nivel 3 del tick (§7.4): pasa los plugin_events recolectados por
