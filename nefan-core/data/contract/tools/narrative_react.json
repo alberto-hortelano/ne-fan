@@ -1,0 +1,103 @@
+{
+  "name": "react_to_player",
+  "description": "Decide if the player's dialogue choice/free-text reshapes the open world. Return zero or more consequences.",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "consequences"
+    ],
+    "properties": {
+      "consequences": {
+        "type": "array",
+        "maxItems": 4,
+        "items": {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "dialogue",
+                "story_update",
+                "spawn_entity",
+                "schedule_event",
+                "plugin_event",
+                "noop"
+              ]
+            },
+            "speaker": {
+              "type": "string",
+              "description": "Display name of the NPC who speaks. Prefer an NPC already in `entities`."
+            },
+            "text": {
+              "type": "string",
+              "description": "What the NPC says. Write in the same language as the player's free_text."
+            },
+            "choices": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3,
+              "description": "Optional 2-3 follow-up options for the player."
+            },
+            "delta": {
+              "type": "string",
+              "description": "Incremental update to story_so_far (1-3 sentences)."
+            },
+            "entity_kind": {
+              "type": "string",
+              "enum": [
+                "npc",
+                "building",
+                "object"
+              ]
+            },
+            "description": {
+              "type": "string",
+              "description": "Vivid English description of the entity (used for asset generation). NPCs/enemies must be HUMANOID — never animals or non-humanoid monsters."
+            },
+            "name": {
+              "type": "string",
+              "description": "Display name for an NPC entity."
+            },
+            "role": {
+              "type": "string",
+              "description": "NPC ambient-behaviour role: peasant | guard | villager | merchant. The game engine executes it (wander, face the player, flee from fights; guards intervene). Unknown roles degrade to villager."
+            },
+            "position_hint": {
+              "type": "string",
+              "description": "Plausible placement: near_player, distant_east, distant_north, etc."
+            },
+            "texture_hash": {
+              "type": "string",
+              "description": "Reuse a cached texture by hash from available_assets."
+            },
+            "model_hash": {
+              "type": "string",
+              "description": "Reuse a cached GLB by hash from available_assets."
+            },
+            "trigger": {
+              "type": "string",
+              "description": "When the scheduled event fires: next_scene, timer:60s, on_player_action:.."
+            },
+            "plugin_id": {
+              "type": "string",
+              "description": "Id (sha256) of the active plugin that consumes the event."
+            },
+            "event_type": {
+              "type": "string",
+              "description": "Event type from the plugin's events_consumed (e.g. trade_offered)."
+            },
+            "payload": {
+              "type": "object",
+              "description": "Event payload matching what the plugin's rules read (event.*)."
+            }
+          }
+        }
+      }
+    }
+  }
+}
