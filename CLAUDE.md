@@ -431,7 +431,7 @@ Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del ob
 
 Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde), decor (gris apagado).
 
-Limitación v1 asumida: Format D no expresa alturas — las world scenes del motor llegan con `scale.y = 1` (edificios de 1 m en 3D, paridad literal con el 2D). Follow-up opcional: altura visual por categoría en `object_spawner`.
+**Altura**: cada entity admite `h` opcional en METROS (el footprint sigue en celdas); sin él, `formatDToWorld` aplica `KIND_DEFAULT_HEIGHT` (building 2.5, tree 4, prop 1, item/decor 0.5) y emite `scale.y` real. El 3D la construye tal cual; el 2D la extruye como prisma (`view-prism.ts` + `drawSceneBox`: caras orientadas a cámara, tapa a `−h·verticalScale`) y las cajas altas (>1.2 m) ocluyen al player vía depth-sort con fade. La colisión NUNCA usa la altura (solo huella XZ).
 
 ## Convenciones de codigo
 
