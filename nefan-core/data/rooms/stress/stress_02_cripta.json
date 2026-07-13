@@ -1,60 +1,76 @@
 {
+  "scene_id": "stress_02_cripta",
   "room_id": "stress_02_cripta",
+  "scene_description": "Una cripta abovedada con pilares de piedra agrietados. Sarcofagos de marmol descansan entre las sombras. El aire huele a incienso rancio.",
   "room_description": "Una cripta abovedada con pilares de piedra agrietados. Sarcofagos de marmol descansan entre las sombras. El aire huele a incienso rancio.",
-  "dimensions": { "width": 10.0, "height": 4.0, "depth": 8.0 },
-  "surfaces": {
-    "floor": {
-      "texture_prompt": "ancient marble crypt floor, cracked, dark veins, mossy joints, seamless tiling",
-      "tiling": [3, 2]
-    },
-    "ceiling": {
-      "texture_prompt": "gothic vaulted stone ceiling, ribbed arches, cobwebs, dark, seamless tiling",
-      "tiling": [3, 2]
-    },
-    "walls": [
-      { "side": "north", "texture_prompt": "crypt stone wall with carved skull reliefs, dark fantasy, seamless tiling", "tiling": [3, 1] },
-      { "side": "east",  "texture_prompt": "crypt wall with burial niches, bones visible, dark stone, seamless tiling", "tiling": [2, 1] },
-      { "side": "south", "texture_prompt": "crypt entrance wall, iron gate frame, ancient runes carved in stone, seamless tiling", "tiling": [3, 1] },
-      { "side": "west",  "texture_prompt": "crypt wall with faded fresco of death, peeling paint on stone, seamless tiling", "tiling": [2, 1] }
+  "dimensions": {
+    "width": 10.0,
+    "depth": 8.0
+  },
+  "terrain": {
+    "color": [
+      0.3,
+      0.28,
+      0.25
+    ],
+    "texture_prompt": "ancient marble crypt floor, cracked, dark veins, mossy joints, seamless tiling",
+    "tiling": [
+      3,
+      2
     ]
   },
-  "exits": [
-    {
-      "wall": "south",
-      "offset": 0.0,
-      "size": [2.0, 3.0],
-      "description": "puerta de hierro con rejas",
-      "target_hint": "main corridor"
-    },
-    {
-      "wall": "north",
-      "offset": -2.0,
-      "size": [1.5, 2.5],
-      "description": "pasaje oscuro descendente",
-      "target_hint": "deeper crypt"
-    }
-  ],
   "lighting": {
-    "ambient": { "color": [0.04, 0.03, 0.05], "intensity": 0.25 },
+    "ambient": {
+      "color": [
+        0.04,
+        0.03,
+        0.05
+      ],
+      "intensity": 0.25
+    },
     "lights": [
       {
         "type": "point",
-        "position": [0, 3.5, 0],
-        "color": [0.6, 0.5, 1.0],
+        "position": [
+          0,
+          3.5,
+          0
+        ],
+        "color": [
+          0.6,
+          0.5,
+          1.0
+        ],
         "intensity": 1.5,
         "range": 8.0
       },
       {
         "type": "point",
-        "position": [-3.5, 2.5, -2.5],
-        "color": [1.0, 0.6, 0.2],
+        "position": [
+          -3.5,
+          2.5,
+          -2.5
+        ],
+        "color": [
+          1.0,
+          0.6,
+          0.2
+        ],
         "intensity": 2.0,
         "range": 5.0
       },
       {
         "type": "point",
-        "position": [3.5, 2.5, 2.0],
-        "color": [1.0, 0.6, 0.2],
+        "position": [
+          3.5,
+          2.5,
+          2.0
+        ],
+        "color": [
+          1.0,
+          0.6,
+          0.2
+        ],
         "intensity": 2.0,
         "range": 5.0
       }
@@ -66,8 +82,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "ancient cracked stone pillar, carved runes, dark crypt",
-      "position": [-3.0, 0, -1.5],
-      "scale": [0.5, 3.5, 0.5],
+      "position": [
+        -3.0,
+        0,
+        -1.5
+      ],
+      "scale": [
+        0.5,
+        3.5,
+        0.5
+      ],
       "description": "pilar de piedra agrietado con runas talladas",
       "category": "building",
       "state": "damaged"
@@ -77,8 +101,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "mossy stone pillar, spider webs, dark crypt",
-      "position": [3.0, 0, -1.5],
-      "scale": [0.5, 3.5, 0.5],
+      "position": [
+        3.0,
+        0,
+        -1.5
+      ],
+      "scale": [
+        0.5,
+        3.5,
+        0.5
+      ],
       "description": "pilar cubierto de musgo y telaranas",
       "category": "building"
     },
@@ -88,8 +120,16 @@
       "generate_3d": true,
       "model_prompt": "stone sarcophagus with carved lid, medieval dark fantasy",
       "texture_prompt": "carved stone sarcophagus, ancient, dark veins in marble",
-      "position": [0, 0, -2.5],
-      "scale": [0.8, 0.6, 2.0],
+      "position": [
+        0,
+        0,
+        -2.5
+      ],
+      "scale": [
+        0.8,
+        0.6,
+        2.0
+      ],
       "description": "sarcofago de piedra con tapa tallada con efigies",
       "category": "building",
       "state": "intact",
@@ -101,11 +141,253 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "iron candelabra with melted candles, gothic",
-      "position": [-1.5, 0, 0.5],
-      "scale": [0.15, 1.2, 0.15],
+      "position": [
+        -1.5,
+        0,
+        0.5
+      ],
+      "scale": [
+        0.15,
+        1.2,
+        0.15
+      ],
       "description": "candelabro de hierro con velas derretidas",
       "category": "prop",
       "mood": "mysterious"
+    },
+    {
+      "id": "wall_north_l",
+      "mesh": "box",
+      "position": [
+        -3.875,
+        0.0,
+        -4.0
+      ],
+      "scale": [
+        2.25,
+        4.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (l)",
+      "texture_prompt": "crypt stone wall with carved skull reliefs, dark fantasy, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_north_r",
+      "mesh": "box",
+      "position": [
+        1.875,
+        0.0,
+        -4.0
+      ],
+      "scale": [
+        6.25,
+        4.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (r)",
+      "texture_prompt": "crypt stone wall with carved skull reliefs, dark fantasy, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_north_t",
+      "mesh": "box",
+      "position": [
+        -2.0,
+        2.5,
+        -4.0
+      ],
+      "scale": [
+        1.5,
+        1.5,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (t)",
+      "texture_prompt": "crypt stone wall with carved skull reliefs, dark fantasy, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_l",
+      "mesh": "box",
+      "position": [
+        -3.0,
+        0.0,
+        4.0
+      ],
+      "scale": [
+        4.0,
+        4.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (l)",
+      "texture_prompt": "crypt entrance wall, iron gate frame, ancient runes carved in stone, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_r",
+      "mesh": "box",
+      "position": [
+        3.0,
+        0.0,
+        4.0
+      ],
+      "scale": [
+        4.0,
+        4.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (r)",
+      "texture_prompt": "crypt entrance wall, iron gate frame, ancient runes carved in stone, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_south_t",
+      "mesh": "box",
+      "position": [
+        0.0,
+        3.0,
+        4.0
+      ],
+      "scale": [
+        2.0,
+        1.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (t)",
+      "texture_prompt": "crypt entrance wall, iron gate frame, ancient runes carved in stone, seamless tiling",
+      "tiling": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": "wall_east",
+      "mesh": "box",
+      "position": [
+        5.0,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        4.0,
+        8.0
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east",
+      "texture_prompt": "crypt wall with burial niches, bones visible, dark stone, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "wall_west",
+      "mesh": "box",
+      "position": [
+        -5.0,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        4.0,
+        8.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west",
+      "texture_prompt": "crypt wall with faded fresco of death, peeling paint on stone, seamless tiling",
+      "tiling": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": "ceiling",
+      "mesh": "box",
+      "position": [
+        0,
+        4.0,
+        0
+      ],
+      "scale": [
+        10.0,
+        0.15,
+        8.0
+      ],
+      "category": "building",
+      "color": [
+        0.2,
+        0.2,
+        0.22
+      ],
+      "description": "techo",
+      "texture_prompt": "gothic vaulted stone ceiling, ribbed arches, cobwebs, dark, seamless tiling",
+      "tiling": [
+        3,
+        2
+      ]
     }
   ],
   "npcs": [
@@ -114,9 +396,21 @@
       "name": "Padre Aemond",
       "character_type": "mage",
       "animation": "praying",
-      "position": [2.0, 0, 1.5],
-      "rotation": [0, -90, 0],
-      "scale": [0.5, 1.8, 0.5],
+      "position": [
+        2.0,
+        0,
+        1.5
+      ],
+      "rotation": [
+        0,
+        -90,
+        0
+      ],
+      "scale": [
+        0.5,
+        1.8,
+        0.5
+      ],
       "description": "figura espectral de un sacerdote con ropas deshechas, ojos vacios brillan con luz azulada",
       "dialogue_hint": "Conoce la historia de los enterrados aqui. Puede dar una pista sobre la llave del sarcofago."
     }

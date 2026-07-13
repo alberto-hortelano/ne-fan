@@ -1,69 +1,97 @@
 {
+  "scene_id": "stress_05_claro_bosque",
   "room_id": "stress_05_claro_bosque",
+  "scene_description": "Un claro en el bosque oscuro. La luz de la luna se filtra entre las copas de los arboles. El suelo esta cubierto de hojas secas y hierba silvestre.",
   "room_description": "Un claro en el bosque oscuro. La luz de la luna se filtra entre las copas de los arboles. El suelo esta cubierto de hojas secas y hierba silvestre.",
-  "dimensions": { "width": 25.0, "height": 8.0, "depth": 25.0 },
-  "surfaces": {
-    "floor": {
-      "texture_prompt": "forest clearing floor, wild grass and fallen leaves, dirt path, mossy ground, natural, seamless tiling",
-      "tiling": [6, 6]
-    },
-    "ceiling": {
-      "texture_prompt": "dark night sky through tree canopy, moonlit clouds, branches silhouette, looking up at sky from forest, seamless tiling",
-      "tiling": [3, 3]
-    },
-    "walls": [
-      { "side": "north", "texture_prompt": "dense dark forest tree line, gnarled trunks, thick undergrowth, fantasy forest edge viewed from clearing, seamless tiling", "tiling": [6, 2] },
-      { "side": "east",  "texture_prompt": "forest edge with rocky outcrop, moss covered boulders, ferns, dark fantasy forest, seamless tiling", "tiling": [6, 2] },
-      { "side": "south", "texture_prompt": "forest path entrance, ancient trees forming natural archway, dark forest, seamless tiling", "tiling": [6, 2] },
-      { "side": "west",  "texture_prompt": "overgrown forest edge, fallen tree trunk, mushrooms, dark dense woodland, seamless tiling", "tiling": [6, 2] }
+  "dimensions": {
+    "width": 25.0,
+    "depth": 25.0
+  },
+  "terrain": {
+    "color": [
+      0.3,
+      0.28,
+      0.25
+    ],
+    "texture_prompt": "forest clearing floor, wild grass and fallen leaves, dirt path, mossy ground, natural, seamless tiling",
+    "tiling": [
+      6,
+      6
     ]
   },
-  "exits": [
-    {
-      "wall": "south",
-      "offset": 0.0,
-      "size": [3.0, 4.0],
-      "description": "sendero que se interna en el bosque",
-      "target_hint": "dark forest path"
-    },
-    {
-      "wall": "north",
-      "offset": -5.0,
-      "size": [2.0, 3.5],
-      "description": "cueva entre las raices de un arbol gigante",
-      "target_hint": "root cave"
-    }
-  ],
   "lighting": {
-    "ambient": { "color": [0.05, 0.08, 0.12], "intensity": 0.5 },
+    "ambient": {
+      "color": [
+        0.05,
+        0.08,
+        0.12
+      ],
+      "intensity": 0.5
+    },
     "lights": [
       {
         "type": "spot",
-        "position": [0, 7.5, 0],
-        "direction": [0, -1, 0],
-        "color": [0.6, 0.7, 1.0],
+        "position": [
+          0,
+          7.5,
+          0
+        ],
+        "direction": [
+          0,
+          -1,
+          0
+        ],
+        "color": [
+          0.6,
+          0.7,
+          1.0
+        ],
         "intensity": 5.0,
         "range": 15.0,
         "angle": 60.0
       },
       {
         "type": "point",
-        "position": [-4, 1.5, -4],
-        "color": [0.3, 1.0, 0.4],
+        "position": [
+          -4,
+          1.5,
+          -4
+        ],
+        "color": [
+          0.3,
+          1.0,
+          0.4
+        ],
         "intensity": 1.0,
         "range": 5.0
       },
       {
         "type": "point",
-        "position": [5, 1.0, 3],
-        "color": [0.4, 0.6, 1.0],
+        "position": [
+          5,
+          1.0,
+          3
+        ],
+        "color": [
+          0.4,
+          0.6,
+          1.0
+        ],
         "intensity": 0.8,
         "range": 4.0
       },
       {
         "type": "point",
-        "position": [0, 0.5, 0],
-        "color": [1.0, 0.6, 0.2],
+        "position": [
+          0,
+          0.5,
+          0
+        ],
+        "color": [
+          1.0,
+          0.6,
+          0.2
+        ],
         "intensity": 3.0,
         "range": 6.0
       }
@@ -75,8 +103,16 @@
       "mesh": "cylinder",
       "generate_3d": true,
       "model_prompt": "campfire with stone ring, burning logs, embers, fantasy outdoor",
-      "position": [0, 0, 0],
-      "scale": [0.6, 0.3, 0.6],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        0.6,
+        0.3,
+        0.6
+      ],
       "description": "fogata rodeada de piedras con brasas ardientes",
       "category": "prop",
       "state": "burning",
@@ -87,9 +123,21 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "large mossy boulder, forest, grey granite with green moss patches",
-      "position": [8.0, 0, -6.0],
-      "rotation": [10, 30, 5],
-      "scale": [2.0, 1.5, 1.8],
+      "position": [
+        8.0,
+        0,
+        -6.0
+      ],
+      "rotation": [
+        10,
+        30,
+        5
+      ],
+      "scale": [
+        2.0,
+        1.5,
+        1.8
+      ],
       "description": "roca grande cubierta de musgo",
       "category": "terrain"
     },
@@ -98,9 +146,21 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "small forest boulder, dark grey, lichen covered",
-      "position": [9.0, 0, -4.0],
-      "rotation": [5, 60, 0],
-      "scale": [1.0, 0.7, 0.9],
+      "position": [
+        9.0,
+        0,
+        -4.0
+      ],
+      "rotation": [
+        5,
+        60,
+        0
+      ],
+      "scale": [
+        1.0,
+        0.7,
+        0.9
+      ],
       "description": "roca pequena con liquenes",
       "category": "terrain"
     },
@@ -109,8 +169,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "old tree stump, bark texture, moss, forest clearing",
-      "position": [-6.0, 0, 4.0],
-      "scale": [0.8, 0.5, 0.8],
+      "position": [
+        -6.0,
+        0,
+        4.0
+      ],
+      "scale": [
+        0.8,
+        0.5,
+        0.8
+      ],
       "description": "tocon de arbol antiguo con musgo",
       "category": "terrain"
     },
@@ -119,8 +187,16 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "dark green forest bush, wild berries, dense foliage",
-      "position": [-9.0, 0, -8.0],
-      "scale": [1.5, 1.0, 1.5],
+      "position": [
+        -9.0,
+        0,
+        -8.0
+      ],
+      "scale": [
+        1.5,
+        1.0,
+        1.5
+      ],
       "description": "arbusto denso con bayas silvestres",
       "category": "terrain"
     },
@@ -129,9 +205,21 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "wild fern bush, forest undergrowth, dark green",
-      "position": [10.0, 0, 8.0],
-      "rotation": [0, 45, 0],
-      "scale": [1.2, 0.8, 1.2],
+      "position": [
+        10.0,
+        0,
+        8.0
+      ],
+      "rotation": [
+        0,
+        45,
+        0
+      ],
+      "scale": [
+        1.2,
+        0.8,
+        1.2
+      ],
       "description": "helecho grande",
       "category": "terrain"
     },
@@ -140,9 +228,21 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "fallen mossy log, bark peeling, forest floor",
-      "position": [3.0, 0, -9.0],
-      "rotation": [90, 20, 0],
-      "scale": [0.4, 3.0, 0.4],
+      "position": [
+        3.0,
+        0,
+        -9.0
+      ],
+      "rotation": [
+        90,
+        20,
+        0
+      ],
+      "scale": [
+        0.4,
+        3.0,
+        0.4
+      ],
       "description": "tronco caido cubierto de musgo",
       "category": "terrain"
     },
@@ -151,11 +251,253 @@
       "mesh": "cone",
       "generate_3d": false,
       "texture_prompt": "glowing fantasy mushroom, bioluminescent blue cap, forest floor",
-      "position": [-4.0, 0, -4.0],
-      "scale": [0.3, 0.25, 0.3],
+      "position": [
+        -4.0,
+        0,
+        -4.0
+      ],
+      "scale": [
+        0.3,
+        0.25,
+        0.3
+      ],
       "description": "seta bioluminiscente con brillo azulado",
       "category": "terrain",
       "mood": "mysterious"
+    },
+    {
+      "id": "wall_north_l",
+      "mesh": "box",
+      "position": [
+        -9.25,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        6.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (l)",
+      "texture_prompt": "dense dark forest tree line, gnarled trunks, thick undergrowth, fantasy forest edge viewed from clearing, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_r",
+      "mesh": "box",
+      "position": [
+        4.25,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        16.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (r)",
+      "texture_prompt": "dense dark forest tree line, gnarled trunks, thick undergrowth, fantasy forest edge viewed from clearing, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_t",
+      "mesh": "box",
+      "position": [
+        -5.0,
+        3.5,
+        -12.5
+      ],
+      "scale": [
+        2.0,
+        4.5,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (t)",
+      "texture_prompt": "dense dark forest tree line, gnarled trunks, thick undergrowth, fantasy forest edge viewed from clearing, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_l",
+      "mesh": "box",
+      "position": [
+        -7.0,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        11.0,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (l)",
+      "texture_prompt": "forest path entrance, ancient trees forming natural archway, dark forest, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_r",
+      "mesh": "box",
+      "position": [
+        7.0,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        11.0,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (r)",
+      "texture_prompt": "forest path entrance, ancient trees forming natural archway, dark forest, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_t",
+      "mesh": "box",
+      "position": [
+        0.0,
+        4.0,
+        12.5
+      ],
+      "scale": [
+        3.0,
+        4.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (t)",
+      "texture_prompt": "forest path entrance, ancient trees forming natural archway, dark forest, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east",
+      "mesh": "box",
+      "position": [
+        12.5,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        25.0
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east",
+      "texture_prompt": "forest edge with rocky outcrop, moss covered boulders, ferns, dark fantasy forest, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        0.0,
+        0
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        25.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west",
+      "texture_prompt": "overgrown forest edge, fallen tree trunk, mushrooms, dark dense woodland, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "ceiling",
+      "mesh": "box",
+      "position": [
+        0,
+        7.999999999999999,
+        0
+      ],
+      "scale": [
+        25.0,
+        0.15,
+        25.0
+      ],
+      "category": "building",
+      "color": [
+        0.2,
+        0.2,
+        0.22
+      ],
+      "description": "techo",
+      "texture_prompt": "dark night sky through tree canopy, moonlit clouds, branches silhouette, looking up at sky from forest, seamless tiling",
+      "tiling": [
+        3,
+        3
+      ]
     }
   ],
   "npcs": [
@@ -164,9 +506,21 @@
       "name": "Eira",
       "character_type": "rogue",
       "animation": "sitting",
-      "position": [-1.5, 0, 1.0],
-      "rotation": [0, 45, 0],
-      "scale": [0.5, 1.7, 0.5],
+      "position": [
+        -1.5,
+        0,
+        1.0
+      ],
+      "rotation": [
+        0,
+        45,
+        0
+      ],
+      "scale": [
+        0.5,
+        1.7,
+        0.5
+      ],
       "description": "elfa exploradora sentada junto al fuego, con capa verde y arco largo en la espalda",
       "dialogue_hint": "Conoce el bosque. Puede guiar al jugador. Advierte sobre las criaturas nocturnas."
     }

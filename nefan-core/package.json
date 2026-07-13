@@ -12,6 +12,7 @@
     "format": "prettier --write src bridge test scripts",
     "dev": "tsx bridge/ws-server.ts",
     "dump-config": "tsx scripts/dump-config.ts",
+    "dump-scene": "tsx scripts/dump-scene.ts",
     "prebuild": "tsx scripts/dump-config.ts",
     "predev": "tsx scripts/dump-config.ts",
     "pretest": "tsx scripts/dump-config.ts"

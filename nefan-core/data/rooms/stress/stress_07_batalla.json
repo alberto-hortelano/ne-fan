@@ -1,98 +1,132 @@
 {
+  "scene_id": "stress_07_batalla",
   "room_id": "stress_07_batalla",
+  "scene_description": "Un campo de batalla en las ruinas de un anfiteatro. Cuerpos y armas yacen entre escombros. El aire apesta a sangre y humo. Tres guerreros oscuros se preparan para atacar.",
   "room_description": "Un campo de batalla en las ruinas de un anfiteatro. Cuerpos y armas yacen entre escombros. El aire apesta a sangre y humo. Tres guerreros oscuros se preparan para atacar.",
-  "dimensions": { "width": 25.0, "height": 8.0, "depth": 25.0 },
-  "surfaces": {
-    "floor": {
-      "texture_prompt": "battlefield ground, trampled mud and blood, broken weapons, scorched earth, dark fantasy, seamless tiling",
-      "tiling": [6, 6]
-    },
-    "ceiling": {
-      "texture_prompt": "dark stormy sky, red lightning, thick smoke, apocalyptic, looking up, seamless tiling",
-      "tiling": [2, 2]
-    },
-    "walls": [
-      { "side": "north", "texture_prompt": "ruined amphitheatre stone wall, burning siege damage, dark smoke, war torn, seamless tiling", "tiling": [6, 2] },
-      { "side": "east",  "texture_prompt": "crumbling fortress wall, arrow impacts, oil stains, fire damage, dark fantasy battlefield, seamless tiling", "tiling": [6, 2] },
-      { "side": "south", "texture_prompt": "destroyed gatehouse, burning wreckage, smoke and ember, dark fantasy siege, seamless tiling", "tiling": [6, 2] },
-      { "side": "west",  "texture_prompt": "collapsed stone wall, battlefield beyond, distant fires, dark fantasy war, seamless tiling", "tiling": [6, 2] }
+  "dimensions": {
+    "width": 25.0,
+    "depth": 25.0
+  },
+  "terrain": {
+    "color": [
+      0.3,
+      0.28,
+      0.25
+    ],
+    "texture_prompt": "battlefield ground, trampled mud and blood, broken weapons, scorched earth, dark fantasy, seamless tiling",
+    "tiling": [
+      6,
+      6
     ]
   },
-  "exits": [
-    {
-      "wall": "south",
-      "offset": 0.0,
-      "size": [4.0, 5.0],
-      "description": "brecha en la puerta principal destruida",
-      "target_hint": "burning road"
-    },
-    {
-      "wall": "north",
-      "offset": 3.0,
-      "size": [2.5, 3.5],
-      "description": "tunel bajo las gradas del anfiteatro",
-      "target_hint": "underground passage"
-    },
-    {
-      "wall": "east",
-      "offset": -5.0,
-      "size": [2.0, 3.0],
-      "description": "escalera hacia la torre de vigilia",
-      "target_hint": "watchtower"
-    },
-    {
-      "wall": "west",
-      "offset": 4.0,
-      "size": [3.0, 4.0],
-      "description": "muro derrumbado, campo abierto",
-      "target_hint": "open battlefield"
-    }
-  ],
   "lighting": {
-    "ambient": { "color": [0.12, 0.06, 0.04], "intensity": 0.5 },
+    "ambient": {
+      "color": [
+        0.12,
+        0.06,
+        0.04
+      ],
+      "intensity": 0.5
+    },
     "lights": [
       {
         "type": "spot",
-        "position": [0, 7.5, 0],
-        "direction": [0, -1, 0],
-        "color": [1.0, 0.5, 0.2],
+        "position": [
+          0,
+          7.5,
+          0
+        ],
+        "direction": [
+          0,
+          -1,
+          0
+        ],
+        "color": [
+          1.0,
+          0.5,
+          0.2
+        ],
         "intensity": 5.0,
         "range": 18.0,
         "angle": 60.0
       },
       {
         "type": "point",
-        "position": [-8, 2, -8],
-        "color": [1.0, 0.3, 0.1],
+        "position": [
+          -8,
+          2,
+          -8
+        ],
+        "color": [
+          1.0,
+          0.3,
+          0.1
+        ],
         "intensity": 3.0,
         "range": 8.0
       },
       {
         "type": "point",
-        "position": [8, 2, -8],
-        "color": [1.0, 0.3, 0.1],
+        "position": [
+          8,
+          2,
+          -8
+        ],
+        "color": [
+          1.0,
+          0.3,
+          0.1
+        ],
         "intensity": 3.0,
         "range": 8.0
       },
       {
         "type": "point",
-        "position": [-8, 2, 8],
-        "color": [0.8, 0.2, 0.1],
+        "position": [
+          -8,
+          2,
+          8
+        ],
+        "color": [
+          0.8,
+          0.2,
+          0.1
+        ],
         "intensity": 2.5,
         "range": 7.0
       },
       {
         "type": "point",
-        "position": [8, 2, 8],
-        "color": [0.8, 0.2, 0.1],
+        "position": [
+          8,
+          2,
+          8
+        ],
+        "color": [
+          0.8,
+          0.2,
+          0.1
+        ],
         "intensity": 2.5,
         "range": 7.0
       },
       {
         "type": "spot",
-        "position": [0, 7, -10],
-        "direction": [0, -0.5, 0.5],
-        "color": [0.5, 0.5, 1.0],
+        "position": [
+          0,
+          7,
+          -10
+        ],
+        "direction": [
+          0,
+          -0.5,
+          0.5
+        ],
+        "color": [
+          0.5,
+          0.5,
+          1.0
+        ],
         "intensity": 2.0,
         "range": 12.0,
         "angle": 40.0
@@ -103,8 +137,16 @@
     {
       "id": "warrior_berserker",
       "mesh": "capsule",
-      "position": [-6, 0, -6],
-      "scale": [0.5, 1.8, 0.5],
+      "position": [
+        -6,
+        0,
+        -6
+      ],
+      "scale": [
+        0.5,
+        1.8,
+        0.5
+      ],
       "category": "creature",
       "description": "guerrero berserker con hacha de guerra",
       "combat": {
@@ -114,7 +156,10 @@
           "difficulty": "hard",
           "aggression_style": "aggressive",
           "aggression": 0.9,
-          "preferred_attacks": ["heavy", "medium"],
+          "preferred_attacks": [
+            "heavy",
+            "medium"
+          ],
           "reaction_time": 0.4,
           "combat_range": 5.0
         }
@@ -123,8 +168,16 @@
     {
       "id": "warrior_duelist",
       "mesh": "capsule",
-      "position": [6, 0, -6],
-      "scale": [0.5, 1.8, 0.5],
+      "position": [
+        6,
+        0,
+        -6
+      ],
+      "scale": [
+        0.5,
+        1.8,
+        0.5
+      ],
       "category": "creature",
       "description": "duelista con espada rapida",
       "combat": {
@@ -134,7 +187,11 @@
           "difficulty": "hard",
           "aggression_style": "neutral",
           "aggression": 0.6,
-          "preferred_attacks": ["quick", "precise", "medium"],
+          "preferred_attacks": [
+            "quick",
+            "precise",
+            "medium"
+          ],
           "reaction_time": 0.3,
           "combat_range": 4.0
         }
@@ -143,8 +200,16 @@
     {
       "id": "warrior_guardian",
       "mesh": "capsule",
-      "position": [0, 0, -8],
-      "scale": [0.6, 2.0, 0.6],
+      "position": [
+        0,
+        0,
+        -8
+      ],
+      "scale": [
+        0.6,
+        2.0,
+        0.6
+      ],
       "category": "creature",
       "description": "guardian acorazado con escudo y maza",
       "combat": {
@@ -154,7 +219,11 @@
           "difficulty": "medium",
           "aggression_style": "defensive",
           "aggression": 0.4,
-          "preferred_attacks": ["defensive", "medium", "heavy"],
+          "preferred_attacks": [
+            "defensive",
+            "medium",
+            "heavy"
+          ],
           "reaction_time": 0.6,
           "combat_range": 3.5
         }
@@ -165,9 +234,21 @@
       "mesh": "box",
       "generate_3d": false,
       "texture_prompt": "wooden battlefield barricade, splintered, arrow impacts, burning",
-      "position": [0, 0, -3],
-      "rotation": [0, 15, 5],
-      "scale": [4.0, 1.5, 0.5],
+      "position": [
+        0,
+        0,
+        -3
+      ],
+      "rotation": [
+        0,
+        15,
+        5
+      ],
+      "scale": [
+        4.0,
+        1.5,
+        0.5
+      ],
       "description": "barricada de madera destrozada y en llamas",
       "category": "building",
       "state": "damaged"
@@ -177,9 +258,21 @@
       "mesh": "box",
       "generate_3d": true,
       "model_prompt": "destroyed medieval catapult, broken arm, scattered rocks, battlefield, dark fantasy",
-      "position": [-10, 0, 5],
-      "rotation": [5, -30, 3],
-      "scale": [3.0, 2.5, 4.0],
+      "position": [
+        -10,
+        0,
+        5
+      ],
+      "rotation": [
+        5,
+        -30,
+        3
+      ],
+      "scale": [
+        3.0,
+        2.5,
+        4.0
+      ],
       "description": "catapulta destruida con brazo roto",
       "category": "building",
       "state": "damaged"
@@ -189,9 +282,21 @@
       "mesh": "box",
       "generate_3d": false,
       "texture_prompt": "pile of broken medieval weapons, swords shields axes, bloodstained, battlefield",
-      "position": [5, 0, 4],
-      "rotation": [3, 45, 0],
-      "scale": [2.0, 0.6, 1.5],
+      "position": [
+        5,
+        0,
+        4
+      ],
+      "rotation": [
+        3,
+        45,
+        0
+      ],
+      "scale": [
+        2.0,
+        0.6,
+        1.5
+      ],
       "description": "pila de armas rotas y ensangrentadas",
       "category": "prop",
       "state": "damaged"
@@ -201,8 +306,16 @@
       "mesh": "sphere",
       "generate_3d": false,
       "texture_prompt": "blast crater in stone, scorched black, glowing embers, battlefield",
-      "position": [3, -0.3, -2],
-      "scale": [3.0, 0.5, 3.0],
+      "position": [
+        3,
+        -0.3,
+        -2
+      ],
+      "scale": [
+        3.0,
+        0.5,
+        3.0
+      ],
       "description": "crater de explosion con bordes carbonizados",
       "category": "terrain",
       "state": "damaged"
@@ -212,9 +325,21 @@
       "mesh": "plane",
       "display": "flat_image",
       "texture_prompt": "fallen war banner, torn red fabric, skull emblem, transparent background, isolated object",
-      "position": [-4, 0.05, 2],
-      "rotation": [0, 60, 0],
-      "scale": [2.0, 0.01, 3.0],
+      "position": [
+        -4,
+        0.05,
+        2
+      ],
+      "rotation": [
+        0,
+        60,
+        0
+      ],
+      "scale": [
+        2.0,
+        0.01,
+        3.0
+      ],
       "description": "estandarte de guerra caido en el lodo",
       "category": "prop",
       "state": "damaged"
@@ -224,8 +349,16 @@
       "mesh": "cylinder",
       "generate_3d": false,
       "texture_prompt": "tall iron torch stand, burning oil, battlefield illumination",
-      "position": [-8, 0, -8],
-      "scale": [0.15, 2.5, 0.15],
+      "position": [
+        -8,
+        0,
+        -8
+      ],
+      "scale": [
+        0.15,
+        2.5,
+        0.15
+      ],
       "description": "soporte de antorcha de hierro con fuego de aceite",
       "category": "prop",
       "state": "burning"
@@ -235,14 +368,364 @@
       "mesh": "box",
       "generate_3d": true,
       "model_prompt": "ornate war chest, iron-bound, padlocked, dented from battle, dark fantasy treasure",
-      "position": [10, 0, -10],
-      "rotation": [0, -20, 0],
-      "scale": [0.7, 0.5, 0.5],
+      "position": [
+        10,
+        0,
+        -10
+      ],
+      "rotation": [
+        0,
+        -20,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.5,
+        0.5
+      ],
       "description": "cofre de guerra ornamentado y abollado",
       "category": "item",
       "state": "locked",
       "mood": "mysterious",
       "interactive": true
+    },
+    {
+      "id": "wall_north_l",
+      "mesh": "box",
+      "position": [
+        -5.375,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        14.25,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (l)",
+      "texture_prompt": "ruined amphitheatre stone wall, burning siege damage, dark smoke, war torn, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_r",
+      "mesh": "box",
+      "position": [
+        8.375,
+        0.0,
+        -12.5
+      ],
+      "scale": [
+        8.25,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (r)",
+      "texture_prompt": "ruined amphitheatre stone wall, burning siege damage, dark smoke, war torn, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_north_t",
+      "mesh": "box",
+      "position": [
+        3.0,
+        3.5,
+        -12.5
+      ],
+      "scale": [
+        2.5,
+        4.5,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.35,
+        0.33,
+        0.38
+      ],
+      "description": "muro north (t)",
+      "texture_prompt": "ruined amphitheatre stone wall, burning siege damage, dark smoke, war torn, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_l",
+      "mesh": "box",
+      "position": [
+        -7.25,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        10.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (l)",
+      "texture_prompt": "destroyed gatehouse, burning wreckage, smoke and ember, dark fantasy siege, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_r",
+      "mesh": "box",
+      "position": [
+        7.25,
+        0.0,
+        12.5
+      ],
+      "scale": [
+        10.5,
+        8.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (r)",
+      "texture_prompt": "destroyed gatehouse, burning wreckage, smoke and ember, dark fantasy siege, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_south_t",
+      "mesh": "box",
+      "position": [
+        0.0,
+        5.0,
+        12.5
+      ],
+      "scale": [
+        4.0,
+        3.0,
+        0.15
+      ],
+      "category": "building",
+      "color": [
+        0.38,
+        0.35,
+        0.33
+      ],
+      "description": "muro south (t)",
+      "texture_prompt": "destroyed gatehouse, burning wreckage, smoke and ember, dark fantasy siege, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_l",
+      "mesh": "box",
+      "position": [
+        12.5,
+        0.0,
+        -9.25
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        6.5
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (l)",
+      "texture_prompt": "crumbling fortress wall, arrow impacts, oil stains, fire damage, dark fantasy battlefield, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_r",
+      "mesh": "box",
+      "position": [
+        12.5,
+        0.0,
+        4.25
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        16.5
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (r)",
+      "texture_prompt": "crumbling fortress wall, arrow impacts, oil stains, fire damage, dark fantasy battlefield, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_east_t",
+      "mesh": "box",
+      "position": [
+        12.5,
+        3.0,
+        -5.0
+      ],
+      "scale": [
+        0.15,
+        5.0,
+        2.0
+      ],
+      "category": "building",
+      "color": [
+        0.33,
+        0.38,
+        0.3
+      ],
+      "description": "muro east (t)",
+      "texture_prompt": "crumbling fortress wall, arrow impacts, oil stains, fire damage, dark fantasy battlefield, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_l",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        0.0,
+        -5.0
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        15.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (l)",
+      "texture_prompt": "collapsed stone wall, battlefield beyond, distant fires, dark fantasy war, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_r",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        0.0,
+        9.0
+      ],
+      "scale": [
+        0.15,
+        8.0,
+        7.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (r)",
+      "texture_prompt": "collapsed stone wall, battlefield beyond, distant fires, dark fantasy war, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "wall_west_t",
+      "mesh": "box",
+      "position": [
+        -12.5,
+        4.0,
+        4.0
+      ],
+      "scale": [
+        0.15,
+        4.0,
+        3.0
+      ],
+      "category": "building",
+      "color": [
+        0.36,
+        0.33,
+        0.35
+      ],
+      "description": "muro west (t)",
+      "texture_prompt": "collapsed stone wall, battlefield beyond, distant fires, dark fantasy war, seamless tiling",
+      "tiling": [
+        6,
+        2
+      ]
+    },
+    {
+      "id": "ceiling",
+      "mesh": "box",
+      "position": [
+        0,
+        7.999999999999999,
+        0
+      ],
+      "scale": [
+        25.0,
+        0.15,
+        25.0
+      ],
+      "category": "building",
+      "color": [
+        0.2,
+        0.2,
+        0.22
+      ],
+      "description": "techo",
+      "texture_prompt": "dark stormy sky, red lightning, thick smoke, apocalyptic, looking up, seamless tiling",
+      "tiling": [
+        2,
+        2
+      ]
     }
   ],
   "npcs": [
@@ -251,8 +734,16 @@
       "name": "Capitana Vex",
       "character_type": "knight",
       "animation": "arms_crossed",
-      "position": [0, 0, 8],
-      "scale": [0.6, 1.8, 0.6],
+      "position": [
+        0,
+        0,
+        8
+      ],
+      "scale": [
+        0.6,
+        1.8,
+        0.6
+      ],
       "description": "capitana con armadura abollada y espada ensangrentada, dirige a los supervivientes",
       "dialogue_hint": "Lidera la defensa. Necesita que el jugador flanquee a los enemigos."
     },
@@ -261,9 +752,21 @@
       "name": "Sanador Loth",
       "character_type": "mage",
       "animation": "praying",
-      "position": [10, 0, 8],
-      "rotation": [0, -90, 0],
-      "scale": [0.5, 1.6, 0.5],
+      "position": [
+        10,
+        0,
+        8
+      ],
+      "rotation": [
+        0,
+        -90,
+        0
+      ],
+      "scale": [
+        0.5,
+        1.6,
+        0.5
+      ],
       "description": "monje sanador arrodillado junto a los heridos, sus manos brillan con luz curativa",
       "dialogue_hint": "Puede curar al jugador. Sabe que el enemigo usa magia prohibida."
     },
@@ -272,9 +775,21 @@
       "name": "Soldado Herido",
       "character_type": "soldier",
       "animation": "lying",
-      "position": [-3, 0, 6],
-      "rotation": [0, 90, 0],
-      "scale": [0.5, 0.5, 0.5],
+      "position": [
+        -3,
+        0,
+        6
+      ],
+      "rotation": [
+        0,
+        90,
+        0
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
       "description": "soldado moribundo tendido en el suelo, extiende la mano pidiendo ayuda",
       "dialogue_hint": "Entrega un mensaje antes de morir. Revela la localizacion del lider enemigo."
     }
