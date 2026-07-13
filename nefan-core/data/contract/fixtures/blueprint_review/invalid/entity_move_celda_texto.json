@@ -1,0 +1,21 @@
+{
+  "description": "entity_moves con cell no numérica",
+  "expect": "reject",
+  "payload": {
+    "approved": false,
+    "issues": [
+      "x"
+    ],
+    "fixes": {
+      "entity_moves": [
+        {
+          "id": "npc_1",
+          "cell": [
+            "a",
+            "b"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "description": "story_update con text en vez de delta",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "story_update",
+        "text": "pasó algo"
+      }
+    ]
+  }
+}

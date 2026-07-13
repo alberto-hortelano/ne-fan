@@ -1,0 +1,12 @@
+{
+  "description": "plugin_event sin event_type",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "plugin_event",
+        "plugin_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
+}

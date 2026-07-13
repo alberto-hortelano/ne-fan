@@ -1,0 +1,18 @@
+{
+  "description": "dialogue completo con 3 choices",
+  "expect": "accept",
+  "payload": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "Marta",
+        "text": "¿Qué buscas aquí?",
+        "choices": [
+          "Trabajo",
+          "Un techo",
+          "Nada"
+        ]
+      }
+    ]
+  }
+}

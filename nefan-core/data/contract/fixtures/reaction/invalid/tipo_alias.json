@@ -1,0 +1,13 @@
+{
+  "description": "alias show_dialogue no permitido",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "show_dialogue",
+        "speaker": "x",
+        "text": "y"
+      }
+    ]
+  }
+}

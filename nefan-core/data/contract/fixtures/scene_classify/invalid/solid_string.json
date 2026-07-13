@@ -1,0 +1,14 @@
+{
+  "description": "solid como string",
+  "expect": "reject",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "a",
+        "solid": "yes",
+        "tall": true
+      }
+    ]
+  }
+}

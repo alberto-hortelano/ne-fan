@@ -1,0 +1,19 @@
+{
+  "description": "dialogue con 4 choices (máx 3)",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "dialogue",
+        "speaker": "x",
+        "text": "y",
+        "choices": [
+          "a",
+          "b",
+          "c",
+          "d"
+        ]
+      }
+    ]
+  }
+}

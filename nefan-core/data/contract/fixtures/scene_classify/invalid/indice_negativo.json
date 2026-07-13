@@ -1,0 +1,14 @@
+{
+  "description": "índice negativo (PY siempre lo rechazó; TS alineado en esta PR)",
+  "expect": "reject",
+  "payload": {
+    "segments": [
+      {
+        "index": -1,
+        "label": "a",
+        "solid": true,
+        "tall": true
+      }
+    ]
+  }
+}

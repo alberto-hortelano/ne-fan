@@ -1,0 +1,7 @@
+{
+  "description": "approved=false sin issues",
+  "expect": "reject",
+  "payload": {
+    "approved": false
+  }
+}

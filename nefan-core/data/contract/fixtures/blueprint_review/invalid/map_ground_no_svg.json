@@ -1,0 +1,13 @@
+{
+  "description": "map_ground que no empieza por <svg",
+  "expect": "reject",
+  "payload": {
+    "approved": false,
+    "issues": [
+      "x"
+    ],
+    "fixes": {
+      "map_ground": "M0,0 L10,10"
+    }
+  }
+}

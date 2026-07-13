@@ -1,0 +1,13 @@
+{
+  "description": "entity_kind creature no permitido",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "creature",
+        "description": "un lobo"
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "fixes con map_ground SVG y volumes",
+  "expect": "accept",
+  "payload": {
+    "approved": false,
+    "issues": [
+      "agua sin orilla"
+    ],
+    "fixes": {
+      "map_ground": "<svg viewBox=\"0 0 128 128\"><g id=\"ground\"/><g id=\"water\"/></svg>",
+      "volumes": []
+    }
+  }
+}

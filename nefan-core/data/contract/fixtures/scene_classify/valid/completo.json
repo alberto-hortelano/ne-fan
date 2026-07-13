@@ -1,0 +1,24 @@
+{
+  "description": "clasificación completa de los índices esperados",
+  "expect": "accept",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "casa",
+        "solid": true,
+        "tall": true
+      },
+      {
+        "index": 1,
+        "label": "charca",
+        "solid": true,
+        "tall": false
+      }
+    ]
+  },
+  "expected_indices": [
+    0,
+    1
+  ]
+}
