@@ -102,11 +102,16 @@ describe("games loader", () => {
         description: "desc",
         style_token: "token",
         cover: "cover.jpg",
-        refs: [{ category: "nature", file: "nature.jpg", tags: ["bosque"] }],
+        refs: [
+          { category: "forest", file: "forest.jpg", tags: ["bosque"] },
+          // Alias legacy: un pack anterior al set de zonas sigue cargando.
+          { category: "nature", file: "nature.jpg", tags: [] },
+        ],
       }),
     );
     const manifest = loadStyleManifest(stylesDir, "mi_estilo");
-    assert.equal(manifest.refs[0].category, "nature");
+    assert.equal(manifest.refs[0].category, "forest");
+    assert.equal(manifest.refs[1].category, "nature");
 
     let listed = listStyles(stylesDir);
     assert.equal(listed[0].cover_url, undefined);

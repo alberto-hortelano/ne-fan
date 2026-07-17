@@ -16,17 +16,19 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from deps import deps
+from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES
 
 router = APIRouter()
 
 
 class StyleUploadRequest(BaseModel):
     """Subida de un estilo de usuario: nombre + imágenes por categoría en
-    base64 (JSON, no multipart — evita la dependencia python-multipart)."""
+    base64 (JSON, no multipart — evita la dependencia python-multipart).
+    Cada imagen: {category, image_b64}."""
     name: str = Field(min_length=2, max_length=60)
     description: str = Field(default="", max_length=500)
     style_token: str = Field(default="", max_length=300)
-    images: list[dict] = Field(min_length=1, max_length=9)
+    images: list[dict] = Field(min_length=1, max_length=12)
 
 
 class StyleCompleteRequest(BaseModel):
@@ -35,10 +37,16 @@ class StyleCompleteRequest(BaseModel):
     confirm: bool = False
 
 
-_STYLE_CATEGORIES = (
-    "nature", "settlement", "fortress", "interior", "underground",
-    "character_commoner", "character_noble", "character_warrior",
-)
+_STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES)
+
+
+def default_manifest_refs() -> list[dict]:
+    """Los 12 refs canónicos de un pack: las 9 zonas (proyección oblicua
+    única) más los 3 personajes (model sheets)."""
+    refs: list[dict] = []
+    for c in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES):
+        refs.append({"category": c, "file": f"{c}.jpg", "tags": []})
+    return refs
 
 
 @router.post("/styles/upload")
@@ -99,7 +107,7 @@ async def styles_upload(body: StyleUploadRequest):
         "style_token": body.style_token
             or f"consistent hand-crafted art style of the reference images ({body.name})",
         "cover": "cover.jpg",
-        "refs": [{"category": c, "file": f"{c}.jpg", "tags": []} for c in _STYLE_CATEGORIES],
+        "refs": default_manifest_refs(),
     }
     (pack_dir / "style.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

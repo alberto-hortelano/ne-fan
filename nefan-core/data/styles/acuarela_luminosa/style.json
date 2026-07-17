@@ -2,17 +2,37 @@
   "style_id": "acuarela_luminosa",
   "name": "Acuarela luminosa",
   "description": "Acuarela pintada a mano de colores luminosos y luz suave, inspirada en el cine de Studio Ghibli: naturaleza inmensa, asombro y melancolía amable.",
-  "style_token": "hand-painted watercolor anime style, soft luminous colors, gentle warm light, lush nature, Studio Ghibli inspired, painterly, top-down",
+  "style_token": "hand-painted watercolor anime style, soft luminous colors, gentle warm light, lush nature, Studio Ghibli inspired, painterly",
   "cover": "cover.jpg",
   "refs": [
     {
-      "category": "nature",
-      "file": "nature.jpg",
+      "category": "settlement",
+      "file": "settlement.jpg",
       "tags": []
     },
     {
-      "category": "settlement",
-      "file": "settlement.jpg",
+      "category": "farmland",
+      "file": "farmland.jpg",
+      "tags": []
+    },
+    {
+      "category": "forest",
+      "file": "forest.jpg",
+      "tags": []
+    },
+    {
+      "category": "wetland",
+      "file": "wetland.jpg",
+      "tags": []
+    },
+    {
+      "category": "desert",
+      "file": "desert.jpg",
+      "tags": []
+    },
+    {
+      "category": "snow",
+      "file": "snow.jpg",
       "tags": []
     },
     {

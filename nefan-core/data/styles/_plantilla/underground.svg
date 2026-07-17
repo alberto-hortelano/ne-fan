@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "underground".
+       Mazmorra iluminada por antorchas, vista cutaway desde arriba.
+       La imagen real es una pintura full-bleed; estas etiquetas NO van en ella. -->
+  <rect width="1024" height="1024" fill="#211f1c"/>
+
+  <!-- cámaras y corredores excavados (suelo de piedra) -->
+  <g fill="#565049">
+    <rect x="100" y="100" width="300" height="260"/>                <!-- cámara NO -->
+    <rect x="620" y="140" width="280" height="220"/>                <!-- cámara NE -->
+    <rect x="160" y="600" width="260" height="280"/>                <!-- cámara SO -->
+    <rect x="580" y="560" width="320" height="300"/>                <!-- cámara SE -->
+    <rect x="230" y="360" width="90" height="240"/>                 <!-- corredor vertical -->
+    <rect x="400" y="200" width="220" height="80"/>                 <!-- corredor horizontal N -->
+    <rect x="420" y="660" width="160" height="80"/>                 <!-- corredor horizontal S -->
+    <rect x="720" y="360" width="90" height="200"/>                 <!-- corredor vertical E -->
+  </g>
+  <!-- losas del suelo -->
+  <g stroke="#433e38" stroke-width="4">
+    <line x1="100" y1="180" x2="400" y2="180"/><line x1="100" y1="260" x2="400" y2="260"/>
+    <line x1="620" y1="220" x2="900" y2="220"/><line x1="620" y1="290" x2="900" y2="290"/>
+    <line x1="580" y1="640" x2="900" y2="640"/><line x1="580" y1="720" x2="900" y2="720"/>
+    <line x1="160" y1="680" x2="420" y2="680"/><line x1="160" y1="780" x2="420" y2="780"/>
+  </g>
+
+  <!-- escaleras (entrada) -->
+  <g fill="#6e675e">
+    <rect x="110" y="110" width="120" height="18"/><rect x="110" y="136" width="120" height="18"/>
+    <rect x="110" y="162" width="120" height="18"/><rect x="110" y="188" width="120" height="18"/>
+  </g>
+
+  <!-- pilares: tapa circular + cara sur (cilindro, cenital con caras) -->
+  <g fill="#2a2723">
+    <rect x="636" y="620" width="48" height="28"/>
+    <rect x="816" y="620" width="48" height="28"/>
+    <rect x="636" y="800" width="48" height="28"/>
+    <rect x="816" y="800" width="48" height="28"/>
+  </g>
+  <g fill="#3a3631" stroke="#6e675e" stroke-width="5">
+    <circle cx="660" cy="620" r="24"/><circle cx="840" cy="620" r="24"/>
+    <circle cx="660" cy="800" r="24"/><circle cx="840" cy="800" r="24"/>
+  </g>
+
+  <!-- escombros -->
+  <g fill="#6e675e">
+    <polygon points="330,300 360,290 375,315 350,335 325,325"/>
+    <polygon points="200,820 230,810 245,835 220,855 195,845"/>
+    <polygon points="560,240 585,232 595,252 575,268 555,260"/>
+  </g>
+
+  <!-- antorchas: halos cálidos -->
+  <g>
+    <circle cx="250" cy="480" r="60" fill="#d97c33" opacity="0.35"/>
+    <circle cx="250" cy="480" r="12" fill="#f2a33c"/>
+    <circle cx="760" cy="440" r="60" fill="#d97c33" opacity="0.35"/>
+    <circle cx="760" cy="440" r="12" fill="#f2a33c"/>
+    <circle cx="740" cy="700" r="70" fill="#d97c33" opacity="0.35"/>
+    <circle cx="740" cy="700" r="12" fill="#f2a33c"/>
+    <circle cx="300" cy="150" r="55" fill="#d97c33" opacity="0.35"/>
+    <circle cx="300" cy="150" r="12" fill="#f2a33c"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="32" font-weight="bold">
+    <text x="120" y="90">escaleras</text>
+    <text x="330" y="470">corredor</text>
+    <text x="530" y="404">antorchas</text>
+    <text x="600" y="545" font-size="28">cámara con pilares</text>
+    <text x="330" y="370" font-size="28">escombros</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.92"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «underground» — mazmorra a la luz de antorchas</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: pilares con cara sur · corredores, cámaras, escaleras, antorchas</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">La imagen real NO lleva texto ni UI — las etiquetas son solo de la plantilla.</text>
+  </g>
+</svg>

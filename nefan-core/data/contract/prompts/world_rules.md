@@ -20,8 +20,10 @@ ENGINE LIMITS (hard constraints, never break):
 - The camera is a fixed top-down 2D view. Never design content that depends
   on any other angle.
 - Scene/tile JSON should include "style_tag": one of
-  nature|settlement|fortress|interior|underground — the dominant setting of
-  the map; the image pipeline uses it to pick the game's style reference.
+  settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground
+  — the dominant zone of the map; the image pipeline uses it to pick the
+  game's style reference. For natural zones the engine refines it per tile
+  from the tile's biome, so pick the tag that best names the OVERALL setting.
 - ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
   bipeds; only humanoid animations exist. NEVER spawn talking animals,
   beasts, dragons or non-humanoid monsters. Animals may be mentioned as

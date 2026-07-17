@@ -17,6 +17,7 @@
  *  and rejects; no silent placeholder.
  */
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 import {
   solidGridFromMasks,
   IMAGE_SOLID_CHAR,
@@ -329,9 +330,13 @@ export class SceneImageController {
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
           style_id: this.styleId,
-          // Categoría de referencia que etiquetó el motor narrativo para este
-          // tile; el servidor tiene fallback si falta.
-          style_tag: (scene as { style_tag?: string }).style_tag ?? "",
+          // Zona de estilo del tile: la etiqueta del motor narrativo afinada
+          // por el bioma real del tile (un tile de pantano al borde de un
+          // bosque usa la ref wetland). El servidor tiene fallback si falta.
+          style_tag: styleCategoryForTile(
+            (scene as { style_tag?: string }).style_tag,
+            (scene as { biome?: string }).biome,
+          ),
         }),
       });
       if (!res.ok) {

@@ -209,7 +209,11 @@ def validate_scene_response(data: dict) -> dict:
     # style_tag: categoría de referencia de estilo para el repintado IA.
     # Valor fuera del enum se descarta con aviso (mejor sin tag que un 422 en
     # /generate_scene_image cuando el cliente lo reenvíe).
-    _valid_style_tags = {"nature", "settlement", "fortress", "interior", "underground"}
+    # Espejo de nefan-core/src/games/style-categories.ts ("nature" = legacy).
+    _valid_style_tags = {
+        "settlement", "farmland", "forest", "wetland", "desert", "snow",
+        "fortress", "interior", "underground", "nature",
+    }
     if data.get("style_tag") and data["style_tag"] not in _valid_style_tags:
         print(f"validate_scene: style_tag inválido '{data['style_tag']}' — descartado", flush=True)
         data.pop("style_tag", None)

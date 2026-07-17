@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "fortress".
+       ZONA de mundo abierto: la fortaleza EN su paisaje (campo alrededor,
+       camino de tierra hasta la puerta), no un edificio aislado.
+       La imagen real es una pintura full-bleed sin texto. -->
+  <rect width="1024" height="1024" fill="#5d7c38"/>
+
+  <!-- entorno: arboleda y matas alrededor de la muralla -->
+  <g fill="#46682f" stroke="#2c421f" stroke-width="5">
+    <circle cx="50" cy="360" r="40"/><circle cx="980" cy="420" r="42"/>
+    <circle cx="60" cy="600" r="36"/><circle cx="970" cy="640" r="38"/>
+    <circle cx="440" cy="40" r="36"/><circle cx="600" cy="30" r="32"/>
+  </g>
+
+  <!-- muralla exterior (anillo de piedra) -->
+  <rect x="140" y="110" width="744" height="700" fill="none"
+        stroke="#8a857a" stroke-width="56"/>
+  <rect x="140" y="110" width="744" height="700" fill="none"
+        stroke="#6e6a60" stroke-width="8"/>
+
+  <!-- patio interior -->
+  <rect x="196" y="166" width="632" height="588" fill="#9c8f6e"/>
+
+  <!-- CARA SUR de la muralla (cenital con caras: franja más oscura bajo el
+       tramo sur, con hueco en la puerta) -->
+  <g fill="#6e6a60">
+    <rect x="168" y="838" width="284" height="28"/>
+    <rect x="572" y="838" width="248" height="28"/>
+  </g>
+
+  <!-- torres en las esquinas: tapa circular + cara (cilindro) -->
+  <g fill="#6e6a60">
+    <rect x="66" y="110" width="148" height="114"/>
+    <rect x="810" y="110" width="148" height="114"/>
+    <rect x="66" y="810" width="148" height="60"/>
+    <rect x="810" y="810" width="148" height="60"/>
+  </g>
+  <g fill="#8a857a" stroke="#5f5b52" stroke-width="6">
+    <circle cx="140" cy="110" r="80"/><circle cx="884" cy="110" r="80"/>
+    <circle cx="140" cy="810" r="80"/><circle cx="884" cy="810" r="80"/>
+  </g>
+  <g fill="#a39e92">
+    <circle cx="140" cy="110" r="42"/><circle cx="884" cy="110" r="42"/>
+    <circle cx="140" cy="810" r="42"/><circle cx="884" cy="810" r="42"/>
+  </g>
+
+  <!-- puerta (vano en la muralla sur) con camino -->
+  <rect x="452" y="782" width="120" height="56" fill="#8f7a52"/>
+  <path d="M 470 838 L 554 838 L 576 874 L 448 874 Z" fill="#8f7a52"/>
+  <g stroke="#5c3a26" stroke-width="10">
+    <line x1="452" y1="786" x2="452" y2="834"/>
+    <line x1="572" y1="786" x2="572" y2="834"/>
+  </g>
+
+  <!-- barracones: tejado + CARA SUR con puerta (cenital con caras) -->
+  <g stroke="#5c3a26" stroke-width="5">
+    <g>
+      <rect x="250" y="212" width="220" height="48" fill="#c26a48"/>
+      <rect x="250" y="260" width="220" height="44" fill="#a4573b"/>
+      <rect x="250" y="304" width="220" height="42" fill="#7c4a30"/>
+      <rect x="342" y="312" width="34" height="34" fill="#4a3320" stroke-width="3"/>
+    </g>
+    <g>
+      <rect x="560" y="212" width="200" height="48" fill="#c26a48"/>
+      <rect x="560" y="260" width="200" height="44" fill="#a4573b"/>
+      <rect x="560" y="304" width="200" height="42" fill="#7c4a30"/>
+      <rect x="642" y="312" width="34" height="34" fill="#4a3320" stroke-width="3"/>
+    </g>
+    <g>
+      <rect x="250" y="584" width="180" height="42" fill="#c26a48"/>
+      <rect x="250" y="626" width="180" height="40" fill="#a4573b"/>
+      <rect x="250" y="666" width="180" height="38" fill="#7c4a30"/>
+      <rect x="322" y="672" width="32" height="32" fill="#4a3320" stroke-width="3"/>
+    </g>
+  </g>
+
+  <!-- pozo -->
+  <circle cx="640" cy="600" r="36" fill="#8a857a" stroke="#5f5b52" stroke-width="6"/>
+  <circle cx="640" cy="600" r="16" fill="#4f7fa8"/>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="34" font-weight="bold">
+    <text x="380" y="90">muralla con torres</text>
+    <text x="290" y="390">barracones</text>
+    <text x="430" y="520">patio interior</text>
+    <text x="600" y="772">puerta</text>
+    <text x="690" y="610" font-size="28">pozo</text>
+    <text x="30" y="330" font-size="26">campo alrededor</text>
+    <text x="620" y="866" font-size="26">camino de TIERRA</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «fortress» — fortaleza EN su paisaje</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: muralla, torres y barracones pintan su cara sur · EN su paisaje</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Escena completa full-bleed, varios elementos — nunca un sujeto aislado. Sin texto ni UI.</text>
+  </g>
+</svg>

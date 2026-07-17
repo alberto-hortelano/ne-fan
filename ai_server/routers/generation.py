@@ -109,7 +109,11 @@ class SceneImageRequest(BaseModel):
     # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
     # referencia global fija de siempre.
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    style_tag: str = Field(default="", pattern="^(nature|settlement|fortress|interior|underground)?$")
+    # Zonas de estilo (espejo de style-categories.ts; "nature" = legacy).
+    style_tag: str = Field(
+        default="",
+        pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
+    )
 
     @field_validator("context_sides")
     @classmethod

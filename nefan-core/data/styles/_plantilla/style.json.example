@@ -1,0 +1,21 @@
+{
+  "style_id": "mi_estilo",
+  "name": "Mi estilo",
+  "description": "Una frase que vende el estilo al jugador en la pantalla de título.",
+  "style_token": "hand-painted gouache, warm earthy palette, soft diffuse light, storybook mood",
+  "cover": "cover.jpg",
+  "refs": [
+    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
+    { "category": "farmland", "file": "farmland.jpg", "tags": [] },
+    { "category": "forest", "file": "forest.jpg", "tags": [] },
+    { "category": "wetland", "file": "wetland.jpg", "tags": [] },
+    { "category": "desert", "file": "desert.jpg", "tags": [] },
+    { "category": "snow", "file": "snow.jpg", "tags": [] },
+    { "category": "fortress", "file": "fortress.jpg", "tags": [] },
+    { "category": "interior", "file": "interior.jpg", "tags": [] },
+    { "category": "underground", "file": "underground.jpg", "tags": [] },
+    { "category": "character_commoner", "file": "character_commoner.jpg", "tags": [] },
+    { "category": "character_noble", "file": "character_noble.jpg", "tags": [] },
+    { "category": "character_warrior", "file": "character_warrior.jpg", "tags": [] }
+  ]
+}
