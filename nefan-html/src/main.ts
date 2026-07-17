@@ -16,7 +16,7 @@ import {
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
-import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
+import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
@@ -1200,11 +1200,12 @@ function gameLoop(now: number): void {
         .catch(() => {});
     }
   }
-  // B alterna el overlay de colisión (esquema, derivada de imagen, recortes)
-  // sobre la escena, para juzgar la precisión del análisis.
+  // B cicla la vista de debug: off → colisiones → fases del pipeline de
+  // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
+  // para comparar in situ el plan declarado con lo que pintó el modelo.
   if (devInput.consumeToggleCollisionDebug()) {
-    const on = renderer.toggleDebugCollision();
-    console.log(`[debug] collision overlay ${on ? "ON" : "OFF"}`);
+    const mode = renderer.cycleDebugView();
+    log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
   }
   // N (descubrimiento) quedó integrada en el análisis completo de X.
   if (devInput.consumeDiscoverObjects()) {

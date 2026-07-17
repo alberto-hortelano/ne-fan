@@ -2,8 +2,9 @@
  *  son del harness (pipeline de imagen IA, debug de colisión), no del esquema
  *  de control del jugador, así que funcionan igual con cualquier provider.
  *
- *  G = regenerar imagen del tile · X = segmentar oclusores · B = bordes de
- *  colisión · N = descubrir props (si no hay propuesta de tile activa, que la
+ *  G = regenerar imagen del tile · X = segmentar oclusores · B = ciclar la
+ *  vista de debug (off → colisiones → blueprint → imagen IA → segmentación →
+ *  placa) · N = descubrir props (si no hay propuesta de tile activa, que la
  *  atiende el provider) · R = revisar blueprint con Claude. */
 
 export interface DevToolsDeps {
@@ -32,7 +33,8 @@ export class DevToolsInput {
         // X = eXtraer/segmentar oclusores (muros/edificios) de la imagen actual
         // para que tapen al personaje (depth-sort). S está ocupada por movimiento.
         case "x": this.segmentRequested = true; break;
-        // B = toggle de los Bordes de colisión pintados sobre la imagen (debug).
+        // B = ciclar la vista de debug (colisiones → fases del pipeline de
+        // imagen: blueprint, imagen IA, segmentación, placa inpainted).
         case "b": this.collisionDebugRequested = true; break;
         // N = descubrir props Nuevos que la IA inventó (SAM3 open-vocab).
         case "n":
@@ -64,7 +66,7 @@ export class DevToolsInput {
     return false;
   }
 
-  /** True once per B press (toggle de bordes de colisión sobre la imagen). */
+  /** True once per B press (ciclar la vista de debug del renderer). */
   consumeToggleCollisionDebug(): boolean {
     if (this.collisionDebugRequested) {
       this.collisionDebugRequested = false;
