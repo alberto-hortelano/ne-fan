@@ -45,11 +45,6 @@ export interface NarrativeWorldState {
   /** sha256 del world.md con el que se creó la sesión — clave de caches
    *  (initial_scene_cache) y detección de ediciones del mundo. */
   world_doc_hash: string;
-  /** Perspectiva del mundo 2D ("topdown" | "isometric"), CONGELADA al crear
-   *  la sesión como el estilo — los blueprints de todos los tiles se
-   *  componen con ella. Campo aditivo: saves previos la dejan en "" y el
-   *  cliente la trata como "topdown". */
-  perspective: string;
   /** Modo de render del mundo 2D ("image" | "vector"), CONGELADO al crear la
    *  sesión. "image" = el modelo de imagen repinta los blueprints (créditos);
    *  "vector" = se juega con los blueprints compuestos. Campo aditivo: saves

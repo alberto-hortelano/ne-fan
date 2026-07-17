@@ -1,46 +1,49 @@
-/** Proyecciones del compositor de blueprints.
+/** Proyección OBLICUA única del compositor de blueprints.
  *
- *  Ambas perspectivas comparten el contrato: un punto de mundo (u, v) en
- *  celdas del tile (0..128) con altura h (celdas) se proyecta a coordenadas
- *  de usuario del SVG compuesto. El plano del suelo (h=0) es SIEMPRE afín e
- *  invertible — el arte plano del LLM (`map_ground`) se incrusta con una
- *  única transform y las posiciones de pantalla vuelven a mundo sin
- *  ambigüedad; la altura solo desplaza en -y de pantalla.
+ *  Un punto de mundo (u, v) en celdas del tile (0..128) con altura h (celdas)
+ *  se proyecta a coordenadas de usuario del SVG compuesto:
  *
- *  - topdown  ("cenital con caras"): identidad en el suelo; las caras sur de
- *    los volúmenes se pintan entre v y v−h (el voladizo sale por el margen
- *    superior del canvas).
- *  - isometric (2:1 exacto): x = CX + (u−v)·SX, y = (u+v)·SY − h·HS.
+ *      pt(u, v, h) = [u + h·KX, v − h·KY]
  *
- *  El canvas incluye un MARGEN superior fijo para el voladizo de alturas:
- *  viewBox "minX minY width height" con minY negativo. El compositing del
- *  cliente enmascara la imagen final con el alpha de este blueprint, así el
- *  voladizo pisa al tile de detrás en el orden del pintor. */
+ *  El plano del suelo (h=0) es la IDENTIDAD — el arte plano del LLM
+ *  (`map_ground`) se incrusta sin transform, la colisión y las costuras entre
+ *  tiles son triviales (mundo == vista). La altura desplaza en −y (voladizo
+ *  norte, como la cenital clásica) y además ciza en −x (KX negativo): los
+ *  volúmenes muestran su cara sur (iluminada) y su cara este (en sombra),
+ *  el look "3/4" de la oblicua militar. Con KX=0 sería la cenital pura —
+ *  ambos tratamientos son mezclables porque colisión y baselines salen de la
+ *  huella declarada, nunca de los píxeles.
+ *
+ *  El canvas incluye margen superior (voladizo norte) e izquierdo (voladizo
+ *  oeste de la cizalla): viewBox con minX/minY negativos. El compositing del
+ *  cliente enmascara la imagen final con el alpha de este blueprint y pinta
+ *  los tiles en orden (ty, tx) ascendente, así ambos voladizos pisan a los
+ *  vecinos norte/oeste ya pintados. */
 
 import { TILE_CELLS } from "../tile.js";
 
-export type Perspective = "topdown" | "isometric";
+/** Cizalla horizontal por celda de altura. Negativa ⇒ las tapas se inclinan
+ *  al oeste, la cara ESTE queda visible (nu=+1 → shade en faceColor: sur
+ *  iluminada / este en sombra) y el voladizo cae sobre el vecino oeste, que
+ *  el orden de pintado por (ty, tx) ya cubre. atan(0.35) ≈ 19.3°. */
+export const OBLIQUE_KX = -0.35;
+/** Escala vertical de la altura: 1 celda de alto = 1 celda de pantalla
+ *  (== la cenital clásica; el verticalScale del cliente sigue siendo 1). */
+export const OBLIQUE_KY = 1;
 
-export const PERSPECTIVES: readonly Perspective[] = ["topdown", "isometric"] as const;
+/** Márgenes del canvas en unidades de usuario para los voladizos de alturas
+ *  (la torre más alta admitida son 32 celdas): 32·KY arriba, 32·|KX| ≈ 11.2
+ *  → 12 a la izquierda. */
+export const MARGIN_Y = 32;
+export const MARGIN_X = 12;
 
-export function isPerspective(v: unknown): v is Perspective {
-  return v === "topdown" || v === "isometric";
-}
-
-/** Margen superior del canvas en unidades de usuario (voladizo de alturas:
- *  la torre más alta admitida son 32 celdas → 32 en topdown, 32·HS en iso). */
-export const TOPDOWN_MARGIN = 32;
-export const ISO_MARGIN = 14;
-
-/** Escalas de la iso 2:1 exacta. Con CX=64: x∈[0,128], y∈[0,64]. */
-export const ISO_SX = 0.5;
-export const ISO_SY = 0.25;
-/** Altura: 1 celda de alto ≈ 1.5 celdas de fondo en pantalla (mismo ratio
- *  validado en la demo: HS/SY ≈ 1.5). */
-export const ISO_HS = 0.375;
+/** Desempate del orden del pintor entre volúmenes con la misma v: la cizalla
+ *  solapa vecinos en u y con cámara al SE el más al este está más cerca.
+ *  1/512 acota el sesgo a 0.25 en 128 celdas — nunca pisa una diferencia
+ *  real de v ni los offsets ±0.01 del cutaway o el bias +4 de torres. */
+const U_EPS = 1 / 512;
 
 export interface Projection {
-  readonly kind: Perspective;
   /** viewBox del SVG compuesto. */
   readonly viewBox: { minX: number; minY: number; width: number; height: number };
   /** (u,v,h) en celdas → [x,y] en unidades de usuario del SVG. */
@@ -53,45 +56,24 @@ export interface Projection {
   groundTransform: string;
 }
 
-class TopdownProjection implements Projection {
-  readonly kind = "topdown" as const;
-  readonly viewBox = { minX: 0, minY: -TOPDOWN_MARGIN, width: TILE_CELLS, height: TILE_CELLS + TOPDOWN_MARGIN };
+class ObliqueProjection implements Projection {
+  readonly viewBox = {
+    minX: -MARGIN_X,
+    minY: -MARGIN_Y,
+    width: TILE_CELLS + MARGIN_X,
+    height: TILE_CELLS + MARGIN_Y,
+  };
   pt(u: number, v: number, h = 0): [number, number] {
-    return [u, v - h];
+    return [u + h * OBLIQUE_KX, v - h * OBLIQUE_KY];
   }
   ground(x: number, y: number): [number, number] {
     return [x, y];
   }
-  depth(_u: number, v: number): number {
-    return v;
+  depth(u: number, v: number): number {
+    return v + u * U_EPS;
   }
   readonly groundTransform = "";
 }
 
-class IsoProjection implements Projection {
-  readonly kind = "isometric" as const;
-  readonly cx = TILE_CELLS * ISO_SX; // 64
-  readonly viewBox = {
-    minX: 0,
-    minY: -ISO_MARGIN,
-    width: TILE_CELLS * 2 * ISO_SX,
-    height: TILE_CELLS * 2 * ISO_SY + ISO_MARGIN,
-  };
-  pt(u: number, v: number, h = 0): [number, number] {
-    return [this.cx + (u - v) * ISO_SX, (u + v) * ISO_SY - h * ISO_HS];
-  }
-  ground(x: number, y: number): [number, number] {
-    const a = (x - this.cx) / ISO_SX; // u - v
-    const b = y / ISO_SY; // u + v
-    return [(a + b) / 2, (b - a) / 2];
-  }
-  depth(u: number, v: number): number {
-    return u + v;
-  }
-  /** matrix(a,b,c,d,e,f): x' = a·u + c·v + e ; y' = b·u + d·v + f. */
-  readonly groundTransform = `matrix(${ISO_SX} ${ISO_SY} ${-ISO_SX} ${ISO_SY} ${this.cx} 0)`;
-}
-
-export function projectionFor(perspective: Perspective): Projection {
-  return perspective === "isometric" ? new IsoProjection() : new TopdownProjection();
-}
+/** Proyección única del formato oblicuo (stateless — instancia compartida). */
+export const PROJECTION: Projection = new ObliqueProjection();

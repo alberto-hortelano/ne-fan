@@ -25,8 +25,6 @@ export type TitleAction =
       gameId: string;
       /** Estilo visual elegido ("" = el por defecto del juego). */
       styleId: string;
-      /** Perspectiva del mundo 2D, congelada en la sesión como el estilo. */
-      perspective: "topdown" | "isometric";
       /** Modo de render, congelado en la sesión: imagen IA o vectorial. */
       renderMode: "image" | "vector";
       appearance: { model_id: string; skin_path: string };
@@ -179,19 +177,6 @@ export class TitleScreen {
         <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
       </label>
       <div style="margin-bottom:18px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Perspectiva <span style="color:#666">(fija para toda la partida)</span></div>
-        <div id="ts-perspective" style="display:flex;gap:8px">
-          <button data-perspective="topdown" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Cenital</div>
-            <div style="font-size:10px;color:#888">Vista desde arriba con fachadas y copas con volumen</div>
-          </button>
-          <button data-perspective="isometric" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Isométrica</div>
-            <div style="font-size:10px;color:#888">Vista 2:1 con los edificios girados 45°, estilo clásico</div>
-          </button>
-        </div>
-      </div>
-      <div style="margin-bottom:18px">
         <div style="font-size:12px;color:#999;margin-bottom:4px">Gráficos <span style="color:#666">(fijo para toda la partida)</span></div>
         <div id="ts-rendermode" style="display:flex;gap:8px">
           <button data-rendermode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
@@ -214,23 +199,6 @@ export class TitleScreen {
     const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
     const styleSel = this.content.querySelector("#ts-style") as HTMLSelectElement;
     const styleDesc = this.content.querySelector("#ts-style-desc") as HTMLElement;
-    const perspectiveEl = this.content.querySelector("#ts-perspective") as HTMLElement;
-    let selectedPerspective: "topdown" | "isometric" =
-      selectedGame.default_perspective === "isometric" ? "isometric" : "topdown";
-    const refreshPerspective = (): void => {
-      for (const btn of perspectiveEl.querySelectorAll<HTMLElement>("[data-perspective]")) {
-        const active = btn.dataset.perspective === selectedPerspective;
-        btn.style.borderColor = active ? "#da6" : "#2a2a30";
-        btn.style.background = active ? "#201c14" : "#181820";
-      }
-    };
-    for (const btn of perspectiveEl.querySelectorAll<HTMLElement>("[data-perspective]")) {
-      btn.addEventListener("click", () => {
-        selectedPerspective = btn.dataset.perspective === "isometric" ? "isometric" : "topdown";
-        refreshPerspective();
-      });
-    }
-    refreshPerspective();
     const renderModeEl = this.content.querySelector("#ts-rendermode") as HTMLElement;
     let selectedRenderMode: "image" | "vector" = "image";
     const refreshRenderMode = (): void => {
@@ -272,10 +240,8 @@ export class TitleScreen {
         const game = games.find((g) => g.game_id === card.dataset.gameId);
         if (!game) return;
         selectedGame = game;
-        selectedPerspective = game.default_perspective === "isometric" ? "isometric" : "topdown";
         refreshSelection();
         refreshStyleOptions();
-        refreshPerspective();
       });
     }
     styleSel.addEventListener("change", () => {
@@ -288,7 +254,7 @@ export class TitleScreen {
       .addEventListener("click", () => void this.renderHome());
     (this.content.querySelector("#ts-continue") as HTMLButtonElement)
       .addEventListener("click", () => {
-        void this.renderCharacterEditor(selectedGame, styleSel.value, selectedPerspective, selectedRenderMode);
+        void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode);
       });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
@@ -476,7 +442,6 @@ export class TitleScreen {
   private renderCharacterEditor(
     game: GameInfo,
     styleId: string,
-    perspective: "topdown" | "isometric",
     renderMode: "image" | "vector",
   ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
@@ -524,7 +489,6 @@ export class TitleScreen {
         kind: "new_game",
         gameId: game.game_id,
         styleId,
-        perspective,
         renderMode,
         appearance: {
           model_id: modelSel ? modelSel.value : "",

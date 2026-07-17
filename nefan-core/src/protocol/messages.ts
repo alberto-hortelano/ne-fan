@@ -60,11 +60,6 @@ export interface StartSessionMessage {
   /** Estilo visual elegido en el título; ausente = el por defecto del juego.
    *  Queda CONGELADO en el save al crear la sesión. */
   styleId?: string;
-  /** Perspectiva del mundo 2D ("topdown" | "isometric") elegida en el título;
-   *  ausente = default_perspective del juego (o "topdown"). Queda CONGELADA
-   *  en el save — cambia la proyección de TODOS los blueprints/tiles, así que
-   *  no puede variar a mitad de partida. */
-  perspective?: string;
   /** Modo de render del mundo 2D elegido en el título: "image" (el modelo de
    *  imagen repinta cada blueprint — gasta créditos) | "vector" (el mundo se
    *  ve con los blueprints compuestos del plan del motor narrativo — gratis).
@@ -323,8 +318,6 @@ export interface GamesListedMessage {
     description: string;
     /** Estilo visual por defecto del juego (el jugador puede cambiarlo). */
     style_id: string;
-    /** Perspectiva 2D por defecto del juego ("topdown" si falta). */
-    default_perspective?: string;
     /** Resumen del mundo (~1.200 chars) — la tarjeta puede mostrar un extracto. */
     world_brief: string;
   }>;

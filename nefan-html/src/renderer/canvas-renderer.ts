@@ -9,7 +9,7 @@ import { darken } from "@nefan-core/src/scene/blueprint/palette.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
-import { viewProjectionFor, type ViewProjection, type ViewRect } from "./projection.js";
+import { VIEW_PROJECTION, type ViewProjection, type ViewRect } from "./projection.js";
 
 export interface SceneData {
   /** Acepta `scene_id` o el legado `room_id` por compatibilidad de saves antiguos. */
@@ -427,10 +427,9 @@ export class CanvasRenderer {
   private spriteRenderer: SpriteRenderer | undefined;
   private assetCache: AssetCache | undefined;
   private worldAngle = "isometric_30";
-  /** Proyección de vista de la sesión (congelada). En topdown vista == mundo
-   *  y todo se comporta como siempre; en iso la vista es la 2:1 de los
-   *  blueprints compuestos. */
-  private projection: ViewProjection = viewProjectionFor("topdown");
+  /** Proyección de vista única del formato oblicuo (vista == mundo en el
+   *  suelo; la altura ciza con shearX como los blueprints compuestos). */
+  private readonly projection: ViewProjection = VIEW_PROJECTION;
 
   // (las capas visuales por tile viven en RendererTile: terrainLayer horneada
   // con LRU, sceneImage IA y svgImage)
@@ -470,14 +469,6 @@ export class CanvasRenderer {
 
   setWorldAngle(angle: string): void {
     this.worldAngle = angle;
-  }
-
-  /** Instala la proyección de la sesión (una vez, al iniciar/reanudar).
-   *  Invalida las capas horneadas: su geometría depende de la proyección. */
-  setProjection(kind: "topdown" | "isometric"): void {
-    if (this.projection.kind === kind) return;
-    this.projection = viewProjectionFor(kind);
-    for (const t of this.tiles.values()) t.terrainLayer = null;
   }
 
   getProjection(): ViewProjection {
@@ -898,6 +889,12 @@ export class CanvasRenderer {
           offCtx.drawImage(tile.sceneImage!, bx0, by0, v.w * ppm, v.h * ppm);
         } else {
           this.paintTerrainInto(tile);
+          // El planImage excluye los tramos data-part="tall"/"canopy" (en el
+          // render vivo los pinta su occluder en el depth-sort). La CAPTURA
+          // debe llevar el blueprint COMPLETO — sin esto, el modelo de imagen
+          // y la revisión de visión no ven edificios/murallas/árboles y el
+          // pintado (y sus colisiones derivadas) acaban descolocados.
+          this.paintPlanOccludersInto(tile);
         }
       }
 
@@ -927,6 +924,33 @@ export class CanvasRenderer {
     return off.toDataURL("image/png");
   }
 
+  /** Pinta los occluders de PLAN de un tile en el ctx/transform actual (los
+   *  tramos tall/canopy que el planImage excluye): orden del pintor por
+   *  baseline, copas aéreas al final. Solo para captura — en el render vivo
+   *  los pinta el depth-sort con fade. */
+  private paintPlanOccludersInto(tile: RendererTile): void {
+    const occs = this.occluders.filter(
+      (o): o is Occluder & { img: HTMLImageElement } =>
+        o.tileKey === tile.key && o.kind === "plan" && o.img !== undefined,
+    );
+    if (occs.length === 0) return;
+    occs.sort(
+      (a, b) =>
+        Number(a.overhead ?? false) - Number(b.overhead ?? false) ||
+        a.baselineView - b.baselineView,
+    );
+    for (const o of occs) {
+      const [x0, y0] = this.viewToScreen(o.view.minX, o.view.minZ);
+      this.ctx.drawImage(
+        o.img,
+        x0,
+        y0,
+        (o.view.maxX - o.view.minX) * this.scale,
+        (o.view.maxZ - o.view.minZ) * this.scale,
+      );
+    }
+  }
+
   /** Pinta el terreno completo (color base + grid por celdas + features
    *  vectoriales + capa SVG) en el ctx/transform ACTUAL. Compartido por
    *  captureSchematic (blueprint de img2img) y buildTerrainLayer (capa
@@ -946,13 +970,12 @@ export class CanvasRenderer {
       ctx.drawImage(tile.planImage, vx0, vy0, vw, vh);
       return;
     }
-    // Fallback: color base sobre el canvas de vista. El pintado legacy de
-    // grid/features/cajas solo es correcto en topdown (vista == mundo).
+    // Fallback: color base sobre el canvas de vista y el pintado legacy de
+    // grid/features/cajas (vista == mundo en el suelo).
     const terrainColor =
       rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
     ctx.fillStyle = terrainColor;
     ctx.fillRect(vx0, vy0, vw, vh);
-    if (this.projection.kind !== "topdown") return;
 
     // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
     this.paintTerrainGrid(tile);
@@ -1796,7 +1819,8 @@ export class CanvasRenderer {
       const [bx, by] = this.viewToScreen(g.center[0], g.center[1]);
       const rx = Math.max(3, g.rx * this.scale);
       const ry = Math.max(2, g.ry * this.scale);
-      const topY = by - liftPx;
+      // Tapa desplazada por la cizalla (view-prism ya la resuelve en vista).
+      const [topX, topY] = this.viewToScreen(g.topCx, g.topCy);
       ctx.lineWidth = 1.5;
       if (shape === "sphere") {
         // Sombra de contacto en la base + esfera con el centro a media altura.
@@ -1805,17 +1829,18 @@ export class CanvasRenderer {
         ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2);
         ctx.fill();
         const sr = Math.max(3, r * this.scale);
+        const mx = (bx + topX) / 2;
         ctx.fillStyle = fill;
         ctx.strokeStyle = stroke;
         ctx.beginPath();
-        ctx.arc(bx, by - liftPx / 2, sr, 0, Math.PI * 2);
+        ctx.arc(mx, by - liftPx / 2, sr, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        this.drawObjectLabel(bx, by - liftPx / 2 - sr - 4, label, stroke);
+        this.drawObjectLabel(mx, by - liftPx / 2 - sr - 4, label, stroke);
         return;
       }
       if (shape === "cone") {
-        // Elipse base + triángulo hasta el ápex elevado.
+        // Elipse base + triángulo hasta el ápex desplazado.
         ctx.fillStyle = shade;
         ctx.beginPath();
         ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2);
@@ -1823,28 +1848,35 @@ export class CanvasRenderer {
         ctx.fillStyle = lit;
         ctx.strokeStyle = stroke;
         ctx.beginPath();
-        ctx.moveTo(bx, topY);
+        ctx.moveTo(topX, topY);
         ctx.lineTo(bx - rx, by);
         ctx.lineTo(bx + rx, by);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        this.drawObjectLabel(bx, topY - 4, label, stroke);
+        this.drawObjectLabel(topX, topY - 4, label, stroke);
         return;
       }
-      // cylinder: cortina lateral + media elipse inferior + tapa.
+      // cylinder: cortina lateral (paralelogramo por la cizalla) + media
+      // elipse inferior + tapa desplazada.
       ctx.fillStyle = lit;
-      ctx.fillRect(bx - rx, topY, rx * 2, liftPx);
+      ctx.beginPath();
+      ctx.moveTo(bx - rx, by);
+      ctx.lineTo(bx + rx, by);
+      ctx.lineTo(topX + rx, topY);
+      ctx.lineTo(topX - rx, topY);
+      ctx.closePath();
+      ctx.fill();
       ctx.beginPath();
       ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI);
       ctx.fill();
       ctx.fillStyle = fill;
       ctx.strokeStyle = stroke;
       ctx.beginPath();
-      ctx.ellipse(bx, topY, rx, ry, 0, 0, Math.PI * 2);
+      ctx.ellipse(topX, topY, rx, ry, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      this.drawObjectLabel(bx, topY - ry - 4, label, stroke);
+      this.drawObjectLabel(topX, topY - ry - 4, label, stroke);
       return;
     }
 
@@ -2070,16 +2102,10 @@ export class CanvasRenderer {
     const sheet = this.spriteRenderer.getCached(sprite.model, sprite.anim, sprite.angle);
     if (!sheet) return false; // sheet still loading
     const fwd = forward ?? { x: 0, y: 0, z: 1 };
-    // El frame (hacia dónde "mira" el sprite) se elige por el octante EN
-    // PANTALLA: en iso la cámara está girada 45° respecto al mundo — sin esta
-    // rotación el personaje mira 45° a un lado de su desplazamiento. Solo
-    // rotación (sin el aplastamiento 2:1): importa el octante, no la métrica.
-    let fx = fwd.x;
-    let fz = fwd.z;
-    if (this.projection.kind === "isometric") {
-      fx = fwd.x - fwd.z;
-      fz = fwd.x + fwd.z;
-    }
+    // Cámara alineada con el mundo: el octante del sprite es el forward tal
+    // cual.
+    const fx = fwd.x;
+    const fz = fwd.z;
     const t = sprite.animStartedAt !== undefined
       ? (performance.now() - sprite.animStartedAt) / 1000
       : performance.now() / 1000;

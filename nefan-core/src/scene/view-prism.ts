@@ -2,21 +2,24 @@
  *
  *  Espejo vectorial de lo que el compositor de blueprints hace en espacio de
  *  celdas (`blueprint/render.ts`): una caja con altura se pinta como huella
- *  proyectada + caras verticales orientadas a cámara + tapa elevada
- *  `−h·verticalScale`. Aquí las unidades son METROS de mundo y la proyección
- *  la aporta el cliente (topdown identidad vs=1.0; iso 2:1 vs=0.75) — el
- *  módulo es puro y testeable sin canvas.
+ *  proyectada + caras verticales orientadas a cámara + tapa desplazada
+ *  `(+h·shearX, −h·verticalScale)` — la cizalla oblicua. Aquí las unidades
+ *  son METROS de mundo y la proyección la aporta el cliente — el módulo es
+ *  puro y testeable sin canvas.
  *
- *  Convención de cámara (la del compositor): luz desde el SO ⇒ cara SUR
- *  (+z) iluminada, cara ESTE (+x) en sombra. En topdown la cara este
- *  degenera a área 0 y se descarta.
+ *  Convención de cámara (la del compositor): cara SUR (+z) iluminada, cara
+ *  ESTE (+x) en sombra. Con shearX=0 la cara este degenera a área 0 y se
+ *  descarta (cenital pura).
  */
 
 /** Lo que este módulo necesita de la proyección de vista del cliente
  *  (shape estructural de `nefan-html/src/renderer/projection.ts`). */
 export interface ViewProjLike {
-  /** Metros de vista por metro de altura de mundo (topdown 1.0, iso 0.75). */
+  /** Metros de vista por metro de altura de mundo. */
   readonly verticalScale: number;
+  /** Cizalla horizontal por metro de altura (OBLIQUE_KX del compositor;
+   *  negativa ⇒ tapas al oeste, cara este visible). */
+  readonly shearX: number;
   worldToView(x: number, z: number): [number, number];
 }
 
@@ -32,11 +35,11 @@ export interface ViewBounds {
 export interface PrismGeom {
   /** Huella proyectada a ras de suelo, orden nw→ne→se→sw. */
   base: ViewPoint[];
-  /** La misma huella con la tapa elevada (vy − h·verticalScale). */
+  /** La misma huella con la tapa desplazada (vx + h·shearX, vy − h·verticalScale). */
   top: ViewPoint[];
   /** Cara sur (+z, iluminada) — ausente si degenera (área ~0). */
   south?: ViewPoint[];
-  /** Cara este (+x, en sombra) — ausente en topdown (degenera). */
+  /** Cara este (+x, en sombra) — ausente si degenera (shearX = 0). */
   east?: ViewPoint[];
   /** vy máximo de la base (borde/esquina sur) — clave de profundidad para el
    *  depth-sort, mismo criterio que los occluders del plan. */
@@ -92,7 +95,8 @@ export function prismQuads(
   ];
   const base = corners.map(([x, z]) => proj.worldToView(x, z));
   const lift = h * proj.verticalScale;
-  const top: ViewPoint[] = base.map(([vx, vy]) => [vx, vy - lift]);
+  const shear = h * proj.shearX;
+  const top: ViewPoint[] = base.map(([vx, vy]) => [vx + shear, vy - lift]);
 
   // Índices del orden nw(0), ne(1), se(2), sw(3). Caras orientadas a cámara:
   // sur (sw→se) y este (se→ne), de suelo a tapa.
@@ -113,18 +117,18 @@ export function prismQuads(
 export interface CylinderGeom {
   /** Centro de la elipse base en vista. */
   center: ViewPoint;
-  /** Semiejes de la elipse proyectada (iso: r√2, r√2/2; topdown: r, r). */
+  /** Semiejes de la elipse proyectada (suelo identidad ⇒ r, r). */
   rx: number;
   ry: number;
-  /** vy del centro de la tapa (center[1] − h·verticalScale). */
+  /** Centro de la tapa: (center[0] + h·shearX, center[1] − h·verticalScale). */
+  topCx: number;
   topCy: number;
   baselineViewY: number;
   viewBounds: ViewBounds;
 }
 
 /** Cilindro de radio `r` metros y altura `h` metros con base en (cx,cz).
- *  La elipse proyectada replica `groundEllipse` del compositor: un círculo
- *  de mundo se ve en iso con semiejes (r√2, r√2/2) de vista. */
+ *  La elipse proyectada replica `groundEllipse` del compositor. */
 export function cylinderGeom(
   cx: number,
   cz: number,
@@ -135,7 +139,7 @@ export function cylinderGeom(
   const [vx, vy] = proj.worldToView(cx, cz);
   // Semiejes en vista: extremos de |Δvx|/|Δvy| sondeando puntos DEL círculo
   // en las direcciones singulares de la proyección (0°, 45°, 90°, 135°).
-  // Iso 2:1 exacta → (r√2, r√2/2); topdown (identidad) → (r, r).
+  // Con el suelo identidad → (r, r).
   const s = Math.SQRT1_2 * r;
   let rx = 0;
   let ry = 0;
@@ -144,13 +148,20 @@ export function cylinderGeom(
     rx = Math.max(rx, Math.abs(px - vx));
     ry = Math.max(ry, Math.abs(py - vy));
   }
+  const topCx = vx + h * proj.shearX;
   const topCy = vy - h * proj.verticalScale;
   return {
     center: [vx, vy],
     rx,
     ry,
+    topCx,
     topCy,
     baselineViewY: vy + ry,
-    viewBounds: { minX: vx - rx, minY: topCy - ry, maxX: vx + rx, maxY: vy + ry },
+    viewBounds: {
+      minX: Math.min(vx, topCx) - rx,
+      minY: topCy - ry,
+      maxX: Math.max(vx, topCx) + rx,
+      maxY: vy + ry,
+    },
   };
 }

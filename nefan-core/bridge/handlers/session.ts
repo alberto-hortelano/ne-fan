@@ -31,7 +31,6 @@ import {
 } from "../context.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
-import { isPerspective } from "../../src/scene/blueprint/index.js";
 import type {
   CreateGameMessage,
   DeleteSessionMessage,
@@ -196,12 +195,6 @@ export async function handleStartSession(
     // Estilo: el elegido por el jugador o el por defecto del juego. Un
     // styleId inexistente aborta (fail-loud), no degrada en silencio.
     const style = loadStyleManifest(ctx.stylesDir, msg.styleId || meta.style_id);
-    // Perspectiva: elegida en el título o default del juego. Queda CONGELADA
-    // en el save igual que el estilo; un valor desconocido aborta.
-    const perspective = msg.perspective || meta.default_perspective || "topdown";
-    if (!isPerspective(perspective)) {
-      throw new Error(`perspectiva desconocida "${perspective}" (esperaba topdown|isometric)`);
-    }
     // Modo de render: imagen IA (créditos) o mundo vectorial (blueprints
     // compuestos). Congelado como el estilo: mezclar tiles pintados y
     // vectoriales rompe la continuidad visual entre vecinos.
@@ -228,9 +221,7 @@ export async function handleStartSession(
     }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
-    // La perspectiva forma parte de la identidad del bootstrap cacheado: los
-    // blueprints compuestos difieren aunque el mundo y el estilo coincidan.
-    worldKey = `${worldDocHash}:${style.style_id}:${perspective}`;
+    worldKey = `${worldDocHash}:${style.style_id}`;
     ctx.activePlugins = new Map();
     ctx.narrative.startNewSession(msg.gameId);
     ctx.narrative.setWorldInfo({
@@ -239,7 +230,6 @@ export async function handleStartSession(
       style_id: style.style_id,
       style_token: style.style_token,
       world_doc_hash: worldDocHash,
-      perspective,
       render_mode: renderMode,
       combat_system: combatId,
     });

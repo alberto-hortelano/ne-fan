@@ -308,13 +308,19 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
-## Perspectiva 2D y plan de tile (map_ground + volumes)
+## Proyección oblicua 2D y plan de tile (map_ground + volumes)
 
-El cliente 2D renderiza el mundo por tiles en una de DOS perspectivas, elegida
-por el jugador al empezar (junto al mundo y al estilo) y **congelada en el
-save** como `world.perspective` (`"topdown"` cenital con caras | `"isometric"`
-2:1). Resume la restaura; no puede cambiar a mitad de partida (cambiaría la
-proyección de todos los blueprints). `game.json` admite `default_perspective`.
+El cliente 2D renderiza el mundo por tiles en UNA única proyección
+**oblicua**: el suelo queda sin proyectar (vista == mundo, rejilla cuadrada) y
+la altura se dibuja con cizalla — `pt(u,v,h) = [u + h·KX, v − h·KY]` con
+`OBLIQUE_KX = −0.35`, `OBLIQUE_KY = 1` (`blueprint/projection.ts`). Los
+volúmenes muestran su **cara sur iluminada y su cara este en sombra** (look
+"3/4"/oblicua militar); con KX=0 sería la cenital pura, y ambos tratamientos
+pueden mezclarse porque colisión y baselines salen de la huella declarada,
+nunca de los píxeles. (Sustituye a las dos perspectivas topdown/isometric de
+antes: ya no hay selector, ni `world.perspective` en el save, ni refs `_iso`
+en los style packs; los saves viejos con el campo lo conservan en el JSON pero
+nadie lo lee.)
 
 **El motor narrativo NO dibuja la proyección.** Cada tile declara un plan
 semántico y el **compositor determinista** (`nefan-core/src/scene/blueprint/`)
@@ -322,36 +328,40 @@ lo proyecta:
 
 - `map_ground`: SVG plano del suelo (viewBox "0 0 128 128", capas
   `g#ground`+`g#water`, `g#deck` opcional) — celdas de mundo SIN proyectar,
-  libertad artística total. En iso se incrusta con una única transform afín.
+  libertad artística total; se incrusta identidad (sin transform).
 - `volumes`: todo lo que tiene altura, tipado — `building` (con `roof`,
   `walls`, `doors`, `cutaway:true` para edificios enterables), `wall`,
   `tower`, `gate` (vano transitable), `tree`, `bush`, `rock`, `fountain`,
   `prop`. Huella en celdas + altura; `label` en español guía al clasificador.
   Sin volumes explícitos, el compositor los deriva del esquema
   (`vegetation_zones` → árboles, `structures` → cutaway).
-- `composeBlueprint(plan, perspective, tileKey)` → SVG proyectado (orden del
-  pintor, caras SO iluminadas / SE en sombra en iso, voladizo norte para las
-  alturas) + `elements` (bbox proyectado + baseline + huella por volumen).
-  **Determinista byte a byte** (SeededRng; `COMPOSER_VERSION` en la clave de
-  caché de imagen): el resume hace cache-hit.
+- `composeBlueprint(plan, tileKey)` → SVG proyectado (orden del pintor
+  `v + u/512` — el desempate en u ordena los solapes de la cizalla —,
+  voladizo norte + oeste, viewBox `-12 -32 140 160`) + `elements` (bbox
+  proyectado + baseline + huella por volumen). **Determinista byte a byte**
+  (SeededRng; `COMPOSER_VERSION` — v8 — en la clave de caché de imagen): el
+  resume hace cache-hit. OJO: cambiar cualquier byte de salida invalida la
+  caché de imágenes Meshy de TODOS los saves (regeneración al revisitar).
 
 **Consecuencias en el pipeline** (cliente 2D):
 - Colisión = agua del `map_ground` (raster sin proyectar) ∪ huellas
-  analíticas (`volumeCollisionGrid`) — espacio de MUNDO, idéntica en ambas
-  perspectivas; NUNCA de píxeles proyectados.
+  analíticas (`volumeCollisionGrid`) — espacio de MUNDO; NUNCA de píxeles
+  proyectados.
 - La imagen de Meshy se **enmascara con el alpha del blueprint** antes de
-  instalarse (el rombo/voladizo recorta lo del vecino); los tiles se pintan
-  por profundidad (`ty` / `tx+ty`).
-- El renderer trabaja en **espacio de vista** (`renderer/projection.ts`):
-  en topdown vista == mundo; en iso `vx = x−z, vy = (x+z)/2` (la 2:1 exacta
-  del blueprint, 1 unidad SVG = 1 m de vista). Simulación e input no cambian.
+  instalarse (los voladizos norte/oeste recortan lo del vecino); los tiles se
+  pintan por profundidad (`ty·4096 + tx`), así los voladizos pisan a vecinos
+  ya pintados.
+- El renderer trabaja en **espacio de vista** (`renderer/projection.ts`,
+  `VIEW_PROJECTION` único): vista == mundo en el suelo; los prismas
+  vectoriales (`view-prism.ts`) desplazan la tapa `(+h·shearX, −h)` — espejo
+  exacto del compositor. Simulación e input no cambian.
 - `expected_elements` del análisis salen del compositor; los segmentos
   casados toman baseline/colisión de su huella declarada; los no casados
   (añadidos del modelo de imagen) aportan una franja en su línea de suelo.
 - El retoque de visión (`blueprint_review`) corrige `{map_ground, volumes}`
   (documentos COMPLETOS) y se persiste con `map_plan_update`.
 
-Godot (cliente 3D) no participa: la perspectiva solo afecta al mundo 2D.
+Godot (cliente 3D) no participa: la proyección solo afecta al mundo 2D.
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 
@@ -471,7 +481,7 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 - **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluido del SpringArm collision.
 - **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
 - **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
-- **Doble perspectiva 2D (cenital con caras / isométrica)** elegida al inicio y congelada en el save; el LLM declara planes semánticos (`map_ground`+`volumes`) y el compositor de nefan-core proyecta. Colisión desde huellas, nunca desde píxeles pintados.
+- **Proyección oblicua 2D única** (suelo cenital sin proyectar + cizalla en la altura: cara sur iluminada, cara este en sombra) — sustituyó a la doble perspectiva topdown/isometric; el LLM declara planes semánticos (`map_ground`+`volumes`) y el compositor de nefan-core proyecta. Colisión desde huellas, nunca desde píxeles pintados.
 
 ## Hardware
 

@@ -110,9 +110,6 @@ class SceneImageRequest(BaseModel):
     # referencia global fija de siempre.
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
     style_tag: str = Field(default="", pattern="^(nature|settlement|fortress|interior|underground)?$")
-    # Perspectiva congelada de la sesión: cambia la leyenda de la instrucción
-    # (cenital con caras / isométrica 2:1) y entra en la clave de caché.
-    perspective: str = Field(default="topdown", pattern="^(topdown|isometric)$")
 
     @field_validator("context_sides")
     @classmethod
@@ -430,10 +427,6 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # Perspectiva: misma captura con otra leyenda no debe servir una imagen
-    # cacheada. "topdown" se omite para no invalidar caché preexistente.
-    if body.perspective != "topdown":
-        context["perspective"] = body.perspective
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)
@@ -453,7 +446,6 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
             body.context_sides, body.blueprint_kind,
             style_ref.data_uri if style_ref else None,
             style_ref.style_token if style_ref else "",
-            body.perspective,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e

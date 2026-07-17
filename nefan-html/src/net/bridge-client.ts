@@ -280,10 +280,9 @@ export class BridgeClient {
     gameId: string,
     appearance?: { model_id: string; skin_path: string },
     styleId?: string,
-    perspective?: string,
     renderMode?: string,
   ): Promise<SessionStartedMessage> {
-    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, perspective, renderMode });
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode });
   }
 
   resumeSession(sessionId: string): Promise<SessionStartedMessage> {

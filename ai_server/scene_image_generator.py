@@ -92,35 +92,24 @@ class SceneImageGenerator:
         blueprint_kind: str = "boxes",
         style_ref_uri: str | None = None,
         style_token: str = "",
-        perspective: str = "topdown",
     ) -> dict:
         """`style_ref_uri`: referencia de estilo del pack del juego (data URI);
         None degrada a la referencia global fija. `style_token` complementa a
-        la imagen con la dirección de arte en texto. `perspective` es la
-        proyección congelada de la sesión: el blueprint compuesto ya viene
-        proyectado — la leyenda describe cómo leer sus caras/volúmenes."""
+        la imagen con la dirección de arte en texto."""
         sch = self._load_rgb(schematic_png_bytes)
         if blueprint_kind == "svg":
             # Blueprint compuesto: plano vectorial rico YA PROYECTADO en la
-            # perspectiva de la sesión. Dos diales validados empíricamente
+            # oblicua del compositor. Dos diales validados empíricamente
             # (experimento svg_test): la FIDELIDAD al plano viene sola; el
             # REPINTADO total hay que exigirlo o el modelo devuelve el vector
             # casi tal cual. Specs negativas contra las invenciones observadas.
-            if perspective == "isometric":
-                view = (
-                    "2:1 isometric video-game map (classic RPG angle). The plan is "
-                    "ALREADY projected: every building shows its top plus TWO "
-                    "visible facades (south-west facades lit, south-east facades "
-                    "in shade — keep that light direction), trees show a trunk "
-                    "with the canopy above, towers are cylinders. "
-                )
-            else:
-                view = (
-                    "Top-down 3/4 RPG game map. The plan is ALREADY projected: "
-                    "vertical surfaces show their SOUTH face below their top "
-                    "(walls and buildings have a visible facade strip, trees show "
-                    "a trunk under the canopy). Keep that projection exactly. "
-                )
+            view = (
+                "Top-down 3/4 RPG game map. The plan is ALREADY projected: "
+                "vertical volumes show their top plus a lit SOUTH facade and a "
+                "shaded EAST side facade (tops lean slightly north-west), trees "
+                "show a trunk under the canopy. Keep that projection and light "
+                "direction exactly. "
+            )
             instruction = (
                 view
                 + "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
@@ -181,7 +170,7 @@ class SceneImageGenerator:
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(
-            f"SceneImageGen.full[{blueprint_kind}/{perspective}]: '{prompt[:40]}' {w}x{h} "
+            f"SceneImageGen.full[{blueprint_kind}]: '{prompt[:40]}' {w}x{h} "
             f"{res.get('consumed_credits')}cr -> {dt:.1f}s",
             flush=True,
         )
