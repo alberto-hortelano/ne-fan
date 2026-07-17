@@ -16,6 +16,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from deps import deps
+from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES
 
 router = APIRouter()
 
@@ -35,8 +36,6 @@ class StyleCompleteRequest(BaseModel):
     faltan (coste real en créditos Meshy)."""
     confirm: bool = False
 
-
-from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES
 
 _STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES)
 
