@@ -102,14 +102,22 @@ interface RendererTile {
   /** Capa de terreno horneada (lazy, LRU re-horneable desde el esquema). */
   terrainLayer: HTMLCanvasElement | null;
   layerLastUsed: number;
-  /** Imagen IA (img2img) del tile, si se generó. */
+  /** Imagen IA (img2img) del tile, si se generó. SIEMPRE la original — la
+   *  placa inpainted vive aparte en plateImage. */
   sceneImage: HTMLImageElement | null;
+  /** Placa de fondo: la imagen SIN los objetos altos (huecos inpainted).
+   *  Cuando existe es la capa base del render (los cutouts pintan los
+   *  objetos encima y el fade por proximidad revela el suelo real). */
+  plateImage: HTMLImageElement | null;
   svgImage: HTMLImageElement | null;
   /** Blueprint COMPUESTO rasterizado: cuando existe, ES el dibujo del tile —
    *  el schematic y la capa viva lo pintan en vez de grid+features+cajas.
    *  Su viewBox define el canvas del tile en vista (voladizo incluido); la
    *  imagen IA enmascarada cubre el MISMO canvas. */
   planImage: HTMLImageElement | null;
+  /** Blueprint compuesto COMPLETO (con los tramos tall/canopy que planImage
+   *  excluye), rasterizado lazy solo para la vista debug "blueprint" (B). */
+  planFullImage: HTMLImageElement | null;
   planViewBox: ComposedTilePlan["view_box"] | null;
   /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
    *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
@@ -391,6 +399,24 @@ export interface Occluder {
   label?: string;
 }
 
+/** Vistas de debug del ciclo de la tecla B: apagado, overlay de colisión, y
+ *  las FASES del pipeline de imagen del tile — blueprint compuesto original,
+ *  imagen IA generada, segmentación (recortes del análisis sobre veladura) y
+ *  placa de fondo (el suelo con los huecos inpainted). Las fases sustituyen
+ *  la capa base del tile para poder comparar unas con otras in situ. */
+export type DebugView = "off" | "collision" | "blueprint" | "image" | "segments" | "plate";
+
+export const DEBUG_VIEW_LABELS: Record<DebugView, string> = {
+  off: "sin overlay",
+  collision: "colisiones",
+  blueprint: "blueprint (plan compuesto)",
+  image: "imagen IA original",
+  segments: "segmentación del análisis",
+  plate: "placa de fondo (inpaint)",
+};
+
+const DEBUG_VIEW_CYCLE: DebugView[] = ["off", "collision", "blueprint", "image", "segments", "plate"];
+
 export interface CanvasRendererOptions {
   spriteRenderer?: SpriteRenderer;
   assetCache?: AssetCache;
@@ -442,13 +468,14 @@ export class CanvasRenderer {
    *  frame — el fade por proximidad entra y sale suave. */
   private occFade = new Map<string, number>();
   private lastFadeTs = 0;
-  /** When true, overlay the schematic object rectangles on top of the AI image
-   *  to eyeball alignment between the painted scene and the collision boxes. */
-  /** When true, outline the collision boxes (red, = authored `position±scale/2`,
-   *  what `collidesAt` blocks) and the segmented occluder footprints (cyan dashed,
-   *  = what SAM actually found painted) over the scene, to judge how precise the
-   *  collision is vs the image. Toggled with B. */
-  private debugCollision = true; // en desarrollo, ON por defecto; B lo apaga
+  /** Vista de debug activa (tecla B, en ciclo). "collision" pinta las cajas
+   *  de colisión (rojas = esquema, celdas = derivadas) y las huellas de los
+   *  recortes (cian) sobre la escena; las vistas de FASE (blueprint / image /
+   *  segments / plate) sustituyen la capa base del tile por esa fase del
+   *  pipeline de imagen para comparar unas con otras. */
+  private debugView: DebugView = "collision"; // en desarrollo, colisiones ON por defecto
+  /** Tiles con el raster del blueprint COMPLETO en vuelo (vista blueprint). */
+  private planFullLoading = new Set<string>();
   /** True only while rendering the offscreen schematic for capture — suppresses
    *  text labels, which would pollute the canny edge map. */
   private _capturing = false;
@@ -541,8 +568,10 @@ export class CanvasRenderer {
       terrainLayer: same ? prev.terrainLayer : null,
       layerLastUsed: same ? prev.layerLastUsed : 0,
       sceneImage: same ? prev.sceneImage : null,
+      plateImage: same ? prev.plateImage : null,
       svgImage: same ? prev.svgImage : null,
       planImage: same ? prev.planImage : null,
+      planFullImage: same ? prev.planFullImage : null,
       planViewBox: scene.__composed?.view_box ?? null,
       imageGrid: same ? prev.imageGrid : null,
       imageAnalyzed: same ? prev.imageAnalyzed : false,
@@ -679,7 +708,11 @@ export class CanvasRenderer {
    *  (terrain_svg, refino visual) o `planImage` (el blueprint compuesto).
    *  Cuando decodifica se invalida su capa horneada (se re-hornea con la
    *  SVG). Decode fallido → errors.push. */
-  private loadSvgLayer(tile: RendererTile, svg: string, target: "svgImage" | "planImage"): void {
+  private loadSvgLayer(
+    tile: RendererTile,
+    svg: string,
+    target: "svgImage" | "planImage" | "planFullImage",
+  ): void {
     // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
     // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
     let src = svg;
@@ -696,12 +729,20 @@ export class CanvasRenderer {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      tile[target] = img;
-      // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
-      tile.terrainLayer = null;
+      if (target === "planFullImage") this.planFullLoading.delete(tile.key);
+      // El tile pudo re-registrarse (misma escena) mientras decodificaba: la
+      // capa se instala en el registro VIGENTE, no en el objeto capturado.
+      const current = this.tiles.get(tile.key);
+      const dst = current && current.sceneFingerprint === tile.sceneFingerprint ? current : tile;
+      dst[target] = img;
+      if (target !== "planFullImage") {
+        // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
+        dst.terrainLayer = null;
+      }
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
+      if (target === "planFullImage") this.planFullLoading.delete(tile.key);
       errors.push("scene", `${target === "svgImage" ? "terrain_svg" : "blueprint compuesto"} no decodifica como imagen; se omite la capa SVG`);
     };
     img.src = url;
@@ -750,22 +791,25 @@ export class CanvasRenderer {
     if (!tile) return;
     tile.sceneImage = img;
     tile.terrainLayer = null;
-    // Imagen nueva → el análisis derivado de la anterior deja de valer.
+    // Imagen nueva → el análisis derivado de la anterior deja de valer
+    // (la placa inpainted incluida).
+    tile.plateImage = null;
     tile.imageGrid = null;
     tile.imageAnalyzed = false;
     this.occluders = this.occluders.filter((o) => o.tileKey !== key);
   }
 
   /** Instala la PLACA de fondo del tile: la imagen de escena SIN los objetos
-   *  altos (huecos inpainted por el servidor). Sustituye la imagen base SIN
-   *  purgar occluders ni análisis — los cutouts son precisamente quienes
-   *  pintan los objetos, y al fundirse por proximidad se ve la placa (lo que
-   *  realmente hay debajo) en vez de una copia congelada del objeto. */
+   *  altos (huecos inpainted por el servidor). Cuando existe es la capa base
+   *  del render, SIN purgar occluders ni análisis — los cutouts son
+   *  precisamente quienes pintan los objetos, y al fundirse por proximidad se
+   *  ve la placa (lo que realmente hay debajo) en vez de una copia congelada
+   *  del objeto. La imagen original se conserva en sceneImage (vista B,
+   *  bandas de contexto, re-análisis). */
   setTilePlate(key: string, img: HTMLImageElement): void {
     const tile = this.tiles.get(key);
     if (!tile) return;
-    tile.sceneImage = img;
-    tile.terrainLayer = null;
+    tile.plateImage = img;
   }
 
   /** Registra el análisis derivado de la imagen de un tile (overlay B):
@@ -813,10 +857,46 @@ export class CanvasRenderer {
     }));
   }
 
-  /** Toggle the collision-vs-image debug overlay (B). Returns the new state. */
-  toggleDebugCollision(): boolean {
-    this.debugCollision = !this.debugCollision;
-    return this.debugCollision;
+  /** Avanza la vista de debug (B) al siguiente modo del ciclo y lo devuelve:
+   *  off → colisiones → blueprint → imagen IA → segmentación → placa. */
+  cycleDebugView(): DebugView {
+    const i = DEBUG_VIEW_CYCLE.indexOf(this.debugView);
+    this.debugView = DEBUG_VIEW_CYCLE[(i + 1) % DEBUG_VIEW_CYCLE.length];
+    return this.debugView;
+  }
+
+  getDebugView(): DebugView {
+    return this.debugView;
+  }
+
+  /** Capa base del tile según la vista de debug activa. null = pintar la
+   *  capa horneada del esquema (fallback de siempre). Las vistas de fase
+   *  degradan a la fase más cercana disponible (un tile sin imagen IA enseña
+   *  su blueprint, uno sin placa su imagen…). */
+  private tileBaseImage(tile: RendererTile): HTMLImageElement | null {
+    switch (this.debugView) {
+      case "blueprint": {
+        const composed = tile.scene.__composed;
+        if (!composed) return null; // sin plan: la capa horneada ES el esquema
+        // El planImage base excluye los tramos tall/canopy (los pinta el
+        // depth-sort): la vista blueprint rasteriza lazy el SVG COMPLETO.
+        if (!tile.planFullImage && !this.planFullLoading.has(tile.key)) {
+          this.planFullLoading.add(tile.key);
+          this.loadSvgLayer(tile, composed.svg, "planFullImage");
+        }
+        return tile.planFullImage ?? tile.planImage;
+      }
+      case "image":
+        return tile.sceneImage;
+      case "segments":
+        return tile.sceneImage ?? tile.plateImage;
+      case "plate":
+        return tile.plateImage ?? tile.sceneImage;
+      default:
+        // Render normal: la placa (si el análisis la instaló) es la base y
+        // los cutouts pintan los objetos encima.
+        return tile.plateImage ?? tile.sceneImage;
+    }
   }
 
   /** (Des)activa el velo de carga direccional. `text` se pinta en la banda
@@ -1223,15 +1303,26 @@ export class CanvasRenderer {
       if (t.tx !== undefined && t.ty !== undefined) gridKeys.add(`${t.tx},${t.ty}`);
     }
 
+    // Vistas de FASE del pipeline de imagen (B): sustituyen la capa base del
+    // tile y desactivan los occluders del depth-sort (compararían fases
+    // distintas entre sí); las entidades se pintan planas para poder navegar.
+    const phaseView =
+      this.debugView === "blueprint" ||
+      this.debugView === "image" ||
+      this.debugView === "segments" ||
+      this.debugView === "plate";
+
     // ── Paso de tiles: capa horneada (o imagen IA) sobre su canvas de vista ─
     for (const tile of visible) {
       const v = this.tileView(tile);
       const [fx, fy] = this.viewToScreen(v.x, v.y);
       const fw = v.w * this.scale;
       const fh = v.h * this.scale;
-      if (tile.sceneImage) {
-        // Tile con fondo IA: la imagen sustituye a la capa horneada.
-        ctx.drawImage(tile.sceneImage, fx, fy, fw, fh);
+      const base = this.tileBaseImage(tile);
+      if (base) {
+        // Tile con fondo instalado (imagen IA/placa, o la fase elegida en la
+        // vista B): la imagen sustituye a la capa horneada.
+        ctx.drawImage(base, fx, fy, fw, fh);
       } else {
         if (!tile.terrainLayer && !this.bakedThisFrame) {
           this.bakeTerrainLayer(tile);
@@ -1248,6 +1339,12 @@ export class CanvasRenderer {
           ctx.fillStyle = terrainColor;
           ctx.fillRect(fx, fy, fw, fh);
         }
+      }
+      // Veladura de la vista de segmentación: atenúa el fondo (imagen o capa
+      // horneada) para que los recortes del análisis (opacos encima) destaquen.
+      if (this.debugView === "segments") {
+        ctx.fillStyle = "rgba(8,8,14,0.55)";
+        ctx.fillRect(fx, fy, fw, fh);
       }
       // Borde de "fin del mundo conocido": SOLO en los lados sin vecino (las
       // costuras entre tiles existentes no se marcan — el mundo es continuo).
@@ -1354,7 +1451,7 @@ export class CanvasRenderer {
     );
     for (const e of flatBoxes) this.drawEntity(e);
 
-    if (this.occluders.length + vectorOccs.length > 0) {
+    if (!phaseView && this.occluders.length + vectorOccs.length > 0) {
       this.drawDepthSorted(player, enemies, restObjects, npcs, vectorOccs);
     } else {
       for (const npc of npcs) this.drawNpc(npc);
@@ -1363,7 +1460,21 @@ export class CanvasRenderer {
       this.drawPlayer(player);
     }
 
-    if (this.debugCollision) this.drawCollisionDebug(objects);
+    if (this.debugView === "segments") this.drawSegmentsOverlay();
+    if (this.debugView === "collision") this.drawCollisionDebug(objects);
+    if (this.debugView !== "off") {
+      // Aviso cuando ningún tile visible tiene la fase pedida (se está viendo
+      // el fallback): dice qué tecla la genera.
+      let note = "";
+      if (this.debugView === "image" && !visible.some((t) => t.sceneImage)) {
+        note = "sin imagen IA a la vista — G (o Auto-img) la genera";
+      } else if (this.debugView === "plate" && !visible.some((t) => t.plateImage)) {
+        note = "sin placa a la vista — X (análisis del tile) la genera";
+      } else if (this.debugView === "segments" && this.occluders.length === 0) {
+        note = "sin segmentos — X (análisis del tile) los genera";
+      }
+      this.drawDebugViewLabel(note);
+    }
 
     // Velo de carga direccional — lo último, por encima de todo.
     if (this.edgeLoading) this.drawEdgeLoading();
@@ -1569,6 +1680,64 @@ export class CanvasRenderer {
     ctx.fillStyle = "rgba(255,140,0,1)";
     ctx.fillRect(12, 124, 14, 10);
     ctx.fillText("terreno solido del esquema (muro/agua)", 32, 133);
+    ctx.restore();
+  }
+
+  /** Vista de segmentación (B): pinta cada recorte del análisis OPACO sobre
+   *  la veladura, con su caja y etiqueta — cian los segmentados de la imagen
+   *  por visión, naranja los tramos rasterizados del plan. Se ve qué encontró
+   *  el análisis y qué píxeles exactos recortó. */
+  private drawSegmentsOverlay(): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "left";
+    const occs = [...this.occluders].sort((a, b) => a.baselineView - b.baselineView);
+    for (const occ of occs) {
+      const v = occ.view;
+      const [x0, y0] = this.viewToScreen(v.minX, v.minZ);
+      const w = (v.maxX - v.minX) * this.scale;
+      const h = (v.maxZ - v.minZ) * this.scale;
+      if (occ.img) ctx.drawImage(occ.img, x0, y0, w, h);
+      const color = occ.kind === "plan" ? "rgba(255,170,40,1)" : "rgba(60,255,255,1)";
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.setLineDash([]);
+      if (w >= 48) {
+        const name = occ.label ??
+          (occ.tileKey !== undefined ? occ.id.replace(`${occ.tileKey}:`, "") : occ.id);
+        const tw = ctx.measureText(name).width;
+        ctx.fillStyle = "rgba(10,10,14,0.75)";
+        ctx.fillRect(x0, y0 - 15, tw + 8, 14);
+        ctx.fillStyle = color;
+        ctx.fillText(name, x0 + 4, y0 - 4);
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Píldora con la vista de debug activa (esquina superior izquierda) y, si
+   *  la fase no está disponible, el aviso de qué tecla la genera. */
+  private drawDebugViewLabel(note = ""): void {
+    const ctx = this.ctx;
+    const text = `B · vista: ${DEBUG_VIEW_LABELS[this.debugView]}`;
+    ctx.save();
+    ctx.font = "bold 12px monospace";
+    ctx.textAlign = "left";
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = "rgba(10,10,14,0.8)";
+    ctx.fillRect(8, 8, tw + 16, 22);
+    ctx.fillStyle = "#8df";
+    ctx.fillText(text, 16, 23);
+    if (note) {
+      const nw = ctx.measureText(note).width;
+      ctx.fillStyle = "rgba(10,10,14,0.8)";
+      ctx.fillRect(8, 32, nw + 16, 20);
+      ctx.fillStyle = "rgba(255,200,80,1)";
+      ctx.fillText(note, 16, 46);
+    }
     ctx.restore();
   }
 
@@ -1790,8 +1959,8 @@ export class CanvasRenderer {
   /** Draw a static scene element (building/prop/item) as an extruded prism
    *  using its authored footprint + height (scale[1], metres). La geometría
    *  viene de view-prism (espejo del compositor de blueprints): huella
-   *  proyectada, cara sur iluminada, cara este en sombra (degenera en
-   *  topdown) y tapa a −h·verticalScale. Items bajos quedan como rombo. */
+   *  proyectada, cara sur iluminada, cara este en sombra y tapa desplazada
+   *  (+h·shearX, −h·verticalScale). Items bajos quedan como rombo. */
   private drawSceneBox(obj: { id: string; position: number[]; scale: number[]; category: string; description: string; shape?: string }): void {
     const ctx = this.ctx;
     const px = obj.position?.[0] ?? 0;
