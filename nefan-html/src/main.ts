@@ -6,7 +6,7 @@ import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import {
   composeBlueprint,
   deriveVolumesFromSchema,
@@ -799,6 +799,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     const sizeXZ = scale && scale.length >= 3
       ? { x: scale[0], z: scale[2] }
       : undefined;
+    const sizeY = scale && scale.length >= 3 ? scale[1] : undefined;
     const category = obj.category as string | undefined;
     const shape = obj.shape as string | undefined;
     const combat = obj.combat as Record<string, unknown> | undefined;
@@ -849,6 +850,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
         hp: combat.health as number, maxHp: combat.health as number, alive: true,
         category: category ?? "creature",
         sizeXZ,
+        sizeY,
         skinPrompt: enemyPrompt,
       };
       characterSprites.requestSkin(enemyPrompt);
@@ -860,6 +862,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
         label: (obj.description ?? "") as string, alive: true,
         category: category ?? "prop",
         sizeXZ,
+        sizeY,
         shape,
       };
       objectEntities.push(objectEntity);
@@ -1773,6 +1776,8 @@ function materializeSpawn(effect: {
     alive: true,
     category: isBuilding ? "building" : "prop",
     sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },
+    // Altura coherente con la de las escenas del motor (defaults por kind).
+    sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
     spriteHash,
   });
   log(`✨ ${isBuilding ? "edificio" : "objeto"}: ${label}`);

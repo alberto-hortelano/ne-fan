@@ -472,6 +472,14 @@ def validate_scene_response(data: dict) -> dict:
         }
         if ent.get("shape") in ("box", "cylinder", "sphere", "cone"):
             clean_ent["shape"] = ent["shape"]
+        # Altura en METROS (espejo de KIND_DEFAULT_HEIGHT/MAX_ENTITY_HEIGHT_M
+        # en scene-normalize.ts) — sin whitelist aquí el campo se perdería.
+        if (
+            isinstance(ent.get("h"), (int, float))
+            and not isinstance(ent.get("h"), bool)
+            and 0 < ent["h"] <= 20
+        ):
+            clean_ent["h"] = float(ent["h"])
         if isinstance(ent.get("texture_hash"), str):
             clean_ent["texture_hash"] = ent["texture_hash"]
         if isinstance(ent.get("model_hash"), str):

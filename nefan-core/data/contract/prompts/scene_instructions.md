@@ -26,7 +26,8 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
-      "shape": "box"|"cylinder"|"sphere"|"cone" },   // optional; default box
+      "shape": "box"|"cylinder"|"sphere"|"cone",     // optional; default box
+      "h": <metres> },                               // optional height in METRES; default per kind
     ...
   ],
   "ambient_event": "<one Spanish atmospheric line>"
@@ -154,6 +155,11 @@ ENTITY RULES
   hanging signs, stains. Visible on the map but NO collision and NO interaction.
   Use decor (never prop) for anything the player should walk past freely; a prop
   is a physical obstacle (table, barrel, cart).
+- `h` = height in METRES (NOT cells; footprint stays in cells). Both clients
+  render it (extruded prism in 2D, real height in 3D). Guide: house 2.5-4,
+  tower/church/keep 5-8, tree 3-8, prop 0.5-2. Omit for the per-kind default
+  (building 2.5, tree 4, prop 1, item/decor 0.5) — DO set it when it tells a
+  story: a looming fortress, a stunted sapling, a grand cathedral.
 
 SHAPE (optional; hints the rendered footprint — use it, it makes better maps)
 - "cylinder": round things seen from above — barrel, well, cauldron, urn, jar,

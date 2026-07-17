@@ -4,6 +4,8 @@
 
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import { prismQuads, cylinderGeom, type ViewPoint } from "@nefan-core/src/scene/view-prism.js";
+import { darken } from "@nefan-core/src/scene/blueprint/palette.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
@@ -174,6 +176,12 @@ const TILE_PPM = 16;
 /** Máximo de capas horneadas vivas; la más antigua se libera (re-horneable). */
 const MAX_BAKED_LAYERS = 24;
 
+/** Altura (m) a partir de la cual una caja estática del esquema entra al
+ *  depth-sort como occluder vectorial (puede tapar al player). Por debajo
+ *  (items 0.5, decor 0.5, props 1) se pinta plana antes que las entidades —
+ *  clutter de suelo donde la oclusión imperfecta es imperceptible. */
+const PRISM_OCCLUDER_MIN_H = 1.2;
+
 export interface Entity {
   id: string;
   pos: Vec3;
@@ -202,6 +210,9 @@ export interface Entity {
   /** Footprint in metres on the XZ plane, taken from the scene JSON `scale`.
    *  Falls back to a square based on `radius` when not set. */
   sizeXZ?: { x: number; z: number };
+  /** Altura en metros (scale[1] de la world scene) — extrusión del prisma en
+   *  el schematic y umbral de entrada al depth-sort (edificios/árboles). */
+  sizeY?: number;
   /** Pista de forma para el schematic: box (rect) | cylinder/sphere (círculo) |
    *  cone (triángulo). Ausente → rectángulo (o rombo si category==="item"). */
   shape?: string;
@@ -353,7 +364,12 @@ export interface SceneBounds {
  *  under) the player depending on who is "in front". */
 export interface Occluder {
   id: string;
-  img: HTMLImageElement;
+  /** Bitmap recortado (occluders de imagen/plan). Ausente en los occluders
+   *  VECTORIALES (cajas altas del esquema), que pintan con `paintVector`. */
+  img?: HTMLImageElement;
+  /** Pintado vectorial del occluder (prisma del esquema). El caller fija
+   *  globalAlpha con el fade antes de llamar. */
+  paintVector?: () => void;
   view: SceneBounds;
   baselineView: number;
   /** Huella de MUNDO (metros XZ) del tramo — cuando existe, el depth-sort
@@ -368,8 +384,9 @@ export interface Occluder {
   overhead?: boolean;
   /** Origen del recorte: "image" = segmento clasificado `tall` por visión
    *  (mundo derivado de imagen); "plan" = tramo de volumen del blueprint
-   *  compuesto (rasterizado del SVG, sin imagen IA). */
-  kind?: "image" | "plan";
+   *  compuesto (rasterizado del SVG, sin imagen IA); "vector" = prisma del
+   *  esquema (caja alta pintada por paintVector, sin bitmap). */
+  kind?: "image" | "plan" | "vector";
   /** Etiqueta de la clasificación por visión ("roble", "muro"...) — overlay B. */
   label?: string;
 }
@@ -890,7 +907,13 @@ export class CanvasRenderer {
         .filter((t) => !asImage(t) && !t.planImage)
         .flatMap((t): SceneObject[] => t.scene.objects ?? [])
         .filter((o) => o.category !== "creature")
-        .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
+        // Orden de pintor por borde SUR de la huella (con prismas, el sort
+        // por centro pinta mal los solapes).
+        .sort(
+          (a, b) =>
+            ((a.position?.[2] ?? 0) + (a.scale?.[2] ?? 0) / 2) -
+            ((b.position?.[2] ?? 0) + (b.scale?.[2] ?? 0) / 2),
+        );
       for (const obj of staticObjects) {
         this.drawSceneBox(obj);
       }
@@ -1277,24 +1300,43 @@ export class CanvasRenderer {
       }
     }
 
-    // Static scene elements de los tiles visibles, ordenados por Z global.
-    // Un tile con imagen IA o con blueprint compuesto ya los lleva pintados
-    // (solo overlay de debug).
-    const staticObjects = visible
-      .filter((t) => !t.sceneImage && !t.planImage)
-      .flatMap((t): SceneObject[] => t.scene.objects ?? [])
-      .filter((o) => o.category !== "creature")
-      .sort((a, b) => (a.position?.[2] ?? 0) - (b.position?.[2] ?? 0));
-    for (const obj of staticObjects) {
-      this.drawSceneBox(obj);
+    // Partición de las entidades de objeto (ÚNICO camino de pintado de cajas
+    // del esquema — antes también se pintaban desde scene.objects, duplicadas):
+    //  - estáticas PLANAS (h ≤ 1.2 m: items/decor/props) → antes que todo,
+    //    orden de pintor por borde sur en vista;
+    //  - estáticas ALTAS (buildings 2.5, árboles 4) → occluders VECTORIALES
+    //    del depth-sort (pueden tapar al player, con fade de proximidad);
+    //  - el resto (creatures) → paso de entidades normal.
+    // Un tile con imagen IA o blueprint compuesto ya pinta sus objetos
+    // (gate tileArtAt, igual que drawEntity).
+    const flatBoxes: Entity[] = [];
+    const vectorOccs: Occluder[] = [];
+    const restObjects: Entity[] = [];
+    for (const e of objects) {
+      const cat = e.category ?? "";
+      const isStatic =
+        cat === "building" || cat === "terrain" || cat === "prop" || cat === "item" || cat === "decor";
+      if (!isStatic) {
+        restObjects.push(e);
+        continue;
+      }
+      if (!e.alive || this.tileArtAt(e.pos.x, e.pos.z)) continue;
+      if ((e.sizeY ?? 1) > PRISM_OCCLUDER_MIN_H) vectorOccs.push(this.boxOccluder(e));
+      else flatBoxes.push(e);
     }
+    flatBoxes.sort(
+      (a, b) =>
+        this.projection.worldToView(a.pos.x, a.pos.z + (a.sizeXZ?.z ?? 0) / 2)[1] -
+        this.projection.worldToView(b.pos.x, b.pos.z + (b.sizeXZ?.z ?? 0) / 2)[1],
+    );
+    for (const e of flatBoxes) this.drawEntity(e);
 
-    if (this.occluders.length > 0) {
-      this.drawDepthSorted(player, enemies, objects, npcs);
+    if (this.occluders.length + vectorOccs.length > 0) {
+      this.drawDepthSorted(player, enemies, restObjects, npcs, vectorOccs);
     } else {
       for (const npc of npcs) this.drawNpc(npc);
       for (const e of enemies) this.drawEntity(e);
-      for (const obj of objects) this.drawEntity(obj);
+      for (const obj of restObjects) this.drawEntity(obj);
       this.drawPlayer(player);
     }
 
@@ -1575,21 +1617,24 @@ export class CanvasRenderer {
     enemies: Entity[],
     objects: Entity[],
     npcs: Entity[],
+    extraOccs: Occluder[] = [],
   ): void {
     // Occluders por profundidad de baseline — el mismo orden del pintor con
     // el que el compositor pintó el planImage base (consistencia estática).
     // Los tramos AÉREOS (copas: por encima de la altura de un personaje) se
-    // apartan y se pintan AL FINAL, sobre todas las entidades.
-    const occs = this.occluders.filter((o) => !o.overhead).sort((a, b) => a.baselineView - b.baselineView);
-    const overhead = this.occluders.filter((o) => o.overhead).sort((a, b) => a.baselineView - b.baselineView);
+    // apartan y se pintan AL FINAL, sobre todas las entidades. Los `extraOccs`
+    // (prismas vectoriales por frame) comparten comparadores y fade.
+    const all = extraOccs.length > 0 ? [...this.occluders, ...extraOccs] : this.occluders;
+    const occs = all.filter((o) => !o.overhead).sort((a, b) => a.baselineView - b.baselineView);
+    const overhead = all.filter((o) => o.overhead).sort((a, b) => a.baselineView - b.baselineView);
     const baselineScreen = occs.map((o) => this.viewToScreen(0, o.baselineView)[1]);
 
     // --- Fade por proximidad ---
     const now = performance.now();
     const dt = this.lastFadeTs > 0 ? Math.min(0.25, (now - this.lastFadeTs) / 1000) : 0;
     this.lastFadeTs = now;
-    if (this.occFade.size > this.occluders.length) {
-      const alive = new Set(this.occluders.map((o) => o.id));
+    if (this.occFade.size > all.length) {
+      const alive = new Set(all.map((o) => o.id));
       for (const id of this.occFade.keys()) if (!alive.has(id)) this.occFade.delete(id);
     }
     const [pvx, pvy] = this.projection.worldToView(player.pos.x, player.pos.z);
@@ -1651,11 +1696,15 @@ export class CanvasRenderer {
       const cur = this.occFade.get(occ.id) ?? 1;
       const fade = dt > 0 ? cur + (target - cur) * Math.min(1, dt * OCCLUDER_FADE_RATE) : cur;
       this.occFade.set(occ.id, fade);
-      const v = occ.view;
-      const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
       const prevAlpha = this.ctx.globalAlpha;
       this.ctx.globalAlpha = fade;
-      this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
+      if (occ.paintVector) {
+        occ.paintVector();
+      } else if (occ.img) {
+        const v = occ.view;
+        const [ix, iy] = this.viewToScreen(v.minX, v.minZ);
+        this.ctx.drawImage(occ.img, ix, iy, (v.maxX - v.minX) * this.scale, (v.maxZ - v.minZ) * this.scale);
+      }
       this.ctx.globalAlpha = prevAlpha;
     };
     for (let i = 0; i <= occs.length; i++) {
@@ -1669,72 +1718,139 @@ export class CanvasRenderer {
     for (const occ of overhead) paint(occ, true);
   }
 
-  /** Draw a static scene element (building/prop/item) using its authored
-   *  footprint. Buildings/terrain get a filled rectangle the size of the XZ
-   *  scale; props get a smaller box; items are diamond markers. */
+  /** Occluder VECTORIAL para una caja alta del esquema: mismos comparadores
+   *  que los occluders del plan (baseline + huella de mundo), pero pinta el
+   *  prisma con drawEntity en vez de un bitmap. Se regenera por frame; el id
+   *  estable ("box:"+id) mantiene vivo el fade de proximidad entre frames. */
+  private boxOccluder(e: Entity): Occluder {
+    const fallback = Math.max(0.5, (e.radius / this.scale) * 2);
+    const sx = e.sizeXZ?.x ?? fallback;
+    const sz = e.sizeXZ?.z ?? fallback;
+    const g = prismQuads(e.pos.x, e.pos.z, sx, sz, e.sizeY ?? 1, this.projection);
+    return {
+      id: "box:" + e.id,
+      view: { minX: g.viewBounds.minX, minZ: g.viewBounds.minY, maxX: g.viewBounds.maxX, maxZ: g.viewBounds.maxY },
+      baselineView: g.baselineViewY,
+      footprintWorld: {
+        minX: e.pos.x - sx / 2,
+        minZ: e.pos.z - sz / 2,
+        maxX: e.pos.x + sx / 2,
+        maxZ: e.pos.z + sz / 2,
+      },
+      kind: "vector",
+      label: e.label,
+      paintVector: () => this.drawEntity(e),
+    };
+  }
+
+  /** Traza un polígono en coordenadas de VISTA y lo rellena (opcionalmente
+   *  con contorno). La proyección de altura ya viene resuelta en los puntos
+   *  (view-prism); aquí solo vista → pantalla. */
+  private fillViewPoly(pts: ViewPoint[], fill: string, stroke?: string, lineWidth = 1): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const [x, y] = this.viewToScreen(pts[i][0], pts[i][1]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
+  }
+
+  /** Draw a static scene element (building/prop/item) as an extruded prism
+   *  using its authored footprint + height (scale[1], metres). La geometría
+   *  viene de view-prism (espejo del compositor de blueprints): huella
+   *  proyectada, cara sur iluminada, cara este en sombra (degenera en
+   *  topdown) y tapa a −h·verticalScale. Items bajos quedan como rombo. */
   private drawSceneBox(obj: { id: string; position: number[]; scale: number[]; category: string; description: string; shape?: string }): void {
     const ctx = this.ctx;
     const px = obj.position?.[0] ?? 0;
     const pz = obj.position?.[2] ?? 0;
     const sx = Math.max(0.2, obj.scale?.[0] ?? 1);
+    const sy = Math.max(0, obj.scale?.[1] ?? 1);
     const sz = Math.max(0.2, obj.scale?.[2] ?? 1);
     const [cx, cy] = this.toScreen(px, pz);
-    const w = sx * this.scale;
-    const h = sz * this.scale;
     const cat = obj.category ?? "prop";
     const fill = CATEGORY_FILL[cat] ?? CATEGORY_FILL.prop;
     const stroke = CATEGORY_STROKE[cat] ?? CATEGORY_STROKE.prop;
+    // Shading del compositor (props de blueprint/render.ts): tapa = fill,
+    // cara iluminada y cara en sombra derivadas.
+    const lit = darken(fill, 0.12);
+    const shade = darken(fill, 0.3);
+    const liftPx = sy * this.projection.verticalScale * this.scale;
+    const label = obj.description || obj.id;
 
-    // Forma explícita del modelo (barril/pozo/torre redonda → círculo; tienda/
-    // aguja → triángulo). Prevalece sobre la categoría para el primitivo, pero
-    // conserva el color de categoría. box/ausente → cae a la lógica de siempre.
+    // Forma explícita del modelo (barril/pozo/torre redonda → "lata"; tienda/
+    // aguja → cono; roca/cúpula → esfera). Conserva el color de categoría.
     const shape = obj.shape;
-    if (shape === "cylinder" || shape === "sphere") {
-      ctx.fillStyle = fill;
-      ctx.strokeStyle = stroke;
+    if (shape === "cylinder" || shape === "sphere" || shape === "cone") {
+      const r = Math.min(sx, sz) / 2;
+      const g = cylinderGeom(px, pz, r, sy, this.projection);
+      const [bx, by] = this.viewToScreen(g.center[0], g.center[1]);
+      const rx = Math.max(3, g.rx * this.scale);
+      const ry = Math.max(2, g.ry * this.scale);
+      const topY = by - liftPx;
       ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, Math.max(3, w / 2), Math.max(3, h / 2), 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      this.drawObjectLabel(cx, cy - h / 2 - 4, obj.description || obj.id, stroke);
-      return;
-    }
-    if (shape === "cone") {
-      ctx.fillStyle = fill;
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - h / 2);
-      ctx.lineTo(cx - w / 2, cy + h / 2);
-      ctx.lineTo(cx + w / 2, cy + h / 2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      this.drawObjectLabel(cx, cy - h / 2 - 4, obj.description || obj.id, stroke);
-      return;
-    }
-
-    if (cat === "building" || cat === "terrain") {
-      ctx.fillStyle = fill;
-      ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
-      if (!this._capturing && w >= 60 && h >= 16) {
-        ctx.fillStyle = "rgba(230, 220, 200, 0.85)";
-        ctx.font = "10px monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const label = (obj.description || obj.id).slice(0, 36);
-        ctx.fillText(label, cx, cy);
-        ctx.textBaseline = "alphabetic";
+      if (shape === "sphere") {
+        // Sombra de contacto en la base + esfera con el centro a media altura.
+        ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+        ctx.beginPath();
+        ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const sr = Math.max(3, r * this.scale);
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
+        ctx.beginPath();
+        ctx.arc(bx, by - liftPx / 2, sr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        this.drawObjectLabel(bx, by - liftPx / 2 - sr - 4, label, stroke);
+        return;
       }
+      if (shape === "cone") {
+        // Elipse base + triángulo hasta el ápex elevado.
+        ctx.fillStyle = shade;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lit;
+        ctx.strokeStyle = stroke;
+        ctx.beginPath();
+        ctx.moveTo(bx, topY);
+        ctx.lineTo(bx - rx, by);
+        ctx.lineTo(bx + rx, by);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        this.drawObjectLabel(bx, topY - 4, label, stroke);
+        return;
+      }
+      // cylinder: cortina lateral + media elipse inferior + tapa.
+      ctx.fillStyle = lit;
+      ctx.fillRect(bx - rx, topY, rx * 2, liftPx);
+      ctx.beginPath();
+      ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI);
+      ctx.fill();
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.beginPath();
+      ctx.ellipse(bx, topY, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      this.drawObjectLabel(bx, topY - ry - 4, label, stroke);
       return;
     }
 
-    if (cat === "item") {
-      const r = Math.max(6, Math.min(w, h) / 2);
+    if (cat === "item" && sy <= 0.6) {
+      // Marcador plano de siempre: rombo a ras de suelo.
+      const r = Math.max(6, (Math.min(sx, sz) / 2) * this.scale);
       ctx.fillStyle = fill;
       ctx.strokeStyle = stroke;
       ctx.lineWidth = 1.5;
@@ -1746,16 +1862,32 @@ export class CanvasRenderer {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      this.drawObjectLabel(cx, cy - r - 4, obj.description || obj.id, "#dec268");
+      this.drawObjectLabel(cx, cy - r - 4, label, "#dec268");
       return;
     }
 
-    ctx.fillStyle = fill;
-    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
-    this.drawObjectLabel(cx, cy - h / 2 - 4, obj.description || obj.id, "#bbb");
+    // Prisma box: caras orientadas a cámara y tapa (view-prism resuelve la
+    // proyección; en topdown la cara este degenera y no llega).
+    const g = prismQuads(px, pz, sx, sz, sy, this.projection);
+    if (g.south) this.fillViewPoly(g.south, lit);
+    if (g.east) this.fillViewPoly(g.east, shade);
+    const isBig = cat === "building" || cat === "terrain";
+    this.fillViewPoly(g.top, fill, stroke, isBig ? 1.5 : 1);
+
+    if (isBig) {
+      const w = sx * this.scale;
+      const d = sz * this.scale;
+      if (!this._capturing && w >= 60 && d >= 16) {
+        ctx.fillStyle = "rgba(230, 220, 200, 0.85)";
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label.slice(0, 36), cx, cy - liftPx);
+        ctx.textBaseline = "alphabetic";
+      }
+      return;
+    }
+    this.drawObjectLabel(cx, cy - liftPx - (sz / 2) * this.scale - 4, label, cat === "item" ? "#dec268" : "#bbb");
   }
 
   private drawObjectLabel(cx: number, cy: number, text: string, color: string): void {
@@ -1834,7 +1966,7 @@ export class CanvasRenderer {
       this.drawSceneBox({
         id: e.id,
         position: [e.pos.x, e.pos.y, e.pos.z],
-        scale: [sx, 1, sz],
+        scale: [sx, e.sizeY ?? 1, sz],
         category,
         description: e.label ?? e.id,
         shape: e.shape,

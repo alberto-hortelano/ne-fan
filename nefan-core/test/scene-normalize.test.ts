@@ -62,7 +62,8 @@ describe("formatDToWorld", () => {
     // cell [2,1] footprint [4,2], mpc 2, halfW 10, halfD 6
     // x = (2 + 4/2)*2 - 10 = -2 ; z = (1 + 2/2)*2 - 6 = -2
     assert.deepEqual(tavern.position, [-2, 0, -2]);
-    assert.deepEqual(tavern.scale, [8, 1, 4]);
+    // Altura default por kind: building 2.5 m (KIND_DEFAULT_HEIGHT).
+    assert.deepEqual(tavern.scale, [8, 2.5, 4]);
     assert.equal(tavern.category, "building");
     assert.equal(tavern.description, "Taberna");
     assert.equal(tavern.texture_hash, "abc");
@@ -83,6 +84,35 @@ describe("formatDToWorld", () => {
     const w = formatDToWorld(d);
     const oak = (w.objects as Record<string, unknown>[]).find((o) => o.id === "oak");
     assert.equal(oak?.category, "prop");
+    // El default de altura sale del KIND (tree → 4 m), no de la category.
+    assert.equal((oak?.scale as number[])[1], 4);
+  });
+
+  it("respeta la altura explícita `h` (metros) y recorta valores disparatados", () => {
+    const d = makeFormatD();
+    (d.entities as Record<string, unknown>[]).push(
+      { id: "torre", kind: "building", name: "Torre", cell: [7, 0], footprint: [2, 2], glyph: "t", h: 6.5 },
+      { id: "megalito", kind: "prop", name: "Megalito", cell: [0, 3], footprint: [1, 1], glyph: "M", h: 999 },
+    );
+    const w = formatDToWorld(d);
+    const objs = w.objects as Record<string, unknown>[];
+    assert.equal((objs.find((o) => o.id === "torre")?.scale as number[])[1], 6.5);
+    // Techo duro de 20 m (MAX_ENTITY_HEIGHT_M).
+    assert.equal((objs.find((o) => o.id === "megalito")?.scale as number[])[1], 20);
+  });
+
+  it("un `h` inválido cae al default por kind (tolerante, como shape)", () => {
+    const d = makeFormatD();
+    (d.entities as Record<string, unknown>[]).push(
+      { id: "caja", kind: "prop", name: "Caja", cell: [0, 3], footprint: [1, 1], glyph: "c", h: -2 },
+      { id: "gema", kind: "item", name: "Gema", cell: [1, 3], footprint: [1, 1], glyph: "g", h: "alta" },
+      { id: "cartel", kind: "decor", name: "Cartel", cell: [2, 3], footprint: [1, 1], glyph: "i" },
+    );
+    const w = formatDToWorld(d);
+    const objs = w.objects as Record<string, unknown>[];
+    assert.equal((objs.find((o) => o.id === "caja")?.scale as number[])[1], 1);
+    assert.equal((objs.find((o) => o.id === "gema")?.scale as number[])[1], 0.5);
+    assert.equal((objs.find((o) => o.id === "cartel")?.scale as number[])[1], 0.5);
   });
 
   it("keeps decor kind as its own walkable category", () => {

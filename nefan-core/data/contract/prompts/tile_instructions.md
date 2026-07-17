@@ -18,7 +18,7 @@ Call narrative_respond with this JSON (Tile Format):
   ],
   "structures": [ ],            // buildings stamped ON the plane (same schema as always)
   "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
-  "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP)
+  "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres)
   "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
   "map_ground": "<svg viewBox=\"0 0 128 128\">…</svg>",  // ground-plane art — see MAP PLAN below
   "volumes": [ … ],                                    // everything with HEIGHT — see MAP PLAN below
