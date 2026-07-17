@@ -1,18 +1,18 @@
 /** Renderers por tipo de volumen del compositor de blueprints.
  *
- *  Truco central que unifica ambas perspectivas: toda cara vertical se emite
- *  como quad de vértices (u, v, h) proyectados con `proj.pt`. En topdown las
- *  caras este/oeste degeneran a área ~0 y se descartan solas; en iso las dos
- *  caras de cámara (SE/SO) salen con su paralaje correcto. El color de cada
- *  cara se elige por su normal exterior: componente +v → cara iluminada
- *  (SO/sur), +u → cara en sombra (SE). El orden del pintor lo impone
- *  `compose.ts` (profundidad de la huella); dentro de un volumen el orden es
- *  sombra → caras → tapa → detalle. */
+ *  Truco central: toda cara vertical se emite como quad de vértices (u, v, h)
+ *  proyectados con `proj.pt` (la oblicua con cizalla KX). Las caras de cámara
+ *  (sur y este) salen con su paralaje; las traseras (norte/oeste) degeneran o
+ *  quedan cubiertas y el filtro de área las descarta. El color de cada cara
+ *  se elige por su normal exterior: componente +v → cara iluminada (sur),
+ *  +u → cara en sombra (este). El orden del pintor lo impone `compose.ts`
+ *  (profundidad de la huella); dentro de un volumen el orden es sombra →
+ *  caras → tapa → detalle. */
 
 import type { SeededRng } from "../../rng.js";
 import { PALETTE, type FaceColors, roofColors, wallColors } from "./palette.js";
 import type { Projection } from "./projection.js";
-import { ISO_SX, ISO_SY } from "./projection.js";
+import { OBLIQUE_KX } from "./projection.js";
 import type {
   BuildingVolume,
   GateVolume,
@@ -80,15 +80,13 @@ function faceColor(colors: FaceColors, nu: number, nv: number): string {
   return nv >= Math.abs(nu) * 0.5 ? colors.lit : colors.shade;
 }
 
-/** Elipse del plano del suelo: círculo de mundo (u,v,r) proyectado. */
+/** Elipse del plano del suelo: círculo de mundo (u,v,r) proyectado (el suelo
+ *  es identidad ⇒ sigue siendo un círculo). */
 function groundEllipse(ctx: RenderCtx, u: number, v: number, r: number, fill: string, extra = "", dy = 0): void {
   const [cx, cy] = ctx.proj.pt(u, v);
-  const iso = ctx.proj.kind === "isometric";
-  const rx = iso ? r * Math.SQRT2 * ISO_SX : r;
-  const ry = iso ? r * Math.SQRT2 * ISO_SY : r;
-  track(ctx, cx - rx, cy + dy - ry);
-  track(ctx, cx + rx, cy + dy + ry);
-  ctx.out.push(ellipse(cx, cy + dy, rx, ry, fill, extra));
+  track(ctx, cx - r, cy + dy - r);
+  track(ctx, cx + r, cy + dy + r);
+  ctx.out.push(ellipse(cx, cy + dy, r, r, fill, extra));
 }
 
 /** Sombra de contacto: elipse PEGADA a la base (el volumen la pisa y solo
@@ -97,11 +95,14 @@ function shadow(ctx: RenderCtx, u: number, v: number, r: number): void {
   groundEllipse(ctx, u + 0.3, v + 0.2, r, PALETTE.shadow, 'opacity="0.14"');
 }
 
-/** Cilindro: cortina de la semicircunferencia de cámara + tapa elíptica. */
+/** Cilindro: cortina de la semicircunferencia de cámara + tapa circular. */
 function cylinder(ctx: RenderCtx, u: number, v: number, r: number, h: number, colors: FaceColors): void {
   const K = 10;
-  // Semicircunferencia orientada a cámara: en topdown la sur, en iso la SE+SO.
-  const a0 = ctx.proj.kind === "isometric" ? -Math.PI / 4 : 0;
+  // Semicircunferencia orientada a cámara: con la cizalla KX la cámara mira
+  // desde el SE — las normales visibles cumplen |KX|·nu + nv > 0, o sea el
+  // arco (−φ, π−φ) con φ = atan(|KX|). Sin el giro quedaba una franja de
+  // cara este sin pintar bajo la tapa desplazada.
+  const a0 = Math.atan(OBLIQUE_KX); // KX<0 ⇒ −φ
   const arc: [number, number][] = [];
   for (let i = 0; i <= K; i++) {
     const a = a0 + (i / K) * Math.PI;
@@ -115,12 +116,9 @@ function cylinder(ctx: RenderCtx, u: number, v: number, r: number, h: number, co
     face(ctx, [au, av], [bu, bv], h, faceColor(colors, nu, nv));
   }
   const [cx, cy] = ctx.proj.pt(u, v, h);
-  const iso = ctx.proj.kind === "isometric";
-  const rx = iso ? r * Math.SQRT2 * ISO_SX : r;
-  const ry = iso ? r * Math.SQRT2 * ISO_SY : r;
-  track(ctx, cx - rx, cy - ry);
-  track(ctx, cx + rx, cy + ry);
-  ctx.out.push(ellipse(cx, cy, rx, ry, colors.top));
+  track(ctx, cx - r, cy - r);
+  track(ctx, cx + r, cy + r);
+  ctx.out.push(ellipse(cx, cy, r, r, colors.top));
 }
 
 /** Juntas de sillería deterministas sobre una cara (líneas cortas). */
@@ -270,20 +268,17 @@ export function renderTower(ctx: RenderCtx, t: TowerVolume): void {
   cylinder(ctx, t.at[0], t.at[1], r, h, colors);
   // coronación: anillo almenado + suelo interior
   const [cx, cy] = ctx.proj.pt(t.at[0], t.at[1], h);
-  const iso = ctx.proj.kind === "isometric";
-  const rx = iso ? r * Math.SQRT2 * ISO_SX : r;
-  const ry = iso ? r * Math.SQRT2 * ISO_SY : r;
-  ctx.out.push(ellipse(cx, cy, rx, ry, "#57524a"));
+  ctx.out.push(ellipse(cx, cy, r, r, "#57524a"));
   if (t.crenellated !== false) {
     ctx.out.push(
-      ellipse(cx, cy, rx * 0.9, ry * 0.9, "none", `stroke="#a5a08f" stroke-width="${fmt(Math.max(1.1, r * 0.28))}" stroke-dasharray="2.1 1.5"`),
+      ellipse(cx, cy, r * 0.9, r * 0.9, "none", `stroke="#a5a08f" stroke-width="${fmt(Math.max(1.1, r * 0.28))}" stroke-dasharray="2.1 1.5"`),
     );
   }
-  ctx.out.push(ellipse(cx, cy, rx * 0.74, ry * 0.74, PALETTE.stoneTop));
-  ctx.out.push(ellipse(cx, cy, rx * 0.62, ry * 0.62, "#7d7869"));
+  ctx.out.push(ellipse(cx, cy, r * 0.74, r * 0.74, PALETTE.stoneTop));
+  ctx.out.push(ellipse(cx, cy, r * 0.62, r * 0.62, "#7d7869"));
   // saeteras en la cara de cámara
-  ctx.out.push(`<rect x="${fmt(cx - rx * 0.42)}" y="${fmt(cy + (iso ? 2 : 3))}" width="0.8" height="2.4" fill="#26221c"/>`);
-  ctx.out.push(`<rect x="${fmt(cx + rx * 0.28)}" y="${fmt(cy + (iso ? 2.8 : 4))}" width="0.8" height="2.4" fill="#26221c"/>`);
+  ctx.out.push(`<rect x="${fmt(cx - r * 0.42)}" y="${fmt(cy + 3)}" width="0.8" height="2.4" fill="#26221c"/>`);
+  ctx.out.push(`<rect x="${fmt(cx + r * 0.28)}" y="${fmt(cy + 4)}" width="0.8" height="2.4" fill="#26221c"/>`);
 }
 
 export function renderGate(ctx: RenderCtx, g: GateVolume): void {
@@ -308,10 +303,7 @@ export function renderGate(ctx: RenderCtx, g: GateVolume): void {
   }
   // arco: hueco oscuro EN el plano de la cara de cámara. Los pies del vano
   // son puntos de MUNDO proyectados — el hueco es un quad alineado con la
-  // cara (en iso la cara es diagonal; un rect vertical de pantalla quedaba
-  // descentrado y flotando) coronado por una semielipse rotada con la misma
-  // pendiente.
-  const iso = ctx.proj.kind === "isometric";
+  // cara, coronado por una semielipse rotada con la misma pendiente.
   const footA: [number, number] = g.orient === "x" ? [au - w / 2, av + depthHalf] : [au + depthHalf, av - w / 2];
   const footB: [number, number] = g.orient === "x" ? [au + w / 2, av + depthHalf] : [au + depthHalf, av + w / 2];
   const archH = h * 0.58;
@@ -322,7 +314,7 @@ export function renderGate(ctx: RenderCtx, g: GateVolume): void {
   const my = (ty1 + ty2) / 2;
   const rxA = Math.hypot(tx2 - tx1, ty2 - ty1) / 2;
   const angle = (Math.atan2(ty2 - ty1, tx2 - tx1) * 180) / Math.PI;
-  const ryA = rxA * (iso ? 0.55 : 0.8);
+  const ryA = rxA * 0.8;
   ctx.out.push(
     `<ellipse cx="${fmt(mx)}" cy="${fmt(my)}" rx="${fmt(rxA)}" ry="${fmt(ryA)}" fill="#211d17" transform="rotate(${fmt(angle)} ${fmt(mx)} ${fmt(my)})"/>`,
   );
@@ -551,17 +543,13 @@ export function renderFountain(ctx: RenderCtx, at: [number, number], r: number):
   shadow(ctx, at[0] + 0.4, at[1] + 0.8, r);
   const colors = wallColors("stone");
   cylinder(ctx, at[0], at[1], r, 1.4, { ...colors, top: "#979181" });
-  groundEllipse(ctx, at[0], at[1], r * 0.78, "#7d7869", "", -1.4 * heightScale(ctx));
-  groundEllipse(ctx, at[0], at[1], r * 0.72, PALETTE.water, "", -1.4 * heightScale(ctx));
+  groundEllipse(ctx, at[0], at[1], r * 0.78, "#7d7869", "", -1.4);
+  groundEllipse(ctx, at[0], at[1], r * 0.72, PALETTE.water, "", -1.4);
   cylinder(ctx, at[0], at[1], r * 0.2, 3.4, { ...colors, top: "#a09a89" });
   const [cx, cy] = ctx.proj.pt(at[0], at[1], 3.4);
   ctx.out.push(circle(cx, cy - 0.9, 0.5, "#bfe0ea"));
   ctx.out.push(circle(cx - 0.8, cy - 0.3, 0.28, "#bfe0ea", 'opacity="0.8"'));
   ctx.out.push(circle(cx + 0.8, cy - 0.35, 0.28, "#bfe0ea", 'opacity="0.8"'));
-}
-
-function heightScale(ctx: RenderCtx): number {
-  return ctx.proj.kind === "isometric" ? 0.375 : 1;
 }
 
 export function renderProp(ctx: RenderCtx, p: PropVolume): void {
@@ -578,7 +566,7 @@ export function renderProp(ctx: RenderCtx, p: PropVolume): void {
     shadow(ctx, u + 0.3, v + 0.3, r + 0.4);
     cylinder(ctx, u, v, r, h, colors);
     const [cx, cy] = ctx.proj.pt(u, v, h);
-    ctx.out.push(ellipse(cx, cy, ctx.proj.kind === "isometric" ? r * Math.SQRT2 * ISO_SX : r, ctx.proj.kind === "isometric" ? r * Math.SQRT2 * ISO_SY : r, "none", `stroke="${colors.joint}" stroke-width="0.25"`));
+    ctx.out.push(ellipse(cx, cy, r, r, "none", `stroke="${colors.joint}" stroke-width="0.25"`));
     return;
   }
   renderBoxPrism(ctx, [u - 1.4, v - 1.4, 2.8, 2.8], h, colors, { roofless: true });

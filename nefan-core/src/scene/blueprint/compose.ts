@@ -3,20 +3,20 @@
  *  Entrada: el plan del tile que declara el motor narrativo —
  *  `map_ground` (arte plano del suelo, celdas de mundo, capas
  *  ground/water/deck, YA sanitizado) + `volumes` (huellas con altura). Salida:
- *  el blueprint SVG en la perspectiva de la sesión, listo para rasterizar y
+ *  el blueprint SVG en la proyección oblicua única, listo para rasterizar y
  *  repintar por el modelo de imagen, más la lista de elementos con su bbox
  *  proyectado y baseline — la guía exacta del clasificador de visión y de los
  *  occluders (sustituye al scraping con getBBox del map_svg antiguo).
  *
- *  DETERMINISMO ES CONTRATO: mismo plan + misma perspectiva + mismo seedKey
- *  ⇒ bytes idénticos. El hash del blueprint gobierna la caché de imagen de
- *  ai_server (el resume debe hacer cache-hit). Sin Date.now/Math.random; el
- *  detalle procedural usa SeededRng por volumen. Subir COMPOSER_VERSION al
- *  cambiar CUALQUIER byte de salida — viaja en la clave de caché. */
+ *  DETERMINISMO ES CONTRATO: mismo plan + mismo seedKey ⇒ bytes idénticos.
+ *  El hash del blueprint gobierna la caché de imagen de ai_server (el resume
+ *  debe hacer cache-hit). Sin Date.now/Math.random; el detalle procedural usa
+ *  SeededRng por volumen. Subir COMPOSER_VERSION al cambiar CUALQUIER byte de
+ *  salida — viaja en la clave de caché. */
 
 import { BIOME_COLORS, darken, lighten } from "./palette.js";
-import type { Perspective, Projection } from "./projection.js";
-import { projectionFor } from "./projection.js";
+import type { Projection } from "./projection.js";
+import { PROJECTION } from "./projection.js";
 import { renderVolume, volumeFootprint, type RenderCtx } from "./render.js";
 import { circle, ellipse, fmt, innerSvg, seededRng, uniform } from "./svg.js";
 import { TILE_CELLS } from "../tile.js";
@@ -38,8 +38,11 @@ import type { Volume } from "./volumes.js";
  *  v7: todo tramo que emite occluder va marcado data-part="tall" — el cliente
  *  lo excluye de la capa base (como la copa) y lo pinta solo vía su cutout en
  *  el depth-sort, para poder fundirlo por proximidad del jugador revelando el
- *  suelo real que hay debajo. */
-export const COMPOSER_VERSION = 7;
+ *  suelo real que hay debajo.
+ *  v8: proyección OBLICUA única (sustituye a topdown e isometric): suelo
+ *  identidad + cizalla KX=−0.35 en la altura — los volúmenes muestran cara
+ *  sur iluminada y cara este en sombra, viewBox con margen oeste. */
+export const COMPOSER_VERSION = 8;
 
 /** Opacidad de la copa del árbol: cubre sin ocultar del todo lo que hay
  *  debajo (las copas tapan mucha superficie de tile). */
@@ -104,7 +107,6 @@ export interface ComposedBlueprint {
   elements: ComposedElement[];
   /** Tramos recortables de los volúmenes `tall` (depth-sort sin imagen IA). */
   occluders: ComposedOccluder[];
-  perspective: Perspective;
   composer_version: number;
 }
 
@@ -194,10 +196,11 @@ function groundLayer(plan: BlueprintPlan, proj: Projection, seedKey: string): st
   );
 }
 
-/** Compone el blueprint del tile en la perspectiva dada. `seedKey` (tileKey)
- *  siembra el detalle procedural — estable por tile entre sesiones. */
-export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, seedKey: string): ComposedBlueprint {
-  const proj = projectionFor(perspective);
+/** Compone el blueprint del tile en la proyección oblicua. `seedKey`
+ *  (tileKey) siembra el detalle procedural — estable por tile entre
+ *  sesiones. */
+export function composeBlueprint(plan: BlueprintPlan, seedKey: string): ComposedBlueprint {
+  const proj = PROJECTION;
   const vb = proj.viewBox;
   const out: string[] = [];
   out.push(groundLayer(plan, proj, seedKey));
@@ -350,7 +353,7 @@ export function composeBlueprint(plan: BlueprintPlan, perspective: Perspective, 
     `<svg viewBox="${fmt(vb.minX)} ${fmt(vb.minY)} ${fmt(vb.width)} ${fmt(vb.height)}" xmlns="http://www.w3.org/2000/svg">` +
     out.join("") +
     "</svg>";
-  return { svg, viewBox: vb, elements, occluders, perspective, composer_version: COMPOSER_VERSION };
+  return { svg, viewBox: vb, elements, occluders, composer_version: COMPOSER_VERSION };
 }
 
 /** Trocea una polilínea en tramos de 2 puntos de longitud ≤ maxLen (los

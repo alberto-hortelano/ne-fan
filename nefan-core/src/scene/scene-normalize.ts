@@ -286,6 +286,11 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       ? raw.map_ground
       : undefined,
     volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
+    // Zona de estilo etiquetada por el motor narrativo y bioma del tile: los
+    // combina el cliente (styleCategoryForTile) para elegir la referencia del
+    // style pack por tile. Passthrough sin validar — ai_server sanea el enum.
+    style_tag: typeof raw.style_tag === "string" ? raw.style_tag : undefined,
+    biome: typeof raw.biome === "string" ? raw.biome : undefined,
     objects,
     npcs,
     ambient_event: raw.ambient_event,

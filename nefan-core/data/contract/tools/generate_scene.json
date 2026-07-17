@@ -224,7 +224,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them to the session perspective and derives collision from the footprints. See the MAP PLAN section of the system prompt.",
+        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt.",
         "items": {
           "type": "object"
         }

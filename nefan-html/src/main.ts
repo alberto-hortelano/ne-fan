@@ -17,7 +17,7 @@ import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/sce
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import { CanvasRenderer, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
-import { viewProjectionFor } from "./renderer/projection.js";
+import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
@@ -181,21 +181,11 @@ function applySessionStyle(styleId: string): void {
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
 
-/** Perspectiva 2D de la sesión activa ("topdown" | "isometric"), congelada
- *  en el save. Saves previos sin el campo ⇒ "topdown". La consumen el
- *  compositor de blueprints y (en PRs siguientes) el renderer/proyección. */
-let sessionPerspective: "topdown" | "isometric" = "topdown";
-/** Proyección de vista de la sesión — también snapea el giro del jugador a
- *  los 8 ejes de animación (ver refreshPlayerForward). */
-let sessionProjection = viewProjectionFor(sessionPerspective);
-function applySessionPerspective(perspective: string): void {
-  sessionPerspective = perspective === "isometric" ? "isometric" : "topdown";
-  sessionProjection = viewProjectionFor(sessionPerspective);
-  sceneImageController.setPerspective(sessionPerspective);
-  renderer.setProjection(sessionPerspective);
-  refreshPlayerForward(); // los ejes de animación dependen de la perspectiva
-  if (perspective) log(`Perspectiva: ${sessionPerspective}`);
-}
+/** Proyección de vista única del mundo 2D (formato oblicuo). Saves con el
+ *  antiguo `world.perspective` lo conservan en el JSON pero nadie lo lee.
+ *  También snapea el giro del jugador a los 8 ejes de animación (ver
+ *  refreshPlayerForward). */
+const sessionProjection = VIEW_PROJECTION;
 
 /** Modo de render de la sesión activa, congelado en el save:
  *  - "image": el pipeline Auto-img repinta cada blueprint con el modelo de
@@ -290,7 +280,7 @@ let currentZoom = zoomTarget;
 renderer.setScale(currentZoom);
 
 // --- Sistema de combate de la sesión (catálogo → HUD + teclas) ---
-// Espejo de applySessionPerspective: el id viene congelado en el save
+// Espejo de applySessionRenderMode: el id viene congelado en el save
 // (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
 // y el mapeo 1..N se regeneran desde el catálogo que declara el sistema.
 let attackCatalog: readonly AttackSpec[] = [];
@@ -658,7 +648,6 @@ function composeTilePlan(
   if (!mapGround && volumes.length === 0) return null;
   const composed = composeBlueprint(
     { map_ground: mapGround, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
-    sessionPerspective,
     key,
   );
   return {
@@ -1005,7 +994,6 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       forward: { ...playerForward },
       input: { ...input.state },
       dialogueActive: input.dialogueActive,
-      perspective: sessionPerspective,
       combatSystem: sessionCombatSystemId,
       attackCatalog: attackCatalog.map((a) => a.id),
       blocked: {
@@ -1542,14 +1530,6 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-// Override de bench: `?perspective=isometric` fuerza la proyección al cargar
-// (los fixtures locales del dropdown no tienen sesión y sin esto siempre se
-// verían en topdown). La perspectiva de una sesión real la pisa al iniciar.
-const perspectiveOverride = new URLSearchParams(location.search).get("perspective");
-if (perspectiveOverride === "isometric" || perspectiveOverride === "topdown") {
-  applySessionPerspective(perspectiveOverride);
-}
-
 // Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
 // bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.
 const bridgeOverride = new URLSearchParams(location.search).get("bridge");
@@ -1890,12 +1870,10 @@ async function runTitleFlow(): Promise<void> {
         action.gameId,
         action.appearance,
         action.styleId || undefined,
-        action.perspective,
         action.renderMode,
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionPerspective(res.state.world?.perspective ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       historyBrowser.setSession(res.sessionId);
@@ -1905,7 +1883,6 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionPerspective(res.state.world?.perspective ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       historyBrowser.setSession(res.state.session_id);

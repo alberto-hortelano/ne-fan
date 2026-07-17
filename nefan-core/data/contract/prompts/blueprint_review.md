@@ -20,8 +20,8 @@ IS the composer's projection of it), also look for its typical authoring bugs:
   scenery building left roofless;
 - an element that should reach the tile border (crossing continuation) but
   stops short, or one touching the border that shouldn't.
-The projection (top-down faces / isometric) is the composer's job: do NOT
-flag perspective or shading — fix WHAT exists and WHERE, in flat cells.
+The projection (oblique faces) is the composer's job: do NOT flag
+perspective or shading — fix WHAT exists and WHERE, in flat cells.
 
 Respond via narrative_respond with EXACTLY this JSON:
 {

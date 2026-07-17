@@ -94,7 +94,6 @@ export class SceneImageController {
   /** Estilo visual de la sesión activa (world.style_id, congelado en el
    *  save). "" = sin sesión aún ⇒ el servidor usa su referencia global. */
   private styleId = "";
-  private perspective: "topdown" | "isometric" = "topdown";
 
   constructor(
     private renderer: CanvasRenderer,
@@ -103,12 +102,6 @@ export class SceneImageController {
 
   setStyle(styleId: string): void {
     this.styleId = styleId;
-  }
-
-  /** Perspectiva congelada de la sesión ("topdown" | "isometric"): viaja al
-   *  prompt de imagen y a la clave de caché. */
-  setPerspective(perspective: string): void {
-    this.perspective = perspective === "isometric" ? "isometric" : "topdown";
   }
 
   isBusy(): boolean {
@@ -336,9 +329,6 @@ export class SceneImageController {
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
           style_id: this.styleId,
-          // Perspectiva congelada de la sesión: cambia la leyenda del prompt
-          // de imagen (caras sur / iso 2:1) y la clave de caché.
-          perspective: this.perspective,
           // Categoría de referencia que etiquetó el motor narrativo para este
           // tile; el servidor tiene fallback si falta.
           style_tag: (scene as { style_tag?: string }).style_tag ?? "",

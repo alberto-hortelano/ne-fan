@@ -1,8 +1,8 @@
 /** Tests del compositor de blueprints: determinismo byte a byte (el hash del
- *  blueprint gobierna la caché de imagen), estructura del SVG por
- *  perspectiva, elementos con bbox/baseline coherentes y validación de
- *  volúmenes. El fixture replica el pueblo de las demos (taberna cutaway,
- *  plaza con fuente, casa con tejado, muralla con torres y puerta). */
+ *  blueprint gobierna la caché de imagen), estructura del SVG en la oblicua
+ *  única, elementos con bbox/baseline coherentes y validación de volúmenes.
+ *  El fixture replica el pueblo de las demos (taberna cutaway, plaza con
+ *  fuente, casa con tejado, muralla con torres y puerta). */
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -11,9 +11,10 @@ import {
   COMPOSER_VERSION,
   composeBlueprint,
   deriveVolumesFromSchema,
-  isPerspective,
+  OBLIQUE_KX,
+  OBLIQUE_KY,
   parseVolumes,
-  projectionFor,
+  PROJECTION,
   TREE_MAX_S,
 } from "../src/scene/blueprint/index.js";
 import type { BlueprintPlan, Volume } from "../src/scene/blueprint/index.js";
@@ -94,185 +95,176 @@ describe("blueprint/volumes", () => {
 });
 
 describe("blueprint/projection", () => {
-  it("topdown: suelo identidad, altura desplaza -y", () => {
-    const p = projectionFor("topdown");
-    assert.deepEqual(p.pt(10, 20), [10, 20]);
-    assert.deepEqual(p.pt(10, 20, 5), [10, 15]);
-    assert.deepEqual(p.ground(10, 20), [10, 20]);
+  it("oblicua: suelo identidad, la altura ciza (-x) y eleva (-y)", () => {
+    assert.deepEqual(PROJECTION.pt(10, 20), [10, 20]);
+    assert.deepEqual(PROJECTION.pt(10, 20, 5), [10 + 5 * OBLIQUE_KX, 20 - 5 * OBLIQUE_KY]);
+    assert.deepEqual(PROJECTION.ground(10, 20), [10, 20]);
+    assert.ok(OBLIQUE_KX < 0, "KX negativo: tapas al oeste, cara este visible");
   });
 
-  it("isometric: 2:1 exacta e invertible en el suelo", () => {
-    const p = projectionFor("isometric");
-    const [x, y] = p.pt(30, 50);
-    const [u, v] = p.ground(x, y);
-    assert.ok(Math.abs(u - 30) < 1e-9 && Math.abs(v - 50) < 1e-9);
-    // 2:1: una celda a lo largo de u se mueve el doble en x que en y
-    const [x0, y0] = p.pt(0, 0);
-    const [x1, y1] = p.pt(1, 0);
-    assert.ok(Math.abs((x1 - x0) / (y1 - y0) - 2) < 1e-9);
-  });
-
-  it("isPerspective solo acepta los dos valores", () => {
-    assert.equal(isPerspective("topdown"), true);
-    assert.equal(isPerspective("isometric"), true);
-    assert.equal(isPerspective("flat"), false);
-    assert.equal(isPerspective(undefined), false);
+  it("depth: v manda; u solo desempata (nunca pisa una diferencia real de v)", () => {
+    // Misma v: el volumen más al este (u mayor) está más cerca de cámara.
+    assert.ok(PROJECTION.depth(80, 40) > PROJECTION.depth(10, 40));
+    // El desempate está acotado: u=128 no alcanza a v+1.
+    assert.ok(PROJECTION.depth(128, 40) < PROJECTION.depth(0, 41));
   });
 });
 
 describe("blueprint/compose", () => {
   it("determinista byte a byte", () => {
-    for (const perspective of ["topdown", "isometric"] as const) {
-      const a = composeBlueprint(PLAN, perspective, "tile_0_0");
-      const b = composeBlueprint(PLAN, perspective, "tile_0_0");
-      assert.equal(a.svg, b.svg, perspective);
-      assert.deepEqual(a.elements, b.elements);
-    }
+    const a = composeBlueprint(PLAN, "tile_0_0");
+    const b = composeBlueprint(PLAN, "tile_0_0");
+    assert.equal(a.svg, b.svg);
+    assert.deepEqual(a.elements, b.elements);
+    assert.equal(a.composer_version, COMPOSER_VERSION);
+    assert.equal(COMPOSER_VERSION, 8);
   });
 
-  it("las dos perspectivas producen SVG distinto con los mismos elementos", () => {
-    const td = composeBlueprint(PLAN, "topdown", "tile_0_0");
-    const iso = composeBlueprint(PLAN, "isometric", "tile_0_0");
-    assert.notEqual(td.svg, iso.svg);
-    assert.deepEqual(
-      td.elements.map((e) => e.id).sort(),
-      iso.elements.map((e) => e.id).sort(),
+  it("viewBox con margen superior (voladizo norte) e izquierdo (cizalla)", () => {
+    const { viewBox } = composeBlueprint(PLAN, "tile_0_0");
+    assert.deepEqual(viewBox, { minX: -12, minY: -32, width: 140, height: 160 });
+  });
+
+  it("incrusta el arte del suelo con clip y sin transform (suelo identidad)", () => {
+    const { svg } = composeBlueprint(PLAN, "tile_0_0");
+    assert.ok(svg.includes('clip-path="url(#tileclip)"'));
+    assert.ok(!svg.includes("matrix("));
+  });
+
+  it("la cizalla materializa la cara este: el bbox rebasa la huella al oeste", () => {
+    const { elements } = composeBlueprint(PLAN, "tile_0_0");
+    const byId = new Map(elements.map((e) => [e.id, e]));
+    // torre_o: at [46,68] r=8 h=11 → la tapa se desplaza 11·KX ≈ −3.85.
+    const tower = byId.get("torre_o")!;
+    const towerMinU = 46 - 8;
+    assert.ok(
+      tower.bbox[0] < towerMinU - 1,
+      `tapa sin cizalla: bbox minX ${tower.bbox[0]} vs huella ${towerMinU}`,
     );
-    assert.equal(td.composer_version, COMPOSER_VERSION);
-  });
-
-  it("viewBox con margen superior (voladizo de alturas)", () => {
-    const td = composeBlueprint(PLAN, "topdown", "tile_0_0");
-    assert.ok(td.viewBox.minY < 0);
-    assert.equal(td.viewBox.width, 128);
-    const iso = composeBlueprint(PLAN, "isometric", "tile_0_0");
-    assert.ok(iso.viewBox.minY < 0);
-    assert.equal(iso.viewBox.width, 128);
-    assert.ok(iso.viewBox.height < td.viewBox.height); // rombo 2:1 achatado
-  });
-
-  it("incrusta el arte del suelo con clip y transform en iso", () => {
-    const td = composeBlueprint(PLAN, "topdown", "tile_0_0");
-    assert.ok(td.svg.includes('clip-path="url(#tileclip)"'));
-    assert.ok(!td.svg.includes("matrix("));
-    const iso = composeBlueprint(PLAN, "isometric", "tile_0_0");
-    assert.ok(iso.svg.includes("matrix(0.5 0.25 -0.5 0.25 64 0)"));
+    // casa_grande (wall_h 5.5 + tejado): también rebasa su rect [78,...].
+    const house = byId.get("casa_grande")!;
+    assert.ok(house.bbox[0] < 78, `casa sin voladizo oeste (${house.bbox[0]})`);
   });
 
   it("elements: flags, bbox dentro del canvas y baseline coherente", () => {
-    for (const perspective of ["topdown", "isometric"] as const) {
-      const { elements, viewBox } = composeBlueprint(PLAN, perspective, "tile_0_0");
-      assert.equal(elements.length, VILLAGE.length);
-      const byId = new Map(elements.map((e) => [e.id, e]));
-      assert.deepEqual(
-        { solid: byId.get("taberna")!.solid, tall: byId.get("taberna")!.tall },
-        { solid: true, tall: true },
-      );
-      assert.deepEqual(
-        { solid: byId.get("mata_1")!.solid, tall: byId.get("mata_1")!.tall },
-        { solid: false, tall: false },
-      );
-      assert.deepEqual(
-        { solid: byId.get("fuente")!.solid, tall: byId.get("fuente")!.tall },
-        { solid: true, tall: false },
-      );
-      for (const e of elements) {
-        const [x, y, w, h] = e.bbox;
-        assert.ok(w > 0 && h > 0, `${perspective}/${e.id}: bbox vacío`);
-        assert.ok(x >= viewBox.minX - 6 && y >= viewBox.minY - 6, `${perspective}/${e.id}: bbox fuera (min)`);
-        assert.ok(x + w <= viewBox.minX + viewBox.width + 6, `${perspective}/${e.id}: bbox fuera (x)`);
-        // la baseline (contacto con el suelo) cae dentro del bbox vertical
-        assert.ok(e.baseline_y >= y - 0.5 && e.baseline_y <= y + h + 2, `${perspective}/${e.id}: baseline fuera del bbox`);
-      }
-      // el árbol es más ancho que su tronco: la copa está en el bbox
-      const tree = byId.get("roble_1")!;
-      assert.ok(tree.bbox[2] > 8, `${perspective}: copa no reflejada en bbox`);
+    const { elements, viewBox } = composeBlueprint(PLAN, "tile_0_0");
+    assert.equal(elements.length, VILLAGE.length);
+    const byId = new Map(elements.map((e) => [e.id, e]));
+    assert.deepEqual(
+      { solid: byId.get("taberna")!.solid, tall: byId.get("taberna")!.tall },
+      { solid: true, tall: true },
+    );
+    assert.deepEqual(
+      { solid: byId.get("mata_1")!.solid, tall: byId.get("mata_1")!.tall },
+      { solid: false, tall: false },
+    );
+    assert.deepEqual(
+      { solid: byId.get("fuente")!.solid, tall: byId.get("fuente")!.tall },
+      { solid: true, tall: false },
+    );
+    for (const e of elements) {
+      const [x, y, w, h] = e.bbox;
+      assert.ok(w > 0 && h > 0, `${e.id}: bbox vacío`);
+      assert.ok(x >= viewBox.minX - 6 && y >= viewBox.minY - 6, `${e.id}: bbox fuera (min)`);
+      assert.ok(x + w <= viewBox.minX + viewBox.width + 6, `${e.id}: bbox fuera (x)`);
+      // la baseline (contacto con el suelo) cae dentro del bbox vertical
+      assert.ok(e.baseline_y >= y - 0.5 && e.baseline_y <= y + h + 2, `${e.id}: baseline fuera del bbox`);
     }
+    // el árbol es más ancho que su tronco: la copa está en el bbox
+    const tree = byId.get("roble_1")!;
+    assert.ok(tree.bbox[2] > 8, "copa no reflejada en bbox");
   });
 
-  it("orden del pintor: en topdown la muralla (v=68) se pinta después que la fuente (v=36)", () => {
-    const { svg } = composeBlueprint(PLAN, "topdown", "tile_0_0");
+  it("orden del pintor: la muralla (v=68) se pinta después que la fuente (v=36)", () => {
+    const { svg } = composeBlueprint(PLAN, "tile_0_0");
     const fountain = svg.indexOf('data-vid="fuente"');
     const wall = svg.indexOf('data-vid="muralla_sur"');
     assert.ok(fountain >= 0 && wall >= 0);
     assert.ok(fountain < wall);
   });
 
+  it("orden del pintor: a misma v, el volumen más al este se pinta después", () => {
+    // La cizalla solapa vecinos en u: el desempate depth = v + u/512 debe
+    // pintar el del este (más cerca de cámara) encima del del oeste.
+    const pair: Volume[] = [
+      { id: "oeste", label: "casa oeste", type: "building", rect: [10, 40, 12, 10] },
+      { id: "este", label: "casa este", type: "building", rect: [60, 40, 12, 10] },
+    ];
+    const { svg } = composeBlueprint({ volumes: pair, biome: "grass" }, "t");
+    assert.ok(svg.indexOf('data-vid="oeste"') < svg.indexOf('data-vid="este"'));
+  });
+
   it("orden del pintor: las torres se pintan después que los tramos de muralla que pisan", () => {
     // La muralla se trocea en segmentos ordenados localmente; una torre
-    // asentada sobre ella debe quedar ENCIMA de su tramo anfitrión en ambas
-    // perspectivas (sesgo de profundidad de torre/puerta).
-    for (const perspective of ["topdown", "isometric"] as const) {
-      const { svg } = composeBlueprint(PLAN, perspective, "tile_0_0");
-      const firstWallChunk = svg.indexOf('data-vid="muralla_sur"');
-      const tower = svg.indexOf('data-vid="torre_o"');
-      const gate = svg.indexOf('data-vid="puerta_sur"');
-      assert.ok(firstWallChunk >= 0 && tower >= 0 && gate >= 0);
-      assert.ok(tower > firstWallChunk, `${perspective}: torre antes que la muralla`);
-      assert.ok(gate > firstWallChunk, `${perspective}: puerta antes que la muralla`);
-    }
+    // asentada sobre ella debe quedar ENCIMA de su tramo anfitrión (sesgo
+    // de profundidad de torre/puerta).
+    const { svg } = composeBlueprint(PLAN, "tile_0_0");
+    const firstWallChunk = svg.indexOf('data-vid="muralla_sur"');
+    const tower = svg.indexOf('data-vid="torre_o"');
+    const gate = svg.indexOf('data-vid="puerta_sur"');
+    assert.ok(firstWallChunk >= 0 && tower >= 0 && gate >= 0);
+    assert.ok(tower > firstWallChunk, "torre antes que la muralla");
+    assert.ok(gate > firstWallChunk, "puerta antes que la muralla");
   });
 
   it("seedKey distinto cambia solo el detalle procedural, no la estructura", () => {
-    const a = composeBlueprint(PLAN, "topdown", "tile_0_0");
-    const b = composeBlueprint(PLAN, "topdown", "tile_1_0");
+    const a = composeBlueprint(PLAN, "tile_0_0");
+    const b = composeBlueprint(PLAN, "tile_1_0");
     assert.notEqual(a.svg, b.svg); // juntas/scatter distintos
     assert.deepEqual(a.elements, b.elements); // misma geometría declarada
   });
 
   it("sin map_ground usa el relleno del bioma", () => {
-    const { svg } = composeBlueprint({ volumes: [], biome: "sand" }, "topdown", "t");
+    const { svg } = composeBlueprint({ volumes: [], biome: "sand" }, "t");
     assert.ok(svg.includes('fill="#cbb87e"'));
   });
 
   it("occluders: un tramo por entry tall, SVG standalone, deterministas", () => {
-    for (const perspective of ["topdown", "isometric"] as const) {
-      const a = composeBlueprint(PLAN, perspective, "tile_0_0");
-      const b = composeBlueprint(PLAN, perspective, "tile_0_0");
-      assert.deepEqual(a.occluders, b.occluders, perspective);
-      const vids = new Set(a.occluders.map((o) => o.vid));
-      // Todos los volúmenes tall tienen occluder; los no-tall no.
-      for (const e of a.elements) {
-        assert.equal(vids.has(e.id), e.tall, `${perspective}/${e.id}`);
-      }
-      // La muralla (128 celdas) se trocea: varios occluders con baselines locales.
-      const wallOccs = a.occluders.filter((o) => o.vid === "muralla_sur");
-      assert.ok(wallOccs.length > 2, `${perspective}: muralla sin trocear (${wallOccs.length})`);
-      // El cutaway emite cada muro trasero y el frontal por separado (el
-      // suelo NO ocluye — taparía los muebles interiores).
-      const tabernaOccs = a.occluders.filter((o) => o.vid === "taberna");
-      assert.deepEqual(
-        tabernaOccs.map((o) => o.id).sort(),
-        ["taberna:back_n", "taberna:back_w", "taberna:front"],
-        perspective,
-      );
-      // Huellas FINAS de los tramos del cutaway (rect [8,12,38,34]):
-      const backN = tabernaOccs.find((o) => o.id === "taberna:back_n")!;
-      const backW = tabernaOccs.find((o) => o.id === "taberna:back_w")!;
-      const front = tabernaOccs.find((o) => o.id === "taberna:front")!;
-      assert.deepEqual(backN.footprint_cells, [8, 12, 46, 13.2], `${perspective}: huella back_n`);
-      assert.deepEqual(backW.footprint_cells, [8, 12, 9.2, 46], `${perspective}: huella back_w`);
-      assert.deepEqual(front.footprint_cells, [8, 44.8, 46, 46], `${perspective}: huella front`);
-      // Árbol: dos tramos — tronco (occluder normal, huella fina) y copa
-      // AÉREA (overhead: se pinta sobre las entidades siempre).
-      const treeOccs = a.occluders.filter((o) => o.vid === "roble_1");
-      assert.deepEqual(treeOccs.map((o) => o.id).sort(), ["roble_1:canopy", "roble_1:trunk"], perspective);
-      const trunk = treeOccs.find((o) => o.id === "roble_1:trunk")!;
-      const canopy = treeOccs.find((o) => o.id === "roble_1:canopy")!;
-      assert.equal(trunk.overhead, undefined, `${perspective}: el tronco no es aéreo`);
-      assert.equal(canopy.overhead, true, `${perspective}: la copa es aérea`);
-      const [tu0, tv0, tu1, tv1] = trunk.footprint_cells;
-      assert.ok(tu1 - tu0 < 3 && tv1 - tv0 < 3, `${perspective}: huella del árbol no es el tronco`);
-      for (const o of a.occluders) {
-        const [, y, w, h] = o.bbox;
-        assert.ok(w > 0 && h > 0, `${perspective}/${o.id}: bbox vacío`);
-        assert.ok(o.svg.startsWith("<svg viewBox=") && o.svg.endsWith("</svg>"), `${perspective}/${o.id}: svg malformado`);
-        assert.ok(o.svg.includes(`data-vid="${o.vid}"`));
-        const [fu0, fv0, fu1, fv1] = o.footprint_cells;
-        assert.ok(fu1 > fu0 && fv1 > fv0, `${perspective}/${o.id}: huella vacía`);
-        // baseline dentro del rango vertical del bbox (con margen del pad)
-        assert.ok(o.baseline_y >= y - 0.5 && o.baseline_y <= y + h + 2, `${perspective}/${o.id}: baseline fuera`);
-      }
+    const a = composeBlueprint(PLAN, "tile_0_0");
+    const b = composeBlueprint(PLAN, "tile_0_0");
+    assert.deepEqual(a.occluders, b.occluders);
+    const vids = new Set(a.occluders.map((o) => o.vid));
+    // Todos los volúmenes tall tienen occluder; los no-tall no.
+    for (const e of a.elements) {
+      assert.equal(vids.has(e.id), e.tall, e.id);
+    }
+    // La muralla (128 celdas) se trocea: varios occluders con baselines locales.
+    const wallOccs = a.occluders.filter((o) => o.vid === "muralla_sur");
+    assert.ok(wallOccs.length > 2, `muralla sin trocear (${wallOccs.length})`);
+    // El cutaway emite cada muro trasero y el frontal por separado (el
+    // suelo NO ocluye — taparía los muebles interiores).
+    const tabernaOccs = a.occluders.filter((o) => o.vid === "taberna");
+    assert.deepEqual(
+      tabernaOccs.map((o) => o.id).sort(),
+      ["taberna:back_n", "taberna:back_w", "taberna:front"],
+    );
+    // Huellas FINAS de los tramos del cutaway (rect [8,12,38,34]) — son de
+    // MUNDO: la cizalla no las toca.
+    const backN = tabernaOccs.find((o) => o.id === "taberna:back_n")!;
+    const backW = tabernaOccs.find((o) => o.id === "taberna:back_w")!;
+    const front = tabernaOccs.find((o) => o.id === "taberna:front")!;
+    assert.deepEqual(backN.footprint_cells, [8, 12, 46, 13.2], "huella back_n");
+    assert.deepEqual(backW.footprint_cells, [8, 12, 9.2, 46], "huella back_w");
+    assert.deepEqual(front.footprint_cells, [8, 44.8, 46, 46], "huella front");
+    // Árbol: dos tramos — tronco (occluder normal, huella fina) y copa
+    // AÉREA (overhead: se pinta sobre las entidades siempre).
+    const treeOccs = a.occluders.filter((o) => o.vid === "roble_1");
+    assert.deepEqual(treeOccs.map((o) => o.id).sort(), ["roble_1:canopy", "roble_1:trunk"]);
+    const trunk = treeOccs.find((o) => o.id === "roble_1:trunk")!;
+    const canopy = treeOccs.find((o) => o.id === "roble_1:canopy")!;
+    assert.equal(trunk.overhead, undefined, "el tronco no es aéreo");
+    assert.equal(canopy.overhead, true, "la copa es aérea");
+    const [tu0, tv0, tu1, tv1] = trunk.footprint_cells;
+    assert.ok(tu1 - tu0 < 3 && tv1 - tv0 < 3, "huella del árbol no es el tronco");
+    for (const o of a.occluders) {
+      const [, y, w, h] = o.bbox;
+      assert.ok(w > 0 && h > 0, `${o.id}: bbox vacío`);
+      assert.ok(o.svg.startsWith("<svg viewBox=") && o.svg.endsWith("</svg>"), `${o.id}: svg malformado`);
+      assert.ok(o.svg.includes(`data-vid="${o.vid}"`));
+      const [fu0, fv0, fu1, fv1] = o.footprint_cells;
+      assert.ok(fu1 > fu0 && fv1 > fv0, `${o.id}: huella vacía`);
+      // baseline dentro del rango vertical del bbox (con margen del pad)
+      assert.ok(o.baseline_y >= y - 0.5 && o.baseline_y <= y + h + 2, `${o.id}: baseline fuera`);
     }
   });
 });
@@ -358,13 +350,11 @@ describe("blueprint/derive", () => {
     // items y npcs NO derivan volumen
     assert.equal(byId.has("derived_ent_espada"), false);
     assert.equal(byId.has("derived_ent_aldeano"), false);
-    // el derivado valida y compone en ambas perspectivas
+    // el derivado valida y compone
     const parsed = parseVolumes(derived);
     assert.equal(parsed.ok, true, parsed.ok ? "" : parsed.error);
-    for (const perspective of ["topdown", "isometric"] as const) {
-      const c = composeBlueprint({ volumes: derived, biome: "grass" }, perspective, "tile_0_0");
-      assert.ok(c.svg.includes('data-vid="derived_ent_casa_1"'), perspective);
-    }
+    const c = composeBlueprint({ volumes: derived, biome: "grass" }, "tile_0_0");
+    assert.ok(c.svg.includes('data-vid="derived_ent_casa_1"'));
   });
 
   it("las entities del scatter de la expansión NO derivan y el resto se capa", () => {
@@ -417,7 +407,7 @@ describe("blueprint/derive", () => {
     );
     const parsed = parseVolumes(derived);
     assert.equal(parsed.ok, true, parsed.ok ? "" : parsed.error);
-    const composed = composeBlueprint({ volumes: derived, biome: "forest_floor" }, "isometric", "tile_1_1");
+    const composed = composeBlueprint({ volumes: derived, biome: "forest_floor" }, "tile_1_1");
     assert.ok(composed.svg.length > 500);
   });
 });
