@@ -329,6 +329,10 @@ export class SceneImageController {
           prompt,
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
+          // Si el plano no tiene agua, el servidor omite las cláusulas de agua
+          // de la instrucción — mencionarla en un plano seco ceba ríos
+          // alucinados (bench 002_repaint_fidelity).
+          has_water: groundHasWater((scene as { map_ground?: string }).map_ground),
           style_id: this.styleId,
           // Zona de estilo del tile: la etiqueta del motor narrativo afinada
           // por el bioma real del tile (un tile de pantano al borde de un
@@ -620,6 +624,16 @@ interface ExpectedInfo {
 
 /** Convierte los elementos del blueprint compuesto a la guía del clasificador
  *  (bbox en píxeles de la imagen instalada). Solo solid/tall interesan. */
+/** true si la capa `g#water` del map_ground tiene contenido real. Sin plan
+ *  (escenas legacy/boxes) devuelve true: no sabemos, y es más seguro dejar la
+ *  instrucción de agua que suprimirla en un plano que sí la tenga. */
+function groundHasWater(mapGround: string | undefined): boolean {
+  if (typeof mapGround !== "string") return true;
+  const m = mapGround.match(/<g id="water"[^>]*?(\/>|>([\s\S]*?)<\/g>)/);
+  if (!m) return false;
+  return Boolean(m[2] && m[2].includes("<"));
+}
+
 function expectedFromComposed(composed: ComposedTilePlan, imgW: number, imgH: number): ExpectedInfo[] {
   const vb = composed.view_box;
   const sx = imgW / vb.width;

@@ -242,6 +242,13 @@ skinning_lab/             Bench reusable de skinning AI sobre sprites Mixamo
   presets/*.json           Configs reutilizables (anim, frames, variants, models)
   runs/                    (gitignored) cada run = subdir self-contained con index.html
   README.md                Workflow + cómo añadir un proveedor nuevo
+
+style_lab/                Bench de fidelidad de layout del repintado de escenas
+  fidelity.py              CLI: raster del blueprint, generate (fal), segment (SAM2), score, report
+  fidelity_score.py        Métrica pura (port de matchExpected) + overlays — testeable sin red
+  dump_blueprint.ts        Dump SVG+elements del compositor desde cualquier árbol
+  runs/                    (gitignored) cada run = manifest + imágenes + index.html navegable
+  README.md                Hallazgos del run 002: oblicua + prestretch-a-cuadrado gana
 ```
 
 ## skinning_lab — pruebas de IA sobre sprites

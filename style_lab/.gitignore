@@ -1,0 +1,3 @@
+# Los runs son imágenes generadas, demasiado pesadas para commitear.
+runs/*
+!runs/.gitkeep
