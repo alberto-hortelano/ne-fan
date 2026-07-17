@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "interior".
+       Cutaway SIEMPRE integrado en su entorno: el edificio sin techo, pero el
+       mundo sigue alrededor (calle, vecino, árboles) — NUNCA una planta
+       flotando en un vacío. Cenital con caras. -->
+  <rect width="1024" height="1024" fill="#6b8f3f"/>
+
+  <!-- calle de tierra al sur y camino hasta la puerta -->
+  <rect x="-20" y="740" width="1064" height="80" fill="#8f7a52"/>
+  <polygon points="485,657 555,657 580,740 460,740" fill="#8f7a52"/>
+
+  <!-- huerto vecino a la izquierda -->
+  <rect x="70" y="600" width="130" height="95" fill="#54793a" stroke="#3c5729" stroke-width="4"/>
+  <g stroke="#7da34c" stroke-width="6">
+    <line x1="82" y1="628" x2="188" y2="628"/><line x1="82" y1="654" x2="188" y2="654"/>
+    <line x1="82" y1="680" x2="188" y2="680"/>
+  </g>
+
+  <!-- árboles alrededor (copa + tronco al sur) -->
+  <g>
+    <rect x="118" y="360" width="15" height="42" fill="#5c3a26"/>
+    <rect x="880" y="560" width="15" height="42" fill="#5c3a26"/>
+    <rect x="53" y="178" width="14" height="38" fill="#5c3a26"/>
+    <g fill="#3d5a2c" stroke="#2c421f" stroke-width="5">
+      <circle cx="125" cy="330" r="52"/>
+      <circle cx="887" cy="530" r="50"/>
+      <circle cx="60" cy="150" r="48"/>
+    </g>
+  </g>
+
+  <!-- casa vecina (tejado + cara sur): el pueblo sigue alrededor -->
+  <g stroke="#5c3a26" stroke-width="4">
+    <rect x="840" y="120" width="160" height="44" fill="#c26a48"/>
+    <rect x="840" y="164" width="160" height="40" fill="#a4573b"/>
+    <rect x="840" y="204" width="160" height="38" fill="#7c4a30"/>
+    <rect x="904" y="212" width="30" height="30" fill="#4a3320" stroke-width="3"/>
+  </g>
+
+  <!-- ======== LA TABERNA EN CUTAWAY (sin techo) ======== -->
+  <!-- suelo de tablones -->
+  <rect x="265" y="175" width="500" height="410" fill="#8a6a44"/>
+  <g stroke="#75592f" stroke-width="4">
+    <line x1="265" y1="245" x2="765" y2="245"/><line x1="265" y1="315" x2="765" y2="315"/>
+    <line x1="265" y1="385" x2="765" y2="385"/><line x1="265" y1="455" x2="765" y2="455"/>
+    <line x1="265" y1="525" x2="765" y2="525"/>
+  </g>
+  <!-- muros en corte (grosor visto desde arriba, SIN techo) -->
+  <rect x="250" y="160" width="530" height="440" fill="none"
+        stroke="#5f5b52" stroke-width="30"/>
+  <!-- muro interior de la trastienda -->
+  <rect x="620" y="175" width="26" height="230" fill="#5f5b52"/>
+  <rect x="620" y="470" width="26" height="115" fill="#5f5b52"/>
+  <!-- vano de la puerta sur (alineado con el camino) -->
+  <rect x="480" y="585" width="70" height="30" fill="#8a6a44"/>
+  <!-- CARA SUR del edificio con puerta y ventanas (cenital con caras) -->
+  <rect x="235" y="615" width="560" height="42" fill="#4a463e"/>
+  <rect x="482" y="620" width="66" height="37" fill="#2e2a26"/>
+  <rect x="300" y="624" width="44" height="22" fill="#38424c"/>
+  <rect x="680" y="624" width="44" height="22" fill="#38424c"/>
+
+  <!-- mobiliario -->
+  <g stroke="#3e2718" stroke-width="4">
+    <rect x="300" y="205" width="250" height="52" fill="#5c3a26"/>
+    <rect x="300" y="330" width="110" height="70" fill="#5c3a26"/>
+    <rect x="440" y="430" width="110" height="70" fill="#5c3a26"/>
+  </g>
+  <g fill="#8a857a">
+    <circle cx="330" cy="292" r="17"/><circle cx="410" cy="292" r="17"/><circle cx="490" cy="292" r="17"/>
+  </g>
+  <g fill="#7f9bb5" stroke="#54718c" stroke-width="4">
+    <rect x="670" y="210" width="70" height="120"/>
+    <rect x="670" y="440" width="70" height="120"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="30" font-weight="bold">
+    <text x="280" y="140">taberna en cutaway (sin techo)</text>
+    <text x="300" y="450" font-size="26">mesas y barra</text>
+    <text x="655" y="420" font-size="26">camas</text>
+    <text x="590" y="700">puerta a la calle</text>
+    <text x="60" y="800">el pueblo sigue alrededor: calle…</text>
+    <text x="770" y="290" font-size="26">…vecinos…</text>
+    <text x="60" y="560" font-size="26">…y huerto</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «interior» — el interior SIEMPRE en su contexto</text>
+    <text x="32" y="958" font-size="22">Cutaway sin techo integrado en el pueblo: calle, camino a la puerta, vecinos · cara sur visible</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Nunca una planta flotando en el vacío — el mundo continúa alrededor. Sin texto ni UI.</text>
+  </g>
+</svg>

@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: "character_commoner" como MODEL SHEET —
+       el MISMO personaje dibujado tres veces: frente, tres cuartos y espalda.
+       Fondo neutro liso; las etiquetas son solo de la plantilla. -->
+  <rect width="1024" height="1024" fill="#d8d2c4"/>
+
+  <!-- guías de encuadre (misma altura en las tres vistas) -->
+  <g stroke="#b04a3a" stroke-width="3" stroke-dasharray="12 10" fill="none">
+    <line x1="80" y1="256" x2="944" y2="256"/>
+    <line x1="80" y1="724" x2="944" y2="724"/>
+  </g>
+
+  <!-- ======== VISTA FRONTAL (cx=190) ======== -->
+  <g stroke="#4a3b2a" stroke-width="5">
+    <ellipse cx="190" cy="712" rx="86" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="158" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="196" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="150" y="672" width="38" height="24" fill="#5c4630" rx="6"/>
+    <rect x="192" y="672" width="38" height="24" fill="#5c4630" rx="6"/>
+    <path d="M 144 372 L 236 372 L 248 534 L 132 534 Z" fill="#a89a72"/>
+    <rect x="166" y="470" width="34" height="30" fill="#8f8058"/>
+    <rect x="138" y="452" width="104" height="14" fill="#6e5836"/>
+    <path d="M 144 382 L 118 500 L 138 508 L 158 396 Z" fill="#a89a72"/>
+    <path d="M 236 382 L 262 500 L 242 508 L 222 396 Z" fill="#a89a72"/>
+    <circle cx="128" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="252" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="190" cy="322" r="38" fill="#c9a281"/>
+  </g>
+  <g fill="#4a3b2a">
+    <circle cx="178" cy="318" r="4"/><circle cx="202" cy="318" r="4"/>
+  </g>
+
+  <!-- ======== VISTA TRES CUARTOS (cx=512) ======== -->
+  <g stroke="#4a3b2a" stroke-width="5">
+    <ellipse cx="512" cy="712" rx="86" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="484" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="518" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="476" y="672" width="40" height="24" fill="#5c4630" rx="6"/>
+    <rect x="516" y="672" width="44" height="24" fill="#5c4630" rx="6"/>
+    <path d="M 470 372 L 558 372 L 574 534 L 458 534 Z" fill="#a89a72"/>
+    <rect x="500" y="470" width="34" height="30" fill="#8f8058"/>
+    <rect x="462" y="452" width="106" height="14" fill="#6e5836"/>
+    <path d="M 470 382 L 446 498 L 466 506 L 486 396 Z" fill="#a89a72"/>
+    <!-- brazo derecho por delante del cuerpo (lectura 3/4) -->
+    <path d="M 558 382 L 566 470 L 522 500 L 512 478 L 546 452 Z" fill="#998b64"/>
+    <circle cx="456" cy="514" r="12" fill="#c9a281"/>
+    <circle cx="516" cy="490" r="12" fill="#c9a281"/>
+    <circle cx="512" cy="322" r="38" fill="#c9a281"/>
+  </g>
+  <g fill="#4a3b2a">
+    <circle cx="520" cy="318" r="4"/><circle cx="536" cy="316" r="4"/>
+    <path d="M 546 326 l 6 4" stroke="#4a3b2a" stroke-width="3"/>
+  </g>
+
+  <!-- ======== VISTA DE ESPALDA (cx=834) ======== -->
+  <g stroke="#4a3b2a" stroke-width="5">
+    <ellipse cx="834" cy="712" rx="86" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="802" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="840" y="530" width="26" height="150" fill="#7a6a4f" rx="8"/>
+    <rect x="798" y="672" width="38" height="24" fill="#5c4630" rx="6"/>
+    <rect x="838" y="672" width="38" height="24" fill="#5c4630" rx="6"/>
+    <path d="M 788 372 L 880 372 L 892 534 L 776 534 Z" fill="#998b64"/>
+    <rect x="782" y="452" width="104" height="14" fill="#6e5836"/>
+    <path d="M 788 382 L 762 500 L 782 508 L 802 396 Z" fill="#998b64"/>
+    <path d="M 880 382 L 906 500 L 886 508 L 866 396 Z" fill="#998b64"/>
+    <circle cx="772" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="896" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="834" cy="322" r="38" fill="#c9a281"/>
+    <!-- capucha caída sobre la espalda, sin cara -->
+    <path d="M 796 322 A 38 38 0 0 1 872 322 L 872 300 L 796 300 Z" fill="#8f8058"/>
+    <path d="M 806 360 Q 834 400 862 360 L 862 336 L 806 336 Z" fill="#8f8058"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#333333" font-size="28" font-weight="bold" text-anchor="middle">
+    <text x="190" y="775">frente</text>
+    <text x="512" y="775">tres cuartos</text>
+    <text x="834" y="775">espalda</text>
+  </g>
+  <g fill="#333333" font-size="26" font-weight="bold">
+    <text x="80" y="230">MISMO personaje, misma altura en las tres vistas</text>
+    <text x="80" y="830">ropa de trabajo sencilla y gastada · fondo neutro liso</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «character_commoner» — model sheet del aldeano</text>
+    <text x="32" y="958" font-size="22">UN personaje, 3 vistas (frente · 3/4 · espalda) · cuerpo entero · fondo neutro liso</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">La imagen real NO lleva texto ni UI — las etiquetas son solo de la plantilla.</text>
+  </g>
+</svg>

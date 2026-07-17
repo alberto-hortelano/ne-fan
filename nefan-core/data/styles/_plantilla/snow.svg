@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "snow".
+       ZONA de mundo abierto: paisaje nevado con transición a pradera alpina.
+       La imagen real es una pintura full-bleed sin texto. -->
+  <rect width="1024" height="1024" fill="#d9dde2"/>
+
+  <!-- transición a pradera alpina (borde inferior) -->
+  <path d="M 0 820 C 240 780 480 840 760 800 C 880 784 960 800 1024 790
+           L 1024 1024 L 0 1024 Z" fill="#8fa668"/>
+  <g fill="#d9dde2">
+    <ellipse cx="200" cy="850" rx="70" ry="24"/>
+    <ellipse cx="620" cy="870" rx="60" ry="20"/>
+  </g>
+
+  <!-- arroyo helado -->
+  <path d="M -20 420 C 220 380 420 480 640 450 C 820 426 940 470 1044 450
+           L 1044 520 C 940 540 820 496 640 520 C 420 550 220 450 -20 490 Z"
+        fill="#a9c4d9"/>
+  <g stroke="#c8dcea" stroke-width="8" fill="none">
+    <path d="M 120 440 L 200 430 M 400 470 L 490 458 M 700 470 L 790 462"/>
+  </g>
+
+  <!-- pinos (bosquetes): copa cónica + tronco al sur (cenital con caras) -->
+  <g fill="#5c3a26">
+    <rect x="133" y="238" width="14" height="30"/>
+    <rect x="253" y="208" width="14" height="30"/>
+    <rect x="383" y="248" width="14" height="28"/>
+    <rect x="813" y="238" width="14" height="30"/>
+    <rect x="923" y="288" width="14" height="28"/>
+    <rect x="143" y="698" width="14" height="28"/>
+    <rect x="263" y="728" width="13" height="26"/>
+  </g>
+  <g fill="#33502f" stroke="#243722" stroke-width="5">
+    <polygon points="140,120 190,240 90,240"/>
+    <polygon points="260,80 310,210 210,210"/>
+    <polygon points="390,140 435,250 345,250"/>
+    <polygon points="820,120 870,240 770,240"/>
+    <polygon points="930,180 975,290 885,290"/>
+    <polygon points="150,600 195,700 105,700"/>
+    <polygon points="270,640 310,730 230,730"/>
+  </g>
+  <!-- nieve acumulada en copas -->
+  <g fill="#eef2f6">
+    <polygon points="140,120 165,180 115,180"/>
+    <polygon points="260,80 285,140 235,140"/>
+    <polygon points="820,120 845,180 795,180"/>
+  </g>
+
+  <!-- rocas asomando -->
+  <g fill="#8a857a" stroke="#5f5b52" stroke-width="5">
+    <polygon points="560,640 620,615 665,650 635,705 565,695"/>
+    <polygon points="740,300 790,282 818,310 795,350 742,340"/>
+  </g>
+
+  <!-- senda de nieve pisada -->
+  <path d="M 80 1024 C 220 880 360 760 470 660 C 580 560 640 380 660 -20"
+        stroke="#bfc7cf" stroke-width="40" fill="none" stroke-linecap="round"/>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#38424c" font-size="32" font-weight="bold">
+    <text x="440" y="110">pinos con nieve</text>
+    <text x="120" y="390">arroyo helado</text>
+    <text x="690" y="640">rocas</text>
+    <text x="220" y="770">senda de nieve pisada</text>
+  </g>
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="32" font-weight="bold">
+    <text x="540" y="848">transición a pradera alpina</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «snow» — zona nevada</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: pinos con tronco al sur · nieve, rocas, arroyo helado · SIN edificios</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Escena completa full-bleed, varios elementos — nunca un sujeto aislado. Sin texto ni UI.</text>
+  </g>
+</svg>

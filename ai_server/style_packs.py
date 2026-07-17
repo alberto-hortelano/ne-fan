@@ -26,12 +26,32 @@ RUNTIME_CONFIG_PATH = (
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-ENV_CATEGORIES = ("nature", "settlement", "fortress", "interior", "underground")
+# Zonas de mundo abierto: cada referencia es una escena completa con varios
+# elementos y transiciones a las zonas vecinas (ver data/styles/README.md).
+# Fuente de verdad del enum: nefan-core/src/games/style-categories.ts.
+ENV_CATEGORIES = (
+    "settlement", "farmland", "forest", "wetland", "desert", "snow",
+    "fortress", "interior", "underground",
+)
 CHARACTER_CATEGORIES = ("character_commoner", "character_noble", "character_warrior")
 
-# Orden de fallback cuando la categoría pedida no existe en el pack: primero
-# lo pedido, luego los entornos más frecuentes en tiles.
-_ENV_FALLBACK_ORDER = ("settlement", "nature", "interior", "fortress", "underground")
+# Alias legacy: packs y escenas anteriores al set de zonas usaban "nature".
+LEGACY_ALIASES = {"nature": "forest"}
+
+# Fallback por VECINDAD de zona cuando la categoría pedida no tiene imagen:
+# primero lo pedido, luego zonas afines (mismo carácter natural/construido).
+# Cada cadena cubre las 9 — un pack con una sola imagen sigue pintando todo.
+_ENV_FALLBACK = {
+    "settlement": ("farmland", "fortress", "forest", "wetland", "snow", "desert", "interior", "underground"),
+    "farmland": ("settlement", "forest", "wetland", "desert", "snow", "fortress", "interior", "underground"),
+    "forest": ("wetland", "farmland", "snow", "settlement", "desert", "fortress", "interior", "underground"),
+    "wetland": ("forest", "farmland", "settlement", "snow", "desert", "fortress", "interior", "underground"),
+    "desert": ("farmland", "forest", "settlement", "snow", "wetland", "fortress", "interior", "underground"),
+    "snow": ("forest", "farmland", "settlement", "wetland", "desert", "fortress", "interior", "underground"),
+    "fortress": ("settlement", "farmland", "forest", "underground", "interior", "wetland", "snow", "desert"),
+    "interior": ("underground", "settlement", "fortress", "farmland", "forest", "wetland", "snow", "desert"),
+    "underground": ("interior", "fortress", "settlement", "forest", "farmland", "wetland", "snow", "desert"),
+}
 _CHARACTER_FALLBACK_ORDER = CHARACTER_CATEGORIES
 
 
@@ -82,15 +102,35 @@ class StylePackResolver:
 
     def resolve(self, style_id: str, category: str) -> StyleRef | None:
         """Devuelve la referencia del pack para `category`, con fallback a
-        categorías hermanas si esa imagen aún no existe. None si el pack no
-        tiene ninguna imagen utilizable (el llamador degrada al estilo global).
+        categorías vecinas. None si el pack no tiene ninguna imagen utilizable
+        (el llamador degrada al estilo global).
         """
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        refs = {r.get("category"): r.get("file") for r in manifest.get("refs", [])}
+        # Alias legacy en manifest y en la petición (nature → forest). Con
+        # setdefault, la categoría canónica declarada antes gana al alias.
+        # Las entradas `perspective: "isometric"` de packs de la era de dos
+        # proyecciones se IGNORAN (sus jpg huérfanos en disco son inocuos).
+        refs: dict = {}
+        for r in manifest.get("refs", []):
+            if str(r.get("perspective") or "topdown") == "isometric":
+                continue
+            cat = LEGACY_ALIASES.get(str(r.get("category")), r.get("category"))
+            refs.setdefault(cat, r.get("file"))
+        category = LEGACY_ALIASES.get(category, category)
         is_char = category in CHARACTER_CATEGORIES
-        order = (category, *(_CHARACTER_FALLBACK_ORDER if is_char else _ENV_FALLBACK_ORDER))
+        if is_char:
+            order = (category, *_CHARACTER_FALLBACK_ORDER)
+        else:
+            fallback = _ENV_FALLBACK.get(category)
+            if fallback is None:
+                print(
+                    f"StylePacks WARNING: categoría desconocida '{category}' — usando settlement",
+                    flush=True,
+                )
+                category, fallback = "settlement", _ENV_FALLBACK["settlement"]
+            order = (category, *fallback)
         for cat in dict.fromkeys(order):  # dedupe conservando orden
             file = refs.get(cat)
             if not file:
@@ -119,7 +159,8 @@ class StylePackResolver:
         if not self._styles_dir.exists():
             return out
         for child in sorted(self._styles_dir.iterdir()):
-            if not child.is_dir():
+            # Directorios de soporte (p. ej. _plantilla) no son estilos.
+            if not child.is_dir() or child.name.startswith(("_", ".")):
                 continue
             manifest = self._manifest(child.name)
             if manifest:

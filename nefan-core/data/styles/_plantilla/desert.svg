@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "desert".
+       ZONA de mundo abierto: desierto con transición a estepa seca.
+       La imagen real es una pintura full-bleed sin texto. -->
+  <rect width="1024" height="1024" fill="#cbb87e"/>
+
+  <!-- dunas (bandas curvas de luz y sombra) -->
+  <g fill="none" stroke-width="30">
+    <path d="M -20 180 C 220 120 420 220 700 160 C 850 130 950 150 1044 130" stroke="#dbc98f"/>
+    <path d="M -20 340 C 240 280 460 380 760 320 C 880 296 980 316 1044 300" stroke="#b8a568"/>
+    <path d="M -20 560 C 200 500 420 600 700 540" stroke="#dbc98f"/>
+    <path d="M -20 760 C 180 700 380 790 620 740" stroke="#b8a568"/>
+  </g>
+
+  <!-- transición a estepa seca (borde derecho) -->
+  <path d="M 820 400 C 860 620 840 820 880 1024 L 1024 1024 L 1024 360 Z" fill="#a3a05c"/>
+  <g fill="#7a7a44">
+    <circle cx="920" cy="520" r="10"/><circle cx="960" cy="620" r="9"/>
+    <circle cx="900" cy="720" r="10"/><circle cx="970" cy="820" r="9"/>
+    <circle cx="930" cy="920" r="10"/>
+  </g>
+
+  <!-- roquedal: tapa + cara sur más oscura (cenital con caras) -->
+  <g fill="#9c8a6a" stroke="#6e5f45" stroke-width="6">
+    <polygon points="140,600 220,560 290,600 260,680 160,675"/>
+    <polygon points="250,540 310,515 350,550 325,600 260,590"/>
+    <polygon points="700,820 760,795 800,830 775,880 710,870"/>
+  </g>
+  <g fill="#7b6c50">
+    <polygon points="160,675 260,680 260,706 160,701"/>
+    <polygon points="260,590 325,600 325,622 260,612"/>
+  </g>
+
+  <!-- oasis pequeño: palmeras = copa + tronco al sur -->
+  <ellipse cx="620" cy="420" rx="90" ry="55" fill="#4f7fa8"/>
+  <g stroke="#5c3a26" stroke-width="9" fill="none">
+    <path d="M 540 404 C 544 424 538 436 542 452"/>
+    <path d="M 700 410 C 704 428 698 438 702 452"/>
+    <path d="M 640 500 C 644 518 638 528 642 540"/>
+  </g>
+  <g fill="#46682f" stroke="#2c421f" stroke-width="5">
+    <circle cx="540" cy="380" r="30"/><circle cx="700" cy="390" r="26"/>
+    <circle cx="640" cy="480" r="26"/>
+  </g>
+
+  <!-- matorral seco disperso -->
+  <g fill="#8a7a4a">
+    <circle cx="180" cy="240" r="12"/><circle cx="360" cy="460" r="11"/>
+    <circle cx="120" cy="820" r="12"/><circle cx="480" cy="860" r="11"/>
+    <circle cx="300" cy="700" r="10"/>
+  </g>
+
+  <!-- rastro arenoso (senda apenas marcada) -->
+  <path d="M 40 1024 C 200 900 340 760 460 640 C 560 540 590 480 610 430"
+        stroke="#b09a60" stroke-width="34" fill="none" stroke-linecap="round"
+        stroke-dasharray="60 26"/>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#5a4a28" font-size="32" font-weight="bold">
+    <text x="90" y="140">dunas</text>
+    <text x="500" y="330">oasis pequeño</text>
+    <text x="120" y="530">roquedal</text>
+    <text x="230" y="820">rastro arenoso</text>
+    <text x="120" y="290" font-size="26">matorral seco</text>
+  </g>
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="32" font-weight="bold">
+    <text x="840" y="440">transición</text>
+    <text x="840" y="476">a estepa</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «desert» — zona de desierto</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: rocas y palmeras con cara/tronco al sur · dunas, oasis · SIN edificios</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Escena completa full-bleed, varios elementos — nunca un sujeto aislado. Sin texto ni UI.</text>
+  </g>
+</svg>

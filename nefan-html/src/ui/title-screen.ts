@@ -38,8 +38,12 @@ const STATE_API_URL = `http://127.0.0.1:${CONFIG.ports.state_api}`;
 const AI_SERVER_HTTP = "http://127.0.0.1:8765";
 
 const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
-  { id: "nature", label: "Naturaleza" },
   { id: "settlement", label: "Pueblo" },
+  { id: "farmland", label: "Campos" },
+  { id: "forest", label: "Bosque" },
+  { id: "wetland", label: "Pantano" },
+  { id: "desert", label: "Desierto" },
+  { id: "snow", label: "Nieve" },
   { id: "fortress", label: "Fortaleza" },
   { id: "interior", label: "Interior" },
   { id: "underground", label: "Subterráneo" },

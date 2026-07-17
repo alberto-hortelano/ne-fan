@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "forest".
+       ZONA de mundo abierto: escena completa con varios elementos y transición
+       a la zona vecina. La imagen real es una pintura full-bleed sin texto. -->
+  <rect width="1024" height="1024" fill="#547233"/>
+
+  <!-- transición a pradera abierta (lado derecho) -->
+  <path d="M 760 0 C 700 300 720 600 680 1024 L 1024 1024 L 1024 0 Z" fill="#7da34c"/>
+
+  <!-- claro del bosque -->
+  <ellipse cx="480" cy="640" rx="200" ry="130" fill="#6b8f3f"/>
+
+  <!-- senda de TIERRA cruzando (nunca empedrada) -->
+  <path d="M 40 1024 C 180 820 320 760 470 640 C 620 520 660 300 700 -20
+           L 620 -20 C 585 280 540 470 420 580 C 300 690 140 840 -40 1024 Z"
+        fill="#8f7a52"/>
+
+  <!-- arroyo con rocas -->
+  <path d="M -20 240 C 200 210 340 320 520 300 C 700 280 820 360 1044 330
+           L 1044 390 C 820 420 700 340 520 360 C 340 380 200 270 -20 300 Z"
+        fill="#4f7fa8"/>
+
+  <!-- masa de bosque densa: árbol = copa + tronco asomando por el sur
+       (cenital con caras; la copa tapa lo que queda al norte) -->
+  <g fill="#5c3a26">
+    <rect x="142" y="800" width="16" height="46"/>
+    <rect x="312" y="890" width="16" height="44"/>
+    <rect x="512" y="838" width="15" height="42"/>
+    <rect x="592" y="736" width="14" height="40"/>
+    <rect x="142" y="516" width="15" height="42"/>
+    <rect x="292" y="654" width="14" height="38"/>
+  </g>
+  <g fill="#3d5a2c" stroke="#2c421f" stroke-width="6">
+    <circle cx="90" cy="100" r="70"/><circle cx="220" cy="60" r="80"/>
+    <circle cx="350" cy="110" r="65"/><circle cx="480" cy="55" r="72"/>
+    <circle cx="150" cy="200" r="60"/><circle cx="300" cy="190" r="58"/>
+    <circle cx="90" cy="440" r="62"/><circle cx="200" cy="500" r="55"/>
+    <circle cx="100" cy="600" r="58"/><circle cx="250" cy="620" r="50"/>
+    <circle cx="150" cy="760" r="60"/><circle cx="320" cy="850" r="55"/>
+    <circle cx="520" cy="800" r="52"/><circle cx="600" cy="700" r="48"/>
+  </g>
+
+  <!-- árboles sueltos entrando en la pradera (copa + tronco) -->
+  <g>
+    <rect x="793" y="508" width="14" height="38" fill="#5c3a26"/>
+    <rect x="874" y="724" width="12" height="34" fill="#5c3a26"/>
+    <rect x="914" y="222" width="12" height="32" fill="#5c3a26"/>
+    <g fill="#46682f" stroke="#2c421f" stroke-width="5">
+      <circle cx="800" cy="480" r="42"/><circle cx="880" cy="700" r="36"/>
+      <circle cx="920" cy="200" r="34"/>
+    </g>
+  </g>
+
+  <!-- rocas junto al arroyo -->
+  <g fill="#8a857a" stroke="#5f5b52" stroke-width="5">
+    <polygon points="560,380 605,365 630,395 605,430 558,420"/>
+    <polygon points="430,270 465,258 480,282 460,305 428,296"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="32" font-weight="bold">
+    <text x="90" y="320">bosque: copa + tronco al sur</text>
+    <text x="620" y="450">senda de TIERRA</text>
+    <text x="400" y="650">claro</text>
+    <text x="120" y="390" font-size="26">arroyo y rocas</text>
+    <text x="760" y="800">transición a</text>
+    <text x="760" y="836">pradera abierta</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «forest» — zona de bosque salvaje</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: copa + tronco al sur · senda de tierra (NUNCA empedrada) · SIN edificios</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Escena completa full-bleed, varios elementos — nunca un sujeto aislado. Sin texto ni UI.</text>
+  </g>
+</svg>

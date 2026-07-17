@@ -24,26 +24,22 @@ import { z } from "zod";
  *  archivo/clave de cache sin sorpresas. */
 export const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
 
-/** Categorías de referencia de un style pack. Las de entorno las elige el
- *  generador de imagen de escena según lo que pinta; las de personaje, el
- *  generador de sprites según el rol descrito. */
-export const STYLE_ENV_CATEGORIES = [
-  "nature",
-  "settlement",
-  "fortress",
-  "interior",
-  "underground",
-] as const;
-export const STYLE_CHARACTER_CATEGORIES = [
-  "character_commoner",
-  "character_noble",
-  "character_warrior",
-] as const;
-export const STYLE_CATEGORIES = [
-  ...STYLE_ENV_CATEGORIES,
-  ...STYLE_CHARACTER_CATEGORIES,
-] as const;
-export type StyleCategory = (typeof STYLE_CATEGORIES)[number];
+/** Categorías de referencia de un style pack: viven en style-categories.ts
+ *  (módulo puro, importable desde el navegador); aquí se re-exportan. */
+import {
+  STYLE_CATEGORIES,
+  STYLE_CHARACTER_CATEGORIES,
+  STYLE_ENV_CATEGORIES,
+  STYLE_MANIFEST_CATEGORIES,
+  type StyleCategory,
+} from "./style-categories.js";
+
+export {
+  STYLE_CATEGORIES,
+  STYLE_CHARACTER_CATEGORIES,
+  STYLE_ENV_CATEGORIES,
+  type StyleCategory,
+};
 
 const SafeId = z.string().regex(SAFE_ID, "id must be filesystem-safe (A-Za-z0-9_.-)");
 
@@ -85,9 +81,14 @@ export const StyleManifestSchema = z
       .array(
         z
           .object({
-            category: z.enum(STYLE_CATEGORIES),
+            // Canónicas + alias legacy ("nature" → forest en el resolver).
+            category: z.enum(STYLE_MANIFEST_CATEGORIES),
             file: z.string().min(1),
             tags: z.array(z.string()).default([]),
+            /** LEGACY (era de dos proyecciones): se acepta para no romper
+             *  packs de usuario en disco, pero las entradas "isometric" se
+             *  IGNORAN en todos los consumidores. */
+            perspective: z.enum(["topdown", "isometric"]).optional(),
           })
           .strict(),
       )
@@ -216,6 +217,8 @@ export function listStyles(stylesDir: string): StyleListing[] {
   const out: StyleListing[] = [];
   for (const entry of readdirSync(stylesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
+    // Directorios de soporte (p. ej. _plantilla) no son estilos.
+    if (entry.name.startsWith("_") || entry.name.startsWith(".")) continue;
     try {
       const manifest = loadStyleManifest(stylesDir, entry.name);
       const coverPath = join(stylesDir, entry.name, manifest.cover);

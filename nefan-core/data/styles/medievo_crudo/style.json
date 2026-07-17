@@ -2,17 +2,37 @@
   "style_id": "medievo_crudo",
   "name": "Medievo crudo",
   "description": "Ilustración medieval realista y sucia, con mucho detalle material: piedra gastada, polvo, tinta y luz de vela. Detallado pero no fotorealista.",
-  "style_token": "gritty realistic medieval illustration, weathered stone and dust, rich material detail, candlelight and ink tones, painterly not photorealistic, top-down",
+  "style_token": "gritty realistic medieval illustration, weathered stone and dust, rich material detail, candlelight and ink tones, painterly not photorealistic",
   "cover": "cover.jpg",
   "refs": [
     {
-      "category": "nature",
-      "file": "nature.jpg",
+      "category": "settlement",
+      "file": "settlement.jpg",
       "tags": []
     },
     {
-      "category": "settlement",
-      "file": "settlement.jpg",
+      "category": "farmland",
+      "file": "farmland.jpg",
+      "tags": []
+    },
+    {
+      "category": "forest",
+      "file": "forest.jpg",
+      "tags": []
+    },
+    {
+      "category": "wetland",
+      "file": "wetland.jpg",
+      "tags": []
+    },
+    {
+      "category": "desert",
+      "file": "desert.jpg",
+      "tags": []
+    },
+    {
+      "category": "snow",
+      "file": "snow.jpg",
       "tags": []
     },
     {

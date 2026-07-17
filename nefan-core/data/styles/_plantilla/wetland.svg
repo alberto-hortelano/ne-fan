@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: qué debe mostrar la referencia "wetland".
+       ZONA de mundo abierto: pantano con transición a pradera húmeda.
+       La imagen real es una pintura full-bleed sin texto. -->
+  <rect width="1024" height="1024" fill="#4a5a38"/>
+
+  <!-- transición a pradera húmeda (borde superior derecho) -->
+  <path d="M 640 0 C 700 160 820 240 1024 280 L 1024 0 Z" fill="#6b8f3f"/>
+
+  <!-- canales de agua turbia -->
+  <g fill="#3e5250">
+    <path d="M -20 300 C 200 260 340 380 520 360 C 700 340 840 430 1044 400
+             L 1044 520 C 840 550 700 450 520 470 C 340 490 200 380 -20 420 Z"/>
+    <ellipse cx="260" cy="720" rx="200" ry="110"/>
+    <ellipse cx="760" cy="780" rx="170" ry="90"/>
+  </g>
+  <!-- musgo/lentejas de agua -->
+  <g fill="#5a7048">
+    <ellipse cx="330" cy="700" rx="60" ry="24"/>
+    <ellipse cx="180" cy="750" rx="46" ry="18"/>
+    <ellipse cx="700" cy="760" rx="52" ry="20"/>
+    <ellipse cx="480" cy="420" rx="56" ry="20"/>
+  </g>
+
+  <!-- pasarela de tablones sobre el barro -->
+  <g>
+    <path d="M 80 980 L 200 820 L 340 700 L 470 610 L 560 540 L 640 470"
+          stroke="#6e5836" stroke-width="46" fill="none"/>
+    <g stroke="#8a6a44" stroke-width="8">
+      <line x1="110" y1="930" x2="150" y2="960"/><line x1="150" y1="880" x2="190" y2="910"/>
+      <line x1="200" y1="830" x2="240" y2="860"/><line x1="260" y1="770" x2="300" y2="800"/>
+      <line x1="330" y1="715" x2="365" y2="748"/><line x1="400" y1="660" x2="435" y2="692"/>
+      <line x1="470" y1="615" x2="500" y2="648"/><line x1="540" y1="560" x2="570" y2="592"/>
+    </g>
+  </g>
+
+  <!-- árboles retorcidos: copa + tronco retorcido al sur (cenital con caras) -->
+  <g stroke="#232e1d" stroke-width="10" fill="none">
+    <path d="M 120 200 C 110 260 140 280 130 330"/>
+    <path d="M 880 610 C 870 660 900 680 890 720"/>
+    <path d="M 260 145 C 252 190 276 205 268 240"/>
+    <path d="M 420 198 C 414 236 434 250 428 282"/>
+    <path d="M 90 572 C 84 610 104 624 98 656"/>
+    <path d="M 600 864 C 594 890 610 900 606 920"/>
+  </g>
+  <g fill="#33422a" stroke="#232e1d" stroke-width="6">
+    <circle cx="120" cy="140" r="66"/><circle cx="260" cy="90" r="58"/>
+    <circle cx="420" cy="150" r="52"/><circle cx="90" cy="520" r="56"/>
+    <circle cx="880" cy="560" r="54"/><circle cx="600" cy="820" r="48"/>
+  </g>
+
+  <!-- juncos -->
+  <g stroke="#7a8f4a" stroke-width="6" fill="none">
+    <path d="M 540 330 L 535 280 M 560 335 L 562 282 M 580 332 L 585 285"/>
+    <path d="M 150 640 L 145 590 M 170 645 L 172 592 M 190 642 L 195 595"/>
+    <path d="M 830 720 L 825 670 M 850 725 L 852 672 M 870 722 L 875 675"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#ffffff" stroke="#00000099" stroke-width="5" paint-order="stroke"
+     font-size="32" font-weight="bold">
+    <text x="100" y="360">agua turbia</text>
+    <text x="620" y="620">árboles retorcidos</text>
+    <text x="240" y="590">pasarela de tablones</text>
+    <text x="540" y="260" font-size="26">juncos</text>
+    <text x="700" y="120">transición a</text>
+    <text x="700" y="156">pradera húmeda</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.92"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «wetland» — zona de pantano</text>
+    <text x="32" y="958" font-size="22">Cenital CON CARAS: copa + tronco al sur · agua turbia, juncos, pasarelas · SIN edificios</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">Escena completa full-bleed, varios elementos — nunca un sujeto aislado. Sin texto ni UI.</text>
+  </g>
+</svg>

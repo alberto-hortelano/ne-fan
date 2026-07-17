@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" font-family="sans-serif">
+  <!-- Plantilla esquemática: "character_warrior" como MODEL SHEET —
+       el MISMO personaje dibujado tres veces: frente, tres cuartos y espalda.
+       Fondo neutro liso; las etiquetas son solo de la plantilla. -->
+  <rect width="1024" height="1024" fill="#d8d2c4"/>
+
+  <!-- guías de encuadre -->
+  <g stroke="#b04a3a" stroke-width="3" stroke-dasharray="12 10" fill="none">
+    <line x1="80" y1="256" x2="944" y2="256"/>
+    <line x1="80" y1="724" x2="944" y2="724"/>
+  </g>
+
+  <!-- ======== VISTA FRONTAL (cx=190) ======== -->
+  <g stroke="#33383f" stroke-width="5">
+    <ellipse cx="190" cy="712" rx="92" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="156" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="196" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="148" y="672" width="42" height="24" fill="#565c66" rx="6"/>
+    <rect x="192" y="672" width="42" height="24" fill="#565c66" rx="6"/>
+    <path d="M 142 372 L 238 372 L 246 500 L 134 500 Z" fill="#98a1ac"/>
+    <path d="M 138 500 L 242 500 L 248 544 L 132 544 Z" fill="#7a828c"/>
+    <path d="M 190 378 L 190 496" stroke="#565c66" stroke-width="7" fill="none"/>
+    <ellipse cx="142" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <ellipse cx="238" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <path d="M 140 396 L 116 500 L 136 508 L 156 408 Z" fill="#98a1ac"/>
+    <path d="M 240 396 L 264 500 L 244 508 L 224 408 Z" fill="#98a1ac"/>
+    <circle cx="126" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="254" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="190" cy="322" r="38" fill="#c9a281"/>
+    <path d="M 152 318 A 40 40 0 0 1 228 318 L 228 300 A 40 30 0 0 0 152 300 Z" fill="#7a828c"/>
+  </g>
+  <g fill="#33383f">
+    <circle cx="178" cy="322" r="4"/><circle cx="202" cy="322" r="4"/>
+  </g>
+
+  <!-- ======== VISTA TRES CUARTOS (cx=512) ======== -->
+  <g stroke="#33383f" stroke-width="5">
+    <ellipse cx="512" cy="712" rx="92" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="478" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="516" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="470" y="672" width="42" height="24" fill="#565c66" rx="6"/>
+    <rect x="514" y="672" width="46" height="24" fill="#565c66" rx="6"/>
+    <path d="M 466 372 L 558 372 L 570 500 L 456 500 Z" fill="#98a1ac"/>
+    <path d="M 460 500 L 566 500 L 572 544 L 454 544 Z" fill="#7a828c"/>
+    <ellipse cx="466" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <ellipse cx="558" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <path d="M 462 396 L 440 496 L 460 504 L 478 408 Z" fill="#98a1ac"/>
+    <!-- brazo derecho con la espada al costado -->
+    <path d="M 560 396 L 584 490 L 564 500 L 544 410 Z" fill="#98a1ac"/>
+    <circle cx="450" cy="512" r="12" fill="#c9a281"/>
+    <circle cx="574" cy="508" r="12" fill="#c9a281"/>
+    <circle cx="512" cy="322" r="38" fill="#c9a281"/>
+    <path d="M 474 318 A 40 40 0 0 1 550 318 L 550 300 A 40 30 0 0 0 474 300 Z" fill="#7a828c"/>
+  </g>
+  <g>
+    <rect x="572" y="520" width="14" height="150" fill="#c8cdd3" stroke="#7a828c" stroke-width="3"/>
+    <rect x="552" y="510" width="54" height="12" fill="#6e5836"/>
+  </g>
+  <g fill="#33383f">
+    <circle cx="520" cy="322" r="4"/><circle cx="536" cy="320" r="4"/>
+    <path d="M 546 330 l 6 4" stroke="#33383f" stroke-width="3"/>
+  </g>
+
+  <!-- ======== VISTA DE ESPALDA (cx=834) ======== -->
+  <g stroke="#33383f" stroke-width="5">
+    <ellipse cx="834" cy="712" rx="92" ry="16" fill="#00000022" stroke="none"/>
+    <rect x="800" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="838" y="540" width="28" height="140" fill="#7a828c" rx="8"/>
+    <rect x="792" y="672" width="42" height="24" fill="#565c66" rx="6"/>
+    <rect x="836" y="672" width="42" height="24" fill="#565c66" rx="6"/>
+    <path d="M 786 372 L 882 372 L 890 500 L 778 500 Z" fill="#8b95a1"/>
+    <path d="M 782 500 L 886 500 L 892 544 L 776 544 Z" fill="#6d757f"/>
+    <ellipse cx="786" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <ellipse cx="882" cy="382" rx="26" ry="18" fill="#7a828c"/>
+    <path d="M 784 396 L 760 500 L 780 508 L 800 408 Z" fill="#8b95a1"/>
+    <path d="M 884 396 L 908 500 L 888 508 L 868 408 Z" fill="#8b95a1"/>
+    <circle cx="770" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="898" cy="516" r="12" fill="#c9a281"/>
+    <circle cx="834" cy="322" r="38" fill="#c9a281"/>
+    <path d="M 796 322 A 38 38 0 0 1 872 322 L 872 292 A 38 30 0 0 0 796 292 Z" fill="#7a828c"/>
+    <path d="M 800 348 Q 834 372 868 348 L 868 322 L 800 322 Z" fill="#7a828c"/>
+  </g>
+  <!-- escudo colgado a la espalda + empuñadura sobre el hombro -->
+  <path d="M 796 400 L 872 400 L 872 480 Q 834 522 796 480 Z"
+        fill="#a4573b" stroke="#5c3a26" stroke-width="6"/>
+  <circle cx="834" cy="440" r="10" fill="#d6a534"/>
+  <g>
+    <rect x="862" y="330" width="12" height="56" fill="#6e5836" transform="rotate(18 868 358)"/>
+    <rect x="846" y="322" width="44" height="10" fill="#6e5836" transform="rotate(18 868 327)"/>
+  </g>
+
+  <!-- etiquetas de la plantilla -->
+  <g fill="#333333" font-size="28" font-weight="bold" text-anchor="middle">
+    <text x="190" y="775">frente</text>
+    <text x="512" y="775">tres cuartos</text>
+    <text x="834" y="775">espalda</text>
+  </g>
+  <g fill="#333333" font-size="26" font-weight="bold">
+    <text x="80" y="230">MISMO personaje, misma altura en las tres vistas</text>
+    <text x="80" y="830">armadura de época, arma y escudo visibles · fondo neutro liso</text>
+  </g>
+
+  <!-- franja de reglas (solo en la plantilla) -->
+  <rect y="874" width="1024" height="150" fill="#1e1e1e" opacity="0.88"/>
+  <g fill="#ffffff">
+    <text x="32" y="918" font-size="26" font-weight="bold">REFERENCIA «character_warrior» — model sheet del guerrero</text>
+    <text x="32" y="958" font-size="22">UN personaje, 3 vistas (frente · 3/4 · espalda) · cuerpo entero · fondo neutro liso</text>
+    <text x="32" y="996" font-size="22" fill="#ffd27a">La imagen real NO lleva texto ni UI — las etiquetas son solo de la plantilla.</text>
+  </g>
+</svg>
