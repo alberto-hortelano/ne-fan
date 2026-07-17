@@ -160,8 +160,13 @@ export const CONFIG: NefanConfig = {
     segment_cache_dir: "cache/segments",
     texture_resolution: 512,
     texture_steps: 4,
+    // nano-banana-pro para escenas: en el bench de fidelidad de layout
+    // (style_lab 002_repaint_fidelity) fue a la vez el más fiel a las huellas
+    // declaradas y ~8× más rápido que gpt-image-2 (27-30 s vs 200-220 s;
+    // 9 cr Meshy / $0.15 fal). gpt-image-2 se queda para las skins de
+    // personaje (calidad de model sheet, sin requisito de layout).
     scene_model: "nano-banana-pro",
-    sprite_skin_model: "nano-banana-2",
+    sprite_skin_model: "gpt-image-2",
     scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",
     texture_lazy_load: true,

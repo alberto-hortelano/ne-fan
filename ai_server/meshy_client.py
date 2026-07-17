@@ -5,6 +5,7 @@ Requires MESHY_API_KEY environment variable.
 """
 
 import asyncio
+import base64
 import os
 import time
 
@@ -276,8 +277,44 @@ class MeshyImageToImage:
         prompt: str,
         reference_image_urls: list[str],
         client: httpx.AsyncClient | None = None,
+        aspect: tuple[int, int] | None = None,
     ) -> tuple[bytes, dict]:
-        """submit -> wait -> download. Returns (png_bytes, task_dict). Raises on failure."""
+        """submit -> wait -> download. Returns (png_bytes, task_dict).
+
+        `aspect`: (w, h) del esquema de entrada — Meshy no admite control de
+        tamaño de salida y lo ignora; el fallback fal lo usa para pedir el
+        output en el aspect nativo (el estiramiento a cuadrado degrada la
+        fidelidad de layout, bench 002_repaint_fidelity).
+
+        Si MESHY falla (créditos agotados → 402, 5xx, timeout, task FAILED) y
+        hay FAL_KEY, degrada a fal.ai con el MISMO modelo (mismo contrato de
+        refs como data URIs). Errores de CICLO DE VIDA del caller (p. ej.
+        "client has been closed" cuando el AsyncClient compartido de un
+        fan-out se cerró por el fallo de una sublamada hermana) NO degradan:
+        reintentar por fal una petición cuyo trabajo padre ya murió solo
+        amplifica el gasto. Sin FAL_KEY el error original sube tal cual
+        (fail-loud)."""
+        try:
+            return await self._run_one_meshy(ai_model, prompt, reference_image_urls, client)
+        except Exception as err:
+            meshy_unavailable = isinstance(
+                err, (httpx.HTTPStatusError, httpx.TimeoutException, TimeoutError)
+            ) or (isinstance(err, RuntimeError) and str(err).startswith("Meshy task"))
+            fal_key = os.environ.get("FAL_KEY", "")
+            if not meshy_unavailable or not fal_key:
+                raise
+            print(f"MeshyI2I: fallo ({err!r:.180}) → fallback fal.ai {ai_model}", flush=True)
+            return await FalImageToImage(fal_key).run_one(
+                prompt, reference_image_urls, ai_model=ai_model, aspect=aspect
+            )
+
+    async def _run_one_meshy(
+        self,
+        ai_model: str,
+        prompt: str,
+        reference_image_urls: list[str],
+        client: httpx.AsyncClient | None = None,
+    ) -> tuple[bytes, dict]:
         own_client = client is None
         if own_client:
             client = httpx.AsyncClient(timeout=60.0)
@@ -300,3 +337,114 @@ class MeshyImageToImage:
         finally:
             if own_client:
                 await client.aclose()
+
+
+class FalImageToImage:
+    """Los mismos modelos i2i servidos por fal.ai — fallback de
+    MeshyImageToImage con el MISMO id de modelo (validado en
+    style_lab/{README.md,fidelity.py}). Endpoints REST síncronos con
+    `image_urls` (admite data URIs — el mismo formato de refs que usa el
+    pipeline con Meshy); la respuesta puede traer la imagen como URL http o
+    como data URI."""
+
+    #: id de modelo Meshy → (endpoint de edit en fal, params extra).
+    MODELS = {
+        "gpt-image-2": ("https://fal.run/openai/gpt-image-2/edit", {"quality": "high"}),
+        "nano-banana-pro": (
+            "https://fal.run/fal-ai/nano-banana-pro/edit",
+            {"resolution": "1K"},
+        ),
+    }
+    #: Ratios que admite nano-banana-pro (gpt-image-2 acepta tamaño exacto).
+    NANO_RATIOS = ["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"]
+    #: Coste aproximado por imagen 1K/1024² (dashboard de fal).
+    COST_USD = {"gpt-image-2": 0.17, "nano-banana-pro": 0.15}
+
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.environ.get("FAL_KEY", "")
+        if not self.api_key:
+            raise ValueError("FAL_KEY not set")
+
+    @classmethod
+    def _size_params(cls, ai_model: str, aspect: tuple[int, int] | None) -> dict:
+        """Params de tamaño con el aspect nativo del esquema: el estiramiento
+        anamórfico a cuadrado degrada la fidelidad de layout (bench
+        002_repaint_fidelity). Sin aspect, cuadrado clásico."""
+        if aspect is None:
+            return {"image_size": "square_hd"} if ai_model == "gpt-image-2" else {
+                "aspect_ratio": "1:1"
+            }
+        w, h = aspect
+        if ai_model == "gpt-image-2":
+            # Tamaño exacto: múltiplos de 16, lado largo ~1280.
+            scale = 1280 / max(w, h)
+            return {
+                "image_size": {
+                    "width": round(w * scale / 16) * 16,
+                    "height": round(h * scale / 16) * 16,
+                }
+            }
+        target = w / h
+        return {
+            "aspect_ratio": min(
+                cls.NANO_RATIOS, key=lambda r: abs(int(r.split(":")[0]) / int(r.split(":")[1]) - target)
+            )
+        }
+
+    async def run_one(
+        self,
+        prompt: str,
+        reference_image_urls: list[str],
+        ai_model: str = "gpt-image-2",
+        aspect: tuple[int, int] | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> tuple[bytes, dict]:
+        """Devuelve (png_bytes, task_dict) con el mismo shape de retorno que
+        MeshyImageToImage.run_one (task_dict mínimo con provider="fal")."""
+        if ai_model not in self.MODELS:
+            raise ValueError(
+                f"fal fallback no mapea el modelo '{ai_model}' (soporta {list(self.MODELS)})"
+            )
+        if not reference_image_urls:
+            raise ValueError("FalImageToImage.run_one requiere al menos una referencia")
+        if len(reference_image_urls) > 5:
+            raise ValueError("fal edit accepts at most 5 reference images")
+        url, extra = self.MODELS[ai_model]
+        payload: dict = {
+            "prompt": prompt,
+            "num_images": 1,
+            "output_format": "png",
+            "image_urls": reference_image_urls,
+            **extra,
+            **self._size_params(ai_model, aspect),
+        }
+        headers = {"Authorization": f"Key {self.api_key}", "Content-Type": "application/json"}
+
+        async def _run(c: httpx.AsyncClient) -> tuple[bytes, dict]:
+            start = time.time()
+            response = await c.post(url, headers=headers, json=payload)
+            if response.status_code >= 400:
+                # El body de fal trae la causa real (p. ej. "Exhausted balance") —
+                # sin esto el cliente solo ve un "403 Forbidden" opaco.
+                raise RuntimeError(
+                    f"fal.ai HTTP {response.status_code}: {response.text[:300]}"
+                )
+            data = response.json()
+            images = data.get("images") or []
+            if not images or not images[0].get("url"):
+                raise RuntimeError(f"No output image in fal response: {str(data)[:300]}")
+            img_url = images[0]["url"]
+            if img_url.startswith("data:"):
+                png = base64.b64decode(img_url.split(",", 1)[1])
+            else:
+                got = await c.get(img_url)
+                got.raise_for_status()
+                png = got.content
+            print(f"FalI2I: {ai_model} OK ({time.time() - start:.0f}s)", flush=True)
+            return png, {"provider": "fal", "model": ai_model}
+
+        if client is None:
+            # gpt-image-2 high tarda ~200-300 s y fal.run bloquea hasta terminar.
+            async with httpx.AsyncClient(timeout=600.0) as c:
+                return await _run(c)
+        return await _run(client)

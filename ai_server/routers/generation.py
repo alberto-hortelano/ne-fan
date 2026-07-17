@@ -105,6 +105,10 @@ class SceneImageRequest(BaseModel):
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
     blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
+    # False = el plano NO tiene agua: la instrucción omite las cláusulas de
+    # agua (mencionarla en planos secos ceba ríos alucinados — bench
+    # 002_repaint_fidelity). Default True = comportamiento clásico.
+    has_water: bool = True
     # Estilo del juego: id del pack (congelado en la sesión) y categoría de
     # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
     # referencia global fija de siempre.
@@ -114,7 +118,6 @@ class SceneImageRequest(BaseModel):
         default="",
         pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
     )
-
     @field_validator("context_sides")
     @classmethod
     def _valid_sides(cls, v: list[str]) -> list[str]:
@@ -417,6 +420,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         "kind": "full",
         "model": deps.scene_image_gen._model,
         "sides": "+".join(sorted(body.context_sides)),
+        # Transformación server-side del esquema antes del modelo (prestretch
+        # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
+        # distintos, así que va en la clave para no servir imágenes del
+        # pipeline anterior.
+        "pipeline": "prestretch",
     }
     # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
     # imagen utilizable se degrada a la global — y la clave de cache NO lleva
@@ -438,6 +446,9 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
 
     if deps.scene_cache.has(body.prompt, "scene", context):
         return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
+    # Un miss regenera (~$0.2): dejar rastro de la clave para poder diagnosticar
+    # misses inesperados (p. ej. capturas no deterministas del cliente).
+    print(f"SceneImage: cache miss key={key} context={context}", flush=True)
 
     # No deps.gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
     # holding the lock would needlessly block texture/3D GPU work for ~30s.
@@ -450,6 +461,7 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
             body.context_sides, body.blueprint_kind,
             style_ref.data_uri if style_ref else None,
             style_ref.style_token if style_ref else "",
+            body.has_water,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e

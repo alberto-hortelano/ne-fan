@@ -67,8 +67,15 @@ class SceneImageGenerator:
     def _load_rgb(png_bytes: bytes) -> Image.Image:
         return Image.open(io.BytesIO(png_bytes)).convert("RGB")
 
-    def _run(self, prompt: str, refs: list[str]) -> tuple[bytes, dict]:
+    def _run(
+        self, prompt: str, refs: list[str], aspect: tuple[int, int] | None = None
+    ) -> tuple[bytes, dict]:
         """Drive the async Meshy client from a sync context (called via to_thread).
+
+        `aspect`: (w, h) del esquema — el fallback fal lo usa para pedir el
+        output en el aspect nativo del blueprint (el estiramiento anamórfico a
+        cuadrado cuesta ~45 puntos de fidelidad de layout, bench
+        002_repaint_fidelity). Meshy no admite control de tamaño y lo ignora.
 
         Pasa por DevApiCache: en modo dev devuelve la última escena generada
         (0 créditos); la task dict se sustituye por un stub sin credits."""
@@ -77,7 +84,9 @@ class SceneImageGenerator:
         task_holder: list[dict] = []
 
         def _call() -> list[bytes]:
-            png, task = asyncio.run(self._meshy.run_one(self._model, prompt, refs))
+            png, task = asyncio.run(
+                self._meshy.run_one(self._model, prompt, refs, aspect=aspect)
+            )
             task_holder.append(task)
             return [png]
 
@@ -92,11 +101,24 @@ class SceneImageGenerator:
         blueprint_kind: str = "boxes",
         style_ref_uri: str | None = None,
         style_token: str = "",
+        has_water: bool = True,
     ) -> dict:
         """`style_ref_uri`: referencia de estilo del pack del juego (data URI);
         None degrada a la referencia global fija. `style_token` complementa a
-        la imagen con la dirección de arte en texto."""
+        la imagen con la dirección de arte en texto. `has_water=False` omite
+        las cláusulas de agua y prohíbe pintarla — en planos secos la mención
+        ceba ríos alucinados (fallo dominante del bench 002_repaint_fidelity)."""
         sch = self._load_rgb(schematic_png_bytes)
+        # Prestretch (bench 002_repaint_fidelity): pre-estirar el esquema a
+        # cuadrado y pedir salida cuadrada hace LINEAL el mapeo entrada↔salida
+        # — el des-estirado lo deshace el cliente al escalar la imagen al rect
+        # del tile. Sin esto, Meshy (que ignora `aspect` y devuelve 1024²)
+        # obliga al modelo a un estiramiento anamórfico que desalinea las
+        # huellas (~45 puntos de fidelidad con gpt2; con nano-banana-pro el
+        # prestretch dio el mejor caso del bench: 100% edificios, 0 inventos).
+        side = max(sch.size)
+        if sch.size != (side, side):
+            sch = sch.resize((side, side), Image.LANCZOS)
         if blueprint_kind == "svg":
             # Blueprint compuesto: plano vectorial rico YA PROYECTADO en la
             # oblicua del compositor. Dos diales validados empíricamente
@@ -110,6 +132,21 @@ class SceneImageGenerator:
                 "show a trunk under the canopy. Keep that projection and light "
                 "direction exactly. "
             )
+            water_texture = (
+                "water with ripples, depth and high-contrast banks, " if has_water else ""
+            )
+            water_follow = (
+                "follow the EXACT course and width of the water and of every "
+                "road; keep bridges and walkways painted ON TOP of the water. "
+                if has_water
+                else "follow the EXACT course and width of every road. "
+            )
+            no_water = (
+                ""
+                if has_water
+                else "This map contains NO water at all: do NOT paint any river, "
+                "stream, canal, pond or lake anywhere. "
+            )
             instruction = (
                 view
                 + "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
@@ -117,8 +154,8 @@ class SceneImageGenerator:
                 "the whole map in the painterly, richly textured style of the "
                 "SECOND reference image: dense textured grass with tufts and "
                 "colour variation, detailed tree canopies with individual foliage "
-                "clumps, highlights and drop shadows, water with ripples, depth "
-                "and high-contrast banks, worn dirt roads with edges blending into "
+                f"clumps, highlights and drop shadows, {water_texture}worn dirt "
+                "roads with edges blending into "
                 "grass, individually drawn cobblestones, wooden floors with plank "
                 "grain, stone walls with individual masonry blocks, roof tiles "
                 "drawn one by one. The finished map must NOT look flat, "
@@ -127,11 +164,11 @@ class SceneImageGenerator:
                 "visible over low front walls) are CUTAWAY interiors — keep them "
                 "open exactly as drawn; buildings drawn with a roof keep their "
                 "roof. Keep every element in the SAME position, size, shape and "
-                "height; follow the EXACT course and width of the water and of "
-                "every road; keep bridges and walkways painted ON TOP of the "
-                "water. Do NOT move, remove or merge buildings. Do NOT invent new "
+                f"height; {water_follow}"
+                "Do NOT move, remove or merge buildings. Do NOT invent new "
                 "buildings, walls, bridges or watercourses that are not in the "
-                "blueprint. IMPORTANT: leave every fully transparent pixel of the "
+                f"blueprint. {no_water}"
+                "IMPORTANT: leave every fully transparent pixel of the "
                 "first reference EXACTLY transparent-black — paint only where the "
                 "plan has content. "
                 f"Render the scene as: {prompt.strip()}. "
@@ -166,7 +203,7 @@ class SceneImageGenerator:
             )
         refs = [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
         start = time.perf_counter()
-        png, res = self._run(instruction, refs)
+        png, res = self._run(instruction, refs, aspect=sch.size)
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(
