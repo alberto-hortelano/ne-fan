@@ -4,7 +4,9 @@
     "ai_skin": true,
     "ai_sprites": false,
     "ai_textures": false,
-    "ai_models": false
+    "ai_models": false,
+    "image_analysis": "masks",
+    "image_review": true
   },
   "narrative": {
     "require_llm": true,

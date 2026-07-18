@@ -1,0 +1,525 @@
+{
+  "perspective": "oblique",
+  "composer_version": 8,
+  "view_box": {
+    "minX": -12,
+    "minY": -32,
+    "width": 140,
+    "height": 160
+  },
+  "elements": [
+    {
+      "id": "bloque_o",
+      "label": "bloque de viviendas",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        2.7,
+        -1.2,
+        48.3,
+        32.2
+      ],
+      "baseline_y": 30,
+      "footprint_cells": [
+        6,
+        6,
+        50,
+        30
+      ]
+    },
+    {
+      "id": "bloque_e",
+      "label": "bloque de viviendas",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        74.7,
+        -1.2,
+        48.3,
+        32.2
+      ],
+      "baseline_y": 30,
+      "footprint_cells": [
+        78,
+        6,
+        122,
+        30
+      ]
+    },
+    {
+      "id": "cantina_filtro",
+      "label": "cantina El Filtro",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        12.25,
+        49,
+        25.41,
+        32
+      ],
+      "baseline_y": 80,
+      "footprint_cells": [
+        14,
+        54,
+        36,
+        80
+      ]
+    },
+    {
+      "id": "cantina_barra",
+      "label": "barra",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        16.48,
+        55.5,
+        13.42,
+        4.4
+      ],
+      "baseline_y": 59,
+      "footprint_cells": [
+        17,
+        57,
+        29,
+        59
+      ]
+    },
+    {
+      "id": "cantina_mesa1",
+      "label": "mesa",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        18.65,
+        65,
+        4.25,
+        4.9
+      ],
+      "baseline_y": 69,
+      "footprint_cells": [
+        19,
+        66,
+        22,
+        69
+      ]
+    },
+    {
+      "id": "cantina_mesa2",
+      "label": "mesa",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        26.65,
+        70,
+        4.25,
+        4.9
+      ],
+      "baseline_y": 74,
+      "footprint_cells": [
+        27,
+        71,
+        30,
+        74
+      ]
+    },
+    {
+      "id": "mastil",
+      "label": "mástil de comunicaciones",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        55.4,
+        39,
+        13.2,
+        23.5
+      ],
+      "baseline_y": 61,
+      "footprint_cells": [
+        61,
+        55,
+        67,
+        61
+      ]
+    },
+    {
+      "id": "pantalla",
+      "label": "pantalla pública",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        68.6,
+        52,
+        6.3,
+        5.9
+      ],
+      "baseline_y": 57,
+      "footprint_cells": [
+        70,
+        56,
+        74,
+        57
+      ]
+    },
+    {
+      "id": "puesto_1",
+      "label": "puesto del mercado",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        47.3,
+        78,
+        7.6,
+        6.9
+      ],
+      "baseline_y": 84,
+      "footprint_cells": [
+        48,
+        80,
+        54,
+        84
+      ]
+    },
+    {
+      "id": "puesto_2",
+      "label": "puesto del mercado",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        71.3,
+        80,
+        7.6,
+        6.9
+      ],
+      "baseline_y": 86,
+      "footprint_cells": [
+        72,
+        82,
+        78,
+        86
+      ]
+    },
+    {
+      "id": "puesto_3",
+      "label": "puesto del mercado",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        57.3,
+        90,
+        7.6,
+        6.9
+      ],
+      "baseline_y": 96,
+      "footprint_cells": [
+        58,
+        92,
+        64,
+        96
+      ]
+    },
+    {
+      "id": "barandilla_e",
+      "label": "barandilla",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        96.8,
+        75.2,
+        2,
+        23.6
+      ],
+      "baseline_y": 98.5,
+      "footprint_cells": [
+        97.5,
+        77.5,
+        98.5,
+        98.5
+      ]
+    },
+    {
+      "id": "flora_1",
+      "label": "flora alienígena bioluminiscente",
+      "solid": false,
+      "tall": false,
+      "bbox": [
+        96.44,
+        79.68,
+        9.12,
+        6.75
+      ],
+      "baseline_y": 84,
+      "footprint_cells": [
+        99.56,
+        82.56,
+        102.44,
+        85.44
+      ]
+    },
+    {
+      "id": "flora_2",
+      "label": "flora alienígena bioluminiscente",
+      "solid": false,
+      "tall": false,
+      "bbox": [
+        97.2,
+        88.4,
+        7.6,
+        5.65
+      ],
+      "baseline_y": 92,
+      "footprint_cells": [
+        99.8,
+        90.8,
+        102.2,
+        93.2
+      ]
+    },
+    {
+      "id": "derived_ent_tablon",
+      "label": "tablón de encargos",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        35.95,
+        57,
+        2.95,
+        4.9
+      ],
+      "baseline_y": 61,
+      "footprint_cells": [
+        37,
+        60,
+        38,
+        61
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "id": "bloque_o",
+      "label": "bloque de viviendas",
+      "type": "building",
+      "rect": [
+        6,
+        6,
+        44,
+        24
+      ],
+      "wall_h": 6,
+      "roof": {
+        "kind": "flat"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8a8d92"
+      }
+    },
+    {
+      "id": "bloque_e",
+      "label": "bloque de viviendas",
+      "type": "building",
+      "rect": [
+        78,
+        6,
+        44,
+        24
+      ],
+      "wall_h": 6,
+      "roof": {
+        "kind": "flat"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8a8d92"
+      }
+    },
+    {
+      "id": "cantina_filtro",
+      "label": "cantina El Filtro",
+      "type": "building",
+      "rect": [
+        14,
+        54,
+        22,
+        26
+      ],
+      "wall_h": 5,
+      "roof": {
+        "kind": "none"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8c8f94"
+      },
+      "doors": [
+        {
+          "edge": "e",
+          "at": 13,
+          "w": 4
+        }
+      ],
+      "cutaway": true
+    },
+    {
+      "id": "cantina_barra",
+      "label": "barra",
+      "type": "prop",
+      "rect": [
+        17,
+        57,
+        12,
+        2
+      ],
+      "shape": "box",
+      "h": 1.5,
+      "color": "#5b5e63"
+    },
+    {
+      "id": "cantina_mesa1",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        19,
+        66,
+        3,
+        3
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#6f6a5e"
+    },
+    {
+      "id": "cantina_mesa2",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        27,
+        71,
+        3,
+        3
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#6f6a5e"
+    },
+    {
+      "id": "mastil",
+      "label": "mástil de comunicaciones",
+      "type": "tower",
+      "at": [
+        64,
+        58
+      ],
+      "r": 3,
+      "h": 16
+    },
+    {
+      "id": "pantalla",
+      "label": "pantalla pública",
+      "type": "prop",
+      "rect": [
+        70,
+        56,
+        4,
+        1
+      ],
+      "shape": "box",
+      "h": 4,
+      "color": "#2b3a45"
+    },
+    {
+      "id": "puesto_1",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        48,
+        80,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "puesto_2",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        72,
+        82,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "puesto_3",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        58,
+        92,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "barandilla_e",
+      "label": "barandilla",
+      "type": "wall",
+      "points": [
+        [
+          98,
+          78
+        ],
+        [
+          98,
+          98
+        ]
+      ],
+      "width": 1,
+      "h": 2
+    },
+    {
+      "id": "flora_1",
+      "label": "flora alienígena bioluminiscente",
+      "type": "bush",
+      "at": [
+        101,
+        84
+      ],
+      "s": 1.2
+    },
+    {
+      "id": "flora_2",
+      "label": "flora alienígena bioluminiscente",
+      "type": "bush",
+      "at": [
+        101,
+        92
+      ],
+      "s": 1
+    },
+    {
+      "id": "derived_ent_tablon",
+      "label": "tablón de encargos",
+      "type": "prop",
+      "rect": [
+        37,
+        60,
+        1,
+        1
+      ],
+      "shape": "box",
+      "h": 3
+    }
+  ],
+  "scene_description": "La Plaza de la colonia Umbral bajo un cielo ocre: losas de hormigón, el mástil de comunicaciones y los puestos del mercado de intercambio. La avenida norte baja desde los bloques de vivienda y la cantina El Filtro abre su puerta al oeste.",
+  "style_tag": "settlement"
+}

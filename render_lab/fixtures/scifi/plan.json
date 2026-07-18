@@ -1,0 +1,233 @@
+{
+  "tile_key": "tile_0_0",
+  "map_ground": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 128 128\"><g id=\"ground\"><line x1=\"64\" y1=\"0\" x2=\"64\" y2=\"72\" stroke=\"#726c60\" stroke-width=\"13\" stroke-linecap=\"round\"/><line x1=\"64\" y1=\"0\" x2=\"64\" y2=\"72\" stroke=\"#9c968a\" stroke-width=\"10\" stroke-linecap=\"round\"/><line x1=\"68\" y1=\"64\" x2=\"128\" y2=\"64\" stroke=\"#726c60\" stroke-width=\"11\" stroke-linecap=\"round\"/><line x1=\"68\" y1=\"64\" x2=\"128\" y2=\"64\" stroke=\"#9c968a\" stroke-width=\"8\" stroke-linecap=\"round\"/><line x1=\"64\" y1=\"70\" x2=\"64\" y2=\"128\" stroke=\"#726c60\" stroke-width=\"13\" stroke-linecap=\"round\"/><line x1=\"64\" y1=\"70\" x2=\"64\" y2=\"128\" stroke=\"#9c968a\" stroke-width=\"10\" stroke-linecap=\"round\"/><ellipse cx=\"64\" cy=\"70\" rx=\"40\" ry=\"33\" fill=\"#a29b8b\"/><ellipse cx=\"46\" cy=\"58\" rx=\"4\" ry=\"3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"58\" cy=\"64\" rx=\"5\" ry=\"3\" fill=\"#b0a999\" opacity=\"0.7\"/><ellipse cx=\"74\" cy=\"60\" rx=\"4\" ry=\"3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"84\" cy=\"70\" rx=\"5\" ry=\"3\" fill=\"#b0a999\" opacity=\"0.7\"/><ellipse cx=\"50\" cy=\"78\" rx=\"5\" ry=\"3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"70\" cy=\"82\" rx=\"4\" ry=\"3\" fill=\"#b0a999\" opacity=\"0.7\"/><ellipse cx=\"80\" cy=\"88\" rx=\"5\" ry=\"3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"56\" cy=\"92\" rx=\"4\" ry=\"3\" fill=\"#b0a999\" opacity=\"0.7\"/><ellipse cx=\"88\" cy=\"78\" rx=\"4\" ry=\"3\" fill=\"#8f887a\" opacity=\"0.75\"/><ellipse cx=\"42\" cy=\"70\" rx=\"4\" ry=\"3\" fill=\"#b0a999\" opacity=\"0.7\"/></g><g id=\"water\"/></svg>",
+  "volumes": [
+    {
+      "id": "bloque_o",
+      "label": "bloque de viviendas",
+      "type": "building",
+      "rect": [
+        6,
+        6,
+        44,
+        24
+      ],
+      "wall_h": 6,
+      "roof": {
+        "kind": "flat"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8a8d92"
+      }
+    },
+    {
+      "id": "bloque_e",
+      "label": "bloque de viviendas",
+      "type": "building",
+      "rect": [
+        78,
+        6,
+        44,
+        24
+      ],
+      "wall_h": 6,
+      "roof": {
+        "kind": "flat"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8a8d92"
+      }
+    },
+    {
+      "id": "cantina_filtro",
+      "label": "cantina El Filtro",
+      "type": "building",
+      "rect": [
+        14,
+        54,
+        22,
+        26
+      ],
+      "wall_h": 5,
+      "roof": {
+        "kind": "none"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#8c8f94"
+      },
+      "doors": [
+        {
+          "edge": "e",
+          "at": 13,
+          "w": 4
+        }
+      ],
+      "cutaway": true
+    },
+    {
+      "id": "cantina_barra",
+      "label": "barra",
+      "type": "prop",
+      "rect": [
+        17,
+        57,
+        12,
+        2
+      ],
+      "shape": "box",
+      "h": 1.5,
+      "color": "#5b5e63"
+    },
+    {
+      "id": "cantina_mesa1",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        19,
+        66,
+        3,
+        3
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#6f6a5e"
+    },
+    {
+      "id": "cantina_mesa2",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        27,
+        71,
+        3,
+        3
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#6f6a5e"
+    },
+    {
+      "id": "mastil",
+      "label": "mástil de comunicaciones",
+      "type": "tower",
+      "at": [
+        64,
+        58
+      ],
+      "r": 3,
+      "h": 16
+    },
+    {
+      "id": "pantalla",
+      "label": "pantalla pública",
+      "type": "prop",
+      "rect": [
+        70,
+        56,
+        4,
+        1
+      ],
+      "shape": "box",
+      "h": 4,
+      "color": "#2b3a45"
+    },
+    {
+      "id": "puesto_1",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        48,
+        80,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "puesto_2",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        72,
+        82,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "puesto_3",
+      "label": "puesto del mercado",
+      "type": "prop",
+      "rect": [
+        58,
+        92,
+        6,
+        4
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#7a5c3a"
+    },
+    {
+      "id": "barandilla_e",
+      "label": "barandilla",
+      "type": "wall",
+      "points": [
+        [
+          98,
+          78
+        ],
+        [
+          98,
+          98
+        ]
+      ],
+      "width": 1,
+      "h": 2
+    },
+    {
+      "id": "flora_1",
+      "label": "flora alienígena bioluminiscente",
+      "type": "bush",
+      "at": [
+        101,
+        84
+      ],
+      "s": 1.2
+    },
+    {
+      "id": "flora_2",
+      "label": "flora alienígena bioluminiscente",
+      "type": "bush",
+      "at": [
+        101,
+        92
+      ],
+      "s": 1
+    },
+    {
+      "id": "derived_ent_tablon",
+      "label": "tablón de encargos",
+      "type": "prop",
+      "rect": [
+        37,
+        60,
+        1,
+        1
+      ],
+      "shape": "box",
+      "h": 3
+    }
+  ],
+  "biome": "stone",
+  "scene_description": "La Plaza de la colonia Umbral bajo un cielo ocre: losas de hormigón, el mástil de comunicaciones y los puestos del mercado de intercambio. La avenida norte baja desde los bloques de vivienda y la cantina El Filtro abre su puerta al oeste.",
+  "style_tag": "settlement"
+}

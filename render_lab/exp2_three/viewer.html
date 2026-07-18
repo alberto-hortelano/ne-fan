@@ -1,0 +1,144 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>html,body{margin:0;background:#1d2a18}canvas{display:block}</style>
+<script type="importmap">
+  {"imports": {"three": "https://unpkg.com/three@0.170.0/build/three.module.js"}}
+</script>
+<script type="module">
+  // viewer.html — render oblicuo de una escena three.js del bench.
+  //   ?scene=<módulo relativo a render_lab/> (export async build(THREE, ctx))
+  //   &plan=<plan.json>  &ground=<png del suelo>  &tex=<dir de texturas>
+  // Reproduce la proyección del compositor: cámara ortográfica CENITAL +
+  // cizalla en la matriz del grupo raíz (x' = x + KX·y, z' = z − KY·y) con
+  // KX=−0.35, KY=1 — idéntico a pt(u,v,h) de blueprint/projection.ts.
+  import * as THREE from "three";
+
+  const params = new URLSearchParams(location.search);
+  const KX = -0.35, KY = 1;
+  const VB = { minX: -12, minY: -32, width: 140, height: 160 }; // viewBox del compositor
+  const PX = 4; // px por celda (PX_PER_UNIT del bench)
+
+  //: mode=masks — pasada de segmentación: cada unidad de oclusión en un color
+  //: plano de una paleta separada; el resto negro. Sin AA (bordes duros) y
+  //: sin conversión de espacio de color (valores exactos en el PNG).
+  const MASK_MODE = params.get("mode") === "masks";
+  const renderer = new THREE.WebGLRenderer({ antialias: !MASK_MODE, preserveDrawingBuffer: true });
+  renderer.setSize(VB.width * PX, VB.height * PX);
+  renderer.setClearColor(MASK_MODE ? 0x000000 : 0x1d2a18, 1);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const cx = VB.minX + VB.width / 2;   // 58
+  const cz = VB.minY + VB.height / 2;  // 48
+  const cam = new THREE.OrthographicCamera(
+    -VB.width / 2, VB.width / 2, VB.height / 2, -VB.height / 2, 0.1, 1000,
+  );
+  cam.position.set(cx, 400, cz);
+  cam.up.set(0, 0, -1);
+  cam.lookAt(cx, 0, cz);
+  scene.add(cam);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(-80, 140, 220); // desde el sur(-oeste): cara sur lit, este en sombra
+  sun.target.position.set(64, 0, 64);
+  scene.add(sun, sun.target);
+
+  const texCache = new Map();
+  const texDir = params.get("tex") || "../runs/001_alternativas/textures";
+  function texture(name, repeat = [1, 1]) {
+    const key = `${name}:${repeat}`;
+    if (!texCache.has(key)) {
+      const t = new THREE.TextureLoader().load(`${texDir}/${name}.png`);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(repeat[0], repeat[1]);
+      t.colorSpace = THREE.SRGBColorSpace;
+      texCache.set(key, t);
+    }
+    return texCache.get(key);
+  }
+
+  async function main() {
+    const planUrl = params.get("plan");
+    const plan = planUrl ? await (await fetch(planUrl)).json() : null;
+    const mod = await import(params.get("scene"));
+    const ctx = { plan, texture, ground: params.get("ground"), cells: 128, THREE };
+    const built = await mod.build(THREE, ctx);
+
+    let maskMeta = null;
+    if (MASK_MODE) {
+      // Todo negro; después cada unidad de oclusión pinta plano su color.
+      const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      built.group.traverse((m) => { if (m.isMesh) m.material = black; });
+      const units = built.occluders ?? [];
+      maskMeta = units.map((o, i) => {
+        // Paleta rejilla RGB (separación mínima ~68/canal, sin negro) — los
+        // valores se declaran en sRGB para que el PNG devuelva el MISMO hex.
+        const q = [0.2, 0.47, 0.73, 1.0];
+        const col = new THREE.Color().setRGB(
+          q[i % 4], q[Math.floor(i / 4) % 4], q[Math.floor(i / 16) % 4],
+          THREE.SRGBColorSpace,
+        );
+        const mat = new THREE.MeshBasicMaterial({ color: col });
+        o.node.traverse((m) => { if (m.isMesh) m.material = mat; });
+        return {
+          id: o.id,
+          color: `#${col.getHexString()}`,
+          footprint: o.footprint,
+          h: o.h,
+          proximity_only: o.proximityOnly ?? false,
+        };
+      });
+    }
+
+    const root = new THREE.Group();
+    root.add(built.group);
+    // Cizalla oblicua idéntica al compositor (KY=1): fila x recibe KX·y,
+    // fila z recibe −KY·y; la y se conserva para que el z-buffer ordene.
+    root.matrixAutoUpdate = false;
+    root.matrix.set(
+      1, KX, 0, 0,
+      0, 1, 0, 0,
+      0, -KY, 1, 0,
+      0, 0, 0, 1,
+    );
+    scene.add(root);
+
+    // Primer frame dispara la carga de texturas; esperar a que TODAS
+    // terminen (LoadingManager) antes del frame definitivo.
+    renderer.render(scene, cam);
+    await new Promise((resolve) => {
+      const mgr = THREE.DefaultLoadingManager;
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      mgr.onLoad = finish;
+      mgr.onError = (url) => { console.error("texture failed:", url); finish(); };
+      setTimeout(finish, 12000); // techo por si no había nada pendiente
+      setTimeout(() => { if (!mgr.isLoading) finish(); }, 500);
+    });
+    renderer.render(scene, cam);
+
+    window.__scene_dump = JSON.stringify({
+      manifest: built.manifest ?? null,
+      masks: maskMeta,
+      objects: built.group.children.map((o) => ({
+        name: o.name, pos: o.position.toArray(),
+      })),
+    });
+    const dump = document.createElement("pre");
+    dump.id = "scene-dump";
+    dump.style.display = "none";
+    dump.textContent = window.__scene_dump;
+    document.body.appendChild(dump);
+    document.title = "ready";
+  }
+  main().catch((err) => {
+    document.title = "error";
+    const pre = document.createElement("pre");
+    pre.id = "scene-error";
+    pre.textContent = String(err && err.stack || err);
+    pre.style.color = "#f66";
+    document.body.appendChild(pre);
+  });
+</script>

@@ -25,6 +25,7 @@ from narrative_schemas import (
     validate_scene_classify_response,
     validate_narrative_reaction,
     validate_blueprint_review,
+    validate_image_review,
 )
 
 
@@ -720,6 +721,59 @@ class LLMClient:
         with self._pending_lock:
             self._pending.pop(request_id, None)
         print(f"LLM: scene_classify MCP timeout ({timeout}s)")
+        return None
+
+    def review_scene_image(self, image_b64: str, context: dict | None = None) -> dict | None:
+        """Revisión por visión del tile REPINTADO: objetos extra que el modelo
+        de imagen inventó (no declarados). Devuelve {"extras": [...]}
+        validado, o None si no hay listener MCP (el caller degrada: el tile
+        queda solo con el mundo declarado). Solo MCP — como blueprint_review,
+        no tiene sentido sin la sesión del motor escuchando."""
+        if not (self._ws_connected and self._ws):
+            print("LLM: image_review sin MCP bridge — se omite")
+            return None
+        request_id = str(uuid.uuid4())
+        with self._pending_lock:
+            self._pending[request_id] = None
+        try:
+            self._ws.send(json.dumps({  # type: ignore
+                "type": "vision_request",
+                "request_id": request_id,
+                "kind": "image_review",
+                "images": [
+                    {"view": "repainted_tile", "media_type": "image/png", "data_b64": image_b64},
+                ],
+                "context": context or {},
+            }))
+        except Exception as e:
+            print(f"LLM: image_review MCP send failed ({e})")
+            with self._pending_lock:
+                self._pending.pop(request_id, None)
+            return None
+        print(f"LLM: image_review sent via MCP (id={request_id[:8]})")
+
+        timeout = max(self.timeout, 180.0)
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._pending_lock:
+                result = self._pending.get(request_id)
+                if result is not None:
+                    del self._pending[request_id]
+                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
+                        print("LLM: image_review — no hay listener MCP")
+                        return None
+                    try:
+                        validated = validate_image_review(result if isinstance(result, dict) else None)
+                    except ValueError as err:
+                        print(f"LLM: image_review inválido: {err}")
+                        return None
+                    print(f"LLM: image_review recibido ({time.time() - start:.1f}s, "
+                          f"{len(validated['extras'])} extras)")
+                    return validated
+            time.sleep(0.1)
+        with self._pending_lock:
+            self._pending.pop(request_id, None)
+        print(f"LLM: image_review MCP timeout ({timeout}s)")
         return None
 
     def _classify_scene_via_api(

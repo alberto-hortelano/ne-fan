@@ -1,0 +1,398 @@
+{
+  "tile_key": "tile_0_0",
+  "map_ground": "<svg viewBox=\"0 0 128 128\" xmlns=\"http://www.w3.org/2000/svg\"><g id=\"ground\"><ellipse cx=\"64\" cy=\"58\" rx=\"17\" ry=\"11\" fill=\"#a29b8b\"/><ellipse cx=\"56\" cy=\"54\" rx=\"2.2\" ry=\"1.4\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"70\" cy=\"55\" rx=\"2.5\" ry=\"1.5\" fill=\"#b0a999\" opacity=\"0.8\"/><ellipse cx=\"60\" cy=\"62\" rx=\"2.1\" ry=\"1.3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"72\" cy=\"61\" rx=\"2.4\" ry=\"1.5\" fill=\"#b0a999\" opacity=\"0.8\"/><ellipse cx=\"66\" cy=\"66\" rx=\"2.2\" ry=\"1.3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"54\" cy=\"60\" rx=\"1.8\" ry=\"1.2\" fill=\"#b0a999\" opacity=\"0.8\"/><ellipse cx=\"76\" cy=\"58\" rx=\"2.0\" ry=\"1.3\" fill=\"#8f887a\" opacity=\"0.8\"/><ellipse cx=\"62\" cy=\"68\" rx=\"1.9\" ry=\"1.2\" fill=\"#b0a999\" opacity=\"0.8\"/><path d=\"M0,62 C30,63 48,64 64,64 S100,64 128,64\" fill=\"none\" stroke=\"#8f8878\" stroke-width=\"7\" stroke-linecap=\"round\"/><path d=\"M0,62 C30,63 48,64 64,64 S100,64 128,64\" fill=\"none\" stroke=\"#a8a191\" stroke-width=\"5.2\" stroke-linecap=\"round\"/><path d=\"M60,56 C58,42 56,14 54,0\" fill=\"none\" stroke=\"#8a7650\" stroke-width=\"3.2\" stroke-linecap=\"round\" opacity=\"0.9\"/><path d=\"M60,56 C58,42 56,14 54,0\" fill=\"none\" stroke=\"#a89162\" stroke-width=\"2.2\" stroke-linecap=\"round\"/><path d=\"M66,66 C68,90 70,110 72,128\" fill=\"none\" stroke=\"#8a7650\" stroke-width=\"3.2\" stroke-linecap=\"round\" opacity=\"0.9\"/><path d=\"M66,66 C68,90 70,110 72,128\" fill=\"none\" stroke=\"#a89162\" stroke-width=\"2.2\" stroke-linecap=\"round\"/><rect x=\"41\" y=\"41\" width=\"14\" height=\"10\" fill=\"#7c5a36\"/><line x1=\"41\" y1=\"44\" x2=\"55\" y2=\"44\" stroke=\"#5f4426\" stroke-width=\"0.4\"/><line x1=\"41\" y1=\"47\" x2=\"55\" y2=\"47\" stroke=\"#5f4426\" stroke-width=\"0.4\"/><line x1=\"41\" y1=\"50\" x2=\"55\" y2=\"50\" stroke=\"#5f4426\" stroke-width=\"0.4\"/><ellipse cx=\"48\" cy=\"53\" rx=\"5\" ry=\"2.5\" fill=\"#8a7650\" opacity=\"0.55\"/><ellipse cx=\"62\" cy=\"72\" rx=\"4.5\" ry=\"2\" fill=\"#8a7650\" opacity=\"0.55\"/><rect x=\"1\" y=\"90\" width=\"32\" height=\"37\" fill=\"#6d5a3a\" opacity=\"0.85\"/><line x1=\"3\" y1=\"96\" x2=\"31\" y2=\"96\" stroke=\"#48682f\" stroke-width=\"1.2\" opacity=\"0.5\"/><line x1=\"3\" y1=\"103\" x2=\"31\" y2=\"103\" stroke=\"#48682f\" stroke-width=\"1.2\" opacity=\"0.5\"/><line x1=\"3\" y1=\"110\" x2=\"31\" y2=\"110\" stroke=\"#48682f\" stroke-width=\"1.2\" opacity=\"0.5\"/><line x1=\"3\" y1=\"117\" x2=\"31\" y2=\"117\" stroke=\"#48682f\" stroke-width=\"1.2\" opacity=\"0.5\"/><line x1=\"3\" y1=\"124\" x2=\"31\" y2=\"124\" stroke=\"#48682f\" stroke-width=\"1.2\" opacity=\"0.5\"/></g><g id=\"water\"/></svg>",
+  "volumes": [
+    {
+      "id": "taberna_serrana",
+      "label": "taberna",
+      "type": "building",
+      "rect": [
+        40,
+        40,
+        16,
+        12
+      ],
+      "walls": {
+        "material": "timber",
+        "color": "#6b543a"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 7,
+          "w": 4
+        }
+      ],
+      "cutaway": true
+    },
+    {
+      "id": "horno_barrio",
+      "label": "horno",
+      "type": "building",
+      "rect": [
+        56,
+        74,
+        12,
+        10
+      ],
+      "wall_h": 5,
+      "roof": {
+        "kind": "shed",
+        "material": "tile",
+        "color": "#9a5b3c"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#c9b89a"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_calle_n",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        70,
+        30,
+        14,
+        10
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "x",
+        "material": "tile",
+        "color": "#a05a38"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#cfc0a2"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 6,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_calle_s",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        18,
+        70,
+        12,
+        10
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "x",
+        "material": "tile",
+        "color": "#96522f"
+      },
+      "walls": {
+        "material": "stone",
+        "color": "#b3a68e"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_adarve",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        82,
+        74,
+        12,
+        10
+      ],
+      "roof": {
+        "kind": "hip",
+        "material": "tile",
+        "color": "#a05a38"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#c9b89a"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_zocodover",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        110,
+        42,
+        14,
+        12
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "y",
+        "material": "tile",
+        "color": "#96522f"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#cfc0a2"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 6,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "muralla_adarve",
+      "label": "muralla",
+      "type": "wall",
+      "points": [
+        [
+          102,
+          0
+        ],
+        [
+          102,
+          128
+        ]
+      ],
+      "width": 4,
+      "h": 9,
+      "crenellated": true
+    },
+    {
+      "id": "torre_adarve",
+      "label": "torre",
+      "type": "tower",
+      "at": [
+        102,
+        34
+      ],
+      "r": 6,
+      "h": 13,
+      "crenellated": true
+    },
+    {
+      "id": "puerta_adarve",
+      "label": "arco del adarve",
+      "type": "gate",
+      "at": [
+        102,
+        64
+      ],
+      "w": 8,
+      "h": 10,
+      "orient": "y"
+    },
+    {
+      "id": "tapia_huerto_n",
+      "label": "tapia",
+      "type": "wall",
+      "points": [
+        [
+          0,
+          88
+        ],
+        [
+          34,
+          88
+        ],
+        [
+          34,
+          98
+        ]
+      ],
+      "width": 2,
+      "h": 4
+    },
+    {
+      "id": "tapia_huerto_s",
+      "label": "tapia",
+      "type": "wall",
+      "points": [
+        [
+          34,
+          106
+        ],
+        [
+          34,
+          128
+        ]
+      ],
+      "width": 2,
+      "h": 4
+    },
+    {
+      "id": "pozo_plazuela",
+      "label": "pozo",
+      "type": "fountain",
+      "at": [
+        64,
+        52
+      ],
+      "r": 3
+    },
+    {
+      "id": "puesto_cambista",
+      "label": "puesto de cambista",
+      "type": "prop",
+      "rect": [
+        74,
+        54,
+        4,
+        2
+      ],
+      "shape": "box",
+      "h": 3,
+      "color": "#7a5c3e"
+    },
+    {
+      "id": "banco_plaza",
+      "label": "banco",
+      "type": "prop",
+      "rect": [
+        60,
+        68,
+        3,
+        1
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#8f887a"
+    },
+    {
+      "id": "carro_lena",
+      "label": "carro",
+      "type": "prop",
+      "rect": [
+        88,
+        58,
+        4,
+        2
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#8a6b4a"
+    },
+    {
+      "id": "mostrador_taberna",
+      "label": "mostrador",
+      "type": "prop",
+      "rect": [
+        42,
+        43,
+        5,
+        2
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#5f4426"
+    },
+    {
+      "id": "mesa_taberna",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        46,
+        47,
+        3,
+        2
+      ],
+      "shape": "box",
+      "h": 1.5,
+      "color": "#6b543a"
+    },
+    {
+      "id": "barril_taberna",
+      "label": "barril",
+      "type": "prop",
+      "at": [
+        53,
+        42
+      ],
+      "shape": "cylinder",
+      "h": 2,
+      "color": "#7a5c3e"
+    },
+    {
+      "id": "frutal_1",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        8,
+        100
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_2",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        18,
+        96
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_3",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        26,
+        108
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_4",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        10,
+        116
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_5",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        22,
+        120
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    }
+  ],
+  "biome": "dirt",
+  "scene_description": "La plazuela de las Cuatro Calles, entre la catedral y Zocodover: un pozo de brocal gastado, el puesto del cambista, la taberna de la Serrana y el horno del barrio. Al este, un tramo de adarve con su torre y su arco abre la calle real hacia Zocodover; al suroeste, una tapia guarda el huerto de los canónigos.",
+  "style_tag": "settlement"
+}

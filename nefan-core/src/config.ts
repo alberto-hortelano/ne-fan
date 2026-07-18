@@ -28,6 +28,19 @@ export interface NefanConfig {
     ai_textures: boolean;
     /** AI GLB models for objects/buildings via /generate_model. */
     ai_models: boolean;
+    /** Cómo derivar los occluders/placa de la imagen IA del tile:
+     *  - "masks": recorte por las máscaras del PROPIO compositor (cada tramo
+     *    occluder rasterizado como alpha sobre la imagen repintada). Sin
+     *    llamadas a SAM2 ni clasificador de visión para lo declarado —
+     *    sabemos píxel a píxel qué es cada cosa (bench render_lab 001).
+     *  - "sam": pipeline legacy /analyze_scene_image (SAM2 auto-segment +
+     *    visión + refinado por caja). */
+    image_analysis: "masks" | "sam";
+    /** Revisión por visión del tile REPINTADO (kind MCP image_review): los
+     *  objetos que el img2img inventa ganan colisión/oclusión (keep) o se
+     *  inpaintan (remove). Requiere listener del motor; si no está, el tile
+     *  queda solo con el mundo declarado (error log, no fatal). */
+    image_review: boolean;
   };
   narrative: {
     /** Demand a live narrative listener (a second Claude Code session that
@@ -134,6 +147,8 @@ export const CONFIG: NefanConfig = {
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
+    image_analysis: "masks",
+    image_review: true,
   },
   narrative: {
     require_llm: true,

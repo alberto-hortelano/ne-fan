@@ -1,0 +1,722 @@
+[
+  {
+    "id": "muralla_adarve:0",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_0.svg",
+    "bbox": [
+      95.85,
+      -10.8,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 14.8,
+    "footprint_cells": [
+      100,
+      -2,
+      104,
+      14.8
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:1",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_1.svg",
+    "bbox": [
+      95.85,
+      2,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 27.6,
+    "footprint_cells": [
+      100,
+      10.8,
+      104,
+      27.6
+    ],
+    "overhead": false
+  },
+  {
+    "id": "taberna_serrana:back_n",
+    "vid": "taberna_serrana",
+    "label": "taberna",
+    "file": "taberna_serrana_back_n.svg",
+    "bbox": [
+      37.25,
+      34,
+      19.75,
+      8.2
+    ],
+    "baseline_y": 40,
+    "footprint_cells": [
+      40,
+      40,
+      56,
+      41.2
+    ],
+    "overhead": false
+  },
+  {
+    "id": "taberna_serrana:back_w",
+    "vid": "taberna_serrana",
+    "label": "taberna",
+    "file": "taberna_serrana_back_w.svg",
+    "bbox": [
+      37.25,
+      34,
+      4.95,
+      19
+    ],
+    "baseline_y": 40,
+    "footprint_cells": [
+      40,
+      40,
+      41.2,
+      52
+    ],
+    "overhead": false
+  },
+  {
+    "id": "casa_calle_n",
+    "vid": "casa_calle_n",
+    "label": "casa",
+    "file": "casa_calle_n.svg",
+    "bbox": [
+      64.74,
+      22.8,
+      21.26,
+      19.4
+    ],
+    "baseline_y": 40,
+    "footprint_cells": [
+      70,
+      30,
+      84,
+      40
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:2",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_2.svg",
+    "bbox": [
+      95.85,
+      14.8,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 40.4,
+    "footprint_cells": [
+      100,
+      23.6,
+      104,
+      40.4
+    ],
+    "overhead": false
+  },
+  {
+    "id": "torre_adarve",
+    "vid": "torre_adarve",
+    "label": "torre",
+    "file": "torre_adarve.svg",
+    "bbox": [
+      90.45,
+      14,
+      20.15,
+      28.5
+    ],
+    "baseline_y": 40,
+    "footprint_cells": [
+      96,
+      28,
+      108,
+      40
+    ],
+    "overhead": false
+  },
+  {
+    "id": "taberna_serrana:front",
+    "vid": "taberna_serrana",
+    "label": "taberna",
+    "file": "taberna_serrana_front.svg",
+    "bbox": [
+      38.37,
+      37.2,
+      18.63,
+      17.2
+    ],
+    "baseline_y": 52,
+    "footprint_cells": [
+      40,
+      50.8,
+      56,
+      52
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:3",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_3.svg",
+    "bbox": [
+      95.85,
+      27.6,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 53.2,
+    "footprint_cells": [
+      100,
+      36.4,
+      104,
+      53.2
+    ],
+    "overhead": false
+  },
+  {
+    "id": "casa_zocodover",
+    "vid": "casa_zocodover",
+    "label": "casa",
+    "file": "casa_zocodover.svg",
+    "bbox": [
+      106.05,
+      31.05,
+      19.95,
+      25.15
+    ],
+    "baseline_y": 54,
+    "footprint_cells": [
+      110,
+      42,
+      124,
+      54
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:4",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_4.svg",
+    "bbox": [
+      95.85,
+      40.4,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 66,
+    "footprint_cells": [
+      100,
+      49.2,
+      104,
+      66
+    ],
+    "overhead": false
+  },
+  {
+    "id": "puerta_adarve",
+    "vid": "puerta_adarve",
+    "label": "arco del adarve",
+    "file": "puerta_adarve.svg",
+    "bbox": [
+      95.3,
+      45.52,
+      10.8,
+      27.38
+    ],
+    "baseline_y": 71,
+    "footprint_cells": [
+      99.8,
+      57,
+      104.2,
+      71
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:5",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_5.svg",
+    "bbox": [
+      95.85,
+      53.2,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 78.8,
+    "footprint_cells": [
+      100,
+      62,
+      104,
+      78.8
+    ],
+    "overhead": false
+  },
+  {
+    "id": "casa_calle_s",
+    "vid": "casa_calle_s",
+    "label": "casa",
+    "file": "casa_calle_s.svg",
+    "bbox": [
+      12.74,
+      62.8,
+      19.26,
+      19.2
+    ],
+    "baseline_y": 80,
+    "footprint_cells": [
+      18,
+      70,
+      30,
+      80
+    ],
+    "overhead": false
+  },
+  {
+    "id": "horno_barrio",
+    "vid": "horno_barrio",
+    "label": "horno",
+    "file": "horno_barrio.svg",
+    "bbox": [
+      50.74,
+      63.05,
+      19.26,
+      22.95
+    ],
+    "baseline_y": 84,
+    "footprint_cells": [
+      56,
+      74,
+      68,
+      84
+    ],
+    "overhead": false
+  },
+  {
+    "id": "casa_adarve",
+    "vid": "casa_adarve",
+    "label": "casa",
+    "file": "casa_adarve.svg",
+    "bbox": [
+      76.74,
+      66.8,
+      19.26,
+      19.2
+    ],
+    "baseline_y": 84,
+    "footprint_cells": [
+      82,
+      74,
+      94,
+      84
+    ],
+    "overhead": false
+  },
+  {
+    "id": "tapia_huerto_n:0",
+    "vid": "tapia_huerto_n",
+    "label": "tapia",
+    "file": "tapia_huerto_n_0.svg",
+    "bbox": [
+      -2.4,
+      81.1,
+      15.03,
+      9.7
+    ],
+    "baseline_y": 89,
+    "footprint_cells": [
+      -1,
+      87,
+      12.33,
+      89
+    ],
+    "overhead": false
+  },
+  {
+    "id": "tapia_huerto_n:1",
+    "vid": "tapia_huerto_n",
+    "label": "tapia",
+    "file": "tapia_huerto_n_1.svg",
+    "bbox": [
+      8.93,
+      81.1,
+      15.03,
+      9.7
+    ],
+    "baseline_y": 89,
+    "footprint_cells": [
+      10.33,
+      87,
+      23.67,
+      89
+    ],
+    "overhead": false
+  },
+  {
+    "id": "tapia_huerto_n:2",
+    "vid": "tapia_huerto_n",
+    "label": "tapia",
+    "file": "tapia_huerto_n_2.svg",
+    "bbox": [
+      20.27,
+      81.1,
+      15.03,
+      9.7
+    ],
+    "baseline_y": 89,
+    "footprint_cells": [
+      21.67,
+      87,
+      35,
+      89
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:6",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_6.svg",
+    "bbox": [
+      95.85,
+      66,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 91.6,
+    "footprint_cells": [
+      100,
+      74.8,
+      104,
+      91.6
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_2:trunk",
+    "vid": "frutal_2",
+    "label": "frutal",
+    "file": "frutal_2_trunk.svg",
+    "bbox": [
+      15.42,
+      90.5,
+      5.96,
+      8.73
+    ],
+    "baseline_y": 96,
+    "footprint_cells": [
+      17.19,
+      95.19,
+      18.81,
+      96.81
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_2:canopy",
+    "vid": "frutal_2",
+    "label": "frutal",
+    "file": "frutal_2_canopy.svg",
+    "bbox": [
+      10.88,
+      82.94,
+      14.24,
+      12.26
+    ],
+    "baseline_y": 96,
+    "footprint_cells": [
+      17.19,
+      95.19,
+      18.81,
+      96.81
+    ],
+    "overhead": true
+  },
+  {
+    "id": "tapia_huerto_n:3",
+    "vid": "tapia_huerto_n",
+    "label": "tapia",
+    "file": "tapia_huerto_n_3.svg",
+    "bbox": [
+      30.6,
+      82.2,
+      5.7,
+      17.6
+    ],
+    "baseline_y": 99,
+    "footprint_cells": [
+      33,
+      87,
+      35,
+      99
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_1:trunk",
+    "vid": "frutal_1",
+    "label": "frutal",
+    "file": "frutal_1_trunk.svg",
+    "bbox": [
+      5.42,
+      94.5,
+      5.96,
+      8.73
+    ],
+    "baseline_y": 100,
+    "footprint_cells": [
+      7.19,
+      99.19,
+      8.81,
+      100.81
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_1:canopy",
+    "vid": "frutal_1",
+    "label": "frutal",
+    "file": "frutal_1_canopy.svg",
+    "bbox": [
+      0.88,
+      86.94,
+      14.24,
+      12.26
+    ],
+    "baseline_y": 100,
+    "footprint_cells": [
+      7.19,
+      99.19,
+      8.81,
+      100.81
+    ],
+    "overhead": true
+  },
+  {
+    "id": "muralla_adarve:7",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_7.svg",
+    "bbox": [
+      95.85,
+      78.8,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 104.4,
+    "footprint_cells": [
+      100,
+      87.6,
+      104,
+      104.4
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_3:trunk",
+    "vid": "frutal_3",
+    "label": "frutal",
+    "file": "frutal_3_trunk.svg",
+    "bbox": [
+      23.42,
+      102.5,
+      5.96,
+      8.73
+    ],
+    "baseline_y": 108,
+    "footprint_cells": [
+      25.19,
+      107.19,
+      26.81,
+      108.81
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_3:canopy",
+    "vid": "frutal_3",
+    "label": "frutal",
+    "file": "frutal_3_canopy.svg",
+    "bbox": [
+      18.88,
+      94.94,
+      14.24,
+      12.26
+    ],
+    "baseline_y": 108,
+    "footprint_cells": [
+      25.19,
+      107.19,
+      26.81,
+      108.81
+    ],
+    "overhead": true
+  },
+  {
+    "id": "frutal_4:trunk",
+    "vid": "frutal_4",
+    "label": "frutal",
+    "file": "frutal_4_trunk.svg",
+    "bbox": [
+      7.42,
+      110.5,
+      5.96,
+      8.73
+    ],
+    "baseline_y": 116,
+    "footprint_cells": [
+      9.19,
+      115.19,
+      10.81,
+      116.81
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_4:canopy",
+    "vid": "frutal_4",
+    "label": "frutal",
+    "file": "frutal_4_canopy.svg",
+    "bbox": [
+      2.88,
+      102.94,
+      14.24,
+      12.26
+    ],
+    "baseline_y": 116,
+    "footprint_cells": [
+      9.19,
+      115.19,
+      10.81,
+      116.81
+    ],
+    "overhead": true
+  },
+  {
+    "id": "muralla_adarve:8",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_8.svg",
+    "bbox": [
+      95.85,
+      91.6,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 117.2,
+    "footprint_cells": [
+      100,
+      100.4,
+      104,
+      117.2
+    ],
+    "overhead": false
+  },
+  {
+    "id": "tapia_huerto_s:0",
+    "vid": "tapia_huerto_s",
+    "label": "tapia",
+    "file": "tapia_huerto_s_0.svg",
+    "bbox": [
+      30.6,
+      100.2,
+      5.7,
+      18.6
+    ],
+    "baseline_y": 118,
+    "footprint_cells": [
+      33,
+      105,
+      35,
+      118
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_5:trunk",
+    "vid": "frutal_5",
+    "label": "frutal",
+    "file": "frutal_5_trunk.svg",
+    "bbox": [
+      19.42,
+      114.5,
+      5.96,
+      8.73
+    ],
+    "baseline_y": 120,
+    "footprint_cells": [
+      21.19,
+      119.19,
+      22.81,
+      120.81
+    ],
+    "overhead": false
+  },
+  {
+    "id": "frutal_5:canopy",
+    "vid": "frutal_5",
+    "label": "frutal",
+    "file": "frutal_5_canopy.svg",
+    "bbox": [
+      14.88,
+      106.94,
+      14.24,
+      12.26
+    ],
+    "baseline_y": 120,
+    "footprint_cells": [
+      21.19,
+      119.19,
+      22.81,
+      120.81
+    ],
+    "overhead": true
+  },
+  {
+    "id": "tapia_huerto_s:1",
+    "vid": "tapia_huerto_s",
+    "label": "tapia",
+    "file": "tapia_huerto_s_1.svg",
+    "bbox": [
+      30.6,
+      111.2,
+      5.7,
+      18.6
+    ],
+    "baseline_y": 129,
+    "footprint_cells": [
+      33,
+      116,
+      35,
+      129
+    ],
+    "overhead": false
+  },
+  {
+    "id": "muralla_adarve:9",
+    "vid": "muralla_adarve",
+    "label": "muralla",
+    "file": "muralla_adarve_9.svg",
+    "bbox": [
+      95.85,
+      104.4,
+      9.45,
+      25.4
+    ],
+    "baseline_y": 130,
+    "footprint_cells": [
+      100,
+      113.2,
+      104,
+      130
+    ],
+    "overhead": false
+  }
+]
