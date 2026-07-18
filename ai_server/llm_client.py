@@ -741,10 +741,15 @@ class LLMClient:
         if expected:
             header += (
                 "\n\nThe tile's authored plan declares these elements "
-                "({label, solid, tall, bbox_px}) — near-ground truth: a region "
+                "({id, label, solid, tall, bbox_px}) — near-ground truth: a region "
                 "overlapping a declared bbox almost certainly IS that element "
                 "(reuse its label, lean towards its solid/tall; never mark it "
-                f"walkable ground):\n{json.dumps(expected)}"
+                "walkable ground). ORDER the regions against the plan: when a "
+                "region belongs to a declared element, set element_id to that "
+                "element's id; the segmenter often splits ONE object into several "
+                "regions (windows, door and roof of one building) — give ALL its "
+                "parts the SAME element_id. Omit element_id for additions of the "
+                f"image model:\n{json.dumps(expected)}"
             )
         content: list = [{
             "type": "text",

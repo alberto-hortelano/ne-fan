@@ -1,0 +1,18 @@
+{
+  "description": "element_id presente debe ser string no vacío",
+  "expect": "reject",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "casa",
+        "solid": true,
+        "tall": true,
+        "element_id": ""
+      }
+    ]
+  },
+  "expected_indices": [
+    0
+  ]
+}

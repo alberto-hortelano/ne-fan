@@ -14,10 +14,13 @@ import httpx
 
 # Límites de prompt por endpoint. 600 está DOCUMENTADO para los endpoints 3D
 # (text-to-3d / image-to-3d); para image-to-image (nano-banana*) la doc no
-# publica límite — 2000 da margen a las instrucciones de escena. Si la API
-# rechazara un prompt largo, el 4xx sube fail-loud con el mensaje de Meshy.
+# publica límite — 3000 da margen a la instrucción de escena completa (con las
+# cláusulas de rol de la ref de estilo del bench 003 mide ~2800; con 2000 se
+# truncaba la cola: descripción de escena, style_token y reglas de estilo).
+# Si la API rechazara un prompt largo, el 4xx sube fail-loud con el mensaje
+# de Meshy.
 TEXT_TO_3D_PROMPT_MAX = 600
-IMAGE_TO_IMAGE_PROMPT_MAX = 2000
+IMAGE_TO_IMAGE_PROMPT_MAX = 3000
 
 
 def _clamp_prompt(prompt: str, limit: int, endpoint: str) -> str:

@@ -650,8 +650,17 @@ def validate_scene_classify_response(
             return None
         if not isinstance(solid, bool) or not isinstance(tall, bool):
             return None
+        # element_id OPCIONAL: la visión ORDENA las regiones contra el plan —
+        # varias regiones del mismo objeto (ventanas/puerta de un edificio)
+        # comparten el id de su elemento declarado.
+        element_id = seg.get("element_id")
+        if element_id is not None and (not isinstance(element_id, str) or not element_id):
+            return None
         seen.add(index)
-        normalized.append({"index": index, "label": label, "solid": solid, "tall": tall})
+        entry = {"index": index, "label": label, "solid": solid, "tall": tall}
+        if element_id:
+            entry["element_id"] = element_id
+        normalized.append(entry)
     if expected_indices is not None:
         missing = [i for i in expected_indices if i not in seen]
         if missing:

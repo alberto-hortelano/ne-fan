@@ -56,6 +56,9 @@ async function rasterizeLayers(
  *  imagen pintada — guía para el clasificador de visión del análisis. Lo
  *  construye scene-image desde los elementos del blueprint compuesto. */
 export interface ExpectedElement {
+  /** Id del volumen en el blueprint compuesto — la visión lo devuelve en
+   *  `element_id` al ordenar las regiones contra el plan. */
+  id?: string;
   label: string;
   solid: boolean;
   tall: boolean;

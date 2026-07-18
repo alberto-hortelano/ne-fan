@@ -38,6 +38,9 @@ interface AnalyzedSegment {
   image_bbox: [number, number, number, number]; // [x, y, w, h] px
   img_w: number;
   img_h: number;
+  /** Id del elemento DECLARADO al que la visión asignó el segmento (las
+   *  partes de un mismo objeto llegan ya fusionadas por el servidor). */
+  element_id?: string;
 }
 
 /** Un elemento jugable del análisis con su rect en MUNDO (para el bridge:
@@ -540,8 +543,14 @@ export class SceneImageController {
         };
         // Segmento casado con un volumen declarado: su huella (mundo) es la
         // verdad — bajo perspectiva la pintura de una cara cae al norte de la
-        // base real y NO debe convertirse en colisión.
-        const match = matchExpected(seg.image_bbox, expectedInfo);
+        // base real y NO debe convertirse en colisión. Si la VISIÓN ya ordenó
+        // el segmento contra el plan (element_id), ese veredicto manda;
+        // matchExpected queda de fallback (análisis cacheados del formato
+        // anterior, o un element_id que no case con ningún volumen).
+        const match =
+          (seg.element_id
+            ? expectedInfo.find((e) => e.element.id === seg.element_id)
+            : undefined) ?? matchExpected(seg.image_bbox, expectedInfo);
         if (seg.tall) {
           let baselineView = view.maxZ; // borde inferior ≈ contacto con suelo
           if (match) {
@@ -650,7 +659,7 @@ function expectedFromComposed(composed: ComposedTilePlan, imgW: number, imgH: nu
     out.push({
       element: e,
       pxBbox: px,
-      wire: { label: e.label, solid: e.solid, tall: e.tall, bbox_px: px },
+      wire: { id: e.id, label: e.label, solid: e.solid, tall: e.tall, bbox_px: px },
     });
   }
   out.sort((a, b) => b.pxBbox[2] * b.pxBbox[3] - a.pxBbox[2] * a.pxBbox[3]);
