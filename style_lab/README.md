@@ -58,6 +58,53 @@ high ~$0.17. Latencia medida: ~25 s (low), ~60-75 s (medium), ~200 s (high).
   final (más microdetalle, misma composición general).
 - La respuesta no incluye el coste: comprobarlo en el dashboard de fal.
 
+## Hallazgos (run 003_scifi_fidelity, 2026-07-17)
+
+Bench sobre el tile REAL de colonia_aster (blueprint del save + generación por
+`SceneImageGenerator.generate_full`, camino Meshy→fal de producción). El bug:
+la escena generada CALCABA la composición de la ref de estilo
+(`acero_neon/settlement.jpg`, un recinto amurallado completo con puerta) en
+vez de repintar el blueprint. Causas y fixes validados (2 muestras/caso):
+
+- **Una ref de estilo con composición fuerte se calca** — sobre todo en las
+  bandas VACÍAS del capture (margen norte/oeste del viewBox, fondo
+  `CAPTURE_BG`): el modelo rellena el vacío con el template de la ref. Las
+  refs medievales (pictóricas, orgánicas) no lo provocan; una ref sci-fi
+  geométrica sí.
+- Fix 1 (prompt, aplicado a `scene_image_generator.py`): cláusula de ROL de la
+  segunda ref ("ONLY an art-style reference … do NOT copy its layout/fence/
+  gate/composition") + cláusula de zonas vacías ("flat dark-green areas are
+  OUTSIDE the playable map — plain terrain, NO structures").
+- Fix 2 (dato): la ref `settlement` de un pack debe ser un asentamiento
+  ABIERTO y asimétrico, sin muro perimetral ni puerta — un recinto cerrado es
+  una plantilla copiable. Regenerada la de acero_neon con `scene` explícita.
+- Con ambos fixes: 100% de edificios casados y 0-6 máscaras inventadas en
+  sci-fi Y medieval (sin regresión). Solo prompt (sin regenerar la ref) NO
+  basta: la cola mala reaparece (~50% de las muestras).
+- El prompt del kind svg mide ~2800 chars: `IMAGE_TO_IMAGE_PROMPT_MAX` subido
+  a 3000 (el límite de 2000 truncaba scene_description + style_token + reglas
+  en el camino Meshy; el fallback fal siempre envió el prompt completo).
+- La métrica `pct_matched` puede dar 100% con IoU ~0.01 (máscaras SAM gigantes
+  casan con todo por `inter/min-área`): para juzgar composición, SIEMPRE
+  revisar las imágenes/overlays además de los números.
+
+### Addendum: segmentador (siluetas de edificio)
+
+Sobre la misma escena real: **el auto-segment de SAM2 NO produce máscaras de
+objetos grandes compuestos** — el cuerpo de un edificio no aparece entre sus
+~50 máscaras (solo ventanas/paneles; la mejor máscara cubría el 18% del bbox y
+era suelo). No es cuestión de umbrales: el endpoint no expone granularidad y
+el modo automático no tiene noción de "objeto". Medido:
+- unión de partes agrupadas por visión: 5-17% de cobertura del edificio;
+- box prompt (`fal-ai/sam2/image`) con la caja unión(plan ∪ partes):
+  **79-83% de cobertura con 95-100% de contención** — silueta completa
+  (tejado + fachadas), respetando oclusiones (el mástil que solapa al bloque
+  queda excluido de su máscara).
+Aplicado como paso de REFINADO en `/analyze_scene_image`: para cada elemento
+tall que la visión confirmó (le asignó partes), SAM2 box prompt extrae la
+silueta; máscara vacía ⇒ se conserva la unión de partes. La visión decide
+identidad; SAM solo completa la silueta.
+
 ## Añadir un proveedor nuevo
 
 Añadir en `gen.py` una rama en `run_case()` (payload + parseo de respuesta)

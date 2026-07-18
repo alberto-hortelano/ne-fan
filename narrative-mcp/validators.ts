@@ -153,6 +153,9 @@ export function validateSceneClassify(
     if (typeof s.solid !== 'boolean' || typeof s.tall !== 'boolean') {
       return { ok: false, error: `segments[${i}].solid and .tall must be booleans` };
     }
+    if (s.element_id !== undefined && (typeof s.element_id !== 'string' || s.element_id.length === 0)) {
+      return { ok: false, error: `segments[${i}].element_id must be a non-empty string when present` };
+    }
   }
   if (expectedIndices) {
     const missing = expectedIndices.filter((idx) => !seen.has(idx));

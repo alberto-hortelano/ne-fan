@@ -423,8 +423,10 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         # Transformación server-side del esquema antes del modelo (prestretch
         # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
         # distintos, así que va en la clave para no servir imágenes del
-        # pipeline anterior.
-        "pipeline": "prestretch",
+        # pipeline anterior. v2 (bench 003): la instrucción añade las cláusulas
+        # de rol de la ref de estilo — invalida las escenas que calcaban la
+        # composición de la ref.
+        "pipeline": "prestretch2",
     }
     # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
     # imagen utilizable se degrada a la global — y la clave de cache NO lleva
@@ -509,6 +511,11 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
         "layout": layout,
         "sam_model": deps.scene_segmenter._fal.auto_segment_model,
         "vision_model": deps.llm_client.model,
+        # La visión ORDENA regiones contra el plan (element_id) y el servidor
+        # fusiona las partes de un mismo objeto: los análisis cacheados del
+        # formato anterior (fragmentados) no valen. v2: la silueta de los
+        # elementos tall confirmados se refina con SAM2 box prompt.
+        "schema": "element_id_v2",
     })
     key = deps.segment_cache.hash_key("analysis", ctx)
     cached = deps.segment_cache.get_by_hash(key, "analysis")
@@ -549,16 +556,27 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
         )
 
     # Merge por índice: solo solid/tall generan sprite (el resto es suelo).
+    # Las regiones que la VISIÓN asignó al mismo elemento declarado
+    # (element_id) son partes de un mismo objeto (las ventanas y la puerta de
+    # un bloque): se FUSIONAN en un solo segmento — unión de máscaras, un
+    # sprite. La agrupación la decide el modelo de visión, no una heurística.
+    import numpy as np
+
     scene_rgb = scene_rgb_from_png(png)
     by_index = {r["index"]: r for r in regions}
     segments_out: list[dict] = []
     discarded = 0
+    groups: dict[str, list[dict]] = {}
     for cls in classified["segments"]:
         region = by_index.get(cls["index"])
         if region is None:
             continue  # índice extra inventado — el validador ya exigió los reales
         if not (cls["solid"] or cls["tall"]):
             discarded += 1
+            continue
+        element_id = cls.get("element_id")
+        if element_id:
+            groups.setdefault(element_id, []).append(cls)
             continue
         sprite = crop_sprite(scene_rgb, region["mask"], region["bbox_xyxy"])
         sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
@@ -574,11 +592,98 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
             "img_h": sprite["img_h"],
         })
 
+    # Refinado de siluetas: el auto-segment NO produce máscaras de objetos
+    # grandes compuestos — el cuerpo de un edificio no está entre sus máscaras
+    # (solo ventanas/paneles), así que la unión de partes no es la silueta.
+    # Para cada elemento TALL que la visión CONFIRMÓ (le asignó partes), se
+    # pide a SAM2 la silueta con box prompt: caja = unión del bbox declarado
+    # del plan y del bbox observado de las partes (cubre la deriva del pintor
+    # sin umbrales). La visión decide identidad; SAM solo extrae la silueta.
+    # Máscara vacía o fallo de fal ⇒ conservar la unión de partes (log).
+    expected_raw = body.context.get("expected_elements")
+    expected_by_id = {
+        str(e.get("id")): e
+        for e in (expected_raw if isinstance(expected_raw, list) else [])
+        if isinstance(e, dict) and e.get("id") and isinstance(e.get("bbox_px"), list)
+    }
+
+    def group_mask_and_bbox(parts: list[dict]):
+        mask = None
+        for cls in parts:
+            m = by_index[cls["index"]]["mask"]
+            mask = m if mask is None else np.logical_or(mask, m)
+        ys, xs = np.where(mask)
+        return mask, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+    refine_ids = [
+        eid for eid, parts in groups.items()
+        if eid in expected_by_id and any(c["tall"] for c in parts)
+    ]
+    refined: dict[str, object] = {}
+    if refine_ids:
+        h, w = scene_rgb.shape[:2]
+        boxes = []
+        for eid in refine_ids:
+            _, (px0, py0, px1, py1) = group_mask_and_bbox(groups[eid])
+            ex, ey, ew, eh = (int(v) for v in expected_by_id[eid]["bbox_px"])
+            x0 = max(0, min(px0, ex))
+            y0 = max(0, min(py0, ey))
+            x1 = min(w, max(px1, ex + ew))
+            y1 = min(h, max(py1, ey + eh))
+            boxes.append((x0, y0, x1, y1))
+        try:
+            from scene_segmenter import _mask_from_fal, _to_data_uri
+            import io as io_mod
+            from PIL import Image as PILImage
+
+            buf = io_mod.BytesIO()
+            PILImage.fromarray(scene_rgb).save(buf, "PNG")
+            mask_pngs, _cached = DEV_API_CACHE.through_sync(
+                "fal_segment_boxes",
+                lambda: deps.scene_segmenter._fal.segment_boxes(
+                    _to_data_uri(buf.getvalue()), boxes
+                ),
+            )
+            for eid, png in zip(refine_ids, mask_pngs, strict=True):
+                m = _mask_from_fal(png, w, h)
+                if m.any():
+                    refined[eid] = m
+                else:
+                    print(f"analyze_scene: silueta VACÍA para '{eid}' — se conserva la unión de partes", flush=True)
+        except Exception as e:
+            print(f"analyze_scene: refinado de siluetas falló ({e}) — uniones de partes", flush=True)
+
+    for element_id, parts in groups.items():
+        mask, bbox = group_mask_and_bbox(parts)
+        if element_id in refined:
+            mask = refined[element_id]
+            ys, xs = np.where(mask)
+            bbox = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+        sprite = crop_sprite(scene_rgb, mask, bbox)
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = deps.segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        segments_out.append({
+            "id": f"el_{element_id}",
+            "element_id": element_id,
+            "label": parts[0]["label"],
+            # El objeto es sólido/alto si CUALQUIERA de sus partes lo es (la
+            # visión puede marcar una ventana no-tall dentro de un bloque tall).
+            "solid": any(c["solid"] for c in parts),
+            "tall": any(c["tall"] for c in parts),
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
+        })
+
     result = {"segments": segments_out, "discarded": discarded}
     deps.segment_cache.put("analysis", "analysis", json.dumps(result).encode(),
                       context=ctx, subtype_override="analysis")
-    logger.info(f"analyze_scene: {len(segments_out)} jugables, {discarded} suelo "
-          f"(de {len(regions)} regiones)")
+    logger.info(
+        f"analyze_scene: {len(groups)} declarados (visión), "
+        f"{len(segments_out) - len(groups)} añadidos, {discarded} suelo "
+        f"(de {len(regions)} regiones)"
+    )
     return result
 
 

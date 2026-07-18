@@ -39,6 +39,24 @@ _STYLE_RULES = (
     "NO characters, NO UI."
 )
 
+# Bench 003_scifi_fidelity: sin estas dos cláusulas, una ref de estilo con
+# composición fuerte (p. ej. un recinto amurallado completo) se CALCA en la
+# salida — el modelo la trata como segundo layout, sobre todo rellenando las
+# bandas vacías del capture (el margen norte/oeste del viewBox). Con ellas,
+# ambas muestras del bench siguieron el blueprint.
+_STYLE_ROLE_RULES = (
+    "The SECOND reference image is ONLY an art-style reference for materials, "
+    "palette and rendering technique — do NOT copy its layout, its buildings, "
+    "its walls, its fence, its gate or its composition. Every building, road, "
+    "wall and object in your output comes ONLY from the FIRST reference image. "
+)
+_VOID_RULES = (
+    "The flat dark-green background areas of the FIRST image are OUTSIDE the "
+    "playable map: paint them as plain featureless terrain matching the scene "
+    "(bare ground), with absolutely NO buildings, NO walls, NO fences and NO "
+    "objects there. "
+)
+
 
 def _to_data_uri(img: Image.Image, fmt: str = "PNG", long_side: int = 768) -> str:
     w, h = img.size
@@ -173,6 +191,8 @@ class SceneImageGenerator:
                 "plan has content. "
                 f"Render the scene as: {prompt.strip()}. "
                 + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
+                + _STYLE_ROLE_RULES
+                + _VOID_RULES
                 + _STYLE_RULES
             )
         else:

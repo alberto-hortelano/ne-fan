@@ -30,6 +30,10 @@
             },
             "tall": {
               "type": "boolean"
+            },
+            "element_id": {
+              "type": "string",
+              "description": "Id of the DECLARED plan element this region belongs to (from context.expected_elements). Several regions of the same object share it (windows/door/roof of one building). Omit for elements the image model added."
             }
           }
         }

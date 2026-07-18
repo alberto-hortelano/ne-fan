@@ -1,0 +1,33 @@
+{
+  "description": "la visión ordena regiones contra el plan: varias partes del mismo objeto comparten element_id; las añadidas van sin él",
+  "expect": "accept",
+  "payload": {
+    "segments": [
+      {
+        "index": 0,
+        "label": "bloque de viviendas",
+        "solid": true,
+        "tall": true,
+        "element_id": "b1"
+      },
+      {
+        "index": 1,
+        "label": "bloque de viviendas",
+        "solid": true,
+        "tall": false,
+        "element_id": "b1"
+      },
+      {
+        "index": 2,
+        "label": "barril",
+        "solid": true,
+        "tall": false
+      }
+    ]
+  },
+  "expected_indices": [
+    0,
+    1,
+    2
+  ]
+}
