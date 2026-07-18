@@ -88,6 +88,10 @@ class LLMClient:
         self._last_progress_msg: dict[str, str] = {}
         self._ws: websocket.WebSocketApp | None = None
         self._ws_connected = False
+        # Apagado en curso: el run_forever no debe reconectar. Un ai_server
+        # moribundo que sigue reconectándose a narrative-mcp compite con el
+        # ai_server nuevo por el canal del motor narrativo.
+        self._closing = False
 
         # Try MCP bridge first
         if HAS_WEBSOCKET:
@@ -108,6 +112,22 @@ class LLMClient:
         if not self._ws_connected and not self.api_client:
             print("LLM: No backend available. Install websocket-client for MCP bridge, "
                   "or set ANTHROPIC_API_KEY. Narrative requests will fail with 503.")
+
+    def close(self) -> None:
+        """Cierra el canal MCP y desactiva la reconexión (apagado del server).
+
+        Llamado desde el shutdown del lifespan: `WebSocketApp.close()` para el
+        `run_forever(reconnect=5)`, así el proceso que muere (aunque siga
+        drenando peticiones HTTP en vuelo) deja de disputarle el canal de
+        narrative-mcp al ai_server que lo sustituye."""
+        self._closing = True
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception as e:
+                print(f"LLM: error closing MCP websocket on shutdown: {e}")
+            self._ws = None
+        self._ws_connected = False
 
     def _try_connect_mcp(self) -> None:
         """Connect to narrative-mcp WebSocket bridge."""
@@ -187,7 +207,8 @@ class LLMClient:
 
         def on_close(ws: "websocket.WebSocket", close_code: int, close_msg: str) -> None:
             self._ws_connected = False
-            print("LLM: Disconnected from narrative-mcp bridge")
+            if not self._closing:
+                print("LLM: Disconnected from narrative-mcp bridge")
 
         def on_error(ws: "websocket.WebSocket", error: Exception) -> None:
             self._ws_connected = False

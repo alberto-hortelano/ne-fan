@@ -266,6 +266,11 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"\nAI Server ready. HTTP :{deps.config['port']}")
     yield
+    # Cortar el canal MCP ANTES de soltar la referencia: sin esto, el hilo de
+    # run_forever(reconnect=5) sigue reconectando a narrative-mcp mientras el
+    # proceso drena y compite con el ai_server que lo reemplaza.
+    if deps.llm_client is not None:
+        deps.llm_client.close()
     deps.llm_client = None
     deps.texture_gen = None
     deps.model_gen = None
