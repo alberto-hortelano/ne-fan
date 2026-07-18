@@ -42,6 +42,18 @@ export class WsBridge {
   // Pending responses: Claude responds, Python receives
   private pendingResponses = new Map<string, PendingResponse>();
 
+  // Socket que ORIGINÓ cada request_id: la respuesta y el progreso vuelven a
+  // ese socket, no a "el último cliente que conectó". Sin esto, un ai_server
+  // moribundo (drenando su cola tras un SIGTERM) que se reconecta tarde roba
+  // el canal y la respuesta del motor se pierde (el ai_server vivo agota sus
+  // 900 s y devuelve 504 con la escena ya generada). Fallback a `client` si
+  // el socket de origen cerró.
+  private requestOrigins = new Map<string, WebSocket>();
+  // Todos los sockets de ai_server abiertos: cuando el vigente cierra, otro
+  // abierto toma el relevo (sin esto, la muerte del zombie dejaba `client` a
+  // null con el ai_server vivo aún conectado — canal medio muerto).
+  private clients = new Set<WebSocket>();
+
   private constructor() {}
 
   /** Create the bridge. By default the port is NOT bound yet — the first
@@ -140,30 +152,46 @@ export class WsBridge {
   }
 
   private setupClient(ws: WebSocket): void {
+    if (this.client && this.client !== ws && this.client.readyState === this.client.OPEN) {
+      // Dos ai_server vivos a la vez (p. ej. uno viejo drenando tras un
+      // restart del stack). No se expulsa a nadie: el enrutado por
+      // request_id decide a quién va cada respuesta.
+      console.error('[narrative-mcp] WARNING: second AI server connected while another is still open');
+    }
     this.client = ws;
+    this.clients.add(ws);
     console.error('[narrative-mcp] Python AI server connected');
 
     ws.on('message', (raw) => this.handleClientMessage(ws, raw));
     ws.on('close', () => {
+      this.clients.delete(ws);
+      // Olvidar los orígenes de este socket: sus respuestas pendientes caen
+      // al fallback (el cliente vigente) en vez de a un socket muerto.
+      for (const [id, origin] of this.requestOrigins) {
+        if (origin === ws) this.requestOrigins.delete(id);
+      }
       if (this.client === ws) {
-        this.client = null;
-        console.error('[narrative-mcp] Python AI server disconnected');
+        // Relevo: otro socket abierto (p. ej. el ai_server vivo cuando el
+        // zombie por fin muere) pasa a ser el vigente.
+        this.client = [...this.clients].find((c) => c.readyState === c.OPEN) ?? null;
+        if (!this.client) console.error('[narrative-mcp] Python AI server disconnected');
       }
     });
   }
 
-  private handleClientMessage(_ws: WebSocket, raw: unknown): void {
+  private handleClientMessage(ws: WebSocket, raw: unknown): void {
     try {
       const msg: ClientMsg = JSON.parse(String(raw));
 
       if (msg.type === 'hello') return;
 
       if (msg.type === 'bridge_status_request') {
-        this.sendBridgeStatus(msg.request_id);
+        this.sendBridgeStatus(ws, msg.request_id);
         return;
       }
 
       if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event' || msg.type === 'blueprint_review') {
+        this.requestOrigins.set(msg.request_id, ws);
         // Fail-fast: if no MCP client (Claude Code) has ever called
         // narrative_listen, reject the request immediately so the AI server
         // can fall back to API or report an error to Godot.
@@ -178,10 +206,19 @@ export class WsBridge {
     }
   }
 
-  private sendBridgeStatus(requestId: string): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) return;
+  /** Socket al que enviar tráfico de una petición: el que la originó si sigue
+   *  abierto; si no, el cliente vigente (reconexión del mismo ai_server). */
+  private targetFor(requestId: string): WebSocket | null {
+    const origin = this.requestOrigins.get(requestId);
+    if (origin && origin.readyState === origin.OPEN) return origin;
+    if (this.client && this.client.readyState === this.client.OPEN) return this.client;
+    return null;
+  }
+
+  private sendBridgeStatus(ws: WebSocket, requestId: string): void {
+    if (ws.readyState !== ws.OPEN) return;
     const sinceLast = this.lastListenAt > 0 ? (Date.now() - this.lastListenAt) / 1000 : -1;
-    this.client.send(JSON.stringify({
+    ws.send(JSON.stringify({
       type: 'bridge_status_response',
       request_id: requestId,
       listener_active: this.isListenerActive(),
@@ -210,7 +247,9 @@ export class WsBridge {
   }
 
   private sendNoListenerError(msg: RequestMsg): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) return;
+    const target = this.targetFor(msg.request_id);
+    this.requestOrigins.delete(msg.request_id);
+    if (!target) return;
     const reason = this.mcpEverConnected
       ? 'mcp_listener_idle'
       : 'mcp_listener_never_connected';
@@ -221,25 +260,25 @@ export class WsBridge {
                'Start Claude Code from the project directory so .mcp.json loads narrative-mcp.',
     };
     if (msg.type === 'vision_request') {
-      this.client.send(JSON.stringify({
+      target.send(JSON.stringify({
         type: 'vision_response',
         request_id: msg.request_id,
         result: errorPayload,
       }));
     } else if (msg.type === 'narrative_event') {
-      this.client.send(JSON.stringify({
+      target.send(JSON.stringify({
         type: 'narrative_event_response',
         request_id: msg.request_id,
         result: errorPayload,
       }));
     } else if (msg.type === 'blueprint_review') {
-      this.client.send(JSON.stringify({
+      target.send(JSON.stringify({
         type: 'blueprint_review_response',
         request_id: msg.request_id,
         result: errorPayload,
       }));
     } else if (msg.type === 'room_request') {
-      this.client.send(JSON.stringify({
+      target.send(JSON.stringify({
         type: 'room_response',
         request_id: msg.request_id,
         room_data: errorPayload,
@@ -290,72 +329,62 @@ export class WsBridge {
    *  para la petición en curso. Silencioso sin cliente (no es un error: el
    *  progreso es best-effort). */
   sendProgress(requestId: string, message: string): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) return;
-    this.client.send(JSON.stringify({
+    const target = this.targetFor(requestId);
+    if (!target) return;
+    target.send(JSON.stringify({
       type: 'narrative_progress',
       request_id: requestId,
       message,
     }));
   }
 
-  /** Send room data back to Python. Called by narrative_respond tool. */
-  sendResponse(requestId: string, roomData: Record<string, unknown>): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) {
-      console.error('[narrative-mcp] Cannot send response: no client connected');
+  /** Envía la respuesta al socket que originó la petición (targetFor) y
+   *  olvida el origen — la respuesta es terminal. */
+  private sendToOrigin(requestId: string, payload: Record<string, unknown>, what: string): void {
+    const target = this.targetFor(requestId);
+    this.requestOrigins.delete(requestId);
+    if (!target) {
+      console.error(`[narrative-mcp] Cannot send ${what}: no client connected`);
       return;
     }
-
     this.markResponded();
-    this.client.send(JSON.stringify({
+    target.send(JSON.stringify(payload));
+  }
+
+  /** Send room data back to Python. Called by narrative_respond tool. */
+  sendResponse(requestId: string, roomData: Record<string, unknown>): void {
+    this.sendToOrigin(requestId, {
       type: 'room_response',
       request_id: requestId,
       room_data: roomData,
-    }));
+    }, 'response');
   }
 
   /** Send vision analysis result back to Python. Called by narrative_respond. */
   sendVisionResponse(requestId: string, result: Record<string, unknown>): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) {
-      console.error('[narrative-mcp] Cannot send vision response: no client connected');
-      return;
-    }
-
-    this.markResponded();
-    this.client.send(JSON.stringify({
+    this.sendToOrigin(requestId, {
       type: 'vision_response',
       request_id: requestId,
       result,
-    }));
+    }, 'vision response');
   }
 
   /** Send blueprint review result back to Python. Called by narrative_respond. */
   sendBlueprintReviewResponse(requestId: string, result: Record<string, unknown>): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) {
-      console.error('[narrative-mcp] Cannot send blueprint_review response: no client connected');
-      return;
-    }
-
-    this.markResponded();
-    this.client.send(JSON.stringify({
+    this.sendToOrigin(requestId, {
       type: 'blueprint_review_response',
       request_id: requestId,
       result,
-    }));
+    }, 'blueprint_review response');
   }
 
   /** Send narrative reaction result back to Python. Called by narrative_respond. */
   sendNarrativeEventResponse(requestId: string, result: Record<string, unknown>): void {
-    if (!this.client || this.client.readyState !== this.client.OPEN) {
-      console.error('[narrative-mcp] Cannot send narrative_event response: no client connected');
-      return;
-    }
-
-    this.markResponded();
-    this.client.send(JSON.stringify({
+    this.sendToOrigin(requestId, {
       type: 'narrative_event_response',
       request_id: requestId,
       result,
-    }));
+    }, 'narrative_event response');
   }
 
   private shutdown(): void {
@@ -368,6 +397,8 @@ export class WsBridge {
     this.requestRejecter = null;
     this.inFlightSince = 0;
     this.client = null;
+    this.requestOrigins.clear();
+    this.clients.clear();
     if (this.wss) {
       for (const ws of this.wss.clients) ws.close();
       this.wss.close();
