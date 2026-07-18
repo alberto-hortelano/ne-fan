@@ -85,6 +85,11 @@ export const StyleManifestSchema = z
             category: z.enum(STYLE_MANIFEST_CATEGORIES),
             file: z.string().min(1),
             tags: z.array(z.string()).default([]),
+            /** Override del CONTENIDO de escena para generar esta referencia
+             *  (build_style_pack). Sin él se usa la escena canónica de la
+             *  categoría (CATEGORY_SCENES, redactada en clave medieval) — un
+             *  pack sci-fi lo necesita para no pedir graneros o tabernas. */
+            scene: z.string().min(1).optional(),
             /** LEGACY (era de dos proyecciones): se acepta para no romper
              *  packs de usuario en disco, pero las entradas "isometric" se
              *  IGNORAN en todos los consumidores. */

@@ -302,7 +302,7 @@ function applySessionCombatSystem(id: string): void {
     attackSelectorEl.appendChild(span);
   });
   input.setAttackBindings(attackCatalog.map((a) => a.id));
-  if (id) log(`Combate: ${attackCatalog.length === 1 ? "básico" : id} (${attackCatalog.length} ataque${attackCatalog.length === 1 ? "" : "s"})`);
+  if (id) log(`Combate: ${id} (${attackCatalog.length} ataque${attackCatalog.length === 1 ? "" : "s"})`);
 }
 applySessionCombatSystem(""); // arranque sin sesión: catálogo estándar
 

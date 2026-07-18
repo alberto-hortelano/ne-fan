@@ -56,7 +56,8 @@ Campos de `style.json`:
 | `name`, `description` | Lo que ve el jugador en el selector. |
 | `style_token` | Frase en inglés que complementa a las imágenes en cada prompt. Ver [style_token](#el-style_token). |
 | `cover` | Archivo de portada. Si falta, el builder copia el primer entorno disponible. |
-| `refs` | Lista `{category, file, tags}` — una entrada por categoría. `nature` es alias legacy de `forest`. (Campo legacy `perspective`: se acepta en el schema pero las entradas `"isometric"` se IGNORAN — era de dos proyecciones.) |
+| `refs` | Lista `{category, file, tags, scene?}` — una entrada por categoría. `nature` es alias legacy de `forest`. (Campo legacy `perspective`: se acepta en el schema pero las entradas `"isometric"` se IGNORAN — era de dos proyecciones.) |
+| `refs[].scene` | OPCIONAL, solo afecta a la GENERACIÓN del pack (`build_style_pack`): sustituye el contenido canónico de la categoría (`CATEGORY_SCENES`, redactado en clave medieval) por una escena propia en inglés. Un pack de otra ambientación (p. ej. sci-fi, `acero_neon`) lo necesita para no pedir graneros o tabernas; debe respetar las mismas reglas de composición de zona (escena completa + transición, NO buildings donde toque). |
 
 Formato técnico: JPEG o PNG; el resolver (`ai_server/style_packs.py`) las
 normaliza a **long-side 1024, JPEG q90** antes de enviarlas. Cuadradas o casi

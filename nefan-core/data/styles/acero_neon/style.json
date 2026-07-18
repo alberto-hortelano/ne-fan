@@ -1,0 +1,81 @@
+{
+  "style_id": "acero_neon",
+  "name": "Acero y neón",
+  "description": "Ilustración sci-fi limpia y geométrica: paneles de metal cepillado y hormigón, líneas rectas nítidas, paleta gris fría con acentos de neón. Detallada pero con bordes duros, sin barroquismo.",
+  "style_token": "sleek sci-fi digital illustration, crisp straight geometric lines, brushed metal and concrete panels, cool grey palette with neon accent lighting, clean hard edges, subtle wear and grime",
+  "cover": "cover.jpg",
+  "refs": [
+    {
+      "category": "settlement",
+      "file": "settlement.jpg",
+      "tags": [],
+      "scene": "an OPEN, asymmetric colony habitat district with NO perimeter wall and NO gate: a handful of flat-roofed prefab blocks of different sizes scattered at irregular positions, a paved plaza off-centre (smooth concrete paving ONLY in the plaza), straight metal walkways with glow strips running off the edges of the image, equipment crates and small props between buildings, the district blending directly into arid alien terrain with sparse alien shrubs — the layout must NOT form any closed compound or symmetric template"
+    },
+    {
+      "category": "farmland",
+      "file": "farmland.jpg",
+      "tags": [],
+      "scene": "a hydroponic agridome zone: rows of long greenhouse modules and open grow trays with crops under lamps, water pipes and storage tanks, a straight paved service road, blending into open arid ground and an edge of alien vegetation"
+    },
+    {
+      "category": "forest",
+      "file": "forest.jpg",
+      "tags": [],
+      "scene": "a dense alien flora zone with NO buildings: tall bioluminescent alien plants and fungal growths forming a canopy, a clearing, a narrow dirt trail (NO paving), a stream with rocks, blending into open arid ground at one side"
+    },
+    {
+      "category": "wetland",
+      "file": "wetland.jpg",
+      "tags": [],
+      "scene": "an alien marsh with NO buildings: murky mineral pools, faintly glowing reeds and moss, twisted alien growths, metal plank walkways over the mud, blending into wet flats at one side"
+    },
+    {
+      "category": "desert",
+      "file": "desert.jpg",
+      "tags": [],
+      "scene": "an arid alien desert with NO buildings: dust dunes, sharp rocky outcrops, sparse dry alien shrubs, a small condensation pool, a sandy trail, blending into cracked flats at one side"
+    },
+    {
+      "category": "snow",
+      "file": "snow.jpg",
+      "tags": [],
+      "scene": "a frozen alien tundra with NO buildings: ice fields, crystalline mineral formations, rocks, a frozen stream, a trodden trail, blending into an open frost plain at one side"
+    },
+    {
+      "category": "fortress",
+      "file": "fortress.jpg",
+      "tags": [],
+      "scene": "a fortified security compound set in open arid landscape: straight perimeter walls with watchtowers and floodlights, a gate, an inner courtyard with barracks modules and vehicle pads, and the bare ground around the walls with a straight paved road leading to the gate"
+    },
+    {
+      "category": "interior",
+      "file": "interior.jpg",
+      "tags": [],
+      "scene": "the interior of an inhabited colony module (a cantina or common hall) shown in cutaway WITHIN its surroundings: no roof, furniture, consoles and floors visible, and the world continuing around the module — paved colony street, a neighbouring block, a metal walkway reaching its door (never a floor plan floating on a void)"
+    },
+    {
+      "category": "underground",
+      "file": "underground.jpg",
+      "tags": [],
+      "scene": "an underground maintenance level: straight metal corridors, chambers of different sizes with machinery, stairs, support pillars, pipes and cable runs along the walls, cool artificial lighting"
+    },
+    {
+      "category": "character_commoner",
+      "file": "character_commoner.jpg",
+      "tags": [],
+      "scene": "a human colony worker with a bare head and a visible, friendly human face (NO helmet, NO mask), wearing a worn utility jumpsuit with a tool belt"
+    },
+    {
+      "category": "character_noble",
+      "file": "character_noble.jpg",
+      "tags": [],
+      "scene": "a human corporate colony administrator with a bare head and a visible, composed human face (NO helmet, NO mask), in a sleek formal suit holding a holo-tablet"
+    },
+    {
+      "category": "character_warrior",
+      "file": "character_warrior.jpg",
+      "tags": [],
+      "scene": "a colony security trooper in an armored exosuit carrying a compact sidearm"
+    }
+  ]
+}

@@ -50,7 +50,7 @@ function emittedTypes(tick: ReturnType<typeof dispatchPluginEvents>): string[] {
 
 describe("economy plugin shipped", () => {
   it("carga desde data/plugins común y activa en todos los juegos con slice inicial vacío", () => {
-    for (const gameId of ["toledo_1200", "alta_fantasia", "cuentos_oscuros", "dev_combate_basico"]) {
+    for (const gameId of ["toledo_1200", "alta_fantasia", "cuentos_oscuros", "dev_combate_basico", "colonia_aster"]) {
       const { state, id } = makeSession(gameId);
       assert.deepEqual(
         economySlice(state, id),
