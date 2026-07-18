@@ -163,7 +163,7 @@ describe("games loader", () => {
   it("los juegos y estilos shipped del repo validan", () => {
     const games = listGames(REAL_GAMES);
     const ids = games.map((g) => g.game_id);
-    assert.deepEqual(ids, ["alta_fantasia", "cuentos_oscuros", "dev_combate_basico", "toledo_1200"]);
+    assert.deepEqual(ids, ["alta_fantasia", "colonia_aster", "cuentos_oscuros", "dev_combate_basico", "toledo_1200"]);
     for (const g of games) {
       assert.ok(g.world_brief.length >= 100, `${g.game_id} brief too short`);
       // Su estilo por defecto debe existir y validar.
@@ -173,7 +173,7 @@ describe("games loader", () => {
     const styles = listStyles(REAL_STYLES);
     assert.deepEqual(
       styles.map((s) => s.style_id),
-      ["acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
+      ["acero_neon", "acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
     );
   });
 });

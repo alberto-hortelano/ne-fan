@@ -117,11 +117,18 @@ CHAR_FRAME = (
 )
 
 
-def build_prompt(category: str, style_token: str, has_style_refs: bool) -> str:
+def build_prompt(
+    category: str, style_token: str, has_style_refs: bool,
+    scene_override: str | None = None,
+) -> str:
     """Prompt de generación de una categoría. Con refs de estilo del usuario,
-    el estilo se calca de ellas; sin refs, manda el style_token."""
+    el estilo se calca de ellas; sin refs, manda el style_token.
+    `scene_override` (campo `scene` del ref en style.json) sustituye el
+    CONTENIDO canónico de la categoría — CATEGORY_SCENES está redactado en
+    clave medieval y un pack de otra ambientación necesita sus propias
+    escenas (mismo encuadre y reglas de zona)."""
     category = LEGACY_ALIASES.get(category, category)
-    scene = CATEGORY_SCENES[category]
+    scene = scene_override or CATEGORY_SCENES[category]
     is_char = category in CHARACTER_CATEGORIES
     frame = CHAR_FRAME if is_char else ENV_FRAME
     if has_style_refs:
@@ -175,6 +182,7 @@ async def generate_missing(
         {
             "category": str(r.get("category", "")),
             "file": str(r.get("file", "")),
+            "scene": str(r.get("scene") or ""),
         }
         for r in manifest.get("refs", [])
         if str(r.get("perspective") or "topdown") != "isometric"
@@ -216,7 +224,7 @@ async def generate_missing(
         style_paths = style_refs_for(category)
         seed = CHAR_SEED if category in CHARACTER_CATEGORIES else ENV_SEED
         refs = [_to_data_uri(seed)] + [_to_data_uri(p) for p in style_paths]
-        prompt = build_prompt(category, style_token, bool(style_paths))
+        prompt = build_prompt(category, style_token, bool(style_paths), entry["scene"] or None)
         log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={ai_model}")
         png, _task = await api.run_one(ai_model, prompt, refs)
         out_path = pack_dir / entry["file"]

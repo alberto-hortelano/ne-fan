@@ -7,6 +7,7 @@ import { createSystemRegistry } from "../systems/registry.js";
 import type { CombatSystem } from "./combat-system.js";
 import { StandardCombatSystem } from "./standard-combat-system.js";
 import { BasicCombatSystem } from "./basic-combat-system.js";
+import { ShootingCombatSystem } from "./shooting-combat-system.js";
 
 export const combatRegistry = createSystemRegistry<CombatSystem, CombatConfig>(
   "combat",
@@ -14,5 +15,6 @@ export const combatRegistry = createSystemRegistry<CombatSystem, CombatConfig>(
   {
     standard: (config) => new StandardCombatSystem(config),
     basic: () => new BasicCombatSystem(),
+    shooting: () => new ShootingCombatSystem(),
   },
 );

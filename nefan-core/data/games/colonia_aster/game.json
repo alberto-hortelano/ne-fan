@@ -1,0 +1,8 @@
+{
+  "game_id": "colonia_aster",
+  "title": "Colonia Áster",
+  "description": "Una colonia autosuficiente en un planeta árido: pasarelas metálicas, agrodomos y neón, con la flora alienígena siempre al otro lado de la valla. Sci-fi funcional con armas de proyección.",
+  "style_id": "acero_neon",
+  "world_brief": "**Lugar**: Áster-4, planeta árido de cielos ocres. Toda la vida humana ocurre en la colonia Umbral: bloques prefabricados en rejilla, plaza central pavimentada, agrodomos hidropónicos, un complejo de seguridad y túneles de mantenimiento. Fuera del perímetro, desierto y flora alienígena bioluminiscente.\n\n**Regla de espacio**: TODO lo transitable es construido — pavimento, rejilla metálica, pasarela. La vegetación alienígena es ambiente: se ve tras vallas, barandillas y cristales, nunca se pisa. Las calles y edificios son rectos, modulares, de líneas limpias.\n\n**Comunidades**: colonos veteranos de la primera oleada, técnicos contratados por la Compañía Helión, y el cuerpo de seguridad. Tensión sorda entre quienes consideran la colonia su hogar y quienes solo cumplen contrato.\n\n**Poderes**: la administradora de Helión controla suministros y comunicaciones; el consejo de colonos controla los agrodomos; seguridad se debe a ambos y no se fía de ninguno.\n\n**Tono**: sci-fi funcional y contenido, más óxido que cromo. Sin alienígenas inteligentes ni magia: lo extraño es biología local y tecnología averiada. Las armas son de proyección; la violencia es ruidosa, breve y tiene consecuencias.",
+  "systems": { "combat": "shooting" }
+}
