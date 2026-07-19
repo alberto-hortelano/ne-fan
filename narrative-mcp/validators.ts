@@ -165,3 +165,47 @@ export function validateSceneClassify(
   }
   return { ok: true };
 }
+
+/** Pre-flight de una respuesta image_review, espejo de
+ *  ai_server/narrative_schemas.py:validate_image_review. */
+export function validateImageReview(data: unknown): { ok: true } | { ok: false; error: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
+  }
+  const o = data as Record<string, unknown>;
+  if (!Array.isArray(o.extras)) {
+    return { ok: false, error: 'missing `extras` array (use { "extras": [] } if the image invented nothing)' };
+  }
+  if (o.extras.length > 12) {
+    return { ok: false, error: `too many extras (${o.extras.length}); prioritise the 12 that matter for gameplay` };
+  }
+  for (let i = 0; i < o.extras.length; i++) {
+    const e = o.extras[i] as Record<string, unknown>;
+    if (typeof e !== 'object' || e === null) return { ok: false, error: `extras[${i}] must be an object` };
+    if (typeof e.label !== 'string' || e.label.length === 0) {
+      return { ok: false, error: `extras[${i}].label must be a non-empty string` };
+    }
+    if (e.action !== 'keep' && e.action !== 'remove') {
+      return { ok: false, error: `extras[${i}].action must be "keep" or "remove"` };
+    }
+    if (
+      !Array.isArray(e.box_px) || e.box_px.length !== 4 ||
+      e.box_px.some((v) => typeof v !== 'number' || !Number.isFinite(v)) ||
+      (e.box_px[2] as number) <= 0 || (e.box_px[3] as number) <= 0
+    ) {
+      return { ok: false, error: `extras[${i}].box_px must be [x, y, w, h] with w,h > 0` };
+    }
+    if (e.action === 'keep') {
+      if (typeof e.tall !== 'boolean' || typeof e.solid !== 'boolean') {
+        return { ok: false, error: `extras[${i}] keep requires boolean \`tall\` and \`solid\`` };
+      }
+      if (e.h !== undefined && (typeof e.h !== 'number' || e.h <= 0)) {
+        return { ok: false, error: `extras[${i}].h must be a positive number of cells` };
+      }
+      if (e.depth_cells !== undefined && (typeof e.depth_cells !== 'number' || e.depth_cells <= 0)) {
+        return { ok: false, error: `extras[${i}].depth_cells must be a positive number of cells` };
+      }
+    }
+  }
+  return { ok: true };
+}

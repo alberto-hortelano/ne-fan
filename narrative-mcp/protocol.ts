@@ -20,7 +20,7 @@ export interface VisionImage {
 export interface VisionRequestMsg {
   type: 'vision_request';
   request_id: string;
-  kind: 'weapon_orient' | 'weapon_verify' | 'scene_classify';
+  kind: 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review';
   /** Solo kinds weapon_*; scene_classify no lo envía. */
   weapon_type?: string;
   images: VisionImage[];

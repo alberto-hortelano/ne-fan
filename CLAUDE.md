@@ -270,6 +270,7 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 | `/generate_model` | POST | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | POST | Skin de personaje (PNG, ~10s) |
 | `/analyze_weapon` | POST | Vision IA para orientar armas (vía MCP bridge) |
+| `/review_scene_image` | POST | Visión revisa el tile REPINTADO (kind MCP `image_review`): objetos extra del img2img → SAM2 por caja → sprite + línea de contacto con el suelo |
 | `/develop_world` | POST | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
 | `/styles/upload` | POST | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
 | `/styles/{id}/complete` | POST | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
@@ -362,6 +363,16 @@ lo proyecta:
   `VIEW_PROJECTION` único): vista == mundo en el suelo; los prismas
   vectoriales (`view-prism.ts`) desplazan la tapa `(+h·shearX, −h)` — espejo
   exacto del compositor. Simulación e input no cambian.
+- **Occluders por MÁSCARA del compositor** (config `graphics.image_analysis:
+  "masks"`, el default): cada tramo occluder declarado se rasteriza como alpha
+  y recorta su sprite de la imagen repintada — sin SAM2 ni clasificador para
+  el mundo declarado (baseline/huella/colisión ya vienen del plan). La placa
+  se inpainta con la unión de esos recortes. Los objetos EXTRA que el img2img
+  inventa los captura la revisión por visión post-imagen (`/review_scene_image`,
+  kind MCP `image_review`): cajas imprecisas → SAM2 box prompt → sprite/occluder
+  + banda de colisión derivada del contorno inferior de la silueta (sigue la
+  inclinación pintada, nunca se sale del objeto); `remove` = queda bajo la
+  placa. Con `image_analysis: "sam"` sigue disponible el pipeline legacy:
 - `expected_elements` del análisis salen del compositor; los segmentos
   casados toman baseline/colisión de su huella declarada; los no casados
   (añadidos del modelo de imagen) aportan una franja en su línea de suelo.

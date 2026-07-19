@@ -1,0 +1,842 @@
+{
+  "perspective": "oblique",
+  "composer_version": 8,
+  "view_box": {
+    "minX": -12,
+    "minY": -32,
+    "width": 140,
+    "height": 160
+  },
+  "elements": [
+    {
+      "id": "taberna_serrana",
+      "label": "taberna",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        38.25,
+        35,
+        18.75,
+        18.4
+      ],
+      "baseline_y": 52,
+      "footprint_cells": [
+        40,
+        40,
+        56,
+        52
+      ]
+    },
+    {
+      "id": "horno_barrio",
+      "label": "horno",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        51.74,
+        64.05,
+        17.26,
+        20.95
+      ],
+      "baseline_y": 84,
+      "footprint_cells": [
+        56,
+        74,
+        68,
+        84
+      ]
+    },
+    {
+      "id": "casa_calle_n",
+      "label": "casa",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        65.74,
+        23.8,
+        19.26,
+        17.4
+      ],
+      "baseline_y": 40,
+      "footprint_cells": [
+        70,
+        30,
+        84,
+        40
+      ]
+    },
+    {
+      "id": "casa_calle_s",
+      "label": "casa",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        13.74,
+        63.8,
+        17.26,
+        17.2
+      ],
+      "baseline_y": 80,
+      "footprint_cells": [
+        18,
+        70,
+        30,
+        80
+      ]
+    },
+    {
+      "id": "casa_adarve",
+      "label": "casa",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        77.74,
+        67.8,
+        17.26,
+        17.2
+      ],
+      "baseline_y": 84,
+      "footprint_cells": [
+        82,
+        74,
+        94,
+        84
+      ]
+    },
+    {
+      "id": "casa_zocodover",
+      "label": "casa",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        107.05,
+        32.05,
+        17.95,
+        23.15
+      ],
+      "baseline_y": 54,
+      "footprint_cells": [
+        110,
+        42,
+        124,
+        54
+      ]
+    },
+    {
+      "id": "muralla_adarve",
+      "label": "muralla",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        96.85,
+        -9.8,
+        7.45,
+        138.6
+      ],
+      "baseline_y": 130,
+      "footprint_cells": [
+        100,
+        -2,
+        104,
+        130
+      ]
+    },
+    {
+      "id": "torre_adarve",
+      "label": "torre",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        91.45,
+        15,
+        18.15,
+        26.5
+      ],
+      "baseline_y": 40,
+      "footprint_cells": [
+        96,
+        28,
+        108,
+        40
+      ]
+    },
+    {
+      "id": "puerta_adarve",
+      "label": "arco del adarve",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        96.3,
+        46.52,
+        8.8,
+        25.38
+      ],
+      "baseline_y": 71,
+      "footprint_cells": [
+        99.8,
+        57,
+        104.2,
+        71
+      ]
+    },
+    {
+      "id": "tapia_huerto_n",
+      "label": "tapia",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        -1.4,
+        82.1,
+        36.7,
+        16.7
+      ],
+      "baseline_y": 99,
+      "footprint_cells": [
+        -1,
+        87,
+        35,
+        99
+      ]
+    },
+    {
+      "id": "tapia_huerto_s",
+      "label": "tapia",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        31.6,
+        101.2,
+        3.7,
+        27.6
+      ],
+      "baseline_y": 129,
+      "footprint_cells": [
+        33,
+        105,
+        35,
+        129
+      ]
+    },
+    {
+      "id": "pozo_plazuela",
+      "label": "pozo",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        58,
+        46,
+        12,
+        12
+      ],
+      "baseline_y": 55,
+      "footprint_cells": [
+        61,
+        49,
+        67,
+        55
+      ]
+    },
+    {
+      "id": "puesto_cambista",
+      "label": "puesto de cambista",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        72.95,
+        51,
+        5.95,
+        5.9
+      ],
+      "baseline_y": 56,
+      "footprint_cells": [
+        74,
+        54,
+        78,
+        56
+      ]
+    },
+    {
+      "id": "banco_plaza",
+      "label": "banco",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        59.65,
+        67,
+        4.25,
+        2.9
+      ],
+      "baseline_y": 69,
+      "footprint_cells": [
+        60,
+        68,
+        63,
+        69
+      ]
+    },
+    {
+      "id": "carro_lena",
+      "label": "carro",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        87.3,
+        56,
+        5.6,
+        4.9
+      ],
+      "baseline_y": 60,
+      "footprint_cells": [
+        88,
+        58,
+        92,
+        60
+      ]
+    },
+    {
+      "id": "mostrador_taberna",
+      "label": "mostrador",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        41.3,
+        41,
+        6.6,
+        4.9
+      ],
+      "baseline_y": 45,
+      "footprint_cells": [
+        42,
+        43,
+        47,
+        45
+      ]
+    },
+    {
+      "id": "mesa_taberna",
+      "label": "mesa",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        45.48,
+        45.5,
+        4.42,
+        4.4
+      ],
+      "baseline_y": 49,
+      "footprint_cells": [
+        46,
+        47,
+        49,
+        49
+      ]
+    },
+    {
+      "id": "barril_taberna",
+      "label": "barril",
+      "solid": true,
+      "tall": false,
+      "bbox": [
+        51,
+        38.7,
+        4.3,
+        5.5
+      ],
+      "baseline_y": 43.4,
+      "footprint_cells": [
+        51.6,
+        40.6,
+        54.4,
+        43.4
+      ]
+    },
+    {
+      "id": "frutal_1",
+      "label": "frutal",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        1.88,
+        87.94,
+        12.24,
+        14.29
+      ],
+      "baseline_y": 100,
+      "footprint_cells": [
+        6.92,
+        98.92,
+        9.08,
+        101.08
+      ]
+    },
+    {
+      "id": "frutal_2",
+      "label": "frutal",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        11.88,
+        83.94,
+        12.24,
+        14.29
+      ],
+      "baseline_y": 96,
+      "footprint_cells": [
+        16.92,
+        94.92,
+        19.08,
+        97.08
+      ]
+    },
+    {
+      "id": "frutal_3",
+      "label": "frutal",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        19.88,
+        95.94,
+        12.24,
+        14.29
+      ],
+      "baseline_y": 108,
+      "footprint_cells": [
+        24.92,
+        106.92,
+        27.08,
+        109.08
+      ]
+    },
+    {
+      "id": "frutal_4",
+      "label": "frutal",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        3.88,
+        103.94,
+        12.24,
+        14.29
+      ],
+      "baseline_y": 116,
+      "footprint_cells": [
+        8.92,
+        114.92,
+        11.08,
+        117.08
+      ]
+    },
+    {
+      "id": "frutal_5",
+      "label": "frutal",
+      "solid": true,
+      "tall": true,
+      "bbox": [
+        15.88,
+        107.94,
+        12.24,
+        14.29
+      ],
+      "baseline_y": 120,
+      "footprint_cells": [
+        20.92,
+        118.92,
+        23.08,
+        121.08
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "id": "taberna_serrana",
+      "label": "taberna",
+      "type": "building",
+      "rect": [
+        40,
+        40,
+        16,
+        12
+      ],
+      "walls": {
+        "material": "timber",
+        "color": "#6b543a"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 7,
+          "w": 4
+        }
+      ],
+      "cutaway": true
+    },
+    {
+      "id": "horno_barrio",
+      "label": "horno",
+      "type": "building",
+      "rect": [
+        56,
+        74,
+        12,
+        10
+      ],
+      "wall_h": 5,
+      "roof": {
+        "kind": "shed",
+        "material": "tile",
+        "color": "#9a5b3c"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#c9b89a"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_calle_n",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        70,
+        30,
+        14,
+        10
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "x",
+        "material": "tile",
+        "color": "#a05a38"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#cfc0a2"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 6,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_calle_s",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        18,
+        70,
+        12,
+        10
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "x",
+        "material": "tile",
+        "color": "#96522f"
+      },
+      "walls": {
+        "material": "stone",
+        "color": "#b3a68e"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_adarve",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        82,
+        74,
+        12,
+        10
+      ],
+      "roof": {
+        "kind": "hip",
+        "material": "tile",
+        "color": "#a05a38"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#c9b89a"
+      },
+      "doors": [
+        {
+          "edge": "n",
+          "at": 5,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "casa_zocodover",
+      "label": "casa",
+      "type": "building",
+      "rect": [
+        110,
+        42,
+        14,
+        12
+      ],
+      "roof": {
+        "kind": "gable",
+        "axis": "y",
+        "material": "tile",
+        "color": "#96522f"
+      },
+      "walls": {
+        "material": "plaster",
+        "color": "#cfc0a2"
+      },
+      "doors": [
+        {
+          "edge": "s",
+          "at": 6,
+          "w": 3
+        }
+      ]
+    },
+    {
+      "id": "muralla_adarve",
+      "label": "muralla",
+      "type": "wall",
+      "points": [
+        [
+          102,
+          0
+        ],
+        [
+          102,
+          128
+        ]
+      ],
+      "width": 4,
+      "h": 9,
+      "crenellated": true
+    },
+    {
+      "id": "torre_adarve",
+      "label": "torre",
+      "type": "tower",
+      "at": [
+        102,
+        34
+      ],
+      "r": 6,
+      "h": 13,
+      "crenellated": true
+    },
+    {
+      "id": "puerta_adarve",
+      "label": "arco del adarve",
+      "type": "gate",
+      "at": [
+        102,
+        64
+      ],
+      "w": 8,
+      "h": 10,
+      "orient": "y"
+    },
+    {
+      "id": "tapia_huerto_n",
+      "label": "tapia",
+      "type": "wall",
+      "points": [
+        [
+          0,
+          88
+        ],
+        [
+          34,
+          88
+        ],
+        [
+          34,
+          98
+        ]
+      ],
+      "width": 2,
+      "h": 4
+    },
+    {
+      "id": "tapia_huerto_s",
+      "label": "tapia",
+      "type": "wall",
+      "points": [
+        [
+          34,
+          106
+        ],
+        [
+          34,
+          128
+        ]
+      ],
+      "width": 2,
+      "h": 4
+    },
+    {
+      "id": "pozo_plazuela",
+      "label": "pozo",
+      "type": "fountain",
+      "at": [
+        64,
+        52
+      ],
+      "r": 3
+    },
+    {
+      "id": "puesto_cambista",
+      "label": "puesto de cambista",
+      "type": "prop",
+      "rect": [
+        74,
+        54,
+        4,
+        2
+      ],
+      "shape": "box",
+      "h": 3,
+      "color": "#7a5c3e"
+    },
+    {
+      "id": "banco_plaza",
+      "label": "banco",
+      "type": "prop",
+      "rect": [
+        60,
+        68,
+        3,
+        1
+      ],
+      "shape": "box",
+      "h": 1,
+      "color": "#8f887a"
+    },
+    {
+      "id": "carro_lena",
+      "label": "carro",
+      "type": "prop",
+      "rect": [
+        88,
+        58,
+        4,
+        2
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#8a6b4a"
+    },
+    {
+      "id": "mostrador_taberna",
+      "label": "mostrador",
+      "type": "prop",
+      "rect": [
+        42,
+        43,
+        5,
+        2
+      ],
+      "shape": "box",
+      "h": 2,
+      "color": "#5f4426"
+    },
+    {
+      "id": "mesa_taberna",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [
+        46,
+        47,
+        3,
+        2
+      ],
+      "shape": "box",
+      "h": 1.5,
+      "color": "#6b543a"
+    },
+    {
+      "id": "barril_taberna",
+      "label": "barril",
+      "type": "prop",
+      "at": [
+        53,
+        42
+      ],
+      "shape": "cylinder",
+      "h": 2,
+      "color": "#7a5c3e"
+    },
+    {
+      "id": "frutal_1",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        8,
+        100
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_2",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        18,
+        96
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_3",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        26,
+        108
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_4",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        10,
+        116
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    },
+    {
+      "id": "frutal_5",
+      "label": "frutal",
+      "type": "tree",
+      "at": [
+        22,
+        120
+      ],
+      "s": 0.9,
+      "species": "frutal"
+    }
+  ],
+  "scene_description": "La plazuela de las Cuatro Calles, entre la catedral y Zocodover: un pozo de brocal gastado, el puesto del cambista, la taberna de la Serrana y el horno del barrio. Al este, un tramo de adarve con su torre y su arco abre la calle real hacia Zocodover; al suroeste, una tapia guarda el huerto de los canónigos.",
+  "style_tag": "settlement"
+}

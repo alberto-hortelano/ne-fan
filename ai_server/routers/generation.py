@@ -687,6 +687,123 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     return result
 
 
+@router.post("/review_scene_image")
+async def review_scene_image_endpoint(body: AnalyzeSceneRequest):
+    """Revisión por VISIÓN del tile repintado (kind MCP image_review): el
+    motor señala con cajas imprecisas los objetos que el modelo de imagen
+    INVENTÓ; SAM2 (box prompt) recorta su silueta exacta y de ella sale la
+    línea de contacto con el suelo (colisión que sigue la inclinación
+    pintada). keep → sprite/occluder + contacto; remove → recorte para que el
+    cliente lo tape con la placa. Cacheado por layout — resume determinista."""
+    import asyncio
+    import base64 as b64mod
+    import hashlib
+
+    from image_review import bottom_contour, mask_bbox
+    from image_review import mask_from_png as mask_from_fal_png
+
+    if deps.scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable image review",
+        )
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": layout,
+        "vision_model": deps.llm_client.model,
+        "schema": "image_review_v1",
+    })
+    key = deps.segment_cache.hash_key("image_review", ctx)
+    cached = deps.segment_cache.get_by_hash(key, "analysis")
+    if cached is not None:
+        return json.loads(cached)
+
+    review = await asyncio.to_thread(
+        deps.llm_client.review_scene_image,
+        b64mod.b64encode(png).decode(),
+        body.context,
+    )
+    if review is None:
+        raise HTTPException(
+            status_code=503,
+            detail="image review unavailable — no MCP listener or invalid response",
+        )
+
+    import numpy as np  # noqa: F401 — dependencia de scene_segmenter ya presente
+
+    scene_rgb = scene_rgb_from_png(png)
+    h, w = scene_rgb.shape[:2]
+    extras = review["extras"]
+    boxes: list[tuple[int, int, int, int]] = []
+    for e in extras:
+        x, y, bw, bh = e["box_px"]
+        boxes.append((
+            max(0, int(x)), max(0, int(y)),
+            min(w, int(x + bw)), min(h, int(y + bh)),
+        ))
+
+    masks: list = [None] * len(extras)
+    if boxes:
+        try:
+            from scene_segmenter import _to_data_uri
+            import io as io_mod
+            from PIL import Image as PILImage
+
+            buf = io_mod.BytesIO()
+            PILImage.fromarray(scene_rgb).save(buf, "PNG")
+            mask_pngs, _cached = DEV_API_CACHE.through_sync(
+                "fal_segment_boxes_review",
+                lambda: deps.scene_segmenter._fal.segment_boxes(
+                    _to_data_uri(buf.getvalue()), boxes
+                ),
+            )
+            masks = [mask_from_fal_png(p, (w, h)) for p in mask_pngs]
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"image review segmentation failed: {e}") from e
+
+    extras_out: list[dict] = []
+    for i, e in enumerate(extras):
+        mask = masks[i]
+        if mask is None or not mask.any() or mask.sum() < 30:
+            logger.info(f"image_review: '{e['label']}' sin silueta útil — se omite")
+            continue
+        bbox = mask_bbox(mask)
+        sprite = crop_sprite(scene_rgb, mask, bbox)
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = deps.segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        entry = {
+            "id": f"extra_{i}",
+            "label": e["label"],
+            "action": e["action"],
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
+        }
+        if e["action"] == "keep":
+            entry.update({
+                "tall": e["tall"],
+                "solid": e["solid"],
+                "h": e["h"],
+                "depth_cells": e["depth_cells"],
+                "contact_px": bottom_contour(mask),
+            })
+        extras_out.append(entry)
+
+    result = {"extras": extras_out}
+    deps.segment_cache.put("image_review", "analysis", json.dumps(result).encode(),
+                      context=ctx, subtype_override="analysis")
+    logger.info(
+        f"image_review: {len(extras_out)} extras procesados "
+        f"({sum(1 for x in extras_out if x['action'] == 'remove')} removes)"
+    )
+    return result
+
+
 @router.post("/inpaint_scene_plate")
 async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
     """Placa de fondo: inpainting LOCAL (SD 1.5, sin créditos) de los huecos

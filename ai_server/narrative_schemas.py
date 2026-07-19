@@ -913,3 +913,49 @@ def validate_blueprint_review(data: dict | None) -> dict:
             out["fixes"] = fixes
 
     return out
+
+
+def validate_image_review(data: dict | None) -> dict:
+    """Validate a Claude response to an image_review request (objetos EXTRA
+    que el modelo de imagen inventó en el tile repintado). Espejo de
+    narrative-mcp/validators.ts:validateImageReview. Raises ValueError."""
+    if not isinstance(data, dict):
+        raise ValueError(f"image_review payload must be an object, got {type(data).__name__}")
+    extras = data.get("extras")
+    if not isinstance(extras, list):
+        raise ValueError('image_review payload missing `extras` list (use {"extras": []})')
+    if len(extras) > 12:
+        raise ValueError(f"image_review has {len(extras)} extras; máximo 12")
+    out = []
+    for i, e in enumerate(extras):
+        if not isinstance(e, dict):
+            raise ValueError(f"image_review extras[{i}] must be an object")
+        label = e.get("label")
+        if not isinstance(label, str) or not label:
+            raise ValueError(f"image_review extras[{i}].label must be a non-empty string")
+        action = e.get("action")
+        if action not in ("keep", "remove"):
+            raise ValueError(f'image_review extras[{i}].action must be "keep" or "remove"')
+        box = e.get("box_px")
+        if (
+            not isinstance(box, list) or len(box) != 4
+            or not all(isinstance(v, (int, float)) for v in box)
+            or box[2] <= 0 or box[3] <= 0
+        ):
+            raise ValueError(f"image_review extras[{i}].box_px must be [x, y, w, h] con w,h > 0")
+        entry = {"label": label, "action": action, "box_px": [float(v) for v in box]}
+        if action == "keep":
+            if not isinstance(e.get("tall"), bool) or not isinstance(e.get("solid"), bool):
+                raise ValueError(f"image_review extras[{i}] keep requiere booleanos tall y solid")
+            entry["tall"] = e["tall"]
+            entry["solid"] = e["solid"]
+            h = e.get("h", 6)
+            depth = e.get("depth_cells", 4)
+            if not isinstance(h, (int, float)) or h <= 0:
+                raise ValueError(f"image_review extras[{i}].h must be > 0")
+            if not isinstance(depth, (int, float)) or depth <= 0:
+                raise ValueError(f"image_review extras[{i}].depth_cells must be > 0")
+            entry["h"] = float(h)
+            entry["depth_cells"] = float(depth)
+        out.append(entry)
+    return {"extras": out}

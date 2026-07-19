@@ -16,6 +16,7 @@
  *  the image is purely visual. Fail loud: every failure goes to the ErrorLog
  *  and rejects; no silent placeholder.
  */
+import { CONFIG } from "@nefan-core/src/config.js";
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 import {
@@ -41,6 +42,24 @@ interface AnalyzedSegment {
   /** Id del elemento DECLARADO al que la visión asignó el segmento (las
    *  partes de un mismo objeto llegan ya fusionadas por el servidor). */
   element_id?: string;
+}
+
+/** Un extra devuelto por /review_scene_image (objeto que el img2img inventó,
+ *  revisado por visión y recortado por SAM con caja). */
+interface ReviewedExtra {
+  id: string;
+  label: string;
+  action: "keep" | "remove";
+  sprite_url: string;
+  image_bbox: [number, number, number, number];
+  img_w: number;
+  img_h: number;
+  tall?: boolean;
+  solid?: boolean;
+  h?: number;
+  depth_cells?: number;
+  /** Línea de contacto con el suelo: puntos [x, y] en px de imagen. */
+  contact_px?: [number, number][];
 }
 
 /** Un elemento jugable del análisis con su rect en MUNDO (para el bridge:
@@ -275,6 +294,244 @@ export class SceneImageController {
     console.log(`[scene-image] ${key}: placa de fondo instalada (${tallCutouts.length} recortes)`);
   }
 
+  /** SVG standalone → HTMLImageElement al tamaño pedido (decodificado). */
+  private loadSvg(svg: string, w: number, h: number): Promise<HTMLImageElement> {
+    const src = `<svg width="${w}" height="${h}" ${svg.slice("<svg ".length)}`;
+    const url = URL.createObjectURL(new Blob([src], { type: "image/svg+xml" }));
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("svg no decodifica")); };
+      img.src = url;
+    });
+  }
+
+  /** Mundo derivado por MÁSCARAS del compositor: para cada tramo occluder
+   *  declarado, su SVG rasterizado es la máscara EXACTA con la que se recorta
+   *  el sprite de la imagen repintada (source-in). El occluder hereda
+   *  baseline y huella declaradas (misma matemática que loadPlanOccluders);
+   *  la placa se inpainta con la unión de esos recortes (endpoint existente).
+   *  Cero llamadas a SAM2/visión para el mundo declarado. */
+  private async maskOccludersFromPlan(
+    key: string,
+    img: HTMLImageElement,
+    b: SceneBounds,
+    composed: ComposedTilePlan,
+    tv: { x: number; y: number; w: number; h: number },
+  ): Promise<TileAnalysis> {
+    const vb = composed.view_box;
+    const sxView = tv.w / vb.width;
+    const syView = tv.h / vb.height;
+    const pxX = img.naturalWidth / vb.width;   // px de imagen por unidad de usuario
+    const pxY = img.naturalHeight / vb.height;
+    const occluders: Occluder[] = [];
+    const tallCutouts: { sprite: HTMLImageElement; bbox: [number, number, number, number] }[] = [];
+    for (const occ of composed.occluders ?? []) {
+      const [bx, by, bw, bh] = occ.bbox;
+      if (!(bw > 0) || !(bh > 0)) continue;
+      const wPx = Math.max(1, Math.round(bw * pxX));
+      const hPx = Math.max(1, Math.round(bh * pxY));
+      let sprite: HTMLImageElement;
+      const bboxPx: [number, number, number, number] = [
+        (bx - vb.minX) * pxX,
+        (by - vb.minY) * pxY,
+        wPx,
+        hPx,
+      ];
+      try {
+        const mask = await this.loadSvg(occ.svg, wPx, hPx);
+        const cv = document.createElement("canvas");
+        cv.width = wPx;
+        cv.height = hPx;
+        const ctx = cv.getContext("2d");
+        if (!ctx) throw new Error("maskOccluders: no 2D context");
+        ctx.drawImage(mask, 0, 0, wPx, hPx);
+        ctx.globalCompositeOperation = "source-in";
+        ctx.drawImage(img, bboxPx[0], bboxPx[1], wPx, hPx, 0, 0, wPx, hPx);
+        sprite = await this.loadImage(cv.toDataURL("image/png"));
+      } catch (err) {
+        errors.push("scene", `máscara del tramo ${occ.label} (${key}) falló; se omite su occluder`, err);
+        continue;
+      }
+      occluders.push({
+        id: `mask:${key}:${occ.id}`,
+        tileKey: key,
+        kind: "image",
+        label: occ.label,
+        img: sprite,
+        view: {
+          minX: tv.x + (bx - vb.minX) * sxView,
+          minZ: tv.y + (by - vb.minY) * syView,
+          maxX: tv.x + (bx + bw - vb.minX) * sxView,
+          maxZ: tv.y + (by + bh - vb.minY) * syView,
+        },
+        baselineView: tv.y + (occ.baseline_y - vb.minY) * syView,
+        ...(occ.overhead ? { overhead: true } : {}),
+        footprintWorld: {
+          minX: b.minX + occ.footprint_cells[0] * TILE_MPC,
+          minZ: b.minZ + occ.footprint_cells[1] * TILE_MPC,
+          maxX: b.minX + occ.footprint_cells[2] * TILE_MPC,
+          maxZ: b.minZ + occ.footprint_cells[3] * TILE_MPC,
+        },
+      });
+      tallCutouts.push({ sprite, bbox: bboxPx });
+    }
+
+    // Elementos para el motor narrativo: los del PROPIO plan (rect de mundo
+    // desde la huella declarada) — el mapa real que el compositor garantiza.
+    const elements: AnalyzedElement[] = (composed.elements ?? []).map((e) => ({
+      label: e.label,
+      solid: e.solid,
+      tall: e.tall,
+      rect: {
+        minX: b.minX + e.footprint_cells[0] * TILE_MPC,
+        minZ: b.minZ + e.footprint_cells[1] * TILE_MPC,
+        maxX: b.minX + e.footprint_cells[2] * TILE_MPC,
+        maxZ: b.minZ + e.footprint_cells[3] * TILE_MPC,
+      },
+    }));
+
+    // Review por visión del REPINTADO: los objetos que el img2img inventó
+    // ganan colisión/oclusión (keep) o quedan bajo la placa (remove). Fallo
+    // NO fatal: sin listener del motor, el tile queda solo con lo declarado.
+    const stripCells = new Set<number>();
+    if (CONFIG.graphics.image_review) {
+      try {
+        await this.applyImageReview(key, img, b, tv, occluders, tallCutouts, stripCells, elements);
+      } catch (err) {
+        errors.push("scene", `image review de ${key} no disponible (tile solo con lo declarado)`, err);
+      }
+    }
+
+    this.renderer.setOccludersForTile(key, occluders);
+    console.log(
+      `[scene-image] ${key}: occluders por máscara del plan — ${occluders.length} tramos, sin SAM2 declarado`,
+    );
+    if (tallCutouts.length > 0) {
+      try {
+        await this.installPlateForTile(key, img, tallCutouts);
+      } catch (err) {
+        errors.push("scene", `placa de fondo de ${key} falló (queda x-ray del personaje)`, err);
+      }
+    }
+    const rows = rowsFromCells(stripCells);
+    const grid: TerrainGridData | null = rows
+      ? {
+          grid: rows,
+          cols: TILE_CELLS,
+          rows: TILE_CELLS,
+          meters_per_cell: TILE_MPC,
+          origin: [b.minX, b.minZ],
+          solid_chars: [IMAGE_SOLID_CHAR],
+        }
+      : null;
+    return { occluders, grid, elements };
+  }
+
+  /** Aplica el resultado de /review_scene_image: para cada extra `keep`,
+   *  sprite/occluder + banda de colisión derivada de su línea de contacto
+   *  (contorno inferior de la silueta extruido `depth_cells` al norte — la
+   *  base sigue la inclinación PINTADA, nunca se sale de la silueta); los
+   *  `remove` se añaden como recortes de la placa (quedan tapados). */
+  private async applyImageReview(
+    key: string,
+    img: HTMLImageElement,
+    b: SceneBounds,
+    tv: { x: number; y: number; w: number; h: number },
+    occluders: Occluder[],
+    tallCutouts: { sprite: HTMLImageElement; bbox: [number, number, number, number] }[],
+    stripCells: Set<number>,
+    elements: AnalyzedElement[],
+  ): Promise<void> {
+    const scene = this.renderer.getTileScene(key) as
+      | (SceneSummary & { __composed?: ComposedTilePlan })
+      | null;
+    const composed = scene?.__composed;
+    const expectedInfo = composed
+      ? expectedFromComposed(composed, img.naturalWidth, img.naturalHeight)
+      : [];
+    const res = await fetch(`${this.baseUrl}/review_scene_image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_b64: this.imageToDataUrl(img),
+        context: {
+          scene_description: scene?.scene_description ?? "",
+          zone_type: scene?.zone_type ?? "",
+          ...(expectedInfo.length ? { expected_elements: expectedInfo.map((e) => e.wire) } : {}),
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(`/review_scene_image HTTP ${res.status}`);
+    const data = (await res.json()) as { extras: ReviewedExtra[] };
+    const proj = this.renderer.getProjection();
+    for (const extra of data.extras ?? []) {
+      const sprite = await this.loadImage(`${this.baseUrl}${extra.sprite_url}`);
+      const [bx, by, bw, bh] = extra.image_bbox;
+      const bboxPx: [number, number, number, number] = [bx, by, bw, bh];
+      if (extra.action === "remove") {
+        tallCutouts.push({ sprite, bbox: bboxPx });
+        console.log(`[scene-image] ${key}: extra '${extra.label}' eliminado (placa)`);
+        continue;
+      }
+      // keep: la línea de contacto (px de imagen) → celdas de mundo (en la
+      // oblicua el contacto está a h=0: imagen == vista == mundo, lineal).
+      const toWorld = (px: number, py: number): [number, number] => {
+        const vx = tv.x + (px / extra.img_w) * tv.w;
+        const vy = tv.y + (py / extra.img_h) * tv.h;
+        return proj.viewToWorld(vx, vy);
+      };
+      const depth = extra.depth_cells ?? 4;
+      let minWx = Infinity, maxWx = -Infinity, maxWz = -Infinity;
+      for (const [px, py] of extra.contact_px ?? []) {
+        const [wx, wz] = toWorld(px, py);
+        minWx = Math.min(minWx, wx);
+        maxWx = Math.max(maxWx, wx);
+        maxWz = Math.max(maxWz, wz);
+        if (extra.solid) {
+          const c = Math.floor((wx - b.minX) / TILE_MPC);
+          const r1 = Math.floor((wz - b.minZ) / TILE_MPC);
+          for (let r = r1 - Math.ceil(depth); r <= r1; r++) {
+            if (c >= 0 && r >= 0 && c < TILE_CELLS && r < TILE_CELLS) {
+              stripCells.add(r * TILE_CELLS + c);
+            }
+          }
+        }
+      }
+      const footprintWorld: SceneBounds | undefined = Number.isFinite(minWx)
+        ? { minX: minWx, maxX: maxWx, minZ: maxWz - depth * TILE_MPC, maxZ: maxWz }
+        : undefined;
+      if (extra.tall) {
+        const view: SceneBounds = {
+          minX: tv.x + (bx / extra.img_w) * tv.w,
+          maxX: tv.x + ((bx + bw) / extra.img_w) * tv.w,
+          minZ: tv.y + (by / extra.img_h) * tv.h,
+          maxZ: tv.y + ((by + bh) / extra.img_h) * tv.h,
+        };
+        occluders.push({
+          id: `review:${key}:${extra.id}`,
+          tileKey: key,
+          kind: "image",
+          label: extra.label,
+          img: sprite,
+          view,
+          baselineView: footprintWorld ? proj.worldToView(0, footprintWorld.maxZ)[1] : view.maxZ,
+          ...(footprintWorld ? { footprintWorld } : {}),
+        });
+        tallCutouts.push({ sprite, bbox: bboxPx });
+      }
+      if (footprintWorld) {
+        elements.push({
+          label: extra.label,
+          solid: extra.solid ?? true,
+          tall: extra.tall ?? false,
+          rect: { ...footprintWorld },
+        });
+      }
+      console.log(`[scene-image] ${key}: extra '${extra.label}' integrado (tall=${extra.tall})`);
+    }
+  }
+
   /** Enmascara la imagen generada con el alpha del blueprint compuesto: la
    *  imagen instalada solo conserva los píxeles que el plan declaró (rombo/
    *  cuadrado del tile + voladizo de alturas). Meshy devuelve un rect opaco —
@@ -482,6 +739,14 @@ export class SceneImageController {
       const bE: SceneBounds = { minX: tv.x, minZ: tv.y, maxX: tv.x + tv.w, maxZ: tv.y + tv.h };
       const spanX = bE.maxX - bE.minX;
       const spanZ = bE.maxZ - bE.minZ;
+      // Recorte por MÁSCARA del compositor (modo "masks", el canónico): cada
+      // tramo occluder declarado se rasteriza como alpha y recorta su sprite
+      // de la imagen repintada — sin SAM2 ni clasificador para lo declarado.
+      // La colisión sigue siendo la del plan (applyPlanCollision); los
+      // elementos reportados al motor salen del propio compositor.
+      if (CONFIG.graphics.image_analysis === "masks" && composed?.occluders?.length) {
+        return await this.maskOccludersFromPlan(key, img, b, composed, tv);
+      }
       const dataUrl = this.imageToDataUrl(img);
       // Análisis guiado por el plan: los volúmenes declarados (label + bbox
       // proyectado en píxeles) orientan al clasificador — etiqueta mejor y no

@@ -1,0 +1,3 @@
+# Cada run pesa (imágenes generadas); no se versiona.
+runs/*
+!runs/.gitkeep

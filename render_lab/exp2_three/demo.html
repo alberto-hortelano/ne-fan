@@ -1,0 +1,495 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>demo E2a — colisiones y oclusión</title>
+<style>
+  html,body{margin:0;background:#1d2a18;height:100%;overflow:hidden}
+  canvas{display:block}
+  #hud{position:fixed;top:10px;left:10px;color:#dfe3d2;font:13px/1.5 system-ui;
+    background:rgba(20,26,14,.75);padding:.6rem .9rem;border-radius:8px;max-width:300px}
+  #hud b{color:#e8c26a}
+  #state{margin-top:.3rem;color:#9aa088;font-variant-numeric:tabular-nums;white-space:pre}
+</style>
+<script type="importmap">
+  {"imports": {"three": "https://unpkg.com/three@0.170.0/build/three.module.js"}}
+</script>
+<div id="hud">
+  <b>Demo E2a · three.js del plan</b><br>
+  WASD/flechas mover · <b>C</b> rota vistas (colisión/segmentación/oclusión) ·
+  <a href="?tile=medieval" style="color:#8fc7ff">medieval</a> ·
+  <a href="?tile=scifi" style="color:#8fc7ff">scifi</a>
+  <div id="state"></div>
+</div>
+<script type="module">
+  // demo.html — el render E2a hecho jugable: personaje con WASD, colisión
+  // contra el grid analítico de huellas (collision.json, volumeCollisionGrid)
+  // y oclusión del juego: el volumen que te tapa baja su opacidad con la
+  // rampa OCCLUDER_FADE del cliente 2D (1.5 m → 6 m, mínimo 0.45).
+  import * as THREE from "three";
+  import { build } from "./plan_to_scene.mjs?v=4";
+
+  const DEMO_VERSION = "v8"; // visible en el HUD: confirma que no corre caché vieja
+
+  const params = new URLSearchParams(location.search);
+  const TILE = params.get("tile") === "scifi" ? "scifi" : "medieval";
+  //: art=hybrid — arte del pipeline híbrido: placa repintada por IA + sprites
+  //: recortados por máscara, compuestos como painter 2D (renderOrder por
+  //: baseline). art=vector (default) — geometría three.js texturizada.
+  const HYBRID = params.get("art") === "hybrid";
+  const PXC = 4; // px por celda de las capturas del pipeline
+  const KX = -0.35, KY = 1;
+  const VB = { minX: -12, minY: -32, width: 140, height: 160 };
+  const MPC = 0.5;                       // metros por celda (TILE_MPC)
+  const PLAYER_R = 0.8;                  // 0.4 m en celdas
+  const SPEED = 9;                       // celdas/s (~4.5 m/s)
+  // Rampa del juego (OCCLUDER_FADE_*), con el MISMO mínimo que el cliente 2D:
+  // gracias a la mezcla de capa única (fadeTargets) el 0.45 aquí equivale al
+  // recorte plano del juego.
+  const FADE_NEAR = 1.5 / MPC, FADE_FAR = 6 / MPC;
+  let FADE_MIN = 0.45; // ajustable en test vía __demo.setFadeMin
+  const EPS = 0.05;
+
+  // --- renderer + cámara (idénticos al viewer: todo el tile encuadrado) ---
+  const scale = Math.min(innerWidth / VB.width, innerHeight / VB.height);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(VB.width * scale, VB.height * scale);
+  renderer.setClearColor(0x1d2a18, 1);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const cx = VB.minX + VB.width / 2, cz = VB.minY + VB.height / 2;
+  const cam = new THREE.OrthographicCamera(-VB.width / 2, VB.width / 2, VB.height / 2, -VB.height / 2, 0.1, 1000);
+  cam.position.set(cx, 400, cz);
+  cam.up.set(0, 0, -1);
+  cam.lookAt(cx, 0, cz);
+  scene.add(cam);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(-80, 140, 220);
+  sun.target.position.set(64, 0, 64);
+  scene.add(sun, sun.target);
+
+  const texCache = new Map();
+  function texture(name, repeat = [1, 1]) {
+    const key = `${name}:${repeat}`;
+    if (!texCache.has(key)) {
+      const t = new THREE.TextureLoader().load(`../runs/001_alternativas/textures/${name}.png`);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(repeat[0], repeat[1]);
+      t.colorSpace = THREE.SRGBColorSpace;
+      texCache.set(key, t);
+    }
+    return texCache.get(key);
+  }
+
+  // --- datos del tile ---
+  const plan = await (await fetch(`../fixtures/${TILE}/plan.json`)).json();
+  const coll = await (await fetch(`../fixtures/${TILE}/collision.json`)).json();
+  const SOLID = new Set(coll.solid_chars);
+
+  //: Parche del review por visión (solo art=hybrid): rects `add` = bases de
+  //: extras del img2img y bases corregidas; `clear` = huellas declaradas que
+  //: el repintado movió. add gana a clear; ambos ganan al grid del plan.
+  let patch = { add: [], add_cells: [], clear: [] };
+  let patchCells = new Set(); // "u,v" — bases torcidas derivadas de la silueta
+  const inRect = (u, v, [u0, v0, u1, v1]) => u >= u0 && u < u1 && v >= v0 && v < v1;
+
+  function solidAt(u, v) {
+    const c = Math.floor(u), r = Math.floor(v);
+    if (c < 0 || r < 0 || c >= coll.cols || r >= coll.rows) return true; // borde del tile bloquea
+    if (patchCells.has(`${c},${r}`)) return true;
+    if (patch.add.some((rc) => inRect(u, v, rc))) return true;
+    if (patch.clear.some((rc) => inRect(u, v, rc))) return false;
+    return SOLID.has(coll.grid[r][c]);
+  }
+  function circleBlocked(u, v) {
+    for (const [du, dv] of [[PLAYER_R, 0], [-PLAYER_R, 0], [0, PLAYER_R], [0, -PLAYER_R],
+                            [PLAYER_R * .7, PLAYER_R * .7], [-PLAYER_R * .7, PLAYER_R * .7],
+                            [PLAYER_R * .7, -PLAYER_R * .7], [-PLAYER_R * .7, -PLAYER_R * .7]]) {
+      if (solidAt(u + du, v + dv)) return true;
+    }
+    return false;
+  }
+
+  // --- mundo ---
+  // root (CIZALLADO) lleva siempre al personaje; en modo vector también la
+  // geometría. En modo híbrido el arte son planos YA proyectados (la cizalla
+  // viene horneada en las imágenes) y viven fuera del root.
+  const root = new THREE.Group();
+  root.matrixAutoUpdate = false;
+  root.matrix.set(1, KX, 0, 0, 0, 1, 0, 0, 0, -KY, 1, 0, 0, 0, 0, 1);
+  scene.add(root);
+
+  const worldGroup = new THREE.Group(); // anfitrión del overlay de colisión y el player
+  let built = null;
+  let occluders = [];
+  let spritesByBaseline = [];
+  let debugSpriteMeta = []; // para la vista de segmentación (hybrid)
+  let hybDirRef = "";
+
+  function flatPlane(texUrl, wPx, hPx, cxPx, cyPx, y, opts = {}) {
+    const t = new THREE.TextureLoader().load(texUrl);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(wPx / PXC, hPx / PXC),
+      new THREE.MeshBasicMaterial({ map: t, transparent: !!opts.transparent, depthWrite: false, depthTest: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(VB.minX + cxPx / PXC, y, VB.minY + cyPx / PXC);
+    return m;
+  }
+
+  if (HYBRID) {
+    const hybDir = `../runs/001_alternativas/hybrid/${TILE}`;
+    const meta = await (await fetch(`${hybDir}/occluders.json`)).json();
+    // Review por visión (si existe): extras del img2img + parche de colisión.
+    let extras = [];
+    try {
+      extras = await (await fetch(`${hybDir}/extras.json`)).json();
+      patch = await (await fetch(`${hybDir}/collision_patch.json`)).json();
+      patch.add_cells ??= [];
+      patchCells = new Set(patch.add_cells.map(([u, v]) => `${u},${v}`));
+    } catch { /* run sin review: sin extras ni parche */ }
+    const artGroup = new THREE.Group();
+    // Placa: TODO el viewBox (560×640 px de captura) sin los objetos altos —
+    // es lo que el fade revela detrás de un sprite.
+    artGroup.add(flatPlane(`${hybDir}/plate.png`, 560, 640, 280, 320, 0));
+    const spriteMeta = [
+      ...meta,
+      ...extras.filter((e) => e.tall).map((e) => ({ ...e, proximity_only: false })),
+    ];
+    const sorted = [...spriteMeta].sort((a, b) => a.footprint[3] - b.footprint[3]);
+    debugSpriteMeta = sorted;
+    hybDirRef = hybDir;
+    sorted.forEach((o, i) => {
+      const [bx, by, bw, bh] = o.bbox_px;
+      const sprite = flatPlane(`${hybDir}/${o.sprite}`, bw, bh, bx + bw / 2, by + bh / 2, 0.02, { transparent: true });
+      sprite.renderOrder = 10 + 2 * i;
+      artGroup.add(sprite);
+      occluders.push({
+        id: o.id,
+        footprint: o.footprint,
+        h: o.h,
+        node: sprite,
+        proximityOnly: o.proximity_only,
+        baselineV: o.footprint[3],
+      });
+    });
+    spritesByBaseline = occluders.map((o) => o.baselineV).sort((a, b) => a - b);
+    scene.add(artGroup);
+    root.add(worldGroup);
+  } else {
+    built = await build(THREE, { plan, texture, ground: `../fixtures/${TILE}/ground_crop.png`, cells: 128, THREE });
+    occluders = built.occluders ?? [];
+    built.group.add(worldGroup);
+    root.add(built.group);
+  }
+
+  // --- overlay de colisión (tecla C) ---
+  const collCanvas = document.createElement("canvas");
+  collCanvas.width = collCanvas.height = 128;
+  const cctx = collCanvas.getContext("2d");
+  for (let r = 0; r < 128; r++) for (let c = 0; c < 128; c++) {
+    if (SOLID.has(coll.grid[r][c])) { cctx.fillStyle = "rgba(255,60,40,0.55)"; cctx.fillRect(c, r, 1, 1); }
+  }
+  // Parche del review: bases añadidas (naranja) y huellas anuladas (azul).
+  for (const [u0, v0, u1, v1] of patch.clear) {
+    cctx.fillStyle = "rgba(60,120,255,0.55)"; cctx.fillRect(u0, v0, u1 - u0, v1 - v0);
+  }
+  for (const [u0, v0, u1, v1] of patch.add) {
+    cctx.fillStyle = "rgba(255,170,30,0.6)"; cctx.fillRect(u0, v0, u1 - u0, v1 - v0);
+  }
+  for (const [u, v] of patch.add_cells ?? []) {
+    cctx.fillStyle = "rgba(255,40,200,0.65)"; cctx.fillRect(u, v, 1, 1);
+  }
+  const collTex = new THREE.CanvasTexture(collCanvas);
+  collTex.magFilter = THREE.NearestFilter;
+  const collPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(128, 128),
+    new THREE.MeshBasicMaterial({ map: collTex, transparent: true, depthWrite: false, depthTest: !HYBRID }),
+  );
+  collPlane.rotation.x = -Math.PI / 2;
+  collPlane.position.set(64, 0.08, 64);
+  collPlane.visible = false;
+  if (HYBRID) collPlane.renderOrder = 500; // sobre placa y sprites
+  worldGroup.add(collPlane);
+
+  // --- personaje: muñeco simple de 3.6 celdas (1.8 m) ---
+  const player = new THREE.Group();
+  const tunic = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.78, 2.3, 10),
+    new THREE.MeshLambertMaterial({ color: 0x35b6c2, emissive: 0x0e3a40 }),
+  );
+  tunic.position.y = 1.15;
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.62, 12, 10),
+    new THREE.MeshLambertMaterial({ color: 0xf2c79a, emissive: 0x3d2c1a }),
+  );
+  head.position.y = 2.9;
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.95, 16),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.05;
+  player.add(shadow, tunic, head);
+  // Silueta fantasma: copia del personaje SIN depth-test, siempre encima —
+  // cuando un volumen lo tapa, se le sigue viendo como sombra teal (el fade
+  // del volumen hace el resto). renderOrder alto para pintarla la última.
+  for (const src of [tunic, head]) {
+    const ghost = new THREE.Mesh(src.geometry, new THREE.MeshBasicMaterial({
+      color: 0x35d6e2, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false,
+    }));
+    ghost.position.copy(src.position);
+    ghost.renderOrder = 999;
+    player.add(ghost);
+  }
+  worldGroup.add(player);
+
+  const START = TILE === "scifi" ? [64, 88] : [60, 60];
+  const posQ = (params.get("pos") || "").split(",").map(Number);
+  const pos = { u: posQ.length === 2 && !posQ.some(isNaN) ? posQ[0] : START[0],
+                v: posQ.length === 2 && !posQ.some(isNaN) ? posQ[1] : START[1] };
+
+  // --- oclusión + fade ---
+  for (const o of occluders) o.alpha = 1;
+
+  function distToRect(u, v, [u0, v0, u1, v1]) {
+    const du = Math.max(u0 - u, 0, u - u1);
+    const dv = Math.max(v0 - v, 0, v - v1);
+    return Math.hypot(du, dv);
+  }
+  function coversProjected(o, u, v) {
+    // bbox proyectado del volumen: huella ∪ tapa desplazada (+h·KX, −h·KY).
+    const [u0, v0, u1, v1] = o.footprint;
+    const xs = [u0, u1, u0 + o.h * KX, u1 + o.h * KX];
+    const ys = [v0 - o.h * KY, v1 - o.h * KY, v0, v1];
+    const m = 0.8; // margen ~medio cuerpo
+    return u >= Math.min(...xs) - m && u <= Math.max(...xs) + m
+        && v >= Math.min(...ys) - m && v <= Math.max(...ys) + m + 0.5;
+  }
+  function fadeTargets(dt) {
+    for (const o of occluders) {
+      const behind = !(pos.u >= o.footprint[2] - EPS || pos.v >= o.footprint[3] - EPS);
+      const d = distToRect(pos.u, pos.v, o.footprint);
+      let target = 1;
+      const eligible = o.proximityOnly ? d < FADE_FAR : (behind && coversProjected(o, pos.u, pos.v));
+      if (eligible) {
+        target = d <= FADE_NEAR ? FADE_MIN
+          : d >= FADE_FAR ? 1
+          : FADE_MIN + (1 - FADE_MIN) * (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR);
+      }
+      o.alpha += (target - o.alpha) * Math.min(1, dt * 8);
+      const a = o.alpha;
+      if (HYBRID) {
+        // Sprite plano = capa única nativa: basta la opacidad. El renderOrder
+        // del painter NO se toca.
+        o.node.material.opacity = a;
+        continue;
+      }
+      o.node.traverse((m) => {
+        if (!m.isMesh) return;
+        if (a < 0.995) {
+          // CAPA ÚNICA: un edificio apila tejado+tapa+fachada y el alpha se
+          // compondría (0.32² ≈ opaco). Renderizamos el volumen frontal-
+          // primero con depthWrite: la superficie más ALTA se mezcla una vez
+          // y bloquea a las de debajo — como el recorte plano del cliente 2D.
+          if (m.userData.topY === undefined) {
+            m.geometry.computeBoundingSphere();
+            m.userData.topY = m.getWorldPosition(new THREE.Vector3()).y + m.geometry.boundingSphere.radius;
+          }
+          if (!m.material.transparent) { m.material.transparent = true; m.material.needsUpdate = true; }
+          m.material.opacity = a;
+          m.material.depthWrite = true;
+          m.renderOrder = 1000 - m.userData.topY; // más alto ⇒ se pinta antes
+        } else if (m.material.opacity !== undefined && m.material.opacity < 1) {
+          m.material.opacity = 1;
+          m.material.transparent = false;
+          m.material.needsUpdate = true;
+          m.renderOrder = 0;
+        }
+      });
+    }
+  }
+
+  // --- vistas de debug (C rota, como la B del juego) ---
+  const DEBUG_MODES = HYBRID ? ["normal", "colisión", "segmentación", "oclusión"] : ["normal", "colisión"];
+  let debugMode = 0;
+  let segPlane = null, occPlane = null;
+
+  function overlayPlane(canvas) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(VB.width, VB.height),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(VB.minX + VB.width / 2, 0.5, VB.minY + VB.height / 2);
+    m.renderOrder = 600;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  }
+
+  async function buildSegPlane() {
+    // Segmentación: la silueta EXACTA de cada sprite (alpha del mask SAM /
+    // máscara declarada) tintada con un tono distinto + su id.
+    const cv = document.createElement("canvas");
+    cv.width = 560; cv.height = 640;
+    const c = cv.getContext("2d");
+    c.fillStyle = "rgba(0,0,0,0.45)";
+    c.fillRect(0, 0, 560, 640);
+    for (let i = 0; i < debugSpriteMeta.length; i++) {
+      const m = debugSpriteMeta[i];
+      const img = await new Promise((res, rej) => {
+        const im = new Image(); im.onload = () => res(im); im.onerror = rej;
+        im.src = `${hybDirRef}/${m.sprite}`;
+      }).catch(() => null);
+      if (!img) continue;
+      const t = document.createElement("canvas");
+      t.width = img.width; t.height = img.height;
+      const tc = t.getContext("2d");
+      tc.drawImage(img, 0, 0);
+      tc.globalCompositeOperation = "source-in";
+      tc.fillStyle = `hsla(${(i * 137.5) % 360}, 95%, 55%, 0.85)`;
+      tc.fillRect(0, 0, t.width, t.height);
+      const [bx, by, bw, bh] = m.bbox_px;
+      c.drawImage(t, bx, by, bw, bh);
+      c.fillStyle = "#fff";
+      c.font = "9px monospace";
+      c.fillText(m.id.slice(0, 18), bx + 2, Math.max(8, by + 8));
+    }
+    return overlayPlane(cv);
+  }
+
+  function buildOccPlane() {
+    // Oclusión: huella (verde; naranja = proximidad/copa) + BASELINE amarilla
+    // de cada unidad — lo que decide quién tapa a quién y el fade.
+    const cv = document.createElement("canvas");
+    cv.width = 560; cv.height = 640;
+    const c = cv.getContext("2d");
+    c.fillStyle = "rgba(0,0,0,0.35)";
+    c.fillRect(0, 0, 560, 640);
+    const px = (u, v) => [(u + 12) * 4, (v + 32) * 4];
+    for (const o of occluders) {
+      const [u0, v0, u1, v1] = o.footprint;
+      const [x0, y0] = px(u0, v0);
+      const [x1, y1] = px(u1, v1);
+      c.strokeStyle = o.proximityOnly ? "rgba(255,170,30,0.95)" : "rgba(80,255,120,0.95)";
+      c.fillStyle = o.proximityOnly ? "rgba(255,170,30,0.14)" : "rgba(80,255,120,0.14)";
+      c.lineWidth = 1.5;
+      c.fillRect(x0, y0, x1 - x0, y1 - y0);
+      c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      c.strokeStyle = "rgba(255,235,60,0.95)";
+      c.lineWidth = 2.5;
+      c.beginPath();
+      c.moveTo(x0 - 6, y1);
+      c.lineTo(x1 + 6, y1);
+      c.stroke();
+      c.fillStyle = "#fff";
+      c.font = "9px monospace";
+      c.fillText(o.id.slice(0, 18), x0 + 2, Math.max(8, y0 - 2));
+    }
+    return overlayPlane(cv);
+  }
+
+  async function applyDebugMode() {
+    collPlane.visible = DEBUG_MODES[debugMode] === "colisión";
+    if (DEBUG_MODES[debugMode] === "segmentación" && !segPlane) segPlane = await buildSegPlane();
+    if (segPlane) segPlane.visible = DEBUG_MODES[debugMode] === "segmentación";
+    if (DEBUG_MODES[debugMode] === "oclusión" && !occPlane) occPlane = buildOccPlane();
+    if (occPlane) occPlane.visible = DEBUG_MODES[debugMode] === "oclusión";
+  }
+
+  // --- input ---
+  const keys = new Set();
+  addEventListener("keydown", (e) => {
+    if (e.key === "c" || e.key === "C") {
+      debugMode = (debugMode + 1) % DEBUG_MODES.length;
+      applyDebugMode();
+      return;
+    }
+    keys.add(e.key.toLowerCase());
+  });
+  addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  addEventListener("blur", () => keys.clear()); // sin teclas zombis al perder foco
+  document.addEventListener("visibilitychange", () => keys.clear());
+
+  function step(dt) {
+    let du = 0, dv = 0;
+    if (keys.has("w") || keys.has("arrowup")) dv -= 1;
+    if (keys.has("s") || keys.has("arrowdown")) dv += 1;
+    if (keys.has("a") || keys.has("arrowleft")) du -= 1;
+    if (keys.has("d") || keys.has("arrowright")) du += 1;
+    if (du || dv) {
+      const n = Math.hypot(du, dv);
+      du = (du / n) * SPEED * dt;
+      dv = (dv / n) * SPEED * dt;
+      const stuck = circleBlocked(pos.u, pos.v); // "salir sí": si ya estás dentro, no bloquear
+      if (stuck || !circleBlocked(pos.u + du, pos.v)) pos.u += du;
+      if (stuck || !circleBlocked(pos.u, pos.v + dv)) pos.v += dv;
+    }
+  }
+
+  const stateEl = document.getElementById("state");
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    step(dt);
+    fadeTargets(dt);
+    player.position.set(pos.u, 0, pos.v);
+    if (HYBRID) {
+      // Painter: el player se intercala entre sprites según su baseline.
+      let k = 0;
+      while (k < spritesByBaseline.length && spritesByBaseline[k] <= pos.v) k++;
+      const order = 10 + 2 * k - 1;
+      shadow.renderOrder = order;
+      tunic.renderOrder = order + 0.1;
+      head.renderOrder = order + 0.2;
+    }
+    const faded = occluders.filter((o) => o.alpha < 0.97).map((o) => o.id);
+    stateEl.textContent = `${DEMO_VERSION} · tile: ${TILE}  pos: ${pos.u.toFixed(1)}, ${pos.v.toFixed(1)}  vista: ${DEBUG_MODES[debugMode]}\n` +
+      `fundidos: ${faded.length ? faded.join(", ").slice(0, 60) : "—"}`;
+    renderer.render(scene, cam);
+    requestAnimationFrame(frame);
+  }
+
+  // --- API de test (verificación headless / conducida) ---
+  window.__demo = {
+    setPos(u, v) { pos.u = u; pos.v = v; },
+    getPos: () => ({ u: pos.u, v: pos.v }),
+    press: (k) => keys.add(k),
+    release: (k) => keys.delete(k),
+    tick(dt = 0.016) { step(dt); fadeTargets(dt); player.position.set(pos.u, 0, pos.v); renderer.render(scene, cam); },
+    occlusionState: () => occluders.filter((o) => o.alpha < 0.97).map((o) => ({ id: o.id, alpha: +o.alpha.toFixed(2) })),
+    setFadeMin: (x) => { FADE_MIN = x; },
+    setDebugMode: async (i) => { debugMode = i % DEBUG_MODES.length; await applyDebugMode(); },
+    matState: (idPrefix) => {
+      const out = [];
+      for (const o of occluders) {
+        if (!o.id.startsWith(idPrefix)) continue;
+        o.node.traverse((m) => {
+          if (m.isMesh) out.push({ occ: o.id, opacity: +m.material.opacity.toFixed(2), transparent: m.material.transparent });
+        });
+      }
+      return out;
+    },
+    solidAt,
+  };
+
+  window.__scene = scene; // debug
+  window.__built = built;
+  // esperar texturas antes del primer frame
+  await new Promise((resolve) => {
+    const mgr = THREE.DefaultLoadingManager;
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    mgr.onLoad = finish;
+    mgr.onError = (url) => { console.error("texture failed:", url); finish(); };
+    setTimeout(finish, 12000);
+    setTimeout(() => { if (!mgr.isLoading) finish(); }, 800);
+  });
+  document.title = `demo E2a · ${TILE}`;
+  requestAnimationFrame(frame);
+</script>

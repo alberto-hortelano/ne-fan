@@ -1,0 +1,162 @@
+[
+  {
+    "id": "bloque_o",
+    "vid": "bloque_o",
+    "label": "bloque de viviendas",
+    "file": "bloque_o.svg",
+    "bbox": [
+      1.7,
+      -2.2,
+      50.3,
+      34.2
+    ],
+    "baseline_y": 30,
+    "footprint_cells": [
+      6,
+      6,
+      50,
+      30
+    ],
+    "overhead": false
+  },
+  {
+    "id": "bloque_e",
+    "vid": "bloque_e",
+    "label": "bloque de viviendas",
+    "file": "bloque_e.svg",
+    "bbox": [
+      73.7,
+      -2.2,
+      50.3,
+      34.2
+    ],
+    "baseline_y": 30,
+    "footprint_cells": [
+      78,
+      6,
+      122,
+      30
+    ],
+    "overhead": false
+  },
+  {
+    "id": "cantina_filtro:back_n",
+    "vid": "cantina_filtro",
+    "label": "cantina El Filtro",
+    "file": "cantina_filtro_back_n.svg",
+    "bbox": [
+      11.25,
+      48,
+      25.75,
+      8.2
+    ],
+    "baseline_y": 54,
+    "footprint_cells": [
+      14,
+      54,
+      36,
+      55.2
+    ],
+    "overhead": false
+  },
+  {
+    "id": "cantina_filtro:back_w",
+    "vid": "cantina_filtro",
+    "label": "cantina El Filtro",
+    "file": "cantina_filtro_back_w.svg",
+    "bbox": [
+      11.25,
+      48,
+      4.95,
+      33
+    ],
+    "baseline_y": 54,
+    "footprint_cells": [
+      14,
+      54,
+      15.2,
+      80
+    ],
+    "overhead": false
+  },
+  {
+    "id": "mastil",
+    "vid": "mastil",
+    "label": "mástil de comunicaciones",
+    "file": "mastil.svg",
+    "bbox": [
+      54.4,
+      38,
+      15.2,
+      25.5
+    ],
+    "baseline_y": 61,
+    "footprint_cells": [
+      61,
+      55,
+      67,
+      61
+    ],
+    "overhead": false
+  },
+  {
+    "id": "cantina_filtro:front",
+    "vid": "cantina_filtro",
+    "label": "cantina El Filtro",
+    "file": "cantina_filtro_front.svg",
+    "bbox": [
+      12.37,
+      51.2,
+      26.29,
+      29.8
+    ],
+    "baseline_y": 80,
+    "footprint_cells": [
+      14,
+      78.8,
+      36,
+      80
+    ],
+    "overhead": false
+  },
+  {
+    "id": "barandilla_e:0",
+    "vid": "barandilla_e",
+    "label": "barandilla",
+    "file": "barandilla_e_0.svg",
+    "bbox": [
+      95.8,
+      74.2,
+      4,
+      15.6
+    ],
+    "baseline_y": 88.5,
+    "footprint_cells": [
+      97.5,
+      77.5,
+      98.5,
+      88.5
+    ],
+    "overhead": false
+  },
+  {
+    "id": "barandilla_e:1",
+    "vid": "barandilla_e",
+    "label": "barandilla",
+    "file": "barandilla_e_1.svg",
+    "bbox": [
+      95.8,
+      84.2,
+      4,
+      15.6
+    ],
+    "baseline_y": 98.5,
+    "footprint_cells": [
+      97.5,
+      87.5,
+      98.5,
+      98.5
+    ],
+    "overhead": false
+  }
+]

@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify } from './validators.js';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview } from './validators.js';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
@@ -53,6 +53,7 @@ const DEVELOP_WORLD_INSTRUCTIONS = loadPrompt('develop_world.md');
 const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
 
 const BLUEPRINT_REVIEW_INSTRUCTIONS = loadPrompt('blueprint_review.md');
+const IMAGE_REVIEW_INSTRUCTIONS = loadPrompt('image_review.md');
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
  *  que el motor acaba de llamar. Genérico para rutas nuevas. */
@@ -79,7 +80,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
+  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
@@ -115,6 +116,9 @@ Request kinds you may receive:
 - "scene_classify"  → classify segmented regions of a painted scene image
                       (solid / tall per region — the collision map is derived
                       from your answer).
+- "image_review"    → LOOK at the final repainted tile and flag objects the
+                      image model INVENTED (not in the declared plan): return
+                      { extras: [{label, action, box_px, tall, solid, ...}] }.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
@@ -172,6 +176,7 @@ into context:
           const instructions =
             msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS :
             msg.kind === 'scene_classify' ? SCENE_CLASSIFY_INSTRUCTIONS :
+            msg.kind === 'image_review' ? IMAGE_REVIEW_INSTRUCTIONS :
             WEAPON_ORIENT_INSTRUCTIONS;
           content.push({
             type: 'text',
@@ -265,6 +270,7 @@ into context:
     '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
+    '  image_review   → { extras: [{ label, action, box_px, tall, solid, h?, depth_cells? }] }\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
     '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {
@@ -331,6 +337,15 @@ into context:
           if (!check.ok) {
             return {
               content: [{ type: 'text', text: `Invalid scene classification — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
+        if (kind === 'image_review') {
+          const check = validateImageReview(parsed);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid image review — fix the shape and call narrative_respond again: ${check.error}` }],
               isError: true,
             };
           }
