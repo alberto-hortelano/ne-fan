@@ -23,7 +23,7 @@
 
 import http from "node:http";
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 18765);
@@ -332,6 +332,32 @@ async function statePost(path, body) {
   return res.json();
 }
 
+// --- Mundos proscenio (view = "proscenium") ---
+// Fixtures reales de la posada (nefan-core/data/scenes/proscenio/) servidas
+// por place: el bootstrap siembra el world map vía State API como haría el
+// motor con las map tools, y los realize devuelven el plató del place.
+const STAGE_DIR = new URL("../nefan-core/data/scenes/proscenio/", import.meta.url);
+const stageByPlace = new Map();
+for (const f of readdirSync(fileURLToPath(STAGE_DIR))) {
+  if (!f.endsWith(".json")) continue;
+  const scene = JSON.parse(readFileSync(fileURLToPath(new URL(f, STAGE_DIR)), "utf8"));
+  if (scene.stage && scene.place_id) stageByPlace.set(scene.place_id, scene);
+}
+
+async function handleStageRequest(body) {
+  if (body.stage_request?.bootstrap) {
+    await statePost("/map/place", { id: "posada_salon", kind: "interior", parent_id: "world", name: "Salón de la posada" });
+    await statePost("/map/place", { id: "posada_cocina", kind: "interior", parent_id: "world", name: "Cocina de la posada" });
+    await statePost("/map/place", { id: "calle_mayor", kind: "site", parent_id: "world", name: "Calle Mayor" });
+    await statePost("/map/link", { from: "posada_salon", to: "posada_cocina", kind: "door", edge: "north", bidirectional: true });
+    await statePost("/map/link", { from: "posada_salon", to: "calle_mayor", kind: "door", edge: "south", bidirectional: true });
+    return stageByPlace.get("posada_salon");
+  }
+  const id = body.realize_place?.id;
+  if (id && stageByPlace.has(id)) return stageByPlace.get(id);
+  throw new Error(`fake-ai: sin fixture proscenio para el place "${id ?? "?"}"`);
+}
+
 /** Imita el contrato FRONTIER del motor: crea place + link (con edge) vía la
  *  State API y devuelve la escena del place nuevo. */
 async function handleFrontier(frontier) {
@@ -607,6 +633,14 @@ const server = http.createServer((req, res) => {
             return send(200, await handleFrontier(body.frontier_request));
           } catch (err) {
             console.error(`[fake-ai] frontera falló:`, err.message);
+            return send(500, { detail: err.message });
+          }
+        }
+        if (body.stage_request) {
+          try {
+            return send(200, await handleStageRequest(body));
+          } catch (err) {
+            console.error(`[fake-ai] stage falló:`, err.message);
             return send(500, { detail: err.message });
           }
         }

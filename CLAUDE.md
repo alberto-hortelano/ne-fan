@@ -381,6 +381,51 @@ lo proyecta:
 
 Godot (cliente 3D) no participa: la proyección solo afecta al mundo 2D.
 
+## Vista proscenio (`view: "proscenium"` — plató de cine clásico)
+
+Segunda vista del cliente 2D (la oblicua sigue siendo el default): el mundo es
+una cadena de **platós discretos** (escenas por place del world map), no un
+plano continuo de tiles. Convención de cámara FIJA: la cámara está al **sur**
+mirando al norte — `north` = telón de fondo pintado, `south` = embocadura
+(salida hacia cámara; opcional `fourth_wall` que se desvanece por proximidad),
+`east`/`west` = laterales. El jugador se mueve libre en XZ dentro de los
+`bounds` del plató (clamp vía `CollisionDeps.viewConstraint`); la ÚNICA forma
+de viajar es pisar una **zona de salida** → corte a negro (`#scene-fade`) +
+`player_entered_place` → lazy realize o re-broadcast cacheado → spawn junto a
+la puerta de vuelta (patrón puertas de Resident Evil).
+
+- **Selección**: `game.json → view` (enum `overworld|proscenium`), congelada
+  en `world.view` como el estilo; resume con view desconocida aborta. v1 es
+  vector-only (`proscenium` + `renderMode: "image"` aborta el start). Juego
+  dev: `data/games/dev_proscenio`.
+- **Formato**: escena Format D clásica por place + bloque `stage` OBLIGATORIO
+  (`exits[]` con `edge`/`to_place_id`/`zone` en celdas, `backdrop`,
+  `fourth_wall`; zod estricto en `src/scene/stage/schema.ts`). Validación:
+  exits⇔links del place en AMBOS sentidos, zonas transitables y alcanzables;
+  sin regla de "borde alcanzable". Prompt: `stage_instructions.md` (se antepone
+  cuando `world_state.stage_request` está presente, patrón generate_tile).
+- **Compositor** (`nefan-core/src/scene/stage/`): `composeStage(plan, key)`
+  determinista, `STAGE_COMPOSER_VERSION` propia (cero bytes compartidos con la
+  oblicua) — proyección `s(z)=f/(f+z)`, capas fondo→frente (backdrop, suelo en
+  perspectiva, volúmenes como billboards frontales, bastidores, cuarta pared),
+  cada una SVG standalone con huella/exits en METROS de mundo. Colisión de
+  huellas vía `applyPlanCollision`, nunca de píxeles.
+- **Cliente**: `rendererRegistry` (`renderer/registry.ts`, patrón
+  createSystemRegistry) con `ProsceniumRenderer` — rasteriza las capas una vez
+  por escena, cámara de **raíl** en X (zona muerta + lerp, paneo UNIFORME: el
+  decorado es una pintura con perspectiva horneada), sprites insertados entre
+  capas por zStage con escala de profundidad (clamp 0.55). Transiciones en
+  `world/stage-transitions.ts`. Los subsistemas oblicua-only (tiles, Auto-img,
+  captureSchematic) quedan apagados en proscenio.
+- **E2E sin LLM**: fixtures enlazadas `data/scenes/proscenio/posada_*.json`
+  (funcionan desde el room-selector SIN sesión — fallback local de
+  transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
+  (siembra el world map de la posada vía State API). Bench:
+  `window.__nefan.view()/stage()/probeCollide()`.
+- **Entrega 2 (pendiente)**: repintado IA por capas (peeling validado en el
+  experimento lateral de julio) sobre `StageLayer.image_url` — el hueco ya
+  existe en el contrato de capas.
+
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 
 Sistemas de juego completos (comercio, reputación…) como **manifests JSON puros** que un intérprete en `nefan-core/src/plugins/` ejecuta — sin código generado. Spec completa y amendments en `next.md` §7.
@@ -403,7 +448,8 @@ Distintos de los plugins declarativos: **módulos TS de hot loop** con varias im
 - **Combate** (`nefan-core/src/combat/registry.ts`): interfaz `CombatSystem` (catálogo `attacks`, `normalizeAttack`, `windUpTime`, `addPendingImpact`, `resolve`) inyectada en `GameSimulation`; la orquestación y la state machine de `combatant.ts` son compartidas, así el protocolo del bridge no cambia entre implementaciones. Implementaciones: `standard` (envuelve CombatManager/resolver, fórmula completa) y `basic` (un solo ataque "strike", daño fijo 15 a ≤2 m, sin armas ni matriz). Selección: `game.json` → `systems: {combat: "basic"}` (schema en `games/loader.ts`), validada y CONGELADA en el save (`world.combat_system`) en `start_session`; el resume la restaura (save sin campo = estándar; id retirado = resume abortado). `load_room` sin sesión vuelve al estándar (los fixtures asumen ese catálogo). Juego dev de prueba: `data/games/dev_combate_basico`.
 - **Cliente 2D**: el HUD de ataques se genera desde el catálogo del sistema de la sesión (`applySessionCombatSystem` en main.ts) — con `basic` hay un solo botón "1:Golpe" y las teclas 1..N se remapean.
 - **Input del cliente 2D** (`nefan-html/src/input/registry.ts`): interfaz `InputProvider` (estado continuo + one-shots consumibles + `setAttackBindings`/`selectAttack`). Implementaciones: `keyboard` (default) y `scripted` (driver programático para bench E2E, expuesto como `window.__nefan.inputDriver`). Selección por query param `?input=` (capacidad del cliente, no del mundo). Las teclas dev (G/X/B/N/R-review) viven en `DevToolsInput`, fijo y fuera del provider.
-- **Candidatos futuros** (mismo patrón): PlayerController (prerequisito para touch/gamepad), EnemyAI (`systems.enemy_ai`), Renderer 2D, transporte narrativo. CollisionSystem y el pipeline de imagen ya son inyectables vía `*Deps`; formalizar registro sólo si aparece una 2ª implementación.
+- **Renderer 2D** (`nefan-html/src/renderer/registry.ts`): interfaz `Renderer2D` (contrato por-frame: `render` + `drawAttackArea`); implementaciones `oblique` (default, la instancia CanvasRenderer ya cableada) y `proscenium` (vista de plató). Selección por `world.view` congelada en el save (o fixture local con bloque `stage`).
+- **Candidatos futuros** (mismo patrón): PlayerController (prerequisito para touch/gamepad), EnemyAI (`systems.enemy_ai`), transporte narrativo. CollisionSystem y el pipeline de imagen ya son inyectables vía `*Deps`; formalizar registro sólo si aparece una 2ª implementación.
 
 ## Sistema de combate
 
