@@ -36,6 +36,26 @@ export {
   type PeelStep,
 } from "./peel.js";
 export {
+  expectedElementsFor,
+  pxToView,
+  contactToPose,
+  footprintFromContact,
+  matchInventory,
+  peelStepsFromInventory,
+  collisionGridFromCutouts,
+  reconstructionDiff,
+  STAGE_RENDER_SIZE,
+  RECONSTRUCTION_DEFAULTS,
+  type StageExpectedElement,
+  type StageReviewItem,
+  type CutoutPose,
+  type InventoryMatch,
+  type InventoryPeelStep,
+  type CollisionCutout,
+  type StageCollisionResult,
+  type ReconstructionReport,
+} from "./segments.js";
+export {
   frameStage,
   parallaxPanX,
   viewToScreen,
