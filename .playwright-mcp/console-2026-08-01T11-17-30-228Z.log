@@ -1,0 +1,14 @@
+[     171ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[     174ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[     297ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[    7044ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[   62584ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[   62586ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[   81252ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[   81272ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[   82058ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  103395ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  103414ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  112999ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  113027ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  113805ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74

@@ -38,6 +38,11 @@ export interface CollisionDeps {
   getPlayerPos(): { x: number; z: number };
   /** Objetos del esquema que colisionan por AABB (buildings/props). */
   getObstacles(): readonly CollisionObstacle[];
+  /** Restricción de la VISTA activa (cuarta fuente): true = el destino queda
+   *  fuera de lo jugable (p. ej. clamp de profundidad del proscenio). Misma
+   *  semántica salir-sí-entrar-no que el resto de fuentes: la implementación
+   *  recibe el origen para no encerrar a un jugador ya fuera. */
+  viewConstraint?(fromX: number, fromZ: number, toX: number, toZ: number): boolean;
 }
 
 export class CollisionSystem {
@@ -66,6 +71,8 @@ export class CollisionSystem {
    *  colliders de terreno/svg/imagen de los tiles tocados (≤4, coordenadas
    *  globales) y AABBs del esquema donde aún aplican. */
   collidesAt(x: number, z: number): boolean {
+    const pv = this.deps.getPlayerPos();
+    if (this.deps.viewConstraint?.(pv.x, pv.z, x, z)) return true;
     if (this.frontierBlocksMove(x, z)) return true;
     const { tileStore } = this.deps;
     const p = this.deps.getPlayerPos();
