@@ -12,6 +12,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
@@ -61,6 +62,12 @@ interface RouteResult {
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
+
+/** Documento canónico de sistemas de UI (compartido con el resto de prompts
+ *  del contrato) — lo sirve GET /ui_doc para la tool MCP ui_doc_get. */
+const UI_SYSTEMS_DOC = fileURLToPath(
+  new URL("../data/contract/prompts/ui_systems.md", import.meta.url),
+);
 
 export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
@@ -375,6 +382,30 @@ async function handle(
       });
     } catch (err) {
       return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
+    }
+  }
+
+  // ── Guía de sistemas de UI (tool MCP ui_doc_get) ──
+  // Documento canónico (data/contract/prompts/ui_systems.md) + el estado
+  // ACTIVO de la sesión: qué vista/modo/combate están congelados y qué
+  // plugins corren — el motor adapta su salida a lo activo, nunca lo cambia.
+  if (method === "GET" && path === "/ui_doc") {
+    if (!narrative.session_id) {
+      return notFound("no active session — ui_doc describes a running session's UI");
+    }
+    try {
+      return ok({
+        ui_state: {
+          view: narrative.world.view || "overworld",
+          render_mode: narrative.world.render_mode || "image",
+          combat_system: narrative.world.combat_system || "standard",
+          style_id: narrative.world.style_id,
+          plugins: plugins.list(),
+        },
+        ui_doc: readFileSync(UI_SYSTEMS_DOC, "utf-8"),
+      });
+    } catch (err) {
+      return notFound(`ui_systems.md unavailable: ${(err as Error).message}`);
     }
   }
 

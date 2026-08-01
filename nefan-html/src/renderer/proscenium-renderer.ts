@@ -107,7 +107,6 @@ export class ProsceniumRenderer implements Renderer2D {
   }
 
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
-    void objects; // los estáticos se pintan como capas del compositor
     const { ctx, canvas } = this;
     const now = performance.now();
     const dt = this.lastNow ? Math.min(0.1, (now - this.lastNow) / 1000) : 0;
@@ -158,6 +157,16 @@ export class ProsceniumRenderer implements Renderer2D {
     };
     for (const e of enemies) pushCharacter(e, "enemy");
     for (const n of npcs) pushCharacter(n, "npc");
+    // Los estáticos DECLARADOS en la escena ya son capas del compositor; los
+    // spawns dinámicos posteriores (spawn_entity del motor) no tienen capa —
+    // caja esquemática a su profundidad (su huella ya colisiona igual).
+    const layerIds = new Set(this.rasters.map((r) => r.layer.id));
+    for (const o of objects) {
+      if (!o.alive) continue;
+      if (layerIds.has(`vol_${o.id}`) || layerIds.has(`vol_derived_ent_${o.id}`)) continue;
+      const [xs, zs] = worldToStage(stage.bounds, o.pos.x, o.pos.z);
+      drawables.push({ zs, draw: () => this.drawSpawnedObject(o, xs, zs, toScreen, fit) });
+    }
     {
       const [xs, zs] = worldToStage(stage.bounds, player.pos.x, player.pos.z);
       drawables.push({
@@ -245,6 +254,48 @@ export class ProsceniumRenderer implements Renderer2D {
       ctx.font = "11px system-ui";
       ctx.textAlign = "center";
       ctx.fillText(exit.label, sx, sy + 14);
+      ctx.textAlign = "left";
+    }
+  }
+
+  /** Caja esquemática de un objeto spawneado en runtime (sin capa del
+   *  compositor): a su escala de profundidad, con sombra y etiqueta. */
+  private drawSpawnedObject(
+    e: Entity,
+    xs: number,
+    zs: number,
+    toScreen: (vx: number, vy: number) => [number, number],
+    fit: number,
+  ): void {
+    const stage = this.stage!;
+    const ctx = this.ctx;
+    const s = Math.max(MIN_DEPTH_SCALE, scaleAt(stage.proj, zs));
+    const [vx, vy] = stageToView(stage.proj, xs, zs);
+    const [sx, sy] = toScreen(vx, vy);
+    const ppm = stage.proj.px_per_m;
+    const w = Math.max(0.6, e.sizeXZ?.x ?? 1) * ppm * s * fit;
+    const h = Math.max(0.5, e.sizeY ?? 1) * ppm * s * fit;
+    const FILL: Record<string, string> = {
+      building: "#5a4a38",
+      prop: "#57505a",
+      item: "#a8902d",
+      decor: "#7a5f33",
+      terrain: "#2d4a32",
+    };
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, w * 0.55, Math.max(2, w * 0.12), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = FILL[e.category ?? "prop"] ?? FILL.prop;
+    ctx.strokeStyle = "rgba(236,228,212,0.35)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(sx - w / 2, sy - h, w, h);
+    ctx.strokeRect(sx - w / 2, sy - h, w, h);
+    if (e.label) {
+      ctx.fillStyle = "#d8c79a";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(e.label.slice(0, 30), sx, sy - h - 4);
       ctx.textAlign = "left";
     }
   }

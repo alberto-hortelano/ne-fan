@@ -17,7 +17,8 @@ const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.met
 /** Marcadores load-bearing por archivo: identificadores que también existen
  *  en el código (scene-expand, consequence-handler, map-svg, volumes). */
 const CONTRACT_MARKERS: Record<string, string[]> = {
-  "world_rules.md": ["style_tag", "HUMANOID", "story_update"],
+  "world_rules.md": ["style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request"],
+  "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
   "tile_instructions.md": ["map_ground", "volumes", "viewBox", "g id=", "terrain"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "structures", "meters_per_cell"],

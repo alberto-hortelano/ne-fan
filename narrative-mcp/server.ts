@@ -65,6 +65,7 @@ function describeStateCall(method: string, path: string): string {
   if (path.startsWith('/map/trigger')) return 'colocando disparadores del mapa…';
   if (path.startsWith('/map')) return 'consultando el mapa del mundo…';
   if (path === '/world_doc') return 'leyendo el documento del mundo…';
+  if (path === '/ui_doc') return 'leyendo la guía de sistemas de UI…';
   if (path === '/scene/validate') return 'validando la escena generada…';
   if (path.startsWith('/plugins')) return 'trabajando con los sistemas de juego (plugins)…';
   if (path.startsWith('/npc')) return 'dirigiendo a los personajes…';
@@ -456,6 +457,22 @@ into context:
     {},
     async () => {
       return reportBridge(await bridgeGet('/world_doc'));
+    },
+  );
+
+  server.tool(
+    'ui_doc_get',
+    `Read the UI SYSTEMS reference of the game client plus the ACTIVE ` +
+    `configuration of this session (ui_state: view, render_mode, ` +
+    `combat_system, plugins). It explains every UI system the player ` +
+    `touches — world views (overworld tiles vs proscenium stages), dialogue ` +
+    `panel, travel/exits, dynamic spawns, combat HUD, story/ambient, ` +
+    `graphics mode, plugins, map triggers — what options each has, how it ` +
+    `works and how YOU drive it. Call it when unsure how a consequence or ` +
+    `scene field reaches the player, or what the active view expects.`,
+    {},
+    async () => {
+      return reportBridge(await bridgeGet('/ui_doc'));
     },
   );
 
