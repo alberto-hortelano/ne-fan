@@ -179,6 +179,38 @@ function unionGrids(a: TerrainGridData | null, b: TerrainGridData | null): Terra
   return { ...a, grid: rows, solid_chars: ["S"] };
 }
 
+/** Colisión del plató en modo imagen: el grid derivado de los contactos
+ *  PINTADOS (segmentación de la imagen — collisionGridFromCutouts) SUSTITUYE
+ *  a la colisión declarada de los volúmenes: el modelo de imagen recoloca lo
+ *  declarado, y dejar la huella declarada crearía muros fantasma donde no hay
+ *  nada pintado (y elementos missing seguirían bloqueando en vacío). Con
+ *  `grid === null` (review fallido) NO se toca nada: la colisión declarada de
+ *  applyPlanCollision sigue siendo la primera línea. */
+export function applyStageDerivedCollision(
+  key: string,
+  grid: TerrainGridData | null,
+  deps: DerivedCollisionDeps,
+): void {
+  if (grid === null) return;
+  let collider: TerrainCollider | null;
+  try {
+    collider = createTerrainCollider(grid);
+  } catch (err) {
+    errors.push("scene", `grid del plató ${key} inconsistente; sigue la colisión declarada`, err);
+    return;
+  }
+  deps.tileStore.markAnalyzed(key, collider);
+  deps.setTileAnalysisGrid(key, grid);
+  // Retirar la declarada: la imagen manda (ni fantasmas de recolocados ni
+  // bloqueos de elementos missing).
+  deps.tileStore.setSvgCollider(key, null);
+  deps.setTileSvgGrid(key, null);
+  console.log(
+    `[collision] ${key}: colisión del plató PINTADO instalada — ` +
+    `${collider?.solidCellCount ?? 0} celdas sólidas (declarada retirada)`,
+  );
+}
+
 /** Mundo derivado de la imagen: materializa el análisis de un tile. El grid
  *  de segmentos sólidos pasa a ser el collider derivado del tile (la imagen
  *  manda: los AABBs del esquema en ese tile dejan de bloquear). Grid null =

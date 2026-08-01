@@ -32,6 +32,7 @@ import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/
 import {
   CollisionSystem,
   applyPlanCollision,
+  applyStageDerivedCollision,
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
@@ -182,11 +183,15 @@ const renderer = new CanvasRenderer(canvas, {
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
-// Pipeline de imagen del proscenio (entrega 2): repintado + pelado por capas.
-// Instala en el ProsceniumRenderer de la vista (closure: se resuelve al
-// llegar las imágenes, no al construir).
+// Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
+// visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
+// si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
+// declarada (closure: se resuelve al llegar las imágenes, no al construir).
 const stageImageController = new StageImageController(AI_SERVER_URL, {
-  install: (key, images) => prosceniumRenderer?.installImages(key, images),
+  install: (key, images) => {
+    const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
+    if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);
+  },
   log: (msg) => log(msg),
   // Progreso del repintado/pelado en el HUD (mismo indicador que el Auto-img
   // de la oblicua — nunca corren a la vez).
@@ -1214,6 +1219,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     stageImages: () => prosceniumRenderer?.hasImages() ?? false,
     stagePainting: () => stageImageController.running,
     stageCam: () => prosceniumRenderer?.debugCamera() ?? null,
+    stageCutouts: () => prosceniumRenderer?.debugCutouts() ?? null,
     stageProposal: () => stageTransitions.proposalActive,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las

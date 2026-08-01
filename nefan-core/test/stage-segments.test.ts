@@ -220,6 +220,19 @@ describe("peelStepsFromInventory", () => {
     assert.match(steps[2].prompt, /ONLY the empty stage floor/);
   });
 
+  it("behindLabels solo incluye lo que SOLAPA el hueco en pantalla", () => {
+    const near = { ...item("mesa", "keep"), image_bbox: [100, 500, 200, 150] as [number, number, number, number] };
+    const overlapping = { ...item("banco_tras_mesa", "keep"), image_bbox: [150, 420, 120, 120] as [number, number, number, number] };
+    const farAway = { ...item("barril_lejano", "keep"), image_bbox: [800, 450, 80, 100] as [number, number, number, number] };
+    const steps = peelStepsFromInventory([
+      { item: near, z: 1.0 },
+      { item: overlapping, z: 3.0 },
+      { item: farAway, z: 5.0 },
+    ]);
+    assert.deepEqual(steps[0].behindLabels, ["banco_tras_mesa"]); // el lejano no solapa
+    assert.match(steps[0].prompt, /The object being removed is: mesa/);
+  });
+
   it("items sin pose van al final y los remove no aparecen en behindLabels", () => {
     const steps = peelStepsFromInventory([
       { item: item("mancha_remove", "remove"), z: null },

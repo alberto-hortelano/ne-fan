@@ -30,9 +30,10 @@ import {
   type StageFraming,
   type BandPlan,
 } from "@nefan-core/src/scene/stage/index.js";
+import type { StageProjParams } from "@nefan-core/src/scene/stage/index.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { Entity } from "./canvas-renderer.js";
-import type { StageImages } from "../scene/stage-image.js";
+import type { StageImages, StageCutout } from "../scene/stage-image.js";
 import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
 import { errors } from "../ui/error-log.js";
 
@@ -47,6 +48,28 @@ const RAIL_DEAD_ZONE_M = 1.5;
 const RAIL_RATE = 6;
 const PLAYER_COLOR = "#e8a13c";
 const NPC_COLOR = "#6688cc";
+
+/** Fade de recortes con el jugador DETRÁS — espejo de las constantes del
+ *  occluder-fade de la oblicua (canvas-renderer.ts). */
+const CUTOUT_FADE_NEAR_M = 1.5;
+const CUTOUT_FADE_FAR_M = 6;
+const CUTOUT_FADE_MIN = 0.45;
+const CUTOUT_FADE_RATE = 8;
+const CUTOUT_FADE_MARGIN_M = 0.5;
+/** Margen del test "jugador detrás" (zStage del jugador > z del recorte). */
+const BEHIND_EPS_M = 0.05;
+
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+
+function distPointToRect(
+  x: number,
+  z: number,
+  r: { minX: number; minZ: number; maxX: number; maxZ: number },
+): number {
+  const dx = Math.max(r.minX - x, 0, x - r.maxX);
+  const dz = Math.max(r.minZ - z, 0, z - r.maxZ);
+  return Math.hypot(dx, dz);
+}
 
 interface RasterLayer {
   layer: StageLayer;
@@ -87,6 +110,8 @@ export class ProsceniumRenderer implements Renderer2D {
   /** Token de instalación: una escena que llega mientras otra rasteriza
    *  invalida a la anterior (nunca capas mezcladas). */
   private installToken = 0;
+  /** Alphas vivos del fade de recortes (id → alpha, lerp temporal). */
+  private cutFade = new Map<string, number>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -128,18 +153,85 @@ export class ProsceniumRenderer implements Renderer2D {
     };
   }
 
-  /** Instalación ATÓMICA de las imágenes del pelado. Ignora (con aviso) si la
-   *  escena activa ya no es la que se pintó — nunca bitmaps de otro plató. */
-  installImages(key: string, images: StageImages): void {
+  /** Instalación ATÓMICA de las imágenes del pipeline de segmentación.
+   *  true = aceptadas (el caller instala también la colisión derivada);
+   *  false = descartadas (la escena activa ya no es la que se pintó). */
+  installImages(key: string, images: StageImages): boolean {
     if (key !== this.stageKey) {
       errors.push("render", `imágenes del plató ${key} descartadas: la escena activa es ${this.stageKey || "(ninguna)"}`);
-      return;
+      return false;
     }
     this.images = images;
+    this.cutFade.clear();
+    this.frameKey = ""; // el encuadre puede cambiar (proyección calibrada)
+    return true;
   }
 
   hasImages(): boolean {
     return this.images !== null;
+  }
+
+  /** Recortes instalados con su fade vivo (__nefan.stageCutouts). */
+  debugCutouts(): Array<{
+    id: string;
+    layerId?: string;
+    label: string;
+    z: number;
+    solid: boolean;
+    tall: boolean;
+    fade: number;
+    bboxView: [number, number, number, number];
+    footprintWorld: { minX: number; minZ: number; maxX: number; maxZ: number } | null;
+  }> | null {
+    if (!this.images) return null;
+    return this.images.cutouts.map((c) => ({
+      id: c.id,
+      ...(c.layerId ? { layerId: c.layerId } : {}),
+      label: c.label,
+      z: c.z,
+      solid: c.solid,
+      tall: c.tall,
+      fade: this.cutFade.get(c.id) ?? 1,
+      bboxView: c.bboxView,
+      footprintWorld: c.footprintWorld,
+    }));
+  }
+
+  /** Proyección EFECTIVA: con imágenes instaladas manda la calibrada a la
+   *  perspectiva pintada; en modo vectorial, la del compositor. */
+  private effProj(): StageProjParams {
+    return this.images?.paintedProj ?? this.stage!.proj;
+  }
+
+  /** Alpha vivo del fade de un recorte — portado del occluder-fade de la
+   *  oblicua: target = (jugador DETRÁS: zStage > z del recorte) ∧ (su bbox de
+   *  vista cubre al jugador en pantalla, margen 0.5 m a su escala) ∧ (rampa
+   *  de proximidad a la huella pintada); lerp temporal dt·8. */
+  private cutoutFade(
+    cut: StageCutout,
+    proj: StageProjParams,
+    pxs: number,
+    pzs: number,
+    playerPos: { x: number; z: number },
+    dt: number,
+  ): number {
+    let target = 1;
+    if (pzs > cut.z + BEHIND_EPS_M) {
+      const [pvx, pvy] = stageToView(proj, pxs, Math.max(0, pzs));
+      const m = CUTOUT_FADE_MARGIN_M * proj.px_per_m * scaleAt(proj, Math.max(0, pzs));
+      const [minX, minY, maxX, maxY] = cut.bboxView;
+      if (pvx >= minX - m && pvx <= maxX + m && pvy >= minY - m && pvy <= maxY + m) {
+        const d = cut.footprintWorld
+          ? distPointToRect(playerPos.x, playerPos.z, cut.footprintWorld)
+          : 0;
+        const t = clamp01((CUTOUT_FADE_FAR_M - d) / (CUTOUT_FADE_FAR_M - CUTOUT_FADE_NEAR_M));
+        target = 1 - t * (1 - CUTOUT_FADE_MIN);
+      }
+    }
+    const cur = this.cutFade.get(cut.id) ?? 1;
+    const next = cur + (target - cur) * Math.min(1, dt * CUTOUT_FADE_RATE);
+    this.cutFade.set(cut.id, next);
+    return next;
   }
 
   /** Instala la escena ÚNICA del plató: rasteriza cada capa SVG a un
@@ -195,9 +287,13 @@ export class ProsceniumRenderer implements Renderer2D {
     }
 
     // ── Encuadre cinematográfico (cacheado por plató + tamaño de canvas) ─────
+    // Con imágenes instaladas, la proyección CALIBRADA a la perspectiva
+    // pintada manda (el modelo de imagen nunca respeta la franja de suelo del
+    // blueprint): entidades, warp, salidas y recortes comparten la misma
+    // línea de suelo que la pintura.
     const vb = stage.view_box;
-    const proj = stage.proj;
-    const fk = `${this.stageKey}:${canvas.width}x${canvas.height}`;
+    const proj = this.effProj();
+    const fk = `${this.stageKey}:${canvas.width}x${canvas.height}:${this.images ? "img" : "vec"}`;
     if (fk !== this.frameKey || !this.framing || !this.bandPlan) {
       this.framing = frameStage(proj, vb, canvas.width, canvas.height);
       this.bandPlan = bandPlanFor(proj, vb, this.framing, canvas.width, canvas.height);
@@ -232,7 +328,7 @@ export class ProsceniumRenderer implements Renderer2D {
     ];
 
     // ── Entidades ordenadas por profundidad de plató (lejos → cerca) ─────────
-    const drawables: Array<{ zs: number; draw: () => void }> = [];
+    const drawables: Array<{ zs: number; cutout?: boolean; draw: () => void }> = [];
     const pushCharacter = (e: Entity, kind: "npc" | "enemy"): void => {
       if (kind === "npc" && e.alive === false) return; // NPC ausente (director)
       const [xs, zs] = worldToStage(stage.bounds, e.pos.x, e.pos.z);
@@ -282,11 +378,32 @@ export class ProsceniumRenderer implements Renderer2D {
           ),
       });
     }
-    drawables.sort((a, b) => b.zs - a.zs);
+    // ── Recortes SEGMENTADOS de la imagen pintada: drawables a su z PINTADA
+    // (la oclusión del jugador emerge del mismo orden que las entidades) con
+    // fade cuando el jugador queda detrás — el patrón de la oblicua. ────────
+    const images = this.images;
+    if (images) {
+      const [pxs, pzs] = worldToStage(stage.bounds, player.pos.x, player.pos.z);
+      for (const cut of images.cutouts) {
+        const fade = this.cutoutFade(cut, proj, pxs, pzs, player.pos, dt);
+        drawables.push({
+          zs: cut.z,
+          cutout: true,
+          draw: () => {
+            const [lx, ly, lw, lh] = layerRect(cut.z);
+            ctx.globalAlpha = fade;
+            ctx.drawImage(cut.canvas, lx, ly, lw, lh);
+            ctx.globalAlpha = 1;
+          },
+        });
+      }
+    }
+    // Empate de z: el recorte se pinta DESPUÉS (delante) que la entidad —
+    // espejo de la regla del compositor «entidad delante ⟺ zStage < layer.z».
+    drawables.sort((a, b) => b.zs - a.zs || (a.cutout ? 1 : 0) - (b.cutout ? 1 : 0));
 
     // ── Capas + sprites intercalados por z ───────────────────────────────────
     const wallAlpha = fourthWallAlpha(player.pos.z, stage.bounds);
-    const images = this.images;
     let di = 0;
     for (const raster of this.rasters) {
       // Entidad delante de la capa ⟺ su zStage < layer.z ⇒ las que tengan
@@ -305,13 +422,9 @@ export class ProsceniumRenderer implements Renderer2D {
       } else if (images && kind === "floor") {
         // Cubierto por la placa.
       } else if (images && (kind === "prop" || kind === "wall")) {
-        // Recorte por SEGMENTACIÓN de lo pintado (si existe); sin recorte, el
-        // volumen va cocido en la placa — nunca el billboard vectorial encima.
-        const cut = images.cutouts.get(raster.layer.id);
-        if (cut) {
-          const [lx, ly, lw, lh] = layerRect(raster.layer.z);
-          ctx.drawImage(cut, lx, ly, lw, lh);
-        }
+        // Los volúmenes en modo imagen viven como RECORTES segmentados (ya en
+        // drawables, a su z PINTADA) o cocidos en la placa (missing/no
+        // segmentados) — nunca el billboard vectorial encima.
       } else if (kind === "floor" && raster.bandedSrc) {
         // Modo vectorial: el suelo también se warpea por bandas.
         this.drawBanded(raster.bandedSrc, raster.bandedSrc.width, raster.bandedSrc.height, camOffsetM);
@@ -360,7 +473,7 @@ export class ProsceniumRenderer implements Renderer2D {
       if (b.destH <= 0) continue;
       const sy = ((b.srcVy - vb.minY) / vb.height) * srcH;
       const sh = Math.max(1e-3, (b.srcVh / vb.height) * srcH);
-      const dx = canvas.width / 2 + (vb.minX - parallaxPanX(stage.proj, b.z, camOffsetM)) * f.fit;
+      const dx = canvas.width / 2 + (vb.minX - parallaxPanX(this.effProj(), b.z, camOffsetM)) * f.fit;
       ctx.drawImage(src, 0, sy, srcW, sh, dx, b.destY, destW, b.destH);
     }
   }
@@ -388,6 +501,7 @@ export class ProsceniumRenderer implements Renderer2D {
    *  esquina proyecta con SU z: el contorno queda pegado al suelo warpeado. */
   private drawExitZones(toScreen: (vx: number, vy: number, zStage: number) => [number, number]): void {
     const stage = this.stage!;
+    const proj = this.effProj();
     const ctx = this.ctx;
     for (const exit of stage.exits) {
       const r = exit.rect;
@@ -400,7 +514,7 @@ export class ProsceniumRenderer implements Renderer2D {
       ctx.beginPath();
       corners.forEach(([wx, wz], i) => {
         const [xs, zs] = worldToStage(stage.bounds, wx, wz);
-        const [vx, vy] = stageToView(stage.proj, xs, zs);
+        const [vx, vy] = stageToView(proj, xs, zs);
         const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
         if (i === 0) ctx.moveTo(sx, sy);
         else ctx.lineTo(sx, sy);
@@ -412,7 +526,7 @@ export class ProsceniumRenderer implements Renderer2D {
       ctx.fill();
       ctx.stroke();
       const [cxs, czs] = worldToStage(stage.bounds, (r.minX + r.maxX) / 2, (r.minZ + r.maxZ) / 2);
-      const [cvx, cvy] = stageToView(stage.proj, cxs, czs);
+      const [cvx, cvy] = stageToView(proj, cxs, czs);
       const [sx, sy] = toScreen(cvx, cvy, Math.max(0, czs));
       // Etiqueta en espacio de PANTALLA (tamaño fijo, como los labels de NPC).
       ctx.fillStyle = "rgba(232, 216, 180, 0.8)";
@@ -432,12 +546,12 @@ export class ProsceniumRenderer implements Renderer2D {
     toScreen: (vx: number, vy: number, zStage: number) => [number, number],
     fit: number,
   ): void {
-    const stage = this.stage!;
     const ctx = this.ctx;
-    const s = Math.max(MIN_DEPTH_SCALE, scaleAt(stage.proj, zs));
-    const [vx, vy] = stageToView(stage.proj, xs, zs);
+    const proj = this.effProj();
+    const s = Math.max(MIN_DEPTH_SCALE, scaleAt(proj, zs));
+    const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
-    const ppm = stage.proj.px_per_m;
+    const ppm = proj.px_per_m;
     const w = Math.max(0.6, e.sizeXZ?.x ?? 1) * ppm * s * fit;
     const h = Math.max(0.5, e.sizeY ?? 1) * ppm * s * fit;
     const FILL: Record<string, string> = {
@@ -476,12 +590,12 @@ export class ProsceniumRenderer implements Renderer2D {
     now: number,
     kind: "player" | "npc" | "enemy",
   ): void {
-    const stage = this.stage!;
     const ctx = this.ctx;
-    const [vx, vy] = stageToView(stage.proj, xs, zs);
+    const proj = this.effProj();
+    const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
-    const depth = Math.max(MIN_DEPTH_SCALE, scaleAt(stage.proj, zs));
-    const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * stage.proj.px_per_m * depth * fit;
+    const depth = Math.max(MIN_DEPTH_SCALE, scaleAt(proj, zs));
+    const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * proj.px_per_m * depth * fit;
 
     // Sombra de contacto (sin ella los recortes flotan).
     ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -504,7 +618,7 @@ export class ProsceniumRenderer implements Renderer2D {
     }
     if (!drewSprite && e.sprite === undefined) {
       // Círculo explícito (sin sprites): radio a escala de profundidad.
-      const r = Math.max(4, 0.4 * stage.proj.px_per_m * depth * fit);
+      const r = Math.max(4, 0.4 * proj.px_per_m * depth * fit);
       ctx.fillStyle = e.alive ? (kind === "npc" ? NPC_COLOR : e.color) : "#555";
       ctx.globalAlpha = e.alive ? 1 : 0.4;
       ctx.beginPath();
@@ -543,7 +657,7 @@ export class ProsceniumRenderer implements Renderer2D {
     const f = this.framing;
     if (!stage || !f) return;
     const ctx = this.ctx;
-    const proj = stage.proj;
+    const proj = this.effProj();
     const cx = player.pos.x + player.forward.x * params.optimal_distance;
     const cz = player.pos.z + player.forward.z * params.optimal_distance;
     const [xs, zs] = worldToStage(stage.bounds, cx, cz);

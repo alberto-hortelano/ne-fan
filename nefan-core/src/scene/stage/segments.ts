@@ -250,11 +250,24 @@ export interface InventoryPeelStep {
   prompt: string;
 }
 
+/** Margen (px) del test de solape entre huecos y elementos de detrás. */
+const BEHIND_OVERLAP_PAD_PX = 16;
+
+const bboxesOverlap = (
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+  pad = BEHIND_OVERLAP_PAD_PX,
+): boolean =>
+  !(a[0] + a[2] + pad < b[0] || b[0] + b[2] + pad < a[0] ||
+    a[1] + a[3] + pad < b[1] || b[1] + b[3] + pad < a[1]);
+
 /** Pasos de pelado desde el inventario PINTADO, de cerca a lejos por la z
  *  derivada del contacto (un elemento recolocado cambia de plano y el orden
  *  declarado dejaría huecos mal guiados). Los items sin pose (removes sin
  *  contacto, contactos degenerados) van al final: su recorte no se conserva y
- *  el orden solo afecta a la guía del relleno. */
+ *  el orden solo afecta a la guía del relleno. `behindLabels` SOLO incluye lo
+ *  que de verdad SOLAPA el hueco en pantalla — enumerar todo lo lejano invita
+ *  al modelo de fill a pintar muebles dentro del hueco (bench 003). */
 export function peelStepsFromInventory(
   items: { item: StageReviewItem; z: number | null }[],
   backdrop?: string,
@@ -266,14 +279,14 @@ export function peelStepsFromInventory(
   return ordered.map((entry, i) => {
     const behind = ordered
       .slice(i + 1)
-      .filter((e) => e.item.action === "keep")
+      .filter((e) => e.item.action === "keep" && bboxesOverlap(entry.item.image_bbox, e.item.image_bbox))
       .map((e) => e.item.label);
     return {
       itemId: entry.item.id,
       label: entry.item.label,
       action: entry.item.action,
       behindLabels: behind,
-      prompt: buildPeelPrompt(behind, backdrop),
+      prompt: buildPeelPrompt(behind, backdrop, entry.item.label),
     };
   });
 }

@@ -49,17 +49,23 @@ export interface PeelPlan {
   steps: PeelStep[];
 }
 
-/** Instrucción de inpaint para un hueco con `behindLabels` declarado detrás. */
-export function buildPeelPrompt(behindLabels: string[], backdrop?: string): string {
+/** Instrucción de inpaint para un hueco con `behindLabels` pintado detrás.
+ *  `removed` nombra el objeto retirado — sin la prohibición explícita, un
+ *  modelo de fill rellena un hueco con forma de mesa con OTRA mesa (bench
+ *  stage_lab 003). */
+export function buildPeelPrompt(behindLabels: string[], backdrop?: string, removed?: string): string {
   const behind =
     behindLabels.length > 0
       ? `these elements that are partially hidden behind it: ${behindLabels.join(", ")}`
       : "ONLY the empty stage floor";
   const far = backdrop ? ` and, at the far end, the painted backdrop (${backdrop})` : "";
+  const removedClause = removed
+    ? `The object being removed is: ${removed}. Do NOT paint the ${removed} back, nor any similar object. `
+    : "";
   return (
-    `Fill the masked region by continuing EXACTLY what lies behind the removed object: ${behind}${far}. ` +
+    `${removedClause}Fill the masked region by continuing EXACTLY what lies behind the removed object: ${behind}${far}. ` +
     "Extend the floor and the already-visible surfaces seamlessly. " +
-    "Do NOT invent any new object: no planks, fences, signs, crates, furniture, windows, doors, plants or creatures " +
+    "Do NOT invent any new object: no planks, fences, signs, crates, furniture, stoves, windows, doors, plants or creatures " +
     "that are not listed above. Match the surrounding painting style, lighting, colours and perspective exactly."
   );
 }
