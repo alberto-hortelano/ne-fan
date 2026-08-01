@@ -27,11 +27,23 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     if (!parsed.ok) throw new Error(`stagePlanFromScene: ${parsed.error}`);
     declared = parsed.volumes;
   }
-  const derived = deriveVolumesFromSchema(raw as DeriveInput, declared);
+  // En proscenio la habitación enterable ES el plató: sus muros ya van
+  // estampados en el terrain (expandScenePrimitives) y pintarla como fachada
+  // frontal taparía el set entero. Por eso el derive NO consume `structures`
+  // (si lo hiciera, además, su rect actuaría de blocker y se tragaría todo el
+  // mobiliario de dentro). Los cutaway declarados a mano se filtran igual;
+  // los buildings normales (una caseta al fondo de un patio) sí se pintan.
+  const derived = deriveVolumesFromSchema(
+    { ...(raw as DeriveInput), structures: undefined },
+    declared,
+  );
+  const volumes = [...declared, ...derived].filter(
+    (v) => !(v.type === "building" && v.cutaway === true),
+  );
   return {
     size: { cols: size.cols, rows: size.rows, meters_per_cell: size.meters_per_cell },
     stage: stage.stage,
-    volumes: [...declared, ...derived],
+    volumes,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
   };
 }

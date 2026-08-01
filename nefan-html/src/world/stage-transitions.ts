@@ -16,8 +16,10 @@ import {
 import { errors } from "../ui/error-log.js";
 
 /** Si el destino no llega en este tiempo, se retira el velo y se devuelve el
- *  control (el error real ya habrá salido por narrative_status). */
-const TRANSITION_TIMEOUT_MS = 45_000;
+ *  control (el error real ya habrá salido por narrative_status). La primera
+ *  visita a un place lo GENERA el motor narrativo en vivo (2-3 min con LLM
+ *  real) — el timeout es un cinturón contra cuelgues, no una espera normal. */
+const TRANSITION_TIMEOUT_MS = 240_000;
 
 export interface StageTransitionDeps {
   getPlayerPos(): { x: number; z: number };
@@ -33,6 +35,7 @@ export interface StageTransitionDeps {
 export class StageTransitions {
   private transitioning = false;
   private pendingFromPlaceId: string | null = null;
+  private pendingExitId: string | null = null;
   private armedExitId: string | null = null;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -63,6 +66,7 @@ export class StageTransitions {
     }
     this.transitioning = true;
     this.pendingFromPlaceId = from;
+    this.pendingExitId = exit.id;
     this.deps.setFade(true);
     this.deps.log(`🎬 ${exit.label}`);
     this.deps.enterPlace(exit.to_place_id);
@@ -81,6 +85,7 @@ export class StageTransitions {
     this.transitioning = false;
     const from = this.pendingFromPlaceId;
     this.pendingFromPlaceId = null;
+    this.pendingExitId = null;
     this.deps.setFade(false);
     if (!from) return null;
     const spawn = spawnPointForEntry(stage, from);
@@ -110,6 +115,10 @@ export class StageTransitions {
     this.clearTimer();
     this.transitioning = false;
     this.pendingFromPlaceId = null;
+    // El jugador sigue DE PIE en la zona que disparó: armarla para que no
+    // re-dispare en bucle — debe salir y volver a entrar para reintentar.
+    this.armedExitId = this.pendingExitId;
+    this.pendingExitId = null;
     this.deps.setFade(false);
     errors.push("scene", `transición cancelada: ${reason}`);
   }
