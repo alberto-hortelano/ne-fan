@@ -62,7 +62,18 @@ export class TileStore {
 
   getAt(x: number, z: number): TileClientState | undefined {
     const t = worldToTile(x, z);
-    return this.get(t.tx, t.ty);
+    const grid = this.get(t.tx, t.ty);
+    if (grid) return grid;
+    // Escenas SIN grid (fixtures legacy, platós del proscenio): localizar por
+    // rect — sin esto, el gate de AABBs del esquema no ve `imageAnalyzed`/
+    // `svgApplied` del plató y las cajas declaradas bloquean aunque la
+    // colisión derivada de lo pintado las haya sustituido.
+    for (const e of this.entries.values()) {
+      if (e.tx === undefined && x >= e.rect.minX && x < e.rect.maxX && z >= e.rect.minZ && z < e.rect.maxZ) {
+        return e;
+      }
+    }
+    return undefined;
   }
 
   /** ADITIVO: re-añadir la misma clave sustituye (re-render tras resume). */

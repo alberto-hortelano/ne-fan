@@ -453,6 +453,19 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(FAKE_PLATE);
   }
+  // Máscara de segmentación falsa del plató: SVG 1024² negro con un rect
+  // BLANCO en la caja pedida (el navegador lo decodifica como imagen; el
+  // cliente convierte luminancia→alpha). Sin PIL ni píxeles en node.
+  if (req.method === "GET" && req.url?.startsWith("/fake/stage_mask")) {
+    const q = new URL(req.url, "http://x").searchParams;
+    const [x, y, w, h] = ["x", "y", "w", "h"].map((k) => Number(q.get(k) ?? 0));
+    if (!(w > 0) || !(h > 0)) return send(400, { detail: "fake-ai: stage_mask necesita x,y,w,h" });
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">` +
+      `<rect width="1024" height="1024" fill="#000"/>` +
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/></svg>`;
+    res.writeHead(200, { "Content-Type": "image/svg+xml", ...cors });
+    return res.end(svg);
+  }
   if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
     const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
     if (!/^[a-z0-9_]+\/[a-z0-9_]+\/dir_\d+_frame_\d{3}\.png$/.test(rel)) {
@@ -617,6 +630,71 @@ const server = http.createServer((req, res) => {
         sceneImages.set(hash, png);
         console.error(`[fake-ai] peel_scene_layer ${hash} (${png.length}b, prompt: ${String(body.prompt).slice(0, 60)}…)`);
         return send(200, { hash, cached: false, peeled_url: `/cache/scene/${hash}`, backend: "fake" });
+      }
+      // Inventario del plató falso (mock de visión + SAM): responde con la
+      // forma del ENDPOINT real {items, missing, floor} usando las pistas
+      // expected_elements del request — con los 3 casos críticos del E2E:
+      // (a) el PRIMER expected aparece RECOLOCADO (+200 px a la derecha de su
+      // caja declarada, contact_px coherente), (b) el ÚLTIMO expected es
+      // missing (no pintado), (c) un extra inventado keep/solid. Las máscaras
+      // son rects blancos servidos por /fake/stage_mask.
+      if (req.method === "POST" && req.url === "/review_stage_image") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const dims = pngDims(body.image_b64);
+        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
+        const expected = body.context?.expected_elements ?? [];
+        if (!Array.isArray(expected) || expected.length === 0) {
+          return send(422, { detail: "fake-ai: context.expected_elements requerido" });
+        }
+        const S = 1024; // espacio cuadrado del cliente (prestretch)
+        const contactOf = (bx, by, bw, bh) => {
+          const pts = [];
+          for (let px = bx; px <= bx + bw; px += 8) pts.push([Math.round(px), Math.round(by + bh)]);
+          return pts;
+        };
+        const itemOf = (id, label, source, box, extraFields = {}) => ({
+          id,
+          label,
+          source,
+          action: "keep",
+          sprite_url: "/fake/sprite/0",
+          mask_url: `/fake/stage_mask?x=${box[0]}&y=${box[1]}&w=${box[2]}&h=${box[3]}`,
+          image_bbox: box,
+          img_w: S,
+          img_h: S,
+          contact_px: contactOf(...box),
+          tall: true,
+          solid: true,
+          ...extraFields,
+        });
+        const items = [];
+        const missing = [];
+        for (let i = 0; i < expected.length; i++) {
+          const e = expected[i];
+          if (i === expected.length - 1 && expected.length > 1) {
+            missing.push(e.id); // el último declarado no se pintó
+            continue;
+          }
+          let [bx, by, bw, bh] = e.box_px.map(Math.round);
+          if (i === 0) bx = Math.min(S - bw, bx + 200); // RECOLOCADO
+          items.push(itemOf(e.id, e.label, "expected", [bx, by, bw, bh]));
+        }
+        // Extra inventado en zona libre (centro-bajo del cuadro).
+        items.push(itemOf("extra_0", "barril inventado", "extra", [460, 700, 90, 120], {
+          h: 1.2,
+          depth_cells: 2,
+        }));
+        const floor = { wall_base_px: Math.round(S * 0.55) };
+        console.error(
+          `[fake-ai] review_stage_image: ${items.length} items ` +
+          `(${missing.length} missing, 1 extra, recolocado=${items[0]?.id})`,
+        );
+        return send(200, { items, missing, floor });
       }
       if (req.method === "POST" && req.url === "/inpaint_scene_plate") {
         let body = {};
