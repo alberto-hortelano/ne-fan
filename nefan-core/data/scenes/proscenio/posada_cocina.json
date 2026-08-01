@@ -19,7 +19,7 @@
   ],
   "terrain_legend": {},
   "entities": [
-    { "id": "player", "kind": "player", "name": "Tú", "cell": [10, 7], "footprint": [1, 1], "glyph": "@" },
+    { "id": "player", "kind": "player", "name": "Tú", "cell": [14, 8], "footprint": [1, 1], "glyph": "@" },
     { "id": "cocinera", "kind": "npc", "name": "Rosa la cocinera", "cell": [14, 5], "footprint": [1, 1], "glyph": "n" },
     { "id": "fogon", "kind": "prop", "name": "fogón de leña", "cell": [3, 1], "footprint": [4, 2], "glyph": "f", "shape": "box" },
     { "id": "mesa_harina", "kind": "prop", "name": "mesa de amasar", "cell": [8, 5], "footprint": [4, 2], "glyph": "m", "shape": "box" },

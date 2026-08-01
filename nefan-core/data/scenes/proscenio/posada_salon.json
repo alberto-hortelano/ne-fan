@@ -23,7 +23,7 @@
   ],
   "terrain_legend": {},
   "entities": [
-    { "id": "player", "kind": "player", "name": "Tú", "cell": [7, 10], "footprint": [1, 1], "glyph": "@" },
+    { "id": "player", "kind": "player", "name": "Tú", "cell": [12, 11], "footprint": [1, 1], "glyph": "@" },
     { "id": "tabernero", "kind": "npc", "name": "Benito el tabernero", "cell": [5, 6], "footprint": [1, 1], "glyph": "n" },
     { "id": "mesa_grande", "kind": "prop", "name": "mesa grande de roble", "cell": [6, 8], "footprint": [4, 2], "glyph": "m", "shape": "box" },
     { "id": "barril_cerveza", "kind": "prop", "name": "barril de cerveza", "cell": [18, 5], "footprint": [2, 2], "glyph": "b", "shape": "cylinder" },

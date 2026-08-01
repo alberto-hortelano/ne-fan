@@ -12,3 +12,35 @@
 [  112999ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
 [  113027ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
 [  113805ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  283103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  283104ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  283159ms] ReferenceError: stageTransitions is not defined
+    at gameLoop (http://localhost:3000/src/main.ts?t=1785583333197:947:36)
+[  289481ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  289482ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  289517ms] ReferenceError: stageTransitions is not defined
+    at gameLoop (http://localhost:3000/src/main.ts?t=1785583339575:947:36)
+[  298857ms] ReferenceError: StageTransitions is not defined
+    at http://localhost:3000/src/main.ts?t=1785583348959:772:26
+[  298858ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  311068ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  311070ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  315069ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  315071ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  321026ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  321027ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  352019ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  352021ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  352828ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  375243ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  375245ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  387785ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  387787ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  388590ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  462585ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  462587ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  477035ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/dev/api_cache:0
+[  477036ms] [LOG] BridgeClient: connected to ws://127.0.0.1:9877 @ http://localhost:3000/src/net/bridge-client.ts:44
+[  477840ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  479753ms] [LOG] [collision] posada_cocina: plan aplicado — 20 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74
+[  480695ms] [LOG] [collision] posada_salon: plan aplicado — 15 celdas sólidas @ http://localhost:3000/src/world/collision.ts:74

@@ -34,6 +34,7 @@ import {
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
+import { StageTransitions } from "./world/stage-transitions.js";
 import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
@@ -848,6 +849,18 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     playerPos.z = playerStart.z;
   }
 
+  // Plató: si había una transición en vuelo, el spawn de entrada (junto a la
+  // puerta de vuelta) PISA el __player_start del scene data; en cualquier
+  // caso la salida bajo el jugador queda armada (no re-dispara al aparecer).
+  if (stageComposed) {
+    const entry = stageTransitions.resolveEntrySpawn(stageComposed);
+    if (entry) {
+      playerPos.x = entry.x;
+      playerPos.z = entry.z;
+    }
+    stageTransitions.armAt(stageComposed, playerPos.x, playerPos.z);
+  }
+
   // Purga entidades previas de esta clave (re-render de un tile ya visto) y
   // extrae enemigos/objetos/NPCs con posiciones GLOBALES.
   const inRect = (p: Vec3) => p.x >= rect.minX && p.x < rect.maxX && p.z >= rect.minZ && p.z < rect.maxZ;
@@ -1054,6 +1067,39 @@ const collision = new CollisionSystem({
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
+// --- Transiciones de plató (vista proscenio) ---
+const sceneFadeEl = document.getElementById("scene-fade") as HTMLElement;
+const stageTransitions = new StageTransitions({
+  getPlayerPos: () => playerPos,
+  getCurrentPlaceId: () => {
+    const fd = sceneData?.__format_d as Record<string, unknown> | undefined;
+    const placeId = fd?.place_id ?? sceneData?.place_id;
+    return typeof placeId === "string" ? placeId : null;
+  },
+  enterPlace: (placeId) => {
+    if (activeSessionId) narrativeClient.enterPlace(placeId);
+    else void enterLocalStagePlace(placeId);
+  },
+  setFade: (on) => sceneFadeEl.classList.toggle("show", on),
+  log: (msg) => log(msg),
+});
+
+/** Fallback SIN sesión (fixtures del selector): resuelve el place destino a
+ *  la fixture proscenio cuyo `place_id` coincide y la carga en local — el
+ *  paseo por la posada funciona sin bridge narrativo. */
+async function enterLocalStagePlace(placeId: string): Promise<void> {
+  for (const [path, loader] of Object.entries(sceneModules)) {
+    if (!path.includes("/proscenio/")) continue;
+    const mod = await loader();
+    if ((mod.default as Record<string, unknown>).place_id === placeId) {
+      await loadSceneData(mod.default);
+      return;
+    }
+  }
+  errors.push("scene", `ninguna fixture local realiza el place "${placeId}"`);
+  stageTransitions.onError();
+}
+
 /** Deps de los instaladores de colisión derivada (svg/análisis): espejo
  *  visual en el renderer + reporte al bridge solo con sesión activa (los
  *  fixtures locales no tienen dónde persistir). */
@@ -1102,6 +1148,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
     stage: () => activeStage,
+    get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
     setYaw: (yaw: number) => {
@@ -1316,13 +1363,15 @@ function gameLoop(now: number): void {
   }
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
-  // generación de mundo: la frontera bloquea solo direccionalmente.
+  // generación de mundo: la frontera bloquea solo direccionalmente. La única
+  // excepción es la transición de plató (vista proscenio): fundido a negro
+  // mientras llega la escena destino — el corte de puerta clásico.
   if (dialoguePanel.isVisible) {
     // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas).
     input.tileProposalActive = false;
     tileConfirmPromptEl.style.display = "none";
   }
-  if (!dialoguePanel.isVisible) {
+  if (!dialoguePanel.isVisible && !stageTransitions.isTransitioning) {
     applyTurnKeys();
 
     let inputFwd = 0, inputRight = 0;
@@ -1357,6 +1406,12 @@ function gameLoop(now: number): void {
       const stuck = collidesAt(playerPos.x, playerPos.z);
       if (stuck || !collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
+    }
+
+    // Vista proscenio: pisar una zona de salida dispara la transición de
+    // plató (corte a negro + player_entered_place).
+    if (sessionView === "proscenium" && activeStage) {
+      stageTransitions.tick(activeStage);
     }
 
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
@@ -1781,6 +1836,9 @@ narrativeClient.onNarrativeStatus((status) => {
       case "error": {
         const detail = status.message ?? "Algo falló en el motor narrativo.";
         errors.push("narrative", detail);
+        // Una transición de plató en vuelo retira su velo y devuelve el
+        // control (el jugador se queda en la escena de origen).
+        stageTransitions.onError();
         setLoaderState("error", "Error al generar la escena", detail);
         break;
       }
