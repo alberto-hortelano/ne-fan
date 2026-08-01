@@ -229,6 +229,58 @@
           "type": "object"
         }
       },
+      "stage": {
+        "type": "object",
+        "description": "Proscenium worlds only (stage_request present), REQUIRED there. Declares the stage: bounded playable depth, physical exits and optional fourth wall. Camera convention: the camera sits at the SOUTH edge — north (-z) is the painted backdrop, south (+z) the apron (exit toward camera), east/west the wings. Never present on tiles.",
+        "properties": {
+          "focal_m": {
+            "type": "number",
+            "description": "Optional focal length in meters for the ground perspective scaleAt(z)=f/(f+z). Default 12."
+          },
+          "exits": {
+            "type": "array",
+            "description": "1-8 physical exits, EXACTLY one per world-map link of this place (walking into the zone transitions the scene). zone = [col,row,w,h] in scene cells, must be walkable and reachable.",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "edge": { "type": "string", "enum": ["north", "south", "east", "west"] },
+                "to_place_id": { "type": "string", "description": "Destination place; a map_link between this place and it MUST exist." },
+                "zone": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+                "kind": { "type": "string", "enum": ["door", "opening", "stairs"] },
+                "label": { "type": "string", "description": "Visible label in Spanish, e.g. 'Puerta a la cocina'." }
+              },
+              "required": ["id", "edge", "to_place_id", "zone", "kind", "label"]
+            }
+          },
+          "backdrop": {
+            "type": "object",
+            "description": "Optional description of the painted backdrop seen at the north edge (in Spanish).",
+            "properties": { "description": { "type": "string" } },
+            "required": ["description"]
+          },
+          "fourth_wall": {
+            "type": "object",
+            "description": "Optional front wall on the camera side; it fades out when the player approaches. doors = gaps [start col + width in cells].",
+            "properties": {
+              "present": { "type": "boolean" },
+              "doors": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "properties": { "col": { "type": "number" }, "w": { "type": "number" } },
+                  "required": ["col", "w"]
+                }
+              }
+            },
+            "required": ["present"]
+          }
+        },
+        "required": ["exits"]
+      },
       "structures": {
         "type": "array",
         "description": "Enterable rooms/buildings stamped deterministically by the engine: closed wall perimeter + floor + door gaps. NEVER hand-draw W borders when a structure can do it. rect = [col,row,w,h] outer rectangle (walls included, min 3x3); doors carve walkable gaps.",

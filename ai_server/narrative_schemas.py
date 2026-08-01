@@ -277,6 +277,15 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
+    # ── Stage (mundos proscenio): passthrough saneado — la validación real
+    # (zod + reglas de jugabilidad) vive en nefan-core y el bridge la aplica
+    # fail-loud; aquí solo evitamos persistir basura estructural. Un tile
+    # jamás lleva stage.
+    raw_stage = data.get("stage")
+    if raw_stage is not None and (is_tile or not isinstance(raw_stage, dict)):
+        print("validate_scene_response: stage descartado (tile o no es objeto)", flush=True)
+        data.pop("stage", None)
+
     # ── Size + terrain grid (solo escenas legacy; los tiles no llevan) ────
     if not is_tile:
         size = data.get("size") or {}

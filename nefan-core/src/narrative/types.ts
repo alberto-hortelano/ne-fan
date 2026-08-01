@@ -237,6 +237,14 @@ export interface LlmContext {
     sites: Array<{ id: string; kind: string; name: string; description: string }>;
     links: unknown[];
   };
+  /** Solo en mundos view="proscenium": la escena pedida es un plató discreto
+   *  (Format D clásico + bloque `stage` OBLIGATORIO). Acompaña a
+   *  `realize_place` (el place va allí); aquí los extras de la petición:
+   *  por qué borde entra el jugador y si es el bootstrap de la sesión. */
+  stage_request?: {
+    entry_edge?: "north" | "south" | "east" | "west";
+    bootstrap?: boolean;
+  };
   /** Solo en peticiones de frontera: el jugador salió por `edge` de la escena
    *  que realiza `from_place_id` y el world map no tiene destino en esa
    *  dirección. El motor debe crear place + link (con edge) + escena.

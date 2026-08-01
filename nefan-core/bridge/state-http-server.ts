@@ -17,7 +17,7 @@ import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
-import { oppositeEdge } from "../src/world-map/edges.js";
+import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
 import { isEdge, type PlaceTriggerSpec } from "../src/world-map/types.js";
@@ -186,10 +186,17 @@ async function handle(
       (placeId) => {
         const place = wm.get(placeId);
         if (!place) return { exists: false, outgoing_links: 0 };
+        // links con destino + edge efectivo desde este place: los necesita la
+        // regla proscenio (cada link ⇔ una salida física declarada en stage).
+        const links = wm.getOutgoingLinks(placeId).map((l) => ({
+          to: l.from === placeId ? l.to : l.from,
+          edge: resolveExitEdge(wm, placeId, l) ?? undefined,
+        }));
         return {
           exists: true,
           kind: place.kind,
-          outgoing_links: wm.getOutgoingLinks(placeId).length,
+          outgoing_links: links.length,
+          links,
         };
       },
       tileCtx,

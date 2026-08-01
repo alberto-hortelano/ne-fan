@@ -38,6 +38,8 @@ const WORLD_RULES = loadPrompt('world_rules.md');
 
 const TILE_INSTRUCTIONS = loadPrompt('tile_instructions.md');
 
+const STAGE_INSTRUCTIONS = loadPrompt('stage_instructions.md');
+
 const SCENE_INSTRUCTIONS = loadPrompt('scene_instructions.md');
 
 const ROOM_INSTRUCTIONS = loadPrompt('room_instructions.md');
@@ -235,18 +237,24 @@ into context:
         // room_request — distingue entre open-world ('scene') y legacy ('room')
         // según el campo `format` que envía el ai_server. Dentro de 'scene',
         // una petición con generate_tile usa las instrucciones de TILE
-        // (plano continuo) delante de la referencia estándar.
+        // (plano continuo) delante de la referencia estándar; una con
+        // stage_request (mundos proscenio) usa las de STAGE (plató discreto).
         const format = msg.format ?? 'extended';
         currentKind = format === 'scene' ? 'scene' : 'room';
         const kindLabel = currentKind;
-        const isTileRequest = Boolean(
-          (msg.world_state as { generate_tile?: unknown } | undefined)?.generate_tile,
-        );
+        const ws = msg.world_state as
+          | { generate_tile?: unknown; stage_request?: unknown }
+          | undefined;
+        const isTileRequest = Boolean(ws?.generate_tile);
+        const isStageRequest = Boolean(ws?.stage_request);
+        const sceneVariant = isTileRequest
+          ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
+          : isStageRequest
+            ? STAGE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
+            : SCENE_INSTRUCTIONS;
         const instructions = kindLabel !== 'scene'
           ? ROOM_INSTRUCTIONS
-          : (isTileRequest
-            ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
-            : SCENE_INSTRUCTIONS) + '\n\n' + WORLD_RULES;
+          : sceneVariant + '\n\n' + WORLD_RULES;
         return {
           content: [{
             type: 'text',

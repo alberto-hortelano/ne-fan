@@ -14,6 +14,7 @@
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
+import { parseStage, type StageBlock } from "./stage/schema.js";
 import { computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
 import { TILE_CELLS } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
@@ -41,6 +42,9 @@ export interface PlaceContext {
   exists: boolean;
   kind?: string;
   outgoing_links: number;
+  /** Links salientes con destino (y edge si lo declara). Lo necesitan las
+   *  escenas proscenio: cada link debe tener su salida física y viceversa. */
+  links?: Array<{ to: string; edge?: Edge }>;
 }
 
 /** Contexto de validación de un TILE: qué cruces de los vecinos existentes
@@ -87,6 +91,21 @@ export function validateScene(
   const errors: string[] = [];
   const warnings: string[] = [];
   const isTile = rawScene.tile !== undefined;
+
+  // ── Bloque stage (escena proscenio): parse temprano — sus reglas de zonas
+  // y salidas se aplican más abajo, tras construir la máscara walkable ──────
+  let stage: StageBlock | null = null;
+  if (rawScene.stage !== undefined) {
+    if (isTile) {
+      errors.push(
+        "una escena con bloque `stage` (proscenio) no puede ser un tile: los platós son escenas discretas por place",
+      );
+    } else {
+      const parsedStage = parseStage(rawScene.stage);
+      if (parsedStage.ok) stage = parsedStage.stage;
+      else errors.push(parsedStage.error);
+    }
+  }
 
   let cols: number;
   let rows: number;
@@ -203,6 +222,35 @@ export function validateScene(
   const stats = emptyStats(cols, rows);
   stats.walkable_cells = walkableCells;
   stats.npcs_total = npcs.length;
+
+  // ── Salidas del plató: zona dentro del grid y con celdas transitables ─────
+  const exitTargets: Array<{ id: string; label: string; cells: [number, number][] }> = [];
+  if (stage) {
+    for (const exit of stage.exits) {
+      const [zc, zr, zw, zh] = exit.zone;
+      const c0 = Math.floor(zc);
+      const r0 = Math.floor(zr);
+      const c1 = Math.ceil(zc + zw);
+      const r1 = Math.ceil(zr + zh);
+      if (c0 < 0 || r0 < 0 || c1 > cols || r1 > rows) {
+        errors.push(`stage.exits "${exit.id}": zone [${exit.zone.join(", ")}] se sale del grid ${cols}×${rows}`);
+        continue;
+      }
+      const cells: [number, number][] = [];
+      for (let r = r0; r < r1; r++) {
+        for (let c = c0; c < c1; c++) {
+          if (walkable[r * cols + c]) cells.push([c, r]);
+        }
+      }
+      if (cells.length === 0) {
+        errors.push(
+          `stage.exits "${exit.id}" (${exit.label}): ninguna celda de su zone es transitable — la salida no se puede pisar`,
+        );
+        continue;
+      }
+      exitTargets.push({ id: exit.id, label: exit.label, cells });
+    }
+  }
 
   // ── Spawn del jugador ─────────────────────────────────────────────────────
   // Tiles normales NO llevan player: el jugador entra andando desde el vecino.
@@ -340,6 +388,18 @@ export function validateScene(
         }
       }
       stats.border_reachable = allCrossingsReachable;
+    } else if (stage) {
+      // Proscenio: no se sale por el borde sino por las salidas declaradas —
+      // cada zona de exit debe ser alcanzable desde el spawn del jugador.
+      let allExitsReachable = exitTargets.length > 0;
+      for (const target of exitTargets) {
+        const hit = target.cells.some(([c, r]) => reachable[r * cols + c] === 1);
+        if (!hit) {
+          allExitsReachable = false;
+          errors.push(`la salida "${target.id}" (${target.label}) no es alcanzable desde el player`);
+        }
+      }
+      stats.border_reachable = allExitsReachable;
     } else {
       // ¿Se puede salir del mapa? (alguna celda del borde alcanzable)
       let borderReachable = false;
@@ -394,6 +454,9 @@ export function validateScene(
   // ── Contexto exterior en el world map (solo escenas legacy: la salida de
   // un tile es el propio plano continuo, no necesita links) ─────────────────
   const placeId = typeof scene.place_id === "string" ? scene.place_id : null;
+  if (stage && !placeId) {
+    errors.push("una escena proscenio necesita place_id: el plató ES un place del world map");
+  }
   if (placeId && placeContext && !isTile) {
     const info = placeContext(placeId);
     if (!info || !info.exists) {
@@ -404,6 +467,25 @@ export function validateScene(
       errors.push(
         `el place "${placeId}" no tiene ningún link saliente en el world map: al salir de la escena no hay a dónde ir — llama a map_link para conectarlo (door/path a su exterior o vecino) antes de re-responder`,
       );
+    } else if (stage && info.links) {
+      // Proscenio: la salida física es la ÚNICA forma de viajar — cada link
+      // del world map necesita su exit y cada exit su link.
+      const linkTargets = new Set(info.links.map((l) => l.to));
+      for (const exit of stage.exits) {
+        if (!linkTargets.has(exit.to_place_id)) {
+          errors.push(
+            `stage.exits "${exit.id}" apunta a "${exit.to_place_id}" pero el place "${placeId}" no tiene link hacia él en el world map — llama a map_link antes de re-responder`,
+          );
+        }
+      }
+      const exitTargetIds = new Set(stage.exits.map((e) => e.to_place_id));
+      for (const link of info.links) {
+        if (!exitTargetIds.has(link.to)) {
+          errors.push(
+            `el link ${placeId} → ${link.to} del world map no tiene salida física en stage.exits — declara un exit hacia "${link.to}" (en proscenio solo se viaja pisando salidas)`,
+          );
+        }
+      }
     }
   }
 

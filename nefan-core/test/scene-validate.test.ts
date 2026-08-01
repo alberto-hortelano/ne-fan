@@ -203,3 +203,115 @@ describe("validateScene — tiles", () => {
     assert.equal(r.ok, true, r.errors.join(" | "));
   });
 });
+
+/** Escena proscenio jugable: plató amurallado 16×12, player dentro, salida
+ *  norte (telón) hacia la cocina — el borde del mapa NO es alcanzable a
+ *  propósito (en proscenio se sale por las salidas, no por el borde). */
+function makeStageScene(): Record<string, unknown> {
+  const cols = 16;
+  const rows = 12;
+  const terrain = Array.from({ length: rows }, (_, r) => {
+    if (r === 0 || r === rows - 1) return "W".repeat(cols);
+    return "W" + "g".repeat(cols - 2) + "W";
+  });
+  return {
+    scene_id: "posada_salon",
+    place_id: "posada_salon",
+    size: { cols, rows, meters_per_cell: 0.5 },
+    terrain,
+    terrain_legend: {},
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [7, 8], footprint: [1, 1], glyph: "@" },
+    ],
+    stage: {
+      exits: [
+        { id: "puerta_cocina", edge: "north", to_place_id: "posada_cocina",
+          zone: [6, 1, 3, 1], kind: "door", label: "Puerta a la cocina" },
+      ],
+    },
+  };
+}
+
+const stagePlace = () => ({
+  exists: true,
+  kind: "interior",
+  outgoing_links: 1,
+  links: [{ to: "posada_cocina", edge: "north" as const }],
+});
+
+describe("validateScene — escenas proscenio (stage)", () => {
+  it("acepta un plató jugable sin exigir borde alcanzable", () => {
+    const r = validateScene(makeStageScene(), stagePlace);
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+    // border_reachable en stage = todas las salidas alcanzables.
+    assert.equal(r.stats.border_reachable, true);
+  });
+
+  it("rechaza stage en un tile", () => {
+    const tile = {
+      tile: { tx: 0, ty: 0 },
+      biome: "grass",
+      entities: [],
+      stage: { exits: [{ id: "x", edge: "north", to_place_id: "p", zone: [0, 0, 2, 2], kind: "door", label: "Puerta" }] },
+    };
+    const r = validateScene(tile, undefined, { required_crossings: [] });
+    assert.ok(r.errors.some((e) => e.includes("no puede ser un tile")), r.errors.join(" | "));
+  });
+
+  it("rechaza un bloque stage inválido (zod)", () => {
+    const s = makeStageScene();
+    (s.stage as Record<string, unknown>).camara = "norte";
+    const r = validateScene(s, stagePlace);
+    assert.ok(r.errors.some((e) => e.startsWith("stage")), r.errors.join(" | "));
+  });
+
+  it("rechaza una zone fuera del grid", () => {
+    const s = makeStageScene();
+    const stage = s.stage as { exits: Record<string, unknown>[] };
+    stage.exits[0].zone = [14, 0, 6, 2];
+    const r = validateScene(s, stagePlace);
+    assert.ok(r.errors.some((e) => e.includes("se sale del grid")), r.errors.join(" | "));
+  });
+
+  it("rechaza una zone sin celdas transitables", () => {
+    const s = makeStageScene();
+    const stage = s.stage as { exits: Record<string, unknown>[] };
+    stage.exits[0].zone = [6, 0, 3, 1]; // fila 0 = muro
+    const r = validateScene(s, stagePlace);
+    assert.ok(r.errors.some((e) => e.includes("ninguna celda de su zone es transitable")), r.errors.join(" | "));
+  });
+
+  it("rechaza una salida no alcanzable desde el player", () => {
+    const s = makeStageScene();
+    // Tabique completo entre el player (fila 8) y la salida (fila 1).
+    const terrain = s.terrain as string[];
+    terrain[5] = "W".repeat(16);
+    const r = validateScene(s, stagePlace);
+    assert.ok(r.errors.some((e) => e.includes("no es alcanzable desde el player")), r.errors.join(" | "));
+    assert.equal(r.stats.border_reachable, false);
+  });
+
+  it("rechaza exit sin link y link sin exit (cross-check del world map)", () => {
+    const sinLink = validateScene(makeStageScene(), () => ({
+      exists: true,
+      kind: "interior",
+      outgoing_links: 1,
+      links: [{ to: "otro_sitio" }],
+    }));
+    assert.ok(sinLink.errors.some((e) => e.includes("no tiene link hacia él")), sinLink.errors.join(" | "));
+    assert.ok(sinLink.errors.some((e) => e.includes("no tiene salida física")), sinLink.errors.join(" | "));
+  });
+
+  it("rechaza una escena stage sin place_id", () => {
+    const s = makeStageScene();
+    delete s.place_id;
+    const r = validateScene(s, stagePlace);
+    assert.ok(r.errors.some((e) => e.includes("necesita place_id")), r.errors.join(" | "));
+  });
+
+  it("sin links en el contexto, el cross-check no se aplica (compatibilidad)", () => {
+    const r = validateScene(makeStageScene(), () => ({ exists: true, kind: "interior", outgoing_links: 1 }));
+    assert.equal(r.ok, true, r.errors.join(" | "));
+  });
+});
