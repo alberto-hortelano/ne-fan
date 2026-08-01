@@ -395,9 +395,9 @@ de viajar es pisar una **zona de salida** → corte a negro (`#scene-fade`) +
 la puerta de vuelta (patrón puertas de Resident Evil).
 
 - **Selección**: `game.json → view` (enum `overworld|proscenium`), congelada
-  en `world.view` como el estilo; resume con view desconocida aborta. v1 es
-  vector-only (`proscenium` + `renderMode: "image"` aborta el start). Juego
-  dev: `data/games/dev_proscenio`.
+  en `world.view` como el estilo; resume con view desconocida aborta. Ambos
+  `render_mode` valen: "vector" (arte del compositor) e "image" (repintado +
+  pelado por capas, ver abajo). Juego dev: `data/games/dev_proscenio`.
 - **Formato**: escena Format D clásica por place + bloque `stage` OBLIGATORIO
   (`exits[]` con `edge`/`to_place_id`/`zone` en celdas, `backdrop`,
   `fourth_wall`; zod estricto en `src/scene/stage/schema.ts`). Validación:
@@ -422,9 +422,20 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
   (siembra el world map de la posada vía State API). Bench:
   `window.__nefan.view()/stage()/probeCollide()`.
-- **Entrega 2 (pendiente)**: repintado IA por capas (peeling validado en el
-  experimento lateral de julio) sobre `StageLayer.image_url` — el hueco ya
-  existe en el contrato de capas.
+- **Pelado de imágenes (entrega 2, con `render_mode: "image"`)**: el
+  `StageImageController` (`nefan-html/src/scene/stage-image.ts`) repinta el
+  plató ENTERO (`/generate_scene_image` con `blueprint_kind: "stage"` — el
+  plan ya viene en perspectiva; los bastidores son marco) y lo PELA capa a
+  capa de cerca a lejos con las máscaras DECLARADAS del compositor (sin SAM
+  ni visión para lo declarado): recorte por alpha + `/peel_scene_layer`
+  (FLUX Fill fal guiado por `behind_labels` del `peelPlanFor` de
+  `stage/peel.ts`, con negativas duras; fallback LaMa local; máscara
+  dilatada ±8 px y composite duro; caché por hash imagen+máscara+prompt).
+  La imagen final = PLACA (telón+suelo); instalación atómica en el
+  ProsceniumRenderer (placa + recortes; bastidores y cuarta pared siguen
+  vectoriales). Todo en ESPACIO CUADRADO 1024² (espejo del prestretch).
+  Auto al instalar el plató; G = manual. ~$0.3/plató, cacheado para siempre
+  (compositor determinista ⇒ resume gratis).
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 
