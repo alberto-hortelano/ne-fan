@@ -212,6 +212,10 @@ export interface Entity {
   /** Tile del que procede el NPC (clave del scene data que lo declaró) —
    *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
   tileKey?: string;
+  /** true = estático declarado en el scene data (no un spawn dinámico). En
+   *  proscenio con imagen instalada, los declarados SIN capa del compositor
+   *  no pintan caja esquemática (el repintado ya vistió su zona). */
+  sceneDeclared?: boolean;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
   category?: string;

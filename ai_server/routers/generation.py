@@ -453,6 +453,10 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
+    # v2 de la instrucción de plató (anti-top-down + sin ref global cenital):
+    # las generaciones stage previas quedan invalidadas.
+    if body.blueprint_kind == "stage":
+        context["pipeline"] = "prestretch2_stage2"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)

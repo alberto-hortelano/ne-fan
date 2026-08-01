@@ -210,11 +210,16 @@ async function rasterizeSvgSquare(svg: string): Promise<HTMLCanvasElement> {
 }
 
 /** Recorte: imagen ⊙ alpha de la capa (misma operación de máscara declarada
- *  que el modo "masks" de la oblicua). */
+ *  que el modo "masks" de la oblicua). El borde se EMPLUMA (blur ligero):
+ *  cuando el modelo pinta el objeto algo más grande que su huella declarada,
+ *  el corte duro canta — el degradado lo funde con el halo inpainted de la
+ *  placa (la máscara del pelado va dilatada ±8 px). */
 function cutoutByAlpha(image: HTMLCanvasElement, maskAlpha: HTMLCanvasElement): HTMLCanvasElement {
   const out = makeCanvas();
   const ctx = out.getContext("2d")!;
+  ctx.filter = "blur(1.5px)";
   ctx.drawImage(maskAlpha, 0, 0);
+  ctx.filter = "none";
   ctx.globalCompositeOperation = "source-in";
   ctx.drawImage(image, 0, 0);
   ctx.globalCompositeOperation = "source-over";

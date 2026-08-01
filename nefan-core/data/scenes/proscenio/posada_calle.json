@@ -2,7 +2,11 @@
   "scene_id": "posada_calle",
   "place_id": "calle_mayor",
   "scene_description": "La calle Mayor frente a la posada del Roble: fachadas encaladas, un camino de tierra apisonada y la puerta de la posada bajo su cartel de madera.",
-  "size": { "cols": 32, "rows": 14, "meters_per_cell": 0.5 },
+  "size": {
+    "cols": 32,
+    "rows": 14,
+    "meters_per_cell": 0.5
+  },
   "terrain": [
     "gggggggggggggggggggggggggggggggg",
     "gggggggggggggggggggggggggggggggg",
@@ -21,19 +25,111 @@
   ],
   "terrain_legend": {},
   "entities": [
-    { "id": "player", "kind": "player", "name": "Tú", "cell": [16, 10], "footprint": [1, 1], "glyph": "@" },
-    { "id": "vecino", "kind": "npc", "name": "Lucas el aguador", "cell": [24, 8], "footprint": [1, 1], "glyph": "n" },
-    { "id": "posada_oeste", "kind": "building", "name": "posada del Roble", "cell": [4, 0], "footprint": [8, 2], "glyph": "P" },
-    { "id": "posada_este", "kind": "building", "name": "casa del cambista", "cell": [17, 0], "footprint": [9, 2], "glyph": "C" },
-    { "id": "olmo_viejo", "kind": "tree", "name": "olmo viejo", "cell": [2, 8], "footprint": [2, 2], "glyph": "T" },
-    { "id": "carro_heno", "kind": "prop", "name": "carro de heno", "cell": [27, 9], "footprint": [3, 2], "glyph": "h", "shape": "box" }
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Tú",
+      "cell": [
+        16,
+        10
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "@"
+    },
+    {
+      "id": "vecino",
+      "kind": "npc",
+      "name": "Lucas el aguador",
+      "cell": [
+        24,
+        8
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "posada_oeste",
+      "kind": "building",
+      "name": "posada del Roble",
+      "cell": [
+        4,
+        0
+      ],
+      "footprint": [
+        8,
+        2
+      ],
+      "glyph": "P"
+    },
+    {
+      "id": "posada_este",
+      "kind": "building",
+      "name": "casa del cambista",
+      "cell": [
+        17,
+        0
+      ],
+      "footprint": [
+        9,
+        2
+      ],
+      "glyph": "C"
+    },
+    {
+      "id": "olmo_viejo",
+      "kind": "tree",
+      "name": "olmo viejo",
+      "cell": [
+        2,
+        8
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "T"
+    },
+    {
+      "id": "carro_heno",
+      "kind": "prop",
+      "name": "carro de heno",
+      "cell": [
+        27,
+        9
+      ],
+      "footprint": [
+        3,
+        2
+      ],
+      "glyph": "h",
+      "shape": "box"
+    }
   ],
   "stage": {
-    "focal_m": 14,
     "exits": [
-      { "id": "puerta_posada", "edge": "north", "to_place_id": "posada_salon", "zone": [12, 0, 5, 2], "kind": "door", "label": "Puerta de la posada" }
+      {
+        "id": "puerta_posada",
+        "edge": "north",
+        "to_place_id": "posada_salon",
+        "zone": [
+          12,
+          0,
+          5,
+          2
+        ],
+        "kind": "door",
+        "label": "Puerta de la posada"
+      }
     ],
-    "backdrop": { "description": "Fachadas encaladas de dos plantas con el cartel de la posada colgando sobre la puerta" }
+    "backdrop": {
+      "description": "Fachadas encaladas de dos plantas con el cartel de la posada colgando sobre la puerta"
+    }
   },
   "ambient_event": "Un carro traquetea calle abajo y las campanas de la iglesia dan la media."
 }

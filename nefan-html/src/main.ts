@@ -988,6 +988,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
         sizeXZ,
         sizeY,
         shape,
+        sceneDeclared: true,
       };
       objectEntities.push(objectEntity);
     }
@@ -1188,6 +1189,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     stage: () => activeStage,
     stageImages: () => prosceniumRenderer?.hasImages() ?? false,
     stagePainting: () => stageImageController.running,
+    stageCam: () => prosceniumRenderer?.debugCamera() ?? null,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.

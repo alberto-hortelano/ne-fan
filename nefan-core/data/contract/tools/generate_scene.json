@@ -235,7 +235,7 @@
         "properties": {
           "focal_m": {
             "type": "number",
-            "description": "Optional focal length in meters for the ground perspective scaleAt(z)=f/(f+z). Default 12."
+            "description": "Optional focal length in meters for the ground perspective scaleAt(z)=f/(f+z). Default 30 (telephoto). ~22 for intimate close rooms, ~40 for very deep stages."
           },
           "exits": {
             "type": "array",

@@ -25,7 +25,7 @@ import {
 } from "./projection.js";
 import type { Edge } from "../../world-map/types.js";
 
-export const STAGE_COMPOSER_VERSION = 1;
+export const STAGE_COMPOSER_VERSION = 2;
 
 /** Unidades de vista por metro en la embocadura. */
 const PX_PER_M = 10;
@@ -35,7 +35,12 @@ const VIEW_MARGIN_X = 8;
 const VIEW_TOP = -48;
 const VIEW_TOP_INTERIOR = -28;
 const VIEW_BOTTOM_PAD = 10;
-const DEFAULT_FOCAL_M = 12;
+/** Focal por defecto: TELEOBJETIVO (lección del experimento lateral de julio,
+ *  d0≈96). Una focal corta (12) hace que la franja de suelo devore el
+ *  encuadre vertical al hacer zoom y el telón quede recortado; 30 comprime
+ *  la profundidad — el suelo ocupa ~21 unidades y el telón respira. v2 del
+ *  compositor: cambia la proyección de TODAS las capas. */
+const DEFAULT_FOCAL_M = 30;
 /** Altura pintada del muro del telón de fondo (m). */
 const BACKDROP_WALL_M = 3.5;
 /** Altura de la cuarta pared y de sus huecos de puerta (m). */

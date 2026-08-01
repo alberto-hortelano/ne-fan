@@ -35,6 +35,20 @@ export {
   type PeelPlan,
   type PeelStep,
 } from "./peel.js";
+export {
+  frameStage,
+  parallaxPanX,
+  viewToScreen,
+  bandPlanFor,
+  FRAMING_DEFAULTS,
+  BAND_PLAN_DEFAULTS,
+  type StageFraming,
+  type FramingOpts,
+  type ViewBoxRect,
+  type GroundBand,
+  type BandPlan,
+  type BandPlanOpts,
+} from "./framing.js";
 export { railCamera, type RailCameraOpts } from "./camera.js";
 export { exitZoneAt, spawnPointForEntry } from "./entry.js";
 export { fourthWallAlpha, FOURTH_WALL_FADE_DEFAULTS, type FourthWallFadeOpts } from "./fade.js";
