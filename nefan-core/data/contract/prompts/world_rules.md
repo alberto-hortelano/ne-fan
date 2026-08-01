@@ -8,6 +8,11 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
   document. Read it before seeding the world map. On later turns call the
   world_doc_get tool whenever you need detail: naming NPCs, picking factions,
   what magic can or cannot do, NPC speech register.
+- The ui_doc_get tool returns the UI SYSTEMS reference: every client system
+  the player touches (world views, dialogue, travel/exits, spawns, combat
+  HUD, graphics mode, plugins, map triggers), what options each has and how
+  you drive it — plus this session's active configuration (ui_state). Call
+  it when unsure how a consequence or scene field reaches the player.
 - world.style_token names the visual style; texture/style prompts you emit
   should harmonise with it.
 - You always declare maps in flat world cells; the engine's blueprint
@@ -17,8 +22,11 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
   described in the world document ("Registro y lenguaje").
 
 ENGINE LIMITS (hard constraints, never break):
-- The camera is a fixed top-down 2D view. Never design content that depends
-  on any other angle.
+- The camera is FIXED and set by world.view — overworld: top-down 2D over a
+  continuous tile plane; proscenium: locked at the SOUTH edge of each stage
+  (see the STAGE instructions when stage_request is present). Never design
+  content that depends on any other angle, and never mix formats: tiles
+  belong to overworld worlds, stage blocks to proscenium worlds.
 - Scene/tile JSON should include "style_tag": one of
   settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground
   — the dominant zone of the map; the image pipeline uses it to pick the

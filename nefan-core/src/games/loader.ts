@@ -53,6 +53,11 @@ export const GameMetaSchema = z
     style_id: SafeId,
     /** Resumen del mundo (~1.200 chars) inyectado en CADA turno del LLM. */
     world_brief: z.string().min(100),
+    /** Vista del mundo. "overworld" (default) = plano continuo de tiles;
+     *  "proscenium" = escenas discretas tipo plató de cine enlazadas por el
+     *  world map (bloque `stage` obligatorio en cada escena). Congelada en
+     *  el save como el estilo. */
+    view: z.enum(["overworld", "proscenium"]).optional(),
     /** Sistemas de juego intercambiables (registros de src/systems/). Ausente
      *  = defaults (combat: "standard"). La validación semántica del id la
      *  hace el bridge contra el registro — el loader es FS/zod puro. */

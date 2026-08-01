@@ -14,9 +14,17 @@ import {
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import {
+  composeStage,
+  stagePlanFromScene,
+  type ComposedStage,
+} from "@nefan-core/src/scene/stage/index.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
+import { rendererRegistry } from "./renderer/registry.js";
+import type { Renderer2D } from "./renderer/renderer2d.js";
+import { ProsceniumRenderer } from "./renderer/proscenium-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
@@ -26,6 +34,7 @@ import {
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
+import { StageTransitions } from "./world/stage-transitions.js";
 import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
@@ -208,6 +217,45 @@ function applySessionRenderMode(renderMode: string): void {
     log("Gráficos: imagen IA (Auto-img activo)");
   }
 }
+/** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
+ *  contrato por-frame (Renderer2D, registrado en rendererRegistry); el
+ *  CanvasRenderer oblicuo sigue siendo el dueño de tiles/pipeline de imagen
+ *  (subsistemas oblicua-only, apagados en proscenio). La vista la fija la
+ *  sesión (world.view congelado en el save) o una fixture con bloque stage. */
+let activeRenderer: Renderer2D = renderer;
+let prosceniumRenderer: ProsceniumRenderer | null = null;
+let sessionView: "" | "proscenium" = "";
+/** Vista que dicta la SESIÓN del bridge (las fixtures locales pueden
+ *  activarla temporalmente sin sesión). */
+let sessionWorldView: "" | "proscenium" = "";
+/** Plató compuesto vivo (vista proscenio): clamp de movimiento (colisión) y
+ *  transiciones por zona de salida. */
+let activeStage: ComposedStage | null = null;
+
+function applySessionView(view: string): void {
+  const next = view === "proscenium" ? "proscenium" : "";
+  const changed = next !== sessionView;
+  sessionView = next;
+  if (next === "proscenium") {
+    if (!prosceniumRenderer) {
+      prosceniumRenderer = rendererRegistry.create("proscenium", {
+        canvas,
+        spriteRenderer,
+        oblique: renderer,
+      }) as ProsceniumRenderer;
+    }
+    activeRenderer = prosceniumRenderer;
+    // Sin pipeline de imagen en proscenio v1 (vector-only): el repintado por
+    // capas (peeling) llega en la entrega 2.
+    autoPipeline.setEnabled(false);
+    if (changed) log("Vista: proscenio (plató de cine, cámara al sur)");
+  } else {
+    activeRenderer = renderer;
+    activeStage = null;
+    prosceniumRenderer?.clearStage();
+  }
+}
+
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
 // se cargan bajo demanda desde setPlayerAppearance / requestSkin.
@@ -708,6 +756,38 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     (data as Record<string, unknown>).__composed = planInfo.composed;
   }
 
+  // ── Escena proscenio (bloque `stage`): componer el plató e instalarlo en
+  // su renderer. Fail-loud: un stage malformado degrada a escena oblicua con
+  // error visible, nunca en silencio. Una fixture con stage activa la vista
+  // aunque no haya sesión; una fixture sin stage la devuelve a la de la
+  // sesión (o a la oblicua). ─────────────────────────────────────────────
+  const isStageScene = (data as Record<string, unknown>).stage !== undefined && !isGridTile;
+  let stageComposed: ComposedStage | null = null;
+  let stageVolumes: Volume[] = [];
+  if (isStageScene) {
+    try {
+      const stagePlan = stagePlanFromScene(
+        (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
+      );
+      if (stagePlan) {
+        stageComposed = composeStage(stagePlan, key);
+        stageVolumes = stagePlan.volumes;
+      }
+    } catch (err) {
+      errors.push("scene", `stage de ${key} no compone — escena degradada a oblicua`, err);
+    }
+  }
+  if (stageComposed) {
+    applySessionView("proscenium");
+    activeStage = stageComposed;
+    (data as Record<string, unknown>).__stage = stageComposed;
+    void prosceniumRenderer!
+      .installStage(stageComposed, key)
+      .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
+  } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
+    applySessionView("");
+  }
+
   const prevEntry = tileStore.entries.get(key);
   tileStore.add({
     key,
@@ -724,10 +804,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     svgCollider: null,
     svgApplied: false,
   });
-  const { sceneChanged } = renderer.addTile(
-    key,
-    data as unknown as Parameters<typeof renderer.setScene>[0],
-  );
+  // Las escenas de plató no entran al CanvasRenderer oblicuo: las pinta el
+  // ProsceniumRenderer desde sus capas compuestas.
+  const { sceneChanged } = stageComposed
+    ? { sceneChanged: true }
+    : renderer.addTile(key, data as unknown as Parameters<typeof renderer.setScene>[0]);
   // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
   // preserva la imagen y su análisis visual — conservar también la colisión
   // derivada. Con escena distinta la imagen se invalida y se re-analiza.
@@ -742,6 +823,10 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
     void applyPlanCollision(key, { map_ground: plan.map_ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
+  } else if (stageComposed && stageVolumes.length > 0) {
+    // Plató: las huellas de sus volúmenes (mesas, barriles…) bloquean igual
+    // que en la oblicua — colisión declarada, nunca de píxeles.
+    void applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
@@ -762,6 +847,18 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } else if (firstTile && playerStart) {
     playerPos.x = playerStart.x;
     playerPos.z = playerStart.z;
+  }
+
+  // Plató: si había una transición en vuelo, el spawn de entrada (junto a la
+  // puerta de vuelta) PISA el __player_start del scene data; en cualquier
+  // caso la salida bajo el jugador queda armada (no re-dispara al aparecer).
+  if (stageComposed) {
+    const entry = stageTransitions.resolveEntrySpawn(stageComposed);
+    if (entry) {
+      playerPos.x = entry.x;
+      playerPos.z = entry.z;
+    }
+    stageTransitions.armAt(stageComposed, playerPos.x, playerPos.z);
   }
 
   // Purga entidades previas de esta clave (re-render de un tile ya visto) y
@@ -958,8 +1055,50 @@ const collision = new CollisionSystem({
   tileStore,
   getPlayerPos: () => playerPos,
   getObstacles: () => objectEntities,
+  // Clamp de la vista proscenio: los bounds del plató son la cuarta fuente de
+  // solidez (semántica salir-sí-entrar-no: un origen ya fuera no se encierra).
+  viewConstraint: (fromX, fromZ, toX, toZ) => {
+    if (!activeStage) return false;
+    const b = activeStage.bounds;
+    const inside = (x: number, z: number): boolean =>
+      x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
+    return !inside(toX, toZ) && inside(fromX, fromZ);
+  },
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
+
+// --- Transiciones de plató (vista proscenio) ---
+const sceneFadeEl = document.getElementById("scene-fade") as HTMLElement;
+const stageTransitions = new StageTransitions({
+  getPlayerPos: () => playerPos,
+  getCurrentPlaceId: () => {
+    const fd = sceneData?.__format_d as Record<string, unknown> | undefined;
+    const placeId = fd?.place_id ?? sceneData?.place_id;
+    return typeof placeId === "string" ? placeId : null;
+  },
+  enterPlace: (placeId) => {
+    if (activeSessionId) narrativeClient.enterPlace(placeId);
+    else void enterLocalStagePlace(placeId);
+  },
+  setFade: (on) => sceneFadeEl.classList.toggle("show", on),
+  log: (msg) => log(msg),
+});
+
+/** Fallback SIN sesión (fixtures del selector): resuelve el place destino a
+ *  la fixture proscenio cuyo `place_id` coincide y la carga en local — el
+ *  paseo por la posada funciona sin bridge narrativo. */
+async function enterLocalStagePlace(placeId: string): Promise<void> {
+  for (const [path, loader] of Object.entries(sceneModules)) {
+    if (!path.includes("/proscenio/")) continue;
+    const mod = await loader();
+    if ((mod.default as Record<string, unknown>).place_id === placeId) {
+      await loadSceneData(mod.default);
+      return;
+    }
+  }
+  errors.push("scene", `ninguna fixture local realiza el place "${placeId}"`);
+  stageTransitions.onError();
+}
 
 /** Deps de los instaladores de colisión derivada (svg/análisis): espejo
  *  visual en el renderer + reporte al bridge solo con sesión activa (los
@@ -1005,6 +1144,11 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     }),
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    probeCollide: (x: number, z: number) => collidesAt(x, z),
+    // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
+    view: () => sessionView,
+    stage: () => activeStage,
+    get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
     setYaw: (yaw: number) => {
@@ -1219,13 +1363,15 @@ function gameLoop(now: number): void {
   }
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
-  // generación de mundo: la frontera bloquea solo direccionalmente.
+  // generación de mundo: la frontera bloquea solo direccionalmente. La única
+  // excepción es la transición de plató (vista proscenio): fundido a negro
+  // mientras llega la escena destino — el corte de puerta clásico.
   if (dialoguePanel.isVisible) {
     // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas).
     input.tileProposalActive = false;
     tileConfirmPromptEl.style.display = "none";
   }
-  if (!dialoguePanel.isVisible) {
+  if (!dialoguePanel.isVisible && !stageTransitions.isTransitioning) {
     applyTurnKeys();
 
     let inputFwd = 0, inputRight = 0;
@@ -1260,6 +1406,12 @@ function gameLoop(now: number): void {
       const stuck = collidesAt(playerPos.x, playerPos.z);
       if (stuck || !collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
+    }
+
+    // Vista proscenio: pisar una zona de salida dispara la transición de
+    // plató (corte a negro + player_entered_place).
+    if (sessionView === "proscenium" && activeStage) {
+      stageTransitions.tick(activeStage);
     }
 
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
@@ -1490,7 +1642,7 @@ function gameLoop(now: number): void {
   // siguiente frame lo reintenta — los fallos transitorios (sheet a medio
   // cargar, imagen invalidada) se autocorrigen.
   try {
-    renderer.render(
+    activeRenderer.render(
       {
         pos: playerPos,
         forward: playerForward,
@@ -1515,7 +1667,7 @@ function gameLoop(now: number): void {
     const opacity = attackVisual.mode === "impact"
       ? attackVisual.fadeTimer / 0.3 * 0.5
       : 0.3;
-    renderer.drawAttackArea(
+    activeRenderer.drawAttackArea(
       { pos: playerPos, forward: playerForward },
       attackVisual.params,
       attackVisual.mode,
@@ -1684,6 +1836,9 @@ narrativeClient.onNarrativeStatus((status) => {
       case "error": {
         const detail = status.message ?? "Algo falló en el motor narrativo.";
         errors.push("narrative", detail);
+        // Una transición de plató en vuelo retira su velo y devuelve el
+        // control (el jugador se queda en la escena de origen).
+        stageTransitions.onError();
         setLoaderState("error", "Error al generar la escena", detail);
         break;
       }
@@ -1877,6 +2032,8 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
+      sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
+      applySessionView(sessionWorldView);
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
@@ -1886,6 +2043,8 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applySessionRenderMode(res.state.world?.render_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
+      sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
+      applySessionView(sessionWorldView);
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets

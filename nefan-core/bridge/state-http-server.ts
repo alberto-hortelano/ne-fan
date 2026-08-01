@@ -12,12 +12,13 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
-import { oppositeEdge } from "../src/world-map/edges.js";
+import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
 import { isEdge, type PlaceTriggerSpec } from "../src/world-map/types.js";
@@ -61,6 +62,12 @@ interface RouteResult {
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
+
+/** Documento canónico de sistemas de UI (compartido con el resto de prompts
+ *  del contrato) — lo sirve GET /ui_doc para la tool MCP ui_doc_get. */
+const UI_SYSTEMS_DOC = fileURLToPath(
+  new URL("../data/contract/prompts/ui_systems.md", import.meta.url),
+);
 
 export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
@@ -186,10 +193,17 @@ async function handle(
       (placeId) => {
         const place = wm.get(placeId);
         if (!place) return { exists: false, outgoing_links: 0 };
+        // links con destino + edge efectivo desde este place: los necesita la
+        // regla proscenio (cada link ⇔ una salida física declarada en stage).
+        const links = wm.getOutgoingLinks(placeId).map((l) => ({
+          to: l.from === placeId ? l.to : l.from,
+          edge: resolveExitEdge(wm, placeId, l) ?? undefined,
+        }));
         return {
           exists: true,
           kind: place.kind,
-          outgoing_links: wm.getOutgoingLinks(placeId).length,
+          outgoing_links: links.length,
+          links,
         };
       },
       tileCtx,
@@ -368,6 +382,30 @@ async function handle(
       });
     } catch (err) {
       return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
+    }
+  }
+
+  // ── Guía de sistemas de UI (tool MCP ui_doc_get) ──
+  // Documento canónico (data/contract/prompts/ui_systems.md) + el estado
+  // ACTIVO de la sesión: qué vista/modo/combate están congelados y qué
+  // plugins corren — el motor adapta su salida a lo activo, nunca lo cambia.
+  if (method === "GET" && path === "/ui_doc") {
+    if (!narrative.session_id) {
+      return notFound("no active session — ui_doc describes a running session's UI");
+    }
+    try {
+      return ok({
+        ui_state: {
+          view: narrative.world.view || "overworld",
+          render_mode: narrative.world.render_mode || "image",
+          combat_system: narrative.world.combat_system || "standard",
+          style_id: narrative.world.style_id,
+          plugins: plugins.list(),
+        },
+        ui_doc: readFileSync(UI_SYSTEMS_DOC, "utf-8"),
+      });
+    } catch (err) {
+      return notFound(`ui_systems.md unavailable: ${(err as Error).message}`);
     }
   }
 

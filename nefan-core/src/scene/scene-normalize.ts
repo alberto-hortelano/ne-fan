@@ -286,6 +286,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       ? raw.map_ground
       : undefined,
     volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
+    // Bloque stage (mundos proscenio): passthrough — el cliente detecta la
+    // escena de plató por este campo y compone las capas con
+    // stagePlanFromScene sobre el Format D crudo (__format_d).
+    stage: raw.stage !== undefined ? raw.stage : undefined,
     // Zona de estilo etiquetada por el motor narrativo y bioma del tile: los
     // combina el cliente (styleCategoryForTile) para elegir la referencia del
     // style pack por tile. Passthrough sin validar — ai_server sanea el enum.

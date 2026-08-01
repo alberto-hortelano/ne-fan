@@ -1,0 +1,8 @@
+{
+  "game_id": "stagetest",
+  "title": "Vista proscenio",
+  "description": "Fixture de tests del bridge: juego con view = proscenium.",
+  "style_id": "estilo_test",
+  "world_brief": "Mundo mínimo de pruebas para los tests de la vista proscenio. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. Relleno de contexto. ",
+  "view": "proscenium"
+}
