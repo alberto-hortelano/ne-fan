@@ -242,6 +242,15 @@ async def lifespan(app: FastAPI):
         deps.scene_segmenter = None
         logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
 
+    # Pelado por capas del proscenio: FLUX Fill remoto si hay FAL_KEY; sin
+    # ella /peel_scene_layer degrada a LaMa local (gratis, menos guiado).
+    try:
+        from fal_client import FalFillClient
+        deps.fill_client = FalFillClient()
+    except ValueError as e:
+        deps.fill_client = None
+        logger.info(f"FalFillClient disabled: {e} — peel degradará a LaMa local")
+
     if deps.config["expose_diagnostic"]:
         from routers.diagnostic import build_diagnostic_router
         app.include_router(build_diagnostic_router(

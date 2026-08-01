@@ -596,6 +596,28 @@ const server = http.createServer((req, res) => {
       // flujo entero (máscara → endpoint → instalación) y a ojo: al fundirse
       // un cutout por proximidad se ve el verde plano de la placa, no una
       // copia del objeto.
+      // Pelado del proscenio (mock sin píxeles): devuelve la MISMA imagen —
+      // el pipeline del cliente (recortes por máscara, instalación por capa)
+      // se ejercita entero; el relleno real solo cambia los píxeles del hueco.
+      if (req.method === "POST" && req.url === "/peel_scene_layer") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const b64 = String(body.image_b64 ?? "");
+        if (!b64 || !body.mask_b64 || !body.prompt) {
+          return send(422, { detail: "fake-ai: image_b64, mask_b64 y prompt requeridos" });
+        }
+        const png = Buffer.from(b64, "base64");
+        const hash = createHash("sha256")
+          .update(png).update(String(body.mask_b64)).update(String(body.prompt))
+          .digest("hex").slice(0, 16);
+        sceneImages.set(hash, png);
+        console.error(`[fake-ai] peel_scene_layer ${hash} (${png.length}b, prompt: ${String(body.prompt).slice(0, 60)}…)`);
+        return send(200, { hash, cached: false, peeled_url: `/cache/scene/${hash}`, backend: "fake" });
+      }
       if (req.method === "POST" && req.url === "/inpaint_scene_plate") {
         let body = {};
         try {

@@ -205,15 +205,9 @@ export async function handleStartSession(
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }
     // Vista del mundo: la declara game.json y queda CONGELADA en el save
-    // (como el estilo). El proscenio v1 es vector-only: el repintado IA por
-    // capas (peeling) llega en una entrega posterior — mejor abortar aquí que
-    // generar tiles pintados que la vista no puede usar.
+    // (como el estilo). Con renderMode "image", el proscenio repinta y pela
+    // cada plató por capas (entrega 2 — StageImageController en el cliente).
     view = meta.view ?? "overworld";
-    if (view === "proscenium" && renderMode === "image") {
-      throw new Error(
-        'la vista "proscenium" v1 solo soporta gráficos vectoriales — elige renderMode "vector"',
-      );
-    }
     // Sistema de combate: el que declare game.json (systems.combat) o el
     // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
     // fuera del registro aborta (fail-loud), no degrada en silencio.

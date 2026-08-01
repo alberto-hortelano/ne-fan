@@ -24,6 +24,7 @@ import {
 } from "@nefan-core/src/scene/stage/index.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { Entity } from "./canvas-renderer.js";
+import type { StageImages } from "../scene/stage-image.js";
 import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
 import { errors } from "../ui/error-log.js";
 
@@ -53,6 +54,10 @@ export class ProsceniumRenderer implements Renderer2D {
   private stage: ComposedStage | null = null;
   private stageKey = "";
   private rasters: RasterLayer[] = [];
+  /** Imágenes del pipeline de pelado (entrega 2): placa + recortes por capa,
+   *  en ESPACIO CUADRADO — se des-estiran al pintarlas sobre el viewBox.
+   *  null = plató vectorial (v1 o pipeline aún en vuelo). */
+  private images: StageImages | null = null;
   private camX = 0;
   private lastNow = 0;
   /** Token de instalación: una escena que llega mientras otra rasteriza
@@ -81,6 +86,21 @@ export class ProsceniumRenderer implements Renderer2D {
     this.stage = null;
     this.stageKey = "";
     this.rasters = [];
+    this.images = null;
+  }
+
+  /** Instalación ATÓMICA de las imágenes del pelado. Ignora (con aviso) si la
+   *  escena activa ya no es la que se pintó — nunca bitmaps de otro plató. */
+  installImages(key: string, images: StageImages): void {
+    if (key !== this.stageKey) {
+      errors.push("render", `imágenes del plató ${key} descartadas: la escena activa es ${this.stageKey || "(ninguna)"}`);
+      return;
+    }
+    this.images = images;
+  }
+
+  hasImages(): boolean {
+    return this.images !== null;
   }
 
   /** Instala la escena ÚNICA del plató: rasteriza cada capa SVG a un
@@ -102,6 +122,7 @@ export class ProsceniumRenderer implements Renderer2D {
     this.stage = stage;
     this.stageKey = key;
     this.rasters = rasters;
+    this.images = null; // plató nuevo: bitmaps del anterior fuera
     // Cámara al centro del raíl (el spawn la reencuadra en el primer frame).
     this.camX = (stage.bounds.minX + stage.bounds.maxX) / 2;
   }
@@ -198,6 +219,7 @@ export class ProsceniumRenderer implements Renderer2D {
 
     // ── Capas + sprites intercalados por z ───────────────────────────────────
     const wallAlpha = fourthWallAlpha(player.pos.z, stage.bounds);
+    const images = this.images;
     let di = 0;
     for (const raster of this.rasters) {
       // Entidad delante de la capa ⟺ su zStage < layer.z ⇒ las que tengan
@@ -206,14 +228,29 @@ export class ProsceniumRenderer implements Renderer2D {
         drawables[di].draw();
         di++;
       }
-      if (raster.img) {
-        const [lx, ly] = toScreen(vb.minX, vb.minY);
+      const [lx, ly] = toScreen(vb.minX, vb.minY);
+      const lw = vb.width * fit;
+      const lh = vb.height * fit;
+      if (images && raster.layer.kind === "backdrop") {
+        // Con pelado instalado, la PLACA (imagen final: telón + suelo sin
+        // volúmenes) sustituye a backdrop + floor de una sola pasada.
+        ctx.drawImage(images.plate, lx, ly, lw, lh);
+        this.drawExitZones(toScreen, fit);
+      } else if (images && raster.layer.kind === "floor") {
+        // Cubierto por la placa.
+      } else if (
+        images &&
+        (raster.layer.kind === "prop" || raster.layer.kind === "wall") &&
+        images.cutouts.has(raster.layer.id)
+      ) {
+        ctx.drawImage(images.cutouts.get(raster.layer.id)!, lx, ly, lw, lh);
+      } else if (raster.img) {
         if (raster.layer.kind === "fourth_wall") ctx.globalAlpha = wallAlpha;
-        ctx.drawImage(raster.img, lx, ly, vb.width * fit, vb.height * fit);
+        ctx.drawImage(raster.img, lx, ly, lw, lh);
         ctx.globalAlpha = 1;
       }
       // Las zonas de salida se marcan sobre el suelo, justo tras pintarlo.
-      if (raster.layer.kind === "floor") this.drawExitZones(toScreen, fit);
+      if (!images && raster.layer.kind === "floor") this.drawExitZones(toScreen, fit);
     }
     while (di < drawables.length) drawables[di++].draw();
   }

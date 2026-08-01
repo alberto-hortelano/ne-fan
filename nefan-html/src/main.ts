@@ -27,6 +27,7 @@ import type { Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer } from "./renderer/proscenium-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
+import { StageImageController } from "./scene/stage-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
@@ -181,11 +182,19 @@ const renderer = new CanvasRenderer(canvas, {
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
+// Pipeline de imagen del proscenio (entrega 2): repintado + pelado por capas.
+// Instala en el ProsceniumRenderer de la vista (closure: se resuelve al
+// llegar las imágenes, no al construir).
+const stageImageController = new StageImageController(AI_SERVER_URL, {
+  install: (key, images) => prosceniumRenderer?.installImages(key, images),
+  log: (msg) => log(msg),
+});
 
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
  *  save) a los generadores de imagen: escena y skins de personaje. */
 function applySessionStyle(styleId: string): void {
   sceneImageController.setStyle(styleId);
+  stageImageController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
@@ -710,6 +719,24 @@ function composeTilePlan(
   };
 }
 
+/** Metadatos del repintado de un plató, desde el Format D crudo. */
+function stageImageMeta(
+  rawFd: Record<string, unknown>,
+  data: Record<string, unknown>,
+): { description: string; backdrop?: string; styleTag: string } {
+  const stageBlock = rawFd.stage as { backdrop?: { description?: string }; fourth_wall?: { present?: boolean } } | undefined;
+  const styleTag = typeof rawFd.style_tag === "string" && rawFd.style_tag
+    ? rawFd.style_tag
+    : stageBlock?.fourth_wall?.present
+      ? "interior"
+      : "settlement";
+  return {
+    description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
+    backdrop: stageBlock?.backdrop?.description,
+    styleTag,
+  };
+}
+
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
@@ -784,6 +811,12 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     void prosceniumRenderer!
       .installStage(stageComposed, key)
       .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
+    // Entrega 2: con gráficos "imagen IA", repintar + pelar el plató en
+    // cuanto se instala (cacheado por hash: el resume es gratis).
+    if (sessionRenderMode === "image") {
+      const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
+      void stageImageController.runFor(stageComposed, key, stageImageMeta(rawFd, data));
+    }
   } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
     applySessionView("");
   }
@@ -1148,6 +1181,8 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
     stage: () => activeStage,
+    stageImages: () => prosceniumRenderer?.hasImages() ?? false,
+    stagePainting: () => stageImageController.running,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
@@ -1331,6 +1366,13 @@ function gameLoop(now: number): void {
   if (devInput.consumeGenerateScene()) {
     if (sessionRenderMode === "vector") {
       log("G ignorada: la partida es vectorial (elegido al crearla)");
+    } else if (sessionView === "proscenium") {
+      // Proscenio: G repinta + pela el plató activo (manual, aunque el auto
+      // ya lo haga al instalarse — reintento tras un fallo).
+      if (activeStage && activeTileKey && sceneData) {
+        const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
+        void stageImageController.runFor(activeStage, activeTileKey, stageImageMeta(rawFd, sceneData));
+      }
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):

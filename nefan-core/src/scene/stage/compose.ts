@@ -47,7 +47,7 @@ const OPENING_H_M = 2.6;
 const BOUNDS_INSET_M = 0.25;
 
 export interface StageLayerKind {
-  kind: "backdrop" | "floor" | "prop" | "wall" | "fourth_wall";
+  kind: "backdrop" | "floor" | "prop" | "wall" | "wing" | "fourth_wall";
 }
 
 export interface StageLayer {
@@ -56,6 +56,9 @@ export interface StageLayer {
    *  inserción de sprites (entidad delante ⟺ su zStage < layer.z). */
   z: number;
   kind: StageLayerKind["kind"];
+  /** Etiqueta en español del elemento (la del volumen) — alimenta los
+   *  behind_labels del pelado y el debug. Ausente en capas de encuadre. */
+  label?: string;
   /** SVG standalone (viewBox común a todas las capas). */
   svg: string;
   /** [minX, minY, maxX, maxY] en unidades de vista. */
@@ -105,6 +108,7 @@ interface LayerBuild {
   id: string;
   z: number;
   kind: StageLayer["kind"];
+  label?: string;
   body: string;
   bbox: [number, number, number, number];
   baseline_y: number;
@@ -386,7 +390,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
       layers.push({
         id: side < 0 ? "wing_west" : "wing_east",
         z: 0.001,
-        kind: "wall",
+        kind: "wing",
         body,
         bbox: side < 0
           ? [viewBox.minX, viewBox.minY, -halfBack, viewBottom]
@@ -450,6 +454,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     id: l.id,
     z: l.z,
     kind: l.kind,
+    ...(l.label ? { label: l.label } : {}),
     svg: wrap(l.body),
     bbox: l.bbox,
     baseline_y: l.baseline_y,
@@ -700,6 +705,7 @@ function buildVolumeLayer(
     id: `vol_${v.id}`,
     z: zs,
     kind: v.type === "wall" || v.type === "gate" || v.type === "tower" ? "wall" : "prop",
+    label: v.label,
     body,
     bbox: [cx - halfW - 2, topY - 2, cx + halfW + 2, baseY + 3],
     baseline_y: baseY,

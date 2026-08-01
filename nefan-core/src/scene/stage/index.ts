@@ -27,6 +27,14 @@ export {
   type StageScenePlan,
 } from "./compose.js";
 export { stagePlanFromScene } from "./plan.js";
+export {
+  peelPlanFor,
+  paintableVolumeLayers,
+  buildPeelPrompt,
+  STAGE_PEEL_VERSION,
+  type PeelPlan,
+  type PeelStep,
+} from "./peel.js";
 export { railCamera, type RailCameraOpts } from "./camera.js";
 export { exitZoneAt, spawnPointForEntry } from "./entry.js";
 export { fourthWallAlpha, FOURTH_WALL_FADE_DEFAULTS, type FourthWallFadeOpts } from "./fade.js";

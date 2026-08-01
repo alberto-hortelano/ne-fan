@@ -195,6 +195,39 @@ class SceneImageGenerator:
                 + _VOID_RULES
                 + _STYLE_RULES
             )
+        elif blueprint_kind == "stage":
+            # Plató proscenio (entrega 2): el plan YA está dibujado en la
+            # perspectiva del set (suelo convergiendo al fondo, cerca = bajo y
+            # grande). El repintado debe conservarla; los bastidores laterales
+            # son encuadre, no contenido.
+            instruction = (
+                "Side-on view of ONE theatre/film-set style game stage: the camera "
+                "sits at the front edge, low, looking across a floor drawn in "
+                "perspective toward a painted backdrop at the far end. The plan is "
+                "ALREADY drawn in that perspective: the floor converges toward the "
+                "back, far objects are smaller and higher in the frame, near objects "
+                "bigger and lower. Keep that perspective, the horizon height and the "
+                "light direction exactly. "
+                "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
+                "with flat placeholder colours — it is NOT final art. Fully REPAINT "
+                "the whole stage in the painterly, richly textured style of the "
+                "SECOND reference image: floor with wear, grain and colour "
+                "variation; props and walls with material detail, highlights and "
+                "soft contact shadows; a backdrop with atmosphere and depth. The "
+                "finished image must NOT look flat, vector-like or diagram-like "
+                "anywhere. "
+                "The dark bands on the left and right edges are theatre WINGS "
+                "framing the set: keep them as soft dark framing, do NOT fill them "
+                "with new content; lighter gaps in them are open exits — keep them "
+                "open. "
+                "Keep every element in the SAME position, size, shape and height. "
+                "Do NOT move, remove, merge or duplicate objects. Do NOT invent "
+                "new objects, buildings, doors or windows that are not in the plan. "
+                f"Render the scene as: {prompt.strip()}. "
+                + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
+                + _STYLE_ROLE_RULES
+                + _STYLE_RULES
+            )
         else:
             instruction = (
                 "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "

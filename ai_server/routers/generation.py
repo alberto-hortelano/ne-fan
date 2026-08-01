@@ -104,7 +104,7 @@ class SceneImageRequest(BaseModel):
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
+    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg|stage)$")
     # False = el plano NO tiene agua: la instrucción omite las cláusulas de
     # agua (mencionarla en planos secos ceba ríos alucinados — bench
     # 002_repaint_fidelity). Default True = comportamiento clásico.
@@ -134,6 +134,18 @@ class AnalyzeSceneRequest(BaseModel):
     (p. ej. scene_description del tile)."""
     image_b64: str = Field(min_length=1)
     context: dict = Field(default_factory=dict)
+
+
+class PeelLayerRequest(BaseModel):
+    """Pelado de UNA capa del plató (proscenio, entrega 2): la imagen actual
+    del plató + la máscara alpha de la capa DECLARADA por el compositor
+    (blanco = hueco) + el prompt de lo que hay detrás (behind_labels del plan
+    de pelado). FLUX Fill remoto si hay FAL_KEY (guiado por el prompt);
+    fallback LaMa local (continúa texturas, sin créditos). Cacheado por hash
+    (imagen, máscara, prompt): el resume es determinista y gratis."""
+    image_b64: str = Field(min_length=1)
+    mask_b64: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
 
 
 class ScenePlateRequest(BaseModel):
@@ -802,6 +814,89 @@ async def review_scene_image_endpoint(body: AnalyzeSceneRequest):
         f"({sum(1 for x in extras_out if x['action'] == 'remove')} removes)"
     )
     return result
+
+
+@router.post("/peel_scene_layer")
+async def peel_scene_layer_endpoint(body: PeelLayerRequest):
+    """Pelado de una capa del plató: rellena el hueco de la máscara con lo
+    declarado detrás. La máscara se dilata (±8 px) antes del relleno y el
+    resultado se compone DURO sobre la imagen original (fuera de la máscara
+    dilatada, ni un píxel cambia — lección del experimento de julio)."""
+    import asyncio
+    import hashlib
+    import io
+
+    from PIL import Image, ImageFilter
+
+    image_png = _decode_b64_png(body.image_b64)
+    mask_png = _decode_b64_png(body.mask_b64)
+
+    use_flux = deps.fill_client is not None
+    if not use_flux and deps.plate_inpainter is None:
+        raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
+
+    # Máscara dilatada ±8 px: cubre el anti-alias del borde del recorte (sin
+    # ella quedan anillos del color del objeto pelado).
+    mask_img = Image.open(io.BytesIO(mask_png)).convert("L")
+    for _ in range(2):
+        mask_img = mask_img.filter(ImageFilter.MaxFilter(9))
+    buf = io.BytesIO()
+    mask_img.save(buf, format="PNG")
+    dilated_png = buf.getvalue()
+
+    algo = "fluxfill1" if use_flux else f"lama_{PLATE_ALGO}"
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": hashlib.sha256(image_png).hexdigest()[:16],
+        "mask": hashlib.sha256(dilated_png).hexdigest()[:16],
+        "algo": algo,
+    })
+    key = deps.scene_cache.hash_key(body.prompt, ctx)
+    if deps.scene_cache.get_by_hash(key, "plate") is not None:
+        return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
+
+    start = time.time()
+    filled: bytes
+    if use_flux:
+        try:
+            filled = await asyncio.to_thread(
+                deps.fill_client.fill, image_png, dilated_png, body.prompt
+            )
+        except Exception as e:
+            # Sin saldo / fallo remoto: degradar a LaMa local con SU clave de
+            # caché (nunca cachear un relleno LaMa bajo la clave flux).
+            if deps.plate_inpainter is None:
+                raise HTTPException(status_code=502, detail=f"fal fill falló y no hay LaMa: {e}") from e
+            print(f"peel_scene_layer: fal fill falló ({e}) — fallback LaMa", flush=True)
+            algo = f"lama_{PLATE_ALGO}"
+            ctx["algo"] = algo
+            key = deps.scene_cache.hash_key(body.prompt, ctx)
+            if deps.scene_cache.get_by_hash(key, "plate") is not None:
+                return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
+            async with deps.gpu_lock:
+                filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
+    else:
+        async with deps.gpu_lock:
+            filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
+
+    # Composite duro: el relleno solo dentro de la máscara dilatada.
+    base = Image.open(io.BytesIO(image_png)).convert("RGB")
+    fill_img = Image.open(io.BytesIO(filled)).convert("RGB")
+    if fill_img.size != base.size:
+        fill_img = fill_img.resize(base.size, Image.LANCZOS)
+    composed = Image.composite(fill_img, base, mask_img)
+    out = io.BytesIO()
+    composed.save(out, format="PNG")
+    peeled = out.getvalue()
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    deps.scene_cache.put(body.prompt, "plate", peeled, context=ctx, subtype_override="plate")
+    return {
+        "hash": key,
+        "cached": False,
+        "peeled_url": f"/cache/plate/{key}",
+        "backend": algo,
+        "generation_time_ms": elapsed_ms,
+    }
 
 
 @router.post("/inpaint_scene_plate")

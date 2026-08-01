@@ -99,19 +99,25 @@ describe("bridge — mundos proscenio", () => {
     assert.ok(h.narrative.scenes_loaded["posada"], "escena registrada");
   });
 
-  it("proscenium + renderMode image aborta (v1 vector-only, default incluido)", async () => {
-    const { ctx } = makeCtx();
-    for (const [rid, renderMode] of [["r1", "image"], ["r2", undefined]] as const) {
-      const { socket, sent } = makeSocket();
-      await routeMessage(
-        { type: "start_session", requestId: rid, gameId: "stagetest", renderMode },
-        socket,
-        ctx,
-      );
-      const started = sent[0] as SessionStartedMessage;
-      assert.equal(started.ok, false);
-      assert.match(started.error ?? "", /vector/);
-    }
+  it("proscenium + renderMode image arranca (entrega 2: pelado por capas)", async () => {
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          seedPosadaMap(h.narrative);
+          return { ok: true, scene: stageScene("posada", [{ id: "n", edge: "north", to: "cocina" }]) };
+        },
+      },
+    });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "stagetest", renderMode: "image" },
+      socket,
+      h.ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true, started.error);
+    assert.equal(started.state?.world.render_mode, "image");
+    assert.equal(started.state?.world.view, "proscenium");
   });
 
   it("escena sin bloque stage en mundo proscenio ⇒ narrative_status error", async () => {
