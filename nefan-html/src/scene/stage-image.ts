@@ -1,22 +1,22 @@
 /** Pipeline de imagen del PROSCENIO (entrega 2): repintado del plató entero
- *  (máxima integración — la lección del render_lab) y PELADO capa a capa de
- *  cerca a lejos con las máscaras DECLARADAS del compositor (sin SAM ni
- *  visión para el mundo declarado):
+ *  (máxima integración — la lección del render_lab) e instalación como PLACA.
  *
- *    1. blueprint = raster del SVG compuesto → /generate_scene_image
- *       (blueprint_kind "stage") → plató pintado.
- *    2. por cada volumen (cerca→lejos): recorte = imagen ⊙ alpha de su capa;
- *       /peel_scene_layer (FLUX Fill/LaMa, prompt = behind_labels) rellena su
- *       hueco → imagen sin él.
- *    3. la imagen final (todo pelado) es la PLACA (telón + suelo); se instala
- *       todo junto en el ProsceniumRenderer (atómico: nunca capas a medias).
+ *  PROHIBIDO — no reintroducir nunca el recorte por siluetas DECLARADAS
+ *  (rasterizar el SVG de una capa del compositor como máscara sobre la imagen
+ *  pintada): se probó y NO funciona — el modelo de imagen recoloca y
+ *  reorienta lo declarado, así que la silueta declarada recorta SUELO con
+ *  forma de objeto y el objeto real queda cocido en la placa. Jamás va a
+ *  funcionar. Los recortes deben salir de segmentar lo que el modelo PINTÓ
+ *  (visión localiza cada elemento → SAM2 segment_boxes → máscara de IMAGEN);
+ *  el plan declarado solo vale como pista (etiquetas + cajas esperadas).
+ *  Hasta que ese pipeline exista, se instala SOLO la placa (sin recortes):
+ *  sin parallax de volúmenes, pero sin siluetas falsas.
  *
  *  ESPACIO CUADRADO: el server pre-estira a cuadrado (prestretch, bench 002),
  *  así que blueprint, máscaras, recortes y placa viven en 1024×1024; el
  *  renderer des-estira al pintar cada bitmap sobre el rect del viewBox. */
 
 import {
-  peelPlanFor,
   STAGE_PEEL_VERSION,
   type ComposedStage,
 } from "@nefan-core/src/scene/stage/index.js";
@@ -121,35 +121,14 @@ export class StageImageController {
       const painted = await this.fetchToSquare(String(repaintRes.scene_url));
       if (token !== this.token) return;
 
-      const plan = peelPlanFor(stage, { backdrop: meta.backdrop });
-      console.log(`[stage-img] ${key}: plan de pelado v${plan.version} — ${plan.steps.length} capas (cerca→lejos)`);
-      const cutouts = new Map<string, HTMLCanvasElement>();
-      let current = painted;
-      for (let i = 0; i < plan.steps.length; i++) {
-        const step = plan.steps[i];
-        this.deps.log(`🫳 pelando ${step.label} (${i + 1}/${plan.steps.length})`);
-        this.deps.status(`plató ${key}: pelando ${step.label} (${i + 1}/${plan.steps.length})`);
-        const maskAlpha = await rasterizeSvgSquare(step.maskSvg);
-        cutouts.set(step.layerId, cutoutByAlpha(current, maskAlpha));
-        const peelRes = await this.post("/peel_scene_layer", {
-          image_b64: canvasB64(current),
-          mask_b64: canvasB64(alphaToWhiteMask(maskAlpha)),
-          prompt: step.prompt,
-        });
-        if (token !== this.token) return;
-        console.log(
-          `[stage-img] ${key}: pelada "${step.label}" (${i + 1}/${plan.steps.length}) ` +
-          `backend=${peelRes.backend ?? "?"} ${peelRes.cached ? "CACHE HIT" : "generado"} ` +
-          `detrás=[${step.behindLabels.join(", ") || "suelo"}] (${ms()})`,
-        );
-        current = await this.fetchToSquare(String(peelRes.peeled_url));
-        if (token !== this.token) return;
-      }
-
+      // Recortes: PENDIENTE el pipeline por segmentación de lo PINTADO
+      // (visión → SAM2 segment_boxes → máscara de imagen). Hasta entonces,
+      // placa sola — JAMÁS recortar con las siluetas declaradas del SVG (ver
+      // cabecera del fichero).
       const images: StageImages = {
         peelVersion: STAGE_PEEL_VERSION,
-        plate: current,
-        cutouts,
+        plate: painted,
+        cutouts: new Map<string, HTMLCanvasElement>(),
       };
       this.cache.set(key, { svg: stage.svg, images });
       while (this.cache.size > CLIENT_CACHE_MAX) {
@@ -157,8 +136,8 @@ export class StageImageController {
         this.cache.delete(oldest);
       }
       this.deps.install(key, images);
-      this.deps.log(`🎨 plató ${key} pintado (${plan.steps.length} capas peladas)`);
-      console.log(`[stage-img] ${key}: COMPLETO — placa + ${cutouts.size} recortes instalados (${ms()})`);
+      this.deps.log(`🎨 plató ${key} pintado (placa; recortes pendientes de segmentación)`);
+      console.log(`[stage-img] ${key}: COMPLETO — placa instalada, 0 recortes (segmentación pendiente) (${ms()})`);
     } catch (err) {
       console.error(`[stage-img] ${key}: FALLO —`, err);
       errors.push("scene", `repintado del plató ${key} falló`, err);
@@ -216,39 +195,6 @@ async function rasterizeSvgSquare(svg: string): Promise<HTMLCanvasElement> {
   } finally {
     URL.revokeObjectURL(url);
   }
-}
-
-/** Recorte: imagen ⊙ alpha de la capa (misma operación de máscara declarada
- *  que el modo "masks" de la oblicua). El borde se EMPLUMA (blur ligero):
- *  cuando el modelo pinta el objeto algo más grande que su huella declarada,
- *  el corte duro canta — el degradado lo funde con el halo inpainted de la
- *  placa (la máscara del pelado va dilatada ±8 px). */
-function cutoutByAlpha(image: HTMLCanvasElement, maskAlpha: HTMLCanvasElement): HTMLCanvasElement {
-  const out = makeCanvas();
-  const ctx = out.getContext("2d")!;
-  ctx.filter = "blur(1.5px)";
-  ctx.drawImage(maskAlpha, 0, 0);
-  ctx.filter = "none";
-  ctx.globalCompositeOperation = "source-in";
-  ctx.drawImage(image, 0, 0);
-  ctx.globalCompositeOperation = "source-over";
-  return out;
-}
-
-/** Alpha de la capa → máscara L del server (blanco = hueco, negro = intacto). */
-function alphaToWhiteMask(maskAlpha: HTMLCanvasElement): HTMLCanvasElement {
-  const out = makeCanvas();
-  const ctx = out.getContext("2d")!;
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, RENDER_SIZE, RENDER_SIZE);
-  const white = makeCanvas();
-  const wctx = white.getContext("2d")!;
-  wctx.drawImage(maskAlpha, 0, 0);
-  wctx.globalCompositeOperation = "source-in";
-  wctx.fillStyle = "#ffffff";
-  wctx.fillRect(0, 0, RENDER_SIZE, RENDER_SIZE);
-  ctx.drawImage(white, 0, 0);
-  return out;
 }
 
 /** PNG base64 (sin prefijo data:) de un canvas. */

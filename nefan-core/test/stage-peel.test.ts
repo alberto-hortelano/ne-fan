@@ -51,11 +51,11 @@ describe("peelPlanFor", () => {
     for (const s of plan.steps) assert.match(s.prompt, /Do NOT invent any new object/);
   });
 
-  it("las máscaras son las propias capas (SVG standalone con viewBox)", () => {
+  it("el plan NO transporta máscaras: cada paso referencia una capa real y la máscara sale de segmentar lo pintado", () => {
     for (const s of plan.steps) {
-      assert.ok(s.maskSvg.startsWith("<svg xmlns="));
-      const layer = stage.layers.find((l) => l.id === s.layerId)!;
-      assert.equal(s.maskSvg, layer.svg);
+      assert.ok(!("maskSvg" in s), "prohibido: máscara desde el SVG declarado de la capa");
+      assert.ok(stage.layers.some((l) => l.id === s.layerId));
+      assert.ok(s.label.length > 0);
     }
   });
 

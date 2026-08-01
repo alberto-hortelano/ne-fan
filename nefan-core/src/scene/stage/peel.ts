@@ -7,11 +7,14 @@
  *  todos los volúmenes pelados, es la PLACA (telón + suelo) que el fade y el
  *  parallax revelan detrás.
  *
- *  Las máscaras son las capas DECLARADAS del compositor (alpha de su SVG) —
- *  sin SAM ni visión para el mundo declarado, la lección del experimento
- *  lateral de julio con la precisión de las máscaras de la oblicua. Los
- *  bastidores y la cuarta pared son ENCUADRE teatral, no mundo: quedan
- *  vectoriales y fuera del plan. */
+ *  PROHIBIDO derivar las máscaras del SVG declarado de las capas: se probó y
+ *  NO funciona — el modelo de imagen recoloca y reorienta lo declarado, así
+ *  que la silueta declarada recorta SUELO con forma de objeto. Jamás va a
+ *  funcionar. La máscara de cada paso debe salir de SEGMENTAR lo que el
+ *  modelo PINTÓ (visión localiza el elemento → SAM2 segment_boxes); este
+ *  plan solo aporta el ORDEN (cerca→lejos), las etiquetas esperadas y los
+ *  prompts de relleno. Los bastidores y la cuarta pared son ENCUADRE
+ *  teatral, no mundo: quedan vectoriales y fuera del plan. */
 
 import type { ComposedStage, StageLayer } from "./compose.js";
 
@@ -27,12 +30,12 @@ export function paintableVolumeLayers(stage: ComposedStage): StageLayer[] {
 }
 
 export interface PeelStep {
-  /** Capa a pelar: su recorte sale de la imagen previa; su hueco se inpainta. */
+  /** Capa a pelar: su recorte sale de la imagen previa; su hueco se inpainta.
+   *  La MÁSCARA no viaja aquí: sale de segmentar la imagen pintada (visión +
+   *  SAM2), nunca del SVG declarado de la capa. */
   layerId: string;
-  /** Etiqueta humana (debug/log). */
+  /** Etiqueta humana (debug/log y búsqueda del elemento por visión). */
   label: string;
-  /** SVG standalone de la máscara — la propia capa del compositor. */
-  maskSvg: string;
   /** Lo declarado DETRÁS de esta capa (z mayor), de cerca a lejos. */
   behindLabels: string[];
   /** Instrucción del relleno (inglés, con negativas duras — julio: donde no
@@ -73,7 +76,6 @@ export function peelPlanFor(stage: ComposedStage, opts: { backdrop?: string } = 
     return {
       layerId: layer.id,
       label: layer.label ?? layer.id,
-      maskSvg: layer.svg,
       behindLabels: behind,
       prompt: buildPeelPrompt(behind, opts.backdrop),
     };

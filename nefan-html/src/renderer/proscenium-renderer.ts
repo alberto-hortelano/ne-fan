@@ -304,13 +304,14 @@ export class ProsceniumRenderer implements Renderer2D {
         this.drawExitZones(toScreen);
       } else if (images && kind === "floor") {
         // Cubierto por la placa.
-      } else if (
-        images &&
-        (kind === "prop" || kind === "wall") &&
-        images.cutouts.has(raster.layer.id)
-      ) {
-        const [lx, ly, lw, lh] = layerRect(raster.layer.z);
-        ctx.drawImage(images.cutouts.get(raster.layer.id)!, lx, ly, lw, lh);
+      } else if (images && (kind === "prop" || kind === "wall")) {
+        // Recorte por SEGMENTACIÓN de lo pintado (si existe); sin recorte, el
+        // volumen va cocido en la placa — nunca el billboard vectorial encima.
+        const cut = images.cutouts.get(raster.layer.id);
+        if (cut) {
+          const [lx, ly, lw, lh] = layerRect(raster.layer.z);
+          ctx.drawImage(cut, lx, ly, lw, lh);
+        }
       } else if (kind === "floor" && raster.bandedSrc) {
         // Modo vectorial: el suelo también se warpea por bandas.
         this.drawBanded(raster.bandedSrc, raster.bandedSrc.width, raster.bandedSrc.height, camOffsetM);

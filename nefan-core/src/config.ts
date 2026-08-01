@@ -30,14 +30,14 @@ export interface NefanConfig {
     ai_textures: boolean;
     /** AI GLB models for objects/buildings via /generate_model. */
     ai_models: boolean;
-    /** Cómo derivar los occluders/placa de la imagen IA del tile:
-     *  - "masks": recorte por las máscaras del PROPIO compositor (cada tramo
-     *    occluder rasterizado como alpha sobre la imagen repintada). Sin
-     *    llamadas a SAM2 ni clasificador de visión para lo declarado —
-     *    sabemos píxel a píxel qué es cada cosa (bench render_lab 001).
-     *  - "sam": pipeline legacy /analyze_scene_image (SAM2 auto-segment +
-     *    visión + refinado por caja). */
-    image_analysis: "masks" | "sam";
+    /** PROHIBIDO — no reintroducir nunca un modo de recorte por siluetas
+     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el SVG
+     *  del compositor como máscara sobre la imagen repintada se probó y NO
+     *  funciona — el modelo de imagen recoloca y reorienta lo declarado, la
+     *  máscara recorta SUELO con forma de objeto y el objeto real queda
+     *  cocido en la placa. Jamás va a funcionar. Los recortes se derivan
+     *  SIEMPRE segmentando lo que el modelo PINTÓ (SAM2 + visión); el plan
+     *  declarado solo sirve de pista (expected_elements / cajas). */
     /** Revisión por visión del tile REPINTADO (kind MCP image_review): los
      *  objetos que el img2img inventa ganan colisión/oclusión (keep) o se
      *  inpaintan (remove). Requiere listener del motor; si no está, el tile
@@ -149,7 +149,6 @@ export const CONFIG: NefanConfig = {
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
-    image_analysis: "masks",
     image_review: true,
   },
   narrative: {

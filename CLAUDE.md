@@ -363,16 +363,14 @@ lo proyecta:
   `VIEW_PROJECTION` único): vista == mundo en el suelo; los prismas
   vectoriales (`view-prism.ts`) desplazan la tapa `(+h·shearX, −h)` — espejo
   exacto del compositor. Simulación e input no cambian.
-- **Occluders por MÁSCARA del compositor** (config `graphics.image_analysis:
-  "masks"`, el default): cada tramo occluder declarado se rasteriza como alpha
-  y recorta su sprite de la imagen repintada — sin SAM2 ni clasificador para
-  el mundo declarado (baseline/huella/colisión ya vienen del plan). La placa
-  se inpainta con la unión de esos recortes. Los objetos EXTRA que el img2img
-  inventa los captura la revisión por visión post-imagen (`/review_scene_image`,
-  kind MCP `image_review`): cajas imprecisas → SAM2 box prompt → sprite/occluder
-  + banda de colisión derivada del contorno inferior de la silueta (sigue la
-  inclinación pintada, nunca se sale del objeto); `remove` = queda bajo la
-  placa. Con `image_analysis: "sam"` sigue disponible el pipeline legacy:
+- **PROHIBIDO recortar la imagen pintada con siluetas DECLARADAS** (el
+  extinto modo `image_analysis: "masks"`: rasterizar el SVG del compositor
+  como máscara sobre la imagen repintada). Se probó y NO funciona — el modelo
+  de imagen recoloca y reorienta lo declarado, la máscara declarada recorta
+  SUELO con forma de objeto y el objeto real queda cocido en la placa. Jamás
+  va a funcionar; no reintroducirlo. Los recortes salen SIEMPRE de segmentar
+  lo que el modelo PINTÓ: `/analyze_scene_image` (SAM2 auto-segment + visión
+  + refinado `segment_boxes` por caja). Lo declarado solo sirve de PISTA:
 - `expected_elements` del análisis salen del compositor; los segmentos
   casados toman baseline/colisión de su huella declarada; los no casados
   (añadidos del modelo de imagen) aportan una franja en su línea de suelo.
@@ -425,17 +423,20 @@ la puerta de vuelta (patrón puertas de Resident Evil).
 - **Pelado de imágenes (entrega 2, con `render_mode: "image"`)**: el
   `StageImageController` (`nefan-html/src/scene/stage-image.ts`) repinta el
   plató ENTERO (`/generate_scene_image` con `blueprint_kind: "stage"` — el
-  plan ya viene en perspectiva; los bastidores son marco) y lo PELA capa a
-  capa de cerca a lejos con las máscaras DECLARADAS del compositor (sin SAM
-  ni visión para lo declarado): recorte por alpha + `/peel_scene_layer`
-  (FLUX Fill fal guiado por `behind_labels` del `peelPlanFor` de
-  `stage/peel.ts`, con negativas duras; fallback LaMa local; máscara
-  dilatada ±8 px y composite duro; caché por hash imagen+máscara+prompt).
-  La imagen final = PLACA (telón+suelo); instalación atómica en el
-  ProsceniumRenderer (placa + recortes; bastidores y cuarta pared siguen
-  vectoriales). Todo en ESPACIO CUADRADO 1024² (espejo del prestretch).
-  Auto al instalar el plató; G = manual. ~$0.3/plató, cacheado para siempre
-  (compositor determinista ⇒ resume gratis).
+  plan ya viene en perspectiva; los bastidores son marco) y lo instala como
+  PLACA. **PROHIBIDO recortar con las siluetas declaradas del SVG de las
+  capas** (probado: el modelo recoloca/reorienta lo declarado y la silueta
+  recorta suelo con forma de objeto — jamás va a funcionar): los recortes
+  por capa PENDIENTES saldrán de segmentar lo PINTADO (visión localiza cada
+  elemento → SAM2 `segment_boxes` → máscara de imagen), y el pelado usará
+  `/peel_scene_layer` (FLUX Fill fal guiado por `behind_labels` del
+  `peelPlanFor` de `stage/peel.ts` — el plan aporta orden cerca→lejos,
+  etiquetas y prompts, NUNCA máscaras; fallback LaMa local; caché por hash
+  imagen+máscara+prompt). Instalación atómica en el ProsceniumRenderer
+  (placa + recortes; bastidores y cuarta pared siguen vectoriales). Todo en
+  ESPACIO CUADRADO 1024² (espejo del prestretch). Auto al instalar el plató;
+  G = manual. ~$0.3/plató, cacheado para siempre (compositor determinista ⇒
+  resume gratis).
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 
