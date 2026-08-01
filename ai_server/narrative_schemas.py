@@ -968,3 +968,50 @@ def validate_image_review(data: dict | None) -> dict:
             entry["depth_cells"] = float(depth)
         out.append(entry)
     return {"extras": out}
+
+
+def validate_stage_review(data: dict | None, expected_ids: list[str] | None = None) -> dict:
+    """Validate a Claude response to a stage_review request (inventario
+    COMPLETO del plató pintado del proscenio). Espejo de
+    narrative-mcp/validators.ts:validateStageReview. Raises ValueError."""
+    if not isinstance(data, dict):
+        raise ValueError(f"stage_review payload must be an object, got {type(data).__name__}")
+    expected = data.get("expected")
+    if not isinstance(expected, list):
+        raise ValueError("stage_review payload missing `expected` list — every declared element must appear")
+    seen: set[str] = set()
+    expected_out = []
+    for i, e in enumerate(expected):
+        if not isinstance(e, dict):
+            raise ValueError(f"stage_review expected[{i}] must be an object")
+        eid = e.get("id")
+        if not isinstance(eid, str) or not eid:
+            raise ValueError(f"stage_review expected[{i}].id must be a non-empty string")
+        if eid in seen:
+            raise ValueError(f'stage_review expected id "{eid}" appears twice')
+        seen.add(eid)
+        status = e.get("status")
+        if status not in ("found", "missing"):
+            raise ValueError(f'stage_review expected[{i}].status must be "found" or "missing"')
+        entry: dict = {"id": eid, "status": status}
+        if status == "found":
+            box = e.get("box_px")
+            if (
+                not isinstance(box, list) or len(box) != 4
+                or not all(isinstance(v, (int, float)) for v in box)
+                or box[2] <= 0 or box[3] <= 0
+            ):
+                raise ValueError(
+                    f'stage_review expected[{i}] ("{eid}") is found pero box_px no es [x, y, w, h] con w,h > 0'
+                )
+            entry["box_px"] = [float(v) for v in box]
+        expected_out.append(entry)
+    if expected_ids is not None:
+        missing = [i for i in expected_ids if i not in seen]
+        if missing:
+            raise ValueError(f"stage_review inventario incompleto — sin cuenta de: {', '.join(missing)}")
+        unknown = [i for i in seen if i not in expected_ids]
+        if unknown:
+            raise ValueError(f"stage_review ids desconocidos (no están en expected_elements): {', '.join(unknown)}")
+    extras = validate_image_review({"extras": data.get("extras", [])})["extras"]
+    return {"expected": expected_out, "extras": extras}

@@ -820,6 +820,193 @@ async def review_scene_image_endpoint(body: AnalyzeSceneRequest):
     return result
 
 
+class StageReviewRequest(BaseModel):
+    """/review_stage_image — inventario por visión del plató repintado
+    (proscenio). `context.expected_elements` lleva las PISTAS declaradas
+    [{id, label, box_px, tall, solid}]; la visión responde con las cajas
+    REALES pintadas. Los recortes salen SIEMPRE de segmentar la imagen —
+    jamás de siluetas declaradas."""
+
+    image_b64: str = Field(min_length=1)
+    context: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_expected(self) -> "StageReviewRequest":
+        expected = self.context.get("expected_elements", [])
+        if not isinstance(expected, list):
+            raise ValueError("context.expected_elements must be a list")
+        for i, e in enumerate(expected):
+            if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not e["id"]:
+                raise ValueError(f"expected_elements[{i}] needs a non-empty string id")
+            if not isinstance(e.get("label"), str) or not e["label"]:
+                raise ValueError(f"expected_elements[{i}] needs a non-empty string label")
+        return self
+
+
+@router.post("/review_stage_image")
+async def review_stage_image_endpoint(body: StageReviewRequest):
+    """Inventario COMPLETO del plató repintado (kind MCP stage_review): la
+    visión casa cada elemento DECLARADO con su caja REAL pintada (found) o lo
+    marca missing, y añade los extras inventados; SAM2 (box prompt) extrae la
+    máscara de la IMAGEN por item → sprite + máscara full-frame + línea de
+    contacto pintada. El cliente deriva de ahí recortes, z, oclusión y
+    colisión. Cacheado por layout+expected — resume determinista."""
+    import asyncio
+    import base64 as b64mod
+    import hashlib
+    import io as io_mod
+
+    import numpy as np
+    from PIL import Image as PILImage
+
+    from image_review import bottom_contour, mask_bbox
+    from image_review import mask_from_png as mask_from_fal_png
+    from scene_segmenter import _to_data_uri
+
+    if deps.scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable stage review",
+        )
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    expected_req: list[dict] = body.context.get("expected_elements", [])
+    expected_by_id = {e["id"]: e for e in expected_req}
+    if len(expected_by_id) != len(expected_req):
+        raise HTTPException(status_code=422, detail="expected_elements has duplicate ids")
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": layout,
+        "vision_model": deps.llm_client.model,
+        "schema": "stage_review_v1",
+        # A diferencia del review oblicuo, las pistas SÍ entran en la clave:
+        # otro plató (u otro plan) sobre la misma imagen no comparte entrada.
+        "expected": hashlib.sha256(
+            json.dumps(expected_req, sort_keys=True).encode()
+        ).hexdigest()[:16],
+    })
+    key = deps.segment_cache.hash_key("stage_review", ctx)
+    cached = deps.segment_cache.get_by_hash(key, "analysis")
+    if cached is not None:
+        return json.loads(cached)
+
+    review = await asyncio.to_thread(
+        deps.llm_client.review_stage_image,
+        b64mod.b64encode(png).decode(),
+        body.context,
+    )
+    if review is None:
+        raise HTTPException(
+            status_code=503,
+            detail="stage review unavailable — no MCP listener or invalid response",
+        )
+
+    scene_rgb = scene_rgb_from_png(png)
+    h, w = scene_rgb.shape[:2]
+
+    # Inventario unificado: expected found (siempre keep, tall/solid de la
+    # pista declarada) + extras (keep/remove de la visión).
+    missing = [e["id"] for e in review["expected"] if e["status"] == "missing"]
+    items: list[dict] = []
+    for e in review["expected"]:
+        if e["status"] != "found":
+            continue
+        hint = expected_by_id[e["id"]]
+        items.append({
+            "id": e["id"],
+            "label": hint["label"],
+            "source": "expected",
+            "action": "keep",
+            "box_px": e["box_px"],
+            "tall": bool(hint.get("tall", True)),
+            "solid": bool(hint.get("solid", True)),
+        })
+    for i, x in enumerate(review["extras"]):
+        items.append({"id": f"extra_{i}", "source": "extra", **x})
+
+    boxes: list[tuple[int, int, int, int]] = []
+    for it in items:
+        bx, by, bw, bh = it["box_px"]
+        boxes.append((
+            max(0, int(bx)), max(0, int(by)),
+            min(w, int(bx + bw)), min(h, int(by + bh)),
+        ))
+
+    masks: list = []
+    if boxes:
+        try:
+            buf = io_mod.BytesIO()
+            PILImage.fromarray(scene_rgb).save(buf, "PNG")
+            # Canal DEV_API_CACHE propio: through_sync cachea por canal (la
+            # última llamada) — compartirlo con el review oblicuo emparejaría
+            # máscaras con el item equivocado en silencio.
+            mask_pngs, _cached = DEV_API_CACHE.through_sync(
+                "fal_segment_boxes_stage",
+                lambda: deps.scene_segmenter._fal.segment_boxes(
+                    _to_data_uri(buf.getvalue()), boxes
+                ),
+            )
+            masks = [
+                mask_from_fal_png(p, (w, h))
+                for _it, p in zip(items, mask_pngs, strict=True)
+            ]
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"stage review segmentation failed: {e}") from e
+
+    items_out: list[dict] = []
+    for it, mask in zip(items, masks, strict=True):
+        if mask is None or not mask.any() or mask.sum() < 30:
+            if it["source"] == "expected":
+                logger.info(f"stage_review: '{it['label']}' found pero sin silueta útil — pasa a missing")
+                missing.append(it["id"])
+            else:
+                logger.info(f"stage_review: extra '{it['label']}' sin silueta útil — se omite")
+            continue
+        bbox = mask_bbox(mask)
+        sprite = crop_sprite(scene_rgb, mask, bbox)
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = deps.segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        # Máscara L full-frame: la del PELADO del cliente (blanco = elemento).
+        mask_buf = io_mod.BytesIO()
+        PILImage.fromarray((mask.astype(np.uint8) * 255), "L").save(mask_buf, "PNG")
+        mask_png = mask_buf.getvalue()
+        mask_key = deps.segment_cache.put(
+            hashlib.sha256(mask_png).hexdigest()[:16], "segment", mask_png
+        )
+        entry = {
+            "id": it["id"],
+            "label": it["label"],
+            "source": it["source"],
+            "action": it["action"],
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "mask_url": f"/cache/segment/{mask_key}",
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
+        }
+        if it["action"] == "keep":
+            entry.update({
+                "tall": it["tall"],
+                "solid": it["solid"],
+                "contact_px": bottom_contour(mask),
+            })
+            if it["source"] == "extra":
+                entry["h"] = it.get("h", 2.0)
+                entry["depth_cells"] = it.get("depth_cells", 2.0)
+        items_out.append(entry)
+
+    result = {"items": items_out, "missing": missing}
+    deps.segment_cache.put("stage_review", "analysis", json.dumps(result).encode(),
+                           context=ctx, subtype_override="analysis")
+    logger.info(
+        f"stage_review: {len(items_out)} items ({len(missing)} missing, "
+        f"{sum(1 for x in items_out if x['source'] == 'extra')} extras)"
+    )
+    return result
+
+
 @router.post("/peel_scene_layer")
 async def peel_scene_layer_endpoint(body: PeelLayerRequest):
     """Pelado de una capa del plató: rellena el hueco de la máscara con lo
