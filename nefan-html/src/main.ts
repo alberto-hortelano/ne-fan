@@ -808,15 +808,20 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     applySessionView("proscenium");
     activeStage = stageComposed;
     (data as Record<string, unknown>).__stage = stageComposed;
+    // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
+    // reinstalar de la caché cliente si ya se pintó (volver a una escena no
+    // pierde la imagen) o, con gráficos "imagen IA", repintar + pelar.
+    const stageForImages = stageComposed;
+    const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
     void prosceniumRenderer!
       .installStage(stageComposed, key)
+      .then(() => {
+        const reinstalled = stageImageController.reinstallIfCached(stageForImages, key);
+        if (!reinstalled && sessionRenderMode === "image") {
+          void stageImageController.runFor(stageForImages, key, stageImageMeta(rawFd, data));
+        }
+      })
       .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
-    // Entrega 2: con gráficos "imagen IA", repintar + pelar el plató en
-    // cuanto se instala (cacheado por hash: el resume es gratis).
-    if (sessionRenderMode === "image") {
-      const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
-      void stageImageController.runFor(stageComposed, key, stageImageMeta(rawFd, data));
-    }
   } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
     applySessionView("");
   }

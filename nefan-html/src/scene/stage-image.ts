@@ -48,10 +48,19 @@ export interface StageImageDeps {
   log(msg: string): void;
 }
 
+/** Cap de la caché cliente de platós pintados (un playthrough ronda pocos
+ *  platós vivos; el server cachea igual — esto solo ahorra los round-trips
+ *  al VOLVER a una escena ya pintada). */
+const CLIENT_CACHE_MAX = 12;
+
 export class StageImageController {
   private styleId = "";
   private token = 0;
   private busy = false;
+  /** Caché cliente por escena: al volver a un plató ya pintado, reinstalar
+   *  sin red. La clave valida contra el SVG compuesto (determinista): si el
+   *  plató cambió (retoque del motor), la entrada se descarta. */
+  private cache = new Map<string, { svg: string; images: StageImages }>();
 
   constructor(
     private readonly baseUrl: string,
@@ -66,13 +75,30 @@ export class StageImageController {
     return this.busy;
   }
 
+  /** Reinstala las imágenes cacheadas de `key` si el plató no cambió.
+   *  true = instaladas (sin red); false = no hay caché válida. */
+  reinstallIfCached(stage: ComposedStage, key: string): boolean {
+    const hit = this.cache.get(key);
+    if (!hit || hit.svg !== stage.svg) return false;
+    this.deps.install(key, hit.images);
+    console.log(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.size} recortes)`);
+    return true;
+  }
+
   /** Repinta y pela el plató `key`. Un plató nuevo mientras corre otro aborta
    *  el anterior (token); los errores quedan en el error-log (fail-loud). */
   async runFor(stage: ComposedStage, key: string, meta: StageImageMeta): Promise<void> {
+    if (this.reinstallIfCached(stage, key)) return;
     const token = ++this.token;
     this.busy = true;
+    const t0 = performance.now();
+    const ms = () => `${Math.round(performance.now() - t0)}ms`;
     try {
       this.deps.log(`🎨 repintando plató ${key}…`);
+      console.log(
+        `[stage-img] ${key}: repintado → /generate_scene_image ` +
+        `(style=${this.styleId || "(global)"}, tag=${meta.styleTag}, "${meta.description.slice(0, 60)}…")`,
+      );
       const blueprint = await rasterizeSvgSquare(stage.svg);
       const repaintRes = await this.post("/generate_scene_image", {
         image_b64: canvasB64(blueprint),
@@ -83,10 +109,15 @@ export class StageImageController {
         style_tag: meta.styleTag,
       });
       if (token !== this.token) return;
+      console.log(
+        `[stage-img] ${key}: repintado ${repaintRes.cached ? "CACHE HIT" : "generado"} ` +
+        `hash=${repaintRes.hash} (${ms()})`,
+      );
       const painted = await this.fetchToSquare(String(repaintRes.scene_url));
       if (token !== this.token) return;
 
       const plan = peelPlanFor(stage, { backdrop: meta.backdrop });
+      console.log(`[stage-img] ${key}: plan de pelado v${plan.version} — ${plan.steps.length} capas (cerca→lejos)`);
       const cutouts = new Map<string, HTMLCanvasElement>();
       let current = painted;
       for (let i = 0; i < plan.steps.length; i++) {
@@ -100,17 +131,30 @@ export class StageImageController {
           prompt: step.prompt,
         });
         if (token !== this.token) return;
+        console.log(
+          `[stage-img] ${key}: pelada "${step.label}" (${i + 1}/${plan.steps.length}) ` +
+          `backend=${peelRes.backend ?? "?"} ${peelRes.cached ? "CACHE HIT" : "generado"} ` +
+          `detrás=[${step.behindLabels.join(", ") || "suelo"}] (${ms()})`,
+        );
         current = await this.fetchToSquare(String(peelRes.peeled_url));
         if (token !== this.token) return;
       }
 
-      this.deps.install(key, {
+      const images: StageImages = {
         peelVersion: STAGE_PEEL_VERSION,
         plate: current,
         cutouts,
-      });
+      };
+      this.cache.set(key, { svg: stage.svg, images });
+      while (this.cache.size > CLIENT_CACHE_MAX) {
+        const oldest = this.cache.keys().next().value as string;
+        this.cache.delete(oldest);
+      }
+      this.deps.install(key, images);
       this.deps.log(`🎨 plató ${key} pintado (${plan.steps.length} capas peladas)`);
+      console.log(`[stage-img] ${key}: COMPLETO — placa + ${cutouts.size} recortes instalados (${ms()})`);
     } catch (err) {
+      console.error(`[stage-img] ${key}: FALLO —`, err);
       errors.push("scene", `repintado del plató ${key} falló`, err);
     } finally {
       if (token === this.token) this.busy = false;
