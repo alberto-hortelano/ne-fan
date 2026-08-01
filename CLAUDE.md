@@ -420,23 +420,33 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
   (siembra el world map de la posada vía State API). Bench:
   `window.__nefan.view()/stage()/probeCollide()`.
-- **Pelado de imágenes (entrega 2, con `render_mode: "image"`)**: el
+- **Segmentación del plató pintado (entrega 2, `render_mode: "image"`)**: el
   `StageImageController` (`nefan-html/src/scene/stage-image.ts`) repinta el
-  plató ENTERO (`/generate_scene_image` con `blueprint_kind: "stage"` — el
-  plan ya viene en perspectiva; los bastidores son marco) y lo instala como
-  PLACA. **PROHIBIDO recortar con las siluetas declaradas del SVG de las
-  capas** (probado: el modelo recoloca/reorienta lo declarado y la silueta
-  recorta suelo con forma de objeto — jamás va a funcionar): los recortes
-  por capa PENDIENTES saldrán de segmentar lo PINTADO (visión localiza cada
-  elemento → SAM2 `segment_boxes` → máscara de imagen), y el pelado usará
-  `/peel_scene_layer` (FLUX Fill fal guiado por `behind_labels` del
-  `peelPlanFor` de `stage/peel.ts` — el plan aporta orden cerca→lejos,
-  etiquetas y prompts, NUNCA máscaras; fallback LaMa local; caché por hash
-  imagen+máscara+prompt). Instalación atómica en el ProsceniumRenderer
-  (placa + recortes; bastidores y cuarta pared siguen vectoriales). Todo en
-  ESPACIO CUADRADO 1024² (espejo del prestretch). Auto al instalar el plató;
-  G = manual. ~$0.3/plató, cacheado para siempre (compositor determinista ⇒
-  resume gratis).
+  plató ENTERO (`/generate_scene_image`, `blueprint_kind: "stage"`, blueprint
+  SIN cuarta pared) y deriva el mundo jugable de LO PINTADO. **PROHIBIDO
+  recortar con siluetas declaradas del SVG** (probado: el modelo recoloca y
+  reorienta lo declarado — jamás va a funcionar). Pipeline:
+  `/review_stage_image` (kind MCP `stage_review`: la visión inventaría TODO —
+  cada declarado found con su caja REAL pintada o missing, extras inventados
+  keep/remove, y `floor.wall_base_px`) → SAM2 `segment_boxes` por caja →
+  máscara/sprite/contact_px por elemento. **La perspectiva pintada MANDA**:
+  `calibratedProjection` (stage/segments.ts) reancla ground/horizon a la
+  línea de suelo pintada (el repintado nunca respeta la franja de suelo del
+  blueprint) y gobierna entidades, warp, salidas y desproyección; el
+  encuadre en modo imagen capa el zoom para mantener la base de la pared en
+  pantalla. Recortes = imagen ⊙ máscara SAM, con z/huella del contacto
+  pintado (mediana + filtro anti-saltos entre patas); pelado cerca→lejos con
+  `/peel_scene_layer` **backend LaMa** (FLUX reinventa el mueble en su propio
+  hueco — bench stage_lab 003; prompts de `peelStepsFromInventory`, behind
+  solo si solapa). Colisión = `collisionGridFromCutouts` (bandas bajo las
+  bases pintadas, exits limpiados) que SUSTITUYE a la declarada
+  (`applyStageDerivedCollision`); sin visión → placa sola + colisión
+  declarada. Recortes como drawables a su z pintada (oclusión del jugador) +
+  fade 0.45 con el jugador detrás (espejo de la oblicua). Chequeo de
+  reconstrucción (placa+recortes ≈ original) como smoke-test. Bench offline:
+  `stage_lab/` (hoja de contactos); E2E sin créditos:
+  `narrative_lab/stage-cutouts-e2e.md`. Auto al instalar el plató; G =
+  manual; todo cacheado (resume gratis).
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 

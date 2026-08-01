@@ -119,17 +119,18 @@ def calibrated_projection(proj: dict, vb: dict, floor: dict) -> dict:
 
 def contact_to_pose(dump: dict, contact_px: list) -> dict | None:
     proj, vb, rect = dump["proj"], dump["view_box"], dump["rect"]
-    zs_list, contact_world = [], []
+    raw = []
     for px, py in contact_px:
         st = view_to_stage(proj, *px_to_view(vb, px, py))
         if st is None:
             continue
-        z_stage = min(proj["depth_m"], max(0.0, st[1]))
-        zs_list.append(z_stage)
-        contact_world.append(stage_to_world(rect, st[0], z_stage))
-    if len(zs_list) < MIN_CONTACT_POINTS:
+        raw.append((st[0], min(proj["depth_m"], max(0.0, st[1]))))
+    if len(raw) < MIN_CONTACT_POINTS:
         return None
-    return {"z": statistics.median(zs_list), "contact_world": contact_world}
+    z_med = statistics.median(z for _, z in raw)
+    # Filtro anti-saltos del contorno entre patas (espejo de segments.ts).
+    filtered = [(x, z) for x, z in raw if abs(z - z_med) <= 0.75] or raw
+    return {"z": z_med, "contact_world": [stage_to_world(rect, x, z) for x, z in filtered]}
 
 
 def footprint_from_contact(contact_world: list, depth_m: float) -> dict:

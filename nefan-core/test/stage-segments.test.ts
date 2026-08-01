@@ -96,6 +96,22 @@ describe("pxToView / contactToPose", () => {
     assert.ok(Math.abs(pose.z - zsEsperada) < 0.1, `mediana robusta: ${pose.z} ≈ ${zsEsperada}`);
   });
 
+  it("los saltos del contorno entre patas quedan FUERA del contacto (colisión)", () => {
+    // Mesa a zMundo=1.0 con el contorno subiendo al faldón entre las patas
+    // (esos puntos desproyectan mucho más lejos).
+    const pts: [number, number][] = [];
+    for (let x = -2; x <= 2; x += 0.25) {
+      const enFaldon = x > -1 && x < 1;
+      pts.push(worldToPx(x, enFaldon ? 3.5 : 1.0));
+    }
+    const pose = contactToPose(stage.proj, stage.view_box, rect, pts);
+    assert.ok(pose);
+    // Ningún punto del contacto filtrado cae en la zona del faldón (z≈3.5).
+    for (const [, wz] of pose.contactWorld) {
+      assert.ok(Math.abs(wz - 1.0) < 0.8, `punto de faldón colado: z=${wz}`);
+    }
+  });
+
   it("menos de 3 puntos válidos (sobre el horizonte) → null", () => {
     // vy en el horizonte ⇒ viewToStage null.
     const vb = stage.view_box;

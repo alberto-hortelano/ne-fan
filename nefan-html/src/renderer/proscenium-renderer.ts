@@ -295,7 +295,23 @@ export class ProsceniumRenderer implements Renderer2D {
     const proj = this.effProj();
     const fk = `${this.stageKey}:${canvas.width}x${canvas.height}:${this.images ? "img" : "vec"}`;
     if (fk !== this.frameKey || !this.framing || !this.bandPlan) {
-      this.framing = frameStage(proj, vb, canvas.width, canvas.height);
+      // Modo imagen: la proyección calibrada pone z=0 en el borde INFERIOR de
+      // la pintura — anclarlo casi al fondo del canvas y CAPAR el zoom para
+      // que la base de la pared pintada (z=depth) y un 55% de telón por
+      // encima queden SIEMPRE en pantalla (sin cap, el zoom de raíl solo
+      // enseñaría tablones gigantes). Platós pequeños quedan letterboxed por
+      // los bastidores/marco — teatral; los grandes recuperan raíl.
+      let opts = {};
+      if (this.images?.paintedProj) {
+        const vyWall = stageToView(proj, 0, proj.depth_m)[1];
+        const spanUnits = (vb.minY + vb.height - vyWall) * 1.55;
+        const fit0 = canvas.height / vb.height;
+        opts = {
+          groundAnchor: 0.98,
+          maxZoom: Math.max(1, canvas.height / (spanUnits * fit0)),
+        };
+      }
+      this.framing = frameStage(proj, vb, canvas.width, canvas.height, opts);
       this.bandPlan = bandPlanFor(proj, vb, this.framing, canvas.width, canvas.height);
       this.frameKey = fk;
     }
@@ -439,9 +455,10 @@ export class ProsceniumRenderer implements Renderer2D {
           : raster.layer.z;
         const [lx, ly, lw, lh] = layerRect(z);
         if (kind === "fourth_wall") {
-          ctx.globalAlpha = wallAlpha;
-          // Con mundo pintado, la cuarta pared vectorial pasa a SILUETA
-          // (sombra del arco de proscenio) — el beige plano desentona.
+          // Con mundo pintado, la cuarta pared vectorial pasa a SILUETA muy
+          // atenuada (el modelo no la pinta; un velo opaco sobre la pintura
+          // se come la escena — F8): sombra sutil de embocadura.
+          ctx.globalAlpha = images ? Math.min(wallAlpha, 0.3) : wallAlpha;
           if (images) ctx.filter = "brightness(0.3)";
         }
         ctx.drawImage(raster.img, lx, ly, lw, lh);

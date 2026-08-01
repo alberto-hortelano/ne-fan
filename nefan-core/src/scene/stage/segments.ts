@@ -28,6 +28,13 @@ const PLAYER_RADIUS_M = 0.4;
 /** Mínimo de puntos de contacto válidos para derivar una pose. */
 const MIN_CONTACT_POINTS = 3;
 
+/** Tolerancia (m de plató) de un punto de contacto respecto a la MEDIANA:
+ *  el contorno inferior de una máscara SUBE al faldón/asiento entre las
+ *  patas (mesas, taburetes) y esos puntos desproyectan varios metros más
+ *  lejos — sin el filtro, la banda de colisión se hace profundísima y
+ *  cierra pasillos (visto en el E2E real del salón). */
+const CONTACT_Z_TOLERANCE_M = 0.75;
+
 export interface ViewBox {
   minX: number;
   minY: number;
@@ -180,18 +187,23 @@ export function contactToPose(
   renderSize: number = STAGE_RENDER_SIZE,
 ): CutoutPose | null {
   const bounds: StageBounds = rect;
-  const zs: number[] = [];
-  const contactWorld: [number, number][] = [];
+  const raw: { zStage: number; xStage: number }[] = [];
   for (const [px, py] of contactPx) {
     const [vx, vy] = pxToView(vb, px, py, renderSize);
     const st = viewToStage(proj, vx, vy);
     if (!st) continue;
-    const zStage = Math.min(proj.depth_m, Math.max(0, st[1]));
-    zs.push(zStage);
-    contactWorld.push(stageToWorld(bounds, st[0], zStage));
+    raw.push({ xStage: st[0], zStage: Math.min(proj.depth_m, Math.max(0, st[1])) });
   }
-  if (zs.length < MIN_CONTACT_POINTS) return null;
-  return { z: median(zs), contactWorld };
+  if (raw.length < MIN_CONTACT_POINTS) return null;
+  const zMed = median(raw.map((p) => p.zStage));
+  // Solo los puntos que de verdad tocan el suelo cerca de la línea mediana:
+  // los saltos del contorno entre patas quedan fuera de la huella/colisión.
+  let filtered = raw.filter((p) => Math.abs(p.zStage - zMed) <= CONTACT_Z_TOLERANCE_M);
+  if (filtered.length < MIN_CONTACT_POINTS) filtered = raw;
+  return {
+    z: zMed,
+    contactWorld: filtered.map((p) => stageToWorld(bounds, p.xStage, p.zStage)),
+  };
 }
 
 /** Huella de mundo desde el contacto pintado: el contacto es el borde SUR
