@@ -212,7 +212,9 @@
       justify-content: center;
       gap: 14px;
       background: rgba(8, 8, 12, 0.78);
-      z-index: 40;
+      /* SIEMPRE sobre el fundido de transición (z 45): el progreso de la
+         generación debe verse durante el corte a negro del proscenio. */
+      z-index: 60;
       color: #d8c79a;
       font-size: 14px;
       text-align: center;

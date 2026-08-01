@@ -188,6 +188,12 @@ const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
 const stageImageController = new StageImageController(AI_SERVER_URL, {
   install: (key, images) => prosceniumRenderer?.installImages(key, images),
   log: (msg) => log(msg),
+  // Progreso del repintado/pelado en el HUD (mismo indicador que el Auto-img
+  // de la oblicua — nunca corren a la vez).
+  status: (text) => {
+    autoimgStatus.textContent = text ?? "";
+    autoimgStatus.className = text ? "working" : "";
+  },
 });
 
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
@@ -719,6 +725,11 @@ function composeTilePlan(
   };
 }
 
+/** Geometría del plató con indirección MUTABLE: el accept de HMR de abajo
+ *  la reasigna al editar nefan-core/stage — sin recargar la página. */
+let hotComposeStage = composeStage;
+let hotStagePlanFromScene = stagePlanFromScene;
+
 /** Metadatos del repintado de un plató, desde el Format D crudo. */
 function stageImageMeta(
   rawFd: Record<string, unknown>,
@@ -793,11 +804,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   let stageVolumes: Volume[] = [];
   if (isStageScene) {
     try {
-      const stagePlan = stagePlanFromScene(
+      const stagePlan = hotStagePlanFromScene(
         (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
       );
       if (stagePlan) {
-        stageComposed = composeStage(stagePlan, key);
+        stageComposed = hotComposeStage(stagePlan, key);
         stageVolumes = stagePlan.volumes;
       }
     } catch (err) {
@@ -1120,6 +1131,19 @@ const stageTransitions = new StageTransitions({
     else void enterLocalStagePlace(placeId);
   },
   setFade: (on) => sceneFadeEl.classList.toggle("show", on),
+  // Prompt de cruce: mismo elemento y teclas Y/N que la propuesta de tile
+  // del overworld (en proscenio el pipeline de frontera está inactivo — no
+  // compiten por él).
+  setProposal: (exit) => {
+    input.tileProposalActive = exit !== null;
+    if (exit) {
+      tileConfirmPromptEl.innerHTML =
+        `🎬 ${exit.label} — <b>[Y]</b> cruzar · <b>[N]</b> quedarse`;
+      tileConfirmPromptEl.style.display = "block";
+    } else {
+      tileConfirmPromptEl.style.display = "none";
+    }
+  },
   log: (msg) => log(msg),
 });
 
@@ -1190,6 +1214,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     stageImages: () => prosceniumRenderer?.hasImages() ?? false,
     stagePainting: () => stageImageController.running,
     stageCam: () => prosceniumRenderer?.debugCamera() ?? null,
+    stageProposal: () => stageTransitions.proposalActive,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
@@ -1416,9 +1441,11 @@ function gameLoop(now: number): void {
   // excepción es la transición de plató (vista proscenio): fundido a negro
   // mientras llega la escena destino — el corte de puerta clásico.
   if (dialoguePanel.isVisible) {
-    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas).
+    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas)
+    // y la de cruce de plató (sin armar: al cerrar, el tick re-propone).
     input.tileProposalActive = false;
     tileConfirmPromptEl.style.display = "none";
+    stageTransitions.cancelProposal();
   }
   if (!dialoguePanel.isVisible && !stageTransitions.isTransitioning) {
     applyTurnKeys();
@@ -1457,10 +1484,14 @@ function gameLoop(now: number): void {
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Vista proscenio: pisar una zona de salida dispara la transición de
-    // plató (corte a negro + player_entered_place).
+    // Vista proscenio: pisar una zona de salida PROPONE el cruce (Y/N, como
+    // la generación de tiles); confirmar corta a negro y pide la escena.
     if (sessionView === "proscenium" && activeStage) {
       stageTransitions.tick(activeStage);
+      if (stageTransitions.proposalActive) {
+        if (input.consumeTileConfirm()) stageTransitions.confirmProposal();
+        else if (input.consumeTileDecline()) stageTransitions.declineProposal();
+      }
     }
 
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
@@ -1494,7 +1525,10 @@ function gameLoop(now: number): void {
       } else {
         tileConfirmPromptEl.style.display = "none";
       }
-    } else {
+    } else if (!stageTransitions.proposalActive) {
+      // Sin frontera activa Y sin propuesta de cruce de plató: prompt fuera.
+      // (La propuesta del proscenio comparte elemento y teclas — este reset
+      // por-frame se la comía.)
       input.tileProposalActive = false;
       tileConfirmPromptEl.style.display = "none";
     }
@@ -2143,3 +2177,38 @@ async function runTitleFlow(): Promise<void> {
 }
 
 scheduleNextFrame();
+
+// ── HMR (dev): un cambio en la geometría del plató (nefan-core/src/scene/
+// stage) NO recarga la página — se recompone y reinstala el plató activo en
+// caliente. La partida (sesión, cámara, imágenes cacheadas) sobrevive a la
+// iteración. Los módulos renderer/pipeline/transiciones se auto-parchean por
+// prototipo (ver sus pies de fichero); main solo cubre su import directo.
+if (import.meta.hot) {
+  import.meta.hot.accept("@nefan-core/src/scene/stage/index.js", (mod) => {
+    const m = mod as {
+      composeStage?: typeof composeStage;
+      stagePlanFromScene?: typeof stagePlanFromScene;
+    } | undefined;
+    if (!m?.composeStage || !m?.stagePlanFromScene) return;
+    hotComposeStage = m.composeStage;
+    hotStagePlanFromScene = m.stagePlanFromScene;
+    if (sessionView === "proscenium" && sceneData && activeTileKey && prosceniumRenderer) {
+      const key = activeTileKey;
+      const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
+      try {
+        const plan = hotStagePlanFromScene(rawFd);
+        if (plan) {
+          const composed = hotComposeStage(plan, key);
+          activeStage = composed;
+          (sceneData as Record<string, unknown>).__stage = composed;
+          void prosceniumRenderer.installStage(composed, key).then(() => {
+            stageImageController.reinstallIfCached(composed, key);
+          });
+          console.log("[hmr] plató recompuesto en caliente");
+        }
+      } catch (err) {
+        errors.push("scene", "recomposición HMR del plató falló", err);
+      }
+    }
+  });
+}

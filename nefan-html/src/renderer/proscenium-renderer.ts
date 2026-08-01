@@ -95,6 +95,7 @@ export class ProsceniumRenderer implements Renderer2D {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("ProsceniumRenderer: canvas sin contexto 2d");
     this.ctx = ctx;
+    HOT_REGISTRY.add(this);
   }
 
   hasStage(): boolean {
@@ -577,4 +578,23 @@ async function rasterizeSvg(svg: string): Promise<HTMLImageElement> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// ── HMR (dev): parchear el prototipo de las instancias vivas — el plató, las
+// imágenes y la cámara sobreviven a la iteración del renderer o de la
+// geometría de nefan-core (framing/projection): sin recarga de página. ─────
+type HotWindow = Window & { __nefanHotProscenium?: Set<ProsceniumRenderer> };
+const HOT_REGISTRY: Set<ProsceniumRenderer> =
+  ((window as HotWindow).__nefanHotProscenium ??= new Set());
+if (import.meta.hot) {
+  import.meta.hot.accept((mod) => {
+    const Next = (mod as { ProsceniumRenderer?: typeof ProsceniumRenderer } | undefined)?.ProsceniumRenderer;
+    if (!Next) return import.meta.hot!.invalidate();
+    for (const inst of HOT_REGISTRY) {
+      Object.setPrototypeOf(inst, Next.prototype);
+      // Encuadre/bandas dependen del código nuevo: recomputar al vuelo.
+      (inst as unknown as { frameKey: string }).frameKey = "";
+    }
+    console.log(`[hmr] ProsceniumRenderer parcheado (${HOT_REGISTRY.size} instancia/s)`);
+  });
 }

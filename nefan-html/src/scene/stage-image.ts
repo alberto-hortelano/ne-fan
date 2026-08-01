@@ -46,6 +46,8 @@ export interface StageImageDeps {
   /** Instalación atómica en el renderer (ignora si la escena ya cambió). */
   install(key: string, images: StageImages): void;
   log(msg: string): void;
+  /** Progreso vivo para el HUD (null = pipeline en reposo). */
+  status(text: string | null): void;
 }
 
 /** Cap de la caché cliente de platós pintados (un playthrough ronda pocos
@@ -65,7 +67,9 @@ export class StageImageController {
   constructor(
     private readonly baseUrl: string,
     private readonly deps: StageImageDeps,
-  ) {}
+  ) {
+    HOT_REGISTRY.add(this);
+  }
 
   setStyle(styleId: string): void {
     this.styleId = styleId;
@@ -95,6 +99,7 @@ export class StageImageController {
     const ms = () => `${Math.round(performance.now() - t0)}ms`;
     try {
       this.deps.log(`🎨 repintando plató ${key}…`);
+      this.deps.status(`plató ${key}: repintando…`);
       console.log(
         `[stage-img] ${key}: repintado → /generate_scene_image ` +
         `(style=${this.styleId || "(global)"}, tag=${meta.styleTag}, "${meta.description.slice(0, 60)}…")`,
@@ -123,6 +128,7 @@ export class StageImageController {
       for (let i = 0; i < plan.steps.length; i++) {
         const step = plan.steps[i];
         this.deps.log(`🫳 pelando ${step.label} (${i + 1}/${plan.steps.length})`);
+        this.deps.status(`plató ${key}: pelando ${step.label} (${i + 1}/${plan.steps.length})`);
         const maskAlpha = await rasterizeSvgSquare(step.maskSvg);
         cutouts.set(step.layerId, cutoutByAlpha(current, maskAlpha));
         const peelRes = await this.post("/peel_scene_layer", {
@@ -157,7 +163,10 @@ export class StageImageController {
       console.error(`[stage-img] ${key}: FALLO —`, err);
       errors.push("scene", `repintado del plató ${key} falló`, err);
     } finally {
-      if (token === this.token) this.busy = false;
+      if (token === this.token) {
+        this.busy = false;
+        this.deps.status(null);
+      }
     }
   }
 
@@ -245,4 +254,19 @@ function alphaToWhiteMask(maskAlpha: HTMLCanvasElement): HTMLCanvasElement {
 /** PNG base64 (sin prefijo data:) de un canvas. */
 function canvasB64(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL("image/png").split(",")[1];
+}
+
+// ── HMR (dev): parchear el prototipo de las instancias vivas — la partida
+// (plató pintado, caché cliente) sobrevive a la iteración de código. Un
+// cambio aquí o en sus imports de nefan-core NO recarga la página. ─────────
+type HotWindow = Window & { __nefanHotStageImage?: Set<StageImageController> };
+const HOT_REGISTRY: Set<StageImageController> =
+  ((window as HotWindow).__nefanHotStageImage ??= new Set());
+if (import.meta.hot) {
+  import.meta.hot.accept((mod) => {
+    const Next = (mod as { StageImageController?: typeof StageImageController } | undefined)?.StageImageController;
+    if (!Next) return import.meta.hot!.invalidate();
+    for (const inst of HOT_REGISTRY) Object.setPrototypeOf(inst, Next.prototype);
+    console.log(`[hmr] StageImageController parcheado (${HOT_REGISTRY.size} instancia/s)`);
+  });
 }
