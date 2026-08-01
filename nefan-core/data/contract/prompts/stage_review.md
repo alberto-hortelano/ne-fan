@@ -62,6 +62,10 @@ Reglas:
 - La caja describe lo PINTADO: si la mesa declarada a la izquierda aparece
   pintada a la derecha y de costado, la caja va a la derecha. No "corrijas"
   la imagen hacia el plan.
+- NO copies las cajas de `expected_elements`: son PISTAS de dónde deberían
+  estar, no observaciones. Mira la imagen y da la caja de lo que VES — si por
+  casualidad coincide con la pista, perfecto, pero cada caja debe salir de la
+  imagen. Un inventario que calque las pistas es un inventario inválido.
 - `extras`: `tall` true si es más alto que un personaje de pie a su misma
   profundidad (podría taparlo). `solid` false solo para decoración
   atravesable (alfombras, sombras). `h` = altura estimada en metros;
