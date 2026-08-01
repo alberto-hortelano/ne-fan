@@ -1,0 +1,42 @@
+{
+  "scene_id": "posada_salon",
+  "place_id": "posada_salon",
+  "scene_description": "El salón de la posada del Roble: vigas bajas, mesas de madera gastada y el fuego crepitando en la chimenea del fondo. Huele a guiso y a cerveza derramada.",
+  "size": { "cols": 24, "rows": 16, "meters_per_cell": 0.5 },
+  "terrain": [
+    "WWWWWWWWWWooooWWWWWWWWWW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WooooooooooooooooooooooW",
+    "WWWWWWWWWWWWWWoooooWWWWW"
+  ],
+  "terrain_legend": {},
+  "entities": [
+    { "id": "player", "kind": "player", "name": "Tú", "cell": [7, 10], "footprint": [1, 1], "glyph": "@" },
+    { "id": "tabernero", "kind": "npc", "name": "Benito el tabernero", "cell": [5, 6], "footprint": [1, 1], "glyph": "n" },
+    { "id": "mesa_grande", "kind": "prop", "name": "mesa grande de roble", "cell": [6, 8], "footprint": [4, 2], "glyph": "m", "shape": "box" },
+    { "id": "barril_cerveza", "kind": "prop", "name": "barril de cerveza", "cell": [18, 5], "footprint": [2, 2], "glyph": "b", "shape": "cylinder" },
+    { "id": "banco_ventana", "kind": "prop", "name": "banco corrido", "cell": [2, 12], "footprint": [3, 1], "glyph": "c", "shape": "box" }
+  ],
+  "stage": {
+    "focal_m": 12,
+    "exits": [
+      { "id": "puerta_cocina", "edge": "north", "to_place_id": "posada_cocina", "zone": [10, 0, 4, 2], "kind": "door", "label": "Puerta a la cocina" },
+      { "id": "salida_calle", "edge": "south", "to_place_id": "calle_mayor", "zone": [14, 14, 5, 2], "kind": "door", "label": "Salida a la calle" }
+    ],
+    "backdrop": { "description": "Pared de yeso con la chimenea encendida, estanterías con jarras y la puerta de la cocina" },
+    "fourth_wall": { "present": true, "doors": [{ "col": 14, "w": 5 }] }
+  },
+  "ambient_event": "El fuego de la chimenea chisporrotea y alguien ríe en una mesa del rincón."
+}
