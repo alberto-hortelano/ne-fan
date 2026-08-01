@@ -20,7 +20,9 @@ export interface NefanConfig {
     /** img2img AI skin pass on top of the y_bot sheet via ai_server's
      *  /skin_sprite_sheet endpoint, driven by each entity's narrative
      *  description. Requires character_sprites = true. ai_server being down
-     *  degrades to the y_bot base (one error-log entry, no retry loop). */
+     *  degrades to the y_bot base (one error-log entry, no retry loop).
+     *  OFF by default: cada anim son varias llamadas Meshy (créditos reales);
+     *  con false todos los personajes usan la base y_bot. */
     ai_skin: boolean;
     /** AI 2D sprites for entities via /generate_sprite (asset-cache). */
     ai_sprites: boolean;
@@ -143,7 +145,7 @@ export interface NefanConfig {
 export const CONFIG: NefanConfig = {
   graphics: {
     character_sprites: true,
-    ai_skin: true,
+    ai_skin: false,
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
