@@ -31,6 +31,11 @@ export interface NarrativePlayerState {
 export interface NarrativeWorldState {
   name: string;
   atmosphere: string;
+  /** Vista del mundo ("overworld" | "proscenium"), CONGELADA al crear la
+   *  sesión (game.json → view). "proscenium" = escenas discretas tipo plató
+   *  enlazadas por el world map (sin plano continuo de tiles). Campo aditivo:
+   *  saves previos ("") = overworld. */
+  view: string;
   /** Token de texto del estilo visual (prompts de imagen). Viene del
    *  style.json del estilo congelado en la sesión. */
   style_token: string;

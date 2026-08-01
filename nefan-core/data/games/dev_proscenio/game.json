@@ -1,0 +1,8 @@
+{
+  "game_id": "dev_proscenio",
+  "title": "Dev: vista proscenio",
+  "description": "Mundo de desarrollo para probar la vista proscenio (escenas discretas tipo plató de cine con salidas y transiciones). No es contenido de juego.",
+  "style_id": "medievo_crudo",
+  "world_brief": "**Propósito**: mundo mínimo de DESARROLLO para ejercitar la vista proscenio (view = proscenium): escenas discretas tipo plató de cine clásico — profundidad jugable acotada, cámara fija al sur, salidas físicas que transicionan de escena y cuarta pared en interiores.\n\n**Lugar**: la posada del Roble y su entorno inmediato en un cruce de caminos: el salón, la cocina, el patio trasero y la calle Mayor. Cuatro o cinco estancias enlazadas, cada una un plató propio. Sin historia previa: lo que ocurra lo improvisa el motor narrativo.\n\n**Habitantes**: el tabernero, la cocinera, algún parroquiano y un viajero ocasional — útiles para probar diálogo, spawns y transiciones entre platós.\n\n**Tono**: costumbrista y funcional. El objetivo es verificar la vista (capas, cámara de raíl, clamps de profundidad, puertas que cortan a otra escena), no contar nada memorable.",
+  "view": "proscenium"
+}

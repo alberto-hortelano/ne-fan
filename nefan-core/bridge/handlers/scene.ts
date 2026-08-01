@@ -9,8 +9,10 @@ import {
   type BridgeContext,
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
-import { oppositeEdge } from "../../src/world-map/edges.js";
+import { validateScene } from "../../src/scene/scene-validate.js";
+import { oppositeEdge, resolveExitEdge } from "../../src/world-map/edges.js";
 import { handleFrontierAsTile } from "./tile.js";
+import { stagePlaceContext } from "./bootstrap-stage.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type {
   PlayerCrossedFrontierMessage,
@@ -107,6 +109,17 @@ async function runPlaceRealize(
       })),
       links: ctx.narrative.worldMap.getOutgoingLinks(placeId),
     };
+    // Mundos proscenio: la escena del place es un PLATÓ (stage plan). El
+    // edge de entrada es el opuesto al edge del link que trae al jugador
+    // desde el place anterior (si el world map lo sabe).
+    const isStageWorld = ctx.narrative.world.view === "proscenium";
+    if (isStageWorld) {
+      const linkBack = ctx.narrative.worldMap
+        .getOutgoingLinks(placeId)
+        .find((l) => (l.from === placeId ? l.to : l.from) === prevPlaceId);
+      const entryEdge = linkBack ? resolveExitEdge(ctx.narrative.worldMap, placeId, linkBack) : null;
+      realizeCtx.stage_request = entryEdge ? { entry_edge: entryEdge } : {};
+    }
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
@@ -119,11 +132,23 @@ async function runPlaceRealize(
       return fail(`No se pudo generar ${place.name}. ${res.error ?? "Revisa el motor narrativo."}`);
     }
     const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
+    // Tag the scene with the place so recordSceneLoaded attaches it (y para
+    // que la validación proscenio cruce exits⇔links del place correcto).
+    res.scene.place_id = placeId;
+    if (isStageWorld) {
+      if (res.scene.stage === undefined) {
+        return fail(
+          `El motor narrativo respondió ${place.name} sin bloque \`stage\` en un mundo proscenio — el plató necesita sus salidas declaradas`,
+        );
+      }
+      const check = validateScene(res.scene, stagePlaceContext(ctx));
+      if (!check.ok) {
+        return fail(`${place.name} no es jugable: ${check.errors.join(" · ")}`);
+      }
+    }
     // Expandir primitivas (structures/vegetation) ANTES de persistir: lo
     // guardado y difundido es Format D plano.
     res.scene = expandScenePrimitives(res.scene);
-    // Tag the scene with the place so recordSceneLoaded attaches it.
-    res.scene.place_id = placeId;
     ctx.narrative.recordSceneLoaded(sceneId, res.scene);
     await ctx.narrative.save();
     broadcastScene(ctx, sceneId, res.scene, Date.now() - realizeStart);

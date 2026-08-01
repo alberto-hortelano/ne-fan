@@ -31,6 +31,7 @@ import {
 } from "../context.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
+import { runBootstrapStage } from "./bootstrap-stage.js";
 import type {
   CreateGameMessage,
   DeleteSessionMessage,
@@ -190,6 +191,7 @@ export async function handleStartSession(
   let worldKey: string;
   let combatId: string;
   let npcBehaviorId: string | undefined;
+  let view: string;
   try {
     const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
     // Estilo: el elegido por el jugador o el por defecto del juego. Un
@@ -201,6 +203,16 @@ export async function handleStartSession(
     const renderMode = msg.renderMode || "image";
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
+    }
+    // Vista del mundo: la declara game.json y queda CONGELADA en el save
+    // (como el estilo). El proscenio v1 es vector-only: el repintado IA por
+    // capas (peeling) llega en una entrega posterior — mejor abortar aquí que
+    // generar tiles pintados que la vista no puede usar.
+    view = meta.view ?? "overworld";
+    if (view === "proscenium" && renderMode === "image") {
+      throw new Error(
+        'la vista "proscenium" v1 solo soporta gráficos vectoriales — elige renderMode "vector"',
+      );
     }
     // Sistema de combate: el que declare game.json (systems.combat) o el
     // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
@@ -232,6 +244,7 @@ export async function handleStartSession(
       world_doc_hash: worldDocHash,
       render_mode: renderMode,
       combat_system: combatId,
+      view,
     });
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);
@@ -303,6 +316,22 @@ export async function handleStartSession(
   // broadcast it as a narrative_event so all subscribed clients render the
   // same world. Emit lifecycle hints so the client can show a loader.
   const sessionGameId = msg.gameId;
+  if (view === "proscenium") {
+    // Mundos proscenio: la primera escena es un PLATÓ discreto (stage plan),
+    // no el tile (0,0) del plano continuo.
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "generating",
+      kind: "scene",
+      message: "Generando el escenario inicial...",
+    });
+    ctx.sceneGen.enqueue({
+      key: "bootstrap",
+      blocking: true,
+      run: () => runBootstrapStage(ctx, sessionGameId, worldKey),
+    });
+    return;
+  }
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "generating",
@@ -346,6 +375,18 @@ export async function handleResumeSession(
       requestId: msg.requestId,
       ok: false,
       error: `plugin_integrity: ${(err as Error).message ?? err}`,
+    });
+    return;
+  }
+  // Vista congelada en el save (saves previos sin campo → overworld). Un id
+  // fuera del enum aborta el resume — fail-loud, como el combate.
+  const savedView = ctx.narrative.world.view || "overworld";
+  if (savedView !== "overworld" && savedView !== "proscenium") {
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `view_unknown: "${savedView}" (esperaba overworld|proscenium)`,
     });
     return;
   }
@@ -410,11 +451,12 @@ export async function handleResumeSession(
     console.log(
       `Bridge: resume de sesión sin escenas (${ctx.narrative.session_id}) — reintentando bootstrap`,
     );
+    const isStageWorld = savedView === "proscenium";
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
-      kind: "tile",
-      tile: { tx: 0, ty: 0 },
+      kind: isStageWorld ? "scene" : "tile",
+      ...(isStageWorld ? {} : { tile: { tx: 0, ty: 0 } }),
       message: "Reintentando la generación del mundo inicial...",
     });
     const resumeGameId = ctx.narrative.game_id;
@@ -425,7 +467,8 @@ export async function handleResumeSession(
       key: "bootstrap_retry",
       blocking: true,
       // Sin worldKey: el initial-scene-cache es solo para el arranque dev.
-      run: () => runBootstrapTile(ctx, resumeGameId),
+      run: () =>
+        isStageWorld ? runBootstrapStage(ctx, resumeGameId) : runBootstrapTile(ctx, resumeGameId),
     });
   }
 }
