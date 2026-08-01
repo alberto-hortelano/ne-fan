@@ -1,0 +1,11 @@
+{
+  "description": "sin línea de suelo — floor.wall_base_px es obligatorio (calibra la perspectiva pintada)",
+  "expect": "reject",
+  "payload": {
+    "expected": [
+      { "id": "vol_mesa", "status": "found", "box_px": [210, 540, 260, 170] }
+    ],
+    "extras": []
+  },
+  "expected_ids": ["vol_mesa"]
+}

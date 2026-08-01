@@ -137,15 +137,18 @@ class AnalyzeSceneRequest(BaseModel):
 
 
 class PeelLayerRequest(BaseModel):
-    """Pelado de UNA capa del plató (proscenio, entrega 2): la imagen actual
-    del plató + la máscara alpha de la capa DECLARADA por el compositor
-    (blanco = hueco) + el prompt de lo que hay detrás (behind_labels del plan
-    de pelado). FLUX Fill remoto si hay FAL_KEY (guiado por el prompt);
-    fallback LaMa local (continúa texturas, sin créditos). Cacheado por hash
-    (imagen, máscara, prompt): el resume es determinista y gratis."""
+    """Pelado de UNA capa del plató (proscenio): la imagen actual del plató +
+    la máscara del elemento SEGMENTADO de la imagen (SAM2 — nunca una silueta
+    declarada; blanco = hueco) + el prompt de lo que hay detrás. Backend:
+    "lama" (default para el plató — LaMa local, cero invención, el hueco queda
+    tapado por su recorte; bench stage_lab 003-005: FLUX reinventa el mueble
+    dentro de su propio hueco), "flux" (FLUX Fill guiado por prompt) o "auto"
+    (flux si hay FAL_KEY, si no lama). Cacheado por hash (imagen, máscara,
+    prompt, algo): el resume es determinista y gratis."""
     image_b64: str = Field(min_length=1)
     mask_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
+    backend: str = Field(default="auto", pattern="^(auto|lama|flux)$")
 
 
 class ScenePlateRequest(BaseModel):
@@ -997,7 +1000,7 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
                 entry["depth_cells"] = it.get("depth_cells", 2.0)
         items_out.append(entry)
 
-    result = {"items": items_out, "missing": missing}
+    result = {"items": items_out, "missing": missing, "floor": review["floor"]}
     deps.segment_cache.put("stage_review", "analysis", json.dumps(result).encode(),
                            context=ctx, subtype_override="analysis")
     logger.info(
@@ -1022,14 +1025,24 @@ async def peel_scene_layer_endpoint(body: PeelLayerRequest):
     image_png = _decode_b64_png(body.image_b64)
     mask_png = _decode_b64_png(body.mask_b64)
 
-    use_flux = deps.fill_client is not None
-    if not use_flux and deps.plate_inpainter is None:
-        raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
+    if body.backend == "flux":
+        if deps.fill_client is None:
+            raise HTTPException(status_code=503, detail="backend flux pedido pero sin fill_client (FAL_KEY)")
+        use_flux = True
+    elif body.backend == "lama":
+        if deps.plate_inpainter is None:
+            raise HTTPException(status_code=503, detail="backend lama pedido pero sin plate_inpainter")
+        use_flux = False
+    else:
+        use_flux = deps.fill_client is not None
+        if not use_flux and deps.plate_inpainter is None:
+            raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
 
-    # Máscara dilatada ±8 px: cubre el anti-alias del borde del recorte (sin
-    # ella quedan anillos del color del objeto pelado).
+    # Máscara dilatada ±16 px: cubre el anti-alias del borde y traga patas
+    # finas/halos que la segmentación deja fuera (bench stage_lab 004→005) —
+    # el hueco queda TAPADO por su recorte, el halo extra no se ve.
     mask_img = Image.open(io.BytesIO(mask_png)).convert("L")
-    for _ in range(2):
+    for _ in range(4):
         mask_img = mask_img.filter(ImageFilter.MaxFilter(9))
     buf = io.BytesIO()
     mask_img.save(buf, format="PNG")

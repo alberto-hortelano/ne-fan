@@ -78,6 +78,44 @@ export interface StageReviewItem {
   depth_cells?: number;
 }
 
+/** Línea de suelo de la PINTURA (visión): dónde toca el suelo transitable la
+ *  pared del fondo, y (opcional) dónde acaba por delante si el modelo pintó
+ *  una banda no jugable al pie del cuadro. */
+export interface PaintedFloor {
+  /** y (px del cuadrado) donde el suelo se encuentra con el fondo. */
+  wall_base_px: number;
+  /** y (px) del borde delantero del suelo jugable; ausente = borde inferior. */
+  front_px?: number;
+}
+
+/** Proyección CALIBRADA a la perspectiva que el modelo de imagen horneó en la
+ *  pintura. El repintado nunca respeta la franja de suelo del blueprint
+ *  (teleobjetivo ⇒ franja minúscula; el modelo pinta un suelo profundo a su
+ *  gusto), así que en modo imagen la perspectiva pintada MANDA: mismo focal y
+ *  métrica de mundo, pero ground_y/horizon_y reajustados para que z=0 caiga
+ *  en el borde delantero pintado y z=depth en la base de la pared pintada.
+ *  Con ella deproyectan los contactos y proyectan las entidades/warp — el
+ *  jugador pisa el suelo PINTADO. */
+export function calibratedProjection(
+  proj: StageProjParams,
+  vb: ViewBox,
+  floor: PaintedFloor,
+  renderSize: number = STAGE_RENDER_SIZE,
+): StageProjParams {
+  const frontPx = floor.front_px ?? renderSize;
+  if (!(floor.wall_base_px < frontPx)) {
+    throw new Error(
+      `calibratedProjection: wall_base_px (${floor.wall_base_px}) debe estar por encima de front_px (${frontPx})`,
+    );
+  }
+  const vyWall = vb.minY + (floor.wall_base_px / renderSize) * vb.height;
+  const vyFront = vb.minY + (frontPx / renderSize) * vb.height;
+  const sD = proj.focal_m / (proj.focal_m + proj.depth_m);
+  const groundY = vyFront;
+  const horizonY = (vyWall - groundY * sD) / (1 - sD);
+  return { ...proj, ground_y: groundY, horizon_y: horizonY };
+}
+
 /** Pose de un elemento derivada de su línea de contacto pintada. */
 export interface CutoutPose {
   /** zStage (m desde la embocadura) — mediana del contacto. */

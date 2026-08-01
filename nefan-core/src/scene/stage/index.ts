@@ -38,6 +38,7 @@ export {
 export {
   expectedElementsFor,
   pxToView,
+  calibratedProjection,
   contactToPose,
   footprintFromContact,
   matchInventory,
@@ -48,6 +49,7 @@ export {
   RECONSTRUCTION_DEFAULTS,
   type StageExpectedElement,
   type StageReviewItem,
+  type PaintedFloor,
   type CutoutPose,
   type InventoryMatch,
   type InventoryPeelStep,

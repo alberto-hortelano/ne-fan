@@ -20,6 +20,12 @@ Tu trabajo: un inventario COMPLETO de lo pintado.
 2. Además, TODO objeto con volumen pintado sobre el suelo que NO corresponda a
    ningún expected es un `extra`: caja + decidir si se conserva (gana recorte,
    oclusión y colisión) o se elimina (se borra por inpainting).
+3. `floor`: la línea del SUELO pintado — con ella el juego calibra la
+   perspectiva de tu pintura. `wall_base_px` = y (píxeles) donde el suelo
+   transitable se encuentra con la pared del fondo / el telón (promedia si la
+   línea no es recta). `front_px` (opcional) = y del borde DELANTERO del suelo
+   jugable, solo si el modelo pintó una banda no jugable al pie del cuadro
+   (marco, proscenio); si el suelo llega hasta abajo, omítelo.
 
 Responde EXACTAMENTE este JSON:
 
@@ -40,7 +46,8 @@ Responde EXACTAMENTE este JSON:
       "depth_cells": 2
     },
     { "label": "mancha que rompe la escena", "action": "remove", "box_px": [10, 20, 40, 30] }
-  ]
+  ],
+  "floor": { "wall_base_px": 580 }
 }
 ```
 

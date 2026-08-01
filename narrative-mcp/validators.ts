@@ -255,6 +255,19 @@ export function validateStageReview(
       return { ok: false, error: `unknown expected ids (not in expected_elements): ${unknown.join(', ')}` };
     }
   }
+  // floor: calibración de la perspectiva pintada — obligatoria.
+  const floor = o.floor as Record<string, unknown> | undefined;
+  if (typeof floor !== 'object' || floor === null) {
+    return { ok: false, error: 'missing `floor` object — give wall_base_px (y where the walkable floor meets the back wall)' };
+  }
+  if (typeof floor.wall_base_px !== 'number' || !Number.isFinite(floor.wall_base_px) || floor.wall_base_px <= 0) {
+    return { ok: false, error: 'floor.wall_base_px must be a positive number (y pixel)' };
+  }
+  if (floor.front_px !== undefined) {
+    if (typeof floor.front_px !== 'number' || !Number.isFinite(floor.front_px) || floor.front_px <= floor.wall_base_px) {
+      return { ok: false, error: 'floor.front_px must be a number below wall_base_px in the image (front edge is LOWER in the frame)' };
+    }
+  }
   // Los extras comparten forma con image_review (reutilizamos su validación).
   return validateImageReview({ extras: o.extras ?? [] });
 }

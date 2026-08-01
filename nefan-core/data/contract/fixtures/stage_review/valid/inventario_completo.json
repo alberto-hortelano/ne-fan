@@ -16,7 +16,8 @@
         "h": 2,
         "depth_cells": 2
       }
-    ]
+    ],
+    "floor": { "wall_base_px": 580 }
   },
   "expected_ids": ["vol_mesa", "vol_taburete"]
 }

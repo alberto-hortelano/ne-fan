@@ -2,10 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { composeStage, type StageScenePlan } from "../src/scene/stage/compose.js";
-import { stageToView, worldToStage } from "../src/scene/stage/projection.js";
+import { stageToView, viewToStage, worldToStage } from "../src/scene/stage/projection.js";
 import {
   expectedElementsFor,
   pxToView,
+  calibratedProjection,
   contactToPose,
   footprintFromContact,
   matchInventory,
@@ -105,6 +106,45 @@ describe("pxToView / contactToPose", () => {
       ...[worldToPx(0, 0)],
     ];
     assert.equal(contactToPose(stage.proj, vb, rect, pts), null);
+  });
+});
+
+describe("calibratedProjection", () => {
+  it("z=0 cae en el frente pintado y z=depth en la base de la pared pintada", () => {
+    const vb = stage.view_box;
+    const cal = calibratedProjection(stage.proj, vb, { wall_base_px: 580 });
+    // La base de la pared pintada (py 580) desproyecta a z = depth.
+    const vyWall = vb.minY + (580 / STAGE_RENDER_SIZE) * vb.height;
+    const stWall = viewToStage(cal, 0, vyWall);
+    assert.ok(stWall);
+    assert.ok(Math.abs(stWall[1] - stage.proj.depth_m) < 1e-6);
+    // El borde inferior del cuadro (py 1024) desproyecta a z = 0.
+    const vyFront = vb.minY + vb.height;
+    const stFront = viewToStage(cal, 0, vyFront);
+    assert.ok(stFront);
+    assert.ok(Math.abs(stFront[1]) < 1e-6);
+    // La métrica de mundo no cambia (focal/depth/width intactos).
+    assert.equal(cal.focal_m, stage.proj.focal_m);
+    assert.equal(cal.depth_m, stage.proj.depth_m);
+  });
+
+  it("orden de profundidad: contactos más bajos en el cuadro = más cerca", () => {
+    const vb = stage.view_box;
+    const cal = calibratedProjection(stage.proj, vb, { wall_base_px: 580 });
+    const zAt = (py: number): number => {
+      const st = viewToStage(cal, 0, vb.minY + (py / STAGE_RENDER_SIZE) * vb.height);
+      assert.ok(st);
+      return st[1];
+    };
+    assert.ok(zAt(786) < zAt(700));
+    assert.ok(zAt(700) < zAt(650));
+    assert.ok(zAt(650) < stage.proj.depth_m);
+  });
+
+  it("fail-loud si la pared no está por encima del frente", () => {
+    assert.throws(() =>
+      calibratedProjection(stage.proj, stage.view_box, { wall_base_px: 900, front_px: 800 }),
+    );
   });
 });
 

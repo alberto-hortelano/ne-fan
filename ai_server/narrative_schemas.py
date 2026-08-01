@@ -1013,5 +1013,17 @@ def validate_stage_review(data: dict | None, expected_ids: list[str] | None = No
         unknown = [i for i in seen if i not in expected_ids]
         if unknown:
             raise ValueError(f"stage_review ids desconocidos (no están en expected_elements): {', '.join(unknown)}")
+    floor = data.get("floor")
+    if not isinstance(floor, dict):
+        raise ValueError("stage_review payload missing `floor` object (wall_base_px)")
+    wall_base = floor.get("wall_base_px")
+    if not isinstance(wall_base, (int, float)) or wall_base <= 0:
+        raise ValueError("stage_review floor.wall_base_px must be a positive number")
+    floor_out: dict = {"wall_base_px": float(wall_base)}
+    front = floor.get("front_px")
+    if front is not None:
+        if not isinstance(front, (int, float)) or front <= wall_base:
+            raise ValueError("stage_review floor.front_px must be below wall_base_px in the image")
+        floor_out["front_px"] = float(front)
     extras = validate_image_review({"extras": data.get("extras", [])})["extras"]
-    return {"expected": expected_out, "extras": extras}
+    return {"expected": expected_out, "extras": extras, "floor": floor_out}
