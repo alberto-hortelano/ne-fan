@@ -22,7 +22,7 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
   "scene_id": "<slug>",
   "place_id": "<the place from realize_place — REQUIRED>",
   "scene_description": "<2-3 Spanish sentences>",
-  "size": { "cols": 16..40, "rows": 10..24, "meters_per_cell": 0.5 },
+  "size": { "cols": 24..80, "rows": 12..40, "meters_per_cell": 0.5 },
   "terrain": [ ... ],                    // rows × cols glyphs, as always
   "terrain_legend": { },
   "structures": [ ],                     // optional interior sub-rooms
@@ -54,10 +54,29 @@ HARD RULES OF THE STAGE:
 - exit.edge must agree with the link's edge as seen from THIS place
   (map_link edge is declared from the `from` place; walking a bidirectional
   link backwards flips it).
-- Keep stages intimate: 16–40 cols × 10–24 rows at meters_per_cell 0.5
-  (8–20 m wide, 5–12 m deep). A stage is one room, one courtyard, one street
-  section — not a whole village. Split big locations into several linked
-  places, each with its own stage.
+- EXIT KIND is about what is PHYSICALLY there, never symbolic:
+  * "door" ONLY when there is literally a door or gate (a building entrance,
+    a walled garden's gate, a city gate). The engine paints it.
+  * "opening" for everything else: the street continuing past the edge of
+    the set, a clearing in the woods, a path leaving a field, the open end
+    of a bridge. The engine paints NO door — the set simply opens at that
+    edge and the player walks off-frame. Most east/west exits and most
+    exterior exits are openings. Make opening zones GENEROUS: on a side
+    edge, span several rows (even the whole walkable strip if natural, e.g.
+    [78, 6, 2, 20]); reaching the edge of the screen is enough.
+  * "stairs" when a visible level change carries the player out.
+- Stages are GENEROUS, not corridors: a stage is a whole location the player
+  can SPEND TIME in — several points of interest, NPCs with agendas, room to
+  move and fight. Interiors: 24–48 cols × 12–24 rows at meters_per_cell 0.5
+  (12–24 m wide). Exteriors (streets, plazas, fields, forest clearings):
+  48–80 cols × 16–40 rows at 0.5, or meters_per_cell 1.0 for truly big open
+  stages (up to 80 m wide — the camera rails along, the player walks). For
+  deep stages raise focal_m to 14–20 so the far end stays readable.
+- NEVER build a pass-through stage that exists only to be crossed: if a
+  location is mere transit, FOLD it into a bigger neighbouring stage and
+  save the transition. Every stage must justify itself: someone to talk to,
+  something to examine or take, a hook — and usually 2+ exits (the way back
+  plus somewhere NEW), so the world keeps opening instead of dead-ending.
 - stage_request.entry_edge (when present) tells you which edge the player
   enters from: keep a walkable area at that exit's zone (the engine spawns
   the player just inside it). Do NOT include a "player" entity then.

@@ -147,3 +147,45 @@ describe("exitZoneAt / spawnPointForEntry", () => {
     assert.equal(spawnPointForEntry(c, "no_existe"), null);
   });
 });
+
+describe("composeStage — salidas por kind (nada simbólico)", () => {
+  function exteriorPlan(kind: "door" | "opening"): StageScenePlan {
+    return {
+      size: { cols: 64, rows: 24, meters_per_cell: 0.5 },
+      biome: "meadow",
+      stage: {
+        exits: [
+          { id: "oeste", edge: "west", to_place_id: "bosque", zone: [0, 8, 2, 12], kind, label: "Al oeste" },
+          { id: "norte", edge: "north", to_place_id: "colinas", zone: [28, 0, 8, 2], kind, label: "Al norte" },
+        ],
+      },
+      volumes: [],
+    };
+  }
+
+  it("un opening lateral abre HUECO en el bastidor (sin arco de puerta)", () => {
+    const c = composeStage(exteriorPlan("opening"), "prado");
+    const wing = c.layers.find((l) => l.id === "wing_west")!;
+    assert.ok(!wing.svg.includes("#0d0a10"), "sin vano de puerta pintado");
+    // El suelo continúa fuera de plano (tono del suelo oscurecido presente).
+    assert.ok(wing.svg.split("<polygon").length > 2, "hueco con aire + suelo");
+  });
+
+  it("un door lateral pinta su arco", () => {
+    const c = composeStage(exteriorPlan("door"), "prado");
+    const wing = c.layers.find((l) => l.id === "wing_west")!;
+    assert.ok(wing.svg.includes("#0d0a10"), "vano de puerta presente");
+  });
+
+  it("un opening norte exterior pinta camino al horizonte, no puerta", () => {
+    const c = composeStage(exteriorPlan("opening"), "prado");
+    const backdrop = c.layers.find((l) => l.id === "backdrop")!;
+    assert.ok(!backdrop.svg.includes("#171219"), "sin vano oscuro de puerta");
+  });
+
+  it("un door norte sigue pintando la puerta con marco", () => {
+    const c = composeStage(exteriorPlan("door"), "prado");
+    const backdrop = c.layers.find((l) => l.id === "backdrop")!;
+    assert.ok(backdrop.svg.includes("#171219"), "vano de puerta presente");
+  });
+});

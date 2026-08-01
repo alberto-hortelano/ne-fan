@@ -41,6 +41,8 @@ const BACKDROP_WALL_M = 3.5;
 /** Altura de la cuarta pared y de sus huecos de puerta (m). */
 const FOURTH_WALL_M = 3;
 const DOOR_H_M = 2.3;
+/** Altura del hueco de un exit "opening" en los bastidores (m). */
+const OPENING_H_M = 2.6;
 /** Margen de clamp del jugador respecto al rect de la escena (m). */
 const BOUNDS_INSET_M = 0.25;
 
@@ -158,6 +160,13 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     maxZ: rect.minZ + (zone[1] + zone[3]) * mpc,
   });
 
+  /** Color base del suelo — compartido por la capa de suelo, los huecos de
+   *  los bastidores (el suelo continúa fuera de plano) y el camino del
+   *  backdrop. */
+  const floorColor = interiorLike
+    ? darken(PALETTE.woodTop, 0.22)
+    : (BIOME_COLORS[plan.biome ?? "grass"] ?? PALETTE.grassBase);
+
   const exits: ComposedStageExit[] = plan.stage.exits.map((e) => ({
     id: e.id,
     edge: e.edge as Edge,
@@ -205,17 +214,34 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
       const wallH = BACKDROP_WALL_M * PX_PER_M * sBack * 0.4;
       body += rectEl(viewBox.minX, yBack - wallH, viewBox.width, wallH, darken(BIOME_COLORS[plan.biome ?? "grass"] ?? PALETTE.grassBase, 0.18));
     }
-    // Puertas del fondo: un hueco por exit norte.
+    // Salidas del fondo: puerta pintada SOLO si kind "door" (hay una puerta
+    // de verdad); un "opening" es el mundo continuando — camino que se pierde
+    // hacia el horizonte (exterior) o vano oscuro sin marco (interior).
     for (const e of plan.stage.exits) {
       if (e.edge !== "north") continue;
       const w = zoneToWorld(e.zone);
       const cx = ((w.minX + w.maxX) / 2) * PX_PER_M * sBack;
       const doorW = Math.max(1.2, w.maxX - w.minX) * PX_PER_M * sBack;
       const doorH = DOOR_H_M * PX_PER_M * sBack;
-      body += rectEl(cx - doorW / 2, yBack - doorH, doorW, doorH, "#171219");
-      body += rectEl(cx - doorW / 2 - 0.8, yBack - doorH - 0.8, doorW + 1.6, 0.8, PALETTE.woodFace);
-      body += line([cx - doorW / 2, yBack - doorH], [cx - doorW / 2, yBack], PALETTE.woodFace, 0.8);
-      body += line([cx + doorW / 2, yBack - doorH], [cx + doorW / 2, yBack], PALETTE.woodFace, 0.8);
+      if (e.kind === "door") {
+        body += rectEl(cx - doorW / 2, yBack - doorH, doorW, doorH, "#171219");
+        body += rectEl(cx - doorW / 2 - 0.8, yBack - doorH - 0.8, doorW + 1.6, 0.8, PALETTE.woodFace);
+        body += line([cx - doorW / 2, yBack - doorH], [cx - doorW / 2, yBack], PALETTE.woodFace, 0.8);
+        body += line([cx + doorW / 2, yBack - doorH], [cx + doorW / 2, yBack], PALETTE.woodFace, 0.8);
+      } else if (interiorLike) {
+        body += rectEl(cx - doorW / 2, yBack - doorH, doorW, doorH, "#171219");
+      } else {
+        // Camino que converge hacia el horizonte desde la zona de salida.
+        body += polygon(
+          [
+            [cx - doorW / 2, yBack],
+            [cx - doorW * 0.16, yBack - 11],
+            [cx + doorW * 0.16, yBack - 11],
+            [cx + doorW / 2, yBack],
+          ],
+          darken(floorColor, 0.08),
+        );
+      }
     }
     layers.push({
       id: "backdrop",
@@ -234,9 +260,6 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     const yBack = stageToView(proj, 0, depthM)[1];
     const halfFront = (widthM / 2) * PX_PER_M;
     const halfBack = halfFront * sBack;
-    const floorColor = interiorLike
-      ? darken(PALETTE.woodTop, 0.22)
-      : (BIOME_COLORS[plan.biome ?? "grass"] ?? PALETTE.grassBase);
     let body = polygon(
       [
         [-halfFront, GROUND_Y],
@@ -313,18 +336,52 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
         ],
         wingColor,
       );
-      // Salidas laterales: arco marcado sobre el bastidor a la z de su zona.
+      // Salidas laterales. "door" = arco pintado (hay una puerta de verdad);
+      // "opening"/"stairs" = HUECO en el bastidor: el suelo continúa fuera de
+      // plano y basta con llegar al borde de la pantalla — nada simbólico.
       for (const e of plan.stage.exits) {
         if ((side < 0 && e.edge !== "west") || (side > 0 && e.edge !== "east")) continue;
         const w = zoneToWorld(e.zone);
-        const zMid = Math.min(depthM - 0.3, Math.max(0.3, depthM - ((w.minZ + w.maxZ) / 2 - rect.minZ)));
-        const s = scaleAt(proj, zMid);
-        const [ax, ay] = stageToView(proj, side * (widthM / 2), zMid);
-        const aw = 1.4 * PX_PER_M * s;
-        const ah = DOOR_H_M * PX_PER_M * s;
-        body += rectEl(ax - aw / 2, ay - ah, aw, ah, lighten(wingColor, 0.18));
-        body += ellipse(ax, ay - ah, aw / 2, aw / 3, lighten(wingColor, 0.18));
-        body += rectEl(ax - aw / 2 + 0.6, ay - ah + 0.6, aw - 1.2, ah - 0.6, "#0d0a10");
+        // Rango de profundidad de la zona (z de plató, near→far).
+        const zs0 = Math.min(depthM - 0.05, Math.max(0.05, depthM - (w.maxZ - rect.minZ)));
+        const zs1 = Math.min(depthM - 0.05, Math.max(0.05, depthM - (w.minZ - rect.minZ)));
+        if (e.kind === "door") {
+          const zMid = (zs0 + zs1) / 2;
+          const s = scaleAt(proj, zMid);
+          const [ax, ay] = stageToView(proj, side * (widthM / 2), zMid);
+          const aw = 1.4 * PX_PER_M * s;
+          const ah = DOOR_H_M * PX_PER_M * s;
+          body += rectEl(ax - aw / 2, ay - ah, aw, ah, lighten(wingColor, 0.18));
+          body += ellipse(ax, ay - ah, aw / 2, aw / 3, lighten(wingColor, 0.18));
+          body += rectEl(ax - aw / 2 + 0.6, ay - ah + 0.6, aw - 1.2, ah - 0.6, "#0d0a10");
+        } else {
+          const [xe0, ye0] = stageToView(proj, side * (widthM / 2), zs0);
+          const [xe1, ye1] = stageToView(proj, side * (widthM / 2), zs1);
+          const h0 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs0);
+          const h1 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs1);
+          // Aire del hueco (más claro que el bastidor: se lee como abertura
+          // de suelo a altura de dintel, hasta el borde de la pantalla).
+          body += polygon(
+            [
+              [xe0, ye0 - h0],
+              [xe1, ye1 - h1],
+              [outer, ye1 - h1],
+              [outer, ye0],
+              [xe0, ye0],
+            ],
+            lighten(wingColor, 0.22),
+          );
+          // El suelo continúa fuera de plano.
+          body += polygon(
+            [
+              [xe0, ye0],
+              [xe1, ye1],
+              [outer, ye1],
+              [outer, ye0],
+            ],
+            darken(floorColor, 0.1),
+          );
+        }
       }
       layers.push({
         id: side < 0 ? "wing_west" : "wing_east",
