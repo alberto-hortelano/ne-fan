@@ -57,6 +57,14 @@ export async function runBootstrapStage(
     const sceneId = String(res.scene.scene_id ?? res.scene.room_id ?? `scene_${Date.now()}`);
     res.scene.scene_id = sceneId;
     res.scene.room_id = sceneId;
+    // El validador permite platós sin player (realizes: se entra por una
+    // salida), pero el BOOTSTRAP no tiene entrada — el player es obligatorio
+    // aquí, donde sabemos que lo es.
+    const hasPlayer = Array.isArray(res.scene.entities) &&
+      (res.scene.entities as Array<{ kind?: string }>).some((e) => e?.kind === "player");
+    if (!hasPlayer) {
+      return fail('el plató inicial necesita la entity kind "player" (es el bootstrap de la sesión)');
+    }
     const check = validateScene(res.scene, stagePlaceContext(ctx));
     if (!check.ok) {
       return fail(`El escenario inicial no es jugable: ${check.errors.join(" · ")}`);

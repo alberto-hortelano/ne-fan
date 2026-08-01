@@ -315,3 +315,36 @@ describe("validateScene — escenas proscenio (stage)", () => {
     assert.equal(r.ok, true, r.errors.join(" | "));
   });
 });
+
+describe("validateScene — realize de plató sin player", () => {
+  it("acepta un plató SIN player (el flood arranca en una salida)", () => {
+    const s = makeStageScene();
+    (s.entities as Record<string, unknown>[]).splice(0, 1); // fuera el player
+    const r = validateScene(s, stagePlace);
+    assert.deepEqual(r.errors, [], r.errors.join(" | "));
+    assert.equal(r.ok, true);
+  });
+
+  it("sin player, una salida amurallada respecto a otra sigue siendo error", () => {
+    const s = makeStageScene();
+    (s.entities as Record<string, unknown>[]).splice(0, 1);
+    // Segunda salida al sur + tabique que separa norte de sur.
+    const stage = s.stage as { exits: Record<string, unknown>[] };
+    stage.exits.push({ id: "salida_sur", edge: "south", to_place_id: "calle_mayor",
+      zone: [6, 10, 3, 1], kind: "opening", label: "Salida a la calle" });
+    const terrain = s.terrain as string[];
+    terrain[5] = "W".repeat(16);
+    const r = validateScene(s, () => ({
+      exists: true, kind: "interior", outgoing_links: 2,
+      links: [{ to: "posada_cocina", edge: "north" as const }, { to: "calle_mayor", edge: "south" as const }],
+    }));
+    assert.ok(r.errors.some((e) => e.includes("no es alcanzable")), r.errors.join(" | "));
+  });
+
+  it("una escena legacy (sin stage) sigue exigiendo player", () => {
+    const s = makeScene();
+    (s.entities as Record<string, unknown>[]) = (s.entities as Record<string, unknown>[]).filter((e) => e.kind !== "player");
+    const r = validateScene(s, linkedPlace);
+    assert.ok(r.errors.some((e) => e.includes('falta la entity kind "player"')), r.errors.join(" | "));
+  });
+});

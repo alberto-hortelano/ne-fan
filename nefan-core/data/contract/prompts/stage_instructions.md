@@ -65,6 +65,10 @@ HARD RULES OF THE STAGE:
     edge, span several rows (even the whole walkable strip if natural, e.g.
     [78, 6, 2, 20]); reaching the edge of the screen is enough.
   * "stairs" when a visible level change carries the player out.
+  * A building's door on the north edge (entering a facade you SEE): the
+    building occupies the top rows; put the exit zone on the WALKABLE ground
+    directly under its facade (e.g. building rows 0-2 → zone [28, 3, 4, 2]).
+    The zone is where the player STEPS, not the painted door itself.
 - Stages are GENEROUS, not corridors: a stage is a whole location the player
   can SPEND TIME in — several points of interest, NPCs with agendas, room to
   move and fight. Interiors: 24–48 cols × 12–24 rows at meters_per_cell 0.5

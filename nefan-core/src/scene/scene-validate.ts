@@ -263,7 +263,13 @@ export function validateScene(
       player = null;
     }
   } else if (!player) {
-    errors.push('falta la entity kind "player" (spawn del jugador)');
+    // Escenas proscenio de realize: el jugador entra por una salida (el
+    // spawn lo resuelve el cliente con spawnPointForEntry) — sin player, el
+    // flood-fill se siembra desde las zonas de salida. El bootstrap SÍ exige
+    // player: lo comprueba el bridge (bootstrap-stage), que sabe que lo es.
+    if (!stage) {
+      errors.push('falta la entity kind "player" (spawn del jugador)');
+    }
   } else if (player[0] < 0 || player[1] < 0 || player[0] >= cols || player[1] >= rows) {
     errors.push(`el player está fuera del grid: [${player[0]}, ${player[1]}]`);
     player = null;
@@ -321,6 +327,12 @@ export function validateScene(
     }
   }
   if (player) startCells.unshift(player);
+  // Plató sin player (realize): arrancar el flood desde UNA salida — el
+  // jugador entrará por alguna y todas deben quedar conectadas entre sí
+  // (sembrar todas las haría trivialmente alcanzables).
+  if (stage && !player && startCells.length === 0 && exitTargets.length > 0) {
+    startCells.push(exitTargets[0].cells[0]);
+  }
 
   // ── Flood-fill de alcanzabilidad desde el jugador ─────────────────────────
   // Puertas: celdas de hueco de las structures (si las hay).

@@ -230,3 +230,61 @@ describe("bridge — mundos proscenio", () => {
     assert.match(bad.error ?? "", /view_unknown: "cinemascope"/);
   });
 });
+
+describe("bridge — bootstrap proscenio exige player", () => {
+  it("bootstrap sin entity player ⇒ narrative_status error", async () => {
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          seedPosadaMap(h.narrative);
+          const scene = stageScene("posada", [{ id: "n", edge: "north", to: "cocina" }]);
+          scene.entities = [];
+          return { ok: true, scene };
+        },
+      },
+    });
+    const { socket } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "stagetest", renderMode: "vector" },
+      socket,
+      h.ctx,
+    );
+    await waitFor(() =>
+      h.broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = h.broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.match(err?.message ?? "", /player/);
+  });
+
+  it("realize SIN player se acepta (el spawn lo resuelve el cliente)", async () => {
+    let call = 0;
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          call++;
+          if (call === 1) {
+            seedPosadaMap(h.narrative);
+            return { ok: true, scene: stageScene("posada", [{ id: "n", edge: "north", to: "cocina" }]) };
+          }
+          const scene = stageScene("cocina", [{ id: "s", edge: "south", to: "posada" }]);
+          scene.entities = []; // realize: sin player, como manda stage_instructions
+          return { ok: true, scene };
+        },
+      },
+    });
+    const { socket } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "stagetest", renderMode: "vector" },
+      socket,
+      h.ctx,
+    );
+    await waitFor(() =>
+      h.broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    await routeMessage({ type: "player_entered_place", placeId: "cocina" }, socket, h.ctx);
+    await waitFor(() => Boolean(h.narrative.scenes_loaded["cocina"]));
+    assert.ok(h.narrative.scenes_loaded["cocina"], "cocina registrada sin player");
+  });
+});
