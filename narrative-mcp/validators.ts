@@ -268,6 +268,28 @@ export function validateStageReview(
       return { ok: false, error: 'floor.front_px must be a number below wall_base_px in the image (front edge is LOWER in the frame)' };
     }
   }
+  // Trapecio lateral del suelo pintado (opcional, los 4 juntos): x de los
+  // bordes izquierdo/derecho del suelo transitable en la línea de la pared y
+  // en el frente. Calibra px_per_m/focal/centro lateral.
+  const trapKeys = ['left_wall_px', 'right_wall_px', 'left_front_px', 'right_front_px'] as const;
+  const present = trapKeys.filter((k) => floor[k] !== undefined);
+  if (present.length > 0) {
+    if (present.length !== trapKeys.length) {
+      return { ok: false, error: `floor trapezoid needs all four of ${trapKeys.join(', ')} (got only ${present.join(', ')})` };
+    }
+    for (const k of trapKeys) {
+      if (typeof floor[k] !== 'number' || !Number.isFinite(floor[k])) {
+        return { ok: false, error: `floor.${k} must be a finite number (x pixel)` };
+      }
+    }
+    const lw = floor.left_wall_px as number, rw = floor.right_wall_px as number;
+    const lf = floor.left_front_px as number, rf = floor.right_front_px as number;
+    if (lw >= rw) return { ok: false, error: 'floor.left_wall_px must be < right_wall_px' };
+    if (lf >= rf) return { ok: false, error: 'floor.left_front_px must be < right_front_px' };
+    if (rw - lw >= rf - lf) {
+      return { ok: false, error: 'painted floor must converge toward the back: (right_wall_px - left_wall_px) must be < (right_front_px - left_front_px)' };
+    }
+  }
   // Los extras comparten forma con image_review (reutilizamos su validación).
   return validateImageReview({ extras: o.extras ?? [] });
 }

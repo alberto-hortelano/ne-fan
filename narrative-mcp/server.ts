@@ -297,7 +297,7 @@ into context:
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
     '  image_review   → { extras: [{ label, action, box_px, tall, solid, h?, depth_cells? }] }\n' +
-    '  stage_review   → { expected: [{ id, status: "found"|"missing", box_px? }], extras: [...], floor: { wall_base_px } } (every expected id)\n' +
+    '  stage_review   → { expected: [{ id, status: "found"|"missing", box_px? }], extras: [...], floor: { wall_base_px, front_px?, left_wall_px?, right_wall_px?, left_front_px?, right_front_px? } } (every expected id; the 4 lateral floor-edge x either all present or none)\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
     '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {

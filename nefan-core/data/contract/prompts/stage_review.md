@@ -20,12 +20,24 @@ Tu trabajo: un inventario COMPLETO de lo pintado.
 2. Además, TODO objeto con volumen pintado sobre el suelo que NO corresponda a
    ningún expected es un `extra`: caja + decidir si se conserva (gana recorte,
    oclusión y colisión) o se elimina (se borra por inpainting).
-3. `floor`: la línea del SUELO pintado — con ella el juego calibra la
-   perspectiva de tu pintura. `wall_base_px` = y (píxeles) donde el suelo
-   transitable se encuentra con la pared del fondo / el telón (promedia si la
-   línea no es recta). `front_px` (opcional) = y del borde DELANTERO del suelo
-   jugable, solo si el modelo pintó una banda no jugable al pie del cuadro
-   (marco, proscenio); si el suelo llega hasta abajo, omítelo.
+3. `floor`: la geometría del SUELO pintado — con ella el juego calibra la
+   perspectiva de tu pintura (posiciones, colisión Y el tamaño de los
+   personajes). `wall_base_px` = y (píxeles) donde el suelo transitable se
+   encuentra con la pared del fondo / el telón (promedia si la línea no es
+   recta). `front_px` (opcional) = y del borde DELANTERO del suelo jugable,
+   solo si el modelo pintó una banda no jugable al pie del cuadro (marco,
+   proscenio); si el suelo llega hasta abajo, omítelo.
+   Además, da el TRAPECIO lateral del suelo: `left_wall_px`/`right_wall_px` =
+   x de los bordes izquierdo/derecho del suelo transitable EN la línea
+   `y = wall_base_px`, y `left_front_px`/`right_front_px` = los mismos bordes
+   en `y = front_px` (o en el borde inferior de la imagen si no diste
+   `front_px`). Son los puntos donde el suelo se encuentra con las paredes
+   laterales / el fin de lo transitable. Si un mueble tapa el borde,
+   EXTRAPOLA la recta de la pared hasta la línea pedida (el borde es una
+   recta en perspectiva). El suelo debe converger hacia el fondo: el ancho en
+   la pared < el ancho en el frente. Da los 4 valores o ninguno (pueden salir
+   del encuadre: valores <0 o >tamaño de imagen son válidos si la recta
+   extrapolada cruza ahí).
 
 Responde EXACTAMENTE este JSON:
 
@@ -47,7 +59,11 @@ Responde EXACTAMENTE este JSON:
     },
     { "label": "mancha que rompe la escena", "action": "remove", "box_px": [10, 20, 40, 30] }
   ],
-  "floor": { "wall_base_px": 580 }
+  "floor": {
+    "wall_base_px": 580,
+    "left_wall_px": 205, "right_wall_px": 820,
+    "left_front_px": -40, "right_front_px": 1060
+  }
 }
 ```
 

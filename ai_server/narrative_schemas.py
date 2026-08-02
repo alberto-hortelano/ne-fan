@@ -1025,5 +1025,30 @@ def validate_stage_review(data: dict | None, expected_ids: list[str] | None = No
         if not isinstance(front, (int, float)) or front <= wall_base:
             raise ValueError("stage_review floor.front_px must be below wall_base_px in the image")
         floor_out["front_px"] = float(front)
+    # Trapecio lateral del suelo pintado (los 4 juntos o ninguno). Pueden
+    # salir del encuadre (rectas extrapoladas): solo se exige coherencia.
+    trap_keys = ("left_wall_px", "right_wall_px", "left_front_px", "right_front_px")
+    present = [k for k in trap_keys if floor.get(k) is not None]
+    if present:
+        if len(present) != len(trap_keys):
+            raise ValueError(
+                f"stage_review floor trapezoid needs all four of {', '.join(trap_keys)} "
+                f"(got only {', '.join(present)})"
+            )
+        for k in trap_keys:
+            if not isinstance(floor.get(k), (int, float)):
+                raise ValueError(f"stage_review floor.{k} must be a number (x pixel)")
+        lw, rw = float(floor["left_wall_px"]), float(floor["right_wall_px"])
+        lf, rf = float(floor["left_front_px"]), float(floor["right_front_px"])
+        if lw >= rw:
+            raise ValueError("stage_review floor.left_wall_px must be < right_wall_px")
+        if lf >= rf:
+            raise ValueError("stage_review floor.left_front_px must be < right_front_px")
+        if rw - lw >= rf - lf:
+            raise ValueError(
+                "stage_review painted floor must converge toward the back: "
+                "(right_wall_px - left_wall_px) < (right_front_px - left_front_px)"
+            )
+        floor_out.update({"left_wall_px": lw, "right_wall_px": rw, "left_front_px": lf, "right_front_px": rf})
     extras = validate_image_review({"extras": data.get("extras", [])})["extras"]
     return {"expected": expected_out, "extras": extras, "floor": floor_out}
