@@ -235,7 +235,7 @@ describe("calibratedProjection", () => {
     assert.equal(warnings.length, 1);
     // Sin trapecio: sin warning (camino legacy).
     warnings = [];
-    cal = calibratedProjection(stage.proj, vb, base, STAGE_RENDER_SIZE, warnings);
+    calibratedProjection(stage.proj, vb, base, STAGE_RENDER_SIZE, warnings);
     assert.equal(warnings.length, 0);
   });
 });
@@ -260,6 +260,20 @@ describe("fitSpriteScale / spriteScaleAt", () => {
       const size = sCal * spriteScaleAt(model, painted, p.z) * p.hM * painted.px_per_m;
       assert.ok(Math.abs(size - p.paintedView) / p.paintedView < 0.05, `talla en z=${p.z}`);
     }
+  });
+
+  it("fuera del soporte de datos el factor se CONGELA (no extrapola)", () => {
+    // Focal de talla corta con muebles solo en z 4..7: junto a cámara (z 1)
+    // la extrapolación dispararía la talla — debe valer lo mismo que en z 4.
+    const pts = [4, 5.5, 7].map((z) => pointAt(z, 2.2, 2.5));
+    const model = fitSpriteScale(pts, painted);
+    assert.equal(model.z_min, 4);
+    assert.equal(model.z_max, 7);
+    assert.equal(spriteScaleAt(model, painted, 1), spriteScaleAt(model, painted, 4));
+    assert.equal(spriteScaleAt(model, painted, 0), spriteScaleAt(model, painted, 4));
+    assert.equal(spriteScaleAt(model, painted, 9), spriteScaleAt(model, painted, 7));
+    // Dentro del soporte sí interpola (los extremos difieren).
+    assert.notEqual(spriteScaleAt(model, painted, 4), spriteScaleAt(model, painted, 7));
   });
 
   it("poco rango de z ⇒ factor constante; sin puntos ⇒ identidad", () => {
@@ -347,7 +361,7 @@ describe("peelStepsFromInventory", () => {
     );
     assert.deepEqual(steps[0].behindLabels, ["barril", "muro"]);
     assert.deepEqual(steps[2].behindLabels, []);
-    assert.match(steps[2].prompt, /ONLY the empty stage floor/);
+    assert.match(steps[2].prompt, /ONLY the empty ground/);
   });
 
   it("behindLabels solo incluye lo que SOLAPA el hueco en pantalla", () => {

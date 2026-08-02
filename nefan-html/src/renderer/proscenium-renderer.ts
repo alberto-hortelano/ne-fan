@@ -84,8 +84,6 @@ interface RasterLayer {
 
 /** Altura del raster intermedio para el warp vectorial (px). */
 const BANDED_RASTER_H = 1200;
-/** Ancho del marco de proscenio a pantalla (fracción del canvas). */
-const SCREEN_FRAME_FRACTION = 0.055;
 
 export interface ProsceniumRendererOptions {
   spriteRenderer?: SpriteRenderer;
@@ -476,6 +474,10 @@ export class ProsceniumRenderer implements Renderer2D {
         // Los volúmenes en modo imagen viven como RECORTES segmentados (ya en
         // drawables, a su z PINTADA) o cocidos en la placa (missing/no
         // segmentados) — nunca el billboard vectorial encima.
+      } else if (images && kind === "wing") {
+        // Los laterales van cocidos en la placa pintada (paredes de interior;
+        // en exterior ni existen). El vectorial encima además cae DESCENTRADO
+        // con la proyección calibrada — una columna oscura en pleno encuadre.
       } else if (kind === "floor" && raster.bandedSrc) {
         // Modo vectorial: el suelo también se warpea por bandas.
         this.drawBanded(raster.bandedSrc, raster.bandedSrc.width, raster.bandedSrc.height, camOffsetM);
@@ -502,10 +504,6 @@ export class ProsceniumRenderer implements Renderer2D {
       }
     }
     while (di < drawables.length) drawables[di++].draw();
-
-    // Marco de proscenio a PANTALLA: cierre lateral del encuadre (embocadura)
-    // y cinturón anti-flancos en los extremos del raíl. Siempre encima.
-    this.drawScreenFrame();
 
     if (this.debugView === "overlay") this.drawDebugOverlay(toScreen, player);
   }
@@ -657,24 +655,6 @@ export class ProsceniumRenderer implements Renderer2D {
       const sh = Math.max(1e-3, (b.srcVh / vb.height) * srcH);
       const dx = canvas.width / 2 + (vb.minX - parallaxPanX(this.effProj(), b.z, camOffsetM)) * f.fit;
       ctx.drawImage(src, 0, sy, srcW, sh, dx, b.destY, destW, b.destH);
-    }
-  }
-
-  /** Marco de proscenio anclado a PANTALLA: dos bandas oscuras con gradiente
-   *  en los flancos del canvas — la embocadura del teatro, y cinturón que
-   *  cubre cualquier borde de capa en los extremos del raíl. */
-  private drawScreenFrame(): void {
-    const { ctx, canvas } = this;
-    const w = Math.max(24, canvas.width * SCREEN_FRAME_FRACTION);
-    for (const side of [0, 1] as const) {
-      const g = side === 0
-        ? ctx.createLinearGradient(0, 0, w, 0)
-        : ctx.createLinearGradient(canvas.width, 0, canvas.width - w, 0);
-      g.addColorStop(0, "#17131b");
-      g.addColorStop(0.6, "rgba(23, 19, 27, 0.85)");
-      g.addColorStop(1, "rgba(23, 19, 27, 0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(side === 0 ? 0 : canvas.width - w, 0, w, canvas.height);
     }
   }
 

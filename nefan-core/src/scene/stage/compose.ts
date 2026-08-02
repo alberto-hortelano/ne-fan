@@ -25,7 +25,12 @@ import {
 } from "./projection.js";
 import type { Edge } from "../../world-map/types.js";
 
-export const STAGE_COMPOSER_VERSION = 2;
+/** v3: encuadre NATURAL — el suelo llena todo el ancho del viewBox, los
+ *  bastidores negros desaparecen (en interiores son PAREDES laterales reales
+ *  con sus vanos; en exteriores el mundo simplemente continúa hasta el borde).
+ *  El modelo de imagen no debe recibir ninguna pista teatral: las cortinas y
+ *  bandas de proscenio que pintaba salían de estas capas. */
+export const STAGE_COMPOSER_VERSION = 3;
 
 /** Unidades de vista por metro en la embocadura. */
 const PX_PER_M = 10;
@@ -267,17 +272,9 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     const rng = seededRng(`stage:${seedKey}:floor`);
     const sBack = scaleAt(proj, depthM);
     const yBack = stageToView(proj, 0, depthM)[1];
-    const halfFront = (widthM / 2) * PX_PER_M;
-    const halfBack = halfFront * sBack;
-    let body = polygon(
-      [
-        [-halfFront, GROUND_Y],
-        [-halfBack, yBack],
-        [halfBack, yBack],
-        [halfFront, GROUND_Y],
-      ],
-      floorColor,
-    );
+    // El suelo llena TODO el ancho del encuadre (v3): el mundo continúa más
+    // allá del rect jugable — sin bandas laterales que lean como escenario.
+    let body = rectEl(viewBox.minX, yBack, viewBox.width, GROUND_Y - yBack, floorColor);
     // Delantal: el suelo continúa hacia cámara hasta el borde inferior del
     // encuadre (sin él, la franja bajo la embocadura queda transparente).
     body += rectEl(viewBox.minX, GROUND_Y, viewBox.width, viewBottom - GROUND_Y, darken(floorColor, 0.15));
@@ -303,18 +300,18 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
         body += ellipse(vx, vy, uniform(rng, 1.5, 4) * s, uniform(rng, 0.6, 1.4) * s, tint);
       }
     }
-    // Líneas de contacto por profundidad (guía sutil de escala, ambas variantes).
+    // Líneas de contacto por profundidad (guía sutil de escala, ambas
+    // variantes) — a todo el ancho: el suelo es continuo hasta el borde.
     for (let z = 2; z < depthM - 1e-6; z += 2) {
       const y = stageToView(proj, 0, z)[1];
-      const half = (widthM / 2) * PX_PER_M * scaleAt(proj, z);
-      body += line([-half, y], [half, y], darken(floorColor, 0.1), 0.3);
+      body += line([viewBox.minX, y], [viewRight, y], darken(floorColor, 0.1), 0.3);
     }
     layers.push({
       id: "floor",
       z: depthM + 0.4,
       kind: "floor",
       body,
-      bbox: [-halfFront, yBack, halfFront, GROUND_Y],
+      bbox: [viewBox.minX, yBack, viewRight, viewBottom],
       baseline_y: GROUND_Y,
     });
   }
@@ -325,13 +322,20 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     if (built) layers.push(built);
   }
 
-  // ── Bastidores (bandas laterales que cierran el encuadre) ─────────────────
-  {
+  // ── Laterales (v3: nada de bastidores negros de teatro) ──────────────────
+  //  Interior: PAREDES laterales reales en perspectiva, con sus vanos — el
+  //  modelo de imagen las pinta como paredes de la habitación. Exterior: no
+  //  hay capa alguna — el suelo y el cielo continúan hasta el borde del
+  //  encuadre y las salidas laterales son simplemente el mundo siguiendo
+  //  fuera de plano (la zona de salida in-game guía al jugador).
+  if (interiorLike) {
     const sBack = scaleAt(proj, depthM);
     const yBack = stageToView(proj, 0, depthM)[1];
     const halfFront = (widthM / 2) * PX_PER_M;
     const halfBack = halfFront * sBack;
-    const wingColor = "#17131b";
+    const wall = wallColors("plaster");
+    // Pared perpendicular a cámara: tono en sombra respecto al telón.
+    const sideTone = darken(wall.lit, 0.16);
     for (const side of [-1, 1] as const) {
       const outer = side < 0 ? viewBox.minX : viewRight;
       let body = polygon(
@@ -343,11 +347,18 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
           [outer, viewBox.minY],
           [outer, viewBottom],
         ],
-        wingColor,
+        sideTone,
       );
-      // Salidas laterales. "door" = arco pintado (hay una puerta de verdad);
-      // "opening"/"stairs" = HUECO en el bastidor: el suelo continúa fuera de
-      // plano y basta con llegar al borde de la pantalla — nada simbólico.
+      // Arista pared-suelo (zócalo en perspectiva).
+      body += line(
+        [side * halfFront, GROUND_Y],
+        [side * halfBack, yBack],
+        darken(sideTone, 0.3),
+        1.1,
+      );
+      // Salidas laterales. "door" = puerta pintada en la pared;
+      // "opening"/"stairs" = vano abierto: el suelo continúa fuera de plano y
+      // basta con llegar al borde de la pantalla — nada simbólico.
       for (const e of plan.stage.exits) {
         if ((side < 0 && e.edge !== "west") || (side > 0 && e.edge !== "east")) continue;
         const w = zoneToWorld(e.zone);
@@ -360,16 +371,17 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
           const [ax, ay] = stageToView(proj, side * (widthM / 2), zMid);
           const aw = 1.4 * PX_PER_M * s;
           const ah = DOOR_H_M * PX_PER_M * s;
-          body += rectEl(ax - aw / 2, ay - ah, aw, ah, lighten(wingColor, 0.18));
-          body += ellipse(ax, ay - ah, aw / 2, aw / 3, lighten(wingColor, 0.18));
-          body += rectEl(ax - aw / 2 + 0.6, ay - ah + 0.6, aw - 1.2, ah - 0.6, "#0d0a10");
+          body += rectEl(ax - aw / 2 - 0.8, ay - ah - 0.8, aw + 1.6, 0.8, PALETTE.woodFace);
+          body += ellipse(ax, ay - ah, aw / 2 + 0.8, aw / 3, PALETTE.woodFace);
+          body += rectEl(ax - aw / 2, ay - ah, aw, ah, "#0d0a10");
+          body += ellipse(ax, ay - ah, aw / 2, aw / 3, "#0d0a10");
         } else {
           const [xe0, ye0] = stageToView(proj, side * (widthM / 2), zs0);
           const [xe1, ye1] = stageToView(proj, side * (widthM / 2), zs1);
           const h0 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs0);
           const h1 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs1);
-          // Aire del hueco (más claro que el bastidor: se lee como abertura
-          // de suelo a altura de dintel, hasta el borde de la pantalla).
+          // Aire del vano (penumbra de la estancia contigua, de suelo a
+          // dintel, hasta el borde de la pantalla).
           body += polygon(
             [
               [xe0, ye0 - h0],
@@ -378,7 +390,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
               [outer, ye0],
               [xe0, ye0],
             ],
-            lighten(wingColor, 0.22),
+            darken(sideTone, 0.55),
           );
           // El suelo continúa fuera de plano.
           body += polygon(

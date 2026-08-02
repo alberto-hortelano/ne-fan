@@ -57,8 +57,8 @@ export function buildPeelPrompt(behindLabels: string[], backdrop?: string, remov
   const behind =
     behindLabels.length > 0
       ? `these elements that are partially hidden behind it: ${behindLabels.join(", ")}`
-      : "ONLY the empty stage floor";
-  const far = backdrop ? ` and, at the far end, the painted backdrop (${backdrop})` : "";
+      : "ONLY the empty ground";
+  const far = backdrop ? ` and, at the far end, the background (${backdrop})` : "";
   const removedClause = removed
     ? `The object being removed is: ${removed}. Do NOT paint the ${removed} back, nor any similar object. `
     : "";

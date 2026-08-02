@@ -296,6 +296,11 @@ export interface SpriteScaleModel {
   k: number;
   /** Focal de TAMAÑOS pintados (puede diferir de la de posiciones). */
   focal_size_m: number;
+  /** Soporte de datos del fit en z (m). Fuera de [z_min, z_max] el factor se
+   *  CONGELA en el del borde: extrapolar una focal corta a z sin mobiliario
+   *  medido dispara tallas absurdas junto a cámara (visto en el bucle). */
+  z_min?: number;
+  z_max?: number;
 }
 
 export const SPRITE_SCALE_IDENTITY: SpriteScaleModel = { k: 1, focal_size_m: 0 };
@@ -304,7 +309,10 @@ export const SPRITE_SCALE_IDENTITY: SpriteScaleModel = { k: 1, focal_size_m: 0 }
  *  multiplica al s(z) de la proyección calibrada. Identity (focal 0) ⇒ 1. */
 export function spriteScaleAt(model: SpriteScaleModel, proj: StageProjParams, zStage: number): number {
   if (model.focal_size_m <= 0) return model.k;
-  const z = Math.max(0, zStage);
+  let z = Math.max(0, zStage);
+  // Solo se interpola dentro del rango de z con mobiliario medido.
+  if (model.z_min !== undefined) z = Math.max(model.z_min, z);
+  if (model.z_max !== undefined) z = Math.min(model.z_max, z);
   const sSize = model.focal_size_m / (model.focal_size_m + z);
   const sCal = proj.focal_m / (proj.focal_m + z);
   const f = (model.k * sSize) / sCal;
@@ -346,8 +354,9 @@ export function fitSpriteScale(points: SpriteScalePoint[], paintedProj: StagePro
     k: meanRatio,
     focal_size_m: paintedProj.focal_m, // s_size ≡ s_cal ⇒ factor constante
   });
-  const zSpan = Math.max(...obs.map((o) => o.z)) - Math.min(...obs.map((o) => o.z));
-  if (obs.length < 2 || zSpan < SPRITE_FIT_MIN_Z_SPAN_M) return constant();
+  const zMin = Math.min(...obs.map((o) => o.z));
+  const zMax = Math.max(...obs.map((o) => o.z));
+  if (obs.length < 2 || zMax - zMin < SPRITE_FIT_MIN_Z_SPAN_M) return constant();
   let best: { fs: number; k: number; err: number } | null = null;
   for (let i = 0; i <= 60; i++) {
     const fs = 2 * Math.pow(200, i / 60); // 2 m … 400 m, log-espaciado
@@ -360,7 +369,9 @@ export function fitSpriteScale(points: SpriteScalePoint[], paintedProj: StagePro
     const err = logResid.reduce((a, b) => a + (b - mean) * (b - mean), 0);
     if (!best || err < best.err) best = { fs, k: Math.exp(mean), err };
   }
-  return best ? { k: best.k, focal_size_m: best.fs } : constant();
+  // El modelo solo interpola: fuera de [zMin, zMax] no hay datos y el factor
+  // se congela en el borde (spriteScaleAt).
+  return best ? { k: best.k, focal_size_m: best.fs, z_min: zMin, z_max: zMax } : constant();
 }
 
 /** Pose desde la línea de contacto pintada: cada punto px → vista →

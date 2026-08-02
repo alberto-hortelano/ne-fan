@@ -196,41 +196,43 @@ class SceneImageGenerator:
                 + _STYLE_RULES
             )
         elif blueprint_kind == "stage":
-            # Plató proscenio (entrega 2): el plan YA está dibujado en la
-            # perspectiva del set (suelo convergiendo al fondo, cerca = bajo y
-            # grande). El repintado debe conservarla; los bastidores laterales
-            # son encuadre, no contenido. OJO: sin pack de estilo NO se pasa
-            # la referencia global (es un battlemap CENITAL y arrastra al
-            # modelo a pintar la escena desde arriba — visto en el bench).
+            # Vista proscenio (entrega 2): el plan YA está dibujado en
+            # perspectiva de cámara baja (suelo convergiendo al fondo, cerca =
+            # bajo y grande). El repintado debe conservarla. PROHIBIDO
+            # cualquier vocabulario teatral (stage/wings/backdrop/plató): el
+            # modelo lo convierte en cortinas y marcos de escenario — la
+            # imagen debe ser una escena normal que llena TODO el encuadre.
+            # OJO: sin pack de estilo NO se pasa la referencia global (es un
+            # battlemap CENITAL y arrastra al modelo a pintar desde arriba).
             stage_has_style_ref = style_ref_uri is not None
             style_clause = (
-                "Fully REPAINT the whole stage in the painterly, richly textured "
+                "Fully REPAINT the whole scene in the painterly, richly textured "
                 "style of the SECOND reference image"
                 if stage_has_style_ref
-                else "Fully REPAINT the whole stage in a rich, painterly, "
+                else "Fully REPAINT the whole scene in a rich, painterly, "
                 "hand-drawn illustration style"
             )
             instruction = (
-                "SIDE VIEW of ONE theatre/film-set style game stage — this is NOT "
-                "a top-down map. The camera sits at the front edge, low, looking "
-                "horizontally across a floor drawn in perspective toward a painted "
-                "backdrop at the far end. The UPPER part of the frame is a WALL "
-                "(or sky) seen FRONTALLY — never paint floorboards, tables seen "
-                "from above, or any from-above room there. The plan is ALREADY "
-                "drawn in that perspective: the floor is only the lower band, "
-                "converging toward the back; far objects are smaller and higher in "
-                "the frame, near objects bigger and lower. Keep that perspective, "
+                "Ground-level view of ONE game scene — this is NOT a top-down "
+                "map. The camera is low, at eye height, looking horizontally "
+                "across a floor drawn in perspective that recedes toward the "
+                "background. The UPPER part of the frame is the far wall or the "
+                "sky seen FRONTALLY — never paint floorboards, tables seen from "
+                "above, or any from-above room there. The plan is ALREADY drawn "
+                "in that perspective: the floor is the lower band, converging "
+                "toward the back; far objects are smaller and higher in the "
+                "frame, near objects bigger and lower. Keep that perspective, "
                 "the horizon height and the light direction exactly. "
                 "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
                 f"with flat placeholder colours — it is NOT final art. {style_clause}: "
                 "floor with wear, grain and colour variation; props and walls with "
-                "material detail, highlights and soft contact shadows; a backdrop "
+                "material detail, highlights and soft contact shadows; a background "
                 "with atmosphere and depth. The finished image must NOT look flat, "
                 "vector-like or diagram-like anywhere. "
-                "The dark bands on the left and right edges are theatre WINGS "
-                "framing the set: keep them as soft dark framing, do NOT fill them "
-                "with new content; lighter gaps in them are open exits — keep them "
-                "open. "
+                "The scene must FILL the entire frame edge to edge, as a normal "
+                "painting of a real place: NO borders, NO black side bands, NO "
+                "curtains, NO vignettes, NO letterboxing, NO picture frame — the "
+                "world simply continues past the edges of the image. "
                 "Keep every element in the SAME position, size, shape and height. "
                 "Do NOT move, remove, merge or duplicate objects. Do NOT invent "
                 "new objects, buildings, doors or windows that are not in the plan. "

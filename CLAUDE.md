@@ -405,9 +405,15 @@ la puerta de vuelta (patrón puertas de Resident Evil).
 - **Compositor** (`nefan-core/src/scene/stage/`): `composeStage(plan, key)`
   determinista, `STAGE_COMPOSER_VERSION` propia (cero bytes compartidos con la
   oblicua) — proyección `s(z)=f/(f+z)`, capas fondo→frente (backdrop, suelo en
-  perspectiva, volúmenes como billboards frontales, bastidores, cuarta pared),
-  cada una SVG standalone con huella/exits en METROS de mundo. Colisión de
-  huellas vía `applyPlanCollision`, nunca de píxeles.
+  perspectiva A TODO EL ANCHO, volúmenes como billboards frontales, paredes
+  laterales solo en interiores, cuarta pared), cada una SVG standalone con
+  huella/exits en METROS de mundo. Colisión de huellas vía
+  `applyPlanCollision`, nunca de píxeles. **v3: cero pistas teatrales** — sin
+  bastidores negros (exterior: el mundo continúa hasta el borde del encuadre;
+  interior: paredes reales con sus vanos) y el prompt del repintado no
+  menciona teatro; el modelo de imagen pintaba cortinas/marcos de escenario
+  con la versión anterior. El renderer tampoco dibuja marco a pantalla ni las
+  capas `wing` sobre la placa en modo imagen.
 - **Cliente**: `rendererRegistry` (`renderer/registry.ts`, patrón
   createSystemRegistry) con `ProsceniumRenderer` — rasteriza las capas una vez
   por escena, cámara de **raíl** en X (zona muerta + lerp, paneo UNIFORME: el

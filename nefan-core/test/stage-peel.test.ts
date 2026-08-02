@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { composeStage, type StageScenePlan } from "../src/scene/stage/compose.js";
 import { peelPlanFor, paintableVolumeLayers, STAGE_PEEL_VERSION } from "../src/scene/stage/peel.js";
 
-/** Plató con 3 volúmenes a profundidades distintas (mesa cerca, barril medio,
- *  muro lejos) + cuarta pared y bastidores (encuadre, fuera del plan). */
+/** Plató INTERIOR con 3 volúmenes a profundidades distintas (mesa cerca,
+ *  barril medio, muro lejos) + cuarta pared y paredes laterales (encuadre,
+ *  fuera del plan de pelado). */
 function makePlan(): StageScenePlan {
   return {
     size: { cols: 32, rows: 20, meters_per_cell: 0.5 },
@@ -47,7 +48,7 @@ describe("peelPlanFor", () => {
   it("los prompts llevan lo declarado detrás, el backdrop y las negativas duras", () => {
     assert.match(plan.steps[0].prompt, /barril, muro de piedra/);
     assert.match(plan.steps[0].prompt, /Pared de piedra con chimenea/);
-    assert.match(plan.steps[2].prompt, /ONLY the empty stage floor/);
+    assert.match(plan.steps[2].prompt, /ONLY the empty ground/);
     for (const s of plan.steps) assert.match(s.prompt, /Do NOT invent any new object/);
   });
 
@@ -62,7 +63,8 @@ describe("peelPlanFor", () => {
   it("paintableVolumeLayers excluye encuadre y placa", () => {
     const kinds = new Set(paintableVolumeLayers(stage).map((l) => l.kind));
     assert.ok([...kinds].every((k) => k === "prop" || k === "wall"));
-    // Los bastidores ahora son kind "wing" y las capas llevan label.
+    // Las paredes laterales de interior son kind "wing" y las capas de
+    // volumen llevan label.
     const wings = stage.layers.filter((l) => l.kind === "wing");
     assert.equal(wings.length, 2);
     const mesa = stage.layers.find((l) => l.id === "vol_mesa")!;

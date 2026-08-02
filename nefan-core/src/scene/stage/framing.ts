@@ -75,7 +75,12 @@ export function frameStage(
   // jugable — así el raíl SIEMPRE tiene recorrido (platós enanos clampan a
   // maxZoom; los gigantes a minZoom, donde fit0 ya deja raíl de sobra).
   const zoomRaw = canvasW / (o.coverFraction * p.width_m * p.px_per_m * fit0);
-  const zoom = Math.min(o.maxZoom, Math.max(o.minZoom, zoomRaw));
+  let zoom = Math.min(o.maxZoom, Math.max(o.minZoom, zoomRaw));
+  // Cobertura TOTAL: la escena debe llenar el canvas de borde a borde — sin
+  // bandas vacías en los flancos (v3: ya no existe el marco de proscenio que
+  // las tapaba). Gana incluso a maxZoom: mejor ampliar la pintura que
+  // enseñar el vacío. El raíl pierde recorrido (railHalfM clampa a 0).
+  zoom = Math.max(zoom, canvasW / (vb.width * fit0));
   const fit = fit0 * zoom;
   const groundScreenY = o.groundAnchor * canvasH;
   // Con proyección calibrada a la pintura (center_x/cam_x_m ≠ 0) el suelo

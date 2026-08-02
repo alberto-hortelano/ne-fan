@@ -38,8 +38,9 @@ Tu trabajo: un inventario COMPLETO de lo pintado.
    la pared < el ancho en el frente. Da los 4 valores o ninguno (pueden salir
    del encuadre: valores <0 o >tamaño de imagen son válidos si la recta
    extrapolada cruza ahí). Si los bordes laterales del suelo NO se ven en
-   absoluto (encuadre cerrado, sin paredes laterales ni bastidores que los
-   marquen), OMITE los 4: mejor sin trapecio que con rectas inventadas.
+   absoluto (encuadre cerrado o escena abierta donde el suelo llega hasta el
+   borde de la imagen sin paredes que lo limiten), OMITE los 4: mejor sin
+   trapecio que con rectas inventadas.
 
 Responde EXACTAMENTE este JSON:
 

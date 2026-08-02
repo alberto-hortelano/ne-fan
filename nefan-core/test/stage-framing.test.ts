@@ -61,6 +61,16 @@ describe("frameStage", () => {
     assert.equal(zeros.railHalfM, sym.railHalfM);
   });
 
+  it("cobertura total: la placa llena el canvas aunque el zoom adaptativo se quede corto", () => {
+    // Caso real (salón calibrado): ppm alto ⇒ zoomRaw≈1, pero el viewBox a
+    // ese fit no llega al ancho del canvas — sin la cláusula de cobertura
+    // quedaban bandas vacías en los flancos (ya no hay marco que las tape).
+    const calibrated = { ...projFor(16), px_per_m: 19.7 };
+    const f = frameStage(calibrated, VB, 1600, 1000);
+    assert.ok(VB.width * f.fit >= 1600 - 1e-6, `placa ${VB.width * f.fit}px ≥ canvas 1600px`);
+    assert.ok(f.railHalfM >= 0);
+  });
+
   it("ancla la línea de suelo al 78% del canvas", () => {
     const f = frameStage(projFor(16), VB, 1280, 720);
     assert.equal(f.groundScreenY, 0.78 * 720);
