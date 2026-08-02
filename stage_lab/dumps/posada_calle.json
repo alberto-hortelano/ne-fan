@@ -1,0 +1,231 @@
+{
+  "key": "posada_calle",
+  "scene_description": "La calle Mayor frente a la posada del Roble: fachadas encaladas, un camino de tierra apisonada y la puerta de la posada bajo su cartel de madera.",
+  "backdrop": "Fachadas encaladas de dos plantas con el cartel de la posada colgando sobre la puerta",
+  "proj": {
+    "focal_m": 30,
+    "depth_m": 7,
+    "width_m": 16,
+    "px_per_m": 10,
+    "horizon_y": 0,
+    "ground_y": 100
+  },
+  "view_box": {
+    "minX": -88,
+    "minY": -48,
+    "width": 176,
+    "height": 158
+  },
+  "bounds": {
+    "minX": -7.75,
+    "maxX": 7.75,
+    "minZ": -3.25,
+    "maxZ": 3.25
+  },
+  "rect": {
+    "minX": -8,
+    "minZ": -3.5,
+    "maxX": 8,
+    "maxZ": 3.5
+  },
+  "meters_per_cell": 0.5,
+  "layers": [
+    {
+      "id": "backdrop",
+      "z": 7.5,
+      "kind": "backdrop",
+      "label": null,
+      "bbox": [
+        -88,
+        -48,
+        88,
+        81.08108108108108
+      ],
+      "baseline_y": 81.08108108108108,
+      "footprint": null
+    },
+    {
+      "id": "floor",
+      "z": 7.4,
+      "kind": "floor",
+      "label": null,
+      "bbox": [
+        -80,
+        81.08108108108108,
+        80,
+        100
+      ],
+      "baseline_y": 100,
+      "footprint": null
+    },
+    {
+      "id": "vol_derived_ent_posada_este",
+      "z": 6,
+      "kind": "prop",
+      "label": "casa del cambista",
+      "bbox": [
+        2.166666666666668,
+        50.08333333333334,
+        43.66666666666667,
+        86.33333333333334
+      ],
+      "baseline_y": 83.33333333333334,
+      "footprint": [
+        0.5,
+        -3.5,
+        5,
+        -2.5
+      ]
+    },
+    {
+      "id": "vol_derived_ent_posada_oeste",
+      "z": 6,
+      "kind": "prop",
+      "label": "posada del Roble",
+      "bbox": [
+        -52,
+        50.08333333333334,
+        -14.666666666666668,
+        86.33333333333334
+      ],
+      "baseline_y": 83.33333333333334,
+      "footprint": [
+        -6,
+        -3.5,
+        -2,
+        -2.5
+      ]
+    },
+    {
+      "id": "vol_derived_ent_olmo_viejo",
+      "z": 2.1000000000000005,
+      "kind": "prop",
+      "label": "olmo viejo",
+      "bbox": [
+        -66.48598130841121,
+        68.88785046728972,
+        -55.00934579439252,
+        96.45794392523365
+      ],
+      "baseline_y": 93.45794392523365,
+      "footprint": [
+        -6.9,
+        0.5999999999999996,
+        -6.1,
+        1.3999999999999995
+      ]
+    },
+    {
+      "id": "vol_derived_ent_carro_heno",
+      "z": 1.5,
+      "kind": "prop",
+      "label": "carro de heno",
+      "bbox": [
+        50.38095238095238,
+        78.95238095238093,
+        68.66666666666666,
+        98.23809523809523
+      ],
+      "baseline_y": 95.23809523809523,
+      "footprint": [
+        5.5,
+        1,
+        7,
+        2
+      ]
+    },
+    {
+      "id": "wing_east",
+      "z": 0.001,
+      "kind": "wing",
+      "label": null,
+      "bbox": [
+        64.86486486486487,
+        -48,
+        88,
+        110
+      ],
+      "baseline_y": 110,
+      "footprint": null
+    },
+    {
+      "id": "wing_west",
+      "z": 0.001,
+      "kind": "wing",
+      "label": null,
+      "bbox": [
+        -88,
+        -48,
+        -64.86486486486487,
+        110
+      ],
+      "baseline_y": 110,
+      "footprint": null
+    }
+  ],
+  "exits": [
+    {
+      "id": "puerta_posada",
+      "edge": "north",
+      "to_place_id": "posada_salon",
+      "kind": "door",
+      "label": "Puerta de la posada",
+      "rect": {
+        "minX": -2,
+        "minZ": -3.5,
+        "maxX": 0.5,
+        "maxZ": -2.5
+      }
+    }
+  ],
+  "expected_elements": [
+    {
+      "id": "vol_derived_ent_posada_este",
+      "label": "casa del cambista",
+      "box_px": [
+        525,
+        636,
+        241,
+        235
+      ],
+      "tall": true,
+      "solid": true
+    },
+    {
+      "id": "vol_derived_ent_posada_oeste",
+      "label": "posada del Roble",
+      "box_px": [
+        209,
+        636,
+        217,
+        235
+      ],
+      "tall": true,
+      "solid": true
+    },
+    {
+      "id": "vol_derived_ent_olmo_viejo",
+      "label": "olmo viejo",
+      "box_px": [
+        125,
+        758,
+        67,
+        179
+      ],
+      "tall": true,
+      "solid": true
+    },
+    {
+      "id": "vol_derived_ent_carro_heno",
+      "label": "carro de heno",
+      "box_px": [
+        805,
+        823,
+        106,
+        125
+      ],
+      "tall": true,
+      "solid": true
+    }
+  ]
+}

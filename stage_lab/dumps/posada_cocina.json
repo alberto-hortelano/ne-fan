@@ -1,0 +1,214 @@
+{
+  "key": "posada_cocina",
+  "scene_description": "La cocina de la posada: el fogón de leña ocupa la pared del fondo, cuelgan ristras de ajos y una mesa central llena de harina. Hace calor.",
+  "backdrop": "El fogón de leña encendido con ollas de cobre y ristras de ajos colgando",
+  "proj": {
+    "focal_m": 30,
+    "depth_m": 6,
+    "width_m": 10,
+    "px_per_m": 10,
+    "horizon_y": 0,
+    "ground_y": 100
+  },
+  "view_box": {
+    "minX": -58,
+    "minY": -28,
+    "width": 116,
+    "height": 138
+  },
+  "bounds": {
+    "minX": -4.75,
+    "maxX": 4.75,
+    "minZ": -2.75,
+    "maxZ": 2.75
+  },
+  "rect": {
+    "minX": -5,
+    "minZ": -3,
+    "maxX": 5,
+    "maxZ": 3
+  },
+  "meters_per_cell": 0.5,
+  "layers": [
+    {
+      "id": "backdrop",
+      "z": 6.5,
+      "kind": "backdrop",
+      "label": null,
+      "bbox": [
+        -58,
+        -28,
+        58,
+        83.33333333333334
+      ],
+      "baseline_y": 83.33333333333334,
+      "footprint": null
+    },
+    {
+      "id": "floor",
+      "z": 6.4,
+      "kind": "floor",
+      "label": null,
+      "bbox": [
+        -50,
+        83.33333333333334,
+        50,
+        100
+      ],
+      "baseline_y": 100,
+      "footprint": null
+    },
+    {
+      "id": "vol_derived_ent_fogon",
+      "z": 4.5,
+      "kind": "prop",
+      "label": "fogón de leña",
+      "bbox": [
+        -32.434782608695656,
+        71.91304347826087,
+        -11.043478260869566,
+        89.95652173913044
+      ],
+      "baseline_y": 86.95652173913044,
+      "footprint": [
+        -3.5,
+        -2.5,
+        -1.5,
+        -1.5
+      ]
+    },
+    {
+      "id": "vol_derived_ent_tinaja",
+      "z": 4,
+      "kind": "prop",
+      "label": "tinaja de agua",
+      "bbox": [
+        24.470588235294116,
+        73,
+        37.294117647058826,
+        91.23529411764706
+      ],
+      "baseline_y": 88.23529411764706,
+      "footprint": [
+        3,
+        -2,
+        4,
+        -1
+      ]
+    },
+    {
+      "id": "vol_derived_ent_mesa_harina",
+      "z": 2.5,
+      "kind": "prop",
+      "label": "mesa de amasar",
+      "bbox": [
+        -11.230769230769232,
+        76.46153846153845,
+        11.230769230769232,
+        95.3076923076923
+      ],
+      "baseline_y": 92.3076923076923,
+      "footprint": [
+        -1,
+        -0.5,
+        1,
+        0.5
+      ]
+    },
+    {
+      "id": "wing_east",
+      "z": 0.001,
+      "kind": "wing",
+      "label": null,
+      "bbox": [
+        41.66666666666667,
+        -28,
+        58,
+        110
+      ],
+      "baseline_y": 110,
+      "footprint": null
+    },
+    {
+      "id": "wing_west",
+      "z": 0.001,
+      "kind": "wing",
+      "label": null,
+      "bbox": [
+        -58,
+        -28,
+        -41.66666666666667,
+        110
+      ],
+      "baseline_y": 110,
+      "footprint": null
+    },
+    {
+      "id": "fourth_wall",
+      "z": 0,
+      "kind": "fourth_wall",
+      "label": null,
+      "bbox": [
+        -58,
+        70,
+        58,
+        110
+      ],
+      "baseline_y": 110,
+      "footprint": null
+    }
+  ],
+  "exits": [
+    {
+      "id": "puerta_salon",
+      "edge": "south",
+      "to_place_id": "posada_salon",
+      "kind": "door",
+      "label": "Puerta al salón",
+      "rect": {
+        "minX": -1,
+        "minZ": 2,
+        "maxX": 1,
+        "maxZ": 3
+      }
+    }
+  ],
+  "expected_elements": [
+    {
+      "id": "vol_derived_ent_fogon",
+      "label": "fogón de leña",
+      "box_px": [
+        226,
+        741,
+        189,
+        134
+      ],
+      "tall": true,
+      "solid": true
+    },
+    {
+      "id": "vol_derived_ent_tinaja",
+      "label": "tinaja de agua",
+      "box_px": [
+        728,
+        749,
+        113,
+        135
+      ],
+      "tall": true,
+      "solid": true
+    },
+    {
+      "id": "vol_derived_ent_mesa_harina",
+      "label": "mesa de amasar",
+      "box_px": [
+        413,
+        775,
+        198,
+        140
+      ],
+      "tall": true,
+      "solid": true
+    }
+  ]
+}

@@ -162,13 +162,42 @@ def declared_height_m(layer: dict, proj_orig: dict) -> float | None:
     return h_view / (proj_orig["px_per_m"] * s)
 
 
+def fit_sprite_scale(points: list[tuple[float, float]], proj: dict) -> tuple[float, float, float]:
+    """Espejo de segments.ts:fitSpriteScale sobre (z, log_ratio): devuelve
+    (k, focal_size, std de residuos log). Búsqueda en rejilla log de focales."""
+    # Outliers fuera (espejo de segments.ts): a más de ×1.65 de la mediana no votan.
+    if len(points) >= 3:
+        med = float(np.median([r for _, r in points]))
+        kept = [(z, r) for z, r in points if abs(r - med) <= 0.5]
+        if len(kept) >= 2:
+            points = kept
+    if len(points) < 2 or (max(z for z, _ in points) - min(z for z, _ in points)) < 1.5:
+        k = float(np.exp(np.median([r for _, r in points]))) if points else 1.0
+        resid = float(np.std([r for _, r in points])) if points else 0.0
+        return k, proj["focal_m"], resid
+    best = None
+    for i in range(61):
+        fs = 2 * (200 ** (i / 60))
+        resid = [r - np.log((fs / (fs + z)) / (proj["focal_m"] / (proj["focal_m"] + z)))
+                 for z, r in points]
+        mean = float(np.mean(resid))
+        err = float(np.sum((np.array(resid) - mean) ** 2))
+        if best is None or err < best[3]:
+            best = (float(np.exp(mean)), fs, float(np.std(np.array(resid) - mean)), err)
+    return best[0], best[1], best[2]
+
+
 def scale_err_metric(items: list, dump: dict, layers: dict,
                      proj_orig: dict) -> tuple[float | None, float | None, dict]:
-    """(score, error relativo medio, por item). Altura pintada (bbox de la
-    máscara) vs proyectada con la calibración: h_m · ppm_cal · s(z_pintada)."""
+    """(score, std de residuos log tras el ajuste, detalle). El cliente ajusta
+    un modelo de TALLA {k, focal_size} al mobiliario pintado y escala a los
+    personajes con él — lo que importa no es el error absoluto (k lo absorbe)
+    sino la CONSISTENCIA: si todos los items comparten modelo, los personajes
+    casan con todo; residuos altos = items imposibles de casar a la vez."""
     proj, vb = dump["proj"], dump["view_box"]
     px_per_view = RENDER / vb["height"]
     per = {}
+    points: list[tuple[float, float]] = []
     for it in items:
         if it.get("mask") is None or not it.get("pose") or it.get("action") != "keep":
             continue
@@ -178,29 +207,46 @@ def scale_err_metric(items: list, dump: dict, layers: dict,
             h_m = it.get("h")
         if not h_m:
             continue
-        s = proj["focal_m"] / (proj["focal_m"] + max(0.0, it["pose"]["z"]))
+        z = max(0.0, it["pose"]["z"])
+        s = proj["focal_m"] / (proj["focal_m"] + z)
         expected_px = h_m * proj["px_per_m"] * s * px_per_view
         painted_px = it["mask_bbox"][3] - it["mask_bbox"][1]
-        if expected_px <= 0:
+        if expected_px <= 0 or painted_px <= 0:
             continue
+        ratio = painted_px / expected_px
         per[it["id"]] = {"painted_px": painted_px, "expected_px": expected_px,
-                         "rel_err": abs(painted_px - expected_px) / expected_px}
-    if not per:
+                         "ratio": ratio, "z": z}
+        points.append((z, math.log(ratio)))
+    if not points:
         return None, None, per
-    mean_err = float(np.mean([p["rel_err"] for p in per.values()]))
-    return max(0.0, 1.0 - mean_err), mean_err, per
+    k, fs, resid_std = fit_sprite_scale(points, proj)
+    per["_model"] = {"k": k, "focal_size_m": fs, "resid_std": resid_std}
+    return math.exp(-2.0 * resid_std), resid_std, per
 
 
 def unexplained_metric(floor_mask: np.ndarray | None, items: list,
                        floor: dict) -> tuple[float | None, float | None]:
-    """(score, fracción). Región bajo la base de la pared que no es ni suelo
-    ni ningún elemento inventariado = pintado SIN identificar (pisable)."""
+    """(score, fracción). Región del SUELO pintado (el trapecio de la visión,
+    no el rectángulo — fuera del trapecio hay paredes/bastidores legítimos)
+    que no es ni suelo ni ningún elemento inventariado = pintado SIN
+    identificar (pisable por error)."""
     if floor_mask is None or not floor_mask.any():
         return None, None
     wall_py = max(0, int(floor["wall_base_px"]))
     front_py = min(RENDER, int(floor.get("front_px", RENDER)))
+    trap = [floor.get(k) for k in ("left_wall_px", "right_wall_px", "left_front_px", "right_front_px")]
     region = np.zeros((RENDER, RENDER), dtype=bool)
-    region[wall_py:front_py] = True
+    if all(v is not None for v in trap) and front_py > wall_py:
+        lw, rw, lf, rf = (float(v) for v in trap)
+        rows = np.arange(wall_py, front_py)
+        t = (rows - wall_py) / max(1, front_py - wall_py)
+        lefts = np.clip(np.round(lw + (lf - lw) * t).astype(int), 0, RENDER)
+        rights = np.clip(np.round(rw + (rf - rw) * t).astype(int), 0, RENDER)
+        for row, l, r in zip(rows, lefts, rights):
+            if r > l:
+                region[row, l:r] = True
+    else:
+        region[wall_py:front_py] = True
     claimed = floor_mask.copy()
     for it in items:
         if it.get("mask") is not None:

@@ -883,7 +883,8 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
     ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
         "vision_model": deps.llm_client.model,
-        "schema": "stage_review_v1",
+        # v2: floor con trapecio lateral (left/right_wall_px + left/right_front_px).
+        "schema": "stage_review_v2",
         # A diferencia del review oblicuo, las pistas SÍ entran en la clave:
         # otro plató (u otro plan) sobre la misma imagen no comparte entrada.
         "expected": hashlib.sha256(

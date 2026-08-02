@@ -14,6 +14,10 @@ import {
   collisionGridFromCutouts,
   reconstructionDiff,
   STAGE_RENDER_SIZE,
+  declaredLayerHeightM,
+  fitSpriteScale,
+  spriteScaleAt,
+  SPRITE_SCALE_IDENTITY,
   type StageReviewItem,
 } from "../src/scene/stage/segments.js";
 
@@ -233,6 +237,44 @@ describe("calibratedProjection", () => {
     warnings = [];
     cal = calibratedProjection(stage.proj, vb, base, STAGE_RENDER_SIZE, warnings);
     assert.equal(warnings.length, 0);
+  });
+});
+
+describe("fitSpriteScale / spriteScaleAt", () => {
+  const painted = calibratedProjection(stage.proj, stage.view_box, { wall_base_px: 580 });
+  const pointAt = (z: number, k: number, fs: number, hM = 1.2): { z: number; paintedView: number; hM: number } => {
+    const sSize = fs / (fs + z);
+    return { z, paintedView: k * hM * painted.px_per_m * sSize, hM };
+  };
+
+  it("recupera k y la focal de tamaños de puntos sintéticos", () => {
+    const truthK = 1.5;
+    const truthFs = 6;
+    const pts = [0.5, 2.5, 5, 7.5].map((z) => pointAt(z, truthK, truthFs));
+    const model = fitSpriteScale(pts, painted);
+    assert.ok(Math.abs(model.k - truthK) / truthK < 0.08, `k≈1.5 (${model.k})`);
+    assert.ok(Math.abs(model.focal_size_m - truthFs) / truthFs < 0.25, `fs≈6 (${model.focal_size_m})`);
+    // La talla efectiva reproduce el tamaño pintado en cada punto.
+    for (const p of pts) {
+      const sCal = painted.focal_m / (painted.focal_m + p.z);
+      const size = sCal * spriteScaleAt(model, painted, p.z) * p.hM * painted.px_per_m;
+      assert.ok(Math.abs(size - p.paintedView) / p.paintedView < 0.05, `talla en z=${p.z}`);
+    }
+  });
+
+  it("poco rango de z ⇒ factor constante; sin puntos ⇒ identidad", () => {
+    const flat = fitSpriteScale([pointAt(3, 1.4, painted.focal_m), pointAt(3.5, 1.4, painted.focal_m)], painted);
+    assert.equal(flat.focal_size_m, painted.focal_m);
+    assert.ok(Math.abs(spriteScaleAt(flat, painted, 5) - 1.4) < 0.05, "factor constante 1.4");
+    assert.deepEqual(fitSpriteScale([], painted), SPRITE_SCALE_IDENTITY);
+    assert.equal(spriteScaleAt(SPRITE_SCALE_IDENTITY, painted, 4), 1);
+  });
+
+  it("declaredLayerHeightM reconstruye una altura plausible del compositor", () => {
+    const layer = stage.layers.find((l) => l.id === "vol_mesa");
+    assert.ok(layer);
+    const hM = declaredLayerHeightM(layer!, stage.proj);
+    assert.ok(hM && hM > 0.5 && hM < 4, `altura declarada ${hM} plausible`);
   });
 });
 

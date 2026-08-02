@@ -36,6 +36,11 @@ import {
   STAGE_RENDER_SIZE,
   expectedElementsFor,
   calibratedProjection,
+  declaredLayerHeightM,
+  fitSpriteScale,
+  SPRITE_SCALE_IDENTITY,
+  type SpriteScaleModel,
+  type SpriteScalePoint,
   contactToPose,
   footprintFromContact,
   matchInventory,
@@ -86,6 +91,9 @@ export interface StageImages {
   missing: string[];
   /** Proyección calibrada a la perspectiva pintada; null = sin review. */
   paintedProj: StageProjParams | null;
+  /** Modelo de talla de sprites vs el mobiliario PINTADO (los TAMAÑOS de la
+   *  pintura llevan su propia perspectiva, distinta de la del suelo). */
+  spriteScale: SpriteScaleModel;
 }
 
 export interface StageImageMeta {
@@ -214,6 +222,7 @@ export class StageImageController {
           collision: null,
           missing: [],
           paintedProj: null,
+          spriteScale: SPRITE_SCALE_IDENTITY,
         });
         console.log(`[stage-img] ${key}: DEGRADADO a placa sola (${ms()})`);
         return;
@@ -352,6 +361,28 @@ export class StageImageController {
       this.checkReconstruction(key, painted, current, work, cutouts);
 
       const missing = [...new Set([...review.missing, ...inventory.missing])];
+      // Talla de sprites: los personajes se miden contra el MOBILIARIO
+      // pintado. El suelo gobierna las POSICIONES; los tamaños pintados
+      // llevan su propia perspectiva (una plaza frontal casi ortográfica
+      // encoge puertas 2× al fondo) — se ajusta {k, focal_size} a los ratios.
+      const layersById2 = new Map(stage.layers.map((l) => [l.id, l]));
+      const scalePoints: SpriteScalePoint[] = [];
+      for (const cut of cutouts) {
+        const layer = cut.layerId ? layersById2.get(cut.layerId) : undefined;
+        const w = workById.get(cut.id);
+        const hM = layer
+          ? declaredLayerHeightM(layer, stage.proj)
+          : (typeof w?.item.h === "number" ? w.item.h : null);
+        if (!hM) continue;
+        scalePoints.push({ z: cut.z, paintedView: cut.bboxView[3] - cut.bboxView[1], hM });
+      }
+      const spriteScale = fitSpriteScale(scalePoints, paintedProj);
+      if (Math.abs(spriteScale.k - 1) > 0.05 || spriteScale.focal_size_m > 0) {
+        console.log(
+          `[stage-img] ${key}: talla de sprites k=${spriteScale.k.toFixed(2)} ` +
+          `focal_size=${spriteScale.focal_size_m.toFixed(1)}m (${scalePoints.length} puntos)`,
+        );
+      }
       this.installAndCache(stage, key, {
         peelVersion: STAGE_PEEL_VERSION,
         plate: current,
@@ -359,6 +390,7 @@ export class StageImageController {
         collision: grid,
         missing,
         paintedProj,
+        spriteScale,
       });
       this.deps.log(`🎨 plató ${key} pintado (${cutouts.length} recortes segmentados)`);
       console.log(

@@ -1,0 +1,18 @@
+{
+  "expected": [
+    { "id": "vol_derived_ent_barril_cerveza", "status": "missing" },
+    { "id": "vol_derived_ent_mesa_grande", "status": "found", "box_px": [0, 585, 355, 390] },
+    { "id": "vol_derived_ent_banco_ventana", "status": "missing" }
+  ],
+  "extras": [
+    { "label": "mesa junto a la chimenea", "action": "keep", "box_px": [112, 485, 348, 175], "tall": false, "solid": true, "h": 0.9, "depth_cells": 2 },
+    { "label": "taburete de tres patas", "action": "keep", "box_px": [698, 638, 116, 138], "tall": false, "solid": true, "h": 0.5, "depth_cells": 1 }
+  ],
+  "floor": {
+    "wall_base_px": 558,
+    "left_wall_px": 55,
+    "right_wall_px": 890,
+    "left_front_px": -80,
+    "right_front_px": 1060
+  }
+}

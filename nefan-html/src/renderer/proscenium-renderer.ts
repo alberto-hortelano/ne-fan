@@ -16,6 +16,7 @@
 import type { Vec3 } from "@nefan-core/src/types.js";
 import {
   scaleAt,
+  spriteScaleAt,
   stageToView,
   worldToStage,
   railCamera,
@@ -226,6 +227,15 @@ export class ProsceniumRenderer implements Renderer2D {
     if (this.minScaleOverride !== null) return this.minScaleOverride;
     if (this.images?.paintedProj) return Math.min(MIN_DEPTH_SCALE, scaleAt(proj, proj.depth_m));
     return MIN_DEPTH_SCALE;
+  }
+
+  /** Talla de sprites vs el mobiliario PINTADO a la profundidad z: el suelo
+   *  gobierna las POSICIONES (px_per_m calibrado del trapecio), pero los
+   *  TAMAÑOS de la pintura llevan su propia perspectiva — los personajes se
+   *  miden contra los muebles que tienen al lado o parecen juguetes. */
+  private spriteScaleFactor(proj: StageProjParams, zs: number): number {
+    const m = this.images?.spriteScale;
+    return m ? spriteScaleAt(m, proj, zs) : 1;
   }
 
   /** Alpha vivo del fade de un recorte — portado del occluder-fade de la
@@ -723,7 +733,7 @@ export class ProsceniumRenderer implements Renderer2D {
     const s = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
-    const ppm = proj.px_per_m;
+    const ppm = proj.px_per_m * this.spriteScaleFactor(proj, zs);
     const w = Math.max(0.6, e.sizeXZ?.x ?? 1) * ppm * s * fit;
     const h = Math.max(0.5, e.sizeY ?? 1) * ppm * s * fit;
     const FILL: Record<string, string> = {
@@ -767,7 +777,7 @@ export class ProsceniumRenderer implements Renderer2D {
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
     const depth = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
-    const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * proj.px_per_m * depth * fit;
+    const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * proj.px_per_m * depth * fit * this.spriteScaleFactor(proj, zs);
 
     // Sombra de contacto (sin ella los recortes flotan).
     ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -790,7 +800,7 @@ export class ProsceniumRenderer implements Renderer2D {
     }
     if (!drewSprite && e.sprite === undefined) {
       // Círculo explícito (sin sprites): radio a escala de profundidad.
-      const r = Math.max(4, 0.4 * proj.px_per_m * depth * fit);
+      const r = Math.max(4, 0.4 * proj.px_per_m * depth * fit * this.spriteScaleFactor(proj, zs));
       ctx.fillStyle = e.alive ? (kind === "npc" ? NPC_COLOR : e.color) : "#555";
       ctx.globalAlpha = e.alive ? 1 : 0.4;
       ctx.beginPath();

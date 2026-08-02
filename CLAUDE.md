@@ -428,23 +428,36 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   reorienta lo declarado — jamás va a funcionar). Pipeline:
   `/review_stage_image` (kind MCP `stage_review`: la visión inventaría TODO —
   cada declarado found con su caja REAL pintada o missing, extras inventados
-  keep/remove, y `floor.wall_base_px`) → SAM2 `segment_boxes` por caja →
+  keep/remove, y `floor` con `wall_base_px` + el TRAPECIO lateral del suelo
+  transitable, los 4 x o ninguno) → SAM2 `segment_boxes` por caja →
   máscara/sprite/contact_px por elemento. **La perspectiva pintada MANDA**:
-  `calibratedProjection` (stage/segments.ts) reancla ground/horizon a la
-  línea de suelo pintada (el repintado nunca respeta la franja de suelo del
-  blueprint) y gobierna entidades, warp, salidas y desproyección; el
-  encuadre en modo imagen capa el zoom para mantener la base de la pared en
-  pantalla. Recortes = imagen ⊙ máscara SAM, con z/huella del contacto
-  pintado (mediana + filtro anti-saltos entre patas); pelado cerca→lejos con
-  `/peel_scene_layer` **backend LaMa** (FLUX reinventa el mueble en su propio
-  hueco — bench stage_lab 003; prompts de `peelStepsFromInventory`, behind
-  solo si solapa). Colisión = `collisionGridFromCutouts` (bandas bajo las
-  bases pintadas, exits limpiados) que SUSTITUYE a la declarada
-  (`applyStageDerivedCollision`); sin visión → placa sola + colisión
-  declarada. Recortes como drawables a su z pintada (oclusión del jugador) +
-  fade 0.45 con el jugador detrás (espejo de la oblicua). Chequeo de
-  reconstrucción (placa+recortes ≈ original) como smoke-test. Bench offline:
-  `stage_lab/` (hoja de contactos); E2E sin créditos:
+  `calibratedProjection` (stage/segments.ts) resuelve del trapecio TODO —
+  ground/horizon, `px_per_m`, `focal_m` y el centro lateral (`center_x`/
+  `cam_x_m` de StageProjParams, default 0 = compositor intacto) — de forma
+  que el rect jugable mapea EXACTO sobre el suelo pintado: **cero muros
+  invisibles por construcción** (y en modo imagen se retira también el
+  collider del terrain declarado: sus muros W no se pintan). Trapecio ausente
+  o degenerado → calibración solo vertical con warning. **Doble perspectiva
+  de talla**: el modelo pinta los TAMAÑOS con otra convergencia que el suelo
+  — `fitSpriteScale` ajusta {k, focal_size} al mobiliario pintado (outliers
+  ×1.65 fuera) y `spriteScaleAt` escala a los personajes con él (posiciones =
+  suelo; talla = tamaños pintados); en modo imagen el clamp 0.55 de escala no
+  aplica dentro de la profundidad jugable. Recortes = imagen ⊙ máscara SAM,
+  con z/huella del contacto pintado (mediana + filtro anti-saltos entre
+  patas); pelado cerca→lejos con `/peel_scene_layer` **backend LaMa** (FLUX
+  reinventa el mueble en su propio hueco — bench stage_lab 003; prompts de
+  `peelStepsFromInventory`, behind solo si solapa). Colisión =
+  `collisionGridFromCutouts` (bandas bajo las bases pintadas, exits
+  limpiados) que SUSTITUYE a la declarada (`applyStageDerivedCollision`); sin
+  visión → placa sola + colisión declarada. Recortes como drawables a su z
+  pintada (oclusión del jugador) + fade 0.45 con el jugador detrás (espejo de
+  la oblicua). Tecla B en proscenio: overlay de debug (colisión reproyectada
+  al suelo pintado + caja de cada recorte con su z y orden del pintor).
+  Chequeo de reconstrucción (placa+recortes ≈ original) como smoke-test.
+  Bench offline: `stage_lab/` (hoja de contactos + `score.py`: score 0-100 de
+  coincidencia — iou/contactos/edge_gap/talla/unexplained — con
+  `runs/scores.csv` y side-by-side; progresión 41→59-66 documentada en
+  `stage_lab/README.md`); E2E sin créditos:
   `narrative_lab/stage-cutouts-e2e.md`. Auto al instalar el plató; G =
   manual; todo cacheado (resume gratis).
 

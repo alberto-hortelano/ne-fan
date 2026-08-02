@@ -37,7 +37,9 @@ Tu trabajo: un inventario COMPLETO de lo pintado.
    recta en perspectiva). El suelo debe converger hacia el fondo: el ancho en
    la pared < el ancho en el frente. Da los 4 valores o ninguno (pueden salir
    del encuadre: valores <0 o >tamaño de imagen son válidos si la recta
-   extrapolada cruza ahí).
+   extrapolada cruza ahí). Si los bordes laterales del suelo NO se ven en
+   absoluto (encuadre cerrado, sin paredes laterales ni bastidores que los
+   marquen), OMITE los 4: mejor sin trapecio que con rectas inventadas.
 
 Responde EXACTAMENTE este JSON:
 

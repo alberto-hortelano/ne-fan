@@ -62,3 +62,35 @@ iterar código u overlays es gratis; cambiar una caja re-segmenta solo esa.
 6. Diff de reconstrucción (placa+recortes vs original): 0.4-0.8/255 — el
    composite es fiel por construcción; NO detecta elementos sin identificar
    (esa garantía es el inventario COMPLETO de la visión).
+
+## Calibración total (runs 006–021, 2026-08-02)
+
+Serie del bucle "coincidencia máxima imagen↔recortes↔colisión" — score
+compuesto en `score.py` (`scores.csv` acumula; `runs/index.html` es la hoja de
+progreso con la demostración in-game en `runs/shots_finales/`).
+
+1. **Trapecio del suelo** (`floor.left/right_wall_px + left/right_front_px`
+   del contrato stage_review): calibra px_per_m, focal y centro/cámara
+   laterales (`calibratedProjection` con solve exacto — las 4 esquinas del
+   trapecio se reproducen a 1e-9). Baseline sin él: 41.4/100 con edge_gap
+   0.005 y escala rota; con él el rect jugable calca el suelo pintado.
+2. **edge_gap** (métrica anti-muros-invisibles): solo puntúan lados LIBRES —
+   interiores al encuadre Y no ocluidos por items inventariados (el suelo que
+   muere contra una mesa no es un borde jugable). La máscara de suelo son DOS
+   cajas SAM (empedrado del fondo + tarima delantera) unidas.
+3. **Doble perspectiva de la pintura**: el modelo pinta el suelo con una
+   convergencia (trapecio) y los TAMAÑOS con otra (una plaza frontal casi
+   ortográfica encoge puertas 2× al fondo). Posiciones/colisión usan la del
+   suelo; la TALLA de sprites usa `fitSpriteScale` → {k, focal_size} ajustado
+   al mobiliario pintado (outliers a >×1.65 de la mediana no votan). La
+   métrica de talla puntúa CONSISTENCIA (residuos del fit), no error absoluto
+   — k lo absorbe el cliente.
+4. **unexplained** se evalúa dentro del TRAPECIO (fuera hay paredes/bastidores
+   legítimos). Restante real ~6-28%: huecos de la máscara de suelo y sombras.
+5. Repintar con anclas de escala en el prompt: DESCARTADO tras medir — la
+   varianza entre repintados supera la ganancia y el modelo de talla ya
+   reconcilia en cliente. Encuadres cerrados sin bordes de suelo visibles: la
+   visión ahora puede omitir el trapecio (mejor vertical-only que rectas
+   inventadas).
+
+Scores finales (visión real): salón v2 58.5 · cocina 62.7 · calle 65.7.

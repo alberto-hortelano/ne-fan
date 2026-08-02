@@ -261,6 +261,108 @@ const median = (xs: number[]): number => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+/** Altura DECLARADA (m) de un volumen reconstruida de su capa del compositor:
+ *  (baseline_y − bbox.minY) / (ppm · s(z)) con la proyección ORIGINAL del
+ *  compositor (no la calibrada). null si la capa no tiene altura pintable. */
+export function declaredLayerHeightM(
+  layer: Pick<StageLayer, "z" | "bbox" | "baseline_y">,
+  proj: StageProjParams,
+): number | null {
+  const s = proj.focal_m / (proj.focal_m + Math.max(0, layer.z));
+  const hView = layer.baseline_y - layer.bbox[1];
+  if (hView <= 0) return null;
+  return hView / (proj.px_per_m * s);
+}
+
+/** Rango sano de la razón MEDIA pintado/declarado observada (fuera de él,
+ *  algo raro pasó con las máscaras y es mejor no distorsionar). El clamp se
+ *  valida sobre la media de los datos, no sobre k (que extrapola a z=0 y con
+ *  focales de talla cortas legítimamente se dispara). */
+const SPRITE_SCALE_MIN = 0.75;
+const SPRITE_SCALE_MAX = 3.5;
+/** Clamp del factor EFECTIVO en el draw (cinturón y tirantes). */
+export const SPRITE_FACTOR_CLAMP: [number, number] = [0.6, 3.5];
+/** Los items deben abarcar al menos este rango de z para fiar una focal de
+ *  talla propia; por debajo, factor constante. */
+const SPRITE_FIT_MIN_Z_SPAN_M = 1.5;
+
+/** Modelo de TALLA de sprites derivado del mobiliario PINTADO. Los modelos de
+ *  imagen pintan el suelo con una convergencia y los TAMAÑOS con otra (una
+ *  plaza frontal casi ortográfica puede encoger puertas 2× al fondo): las
+ *  POSICIONES siguen la calibración del suelo, pero la talla de quien camina
+ *  sigue esta otra perspectiva. talla(z) = k · focal_size/(focal_size+z). */
+export interface SpriteScaleModel {
+  /** Factor base en la embocadura (1 = talla declarada). */
+  k: number;
+  /** Focal de TAMAÑOS pintados (puede diferir de la de posiciones). */
+  focal_size_m: number;
+}
+
+export const SPRITE_SCALE_IDENTITY: SpriteScaleModel = { k: 1, focal_size_m: 0 };
+
+/** Talla efectiva relativa a la proyección de posiciones a profundidad z:
+ *  multiplica al s(z) de la proyección calibrada. Identity (focal 0) ⇒ 1. */
+export function spriteScaleAt(model: SpriteScaleModel, proj: StageProjParams, zStage: number): number {
+  if (model.focal_size_m <= 0) return model.k;
+  const z = Math.max(0, zStage);
+  const sSize = model.focal_size_m / (model.focal_size_m + z);
+  const sCal = proj.focal_m / (proj.focal_m + z);
+  const f = (model.k * sSize) / sCal;
+  return Math.min(SPRITE_FACTOR_CLAMP[1], Math.max(SPRITE_FACTOR_CLAMP[0], f));
+}
+
+/** Punto de observación de talla: un elemento pintado con altura conocida. */
+export interface SpriteScalePoint {
+  z: number;
+  /** Altura pintada en unidades de vista (bbox de la máscara). */
+  paintedView: number;
+  /** Altura declarada/estimada en metros. */
+  hM: number;
+}
+
+/** Ajusta {k, focal_size} a los ratios pintado/proyectado por búsqueda en
+ *  rejilla log de focales (robusta, sin derivadas): minimiza la desviación de
+ *  log(ratio_i) − log(s_size(z_i)/s_cal(z_i)). Con <2 puntos o poco rango de
+ *  z, degrada a factor constante (mediana clampada) con la focal calibrada
+ *  (ratio constante). Sin puntos ⇒ identidad. */
+export function fitSpriteScale(points: SpriteScalePoint[], paintedProj: StageProjParams): SpriteScaleModel {
+  let obs = points
+    .filter((p) => p.paintedView > 0 && p.hM > 0)
+    .map((p) => {
+      const sCal = paintedProj.focal_m / (paintedProj.focal_m + Math.max(0, p.z));
+      return { z: Math.max(0, p.z), logRatio: Math.log(p.paintedView / (p.hM * paintedProj.px_per_m * sCal)) };
+    });
+  if (obs.length === 0) return SPRITE_SCALE_IDENTITY;
+  // Outliers fuera (máscaras que tragan sombras/vecinos, h de visión malas):
+  // a más de ×1.65 de la mediana no votan.
+  if (obs.length >= 3) {
+    const med = median(obs.map((o) => o.logRatio));
+    const kept = obs.filter((o) => Math.abs(o.logRatio - med) <= 0.5);
+    if (kept.length >= 2) obs = kept;
+  }
+  const meanRatio = Math.exp(median(obs.map((o) => o.logRatio)));
+  if (meanRatio < SPRITE_SCALE_MIN || meanRatio > SPRITE_SCALE_MAX) return SPRITE_SCALE_IDENTITY;
+  const constant = (): SpriteScaleModel => ({
+    k: meanRatio,
+    focal_size_m: paintedProj.focal_m, // s_size ≡ s_cal ⇒ factor constante
+  });
+  const zSpan = Math.max(...obs.map((o) => o.z)) - Math.min(...obs.map((o) => o.z));
+  if (obs.length < 2 || zSpan < SPRITE_FIT_MIN_Z_SPAN_M) return constant();
+  let best: { fs: number; k: number; err: number } | null = null;
+  for (let i = 0; i <= 60; i++) {
+    const fs = 2 * Math.pow(200, i / 60); // 2 m … 400 m, log-espaciado
+    const logResid = obs.map((o) => {
+      const sCal = paintedProj.focal_m / (paintedProj.focal_m + o.z);
+      const sSize = fs / (fs + o.z);
+      return o.logRatio - Math.log(sSize / sCal);
+    });
+    const mean = logResid.reduce((a, b) => a + b, 0) / logResid.length;
+    const err = logResid.reduce((a, b) => a + (b - mean) * (b - mean), 0);
+    if (!best || err < best.err) best = { fs, k: Math.exp(mean), err };
+  }
+  return best ? { k: best.k, focal_size_m: best.fs } : constant();
+}
+
 /** Pose desde la línea de contacto pintada: cada punto px → vista →
  *  viewToStage (los que caen en o sobre el horizonte se descartan) → clamp a
  *  [0, depth]. z = MEDIANA (robusta ante puntos de la máscara que muerden un
