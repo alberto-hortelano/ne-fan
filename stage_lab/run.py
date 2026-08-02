@@ -158,7 +158,11 @@ def contact_to_pose(dump: dict, contact_px: list) -> dict | None:
     z_med = statistics.median(z for _, z in raw)
     # Filtro anti-saltos del contorno entre patas (espejo de segments.ts).
     filtered = [(x, z) for x, z in raw if abs(z - z_med) <= 0.75] or raw
-    return {"z": z_med, "contact_world": [stage_to_world(rect, x, z) for x, z in filtered]}
+    return {"z": z_med,
+            "contact_world": [stage_to_world(rect, x, z) for x, z in filtered],
+            # Métrica contact_ok del score: qué fracción del contorno inferior
+            # toca de verdad el suelo cerca de la línea mediana.
+            "contact_ok_frac": len(filtered) / len(raw)}
 
 
 def footprint_from_contact(contact_world: list, depth_m: float) -> dict:
@@ -397,9 +401,12 @@ def main() -> None:
     floor = review.get("floor")
     if not floor:
         raise SystemExit("el fichero --boxes necesita floor.wall_base_px (contrato stage_review)")
+    proj_orig = dict(dump["proj"])  # la del compositor (alturas declaradas)
     dump["proj"] = calibrated_projection(dump["proj"], dump["view_box"], floor)
-    print(f"proyección calibrada: ground_y={dump['proj']['ground_y']:.1f} "
-          f"horizon_y={dump['proj']['horizon_y']:.1f} (pintura ≠ blueprint)")
+    lateral = "COMPLETA" if "center_x" in dump["proj"] else "solo vertical"
+    print(f"proyección calibrada ({lateral}): focal={dump['proj']['focal_m']:.1f} "
+          f"ppm={dump['proj']['px_per_m']:.2f} ground_y={dump['proj']['ground_y']:.1f} "
+          f"horizon_y={dump['proj']['horizon_y']:.1f}")
 
     hints = {e["id"]: e for e in dump["expected_elements"]}
     layers = {l["id"]: l for l in dump["layers"]}
@@ -464,6 +471,27 @@ def main() -> None:
     for w in warnings:
         print(f"⚠️  {w}")
 
+    # Máscara SAM del SUELO (dos cajas extra, cacheadas): alimenta edge_gap
+    # (muros invisibles) y unexplained (pintado sin identificar) del score.
+    # Dos cajas porque el suelo suele ser dos materiales (empedrado del fondo
+    # + tarima delantera) y SAM segmenta uno por caja; la unión cubre ambos.
+    floor_mask = None
+    try:
+        wall_py = max(0, int(floor["wall_base_px"]) - 8)
+        front_py = min(RENDER, int(floor.get("front_px", RENDER)))
+        split = wall_py + int((front_py - wall_py) * 0.55)
+        boxes_floor = [(0, wall_py, RENDER, split + 40), (0, split - 40, RENDER, front_py)]
+        masks = segment_boxes_cached(image_png, boxes_floor)
+        acc = np.zeros((RENDER, RENDER), dtype=bool)
+        for png in masks:
+            acc |= mask_from_png(png, (RENDER, RENDER))
+        if acc.sum() < 500:
+            print("⚠️  máscara de suelo casi vacía — edge_gap/unexplained sin datos")
+        else:
+            floor_mask = acc
+    except Exception as err:  # noqa: BLE001 — el score degrada, el run sigue
+        print(f"⚠️  SAM del suelo falló ({err}) — edge_gap/unexplained sin datos")
+
     # Pelado opcional cerca→lejos por z pintada.
     plate_png = None
     peel_seq = []
@@ -502,6 +530,7 @@ def main() -> None:
             full_frame_cutout(scene_rgb, it["mask"]).save(out / f"10_recorte_{it['id']}.png")
     for i, (iid, png) in enumerate(peel_seq):
         (out / f"20_pelado_{i}_{iid}.png").write_bytes(png)
+    recon_diff = None
     if plate_png:
         (out / "30_placa.png").write_bytes(plate_png)
         # Reconstrucción: placa + recortes lejos→cerca ≈ original.
@@ -511,8 +540,24 @@ def main() -> None:
             m = Image.fromarray((it["mask"] * 255).astype(np.uint8), "L")
             recon = Image.composite(base, recon, m)
         recon.save(out / "31_reconstruccion.png")
-        diff = np.abs(np.asarray(recon, dtype=np.int16) - np.asarray(base, dtype=np.int16)).mean()
-        print(f"diff de reconstrucción (media global, halos incluidos): {diff:.2f}/255")
+        recon_diff = float(np.abs(np.asarray(recon, dtype=np.int16) - np.asarray(base, dtype=np.int16)).mean())
+        print(f"diff de reconstrucción (media global, halos incluidos): {recon_diff:.2f}/255")
+
+    # ── Score de coincidencia + side-by-side ──────────────────────────────
+    import score as score_mod
+    score = score_mod.compute_score(
+        dump=dump, items=items, floor=floor, floor_mask=floor_mask,
+        layers=layers, proj_orig=proj_orig, recon_diff=recon_diff,
+        world_to_px=world_to_px, view_to_stage=view_to_stage)
+    print(f"SCORE {score['composite']}/100 — " + " ".join(
+        f"{k}={v if v is not None else '—'}" for k, v in score["components"].items()))
+    (out / "score.json").write_text(
+        json.dumps(score, indent=2, ensure_ascii=False), encoding="utf-8")
+    score_mod.append_csv(RUNS / "scores.csv", args.name, score)
+    score_mod.draw_side_by_side(
+        base, dump, floor, items, solid, floor_mask,
+        world_to_px, view_to_stage, stage_to_view, view_to_px,
+    ).save(out / "05_side_by_side.png")
 
     summary = {
         "items": [{k: v for k, v in it.items() if k not in ("mask", "contact_px")}
