@@ -112,6 +112,9 @@ export class ProsceniumRenderer implements Renderer2D {
   private installToken = 0;
   /** Alphas vivos del fade de recortes (id → alpha, lerp temporal). */
   private cutFade = new Map<string, number>();
+  /** Overlay de debug (tecla B): colisión reproyectada + cajas de recortes
+   *  con su z pintada. */
+  private debugView: "off" | "overlay" = "off";
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -140,6 +143,15 @@ export class ProsceniumRenderer implements Renderer2D {
     this.framing = null;
     this.bandPlan = null;
     this.frameKey = "";
+  }
+
+  /** Cicla el overlay de debug (tecla B en vista proscenio): off ↔ overlay.
+   *  El overlay superpone la colisión ACTIVA reproyectada al suelo pintado
+   *  (celdas del grid derivado; huellas declaradas si no hay imágenes) y, por
+   *  cada recorte, su caja de vista a su z con etiqueta `#orden id z=…`. */
+  cycleDebugView(): "off" | "overlay" {
+    this.debugView = this.debugView === "off" ? "overlay" : "off";
+    return this.debugView;
   }
 
   /** Estado de cámara/encuadre para el bench (__nefan.stageCam). */
@@ -471,6 +483,136 @@ export class ProsceniumRenderer implements Renderer2D {
     // Marco de proscenio a PANTALLA: cierre lateral del encuadre (embocadura)
     // y cinturón anti-flancos en los extremos del raíl. Siempre encima.
     this.drawScreenFrame();
+
+    if (this.debugView === "overlay") this.drawDebugOverlay(toScreen, player);
+  }
+
+  /** Overlay B: la verdad jugable superpuesta a la pintura. Celdas SÓLIDAS de
+   *  la colisión activa (grid derivado de lo pintado en modo imagen; huellas
+   *  declaradas de las capas en vectorial) reproyectadas al suelo, la caja de
+   *  vista de cada recorte a su z pintada con `#orden id z=…` (el orden del
+   *  pintor = z-index efectivo), su huella en el suelo, las huellas de los
+   *  missing (sin colisión) y el zStage del jugador para comparar. */
+  private drawDebugOverlay(
+    toScreen: (vx: number, vy: number, zStage: number) => [number, number],
+    player: PlayerView,
+  ): void {
+    const { ctx } = this;
+    const stage = this.stage!;
+    const proj = this.effProj();
+    const images = this.images;
+
+    // Traza el contorno de un rect de MUNDO sobre el suelo (cada esquina
+    // proyecta con SU z — el mismo patrón que drawExitZones).
+    const traceWorldRect = (minX: number, minZ: number, maxX: number, maxZ: number): void => {
+      const corners: Array<[number, number]> = [
+        [minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ],
+      ];
+      corners.forEach(([wx, wz], i) => {
+        const [xs, zsRaw] = worldToStage(stage.bounds, wx, wz);
+        const zs = Math.max(0, Math.min(proj.depth_m, zsRaw));
+        const [vx, vy] = stageToView(proj, xs, zs);
+        const [sx, sy] = toScreen(vx, vy, zs);
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+    };
+
+    // ── Colisión activa ──────────────────────────────────────────────────────
+    const grid = images?.collision ?? null;
+    if (grid?.origin) {
+      const solid = new Set(grid.solid_chars ?? ["W", "w"]);
+      const [ox, oz] = grid.origin;
+      const mpc = grid.meters_per_cell;
+      ctx.beginPath();
+      for (let r = 0; r < grid.rows; r++) {
+        const row = grid.grid[r] ?? "";
+        for (let c = 0; c < grid.cols; c++) {
+          if (!solid.has(row[c] ?? ".")) continue;
+          traceWorldRect(ox + c * mpc, oz + r * mpc, ox + (c + 1) * mpc, oz + (r + 1) * mpc);
+        }
+      }
+      ctx.fillStyle = "rgba(255, 60, 60, 0.30)";
+      ctx.fill();
+    } else {
+      // Sin grid derivado: la primera línea es la colisión DECLARADA — las
+      // huellas de las capas del compositor.
+      ctx.beginPath();
+      for (const { layer } of this.rasters) {
+        if (!layer.footprint) continue;
+        traceWorldRect(layer.footprint[0], layer.footprint[1], layer.footprint[2], layer.footprint[3]);
+      }
+      ctx.fillStyle = "rgba(255, 60, 60, 0.18)";
+      ctx.strokeStyle = "rgba(255, 60, 60, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // ── Recortes: caja de vista a su z pintada + huella + orden del pintor ──
+    if (images) {
+      const orderIdx = new Map(
+        [...images.cutouts].sort((a, b) => b.z - a.z).map((c, i) => [c.id, i + 1]),
+      );
+      ctx.font = "11px monospace";
+      for (const cut of images.cutouts) {
+        const color = cut.solid ? "#ff5a5a" : "#4ad2ff";
+        const [minX, minY, maxX, maxY] = cut.bboxView;
+        const [x0, y0] = toScreen(minX, minY, cut.z);
+        const [x1, y1] = toScreen(maxX, maxY, cut.z);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        if (cut.footprintWorld) {
+          const fp = cut.footprintWorld;
+          ctx.beginPath();
+          traceWorldRect(fp.minX, fp.minZ, fp.maxX, fp.maxZ);
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        const fade = this.cutFade.get(cut.id) ?? 1;
+        const tag = `#${orderIdx.get(cut.id)} ${cut.id.replace("vol_derived_ent_", "").replace("vol_", "")}`
+          + ` z=${cut.z.toFixed(2)}${cut.solid ? "" : " ·nosolid"}${fade < 0.99 ? ` ·fade=${fade.toFixed(2)}` : ""}`;
+        ctx.fillStyle = "rgba(10, 8, 16, 0.75)";
+        ctx.fillRect(x0, y0 - 14, ctx.measureText(tag).width + 8, 13);
+        ctx.fillStyle = color;
+        ctx.fillText(tag, x0 + 4, y0 - 4);
+      }
+      // Missing: la huella declarada quedó SIN recorte ni colisión.
+      ctx.strokeStyle = "rgba(200, 200, 200, 0.6)";
+      ctx.fillStyle = "rgba(200, 200, 200, 0.7)";
+      for (const id of images.missing) {
+        const layer = this.rasters.find((r) => r.layer.id === id)?.layer;
+        if (!layer?.footprint) continue;
+        ctx.beginPath();
+        traceWorldRect(layer.footprint[0], layer.footprint[1], layer.footprint[2], layer.footprint[3]);
+        ctx.setLineDash([2, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const [xs, zsRaw] = worldToStage(stage.bounds, (layer.footprint[0] + layer.footprint[2]) / 2, layer.footprint[3]);
+        const zs = Math.max(0, Math.min(proj.depth_m, zsRaw));
+        const [vx, vy] = stageToView(proj, xs, zs);
+        const [sx, sy] = toScreen(vx, vy, zs);
+        ctx.textAlign = "center";
+        ctx.fillText(`${id.replace("vol_derived_ent_", "").replace("vol_", "")} · missing`, sx, sy + 12);
+        ctx.textAlign = "left";
+      }
+    }
+
+    // ── Cabecera ─────────────────────────────────────────────────────────────
+    const [, pzs] = worldToStage(stage.bounds, player.pos.x, player.pos.z);
+    const head = images
+      ? `B·debug — jugador zStage=${pzs.toFixed(2)} · recortes=${images.cutouts.length}`
+        + ` · colisión=${grid ? "derivada (pintada)" : "declarada"}`
+        + (images.missing.length ? ` · missing: ${images.missing.join(", ")}` : "")
+      : `B·debug — jugador zStage=${pzs.toFixed(2)} · vectorial: huellas declaradas`;
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "rgba(10, 8, 16, 0.75)";
+    ctx.fillRect(8, 8, ctx.measureText(head).width + 12, 18);
+    ctx.fillStyle = "#ffd27a";
+    ctx.fillText(head, 14, 21);
   }
 
   /** Warp por bandas de una imagen full-viewBox (placa o raster del suelo):

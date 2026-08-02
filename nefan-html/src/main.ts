@@ -1426,10 +1426,16 @@ function gameLoop(now: number): void {
   }
   // B cicla la vista de debug: off → colisiones → fases del pipeline de
   // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
-  // para comparar in situ el plan declarado con lo que pintó el modelo.
+  // para comparar in situ el plan declarado con lo que pintó el modelo. En
+  // proscenio, overlay propio: colisión reproyectada + recortes con su z.
   if (devInput.consumeToggleCollisionDebug()) {
-    const mode = renderer.cycleDebugView();
-    log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
+    if (sessionView === "proscenium" && prosceniumRenderer) {
+      const mode = prosceniumRenderer.cycleDebugView();
+      log(`B · overlay plató: ${mode === "overlay" ? "colisión + recortes por z" : "off"}`);
+    } else {
+      const mode = renderer.cycleDebugView();
+      log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
+    }
   }
   // N (descubrimiento) quedó integrada en el análisis completo de X.
   if (devInput.consumeDiscoverObjects()) {
