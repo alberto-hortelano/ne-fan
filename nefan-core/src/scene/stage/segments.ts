@@ -93,7 +93,23 @@ export interface PaintedFloor {
   wall_base_px: number;
   /** y (px) del borde delantero del suelo jugable; ausente = borde inferior. */
   front_px?: number;
+  /** Trapecio lateral del suelo pintado (los 4 juntos o ninguno): x px de los
+   *  bordes izquierdo/derecho del suelo transitable EN la línea de la pared y
+   *  en el frente. Rectas extrapoladas si un mueble ocluye — pueden salir del
+   *  encuadre. Con ellos se calibra px_per_m/focal/centro lateral. */
+  left_wall_px?: number;
+  right_wall_px?: number;
+  left_front_px?: number;
+  right_front_px?: number;
 }
+
+/** Rango sano del ratio de anchos pared/frente del trapecio pintado: fuera de
+ *  él (casi paralelo o invertido) la calibración lateral degrada a la
+ *  vertical. */
+const TRAPEZOID_SD_MIN = 0.05;
+const TRAPEZOID_SD_MAX = 0.95;
+const CALIBRATED_FOCAL_MIN_M = 2;
+const CALIBRATED_FOCAL_MAX_M = 400;
 
 /** Proyección CALIBRADA a la perspectiva que el modelo de imagen horneó en la
  *  pintura. El repintado nunca respeta la franja de suelo del blueprint
@@ -108,6 +124,7 @@ export function calibratedProjection(
   vb: ViewBox,
   floor: PaintedFloor,
   renderSize: number = STAGE_RENDER_SIZE,
+  warnings?: string[],
 ): StageProjParams {
   const frontPx = floor.front_px ?? renderSize;
   if (!(floor.wall_base_px < frontPx)) {
@@ -117,10 +134,80 @@ export function calibratedProjection(
   }
   const vyWall = vb.minY + (floor.wall_base_px / renderSize) * vb.height;
   const vyFront = vb.minY + (frontPx / renderSize) * vb.height;
-  const sD = proj.focal_m / (proj.focal_m + proj.depth_m);
   const groundY = vyFront;
+
+  // ── Calibración LATERAL (trapecio del suelo pintado): resuelve px_per_m,
+  // focal y centro/cámara laterales para que el rect jugable de mundo mapee
+  // EXACTO sobre el trapecio pintado (cero muros invisibles y personajes a la
+  // escala de la pintura). Degenerado ⇒ warning + calibración vertical-only.
+  const trap = solveFloorTrapezoid(proj, vb, floor, renderSize, groundY, vyWall, warnings);
+  if (trap) return trap;
+
+  const sD = proj.focal_m / (proj.focal_m + proj.depth_m);
   const horizonY = (vyWall - groundY * sD) / (1 - sD);
   return { ...proj, ground_y: groundY, horizon_y: horizonY };
+}
+
+/** Solve del trapecio pintado (modelo vx = center_x + (xStage−cam_x_m)·ppm·s):
+ *  sD = anchoPared/anchoFrente ⇒ focal; ppm del ancho frontal; el centro
+ *  lateral de los puntos medios de ambas líneas. null si faltan campos o el
+ *  trapecio es degenerado (con warning). */
+function solveFloorTrapezoid(
+  proj: StageProjParams,
+  vb: ViewBox,
+  floor: PaintedFloor,
+  renderSize: number,
+  groundY: number,
+  vyWall: number,
+  warnings?: string[],
+): StageProjParams | null {
+  const { left_wall_px, right_wall_px, left_front_px, right_front_px } = floor;
+  const given = [left_wall_px, right_wall_px, left_front_px, right_front_px];
+  const present = given.filter((v) => v !== undefined).length;
+  if (present === 0) return null;
+  if (present !== 4) {
+    warnings?.push(`trapecio del suelo incompleto (${present}/4 campos) — calibración solo vertical`);
+    return null;
+  }
+  const toVx = (px: number): number => vb.minX + (px / renderSize) * vb.width;
+  const vxLW = toVx(left_wall_px!);
+  const vxRW = toVx(right_wall_px!);
+  const vxLF = toVx(left_front_px!);
+  const vxRF = toVx(right_front_px!);
+  const wallW = vxRW - vxLW;
+  const frontW = vxRF - vxLF;
+  if (wallW <= 0 || frontW <= 0) {
+    warnings?.push("trapecio del suelo con ancho no positivo — calibración solo vertical");
+    return null;
+  }
+  const sD = wallW / frontW;
+  if (sD < TRAPEZOID_SD_MIN || sD > TRAPEZOID_SD_MAX) {
+    warnings?.push(
+      `trapecio degenerado (sD=${sD.toFixed(3)} fuera de [${TRAPEZOID_SD_MIN}, ${TRAPEZOID_SD_MAX}]) — calibración solo vertical`,
+    );
+    return null;
+  }
+  const focal = (proj.depth_m * sD) / (1 - sD);
+  if (focal < CALIBRATED_FOCAL_MIN_M || focal > CALIBRATED_FOCAL_MAX_M) {
+    warnings?.push(
+      `focal calibrada absurda (${focal.toFixed(1)} m fuera de [${CALIBRATED_FOCAL_MIN_M}, ${CALIBRATED_FOCAL_MAX_M}]) — calibración solo vertical`,
+    );
+    return null;
+  }
+  const ppm = frontW / proj.width_m;
+  const midF = (vxLF + vxRF) / 2;
+  const midW = (vxLW + vxRW) / 2;
+  const u = (midW - midF) / (1 - sD); // = cam_x_m · ppm
+  const horizonY = (vyWall - groundY * sD) / (1 - sD);
+  return {
+    ...proj,
+    focal_m: focal,
+    px_per_m: ppm,
+    ground_y: groundY,
+    horizon_y: horizonY,
+    center_x: midF + u,
+    cam_x_m: u / ppm,
+  };
 }
 
 /** Pose de un elemento derivada de su línea de contacto pintada. */

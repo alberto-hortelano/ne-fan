@@ -57,6 +57,28 @@ describe("proyección proscenio", () => {
     assert.equal(viewToStage(P, 0, P.horizon_y - 5), null);
   });
 
+  it("center_x/cam_x_m: defaults 0 ≡ fórmula original (golden)", () => {
+    const withDefaults: StageProjParams = { ...P, center_x: 0, cam_x_m: 0 };
+    for (const [xs, zs] of [[0, 0], [3.5, 2], [-5, 7.9]] as const) {
+      assert.deepEqual(stageToView(withDefaults, xs, zs), stageToView(P, xs, zs));
+    }
+    // Golden: valores concretos de la fórmula pre-calibración lateral.
+    assert.deepEqual(stageToView(P, 3, 4), [3 * 10 * (12 / 16), 100 * (12 / 16)]);
+  });
+
+  it("center_x/cam_x_m ≠ 0: round-trip exacto y desplazamiento correcto", () => {
+    const C: StageProjParams = { ...P, center_x: -7.5, cam_x_m: 1.25 };
+    for (const [xs, zs] of [[0, 0], [3.5, 2], [-5, 7.9], [2.25, 0.4]] as const) {
+      const [vx, vy] = stageToView(C, xs, zs);
+      const back = viewToStage(C, vx, vy);
+      assert.ok(back, "el punto debería cortar el suelo");
+      assert.ok(Math.abs(back![0] - xs) < 1e-9, `x: ${back![0]} ≈ ${xs}`);
+      assert.ok(Math.abs(back![1] - zs) < 1e-9, `z: ${back![1]} ≈ ${zs}`);
+    }
+    // En la embocadura (s=1): vx = center_x + (xStage − cam_x_m)·ppm.
+    assert.deepEqual(stageToView(C, 1.25, 0), [-7.5, 100]);
+  });
+
   it("worldToStage/stageToWorld son inversas y respetan la convención cámara-sur", () => {
     // La embocadura (z mundo = maxZ) es zStage 0; el telón (minZ) es depth.
     assert.deepEqual(worldToStage(B, 0, B.maxZ), [0, 0]);

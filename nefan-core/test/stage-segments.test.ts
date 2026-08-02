@@ -162,6 +162,78 @@ describe("calibratedProjection", () => {
       calibratedProjection(stage.proj, stage.view_box, { wall_base_px: 900, front_px: 800 }),
     );
   });
+
+  it("trapecio: recupera EXACTAMENTE los parámetros que generaron las esquinas", () => {
+    const vb = stage.view_box;
+    // Perspectiva pintada sintética, descentrada y con focal distinta.
+    const truth = {
+      ...stage.proj,
+      focal_m: 9,
+      px_per_m: 6.2,
+      center_x: -11,
+      cam_x_m: 1.7,
+      ground_y: vb.minY + vb.height * 0.97,
+      horizon_y: vb.minY + vb.height * 0.1,
+    };
+    const W = stage.proj.width_m;
+    const D = stage.proj.depth_m;
+    // Esquinas del suelo proyectadas por la verdad → px del cuadrado.
+    const toPx = (v: [number, number]): [number, number] => [
+      ((v[0] - vb.minX) / vb.width) * STAGE_RENDER_SIZE,
+      ((v[1] - vb.minY) / vb.height) * STAGE_RENDER_SIZE,
+    ];
+    const lw = toPx(stageToView(truth, -W / 2, D));
+    const rw = toPx(stageToView(truth, W / 2, D));
+    const lf = toPx(stageToView(truth, -W / 2, 0));
+    const rf = toPx(stageToView(truth, W / 2, 0));
+    const cal = calibratedProjection(stage.proj, vb, {
+      wall_base_px: lw[1],
+      front_px: lf[1],
+      left_wall_px: lw[0],
+      right_wall_px: rw[0],
+      left_front_px: lf[0],
+      right_front_px: rf[0],
+    });
+    for (const k of ["focal_m", "px_per_m", "center_x", "cam_x_m", "ground_y", "horizon_y"] as const) {
+      assert.ok(
+        Math.abs((cal[k] ?? 0) - (truth[k] ?? 0)) < 1e-6,
+        `${k}: ${cal[k]} ≈ ${truth[k]}`,
+      );
+    }
+    // Las 4 esquinas del trapecio se reproducen a 1e-9 en unidades de vista.
+    for (const [xs, zs, px] of [
+      [-W / 2, D, lw], [W / 2, D, rw], [-W / 2, 0, lf], [W / 2, 0, rf],
+    ] as const) {
+      const [vx, vy] = stageToView(cal, xs, zs);
+      const [evx, evy] = pxToView(vb, px[0], px[1]);
+      assert.ok(Math.abs(vx - evx) < 1e-9 && Math.abs(vy - evy) < 1e-9, `esquina (${xs},${zs})`);
+    }
+    // La métrica de mundo NUNCA se recalibra.
+    assert.equal(cal.depth_m, stage.proj.depth_m);
+    assert.equal(cal.width_m, stage.proj.width_m);
+  });
+
+  it("trapecio degenerado o incompleto → calibración vertical-only con warning", () => {
+    const vb = stage.view_box;
+    const base = { wall_base_px: 580 };
+    // Incompleto (2/4).
+    let warnings: string[] = [];
+    let cal = calibratedProjection(stage.proj, vb, { ...base, left_wall_px: 100, right_wall_px: 900 }, STAGE_RENDER_SIZE, warnings);
+    assert.equal(cal.px_per_m, stage.proj.px_per_m);
+    assert.equal(warnings.length, 1);
+    // Casi paralelo (sD ≈ 1): degrada.
+    warnings = [];
+    cal = calibratedProjection(stage.proj, vb, {
+      ...base, left_wall_px: 10, right_wall_px: 1010, left_front_px: 0, right_front_px: 1020,
+    }, STAGE_RENDER_SIZE, warnings);
+    assert.equal(cal.px_per_m, stage.proj.px_per_m);
+    assert.equal(cal.center_x, undefined);
+    assert.equal(warnings.length, 1);
+    // Sin trapecio: sin warning (camino legacy).
+    warnings = [];
+    cal = calibratedProjection(stage.proj, vb, base, STAGE_RENDER_SIZE, warnings);
+    assert.equal(warnings.length, 0);
+  });
 });
 
 describe("footprintFromContact", () => {

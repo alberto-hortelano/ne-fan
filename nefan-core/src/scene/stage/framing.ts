@@ -78,7 +78,12 @@ export function frameStage(
   const zoom = Math.min(o.maxZoom, Math.max(o.minZoom, zoomRaw));
   const fit = fit0 * zoom;
   const groundScreenY = o.groundAnchor * canvasH;
-  const railHalfM = Math.max(0, p.width_m / 2 - canvasW / (2 * fit * p.px_per_m));
+  // Con proyección calibrada a la pintura (center_x/cam_x_m ≠ 0) el suelo
+  // pintado está descentrado en el viewBox y la garantía anti-huecos del
+  // header deja de ser simétrica: recortar el raíl por la asimetría es la
+  // guardia conservadora (defaults 0 ⇒ fórmula original intacta).
+  const asymM = Math.abs(p.cam_x_m ?? 0) + Math.abs(p.center_x ?? 0) / p.px_per_m;
+  const railHalfM = Math.max(0, p.width_m / 2 - canvasW / (2 * fit * p.px_per_m) - asymM);
   return { fit, zoom, groundScreenY, railHalfM };
 }
 

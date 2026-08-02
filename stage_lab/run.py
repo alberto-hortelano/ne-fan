@@ -83,12 +83,16 @@ def view_to_stage(proj: dict, vx: float, vy: float) -> tuple[float, float] | Non
     if s <= 0:
         return None
     z = (proj["focal_m"] * (1 - s)) / s
-    return (vx / (proj["px_per_m"] * s), z)
+    cx = proj.get("center_x", 0.0)
+    xc = proj.get("cam_x_m", 0.0)
+    return ((vx - cx) / (proj["px_per_m"] * s) + xc, z)
 
 
 def stage_to_view(proj: dict, xs: float, zs: float) -> tuple[float, float]:
     s = proj["focal_m"] / (proj["focal_m"] + max(0.0, zs))
-    return (xs * proj["px_per_m"] * s,
+    cx = proj.get("center_x", 0.0)
+    xc = proj.get("cam_x_m", 0.0)
+    return (cx + (xs - xc) * proj["px_per_m"] * s,
             proj["horizon_y"] + (proj["ground_y"] - proj["horizon_y"]) * s)
 
 
@@ -105,14 +109,38 @@ def world_to_px(dump: dict, x: float, z: float) -> tuple[float, float]:
 def calibrated_projection(proj: dict, vb: dict, floor: dict) -> dict:
     """Espejo de segments.ts:calibratedProjection — la perspectiva PINTADA
     manda: ground_y/horizon_y reajustados para que z=0 caiga en el frente
-    pintado y z=depth en la base de la pared pintada."""
+    pintado y z=depth en la base de la pared pintada. Con el trapecio lateral
+    (left/right_wall_px + left/right_front_px) resuelve además px_per_m,
+    focal y centro/cámara laterales (modelo vx = cx + (xs − xc)·ppm·s);
+    degenerado → calibración vertical-only con aviso."""
     front_px = floor.get("front_px", RENDER)
     if not floor["wall_base_px"] < front_px:
         raise ValueError("floor.wall_base_px debe estar por encima de front_px")
     vy_wall = vb["minY"] + (floor["wall_base_px"] / RENDER) * vb["height"]
     vy_front = vb["minY"] + (front_px / RENDER) * vb["height"]
-    s_d = proj["focal_m"] / (proj["focal_m"] + proj["depth_m"])
     ground = vy_front
+
+    trap_keys = ("left_wall_px", "right_wall_px", "left_front_px", "right_front_px")
+    if all(floor.get(k) is not None for k in trap_keys):
+        to_vx = lambda px: vb["minX"] + (px / RENDER) * vb["width"]  # noqa: E731
+        vx_lw, vx_rw = to_vx(floor["left_wall_px"]), to_vx(floor["right_wall_px"])
+        vx_lf, vx_rf = to_vx(floor["left_front_px"]), to_vx(floor["right_front_px"])
+        wall_w, front_w = vx_rw - vx_lw, vx_rf - vx_lf
+        if wall_w > 0 and front_w > 0:
+            s_d = wall_w / front_w
+            if 0.05 <= s_d <= 0.95:
+                focal = proj["depth_m"] * s_d / (1 - s_d)
+                if 2 <= focal <= 400:
+                    ppm = front_w / proj["width_m"]
+                    mid_f, mid_w = (vx_lf + vx_rf) / 2, (vx_lw + vx_rw) / 2
+                    u = (mid_w - mid_f) / (1 - s_d)
+                    horizon = (vy_wall - ground * s_d) / (1 - s_d)
+                    return {**proj, "focal_m": focal, "px_per_m": ppm,
+                            "ground_y": ground, "horizon_y": horizon,
+                            "center_x": mid_f + u, "cam_x_m": u / ppm}
+        print(f"  [calibración] trapecio degenerado ({floor}) — vertical-only")
+
+    s_d = proj["focal_m"] / (proj["focal_m"] + proj["depth_m"])
     horizon = (vy_wall - ground * s_d) / (1 - s_d)
     return {**proj, "ground_y": ground, "horizon_y": horizon}
 

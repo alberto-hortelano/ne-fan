@@ -51,6 +51,16 @@ describe("frameStage", () => {
     assert.ok(f.railHalfM > 10, `railHalfM ${f.railHalfM}`);
   });
 
+  it("guardia del raíl con proyección descentrada: recorta por la asimetría", () => {
+    const sym = frameStage(projFor(16), VB, 1280, 720);
+    const asym = frameStage({ ...projFor(16), center_x: -12, cam_x_m: 0.8 }, VB, 1280, 720);
+    const expected = Math.max(0, sym.railHalfM - 0.8 - 12 / P.px_per_m);
+    assert.ok(Math.abs(asym.railHalfM - expected) < 1e-9, `${asym.railHalfM} ≈ ${expected}`);
+    // Defaults 0 ⇒ fórmula original intacta.
+    const zeros = frameStage({ ...projFor(16), center_x: 0, cam_x_m: 0 }, VB, 1280, 720);
+    assert.equal(zeros.railHalfM, sym.railHalfM);
+  });
+
   it("ancla la línea de suelo al 78% del canvas", () => {
     const f = frameStage(projFor(16), VB, 1280, 720);
     assert.equal(f.groundScreenY, 0.78 * 720);
