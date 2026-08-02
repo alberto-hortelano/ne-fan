@@ -263,6 +263,9 @@ function applySessionView(view: string): void {
         spriteRenderer,
         oblique: renderer,
       }) as ProsceniumRenderer;
+      // Palanca dev del clamp de escala por profundidad (?minscale=0.4).
+      const minScale = parseFloat(new URLSearchParams(location.search).get("minscale") ?? "");
+      if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
     }
     activeRenderer = prosceniumRenderer;
     // Sin pipeline de imagen en proscenio v1 (vector-only): el repintado por
@@ -824,6 +827,12 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     applySessionView("proscenium");
     activeStage = stageComposed;
     (data as Record<string, unknown>).__stage = stageComposed;
+    // Fixture sin sesión de bridge: el player no pasó por session_start y no
+    // tiene apariencia — resolver la base y_bot para que las demos del plató
+    // muestren un sprite que escala con la profundidad (no un círculo).
+    if (CONFIG.graphics.character_sprites && playerModel === null) {
+      void setPlayerAppearance("", "");
+    }
     // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
     // reinstalar de la caché cliente si ya se pintó (volver a una escena no
     // pierde la imagen) o, con gráficos "imagen IA", repintar + pelar.
@@ -1227,6 +1236,13 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     setYaw: (yaw: number) => {
       playerYaw = yaw;
       refreshPlayerForward();
+    },
+    // Teletransporte del bench: posiciona al jugador para las capturas
+    // deterministas (respeta la simulación en el siguiente tick — la colisión
+    // "salir sí, entrar no" permite des-penetrar si el destino es sólido).
+    setPlayerPos: (x: number, z: number) => {
+      playerPos.x = x;
+      playerPos.z = z;
     },
     // Driver programático del provider "scripted" (?input=scripted) — API
     // limpia para el bench en vez de sintetizar KeyboardEvents.

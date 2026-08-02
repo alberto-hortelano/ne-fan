@@ -115,6 +115,9 @@ export class ProsceniumRenderer implements Renderer2D {
   /** Overlay de debug (tecla B): colisión reproyectada + cajas de recortes
    *  con su z pintada. */
   private debugView: "off" | "overlay" = "off";
+  /** Override dev del clamp de escala por profundidad (?minscale=). null =
+   *  política por defecto (ver depthScaleFloor). */
+  minScaleOverride: number | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -213,6 +216,16 @@ export class ProsceniumRenderer implements Renderer2D {
    *  perspectiva pintada; en modo vectorial, la del compositor. */
   private effProj(): StageProjParams {
     return this.images?.paintedProj ?? this.stage!.proj;
+  }
+
+  /** Clamp inferior de la escala de sprites por profundidad. En modo imagen
+   *  con proyección calibrada la PINTURA manda: nunca clampa dentro de la
+   *  profundidad jugable (un personaje al fondo mide lo que miden los muebles
+   *  del fondo); en vectorial, el 0.55 de legibilidad de los 8 octantes. */
+  private depthScaleFloor(proj: StageProjParams): number {
+    if (this.minScaleOverride !== null) return this.minScaleOverride;
+    if (this.images?.paintedProj) return Math.min(MIN_DEPTH_SCALE, scaleAt(proj, proj.depth_m));
+    return MIN_DEPTH_SCALE;
   }
 
   /** Alpha vivo del fade de un recorte — portado del occluder-fade de la
@@ -707,7 +720,7 @@ export class ProsceniumRenderer implements Renderer2D {
   ): void {
     const ctx = this.ctx;
     const proj = this.effProj();
-    const s = Math.max(MIN_DEPTH_SCALE, scaleAt(proj, zs));
+    const s = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
     const ppm = proj.px_per_m;
@@ -753,7 +766,7 @@ export class ProsceniumRenderer implements Renderer2D {
     const proj = this.effProj();
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
-    const depth = Math.max(MIN_DEPTH_SCALE, scaleAt(proj, zs));
+    const depth = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
     const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * proj.px_per_m * depth * fit;
 
     // Sombra de contacto (sin ella los recortes flotan).

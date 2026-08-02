@@ -24,19 +24,26 @@ Navegar (Playwright o Chrome) a:
 2. Disparar la G (`window.dispatchEvent(new KeyboardEvent("keydown", {key:
    "g", bubbles: true}))`) y esperar `stageImages() && !stagePainting()`.
    El mock del fake (`/review_stage_image`) devuelve: primer expected
-   RECOLOCADO +200 px, último expected missing, un `extra_0` inventado, y
-   `floor.wall_base_px` para la calibración; las máscaras son rects SVG de
-   `/fake/stage_mask`.
+   RECOLOCADO +200 px, último expected missing, un `extra_0` inventado, y un
+   `floor` con `wall_base_px` + el TRAPECIO lateral (left/right_wall_px,
+   left/right_front_px, descentrado) que ejercita la calibración COMPLETA
+   (ppm/focal/centro — log `[stage-img] …: calibración COMPLETA`); las
+   máscaras son rects SVG de `/fake/stage_mask`.
 
 ## Asserts (todos verificados en verde el 2026-08-02)
 
 - `stageCutouts()` = 2 casados (mesa, barril recolocado con `footprintWorld`
   en su posición PINTADA x≈5.4-6.8, no la declarada x 3-4) + `extra_0`; el
   banco missing NO aparece.
-- `probeCollide`: **true** en las posiciones pintadas (mesa (−2,1.8), barril
-  (6.1,1.3), extra (0,0.4)); **false** en la posición DECLARADA del barril
-  (3.5,−1) y en la del banco missing (−4.25,2.25) — la colisión derivada
-  SUSTITUYE a la declarada; **false** dentro de ambas zonas de salida.
+- `probeCollide`: **true** dentro de las bandas pintadas de mesa/barril/extra;
+  **false** en la posición DECLARADA del barril y en la del banco missing — la
+  colisión derivada SUSTITUYE a la declarada; **false** dentro de ambas zonas
+  de salida. Y CERO muros invisibles: **false** pegado a los 4 bordes de
+  bounds (pared del fondo, frente, laterales — los muros W del terrain se
+  retiran en modo imagen: no están pintados; el clamp de bounds = borde del
+  suelo pintado detiene al jugador) y **true** fuera de bounds. Teletransportar
+  al jugador a la pared del fondo (`setPlayerPos(0, minZ+0.3)`) debe alcanzar
+  la zona de la puerta norte (propuesta de cruce visible).
 - Fade: conducir al jugador (driver scripted, rodeando por el ESTE — el
   camino directo lo bloquea el extra pintado, que es en sí una verificación)
   hasta (−2.2, 0.6), detrás de la mesa pintada → `stageCutouts()` da

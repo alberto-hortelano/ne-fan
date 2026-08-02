@@ -205,9 +205,16 @@ export function applyStageDerivedCollision(
   // bloqueos de elementos missing).
   deps.tileStore.setSvgCollider(key, null);
   deps.setTileSvgGrid(key, null);
+  // Y el terreno declarado también: los muros W del terrain NO se pintan en
+  // el plató (el compositor pinta el suelo sobre el rect COMPLETO y la pared
+  // solo como telón) — sus celdas serían franjas de muro invisible sobre
+  // suelo pintado. El clamp de bounds (viewConstraint) ya detiene al jugador
+  // exactamente en el borde pintado del suelo, y las zonas de salida siguen
+  // gobernando el viaje.
+  deps.tileStore.clearTerrainCollider(key);
   console.log(
     `[collision] ${key}: colisión del plató PINTADO instalada — ` +
-    `${collider?.solidCellCount ?? 0} celdas sólidas (declarada retirada)`,
+    `${collider?.solidCellCount ?? 0} celdas sólidas (declarada y terreno retirados)`,
   );
 }
 

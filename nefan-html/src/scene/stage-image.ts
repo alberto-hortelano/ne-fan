@@ -227,8 +227,19 @@ export class StageImageController {
       );
 
       // ── 3. La perspectiva PINTADA manda ──────────────────────────────────
+      // Con el trapecio lateral del floor, calibra TAMBIÉN ppm/focal/centro:
+      // el rect jugable mapea exacto al suelo pintado (cero muros invisibles,
+      // personajes a la escala de la pintura). Degradación con aviso.
       const vb = stage.view_box;
-      const paintedProj = calibratedProjection(stage.proj, vb, review.floor);
+      const calWarnings: string[] = [];
+      const paintedProj = calibratedProjection(stage.proj, vb, review.floor, RENDER_SIZE, calWarnings);
+      for (const w of calWarnings) errors.push("scene", `calibración del plató ${key}: ${w}`);
+      const lateral = paintedProj.center_x !== undefined;
+      console.log(
+        `[stage-img] ${key}: calibración ${lateral ? "COMPLETA" : "solo vertical"} — ` +
+        `focal=${paintedProj.focal_m.toFixed(1)}m ppm=${paintedProj.px_per_m.toFixed(2)}` +
+        (lateral ? ` cx=${paintedProj.center_x!.toFixed(1)} camX=${paintedProj.cam_x_m!.toFixed(2)}m` : ""),
+      );
       const rect = {
         minX: -stage.proj.width_m / 2,
         minZ: -stage.proj.depth_m / 2,

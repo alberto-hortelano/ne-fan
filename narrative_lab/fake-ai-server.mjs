@@ -689,7 +689,16 @@ const server = http.createServer((req, res) => {
           h: 1.2,
           depth_cells: 2,
         }));
-        const floor = { wall_base_px: Math.round(S * 0.55) };
+        // Trapecio lateral del suelo "pintado": converge hacia el fondo y va
+        // ligeramente descentrado para ejercitar la calibración completa
+        // (ppm/focal/centro) del cliente. sD = 524/1104 ≈ 0.475.
+        const floor = {
+          wall_base_px: Math.round(S * 0.55),
+          left_wall_px: 270,
+          right_wall_px: 794,
+          left_front_px: -30,
+          right_front_px: 1074,
+        };
         console.error(
           `[fake-ai] review_stage_image: ${items.length} items ` +
           `(${missing.length} missing, 1 extra, recolocado=${items[0]?.id})`,

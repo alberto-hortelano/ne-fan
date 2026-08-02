@@ -105,6 +105,17 @@ export class TileStore {
     entry.svgApplied = true;
   }
 
+  /** Retira el collider del terreno declarado de un tile (vista proscenio en
+   *  modo imagen: la geometría del terrain NO se pinta — los muros W
+   *  perimetrales serían muros invisibles sobre suelo pintado; el clamp de
+   *  bounds ya para al jugador en la base pintada de la pared). Fail-loud si
+   *  la clave no existe. */
+  clearTerrainCollider(key: string): void {
+    const entry = this.entries.get(key);
+    if (!entry) throw new Error(`TileStore.clearTerrainCollider: tile ${key} no registrado`);
+    entry.collider = null;
+  }
+
   /** Solo para resetWorld (arranque/resume/fixtures). */
   clear(): void {
     this.entries.clear();

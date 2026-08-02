@@ -21,7 +21,7 @@ import type { ComposedStage, StageLayer } from "./compose.js";
 /** Versión del pipeline de pelado — va en las claves de caché de imagen del
  *  cliente/ai_server: cambiar el plan o el prompt regenera, nunca sirve
  *  rellenos del algoritmo anterior. */
-export const STAGE_PEEL_VERSION = 2;
+export const STAGE_PEEL_VERSION = 3;
 
 /** Capas de volumen repintables (props/muros). El orden del array respeta el
  *  orden del pintor del compositor (fondo → frente). */
