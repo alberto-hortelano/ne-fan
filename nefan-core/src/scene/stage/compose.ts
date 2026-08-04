@@ -112,6 +112,10 @@ export interface StageScenePlan {
    *  en celdas de la escena. */
   volumes: Volume[];
   biome?: string;
+  /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
+   *  bandas de tipo; el compositor SVG no la consume. */
+  terrain?: string[];
+  terrain_legend?: Record<string, string>;
 }
 
 interface LayerBuild {
@@ -489,6 +493,55 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
   };
 }
 
+/** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
+ *  compartido por el compositor SVG y el builder greybox 3D (si divergieran,
+ *  colisión declarada y render dejarían de casar). null = sin huella
+ *  razonable (prop sin at ni rect). */
+export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
+  switch (v.type) {
+    case "building":
+      return v.rect;
+    case "wall": {
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      for (const [c, r] of v.points) {
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+      }
+      const half = (v.width ?? 3) / 2;
+      return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
+    }
+    case "tower": {
+      const r = v.r ?? 3;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "gate": {
+      const w = v.w ?? 8;
+      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
+    }
+    case "tree": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
+    }
+    case "bush": {
+      const s = v.s ?? 1;
+      return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
+    }
+    case "rock": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
+    }
+    case "fountain": {
+      const r = v.r ?? 4;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "prop": {
+      if (v.rect) return v.rect;
+      if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
+      return null;
+    }
+  }
+}
+
 /** Billboard frontal de un volumen (vista desde la cámara sur). Devuelve null
  *  para volúmenes sin representación frontal razonable. */
 function buildVolumeLayer(
@@ -502,59 +555,8 @@ function buildVolumeLayer(
 ): LayerBuild | null {
   const rng = seededRng(`stage:${seedKey}:${v.id}`);
 
-  // Huella en celdas [c0, r0, w, h] según el tipo.
-  let fp: [number, number, number, number];
-  switch (v.type) {
-    case "building":
-      fp = v.rect;
-      break;
-    case "wall": {
-      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-      for (const [c, r] of v.points) {
-        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
-        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
-      }
-      const half = (v.width ?? 3) / 2;
-      fp = [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
-      break;
-    }
-    case "tower": {
-      const r = v.r ?? 3;
-      fp = [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-      break;
-    }
-    case "gate": {
-      const w = v.w ?? 8;
-      fp = v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
-      break;
-    }
-    case "tree": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
-      break;
-    }
-    case "bush": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
-      break;
-    }
-    case "rock": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
-      break;
-    }
-    case "fountain": {
-      const r = v.r ?? 4;
-      fp = [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-      break;
-    }
-    case "prop": {
-      if (v.rect) fp = v.rect;
-      else if (v.at) fp = [v.at[0] - 1, v.at[1] - 1, 2, 2];
-      else return null;
-      break;
-    }
-  }
+  const fp = volumeFootprintCells(v);
+  if (!fp) return null;
 
   const xs = cellsToXStage(fp[0], fp[2]);
   const zs = cellsToZStage(fp[1], fp[3]);

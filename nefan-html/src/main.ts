@@ -18,6 +18,7 @@ import {
   composeStage,
   stagePlanFromScene,
   type ComposedStage,
+  type StageScenePlan,
 } from "@nefan-core/src/scene/stage/index.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
@@ -809,6 +810,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // sesión (o a la oblicua). ─────────────────────────────────────────────
   const isStageScene = (data as Record<string, unknown>).stage !== undefined && !isGridTile;
   let stageComposed: ComposedStage | null = null;
+  let stagePlanCaptured: StageScenePlan | null = null;
   let stageVolumes: Volume[] = [];
   if (isStageScene) {
     try {
@@ -817,6 +819,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       );
       if (stagePlan) {
         stageComposed = hotComposeStage(stagePlan, key);
+        stagePlanCaptured = stagePlan;
         stageVolumes = stagePlan.volumes;
       }
     } catch (err) {
@@ -835,15 +838,20 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     }
     // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
     // reinstalar de la caché cliente si ya se pintó (volver a una escena no
-    // pierde la imagen) o, con gráficos "imagen IA", repintar + pelar.
+    // pierde la imagen) o, con gráficos "imagen IA", greybox + repintar +
+    // pelar. La clave de caché es el hash del GreyboxSpec del plan.
     const stageForImages = stageComposed;
+    const stagePlanForImages = stagePlanCaptured;
     const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
     void prosceniumRenderer!
       .installStage(stageComposed, key)
-      .then(() => {
-        const reinstalled = stageImageController.reinstallIfCached(stageForImages, key);
+      .then(async () => {
+        if (!stagePlanForImages) return;
+        const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
         if (!reinstalled && sessionRenderMode === "image") {
-          void stageImageController.runFor(stageForImages, key, stageImageMeta(rawFd, data));
+          void stageImageController.runFor(
+            stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
+          );
         }
       })
       .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
@@ -1425,7 +1433,16 @@ function gameLoop(now: number): void {
       // ya lo haga al instalarse — reintento tras un fallo).
       if (activeStage && activeTileKey && sceneData) {
         const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
-        void stageImageController.runFor(activeStage, activeTileKey, stageImageMeta(rawFd, sceneData));
+        try {
+          const plan = hotStagePlanFromScene(rawFd);
+          if (plan) {
+            void stageImageController.runFor(
+              activeStage, activeTileKey, stageImageMeta(rawFd, sceneData), plan,
+            );
+          }
+        } catch (err) {
+          errors.push("scene", "G: el plan del plató activo no parsea", err);
+        }
       }
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
@@ -2230,7 +2247,7 @@ if (import.meta.hot) {
           activeStage = composed;
           (sceneData as Record<string, unknown>).__stage = composed;
           void prosceniumRenderer.installStage(composed, key).then(() => {
-            stageImageController.reinstallIfCached(composed, key);
+            void stageImageController.reinstallIfCached(plan, key);
           });
           console.log("[hmr] plató recompuesto en caliente");
         }

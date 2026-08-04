@@ -118,6 +118,11 @@ class SceneImageRequest(BaseModel):
         default="",
         pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
     )
+    # Clave de layout ESTABLE aportada por el cliente (hash del GreyboxSpec
+    # canónico del plató). El render WebGL no es byte-determinista: sin esta
+    # clave, cada arranque hashearía píxeles distintos ⇒ miss (~$0.2/plató).
+    # Vacía ⇒ se hashea el PNG (camino clásico de la oblicua).
+    layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
     @field_validator("context_sides")
     @classmethod
     def _valid_sides(cls, v: list[str]) -> list[str]:
@@ -425,7 +430,12 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
 
     png = _decode_b64_png(body.image_b64)
-    layout = hashlib.sha256(png).hexdigest()[:16]
+    # layout_key del cliente (hash del spec del greybox, prefijado para no
+    # colisionar con el espacio de hashes de PNG) o hash de los píxeles.
+    layout = (
+        f"gb:{body.layout_key[:16]}" if body.layout_key
+        else hashlib.sha256(png).hexdigest()[:16]
+    )
     # `model` is in the key so switching backends/models never serves a stale
     # image cached under a different generator. `sides` covers the (unlikely)
     # case of identical pixels with a different context instruction; empty is
@@ -433,7 +443,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     context = {
         "layout": layout,
         "kind": "full",
-        "model": deps.scene_image_gen._model,
+        "model": (
+            deps.scene_image_gen._stage_model
+            if body.blueprint_kind == "stage"
+            else deps.scene_image_gen._model
+        ),
         "sides": "+".join(sorted(body.context_sides)),
         # Transformación server-side del esquema antes del modelo (prestretch
         # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
@@ -456,10 +470,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # v2 de la instrucción de plató (anti-top-down + sin ref global cenital):
-    # las generaciones stage previas quedan invalidadas.
+    # stage_greybox1: la base pasa de SVG rasterizado a render 3D greybox
+    # (clay) con prompt KEEP y modelo de plató propio — todas las generaciones
+    # stage previas quedan invalidadas.
     if body.blueprint_kind == "stage":
-        context["pipeline"] = "prestretch2_stage2"
+        context["pipeline"] = "stage_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)

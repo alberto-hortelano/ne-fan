@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8">
+<title>escenografia_lab — bases SVG de plató de cine clásico</title>
+<style>
+body{background:#1b1b20;color:#ddd;font-family:sans-serif;margin:24px auto;max-width:1240px}
+h1{font-size:26px} h2{border-bottom:1px solid #444;padding-bottom:4px;margin-top:44px}
+img{width:100%;max-width:1200px;display:block;border:1px solid #444;margin:10px 0;background:#000}
+p,li{font-size:15px;line-height:1.5} small{color:#999}
+.meta{color:#b9b3a4}
+ul{margin:6px 0 0 18px}
+a{color:#8cf}
+</style>
+<h1>escenografia_lab — pares descripción ↔ escenario SVG</h1>
+<p>Bases hechas a mano con estética de <b>plató de cine de los años 50</b>
+(decorado a nivel de suelo + fondo matte, cero teatro). Cámara al sur mirando
+al norte, un punto de fuga, focal larga. Cada par: <code>descripcion.md</code>
+(el texto genera el escenario) + <code>escena.svg</code>. Selecciona los que
+funcionen y anota cambios; los elegidos serán referencia de estilo para el
+modelo de imagen y norte del compositor v4.</p>
+
+<h2>01 · Calle mayor curva — atardecer</h2>
+<img src="01_calle_curva/escena.svg" alt="Calle mayor curva">
+<p class="meta">Foco: torre sobre el codo de la curva. Luz: sol bajo del oeste —
+soportales a contraluz, fachadas doradas, sombra corriendo A LO LARGO de la
+calle con charcos de luz por los arcos. Primer término: pilar del soportal y
+carro con barricas. <a href="01_calle_curva/descripcion.md">descripción</a></p>
+
+<h2>02 · Plaza del mercado — media mañana</h2>
+<img src="02_plaza_mercado/escena.svg" alt="Plaza del mercado">
+<p class="meta">Foco: la fuente al sol contra la sombra diagonal de la iglesia
+(sillería con contrafuertes). Toldos, puestos, vega pálida entre tejados.
+Primer término: toldo festoneado invadiendo arriba + mesa de calabazas.
+<a href="02_plaza_mercado/descripcion.md">descripción</a></p>
+
+<h2>03 · Sala de la posada — media tarde</h2>
+<img src="03_taberna/escena.svg" alt="Interior de taberna">
+<p class="meta">Foco: la boca de la chimenea (volumen de piedra que sale del
+muro). Luz: lámina dorada de la ventana oeste con motas de polvo + resplandor
+del fuego. Vigas bajas con jamón y ajos en primer término alto; barra en fuga,
+banqueta volcada. <a href="03_taberna/descripcion.md">descripción</a></p>
+
+<h2>04 · Senda del arroyo con puente — primera tarde</h2>
+<img src="04_bosque_puente/escena.svg" alt="Bosque con puente">
+<p class="meta">Foco: el claro dorado del fondo tras la cortina de troncos
+pálidos. El arroyo cruza la escena y la senda lo salva por el puente combado.
+God rays y motas de sol; haya enorme con hiedra y setas de primer término.
+<a href="04_bosque_puente/descripcion.md">descripción</a></p>
+
+<h2>05 · Muelle de la Barca — amanecer con niebla</h2>
+<img src="05_puerto_fluvial/escena.svg" alt="Puerto fluvial">
+<p class="meta">Foco: la grúa de rueda con el fardo a medio izar, en silueta
+contra el agua peltre. El canto del muelle corta en gran diagonal; gabarra
+amarrada tras el cantil, redes secándose, candil del fielato como único punto
+cálido. <a href="05_puerto_fluvial/descripcion.md">descripción</a></p>
+
+<h2>06 · Puerta del Poniente — sol poniéndose</h2>
+<img src="06_puerta_muralla/escena.svg" alt="Puerta de muralla">
+<p class="meta">Contraluz total: el arco enmarca el sol y vierte un pasillo de
+luz cuesta abajo por las roderas; muralla y crucero en silueta con filo
+naranja; grajos en las almenas.
+<a href="06_puerta_muralla/descripcion.md">descripción</a></p>
+
+<p><small>Navegar: <code>cd escenografia_lab &amp;&amp; python3 -m http.server 8912</code>
+o abrir este archivo con file://. Ver README.md para el checklist de
+composición que cumple cada escena.</small></p>

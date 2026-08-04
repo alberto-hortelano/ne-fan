@@ -426,46 +426,47 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
   (siembra el world map de la posada vía State API). Bench:
   `window.__nefan.view()/stage()/probeCollide()`.
-- **Segmentación del plató pintado (entrega 2, `render_mode: "image"`)**: el
-  `StageImageController` (`nefan-html/src/scene/stage-image.ts`) repinta el
-  plató ENTERO (`/generate_scene_image`, `blueprint_kind: "stage"`, blueprint
-  SIN cuarta pared) y deriva el mundo jugable de LO PINTADO. **PROHIBIDO
-  recortar con siluetas declaradas del SVG** (probado: el modelo recoloca y
-  reorienta lo declarado — jamás va a funcionar). Pipeline:
-  `/review_stage_image` (kind MCP `stage_review`: la visión inventaría TODO —
-  cada declarado found con su caja REAL pintada o missing, extras inventados
-  keep/remove, y `floor` con `wall_base_px` + el TRAPECIO lateral del suelo
-  transitable, los 4 x o ninguno) → SAM2 `segment_boxes` por caja →
-  máscara/sprite/contact_px por elemento. **La perspectiva pintada MANDA**:
-  `calibratedProjection` (stage/segments.ts) resuelve del trapecio TODO —
-  ground/horizon, `px_per_m`, `focal_m` y el centro lateral (`center_x`/
-  `cam_x_m` de StageProjParams, default 0 = compositor intacto) — de forma
-  que el rect jugable mapea EXACTO sobre el suelo pintado: **cero muros
-  invisibles por construcción** (y en modo imagen se retira también el
-  collider del terrain declarado: sus muros W no se pintan). Trapecio ausente
-  o degenerado → calibración solo vertical con warning. **Doble perspectiva
-  de talla**: el modelo pinta los TAMAÑOS con otra convergencia que el suelo
-  — `fitSpriteScale` ajusta {k, focal_size} al mobiliario pintado (outliers
-  ×1.65 fuera) y `spriteScaleAt` escala a los personajes con él (posiciones =
-  suelo; talla = tamaños pintados); en modo imagen el clamp 0.55 de escala no
-  aplica dentro de la profundidad jugable. Recortes = imagen ⊙ máscara SAM,
-  con z/huella del contacto pintado (mediana + filtro anti-saltos entre
-  patas); pelado cerca→lejos con `/peel_scene_layer` **backend LaMa** (FLUX
-  reinventa el mueble en su propio hueco — bench stage_lab 003; prompts de
-  `peelStepsFromInventory`, behind solo si solapa). Colisión =
-  `collisionGridFromCutouts` (bandas bajo las bases pintadas, exits
-  limpiados) que SUSTITUYE a la declarada (`applyStageDerivedCollision`); sin
-  visión → placa sola + colisión declarada. Recortes como drawables a su z
-  pintada (oclusión del jugador) + fade 0.45 con el jugador detrás (espejo de
-  la oblicua). Tecla B en proscenio: overlay de debug (colisión reproyectada
-  al suelo pintado + caja de cada recorte con su z y orden del pintor).
-  Chequeo de reconstrucción (placa+recortes ≈ original) como smoke-test.
-  Bench offline: `stage_lab/` (hoja de contactos + `score.py`: score 0-100 de
-  coincidencia — iou/contactos/edge_gap/talla/unexplained — con
-  `runs/scores.csv` y side-by-side; progresión 41→59-66 documentada en
-  `stage_lab/README.md`); E2E sin créditos:
-  `narrative_lab/stage-cutouts-e2e.md`. Auto al instalar el plató; G =
-  manual; todo cacheado (resume gratis).
+- **Plano base GREYBOX 3D + segmentación del plató pintado (entrega 2,
+  `render_mode: "image"`)**: el plano base del repintado es un **render
+  three.js clay** del plan (bench `escenografia_lab/greybox`: la vía
+  clay→gpt-image-2 da la máxima fidelidad de layout). `buildGreyboxSpec`
+  (`nefan-core/src/scene/stage/greybox.ts`, puro y determinista,
+  `STAGE_GREYBOX_VERSION`) emite primitivas + luces sembradas + suelo por
+  bandas de TERRENO (`terrain`/`terrain_legend` del plan) + **cámara baja por
+  modo** (exterior `GREYBOX_EYE_M`=3.2 m — los platós son anchos y someros y a
+  1,7-2,2 el suelo colapsa en un hilo; interior 1,8 m — a 3,2 quedaría A LA
+  altura del techo; hfov 75°, `focal_m` = retroceso derivado del ancho,
+  view_box de aspect FIJO 2.0 — un recorte ceñido deformaba ×5 con el
+  prestretch) expresada en el pinhole de `projection.ts` (`stageToViewAt`): la
+  cámara three.js del cliente (`stage-greybox-render.ts`, único módulo GL,
+  import dinámico) se DERIVA del spec y equivale EXACTO a `spec.proj` ⇒
+  `paintedProj = spec.proj` y `paintedViewBox = spec.view_box` SIEMPRE
+  (incluida la degradación sin visión); `calibratedProjection` del trapecio
+  queda como telemetría de deriva. El renderer usa `effVb()`/`effProj()` —
+  mezclar el view_box del compositor SVG con la placa greybox desalinea.
+  **Caché por hash del spec canónico** (floats redondeados 1e-4): el PNG
+  WebGL NO es byte-determinista — el cliente manda `layout_key` y el server
+  clava `layout: "gb:<hash>"` (pipeline `stage_greybox1`, modelo
+  `stage_scene_model: "gpt-image-2"` vía fal DIRECTO, ~210 s/plató,
+  cacheado). El `StageImageController` (`nefan-html/src/scene/stage-image.ts`)
+  repinta el plató ENTERO y deriva el mundo jugable de LO PINTADO.
+  **PROHIBIDO recortar con siluetas declaradas** (SVG o spec — el modelo
+  puede recolocar). Pipeline: `/review_stage_image` (kind MCP `stage_review`;
+  `expected_elements` salen del MANIFEST del greybox, cajas proyectadas
+  exactas) → SAM2 `segment_boxes` → máscara/sprite/contact_px. **Doble
+  perspectiva de talla**: `fitSpriteScale` sigue activo (los tamaños pintados
+  llevan su propia convergencia). Recortes = imagen ⊙ máscara SAM, con
+  z/huella del contacto pintado (mediana + filtro anti-saltos); pelado
+  cerca→lejos con `/peel_scene_layer` **backend LaMa**. Colisión =
+  `collisionGridFromCutouts` que SUSTITUYE a la declarada
+  (`applyStageDerivedCollision`, terrain retirado); sin visión → placa sola
+  (alineada por construcción) + colisión declarada. Recortes como drawables a
+  su z pintada + fade 0.45. Tecla B: overlay de debug. Chequeo de
+  reconstrucción como smoke-test. Benches: `escenografia_lab/greybox`
+  (formatos de plano), `stage_lab/` (score de coincidencia); E2E sin
+  créditos: `narrative_lab/stage-cutouts-e2e.md` (OJO: la tecla G solo se
+  consume con el bridge arriba). Auto al instalar el plató; G = manual; todo
+  cacheado (resume gratis).
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 

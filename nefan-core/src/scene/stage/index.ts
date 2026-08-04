@@ -20,12 +20,27 @@ export {
 } from "./projection.js";
 export {
   composeStage,
+  volumeFootprintCells,
   STAGE_COMPOSER_VERSION,
   type ComposedStage,
   type ComposedStageExit,
   type StageLayer,
   type StageScenePlan,
 } from "./compose.js";
+export { stageToViewAt } from "./projection.js";
+export {
+  buildGreyboxSpec,
+  expectedElementsFromGreybox,
+  canonicalGreyboxJson,
+  volumeHeightM,
+  STAGE_GREYBOX_VERSION,
+  GREYBOX_EYE_M,
+  type GreyboxSpec,
+  type GreyboxPrimitive,
+  type GreyboxLight,
+  type GreyboxCamera,
+  type GreyboxManifestItem,
+} from "./greybox.js";
 export { stagePlanFromScene } from "./plan.js";
 export {
   peelPlanFor,

@@ -40,10 +40,22 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
   const volumes = [...declared, ...derived].filter(
     (v) => !(v.type === "building" && v.cutaway === true),
   );
+  // Rejilla de terreno (opcional): el greybox pinta el suelo por bandas de
+  // tipo (la calle de tierra, el prado, el empedrado) — sin ella todo el
+  // suelo sería un color plano.
+  const terrain = Array.isArray(raw.terrain) && raw.terrain.every((r) => typeof r === "string")
+    ? (raw.terrain as string[])
+    : undefined;
+  const legend =
+    raw.terrain_legend && typeof raw.terrain_legend === "object"
+      ? (raw.terrain_legend as Record<string, string>)
+      : undefined;
   return {
     size: { cols: size.cols, rows: size.rows, meters_per_cell: size.meters_per_cell },
     stage: stage.stage,
     volumes,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
+    ...(terrain ? { terrain } : {}),
+    ...(legend ? { terrain_legend: legend } : {}),
   };
 }

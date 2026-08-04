@@ -218,6 +218,7 @@ async def lifespan(app: FastAPI):
     deps.scene_image_gen = SceneImageGenerator(
         style_image_path=str(_repo_root / deps.config["scene_style_image"]),
         model=deps.config["scene_model"],
+        stage_model=deps.config["stage_scene_model"],
     )
     # Packs de estilo por juego (imágenes de referencia por categoría).
     # Degradación esperable si aún no hay packs: resolve() devuelve None y las

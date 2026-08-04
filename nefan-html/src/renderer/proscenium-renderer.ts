@@ -211,10 +211,17 @@ export class ProsceniumRenderer implements Renderer2D {
     }));
   }
 
-  /** Proyección EFECTIVA: con imágenes instaladas manda la calibrada a la
-   *  perspectiva pintada; en modo vectorial, la del compositor. */
+  /** Proyección EFECTIVA: con imágenes instaladas manda la del greybox
+   *  pintado; en modo vectorial, la del compositor. */
   private effProj(): StageProjParams {
     return this.images?.paintedProj ?? this.stage!.proj;
+  }
+
+  /** view_box EFECTIVO — gemelo de effProj: la placa y las máscaras del
+   *  pipeline de imagen viven estiradas desde el view_box del GREYBOX, no
+   *  desde el del compositor SVG. Mezclarlos desalinearía placa y sprites. */
+  private effVb(): ComposedStage["view_box"] {
+    return this.images?.paintedViewBox ?? this.stage!.view_box;
   }
 
   /** Clamp inferior de la escala de sprites por profundidad. En modo imagen
@@ -324,7 +331,7 @@ export class ProsceniumRenderer implements Renderer2D {
     // pintada manda (el modelo de imagen nunca respeta la franja de suelo del
     // blueprint): entidades, warp, salidas y recortes comparten la misma
     // línea de suelo que la pintura.
-    const vb = stage.view_box;
+    const vb = this.effVb();
     const proj = this.effProj();
     const fk = `${this.stageKey}:${canvas.width}x${canvas.height}:${this.images ? "img" : "vec"}`;
     if (fk !== this.frameKey || !this.framing || !this.bandPlan) {
@@ -478,6 +485,10 @@ export class ProsceniumRenderer implements Renderer2D {
         // Los laterales van cocidos en la placa pintada (paredes de interior;
         // en exterior ni existen). El vectorial encima además cae DESCENTRADO
         // con la proyección calibrada — una columna oscura en pleno encuadre.
+      } else if (images && kind === "fourth_wall") {
+        // El raster vectorial vive en el viewBox del COMPOSITOR; con la placa
+        // greybox instalada (otro view_box) caería descolocado. El fade de
+        // proximidad de la cuarta pared lo gobierna el mundo, no este velo.
       } else if (kind === "floor" && raster.bandedSrc) {
         // Modo vectorial: el suelo también se warpea por bandas.
         this.drawBanded(raster.bandedSrc, raster.bandedSrc.width, raster.bandedSrc.height, camOffsetM);
@@ -643,8 +654,7 @@ export class ProsceniumRenderer implements Renderer2D {
    *  suavizado sub-píxel es la segunda defensa anti-moiré. */
   private drawBanded(src: CanvasImageSource, srcW: number, srcH: number, camOffsetM: number): void {
     const { ctx, canvas } = this;
-    const stage = this.stage!;
-    const vb = stage.view_box;
+    const vb = this.effVb();
     const f = this.framing!;
     const plan = this.bandPlan!;
     const destW = vb.width * f.fit;

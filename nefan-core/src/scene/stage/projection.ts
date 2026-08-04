@@ -65,6 +65,29 @@ export function stageToView(p: StageProjParams, xStage: number, zStage: number):
   return [cx + (xStage - xc) * p.px_per_m * s, p.horizon_y + (p.ground_y - p.horizon_y) * s];
 }
 
+/** Proyección GENERAL de un punto con altura: [xStage, zStage, alturaM] →
+ *  [vx, vy]. Modelo pinhole completo del que stageToView es el caso y=0:
+ *  la cámara está a eyeM = (ground_y − horizon_y)/px_per_m sobre el suelo y a
+ *  focal_m al sur de la embocadura, mirando horizontal — un punto a altura y
+ *  proyecta a vy = horizon_y + (eyeM − y)·px_per_m·s(z). El builder greybox
+ *  3D usa EXACTAMENTE esta fórmula, así su cámara three.js y la proyección
+ *  declarada coinciden por construcción. */
+export function stageToViewAt(
+  p: StageProjParams,
+  xStage: number,
+  zStage: number,
+  heightM: number,
+): [number, number] {
+  const s = scaleAt(p, zStage);
+  const cx = p.center_x ?? 0;
+  const xc = p.cam_x_m ?? 0;
+  const eyeM = (p.ground_y - p.horizon_y) / p.px_per_m;
+  return [
+    cx + (xStage - xc) * p.px_per_m * s,
+    p.horizon_y + (eyeM - heightM) * p.px_per_m * s,
+  ];
+}
+
 /** Inversa de stageToView sobre el plano del suelo (picking). Un vy en o por
  *  encima del horizonte no corta el suelo → null. */
 export function viewToStage(p: StageProjParams, vx: number, vy: number): [number, number] | null {

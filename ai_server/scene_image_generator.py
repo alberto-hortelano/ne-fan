@@ -70,8 +70,17 @@ def _to_data_uri(img: Image.Image, fmt: str = "PNG", long_side: int = 768) -> st
 
 
 class SceneImageGenerator:
-    def __init__(self, style_image_path: str, model: str = "nano-banana-pro"):
+    def __init__(
+        self,
+        style_image_path: str,
+        model: str = "nano-banana-pro",
+        stage_model: str = "gpt-image-2",
+    ):
         self._model = model
+        #: Modelo del repintado del PLATÓ (greybox clay → imagen), vía fal
+        #: DIRECTO (sin Meshy): gpt-image-2 dio la mayor fidelidad de layout
+        #: del bench escenografia_lab/greybox sobre bases clay.
+        self._stage_model = stage_model
         self._meshy = MeshyImageToImage()  # reads MESHY_API_KEY
         self._style_path = Path(style_image_path)
         if not self._style_path.exists():
@@ -79,7 +88,11 @@ class SceneImageGenerator:
         # Cache the style reference data URI once (it never changes per run).
         style = Image.open(self._style_path).convert("RGB")
         self._style_uri = _to_data_uri(style, "JPEG", long_side=1024)
-        print(f"SceneImageGen: Meshy '{model}', style={self._style_path.name}", flush=True)
+        print(
+            f"SceneImageGen: Meshy '{model}' / stage fal '{stage_model}', "
+            f"style={self._style_path.name}",
+            flush=True,
+        )
 
     @staticmethod
     def _load_rgb(png_bytes: bytes) -> Image.Image:
@@ -109,6 +122,28 @@ class SceneImageGenerator:
             return [png]
 
         blobs, _cached = DEV_API_CACHE.through_sync("meshy_i2i_scene", _call, note=prompt)
+        return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
+
+    def _run_stage(
+        self, prompt: str, refs: list[str], aspect: tuple[int, int] | None = None
+    ) -> tuple[bytes, dict]:
+        """Repintado del plató: fal DIRECTO con el modelo de plató (gpt-image-2
+        high tarda 200-300 s; el resultado queda cacheado por layout_key).
+        Canal DEV_API_CACHE propio para no contaminar el de Meshy."""
+        from dev_api_cache import DEV_API_CACHE
+        from meshy_client import FalImageToImage
+
+        task_holder: list[dict] = []
+
+        def _call() -> list[bytes]:
+            fal = FalImageToImage()  # lee FAL_KEY; sin ella, error visible
+            png, task = asyncio.run(
+                fal.run_one(prompt, refs, ai_model=self._stage_model, aspect=aspect)
+            )
+            task_holder.append(task)
+            return [png]
+
+        blobs, _cached = DEV_API_CACHE.through_sync("fal_i2i_stage", _call, note=prompt)
         return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
     def generate_full(
@@ -196,9 +231,10 @@ class SceneImageGenerator:
                 + _STYLE_RULES
             )
         elif blueprint_kind == "stage":
-            # Vista proscenio (entrega 2): el plan YA está dibujado en
-            # perspectiva de cámara baja (suelo convergiendo al fondo, cerca =
-            # bajo y grande). El repintado debe conservarla. PROHIBIDO
+            # Vista proscenio: la base es un RENDER 3D GREYBOX (clay iluminado
+            # con cámara a nivel de ojo, bench escenografia_lab/greybox) — la
+            # composición, la perspectiva y la LUZ ya son correctas y hay que
+            # conservarlas EXACTAS (preámbulo KEEP del bench). PROHIBIDO
             # cualquier vocabulario teatral (stage/wings/backdrop/plató): el
             # modelo lo convierte en cortinas y marcos de escenario — la
             # imagen debe ser una escena normal que llena TODO el encuadre.
@@ -206,29 +242,26 @@ class SceneImageGenerator:
             # battlemap CENITAL y arrastra al modelo a pintar desde arriba).
             stage_has_style_ref = style_ref_uri is not None
             style_clause = (
-                "Fully REPAINT the whole scene in the painterly, richly textured "
-                "style of the SECOND reference image"
+                "in the painterly, richly textured style of the SECOND "
+                "reference image"
                 if stage_has_style_ref
-                else "Fully REPAINT the whole scene in a rich, painterly, "
-                "hand-drawn illustration style"
+                else "in a rich, painterly, hand-drawn illustration style"
             )
             instruction = (
-                "Ground-level view of ONE game scene — this is NOT a top-down "
-                "map. The camera is low, at eye height, looking horizontally "
-                "across a floor drawn in perspective that recedes toward the "
-                "background. The UPPER part of the frame is the far wall or the "
-                "sky seen FRONTALLY — never paint floorboards, tables seen from "
-                "above, or any from-above room there. The plan is ALREADY drawn "
-                "in that perspective: the floor is the lower band, converging "
-                "toward the back; far objects are smaller and higher in the "
-                "frame, near objects bigger and lower. Keep that perspective, "
-                "the horizon height and the light direction exactly. "
-                "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
-                f"with flat placeholder colours — it is NOT final art. {style_clause}: "
-                "floor with wear, grain and colour variation; props and walls with "
-                "material detail, highlights and soft contact shadows; a background "
-                "with atmosphere and depth. The finished image must NOT look flat, "
-                "vector-like or diagram-like anywhere. "
+                "Fully repaint this exact scene as a finished illustration "
+                f"{style_clause}. The FIRST reference image is an untextured 3D "
+                "blockout render (flat clay surfaces with correct perspective "
+                "and lighting) — it is NOT final art, but its GEOMETRY is the "
+                "truth: keep the composition, the camera angle, the "
+                "perspective, the horizon height, the position and silhouette "
+                "of every volume, and the lighting direction EXACTLY as in the "
+                "reference. Ground-level view, NOT a top-down map. Replace the "
+                "flat placeholder surfaces with fully detailed, textured "
+                "materials: floor with wear, grain and colour variation; walls "
+                "and props with material detail, highlights and soft contact "
+                "shadows; a background with atmosphere and depth. The finished "
+                "image must NOT look flat, vector-like or 3D-render-like "
+                "anywhere. "
                 "The scene must FILL the entire frame edge to edge, as a normal "
                 "painting of a real place: NO borders, NO black side bands, NO "
                 "curtains, NO vignettes, NO letterboxing, NO picture frame — the "
@@ -275,7 +308,8 @@ class SceneImageGenerator:
             else [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
         )
         start = time.perf_counter()
-        png, res = self._run(instruction, refs, aspect=sch.size)
+        run = self._run_stage if blueprint_kind == "stage" else self._run
+        png, res = run(instruction, refs, aspect=sch.size)
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(

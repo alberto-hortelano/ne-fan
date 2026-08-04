@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <!-- Muelle fluvial con niebla. Horizonte y=390, fuga (520,390). Luz difusa de amanecer; el muelle corta en diagonal. -->
+  <defs>
+    <linearGradient id="cielo5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b8bfc2"/>
+      <stop offset="0.7" stop-color="#dcd8c8"/>
+      <stop offset="1" stop-color="#efe6d0"/>
+    </linearGradient>
+    <linearGradient id="agua5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d4d4c4"/>
+      <stop offset="0.5" stop-color="#c2c6bd"/>
+      <stop offset="1" stop-color="#a4aca4"/>
+    </linearGradient>
+    <linearGradient id="niebla5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8e4d4" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#e8e4d4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="muelle5" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#3f342a"/>
+      <stop offset="0.6" stop-color="#57493a"/>
+      <stop offset="1" stop-color="#6e5c48"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ======== CIELO Y ORILLA OPUESTA ======== -->
+  <rect x="0" y="0" width="1600" height="420" fill="url(#cielo5)"/>
+  <!-- arboleda de la otra orilla, aguada -->
+  <g fill="#b0b5a0" opacity="0.75">
+    <path d="M 0,398 q 90,-40 180,-34 q 80,6 150,-16 q 90,-28 180,-16 q 70,8 140,-6 q 100,-20 190,-6 q 80,12 160,4 l 0,72 l -1000,0 z"/>
+  </g>
+  <g fill="#a4aa94" opacity="0.7">
+    <ellipse cx="180" cy="372" rx="60" ry="26"/>
+    <ellipse cx="420" cy="360" rx="70" ry="30"/>
+    <ellipse cx="700" cy="368" rx="64" ry="26"/>
+  </g>
+  <!-- molino de ribera en silueta aguada -->
+  <g fill="#9aa090" opacity="0.85">
+    <polygon points="1150,398 1150,336 1230,336 1230,398"/>
+    <polygon points="1140,338 1190,306 1240,338"/>
+    <rect x="1246" y="360" width="46" height="38"/>
+    <!-- rueda del molino -->
+    <circle cx="1132" cy="382" r="34" fill="none" stroke="#9aa090" stroke-width="8"/>
+  </g>
+  <!-- vela lejana apenas insinuada -->
+  <polygon points="880,404 880,362 906,398" fill="#cfcab8" opacity="0.8"/>
+
+  <!-- ======== AGUA ======== -->
+  <polygon points="0,398 1600,398 1600,780 632,470 480,474 0,650" fill="url(#agua5)"/>
+  <!-- banda de niebla comiéndose la lámina lejana -->
+  <rect x="0" y="380" width="1600" height="120" fill="url(#niebla5)"/>
+  <!-- rizos suaves -->
+  <g stroke="#d8d8c8" stroke-width="4" fill="none" opacity="0.7" stroke-linecap="round">
+    <path d="M 700,470 q 70,-8 140,0"/>
+    <path d="M 900,530 q 80,-10 160,0"/>
+    <path d="M 1150,610 q 90,-10 180,2"/>
+    <path d="M 1360,700 q 80,-10 160,2"/>
+    <path d="M 760,430 q 50,-6 100,0"/>
+  </g>
+  <g stroke="#8f9890" stroke-width="3.5" fill="none" opacity="0.6" stroke-linecap="round">
+    <path d="M 820,490 q 60,-8 120,0"/>
+    <path d="M 1050,570 q 70,-8 140,2"/>
+    <path d="M 1290,660 q 70,-8 140,2"/>
+  </g>
+
+  <!-- bote de remos a lo lejos -->
+  <g>
+    <path d="M 1150,560 Q 1158,578 1190,580 L 1266,580 Q 1292,576 1298,558 L 1272,554 Q 1240,564 1196,562 Z" fill="#4e4132"/>
+    <path d="M 1150,560 L 1298,558 L 1296,550 L 1152,553 Z" fill="#655442"/>
+    <g stroke="#8f9890" stroke-width="4" fill="none" opacity="0.6">
+      <path d="M 1190,586 q 4,16 -3,30"/>
+      <path d="M 1262,586 q -4,18 3,34"/>
+    </g>
+  </g>
+
+  <!-- ======== MUELLE DE TABLONES (gran diagonal) ======== -->
+  <polygon points="0,650 480,474 632,470 1600,780 1600,1000 0,1000" fill="url(#muelle5)"/>
+  <!-- frente del cantil hacia el agua -->
+  <polygon points="632,470 1600,780 1600,810 636,486" fill="#2e241b"/>
+  <!-- tablones en fuga -->
+  <g stroke="#2e241b" stroke-width="4" opacity="0.8">
+    <path d="M 130,1000 L 560,472"/>
+    <path d="M 420,1000 L 604,474"/>
+    <path d="M 740,1000 L 646,486"/>
+    <path d="M 1060,1000 L 700,504"/>
+    <path d="M 1380,1000 L 760,522"/>
+    <path d="M 1600,940 L 820,542"/>
+    <path d="M 1600,830 L 880,560"/>
+  </g>
+  <!-- juntas transversales -->
+  <g stroke="#2e241b" stroke-width="3" opacity="0.6">
+    <path d="M 0,760 L 1600,890"/>
+    <path d="M 0,880 L 1600,960"/>
+    <path d="M 60,660 L 1220,760"/>
+    <path d="M 240,580 L 900,640"/>
+    <path d="M 380,520 L 730,550"/>
+  </g>
+  <!-- ======== GABARRA AMARRADA AL CANTIL (asoma sobre el canto) ======== -->
+  <g>
+    <!-- casco visto sobre el cantil, paralelo al muelle -->
+    <path d="M 946,584 Q 952,548 986,540 L 1170,596 Q 1206,610 1204,662 L 1160,668 Q 1060,626 966,594 Z" fill="#43362a"/>
+    <path d="M 952,556 Q 990,544 1030,556 L 1196,612 L 1200,632 L 1000,564 Z" fill="#5c4a38"/>
+    <!-- mástil desnudo con verga -->
+    <line x1="1072" y1="592" x2="1062" y2="272" stroke="#4a3b2c" stroke-width="10"/>
+    <line x1="1012" y1="322" x2="1122" y2="312" stroke="#4a3b2c" stroke-width="6"/>
+    <path d="M 1013,324 q 52,22 108,-12" stroke="#8f8574" stroke-width="5" fill="none"/>
+    <!-- estachas al muelle -->
+    <path d="M 960,586 q -54,-12 -88,-38" stroke="#33291e" stroke-width="4" fill="none"/>
+    <path d="M 1196,640 q 70,50 140,120" stroke="#33291e" stroke-width="4" fill="none"/>
+    <!-- el cantil vuelve a tapar la obra viva: la gabarra queda DETRÁS del muro -->
+    <polygon points="936,566 1214,656 1214,678 936,588" fill="#2e241b"/>
+  </g>
+
+  <!-- ======== NORAYES, REDES Y CABOS DEL CANTO ======== -->
+  <g>
+    <!-- postes de amarre decrecientes -->
+    <g fill="#33291e">
+      <polygon points="688,508 688,448 712,448 712,510"/>
+      <polygon points="852,560 852,492 880,492 880,562"/>
+      <polygon points="1054,624 1054,546 1088,546 1088,626"/>
+      <polygon points="1300,706 1300,614 1340,614 1340,708"/>
+    </g>
+    <g fill="#4a3b2c">
+      <polygon points="688,448 700,442 722,442 712,448"/>
+      <polygon points="852,492 866,485 892,485 880,492"/>
+      <polygon points="1054,546 1070,538 1100,538 1088,546"/>
+      <polygon points="1300,614 1318,605 1352,605 1340,614"/>
+    </g>
+    <!-- red secándose entre los dos postes medios -->
+    <g stroke="#5c5240" stroke-width="2.5" fill="none" opacity="0.9">
+      <path d="M 880,500 Q 966,540 1054,556"/>
+      <path d="M 880,516 Q 966,558 1054,574"/>
+      <path d="M 880,532 Q 966,576 1054,592"/>
+      <path d="M 880,548 Q 966,592 1054,610"/>
+      <line x1="912" y1="508" x2="916" y2="560"/>
+      <line x1="948" y1="520" x2="952" y2="574"/>
+      <line x1="984" y1="530" x2="988" y2="586"/>
+      <line x1="1020" y1="540" x2="1024" y2="598"/>
+    </g>
+    <!-- cabo entre postes cercanos -->
+    <path d="M 700,452 Q 780,486 862,494" stroke="#6b5a40" stroke-width="4" fill="none"/>
+  </g>
+
+  <!-- ======== GRÚA DE MADERA (foco) ======== -->
+  <g>
+    <!-- plataforma -->
+    <polygon points="560,486 760,478 780,502 580,512" fill="#33291e"/>
+    <!-- montante y tornapuntas -->
+    <line x1="656" y1="492" x2="650" y2="180" stroke="#3a2f22" stroke-width="16"/>
+    <line x1="600" y1="496" x2="648" y2="300" stroke="#3a2f22" stroke-width="9"/>
+    <line x1="716" y1="488" x2="656" y2="300" stroke="#3a2f22" stroke-width="9"/>
+    <!-- rueda de pisar (la firma de la grúa medieval) -->
+    <circle cx="620" cy="366" r="64" fill="none" stroke="#3a2f22" stroke-width="13"/>
+    <g stroke="#3a2f22" stroke-width="7">
+      <line x1="620" y1="302" x2="620" y2="430"/>
+      <line x1="556" y1="366" x2="684" y2="366"/>
+      <line x1="576" y1="320" x2="664" y2="412"/>
+      <line x1="664" y1="320" x2="576" y2="412"/>
+    </g>
+    <circle cx="620" cy="366" r="12" fill="#3a2f22"/>
+    <!-- pescante inclinado sobre el agua -->
+    <line x1="650" y1="182" x2="880" y2="272" stroke="#3a2f22" stroke-width="13"/>
+    <line x1="652" y1="270" x2="806" y2="240" stroke="#3a2f22" stroke-width="8"/>
+    <!-- polea y fardo a medio izar -->
+    <circle cx="880" cy="278" r="12" fill="#3a2f22"/>
+    <line x1="880" y1="290" x2="876" y2="410" stroke="#33291e" stroke-width="4"/>
+    <path d="M 838,410 q 38,-20 78,0 l -6,60 q -32,16 -66,0 z" fill="#7c6a4e"/>
+    <path d="M 840,436 q 36,-14 74,0 M 852,412 l 8,60 M 890,406 l 6,62" stroke="#57493a" stroke-width="3.5" fill="none"/>
+    <!-- cabo de retenida -->
+    <path d="M 874,472 q -70,34 -138,38" stroke="#33291e" stroke-width="3.5" fill="none"/>
+    <!-- canto iluminado del montante -->
+    <line x1="663" y1="490" x2="657" y2="184" stroke="#8a7452" stroke-width="4" opacity="0.8"/>
+  </g>
+
+  <!-- ======== ALMACENES DEL CANTIL (izquierda, en fuga) ======== -->
+  <!-- A3: cobertizo pequeño -->
+  <g>
+    <polygon points="400,502 400,404 452,398 480,402 480,468" fill="#6e6252"/>
+    <polygon points="392,406 446,368 486,404 452,398 400,404" fill="#57493c"/>
+    <rect x="420" y="428" width="26" height="40" fill="#2e241b"/>
+  </g>
+  <!-- A2: fielato con candil encendido -->
+  <g>
+    <polygon points="260,560 260,300 380,286 400,290 400,502" fill="#77685a"/>
+    <polygon points="248,304 330,240 412,294 380,286 260,300" fill="#5c4c40"/>
+    <g stroke="#57493c" stroke-width="4" opacity="0.8">
+      <line x1="262" y1="420" x2="398" y2="400"/>
+      <line x1="330" y1="298" x2="330" y2="540"/>
+    </g>
+    <rect x="282" y="340" width="30" height="42" fill="#3a3128"/>
+    <!-- ventana con candil: el único punto cálido -->
+    <rect x="346" y="334" width="32" height="44" fill="#e8b25c"/>
+    <rect x="346" y="334" width="32" height="44" fill="none" stroke="#4a3b2c" stroke-width="4"/>
+    <line x1="362" y1="334" x2="362" y2="378" stroke="#4a3b2c" stroke-width="3"/>
+    <ellipse cx="362" cy="356" rx="40" ry="30" fill="#e8b25c" opacity="0.25"/>
+    <path d="M 268,532 l 0,-64 a 26,24 0 0 1 52,0 l 0,56 z" fill="#2e241b"/>
+  </g>
+  <!-- A1: almacén grande, recortado, con garrucha en el hastial -->
+  <g>
+    <polygon points="0,640 0,60 200,40 260,52 260,560" fill="#6b5c4c"/>
+    <polygon points="0,60 140,0 260,52 200,40" fill="#4e4034"/>
+    <g stroke="#544636" stroke-width="5" opacity="0.8">
+      <line x1="0" y1="420" x2="258" y2="400"/>
+      <line x1="130" y1="52" x2="130" y2="618"/>
+    </g>
+    <!-- portón enorme -->
+    <path d="M 30,626 l 0,-160 a 60,54 0 0 1 120,0 l 0,148 z" fill="#3a2f24"/>
+    <path d="M 44,622 l 0,-150 a 48,44 0 0 1 94,0 l 0,140 z" fill="#2a2119"/>
+    <line x1="91" y1="472" x2="91" y2="620" stroke="#3a2f24" stroke-width="5"/>
+    <!-- viga de carga y garrucha -->
+    <line x1="196" y1="120" x2="196" y2="170" stroke="#33291e" stroke-width="10"/>
+    <line x1="150" y1="128" x2="242" y2="120" stroke="#33291e" stroke-width="8"/>
+    <circle cx="238" cy="132" r="9" fill="#33291e"/>
+    <path d="M 238,140 l -2,60" stroke="#33291e" stroke-width="3.5"/>
+    <!-- ventanuco -->
+    <rect x="168" y="250" width="34" height="46" fill="#3a3128"/>
+  </g>
+
+  <!-- ======== PRIMER TÉRMINO ======== -->
+  <!-- noray con maroma, abajo-derecha -->
+  <g>
+    <path d="M 1330,1000 l 8,-150 q 2,-34 42,-34 q 40,0 42,34 l 8,150 z" fill="#241c14"/>
+    <ellipse cx="1380" cy="816" rx="46" ry="16" fill="#3a2f22"/>
+    <!-- vueltas de maroma -->
+    <g stroke="#6b5a40" stroke-width="10" fill="none">
+      <path d="M 1336,880 q 44,20 88,0"/>
+      <path d="M 1338,904 q 42,20 84,0"/>
+    </g>
+    <!-- maroma hacia la gabarra -->
+    <path d="M 1352,872 Q 1240,800 1146,714" stroke="#6b5a40" stroke-width="8" fill="none"/>
+    <!-- cabo adujado -->
+    <g fill="none" stroke="#6b5a40">
+      <ellipse cx="1180" cy="930" rx="70" ry="24" stroke-width="9"/>
+      <ellipse cx="1180" cy="930" rx="44" ry="14" stroke-width="8"/>
+      <ellipse cx="1180" cy="930" rx="20" ry="6" stroke-width="7"/>
+    </g>
+  </g>
+  <!-- cajas y barril, abajo-derecha recortados -->
+  <g>
+    <polygon points="1440,1000 1444,860 1600,846 1600,1000" fill="#4e4030"/>
+    <polygon points="1444,860 1600,846 1600,806 1448,820" fill="#5f5040"/>
+    <line x1="1520" y1="852" x2="1522" y2="1000" stroke="#382c1e" stroke-width="4"/>
+    <rect x="1462" y="712" width="116" height="74" rx="12" fill="#66492e"/>
+    <ellipse cx="1520" cy="714" rx="58" ry="18" fill="#7c5a38"/>
+    <path d="M 1462,740 l 116,0 M 1462,764 l 116,0" stroke="#43331e" stroke-width="4"/>
+  </g>
+  <!-- red colgada de un poste, abajo-izquierda recortada -->
+  <g>
+    <line x1="120" y1="1000" x2="132" y2="760" stroke="#241c14" stroke-width="18"/>
+    <g stroke="#5c5240" stroke-width="2.5" fill="none" opacity="0.9">
+      <path d="M 130,790 q 90,30 60,140 q -20,70 -80,70"/>
+      <path d="M 132,820 q 60,26 40,110"/>
+      <path d="M 130,860 q 40,20 24,80"/>
+      <line x1="150" y1="820" x2="158" y2="900"/>
+      <line x1="172" y1="850" x2="176" y2="930"/>
+    </g>
+  </g>
+
+  <!-- gaviotas -->
+  <g stroke="#7c8288" stroke-width="3.5" fill="none" opacity="0.9">
+    <path d="M 1050,220 q 12,-12 24,0 q 12,-12 24,0"/>
+    <path d="M 1180,260 q 10,-10 20,0 q 10,-10 20,0"/>
+    <path d="M 960,300 q 8,-8 16,0 q 8,-8 16,0"/>
+    <path d="M 1300,180 q 9,-9 18,0 q 9,-9 18,0"/>
+  </g>
+</svg>

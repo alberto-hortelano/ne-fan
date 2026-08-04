@@ -1,42 +1,47 @@
-/** Pipeline de imagen del PROSCENIO (entrega 2): repintado del plató entero
- *  (máxima integración — la lección del render_lab) + SEGMENTACIÓN por IA de
- *  lo PINTADO con comprobación por visión:
+/** Pipeline de imagen del PROSCENIO: GREYBOX 3D → repintado del plató entero
+ *  + SEGMENTACIÓN por IA de lo PINTADO con comprobación por visión:
  *
- *    1. blueprint (capas del compositor SIN cuarta pared) → /generate_scene_image
- *       (blueprint_kind "stage") → plató pintado.
+ *    1. buildGreyboxSpec(plan) → renderGreybox (three.js, clay iluminado con
+ *       la cámara a nivel de ojo) → /generate_scene_image (blueprint_kind
+ *       "stage", layout_key = hash del spec canónico) → plató pintado. La vía
+ *       clay→gpt-image-2 es la de mayor fidelidad de layout del bench
+ *       escenografia_lab/greybox (run 001).
  *    2. /review_stage_image: la VISIÓN inventaría lo pintado — cada elemento
- *       declarado found (con su caja REAL) o missing + extras inventados +
- *       la línea de suelo (floor) — y SAM2 extrae la máscara de la IMAGEN de
- *       cada item.
- *    3. La perspectiva PINTADA manda: calibratedProjection reajusta
- *       ground_y/horizon_y a la línea de suelo pintada; de la línea de
- *       contacto de cada máscara salen su z de plató, su huella de mundo y la
- *       colisión (bandas que siguen la inclinación pintada).
+ *       declarado found (con su caja REAL) o missing + extras inventados —
+ *       y SAM2 extrae la máscara de la IMAGEN de cada item.
+ *    3. La proyección del GREYBOX manda: la cámara three.js equivale
+ *       EXACTAMENTE a spec.proj (garantizado por tests de core) y el clay fija
+ *       la perspectiva del repintado — paintedProj = spec.proj sin calibrar.
+ *       calibratedProjection queda como TELEMETRÍA de deriva (si el modelo
+ *       moviera el suelo sistemáticamente, reactivar es una línea).
  *    4. Pelado cerca→lejos por z PINTADA con /peel_scene_layer (LaMa local
  *       por defecto — FLUX reinventa el mueble en su propio hueco, bench
  *       stage_lab 003); la imagen final es la PLACA. Recorte de cada item =
  *       imagen ⊙ su máscara SAM (feather 1.5 px).
  *    5. Instalación atómica: placa + recortes con pose + colisión derivada +
- *       proyección calibrada. Chequeo de reconstrucción (placa+recortes ≈
- *       original) como smoke-test de integridad.
+ *       proj/view_box del greybox. Chequeo de reconstrucción (placa+recortes
+ *       ≈ original) como smoke-test de integridad.
  *
- *  PROHIBIDO recortar con siluetas DECLARADAS (SVG del compositor): el modelo
- *  de imagen recoloca y reorienta lo declarado — la silueta declarada recorta
- *  SUELO con forma de objeto. Lo declarado solo viaja como pista
- *  (expected_elements) y como profundidad de huella. Si la visión no está
- *  disponible, se instala SOLO la placa (sin recortes ni colisión derivada:
- *  sigue la declarada).
+ *  PROHIBIDO recortar con siluetas DECLARADAS (SVG/spec del compositor): el
+ *  modelo de imagen puede recolocar lo declarado — la silueta declarada
+ *  recorta SUELO con forma de objeto. Lo declarado solo viaja como pista
+ *  (expected_elements del manifest) y como profundidad de huella. Si la
+ *  visión no está disponible, se instala SOLO la placa (sin recortes ni
+ *  colisión derivada: sigue la declarada) — pero SIEMPRE con proj/view_box
+ *  del greybox, o la placa se proyectaría con la geometría del SVG.
  *
- *  ESPACIO CUADRADO: el server pre-estira a cuadrado (prestretch, bench 002),
- *  así que blueprint, máscaras, recortes y placa viven en 1024×1024; el
- *  renderer des-estira al pintar cada bitmap sobre el rect del viewBox. */
+ *  ESPACIO CUADRADO: el greybox ya renderiza 1024² (estirado del view_box,
+ *  espejo del prestretch), así que blueprint, máscaras, recortes y placa
+ *  viven en 1024×1024; el renderer des-estira al pintar cada bitmap sobre el
+ *  rect del view_box DEL SPEC (paintedViewBox). */
 
 import {
   STAGE_PEEL_VERSION,
   STAGE_RENDER_SIZE,
-  expectedElementsFor,
+  buildGreyboxSpec,
+  canonicalGreyboxJson,
+  expectedElementsFromGreybox,
   calibratedProjection,
-  declaredLayerHeightM,
   fitSpriteScale,
   SPRITE_SCALE_IDENTITY,
   type SpriteScaleModel,
@@ -49,11 +54,14 @@ import {
   reconstructionDiff,
   pxToView,
   type ComposedStage,
+  type GreyboxSpec,
+  type StageScenePlan,
   type StageProjParams,
   type StageReviewItem,
   type PaintedFloor,
   type CollisionCutout,
 } from "@nefan-core/src/scene/stage/index.js";
+import type { ViewBox } from "@nefan-core/src/scene/stage/segments.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
 
@@ -89,8 +97,12 @@ export interface StageImages {
   collision: TerrainGridData | null;
   /** layerIds declarados que el modelo NO pintó (sin recorte ni colisión). */
   missing: string[];
-  /** Proyección calibrada a la perspectiva pintada; null = sin review. */
+  /** Proyección de la placa: la del GREYBOX (exacta por construcción).
+   *  null solo en instalaciones legacy (nunca las emite este pipeline). */
   paintedProj: StageProjParams | null;
+  /** view_box del greybox — la placa/máscaras viven estiradas desde ÉL, no
+   *  desde el view_box del compositor SVG (effVb() en el renderer). */
+  paintedViewBox: ViewBox | null;
   /** Modelo de talla de sprites vs el mobiliario PINTADO (los TAMAÑOS de la
    *  pintura llevan su propia perspectiva, distinta de la del suelo). */
   spriteScale: SpriteScaleModel;
@@ -132,9 +144,10 @@ export class StageImageController {
   private token = 0;
   private busy = false;
   /** Caché cliente por escena: al volver a un plató ya pintado, reinstalar
-   *  sin red (colisión y proyección calibrada viajan dentro). La clave valida
-   *  contra el SVG compuesto Y la versión del pipeline. */
-  private cache = new Map<string, { svg: string; images: StageImages }>();
+   *  sin red (colisión y proyección viajan dentro). La clave valida contra el
+   *  hash del GreyboxSpec canónico (la versión del builder viaja dentro) Y la
+   *  versión del pipeline de pelado. */
+  private cache = new Map<string, { specHash: string; images: StageImages }>();
 
   constructor(
     private readonly baseUrl: string,
@@ -153,32 +166,47 @@ export class StageImageController {
 
   /** Reinstala las imágenes cacheadas de `key` si el plató no cambió.
    *  true = instaladas (sin red); false = no hay caché válida. */
-  reinstallIfCached(stage: ComposedStage, key: string): boolean {
+  async reinstallIfCached(plan: StageScenePlan, key: string): Promise<boolean> {
+    const spec = buildGreyboxSpec(plan, key);
+    const specHash = await sha256Hex(canonicalGreyboxJson(spec));
+    return this.reinstallWith(specHash, key);
+  }
+
+  private reinstallWith(specHash: string, key: string): boolean {
     const hit = this.cache.get(key);
-    if (!hit || hit.svg !== stage.svg || hit.images.peelVersion !== STAGE_PEEL_VERSION) return false;
+    if (!hit || hit.specHash !== specHash || hit.images.peelVersion !== STAGE_PEEL_VERSION) return false;
     this.deps.install(key, hit.images);
     console.log(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.length} recortes)`);
     return true;
   }
 
-  /** Repinta, inventaría por visión, segmenta y pela el plató `key`. Un plató
-   *  nuevo mientras corre otro aborta el anterior (token); los errores quedan
-   *  en el error-log (fail-loud) y degradan a placa sola. */
-  async runFor(stage: ComposedStage, key: string, meta: StageImageMeta): Promise<void> {
-    if (this.reinstallIfCached(stage, key)) return;
+  /** Renderiza el greybox, repinta, inventaría por visión, segmenta y pela el
+   *  plató `key`. `stage` aporta los exits (autoridad de transiciones); toda
+   *  la geometría de imagen sale del GreyboxSpec del plan. Un plató nuevo
+   *  mientras corre otro aborta el anterior (token); los errores quedan en el
+   *  error-log (fail-loud) y degradan a placa sola. */
+  async runFor(stage: ComposedStage, key: string, meta: StageImageMeta, plan: StageScenePlan): Promise<void> {
+    const spec = buildGreyboxSpec(plan, key);
+    const specHash = await sha256Hex(canonicalGreyboxJson(spec));
+    if (this.reinstallWith(specHash, key)) return;
     const token = ++this.token;
     this.busy = true;
     const t0 = performance.now();
     const ms = () => `${Math.round(performance.now() - t0)}ms`;
     try {
-      // ── 1. Repintado ─────────────────────────────────────────────────────
+      // ── 1. Greybox 3D + repintado ────────────────────────────────────────
       this.deps.log(`🎨 repintando plató ${key}…`);
-      this.deps.status(`plató ${key}: repintando…`);
+      this.deps.status(`plató ${key}: renderizando greybox…`);
       console.log(
-        `[stage-img] ${key}: repintado → /generate_scene_image ` +
-        `(style=${this.styleId || "(global)"}, tag=${meta.styleTag}, "${meta.description.slice(0, 60)}…")`,
+        `[stage-img] ${key}: greybox → /generate_scene_image ` +
+        `(spec=${specHash.slice(0, 12)}, style=${this.styleId || "(global)"}, ` +
+        `tag=${meta.styleTag}, "${meta.description.slice(0, 60)}…")`,
       );
-      const blueprint = await rasterizeBlueprintSquare(stage);
+      // three.js solo se carga en modo imagen (import dinámico).
+      const { renderGreybox } = await import("./stage-greybox-render.js");
+      const blueprint = renderGreybox(spec);
+      if (token !== this.token) return;
+      this.deps.status(`plató ${key}: repintando…`);
       const repaintRes = await this.post("/generate_scene_image", {
         image_b64: canvasB64(blueprint),
         prompt: meta.description,
@@ -186,6 +214,9 @@ export class StageImageController {
         has_water: false,
         style_id: this.styleId,
         style_tag: meta.styleTag,
+        // Clave de layout estable: el PNG WebGL no es byte-determinista; el
+        // hash del spec canónico sí (misma escena ⇒ CACHE HIT en el server).
+        layout_key: specHash,
       });
       if (token !== this.token) return;
       console.log(
@@ -196,7 +227,7 @@ export class StageImageController {
       if (token !== this.token) return;
 
       // ── 2. Inventario por visión + SAM ───────────────────────────────────
-      const expected = expectedElementsFor(stage);
+      const expected = expectedElementsFromGreybox(spec);
       this.deps.status(`plató ${key}: inventario por visión (${expected.length} declarados)…`);
       let review: ReviewResponse;
       try {
@@ -215,13 +246,16 @@ export class StageImageController {
         if (token !== this.token) return;
         errors.push("scene", `review del plató ${key} no disponible — placa sola (sin recortes)`, err);
         // SIN caché cliente: si la visión vuelve, la próxima visita reintenta.
+        // proj/view_box del greybox SIEMPRE — la placa clay-repintada vive en
+        // esa geometría; instalarla con la del SVG la desalinearía.
         this.deps.install(key, {
           peelVersion: STAGE_PEEL_VERSION,
           plate: painted,
           cutouts: [],
           collision: null,
           missing: [],
-          paintedProj: null,
+          paintedProj: spec.proj,
+          paintedViewBox: spec.view_box,
           spriteScale: SPRITE_SCALE_IDENTITY,
         });
         console.log(`[stage-img] ${key}: DEGRADADO a placa sola (${ms()})`);
@@ -235,27 +269,35 @@ export class StageImageController {
         `floor.wall_base=${review.floor.wall_base_px}px`,
       );
 
-      // ── 3. La perspectiva PINTADA manda ──────────────────────────────────
-      // Con el trapecio lateral del floor, calibra TAMBIÉN ppm/focal/centro:
-      // el rect jugable mapea exacto al suelo pintado (cero muros invisibles,
-      // personajes a la escala de la pintura). Degradación con aviso.
-      const vb = stage.view_box;
-      const calWarnings: string[] = [];
-      const paintedProj = calibratedProjection(stage.proj, vb, review.floor, RENDER_SIZE, calWarnings);
-      for (const w of calWarnings) errors.push("scene", `calibración del plató ${key}: ${w}`);
-      const lateral = paintedProj.center_x !== undefined;
-      console.log(
-        `[stage-img] ${key}: calibración ${lateral ? "COMPLETA" : "solo vertical"} — ` +
-        `focal=${paintedProj.focal_m.toFixed(1)}m ppm=${paintedProj.px_per_m.toFixed(2)}` +
-        (lateral ? ` cx=${paintedProj.center_x!.toFixed(1)} camX=${paintedProj.cam_x_m!.toFixed(2)}m` : ""),
-      );
+      // ── 3. La proyección del GREYBOX manda ───────────────────────────────
+      // El clay fija la perspectiva del repintado y la cámara three.js
+      // equivale exactamente a spec.proj: cero calibración por construcción.
+      // El trapecio de la visión queda como TELEMETRÍA de deriva.
+      const vb = spec.view_box;
+      const paintedProj = spec.proj;
+      try {
+        const calWarnings: string[] = [];
+        const cal = calibratedProjection(spec.proj, vb, review.floor, RENDER_SIZE, calWarnings);
+        const lateral = cal.center_x !== undefined;
+        console.log(
+          `[stage-img] ${key}: deriva de calibración (telemetría) — ` +
+          `Δground=${(cal.ground_y - spec.proj.ground_y).toFixed(1)} ` +
+          `Δhorizon=${(cal.horizon_y - spec.proj.horizon_y).toFixed(1)}` +
+          (lateral
+            ? ` focal=${cal.focal_m.toFixed(1)}m ppm=${cal.px_per_m.toFixed(2)} camX=${cal.cam_x_m!.toFixed(2)}m`
+            : " (solo vertical)") +
+          (calWarnings.length ? ` — ${calWarnings.join("; ")}` : ""),
+        );
+      } catch (err) {
+        console.log(`[stage-img] ${key}: telemetría de calibración no evaluable —`, err);
+      }
       const rect = {
-        minX: -stage.proj.width_m / 2,
-        minZ: -stage.proj.depth_m / 2,
-        maxX: stage.proj.width_m / 2,
-        maxZ: stage.proj.depth_m / 2,
+        minX: -spec.proj.width_m / 2,
+        minZ: -spec.proj.depth_m / 2,
+        maxX: spec.proj.width_m / 2,
+        maxZ: spec.proj.depth_m / 2,
       };
-      const layersById = new Map(stage.layers.map((l) => [l.id, l]));
+      const manifestById = new Map(spec.manifest.map((m) => [m.id, m]));
 
       interface WorkItem {
         item: StageReviewItem;
@@ -271,16 +313,16 @@ export class StageImageController {
         if (token !== this.token) return;
         let z: number | null = null;
         let contactWorld: [number, number][] | null = null;
-        const layer = item.source === "expected" ? layersById.get(item.id) : undefined;
-        const depthM = layer?.footprint
-          ? layer.footprint[3] - layer.footprint[1]
+        const declared = item.source === "expected" ? manifestById.get(item.id) : undefined;
+        const depthM = declared
+          ? declared.footprintWorld[3] - declared.footprintWorld[1]
           : (item.depth_cells ?? 2) * STAGE_CELL_MPC;
         if (item.action === "keep" && item.contact_px?.length) {
           const pose = contactToPose(paintedProj, vb, rect, item.contact_px);
           if (pose) {
             z = pose.z;
             contactWorld = pose.contactWorld;
-            const declaredZ = layer?.z;
+            const declaredZ = declared?.zStage;
             if (declaredZ !== undefined && Math.abs(z - declaredZ) > RELOCATION_LOG_M) {
               console.log(
                 `[stage-img] ${key}: "${item.label}" RECOLOCADO — z pintada ${z.toFixed(1)} vs declarada ${declaredZ.toFixed(1)}`,
@@ -365,14 +407,11 @@ export class StageImageController {
       // pintado. El suelo gobierna las POSICIONES; los tamaños pintados
       // llevan su propia perspectiva (una plaza frontal casi ortográfica
       // encoge puertas 2× al fondo) — se ajusta {k, focal_size} a los ratios.
-      const layersById2 = new Map(stage.layers.map((l) => [l.id, l]));
       const scalePoints: SpriteScalePoint[] = [];
       for (const cut of cutouts) {
-        const layer = cut.layerId ? layersById2.get(cut.layerId) : undefined;
+        const declared = cut.layerId ? manifestById.get(cut.layerId) : undefined;
         const w = workById.get(cut.id);
-        const hM = layer
-          ? declaredLayerHeightM(layer, stage.proj)
-          : (typeof w?.item.h === "number" ? w.item.h : null);
+        const hM = declared ? declared.hM : (typeof w?.item.h === "number" ? w.item.h : null);
         if (!hM) continue;
         scalePoints.push({ z: cut.z, paintedView: cut.bboxView[3] - cut.bboxView[1], hM });
       }
@@ -383,13 +422,14 @@ export class StageImageController {
           `focal_size=${spriteScale.focal_size_m.toFixed(1)}m (${scalePoints.length} puntos)`,
         );
       }
-      this.installAndCache(stage, key, {
+      this.installAndCache(specHash, key, {
         peelVersion: STAGE_PEEL_VERSION,
         plate: current,
         cutouts,
         collision: grid,
         missing,
         paintedProj,
+        paintedViewBox: spec.view_box,
         spriteScale,
       });
       this.deps.log(`🎨 plató ${key} pintado (${cutouts.length} recortes segmentados)`);
@@ -408,8 +448,8 @@ export class StageImageController {
     }
   }
 
-  private installAndCache(stage: ComposedStage, key: string, images: StageImages): void {
-    this.cache.set(key, { svg: stage.svg, images });
+  private installAndCache(specHash: string, key: string, images: StageImages): void {
+    this.cache.set(key, { specHash, images });
     while (this.cache.size > CLIENT_CACHE_MAX) {
       const oldest = this.cache.keys().next().value as string;
       this.cache.delete(oldest);
@@ -508,27 +548,10 @@ function makeCanvas(): HTMLCanvasElement {
   return c;
 }
 
-/** Blueprint del repintado: las capas del compositor SIN la cuarta pared
- *  (taparía la banda inferior y el modelo la reinterpreta como suelo — bench
- *  stage_lab). Cada capa es un SVG standalone con el viewBox común; se
- *  estiran a cuadrado (espejo del prestretch del server). */
-async function rasterizeBlueprintSquare(stage: ComposedStage): Promise<HTMLCanvasElement> {
-  const canvas = makeCanvas();
-  const ctx = canvas.getContext("2d")!;
-  for (const layer of stage.layers) {
-    if (layer.kind === "fourth_wall") continue;
-    const blob = new Blob([layer.svg], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    try {
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      ctx.drawImage(img, 0, 0, RENDER_SIZE, RENDER_SIZE);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-  return canvas;
+/** sha256 hex de un string (clave de caché del spec canónico). */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** La máscara del server es L OPACA (blanco = elemento): para componer con
