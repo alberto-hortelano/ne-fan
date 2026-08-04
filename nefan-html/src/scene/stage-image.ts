@@ -54,7 +54,6 @@ import {
   reconstructionDiff,
   pxToView,
   type ComposedStage,
-  type GreyboxSpec,
   type StageScenePlan,
   type StageProjParams,
   type StageReviewItem,

@@ -19,7 +19,7 @@ import { seededRng, uniform } from "../blueprint/svg.js";
 import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import type { Volume } from "../blueprint/volumes.js";
 import { volumeFootprintCells, type StageScenePlan } from "./compose.js";
-import { scaleAt, stageToViewAt, type StageProjParams } from "./projection.js";
+import { stageToViewAt, type StageProjParams } from "./projection.js";
 import { STAGE_RENDER_SIZE, type StageExpectedElement, type ViewBox } from "./segments.js";
 
 /** Versión del builder: viaja dentro del spec (y por tanto dentro del hash de
