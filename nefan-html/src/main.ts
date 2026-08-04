@@ -18,6 +18,7 @@ import {
   composeStage,
   stagePlanFromScene,
   type ComposedStage,
+  type StageScenePlan,
 } from "@nefan-core/src/scene/stage/index.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
@@ -27,10 +28,12 @@ import type { Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer } from "./renderer/proscenium-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
+import { StageImageController } from "./scene/stage-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
   applyPlanCollision,
+  applyStageDerivedCollision,
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
@@ -181,11 +184,29 @@ const renderer = new CanvasRenderer(canvas, {
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
 const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
+// Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
+// visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
+// si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
+// declarada (closure: se resuelve al llegar las imágenes, no al construir).
+const stageImageController = new StageImageController(AI_SERVER_URL, {
+  install: (key, images) => {
+    const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
+    if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);
+  },
+  log: (msg) => log(msg),
+  // Progreso del repintado/pelado en el HUD (mismo indicador que el Auto-img
+  // de la oblicua — nunca corren a la vez).
+  status: (text) => {
+    autoimgStatus.textContent = text ?? "";
+    autoimgStatus.className = text ? "working" : "";
+  },
+});
 
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
  *  save) a los generadores de imagen: escena y skins de personaje. */
 function applySessionStyle(styleId: string): void {
   sceneImageController.setStyle(styleId);
+  stageImageController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
@@ -243,6 +264,9 @@ function applySessionView(view: string): void {
         spriteRenderer,
         oblique: renderer,
       }) as ProsceniumRenderer;
+      // Palanca dev del clamp de escala por profundidad (?minscale=0.4).
+      const minScale = parseFloat(new URLSearchParams(location.search).get("minscale") ?? "");
+      if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
     }
     activeRenderer = prosceniumRenderer;
     // Sin pipeline de imagen en proscenio v1 (vector-only): el repintado por
@@ -710,6 +734,29 @@ function composeTilePlan(
   };
 }
 
+/** Geometría del plató con indirección MUTABLE: el accept de HMR de abajo
+ *  la reasigna al editar nefan-core/stage — sin recargar la página. */
+let hotComposeStage = composeStage;
+let hotStagePlanFromScene = stagePlanFromScene;
+
+/** Metadatos del repintado de un plató, desde el Format D crudo. */
+function stageImageMeta(
+  rawFd: Record<string, unknown>,
+  data: Record<string, unknown>,
+): { description: string; backdrop?: string; styleTag: string } {
+  const stageBlock = rawFd.stage as { backdrop?: { description?: string }; fourth_wall?: { present?: boolean } } | undefined;
+  const styleTag = typeof rawFd.style_tag === "string" && rawFd.style_tag
+    ? rawFd.style_tag
+    : stageBlock?.fourth_wall?.present
+      ? "interior"
+      : "settlement";
+  return {
+    description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
+    backdrop: stageBlock?.backdrop?.description,
+    styleTag,
+  };
+}
+
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
@@ -763,14 +810,16 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // sesión (o a la oblicua). ─────────────────────────────────────────────
   const isStageScene = (data as Record<string, unknown>).stage !== undefined && !isGridTile;
   let stageComposed: ComposedStage | null = null;
+  let stagePlanCaptured: StageScenePlan | null = null;
   let stageVolumes: Volume[] = [];
   if (isStageScene) {
     try {
-      const stagePlan = stagePlanFromScene(
+      const stagePlan = hotStagePlanFromScene(
         (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
       );
       if (stagePlan) {
-        stageComposed = composeStage(stagePlan, key);
+        stageComposed = hotComposeStage(stagePlan, key);
+        stagePlanCaptured = stagePlan;
         stageVolumes = stagePlan.volumes;
       }
     } catch (err) {
@@ -781,8 +830,30 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     applySessionView("proscenium");
     activeStage = stageComposed;
     (data as Record<string, unknown>).__stage = stageComposed;
+    // Fixture sin sesión de bridge: el player no pasó por session_start y no
+    // tiene apariencia — resolver la base y_bot para que las demos del plató
+    // muestren un sprite que escala con la profundidad (no un círculo).
+    if (CONFIG.graphics.character_sprites && playerModel === null) {
+      void setPlayerAppearance("", "");
+    }
+    // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
+    // reinstalar de la caché cliente si ya se pintó (volver a una escena no
+    // pierde la imagen) o, con gráficos "imagen IA", greybox + repintar +
+    // pelar. La clave de caché es el hash del GreyboxSpec del plan.
+    const stageForImages = stageComposed;
+    const stagePlanForImages = stagePlanCaptured;
+    const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
     void prosceniumRenderer!
       .installStage(stageComposed, key)
+      .then(async () => {
+        if (!stagePlanForImages) return;
+        const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
+        if (!reinstalled && sessionRenderMode === "image") {
+          void stageImageController.runFor(
+            stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
+          );
+        }
+      })
       .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
   } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
     applySessionView("");
@@ -950,6 +1021,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
         sizeXZ,
         sizeY,
         shape,
+        sceneDeclared: true,
       };
       objectEntities.push(objectEntity);
     }
@@ -1081,6 +1153,19 @@ const stageTransitions = new StageTransitions({
     else void enterLocalStagePlace(placeId);
   },
   setFade: (on) => sceneFadeEl.classList.toggle("show", on),
+  // Prompt de cruce: mismo elemento y teclas Y/N que la propuesta de tile
+  // del overworld (en proscenio el pipeline de frontera está inactivo — no
+  // compiten por él).
+  setProposal: (exit) => {
+    input.tileProposalActive = exit !== null;
+    if (exit) {
+      tileConfirmPromptEl.innerHTML =
+        `🎬 ${exit.label} — <b>[Y]</b> cruzar · <b>[N]</b> quedarse`;
+      tileConfirmPromptEl.style.display = "block";
+    } else {
+      tileConfirmPromptEl.style.display = "none";
+    }
+  },
   log: (msg) => log(msg),
 });
 
@@ -1148,12 +1233,24 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
     stage: () => activeStage,
+    stageImages: () => prosceniumRenderer?.hasImages() ?? false,
+    stagePainting: () => stageImageController.running,
+    stageCam: () => prosceniumRenderer?.debugCamera() ?? null,
+    stageCutouts: () => prosceniumRenderer?.debugCutouts() ?? null,
+    stageProposal: () => stageTransitions.proposalActive,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
     setYaw: (yaw: number) => {
       playerYaw = yaw;
       refreshPlayerForward();
+    },
+    // Teletransporte del bench: posiciona al jugador para las capturas
+    // deterministas (respeta la simulación en el siguiente tick — la colisión
+    // "salir sí, entrar no" permite des-penetrar si el destino es sólido).
+    setPlayerPos: (x: number, z: number) => {
+      playerPos.x = x;
+      playerPos.z = z;
     },
     // Driver programático del provider "scripted" (?input=scripted) — API
     // limpia para el bench en vez de sintetizar KeyboardEvents.
@@ -1331,6 +1428,22 @@ function gameLoop(now: number): void {
   if (devInput.consumeGenerateScene()) {
     if (sessionRenderMode === "vector") {
       log("G ignorada: la partida es vectorial (elegido al crearla)");
+    } else if (sessionView === "proscenium") {
+      // Proscenio: G repinta + pela el plató activo (manual, aunque el auto
+      // ya lo haga al instalarse — reintento tras un fallo).
+      if (activeStage && activeTileKey && sceneData) {
+        const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
+        try {
+          const plan = hotStagePlanFromScene(rawFd);
+          if (plan) {
+            void stageImageController.runFor(
+              activeStage, activeTileKey, stageImageMeta(rawFd, sceneData), plan,
+            );
+          }
+        } catch (err) {
+          errors.push("scene", "G: el plan del plató activo no parsea", err);
+        }
+      }
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
@@ -1346,10 +1459,16 @@ function gameLoop(now: number): void {
   }
   // B cicla la vista de debug: off → colisiones → fases del pipeline de
   // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
-  // para comparar in situ el plan declarado con lo que pintó el modelo.
+  // para comparar in situ el plan declarado con lo que pintó el modelo. En
+  // proscenio, overlay propio: colisión reproyectada + recortes con su z.
   if (devInput.consumeToggleCollisionDebug()) {
-    const mode = renderer.cycleDebugView();
-    log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
+    if (sessionView === "proscenium" && prosceniumRenderer) {
+      const mode = prosceniumRenderer.cycleDebugView();
+      log(`B · overlay plató: ${mode === "overlay" ? "colisión + recortes por z" : "off"}`);
+    } else {
+      const mode = renderer.cycleDebugView();
+      log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
+    }
   }
   // N (descubrimiento) quedó integrada en el análisis completo de X.
   if (devInput.consumeDiscoverObjects()) {
@@ -1367,9 +1486,11 @@ function gameLoop(now: number): void {
   // excepción es la transición de plató (vista proscenio): fundido a negro
   // mientras llega la escena destino — el corte de puerta clásico.
   if (dialoguePanel.isVisible) {
-    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas).
+    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas)
+    // y la de cruce de plató (sin armar: al cerrar, el tick re-propone).
     input.tileProposalActive = false;
     tileConfirmPromptEl.style.display = "none";
+    stageTransitions.cancelProposal();
   }
   if (!dialoguePanel.isVisible && !stageTransitions.isTransitioning) {
     applyTurnKeys();
@@ -1408,10 +1529,14 @@ function gameLoop(now: number): void {
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
     }
 
-    // Vista proscenio: pisar una zona de salida dispara la transición de
-    // plató (corte a negro + player_entered_place).
+    // Vista proscenio: pisar una zona de salida PROPONE el cruce (Y/N, como
+    // la generación de tiles); confirmar corta a negro y pide la escena.
     if (sessionView === "proscenium" && activeStage) {
       stageTransitions.tick(activeStage);
+      if (stageTransitions.proposalActive) {
+        if (input.consumeTileConfirm()) stageTransitions.confirmProposal();
+        else if (input.consumeTileDecline()) stageTransitions.declineProposal();
+      }
     }
 
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
@@ -1445,7 +1570,10 @@ function gameLoop(now: number): void {
       } else {
         tileConfirmPromptEl.style.display = "none";
       }
-    } else {
+    } else if (!stageTransitions.proposalActive) {
+      // Sin frontera activa Y sin propuesta de cruce de plató: prompt fuera.
+      // (La propuesta del proscenio comparte elemento y teclas — este reset
+      // por-frame se la comía.)
       input.tileProposalActive = false;
       tileConfirmPromptEl.style.display = "none";
     }
@@ -2094,3 +2222,38 @@ async function runTitleFlow(): Promise<void> {
 }
 
 scheduleNextFrame();
+
+// ── HMR (dev): un cambio en la geometría del plató (nefan-core/src/scene/
+// stage) NO recarga la página — se recompone y reinstala el plató activo en
+// caliente. La partida (sesión, cámara, imágenes cacheadas) sobrevive a la
+// iteración. Los módulos renderer/pipeline/transiciones se auto-parchean por
+// prototipo (ver sus pies de fichero); main solo cubre su import directo.
+if (import.meta.hot) {
+  import.meta.hot.accept("@nefan-core/src/scene/stage/index.js", (mod) => {
+    const m = mod as {
+      composeStage?: typeof composeStage;
+      stagePlanFromScene?: typeof stagePlanFromScene;
+    } | undefined;
+    if (!m?.composeStage || !m?.stagePlanFromScene) return;
+    hotComposeStage = m.composeStage;
+    hotStagePlanFromScene = m.stagePlanFromScene;
+    if (sessionView === "proscenium" && sceneData && activeTileKey && prosceniumRenderer) {
+      const key = activeTileKey;
+      const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
+      try {
+        const plan = hotStagePlanFromScene(rawFd);
+        if (plan) {
+          const composed = hotComposeStage(plan, key);
+          activeStage = composed;
+          (sceneData as Record<string, unknown>).__stage = composed;
+          void prosceniumRenderer.installStage(composed, key).then(() => {
+            void stageImageController.reinstallIfCached(plan, key);
+          });
+          console.log("[hmr] plató recompuesto en caliente");
+        }
+      } catch (err) {
+        errors.push("scene", "recomposición HMR del plató falló", err);
+      }
+    }
+  });
+}

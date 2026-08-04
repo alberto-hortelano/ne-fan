@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from plate_inpainter import PlateInpainter
     from scene_image_generator import SceneImageGenerator
     from scene_segmenter import SceneSegmenter
+    from fal_client import FalFillClient
     from skin_generator import SkinGenerator
     from sprite_generator import SpriteGenerator
     from sprite_skin_meshy import SpriteSkinMeshy
@@ -39,6 +40,9 @@ class Deps:
     sprite_gen: "SpriteGenerator | None" = None
     scene_image_gen: "SceneImageGenerator | None" = None
     scene_segmenter: "SceneSegmenter | None" = None
+    # Pelado por capas del proscenio (FLUX Fill remoto). None = sin FAL_KEY;
+    # /peel_scene_layer degrada a LaMa local (plate_inpainter).
+    fill_client: "FalFillClient | None" = None
     style_packs: "StylePackResolver | None" = None
     asset_cache: "AssetCache | None" = None
     model_cache: "AssetCache | None" = None

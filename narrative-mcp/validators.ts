@@ -209,3 +209,87 @@ export function validateImageReview(data: unknown): { ok: true } | { ok: false; 
   }
   return { ok: true };
 }
+
+/** Pre-flight de una respuesta stage_review (inventario COMPLETO del plató
+ *  pintado), espejo de ai_server/narrative_schemas.py:validate_stage_review.
+ *  `expectedIds` (del listen) exige que cada elemento declarado aparezca
+ *  exactamente una vez, found (con box_px) o missing. */
+export function validateStageReview(
+  data: unknown,
+  expectedIds: string[] | null,
+): { ok: true } | { ok: false; error: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
+  }
+  const o = data as Record<string, unknown>;
+  if (!Array.isArray(o.expected)) {
+    return { ok: false, error: 'missing `expected` array — every declared element must appear as found or missing' };
+  }
+  const isBox = (b: unknown): b is number[] =>
+    Array.isArray(b) && b.length === 4 &&
+    b.every((v) => typeof v === 'number' && Number.isFinite(v)) &&
+    (b[2] as number) > 0 && (b[3] as number) > 0;
+  const seen = new Set<string>();
+  for (let i = 0; i < o.expected.length; i++) {
+    const e = o.expected[i] as Record<string, unknown>;
+    if (typeof e !== 'object' || e === null) return { ok: false, error: `expected[${i}] must be an object` };
+    if (typeof e.id !== 'string' || e.id.length === 0) {
+      return { ok: false, error: `expected[${i}].id must be a non-empty string` };
+    }
+    if (seen.has(e.id)) return { ok: false, error: `expected id "${e.id}" appears twice` };
+    seen.add(e.id);
+    if (e.status !== 'found' && e.status !== 'missing') {
+      return { ok: false, error: `expected[${i}].status must be "found" or "missing"` };
+    }
+    if (e.status === 'found' && !isBox(e.box_px)) {
+      return { ok: false, error: `expected[${i}] ("${e.id}") is found but box_px is not [x, y, w, h] with w,h > 0` };
+    }
+  }
+  if (expectedIds) {
+    const missing = expectedIds.filter((id) => !seen.has(id));
+    if (missing.length > 0) {
+      return { ok: false, error: `incomplete inventory — these declared elements are unaccounted for: ${missing.join(', ')}` };
+    }
+    const unknown = [...seen].filter((id) => !expectedIds.includes(id));
+    if (unknown.length > 0) {
+      return { ok: false, error: `unknown expected ids (not in expected_elements): ${unknown.join(', ')}` };
+    }
+  }
+  // floor: calibración de la perspectiva pintada — obligatoria.
+  const floor = o.floor as Record<string, unknown> | undefined;
+  if (typeof floor !== 'object' || floor === null) {
+    return { ok: false, error: 'missing `floor` object — give wall_base_px (y where the walkable floor meets the back wall)' };
+  }
+  if (typeof floor.wall_base_px !== 'number' || !Number.isFinite(floor.wall_base_px) || floor.wall_base_px <= 0) {
+    return { ok: false, error: 'floor.wall_base_px must be a positive number (y pixel)' };
+  }
+  if (floor.front_px !== undefined) {
+    if (typeof floor.front_px !== 'number' || !Number.isFinite(floor.front_px) || floor.front_px <= floor.wall_base_px) {
+      return { ok: false, error: 'floor.front_px must be a number below wall_base_px in the image (front edge is LOWER in the frame)' };
+    }
+  }
+  // Trapecio lateral del suelo pintado (opcional, los 4 juntos): x de los
+  // bordes izquierdo/derecho del suelo transitable en la línea de la pared y
+  // en el frente. Calibra px_per_m/focal/centro lateral.
+  const trapKeys = ['left_wall_px', 'right_wall_px', 'left_front_px', 'right_front_px'] as const;
+  const present = trapKeys.filter((k) => floor[k] !== undefined);
+  if (present.length > 0) {
+    if (present.length !== trapKeys.length) {
+      return { ok: false, error: `floor trapezoid needs all four of ${trapKeys.join(', ')} (got only ${present.join(', ')})` };
+    }
+    for (const k of trapKeys) {
+      if (typeof floor[k] !== 'number' || !Number.isFinite(floor[k])) {
+        return { ok: false, error: `floor.${k} must be a finite number (x pixel)` };
+      }
+    }
+    const lw = floor.left_wall_px as number, rw = floor.right_wall_px as number;
+    const lf = floor.left_front_px as number, rf = floor.right_front_px as number;
+    if (lw >= rw) return { ok: false, error: 'floor.left_wall_px must be < right_wall_px' };
+    if (lf >= rf) return { ok: false, error: 'floor.left_front_px must be < right_front_px' };
+    if (rw - lw >= rf - lf) {
+      return { ok: false, error: 'painted floor must converge toward the back: (right_wall_px - left_wall_px) must be < (right_front_px - left_front_px)' };
+    }
+  }
+  // Los extras comparten forma con image_review (reutilizamos su validación).
+  return validateImageReview({ extras: o.extras ?? [] });
+}

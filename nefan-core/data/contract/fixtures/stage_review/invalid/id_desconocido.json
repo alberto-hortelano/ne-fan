@@ -1,0 +1,12 @@
+{
+  "description": "un id que no está en expected_elements — la visión no puede inventar declarados",
+  "expect": "reject",
+  "payload": {
+    "expected": [
+      { "id": "vol_mesa", "status": "found", "box_px": [210, 540, 260, 170] },
+      { "id": "vol_fantasma", "status": "missing" }
+    ],
+    "extras": []
+  },
+  "expected_ids": ["vol_mesa"]
+}

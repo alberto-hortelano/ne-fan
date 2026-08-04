@@ -363,16 +363,14 @@ lo proyecta:
   `VIEW_PROJECTION` único): vista == mundo en el suelo; los prismas
   vectoriales (`view-prism.ts`) desplazan la tapa `(+h·shearX, −h)` — espejo
   exacto del compositor. Simulación e input no cambian.
-- **Occluders por MÁSCARA del compositor** (config `graphics.image_analysis:
-  "masks"`, el default): cada tramo occluder declarado se rasteriza como alpha
-  y recorta su sprite de la imagen repintada — sin SAM2 ni clasificador para
-  el mundo declarado (baseline/huella/colisión ya vienen del plan). La placa
-  se inpainta con la unión de esos recortes. Los objetos EXTRA que el img2img
-  inventa los captura la revisión por visión post-imagen (`/review_scene_image`,
-  kind MCP `image_review`): cajas imprecisas → SAM2 box prompt → sprite/occluder
-  + banda de colisión derivada del contorno inferior de la silueta (sigue la
-  inclinación pintada, nunca se sale del objeto); `remove` = queda bajo la
-  placa. Con `image_analysis: "sam"` sigue disponible el pipeline legacy:
+- **PROHIBIDO recortar la imagen pintada con siluetas DECLARADAS** (el
+  extinto modo `image_analysis: "masks"`: rasterizar el SVG del compositor
+  como máscara sobre la imagen repintada). Se probó y NO funciona — el modelo
+  de imagen recoloca y reorienta lo declarado, la máscara declarada recorta
+  SUELO con forma de objeto y el objeto real queda cocido en la placa. Jamás
+  va a funcionar; no reintroducirlo. Los recortes salen SIEMPRE de segmentar
+  lo que el modelo PINTÓ: `/analyze_scene_image` (SAM2 auto-segment + visión
+  + refinado `segment_boxes` por caja). Lo declarado solo sirve de PISTA:
 - `expected_elements` del análisis salen del compositor; los segmentos
   casados toman baseline/colisión de su huella declarada; los no casados
   (añadidos del modelo de imagen) aportan una franja en su línea de suelo.
@@ -395,9 +393,9 @@ de viajar es pisar una **zona de salida** → corte a negro (`#scene-fade`) +
 la puerta de vuelta (patrón puertas de Resident Evil).
 
 - **Selección**: `game.json → view` (enum `overworld|proscenium`), congelada
-  en `world.view` como el estilo; resume con view desconocida aborta. v1 es
-  vector-only (`proscenium` + `renderMode: "image"` aborta el start). Juego
-  dev: `data/games/dev_proscenio`.
+  en `world.view` como el estilo; resume con view desconocida aborta. Ambos
+  `render_mode` valen: "vector" (arte del compositor) e "image" (repintado +
+  pelado por capas, ver abajo). Juego dev: `data/games/dev_proscenio`.
 - **Formato**: escena Format D clásica por place + bloque `stage` OBLIGATORIO
   (`exits[]` con `edge`/`to_place_id`/`zone` en celdas, `backdrop`,
   `fourth_wall`; zod estricto en `src/scene/stage/schema.ts`). Validación:
@@ -407,9 +405,15 @@ la puerta de vuelta (patrón puertas de Resident Evil).
 - **Compositor** (`nefan-core/src/scene/stage/`): `composeStage(plan, key)`
   determinista, `STAGE_COMPOSER_VERSION` propia (cero bytes compartidos con la
   oblicua) — proyección `s(z)=f/(f+z)`, capas fondo→frente (backdrop, suelo en
-  perspectiva, volúmenes como billboards frontales, bastidores, cuarta pared),
-  cada una SVG standalone con huella/exits en METROS de mundo. Colisión de
-  huellas vía `applyPlanCollision`, nunca de píxeles.
+  perspectiva A TODO EL ANCHO, volúmenes como billboards frontales, paredes
+  laterales solo en interiores, cuarta pared), cada una SVG standalone con
+  huella/exits en METROS de mundo. Colisión de huellas vía
+  `applyPlanCollision`, nunca de píxeles. **v3: cero pistas teatrales** — sin
+  bastidores negros (exterior: el mundo continúa hasta el borde del encuadre;
+  interior: paredes reales con sus vanos) y el prompt del repintado no
+  menciona teatro; el modelo de imagen pintaba cortinas/marcos de escenario
+  con la versión anterior. El renderer tampoco dibuja marco a pantalla ni las
+  capas `wing` sobre la placa en modo imagen.
 - **Cliente**: `rendererRegistry` (`renderer/registry.ts`, patrón
   createSystemRegistry) con `ProsceniumRenderer` — rasteriza las capas una vez
   por escena, cámara de **raíl** en X (zona muerta + lerp, paneo UNIFORME: el
@@ -422,9 +426,47 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
   (siembra el world map de la posada vía State API). Bench:
   `window.__nefan.view()/stage()/probeCollide()`.
-- **Entrega 2 (pendiente)**: repintado IA por capas (peeling validado en el
-  experimento lateral de julio) sobre `StageLayer.image_url` — el hueco ya
-  existe en el contrato de capas.
+- **Plano base GREYBOX 3D + segmentación del plató pintado (entrega 2,
+  `render_mode: "image"`)**: el plano base del repintado es un **render
+  three.js clay** del plan (bench `escenografia_lab/greybox`: la vía
+  clay→gpt-image-2 da la máxima fidelidad de layout). `buildGreyboxSpec`
+  (`nefan-core/src/scene/stage/greybox.ts`, puro y determinista,
+  `STAGE_GREYBOX_VERSION`) emite primitivas + luces sembradas + suelo por
+  bandas de TERRENO (`terrain`/`terrain_legend` del plan) + **cámara baja por
+  modo** (exterior `GREYBOX_EYE_M`=3.2 m — los platós son anchos y someros y a
+  1,7-2,2 el suelo colapsa en un hilo; interior 1,8 m — a 3,2 quedaría A LA
+  altura del techo; hfov 75°, `focal_m` = retroceso derivado del ancho,
+  view_box de aspect FIJO 2.0 — un recorte ceñido deformaba ×5 con el
+  prestretch) expresada en el pinhole de `projection.ts` (`stageToViewAt`): la
+  cámara three.js del cliente (`stage-greybox-render.ts`, único módulo GL,
+  import dinámico) se DERIVA del spec y equivale EXACTO a `spec.proj` ⇒
+  `paintedProj = spec.proj` y `paintedViewBox = spec.view_box` SIEMPRE
+  (incluida la degradación sin visión); `calibratedProjection` del trapecio
+  queda como telemetría de deriva. El renderer usa `effVb()`/`effProj()` —
+  mezclar el view_box del compositor SVG con la placa greybox desalinea.
+  **Caché por hash del spec canónico** (floats redondeados 1e-4): el PNG
+  WebGL NO es byte-determinista — el cliente manda `layout_key` y el server
+  clava `layout: "gb:<hash>"` (pipeline `stage_greybox1`, modelo
+  `stage_scene_model: "gpt-image-2"` vía fal DIRECTO, ~210 s/plató,
+  cacheado). El `StageImageController` (`nefan-html/src/scene/stage-image.ts`)
+  repinta el plató ENTERO y deriva el mundo jugable de LO PINTADO.
+  **PROHIBIDO recortar con siluetas declaradas** (SVG o spec — el modelo
+  puede recolocar). Pipeline: `/review_stage_image` (kind MCP `stage_review`;
+  `expected_elements` salen del MANIFEST del greybox, cajas proyectadas
+  exactas) → SAM2 `segment_boxes` → máscara/sprite/contact_px. **Doble
+  perspectiva de talla**: `fitSpriteScale` sigue activo (los tamaños pintados
+  llevan su propia convergencia). Recortes = imagen ⊙ máscara SAM, con
+  z/huella del contacto pintado (mediana + filtro anti-saltos); pelado
+  cerca→lejos con `/peel_scene_layer` **backend LaMa**. Colisión =
+  `collisionGridFromCutouts` que SUSTITUYE a la declarada
+  (`applyStageDerivedCollision`, terrain retirado); sin visión → placa sola
+  (alineada por construcción) + colisión declarada. Recortes como drawables a
+  su z pintada + fade 0.45. Tecla B: overlay de debug. Chequeo de
+  reconstrucción como smoke-test. Benches: `escenografia_lab/greybox`
+  (formatos de plano), `stage_lab/` (score de coincidencia); E2E sin
+  créditos: `narrative_lab/stage-cutouts-e2e.md` (OJO: la tecla G solo se
+  consume con el bridge arriba). Auto al instalar el plató; G = manual; todo
+  cacheado (resume gratis).
 
 ## Plugins declarativos (next.md §7 — F1–F8 completas)
 

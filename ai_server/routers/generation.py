@@ -104,7 +104,7 @@ class SceneImageRequest(BaseModel):
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg)$")
+    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg|stage)$")
     # False = el plano NO tiene agua: la instrucción omite las cláusulas de
     # agua (mencionarla en planos secos ceba ríos alucinados — bench
     # 002_repaint_fidelity). Default True = comportamiento clásico.
@@ -118,6 +118,11 @@ class SceneImageRequest(BaseModel):
         default="",
         pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
     )
+    # Clave de layout ESTABLE aportada por el cliente (hash del GreyboxSpec
+    # canónico del plató). El render WebGL no es byte-determinista: sin esta
+    # clave, cada arranque hashearía píxeles distintos ⇒ miss (~$0.2/plató).
+    # Vacía ⇒ se hashea el PNG (camino clásico de la oblicua).
+    layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
     @field_validator("context_sides")
     @classmethod
     def _valid_sides(cls, v: list[str]) -> list[str]:
@@ -134,6 +139,21 @@ class AnalyzeSceneRequest(BaseModel):
     (p. ej. scene_description del tile)."""
     image_b64: str = Field(min_length=1)
     context: dict = Field(default_factory=dict)
+
+
+class PeelLayerRequest(BaseModel):
+    """Pelado de UNA capa del plató (proscenio): la imagen actual del plató +
+    la máscara del elemento SEGMENTADO de la imagen (SAM2 — nunca una silueta
+    declarada; blanco = hueco) + el prompt de lo que hay detrás. Backend:
+    "lama" (default para el plató — LaMa local, cero invención, el hueco queda
+    tapado por su recorte; bench stage_lab 003-005: FLUX reinventa el mueble
+    dentro de su propio hueco), "flux" (FLUX Fill guiado por prompt) o "auto"
+    (flux si hay FAL_KEY, si no lama). Cacheado por hash (imagen, máscara,
+    prompt, algo): el resume es determinista y gratis."""
+    image_b64: str = Field(min_length=1)
+    mask_b64: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+    backend: str = Field(default="auto", pattern="^(auto|lama|flux)$")
 
 
 class ScenePlateRequest(BaseModel):
@@ -410,7 +430,12 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
 
     png = _decode_b64_png(body.image_b64)
-    layout = hashlib.sha256(png).hexdigest()[:16]
+    # layout_key del cliente (hash del spec del greybox, prefijado para no
+    # colisionar con el espacio de hashes de PNG) o hash de los píxeles.
+    layout = (
+        f"gb:{body.layout_key[:16]}" if body.layout_key
+        else hashlib.sha256(png).hexdigest()[:16]
+    )
     # `model` is in the key so switching backends/models never serves a stale
     # image cached under a different generator. `sides` covers the (unlikely)
     # case of identical pixels with a different context instruction; empty is
@@ -418,7 +443,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     context = {
         "layout": layout,
         "kind": "full",
-        "model": deps.scene_image_gen._model,
+        "model": (
+            deps.scene_image_gen._stage_model
+            if body.blueprint_kind == "stage"
+            else deps.scene_image_gen._model
+        ),
         "sides": "+".join(sorted(body.context_sides)),
         # Transformación server-side del esquema antes del modelo (prestretch
         # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
@@ -441,6 +470,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
+    # stage_greybox1: la base pasa de SVG rasterizado a render 3D greybox
+    # (clay) con prompt KEEP y modelo de plató propio — todas las generaciones
+    # stage previas quedan invalidadas.
+    if body.blueprint_kind == "stage":
+        context["pipeline"] = "stage_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)
@@ -802,6 +836,287 @@ async def review_scene_image_endpoint(body: AnalyzeSceneRequest):
         f"({sum(1 for x in extras_out if x['action'] == 'remove')} removes)"
     )
     return result
+
+
+class StageReviewRequest(BaseModel):
+    """/review_stage_image — inventario por visión del plató repintado
+    (proscenio). `context.expected_elements` lleva las PISTAS declaradas
+    [{id, label, box_px, tall, solid}]; la visión responde con las cajas
+    REALES pintadas. Los recortes salen SIEMPRE de segmentar la imagen —
+    jamás de siluetas declaradas."""
+
+    image_b64: str = Field(min_length=1)
+    context: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_expected(self) -> "StageReviewRequest":
+        expected = self.context.get("expected_elements", [])
+        if not isinstance(expected, list):
+            raise ValueError("context.expected_elements must be a list")
+        for i, e in enumerate(expected):
+            if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not e["id"]:
+                raise ValueError(f"expected_elements[{i}] needs a non-empty string id")
+            if not isinstance(e.get("label"), str) or not e["label"]:
+                raise ValueError(f"expected_elements[{i}] needs a non-empty string label")
+        return self
+
+
+@router.post("/review_stage_image")
+async def review_stage_image_endpoint(body: StageReviewRequest):
+    """Inventario COMPLETO del plató repintado (kind MCP stage_review): la
+    visión casa cada elemento DECLARADO con su caja REAL pintada (found) o lo
+    marca missing, y añade los extras inventados; SAM2 (box prompt) extrae la
+    máscara de la IMAGEN por item → sprite + máscara full-frame + línea de
+    contacto pintada. El cliente deriva de ahí recortes, z, oclusión y
+    colisión. Cacheado por layout+expected — resume determinista."""
+    import asyncio
+    import base64 as b64mod
+    import hashlib
+    import io as io_mod
+
+    import numpy as np
+    from PIL import Image as PILImage
+
+    from image_review import bottom_contour, mask_bbox
+    from image_review import mask_from_png as mask_from_fal_png
+    from scene_segmenter import _to_data_uri
+
+    if deps.scene_segmenter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable stage review",
+        )
+    if deps.llm_client is None:
+        raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
+
+    png = _decode_b64_png(body.image_b64)
+    layout = hashlib.sha256(png).hexdigest()[:16]
+    expected_req: list[dict] = body.context.get("expected_elements", [])
+    expected_by_id = {e["id"]: e for e in expected_req}
+    if len(expected_by_id) != len(expected_req):
+        raise HTTPException(status_code=422, detail="expected_elements has duplicate ids")
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": layout,
+        "vision_model": deps.llm_client.model,
+        # v2: floor con trapecio lateral (left/right_wall_px + left/right_front_px).
+        "schema": "stage_review_v2",
+        # A diferencia del review oblicuo, las pistas SÍ entran en la clave:
+        # otro plató (u otro plan) sobre la misma imagen no comparte entrada.
+        "expected": hashlib.sha256(
+            json.dumps(expected_req, sort_keys=True).encode()
+        ).hexdigest()[:16],
+    })
+    key = deps.segment_cache.hash_key("stage_review", ctx)
+    cached = deps.segment_cache.get_by_hash(key, "analysis")
+    if cached is not None:
+        return json.loads(cached)
+
+    review = await asyncio.to_thread(
+        deps.llm_client.review_stage_image,
+        b64mod.b64encode(png).decode(),
+        body.context,
+    )
+    if review is None:
+        raise HTTPException(
+            status_code=503,
+            detail="stage review unavailable — no MCP listener or invalid response",
+        )
+
+    scene_rgb = scene_rgb_from_png(png)
+    h, w = scene_rgb.shape[:2]
+
+    # Inventario unificado: expected found (siempre keep, tall/solid de la
+    # pista declarada) + extras (keep/remove de la visión).
+    missing = [e["id"] for e in review["expected"] if e["status"] == "missing"]
+    items: list[dict] = []
+    for e in review["expected"]:
+        if e["status"] != "found":
+            continue
+        hint = expected_by_id[e["id"]]
+        items.append({
+            "id": e["id"],
+            "label": hint["label"],
+            "source": "expected",
+            "action": "keep",
+            "box_px": e["box_px"],
+            "tall": bool(hint.get("tall", True)),
+            "solid": bool(hint.get("solid", True)),
+        })
+    for i, x in enumerate(review["extras"]):
+        items.append({"id": f"extra_{i}", "source": "extra", **x})
+
+    boxes: list[tuple[int, int, int, int]] = []
+    for it in items:
+        bx, by, bw, bh = it["box_px"]
+        boxes.append((
+            max(0, int(bx)), max(0, int(by)),
+            min(w, int(bx + bw)), min(h, int(by + bh)),
+        ))
+
+    masks: list = []
+    if boxes:
+        try:
+            buf = io_mod.BytesIO()
+            PILImage.fromarray(scene_rgb).save(buf, "PNG")
+            # Canal DEV_API_CACHE propio: through_sync cachea por canal (la
+            # última llamada) — compartirlo con el review oblicuo emparejaría
+            # máscaras con el item equivocado en silencio.
+            mask_pngs, _cached = DEV_API_CACHE.through_sync(
+                "fal_segment_boxes_stage",
+                lambda: deps.scene_segmenter._fal.segment_boxes(
+                    _to_data_uri(buf.getvalue()), boxes
+                ),
+            )
+            masks = [
+                mask_from_fal_png(p, (w, h))
+                for _it, p in zip(items, mask_pngs, strict=True)
+            ]
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"stage review segmentation failed: {e}") from e
+
+    items_out: list[dict] = []
+    for it, mask in zip(items, masks, strict=True):
+        if mask is None or not mask.any() or mask.sum() < 30:
+            if it["source"] == "expected":
+                logger.info(f"stage_review: '{it['label']}' found pero sin silueta útil — pasa a missing")
+                missing.append(it["id"])
+            else:
+                logger.info(f"stage_review: extra '{it['label']}' sin silueta útil — se omite")
+            continue
+        bbox = mask_bbox(mask)
+        sprite = crop_sprite(scene_rgb, mask, bbox)
+        sprite_hash = hashlib.sha256(sprite["sprite_png_bytes"]).hexdigest()[:16]
+        sprite_key = deps.segment_cache.put(sprite_hash, "segment", sprite["sprite_png_bytes"])
+        # Máscara L full-frame: la del PELADO del cliente (blanco = elemento).
+        mask_buf = io_mod.BytesIO()
+        PILImage.fromarray((mask.astype(np.uint8) * 255), "L").save(mask_buf, "PNG")
+        mask_png = mask_buf.getvalue()
+        mask_key = deps.segment_cache.put(
+            hashlib.sha256(mask_png).hexdigest()[:16], "segment", mask_png
+        )
+        entry = {
+            "id": it["id"],
+            "label": it["label"],
+            "source": it["source"],
+            "action": it["action"],
+            "sprite_url": f"/cache/segment/{sprite_key}",
+            "mask_url": f"/cache/segment/{mask_key}",
+            "image_bbox": sprite["image_bbox"],
+            "img_w": sprite["img_w"],
+            "img_h": sprite["img_h"],
+        }
+        if it["action"] == "keep":
+            entry.update({
+                "tall": it["tall"],
+                "solid": it["solid"],
+                "contact_px": bottom_contour(mask),
+            })
+            if it["source"] == "extra":
+                entry["h"] = it.get("h", 2.0)
+                entry["depth_cells"] = it.get("depth_cells", 2.0)
+        items_out.append(entry)
+
+    result = {"items": items_out, "missing": missing, "floor": review["floor"]}
+    deps.segment_cache.put("stage_review", "analysis", json.dumps(result).encode(),
+                           context=ctx, subtype_override="analysis")
+    logger.info(
+        f"stage_review: {len(items_out)} items ({len(missing)} missing, "
+        f"{sum(1 for x in items_out if x['source'] == 'extra')} extras)"
+    )
+    return result
+
+
+@router.post("/peel_scene_layer")
+async def peel_scene_layer_endpoint(body: PeelLayerRequest):
+    """Pelado de una capa del plató: rellena el hueco de la máscara con lo
+    declarado detrás. La máscara se dilata (±8 px) antes del relleno y el
+    resultado se compone DURO sobre la imagen original (fuera de la máscara
+    dilatada, ni un píxel cambia — lección del experimento de julio)."""
+    import asyncio
+    import hashlib
+    import io
+
+    from PIL import Image, ImageFilter
+
+    image_png = _decode_b64_png(body.image_b64)
+    mask_png = _decode_b64_png(body.mask_b64)
+
+    if body.backend == "flux":
+        if deps.fill_client is None:
+            raise HTTPException(status_code=503, detail="backend flux pedido pero sin fill_client (FAL_KEY)")
+        use_flux = True
+    elif body.backend == "lama":
+        if deps.plate_inpainter is None:
+            raise HTTPException(status_code=503, detail="backend lama pedido pero sin plate_inpainter")
+        use_flux = False
+    else:
+        use_flux = deps.fill_client is not None
+        if not use_flux and deps.plate_inpainter is None:
+            raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
+
+    # Máscara dilatada ±16 px: cubre el anti-alias del borde y traga patas
+    # finas/halos que la segmentación deja fuera (bench stage_lab 004→005) —
+    # el hueco queda TAPADO por su recorte, el halo extra no se ve.
+    mask_img = Image.open(io.BytesIO(mask_png)).convert("L")
+    for _ in range(4):
+        mask_img = mask_img.filter(ImageFilter.MaxFilter(9))
+    buf = io.BytesIO()
+    mask_img.save(buf, format="PNG")
+    dilated_png = buf.getvalue()
+
+    algo = "fluxfill1" if use_flux else f"lama_{PLATE_ALGO}"
+    ctx = DEV_API_CACHE.namespace_context({
+        "layout": hashlib.sha256(image_png).hexdigest()[:16],
+        "mask": hashlib.sha256(dilated_png).hexdigest()[:16],
+        "algo": algo,
+    })
+    key = deps.scene_cache.hash_key(body.prompt, ctx)
+    if deps.scene_cache.get_by_hash(key, "plate") is not None:
+        return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
+
+    start = time.time()
+    filled: bytes
+    if use_flux:
+        try:
+            filled = await asyncio.to_thread(
+                deps.fill_client.fill, image_png, dilated_png, body.prompt
+            )
+        except Exception as e:
+            # Sin saldo / fallo remoto: degradar a LaMa local con SU clave de
+            # caché (nunca cachear un relleno LaMa bajo la clave flux).
+            if deps.plate_inpainter is None:
+                raise HTTPException(status_code=502, detail=f"fal fill falló y no hay LaMa: {e}") from e
+            print(f"peel_scene_layer: fal fill falló ({e}) — fallback LaMa", flush=True)
+            algo = f"lama_{PLATE_ALGO}"
+            ctx["algo"] = algo
+            key = deps.scene_cache.hash_key(body.prompt, ctx)
+            if deps.scene_cache.get_by_hash(key, "plate") is not None:
+                return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
+            async with deps.gpu_lock:
+                filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
+    else:
+        async with deps.gpu_lock:
+            filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
+
+    # Composite duro: el relleno solo dentro de la máscara dilatada.
+    base = Image.open(io.BytesIO(image_png)).convert("RGB")
+    fill_img = Image.open(io.BytesIO(filled)).convert("RGB")
+    if fill_img.size != base.size:
+        fill_img = fill_img.resize(base.size, Image.LANCZOS)
+    composed = Image.composite(fill_img, base, mask_img)
+    out = io.BytesIO()
+    composed.save(out, format="PNG")
+    peeled = out.getvalue()
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    deps.scene_cache.put(body.prompt, "plate", peeled, context=ctx, subtype_override="plate")
+    return {
+        "hash": key,
+        "cached": False,
+        "peeled_url": f"/cache/plate/{key}",
+        "backend": algo,
+        "generation_time_ms": elapsed_ms,
+    }
 
 
 @router.post("/inpaint_scene_plate")

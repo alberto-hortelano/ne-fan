@@ -968,3 +968,87 @@ def validate_image_review(data: dict | None) -> dict:
             entry["depth_cells"] = float(depth)
         out.append(entry)
     return {"extras": out}
+
+
+def validate_stage_review(data: dict | None, expected_ids: list[str] | None = None) -> dict:
+    """Validate a Claude response to a stage_review request (inventario
+    COMPLETO del plató pintado del proscenio). Espejo de
+    narrative-mcp/validators.ts:validateStageReview. Raises ValueError."""
+    if not isinstance(data, dict):
+        raise ValueError(f"stage_review payload must be an object, got {type(data).__name__}")
+    expected = data.get("expected")
+    if not isinstance(expected, list):
+        raise ValueError("stage_review payload missing `expected` list — every declared element must appear")
+    seen: set[str] = set()
+    expected_out = []
+    for i, e in enumerate(expected):
+        if not isinstance(e, dict):
+            raise ValueError(f"stage_review expected[{i}] must be an object")
+        eid = e.get("id")
+        if not isinstance(eid, str) or not eid:
+            raise ValueError(f"stage_review expected[{i}].id must be a non-empty string")
+        if eid in seen:
+            raise ValueError(f'stage_review expected id "{eid}" appears twice')
+        seen.add(eid)
+        status = e.get("status")
+        if status not in ("found", "missing"):
+            raise ValueError(f'stage_review expected[{i}].status must be "found" or "missing"')
+        entry: dict = {"id": eid, "status": status}
+        if status == "found":
+            box = e.get("box_px")
+            if (
+                not isinstance(box, list) or len(box) != 4
+                or not all(isinstance(v, (int, float)) for v in box)
+                or box[2] <= 0 or box[3] <= 0
+            ):
+                raise ValueError(
+                    f'stage_review expected[{i}] ("{eid}") is found pero box_px no es [x, y, w, h] con w,h > 0'
+                )
+            entry["box_px"] = [float(v) for v in box]
+        expected_out.append(entry)
+    if expected_ids is not None:
+        missing = [i for i in expected_ids if i not in seen]
+        if missing:
+            raise ValueError(f"stage_review inventario incompleto — sin cuenta de: {', '.join(missing)}")
+        unknown = [i for i in seen if i not in expected_ids]
+        if unknown:
+            raise ValueError(f"stage_review ids desconocidos (no están en expected_elements): {', '.join(unknown)}")
+    floor = data.get("floor")
+    if not isinstance(floor, dict):
+        raise ValueError("stage_review payload missing `floor` object (wall_base_px)")
+    wall_base = floor.get("wall_base_px")
+    if not isinstance(wall_base, (int, float)) or wall_base <= 0:
+        raise ValueError("stage_review floor.wall_base_px must be a positive number")
+    floor_out: dict = {"wall_base_px": float(wall_base)}
+    front = floor.get("front_px")
+    if front is not None:
+        if not isinstance(front, (int, float)) or front <= wall_base:
+            raise ValueError("stage_review floor.front_px must be below wall_base_px in the image")
+        floor_out["front_px"] = float(front)
+    # Trapecio lateral del suelo pintado (los 4 juntos o ninguno). Pueden
+    # salir del encuadre (rectas extrapoladas): solo se exige coherencia.
+    trap_keys = ("left_wall_px", "right_wall_px", "left_front_px", "right_front_px")
+    present = [k for k in trap_keys if floor.get(k) is not None]
+    if present:
+        if len(present) != len(trap_keys):
+            raise ValueError(
+                f"stage_review floor trapezoid needs all four of {', '.join(trap_keys)} "
+                f"(got only {', '.join(present)})"
+            )
+        for k in trap_keys:
+            if not isinstance(floor.get(k), (int, float)):
+                raise ValueError(f"stage_review floor.{k} must be a number (x pixel)")
+        lw, rw = float(floor["left_wall_px"]), float(floor["right_wall_px"])
+        lf, rf = float(floor["left_front_px"]), float(floor["right_front_px"])
+        if lw >= rw:
+            raise ValueError("stage_review floor.left_wall_px must be < right_wall_px")
+        if lf >= rf:
+            raise ValueError("stage_review floor.left_front_px must be < right_front_px")
+        if rw - lw >= rf - lf:
+            raise ValueError(
+                "stage_review painted floor must converge toward the back: "
+                "(right_wall_px - left_wall_px) < (right_front_px - left_front_px)"
+            )
+        floor_out.update({"left_wall_px": lw, "right_wall_px": rw, "left_front_px": lf, "right_front_px": rf})
+    extras = validate_image_review({"extras": data.get("extras", [])})["extras"]
+    return {"expected": expected_out, "extras": extras, "floor": floor_out}

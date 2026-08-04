@@ -91,6 +91,32 @@ export class TitleScreen {
       "overflow-y: auto",
     ].join(";");
     this.root.appendChild(this.content);
+    // Cierre SIN sesión (modo fixtures/dev): oculta el título y deja el juego
+    // en local — el selector "Room" y las teclas dev (G/B…) quedan a mano.
+    // No resuelve la promesa de show(): runTitleFlow queda en espera, igual
+    // que ocultar el overlay a mano desde la consola.
+    const close = document.createElement("button");
+    close.id = "ts-close";
+    close.textContent = "✕ cerrar (modo fixtures, sin sesión)";
+    close.title = "Cierra el título sin arrancar sesión: fixtures del selector Room";
+    close.style.cssText = [
+      "position: absolute",
+      "top: 12px",
+      "right: 16px",
+      "background: none",
+      "border: 1px solid #444",
+      "border-radius: 4px",
+      "color: #888",
+      "font: inherit",
+      "font-size: 12px",
+      "padding: 4px 10px",
+      "cursor: pointer",
+    ].join(";");
+    close.addEventListener("click", () => {
+      this.hide();
+      console.log("[title] cerrado sin sesión — modo fixtures (selector Room + tecla G)");
+    });
+    this.root.appendChild(close);
     document.body.appendChild(this.root);
   }
 

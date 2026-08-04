@@ -163,16 +163,34 @@ describe("composeStage — salidas por kind (nada simbólico)", () => {
     };
   }
 
-  it("un opening lateral abre HUECO en el bastidor (sin arco de puerta)", () => {
-    const c = composeStage(exteriorPlan("opening"), "prado");
-    const wing = c.layers.find((l) => l.id === "wing_west")!;
-    assert.ok(!wing.svg.includes("#0d0a10"), "sin vano de puerta pintado");
-    // El suelo continúa fuera de plano (tono del suelo oscurecido presente).
-    assert.ok(wing.svg.split("<polygon").length > 2, "hueco con aire + suelo");
+  it("un EXTERIOR no tiene capas laterales: el mundo continúa hasta el borde", () => {
+    for (const kind of ["opening", "door"] as const) {
+      const c = composeStage(exteriorPlan(kind), "prado");
+      assert.equal(c.layers.some((l) => l.kind === "wing"), false, `sin wings (${kind})`);
+      // Y el suelo llena todo el ancho del viewBox (nada de trapecio con
+      // bandas negras a los lados — la pista teatral que pintaba cortinas).
+      const floor = c.layers.find((l) => l.id === "floor")!;
+      assert.ok(floor.svg.includes(`x="${c.view_box.minX}"`), "suelo desde el borde izquierdo");
+    }
   });
 
-  it("un door lateral pinta su arco", () => {
-    const c = composeStage(exteriorPlan("door"), "prado");
+  it("un INTERIOR pinta paredes laterales reales (no bastidores negros)", () => {
+    const plan = makePlan();
+    const c = composeStage(plan, "posada_salon");
+    const wings = c.layers.filter((l) => l.kind === "wing");
+    assert.equal(wings.length, 2);
+    for (const w of wings) {
+      assert.ok(!w.svg.includes("#17131b"), "sin negro de bastidor");
+    }
+  });
+
+  it("un door lateral interior pinta su vano en la pared", () => {
+    const plan = makePlan();
+    plan.stage.exits.push({
+      id: "oeste", edge: "west", to_place_id: "bodega",
+      zone: [0, 6, 2, 4], kind: "door", label: "A la bodega",
+    });
+    const c = composeStage(plan, "posada_salon");
     const wing = c.layers.find((l) => l.id === "wing_west")!;
     assert.ok(wing.svg.includes("#0d0a10"), "vano de puerta presente");
   });

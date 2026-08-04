@@ -1,0 +1,302 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <!-- Senda de bosque con puente. Horizonte y=420, fuga oculta por la S del camino. Claro dorado al fondo. Sol alto desde arriba-izquierda. -->
+  <defs>
+    <radialGradient id="claro" cx="0.5" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#f6e6a4"/>
+      <stop offset="0.45" stop-color="#dccf8e" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#b8bc84" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fondoBosque" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fa284"/>
+      <stop offset="1" stop-color="#c2c298"/>
+    </linearGradient>
+    <linearGradient id="senda" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#8a7854"/>
+      <stop offset="1" stop-color="#b3a072"/>
+    </linearGradient>
+    <linearGradient id="agua" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#96b0a8"/>
+      <stop offset="1" stop-color="#647e82"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ======== FONDO: bosque comido por la luz ======== -->
+  <rect x="0" y="0" width="1600" height="1000" fill="url(#fondoBosque)"/>
+  <ellipse cx="700" cy="400" rx="560" ry="420" fill="url(#claro)"/>
+  <!-- cortina de troncos pálidos con sus copas difusas -->
+  <g fill="#b0bc98" opacity="0.8">
+    <ellipse cx="470" cy="150" rx="90" ry="55"/>
+    <ellipse cx="620" cy="105" rx="110" ry="60"/>
+    <ellipse cx="790" cy="90" rx="120" ry="62"/>
+    <ellipse cx="950" cy="120" rx="100" ry="56"/>
+    <ellipse cx="1060" cy="170" rx="80" ry="48"/>
+  </g>
+  <g fill="#a8b394" opacity="0.85">
+    <polygon points="452,492 448,180 470,180 472,492"/>
+    <polygon points="548,478 546,140 566,140 570,478"/>
+    <polygon points="640,464 638,120 656,120 660,464"/>
+    <polygon points="742,452 742,110 756,110 758,452"/>
+    <polygon points="838,458 838,130 852,130 854,458"/>
+    <polygon points="936,466 934,150 952,150 956,466"/>
+    <polygon points="1030,478 1028,180 1048,180 1052,478"/>
+  </g>
+  <g fill="#98a488" opacity="0.7">
+    <polygon points="500,486 498,220 510,220 512,486"/>
+    <polygon points="700,458 700,160 710,160 712,458"/>
+    <polygon points="892,462 890,170 900,170 902,462"/>
+    <polygon points="984,470 982,200 994,200 996,470"/>
+  </g>
+  <!-- sombras de base para asentar los troncos lejanos -->
+  <g fill="#98a082" opacity="0.6">
+    <ellipse cx="461" cy="492" rx="26" ry="6"/>
+    <ellipse cx="558" cy="478" rx="24" ry="6"/>
+    <ellipse cx="649" cy="464" rx="22" ry="5"/>
+    <ellipse cx="750" cy="452" rx="20" ry="5"/>
+    <ellipse cx="846" cy="458" rx="20" ry="5"/>
+    <ellipse cx="945" cy="466" rx="22" ry="5"/>
+    <ellipse cx="1040" cy="478" rx="24" ry="6"/>
+  </g>
+
+  <!-- ======== TRONCOS MEDIOS ======== -->
+  <g>
+    <polygon points="360,520 348,60 402,60 398,520" fill="#6a5a44"/>
+    <path d="M 356,400 q 14,-8 38,-4 M 352,300 q 16,-10 44,-6" stroke="#57493a" stroke-width="5" fill="none"/>
+    <path d="M 398,520 l -8,-460 l 10,0 z" fill="#8a7452" opacity="0.8"/>
+    <ellipse cx="380" cy="524" rx="60" ry="14" fill="#4e4634" opacity="0.5"/>
+    <!-- rama baja rematada en fronda -->
+    <path d="M 396,180 q 90,-30 180,-20" stroke="#6a5a44" stroke-width="16" fill="none"/>
+    <g fill="#57744a">
+      <ellipse cx="590" cy="150" rx="66" ry="30"/>
+      <ellipse cx="530" cy="170" rx="46" ry="22"/>
+    </g>
+    <ellipse cx="600" cy="140" rx="40" ry="18" fill="#6e8858"/>
+  </g>
+  <g>
+    <polygon points="1080,540 1068,20 1136,20 1130,540" fill="#615139"/>
+    <path d="M 1076,420 q 20,-10 52,-6 M 1072,300 q 22,-12 58,-8" stroke="#4e4130" stroke-width="6" fill="none"/>
+    <path d="M 1130,540 l -10,-520 l 12,0 z" fill="#8a7452" opacity="0.75"/>
+    <ellipse cx="1102" cy="544" rx="70" ry="16" fill="#4e4634" opacity="0.5"/>
+  </g>
+  <g>
+    <polygon points="1250,600 1240,0 1320,0 1312,600" fill="#57493a"/>
+    <path d="M 1246,460 q 24,-12 62,-8 M 1242,330 q 26,-14 70,-8" stroke="#463a2e" stroke-width="7" fill="none"/>
+    <path d="M 1312,600 l -12,-600 l 14,0 z" fill="#7c684a" opacity="0.7"/>
+    <ellipse cx="1278" cy="606" rx="80" ry="18" fill="#4e4634" opacity="0.5"/>
+  </g>
+
+  <!-- ======== SOTOBOSQUE (manto de hojarasca) ======== -->
+  <path d="M 0,1000 L 0,560 Q 260,520 452,486 Q 700,452 900,462 Q 1200,478 1400,540 L 1600,600 L 1600,1000 Z" fill="#7c7048"/>
+  <path d="M 0,640 Q 300,590 560,560 Q 480,590 300,640 Q 140,680 0,720 Z" fill="#8a7c52" opacity="0.7"/>
+
+  <!-- ======== ARROYO (cruza de izquierda a derecha por delante del claro) ======== -->
+  <g>
+    <path d="M 0,586
+             C 280,560 540,550 760,558
+             C 990,568 1180,660 1330,795
+             C 1420,878 1500,950 1560,1000
+             L 1360,1000
+             C 1320,940 1240,860 1150,780
+             C 1020,668 880,626 720,620
+             C 500,614 240,624 0,644 Z" fill="url(#agua)"/>
+    <!-- glints cortos del cielo -->
+    <g stroke="#d8e2dc" stroke-width="5" fill="none" opacity="0.7" stroke-linecap="round">
+      <path d="M 180,606 q 60,-8 120,-6"/>
+      <path d="M 460,584 q 60,-6 120,-2"/>
+      <path d="M 950,600 q 56,16 100,44"/>
+      <path d="M 1210,760 q 46,40 84,86"/>
+    </g>
+    <g stroke="#54686c" stroke-width="4" fill="none" opacity="0.6" stroke-linecap="round">
+      <path d="M 320,616 q 50,-6 100,-4"/>
+      <path d="M 1080,680 q 44,28 80,64"/>
+    </g>
+    <!-- piedras del cauce -->
+    <g fill="#8a8a78">
+      <ellipse cx="250" cy="622" rx="26" ry="9"/>
+      <ellipse cx="560" cy="596" rx="24" ry="8"/>
+      <ellipse cx="1060" cy="672" rx="30" ry="12"/>
+      <ellipse cx="1300" cy="850" rx="44" ry="17"/>
+    </g>
+    <g fill="#a8a894">
+      <ellipse cx="246" cy="618" rx="26" ry="8"/>
+      <ellipse cx="556" cy="592" rx="24" ry="7"/>
+      <ellipse cx="1056" cy="667" rx="30" ry="11"/>
+      <ellipse cx="1296" cy="844" rx="44" ry="16"/>
+    </g>
+    <!-- hierbas de orilla -->
+    <g stroke="#77884c" stroke-width="3" fill="none">
+      <path d="M 340,648 q 4,-24 18,-36 M 352,652 q 8,-20 24,-28"/>
+      <path d="M 1150,790 q 4,-28 20,-42 M 1164,798 q 10,-24 28,-34"/>
+    </g>
+  </g>
+
+  <!-- ======== SENDA (cruza el arroyo POR el puente) ======== -->
+  <!-- tramo cercano: de abajo a la cabecera sur -->
+  <path d="M 320,1000
+           C 430,850 550,740 692,648
+           L 850,656
+           C 800,740 660,880 590,1000 Z" fill="url(#senda)"/>
+  <!-- tramo lejano: de la cabecera norte al claro -->
+  <path d="M 758,566 L 854,572
+           C 838,528 812,492 782,462
+           L 738,452
+           C 740,492 746,532 758,566 Z" fill="url(#senda)"/>
+  <!-- roderas del tramo cercano -->
+  <g stroke="#8a7854" stroke-width="7" fill="none" opacity="0.6">
+    <path d="M 400,1000 C 500,860 600,760 720,672"/>
+    <path d="M 470,1000 C 570,880 660,790 790,678"/>
+  </g>
+  <!-- raíces cruzando la senda -->
+  <g stroke="#6b5a40" fill="none" opacity="0.8">
+    <path d="M 370,940 q 120,-24 240,-10" stroke-width="9"/>
+    <path d="M 500,830 q 100,-20 200,-8" stroke-width="7"/>
+    <path d="M 620,740 q 80,-16 160,-10" stroke-width="6"/>
+  </g>
+
+  <!-- ======== PUENTE DE TABLONES (perpendicular al arroyo) ======== -->
+  <g>
+    <!-- sombra en el agua bajo el vano -->
+    <ellipse cx="786" cy="614" rx="88" ry="14" fill="#3a4436" opacity="0.35"/>
+    <!-- estribos en las dos orillas -->
+    <polygon points="684,644 864,652 864,672 684,664" fill="#4e4130"/>
+    <polygon points="742,564 868,570 868,584 742,578" fill="#4e4130"/>
+    <!-- grosor del tablero (visto por debajo del canto sur) -->
+    <path d="M 692,650 L 858,656 L 858,674 L 692,668 Z" fill="#57503f"/>
+    <!-- tablero combado (canto izquierdo y derecho abombados) -->
+    <path d="M 692,650 Q 706,604 760,568 L 856,574 Q 866,612 858,656 Z" fill="#8a8274"/>
+    <!-- canto cercano iluminado -->
+    <path d="M 692,650 L 858,656" stroke="#b3ab98" stroke-width="5" fill="none"/>
+    <!-- tablones perpendiculares al paso -->
+    <g stroke="#6b6355" stroke-width="4" opacity="0.9">
+      <line x1="700" y1="636" x2="856" y2="642"/>
+      <line x1="710" y1="620" x2="858" y2="626"/>
+      <line x1="722" y1="604" x2="860" y2="610"/>
+      <line x1="734" y1="590" x2="861" y2="595"/>
+      <line x1="748" y1="578" x2="862" y2="582"/>
+    </g>
+    <!-- baranda única, aguas arriba (izquierda) -->
+    <g stroke="#6e6759" stroke-width="10">
+      <line x1="700" y1="650" x2="700" y2="590"/>
+      <line x1="724" y1="606" x2="724" y2="550"/>
+      <line x1="752" y1="572" x2="752" y2="522"/>
+    </g>
+    <path d="M 694,594 Q 720,550 756,526 L 762,530" stroke="#8a8274" stroke-width="9" fill="none"/>
+    <circle cx="700" cy="588" r="6" fill="#8a8274"/>
+    <circle cx="752" cy="521" r="5" fill="#8a8274"/>
+  </g>
+
+  <!-- ======== TRONCO CAÍDO CON MUSGO ======== -->
+  <g>
+    <path d="M 120,760 Q 360,700 560,706 L 560,748 Q 360,742 130,806 Z" fill="#5c5240"/>
+    <!-- parches de musgo sobre el lomo -->
+    <g fill="#6e7a4c">
+      <ellipse cx="200" cy="756" rx="52" ry="12" transform="rotate(-8 200 756)"/>
+      <ellipse cx="330" cy="722" rx="60" ry="12" transform="rotate(-6 330 722)"/>
+      <ellipse cx="470" cy="710" rx="44" ry="10" transform="rotate(-2 470 710)"/>
+    </g>
+    <!-- testa con anillos -->
+    <ellipse cx="562" cy="727" rx="14" ry="21" fill="#8a7452"/>
+    <ellipse cx="562" cy="727" rx="9" ry="14" fill="none" stroke="#57493a" stroke-width="2.5"/>
+    <ellipse cx="562" cy="727" rx="4" ry="7" fill="none" stroke="#57493a" stroke-width="2"/>
+    <path d="M 180,752 q 30,-8 60,-8 M 300,730 q 40,-8 80,-6" stroke="#4a4234" stroke-width="4" fill="none"/>
+    <ellipse cx="340" cy="800" rx="210" ry="18" fill="#5c5438" opacity="0.4"/>
+  </g>
+
+  <!-- ======== HELECHOS Y SETAS ======== -->
+  <g stroke="#5f7040" stroke-width="4" fill="none">
+    <path d="M 620,880 q 10,-70 60,-96 M 640,890 q 30,-60 88,-74 M 610,876 q -6,-60 24,-96"/>
+    <path d="M 1180,820 q 12,-56 54,-78 M 1200,830 q 28,-48 76,-58"/>
+  </g>
+  <g stroke="#77884c" stroke-width="3" fill="none">
+    <path d="M 630,872 q 8,-52 44,-72 M 1192,816 q 10,-44 42,-60"/>
+  </g>
+  <!-- corro de setas rojas al pie del haya grande -->
+  <g transform="translate(210,-40)">
+    <g fill="#b0402e">
+      <path d="M 216,916 a 28,17 0 0 1 56,0 z"/>
+      <path d="M 280,944 a 24,15 0 0 1 48,0 z"/>
+      <path d="M 178,954 a 21,14 0 0 1 42,0 z"/>
+    </g>
+    <g fill="#e8dcc8">
+      <rect x="236" y="916" width="15" height="24" rx="6"/>
+      <rect x="297" y="944" width="13" height="20" rx="5"/>
+      <rect x="193" y="954" width="12" height="18" rx="5"/>
+      <circle cx="232" cy="907" r="3.2"/><circle cx="252" cy="903" r="3.2"/>
+      <circle cx="292" cy="935" r="2.8"/><circle cx="196" cy="946" r="2.8"/>
+    </g>
+  </g>
+
+  <!-- ======== PRIMER TÉRMINO: troncos enormes recortados ======== -->
+  <g>
+    <path d="M 0,1000 L 0,0 L 200,0 L 192,660 Q 210,780 260,880 L 288,1000 Z" fill="#33291e"/>
+    <path d="M 192,660 Q 210,780 260,880 L 288,1000 L 210,1000 Q 176,880 170,760 Z" fill="#3f342a"/>
+    <path d="M 288,1000 Q 300,940 350,920 L 380,1000 Z" fill="#33291e"/>
+    <path d="M 210,1000 Q 190,950 140,940 L 120,1000 Z" fill="#2c231a"/>
+    <g stroke="#241c14" stroke-width="7" fill="none" opacity="0.8">
+      <path d="M 60,0 Q 70,300 66,640 Q 66,800 96,980"/>
+      <path d="M 130,0 Q 138,320 134,660 Q 138,820 176,990"/>
+    </g>
+    <g stroke="#4a3f30" stroke-width="4" fill="none" opacity="0.7">
+      <path d="M 96,0 Q 104,300 100,620"/>
+      <path d="M 168,0 Q 174,280 170,600"/>
+    </g>
+    <g fill="#4a6338">
+      <ellipse cx="52" cy="220" rx="34" ry="22"/>
+      <ellipse cx="90" cy="300" rx="40" ry="26"/>
+      <ellipse cx="58" cy="390" rx="30" ry="20"/>
+      <ellipse cx="110" cy="470" rx="34" ry="22"/>
+      <ellipse cx="76" cy="560" rx="26" ry="18"/>
+    </g>
+    <g fill="#5f7a44">
+      <ellipse cx="66" cy="250" rx="20" ry="13"/>
+      <ellipse cx="100" cy="330" rx="22" ry="14"/>
+      <ellipse cx="90" cy="500" rx="18" ry="12"/>
+    </g>
+  </g>
+  <g>
+    <path d="M 1600,1000 L 1600,0 L 1400,0 L 1412,540 Q 1400,760 1360,900 L 1340,1000 Z" fill="#2c231a"/>
+    <path d="M 1412,540 Q 1400,760 1360,900 L 1340,1000 L 1420,1000 Q 1450,860 1456,700 Z" fill="#3a2f24"/>
+    <g stroke="#201914" stroke-width="8" fill="none" opacity="0.8">
+      <path d="M 1500,0 Q 1494,300 1500,640 Q 1502,820 1480,980"/>
+      <path d="M 1560,0 Q 1556,320 1560,700"/>
+    </g>
+    <path d="M 1420,120 Q 1200,60 1010,110" stroke="#2c231a" stroke-width="34" fill="none"/>
+    <path d="M 1240,86 q -60,-8 -120,10" stroke="#2c231a" stroke-width="18" fill="none"/>
+    <g fill="#3e5232">
+      <ellipse cx="1150" cy="130" rx="70" ry="30"/>
+      <ellipse cx="1300" cy="110" rx="90" ry="36"/>
+      <ellipse cx="1050" cy="150" rx="50" ry="24"/>
+    </g>
+    <g fill="#4a6338">
+      <ellipse cx="1210" cy="120" rx="50" ry="22"/>
+      <ellipse cx="1330" cy="100" rx="56" ry="24"/>
+    </g>
+  </g>
+
+  <!-- ======== DOSEL OSCURO ======== -->
+  <g>
+    <path d="M 0,0 L 1600,0 L 1600,60 Q 1400,110 1200,86 Q 1000,66 800,96 Q 600,126 400,100 Q 200,76 0,120 Z" fill="#2e3320"/>
+    <path d="M 200,60 Q 400,130 620,96 Q 560,150 420,146 Q 280,140 200,100 Z" fill="#3a4226" opacity="0.9"/>
+    <path d="M 760,50 Q 960,120 1160,80 Q 1080,140 940,134 Q 820,126 760,90 Z" fill="#3a4226" opacity="0.85"/>
+  </g>
+
+  <!-- ======== HACES DE LUZ Y MOTAS ======== -->
+  <g fill="#f6ecb4">
+    <polygon points="430,0 530,0 900,700 780,700" opacity="0.13"/>
+    <polygon points="640,0 700,0 1010,600 930,620" opacity="0.10"/>
+    <polygon points="260,0 300,0 560,520 480,540" opacity="0.10"/>
+  </g>
+  <g fill="#eee2a0" opacity="0.5">
+    <ellipse cx="600" cy="800" rx="46" ry="14"/>
+    <ellipse cx="720" cy="740" rx="34" ry="10"/>
+    <ellipse cx="500" cy="900" rx="56" ry="16"/>
+    <ellipse cx="840" cy="704" rx="26" ry="8"/>
+    <ellipse cx="900" cy="620" rx="20" ry="6"/>
+    <ellipse cx="380" cy="960" rx="40" ry="12"/>
+  </g>
+
+  <!-- pájaros contra el claro -->
+  <g stroke="#57604a" stroke-width="3" fill="none" opacity="0.9">
+    <path d="M 700,260 q 9,-9 18,0 q 9,-9 18,0"/>
+    <path d="M 780,300 q 7,-7 14,0 q 7,-7 14,0"/>
+  </g>
+</svg>

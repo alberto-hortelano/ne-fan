@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8">
+<title>greybox bench — SVG vs greybox 3D vs depth</title>
+<style>
+  body { background:#1c1c1c; color:#ddd; font:15px/1.5 system-ui; margin:24px; }
+  .grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; margin-bottom:38px; }
+  img { width:100%; height:auto; }
+  h2 { border-bottom:1px solid #333; padding-bottom:4px; }
+  h3 { margin:0 0 6px; font-size:14px; }
+  .params { color:#8fb35c; font-family:monospace; font-size:12.5px; }
+</style>
+<h1>Bench greybox: mismo plan, distinto plano base (9 imágenes)</h1>
+<p>Comparativa por escena: greybox 3D (clay/depth) contra el baseline del SVG
+dibujado a mano, todo con la misma cláusula de estilo Magic.</p>
+<h2>01_calle</h2><div class='grid'><div><h3>base clay (greybox 3D)</h3><img src="../01_calle/clay.png" loading="lazy"></div><div><h3>SVG a mano → gpt-image-2 (baseline)</h3><img src="../../estilos/magic/01_calle_magic.png" loading="lazy"></div><div><h3>clay → gpt-image-2</h3><img src="01_calle_gpt2_clay.png" loading="lazy"><div class="params">0.17$ · 168.0s</div></div><div><h3>clay → seedream4</h3><img src="01_calle_seedream_clay.png" loading="lazy"><div class="params">0.03$ · 39.5s</div></div><div><h3>depth → FLUX depth</h3><img src="01_calle_flux_depth.png" loading="lazy"><div class="params">0.03$ · 192.0s</div></div></div><h2>02_plaza</h2><div class='grid'><div><h3>base clay (greybox 3D)</h3><img src="../02_plaza/clay.png" loading="lazy"></div><div><h3>SVG a mano → gpt-image-2 (baseline)</h3><img src="../../estilos/magic/02_plaza_magic.png" loading="lazy"></div><div><h3>clay → gpt-image-2</h3><img src="02_plaza_gpt2_clay.png" loading="lazy"><div class="params">0.17$ · 194.7s</div></div><div><h3>clay → seedream4</h3><img src="02_plaza_seedream_clay.png" loading="lazy"><div class="params">0.03$ · 25.9s</div></div><div><h3>depth → FLUX depth</h3><img src="02_plaza_flux_depth.png" loading="lazy"><div class="params">0.03$ · 225.7s</div></div></div><h2>05_puerto</h2><div class='grid'><div><h3>base clay (greybox 3D)</h3><img src="../05_puerto/clay.png" loading="lazy"></div><div><h3>SVG a mano → gpt-image-2 (baseline)</h3><img src="../../estilos/magic/05_puerto_magic.png" loading="lazy"></div><div><h3>clay → gpt-image-2</h3><img src="05_puerto_gpt2_clay.png" loading="lazy"><div class="params">0.17$ · 140.5s</div></div><div><h3>clay → seedream4</h3><img src="05_puerto_seedream_clay.png" loading="lazy"><div class="params">0.03$ · 31.5s</div></div><div><h3>depth → FLUX depth</h3><img src="05_puerto_flux_depth.png" loading="lazy"><div class="params">0.03$ · 77.8s</div></div></div>

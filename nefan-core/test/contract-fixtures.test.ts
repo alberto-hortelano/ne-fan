@@ -15,6 +15,7 @@ import {
   validateNarrativeReaction,
   validateBlueprintReview,
   validateSceneClassify,
+  validateStageReview,
 } from "../../narrative-mcp/validators.js";
 import { sanitizeGroundSvg } from "../src/scene/map-svg.js";
 import { TILE_CELLS } from "../src/scene/tile.js";
@@ -26,6 +27,7 @@ interface Fixture {
   expect: "accept" | "reject";
   payload: unknown;
   expected_indices?: number[];
+  expected_ids?: string[];
   /** Para sanitizadores que normalizan: output exacto esperado tras aceptar. */
   expected_output?: string;
 }
@@ -50,6 +52,7 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   reaction: (fx) => validateNarrativeReaction(fx.payload),
   blueprint_review: (fx) => validateBlueprintReview(fx.payload),
   scene_classify: (fx) => validateSceneClassify(fx.payload, fx.expected_indices ?? null),
+  stage_review: (fx) => validateStageReview(fx.payload, fx.expected_ids ?? null),
   ground_svg: (fx) =>
     sanitizeGroundSvg((fx.payload as { svg: unknown }).svg, TILE_CELLS, TILE_CELLS),
 };

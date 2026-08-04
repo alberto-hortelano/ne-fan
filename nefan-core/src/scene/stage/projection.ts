@@ -32,6 +32,13 @@ export interface StageProjParams {
   horizon_y: number;
   /** y de vista de la línea de suelo en la embocadura (z=0). */
   ground_y: number;
+  /** x de vista del punto de fuga lateral (default 0 = centro del viewBox).
+   *  Solo lo fija la calibración a la perspectiva PINTADA; el compositor
+   *  nunca lo emite (default ⇒ salida byte a byte idéntica). */
+  center_x?: number;
+  /** x lateral de la cámara en metros de plató (default 0 = eje central).
+   *  Con center_x forma el modelo vx = center_x + (xStage − cam_x_m)·ppm·s. */
+  cam_x_m?: number;
 }
 
 /** Límites jugables del plató en metros de MUNDO. */
@@ -53,7 +60,32 @@ export function scaleAt(p: StageProjParams, zStage: number): number {
  *  eje central; vy es la línea de CONTACTO con el suelo a esa profundidad. */
 export function stageToView(p: StageProjParams, xStage: number, zStage: number): [number, number] {
   const s = scaleAt(p, zStage);
-  return [xStage * p.px_per_m * s, p.horizon_y + (p.ground_y - p.horizon_y) * s];
+  const cx = p.center_x ?? 0;
+  const xc = p.cam_x_m ?? 0;
+  return [cx + (xStage - xc) * p.px_per_m * s, p.horizon_y + (p.ground_y - p.horizon_y) * s];
+}
+
+/** Proyección GENERAL de un punto con altura: [xStage, zStage, alturaM] →
+ *  [vx, vy]. Modelo pinhole completo del que stageToView es el caso y=0:
+ *  la cámara está a eyeM = (ground_y − horizon_y)/px_per_m sobre el suelo y a
+ *  focal_m al sur de la embocadura, mirando horizontal — un punto a altura y
+ *  proyecta a vy = horizon_y + (eyeM − y)·px_per_m·s(z). El builder greybox
+ *  3D usa EXACTAMENTE esta fórmula, así su cámara three.js y la proyección
+ *  declarada coinciden por construcción. */
+export function stageToViewAt(
+  p: StageProjParams,
+  xStage: number,
+  zStage: number,
+  heightM: number,
+): [number, number] {
+  const s = scaleAt(p, zStage);
+  const cx = p.center_x ?? 0;
+  const xc = p.cam_x_m ?? 0;
+  const eyeM = (p.ground_y - p.horizon_y) / p.px_per_m;
+  return [
+    cx + (xStage - xc) * p.px_per_m * s,
+    p.horizon_y + (eyeM - heightM) * p.px_per_m * s,
+  ];
 }
 
 /** Inversa de stageToView sobre el plano del suelo (picking). Un vy en o por
@@ -62,7 +94,7 @@ export function viewToStage(p: StageProjParams, vx: number, vy: number): [number
   const s = (vy - p.horizon_y) / (p.ground_y - p.horizon_y);
   if (s <= 0) return null;
   const z = (p.focal_m * (1 - s)) / s;
-  return [vx / (p.px_per_m * s), z];
+  return [(vx - (p.center_x ?? 0)) / (p.px_per_m * s) + (p.cam_x_m ?? 0), z];
 }
 
 /** Mundo → plató (metros). El eje X del plató ES el eje X del mundo centrado;

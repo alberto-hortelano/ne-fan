@@ -72,3 +72,4 @@ nefan-core/dist/
 nefan-core/data/games/user_*/
 nefan-core/data/styles/user_*/
 .playwright-mcp/
+stage_lab/runs/

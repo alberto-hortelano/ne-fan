@@ -179,6 +179,45 @@ function unionGrids(a: TerrainGridData | null, b: TerrainGridData | null): Terra
   return { ...a, grid: rows, solid_chars: ["S"] };
 }
 
+/** Colisión del plató en modo imagen: el grid derivado de los contactos
+ *  PINTADOS (segmentación de la imagen — collisionGridFromCutouts) SUSTITUYE
+ *  a la colisión declarada de los volúmenes: el modelo de imagen recoloca lo
+ *  declarado, y dejar la huella declarada crearía muros fantasma donde no hay
+ *  nada pintado (y elementos missing seguirían bloqueando en vacío). Con
+ *  `grid === null` (review fallido) NO se toca nada: la colisión declarada de
+ *  applyPlanCollision sigue siendo la primera línea. */
+export function applyStageDerivedCollision(
+  key: string,
+  grid: TerrainGridData | null,
+  deps: DerivedCollisionDeps,
+): void {
+  if (grid === null) return;
+  let collider: TerrainCollider | null;
+  try {
+    collider = createTerrainCollider(grid);
+  } catch (err) {
+    errors.push("scene", `grid del plató ${key} inconsistente; sigue la colisión declarada`, err);
+    return;
+  }
+  deps.tileStore.markAnalyzed(key, collider);
+  deps.setTileAnalysisGrid(key, grid);
+  // Retirar la declarada: la imagen manda (ni fantasmas de recolocados ni
+  // bloqueos de elementos missing).
+  deps.tileStore.setSvgCollider(key, null);
+  deps.setTileSvgGrid(key, null);
+  // Y el terreno declarado también: los muros W del terrain NO se pintan en
+  // el plató (el compositor pinta el suelo sobre el rect COMPLETO y la pared
+  // solo como telón) — sus celdas serían franjas de muro invisible sobre
+  // suelo pintado. El clamp de bounds (viewConstraint) ya detiene al jugador
+  // exactamente en el borde pintado del suelo, y las zonas de salida siguen
+  // gobernando el viaje.
+  deps.tileStore.clearTerrainCollider(key);
+  console.log(
+    `[collision] ${key}: colisión del plató PINTADO instalada — ` +
+    `${collider?.solidCellCount ?? 0} celdas sólidas (declarada y terreno retirados)`,
+  );
+}
+
 /** Mundo derivado de la imagen: materializa el análisis de un tile. El grid
  *  de segmentos sólidos pasa a ser el collider derivado del tile (la imagen
  *  manda: los AABBs del esquema en ese tile dejan de bloquear). Grid null =

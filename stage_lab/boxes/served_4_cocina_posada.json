@@ -1,0 +1,19 @@
+{
+  "expected": [
+    { "id": "vol_derived_ent_fogon", "status": "found", "box_px": [328, 312, 340, 260] },
+    { "id": "vol_derived_ent_tinaja", "status": "found", "box_px": [720, 502, 156, 194] },
+    { "id": "vol_derived_ent_mesa_harina", "status": "found", "box_px": [226, 548, 568, 290] }
+  ],
+  "extras": [
+    { "label": "cajón con sacos de patatas delante de la mesa", "action": "keep", "box_px": [570, 696, 182, 152], "tall": false, "solid": true, "h": 0.6, "depth_cells": 1 },
+    { "label": "mostrador de obra con leñera bajo arco", "action": "keep", "box_px": [136, 498, 198, 190], "tall": false, "solid": true, "h": 1.0, "depth_cells": 2 }
+  ],
+  "floor": {
+    "wall_base_px": 580,
+    "front_px": 945,
+    "left_wall_px": 130,
+    "right_wall_px": 890,
+    "left_front_px": 52,
+    "right_front_px": 949
+  }
+}

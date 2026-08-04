@@ -1,0 +1,23 @@
+{
+  "description": "inventario completo: un found con caja real, un missing, y un extra keep con flags",
+  "expect": "accept",
+  "payload": {
+    "expected": [
+      { "id": "vol_mesa", "status": "found", "box_px": [210, 540, 260, 170] },
+      { "id": "vol_taburete", "status": "missing" }
+    ],
+    "extras": [
+      {
+        "label": "barril junto a la chimenea",
+        "action": "keep",
+        "box_px": [700, 420, 90, 130],
+        "tall": true,
+        "solid": true,
+        "h": 2,
+        "depth_cells": 2
+      }
+    ],
+    "floor": { "wall_base_px": 580 }
+  },
+  "expected_ids": ["vol_mesa", "vol_taburete"]
+}

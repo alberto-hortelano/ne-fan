@@ -12,6 +12,7 @@ import {
   exitZoneAt,
   spawnPointForEntry,
   type ComposedStage,
+  type ComposedStageExit,
 } from "@nefan-core/src/scene/stage/index.js";
 import { errors } from "../ui/error-log.js";
 
@@ -29,6 +30,9 @@ export interface StageTransitionDeps {
   /** Pide la escena del place destino (bridge o fallback local de fixtures). */
   enterPlace(placeId: string): void;
   setFade(on: boolean): void;
+  /** Propuesta de cruce en curso (prompt Y/N del cliente, la misma mecánica
+   *  que la generación de tiles del overworld) — null = ocultar. */
+  setProposal(exit: ComposedStageExit | null): void;
   log(msg: string): void;
 }
 
@@ -37,9 +41,13 @@ export class StageTransitions {
   private pendingFromPlaceId: string | null = null;
   private pendingExitId: string | null = null;
   private armedExitId: string | null = null;
+  /** Salida bajo el jugador con prompt Y/N visible (aún sin cruzar). */
+  private proposedExit: ComposedStageExit | null = null;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly deps: StageTransitionDeps) {}
+  constructor(private readonly deps: StageTransitionDeps) {
+    HOT_REGISTRY.add(this);
+  }
 
   /** true mientras hay una transición en vuelo — el gameLoop congela el
    *  movimiento del jugador (la cámara y las animaciones siguen). */
@@ -47,17 +55,39 @@ export class StageTransitions {
     return this.transitioning;
   }
 
-  /** Tick por frame en vista proscenio: dispara la transición al pisar una
-   *  zona de salida (desarmada). */
+  /** true mientras hay un prompt de cruce visible (teclas Y/N activas). */
+  get proposalActive(): boolean {
+    return this.proposedExit !== null;
+  }
+
+  /** Tick por frame en vista proscenio: pisar una zona de salida PROPONE el
+   *  cruce (prompt Y/N, la misma mecánica que la generación de tiles del
+   *  overworld) — nada de transicionar en seco: cruzar puede costar una
+   *  generación LLM y un paso accidental no debe cambiar de escena. */
   tick(stage: ComposedStage): void {
     if (this.transitioning) return;
     const p = this.deps.getPlayerPos();
     const exit = exitZoneAt(stage, p.x, p.z);
     if (!exit) {
       this.armedExitId = null;
+      if (this.proposedExit) {
+        this.proposedExit = null;
+        this.deps.setProposal(null);
+      }
       return;
     }
-    if (exit.id === this.armedExitId) return; // aún no ha salido de su zona de entrada
+    if (exit.id === this.armedExitId) return; // declinada o zona de entrada: re-armar al salir
+    if (this.proposedExit?.id === exit.id) return; // prompt ya visible
+    this.proposedExit = exit;
+    this.deps.setProposal(exit);
+  }
+
+  /** Y: cruzar la salida propuesta. */
+  confirmProposal(): void {
+    const exit = this.proposedExit;
+    if (!exit || this.transitioning) return;
+    this.proposedExit = null;
+    this.deps.setProposal(null);
     const from = this.deps.getCurrentPlaceId();
     if (!from) {
       // Sin place no hay vuelta que resolver — transicionar igual (el spawn
@@ -74,6 +104,22 @@ export class StageTransitions {
       if (!this.transitioning) return;
       this.recover(`la escena destino no llegó en ${TRANSITION_TIMEOUT_MS / 1000}s`);
     }, TRANSITION_TIMEOUT_MS);
+  }
+
+  /** N: quedarse — la zona queda armada hasta salir y volver a entrar. */
+  declineProposal(): void {
+    if (!this.proposedExit) return;
+    this.armedExitId = this.proposedExit.id;
+    this.proposedExit = null;
+    this.deps.setProposal(null);
+  }
+
+  /** Retira el prompt sin armar la zona (p. ej. se abre un diálogo): al
+   *  volver el control, el tick re-propone si sigue en la zona. */
+  cancelProposal(): void {
+    if (!this.proposedExit) return;
+    this.proposedExit = null;
+    this.deps.setProposal(null);
   }
 
   /** Al instalarse un plató: devuelve el spawn de entrada si había transición
@@ -129,4 +175,19 @@ export class StageTransitions {
       this.timeoutId = null;
     }
   }
+}
+
+// ── HMR (dev): parcheo de prototipo — la máquina de transición sobrevive a
+// la iteración sin recargar (y corta la cadena de invalidación de
+// nefan-core/stage hacia main.ts). ─────────────────────────────────────────
+type HotWindow = Window & { __nefanHotStageTransitions?: Set<StageTransitions> };
+const HOT_REGISTRY: Set<StageTransitions> =
+  ((window as HotWindow).__nefanHotStageTransitions ??= new Set());
+if (import.meta.hot) {
+  import.meta.hot.accept((mod) => {
+    const Next = (mod as { StageTransitions?: typeof StageTransitions } | undefined)?.StageTransitions;
+    if (!Next) return import.meta.hot!.invalidate();
+    for (const inst of HOT_REGISTRY) Object.setPrototypeOf(inst, Next.prototype);
+    console.log(`[hmr] StageTransitions parcheado (${HOT_REGISTRY.size} instancia/s)`);
+  });
 }

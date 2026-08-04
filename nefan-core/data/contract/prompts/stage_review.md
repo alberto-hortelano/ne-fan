@@ -1,0 +1,101 @@
+# STAGE REVIEW — inventario COMPLETO del plató pintado
+
+Estás viendo la imagen FINAL repintada de un PLATÓ de la vista proscenio: una
+escena en PERSPECTIVA lateral (cámara al sur mirando al norte — el telón de
+fondo arriba, la embocadura abajo, el suelo en perspectiva entre ambos). NO es
+una vista cenital. La imagen está ESTIRADA a un cuadrado — los objetos pueden
+verse algo achatados o alargados; es normal.
+
+Junto a la imagen recibes `expected_elements`: los elementos que el plan
+DECLARÓ, cada uno con su etiqueta y una caja APROXIMADA de dónde debería
+estar. El modelo de imagen a veces los RECOLOCA, los gira, los pinta con otro
+tamaño, los omite… o INVENTA objetos nuevos. Tu inventario es la única
+garantía de que cada cosa pintada existe en el juego: lo que no inventaríes,
+el jugador lo atraviesa o lo pisa y se rompe la ilusión.
+
+Tu trabajo: un inventario COMPLETO de lo pintado.
+1. Para CADA elemento de `expected_elements`: ¿está pintado? Si sí, da su caja
+   REAL (donde de verdad está pintado, no donde debería estar). Si no lo
+   encuentras, márcalo `missing`.
+2. Además, TODO objeto con volumen pintado sobre el suelo que NO corresponda a
+   ningún expected es un `extra`: caja + decidir si se conserva (gana recorte,
+   oclusión y colisión) o se elimina (se borra por inpainting).
+3. `floor`: la geometría del SUELO pintado — con ella el juego calibra la
+   perspectiva de tu pintura (posiciones, colisión Y el tamaño de los
+   personajes). `wall_base_px` = y (píxeles) donde el suelo transitable se
+   encuentra con la pared del fondo / el telón (promedia si la línea no es
+   recta). `front_px` (opcional) = y del borde DELANTERO del suelo jugable,
+   solo si el modelo pintó una banda no jugable al pie del cuadro (marco,
+   proscenio); si el suelo llega hasta abajo, omítelo.
+   Además, da el TRAPECIO lateral del suelo: `left_wall_px`/`right_wall_px` =
+   x de los bordes izquierdo/derecho del suelo transitable EN la línea
+   `y = wall_base_px`, y `left_front_px`/`right_front_px` = los mismos bordes
+   en `y = front_px` (o en el borde inferior de la imagen si no diste
+   `front_px`). Son los puntos donde el suelo se encuentra con las paredes
+   laterales / el fin de lo transitable. Si un mueble tapa el borde,
+   EXTRAPOLA la recta de la pared hasta la línea pedida (el borde es una
+   recta en perspectiva). El suelo debe converger hacia el fondo: el ancho en
+   la pared < el ancho en el frente. Da los 4 valores o ninguno (pueden salir
+   del encuadre: valores <0 o >tamaño de imagen son válidos si la recta
+   extrapolada cruza ahí). Si los bordes laterales del suelo NO se ven en
+   absoluto (encuadre cerrado o escena abierta donde el suelo llega hasta el
+   borde de la imagen sin paredes que lo limiten), OMITE los 4: mejor sin
+   trapecio que con rectas inventadas.
+
+Responde EXACTAMENTE este JSON:
+
+```json
+{
+  "expected": [
+    { "id": "vol_mesa", "status": "found", "box_px": [210, 540, 260, 170] },
+    { "id": "vol_taburete", "status": "missing" }
+  ],
+  "extras": [
+    {
+      "label": "barril junto a la chimenea",
+      "action": "keep",
+      "box_px": [700, 420, 90, 130],
+      "tall": true,
+      "solid": true,
+      "h": 2,
+      "depth_cells": 2
+    },
+    { "label": "mancha que rompe la escena", "action": "remove", "box_px": [10, 20, 40, 30] }
+  ],
+  "floor": {
+    "wall_base_px": 580,
+    "left_wall_px": 205, "right_wall_px": 820,
+    "left_front_px": -40, "right_front_px": 1060
+  }
+}
+```
+
+Reglas:
+- `expected` debe listar TODOS los ids de `expected_elements`, cada uno una
+  sola vez, con `status: "found"` (y `box_px` obligatoria) o `"missing"`.
+- `box_px` = [x, y, ancho, alto] en píxeles de ESTA imagen. Puede ser
+  IMPRECISA: un modelo de segmentación recortará la silueta exacta dentro de
+  la caja. La caja debe contener el objeto ENTERO (incluida su base apoyada en
+  el suelo) con algo de margen, y NO abarcar objetos vecinos — si el objeto
+  toca a otro, encoge la caja hacia el lado libre.
+- La caja describe lo PINTADO: si la mesa declarada a la izquierda aparece
+  pintada a la derecha y de costado, la caja va a la derecha. No "corrijas"
+  la imagen hacia el plan.
+- NO copies las cajas de `expected_elements`: son PISTAS de dónde deberían
+  estar, no observaciones. Mira la imagen y da la caja de lo que VES — si por
+  casualidad coincide con la pista, perfecto, pero cada caja debe salir de la
+  imagen. Un inventario que calque las pistas es un inventario inválido.
+- `extras`: `tall` true si es más alto que un personaje de pie a su misma
+  profundidad (podría taparlo). `solid` false solo para decoración
+  atravesable (alfombras, sombras). `h` = altura estimada en metros;
+  `depth_cells` = profundidad de su base en celdas de 0.5 m (lo que ocupa
+  hacia el fondo). No des la base: la colisión se deriva del contorno
+  inferior de la silueta.
+- `action: "remove"` para lo que desentone o duplique un expected (el modelo a
+  veces pinta el mismo mueble dos veces): se inpainta y desaparece.
+- NO listes como extra: detalles del suelo (tablones, alfombras planas,
+  sombras, charcos), el telón de fondo, la chimenea u hornacinas EMPOTRADAS en
+  la pared del fondo (forman parte del telón), ni nada ya cubierto por un
+  expected.
+- Máximo 12 extras: prioriza los que afectan al juego (grandes, en zona
+  transitable). `"extras": []` es válido.

@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview } from './validators.js';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview } from './validators.js';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
@@ -56,6 +56,7 @@ const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
 
 const BLUEPRINT_REVIEW_INSTRUCTIONS = loadPrompt('blueprint_review.md');
 const IMAGE_REVIEW_INSTRUCTIONS = loadPrompt('image_review.md');
+const STAGE_REVIEW_INSTRUCTIONS = loadPrompt('stage_review.md');
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
  *  que el motor acaba de llamar. Genérico para rutas nuevas. */
@@ -83,10 +84,13 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
+  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'stage_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
+  // Ids esperados de la última petición stage_review (pre-flight de inventario
+  // completo: cada expected debe aparecer found o missing).
+  let currentStageExpectedIds: string[] | null = null;
 
   // ── Latido de progreso ──────────────────────────────────────────────────
   // Cada paso observable del motor (recoger la petición, llamar una tool de
@@ -122,6 +126,11 @@ Request kinds you may receive:
 - "image_review"    → LOOK at the final repainted tile and flag objects the
                       image model INVENTED (not in the declared plan): return
                       { extras: [{label, action, box_px, tall, solid, ...}] }.
+- "stage_review"    → LOOK at the final repainted proscenium STAGE (side-view
+                      perspective) and return a COMPLETE inventory: every
+                      expected element found (with its REAL painted box) or
+                      missing, plus every invented extra. Return
+                      { expected: [{id, status, box_px?}], extras: [...] }.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
@@ -155,6 +164,13 @@ into context:
           currentClassifyIndices = msg.kind === 'scene_classify' && Array.isArray(regions)
             ? regions.map((r) => r.index).filter((i): i is number => Number.isInteger(i))
             : null;
+          // stage_review: recordar los ids esperados para exigir un
+          // inventario COMPLETO en narrative_respond.
+          const expectedEls = (msg.context as { expected_elements?: { id?: string }[] } | undefined)
+            ?.expected_elements;
+          currentStageExpectedIds = msg.kind === 'stage_review' && Array.isArray(expectedEls)
+            ? expectedEls.map((e) => e.id).filter((i): i is string => typeof i === 'string')
+            : null;
           // Build content blocks: text header + image blocks + footer
           const header = JSON.stringify({
             kind: msg.kind,
@@ -180,6 +196,7 @@ into context:
             msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS :
             msg.kind === 'scene_classify' ? SCENE_CLASSIFY_INSTRUCTIONS :
             msg.kind === 'image_review' ? IMAGE_REVIEW_INSTRUCTIONS :
+            msg.kind === 'stage_review' ? STAGE_REVIEW_INSTRUCTIONS :
             WEAPON_ORIENT_INSTRUCTIONS;
           content.push({
             type: 'text',
@@ -280,6 +297,7 @@ into context:
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
     '  image_review   → { extras: [{ label, action, box_px, tall, solid, h?, depth_cells? }] }\n' +
+    '  stage_review   → { expected: [{ id, status: "found"|"missing", box_px? }], extras: [...], floor: { wall_base_px, front_px?, left_wall_px?, right_wall_px?, left_front_px?, right_front_px? } } (every expected id; the 4 lateral floor-edge x either all present or none)\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
     '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {
@@ -355,6 +373,15 @@ into context:
           if (!check.ok) {
             return {
               content: [{ type: 'text', text: `Invalid image review — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
+        if (kind === 'stage_review') {
+          const check = validateStageReview(parsed, currentStageExpectedIds);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid stage review — fix the shape and call narrative_respond again: ${check.error}` }],
               isError: true,
             };
           }

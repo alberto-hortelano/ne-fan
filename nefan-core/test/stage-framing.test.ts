@@ -1,0 +1,184 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  frameStage,
+  parallaxPanX,
+  viewToScreen,
+  bandPlanFor,
+  type ViewBoxRect,
+} from "../src/scene/stage/framing.js";
+import { scaleAt, stageToView, type StageProjParams } from "../src/scene/stage/projection.js";
+
+/** Proyección de un plató interior 16×9 m (como el salón de la posada). */
+const P: StageProjParams = {
+  focal_m: 12,
+  depth_m: 9,
+  width_m: 16,
+  px_per_m: 10,
+  horizon_y: 0,
+  ground_y: 100,
+};
+/** viewBox interior (VIEW_TOP_INTERIOR=-28, pad 10, margen 8). */
+const VB: ViewBoxRect = { minX: -88, minY: -28, width: 176, height: 138 };
+
+const projFor = (widthM: number, depthM = 9): StageProjParams => ({ ...P, width_m: widthM, depth_m: depthM });
+
+describe("frameStage", () => {
+  it("zoom adaptativo: platós pequeños acercan, grandes clampan a minZoom", () => {
+    const f16 = frameStage(projFor(16), VB, 1280, 720);
+    assert.ok(f16.zoom > 2 && f16.zoom <= 2.8, `16 m acerca fuerte (${f16.zoom})`);
+    // Un plató enano SÍ clampa a maxZoom.
+    const f10 = frameStage(projFor(10), { ...VB, minX: -58, width: 116 }, 1280, 720);
+    assert.equal(f10.zoom, 2.8);
+    const f80 = frameStage(projFor(80), { ...VB, minX: -408, width: 816 }, 1280, 720);
+    assert.equal(f80.zoom, 1);
+    // 24 m cae entre clamps.
+    const f24 = frameStage(projFor(24), { ...VB, minX: -128, width: 256 }, 1280, 720);
+    assert.ok(f24.zoom > 1 && f24.zoom < 2.8, `zoom intermedio ${f24.zoom}`);
+  });
+
+  it("el raíl SIEMPRE tiene recorrido en platós medianos (el bug que motiva esto)", () => {
+    const f = frameStage(projFor(16), VB, 1280, 720);
+    assert.ok(f.railHalfM > 0.5, `railHalfM ${f.railHalfM} > 0`);
+    // El viewport cubre ≤ ~coverFraction del ancho jugable.
+    const viewportM = 1280 / (f.fit * P.px_per_m);
+    assert.ok(viewportM <= 16 * 0.75, `viewport ${viewportM}m ≤ 70% de 16m (+margen)`);
+  });
+
+  it("un plató de 80 m a zoom 1 también tiene raíl (fit0 no lo abarca)", () => {
+    const f = frameStage(projFor(80), { ...VB, minX: -408, width: 816 }, 1280, 720);
+    assert.ok(f.railHalfM > 10, `railHalfM ${f.railHalfM}`);
+  });
+
+  it("guardia del raíl con proyección descentrada: recorta por la asimetría", () => {
+    const sym = frameStage(projFor(16), VB, 1280, 720);
+    const asym = frameStage({ ...projFor(16), center_x: -12, cam_x_m: 0.8 }, VB, 1280, 720);
+    const expected = Math.max(0, sym.railHalfM - 0.8 - 12 / P.px_per_m);
+    assert.ok(Math.abs(asym.railHalfM - expected) < 1e-9, `${asym.railHalfM} ≈ ${expected}`);
+    // Defaults 0 ⇒ fórmula original intacta.
+    const zeros = frameStage({ ...projFor(16), center_x: 0, cam_x_m: 0 }, VB, 1280, 720);
+    assert.equal(zeros.railHalfM, sym.railHalfM);
+  });
+
+  it("cobertura total: la placa llena el canvas aunque el zoom adaptativo se quede corto", () => {
+    // Caso real (salón calibrado): ppm alto ⇒ zoomRaw≈1, pero el viewBox a
+    // ese fit no llega al ancho del canvas — sin la cláusula de cobertura
+    // quedaban bandas vacías en los flancos (ya no hay marco que las tape).
+    const calibrated = { ...projFor(16), px_per_m: 19.7 };
+    const f = frameStage(calibrated, VB, 1600, 1000);
+    assert.ok(VB.width * f.fit >= 1600 - 1e-6, `placa ${VB.width * f.fit}px ≥ canvas 1600px`);
+    assert.ok(f.railHalfM >= 0);
+  });
+
+  it("ancla la línea de suelo al 78% del canvas", () => {
+    const f = frameStage(projFor(16), VB, 1280, 720);
+    assert.equal(f.groundScreenY, 0.78 * 720);
+    // Invariante del anclaje: el techo del viewBox queda EN o sobre el techo
+    // del canvas (nunca franja vacía por encima del contenido a zoom 1).
+    assert.ok(0.78 <= (P.ground_y - VB.minY) / VB.height);
+  });
+});
+
+describe("parallaxPanX / viewToScreen", () => {
+  const F = frameStage(P, VB, 1280, 720);
+
+  it("sin desplazamiento de cámara no hay paneo", () => {
+    assert.equal(parallaxPanX(P, 0, 0), 0);
+    assert.equal(parallaxPanX(P, 5, 0), 0);
+  });
+
+  it("el paneo decrece con la profundidad (lo cercano corre más)", () => {
+    const near = parallaxPanX(P, 0, 2);
+    const mid = parallaxPanX(P, 4, 2);
+    const far = parallaxPanX(P, 9, 2);
+    assert.ok(near > mid && mid > far, `${near} > ${mid} > ${far}`);
+    assert.equal(near, 2 * P.px_per_m); // s(0) = 1 ⇒ paneo completo
+  });
+
+  it("identidad proyectiva: panear ≡ proyectar respecto a la cámara", () => {
+    // Para cualquier punto de plató (xs, z) y cámara camOffsetM:
+    // viewToScreen(stageToView(xs, z), z, cam) === proyección de (xs − cam, z).
+    for (const [xs, z, cam] of [[3, 2, 1.5], [-5, 7, -2], [0, 0.5, 3]] as const) {
+      const [vx, vy] = stageToView(P, xs, z);
+      const [sx] = viewToScreen(P, F, 1280, vx, vy, z, cam);
+      const expected = 1280 / 2 + (xs - cam) * P.px_per_m * scaleAt(P, z) * F.fit;
+      assert.ok(Math.abs(sx - expected) < 1e-9, `${sx} ≈ ${expected}`);
+    }
+  });
+
+  it("la vertical ancla ground_y en groundScreenY", () => {
+    const [, sy] = viewToScreen(P, F, 1280, 0, P.ground_y, 0, 0);
+    assert.equal(sy, F.groundScreenY);
+  });
+});
+
+describe("bandPlanFor", () => {
+  const F = frameStage(P, VB, 1280, 720);
+  const plan = bandPlanFor(P, VB, F, 1280, 720);
+
+  it("bandas contiguas sin huecos ni solapes cubriendo hasta el borde inferior", () => {
+    let y = plan.backdrop.destY + plan.backdrop.destH;
+    for (const b of plan.ground) {
+      assert.equal(b.destY, y, `banda arranca donde acabó la anterior (${b.destY} vs ${y})`);
+      assert.ok(b.destH >= 1);
+      y += b.destH;
+    }
+    assert.equal(plan.apron.destY, y);
+    assert.equal(plan.apron.destY + plan.apron.destH, 720);
+  });
+
+  it("z estrictamente decreciente hacia la embocadura; backdrop=depth, apron=0", () => {
+    assert.equal(plan.backdrop.z, P.depth_m);
+    assert.equal(plan.apron.z, 0);
+    let prev = Infinity;
+    for (const b of plan.ground) {
+      assert.ok(b.z < prev, `z ${b.z} < ${prev}`);
+      prev = b.z;
+    }
+  });
+
+  it("presupuesto: Δdx dentro de cada banda ≤ maxShiftPx en el extremo del raíl", () => {
+    const maxShift = 0.75;
+    for (const b of plan.ground) {
+      const zTop = Math.min(P.depth_m, Math.max(0, topZ(b)));
+      const zBot = Math.min(P.depth_m, Math.max(0, bottomZ(b)));
+      const d = Math.abs(
+        F.railHalfM * P.px_per_m * F.fit * (scaleAt(P, zTop) - scaleAt(P, zBot)),
+      );
+      // +epsilon: el presupuesto se evalúa al AMPLIAR (frontera del bucle).
+      assert.ok(d <= maxShift + 0.4, `banda en ${b.destY} Δdx=${d.toFixed(2)}`);
+    }
+    function topZ(b: { srcVy: number }): number {
+      return inverseZ(b.srcVy);
+    }
+    function bottomZ(b: { srcVy: number; srcVh: number }): number {
+      return inverseZ(b.srcVy + b.srcVh);
+    }
+    function inverseZ(vy: number): number {
+      const s = (vy - P.horizon_y) / (P.ground_y - P.horizon_y);
+      return s <= 0 ? P.depth_m : (P.focal_m * (1 - s)) / s;
+    }
+  });
+
+  it("las bandas son finas cerca y gruesas lejos", () => {
+    const first = plan.ground[0];
+    const last = plan.ground[plan.ground.length - 1];
+    assert.ok(first.destH >= last.destH, `lejos ${first.destH}px ≥ cerca ${last.destH}px`);
+  });
+
+  it("las fuentes quedan dentro del viewBox", () => {
+    const bottom = VB.minY + VB.height;
+    for (const b of [plan.backdrop, ...plan.ground, plan.apron]) {
+      assert.ok(b.srcVy >= VB.minY - 1e-9 && b.srcVy + b.srcVh <= bottom + 1e-9,
+        `fuente [${b.srcVy}, ${b.srcVy + b.srcVh}] dentro de [${VB.minY}, ${bottom}]`);
+    }
+  });
+
+  it("sin raíl (railHalfM=0) el plan degenera a pocas bandas grandes", () => {
+    const wide: ViewBoxRect = { ...VB, minX: -88, width: 176 };
+    const noRail = { ...F, railHalfM: 0 };
+    const p2 = bandPlanFor(P, wide, noRail, 1280, 720);
+    assert.ok(p2.ground.length <= Math.ceil((0.78 * 720) / 8) + 2);
+  });
+});

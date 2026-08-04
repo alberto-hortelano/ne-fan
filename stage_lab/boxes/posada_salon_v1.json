@@ -1,0 +1,20 @@
+{
+  "expected": [
+    { "id": "vol_derived_ent_barril_cerveza", "status": "found", "box_px": [788, 634, 86, 152] },
+    { "id": "vol_derived_ent_mesa_grande", "status": "found", "box_px": [300, 538, 200, 168] },
+    { "id": "vol_derived_ent_banco_ventana", "status": "found", "box_px": [160, 542, 165, 112] }
+  ],
+  "extras": [
+    { "label": "mesa con vela a la derecha", "action": "keep", "box_px": [693, 528, 182, 104], "tall": true, "solid": true, "h": 1.0, "depth_cells": 2 },
+    { "label": "banco frente a la mesa central", "action": "keep", "box_px": [250, 608, 92, 102], "tall": true, "solid": true, "h": 0.5, "depth_cells": 1 },
+    { "label": "banco a la derecha de la mesa central", "action": "keep", "box_px": [420, 590, 98, 80], "tall": true, "solid": true, "h": 0.5, "depth_cells": 1 },
+    { "label": "banco frente a la mesa derecha", "action": "keep", "box_px": [650, 594, 120, 96], "tall": true, "solid": true, "h": 0.5, "depth_cells": 1 },
+    { "label": "barril junto a la puerta izquierda", "action": "keep", "box_px": [166, 640, 86, 150], "tall": true, "solid": true, "h": 1.2, "depth_cells": 2 },
+    { "label": "barril izquierdo junto a la chimenea", "action": "keep", "box_px": [415, 490, 60, 92], "tall": false, "solid": true, "h": 1.2, "depth_cells": 2 },
+    { "label": "barril derecho junto a la chimenea", "action": "keep", "box_px": [468, 484, 66, 94], "tall": false, "solid": true, "h": 1.2, "depth_cells": 2 },
+    { "label": "barril bajo el arco (izquierda)", "action": "keep", "box_px": [222, 477, 72, 88], "tall": false, "solid": true, "h": 1.2, "depth_cells": 2 },
+    { "label": "barril bajo el arco (derecha)", "action": "keep", "box_px": [297, 461, 58, 88], "tall": false, "solid": true, "h": 1.2, "depth_cells": 2 },
+    { "label": "barril contra la pared derecha", "action": "keep", "box_px": [806, 486, 66, 84], "tall": false, "solid": true, "h": 1.2, "depth_cells": 2 }
+  ],
+  "floor": { "wall_base_px": 575 }
+}

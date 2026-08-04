@@ -19,6 +19,7 @@ from narrative_schemas import (  # noqa: E402
     validate_blueprint_review,
     validate_narrative_reaction,
     validate_scene_classify_response,
+    validate_stage_review,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "nefan-core" / "data" / "contract" / "fixtures"
@@ -55,6 +56,14 @@ def accepts_classify(payload, expected_indices) -> bool:
     return validate_scene_classify_response(payload, expected_indices) is not None
 
 
+def accepts_stage_review(payload, expected_ids) -> bool:
+    try:
+        validate_stage_review(payload, expected_ids)
+        return True
+    except ValueError:
+        return False
+
+
 class TestContractFixtures(unittest.TestCase):
     def _run(self, kind: str, accepts):
         for name, fx in load_fixtures(kind):
@@ -79,6 +88,12 @@ class TestContractFixtures(unittest.TestCase):
         self._run(
             "scene_classify",
             lambda fx: accepts_classify(fx["payload"], fx.get("expected_indices")),
+        )
+
+    def test_stage_review(self):
+        self._run(
+            "stage_review",
+            lambda fx: accepts_stage_review(fx["payload"], fx.get("expected_ids")),
         )
 
     def test_ground_svg(self):

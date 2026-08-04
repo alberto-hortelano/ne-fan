@@ -70,8 +70,17 @@ def _to_data_uri(img: Image.Image, fmt: str = "PNG", long_side: int = 768) -> st
 
 
 class SceneImageGenerator:
-    def __init__(self, style_image_path: str, model: str = "nano-banana-pro"):
+    def __init__(
+        self,
+        style_image_path: str,
+        model: str = "nano-banana-pro",
+        stage_model: str = "gpt-image-2",
+    ):
         self._model = model
+        #: Modelo del repintado del PLATÓ (greybox clay → imagen), vía fal
+        #: DIRECTO (sin Meshy): gpt-image-2 dio la mayor fidelidad de layout
+        #: del bench escenografia_lab/greybox sobre bases clay.
+        self._stage_model = stage_model
         self._meshy = MeshyImageToImage()  # reads MESHY_API_KEY
         self._style_path = Path(style_image_path)
         if not self._style_path.exists():
@@ -79,7 +88,11 @@ class SceneImageGenerator:
         # Cache the style reference data URI once (it never changes per run).
         style = Image.open(self._style_path).convert("RGB")
         self._style_uri = _to_data_uri(style, "JPEG", long_side=1024)
-        print(f"SceneImageGen: Meshy '{model}', style={self._style_path.name}", flush=True)
+        print(
+            f"SceneImageGen: Meshy '{model}' / stage fal '{stage_model}', "
+            f"style={self._style_path.name}",
+            flush=True,
+        )
 
     @staticmethod
     def _load_rgb(png_bytes: bytes) -> Image.Image:
@@ -109,6 +122,28 @@ class SceneImageGenerator:
             return [png]
 
         blobs, _cached = DEV_API_CACHE.through_sync("meshy_i2i_scene", _call, note=prompt)
+        return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
+
+    def _run_stage(
+        self, prompt: str, refs: list[str], aspect: tuple[int, int] | None = None
+    ) -> tuple[bytes, dict]:
+        """Repintado del plató: fal DIRECTO con el modelo de plató (gpt-image-2
+        high tarda 200-300 s; el resultado queda cacheado por layout_key).
+        Canal DEV_API_CACHE propio para no contaminar el de Meshy."""
+        from dev_api_cache import DEV_API_CACHE
+        from meshy_client import FalImageToImage
+
+        task_holder: list[dict] = []
+
+        def _call() -> list[bytes]:
+            fal = FalImageToImage()  # lee FAL_KEY; sin ella, error visible
+            png, task = asyncio.run(
+                fal.run_one(prompt, refs, ai_model=self._stage_model, aspect=aspect)
+            )
+            task_holder.append(task)
+            return [png]
+
+        blobs, _cached = DEV_API_CACHE.through_sync("fal_i2i_stage", _call, note=prompt)
         return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
     def generate_full(
@@ -195,6 +230,50 @@ class SceneImageGenerator:
                 + _VOID_RULES
                 + _STYLE_RULES
             )
+        elif blueprint_kind == "stage":
+            # Vista proscenio: la base es un RENDER 3D GREYBOX (clay iluminado
+            # con cámara a nivel de ojo, bench escenografia_lab/greybox) — la
+            # composición, la perspectiva y la LUZ ya son correctas y hay que
+            # conservarlas EXACTAS (preámbulo KEEP del bench). PROHIBIDO
+            # cualquier vocabulario teatral (stage/wings/backdrop/plató): el
+            # modelo lo convierte en cortinas y marcos de escenario — la
+            # imagen debe ser una escena normal que llena TODO el encuadre.
+            # OJO: sin pack de estilo NO se pasa la referencia global (es un
+            # battlemap CENITAL y arrastra al modelo a pintar desde arriba).
+            stage_has_style_ref = style_ref_uri is not None
+            style_clause = (
+                "in the painterly, richly textured style of the SECOND "
+                "reference image"
+                if stage_has_style_ref
+                else "in a rich, painterly, hand-drawn illustration style"
+            )
+            instruction = (
+                "Fully repaint this exact scene as a finished illustration "
+                f"{style_clause}. The FIRST reference image is an untextured 3D "
+                "blockout render (flat clay surfaces with correct perspective "
+                "and lighting) — it is NOT final art, but its GEOMETRY is the "
+                "truth: keep the composition, the camera angle, the "
+                "perspective, the horizon height, the position and silhouette "
+                "of every volume, and the lighting direction EXACTLY as in the "
+                "reference. Ground-level view, NOT a top-down map. Replace the "
+                "flat placeholder surfaces with fully detailed, textured "
+                "materials: floor with wear, grain and colour variation; walls "
+                "and props with material detail, highlights and soft contact "
+                "shadows; a background with atmosphere and depth. The finished "
+                "image must NOT look flat, vector-like or 3D-render-like "
+                "anywhere. "
+                "The scene must FILL the entire frame edge to edge, as a normal "
+                "painting of a real place: NO borders, NO black side bands, NO "
+                "curtains, NO vignettes, NO letterboxing, NO picture frame — the "
+                "world simply continues past the edges of the image. "
+                "Keep every element in the SAME position, size, shape and height. "
+                "Do NOT move, remove, merge or duplicate objects. Do NOT invent "
+                "new objects, buildings, doors or windows that are not in the plan. "
+                f"Render the scene as: {prompt.strip()}. "
+                + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
+                + (_STYLE_ROLE_RULES if stage_has_style_ref else "")
+                + _STYLE_RULES
+            )
         else:
             instruction = (
                 "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "
@@ -221,9 +300,16 @@ class SceneImageGenerator:
                 "edges of your output, and paint everything else so it continues "
                 "them with no visible seam (same palette, same ground texture)."
             )
-        refs = [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
+        # Stage sin pack: solo el blueprint (la ref global es un battlemap
+        # cenital y contamina la vista lateral). El resto, como siempre.
+        refs = (
+            [_to_data_uri(sch, "PNG")]
+            if blueprint_kind == "stage" and style_ref_uri is None
+            else [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
+        )
         start = time.perf_counter()
-        png, res = self._run(instruction, refs, aspect=sch.size)
+        run = self._run_stage if blueprint_kind == "stage" else self._run
+        png, res = run(instruction, refs, aspect=sch.size)
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(

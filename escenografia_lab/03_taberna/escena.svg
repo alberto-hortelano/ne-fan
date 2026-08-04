@@ -1,0 +1,278 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <!-- Taberna, media tarde. Horizonte y=430, fuga (620,430). Luz: ventana OESTE (izquierda) + lumbre en el muro derecho. -->
+  <defs>
+    <linearGradient id="backwall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#524028"/>
+      <stop offset="1" stop-color="#6e5a41"/>
+    </linearGradient>
+    <linearGradient id="floor3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7a5f42"/>
+      <stop offset="0.5" stop-color="#684e35"/>
+      <stop offset="1" stop-color="#4a3724"/>
+    </linearGradient>
+    <radialGradient id="fireglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb35c" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#e8763a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e8763a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="kitchenglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd98e" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffd98e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shaft3" x1="0" y1="0" x2="1" y2="0.3">
+      <stop offset="0" stop-color="#f7e5ae" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#f7e5ae" stop-opacity="0.04"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ======== TECHO BAJO CON VIGAS ======== -->
+  <rect x="0" y="0" width="1600" height="310" fill="#46331f"/>
+  <!-- plano del entrevigado subiendo hacia cámara -->
+  <polygon points="0,180 380,300 1080,300 1600,150 1600,0 0,0" fill="#544026"/>
+  <!-- vigas en fuga (ancladas al remate del muro del fondo) -->
+  <polygon points="220,0 340,0 512,302 476,302" fill="#2c2014"/>
+  <polygon points="640,0 740,0 668,302 634,302" fill="#312415"/>
+  <polygon points="1120,0 1240,0 838,302 800,302" fill="#2c2014"/>
+  <polygon points="1560,0 1600,0 1600,80 1010,302 972,302" fill="#312415"/>
+  <path d="M 1240,0 L 838,302" stroke="#6e4426" stroke-width="4" opacity="0.6"/>
+  <path d="M 1600,80 L 1010,302" stroke="#7a4c2a" stroke-width="4" opacity="0.6"/>
+
+  <!-- ======== MURO DEL FONDO ======== -->
+  <rect x="380" y="300" width="700" height="190" fill="url(#backwall)"/>
+  <!-- puerta de la cocina entreabierta con luz cálida -->
+  <g>
+    <rect x="560" y="382" width="96" height="108" fill="#2a1f15"/>
+    <rect x="604" y="386" width="48" height="104" fill="#e8b96a"/>
+    <rect x="612" y="386" width="40" height="104" fill="#f6d494"/>
+    <ellipse cx="620" cy="440" rx="86" ry="66" fill="url(#kitchenglow)"/>
+    <rect x="560" y="382" width="46" height="108" fill="#4e3826"/>
+    <line x1="604" y1="382" x2="604" y2="490" stroke="#241a10" stroke-width="3"/>
+    <!-- luz derramada en el suelo desde la cocina -->
+    <polygon points="608,490 654,490 700,540 630,544" fill="#f6d494" opacity="0.35"/>
+    <rect x="552" y="374" width="112" height="10" fill="#3a2b1c"/>
+  </g>
+  <!-- estante con jarras y platos -->
+  <g>
+    <line x1="740" y1="380" x2="980" y2="380" stroke="#3a2b1c" stroke-width="7"/>
+    <g fill="#a8825c">
+      <path d="M 760,380 l 4,-20 a 11,10 0 0 1 20,0 l 4,20 z"/>
+      <path d="M 806,380 l 4,-17 a 10,9 0 0 1 17,0 l 4,17 z"/>
+      <path d="M 846,380 l 4,-21 a 11,11 0 0 1 21,0 l 4,21 z"/>
+    </g>
+    <g fill="#c9b492">
+      <circle cx="912" cy="368" r="13"/>
+      <circle cx="946" cy="368" r="13"/>
+    </g>
+    <line x1="740" y1="424" x2="980" y2="424" stroke="#3a2b1c" stroke-width="6"/>
+    <g fill="#8f6b48">
+      <path d="M 766,424 l 3,-15 a 9,8 0 0 1 16,0 l 3,15 z"/>
+      <path d="M 822,424 l 3,-14 a 8,8 0 0 1 15,0 l 3,14 z"/>
+      <path d="M 876,424 l 3,-16 a 9,9 0 0 1 17,0 l 3,16 z"/>
+    </g>
+    <!-- manojos de hierbas -->
+    <g fill="#7c7a4a">
+      <path d="M 1006,368 l -8,30 l 18,0 z"/>
+      <path d="M 1040,368 l -7,25 l 16,0 z"/>
+    </g>
+  </g>
+
+  <!-- ======== MURO IZQUIERDO (ventana, luz principal) ======== -->
+  <polygon points="0,180 380,300 380,490 0,570" fill="#5f4b33"/>
+  <!-- ventana emplomada -->
+  <g>
+    <polygon points="80,306 320,360 320,478 80,510" fill="#3a2b1c"/>
+    <polygon points="94,318 308,368 308,470 94,498" fill="#f2e3b0"/>
+    <g stroke="#8a7a54" stroke-width="4" opacity="0.9">
+      <line x1="166" y1="336" x2="166" y2="489"/>
+      <line x1="238" y1="352" x2="238" y2="479"/>
+      <line x1="94" y1="368" x2="308" y2="400"/>
+      <line x1="94" y1="428" x2="308" y2="438"/>
+    </g>
+    <polygon points="70,510 330,478 330,490 70,524" fill="#4a3826"/>
+  </g>
+
+  <!-- ======== MURO DERECHO ======== -->
+  <polygon points="1080,300 1600,150 1600,570 1080,490" fill="#5a4630"/>
+  <!-- ======== SUELO DE TABLAS ======== -->
+  <polygon points="0,570 380,490 1080,490 1600,570 1600,1000 0,1000" fill="url(#floor3)"/>
+  <g stroke="#3e2d1d" stroke-width="4" opacity="0.6">
+    <path d="M 60,1000 L 520,490"/>
+    <path d="M 360,1000 L 586,490"/>
+    <path d="M 660,1000 L 652,490"/>
+    <path d="M 960,1000 L 716,490"/>
+    <path d="M 1260,1000 L 782,490"/>
+    <path d="M 1540,1000 L 846,490"/>
+    <path d="M 0,660 L 430,500"/>
+    <path d="M 0,860 L 470,496"/>
+  </g>
+  <!-- lámina de luz de la ventana sobre las tablas -->
+  <polygon points="120,560 330,510 700,680 400,830" fill="url(#shaft3)"/>
+  <g fill="#f7ecc2" opacity="0.8">
+    <circle cx="300" cy="520" r="2.5"/><circle cx="360" cy="560" r="2"/>
+    <circle cx="430" cy="600" r="2.5"/><circle cx="340" cy="620" r="1.8"/>
+    <circle cx="500" cy="650" r="2.2"/><circle cx="420" cy="690" r="1.8"/>
+    <circle cx="550" cy="700" r="2"/><circle cx="470" cy="740" r="1.6"/>
+  </g>
+
+  <!-- ======== CHIMENEA (volumen que sale del muro derecho) ======== -->
+  <g>
+    <!-- costado izquierdo del cuerpo, tocado por la luz de la ventana -->
+    <polygon points="1120,600 1120,352 1168,344 1168,610" fill="#7c7060"/>
+    <!-- frente de piedra -->
+    <polygon points="1168,610 1168,344 1470,318 1470,652" fill="#6e6152"/>
+    <!-- campana -->
+    <polygon points="1168,344 1470,318 1400,220 1240,236" fill="#655849"/>
+    <polygon points="1240,236 1400,220 1400,150 1240,164" fill="#5c5044"/>
+    <!-- piedras insinuadas -->
+    <g stroke="#57493b" stroke-width="3.5" opacity="0.8">
+      <line x1="1176" y1="420" x2="1465" y2="398"/>
+      <line x1="1172" y1="500" x2="1468" y2="492"/>
+      <line x1="1280" y1="346" x2="1280" y2="620"/>
+      <line x1="1382" y1="336" x2="1382" y2="634"/>
+    </g>
+    <!-- repisa -->
+    <polygon points="1156,352 1482,324 1482,310 1156,336" fill="#3f3222"/>
+    <path d="M 1220,338 l 4,-22 a 12,11 0 0 1 22,0 l 4,20 z" fill="#a8825c"/>
+    <path d="M 1330,328 l 4,-23 a 12,12 0 0 1 23,0 l 4,21 z" fill="#8f6b48"/>
+    <ellipse cx="1430" cy="316" rx="22" ry="9" fill="#c9b492"/>
+    <!-- boca del hogar -->
+    <path d="M 1210,636 l 0,-130 a 105,88 0 0 1 210,0 l 0,116 z" fill="#1c130c"/>
+    <ellipse cx="1315" cy="590" rx="150" ry="110" fill="url(#fireglow)"/>
+    <!-- leños y llamas -->
+    <rect x="1240" y="608" width="150" height="16" rx="8" fill="#3a231a" transform="rotate(-3 1315 616)"/>
+    <rect x="1255" y="590" width="120" height="14" rx="7" fill="#46281c" transform="rotate(3 1315 597)"/>
+    <path d="M 1276,592 q 8,-38 22,-12 q 6,-28 20,-6 q 12,-20 17,6 q -14,32 -59,12 z" fill="#f6a04a"/>
+    <path d="M 1290,588 q 7,-22 17,-6 q 8,-14 12,3 q -8,20 -29,3 z" fill="#ffd977"/>
+    <!-- gancho y puchero de cobre -->
+    <line x1="1315" y1="508" x2="1315" y2="546" stroke="#241a12" stroke-width="6"/>
+    <path d="M 1292,546 a 25,20 0 0 0 46,0 l -5,-11 l -36,0 z" fill="#9c5f38"/>
+    <path d="M 1292,546 a 25,20 0 0 0 46,0" fill="none" stroke="#d98a4e" stroke-width="4"/>
+    <!-- resplandor sobre el suelo del rincón -->
+    <ellipse cx="1300" cy="700" rx="300" ry="130" fill="url(#fireglow)" opacity="0.4"/>
+    <!-- banco arrimado a la lumbre -->
+    <polygon points="1050,700 1290,672 1316,696 1076,728" fill="#553f28"/>
+    <polygon points="1050,700 1076,728 1076,742 1050,716" fill="#3f2d1a"/>
+    <g stroke="#3a2b1a" stroke-width="12">
+      <line x1="1080" y1="724" x2="1078" y2="820"/>
+      <line x1="1290" y1="694" x2="1294" y2="782"/>
+    </g>
+  </g>
+
+  <!-- ======== BARRA DEL POSADERO (izquierda) ======== -->
+  <g>
+    <!-- toneles tras la barra -->
+    <ellipse cx="345" cy="520" rx="44" ry="15" fill="#5a4128"/>
+    <rect x="301" y="458" width="88" height="64" rx="12" fill="#6e5136"/>
+    <path d="M 301,478 l 88,0 M 301,502 l 88,0" stroke="#4a3520" stroke-width="4"/>
+    <ellipse cx="452" cy="528" rx="38" ry="13" fill="#5a4128"/>
+    <rect x="414" y="474" width="76" height="56" rx="10" fill="#66492e"/>
+    <path d="M 414,492 l 76,0 M 414,510 l 76,0" stroke="#4a3520" stroke-width="4"/>
+    <!-- mostrador en fuga hacia la fuga -->
+    <polygon points="60,742 470,580 560,600 160,782" fill="#96744c"/>
+    <polygon points="60,742 160,782 160,984 60,930" fill="#553f26"/>
+    <polygon points="160,782 560,600 560,760 160,984" fill="#6b5034"/>
+    <line x1="166" y1="860" x2="558" y2="668" stroke="#4a3520" stroke-width="5"/>
+    <line x1="166" y1="920" x2="558" y2="724" stroke="#4a3520" stroke-width="5"/>
+    <!-- brillo del canto pulido -->
+    <path d="M 66,744 L 468,584" stroke="#c9a26a" stroke-width="6" opacity="0.8"/>
+    <!-- jarras sobre la barra -->
+    <path d="M 250,668 l 5,-30 a 14,13 0 0 1 26,0 l 5,30 z" fill="#a8825c"/>
+    <path d="M 240,660 l -16,-8 l 0,14 l 16,5 z" fill="#a8825c"/>
+    <path d="M 400,600 l 4,-26 a 13,12 0 0 1 24,0 l 4,24 z" fill="#8f6b48"/>
+  </g>
+
+  <!-- ======== MESAS Y TABURETES ======== -->
+  <!-- mesa del fondo -->
+  <g>
+    <ellipse cx="760" cy="565" rx="95" ry="26" fill="#7a5c3a"/>
+    <ellipse cx="760" cy="559" rx="95" ry="26" fill="#8a683f"/>
+    <g stroke="#4e3a24" stroke-width="8">
+      <line x1="700" y1="580" x2="694" y2="650"/>
+      <line x1="820" y1="580" x2="826" y2="648"/>
+    </g>
+    <path d="M 730,552 l 3,-17 a 9,8 0 0 1 16,0 l 3,17 z" fill="#a8825c"/>
+  </g>
+  <!-- mesa principal, término medio -->
+  <g>
+    <ellipse cx="850" cy="740" rx="185" ry="52" fill="#6b4f30"/>
+    <ellipse cx="850" cy="730" rx="185" ry="52" fill="#8f6f48"/>
+    <path d="M 680,760 a 185,52 0 0 0 60,32" stroke="#5a4128" stroke-width="5" fill="none"/>
+    <g stroke="#4e3a24" stroke-width="14">
+      <line x1="722" y1="768" x2="710" y2="900"/>
+      <line x1="978" y1="768" x2="992" y2="896"/>
+      <line x1="850" y1="781" x2="850" y2="924"/>
+    </g>
+    <!-- vela apagada y plato -->
+    <rect x="822" y="686" width="14" height="30" rx="4" fill="#e8dcc0"/>
+    <ellipse cx="829" cy="718" rx="24" ry="8" fill="#b8a274"/>
+    <ellipse cx="920" cy="726" rx="30" ry="10" fill="#c9b492"/>
+    <!-- taburete -->
+    <ellipse cx="1090" cy="820" rx="60" ry="19" fill="#6b5034"/>
+    <g stroke="#4a3520" stroke-width="10">
+      <line x1="1050" y1="832" x2="1040" y2="930"/>
+      <line x1="1130" y1="832" x2="1142" y2="928"/>
+      <line x1="1090" y1="838" x2="1090" y2="940"/>
+    </g>
+    <!-- banqueta volcada -->
+    <g transform="rotate(-70 600 850)">
+      <ellipse cx="600" cy="850" rx="52" ry="16" fill="#5f4830"/>
+      <g stroke="#443118" stroke-width="9">
+        <line x1="568" y1="860" x2="560" y2="930"/>
+        <line x1="632" y1="860" x2="640" y2="928"/>
+      </g>
+    </g>
+    <!-- sombras de patas -->
+    <ellipse cx="850" cy="912" rx="200" ry="26" fill="#241a10" opacity="0.35"/>
+    <ellipse cx="1090" cy="936" rx="70" ry="14" fill="#241a10" opacity="0.35"/>
+  </g>
+
+  <!-- ======== JAMONES Y AJOS (primer término alto, colgados de la viga cercana) ======== -->
+  <g>
+    <line x1="285" y1="60" x2="285" y2="130" stroke="#241a10" stroke-width="6"/>
+    <path d="M 285,130 q -58,16 -52,98 q 8,76 58,80 q 46,3 49,-70 q 3,-86 -55,-108 z" fill="#7c3a28"/>
+    <path d="M 258,186 q -6,60 30,74" stroke="#a85a3c" stroke-width="7" fill="none"/>
+    <path d="M 285,130 q 30,10 40,44" stroke="#5c281c" stroke-width="6" fill="none"/>
+    <!-- ristra de ajos junto al jamón -->
+    <line x1="405" y1="96" x2="405" y2="150" stroke="#241a10" stroke-width="5"/>
+    <g fill="#d8cbb0">
+      <circle cx="405" cy="166" r="17"/>
+      <circle cx="391" cy="197" r="16"/>
+      <circle cx="420" cy="200" r="15"/>
+      <circle cx="403" cy="230" r="16"/>
+      <circle cx="418" cy="258" r="14"/>
+    </g>
+    <path d="M 405,150 q -5,60 -2,118" stroke="#b3a488" stroke-width="3" fill="none"/>
+  </g>
+
+  <!-- ======== PRIMER TÉRMINO BAJO ======== -->
+  <!-- tonel cortado abajo-izquierda -->
+  <g>
+    <path d="M -40,820 q 10,110 40,180 l 150,0 q 30,-80 36,-172 q -110,-40 -226,-8 z" fill="#66492e"/>
+    <ellipse cx="72" cy="816" rx="118" ry="34" fill="#7c5c3c"/>
+    <ellipse cx="72" cy="816" rx="90" ry="24" fill="#4e3822"/>
+    <path d="M -34,872 q 110,36 224,-10" stroke="#3f2d1a" stroke-width="7" fill="none"/>
+    <path d="M -26,940 q 104,32 208,-16" stroke="#3f2d1a" stroke-width="7" fill="none"/>
+  </g>
+  <!-- esquina de mesa con jarra, hogaza y cuchillo, abajo-derecha -->
+  <g>
+    <polygon points="900,880 1600,790 1600,1000 940,1000" fill="#8a6a44"/>
+    <polygon points="900,880 940,1000 900,1000" fill="#5a4128"/>
+    <path d="M 920,912 L 1600,822" stroke="#6b5034" stroke-width="6"/>
+    <path d="M 906,952 L 1600,868" stroke="#6b5034" stroke-width="6"/>
+    <path d="M 1150,864 l 6,-58 a 30,26 0 0 1 58,0 l 6,54 z" fill="#a8825c"/>
+    <path d="M 1148,824 q -26,-10 -24,16 q 2,20 24,12" fill="none" stroke="#a8825c" stroke-width="9"/>
+    <ellipse cx="1185" cy="806" rx="26" ry="7" fill="#6b4f30"/>
+    <path d="M 1320,844 a 58,34 0 0 1 116,-4 l -4,22 q -56,14 -108,2 z" fill="#c99a5c"/>
+    <path d="M 1330,824 q 22,-12 46,-14 M 1352,836 q 22,-10 44,-12" stroke="#a87840" stroke-width="4" fill="none"/>
+    <path d="M 1320,844 l 116,-4" stroke="#e8d0a0" stroke-width="5"/>
+    <!-- cuchillo clavado de punta -->
+    <g transform="rotate(-14 1490 820)">
+      <rect x="1482" y="748" width="13" height="40" rx="5" fill="#3a2b1a"/>
+      <polygon points="1478,788 1500,788 1490,852 1486,852" fill="#c9c9c4"/>
+      <line x1="1489" y1="788" x2="1488" y2="848" stroke="#8f8f8a" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- penumbra en la esquina inferior izquierda (caída de luz, no marco) -->
+  <polygon points="0,1000 0,860 200,1000" fill="#241a10" opacity="0.3"/>
+</svg>

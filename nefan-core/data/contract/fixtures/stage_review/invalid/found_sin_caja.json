@@ -1,0 +1,11 @@
+{
+  "description": "un elemento found sin box_px válida — la caja REAL pintada es obligatoria",
+  "expect": "reject",
+  "payload": {
+    "expected": [
+      { "id": "vol_mesa", "status": "found" }
+    ],
+    "extras": []
+  },
+  "expected_ids": ["vol_mesa"]
+}

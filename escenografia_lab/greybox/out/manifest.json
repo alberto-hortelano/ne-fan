@@ -1,0 +1,83 @@
+[
+  {
+    "file": "01_calle_gpt2_clay.png",
+    "scene": "01_calle",
+    "variant": "gpt2_clay",
+    "endpoint": "openai/gpt-image-2/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A curved main street in a medieval hillside town at sunset. Low golden sun from the west: an arcaded walkway with stone pillars in backlit shadow on the left, sunlit golden plaster facades with shuttered windows and a wooden door on the right, a wooden cart loaded with barrels beside them. The cobbled street with old cart ruts bends to the right and disappears behind the houses; a stone bell tower with a pyramidal roof rises above the bend, and hazy rooftops and soft hills dissolve in warm evening haze beyond. Long shadows run along the street with pools of warm light. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.17,
+    "elapsed_s": 168.0
+  },
+  {
+    "file": "01_calle_flux_depth.png",
+    "scene": "01_calle",
+    "variant": "flux_depth",
+    "endpoint": "fal-ai/flux-control-lora-depth",
+    "prompt": "A curved main street in a medieval hillside town at sunset. Low golden sun from the west: an arcaded walkway with stone pillars in backlit shadow on the left, sunlit golden plaster facades with shuttered windows and a wooden door on the right, a wooden cart loaded with barrels beside them. The cobbled street with old cart ruts bends to the right and disappears behind the houses; a stone bell tower with a pyramidal roof rises above the bend, and hazy rooftops and soft hills dissolve in warm evening haze beyond. Long shadows run along the street with pools of warm light. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood. Fill the entire frame; no borders, no text, no people.",
+    "cost_usd": 0.03,
+    "elapsed_s": 192.0
+  },
+  {
+    "file": "01_calle_seedream_clay.png",
+    "scene": "01_calle",
+    "variant": "seedream_clay",
+    "endpoint": "fal-ai/bytedance/seedream/v4/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A curved main street in a medieval hillside town at sunset. Low golden sun from the west: an arcaded walkway with stone pillars in backlit shadow on the left, sunlit golden plaster facades with shuttered windows and a wooden door on the right, a wooden cart loaded with barrels beside them. The cobbled street with old cart ruts bends to the right and disappears behind the houses; a stone bell tower with a pyramidal roof rises above the bend, and hazy rooftops and soft hills dissolve in warm evening haze beyond. Long shadows run along the street with pools of warm light. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.03,
+    "elapsed_s": 39.5
+  },
+  {
+    "file": "02_plaza_gpt2_clay.png",
+    "scene": "02_plaza",
+    "variant": "gpt2_clay",
+    "endpoint": "openai/gpt-image-2/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A market square in a medieval town at mid-morning. Morning sun from the east-right: a large stone church with buttresses and a bell tower closes the right side in backlit shade, casting a long diagonal shadow across the cobbled plaza; a small stone fountain with a central column stands in sunlight against that shadow. Wooden market stalls with canvas awnings, a table piled with pumpkins in the near right foreground, barrels near the left edge. Whitewashed houses with tiled gable roofs enclose the far side, with a gap between roofs opening to pale hazy farmland and hills. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.17,
+    "elapsed_s": 194.7
+  },
+  {
+    "file": "02_plaza_flux_depth.png",
+    "scene": "02_plaza",
+    "variant": "flux_depth",
+    "endpoint": "fal-ai/flux-control-lora-depth",
+    "prompt": "A market square in a medieval town at mid-morning. Morning sun from the east-right: a large stone church with buttresses and a bell tower closes the right side in backlit shade, casting a long diagonal shadow across the cobbled plaza; a small stone fountain with a central column stands in sunlight against that shadow. Wooden market stalls with canvas awnings, a table piled with pumpkins in the near right foreground, barrels near the left edge. Whitewashed houses with tiled gable roofs enclose the far side, with a gap between roofs opening to pale hazy farmland and hills. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood. Fill the entire frame; no borders, no text, no people.",
+    "cost_usd": 0.03,
+    "elapsed_s": 225.7
+  },
+  {
+    "file": "02_plaza_seedream_clay.png",
+    "scene": "02_plaza",
+    "variant": "seedream_clay",
+    "endpoint": "fal-ai/bytedance/seedream/v4/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A market square in a medieval town at mid-morning. Morning sun from the east-right: a large stone church with buttresses and a bell tower closes the right side in backlit shade, casting a long diagonal shadow across the cobbled plaza; a small stone fountain with a central column stands in sunlight against that shadow. Wooden market stalls with canvas awnings, a table piled with pumpkins in the near right foreground, barrels near the left edge. Whitewashed houses with tiled gable roofs enclose the far side, with a gap between roofs opening to pale hazy farmland and hills. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.03,
+    "elapsed_s": 25.9
+  },
+  {
+    "file": "05_puerto_gpt2_clay.png",
+    "scene": "05_puerto",
+    "variant": "gpt2_clay",
+    "endpoint": "openai/gpt-image-2/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A small river dock at foggy dawn. The stone quay cuts the scene in a strong diagonal, pewter-grey water beyond the edge dissolving into dense morning mist. A wooden treadwheel crane with a big vertical wheel stands dark in silhouette by the edge, its jib lifting a hanging bale over the water; a low moored barge with a tilted mast floats beyond the quay. On the left a small toll house with a single warm lantern glowing — the only warm light; drying fishing nets on wooden racks behind it. Barrels, crates and a coiled rope on the wet planked foreground. The far bank is a faint silhouette in the fog. Cold blue-grey dawn light, sun barely risen. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.17,
+    "elapsed_s": 140.5
+  },
+  {
+    "file": "05_puerto_flux_depth.png",
+    "scene": "05_puerto",
+    "variant": "flux_depth",
+    "endpoint": "fal-ai/flux-control-lora-depth",
+    "prompt": "A small river dock at foggy dawn. The stone quay cuts the scene in a strong diagonal, pewter-grey water beyond the edge dissolving into dense morning mist. A wooden treadwheel crane with a big vertical wheel stands dark in silhouette by the edge, its jib lifting a hanging bale over the water; a low moored barge with a tilted mast floats beyond the quay. On the left a small toll house with a single warm lantern glowing — the only warm light; drying fishing nets on wooden racks behind it. Barrels, crates and a coiled rope on the wet planked foreground. The far bank is a faint silhouette in the fog. Cold blue-grey dawn light, sun barely risen. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood. Fill the entire frame; no borders, no text, no people.",
+    "cost_usd": 0.03,
+    "elapsed_s": 77.8
+  },
+  {
+    "file": "05_puerto_seedream_clay.png",
+    "scene": "05_puerto",
+    "variant": "seedream_clay",
+    "endpoint": "fal-ai/bytedance/seedream/v4/edit",
+    "prompt": "Fully repaint this exact scene as a finished illustration. The reference is an untextured 3D blockout: replace the flat placeholder surfaces with fully detailed, textured materials while keeping the composition, camera angle, perspective, the position and silhouette of every volume, and the lighting direction EXACTLY as in the reference image. Ground-level view. Fill the entire frame edge to edge: no borders, no frames, no letterboxing, no vignettes. No people, no animals with human poses, no text, no watermark. Scene: A small river dock at foggy dawn. The stone quay cuts the scene in a strong diagonal, pewter-grey water beyond the edge dissolving into dense morning mist. A wooden treadwheel crane with a big vertical wheel stands dark in silhouette by the edge, its jib lifting a hanging bale over the water; a low moored barge with a tilted mast floats beyond the quay. On the left a small toll house with a single warm lantern glowing — the only warm light; drying fishing nets on wooden racks behind it. Barrels, crates and a coiled rope on the wet planked foreground. The far bank is a faint silhouette in the fog. Cold blue-grey dawn light, sun barely risen. Art style: Magic: The Gathering card illustration — polished digital fantasy painting, saturated jewel tones, dramatic light, painterly but detailed rendering, epic cinematic mood.",
+    "cost_usd": 0.03,
+    "elapsed_s": 31.5
+  }
+]

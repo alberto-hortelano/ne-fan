@@ -218,6 +218,7 @@ async def lifespan(app: FastAPI):
     deps.scene_image_gen = SceneImageGenerator(
         style_image_path=str(_repo_root / deps.config["scene_style_image"]),
         model=deps.config["scene_model"],
+        stage_model=deps.config["stage_scene_model"],
     )
     # Packs de estilo por juego (imágenes de referencia por categoría).
     # Degradación esperable si aún no hay packs: resolve() devuelve None y las
@@ -241,6 +242,15 @@ async def lifespan(app: FastAPI):
     except ValueError as e:
         deps.scene_segmenter = None
         logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
+
+    # Pelado por capas del proscenio: FLUX Fill remoto si hay FAL_KEY; sin
+    # ella /peel_scene_layer degrada a LaMa local (gratis, menos guiado).
+    try:
+        from fal_client import FalFillClient
+        deps.fill_client = FalFillClient()
+    except ValueError as e:
+        deps.fill_client = None
+        logger.info(f"FalFillClient disabled: {e} — peel degradará a LaMa local")
 
     if deps.config["expose_diagnostic"]:
         from routers.diagnostic import build_diagnostic_router

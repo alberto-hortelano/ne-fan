@@ -30,14 +30,14 @@ export interface NefanConfig {
     ai_textures: boolean;
     /** AI GLB models for objects/buildings via /generate_model. */
     ai_models: boolean;
-    /** Cómo derivar los occluders/placa de la imagen IA del tile:
-     *  - "masks": recorte por las máscaras del PROPIO compositor (cada tramo
-     *    occluder rasterizado como alpha sobre la imagen repintada). Sin
-     *    llamadas a SAM2 ni clasificador de visión para lo declarado —
-     *    sabemos píxel a píxel qué es cada cosa (bench render_lab 001).
-     *  - "sam": pipeline legacy /analyze_scene_image (SAM2 auto-segment +
-     *    visión + refinado por caja). */
-    image_analysis: "masks" | "sam";
+    /** PROHIBIDO — no reintroducir nunca un modo de recorte por siluetas
+     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el SVG
+     *  del compositor como máscara sobre la imagen repintada se probó y NO
+     *  funciona — el modelo de imagen recoloca y reorienta lo declarado, la
+     *  máscara recorta SUELO con forma de objeto y el objeto real queda
+     *  cocido en la placa. Jamás va a funcionar. Los recortes se derivan
+     *  SIEMPRE segmentando lo que el modelo PINTÓ (SAM2 + visión); el plan
+     *  declarado solo sirve de pista (expected_elements / cajas). */
     /** Revisión por visión del tile REPINTADO (kind MCP image_review): los
      *  objetos que el img2img inventa ganan colisión/oclusión (keep) o se
      *  inpaintan (remove). Requiere listener del motor; si no está, el tile
@@ -95,6 +95,10 @@ export interface NefanConfig {
     /** Meshy image-to-image model for scene generation (best top-down:
      *  nano-banana-pro). Also valid: nano-banana, nano-banana-2, gpt-image-2. */
     scene_model: string;
+    /** Modelo del repintado del PLATÓ proscenio (greybox clay → imagen), vía
+     *  fal directo. gpt-image-2 = mayor fidelidad de layout del bench
+     *  escenografia_lab/greybox. */
+    stage_scene_model: string;
     /** Meshy image-to-image model for character sprite skinning (hero-shot +
      *  atlas de keyframes por anim×dir — pipeline validado en skinning_lab;
      *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
@@ -149,7 +153,6 @@ export const CONFIG: NefanConfig = {
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
-    image_analysis: "masks",
     image_review: true,
   },
   narrative: {
@@ -183,6 +186,10 @@ export const CONFIG: NefanConfig = {
     // 9 cr Meshy / $0.15 fal). gpt-image-2 se queda para las skins de
     // personaje (calidad de model sheet, sin requisito de layout).
     scene_model: "nano-banana-pro",
+    // Plató proscenio: la base es un render 3D clay (greybox) y ahí gana
+    // gpt-image-2 (bench escenografia_lab/greybox run 001: máxima fidelidad
+    // de layout conservando luz y hora). Vía fal directo, sin Meshy.
+    stage_scene_model: "gpt-image-2",
     sprite_skin_model: "gpt-image-2",
     scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",

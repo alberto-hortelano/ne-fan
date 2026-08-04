@@ -25,7 +25,12 @@ import {
 } from "./projection.js";
 import type { Edge } from "../../world-map/types.js";
 
-export const STAGE_COMPOSER_VERSION = 1;
+/** v3: encuadre NATURAL — el suelo llena todo el ancho del viewBox, los
+ *  bastidores negros desaparecen (en interiores son PAREDES laterales reales
+ *  con sus vanos; en exteriores el mundo simplemente continúa hasta el borde).
+ *  El modelo de imagen no debe recibir ninguna pista teatral: las cortinas y
+ *  bandas de proscenio que pintaba salían de estas capas. */
+export const STAGE_COMPOSER_VERSION = 3;
 
 /** Unidades de vista por metro en la embocadura. */
 const PX_PER_M = 10;
@@ -35,7 +40,12 @@ const VIEW_MARGIN_X = 8;
 const VIEW_TOP = -48;
 const VIEW_TOP_INTERIOR = -28;
 const VIEW_BOTTOM_PAD = 10;
-const DEFAULT_FOCAL_M = 12;
+/** Focal por defecto: TELEOBJETIVO (lección del experimento lateral de julio,
+ *  d0≈96). Una focal corta (12) hace que la franja de suelo devore el
+ *  encuadre vertical al hacer zoom y el telón quede recortado; 30 comprime
+ *  la profundidad — el suelo ocupa ~21 unidades y el telón respira. v2 del
+ *  compositor: cambia la proyección de TODAS las capas. */
+const DEFAULT_FOCAL_M = 30;
 /** Altura pintada del muro del telón de fondo (m). */
 const BACKDROP_WALL_M = 3.5;
 /** Altura de la cuarta pared y de sus huecos de puerta (m). */
@@ -47,7 +57,7 @@ const OPENING_H_M = 2.6;
 const BOUNDS_INSET_M = 0.25;
 
 export interface StageLayerKind {
-  kind: "backdrop" | "floor" | "prop" | "wall" | "fourth_wall";
+  kind: "backdrop" | "floor" | "prop" | "wall" | "wing" | "fourth_wall";
 }
 
 export interface StageLayer {
@@ -56,6 +66,9 @@ export interface StageLayer {
    *  inserción de sprites (entidad delante ⟺ su zStage < layer.z). */
   z: number;
   kind: StageLayerKind["kind"];
+  /** Etiqueta en español del elemento (la del volumen) — alimenta los
+   *  behind_labels del pelado y el debug. Ausente en capas de encuadre. */
+  label?: string;
   /** SVG standalone (viewBox común a todas las capas). */
   svg: string;
   /** [minX, minY, maxX, maxY] en unidades de vista. */
@@ -99,12 +112,17 @@ export interface StageScenePlan {
    *  en celdas de la escena. */
   volumes: Volume[];
   biome?: string;
+  /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
+   *  bandas de tipo; el compositor SVG no la consume. */
+  terrain?: string[];
+  terrain_legend?: Record<string, string>;
 }
 
 interface LayerBuild {
   id: string;
   z: number;
   kind: StageLayer["kind"];
+  label?: string;
   body: string;
   bbox: [number, number, number, number];
   baseline_y: number;
@@ -258,17 +276,9 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     const rng = seededRng(`stage:${seedKey}:floor`);
     const sBack = scaleAt(proj, depthM);
     const yBack = stageToView(proj, 0, depthM)[1];
-    const halfFront = (widthM / 2) * PX_PER_M;
-    const halfBack = halfFront * sBack;
-    let body = polygon(
-      [
-        [-halfFront, GROUND_Y],
-        [-halfBack, yBack],
-        [halfBack, yBack],
-        [halfFront, GROUND_Y],
-      ],
-      floorColor,
-    );
+    // El suelo llena TODO el ancho del encuadre (v3): el mundo continúa más
+    // allá del rect jugable — sin bandas laterales que lean como escenario.
+    let body = rectEl(viewBox.minX, yBack, viewBox.width, GROUND_Y - yBack, floorColor);
     // Delantal: el suelo continúa hacia cámara hasta el borde inferior del
     // encuadre (sin él, la franja bajo la embocadura queda transparente).
     body += rectEl(viewBox.minX, GROUND_Y, viewBox.width, viewBottom - GROUND_Y, darken(floorColor, 0.15));
@@ -294,18 +304,18 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
         body += ellipse(vx, vy, uniform(rng, 1.5, 4) * s, uniform(rng, 0.6, 1.4) * s, tint);
       }
     }
-    // Líneas de contacto por profundidad (guía sutil de escala, ambas variantes).
+    // Líneas de contacto por profundidad (guía sutil de escala, ambas
+    // variantes) — a todo el ancho: el suelo es continuo hasta el borde.
     for (let z = 2; z < depthM - 1e-6; z += 2) {
       const y = stageToView(proj, 0, z)[1];
-      const half = (widthM / 2) * PX_PER_M * scaleAt(proj, z);
-      body += line([-half, y], [half, y], darken(floorColor, 0.1), 0.3);
+      body += line([viewBox.minX, y], [viewRight, y], darken(floorColor, 0.1), 0.3);
     }
     layers.push({
       id: "floor",
       z: depthM + 0.4,
       kind: "floor",
       body,
-      bbox: [-halfFront, yBack, halfFront, GROUND_Y],
+      bbox: [viewBox.minX, yBack, viewRight, viewBottom],
       baseline_y: GROUND_Y,
     });
   }
@@ -316,13 +326,20 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     if (built) layers.push(built);
   }
 
-  // ── Bastidores (bandas laterales que cierran el encuadre) ─────────────────
-  {
+  // ── Laterales (v3: nada de bastidores negros de teatro) ──────────────────
+  //  Interior: PAREDES laterales reales en perspectiva, con sus vanos — el
+  //  modelo de imagen las pinta como paredes de la habitación. Exterior: no
+  //  hay capa alguna — el suelo y el cielo continúan hasta el borde del
+  //  encuadre y las salidas laterales son simplemente el mundo siguiendo
+  //  fuera de plano (la zona de salida in-game guía al jugador).
+  if (interiorLike) {
     const sBack = scaleAt(proj, depthM);
     const yBack = stageToView(proj, 0, depthM)[1];
     const halfFront = (widthM / 2) * PX_PER_M;
     const halfBack = halfFront * sBack;
-    const wingColor = "#17131b";
+    const wall = wallColors("plaster");
+    // Pared perpendicular a cámara: tono en sombra respecto al telón.
+    const sideTone = darken(wall.lit, 0.16);
     for (const side of [-1, 1] as const) {
       const outer = side < 0 ? viewBox.minX : viewRight;
       let body = polygon(
@@ -334,11 +351,18 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
           [outer, viewBox.minY],
           [outer, viewBottom],
         ],
-        wingColor,
+        sideTone,
       );
-      // Salidas laterales. "door" = arco pintado (hay una puerta de verdad);
-      // "opening"/"stairs" = HUECO en el bastidor: el suelo continúa fuera de
-      // plano y basta con llegar al borde de la pantalla — nada simbólico.
+      // Arista pared-suelo (zócalo en perspectiva).
+      body += line(
+        [side * halfFront, GROUND_Y],
+        [side * halfBack, yBack],
+        darken(sideTone, 0.3),
+        1.1,
+      );
+      // Salidas laterales. "door" = puerta pintada en la pared;
+      // "opening"/"stairs" = vano abierto: el suelo continúa fuera de plano y
+      // basta con llegar al borde de la pantalla — nada simbólico.
       for (const e of plan.stage.exits) {
         if ((side < 0 && e.edge !== "west") || (side > 0 && e.edge !== "east")) continue;
         const w = zoneToWorld(e.zone);
@@ -351,16 +375,17 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
           const [ax, ay] = stageToView(proj, side * (widthM / 2), zMid);
           const aw = 1.4 * PX_PER_M * s;
           const ah = DOOR_H_M * PX_PER_M * s;
-          body += rectEl(ax - aw / 2, ay - ah, aw, ah, lighten(wingColor, 0.18));
-          body += ellipse(ax, ay - ah, aw / 2, aw / 3, lighten(wingColor, 0.18));
-          body += rectEl(ax - aw / 2 + 0.6, ay - ah + 0.6, aw - 1.2, ah - 0.6, "#0d0a10");
+          body += rectEl(ax - aw / 2 - 0.8, ay - ah - 0.8, aw + 1.6, 0.8, PALETTE.woodFace);
+          body += ellipse(ax, ay - ah, aw / 2 + 0.8, aw / 3, PALETTE.woodFace);
+          body += rectEl(ax - aw / 2, ay - ah, aw, ah, "#0d0a10");
+          body += ellipse(ax, ay - ah, aw / 2, aw / 3, "#0d0a10");
         } else {
           const [xe0, ye0] = stageToView(proj, side * (widthM / 2), zs0);
           const [xe1, ye1] = stageToView(proj, side * (widthM / 2), zs1);
           const h0 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs0);
           const h1 = OPENING_H_M * PX_PER_M * scaleAt(proj, zs1);
-          // Aire del hueco (más claro que el bastidor: se lee como abertura
-          // de suelo a altura de dintel, hasta el borde de la pantalla).
+          // Aire del vano (penumbra de la estancia contigua, de suelo a
+          // dintel, hasta el borde de la pantalla).
           body += polygon(
             [
               [xe0, ye0 - h0],
@@ -369,7 +394,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
               [outer, ye0],
               [xe0, ye0],
             ],
-            lighten(wingColor, 0.22),
+            darken(sideTone, 0.55),
           );
           // El suelo continúa fuera de plano.
           body += polygon(
@@ -386,7 +411,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
       layers.push({
         id: side < 0 ? "wing_west" : "wing_east",
         z: 0.001,
-        kind: "wall",
+        kind: "wing",
         body,
         bbox: side < 0
           ? [viewBox.minX, viewBox.minY, -halfBack, viewBottom]
@@ -450,6 +475,7 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
     id: l.id,
     z: l.z,
     kind: l.kind,
+    ...(l.label ? { label: l.label } : {}),
     svg: wrap(l.body),
     bbox: l.bbox,
     baseline_y: l.baseline_y,
@@ -467,6 +493,55 @@ export function composeStage(plan: StageScenePlan, seedKey: string): ComposedSta
   };
 }
 
+/** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
+ *  compartido por el compositor SVG y el builder greybox 3D (si divergieran,
+ *  colisión declarada y render dejarían de casar). null = sin huella
+ *  razonable (prop sin at ni rect). */
+export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
+  switch (v.type) {
+    case "building":
+      return v.rect;
+    case "wall": {
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      for (const [c, r] of v.points) {
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+      }
+      const half = (v.width ?? 3) / 2;
+      return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
+    }
+    case "tower": {
+      const r = v.r ?? 3;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "gate": {
+      const w = v.w ?? 8;
+      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
+    }
+    case "tree": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
+    }
+    case "bush": {
+      const s = v.s ?? 1;
+      return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
+    }
+    case "rock": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
+    }
+    case "fountain": {
+      const r = v.r ?? 4;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "prop": {
+      if (v.rect) return v.rect;
+      if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
+      return null;
+    }
+  }
+}
+
 /** Billboard frontal de un volumen (vista desde la cámara sur). Devuelve null
  *  para volúmenes sin representación frontal razonable. */
 function buildVolumeLayer(
@@ -480,59 +555,8 @@ function buildVolumeLayer(
 ): LayerBuild | null {
   const rng = seededRng(`stage:${seedKey}:${v.id}`);
 
-  // Huella en celdas [c0, r0, w, h] según el tipo.
-  let fp: [number, number, number, number];
-  switch (v.type) {
-    case "building":
-      fp = v.rect;
-      break;
-    case "wall": {
-      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-      for (const [c, r] of v.points) {
-        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
-        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
-      }
-      const half = (v.width ?? 3) / 2;
-      fp = [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
-      break;
-    }
-    case "tower": {
-      const r = v.r ?? 3;
-      fp = [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-      break;
-    }
-    case "gate": {
-      const w = v.w ?? 8;
-      fp = v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
-      break;
-    }
-    case "tree": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
-      break;
-    }
-    case "bush": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
-      break;
-    }
-    case "rock": {
-      const s = v.s ?? 1;
-      fp = [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
-      break;
-    }
-    case "fountain": {
-      const r = v.r ?? 4;
-      fp = [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-      break;
-    }
-    case "prop": {
-      if (v.rect) fp = v.rect;
-      else if (v.at) fp = [v.at[0] - 1, v.at[1] - 1, 2, 2];
-      else return null;
-      break;
-    }
-  }
+  const fp = volumeFootprintCells(v);
+  if (!fp) return null;
 
   const xs = cellsToXStage(fp[0], fp[2]);
   const zs = cellsToZStage(fp[1], fp[3]);
@@ -700,6 +724,7 @@ function buildVolumeLayer(
     id: `vol_${v.id}`,
     z: zs,
     kind: v.type === "wall" || v.type === "gate" || v.type === "tower" ? "wall" : "prop",
+    label: v.label,
     body,
     bbox: [cx - halfW - 2, topY - 2, cx + halfW + 2, baseY + 3],
     baseline_y: baseY,

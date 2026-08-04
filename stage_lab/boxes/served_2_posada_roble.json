@@ -1,0 +1,25 @@
+{
+  "expected": [
+    { "id": "vol_derived_ent_barril_cerveza", "status": "found", "box_px": [788, 638, 88, 140] },
+    { "id": "vol_derived_ent_mesa_grande", "status": "found", "box_px": [306, 504, 198, 200] },
+    { "id": "vol_derived_ent_banco_ventana", "status": "found", "box_px": [242, 604, 102, 102] }
+  ],
+  "extras": [
+    { "label": "mesa con banco y vela a la izquierda", "action": "keep", "box_px": [155, 502, 162, 138], "tall": false, "solid": true, "h": 0.9, "depth_cells": 2 },
+    { "label": "mesa con vela junto a la pared derecha", "action": "keep", "box_px": [694, 518, 174, 126], "tall": false, "solid": true, "h": 0.9, "depth_cells": 2 },
+    { "label": "banco delante de la mesa derecha", "action": "keep", "box_px": [648, 584, 124, 134], "tall": false, "solid": true, "h": 0.5, "depth_cells": 1 },
+    { "label": "banco a la derecha de la mesa central", "action": "keep", "box_px": [420, 590, 102, 106], "tall": false, "solid": true, "h": 0.5, "depth_cells": 1 },
+    { "label": "barril grande de primer término izquierdo", "action": "keep", "box_px": [160, 638, 90, 140], "tall": false, "solid": true, "h": 1.1, "depth_cells": 2 },
+    { "label": "barril junto a la chimenea, lado izquierdo", "action": "keep", "box_px": [412, 488, 68, 116], "tall": false, "solid": true, "h": 1.0, "depth_cells": 2 },
+    { "label": "segundo barril junto a la chimenea", "action": "keep", "box_px": [476, 486, 66, 118], "tall": false, "solid": true, "h": 1.0, "depth_cells": 2 },
+    { "label": "barril junto a la pared derecha", "action": "keep", "box_px": [806, 486, 74, 92], "tall": false, "solid": true, "h": 1.0, "depth_cells": 2 },
+    { "label": "barril al pie del arco de la pared del fondo", "action": "keep", "box_px": [294, 474, 62, 90], "tall": false, "solid": true, "h": 1.0, "depth_cells": 1 }
+  ],
+  "floor": {
+    "wall_base_px": 580,
+    "left_wall_px": 150,
+    "right_wall_px": 878,
+    "left_front_px": 44,
+    "right_front_px": 979
+  }
+}
