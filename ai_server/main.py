@@ -36,7 +36,7 @@ logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 from llm_client import LLMClient
 from scene_image_generator import SceneImageGenerator
 from style_packs import StylePackResolver
-from fal_client import FalSamClient
+from remote_gen_client import RemoteGenClient
 from scene_segmenter import SceneSegmenter
 from asset_cache import AssetCache
 from asset_store_client import AssetStoreClient
@@ -100,17 +100,11 @@ async def lifespan(app: FastAPI):
         manifest=deps.asset_manifest,
     )
 
-    # El análisis de escena es OPCIONAL: necesita FAL_KEY. Sin ella el server
-    # arranca igual; /analyze_scene_image devuelve 503.
-    try:
-        deps.scene_segmenter = SceneSegmenter(
-            fal_client=FalSamClient(
-                auto_segment_model=deps.config["auto_segment_model"],
-            ),
-        )
-    except ValueError as e:
-        deps.scene_segmenter = None
-        logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
+    # Segmentación (F4): la llamada SAM2 vive en remote-gen (POST /segment) —
+    # este proceso ya no lee FAL_KEY. remote-gen caído o sin key → los
+    # análisis fallan ruidosos (502/503 con detail) en el momento de usarla.
+    deps.remote_gen = RemoteGenClient()
+    deps.scene_segmenter = SceneSegmenter(segment_client=deps.remote_gen)
 
     # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
     # keep-list de world-state). Best-effort aquí — el arranque de ai_server
@@ -133,6 +127,9 @@ async def lifespan(app: FastAPI):
     if deps.llm_client is not None:
         deps.llm_client.close()
     deps.llm_client = None
+    if deps.remote_gen is not None:
+        deps.remote_gen.close()
+    deps.remote_gen = None
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)

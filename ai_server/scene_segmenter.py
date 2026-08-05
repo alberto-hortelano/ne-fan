@@ -20,8 +20,6 @@ import time
 import numpy as np
 from PIL import Image
 
-from fal_client import FalSamClient
-
 
 def _to_data_uri(png_bytes: bytes) -> str:
     import base64
@@ -77,10 +75,13 @@ def crop_sprite(scene_rgb: np.ndarray, mask: np.ndarray, bbox_xyxy: tuple) -> di
 
 
 class SceneSegmenter:
-    def __init__(self, fal_client: FalSamClient):
-        self._fal = fal_client
+    def __init__(self, segment_client):
+        """`segment_client`: duck-typed con `auto_segment(data_uri) ->
+        list[bytes]` — desde F4, RemoteGenClient (POST /segment del proceso
+        remote-gen); antes, FalSamClient in-process."""
+        self._segment_client = segment_client
         print(
-            f"SceneSegmenter: fal auto-segment='{fal_client.auto_segment_model}'",
+            f"SceneSegmenter: segmentación vía {segment_client.base_url}/segment",
             flush=True,
         )
 
@@ -104,7 +105,7 @@ class SceneSegmenter:
         from dev_api_cache import DEV_API_CACHE
 
         mask_pngs, _cached = DEV_API_CACHE.through_sync(
-            "fal_segment", lambda: self._fal.auto_segment(data_uri)
+            "fal_segment", lambda: self._segment_client.auto_segment(data_uri)
         )
         dt = time.perf_counter() - start
         print(f"SceneSegmenter.analyze: {len(mask_pngs)} masks ({dt:.2f}s)", flush=True)

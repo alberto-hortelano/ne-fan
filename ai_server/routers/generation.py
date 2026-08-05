@@ -181,7 +181,7 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     if deps.scene_segmenter is None:
         raise HTTPException(
             status_code=503,
-            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable scene analysis",
+            detail="deps.scene_segmenter unavailable",
         )
     if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
@@ -190,7 +190,9 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     layout = hashlib.sha256(png).hexdigest()[:16]
     ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
-        "sam_model": deps.scene_segmenter._fal.auto_segment_model,
+        # Mismo string que configuraba al cliente SAM in-process (pre-F4):
+        # la clave de caché de los análisis existentes NO cambia.
+        "sam_model": deps.config["auto_segment_model"],
         "vision_model": deps.llm_client.model,
         # La visión ORDENA regiones contra el plan (element_id) y el servidor
         # fusiona las partes de un mismo objeto: los análisis cacheados del
@@ -321,7 +323,7 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
             PILImage.fromarray(scene_rgb).save(buf, "PNG")
             mask_pngs, _cached = DEV_API_CACHE.through_sync(
                 "fal_segment_boxes",
-                lambda: deps.scene_segmenter._fal.segment_boxes(
+                lambda: deps.remote_gen.segment_boxes(
                     _to_data_uri(buf.getvalue()), boxes
                 ),
             )
@@ -414,7 +416,7 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
     if deps.scene_segmenter is None:
         raise HTTPException(
             status_code=503,
-            detail="deps.scene_segmenter unavailable — set FAL_KEY in .env to enable stage review",
+            detail="deps.scene_segmenter unavailable",
         )
     if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
@@ -493,7 +495,7 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
             # máscaras con el item equivocado en silencio.
             mask_pngs, _cached = DEV_API_CACHE.through_sync(
                 "fal_segment_boxes_stage",
-                lambda: deps.scene_segmenter._fal.segment_boxes(
+                lambda: deps.remote_gen.segment_boxes(
                     _to_data_uri(buf.getvalue()), boxes
                 ),
             )

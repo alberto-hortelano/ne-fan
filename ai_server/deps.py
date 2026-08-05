@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from scene_image_generator import SceneImageGenerator
     from scene_segmenter import SceneSegmenter
     from fal_client import FalFillClient, FalSamClient
+    from remote_gen_client import RemoteGenClient
     from skin_generator import SkinGenerator
     from sprite_generator import SpriteGenerator
     from sprite_skin_meshy import SpriteSkinMeshy
@@ -45,6 +46,9 @@ class Deps:
     # FAL_KEY; /segment devuelve 503. narrative-llm NO lo usa: llama a
     # /segment por HTTP (remote_gen_client).
     fal_sam: "FalSamClient | None" = None
+    # Cliente HTTP de remote-gen (proceso narrative-llm, F4): la segmentación
+    # viaja por POST /segment — este proceso ya no lee FAL_KEY.
+    remote_gen: "RemoteGenClient | None" = None
     # Pelado por capas del proscenio (FLUX Fill remoto). None = sin FAL_KEY;
     # /peel_scene_layer degrada a LaMa local (plate_inpainter).
     fill_client: "FalFillClient | None" = None
