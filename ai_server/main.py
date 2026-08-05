@@ -70,6 +70,7 @@ from deps import deps
 from routers.asset_proxy import router as asset_proxy_router
 from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
+from routers.gpu_generation import router as gpu_generation_router
 from routers.narrative import router as narrative_router
 from routers.styles import router as styles_router
 
@@ -274,6 +275,7 @@ app.include_router(cache_assets_router)
 app.include_router(asset_proxy_router)
 app.include_router(styles_router)
 app.include_router(generation_router)
+app.include_router(gpu_generation_router)
 app.include_router(narrative_router)
 
 
