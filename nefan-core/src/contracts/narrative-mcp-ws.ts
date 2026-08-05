@@ -1,16 +1,14 @@
 /** Protocolo WS :3737 entre narrative-llm (ai_server Python) y su sidecar
  * narrative-mcp (que a su vez habla MCP stdio con Claude Code).
  *
- * HOY la fuente es `narrative-mcp/protocol.ts` (paquete aparte, fuera del
- * rootDir de nefan-core). Este módulo es su espejo tipado dentro de los
- * contratos; en F0 la fuente se muda aquí y narrative-mcp/protocol.ts pasa a
- * reexportar de `nefan-core/dist/contracts/` (reexport de compatibilidad).
- * Hasta entonces: cualquier cambio se hace en LOS DOS o el test de contrato
- * de F0 lo detecta.
+ * Este módulo es LA FUENTE del protocolo (F0): `narrative-mcp/protocol.ts` es
+ * un reexport de compatibilidad con los nombres históricos (ClientMsg,
+ * RequestMsg, ServerMsg, PeerMsg) y `narrative-mcp/contract-check.ts`
+ * verifica en compile-time que los unions siguen siendo idénticos.
  *
- * Diferencia deliberada con protocol.ts: aquí `NarrativeProgressMsg` SÍ está
- * en el union `McpToAiMsg` — el wire real lo emite (ws-bridge.ts
- * sendProgress) aunque el union original lo omita.
+ * Nota histórica: `NarrativeProgressMsg` está en el union `McpToAiMsg` — el
+ * wire real siempre lo emitió (ws-bridge.ts sendProgress) aunque el union
+ * original de protocol.ts lo omitiera.
  */
 
 // ── narrative-llm (Python) → narrative-mcp ──

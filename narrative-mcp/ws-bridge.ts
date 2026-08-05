@@ -1,5 +1,16 @@
 import { WebSocketServer, WebSocket as WsWebSocket, type WebSocket } from 'ws';
-import type { ClientMsg, PeerMsg, RequestMsg } from './protocol.js';
+import type {
+  BlueprintReviewResponseMsg,
+  BridgeStatusResponseMsg,
+  ClientMsg,
+  NarrativeEventResponseMsg,
+  NarrativeProgressMsg,
+  PeerMsg,
+  RequestMsg,
+  RoomResponseMsg,
+  TakeoverMsg,
+  VisionResponseMsg,
+} from './protocol.js';
 import { RUNTIME_CONFIG } from './runtime-config.js';
 
 const PORT = Number(process.env.NARRATIVE_WS_PORT) || RUNTIME_CONFIG.ports.narrative_ws;
@@ -145,7 +156,7 @@ export class WsBridge {
   private static requestTakeover(): Promise<void> {
     return new Promise((resolve, reject) => {
       const ws = new WsWebSocket(`ws://localhost:${PORT}`);
-      ws.once('open', () => ws.send(JSON.stringify({ type: 'takeover' })));
+      ws.once('open', () => ws.send(JSON.stringify({ type: 'takeover' } satisfies TakeoverMsg)));
       ws.once('close', () => setTimeout(resolve, 200));
       ws.once('error', (err) => reject(err));
     });
@@ -224,7 +235,7 @@ export class WsBridge {
       listener_active: this.isListenerActive(),
       listener_ever_connected: this.mcpEverConnected,
       last_listen_seconds_ago: sinceLast,
-    }));
+    } satisfies BridgeStatusResponseMsg));
   }
 
   /** True if a Claude Code MCP client is currently waiting on narrative_listen
@@ -264,25 +275,25 @@ export class WsBridge {
         type: 'vision_response',
         request_id: msg.request_id,
         result: errorPayload,
-      }));
+      } satisfies VisionResponseMsg));
     } else if (msg.type === 'narrative_event') {
       target.send(JSON.stringify({
         type: 'narrative_event_response',
         request_id: msg.request_id,
         result: errorPayload,
-      }));
+      } satisfies NarrativeEventResponseMsg));
     } else if (msg.type === 'blueprint_review') {
       target.send(JSON.stringify({
         type: 'blueprint_review_response',
         request_id: msg.request_id,
         result: errorPayload,
-      }));
+      } satisfies BlueprintReviewResponseMsg));
     } else if (msg.type === 'room_request') {
       target.send(JSON.stringify({
         type: 'room_response',
         request_id: msg.request_id,
         room_data: errorPayload,
-      }));
+      } satisfies RoomResponseMsg));
     }
     console.error(`[narrative-mcp] No MCP listener — rejected ${msg.type} (${reason})`);
   }
@@ -335,7 +346,7 @@ export class WsBridge {
       type: 'narrative_progress',
       request_id: requestId,
       message,
-    }));
+    } satisfies NarrativeProgressMsg));
   }
 
   /** Envía la respuesta al socket que originó la petición (targetFor) y
@@ -357,7 +368,7 @@ export class WsBridge {
       type: 'room_response',
       request_id: requestId,
       room_data: roomData,
-    }, 'response');
+    } satisfies RoomResponseMsg, 'response');
   }
 
   /** Send vision analysis result back to Python. Called by narrative_respond. */
@@ -366,7 +377,7 @@ export class WsBridge {
       type: 'vision_response',
       request_id: requestId,
       result,
-    }, 'vision response');
+    } satisfies VisionResponseMsg, 'vision response');
   }
 
   /** Send blueprint review result back to Python. Called by narrative_respond. */
@@ -375,7 +386,7 @@ export class WsBridge {
       type: 'blueprint_review_response',
       request_id: requestId,
       result,
-    }, 'blueprint_review response');
+    } satisfies BlueprintReviewResponseMsg, 'blueprint_review response');
   }
 
   /** Send narrative reaction result back to Python. Called by narrative_respond. */
@@ -384,7 +395,7 @@ export class WsBridge {
       type: 'narrative_event_response',
       request_id: requestId,
       result,
-    }, 'narrative_event response');
+    } satisfies NarrativeEventResponseMsg, 'narrative_event response');
   }
 
   private shutdown(): void {
