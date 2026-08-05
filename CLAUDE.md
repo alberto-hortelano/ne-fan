@@ -37,6 +37,7 @@ cd ~/code/ne-fan
 source .venv/bin/activate
 cd nefan-core && npx tsx services/asset-store/server.ts  # asset-store :8767 (blobs+manifest SQLite)
 python ai_server/gpu_worker_main.py         # GPU worker :8766 (texturas/modelos/LaMa; opcional)
+python ai_server/remote_gen_main.py         # Remote-gen :8768 (Meshy/fal, SAM2, styles; opcional)
 python ai_server/main.py                    # AI server :8765 (narrativa; opcional)
 cd nefan-core && npx tsx bridge/ws-server.ts  # Bridge TS :9877 (opcional)
 cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
@@ -241,7 +242,8 @@ nefan-html/               Cliente 2D top-down (Canvas)
     renderer/              Canvas 2D rendering
     input/                 Keyboard + mouse handler
 
-ai_server/                Python FastAPI en puerto 8765
+ai_server/                Python FastAPI — 3 procesos: main.py (narrativa :8765),
+                          gpu_worker_main.py (:8766), remote_gen_main.py (:8768)
 narrative-mcp/            Node.js MCP bridge
 
 skinning_lab/             Bench reusable de skinning AI sobre sprites Mixamo
@@ -267,26 +269,38 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 - **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
 - **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
 
-## AI server — Endpoints
+## Stack Python de IA — Endpoints (3 procesos desde F3/F4)
 
-| Endpoint | Metodo | Que hace |
-|----------|--------|----------|
-| `/health` | GET | Estado: ready/loading, pipeline texturas |
-| `/backend_status` | GET | Estado de meshy_3d, ai_vision (consumido por panel del title screen) |
-| `/generate_scene` | POST | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
-| `/generate_texture` | POST | Textura PBR seamless (albedo+normal), ~1s |
-| `/generate_model` | POST | Modelo GLB desde prompt (Meshy o TripoSG) |
-| `/generate_skin` | POST | Skin de personaje (PNG, ~10s) |
-| `/analyze_weapon` | POST | Vision IA para orientar armas (vía MCP bridge) |
-| `/review_scene_image` | POST | Visión revisa el tile REPINTADO (kind MCP `image_review`): objetos extra del img2img → SAM2 por caja → sprite + línea de contacto con el suelo |
-| `/develop_world` | POST | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
-| `/styles/upload` | POST | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
-| `/styles/{id}/complete` | POST | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
-| `/notify_session` | POST | Godot informa de inicio/reanudación de sesión narrativa |
-| `/report_player_choice` | POST | Godot reporta elección de diálogo → Claude devuelve consequences |
-| `/assets` | GET | Listar assets indexados del manifest (con prompt original) |
-| `/assets/by_hash/{hash}` | GET | Lookup individual con cache_url |
-| `/cache/{type}/{hash}` | GET | Servir asset cacheado (albedo/normal/roughness/model/skin/sprite) |
+`ai_server/main.py` (narrative-llm :8765), `ai_server/gpu_worker_main.py`
+(:8766) y `ai_server/remote_gen_main.py` (:8768) comparten paquete y `.venv`.
+:8765 proxya los endpoints GPU y `/cache|/assets` para Godot; el HTML resuelve
+cada servicio con `serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
+
+| Endpoint | Proceso | Que hace |
+|----------|---------|----------|
+| `/health` | los 3 | Estado del proceso (el del gpu-worker incluye `model_backend`) |
+| `/backend_status` | :8765 | Estado de meshy_3d (vía /health del gpu-worker) + ai_vision (panel del title screen) |
+| `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
+| `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
+| `/analyze_scene_image` | :8765 | Mundo derivado de la imagen del tile (SAM2 vía remote-gen + visión) |
+| `/review_stage_image` | :8765 | Inventario por visión del plató repintado (SAM2 vía remote-gen) |
+| `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
+| `/notify_session` | :8765 | Godot informa de inicio/reanudación de sesión narrativa |
+| `/report_player_choice` | :8765 | Godot reporta elección de diálogo → Claude devuelve consequences |
+| `/generate_texture` | :8766 | Textura PBR seamless (albedo+normal), ~1s |
+| `/generate_model` | :8766 | Modelo GLB desde prompt (Meshy o TripoSG) |
+| `/generate_skin` | :8766 | Skin de personaje (PNG, ~10s) |
+| `/generate_sprite` | :8766 | Sprite RGBA 2D desde prompt |
+| `/inpaint_scene_plate` | :8766 | Placa de fondo del tile (LaMa local) |
+| `/peel_scene_layer` | :8766 | Pelado de una capa del plató (LaMa; FLUX vía fal opcional) |
+| `/generate_scene_image` | :8768 | Repintado del tile/plató (Meshy i2i / fal gpt-image-2) |
+| `/skin_sprite_sheet` | :8768 | Sprite sheet skinneado por IA (Meshy hero-shot + atlas) |
+| `/segment` | :8768 | SAM2 auto/boxes — la única llamada fal SAM del stack |
+| `/styles/upload` | :8768 | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
+| `/styles/{id}/complete` | :8768 | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
+| `/dev/api_cache` | :8768 | Toggle del modo dev de APIs de pago (visible para los 3 procesos) |
+| `/assets`, `/assets/by_hash/{hash}` | :8767 | Índice de assets del manifest (asset-store; :8765 proxya) |
+| `/cache/{type}/{hash}` | :8767 | Servir asset cacheado (albedo/normal/roughness/model/skin/sprite; :8765 proxya) |
 
 ## Modelos de IA y que hacen
 

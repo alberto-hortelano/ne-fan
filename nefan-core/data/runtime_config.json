@@ -47,7 +47,8 @@
     "godot_remote": 9876,
     "html": 3000,
     "asset_store": 8767,
-    "gpu_worker": 8766
+    "gpu_worker": 8766,
+    "remote_gen": 8768
   },
   "content": {
     "games_dir": "nefan-core/data/games",

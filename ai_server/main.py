@@ -9,7 +9,6 @@ carga de entorno/config, el lifespan que puebla `deps`, la app FastAPI y
 
 import logging
 import argparse
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 from config_snapshot import load_config, load_env_file
@@ -34,20 +33,17 @@ class _SilenceHealthcheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from llm_client import LLMClient
-from scene_image_generator import SceneImageGenerator
 from style_packs import StylePackResolver
-from fal_client import FalSamClient
+from remote_gen_client import RemoteGenClient
 from scene_segmenter import SceneSegmenter
 from asset_cache import AssetCache
 from asset_store_client import AssetStoreClient
 
 from deps import deps
 from routers.asset_proxy import router as asset_proxy_router
-from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
 from routers.gpu_proxy import router as gpu_proxy_router
 from routers.narrative import router as narrative_router
-from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
 
@@ -73,24 +69,13 @@ async def lifespan(app: FastAPI):
         asset_manifest=deps.asset_manifest,
     )
 
-    # F3: los pipelines GPU (texturas/modelos/skins/sprites/LaMa) viven en el
-    # gpu-worker (:8766, gpu_worker_main.py). Este proceso solo conserva lo
-    # narrativo/remoto y proxya los endpoints GPU para Godot (gpu_proxy).
-    deps.scene_cache = AssetCache(
-        cache_dir=deps.config["scene_cache_dir"],
-        asset_type="scene",
-        manifest=deps.asset_manifest,
-    )
-
-    _repo_root = Path(__file__).resolve().parent.parent
-    deps.scene_image_gen = SceneImageGenerator(
-        style_image_path=str(_repo_root / deps.config["scene_style_image"]),
-        model=deps.config["scene_model"],
-        stage_model=deps.config["stage_scene_model"],
-    )
-    # Packs de estilo por juego (imágenes de referencia por categoría).
-    # Degradación esperable si aún no hay packs: resolve() devuelve None y las
-    # peticiones usan la referencia global de arriba.
+    # F3/F4: los pipelines GPU viven en el gpu-worker (:8766) y los de APIs
+    # de pago en remote-gen (:8768). Este proceso solo conserva lo narrativo
+    # y la visión, y proxya los endpoints GPU para Godot (gpu_proxy).
+    #
+    # Packs de estilo por juego: /develop_world los LISTA para el motor
+    # narrativo (narrative.py). Lector FS sin claves — coexiste con la
+    # instancia de remote-gen sin conflicto (cache por mtime).
     deps.style_packs = StylePackResolver()
 
     deps.segment_cache = AssetCache(
@@ -99,17 +84,11 @@ async def lifespan(app: FastAPI):
         manifest=deps.asset_manifest,
     )
 
-    # El análisis de escena es OPCIONAL: necesita FAL_KEY. Sin ella el server
-    # arranca igual; /analyze_scene_image devuelve 503.
-    try:
-        deps.scene_segmenter = SceneSegmenter(
-            fal_client=FalSamClient(
-                auto_segment_model=deps.config["auto_segment_model"],
-            ),
-        )
-    except ValueError as e:
-        deps.scene_segmenter = None
-        logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
+    # Segmentación (F4): la llamada SAM2 vive en remote-gen (POST /segment) —
+    # este proceso ya no lee FAL_KEY. remote-gen caído o sin key → los
+    # análisis fallan ruidosos (502/503 con detail) en el momento de usarla.
+    deps.remote_gen = RemoteGenClient()
+    deps.scene_segmenter = SceneSegmenter(segment_client=deps.remote_gen)
 
     # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
     # keep-list de world-state). Best-effort aquí — el arranque de ai_server
@@ -132,6 +111,9 @@ async def lifespan(app: FastAPI):
     if deps.llm_client is not None:
         deps.llm_client.close()
     deps.llm_client = None
+    if deps.remote_gen is not None:
+        deps.remote_gen.close()
+    deps.remote_gen = None
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
@@ -147,13 +129,12 @@ app.add_middleware(
 )
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
-# cache_assets solo conserva /dev/api_cache; asset_proxy reenvía /cache|/assets
-# al asset-store (:8767) y gpu_proxy los endpoints GPU al gpu-worker (:8766)
-# para clientes no migrados (Godot).
-app.include_router(cache_assets_router)
+# asset_proxy reenvía /cache|/assets al asset-store (:8767) y gpu_proxy los
+# endpoints GPU al gpu-worker (:8766) para clientes no migrados (Godot).
+# El repintado, /styles y el toggle /dev/api_cache viven en remote-gen
+# (:8768) — sin proxy: sus únicos clientes (HTML) resuelven por serviceUrl.
 app.include_router(asset_proxy_router)
 app.include_router(gpu_proxy_router)
-app.include_router(styles_router)
 app.include_router(generation_router)
 app.include_router(narrative_router)
 

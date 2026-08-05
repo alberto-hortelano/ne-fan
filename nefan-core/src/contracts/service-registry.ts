@@ -74,8 +74,9 @@ export const SERVICES = {
   "remote-gen": {
     protocol: "http",
     port: 8768,
-    currentPort: 8765,
-    extractionPhase: "F4",
+    // Extraído en F4: proceso propio (ai_server/remote_gen_main.py). Sin
+    // proxy en :8765 — sus únicos clientes (HTML) resuelven por serviceUrl.
+    currentPort: 8768,
     description:
       "Adaptador de APIs de pago (Meshy/fal): scene images, sprite sheets, style packs, segmentación SAM2.",
   },

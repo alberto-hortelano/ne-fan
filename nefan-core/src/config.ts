@@ -142,6 +142,8 @@ export interface NefanConfig {
     asset_store: number;
     /** gpu-worker (S4): pipelines GPU locales — SD/TripoSG/LaMa (F3). */
     gpu_worker: number;
+    /** remote-gen (S5): adaptador Meshy/fal — repintados, sheets, SAM2 (F4). */
+    remote_gen: number;
   };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
@@ -214,6 +216,7 @@ export const CONFIG: NefanConfig = {
     html: 3000,
     asset_store: 8767,
     gpu_worker: 8766,
+    remote_gen: 8768,
   },
   content: {
     games_dir: "nefan-core/data/games",

@@ -16,6 +16,7 @@ describe("registro de servicios ↔ config", () => {
     // Extraídos: puerto propio, atado a su entrada de CONFIG.ports.
     assert.equal(SERVICES["asset-store"].currentPort, CONFIG.ports.asset_store);
     assert.equal(SERVICES["gpu-worker"].currentPort, CONFIG.ports.gpu_worker);
+    assert.equal(SERVICES["remote-gen"].currentPort, CONFIG.ports.remote_gen);
     // Los servicios aún no extraídos co-viven en ai_server: mismo puerto.
     for (const name of ["gpu-worker", "asset-store", "remote-gen"] as const) {
       if (SERVICES[name].extractionPhase !== undefined) {

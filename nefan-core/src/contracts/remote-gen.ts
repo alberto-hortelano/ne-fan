@@ -1,5 +1,6 @@
-/** S5 · remote-gen — HTTP :8768 (hoy co-vive en ai_server :8765; se extrae
- * en F4).
+/** S5 · remote-gen — HTTP :8768 (extraído en F4: ai_server/remote_gen_main.py;
+ * sin proxy en :8765 — sus únicos clientes, el HTML, resuelven por
+ * serviceUrl).
  *
  * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro,
  * fal SAM2, FLUX Fill): repintado de tiles/platós, sprite sheets skinneados,
@@ -119,32 +120,42 @@ export interface StyleCompleteResponse {
   message?: string;
 }
 
-// ── Segmentación (PLANNED F4 — extrae la llamada fal SAM2 para que
-//    narrative-llm no dependa de fal) ──
+// ── Segmentación (F4 — extrae la ÚNICA llamada fal SAM2 del stack para que
+//    narrative-llm no dependa de FAL_KEY) ──
 
 export interface SegmentBox {
   id: string;
-  /** [x, y, w, h] px de la imagen. */
-  box_px: [number, number, number, number];
+  /** [x0, y0, x1, y1] px — el box prompt de SAM2 tal cual. */
+  box_xyxy: [number, number, number, number];
 }
 
 export interface SegmentRequest {
   image_b64: string;
   /** "auto" = SAM2 auto-segment; "boxes" = un prompt de caja por elemento. */
   mode: "auto" | "boxes";
+  /** Obligatorio (no vacío, ids únicos) con mode "boxes"; 422 si falta. */
   boxes?: SegmentBox[];
 }
 
 export interface SegmentMask {
-  /** id de la caja de entrada (mode "boxes") o sintético (mode "auto"). */
+  /** id de la caja de entrada (mode "boxes") o sintético `auto_i` en orden
+   *  de detección (mode "auto"). */
   id: string;
-  /** PNG L base64 full-frame (blanco = elemento). */
+  /** PNG CRUDO de fal en base64 (cutout RGBA o máscara según el modelo) —
+   *  la conversión a máscara booleana es del consumidor (mask_from_png /
+   *  _mask_from_fal), igual que cuando la llamada era in-process: los blobs
+   *  de los canales dev del consumidor siguen valiendo byte a byte. */
   mask_b64: string;
-  image_bbox: [number, number, number, number];
 }
 
 export interface SegmentResponse {
   masks: SegmentMask[];
+}
+
+export interface RemoteGenHealthResponse {
+  status: "ready" | "loading";
+  /** false = sin FAL_KEY en el proceso remote-gen (/segment dará 503). */
+  segment_available: boolean;
 }
 
 // ── Cache de modo dev (respuestas de APIs de pago congeladas) ──
@@ -179,7 +190,8 @@ export const RemoteGenApi = {
     "POST",
     "/styles/{style_id}/complete",
   ),
-  /** PLANNED F4 — interno, consumido por narrative-llm. */
+  health: endpoint<void, RemoteGenHealthResponse>("GET", "/health"),
+  /** Interno — consumido por narrative-llm (remote_gen_client.py). */
   segment: endpoint<SegmentRequest, SegmentResponse>("POST", "/segment"),
   /** El toggle vive aquí: los canales cacheados son las respuestas de las
    *  APIs de pago, sus únicos consumidores. Cada canal es global — compartir
