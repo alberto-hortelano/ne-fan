@@ -3,8 +3,22 @@
   "version": "0.1.0",
   "description": "Never Ending Fantasy — shared game logic (combat, AI, state)",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/src/contracts/index.d.ts",
+      "default": "./dist/src/contracts/index.js"
+    },
+    "./contracts/*": {
+      "types": "./dist/src/contracts/*.d.ts",
+      "default": "./dist/src/contracts/*.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts",

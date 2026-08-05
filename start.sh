@@ -105,15 +105,12 @@ start_bridge() {
 
 start_narrative_mcp() {
     port_busy "$PORT_NARR" && kill_port "$PORT_NARR"
-    # Recompilar si dist falta O está desfasado respecto a las fuentes: un
-    # dist viejo ejecuta silenciosamente código de otro día (p. ej. sin los
-    # latidos de progreso) y es indistinguible de un bug en runtime.
-    local narr_src_newest
-    narr_src_newest=$(find "$PROJECT_DIR/narrative-mcp" -maxdepth 1 -name "*.ts" -newer "$PROJECT_DIR/narrative-mcp/dist/server.js" 2>/dev/null | head -1)
-    if [[ ! -f "$PROJECT_DIR/narrative-mcp/dist/server.js" || -n "$narr_src_newest" ]]; then
-        echo "🛠  narrative-mcp: building..."
-        ( cd "$PROJECT_DIR/narrative-mcp" && npm run build ) || return 1
-    fi
+    # Recompilar SIEMPRE: `tsc -b` es incremental (no-op en ~0,1 s si está
+    # fresco) y detecta también cambios en los contratos de nefan-core, que un
+    # `find -newer` sobre narrative-mcp/*.ts no vería. Un dist viejo ejecuta
+    # silenciosamente código de otro día y es indistinguible de un bug.
+    echo "🛠  narrative-mcp: building (tsc -b incremental)..."
+    ( cd "$PROJECT_DIR/narrative-mcp" && npm run build ) || return 1
     # NARRATIVE_EAGER_BIND: this standalone instance is a port placeholder, so it
     # must bind :3737 at startup (no narrative_listen ever drives it) to satisfy
     # wait_for_port below. Claude-Code-spawned instances bind lazily on first

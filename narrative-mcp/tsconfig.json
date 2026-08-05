@@ -10,5 +10,6 @@
     "skipLibCheck": true,
     "declaration": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts"],
+  "references": [{ "path": "../nefan-core" }]
 }

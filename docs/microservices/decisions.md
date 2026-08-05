@@ -4,7 +4,8 @@
 
 1. **Contratos en `nefan-core/src/contracts/`, no en `packages/contracts/`.**
    Compila con el tsconfig existente sin tocar nada, nefan-html ya lo importa
-   vía alias Vite, narrative-mcp puede importar de `dist/contracts/`.
+   vía alias Vite, narrative-mcp importa `@nefan/core/contracts/*`
+   (dependencia `file:` + exports map sobre `dist/src/contracts/`).
    Migrar a paquete propio es un `git mv` futuro si hiciera falta publicarlo.
 2. **Contratos types-only** (sin zod nuevo). Donde ya hay zod (plugins) se
    reexporta el schema junto al tipo. La validación cruzada con Python se
