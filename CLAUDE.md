@@ -278,7 +278,6 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 | `/generate_model` | POST | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | POST | Skin de personaje (PNG, ~10s) |
 | `/analyze_weapon` | POST | Vision IA para orientar armas (vía MCP bridge) |
-| `/review_scene_image` | POST | Visión revisa el tile REPINTADO (kind MCP `image_review`): objetos extra del img2img → SAM2 por caja → sprite + línea de contacto con el suelo |
 | `/develop_world` | POST | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
 | `/styles/upload` | POST | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
 | `/styles/{id}/complete` | POST | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |

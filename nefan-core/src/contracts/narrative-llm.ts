@@ -210,8 +210,8 @@ export const NarrativeLlmApi = {
     "/review_stage_image",
   ),
   backendStatus: endpoint<void, BackendStatusResponse>("GET", "/backend_status"),
-  // /review_scene_image: DEPRECADO — sin clientes vivos (el equivalente del
-  // plató es /review_stage_image). No se tipa; se elimina en F4.
+  // /review_scene_image (muerto, sin clientes) ELIMINADO en F4 junto con
+  // LLMClient.review_scene_image y pipe_server.py.
 } as const;
 
 export type NarrativeLlmApi = typeof NarrativeLlmApi;

@@ -142,8 +142,8 @@ GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
 **S3 narrative-llm (HTTP :8765)** — ✅ /health, /notify_session,
 /generate_scene, /report_player_choice, /develop_world,
 /review_scene_blueprint, /analyze_weapon, /analyze_scene_image,
-/review_stage_image, /backend_status. ☠ /review_scene_image (sin clientes
-vivos; se elimina en F4). WS :3737 completo en `narrative-mcp-ws.ts`
+/review_stage_image, /backend_status. ☠ /review_scene_image ELIMINADO en F4
+(sin clientes vivos). WS :3737 completo en `narrative-mcp-ws.ts`
 (room/vision/narrative_event/blueprint_review + responses +
 narrative_progress + bridge_status + takeover).
 
@@ -164,8 +164,8 @@ GET /styles/{style_id}/{file} (desde S2), GET /health.
 ☠ /cache/check/{hash} (ruta muerta desde siempre por el orden del catch-all;
 preservada como 400, ver contrato).
 
-**Fuera de contrato** (deliberado): `ai_server/pipe_server.py` (TCP :8764,
-muerto — borrar), el remote control TCP :9876 de Godot (herramienta de test,
+**Fuera de contrato** (deliberado): el remote control TCP :9876 de Godot
+(herramienta de test,
 no servicio) y los benches (`narrative_lab/fake-ai-server.mjs` emula S3-S6 en
 :18765 y es la spec ejecutable para validarlos).
 
