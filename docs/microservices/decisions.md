@@ -44,6 +44,21 @@
     hecho vía `POST /assets`; hash de oro fijado en
     `ai_server/tests/test_asset_cache.py`.
 
+13. **El peel "flux" llama a fal DIRECTO desde el gpu-worker** (F3), no vía
+    remote-gen: el fallback flux→lama re-deriva la clave de caché en local
+    (lógica entrelazada con el cache) y peel se extrajo antes de que
+    remote-gen exista. FAL_KEY es opcional en el gpu-worker (sin ella degrada
+    a LaMa). Deuda de frontera consciente ("remote-gen = dinero") — revisable
+    si remote-gen gana un endpoint de fill.
+14. **`gpu_lock` se queda DENTRO del gpu-worker** (F3): es lock de
+    coherencia además de CUDA (Skin/Sprite/ModelGenerator mutan el pipe SD
+    compartido — padding, LoRA, device — y restauran; FastAPI async
+    intercala). Lo extraído es no compartirlo con los endpoints narrativos.
+15. **`DevApiCache.enabled` multi-proceso por (mtime, inode)** (F3): los tres
+    procesos comparten `cache/dev_api_cache/`; el toggle vive solo en
+    remote-gen (contrato) y los demás lo ven releyendo `state.json` cuando
+    cambia su firma en disco (escritura tmp+replace, atómica para el lector).
+
 ## Abiertas (decidir cuando toque la fase)
 
 1. **F6 sí o no** — separar world-state por red puede no aportar nada en un

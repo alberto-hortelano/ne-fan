@@ -76,8 +76,10 @@ jobs:
         with:
           python-version: "3.11"
       # pillow + httpx: deps ligeras de los tests de sprite_skin_meshy
-      # (atlas/keyframes). El resto de la suite sigue siendo stdlib-only.
-      - run: pip install ruff pillow httpx
+      # (atlas/keyframes). fastapi + uvicorn (F3): tests del proceso
+      # gpu-worker (TestClient + dos workers reales en subprocesos). El resto
+      # de la suite sigue siendo stdlib-only.
+      - run: pip install ruff pillow httpx fastapi uvicorn
       - run: ruff check ai_server
       - run: python -m compileall -q ai_server
       - run: python -m unittest discover -s ai_server/tests

@@ -36,7 +36,8 @@ Cosas a tener en cuenta:
 cd ~/code/ne-fan
 source .venv/bin/activate
 cd nefan-core && npx tsx services/asset-store/server.ts  # asset-store :8767 (blobs+manifest SQLite)
-python ai_server/main.py                    # AI server :8765 (opcional)
+python ai_server/gpu_worker_main.py         # GPU worker :8766 (texturas/modelos/LaMa; opcional)
+python ai_server/main.py                    # AI server :8765 (narrativa; opcional)
 cd nefan-core && npx tsx bridge/ws-server.ts  # Bridge TS :9877 (opcional)
 cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility

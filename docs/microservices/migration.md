@@ -76,12 +76,26 @@ seguridad inter-proceso). Test de escrituras concurrentes en
 corrupción — imposible hoy); clientes funcionando vía proxy; bench del coste
 de registro vs el rewrite de 5,8 MB actual; `start.sh` con el servicio nuevo.
 
-## F3 — Extraer gpu-worker (:8766)
+## F3 — Extraer gpu-worker (:8766) ✅ (2026-08-05)
+
+Ejecutada: proceso propio `ai_server/gpu_worker_main.py` (mismo paquete
+Python, entrypoint nuevo; los 6 endpoints viven en
+`routers/gpu_generation.py`). Matiz sobre el plan original: **`gpu_lock` NO
+desaparece dentro del worker** — además de CUDA protege la coherencia del
+pipe SD compartido (Skin/Sprite/ModelGenerator lo mutan y restauran, y
+FastAPI async intercala); lo que muere es compartirlo con los endpoints
+narrativos. Escalar sigue siendo un proceso por GPU
+(`NEFAN_URL_GPU_WORKER`; probado con dos workers mock en
+`tests/test_two_gpu_workers.py`). narrative-llm proxya los endpoints en
+:8765 para Godot (`routers/gpu_proxy.py`, indefinido) y agrega el
+`model_backend` del `/health` del worker en `/backend_status` (best-effort,
+shape intacto). El peel "flux" llama a fal DIRECTO desde el worker
+(decisión 13); `DevApiCache.enabled` se relee por (mtime, inode) para que el
+toggle sea visible entre procesos. Cliente HTML directo vía
+`serviceUrl("gpu-worker")`. Detalle histórico del plan original:
 
 - Mover los pipelines locales (texture/skin/sprite/model/plate + camino LaMa
   de peel) a un proceso propio con `GpuWorkerApi`.
-- `deps.gpu_lock` desaparece: la serialización es la cola del proceso
-  mono-GPU. Escalar = un proceso por GPU.
 - ai_server proxya durante la transición; después, AiClient y clientes van
   directo (overrides de F1).
 

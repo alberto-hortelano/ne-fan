@@ -15,7 +15,7 @@ las decisiones en [decisions.md](decisions.md).
 | S1 | **game-gateway** | Sesiones en vivo: WS con clientes, routing, `GameSimulation` (hot loop) y `SceneGenQueue` in-process | WS | 9877 (9877) | `contracts/gateway.ts` |
 | S2 | **world-state** | Fuente de verdad del mundo: `NarrativeState` (único escritor de saves), `WorldMapManager`, `NpcDirector`, plugins runtime | HTTP | 9878 (9878, mismo proceso que S1) | `contracts/world-state.ts` |
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
-| S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | 8766 (8765) | `contracts/gpu-worker.ts` |
+| S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para Godot**)** | `contracts/gpu-worker.ts` |
 | S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | 8768 (8765) | `contracts/remote-gen.ts` |
 | S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para Godot**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
@@ -79,8 +79,10 @@ Dos ciclos (sin cambios respecto a hoy):
   SAM2 se delega en remote-gen (`/segment`, F4).
 - **gpu-worker vs remote-gen**: separar lo que consume GPU local (escala = nº
   de GPUs, serializado por naturaleza) de lo que consume dinero (escala =
-  concurrencia HTTP, latencias 30–300 s). El `gpu_lock` de asyncio desaparece:
-  la serialización pasa a ser la cola natural de un proceso mono-GPU.
+  concurrencia HTTP, latencias 30–300 s). El `gpu_lock` de asyncio NO
+  desaparece dentro del worker (F3): además de CUDA protege la coherencia del
+  pipe SD compartido que Skin/Sprite/ModelGenerator mutan y restauran; lo que
+  muere es compartirlo con los endpoints narrativos.
 - **asset-store primero (F2)**: es la única pieza que TODOS los generadores
   escriben y TODOS los clientes leen. `cache/manifest.json` (~5,8 MB,
   reescrito entero en cada registro, ~17k entradas) no soporta escrituras
@@ -145,9 +147,11 @@ vivos; se elimina en F4). WS :3737 completo en `narrative-mcp-ws.ts`
 (room/vision/narrative_event/blueprint_review + responses +
 narrative_progress + bridge_status + takeover).
 
-**S4 gpu-worker (HTTP :8766)** — ✅ /generate_texture, /generate_model,
-/generate_skin, /generate_sprite, /inpaint_scene_plate, /peel_scene_layer,
-/diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame (`@internal`).
+**S4 gpu-worker (HTTP :8766, EXTRAÍDO en F3)** — ✅ /generate_texture,
+/generate_model, /generate_skin, /generate_sprite, /inpaint_scene_plate,
+/peel_scene_layer, /health (con `model_backend` para el /backend_status de
+S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
+(`@internal`). ai_server proxya todos en :8765 para Godot (gpu_proxy.py).
 
 **S5 remote-gen (HTTP :8768)** — ✅ /generate_scene_image, /skin_sprite_sheet,
 /styles/upload, /styles/{style_id}/complete, GET+POST /dev/api_cache.
@@ -170,6 +174,6 @@ no servicio) y los benches (`narrative_lab/fake-ai-server.mjs` emula S3-S6 en
 | Cliente | S1 | S2 | S3 | S4 | S5 | S6 |
 |---------|----|----|----|----|----|----|
 | nefan-html | todo lo autoritativo | covers estilos (→S6 en F2) | review/analyze de imagen | peel, plate, sprites | scene image, sheets, styles | GET blobs |
-| Godot | 8/19 mensajes (deriva conocida) | — | — | texturas, modelos, skins, analyze_weapon | — | GET blobs |
+| Godot | 8/19 mensajes (deriva conocida) | — | — | texturas, modelos, skins (vía proxy :8765), analyze_weapon | — | GET blobs |
 | gateway (S1) | — | in-process (→contrato en F6) | generate_scene, choices, develop_world, sprites | vía AiClient | — | assetExists |
 | narrative-mcp | — | 18 tools de estado | (es su sidecar) | — | — | — |
