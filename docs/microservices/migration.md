@@ -103,7 +103,20 @@ toggle sea visible entre procesos. Cliente HTML directo vía
 obteniendo texturas/modelos; dos gpu-workers con mocks reparten trabajo (el
 mecanismo queda probado aunque haya 1 GPU).
 
-## F4 — Extraer remote-gen (:8768) + `/segment`
+## F4 — Extraer remote-gen (:8768) + `/segment` ✅ (2026-08-05)
+
+Ejecutada: proceso propio `ai_server/remote_gen_main.py` (endpoints en
+`routers/remote_generation.py` + `routers/styles.py` + `routers/segment.py`
++ el toggle `/dev/api_cache`). `POST /segment` es la ÚNICA llamada fal SAM2
+del stack (mode auto/boxes, PNG crudos de fal — la conversión a bool queda en
+el consumidor y los blobs de los canales dev siguen valiendo byte a byte);
+narrative-llm lo consume vía `remote_gen_client.py` y **ya no lee FAL_KEY**
+(`sam_model` de las claves de caché sale de config — mismo string, cachés
+intactas; golden en `tests/test_segment_router.py`). Sin proxy en :8765: los
+únicos clientes (HTML) resuelven por `serviceUrl("remote-gen")`.
+`/review_scene_image`, `LLMClient.review_scene_image` y `pipe_server.py`
+eliminados. `style_packs` queda TAMBIÉN en narrative-llm (/develop_world
+lista estilos — lector FS sin claves). Detalle histórico del plan original:
 
 - Mover Meshy/fal (scene image, sprite sheets, style packs) y el
   `DEV_API_CACHE` con `RemoteGenApi`.

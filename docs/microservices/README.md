@@ -16,7 +16,7 @@ las decisiones en [decisions.md](decisions.md).
 | S2 | **world-state** | Fuente de verdad del mundo: `NarrativeState` (único escritor de saves), `WorldMapManager`, `NpcDirector`, plugins runtime | HTTP | 9878 (9878, mismo proceso que S1) | `contracts/world-state.ts` |
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
 | S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para Godot**)** | `contracts/gpu-worker.ts` |
-| S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | 8768 (8765) | `contracts/remote-gen.ts` |
+| S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | **8768 (extraído en F4** — `ai_server/remote_gen_main.py`; sin proxy, los clientes HTML resuelven por serviceUrl**)** | `contracts/remote-gen.ts` |
 | S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para Godot**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
 
@@ -153,9 +153,11 @@ narrative_progress + bridge_status + takeover).
 S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
 (`@internal`). ai_server proxya todos en :8765 para Godot (gpu_proxy.py).
 
-**S5 remote-gen (HTTP :8768)** — ✅ /generate_scene_image, /skin_sprite_sheet,
-/styles/upload, /styles/{style_id}/complete, GET+POST /dev/api_cache.
-🆕 POST /segment (F4).
+**S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_scene_image,
+/skin_sprite_sheet, /styles/upload, /styles/{style_id}/complete,
+GET+POST /dev/api_cache (el flag lo ven los otros procesos releyendo
+state.json), ✅ POST /segment (SAM2 auto/boxes — consumido por narrative-llm
+vía remote_gen_client.py), /health.
 
 **S6 asset-store (HTTP :8767, EXTRAÍDO en F2)** — ✅ /cache/{kind}/{hash},
 /cache/sprite_sheet/{hash}/{filename}, POST /cache/prune (con keep-list),
