@@ -86,6 +86,19 @@ class DevApiCacheTest(unittest.TestCase):
         self.assertTrue(reborn.enabled)
         self.assertEqual(reborn.get("meshy_test"), [b"x"])
 
+    def test_toggle_visible_across_live_instances(self):
+        """F3: tres procesos comparten cache/dev_api_cache/ y solo remote-gen
+        tiene el toggle — las instancias VIVAS de los otros procesos deben ver
+        el cambio de enabled (relectura por mtime), no solo al renacer."""
+        other = DevApiCache(Path(self._tmp.name))
+        self.assertFalse(other.enabled)
+        self.cache.set_enabled(True)
+        self.assertTrue(other.enabled)
+        self.assertEqual(other.namespace_suffix(), "devcache")
+        self.cache.set_enabled(False)
+        self.assertFalse(other.enabled)
+        self.assertEqual(other.namespace_suffix(), "")
+
     def test_namespace_only_when_enabled(self):
         self.assertEqual(self.cache.namespace_suffix(), "")
         self.assertIsNone(self.cache.namespace_context())
