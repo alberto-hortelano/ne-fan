@@ -21,23 +21,24 @@ import { WorldStateApi } from "../src/contracts/world-state.js";
 import { fillPath, type Endpoint } from "../src/contracts/http.js";
 
 /** Endpoints del contrato SIN rama en el router de hoy (documentados así):
- *  - getLlmContext (PLANNED F5) y getAssetRefs (PLANNED F2)
- *  - getStyleFile: rama binaria aparte (serveStyleFile), probada abajo a mano */
-const SKIP = new Set(["getLlmContext", "getAssetRefs", "getStyleFile"]);
+ *  - getLlmContext (PLANNED F5) */
+const SKIP = new Set(["getLlmContext"]);
 
 let server: Server;
 let baseUrl: string;
+let narrativeRef: ReturnType<typeof makeNarrativeState>["narrative"];
 
 before(async () => {
-  const { narrative } = makeNarrativeState();
+  const { narrative, storage } = makeNarrativeState();
+  narrativeRef = narrative;
   narrative.startNewSession("plugtest");
   const activePlugins = new Map<string, PluginManifest>();
   server = createStateHttpServer({
     port: 0,
     narrative,
     npcDirector: new NpcDirector(narrative),
-    stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
     gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
+    sessionStorage: storage,
     onMutation: () => {},
     onProgress: () => {},
     plugins: {
@@ -99,16 +100,18 @@ describe("contrato WorldStateApi ↔ router real", () => {
     }
   });
 
-  it("getStyleFile (rama binaria): sirve un fichero real de data/styles", async () => {
-    // La rama /styles/ es un bypass binario fuera del ciclo JSON; se prueba
-    // con un manifest real de un style pack shipped.
-    const res = await fetch(`${baseUrl}${fillPath(WorldStateApi.getStyleFile.path, {
-      style_id: "medievo_crudo",
-      file: "style.json",
-    })}`);
+  it("getAssetRefs: unión de refs de escenas/entidades/snapshot de todos los saves", async () => {
+    narrativeRef.recordSceneLoaded("plaza", { scene_id: "plaza" }, ["hash_a", "hash_b"]);
+    narrativeRef.recordEntitySpawned("npc1", "npc", "plaza", [0, 0, 0], {}, "test", "", ["hash_c"]);
+    await narrativeRef.save();
+    const res = await fetch(`${baseUrl}/sessions/asset_refs`);
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get("content-type"), "application/json");
-    const body = (await res.json()) as Record<string, unknown>;
-    assert.ok(typeof body.style_token === "string");
+    const body = (await res.json()) as { refs: string[] };
+    for (const h of ["hash_a", "hash_b", "hash_c"]) {
+      assert.ok(body.refs.includes(h), `falta ${h} en la keep-list`);
+    }
   });
+
+  // GET /styles/{id}/{file} migró al asset-store en F2 — cubierto en
+  // test/asset-store.test.ts.
 });

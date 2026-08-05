@@ -160,7 +160,10 @@ const WORLD_ANGLE = "isometric_30";
 // sprites/assets/imagen porque S3–S6 co-viven en ai_server; el reparto por
 // servicio (asset-store, gpu-worker, remote-gen) es trabajo de F2–F4.
 const AI_SERVER_URL = serviceUrl("narrative-llm");
-const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
+// Blobs cacheados (F2): proceso propio del asset-store. `?ai=` del bench lo
+// cubre también (fake-ai-server emula S3-S6 en un solo puerto).
+const ASSET_STORE_URL = serviceUrl("asset-store");
+const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL, ASSET_STORE_URL);
 const characterSprites = new CharacterSpriteManager(spriteRenderer, WORLD_ANGLE);
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
  *  `entity.sprite` a partir de ese momento (antes, círculos). */
@@ -176,7 +179,7 @@ const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
 baseSheetsReady.catch((err) =>
   errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
 );
-const assetCache = new AssetCache(AI_SERVER_URL);
+const assetCache = new AssetCache(AI_SERVER_URL, ASSET_STORE_URL);
 const renderer = new CanvasRenderer(canvas, {
   spriteRenderer,
   assetCache,
@@ -185,12 +188,12 @@ const renderer = new CanvasRenderer(canvas, {
 // Generación IA del fondo de escena (img2img desde el blueprint del tile).
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
-const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL);
+const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL, ASSET_STORE_URL);
 // Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
 // visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
 // si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
 // declarada (closure: se resuelve al llegar las imágenes, no al construir).
-const stageImageController = new StageImageController(AI_SERVER_URL, {
+const stageImageController = new StageImageController(AI_SERVER_URL, ASSET_STORE_URL, {
   install: (key, images) => {
     const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
     if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);

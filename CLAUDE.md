@@ -35,6 +35,7 @@ Cosas a tener en cuenta:
 # Manual (si prefieres arrancar servicios por separado):
 cd ~/code/ne-fan
 source .venv/bin/activate
+cd nefan-core && npx tsx services/asset-store/server.ts  # asset-store :8767 (blobs+manifest SQLite)
 python ai_server/main.py                    # AI server :8765 (opcional)
 cd nefan-core && npx tsx bridge/ws-server.ts  # Bridge TS :9877 (opcional)
 cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
@@ -171,6 +172,10 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
     dev/                   Initial scene cache (bootstrap replay)
   bridge/
     ws-server.ts           WebSocket bridge para Godot (:9877)
+  services/
+    asset-store/           Microservicio S6 (:8767): blobs content-addressed +
+                           manifest SQLite (F2) + styles binarios; ai_server
+                           proxya /cache|/assets para Godot
   data/
     combat_config.json     Config compartida (symlink desde godot/data/)
     rooms/                 Fixtures de test en formato world scene (dev/, stress/, robledo_village.json del dump)
@@ -577,7 +582,7 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador.
 - **Un solo formato de escena para ambos clientes.** El motor produce Format D; el bridge lo normaliza a world scene con `formatDToWorld` (nefan-core) antes de emitir, y 2D y 3D pintan esa misma forma. Nada exclusivo de un cliente en el schema de escena; Godot no proyecta celdas (fail-loud ante Format D crudo).
 - **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Con bridge conectado, la sesión es la del bridge (plugins incluidos): el mirror GD se hidrata en memoria (`bridge_authoritative`) y su `save()` está bloqueado; pos/HP se snapshotean en `save_session` y el resume restaura posición, HP y entities. Offline, el mirror GD guarda en local. El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
-- **Asset library indexada** — `cache/manifest.json` traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
+- **Asset library indexada** — el asset-store (:8767, `cache/manifest.sqlite3` desde F2; `manifest.json` queda congelado como rollback) traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.
 - **MCP bridge sobre API directa** — usuario tiene Claude Max, no necesita API key.

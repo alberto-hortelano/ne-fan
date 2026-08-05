@@ -10,12 +10,12 @@
  *  - state cycle:      Claude → narrative-mcp → THIS server (new)
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
+import { loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
@@ -48,13 +48,13 @@ export interface StateHttpServerOptions {
   port: number;
   narrative: NarrativeState;
   npcDirector: NpcDirector;
-  /** Directorio de style packs (data/styles). Sus archivos se sirven como
-   *  estáticos en GET /styles/{style_id}/{file} para la title screen —
-   *  funciona sin ai_server (preset 4). */
-  stylesDir: string;
   /** Directorio de juegos (data/games) — GET /world_doc lee de ahí el
    *  world.md del juego de la sesión activa (tool MCP world_doc_get). */
   gamesDir: string;
+  /** Storage de saves — GET /sessions/asset_refs (F2) recorre TODOS los
+   *  saves para construir la keep-list del prune del asset-store. Opcional:
+   *  sin él la ruta no existe (404), los tests viejos no lo pasan. */
+  sessionStorage?: SessionStorage;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
   /** Latido de progreso del motor narrativo (POST /narrative_progress desde
@@ -93,13 +93,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
 
   const server = createServer((req, res) => {
-    // Estáticos de estilo (imágenes binarias): rama propia, fuera del ciclo
-    // JSON de handle().
-    if ((req.method ?? "GET") === "GET" && (req.url ?? "").startsWith("/styles/")) {
-      serveStyleFile(req, res, opts.stylesDir);
-      return;
-    }
-    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress)
+    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress, opts.sessionStorage)
       .then(async (result) => {
         if (result.mutated) {
           try {
@@ -129,6 +123,7 @@ async function handle(
   plugins: StateHttpServerOptions["plugins"],
   gamesDir: string,
   onProgress: StateHttpServerOptions["onProgress"],
+  sessionStorage?: SessionStorage,
 ): Promise<RouteResult> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -229,6 +224,33 @@ async function handle(
       tileCtx,
     );
     return ok(result satisfies ResponseOf<typeof WorldStateApi.validateScene>);
+  }
+
+  // ── Keep-list del asset-store (F2) ──
+  // Unión de hashes referenciados por CUALQUIER save vivo: asset_refs de
+  // escenas y entidades + asset_index_snapshot. El prune del asset-store la
+  // consulta para no podar assets que un resume necesitará.
+  if (method === "GET" && path === "/sessions/asset_refs" && sessionStorage) {
+    const refs = new Set<string>();
+    for (const meta of await sessionStorage.list()) {
+      let data;
+      try {
+        data = await sessionStorage.read(meta.session_id);
+      } catch (err) {
+        // Un save corrupto no debe vaciar la keep-list ni tumbar la ruta.
+        console.warn(`asset_refs: save "${meta.session_id}" ilegible:`, err);
+        continue;
+      }
+      if (!data) continue;
+      for (const scene of Object.values(data.scenes_loaded ?? {})) {
+        for (const r of scene.asset_refs ?? []) refs.add(r);
+      }
+      for (const entity of data.entities ?? []) {
+        for (const r of entity.asset_refs ?? []) refs.add(r);
+      }
+      for (const asset of data.asset_index_snapshot ?? []) refs.add(asset.hash);
+    }
+    return ok({ refs: [...refs].sort() } satisfies ResponseOf<typeof WorldStateApi.getAssetRefs>);
   }
 
   // ── Health ──
@@ -547,41 +569,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-const STYLE_FILE_MIME: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".json": "application/json",
-};
-
-/** GET /styles/{style_id}/{file} — sirve las imágenes/manifest de un style
- *  pack. Los dos segmentos se validan contra SAFE_ID/extensión conocida, así
- *  que no hay traversal posible (`..` no pasa el regex). */
-function serveStyleFile(req: IncomingMessage, res: ServerResponse, stylesDir: string): void {
-  const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  const parts = url.pathname.split("/").filter(Boolean); // ["styles", id, file]
-  const styleId = parts[1] ?? "";
-  const file = parts[2] ?? "";
-  const ext = extname(file).toLowerCase();
-  const mime = STYLE_FILE_MIME[ext];
-  const safeFile = SAFE_ID.test(file); // sin "/" ni "..": el regex solo admite [A-Za-z0-9_.-]
-  if (parts.length !== 3 || !SAFE_ID.test(styleId) || !safeFile || !mime || file.includes("..")) {
-    sendJson(res, 400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
-    return;
-  }
-  const path = join(stylesDir, styleId, file);
-  if (!existsSync(path) || !statSync(path).isFile()) {
-    sendJson(res, 404, { ok: false, error: `style file not found: ${styleId}/${file}` });
-    return;
-  }
-  const body = readFileSync(path);
-  res.writeHead(200, {
-    "Content-Type": mime,
-    "Content-Length": body.byteLength,
-    // Las tarjetas del título se re-piden en cada visita; las imágenes de un
-    // pack solo cambian al regenerar el estilo.
-    "Cache-Control": "max-age=300",
-  });
-  res.end(body);
-}
+// GET /styles/{style_id}/{file} vive ahora en el asset-store (F2):
+// services/asset-store/blob-store.ts (readStyleFile). Aquí ya no hay rama
+// binaria — el único consumidor (covers de la title screen) apunta a :8767.

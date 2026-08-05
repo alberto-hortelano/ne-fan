@@ -128,8 +128,8 @@ createStateHttpServer({
   port: STATE_HTTP_PORT,
   narrative,
   npcDirector,
-  stylesDir: STYLES_DIR,
   gamesDir: GAMES_DIR,
+  sessionStorage,
   onMutation: async () => {
     await narrative.save();
   },

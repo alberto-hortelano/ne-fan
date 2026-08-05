@@ -31,12 +31,13 @@ describe("resolveServiceUrl", () => {
   });
 
   it("override NEFAN_URL_<NAME> gana y pierde la barra final", () => {
-    const env = { NEFAN_URL_ASSET_STORE: "http://10.0.0.5:8767///" };
-    assert.equal(resolveServiceUrl("asset-store", env), "http://10.0.0.5:8767");
-    // Un env con otros overrides no afecta a este servicio.
+    const env = { NEFAN_URL_ASSET_STORE: "http://10.0.0.5:18767///" };
+    assert.equal(resolveServiceUrl("asset-store", env), "http://10.0.0.5:18767");
+    // Un env con otros overrides no afecta a este servicio (asset-store ya
+    // extraído en F2 → su puerto propio).
     assert.equal(
       resolveServiceUrl("asset-store", { NEFAN_URL_GPU_WORKER: "http://x:1" }),
-      "http://127.0.0.1:8765",
+      "http://127.0.0.1:8767",
     );
   });
 });

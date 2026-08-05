@@ -14,7 +14,8 @@ import asyncio
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from asset_cache import AssetCache, AssetManifest
+    from asset_cache import AssetCache
+    from asset_store_client import AssetStoreClient
     from controlnet_skin import ControlNetSkinGenerator
     from llm_client import LLMClient
     from model_generator import ModelGenerator
@@ -50,7 +51,9 @@ class Deps:
     sprite_cache: "AssetCache | None" = None
     scene_cache: "AssetCache | None" = None
     segment_cache: "AssetCache | None" = None
-    asset_manifest: "AssetManifest | None" = None
+    # Cliente HTTP del asset-store (F2) — conserva el nombre histórico porque
+    # AssetCache/llm_client lo consumen por duck typing (register/list_assets).
+    asset_manifest: "AssetStoreClient | None" = None
     config: dict = {}
 
     def __init__(self) -> None:

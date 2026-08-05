@@ -117,6 +117,10 @@ export interface NefanConfig {
      *  /cache/prune) se evictan los assets menos usados (LRU por `last_used`
      *  del manifest) hasta bajar del límite. 0 = sin límite. */
     cache_max_bytes: number;
+    /** Índice SQLite del asset-store (F2) — sustituye a cache/manifest.json
+     *  (que se conserva congelado como referencia/rollback). Relativo a la
+     *  raíz del repo, como el resto de rutas de cache. */
+    manifest_db: string;
   };
   /** Puertos del stack — fuente única. Los consumidores TS importan CONFIG;
    *  los servicios no-TS (narrative-mcp, ai_server) leen el snapshot
@@ -134,6 +138,8 @@ export interface NefanConfig {
     godot_remote: number;
     /** Vite dev server del cliente HTML 2D. */
     html: number;
+    /** asset-store (S6): blobs content-addressed + manifest SQLite (F2). */
+    asset_store: number;
   };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
@@ -196,6 +202,7 @@ export const CONFIG: NefanConfig = {
     texture_lazy_load: true,
     expose_diagnostic: false,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
+    manifest_db: "cache/manifest.sqlite3",
   },
   ports: {
     bridge: 9877,
@@ -203,6 +210,7 @@ export const CONFIG: NefanConfig = {
     narrative_ws: 3737,
     godot_remote: 9876,
     html: 3000,
+    asset_store: 8767,
   },
   content: {
     games_dir: "nefan-core/data/games",

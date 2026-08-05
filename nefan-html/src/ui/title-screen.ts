@@ -31,9 +31,9 @@ export type TitleAction =
       appearance: { model_id: string; skin_path: string };
     };
 
-/** world-state (State API del bridge) — sirve las covers de los estilos como
- *  estáticos, con o sin ai_server (migra a asset-store en F2). */
-const STATE_API_URL = serviceUrl("world-state");
+/** asset-store — sirve las covers de los estilos como estáticos, con o sin
+ *  ai_server (movido desde el State API en F2; preset 4 arranca el store). */
+const ASSET_STORE_URL = serviceUrl("asset-store");
 /** remote-gen — subida de estilos y generación de las categorías que falten
  *  (Meshy). Hoy resuelve al ai_server; puerto propio en F4. Sin él, "Subir
  *  estilo" falla con error visible. */
@@ -533,7 +533,7 @@ export class TitleScreen {
 
 function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   const cover = style?.cover_url
-    ? `<img src="${escapeAttr(STATE_API_URL + style.cover_url)}" alt="" style="width:120px;height:80px;object-fit:cover;flex:none;border:1px solid #333">`
+    ? `<img src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" alt="" style="width:120px;height:80px;object-fit:cover;flex:none;border:1px solid #333">`
     : `<div style="width:120px;height:80px;flex:none;border:1px solid #333;background:linear-gradient(135deg,#23202b,#161419);display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;text-align:center;padding:4px">${escapeHtml(style?.name ?? g.style_id)}</div>`;
   return `
     <div data-game-id="${escapeAttr(g.game_id)}" style="display:flex;gap:14px;padding:12px;background:#181820;border:2px solid #2a2a30;cursor:pointer;border-radius:4px">

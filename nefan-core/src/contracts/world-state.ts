@@ -27,7 +27,7 @@ import type {
   SceneValidationResult,
   FormatDScene,
 } from "./common.js";
-import { endpoint, type BinaryResponse } from "./http.js";
+import { endpoint } from "./http.js";
 
 // ── Sobres request/response (hoy implícitos en state-http-server.ts) ──
 
@@ -165,8 +165,9 @@ export interface NpcDirectiveRequest {
   directive: NpcDirective | null;
 }
 
-/** PLANNED F2 — keep-list para el prune del asset-store: hashes referenciados
- *  por algún save vivo (asset_refs de escenas/entidades + snapshot). */
+/** Keep-list para el prune del asset-store (F2): hashes referenciados por
+ *  algún save vivo (asset_refs de escenas/entidades + asset_index_snapshot),
+ *  ordenados. Requiere que el server reciba sessionStorage. */
 export interface AssetRefsResponse {
   refs: string[];
 }
@@ -235,20 +236,15 @@ export const WorldStateApi = {
     "/npc/{id}/directive",
   ),
 
-  /** @deprecated Migra a asset-store en F2 (los covers/refs de un style pack
-   *  son assets, no estado del mundo). Mientras tanto sigue aquí porque el
-   *  título debe funcionar sin ai_server (preset 4 del launcher). */
-  getStyleFile: endpoint<void, BinaryResponse, "style_id" | "file">(
-    "GET",
-    "/styles/{style_id}/{file}",
-  ),
+  // GET /styles/{style_id}/{file} migró al asset-store en F2 (los covers de
+  // un style pack son assets, no estado del mundo): AssetStoreApi.getStyleFile.
 
   /** PLANNED F5 — contexto LLM de la sesión, para des-stickyficar el
    *  LLMClient de narrative-llm (hoy ese contexto viaja empujado en cada
    *  petición y `session_info` vive en memoria del proceso Python). */
   getLlmContext: endpoint<void, LlmContext, "id">("GET", "/session/{id}/llm_context"),
 
-  /** PLANNED F2 — keep-list para el prune del asset-store. */
+  /** Keep-list para el prune del asset-store (F2). */
   getAssetRefs: endpoint<void, AssetRefsResponse>("GET", "/sessions/asset_refs"),
 } as const;
 

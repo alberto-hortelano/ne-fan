@@ -27,7 +27,12 @@ export class AssetCache {
   private images = new Map<string, HTMLImageElement>();
   private hashByPromptKey = new Map<string, Promise<string>>();
 
-  constructor(private baseUrl: string) {}
+  /** baseUrl = generación (/generate_sprite, gpu-worker en ai_server hoy);
+   *  assetsUrl = blobs cacheados (/cache/sprite, asset-store :8767). */
+  constructor(
+    private baseUrl: string,
+    private assetsUrl: string,
+  ) {}
 
   /** Ask ai_server to render (or look up) a sprite for `prompt` at `angle`.
    * Returns the hash so the caller can stash it on an entity for `drawByHash`.
@@ -97,7 +102,7 @@ export class AssetCache {
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = `${this.baseUrl}/cache/sprite/${hash}`;
+    img.src = `${this.assetsUrl}/cache/sprite/${hash}`;
     img.addEventListener("error", () => {
       errors.push("sprite", `hashed sprite ${hash} failed to load (${img.src})`);
     });

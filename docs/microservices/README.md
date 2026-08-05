@@ -17,7 +17,7 @@ las decisiones en [decisions.md](decisions.md).
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
 | S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | 8766 (8765) | `contracts/gpu-worker.ts` |
 | S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | 8768 (8765) | `contracts/remote-gen.ts` |
-| S6 | **asset-store** | Blobs content-addressed + manifest (SQLite tras F2) + styles binarios | HTTP | 8767 (8765) | `contracts/asset-store.ts` |
+| S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para Godot**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
 
 ```mermaid
@@ -133,8 +133,9 @@ GET+POST /entity/{id}/inventory, POST /entity/{id}/inventory/remove,
 /plugins/{id}/inspect, POST /plugins/register, POST /narrative_progress,
 /npcs/in_transit, /npc/{id}, POST /npc/{id}/move_to_place,
 POST /npc/{id}/arrive, POST /npc/{id}/directive,
-GET /styles/{style_id}/{file} (→ migra a S6 en F2).
-🆕 GET /session/{id}/llm_context (F5), GET /sessions/asset_refs (F2).
+✅ GET /sessions/asset_refs (F2, keep-list del prune).
+GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
+🆕 GET /session/{id}/llm_context (F5).
 
 **S3 narrative-llm (HTTP :8765)** — ✅ /health, /notify_session,
 /generate_scene, /report_player_choice, /develop_world,
@@ -152,10 +153,12 @@ narrative_progress + bridge_status + takeover).
 /styles/upload, /styles/{style_id}/complete, GET+POST /dev/api_cache.
 🆕 POST /segment (F4).
 
-**S6 asset-store (HTTP :8767)** — ✅ /cache/{kind}/{hash},
-/cache/sprite_sheet/{hash}/{filename}, /cache/check/{hash},
-POST /cache/prune, /assets, /assets/by_hash/{hash},
-GET /styles/{style_id}/{file} (desde S2). 🆕 POST /assets (F2).
+**S6 asset-store (HTTP :8767, EXTRAÍDO en F2)** — ✅ /cache/{kind}/{hash},
+/cache/sprite_sheet/{hash}/{filename}, POST /cache/prune (con keep-list),
+/assets, /assets/by_hash/{hash}, POST /assets (registro remoto),
+GET /styles/{style_id}/{file} (desde S2), GET /health.
+☠ /cache/check/{hash} (ruta muerta desde siempre por el orden del catch-all;
+preservada como 400, ver contrato).
 
 **Fuera de contrato** (deliberado): `ai_server/pipe_server.py` (TCP :8764,
 muerto — borrar), el remote control TCP :9876 de Godot (herramienta de test,

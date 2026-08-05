@@ -99,9 +99,12 @@ export class SceneImageController {
    *  save). "" = sin sesión aún ⇒ el servidor usa su referencia global. */
   private styleId = "";
 
+  /** baseUrl = generación/review (ai_server); assetsUrl = blobs /cache/*
+   *  (asset-store :8767) — los endpoints devuelven *_url RELATIVAS al cache. */
   constructor(
     private renderer: CanvasRenderer,
     private baseUrl: string,
+    private assetsUrl: string,
   ) {}
 
   setStyle(styleId: string): void {
@@ -267,7 +270,7 @@ export class SceneImageController {
     }
     const data = (await res.json()) as { plate_url?: string };
     if (!data.plate_url) throw new Error("/inpaint_scene_plate sin plate_url");
-    let plate = await this.loadImage(`${this.baseUrl}${data.plate_url}`);
+    let plate = await this.loadImage(`${this.assetsUrl}${data.plate_url}`);
     // El servidor aplana a RGB (el alpha del rombo/voladizo vuelve negro):
     // re-enmascarar con el blueprint compuesto, como la imagen original.
     plate = await this.maskByBlueprint(plate, key);
@@ -353,7 +356,7 @@ export class SceneImageController {
       if (!data.scene_url) {
         throw new Error(`/generate_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
       }
-      let img = await this.loadImage(`${this.baseUrl}${data.scene_url}`);
+      let img = await this.loadImage(`${this.assetsUrl}${data.scene_url}`);
       if (contextSides.length > 0) {
         img = await this.cropToTile(img, expanded, tileExt);
       }
@@ -525,7 +528,7 @@ export class SceneImageController {
       const stripCells = new Set<number>();
       let solids = 0;
       for (const seg of data.segments ?? []) {
-        const sprite = await this.loadImage(`${this.baseUrl}${seg.sprite_url}`);
+        const sprite = await this.loadImage(`${this.assetsUrl}${seg.sprite_url}`);
         const [bx, by, bw, bh] = seg.image_bbox;
         // Rect del segmento en VISTA (lineal sobre el canvas del tile).
         const view: SceneBounds = {
