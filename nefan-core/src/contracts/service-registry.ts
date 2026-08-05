@@ -62,10 +62,12 @@ export const SERVICES = {
   "asset-store": {
     protocol: "http",
     port: 8767,
-    currentPort: 8765,
-    extractionPhase: "F2",
+    // Extraído en F2: proceso propio (services/asset-store/). ai_server
+    // mantiene un proxy transparente de /cache|/assets para clientes no
+    // migrados (Godot).
+    currentPort: 8767,
     description:
-      "Almacén content-addressed: blobs de cache/, manifest (SQLite tras F2), styles binarios.",
+      "Almacén content-addressed: blobs de cache/, manifest SQLite, styles binarios.",
   },
   "remote-gen": {
     protocol: "http",
