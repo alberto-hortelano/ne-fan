@@ -7,32 +7,14 @@ carga de entorno/config, el lifespan que puebla `deps`, la app FastAPI y
 /health.
 """
 
-import json
 import logging
-import os
 import argparse
 from pathlib import Path
 from contextlib import asynccontextmanager
 
+from config_snapshot import load_config, load_env_file
 
-def _load_env_file(env_path: Path) -> None:
-    """Load .env file into os.environ (simple parser, no python-dotenv dependency)."""
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-_env_file = Path(__file__).resolve().parent.parent / ".env"
-_load_env_file(_env_file)
+load_env_file()
 
 import uvicorn
 from fastapi import FastAPI
@@ -75,34 +57,6 @@ from routers.narrative import router as narrative_router
 from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
-
-
-RUNTIME_CONFIG_PATH = (
-    Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "runtime_config.json"
-)
-
-
-def load_config(config_path: Path | None = None) -> dict:
-    """Read the snapshot produced by `nefan-core/scripts/dump-config.ts`.
-
-    Fail-loud: a missing file or a missing `ai_server` block is a hard error.
-    Regenerate the snapshot via `cd nefan-core && npx tsx scripts/dump-config.ts`
-    (or any `npm run build/dev/test` which triggers the pre-hook)."""
-    path = Path(config_path) if config_path else RUNTIME_CONFIG_PATH
-    if not path.exists():
-        raise FileNotFoundError(
-            f"runtime_config.json not found at {path}. "
-            "Run `cd nefan-core && npx tsx scripts/dump-config.ts` to regenerate it."
-        )
-    logger.info(f"Config loaded from: {path}")
-    with open(path) as f:
-        full = json.load(f)
-    ai = full.get("ai_server")
-    if not isinstance(ai, dict):
-        raise ValueError(
-            f"{path} has no `ai_server` block. Update nefan-core/src/config.ts."
-        )
-    return ai
 
 
 @asynccontextmanager

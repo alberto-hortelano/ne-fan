@@ -1,11 +1,12 @@
-/** S4 · gpu-worker — HTTP :8766 (hoy co-vive en ai_server :8765; se extrae
- * en F3).
+/** S4 · gpu-worker — HTTP :8766 (extraído en F3: ai_server/gpu_worker_main.py;
+ * narrative-llm proxya los endpoints en :8765 para Godot).
  *
  * Generación LOCAL con GPU (RTX 3060): texturas PBR SD1.5+LCM, skins img2img,
  * sprites, modelos TripoSG (fallback sin MESHY_API_KEY) e inpainting LaMa.
- * Restricción dura: 1 proceso = 1 GPU — hoy un asyncio.Lock (deps.gpu_lock)
- * serializa; tras F3 la serialización es la cola natural del proceso
- * mono-GPU y escalar = añadir procesos (uno por GPU).
+ * Restricción dura: 1 proceso = 1 GPU — el asyncio.Lock (deps.gpu_lock) NO
+ * desaparece con la extracción: además de CUDA protege la COHERENCIA del
+ * pipe SD compartido (Skin/Sprite/ModelGenerator lo mutan y restauran).
+ * Escalar = añadir procesos (uno por GPU) vía NEFAN_URL_GPU_WORKER.
  *
  * Todos los endpoints registran su resultado en asset-store (hash
  * content-addressed, `cached: true` en hit) y el blob se recupera por las
@@ -96,7 +97,8 @@ export interface PeelSceneLayerRequest {
   mask_b64: string;
   prompt: string;
   /** "lama" (default del plató, local y determinista) | "flux" (FLUX Fill
-   *  vía remote-gen) | "auto" (flux si hay FAL_KEY, si no lama). */
+   *  vía fal DIRECTO — FAL_KEY opcional en gpu-worker) | "auto" (flux si hay
+   *  FAL_KEY, si no lama). */
   backend?: "auto" | "lama" | "flux";
 }
 
@@ -110,7 +112,16 @@ export interface PeelSceneLayerResponse {
   generation_time_ms?: number;
 }
 
+/** `model_backend` alimenta el /backend_status de narrative-llm (agregación
+ *  best-effort — el shape del panel de Godot no cambia con la extracción). */
+export interface GpuWorkerHealthResponse {
+  status: "ready" | "loading";
+  texture_pipeline: "loaded" | "lazy";
+  model_backend: "meshy" | "triposg" | "none";
+}
+
 export const GpuWorkerApi = {
+  health: endpoint<void, GpuWorkerHealthResponse>("GET", "/health"),
   generateTexture: endpoint<GenerateTextureRequest, GenerateTextureResponse>(
     "POST",
     "/generate_texture",
@@ -125,8 +136,11 @@ export const GpuWorkerApi = {
     "POST",
     "/inpaint_scene_plate",
   ),
-  /** El camino LaMa es local (GPU); el camino flux delega en remote-gen. El
-   *  contrato externo no cambia según el backend. */
+  /** El camino LaMa es local (GPU); el camino flux llama a fal DIRECTO desde
+   *  el gpu-worker (decisión F3: el fallback flux→lama re-deriva la clave de
+   *  caché en local — meterle un hop a remote-gen lo complicaría; deuda de
+   *  frontera documentada en docs/microservices/decisions.md). El contrato
+   *  externo no cambia según el backend. */
   peelSceneLayer: endpoint<PeelSceneLayerRequest, PeelSceneLayerResponse>(
     "POST",
     "/peel_scene_layer",
