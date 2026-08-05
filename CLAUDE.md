@@ -157,6 +157,8 @@ Para medir atributos fisicos de animaciones (alcance, arco, velocidad) y actuali
 
 ## Arquitectura
 
+Plan de división en microservicios: `docs/microservices/README.md` (servicios, fronteras, fases F0–F6). Los contratos tipados de TODOS los servicios (endpoints WS/HTTP, incluidos los del ai_server Python) viven en `nefan-core/src/contracts/` — fuente de verdad del wire entre procesos.
+
 ```
 nefan-core/               TypeScript — logica de juego compartida (Godot + HTML)
   src/
