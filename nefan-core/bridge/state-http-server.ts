@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { SAFE_ID, loadWorldDoc } from "../src/games/loader.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
@@ -55,6 +56,10 @@ export interface StateHttpServerOptions {
   /** Directorio de juegos (data/games) — GET /world_doc lee de ahí el
    *  world.md del juego de la sesión activa (tool MCP world_doc_get). */
   gamesDir: string;
+  /** Storage de saves — GET /sessions/asset_refs (F2) recorre TODOS los
+   *  saves para construir la keep-list del prune del asset-store. Opcional:
+   *  sin él la ruta no existe (404), los tests viejos no lo pasan. */
+  sessionStorage?: SessionStorage;
   /** Called after any mutation so the bridge can persist the session. */
   onMutation: () => void | Promise<void>;
   /** Latido de progreso del motor narrativo (POST /narrative_progress desde
@@ -99,7 +104,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
       serveStyleFile(req, res, opts.stylesDir);
       return;
     }
-    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress)
+    handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress, opts.sessionStorage)
       .then(async (result) => {
         if (result.mutated) {
           try {
@@ -129,6 +134,7 @@ async function handle(
   plugins: StateHttpServerOptions["plugins"],
   gamesDir: string,
   onProgress: StateHttpServerOptions["onProgress"],
+  sessionStorage?: SessionStorage,
 ): Promise<RouteResult> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -229,6 +235,33 @@ async function handle(
       tileCtx,
     );
     return ok(result satisfies ResponseOf<typeof WorldStateApi.validateScene>);
+  }
+
+  // ── Keep-list del asset-store (F2) ──
+  // Unión de hashes referenciados por CUALQUIER save vivo: asset_refs de
+  // escenas y entidades + asset_index_snapshot. El prune del asset-store la
+  // consulta para no podar assets que un resume necesitará.
+  if (method === "GET" && path === "/sessions/asset_refs" && sessionStorage) {
+    const refs = new Set<string>();
+    for (const meta of await sessionStorage.list()) {
+      let data;
+      try {
+        data = await sessionStorage.read(meta.session_id);
+      } catch (err) {
+        // Un save corrupto no debe vaciar la keep-list ni tumbar la ruta.
+        console.warn(`asset_refs: save "${meta.session_id}" ilegible:`, err);
+        continue;
+      }
+      if (!data) continue;
+      for (const scene of Object.values(data.scenes_loaded ?? {})) {
+        for (const r of scene.asset_refs ?? []) refs.add(r);
+      }
+      for (const entity of data.entities ?? []) {
+        for (const r of entity.asset_refs ?? []) refs.add(r);
+      }
+      for (const asset of data.asset_index_snapshot ?? []) refs.add(asset.hash);
+    }
+    return ok({ refs: [...refs].sort() } satisfies ResponseOf<typeof WorldStateApi.getAssetRefs>);
   }
 
   // ── Health ──

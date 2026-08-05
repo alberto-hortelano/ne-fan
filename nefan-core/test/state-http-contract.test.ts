@@ -21,15 +21,17 @@ import { WorldStateApi } from "../src/contracts/world-state.js";
 import { fillPath, type Endpoint } from "../src/contracts/http.js";
 
 /** Endpoints del contrato SIN rama en el router de hoy (documentados así):
- *  - getLlmContext (PLANNED F5) y getAssetRefs (PLANNED F2)
+ *  - getLlmContext (PLANNED F5)
  *  - getStyleFile: rama binaria aparte (serveStyleFile), probada abajo a mano */
-const SKIP = new Set(["getLlmContext", "getAssetRefs", "getStyleFile"]);
+const SKIP = new Set(["getLlmContext", "getStyleFile"]);
 
 let server: Server;
 let baseUrl: string;
+let narrativeRef: ReturnType<typeof makeNarrativeState>["narrative"];
 
 before(async () => {
-  const { narrative } = makeNarrativeState();
+  const { narrative, storage } = makeNarrativeState();
+  narrativeRef = narrative;
   narrative.startNewSession("plugtest");
   const activePlugins = new Map<string, PluginManifest>();
   server = createStateHttpServer({
@@ -38,6 +40,7 @@ before(async () => {
     npcDirector: new NpcDirector(narrative),
     stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
     gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
+    sessionStorage: storage,
     onMutation: () => {},
     onProgress: () => {},
     plugins: {
@@ -96,6 +99,18 @@ describe("contrato WorldStateApi ↔ router real", () => {
         !(res.status === 404 && typeof body.error === "string" && body.error.startsWith("no route for")),
         `WorldStateApi.${name} (${ep.method} ${ep.path}) no tiene rama en el router: ${body.error}`,
       );
+    }
+  });
+
+  it("getAssetRefs: unión de refs de escenas/entidades/snapshot de todos los saves", async () => {
+    narrativeRef.recordSceneLoaded("plaza", { scene_id: "plaza" }, ["hash_a", "hash_b"]);
+    narrativeRef.recordEntitySpawned("npc1", "npc", "plaza", [0, 0, 0], {}, "test", "", ["hash_c"]);
+    await narrativeRef.save();
+    const res = await fetch(`${baseUrl}/sessions/asset_refs`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { refs: string[] };
+    for (const h of ["hash_a", "hash_b", "hash_c"]) {
+      assert.ok(body.refs.includes(h), `falta ${h} en la keep-list`);
     }
   });
 

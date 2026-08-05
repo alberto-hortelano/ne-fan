@@ -165,8 +165,9 @@ export interface NpcDirectiveRequest {
   directive: NpcDirective | null;
 }
 
-/** PLANNED F2 — keep-list para el prune del asset-store: hashes referenciados
- *  por algún save vivo (asset_refs de escenas/entidades + snapshot). */
+/** Keep-list para el prune del asset-store (F2): hashes referenciados por
+ *  algún save vivo (asset_refs de escenas/entidades + asset_index_snapshot),
+ *  ordenados. Requiere que el server reciba sessionStorage. */
 export interface AssetRefsResponse {
   refs: string[];
 }
@@ -248,7 +249,7 @@ export const WorldStateApi = {
    *  petición y `session_info` vive en memoria del proceso Python). */
   getLlmContext: endpoint<void, LlmContext, "id">("GET", "/session/{id}/llm_context"),
 
-  /** PLANNED F2 — keep-list para el prune del asset-store. */
+  /** Keep-list para el prune del asset-store (F2). */
   getAssetRefs: endpoint<void, AssetRefsResponse>("GET", "/sessions/asset_refs"),
 } as const;
 

@@ -130,6 +130,7 @@ createStateHttpServer({
   npcDirector,
   stylesDir: STYLES_DIR,
   gamesDir: GAMES_DIR,
+  sessionStorage,
   onMutation: async () => {
     await narrative.save();
   },
