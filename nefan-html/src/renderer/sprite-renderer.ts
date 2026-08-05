@@ -54,9 +54,9 @@ export class SpriteRenderer {
   private inflight = new Map<string, Promise<SpriteSheet>>();
   private skinInflight = new Map<string, Promise<SpriteSheet>>();
 
-  /** baseUrl = sheets estáticos locales (/sprites, Vite); aiServerUrl =
-   *  generación (/skin_sprite_sheet, remote-gen en ai_server hoy); assetsUrl
-   *  = frames cacheados (/cache/sprite_sheet/..., asset-store :8767). */
+  /** baseUrl = sheets estáticos locales (/sprites, Vite); aiServerUrl = base
+   *  de remote-gen (/skin_sprite_sheet — en ai_server hasta el corte de F4);
+   *  assetsUrl = frames cacheados (/cache/sprite_sheet/..., asset-store). */
   constructor(
     private baseUrl: string,
     private aiServerUrl: string,

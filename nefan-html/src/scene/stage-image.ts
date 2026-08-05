@@ -63,6 +63,7 @@ import {
 import type { ViewBox } from "@nefan-core/src/scene/stage/segments.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
+import type { GenServiceUrls } from "../net/service-urls.js";
 
 const RENDER_SIZE = STAGE_RENDER_SIZE;
 /** Celda de la colisión derivada (m) — la misma del resto del mundo. */
@@ -148,12 +149,11 @@ export class StageImageController {
    *  versión del pipeline de pelado. */
   private cache = new Map<string, { specHash: string; images: StageImages }>();
 
-  /** baseUrl = generación/review/peel (ai_server); assetsUrl = blobs
-   *  /cache/* (asset-store :8767) — los endpoints devuelven URLs RELATIVAS
-   *  al cache que fetchToSquare resuelve contra assetsUrl. */
+  /** urls: reparto por servicio — remote (repintado del plató), narrative
+   *  (review con visión), gpu (peel LaMa), assets (blobs /cache/*; los
+   *  endpoints devuelven URLs RELATIVAS que fetchToSquare resuelve). */
   constructor(
-    private readonly baseUrl: string,
-    private readonly assetsUrl: string,
+    private readonly urls: GenServiceUrls,
     private readonly deps: StageImageDeps,
   ) {
     HOT_REGISTRY.add(this);
@@ -210,7 +210,7 @@ export class StageImageController {
       const blueprint = renderGreybox(spec);
       if (token !== this.token) return;
       this.deps.status(`plató ${key}: repintando…`);
-      const repaintRes = await this.post("/generate_scene_image", {
+      const repaintRes = await this.post(this.urls.remote, "/generate_scene_image", {
         image_b64: canvasB64(blueprint),
         prompt: meta.description,
         blueprint_kind: "stage",
@@ -234,7 +234,7 @@ export class StageImageController {
       this.deps.status(`plató ${key}: inventario por visión (${expected.length} declarados)…`);
       let review: ReviewResponse;
       try {
-        review = (await this.post("/review_stage_image", {
+        review = (await this.post(this.urls.narrative, "/review_stage_image", {
           image_b64: canvasB64(painted),
           context: {
             scene_description: meta.description,
@@ -372,7 +372,7 @@ export class StageImageController {
             tall: w.item.tall !== false,
           });
         }
-        const peelRes = await this.post("/peel_scene_layer", {
+        const peelRes = await this.post(this.urls.gpu, "/peel_scene_layer", {
           image_b64: canvasB64(current),
           mask_b64: canvasB64(maskToWhite(w.mask!)),
           prompt: step.prompt,
@@ -519,8 +519,8 @@ export class StageImageController {
     }
   }
 
-  private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+  private async post(base: string, path: string, body: unknown): Promise<Record<string, unknown>> {
+    const res = await fetch(`${base}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -536,7 +536,7 @@ export class StageImageController {
   private async fetchToSquare(urlPath: string): Promise<HTMLCanvasElement> {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = urlPath.startsWith("http") ? urlPath : `${this.assetsUrl}${urlPath}`;
+    img.src = urlPath.startsWith("http") ? urlPath : `${this.urls.assets}${urlPath}`;
     await img.decode();
     const canvas = makeCanvas();
     canvas.getContext("2d")!.drawImage(img, 0, 0, RENDER_SIZE, RENDER_SIZE);

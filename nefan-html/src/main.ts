@@ -155,15 +155,25 @@ const config = loadConfig(combatConfigJson);
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const WORLD_ANGLE = "isometric_30";
-// Base del ai_server (S3 narrative-llm). Overrides de bench (`?ai=`,
-// `?bridge=`) viven en net/service-urls.ts. HOY esta base fluye también a
-// sprites/assets/imagen porque S3–S6 co-viven en ai_server; el reparto por
-// servicio (asset-store, gpu-worker, remote-gen) es trabajo de F2–F4.
+// Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
+// en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
+// así que `?ai=` cubre las cuatro.
 const AI_SERVER_URL = serviceUrl("narrative-llm");
-// Blobs cacheados (F2): proceso propio del asset-store. `?ai=` del bench lo
-// cubre también (fake-ai-server emula S3-S6 en un solo puerto).
+// Blobs cacheados (F2): proceso propio del asset-store.
 const ASSET_STORE_URL = serviceUrl("asset-store");
-const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL, ASSET_STORE_URL);
+// Pipelines GPU locales (F3): proceso propio del gpu-worker.
+const GPU_WORKER_URL = serviceUrl("gpu-worker");
+// Meshy/fal (repintados, sheets skinneados): en ai_server hasta el corte de
+// F4 — resolver ya por servicio deja el flip a :8768 sin tocar clientes.
+const REMOTE_GEN_URL = serviceUrl("remote-gen");
+// Reparto por servicio de los pipelines de imagen (Scene/StageImageController).
+const GEN_URLS = {
+  narrative: AI_SERVER_URL,
+  gpu: GPU_WORKER_URL,
+  remote: REMOTE_GEN_URL,
+  assets: ASSET_STORE_URL,
+};
+const spriteRenderer = new SpriteRenderer("/sprites", REMOTE_GEN_URL, ASSET_STORE_URL);
 const characterSprites = new CharacterSpriteManager(spriteRenderer, WORLD_ANGLE);
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
  *  `entity.sprite` a partir de ese momento (antes, círculos). */
@@ -179,7 +189,7 @@ const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
 baseSheetsReady.catch((err) =>
   errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
 );
-const assetCache = new AssetCache(AI_SERVER_URL, ASSET_STORE_URL);
+const assetCache = new AssetCache(GPU_WORKER_URL, ASSET_STORE_URL);
 const renderer = new CanvasRenderer(canvas, {
   spriteRenderer,
   assetCache,
@@ -188,12 +198,12 @@ const renderer = new CanvasRenderer(canvas, {
 // Generación IA del fondo de escena (img2img desde el blueprint del tile).
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
-const sceneImageController = new SceneImageController(renderer, AI_SERVER_URL, ASSET_STORE_URL);
+const sceneImageController = new SceneImageController(renderer, GEN_URLS);
 // Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
 // visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
 // si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
 // declarada (closure: se resuelve al llegar las imágenes, no al construir).
-const stageImageController = new StageImageController(AI_SERVER_URL, ASSET_STORE_URL, {
+const stageImageController = new StageImageController(GEN_URLS, {
   install: (key, images) => {
     const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
     if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);
