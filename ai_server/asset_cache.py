@@ -1,63 +1,23 @@
-"""Disk-based asset cache with shared manifest of generated assets.
+"""Disk-based asset cache: blobs + hashing content-addressed.
 
-The cache directory holds blob files keyed by SHA256(prompt)[:16]. The shared
-`AssetManifest` (one JSON file per cache root) tracks every blob along with its
-prompt, so the narrative engine can browse what already exists and reuse it.
+The cache directory holds blob files keyed by SHA256(prompt+context)[:16].
+El ÍNDICE de assets (el antiguo `AssetManifest` sobre cache/manifest.json)
+vive desde F2 en el asset-store (nefan-core/services/asset-store/, SQLite);
+aquí `manifest` es cualquier objeto con `.register(...)` — en producción, el
+`AssetStoreClient` (HTTP). El HASHING se queda en Python a propósito:
+`hash_key()` depende del str() de Python sobre el context (bools, listas) y
+portarlo bifurcaría la caché entera.
 """
 
 import hashlib
-import json
 import os
-import shutil
 import tempfile
-import threading
-import time
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import Protocol
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-# Los touch() de last_used se persisten como mucho cada este intervalo para no
-# reescribir el manifest entero (O(n)) en cada cache hit. Un touch perdido por
-# un crash sólo degrada la aproximación LRU, no corrompe nada.
-_TOUCH_SAVE_INTERVAL_S = 60.0
-
-
-class AssetManifest:
-    """Shared index of all generated assets across cache types.
-
-    Crece con cada register(); `prune()` aplica un techo de tamaño con
-    eviction LRU (por `last_used`, con fallback a `created_at`)."""
-
-    def __init__(self, manifest_path: Path):
-        self.path = Path(manifest_path)
-        self._lock = threading.Lock()
-        self._entries: list[dict] = []
-        self._touch_dirty = False
-        self._last_touch_save = 0.0
-        self._load()
-
-    def _load(self) -> None:
-        if not self.path.exists():
-            return
-        try:
-            data = json.loads(self.path.read_text())
-            if isinstance(data, list):
-                self._entries = data
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"AssetManifest: failed to load {self.path}: {e}")
-
-    def _save_locked(self) -> None:
-        # Caller must hold self._lock.
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(self._entries, indent=2, ensure_ascii=False)
-        )
-        os.replace(tmp, self.path)
+class ManifestRegistrar(Protocol):
+    """Superficie mínima que AssetCache necesita del índice (duck typing)."""
 
     def register(
         self,
@@ -67,200 +27,7 @@ class AssetManifest:
         prompt: str,
         size_bytes: int,
         extra: dict | None = None,
-    ) -> None:
-        with self._lock:
-            for e in self._entries:
-                if (
-                    e.get("hash") == hash_key
-                    and e.get("type") == asset_type
-                    and e.get("subtype") == subtype
-                ):
-                    return
-            self._entries.append(
-                {
-                    "hash": hash_key,
-                    "type": asset_type,
-                    "subtype": subtype,
-                    "prompt": prompt,
-                    "created_at": _now(),
-                    "size_bytes": int(size_bytes),
-                    "extra": extra or {},
-                }
-            )
-            self._save_locked()
-
-    def list_assets(
-        self,
-        asset_type: str | None = None,
-        limit: int = 50,
-        collapse_subtypes: bool = True,
-    ) -> list[dict]:
-        with self._lock:
-            entries = list(self._entries)
-        if asset_type:
-            entries = [e for e in entries if e.get("type") == asset_type]
-        entries.reverse()
-        if collapse_subtypes:
-            seen: set[tuple[str, str]] = set()
-            collapsed: list[dict] = []
-            for e in entries:
-                key = (e.get("hash", ""), e.get("type", ""))
-                if key in seen:
-                    continue
-                seen.add(key)
-                collapsed.append(
-                    {
-                        "hash": e.get("hash"),
-                        "type": e.get("type"),
-                        "prompt": e.get("prompt"),
-                        "created_at": e.get("created_at"),
-                    }
-                )
-            entries = collapsed
-        return entries[:limit]
-
-    def find_by_hash(self, hash_key: str) -> list[dict]:
-        with self._lock:
-            return [e for e in self._entries if e.get("hash") == hash_key]
-
-    def touch(self, hash_key: str) -> None:
-        """Marca un asset como usado (para el LRU de prune). El save se
-        debouncea a _TOUCH_SAVE_INTERVAL_S; en memoria es inmediato."""
-        with self._lock:
-            changed = False
-            for e in self._entries:
-                if e.get("hash") == hash_key:
-                    e["last_used"] = _now()
-                    changed = True
-            if not changed:
-                return
-            self._touch_dirty = True
-            now = time.monotonic()
-            if now - self._last_touch_save >= _TOUCH_SAVE_INTERVAL_S:
-                self._save_locked()
-                self._touch_dirty = False
-                self._last_touch_save = now
-
-    def total_bytes(self) -> int:
-        with self._lock:
-            return sum(int(e.get("size_bytes", 0)) for e in self._entries)
-
-    def prune(self, dirs_by_type: dict[str, Path], max_bytes: int) -> dict:
-        """Evicta assets completos (todas las subtypes de un (type, hash))
-        menos usados hasta que el total baje de max_bytes.
-
-        `dirs_by_type` mapea asset_type → directorio raíz de ese cache (el
-        blob vive en {dir}/{hash}/). Un type sin directorio conocido no se
-        toca en disco ni en el manifest (fail-safe). Devuelve un resumen."""
-        if max_bytes <= 0:
-            return {"pruned": 0, "freed_bytes": 0, "total_bytes": self.total_bytes()}
-        with self._lock:
-            groups: dict[tuple[str, str], dict] = {}
-            for e in self._entries:
-                key = (str(e.get("type", "")), str(e.get("hash", "")))
-                g = groups.setdefault(key, {"size": 0, "last": ""})
-                g["size"] += int(e.get("size_bytes", 0))
-                last = str(e.get("last_used") or e.get("created_at") or "")
-                if last > g["last"]:
-                    g["last"] = last
-            total = sum(g["size"] for g in groups.values())
-            if total <= max_bytes:
-                return {"pruned": 0, "freed_bytes": 0, "total_bytes": total}
-
-            evicted: set[tuple[str, str]] = set()
-            freed = 0
-            # ISO-8601 ordena lexicográficamente: el más antiguo primero.
-            for (atype, hash_key), g in sorted(groups.items(), key=lambda kv: kv[1]["last"]):
-                if total <= max_bytes:
-                    break
-                blob_root = dirs_by_type.get(atype)
-                if blob_root is None:
-                    continue  # type sin dir conocido — no tocar
-                blob_dir = Path(blob_root) / hash_key
-                try:
-                    if blob_dir.exists():
-                        shutil.rmtree(blob_dir)
-                except OSError as err:
-                    print(f"AssetManifest.prune: cannot remove {blob_dir}: {err}", flush=True)
-                    continue  # no desindexar lo que sigue en disco
-                evicted.add((atype, hash_key))
-                total -= g["size"]
-                freed += g["size"]
-
-            if evicted:
-                self._entries = [
-                    e
-                    for e in self._entries
-                    if (str(e.get("type", "")), str(e.get("hash", ""))) not in evicted
-                ]
-                self._save_locked()
-            return {"pruned": len(evicted), "freed_bytes": freed, "total_bytes": total}
-
-    def find_by_prompt(
-        self, prompt: str, asset_type: str | None = None
-    ) -> list[dict]:
-        normalized = prompt.strip().lower()
-        with self._lock:
-            return [
-                e
-                for e in self._entries
-                if e.get("prompt", "").strip().lower() == normalized
-                and (asset_type is None or e.get("type") == asset_type)
-            ]
-
-    def total_count(self) -> int:
-        with self._lock:
-            return len(self._entries)
-
-    def scan_directory(
-        self,
-        cache_dir: Path,
-        asset_type: str,
-        subtypes_by_filename: dict[str, str],
-    ) -> int:
-        """One-shot scan of a cache directory to rebuild manifest entries for
-        existing files. Used to recover assets generated before the manifest
-        existed. Adds entries with empty `prompt` (unknown). Returns count added."""
-        if not cache_dir.exists():
-            return 0
-        added = 0
-        for entry in cache_dir.iterdir():
-            if not entry.is_dir():
-                continue
-            hash_key = entry.name
-            for f in entry.iterdir():
-                subtype = subtypes_by_filename.get(f.name)
-                if subtype is None:
-                    continue
-                with self._lock:
-                    already = any(
-                        e.get("hash") == hash_key
-                        and e.get("type") == asset_type
-                        and e.get("subtype") == subtype
-                        for e in self._entries
-                    )
-                    if already:
-                        continue
-                    try:
-                        size = f.stat().st_size
-                    except OSError:
-                        size = 0
-                    self._entries.append(
-                        {
-                            "hash": hash_key,
-                            "type": asset_type,
-                            "subtype": subtype,
-                            "prompt": "",  # unknown — file pre-dates manifest
-                            "created_at": _now(),
-                            "size_bytes": size,
-                            "extra": {"recovered": True},
-                        }
-                    )
-                    added += 1
-        if added > 0:
-            with self._lock:
-                self._save_locked()
-        return added
+    ) -> None: ...
 
 
 class AssetCache:
@@ -268,7 +35,7 @@ class AssetCache:
         self,
         cache_dir: str = "cache/textures",
         asset_type: str = "texture",
-        manifest: AssetManifest | None = None,
+        manifest: ManifestRegistrar | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)

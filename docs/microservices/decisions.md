@@ -29,14 +29,26 @@
    y, cuando se extraigan, en `config.ts`/`runtime_config.json`.
 9. **Orden de extracción: S6 → S4 → S5 → (F5) → S2 opcional.** El asset-store
    primero porque el manifest compartido bloquea el resto.
+10. **node:sqlite (`DatabaseSync`) para el índice del asset-store** (F2):
+    built-in de Node ≥ 24, cero dependencias nativas. El proceso del store es
+    el ÚNICO que abre el .sqlite3 (la cola HTTP es la serialización); plan B
+    documentado: better-sqlite3 si la API experimental rompiera.
+11. **Prune con keep-list por pull S6→S2 best-effort** (resuelve la abierta
+    2): el store consulta `GET /sessions/asset_refs` de world-state con
+    timeout 3 s; si no responde, poda SIN keep-list (= status quo pre-F2) con
+    warning. No se añade body `{keep}` a `POST /cache/prune` (superficie
+    mínima; el contrato lo admitiría si hiciera falta).
+12. **El hashing content-addressed se queda en Python** (F2): `hash_key()`
+    depende del `str()` de Python sobre el context (bools, listas) y portarlo
+    bifurcaría la caché entera (16.907 entradas). El store recibe el hash
+    hecho vía `POST /assets`; hash de oro fijado en
+    `ai_server/tests/test_asset_cache.py`.
 
 ## Abiertas (decidir cuando toque la fase)
 
 1. **F6 sí o no** — separar world-state por red puede no aportar nada en un
    despliegue de una máquina. Decidir tras F5 con latencias medidas.
-2. **Prune y referencias vivas** — ¿asset-store consulta a world-state
-   (`/sessions/asset_refs`, dependencia S6→S2) o el llamante pasa la
-   keep-list en `POST /cache/prune`? El contrato admite ambas.
+2. ~~Prune y referencias vivas~~ — RESUELTA en F2 (decisión tomada 11).
 3. **Godot y los contratos** — no consume TS. ¿Generar JSON Schema desde los
    .d.ts para validar en GDScript, o dejarlo como cliente best-effort?
    (Deriva actual conocida: 8/19 mensajes, espejo GD en schema v3 vs v4.)

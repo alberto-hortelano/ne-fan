@@ -6,24 +6,31 @@ sockets fake, `narrative_lab/fake-ai-server.mjs`, benches). Cada fase es
 independiente: se puede parar después de cualquiera con un sistema mejor que
 el anterior.
 
-## F0 — Contratos sin cambio de comportamiento
+## F0 — Contratos sin cambio de comportamiento ✅ (2026-08-05)
 
 - ~~Crear `nefan-core/src/contracts/` completo~~ **(hecho, 2026-08-04)**.
-- Tipar `bridge/state-http-server.ts` y los handlers del bridge con los
-  contratos (cambio solo de tipos: las respuestas pasan a estar anotadas con
-  `WorldStateApi`/`ResponseOf`).
-- Mover la fuente de `narrative-mcp/protocol.ts` a
-  `contracts/narrative-mcp-ws.ts`: narrative-mcp importa
+- ~~Tipar `bridge/state-http-server.ts` con los contratos~~ — cada respuesta
+  anotada con `satisfies ResponseOf<...>`; `plugins.inspect` estrechado a
+  `PluginInspectResult`. Compiló a la primera (el contrato documentaba el
+  cable real).
+- ~~Mover la fuente de `narrative-mcp/protocol.ts` a
+  `contracts/narrative-mcp-ws.ts`~~ — narrative-mcp importa
   `@nefan/core/contracts/*` (dependencia `file:` + exports map; físicamente
-  `dist/src/contracts/`) y su `protocol.ts` queda como reexport de
-  compatibilidad. (Hasta entonces son espejo: cambiar los dos a la vez.)
-- Test de contrato: un test que importe ambos módulos y compruebe que los
-  unions coinciden (compile-time con `satisfies`).
+  `dist/src/contracts/`; build `tsc -b` con project references, incremental)
+  y su `protocol.ts` es un reexport de compatibilidad.
+- ~~Tests de contrato~~ — `narrative-mcp/contract-check.ts` (compile-time,
+  unions idénticos) y `nefan-core/test/state-http-contract.test.ts` (toda
+  ruta de la tabla tiene rama real en el router).
 
-**Hecho cuando**: `npx tsc --noEmit` + `npm test` en verde en nefan-core;
-nefan-html compila; narrative-mcp compila.
+## F1 — Configuración de servicios (matar URLs hardcodeadas) ✅ (2026-08-05)
 
-## F1 — Configuración de servicios (matar URLs hardcodeadas)
+Ejecutada: `serviceUrl()` en el cliente (`nefan-html/src/net/service-urls.ts`,
+env sintético desde `?ai=`/`?bridge=`), `resolveServiceUrl` en ws-server y
+AiClient (alias `NEFAN_AI_SERVER` @deprecated con prioridad hasta F5),
+`NEFAN_URL_WORLD_STATE` en narrative-mcp. El registro vive en
+`contracts/service-registry.ts` (módulo hoja sin dependencias — common.ts
+arrastra módulos node-only y rompía el typecheck del navegador). Criterio del
+grep verificado. Detalle histórico del plan original:
 
 - Sustituir las URLs fijas por `resolveServiceUrl` de `contracts/common.ts`:
   - nefan-html: `main.ts` (base ai_server + override `?ai=`),
@@ -39,7 +46,18 @@ nefan-html compila; narrative-mcp compila.
 solo aparece en `contracts/common.ts` y en config; humo manual con `start.sh`
 (preset 2 ó 4).
 
-## F2 — Extraer asset-store (:8767) — LA PRIMERA
+## F2 — Extraer asset-store (:8767) — LA PRIMERA ✅ (2026-08-05)
+
+Ejecutada: servicio Node en `nefan-core/services/asset-store/` (node:sqlite,
+`cache/manifest.sqlite3`; migración one-shot idempotente — 16.907 entradas en
+202 ms, collapse idéntico al Python; `manifest.json` congelado como
+rollback). ai_server usa `AssetStoreClient` (register fail-loud,
+count/bytes/prune best-effort) y proxya `/cache|/assets` para Godot.
+`/styles/{id}/{file}` movido desde el State API; keep-list
+`GET /sessions/asset_refs` en world-state consumida por el prune. Bench: 100
+registros en 3 ms (antes: rewrite de 5,8 MB por registro bajo lock, sin
+seguridad inter-proceso). Test de escrituras concurrentes en
+`test/asset-store.test.ts`. Detalle histórico del plan original:
 
 - Nuevo servicio (Node, ver decisions.md) con `AssetStoreApi`.
 - **Migrar `cache/manifest.json` (~17k entradas) a SQLite** con script
