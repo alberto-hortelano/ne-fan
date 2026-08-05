@@ -21,8 +21,28 @@ import { validateScene, type TileValidationContext } from "../src/scene/scene-va
 import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
 import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
-import { isEdge, type PlaceTriggerSpec } from "../src/world-map/types.js";
+import { isEdge } from "../src/world-map/types.js";
 import type { NpcDirector, NpcDirective } from "../src/world-map/npc-director.js";
+import type { ErrorResponse, PluginInspectResult } from "../src/contracts/common.js";
+import { WorldStateApi } from "../src/contracts/world-state.js";
+import type { ResponseOf } from "../src/contracts/http.js";
+import type {
+  MapTriggerRequest,
+  PlayerEntityResponse,
+  EntityListResponse,
+  InventoryGetResponse,
+  InventoryMutationResponse,
+  PlaceDetailResponse,
+  PlaceUpsertResponse,
+  MapLinkResponse,
+  MapTriggerResponse,
+  PluginListResponse,
+  PluginRegisterResponse,
+  UiDocResponse,
+  WorldDocResponse,
+  WorldStateHealthResponse,
+  NpcsInTransitResponse,
+} from "../src/contracts/world-state.js";
 
 export interface StateHttpServerOptions {
   port: number;
@@ -51,7 +71,7 @@ export interface StateHttpServerOptions {
     list: () => Array<Record<string, unknown>>;
     /** Detalle de un plugin (F6): una derived_view concreta o el slice
      *  completo. Lanza con el motivo si el plugin o la vista no existen. */
-    inspect: (id: string, view?: string) => Record<string, unknown>;
+    inspect: (id: string, view?: string) => PluginInspectResult;
   };
 }
 
@@ -118,7 +138,7 @@ async function handle(
 
   // ── Plugins (F5) ──
   if (method === "GET" && path === "/plugins") {
-    return ok({ plugins: plugins.list() });
+    return ok({ plugins: plugins.list() } satisfies PluginListResponse);
   }
 
   // Detalle de un plugin (F6): GET /plugins/{id}/inspect?view=<name>
@@ -131,7 +151,7 @@ async function handle(
   ) {
     try {
       const view = url.searchParams.get("view") ?? undefined;
-      return ok(plugins.inspect(parts[1], view));
+      return ok(plugins.inspect(parts[1], view) satisfies ResponseOf<typeof WorldStateApi.inspectPlugin>);
     } catch (err) {
       return bad((err as Error).message);
     }
@@ -144,7 +164,7 @@ async function handle(
     }
     try {
       const result = plugins.register(body.manifest);
-      return mutated({ ok: true, ...result });
+      return mutated({ ok: true, ...result } satisfies PluginRegisterResponse);
     } catch (err) {
       return bad((err as Error).message);
     }
@@ -158,7 +178,7 @@ async function handle(
     const message = typeof body?.message === "string" ? body.message.slice(0, 300) : "";
     if (!message) return bad("body requires { message: string }");
     onProgress(message);
-    return { status: 200, body: { ok: true } };
+    return { status: 200, body: { ok: true } satisfies ResponseOf<typeof WorldStateApi.narrativeProgress> };
   }
 
   // ── Escenas ──
@@ -208,7 +228,7 @@ async function handle(
       },
       tileCtx,
     );
-    return ok(result);
+    return ok(result satisfies ResponseOf<typeof WorldStateApi.validateScene>);
   }
 
   // ── Health ──
@@ -218,12 +238,12 @@ async function handle(
       session_id: narrative.session_id,
       has_session: Boolean(narrative.session_id),
       game_id: narrative.game_id,
-    });
+    } satisfies WorldStateHealthResponse);
   }
 
   // ── Map ──
   if (method === "GET" && path === "/map") {
-    return ok(wm.serialize());
+    return ok(wm.serialize() satisfies ResponseOf<typeof WorldStateApi.getMap>);
   }
 
   if (method === "GET" && parts[0] === "map" && parts[1] === "place" && parts[2]) {
@@ -235,7 +255,7 @@ async function handle(
       ancestors: wm.getAncestors(place.id).slice(1), // drop self
       outgoing_links: wm.getOutgoingLinks(place.id),
       npcs: npcDirector.getNpcsAtPlace(place.id),
-    });
+    } satisfies PlaceDetailResponse);
   }
 
   if (method === "POST" && path === "/map/place") {
@@ -252,7 +272,7 @@ async function handle(
     try {
       const place = wm.upsertPlace(body);
       narrative.markDirty();
-      return mutated({ ok: true, place });
+      return mutated({ ok: true, place } satisfies PlaceUpsertResponse);
     } catch (err) {
       return bad((err as Error).message);
     }
@@ -269,14 +289,14 @@ async function handle(
     try {
       const link = wm.addLink(body);
       narrative.markDirty();
-      return mutated({ ok: true, link });
+      return mutated({ ok: true, link } satisfies MapLinkResponse);
     } catch (err) {
       return bad((err as Error).message);
     }
   }
 
   if (method === "POST" && path === "/map/trigger") {
-    const body = (await readJson(req)) as { place_id?: string; trigger?: PlaceTriggerSpec };
+    const body = (await readJson(req)) as Partial<MapTriggerRequest>;
     const placeId = body?.place_id;
     const trigger = body?.trigger;
     if (typeof placeId !== "string" || !trigger || typeof trigger.id !== "string" || !trigger.when) {
@@ -286,7 +306,7 @@ async function handle(
     try {
       wm.addTrigger(placeId, trigger);
       narrative.markDirty();
-      return mutated({ ok: true, place_id: placeId, trigger_id: trigger.id });
+      return mutated({ ok: true, place_id: placeId, trigger_id: trigger.id } satisfies MapTriggerResponse);
     } catch (err) {
       return bad((err as Error).message);
     }
@@ -302,16 +322,16 @@ async function handle(
         position: e.position,
         spawn_reason: e.spawn_reason,
       })),
-    });
+    } satisfies EntityListResponse);
   }
 
   if (method === "GET" && parts[0] === "entity" && parts[1] && parts.length === 2) {
     if (parts[1] === "player") {
-      return ok({ id: "player", type: "player", player: narrative.player });
+      return ok({ id: "player", type: "player", player: narrative.player } satisfies PlayerEntityResponse);
     }
     const entity = narrative.getEntity(parts[1]);
     if (!entity) return notFound(`entity "${parts[1]}" not found`);
-    return ok(entity);
+    return ok(entity satisfies ResponseOf<typeof WorldStateApi.getEntity>);
   }
 
   if (
@@ -321,7 +341,7 @@ async function handle(
     parts[2] === "inventory" &&
     parts.length === 3
   ) {
-    return ok({ entity_id: parts[1], inventory: narrative.getInventory(parts[1]) });
+    return ok({ entity_id: parts[1], inventory: narrative.getInventory(parts[1]) } satisfies InventoryGetResponse);
   }
 
   if (
@@ -341,7 +361,7 @@ async function handle(
       ok: true,
       entity_id: parts[1],
       inventory: narrative.getInventory(parts[1]),
-    });
+    } satisfies InventoryMutationResponse);
   }
 
   if (
@@ -366,7 +386,7 @@ async function handle(
       ok: true,
       entity_id: parts[1],
       inventory: narrative.getInventory(parts[1]),
-    });
+    } satisfies InventoryMutationResponse);
   }
 
   // ── Documento del mundo (bajo demanda para el motor narrativo) ──
@@ -379,7 +399,7 @@ async function handle(
         game_id: narrative.game_id,
         world_name: narrative.world.name,
         world_doc: loadWorldDoc(gamesDir, narrative.game_id),
-      });
+      } satisfies WorldDocResponse);
     } catch (err) {
       return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
     }
@@ -403,7 +423,7 @@ async function handle(
           plugins: plugins.list(),
         },
         ui_doc: readFileSync(UI_SYSTEMS_DOC, "utf-8"),
-      });
+      } satisfies UiDocResponse);
     } catch (err) {
       return notFound(`ui_systems.md unavailable: ${(err as Error).message}`);
     }
@@ -411,13 +431,13 @@ async function handle(
 
   // ── NPC high-level movement ──
   if (method === "GET" && path === "/npcs/in_transit") {
-    return ok({ npcs: npcDirector.getNpcsInTransit() });
+    return ok({ npcs: npcDirector.getNpcsInTransit() } satisfies NpcsInTransitResponse);
   }
 
   if (method === "GET" && parts[0] === "npc" && parts[1] && parts.length === 2) {
     const info = npcDirector.getNpcPlace(parts[1]);
     if (!info) return notFound(`npc "${parts[1]}" not found`);
-    return ok(info);
+    return ok(info satisfies ResponseOf<typeof WorldStateApi.getNpc>);
   }
 
   if (
@@ -433,7 +453,7 @@ async function handle(
     }
     const result = npcDirector.moveNpcToPlace(parts[1], body.place_id);
     if (!result.ok) return bad(result.error ?? "move failed");
-    return mutated(result);
+    return mutated(result satisfies ResponseOf<typeof WorldStateApi.moveNpcToPlace>);
   }
 
   if (
@@ -445,7 +465,7 @@ async function handle(
   ) {
     const result = npcDirector.arriveNpc(parts[1]);
     if (!result.ok) return bad(result.error ?? "arrive failed");
-    return mutated(result);
+    return mutated(result satisfies ResponseOf<typeof WorldStateApi.arriveNpc>);
   }
 
   if (
@@ -465,10 +485,10 @@ async function handle(
     }
     const result = npcDirector.setDirective(parts[1], directive);
     if (!result.ok) return bad(result.error ?? "set directive failed");
-    return mutated(result);
+    return mutated(result satisfies ResponseOf<typeof WorldStateApi.setNpcDirective>);
   }
 
-  return { status: 404, body: { ok: false, error: `no route for ${method} ${path}` } };
+  return { status: 404, body: { ok: false, error: `no route for ${method} ${path}` } satisfies ErrorResponse };
 }
 
 // ── Helpers ──
@@ -482,11 +502,11 @@ function mutated(body: unknown): RouteResult {
 }
 
 function bad(message: string): RouteResult {
-  return { status: 400, body: { ok: false, error: message } };
+  return { status: 400, body: { ok: false, error: message } satisfies ErrorResponse };
 }
 
 function notFound(message: string): RouteResult {
-  return { status: 404, body: { ok: false, error: message } };
+  return { status: 404, body: { ok: false, error: message } satisfies ErrorResponse };
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {

@@ -180,7 +180,7 @@ createStateHttpServer({
         ctx.activePlugins,
         id,
         view,
-      ) as unknown as Record<string, unknown>,
+      ),
   },
 });
 

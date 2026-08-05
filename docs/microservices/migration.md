@@ -13,8 +13,9 @@ el anterior.
   contratos (cambio solo de tipos: las respuestas pasan a estar anotadas con
   `WorldStateApi`/`ResponseOf`).
 - Mover la fuente de `narrative-mcp/protocol.ts` a
-  `contracts/narrative-mcp-ws.ts`: narrative-mcp importa de
-  `nefan-core/dist/contracts/` y su `protocol.ts` queda como reexport de
+  `contracts/narrative-mcp-ws.ts`: narrative-mcp importa
+  `@nefan/core/contracts/*` (dependencia `file:` + exports map; físicamente
+  `dist/src/contracts/`) y su `protocol.ts` queda como reexport de
   compatibilidad. (Hasta entonces son espejo: cambiar los dos a la vez.)
 - Test de contrato: un test que importe ambos módulos y compruebe que los
   unions coinciden (compile-time con `satisfies`).
