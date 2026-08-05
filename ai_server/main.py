@@ -62,11 +62,12 @@ from scene_image_generator import SceneImageGenerator
 from style_packs import StylePackResolver
 from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter
-from asset_cache import AssetCache, AssetManifest
+from asset_cache import AssetCache
+from asset_store_client import AssetStoreClient
 from asset_paths import SPRITE_SHEETS_DIR
 
 from deps import deps
-from routers.cache_assets import _cache_dirs_by_type
+from routers.asset_proxy import router as asset_proxy_router
 from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
 from routers.narrative import router as narrative_router
@@ -107,49 +108,16 @@ def load_config(config_path: Path | None = None) -> dict:
 async def lifespan(app: FastAPI):
     deps.config = load_config()
 
-    # Shared manifest sits at the cache root and tracks every asset across types.
-    from pathlib import Path as _P
-    cache_root = _P(deps.config["cache_root"])
-    manifest_path = cache_root / "manifest.json"
-    deps.asset_manifest = AssetManifest(manifest_path)
-    logger.info(f"AssetManifest: {manifest_path.resolve()} ({deps.asset_manifest.total_count()} entries)")
-
-    # First-run recovery: scan existing cache directories so previously generated
-    # assets become discoverable to the narrative engine.
-    if deps.asset_manifest.total_count() == 0:
-        added_total = 0
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "textures",
-            asset_type="texture",
-            subtypes_by_filename={"albedo.png": "albedo", "normal.png": "normal", "roughness.png": "roughness"},
-        )
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "models",
-            asset_type="model",
-            subtypes_by_filename={"model.glb": "model"},
-        )
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "skins",
-            asset_type="skin",
-            subtypes_by_filename={"skin.png": "skin"},
-        )
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "sprites",
-            asset_type="sprite",
-            subtypes_by_filename={"sprite.png": "sprite"},
-        )
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "scenes",
-            asset_type="scene",
-            subtypes_by_filename={"scene.png": "scene"},
-        )
-        added_total += deps.asset_manifest.scan_directory(
-            cache_root / "segments",
-            asset_type="segment",
-            subtypes_by_filename={"segment.png": "segment"},
-        )
-        if added_total > 0:
-            logger.info(f"AssetManifest: recovered {added_total} pre-existing assets")
+    # F2: el índice de assets vive en el asset-store (:8767, SQLite). Este
+    # cliente sustituye a AssetManifest con la misma superficie (duck typing:
+    # AssetCache.put y llm_client no cambian). El recovery scan y la
+    # migración del manifest.json legado son del STORE (services/asset-store/
+    # migrate-manifest.ts), no de ai_server.
+    deps.asset_manifest = AssetStoreClient()
+    logger.info(
+        f"AssetStore: {deps.asset_manifest.base_url} "
+        f"({deps.asset_manifest.total_count()} entries)"
+    )
 
     deps.llm_client = LLMClient(
         model=deps.config["llm_model"],
@@ -262,14 +230,15 @@ async def lifespan(app: FastAPI):
         ))
         logger.info("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
 
-    # Techo de tamaño del cache (LRU por last_used del manifest). Sin él, el
-    # cache crece sin cota (llegó a 340 MB en dev). 0 = sin límite.
+    # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
+    # keep-list de world-state). Best-effort aquí — el arranque de ai_server
+    # no depende de que el store esté ya arriba.
     max_cache_bytes = int(deps.config["cache_max_bytes"])
     if max_cache_bytes > 0:
-        summary = deps.asset_manifest.prune(_cache_dirs_by_type(), max_cache_bytes)
+        summary = deps.asset_manifest.prune()
         if summary["pruned"] > 0:
             logger.info(
-                f"AssetManifest: pruned {summary['pruned']} assets "
+                f"AssetStore: pruned {summary['pruned']} assets "
                 f"({summary['freed_bytes'] / 1e6:.1f} MB freed, "
                 f"{summary['total_bytes'] / 1e6:.1f} MB remain)"
             )
@@ -299,7 +268,10 @@ app.add_middleware(
 )
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
+# cache_assets solo conserva /dev/api_cache; el proxy reenvía /cache|/assets
+# al asset-store (:8767) para clientes no migrados (Godot).
 app.include_router(cache_assets_router)
+app.include_router(asset_proxy_router)
 app.include_router(styles_router)
 app.include_router(generation_router)
 app.include_router(narrative_router)
