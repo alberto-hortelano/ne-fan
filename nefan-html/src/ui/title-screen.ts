@@ -34,9 +34,9 @@ export type TitleAction =
 /** asset-store — sirve las covers de los estilos como estáticos, con o sin
  *  ai_server (movido desde el State API en F2; preset 4 arranca el store). */
 const ASSET_STORE_URL = serviceUrl("asset-store");
-/** remote-gen — subida de estilos y generación de las categorías que falten
- *  (Meshy). Hoy resuelve al ai_server; puerto propio en F4. Sin él, "Subir
- *  estilo" falla con error visible. */
+/** remote-gen (proceso propio desde F4) — subida de estilos y generación de las
+ *  categorías que falten (Meshy). Sin él, "Subir estilo" falla con error
+ *  visible. */
 const AI_SERVER_HTTP = serviceUrl("remote-gen");
 
 const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [

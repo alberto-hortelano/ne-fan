@@ -34,11 +34,11 @@ export function serviceUrl(name: ServiceName): string {
  *  (Scene/StageImageController). Un solo objeto en vez de N parámetros
  *  posicionales: el reparto por servicio creció en F3/F4. */
 export interface GenServiceUrls {
-  /** narrative-llm (:8765): reviews y análisis con visión. */
+  /** narrative-llm: reviews y análisis con visión. */
   narrative: string;
-  /** gpu-worker (:8766): peel_scene_layer, inpaint_scene_plate. */
+  /** gpu-worker: peel_scene_layer, inpaint_scene_plate. */
   gpu: string;
-  /** remote-gen (repintado Meshy/fal — :8765 hasta el corte de F4). */
+  /** remote-gen: repintado Meshy/fal, sheets skinneados. */
   remote: string;
   /** asset-store (:8767): blobs /cache/*. */
   assets: string;

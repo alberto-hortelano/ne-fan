@@ -1,5 +1,6 @@
-/** S5 · remote-gen — HTTP :8768 (hoy co-vive en ai_server :8765; se extrae
- * en F4).
+/** S5 · remote-gen — HTTP :8768 (extraído en F4: ai_server/remote_gen_main.py;
+ * sin proxy en :8765 — sus únicos clientes, el HTML, resuelven por
+ * serviceUrl).
  *
  * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro,
  * fal SAM2, FLUX Fill): repintado de tiles/platós, sprite sheets skinneados,

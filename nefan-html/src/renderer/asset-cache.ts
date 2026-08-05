@@ -27,7 +27,7 @@ export class AssetCache {
   private images = new Map<string, HTMLImageElement>();
   private hashByPromptKey = new Map<string, Promise<string>>();
 
-  /** baseUrl = generación (/generate_sprite, gpu-worker :8766 desde F3);
+  /** baseUrl = generación (/generate_sprite, proceso gpu-worker desde F3);
    *  assetsUrl = blobs cacheados (/cache/sprite, asset-store :8767). */
   constructor(
     private baseUrl: string,

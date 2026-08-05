@@ -18,6 +18,7 @@ PORT_NARR=3737
 PORT_REMOTE=9876
 PORT_ASSETS=8767
 PORT_GPU=8766
+PORT_RGEN=8768
 
 declare -a STARTED_PIDS=()
 
@@ -125,6 +126,19 @@ start_gpu_worker() {
     STARTED_PIDS+=($!)
     wait_for_http_health "http://127.0.0.1:$PORT_GPU/health" 30 "gpu-worker" || return 1
     echo "✅ gpu-worker :$PORT_GPU  (log: $LOG_DIR/nefan-gpu-worker.log)"
+}
+
+start_remote_gen() {
+    port_busy "$PORT_RGEN" && kill_port "$PORT_RGEN"
+    (
+        cd "$PROJECT_DIR" || exit 1
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+        exec python -u ai_server/remote_gen_main.py
+    ) >"$LOG_DIR/nefan-remote-gen.log" 2>&1 &
+    STARTED_PIDS+=($!)
+    wait_for_http_health "http://127.0.0.1:$PORT_RGEN/health" 30 "remote-gen" || return 1
+    echo "✅ remote-gen :$PORT_RGEN  (log: $LOG_DIR/nefan-remote-gen.log)"
 }
 
 start_narrative_mcp() {
@@ -257,7 +271,7 @@ EOF
 
 # Service slot index → key. OJO: añadir servicios nuevos AL FINAL — las
 # máscaras de PRESET_PROFILES y EXCLUSIVE_PAIRS son posicionales.
-SERVICES=(bridge narrative-mcp ai_server godot godot-headless html asset-store gpu-worker)
+SERVICES=(bridge narrative-mcp ai_server godot godot-headless html asset-store gpu-worker remote-gen)
 # Service slot index → display label
 SERVICE_LABELS=(
     "bridge          :9877"
@@ -268,6 +282,7 @@ SERVICE_LABELS=(
     "HTML            :3000"
     "asset-store     :8767"
     "gpu-worker      :8766"
+    "remote-gen      :8768"
 )
 # Service slot index → one-line hint
 SERVICE_HINTS=(
@@ -279,6 +294,7 @@ SERVICE_HINTS=(
     "2D browser client"
     "blobs + manifest SQLite (F2)"
     "SD/TripoSG/LaMa pipelines (F3)"
+    "Meshy/fal + SAM2 + toggle dev (F4)"
 )
 
 # Mutually exclusive pairs (space-separated indices in a single string).
@@ -307,22 +323,23 @@ PRESET_DESCS=(
 )
 # El asset-store acompaña a cualquier preset con bridge o ai_server: el
 # gateway resuelve assetExists contra :8767 y los generadores registran ahí;
-# también a "HTML 2D iteration" (covers de estilos sin ai_server). El
-# gpu-worker acompaña a los presets con ai_server (texturas/modelos/peel);
-# "Automated tests" y "HTML 2D iteration" no generan, van sin él.
-#                  bridge  narr  ai  god  hl  html  assets  gpu
+# también a "HTML 2D iteration" (covers de estilos sin ai_server). gpu-worker
+# y remote-gen acompañan a los presets con ai_server (texturas/modelos/peel y
+# repintados/sheets/SAM2 respectivamente); "Automated tests" y
+# "HTML 2D iteration" no generan, van sin ellos.
+#                  bridge  narr  ai  god  hl  html  assets  gpu  rgen
 PRESET_PROFILES=(
-    "1 1 1 1 0 1 1 1"   # Play
-    "1 1 1 0 0 1 1 1"   # Story 2D
-    "1 0 0 0 1 0 1 0"   # Automated tests
-    "1 0 0 0 0 1 1 0"   # HTML 2D iteration
-    "0 0 0 1 0 0 0 0"   # Godot offline
-    "0 0 1 0 0 0 1 1"   # ai_server only
-    "0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
+    "1 1 1 1 0 1 1 1 1"   # Play
+    "1 1 1 0 0 1 1 1 1"   # Story 2D
+    "1 0 0 0 1 0 1 0 0"   # Automated tests
+    "1 0 0 0 0 1 1 0 0"   # HTML 2D iteration
+    "0 0 0 1 0 0 0 0 0"   # Godot offline
+    "0 0 1 0 0 0 1 1 1"   # ai_server only
+    "0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
 )
 
 # Live state — applied by TUI, consumed by launcher.
-declare -a ACTIVE=(0 0 0 0 0 0 0 0)
+declare -a ACTIVE=(0 0 0 0 0 0 0 0 0)
 
 apply_preset() {
     local idx=$1
@@ -633,13 +650,14 @@ run_selection() {
     echo "▶ Launching selected services..."
     echo ""
 
-    # Order: asset-store → gpu-worker → bridge → narrative-mcp → ai_server →
-    # (Claude pause) → godot/headless → html. El asset-store va PRIMERO:
-    # ai_server hace count/prune al arrancar y el gateway puede pedir
-    # assetExists temprano; el gpu-worker antes que ai_server para que
-    # /backend_status ya lo vea al primer poll.
+    # Order: asset-store → gpu-worker → remote-gen → bridge → narrative-mcp →
+    # ai_server → (Claude pause) → godot/headless → html. El asset-store va
+    # PRIMERO: ai_server hace count/prune al arrancar y el gateway puede pedir
+    # assetExists temprano; gpu-worker y remote-gen antes que ai_server para
+    # que /backend_status y /segment ya los vean al primer uso.
     (( ACTIVE[6] == 1 )) && { start_asset_store   || return 1; }
     (( ACTIVE[7] == 1 )) && { start_gpu_worker    || return 1; }
+    (( ACTIVE[8] == 1 )) && { start_remote_gen    || return 1; }
     (( ACTIVE[0] == 1 )) && { start_bridge        || return 1; }
     (( ACTIVE[1] == 1 )) && { start_narrative_mcp || return 1; }
     (( ACTIVE[2] == 1 )) && { start_ai            || return 1; }
@@ -676,6 +694,7 @@ cmd_status() {
         "ai_server:$PORT_AI"
         "asset-store:$PORT_ASSETS"
         "gpu-worker:$PORT_GPU"
+        "remote-gen:$PORT_RGEN"
         "Godot remote:$PORT_REMOTE"
         "HTML:$PORT_HTML"
     )
@@ -702,7 +721,7 @@ cmd_status() {
 cmd_stop() {
     echo "🛑 killing services..."
     local port
-    for port in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU"; do
+    for port in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU" "$PORT_RGEN"; do
         if port_busy "$port"; then
             kill_port "$port"
             echo "    · :$port"

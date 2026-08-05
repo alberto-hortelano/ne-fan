@@ -163,8 +163,8 @@ const AI_SERVER_URL = serviceUrl("narrative-llm");
 const ASSET_STORE_URL = serviceUrl("asset-store");
 // Pipelines GPU locales (F3): proceso propio del gpu-worker.
 const GPU_WORKER_URL = serviceUrl("gpu-worker");
-// Meshy/fal (repintados, sheets skinneados): en ai_server hasta el corte de
-// F4 — resolver ya por servicio deja el flip a :8768 sin tocar clientes.
+// Meshy/fal (F4): proceso propio de remote-gen (repintados, sheets
+// skinneados, toggle dev de las APIs de pago).
 const REMOTE_GEN_URL = serviceUrl("remote-gen");
 // Reparto por servicio de los pipelines de imagen (Scene/StageImageController).
 const GEN_URLS = {
@@ -467,7 +467,7 @@ const devcacheToggle = document.getElementById("devcache-toggle") as HTMLInputEl
 
 async function initDevCacheToggle(): Promise<void> {
   try {
-    const res = await fetch(`${AI_SERVER_URL}/dev/api_cache`);
+    const res = await fetch(`${REMOTE_GEN_URL}/dev/api_cache`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const st = (await res.json()) as { enabled?: boolean };
     devcacheToggle.checked = !!st.enabled;
@@ -482,7 +482,7 @@ void initDevCacheToggle();
 
 devcacheToggle.addEventListener("change", () => {
   const enabled = devcacheToggle.checked;
-  void fetch(`${AI_SERVER_URL}/dev/api_cache`, {
+  void fetch(`${REMOTE_GEN_URL}/dev/api_cache`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),

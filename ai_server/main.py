@@ -9,7 +9,6 @@ carga de entorno/config, el lifespan que puebla `deps`, la app FastAPI y
 
 import logging
 import argparse
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 from config_snapshot import load_config, load_env_file
@@ -34,7 +33,6 @@ class _SilenceHealthcheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from llm_client import LLMClient
-from scene_image_generator import SceneImageGenerator
 from style_packs import StylePackResolver
 from remote_gen_client import RemoteGenClient
 from scene_segmenter import SceneSegmenter
@@ -43,12 +41,9 @@ from asset_store_client import AssetStoreClient
 
 from deps import deps
 from routers.asset_proxy import router as asset_proxy_router
-from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
 from routers.gpu_proxy import router as gpu_proxy_router
 from routers.narrative import router as narrative_router
-from routers.remote_generation import router as remote_generation_router
-from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
 
@@ -74,24 +69,13 @@ async def lifespan(app: FastAPI):
         asset_manifest=deps.asset_manifest,
     )
 
-    # F3: los pipelines GPU (texturas/modelos/skins/sprites/LaMa) viven en el
-    # gpu-worker (:8766, gpu_worker_main.py). Este proceso solo conserva lo
-    # narrativo/remoto y proxya los endpoints GPU para Godot (gpu_proxy).
-    deps.scene_cache = AssetCache(
-        cache_dir=deps.config["scene_cache_dir"],
-        asset_type="scene",
-        manifest=deps.asset_manifest,
-    )
-
-    _repo_root = Path(__file__).resolve().parent.parent
-    deps.scene_image_gen = SceneImageGenerator(
-        style_image_path=str(_repo_root / deps.config["scene_style_image"]),
-        model=deps.config["scene_model"],
-        stage_model=deps.config["stage_scene_model"],
-    )
-    # Packs de estilo por juego (imágenes de referencia por categoría).
-    # Degradación esperable si aún no hay packs: resolve() devuelve None y las
-    # peticiones usan la referencia global de arriba.
+    # F3/F4: los pipelines GPU viven en el gpu-worker (:8766) y los de APIs
+    # de pago en remote-gen (:8768). Este proceso solo conserva lo narrativo
+    # y la visión, y proxya los endpoints GPU para Godot (gpu_proxy).
+    #
+    # Packs de estilo por juego: /develop_world los LISTA para el motor
+    # narrativo (narrative.py). Lector FS sin claves — coexiste con la
+    # instancia de remote-gen sin conflicto (cache por mtime).
     deps.style_packs = StylePackResolver()
 
     deps.segment_cache = AssetCache(
@@ -145,15 +129,13 @@ app.add_middleware(
 )
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
-# cache_assets solo conserva /dev/api_cache; asset_proxy reenvía /cache|/assets
-# al asset-store (:8767) y gpu_proxy los endpoints GPU al gpu-worker (:8766)
-# para clientes no migrados (Godot).
-app.include_router(cache_assets_router)
+# asset_proxy reenvía /cache|/assets al asset-store (:8767) y gpu_proxy los
+# endpoints GPU al gpu-worker (:8766) para clientes no migrados (Godot).
+# El repintado, /styles y el toggle /dev/api_cache viven en remote-gen
+# (:8768) — sin proxy: sus únicos clientes (HTML) resuelven por serviceUrl.
 app.include_router(asset_proxy_router)
 app.include_router(gpu_proxy_router)
-app.include_router(styles_router)
 app.include_router(generation_router)
-app.include_router(remote_generation_router)
 app.include_router(narrative_router)
 
 
