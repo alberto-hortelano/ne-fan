@@ -7,32 +7,14 @@ carga de entorno/config, el lifespan que puebla `deps`, la app FastAPI y
 /health.
 """
 
-import json
 import logging
-import os
 import argparse
 from pathlib import Path
 from contextlib import asynccontextmanager
 
+from config_snapshot import load_config, load_env_file
 
-def _load_env_file(env_path: Path) -> None:
-    """Load .env file into os.environ (simple parser, no python-dotenv dependency)."""
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-_env_file = Path(__file__).resolve().parent.parent / ".env"
-_load_env_file(_env_file)
+load_env_file()
 
 import uvicorn
 from fastapi import FastAPI
@@ -52,56 +34,22 @@ class _SilenceHealthcheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from llm_client import LLMClient
-from texture_generator import TextureGenerator
-from model_generator import ModelGenerator
-from skin_generator import SkinGenerator
-from plate_inpainter import PlateInpainter
-from sprite_generator import SpriteGenerator
-from controlnet_skin import ControlNetSkinGenerator
 from scene_image_generator import SceneImageGenerator
 from style_packs import StylePackResolver
 from fal_client import FalSamClient
 from scene_segmenter import SceneSegmenter
 from asset_cache import AssetCache
 from asset_store_client import AssetStoreClient
-from asset_paths import SPRITE_SHEETS_DIR
 
 from deps import deps
 from routers.asset_proxy import router as asset_proxy_router
 from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
+from routers.gpu_proxy import router as gpu_proxy_router
 from routers.narrative import router as narrative_router
 from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
-
-
-RUNTIME_CONFIG_PATH = (
-    Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "runtime_config.json"
-)
-
-
-def load_config(config_path: Path | None = None) -> dict:
-    """Read the snapshot produced by `nefan-core/scripts/dump-config.ts`.
-
-    Fail-loud: a missing file or a missing `ai_server` block is a hard error.
-    Regenerate the snapshot via `cd nefan-core && npx tsx scripts/dump-config.ts`
-    (or any `npm run build/dev/test` which triggers the pre-hook)."""
-    path = Path(config_path) if config_path else RUNTIME_CONFIG_PATH
-    if not path.exists():
-        raise FileNotFoundError(
-            f"runtime_config.json not found at {path}. "
-            "Run `cd nefan-core && npx tsx scripts/dump-config.ts` to regenerate it."
-        )
-    logger.info(f"Config loaded from: {path}")
-    with open(path) as f:
-        full = json.load(f)
-    ai = full.get("ai_server")
-    if not isinstance(ai, dict):
-        raise ValueError(
-            f"{path} has no `ai_server` block. Update nefan-core/src/config.ts."
-        )
-    return ai
 
 
 @asynccontextmanager
@@ -125,57 +73,9 @@ async def lifespan(app: FastAPI):
         asset_manifest=deps.asset_manifest,
     )
 
-    deps.asset_cache = AssetCache(
-        cache_dir=deps.config["texture_cache_dir"],
-        asset_type="texture",
-        manifest=deps.asset_manifest,
-    )
-
-    deps.texture_gen = TextureGenerator(
-        width=deps.config["texture_resolution"],
-        height=deps.config["texture_resolution"],
-        steps=deps.config["texture_steps"],
-        lazy=deps.config["texture_lazy_load"],
-    )
-
-    deps.model_cache = AssetCache(
-        cache_dir=deps.config["model_cache_dir"],
-        asset_type="model",
-        manifest=deps.asset_manifest,
-    )
-
-    deps.model_gen = ModelGenerator(
-        texture_gen_ref=deps.texture_gen,
-        lazy=True,
-    )
-
-    deps.skin_cache = AssetCache(
-        cache_dir=deps.config["skin_cache_dir"],
-        asset_type="skin",
-        manifest=deps.asset_manifest,
-    )
-
-    deps.skin_gen = SkinGenerator(
-        texture_gen_ref=deps.texture_gen,
-    )
-    deps.controlnet_skin_gen = ControlNetSkinGenerator(
-        texture_gen_ref=deps.texture_gen,
-        default_strength=0.40,
-    )
-    deps.plate_inpainter = PlateInpainter(
-        texture_gen_ref=deps.texture_gen,
-    )
-
-    deps.sprite_cache = AssetCache(
-        cache_dir=deps.config["sprite_cache_dir"],
-        asset_type="sprite",
-        manifest=deps.asset_manifest,
-    )
-
-    deps.sprite_gen = SpriteGenerator(
-        texture_gen_ref=deps.texture_gen,
-    )
-
+    # F3: los pipelines GPU (texturas/modelos/skins/sprites/LaMa) viven en el
+    # gpu-worker (:8766, gpu_worker_main.py). Este proceso solo conserva lo
+    # narrativo/remoto y proxya los endpoints GPU para Godot (gpu_proxy).
     deps.scene_cache = AssetCache(
         cache_dir=deps.config["scene_cache_dir"],
         asset_type="scene",
@@ -211,25 +111,6 @@ async def lifespan(app: FastAPI):
         deps.scene_segmenter = None
         logger.info(f"SceneSegmenter disabled: {e} (set FAL_KEY in .env to enable)")
 
-    # Pelado por capas del proscenio: FLUX Fill remoto si hay FAL_KEY; sin
-    # ella /peel_scene_layer degrada a LaMa local (gratis, menos guiado).
-    try:
-        from fal_client import FalFillClient
-        deps.fill_client = FalFillClient()
-    except ValueError as e:
-        deps.fill_client = None
-        logger.info(f"FalFillClient disabled: {e} — peel degradará a LaMa local")
-
-    if deps.config["expose_diagnostic"]:
-        from routers.diagnostic import build_diagnostic_router
-        app.include_router(build_diagnostic_router(
-            sprite_sheets_dir=SPRITE_SHEETS_DIR,
-            gpu_lock=deps.gpu_lock,
-            skin_gen=deps.skin_gen,
-            controlnet_skin_gen=deps.controlnet_skin_gen,
-        ))
-        logger.info("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
-
     # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
     # keep-list de world-state). Best-effort aquí — el arranque de ai_server
     # no depende de que el store esté ya arriba.
@@ -251,8 +132,6 @@ async def lifespan(app: FastAPI):
     if deps.llm_client is not None:
         deps.llm_client.close()
     deps.llm_client = None
-    deps.texture_gen = None
-    deps.model_gen = None
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
@@ -268,10 +147,12 @@ app.add_middleware(
 )
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
-# cache_assets solo conserva /dev/api_cache; el proxy reenvía /cache|/assets
-# al asset-store (:8767) para clientes no migrados (Godot).
+# cache_assets solo conserva /dev/api_cache; asset_proxy reenvía /cache|/assets
+# al asset-store (:8767) y gpu_proxy los endpoints GPU al gpu-worker (:8766)
+# para clientes no migrados (Godot).
 app.include_router(cache_assets_router)
 app.include_router(asset_proxy_router)
+app.include_router(gpu_proxy_router)
 app.include_router(styles_router)
 app.include_router(generation_router)
 app.include_router(narrative_router)
@@ -284,7 +165,10 @@ async def health():
     return {
         "status": "ready" if deps.llm_client else "loading",
         "mode": "narrative",
-        "texture_pipeline": "loaded" if (deps.texture_gen and deps.texture_gen.is_loaded) else "lazy",
+        # Transitorio F3: el pipeline de texturas vive en el gpu-worker; el
+        # campo se conserva constante para no romper el shape (Godot lo lee).
+        # NO consultar aquí al gpu-worker — /health se pollea mucho.
+        "texture_pipeline": "lazy",
         "cache_total_bytes": cache_total,
         "cache_max_bytes": cache_max,
         "cache_over_limit": bool(cache_max and cache_total > cache_max),

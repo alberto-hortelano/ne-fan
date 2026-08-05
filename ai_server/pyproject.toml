@@ -21,6 +21,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# main.py carga .env y configura logging ANTES de importar los generadores
-# (los imports leen os.environ al inicializarse) — E402 es deliberado ahí.
+# Los entrypoints cargan .env y configuran logging ANTES de importar los
+# generadores (los imports leen os.environ al inicializarse) — E402 es
+# deliberado ahí.
 "main.py" = ["E402"]
+"gpu_worker_main.py" = ["E402"]
+"remote_gen_main.py" = ["E402"]

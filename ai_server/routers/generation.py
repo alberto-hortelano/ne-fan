@@ -1,8 +1,10 @@
-"""Generación de assets por IA: escenas, texturas, modelos, skins y sprites.
+"""Generación narrativa y de imagen de escena: escenas LLM, repintado
+Meshy/fal, análisis/review por visión y sprite sheets skinneados.
 
 Endpoints movidos TAL CUAL desde main.py (el estado runtime viene de `deps`).
 Incluye /backend_status y /analyze_weapon porque comparten el mismo dominio
-(estado y visión de los backends generativos).
+(estado y visión de los backends generativos). Los pipelines GPU locales
+(texturas/modelos/skins/sprites/LaMa) viven en routers/gpu_generation.py (F3).
 """
 
 import json
@@ -16,7 +18,7 @@ from asset_paths import SKINNED_SHEETS_DIR, SPRITE_SHEETS_DIR
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
 from llm_client import NarrativeUnavailable
-from plate_inpainter import PLATE_ALGO
+from request_util import decode_b64_png
 from scene_image_generator import SIDES
 from scene_segmenter import crop_sprite, scene_rgb_from_png
 from sprite_skin_meshy import SpriteSkinMeshy
@@ -24,34 +26,6 @@ from sprite_skin_meshy import SpriteSkinMeshy
 logger = logging.getLogger("ai_server")
 
 router = APIRouter()
-
-
-class TextureRequest(BaseModel):
-    prompt: str = Field(min_length=1)
-    seed: int = -1
-
-
-class ModelRequest(BaseModel):
-    prompt: str = Field(min_length=1)
-    scale: list[float] = Field(default_factory=lambda: [0.5, 0.5, 0.5])
-    seed: int = -1
-    quality: str = "normal"
-
-
-class SkinRequest(BaseModel):
-    prompt: str = Field(min_length=1)
-    strength: float = -1
-    gamma: float = 0.35
-    seed: int = -1
-
-
-class SpriteRequest(BaseModel):
-    prompt: str = Field(min_length=1)
-    width: int = 512
-    height: int = 512
-    seed: int = -1
-    angle: str = "top_down"
-    style_token: str | None = None
 
 
 class GenerateSceneRequest(BaseModel):
@@ -141,30 +115,6 @@ class AnalyzeSceneRequest(BaseModel):
     context: dict = Field(default_factory=dict)
 
 
-class PeelLayerRequest(BaseModel):
-    """Pelado de UNA capa del plató (proscenio): la imagen actual del plató +
-    la máscara del elemento SEGMENTADO de la imagen (SAM2 — nunca una silueta
-    declarada; blanco = hueco) + el prompt de lo que hay detrás. Backend:
-    "lama" (default para el plató — LaMa local, cero invención, el hueco queda
-    tapado por su recorte; bench stage_lab 003-005: FLUX reinventa el mueble
-    dentro de su propio hueco), "flux" (FLUX Fill guiado por prompt) o "auto"
-    (flux si hay FAL_KEY, si no lama). Cacheado por hash (imagen, máscara,
-    prompt, algo): el resume es determinista y gratis."""
-    image_b64: str = Field(min_length=1)
-    mask_b64: str = Field(min_length=1)
-    prompt: str = Field(min_length=1)
-    backend: str = Field(default="auto", pattern="^(auto|lama|flux)$")
-
-
-class ScenePlateRequest(BaseModel):
-    """Placa de fondo del tile: la imagen de escena + la máscara unión de los
-    segmentos `tall` recortados (blanco = hueco). El inpainting local rellena
-    los huecos continuando solo el suelo, sin añadir nada — la capa base que
-    el fade por proximidad de los cutouts revela detrás de un objeto alto."""
-    image_b64: str = Field(min_length=1)
-    mask_b64: str = Field(min_length=1)
-
-
 @router.post("/generate_scene")
 async def generate_scene(body: GenerateSceneRequest):
     """Accept the LlmContext from the bridge, return open-world scene JSON."""
@@ -184,94 +134,33 @@ async def generate_scene(body: GenerateSceneRequest):
         raise HTTPException(status_code=status, detail=str(e)) from e
 
 
-@router.post("/generate_texture")
-async def generate_texture_endpoint(body: TextureRequest):
-    """Generate PBR texture set from a prompt. Returns URLs to cached PNGs."""
-    import asyncio
-
-    key = deps.asset_cache.hash_key(body.prompt)
-
-    # Check cache first
-    if deps.asset_cache.has_all(body.prompt, ["albedo", "normal"]):
-        return {
-            "hash": key,
-            "cached": True,
-            "albedo_url": f"/cache/albedo/{key}",
-            "normal_url": f"/cache/normal/{key}",
-        }
-
-    # Generate (serialized — CUDA doesn't support concurrent access)
-    start = time.time()
-    async with deps.gpu_lock:
-        result = await asyncio.to_thread(deps.texture_gen.generate, body.prompt, body.seed)
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    # Store in cache
-    deps.asset_cache.put(body.prompt, "albedo", result["albedo"])
-    deps.asset_cache.put(body.prompt, "normal", result["normal"])
-
-    return {
-        "hash": key,
-        "cached": False,
-        "albedo_url": f"/cache/albedo/{key}",
-        "normal_url": f"/cache/normal/{key}",
-        "generation_time_ms": elapsed_ms,
-    }
-
-
-@router.post("/generate_model")
-async def generate_model_endpoint(body: ModelRequest):
-    """Generate a 3D model (GLB) from a prompt."""
-    import asyncio
-
-    # namespace_context: en modo dev-cache el GLB deriva de una respuesta
-    # rancia de Meshy — no debe pisar el slot real de este prompt.
-    model_ctx = DEV_API_CACHE.namespace_context()
-    key = deps.model_cache.hash_key(body.prompt, model_ctx)
-
-    # Check cache
-    if deps.model_cache.has(body.prompt, "model", model_ctx):
-        return {
-            "hash": key,
-            "cached": True,
-            "model_url": f"/cache/model/{key}",
-        }
-
-    # Generate (serialized with textures via GPU lock)
-    start = time.time()
-    async with deps.gpu_lock:
-        glb_bytes = await asyncio.to_thread(
-            deps.model_gen.generate, body.prompt, body.scale, body.seed, body.quality
-        )
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.model_cache.put(body.prompt, "model", glb_bytes, model_ctx)
-
-    return {
-        "hash": key,
-        "cached": False,
-        "model_url": f"/cache/model/{key}",
-        "generation_time_ms": elapsed_ms,
-    }
-
-
 @router.get("/backend_status")
 async def backend_status_endpoint():
     """Report the state of optional backends. Used by Godot's ServiceSettings panel."""
     import asyncio
 
-    # Meshy 3D
-    if deps.model_gen and getattr(deps.model_gen, "_meshy", None):
+    from routers.gpu_proxy import GPU_WORKER_URL, fetch_gpu_worker_health
+
+    # Meshy 3D vive en el gpu-worker desde F3: agregación best-effort de su
+    # /health (timeout 2 s). El shape del panel de Godot no cambia.
+    worker = await fetch_gpu_worker_health()
+    backend = worker.get("model_backend") if worker else None
+    if backend == "meshy":
         meshy_status = {"state": "ready", "message": "API key configurada"}
-    elif deps.model_gen and getattr(deps.model_gen, "_triposg_available", False):
+    elif backend == "triposg":
         meshy_status = {
             "state": "fallback",
             "message": "Meshy no configurado (usando TripoSG local)",
         }
-    else:
+    elif backend == "none":
         meshy_status = {
             "state": "down",
             "message": "no disponible (define MESHY_API_KEY en .env)",
+        }
+    else:
+        meshy_status = {
+            "state": "down",
+            "message": f"gpu-worker no disponible ({GPU_WORKER_URL})",
         }
 
     # AI Vision (MCP bridge listener preferred, direct API as fallback)
@@ -328,97 +217,6 @@ async def analyze_weapon_endpoint(body: AnalyzeWeaponRequest):
     return result
 
 
-@router.post("/generate_skin")
-async def generate_skin_endpoint(body: SkinRequest):
-    """Generate a character skin variant via img2img on the base Paladin UV."""
-    import asyncio
-
-    key = deps.skin_cache.hash_key(body.prompt)
-
-    if deps.skin_cache.has(body.prompt, "skin"):
-        return {
-            "hash": key,
-            "cached": True,
-            "skin_url": f"/cache/skin/{key}",
-        }
-
-    start = time.time()
-    async with deps.gpu_lock:
-        result = await asyncio.to_thread(
-            deps.skin_gen.generate, body.prompt, body.strength, body.gamma, body.seed
-        )
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.skin_cache.put(body.prompt, "skin", result["skin"])
-
-    return {
-        "hash": key,
-        "cached": False,
-        "skin_url": f"/cache/skin/{key}",
-        "generation_time_ms": elapsed_ms,
-    }
-
-
-@router.post("/generate_sprite")
-async def generate_sprite_endpoint(body: SpriteRequest):
-    """Generate an RGBA sprite PNG from a prompt (image with transparent background).
-
-    Accepts an optional ``angle`` (top_down | isometric_30 | isometric_45 |
-    frontal) so 2D-world assets match the projection of pre-rendered Mixamo
-    sprite sheets. ``angle`` and ``style_token`` participate in the cache key,
-    so the same prompt at different angles cache independently.
-    """
-    import asyncio
-
-    context = {"angle": body.angle}
-    if body.style_token:
-        context["style_token"] = body.style_token
-
-    key = deps.sprite_cache.hash_key(body.prompt, context)
-
-    if deps.sprite_cache.has(body.prompt, "sprite", context):
-        return {
-            "hash": key,
-            "cached": True,
-            "sprite_url": f"/cache/sprite/{key}",
-            "angle": body.angle,
-        }
-
-    start = time.time()
-    async with deps.gpu_lock:
-        result = await asyncio.to_thread(
-            deps.sprite_gen.generate, body.prompt, body.width, body.height,
-            body.seed, body.angle, body.style_token,
-        )
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.sprite_cache.put(
-        body.prompt, "sprite", result["sprite"],
-        context=context, subtype_override="sprite_2d",
-    )
-
-    return {
-        "hash": key,
-        "cached": False,
-        "sprite_url": f"/cache/sprite/{key}",
-        "angle": body.angle,
-        "generation_time_ms": elapsed_ms,
-    }
-
-
-def _decode_b64_png(image_b64: str) -> bytes:
-    """Decode a base64 PNG (optionally a `data:image/png;base64,` URL) to bytes.
-    Fail-loud: a malformed payload is a 400, not a silent empty image."""
-    import base64
-    raw = image_b64
-    if raw.startswith("data:"):
-        _, _, raw = raw.partition(",")
-    try:
-        return base64.b64decode(raw, validate=True)
-    except (ValueError, base64.binascii.Error) as e:
-        raise HTTPException(status_code=400, detail=f"invalid base64 image: {e}") from e
-
-
 @router.post("/generate_scene_image")
 async def generate_scene_image_endpoint(body: SceneImageRequest):
     """Repaint the client's schematic into a detailed top-down scene (img2img +
@@ -429,7 +227,7 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     if deps.scene_image_gen is None:
         raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
 
-    png = _decode_b64_png(body.image_b64)
+    png = decode_b64_png(body.image_b64)
     # layout_key del cliente (hash del spec del greybox, prefijado para no
     # colisionar con el espacio de hashes de PNG) o hash de los píxeles.
     layout = (
@@ -539,7 +337,7 @@ async def analyze_scene_image_endpoint(body: AnalyzeSceneRequest):
     if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
 
-    png = _decode_b64_png(body.image_b64)
+    png = decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
     ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
@@ -744,7 +542,7 @@ async def review_scene_image_endpoint(body: AnalyzeSceneRequest):
     if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
 
-    png = _decode_b64_png(body.image_b64)
+    png = decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
     ctx = DEV_API_CACHE.namespace_context({
         "layout": layout,
@@ -889,7 +687,7 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
     if deps.llm_client is None:
         raise HTTPException(status_code=503, detail="deps.llm_client unavailable — vision required")
 
-    png = _decode_b64_png(body.image_b64)
+    png = decode_b64_png(body.image_b64)
     layout = hashlib.sha256(png).hexdigest()[:16]
     expected_req: list[dict] = body.context.get("expected_elements", [])
     expected_by_id = {e["id"]: e for e in expected_req}
@@ -1024,136 +822,6 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
         f"{sum(1 for x in items_out if x['source'] == 'extra')} extras)"
     )
     return result
-
-
-@router.post("/peel_scene_layer")
-async def peel_scene_layer_endpoint(body: PeelLayerRequest):
-    """Pelado de una capa del plató: rellena el hueco de la máscara con lo
-    declarado detrás. La máscara se dilata (±8 px) antes del relleno y el
-    resultado se compone DURO sobre la imagen original (fuera de la máscara
-    dilatada, ni un píxel cambia — lección del experimento de julio)."""
-    import asyncio
-    import hashlib
-    import io
-
-    from PIL import Image, ImageFilter
-
-    image_png = _decode_b64_png(body.image_b64)
-    mask_png = _decode_b64_png(body.mask_b64)
-
-    if body.backend == "flux":
-        if deps.fill_client is None:
-            raise HTTPException(status_code=503, detail="backend flux pedido pero sin fill_client (FAL_KEY)")
-        use_flux = True
-    elif body.backend == "lama":
-        if deps.plate_inpainter is None:
-            raise HTTPException(status_code=503, detail="backend lama pedido pero sin plate_inpainter")
-        use_flux = False
-    else:
-        use_flux = deps.fill_client is not None
-        if not use_flux and deps.plate_inpainter is None:
-            raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
-
-    # Máscara dilatada ±16 px: cubre el anti-alias del borde y traga patas
-    # finas/halos que la segmentación deja fuera (bench stage_lab 004→005) —
-    # el hueco queda TAPADO por su recorte, el halo extra no se ve.
-    mask_img = Image.open(io.BytesIO(mask_png)).convert("L")
-    for _ in range(4):
-        mask_img = mask_img.filter(ImageFilter.MaxFilter(9))
-    buf = io.BytesIO()
-    mask_img.save(buf, format="PNG")
-    dilated_png = buf.getvalue()
-
-    algo = "fluxfill1" if use_flux else f"lama_{PLATE_ALGO}"
-    ctx = DEV_API_CACHE.namespace_context({
-        "layout": hashlib.sha256(image_png).hexdigest()[:16],
-        "mask": hashlib.sha256(dilated_png).hexdigest()[:16],
-        "algo": algo,
-    })
-    key = deps.scene_cache.hash_key(body.prompt, ctx)
-    if deps.scene_cache.get_by_hash(key, "plate") is not None:
-        return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
-
-    start = time.time()
-    filled: bytes
-    if use_flux:
-        try:
-            filled = await asyncio.to_thread(
-                deps.fill_client.fill, image_png, dilated_png, body.prompt
-            )
-        except Exception as e:
-            # Sin saldo / fallo remoto: degradar a LaMa local con SU clave de
-            # caché (nunca cachear un relleno LaMa bajo la clave flux).
-            if deps.plate_inpainter is None:
-                raise HTTPException(status_code=502, detail=f"fal fill falló y no hay LaMa: {e}") from e
-            print(f"peel_scene_layer: fal fill falló ({e}) — fallback LaMa", flush=True)
-            algo = f"lama_{PLATE_ALGO}"
-            ctx["algo"] = algo
-            key = deps.scene_cache.hash_key(body.prompt, ctx)
-            if deps.scene_cache.get_by_hash(key, "plate") is not None:
-                return {"hash": key, "cached": True, "peeled_url": f"/cache/plate/{key}", "backend": algo}
-            async with deps.gpu_lock:
-                filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
-    else:
-        async with deps.gpu_lock:
-            filled = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, dilated_png)
-
-    # Composite duro: el relleno solo dentro de la máscara dilatada.
-    base = Image.open(io.BytesIO(image_png)).convert("RGB")
-    fill_img = Image.open(io.BytesIO(filled)).convert("RGB")
-    if fill_img.size != base.size:
-        fill_img = fill_img.resize(base.size, Image.LANCZOS)
-    composed = Image.composite(fill_img, base, mask_img)
-    out = io.BytesIO()
-    composed.save(out, format="PNG")
-    peeled = out.getvalue()
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.scene_cache.put(body.prompt, "plate", peeled, context=ctx, subtype_override="plate")
-    return {
-        "hash": key,
-        "cached": False,
-        "peeled_url": f"/cache/plate/{key}",
-        "backend": algo,
-        "generation_time_ms": elapsed_ms,
-    }
-
-
-@router.post("/inpaint_scene_plate")
-async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
-    """Placa de fondo: inpainting LOCAL (SD 1.5, sin créditos) de los huecos
-    que dejan los objetos altos recortados de la imagen de escena. Devuelve la
-    escena sin los objetos — lo que realmente hay debajo. Cacheado por hash de
-    (imagen, máscara): el resume es determinista y gratis."""
-    import asyncio
-    import hashlib
-
-    if deps.plate_inpainter is None:
-        raise HTTPException(status_code=503, detail="deps.plate_inpainter unavailable")
-
-    image_png = _decode_b64_png(body.image_b64)
-    mask_png = _decode_b64_png(body.mask_b64)
-    ctx = DEV_API_CACHE.namespace_context({
-        "layout": hashlib.sha256(image_png).hexdigest()[:16],
-        "mask": hashlib.sha256(mask_png).hexdigest()[:16],
-        "algo": PLATE_ALGO,
-    })
-    key = deps.scene_cache.hash_key("plate", ctx)
-    if deps.scene_cache.get_by_hash(key, "plate") is not None:
-        return {"hash": key, "cached": True, "plate_url": f"/cache/plate/{key}"}
-
-    start = time.time()
-    async with deps.gpu_lock:
-        plate = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, mask_png)
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.scene_cache.put("plate", "plate", plate, context=ctx, subtype_override="plate")
-    return {
-        "hash": key,
-        "cached": False,
-        "plate_url": f"/cache/plate/{key}",
-        "generation_time_ms": elapsed_ms,
-    }
 
 
 def _skin_sheet_key(

@@ -13,6 +13,9 @@ describe("registro de servicios ↔ config", () => {
     assert.equal(SERVICES["game-gateway"].currentPort, CONFIG.ports.bridge);
     assert.equal(SERVICES["world-state"].currentPort, CONFIG.ports.state_api);
     assert.equal(SERVICES["narrative-llm"].currentPort, CONFIG.ai_server.port);
+    // Extraídos: puerto propio, atado a su entrada de CONFIG.ports.
+    assert.equal(SERVICES["asset-store"].currentPort, CONFIG.ports.asset_store);
+    assert.equal(SERVICES["gpu-worker"].currentPort, CONFIG.ports.gpu_worker);
     // Los servicios aún no extraídos co-viven en ai_server: mismo puerto.
     for (const name of ["gpu-worker", "asset-store", "remote-gen"] as const) {
       if (SERVICES[name].extractionPhase !== undefined) {

@@ -25,6 +25,7 @@ import {
 } from "@nefan-core/src/scene/image-collision.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
+import type { GenServiceUrls } from "../net/service-urls.js";
 import type { CanvasRenderer, ComposedTilePlan, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
 import type { ExpectedElement } from "./svg-collision.js";
 
@@ -99,12 +100,12 @@ export class SceneImageController {
    *  save). "" = sin sesión aún ⇒ el servidor usa su referencia global. */
   private styleId = "";
 
-  /** baseUrl = generación/review (ai_server); assetsUrl = blobs /cache/*
-   *  (asset-store :8767) — los endpoints devuelven *_url RELATIVAS al cache. */
+  /** urls: reparto por servicio — narrative (reviews/análisis con visión),
+   *  gpu (placa LaMa), remote (repintado Meshy/fal), assets (blobs /cache/*;
+   *  los endpoints devuelven *_url RELATIVAS al cache). */
   constructor(
     private renderer: CanvasRenderer,
-    private baseUrl: string,
-    private assetsUrl: string,
+    private urls: GenServiceUrls,
   ) {}
 
   setStyle(styleId: string): void {
@@ -257,7 +258,7 @@ export class SceneImageController {
     mctx.fillRect(0, 0, w, h);
     mctx.drawImage(acc, 0, 0);
 
-    const res = await fetch(`${this.baseUrl}/inpaint_scene_plate`, {
+    const res = await fetch(`${this.urls.gpu}/inpaint_scene_plate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -270,7 +271,7 @@ export class SceneImageController {
     }
     const data = (await res.json()) as { plate_url?: string };
     if (!data.plate_url) throw new Error("/inpaint_scene_plate sin plate_url");
-    let plate = await this.loadImage(`${this.assetsUrl}${data.plate_url}`);
+    let plate = await this.loadImage(`${this.urls.assets}${data.plate_url}`);
     // El servidor aplana a RGB (el alpha del rombo/voladizo vuelve negro):
     // re-enmascarar con el blueprint compuesto, como la imagen original.
     plate = await this.maskByBlueprint(plate, key);
@@ -327,7 +328,7 @@ export class SceneImageController {
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, tileExt);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
-      const res = await fetch(`${this.baseUrl}/generate_scene_image`, {
+      const res = await fetch(`${this.urls.remote}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -356,7 +357,7 @@ export class SceneImageController {
       if (!data.scene_url) {
         throw new Error(`/generate_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
       }
-      let img = await this.loadImage(`${this.assetsUrl}${data.scene_url}`);
+      let img = await this.loadImage(`${this.urls.assets}${data.scene_url}`);
       if (contextSides.length > 0) {
         img = await this.cropToTile(img, expanded, tileExt);
       }
@@ -407,7 +408,7 @@ export class SceneImageController {
       }
       const dataUrl = this.renderer.captureSchematic(reviewRect, this.ppmFor(reviewRect));
       const sceneId = (scene.scene_id as string) || "unknown";
-      const res = await fetch(`${this.baseUrl}/review_scene_blueprint`, {
+      const res = await fetch(`${this.urls.narrative}/review_scene_blueprint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -502,7 +503,7 @@ export class SceneImageController {
       const expected: ExpectedElement[] | undefined = expectedInfo.length
         ? expectedInfo.map((e) => e.wire)
         : undefined;
-      const res = await fetch(`${this.baseUrl}/analyze_scene_image`, {
+      const res = await fetch(`${this.urls.narrative}/analyze_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -528,7 +529,7 @@ export class SceneImageController {
       const stripCells = new Set<number>();
       let solids = 0;
       for (const seg of data.segments ?? []) {
-        const sprite = await this.loadImage(`${this.assetsUrl}${seg.sprite_url}`);
+        const sprite = await this.loadImage(`${this.urls.assets}${seg.sprite_url}`);
         const [bx, by, bw, bh] = seg.image_bbox;
         // Rect del segmento en VISTA (lineal sobre el canvas del tile).
         const view: SceneBounds = {

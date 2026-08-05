@@ -36,29 +36,53 @@ class DevApiCache:
     def __init__(self, root: Path):
         self.root = root
         self._state_path = root / "state.json"
-        self._enabled = self._load_enabled()
+        self._enabled = False
+        self._state_sig: tuple[int, int] | None = None
+        self._refresh_enabled()
 
-    def _load_enabled(self) -> bool:
-        if not self._state_path.exists():
-            return False
-        return bool(json.loads(self._state_path.read_text()).get("enabled", False))
+    def _refresh_enabled(self) -> None:
+        """Relee state.json si cambió en disco. El toggle (POST /dev/api_cache)
+        vive en UN proceso (remote-gen tras F4) pero el flag lo consumen TODOS
+        (gpu-worker namespacea claves de modelo, narrative-llm cachea canales
+        fal): un stat() por acceso mantiene la vista compartida sin IPC. La
+        firma incluye el inode además del mtime: set_enabled escribe vía
+        tmp+replace (inode nuevo), así dos toggles dentro del mismo tick del
+        reloj no pasan desapercibidos."""
+        try:
+            st = self._state_path.stat()
+        except FileNotFoundError:
+            self._enabled = False
+            self._state_sig = None
+            return
+        sig = (st.st_mtime_ns, st.st_ino)
+        if sig == self._state_sig:
+            return
+        self._enabled = bool(json.loads(self._state_path.read_text()).get("enabled", False))
+        self._state_sig = sig
 
     @property
     def enabled(self) -> bool:
+        self._refresh_enabled()
         return self._enabled
 
     def set_enabled(self, on: bool) -> None:
         self._enabled = bool(on)
         self.root.mkdir(parents=True, exist_ok=True)
-        self._state_path.write_text(json.dumps({"enabled": self._enabled}))
+        # Escritura atómica: otro proceso puede estar releyendo el flag justo
+        # ahora — un write_text a medias le rompería el json.loads.
+        tmp = self._state_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"enabled": self._enabled}))
+        tmp.replace(self._state_path)
+        st = self._state_path.stat()
+        self._state_sig = (st.st_mtime_ns, st.st_ino)
         print(f"DevApiCache: {'ON — sirviendo últimas respuestas' if on else 'OFF — llamadas reales'}")
 
     # Sufijo/context para namespacear claves de caches derivados en modo dev.
     def namespace_suffix(self) -> str:
-        return "devcache" if self._enabled else ""
+        return "devcache" if self.enabled else ""
 
     def namespace_context(self, context: dict | None = None) -> dict | None:
-        if not self._enabled:
+        if not self.enabled:
             return context
         return {**(context or {}), "devcache": True}
 
@@ -81,7 +105,7 @@ class DevApiCache:
 
     def get(self, channel: str) -> list[bytes] | None:
         """El último payload del canal, solo con el modo activo."""
-        if not self._enabled:
+        if not self.enabled:
             return None
         bin_path, meta_path = self._paths(channel)
         if not (bin_path.exists() and meta_path.exists()):
@@ -131,7 +155,7 @@ class DevApiCache:
                     "bytes": sum(meta["sizes"]),
                     "blobs": len(meta["sizes"]),
                 }
-        return {"enabled": self._enabled, "channels": channels}
+        return {"enabled": self.enabled, "channels": channels}
 
 
 DEV_API_CACHE = DevApiCache(

@@ -140,6 +140,8 @@ export interface NefanConfig {
     html: number;
     /** asset-store (S6): blobs content-addressed + manifest SQLite (F2). */
     asset_store: number;
+    /** gpu-worker (S4): pipelines GPU locales — SD/TripoSG/LaMa (F3). */
+    gpu_worker: number;
   };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
@@ -211,6 +213,7 @@ export const CONFIG: NefanConfig = {
     godot_remote: 9876,
     html: 3000,
     asset_store: 8767,
+    gpu_worker: 8766,
   },
   content: {
     games_dir: "nefan-core/data/games",
