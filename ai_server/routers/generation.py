@@ -1,27 +1,23 @@
-"""Generación narrativa y de imagen de escena: escenas LLM, repintado
-Meshy/fal, análisis/review por visión y sprite sheets skinneados.
+"""Generación narrativa y visión: escenas LLM, análisis/review de imagen.
 
 Endpoints movidos TAL CUAL desde main.py (el estado runtime viene de `deps`).
 Incluye /backend_status y /analyze_weapon porque comparten el mismo dominio
 (estado y visión de los backends generativos). Los pipelines GPU locales
-(texturas/modelos/skins/sprites/LaMa) viven en routers/gpu_generation.py (F3).
+viven en routers/gpu_generation.py (F3) y los de APIs de pago (repintado,
+sprite sheets skinneados) en routers/remote_generation.py (F4).
 """
 
 import json
 import logging
-import time
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from asset_paths import SKINNED_SHEETS_DIR, SPRITE_SHEETS_DIR
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
 from llm_client import NarrativeUnavailable
 from request_util import decode_b64_png
-from scene_image_generator import SIDES
 from scene_segmenter import crop_sprite, scene_rgb_from_png
-from sprite_skin_meshy import SpriteSkinMeshy
 
 logger = logging.getLogger("ai_server")
 
@@ -59,51 +55,6 @@ class AnalyzeWeaponRequest(BaseModel):
     weapon_type: str = "generic"
     kind: str = "weapon_orient"
     context: dict = Field(default_factory=dict)
-
-
-class SceneImageRequest(BaseModel):
-    """Full-scene img2img from the 2D client's schematic capture.
-
-    `image_b64` is the base64-encoded PNG the Canvas renderer exports (terrain
-    plate + object rectangles, no characters). The result is a painted top-down
-    scene that maps 1:1 onto the same world rectangle.
-
-    `context_sides`: edges of the capture whose outermost strip is REAL,
-    already-painted art from an adjacent tile (not schematic). The model is
-    instructed to reproduce those strips and continue them seamlessly.
-
-    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes)
-    or "svg" (rich map_svg blueprint: the instruction asks for a full painterly
-    REPAINT with cutaway buildings instead of the box legend)."""
-    image_b64: str = Field(min_length=1)
-    prompt: str = Field(min_length=1)
-    context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg|stage)$")
-    # False = el plano NO tiene agua: la instrucción omite las cláusulas de
-    # agua (mencionarla en planos secos ceba ríos alucinados — bench
-    # 002_repaint_fidelity). Default True = comportamiento clásico.
-    has_water: bool = True
-    # Estilo del juego: id del pack (congelado en la sesión) y categoría de
-    # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
-    # referencia global fija de siempre.
-    style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    # Zonas de estilo (espejo de style-categories.ts; "nature" = legacy).
-    style_tag: str = Field(
-        default="",
-        pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
-    )
-    # Clave de layout ESTABLE aportada por el cliente (hash del GreyboxSpec
-    # canónico del plató). El render WebGL no es byte-determinista: sin esta
-    # clave, cada arranque hashearía píxeles distintos ⇒ miss (~$0.2/plató).
-    # Vacía ⇒ se hashea el PNG (camino clásico de la oblicua).
-    layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
-    @field_validator("context_sides")
-    @classmethod
-    def _valid_sides(cls, v: list[str]) -> list[str]:
-        bad = [s for s in v if s not in SIDES]
-        if bad:
-            raise ValueError(f"context_sides must be in {SIDES}, got {bad}")
-        return v
 
 
 class AnalyzeSceneRequest(BaseModel):
@@ -215,108 +166,6 @@ async def analyze_weapon_endpoint(body: AnalyzeWeaponRequest):
         raise HTTPException(status_code=503, detail="vision unavailable")
 
     return result
-
-
-@router.post("/generate_scene_image")
-async def generate_scene_image_endpoint(body: SceneImageRequest):
-    """Repaint the client's schematic into a detailed top-down scene (img2img +
-    ControlNet canny). Cached by (prompt, layout, strength)."""
-    import asyncio
-    import hashlib
-
-    if deps.scene_image_gen is None:
-        raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
-
-    png = decode_b64_png(body.image_b64)
-    # layout_key del cliente (hash del spec del greybox, prefijado para no
-    # colisionar con el espacio de hashes de PNG) o hash de los píxeles.
-    layout = (
-        f"gb:{body.layout_key[:16]}" if body.layout_key
-        else hashlib.sha256(png).hexdigest()[:16]
-    )
-    # `model` is in the key so switching backends/models never serves a stale
-    # image cached under a different generator. `sides` covers the (unlikely)
-    # case of identical pixels with a different context instruction; empty is
-    # dropped from the hash so pre-existing cache entries stay valid.
-    context = {
-        "layout": layout,
-        "kind": "full",
-        "model": (
-            deps.scene_image_gen._stage_model
-            if body.blueprint_kind == "stage"
-            else deps.scene_image_gen._model
-        ),
-        "sides": "+".join(sorted(body.context_sides)),
-        # Transformación server-side del esquema antes del modelo (prestretch
-        # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
-        # distintos, así que va en la clave para no servir imágenes del
-        # pipeline anterior. v2 (bench 003): la instrucción añade las cláusulas
-        # de rol de la ref de estilo — invalida las escenas que calcaban la
-        # composición de la ref.
-        "pipeline": "prestretch2",
-    }
-    # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
-    # imagen utilizable se degrada a la global — y la clave de cache NO lleva
-    # estilo, para no fragmentar el cache preexistente.
-    style_ref = None
-    if body.style_id and deps.style_packs is not None:
-        style_ref = deps.style_packs.resolve(body.style_id, body.style_tag or "settlement")
-        if style_ref is not None:
-            context["style"] = f"{style_ref.style_id}/{style_ref.category}:{style_ref.content_hash}"
-    # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
-    # no debe servir una imagen cacheada bajo la instrucción antigua. "boxes"
-    # se omite (como sides vacío) para no invalidar la caché preexistente.
-    if body.blueprint_kind != "boxes":
-        context["blueprint"] = body.blueprint_kind
-    # stage_greybox1: la base pasa de SVG rasterizado a render 3D greybox
-    # (clay) con prompt KEEP y modelo de plató propio — todas las generaciones
-    # stage previas quedan invalidadas.
-    if body.blueprint_kind == "stage":
-        context["pipeline"] = "stage_greybox1"
-    # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
-    # namespacear la clave para no contaminar el cache real de este layout.
-    context = DEV_API_CACHE.namespace_context(context)
-    key = deps.scene_cache.hash_key(body.prompt, context)
-
-    if deps.scene_cache.has(body.prompt, "scene", context):
-        return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
-    # Un miss regenera (~$0.2): dejar rastro de la clave para poder diagnosticar
-    # misses inesperados (p. ej. capturas no deterministas del cliente).
-    print(f"SceneImage: cache miss key={key} context={context}", flush=True)
-
-    # No deps.gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
-    # holding the lock would needlessly block texture/3D GPU work for ~30s.
-    start = time.time()
-    # 502 explícito: un crash del backend remoto subiría como 500 sin pasar por
-    # el CORSMiddleware y el navegador lo enmascara como error de red.
-    try:
-        result = await asyncio.to_thread(
-            deps.scene_image_gen.generate_full, png, body.prompt,
-            body.context_sides, body.blueprint_kind,
-            style_ref.data_uri if style_ref else None,
-            style_ref.style_token if style_ref else "",
-            body.has_water,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.scene_cache.put(body.prompt, "scene", result["scene"], context=context)
-    # Guardar también el schematic de entrada (el blueprint que pintó el cliente
-    # desde la escena del motor narrativo) para inspección/debug. Directo a disco
-    # sin registrar en el manifest: no es un asset reusable por el LLM.
-    blueprint_path = deps.scene_cache.get_path(key, "blueprint")
-    blueprint_path.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_path.write_bytes(png)
-
-    return {
-        "hash": key,
-        "cached": False,
-        "scene_url": f"/cache/scene/{key}",
-        "width": result["width"],
-        "height": result["height"],
-        "generation_time_ms": elapsed_ms,
-    }
 
 
 @router.post("/analyze_scene_image")
@@ -822,125 +671,3 @@ async def review_stage_image_endpoint(body: StageReviewRequest):
         f"{sum(1 for x in items_out if x['source'] == 'extra')} extras)"
     )
     return result
-
-
-def _skin_sheet_key(
-    model: str, anim: str, angle: str, prompt: str, ai_model: str, style_key: str = ""
-) -> str:
-    """Hash that invalidates whenever the underlying Mixamo sheet is
-    re-rendered. Including the base meta.json mtime guarantees the skinned
-    cache rebuilds on top of the latest frames; otherwise a re-render of the
-    base would silently keep the stale skinned variant alive. The Meshy model
-    and the keyframe profile are part of the key: cambiar de nano-banana-2 a
-    -pro (o retunear ANIM_PROFILES) debe regenerar, no servir el cache viejo.
-    """
-    import hashlib
-    from sprite_skin_meshy import ANIM_PROFILES, DEFAULT_PROFILE
-    base_meta = SPRITE_SHEETS_DIR / model / anim / angle / "meta.json"
-    base_stamp = str(int(base_meta.stat().st_mtime)) if base_meta.exists() else "0"
-    n_kf, fps = ANIM_PROFILES.get(anim, DEFAULT_PROFILE)
-    payload = "\n".join(
-        [model, anim, angle, prompt.strip().lower(), base_stamp, ai_model, f"kf{n_kf}@{fps}",
-         style_key,
-         # En modo dev-cache los frames derivan de una respuesta rancia: clave
-         # aparte para no contaminar el cache real de este prompt.
-         DEV_API_CACHE.namespace_suffix()]
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()[:16]
-
-
-@router.post("/skin_sprite_sheet")
-async def skin_sprite_sheet_endpoint(request: Request):
-    """Skinnea una anim de un sheet Mixamo con el prompt del personaje vía
-    Meshy (hero-shot de identidad + atlas de keyframes por dirección — el
-    pipeline validado en skinning_lab; la vía local SD+ControlNet quedó
-    descartada) y sirve los frames desde
-    `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
-
-    Body: {model, anim, angle, prompt}
-    Returns: {ok, hash, meta, frame_urls: [[url, ...], ...]} — OJO: el meta
-    devuelto es el del sheet SKINNEADO (keyframes reducidos + fps de perfil),
-    no el del base. El cliente reproduce con este meta.
-    """
-
-    body = await request.json()
-    model = str(body.get("model", "")).strip()
-    anim = str(body.get("anim", "idle")).strip()
-    angle = str(body.get("angle", "isometric_30")).strip()
-    prompt = str(body.get("prompt", "")).strip()
-    # Estilo del juego (opcional): pack + rol del personaje para elegir la
-    # referencia (commoner/noble/warrior). Sin pack o sin imagen ⇒ sin ref.
-    style_id = str(body.get("style_id", "")).strip()
-    style_role = str(body.get("style_role", "commoner")).strip() or "commoner"
-
-    if not (model and prompt):
-        raise HTTPException(status_code=400, detail="missing model or prompt")
-    if style_role not in ("commoner", "noble", "warrior"):
-        raise HTTPException(status_code=400, detail=f"invalid style_role: {style_role}")
-
-    style_ref = None
-    if style_id and deps.style_packs is not None:
-        style_ref = deps.style_packs.resolve(style_id, f"character_{style_role}")
-    style_key = f"{style_ref.style_id}:{style_ref.content_hash}" if style_ref else ""
-
-    sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle
-    if not (sheet_dir / "meta.json").exists():
-        raise HTTPException(status_code=404, detail=f"sheet not found: {model}/{anim}/{angle}")
-
-    if deps.sprite_skin_gen is None:
-        try:
-            deps.sprite_skin_gen = SpriteSkinMeshy(
-                SPRITE_SHEETS_DIR, SKINNED_SHEETS_DIR, deps.config["sprite_skin_model"]
-            )
-        except ValueError as e:
-            # MESHY_API_KEY ausente o modelo desconocido: el cliente degrada a
-            # la base y_bot (una entrada de error-log, sin reintentos).
-            raise HTTPException(status_code=503, detail=f"sprite skin no disponible: {e}") from e
-
-    key = _skin_sheet_key(model, anim, angle, prompt, deps.sprite_skin_gen.ai_model, style_key)
-    out_dir = SKINNED_SHEETS_DIR / key
-    out_meta_path = out_dir / "meta.json"
-
-    start = time.time()
-    if out_meta_path.exists():
-        # meta.json se escribe el ÚLTIMO (skin_anim es todo-o-nada): su
-        # presencia garantiza que todos los frames están en disco.
-        with open(out_meta_path) as f:
-            meta = json.load(f)
-    else:
-        try:
-            meta = await deps.sprite_skin_gen.skin_anim(
-                model, anim, angle, prompt, out_dir,
-                style_uri=style_ref.data_uri if style_ref else "",
-                style_key=style_key,
-                style_token=style_ref.style_token if style_ref else "",
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Meshy sprite skin failed ({model}/{anim}): {type(e).__name__}: {e}",
-            ) from e
-        logger.info(
-            f"SpriteSkin: {model}/{anim} ← \"{prompt[:40]}\" "
-            f"({meta['directions']} dirs × {meta['frame_count']} kf, "
-            f"${meta['skin']['cost_usd']}, {int(time.time() - start)}s)"
-        )
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    frame_urls = [
-        [
-            f"/cache/sprite_sheet/{key}/dir_{d}_frame_{f:03d}.png"
-            for f in range(int(meta["frame_count"]))
-        ]
-        for d in range(int(meta["directions"]))
-    ]
-
-    return {
-        "ok": True,
-        "hash": key,
-        "meta": meta,
-        "frame_urls": frame_urls,
-        "generation_time_ms": elapsed_ms,
-    }

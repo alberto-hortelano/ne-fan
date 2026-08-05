@@ -47,6 +47,7 @@ from routers.cache_assets import router as cache_assets_router
 from routers.generation import router as generation_router
 from routers.gpu_proxy import router as gpu_proxy_router
 from routers.narrative import router as narrative_router
+from routers.remote_generation import router as remote_generation_router
 from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
@@ -155,6 +156,7 @@ app.include_router(asset_proxy_router)
 app.include_router(gpu_proxy_router)
 app.include_router(styles_router)
 app.include_router(generation_router)
+app.include_router(remote_generation_router)
 app.include_router(narrative_router)
 
 
