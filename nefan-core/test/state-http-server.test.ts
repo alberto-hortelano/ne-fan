@@ -69,7 +69,7 @@ before(async () => {
           activePlugins,
           id,
           view,
-        ) as unknown as Record<string, unknown>,
+        ),
     },
   });
   await new Promise<void>((resolve) => server.on("listening", () => resolve()));
