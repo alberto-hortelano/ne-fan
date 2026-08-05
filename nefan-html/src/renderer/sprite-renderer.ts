@@ -54,9 +54,13 @@ export class SpriteRenderer {
   private inflight = new Map<string, Promise<SpriteSheet>>();
   private skinInflight = new Map<string, Promise<SpriteSheet>>();
 
+  /** baseUrl = sheets estáticos locales (/sprites, Vite); aiServerUrl =
+   *  generación (/skin_sprite_sheet, remote-gen en ai_server hoy); assetsUrl
+   *  = frames cacheados (/cache/sprite_sheet/..., asset-store :8767). */
   constructor(
     private baseUrl: string,
     private aiServerUrl: string,
+    private assetsUrl: string,
   ) {}
 
   /** Fija el estilo del juego activo. Cambiarlo invalida el cache local de
@@ -149,7 +153,8 @@ export class SpriteRenderer {
         const frames: HTMLImageElement[][] = data.frame_urls.map((dir) => dir.map((url) => {
           const img = new Image();
           img.crossOrigin = "anonymous";
-          img.src = url.startsWith("http") ? url : `${this.aiServerUrl}${url}`;
+          // Las relativas son /cache/sprite_sheet/... → asset-store.
+          img.src = url.startsWith("http") ? url : `${this.assetsUrl}${url}`;
           return img;
         }));
         const sheet: SpriteSheet = { ...meta, model: skinnedModel, frames };

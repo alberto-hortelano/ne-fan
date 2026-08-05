@@ -38,7 +38,6 @@ before(async () => {
     port: 0, // efímero
     narrative,
     npcDirector: new NpcDirector(narrative),
-    stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
     gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
     onMutation: async () => {
       mutations += 1;

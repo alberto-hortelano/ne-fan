@@ -27,7 +27,7 @@ import type {
   SceneValidationResult,
   FormatDScene,
 } from "./common.js";
-import { endpoint, type BinaryResponse } from "./http.js";
+import { endpoint } from "./http.js";
 
 // ── Sobres request/response (hoy implícitos en state-http-server.ts) ──
 
@@ -236,13 +236,8 @@ export const WorldStateApi = {
     "/npc/{id}/directive",
   ),
 
-  /** @deprecated Migra a asset-store en F2 (los covers/refs de un style pack
-   *  son assets, no estado del mundo). Mientras tanto sigue aquí porque el
-   *  título debe funcionar sin ai_server (preset 4 del launcher). */
-  getStyleFile: endpoint<void, BinaryResponse, "style_id" | "file">(
-    "GET",
-    "/styles/{style_id}/{file}",
-  ),
+  // GET /styles/{style_id}/{file} migró al asset-store en F2 (los covers de
+  // un style pack son assets, no estado del mundo): AssetStoreApi.getStyleFile.
 
   /** PLANNED F5 — contexto LLM de la sesión, para des-stickyficar el
    *  LLMClient de narrative-llm (hoy ese contexto viaja empujado en cada

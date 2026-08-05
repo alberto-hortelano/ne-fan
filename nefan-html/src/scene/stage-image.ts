@@ -148,8 +148,12 @@ export class StageImageController {
    *  versión del pipeline de pelado. */
   private cache = new Map<string, { specHash: string; images: StageImages }>();
 
+  /** baseUrl = generación/review/peel (ai_server); assetsUrl = blobs
+   *  /cache/* (asset-store :8767) — los endpoints devuelven URLs RELATIVAS
+   *  al cache que fetchToSquare resuelve contra assetsUrl. */
   constructor(
     private readonly baseUrl: string,
+    private readonly assetsUrl: string,
     private readonly deps: StageImageDeps,
   ) {
     HOT_REGISTRY.add(this);
@@ -532,7 +536,7 @@ export class StageImageController {
   private async fetchToSquare(urlPath: string): Promise<HTMLCanvasElement> {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = urlPath.startsWith("http") ? urlPath : `${this.baseUrl}${urlPath}`;
+    img.src = urlPath.startsWith("http") ? urlPath : `${this.assetsUrl}${urlPath}`;
     await img.decode();
     const canvas = makeCanvas();
     canvas.getContext("2d")!.drawImage(img, 0, 0, RENDER_SIZE, RENDER_SIZE);
