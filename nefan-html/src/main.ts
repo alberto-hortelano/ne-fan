@@ -50,6 +50,7 @@ import {
 import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
+import { serviceUrl } from "./net/service-urls.js";
 import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
 import { HistoryBrowser } from "./ui/history-browser.js";
 import { inputRegistry } from "./input/registry.js";
@@ -154,10 +155,11 @@ const config = loadConfig(combatConfigJson);
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const WORLD_ANGLE = "isometric_30";
-// Override de bench (simétrico a `?bridge=`): `?ai=http://127.0.0.1:18765`
-// apunta imagen/assets/auto-img a un ai_server alternativo (mock).
-const AI_SERVER_URL =
-  new URLSearchParams(location.search).get("ai") ?? "http://127.0.0.1:8765";
+// Base del ai_server (S3 narrative-llm). Overrides de bench (`?ai=`,
+// `?bridge=`) viven en net/service-urls.ts. HOY esta base fluye también a
+// sprites/assets/imagen porque S3–S6 co-viven en ai_server; el reparto por
+// servicio (asset-store, gpu-worker, remote-gen) es trabajo de F2–F4.
+const AI_SERVER_URL = serviceUrl("narrative-llm");
 const spriteRenderer = new SpriteRenderer("/sprites", AI_SERVER_URL);
 const characterSprites = new CharacterSpriteManager(spriteRenderer, WORLD_ANGLE);
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
@@ -1811,10 +1813,9 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-// Override de bench: `?bridge=ws://127.0.0.1:19877` conecta este cliente a un
-// bridge alternativo (stack E2E de narrative_lab) sin tocar la sesión normal.
-const bridgeOverride = new URLSearchParams(location.search).get("bridge");
-const sharedBridge = bridgeOverride ? new BridgeClient(bridgeOverride) : new BridgeClient();
+// El override de bench `?bridge=` (stack E2E de narrative_lab) se resuelve en
+// net/service-urls.ts.
+const sharedBridge = new BridgeClient(serviceUrl("game-gateway"));
 const narrativeClient = new NarrativeClient(sharedBridge);
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);

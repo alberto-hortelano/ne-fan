@@ -1,4 +1,5 @@
-/** WebSocket bridge — runs GameSimulation + NarrativeState, communicates with Godot on :9877.
+/** WebSocket bridge — runs GameSimulation + NarrativeState; los clientes
+ * conectan al puerto del gateway (SERVICES["game-gateway"], CONFIG.ports.bridge).
  *
  *  Este archivo es sólo bootstrap: construye las instancias, el BridgeContext
  *  y el wiring de transporte (WS + state HTTP API). La lógica de cada mensaje
@@ -25,6 +26,7 @@ import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
+import { resolveServiceUrl } from "../src/contracts/common.js";
 import { createStateHttpServer } from "./state-http-server.js";
 import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
@@ -45,7 +47,10 @@ const STYLES_DIR = resolve(dataDir, "styles");
 // Saves live in a shared filesystem location accessible to every client
 // (HTML cannot read user:// from Godot). Override with NEFAN_SAVES_DIR.
 const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(homedir(), "code", "ne-fan", "saves");
-const AI_SERVER_URL = process.env.NEFAN_AI_SERVER ?? "http://127.0.0.1:8765";
+/** Destino del ai_server (S3 narrative-llm). NEFAN_AI_SERVER es el alias
+ *  histórico y gana (lo usa el bench de narrative_lab documentado);
+ *  @deprecated — usar NEFAN_URL_NARRATIVE_LLM (contrato F1); retirada en F5. */
+const AI_SERVER_URL = process.env.NEFAN_AI_SERVER ?? resolveServiceUrl("narrative-llm", process.env);
 
 // Load combat config
 const configPath = resolve(dataDir, "combat_config.json");

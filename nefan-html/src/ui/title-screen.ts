@@ -17,6 +17,7 @@ import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
 import { CONFIG } from "@nefan-core/src/config.js";
+import { serviceUrl } from "../net/service-urls.js";
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }
@@ -30,12 +31,13 @@ export type TitleAction =
       appearance: { model_id: string; skin_path: string };
     };
 
-/** State API del bridge (:9878) — sirve las covers de los estilos como
- *  estáticos, con o sin ai_server. */
-const STATE_API_URL = `http://127.0.0.1:${CONFIG.ports.state_api}`;
-/** ai_server (:8765) — subida de estilos y generación de las categorías que
- *  falten (Meshy). Sin ai_server, "Subir estilo" falla con error visible. */
-const AI_SERVER_HTTP = "http://127.0.0.1:8765";
+/** world-state (State API del bridge) — sirve las covers de los estilos como
+ *  estáticos, con o sin ai_server (migra a asset-store en F2). */
+const STATE_API_URL = serviceUrl("world-state");
+/** remote-gen — subida de estilos y generación de las categorías que falten
+ *  (Meshy). Hoy resuelve al ai_server; puerto propio en F4. Sin él, "Subir
+ *  estilo" falla con error visible. */
+const AI_SERVER_HTTP = serviceUrl("remote-gen");
 
 const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
   { id: "settlement", label: "Pueblo" },

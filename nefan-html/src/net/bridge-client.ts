@@ -1,4 +1,5 @@
-/** WebSocket client for nefan-core logic bridge (:9877).
+/** WebSocket client for the nefan-core logic bridge (game-gateway; la URL la
+ *  resuelve el caller con serviceUrl("game-gateway")).
  *  Mirrors Godot's logic_bridge.gd WebSocket protocol. */
 
 import type {
@@ -15,7 +16,6 @@ import type {
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
-import { CONFIG } from "@nefan-core/src/config.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -50,7 +50,7 @@ export class BridgeClient {
   private pending = new Map<string, PendingRequest>();
   private nextRequestId = 0;
 
-  constructor(url = `ws://127.0.0.1:${CONFIG.ports.bridge}`) {
+  constructor(url: string) {
     this.url = url;
     this.connect();
   }

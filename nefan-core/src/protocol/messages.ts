@@ -321,8 +321,9 @@ export interface GamesListedMessage {
     /** Resumen del mundo (~1.200 chars) — la tarjeta puede mostrar un extracto. */
     world_brief: string;
   }>;
-  /** Estilos disponibles para el selector; cover_url se sirve en el State
-   *  API del bridge (GET /styles/{id}/{file}, puerto :9878). */
+  /** Estilos disponibles para el selector; cover_url es relativo y se
+   *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
+   *  (SERVICES["world-state"] hoy; asset-store tras F2). */
   styles: Array<{
     style_id: string;
     name: string;

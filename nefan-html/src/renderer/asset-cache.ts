@@ -27,7 +27,7 @@ export class AssetCache {
   private images = new Map<string, HTMLImageElement>();
   private hashByPromptKey = new Map<string, Promise<string>>();
 
-  constructor(private baseUrl: string = "http://127.0.0.1:8765") {}
+  constructor(private baseUrl: string) {}
 
   /** Ask ai_server to render (or look up) a sprite for `prompt` at `angle`.
    * Returns the hash so the caller can stash it on an entity for `drawByHash`.

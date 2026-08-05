@@ -4,6 +4,7 @@
  * (both clients talk to the bridge, never to ai_server directly).
  */
 import { CONFIG } from "../config.js";
+import { resolveServiceUrl } from "../contracts/common.js";
 import type { Consequence, LlmContext } from "./types.js";
 
 export interface AiClientOptions {
@@ -54,7 +55,9 @@ export class AiClient {
   private dispatcher: unknown;
 
   constructor(opts: AiClientOptions = {}) {
-    this.baseUrl = opts.baseUrl ?? "http://127.0.0.1:8765";
+    // Sin env inyectado a propósito: este módulo debe seguir siendo
+    // importable desde el navegador; el bridge siempre pasa baseUrl.
+    this.baseUrl = opts.baseUrl ?? resolveServiceUrl("narrative-llm");
     this.timeoutMs = opts.timeoutMs ?? 60_000;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.dispatcher = opts.dispatcher;

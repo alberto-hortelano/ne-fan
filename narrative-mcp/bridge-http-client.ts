@@ -8,8 +8,16 @@
 
 import { RUNTIME_CONFIG } from "./runtime-config.js";
 
-const BRIDGE_HTTP_URL =
-  process.env.NEFAN_STATE_HTTP_URL || `http://127.0.0.1:${RUNTIME_CONFIG.ports.state_api}`;
+/** Destino del world-state. Orden de resolución (contrato F1): override
+ *  canónico NEFAN_URL_WORLD_STATE → NEFAN_STATE_HTTP_URL (alias legado,
+ *  @deprecated) → puerto de runtime_config (config, no hardcode). Sin import
+ *  runtime de nefan-core a propósito: este paquete solo consume el snapshot
+ *  JSON en runtime (ver runtime-config.ts). */
+const BRIDGE_HTTP_URL = (
+  process.env.NEFAN_URL_WORLD_STATE ??
+  process.env.NEFAN_STATE_HTTP_URL ??
+  `http://127.0.0.1:${RUNTIME_CONFIG.ports.state_api}`
+).replace(/\/+$/, "");
 const TIMEOUT_MS = 8_000;
 
 /** Hook de actividad: server.ts lo instala para convertir CADA llamada de

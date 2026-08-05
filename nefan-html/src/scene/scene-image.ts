@@ -101,7 +101,7 @@ export class SceneImageController {
 
   constructor(
     private renderer: CanvasRenderer,
-    private baseUrl: string = "http://127.0.0.1:8765",
+    private baseUrl: string,
   ) {}
 
   setStyle(styleId: string): void {
