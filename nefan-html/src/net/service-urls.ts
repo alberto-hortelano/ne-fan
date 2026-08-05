@@ -6,7 +6,7 @@
  *    que emula S3–S6 a la vez; apunta de golpe los CUATRO servicios que hoy
  *    co-viven en ai_server (narrative-llm, gpu-worker, remote-gen,
  *    asset-store).
- *  - `?bridge=ws://127.0.0.1:19877` — gateway alternativo del bench E2E.
+ *  - `?bridge=ws://...` — gateway alternativo (stack E2E de narrative_lab).
  * Sin query params → loopback con el puerto ACTUAL de cada servicio
  * (SERVICES.currentPort del contrato). */
 import {
