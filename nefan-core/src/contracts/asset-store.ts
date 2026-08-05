@@ -67,7 +67,10 @@ export interface AssetListResponse {
 }
 
 export interface AssetByHashResponse {
-  matches: Array<ManifestEntry & { cache_url: string }>;
+  /** cache_url solo para texture (→ /cache/{subtype}/{hash}) y
+   *  model|skin|sprite (→ /cache/{type}/{hash}); scene/segment van SIN él
+   *  (cable real del router original). */
+  matches: Array<ManifestEntry & { cache_url?: string }>;
 }
 
 /** PLANNED F2 — registro remoto de un asset ya subido/escrito por un
@@ -94,6 +97,11 @@ export const AssetStoreApi = {
     "GET",
     "/cache/sprite_sheet/{hash}/{filename}",
   ),
+  /** @deprecated RUTA MUERTA desde que existe el catch-all: /cache/{kind}/
+   *  {hash} se registró siempre ANTES, así que /cache/check/{h} matchea con
+   *  kind="check" → 400 "Invalid map type". El shape CacheCheckResponse nunca
+   *  ha sido servible; la reimplementación Node preserva el 400 (test fija el
+   *  comportamiento). Revivirla sería un cambio de cable, no un fix. */
   checkHash: endpoint<void, CacheCheckResponse, "hash">("GET", "/cache/check/{hash}"),
   prune: endpoint<void, CachePruneResponse>("POST", "/cache/prune"),
   listAssets: endpoint<void, AssetListResponse, never, { asset_type?: string; limit?: number }>(

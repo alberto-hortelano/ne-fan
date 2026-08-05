@@ -12,5 +12,5 @@
     "composite": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "bridge/**/*.ts"]
+  "include": ["src/**/*.ts", "bridge/**/*.ts", "services/**/*.ts"]
 }
