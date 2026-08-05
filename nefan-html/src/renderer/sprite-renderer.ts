@@ -55,8 +55,8 @@ export class SpriteRenderer {
   private skinInflight = new Map<string, Promise<SpriteSheet>>();
 
   constructor(
-    private baseUrl: string = "/sprites",
-    private aiServerUrl: string = "http://127.0.0.1:8765",
+    private baseUrl: string,
+    private aiServerUrl: string,
   ) {}
 
   /** Fija el estilo del juego activo. Cambiarlo invalida el cache local de
