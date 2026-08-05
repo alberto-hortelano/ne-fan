@@ -54,8 +54,10 @@ export const SERVICES = {
   "gpu-worker": {
     protocol: "http",
     port: 8766,
-    currentPort: 8765,
-    extractionPhase: "F3",
+    // Extraído en F3: proceso propio (ai_server/gpu_worker_main.py).
+    // narrative-llm mantiene un proxy transparente de los endpoints GPU en
+    // :8765 para clientes no migrados (Godot).
+    currentPort: 8766,
     description:
       "Generación local con GPU: texturas SD1.5, skins, sprites, modelos, inpainting LaMa. 1 proceso = 1 GPU.",
   },

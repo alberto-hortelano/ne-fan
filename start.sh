@@ -17,6 +17,7 @@ PORT_AI=8765
 PORT_NARR=3737
 PORT_REMOTE=9876
 PORT_ASSETS=8767
+PORT_GPU=8766
 
 declare -a STARTED_PIDS=()
 
@@ -111,6 +112,19 @@ start_asset_store() {
     STARTED_PIDS+=($!)
     wait_for_http_health "http://127.0.0.1:$PORT_ASSETS/health" 30 "asset-store" || return 1
     echo "✅ asset-store :$PORT_ASSETS  (log: $LOG_DIR/nefan-asset-store.log)"
+}
+
+start_gpu_worker() {
+    port_busy "$PORT_GPU" && kill_port "$PORT_GPU"
+    (
+        cd "$PROJECT_DIR" || exit 1
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+        exec python -u ai_server/gpu_worker_main.py
+    ) >"$LOG_DIR/nefan-gpu-worker.log" 2>&1 &
+    STARTED_PIDS+=($!)
+    wait_for_http_health "http://127.0.0.1:$PORT_GPU/health" 30 "gpu-worker" || return 1
+    echo "✅ gpu-worker :$PORT_GPU  (log: $LOG_DIR/nefan-gpu-worker.log)"
 }
 
 start_narrative_mcp() {
@@ -243,7 +257,7 @@ EOF
 
 # Service slot index → key. OJO: añadir servicios nuevos AL FINAL — las
 # máscaras de PRESET_PROFILES y EXCLUSIVE_PAIRS son posicionales.
-SERVICES=(bridge narrative-mcp ai_server godot godot-headless html asset-store)
+SERVICES=(bridge narrative-mcp ai_server godot godot-headless html asset-store gpu-worker)
 # Service slot index → display label
 SERVICE_LABELS=(
     "bridge          :9877"
@@ -253,16 +267,18 @@ SERVICE_LABELS=(
     "Godot headless (xvfb)"
     "HTML            :3000"
     "asset-store     :8767"
+    "gpu-worker      :8766"
 )
 # Service slot index → one-line hint
 SERVICE_HINTS=(
     "shared TS logic + WebSocket"
     "MCP bridge to Claude Code"
-    "Python LLM/asset server"
+    "Python narrative/LLM server"
     "3D client window"
     "Godot under xvfb (no window)"
     "2D browser client"
     "blobs + manifest SQLite (F2)"
+    "SD/TripoSG/LaMa pipelines (F3)"
 )
 
 # Mutually exclusive pairs (space-separated indices in a single string).
@@ -291,20 +307,22 @@ PRESET_DESCS=(
 )
 # El asset-store acompaña a cualquier preset con bridge o ai_server: el
 # gateway resuelve assetExists contra :8767 y los generadores registran ahí;
-# también a "HTML 2D iteration" (covers de estilos sin ai_server).
-#                  bridge  narr  ai  god  hl  html  assets
+# también a "HTML 2D iteration" (covers de estilos sin ai_server). El
+# gpu-worker acompaña a los presets con ai_server (texturas/modelos/peel);
+# "Automated tests" y "HTML 2D iteration" no generan, van sin él.
+#                  bridge  narr  ai  god  hl  html  assets  gpu
 PRESET_PROFILES=(
-    "1 1 1 1 0 1 1"   # Play
-    "1 1 1 0 0 1 1"   # Story 2D
-    "1 0 0 0 1 0 1"   # Automated tests
-    "1 0 0 0 0 1 1"   # HTML 2D iteration
-    "0 0 0 1 0 0 0"   # Godot offline
-    "0 0 1 0 0 0 1"   # ai_server only
-    "0 0 0 0 0 0 0"   # Custom (filled in from current selection)
+    "1 1 1 1 0 1 1 1"   # Play
+    "1 1 1 0 0 1 1 1"   # Story 2D
+    "1 0 0 0 1 0 1 0"   # Automated tests
+    "1 0 0 0 0 1 1 0"   # HTML 2D iteration
+    "0 0 0 1 0 0 0 0"   # Godot offline
+    "0 0 1 0 0 0 1 1"   # ai_server only
+    "0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
 )
 
 # Live state — applied by TUI, consumed by launcher.
-declare -a ACTIVE=(0 0 0 0 0 0 0)
+declare -a ACTIVE=(0 0 0 0 0 0 0 0)
 
 apply_preset() {
     local idx=$1
@@ -615,10 +633,13 @@ run_selection() {
     echo "▶ Launching selected services..."
     echo ""
 
-    # Order: asset-store → bridge → narrative-mcp → ai_server → (Claude pause)
-    # → godot/headless → html. El asset-store va PRIMERO: ai_server hace
-    # count/prune al arrancar y el gateway puede pedir assetExists temprano.
+    # Order: asset-store → gpu-worker → bridge → narrative-mcp → ai_server →
+    # (Claude pause) → godot/headless → html. El asset-store va PRIMERO:
+    # ai_server hace count/prune al arrancar y el gateway puede pedir
+    # assetExists temprano; el gpu-worker antes que ai_server para que
+    # /backend_status ya lo vea al primer poll.
     (( ACTIVE[6] == 1 )) && { start_asset_store   || return 1; }
+    (( ACTIVE[7] == 1 )) && { start_gpu_worker    || return 1; }
     (( ACTIVE[0] == 1 )) && { start_bridge        || return 1; }
     (( ACTIVE[1] == 1 )) && { start_narrative_mcp || return 1; }
     (( ACTIVE[2] == 1 )) && { start_ai            || return 1; }
@@ -654,6 +675,7 @@ cmd_status() {
         "narrative-mcp:$PORT_NARR"
         "ai_server:$PORT_AI"
         "asset-store:$PORT_ASSETS"
+        "gpu-worker:$PORT_GPU"
         "Godot remote:$PORT_REMOTE"
         "HTML:$PORT_HTML"
     )
@@ -680,7 +702,7 @@ cmd_status() {
 cmd_stop() {
     echo "🛑 killing services..."
     local port
-    for port in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS"; do
+    for port in "$PORT_BRIDGE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU"; do
         if port_busy "$port"; then
             kill_port "$port"
             echo "    · :$port"

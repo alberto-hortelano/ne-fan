@@ -139,18 +139,28 @@ async def backend_status_endpoint():
     """Report the state of optional backends. Used by Godot's ServiceSettings panel."""
     import asyncio
 
-    # Meshy 3D
-    if deps.model_gen and getattr(deps.model_gen, "_meshy", None):
+    from routers.gpu_proxy import GPU_WORKER_URL, fetch_gpu_worker_health
+
+    # Meshy 3D vive en el gpu-worker desde F3: agregación best-effort de su
+    # /health (timeout 2 s). El shape del panel de Godot no cambia.
+    worker = await fetch_gpu_worker_health()
+    backend = worker.get("model_backend") if worker else None
+    if backend == "meshy":
         meshy_status = {"state": "ready", "message": "API key configurada"}
-    elif deps.model_gen and getattr(deps.model_gen, "_triposg_available", False):
+    elif backend == "triposg":
         meshy_status = {
             "state": "fallback",
             "message": "Meshy no configurado (usando TripoSG local)",
         }
-    else:
+    elif backend == "none":
         meshy_status = {
             "state": "down",
             "message": "no disponible (define MESHY_API_KEY en .env)",
+        }
+    else:
+        meshy_status = {
+            "state": "down",
+            "message": f"gpu-worker no disponible ({GPU_WORKER_URL})",
         }
 
     # AI Vision (MCP bridge listener preferred, direct API as fallback)
