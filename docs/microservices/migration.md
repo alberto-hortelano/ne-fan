@@ -2,7 +2,7 @@
 
 Orden pensado para que cada fase deje el juego funcionando y verificable con
 lo que ya existe (~245 tests de nefan-core incl. `bridge-*.test.ts` con
-sockets fake, `narrative_lab/fake-ai-server.mjs`, benches). Cada fase es
+sockets fake, `labs/narrative/fake-ai-server.mjs`, benches). Cada fase es
 independiente: se puede parar después de cualquiera con un sistema mejor que
 el anterior.
 
@@ -99,7 +99,7 @@ toggle sea visible entre procesos. Cliente HTML directo vía
 - ai_server proxya durante la transición; después, AiClient y clientes van
   directo (overrides de F1).
 
-**Hecho cuando**: narrative_lab E2E con fake-ai-server en verde; Godot sigue
+**Hecho cuando**: labs/narrative E2E con fake-ai-server en verde; Godot sigue
 obteniendo texturas/modelos; dos gpu-workers con mocks reparten trabajo (el
 mecanismo queda probado aunque haya 1 GPU).
 
@@ -125,7 +125,7 @@ lista estilos — lector FS sin claves). Detalle histórico del plan original:
   narrative-llm deja de depender de FAL_KEY.
 - **Eliminar `/review_scene_image`** (muerto) y `ai_server/pipe_server.py`.
 
-**Hecho cuando**: escenografia_lab/style_lab/stage_lab funcionan; el toggle
+**Hecho cuando**: labs/{escenografia,style,stage} funcionan; el toggle
 dev de la top bar opera contra el proceso nuevo; pipeline del plató (G) E2E.
 
 ## F5 — Consolidar narrative-llm y matar el estado sticky

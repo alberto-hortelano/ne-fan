@@ -10,7 +10,7 @@
  *
  * Convención: el wire es snake_case (implementación Python/Pydantic; los
  * shapes de referencia son los modelos de ai_server/routers/{narrative,
- * generation}.py y la spec ejecutable narrative_lab/fake-ai-server.mjs).
+ * generation}.py y la spec ejecutable labs/narrative/fake-ai-server.mjs).
  * Errores: `FastApiErrorResponse` (422 validación, 503 sin backend/listener,
  * 504 timeout del LLM — el reintento del mismo tile recupera la respuesta
  * tardía).

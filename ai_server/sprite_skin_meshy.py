@@ -1,11 +1,11 @@
 """Skin de sprite sheets vía Meshy image-to-image (hero-shot + atlas V4).
 
-Pipeline validado en skinning_lab (README, lessons learned): la vía local
+Pipeline validado en labs/skinning (README, lessons learned): la vía local
 SD1.5+ControlNet re-rollea la ropa entre frames y quedó descartada; lo que
 funciona es Meshy con un atlas de keyframes por (anim, dirección) y un
 hero-shot del personaje como segunda referencia de identidad. Este módulo es
 el port de producción del generador de personajes de
-`skinning_lab/lab_server.py` (endpoints hero_shot + skin).
+`labs/skinning/lab_server.py` (endpoints hero_shot + skin).
 
 Flujo por descripción narrativa (prompt):
 1. `hero_shot(prompt)` — img2img del frame `idle dir_0 frame_000` del modelo
@@ -36,7 +36,7 @@ from dev_api_cache import DEV_API_CACHE
 from meshy_client import MeshyImageToImage
 
 # Densidad de keyframes por anim: (n_keyframes, fps de reproducción).
-# Tuneados a mano en skinning_lab/build_base_browser.py:ANIM_PROFILES para
+# Tuneados a mano en labs/skinning/build_base_browser.py:ANIM_PROFILES para
 # que el loop se sienta natural (Disney 4-pose para walk, etc.).
 ANIM_PROFILES: dict[str, tuple[int, float]] = {
     "idle": (8, 2.2),

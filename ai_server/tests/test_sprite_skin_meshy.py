@@ -39,7 +39,7 @@ class KeyframeIndicesTest(unittest.TestCase):
         self.assertEqual(keyframe_indices(10, 0), [])
 
     def test_profiles_fit_v4_atlas_limit(self):
-        # Lección de skinning_lab: el atlas V4 colapsa con >10 frames. Ningún
+        # Lección de labs/skinning: el atlas V4 colapsa con >10 frames. Ningún
         # perfil debe superarlo.
         for anim, (n_kf, _fps) in ANIM_PROFILES.items():
             self.assertLessEqual(n_kf, 10, f"perfil de {anim} supera el límite V4")

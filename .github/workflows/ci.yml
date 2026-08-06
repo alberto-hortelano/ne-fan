@@ -82,5 +82,8 @@ jobs:
       # stdlib-only.
       - run: pip install ruff pillow httpx fastapi uvicorn numpy
       - run: ruff check ai_server
-      - run: python -m compileall -q ai_server
+      # labs/ no tiene tests ni lint (benches), pero compileall lo mantiene
+      # al menos sintácticamente válido — es código que se retoma cada pocos
+      # meses cuando avanza la tecnología de IA.
+      - run: python -m compileall -q ai_server labs
       - run: python -m unittest discover -s ai_server/tests

@@ -2,11 +2,11 @@
  *
  * En el browser no hay process.env: los overrides llegan por query param y se
  * traducen al env sintético que espera `resolveServiceUrl` (contrato):
- *  - `?ai=http://127.0.0.1:18765` — bench fake-ai-server (narrative_lab),
+ *  - `?ai=http://127.0.0.1:18765` — bench fake-ai-server (labs/narrative),
  *    que emula S3–S6 a la vez; apunta de golpe los CUATRO servicios que hoy
  *    co-viven en ai_server (narrative-llm, gpu-worker, remote-gen,
  *    asset-store).
- *  - `?bridge=ws://...` — gateway alternativo (stack E2E de narrative_lab).
+ *  - `?bridge=ws://...` — gateway alternativo (stack E2E de labs/narrative).
  * Sin query params → loopback con el puerto ACTUAL de cada servicio
  * (SERVICES.currentPort del contrato). */
 import {

@@ -48,7 +48,7 @@ const STYLES_DIR = resolve(dataDir, "styles");
 // (HTML cannot read user:// from Godot). Override with NEFAN_SAVES_DIR.
 const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(homedir(), "code", "ne-fan", "saves");
 /** Destino del ai_server (S3 narrative-llm). NEFAN_AI_SERVER es el alias
- *  histórico y gana (lo usa el bench de narrative_lab documentado);
+ *  histórico y gana (lo usa el bench de labs/narrative documentado);
  *  @deprecated — usar NEFAN_URL_NARRATIVE_LLM (contrato F1); retirada en F5. */
 const AI_SERVER_URL = process.env.NEFAN_AI_SERVER ?? resolveServiceUrl("narrative-llm", process.env);
 

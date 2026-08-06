@@ -58,7 +58,7 @@ class PeelLayerRequest(BaseModel):
     la máscara del elemento SEGMENTADO de la imagen (SAM2 — nunca una silueta
     declarada; blanco = hueco) + el prompt de lo que hay detrás. Backend:
     "lama" (default para el plató — LaMa local, cero invención, el hueco queda
-    tapado por su recorte; bench stage_lab 003-005: FLUX reinventa el mueble
+    tapado por su recorte; bench labs/stage 003-005: FLUX reinventa el mueble
     dentro de su propio hueco), "flux" (FLUX Fill guiado por prompt) o "auto"
     (flux si hay FAL_KEY, si no lama). Cacheado por hash (imagen, máscara,
     prompt, algo): el resume es determinista y gratis."""
@@ -255,7 +255,7 @@ async def peel_scene_layer_endpoint(body: PeelLayerRequest):
             raise HTTPException(status_code=503, detail="ni fill_client (FAL_KEY) ni plate_inpainter disponibles")
 
     # Máscara dilatada ±16 px: cubre el anti-alias del borde y traga patas
-    # finas/halos que la segmentación deja fuera (bench stage_lab 004→005) —
+    # finas/halos que la segmentación deja fuera (bench labs/stage 004→005) —
     # el hueco queda TAPADO por su recorte, el halo extra no se ve.
     mask_img = Image.open(io.BytesIO(mask_png)).convert("L")
     for _ in range(4):

@@ -5,7 +5,7 @@
  *       la cámara a nivel de ojo) → /generate_scene_image (blueprint_kind
  *       "stage", layout_key = hash del spec canónico) → plató pintado. La vía
  *       clay→gpt-image-2 es la de mayor fidelidad de layout del bench
- *       escenografia_lab/greybox (run 001).
+ *       labs/escenografia/greybox (run 001).
  *    2. /review_stage_image: la VISIÓN inventaría lo pintado — cada elemento
  *       declarado found (con su caja REAL) o missing + extras inventados —
  *       y SAM2 extrae la máscara de la IMAGEN de cada item.
@@ -16,7 +16,7 @@
  *       moviera el suelo sistemáticamente, reactivar es una línea).
  *    4. Pelado cerca→lejos por z PINTADA con /peel_scene_layer (LaMa local
  *       por defecto — FLUX reinventa el mueble en su propio hueco, bench
- *       stage_lab 003); la imagen final es la PLACA. Recorte de cada item =
+ *       labs/stage 003); la imagen final es la PLACA. Recorte de cada item =
  *       imagen ⊙ su máscara SAM (feather 1.5 px).
  *    5. Instalación atómica: placa + recortes con pose + colisión derivada +
  *       proj/view_box del greybox. Chequeo de reconstrucción (placa+recortes

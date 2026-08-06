@@ -334,7 +334,7 @@ const devInput = new DevToolsInput({
   isTileProposalActive: () => input.tileProposalActive,
 });
 
-// Hook de bench (narrative_lab / pruebas de navegador): estado vivo legible
+// Hook de bench (labs/narrative / pruebas de navegador): estado vivo legible
 // desde la consola o la automatización. Solo lectura — no es API del juego.
 (window as unknown as { __nefan?: unknown }).__nefan = {
   input,
@@ -1826,7 +1826,7 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-// El override de bench `?bridge=` (stack E2E de narrative_lab) se resuelve en
+// El override de bench `?bridge=` (stack E2E de labs/narrative) se resuelve en
 // net/service-urls.ts.
 const sharedBridge = new BridgeClient(serviceUrl("game-gateway"));
 const narrativeClient = new NarrativeClient(sharedBridge);
