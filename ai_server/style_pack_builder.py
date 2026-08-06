@@ -25,7 +25,7 @@ from PIL import Image
 from meshy_client import MeshyImageToImage
 from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, LEGACY_ALIASES, REPO_ROOT
 
-ENV_SEED = REPO_ROOT / "skinning_lab" / "bases" / "battlemap-town-style.png"
+ENV_SEED = REPO_ROOT / "nefan-core" / "data" / "styles" / "battlemap-town-style.png"
 CHAR_SEED = (
     REPO_ROOT / "nefan-html" / "public" / "sprites" / "y_bot" / "idle"
     / "isometric_30" / "dir_0_frame_000.png"

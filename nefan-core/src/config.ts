@@ -201,7 +201,7 @@ export const CONFIG: NefanConfig = {
     // de layout conservando luz y hora). Vía fal directo, sin Meshy.
     stage_scene_model: "gpt-image-2",
     sprite_skin_model: "gpt-image-2",
-    scene_style_image: "skinning_lab/bases/battlemap-town-style.png",
+    scene_style_image: "nefan-core/data/styles/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",
     texture_lazy_load: true,
     expose_diagnostic: false,
