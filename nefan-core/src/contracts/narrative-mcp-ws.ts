@@ -17,9 +17,9 @@ export interface RoomRequestMsg {
   type: "room_request";
   request_id: string;
   world_state: Record<string, unknown>;
-  /** "extended" = schema legacy de sala cerrada (Godot); "scene" = schema
-   *  open-world del cliente HTML. */
-  format?: "extended" | "scene";
+  /** Único formato soportado; el legacy "extended" (sala cerrada) se retiró
+   *  y narrative-mcp rechaza cualquier otro valor con isError. */
+  format?: "scene";
 }
 
 export interface VisionImage {

@@ -9,6 +9,7 @@ import { createAmbientNpcBehavior } from "../src/simulation/npc-behavior.js";
 import { SeededRng } from "../src/rng.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
+import { combatRegistry } from "../src/combat/registry.js";
 import { GameStore } from "../src/store/game-store.js";
 import type { CombatConfig, CombatEvent, EnemyPersonality } from "../src/types.js";
 
@@ -312,5 +313,25 @@ describe("GameSimulation", () => {
       playerMoving: false,
     });
     assert.deepEqual(result.npcEvents, []);
+  });
+});
+
+describe("GameSimulation.setCombatSystem", () => {
+  it("swaps the system after reset()", () => {
+    const sim = new GameSimulation(config, undefined, 42);
+    assert.equal(sim.combatSystem.id, "standard");
+    sim.reset();
+    sim.setCombatSystem(combatRegistry.create("basic", config));
+    assert.equal(sim.combatSystem.id, "basic");
+  });
+
+  it("refuses to swap with live enemy AIs (they capture the system)", () => {
+    const sim = new GameSimulation(config, undefined, 42);
+    sim.addCombatant(createCombatant("player"));
+    sim.addCombatant(createCombatant("skeleton_01"), { aggression: 0.5 });
+    assert.throws(
+      () => sim.setCombatSystem(combatRegistry.create("basic", config)),
+      /call reset\(\) first/,
+    );
   });
 });
