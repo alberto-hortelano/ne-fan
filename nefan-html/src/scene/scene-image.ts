@@ -27,7 +27,20 @@ import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js
 import { errors } from "../ui/error-log.js";
 import type { GenServiceUrls } from "../net/service-urls.js";
 import type { CanvasRenderer, ComposedTilePlan, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
-import type { ExpectedElement } from "./svg-collision.js";
+
+/** Elemento que el plan del tile declara, con su bbox en píxeles de la
+ *  imagen pintada — guía para el clasificador de visión del análisis. Se
+ *  construye desde los elementos del plan compuesto. */
+export interface ExpectedElement {
+  /** Id del volumen en el plan compuesto — la visión lo devuelve en
+   *  `element_id` al ordenar las regiones contra el plan. */
+  id?: string;
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  /** [x, y, w, h] en píxeles de la imagen (imgW×imgH). */
+  bbox_px: [number, number, number, number];
+}
 
 /** Un segmento jugable devuelto por /analyze_scene_image. */
 interface AnalyzedSegment {

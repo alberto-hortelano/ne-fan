@@ -70,6 +70,22 @@ function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
       geo.translate(0, h / 2, 0);
       break;
     }
+    case "polygon": {
+      // Contorno plano horizontal: points absolutos [x, z], grosor en size[0];
+      // pos solo aporta la y de la base (contrato de greybox/common.ts).
+      const pts = p.points ?? [];
+      if (pts.length < 3) throw new Error(`greybox polygon con ${pts.length} points (mínimo 3)`);
+      const t = p.size[0] ?? 0.02;
+      const shape = new THREE.Shape();
+      shape.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], pts[i][1]);
+      shape.closePath();
+      const g = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
+      g.rotateX(Math.PI / 2); // el shape vive en XY → tumbarlo al plano XZ
+      g.translate(0, t, 0); // extrusión hacia ARRIBA desde la base y=0
+      geo = g;
+      break;
+    }
   }
   const mesh = new THREE.Mesh(geo, material(p.color, p.roughness ?? 0.92));
   mesh.position.set(...p.pos);

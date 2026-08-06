@@ -17,7 +17,8 @@
 import { BIOME_COLORS, darken, lighten } from "./palette.js";
 import type { Projection } from "./projection.js";
 import { PROJECTION } from "./projection.js";
-import { renderVolume, volumeFootprint, type RenderCtx } from "./render.js";
+import { renderVolume, type RenderCtx } from "./render.js";
+import { volumeFootprint } from "./footprint.js";
 import { circle, ellipse, fmt, innerSvg, seededRng, uniform } from "./svg.js";
 import { TILE_CELLS } from "../tile.js";
 import type { Volume } from "./volumes.js";

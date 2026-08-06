@@ -44,13 +44,13 @@ export {
 export { stagePlanFromScene } from "./plan.js";
 export {
   peelPlanFor,
-  paintableVolumeLayers,
-  buildPeelPrompt,
-  STAGE_PEEL_VERSION,
   type PeelPlan,
   type PeelStep,
 } from "./peel.js";
 export {
+  paintableVolumeLayers,
+  buildPeelPrompt,
+  STAGE_PEEL_VERSION,
   expectedElementsFor,
   pxToView,
   calibratedProjection,

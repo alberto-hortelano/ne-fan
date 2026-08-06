@@ -11,7 +11,7 @@
  *  declarado no se deriva. */
 
 import { TILE_CELLS } from "../tile.js";
-import { volumeFootprint } from "./render.js";
+import { volumeFootprint } from "./footprint.js";
 import { fnv1a, seededRng, uniform } from "./svg.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
 

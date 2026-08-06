@@ -4,9 +4,9 @@
  *  caché de imagen de ai_server, así que dos composiciones del mismo plan
  *  deben producir bytes idénticos (sin Date.now/Math.random). */
 
-import { SeededRng, fnv1a, seededRng } from "../../rng.js";
+import { fnv1a, seededRng, uniform, pick } from "../../rng.js";
 
-export { fnv1a, seededRng };
+export { fnv1a, seededRng, uniform, pick };
 
 /** Formato compacto y estable de números (2 decimales, sin ceros colgantes). */
 export function fmt(n: number): string {
@@ -42,15 +42,6 @@ export function rectEl(x: number, y: number, w: number, h: number, fill: string,
 
 export function path(d: string, fill: string, extra = ""): string {
   return `<path d="${d}" fill="${fill}"${extra ? ` ${extra}` : ""}/>`;
-}
-
-/** Uniforme en [lo, hi) sobre un SeededRng. */
-export function uniform(rng: SeededRng, lo: number, hi: number): number {
-  return lo + rng.next() * (hi - lo);
-}
-
-export function pick<T>(rng: SeededRng, items: readonly T[]): T {
-  return items[Math.min(items.length - 1, Math.floor(rng.next() * items.length))];
 }
 
 /** Extrae el contenido interior de un documento <svg …>…</svg> ya sanitizado

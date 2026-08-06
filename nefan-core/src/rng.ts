@@ -46,3 +46,12 @@ export function fnv1a(s: string): number {
 export function seededRng(seedKey: string): SeededRng {
   return new SeededRng(fnv1a(seedKey));
 }
+
+/** Uniforme en [lo, hi) sobre un SeededRng. */
+export function uniform(rng: SeededRng, lo: number, hi: number): number {
+  return lo + rng.next() * (hi - lo);
+}
+
+export function pick<T>(rng: SeededRng, items: readonly T[]): T {
+  return items[Math.min(items.length - 1, Math.floor(rng.next() * items.length))];
+}

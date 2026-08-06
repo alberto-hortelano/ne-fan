@@ -52,20 +52,6 @@ async function rasterizeLayers(
   }
 }
 
-/** Elemento que el plan del tile declara, con su bbox en píxeles de la
- *  imagen pintada — guía para el clasificador de visión del análisis. Lo
- *  construye scene-image desde los elementos del blueprint compuesto. */
-export interface ExpectedElement {
-  /** Id del volumen en el blueprint compuesto — la visión lo devuelve en
-   *  `element_id` al ordenar las regiones contra el plan. */
-  id?: string;
-  label: string;
-  solid: boolean;
-  tall: boolean;
-  /** [x, y, w, h] en píxeles de la imagen (imgW×imgH). */
-  bbox_px: [number, number, number, number];
-}
-
 /** Deriva el grid de colisión de agua del `map_ground` de un tile (capa
  *  #water perforada por #deck). Devuelve null si no hay ninguna celda sólida
  *  (tile sin agua). */

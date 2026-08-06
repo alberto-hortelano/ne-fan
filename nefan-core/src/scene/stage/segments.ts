@@ -15,8 +15,39 @@
 
 import type { ComposedStage, ComposedStageExit, StageLayer } from "./compose.js";
 import { viewToStage, stageToWorld, type StageProjParams, type StageBounds } from "./projection.js";
-import { paintableVolumeLayers, buildPeelPrompt } from "./peel.js";
 import type { TerrainGridData } from "../terrain-collision.js";
+
+/** Versión del pipeline de pelado — va en las claves de caché de imagen del
+ *  cliente/ai_server: cambiar el plan o el prompt regenera, nunca sirve
+ *  rellenos del algoritmo anterior. */
+export const STAGE_PEEL_VERSION = 3;
+
+/** Capas de volumen repintables (props/muros). El orden del array respeta el
+ *  orden del pintor del compositor (fondo → frente). */
+export function paintableVolumeLayers(stage: ComposedStage): StageLayer[] {
+  return stage.layers.filter((l) => l.kind === "prop" || l.kind === "wall");
+}
+
+/** Instrucción de inpaint para un hueco con `behindLabels` pintado detrás.
+ *  `removed` nombra el objeto retirado — sin la prohibición explícita, un
+ *  modelo de fill rellena un hueco con forma de mesa con OTRA mesa (bench
+ *  labs/stage 003). */
+export function buildPeelPrompt(behindLabels: string[], backdrop?: string, removed?: string): string {
+  const behind =
+    behindLabels.length > 0
+      ? `these elements that are partially hidden behind it: ${behindLabels.join(", ")}`
+      : "ONLY the empty ground";
+  const far = backdrop ? ` and, at the far end, the background (${backdrop})` : "";
+  const removedClause = removed
+    ? `The object being removed is: ${removed}. Do NOT paint the ${removed} back, nor any similar object. `
+    : "";
+  return (
+    `${removedClause}Fill the masked region by continuing EXACTLY what lies behind the removed object: ${behind}${far}. ` +
+    "Extend the floor and the already-visible surfaces seamlessly. " +
+    "Do NOT invent any new object: no planks, fences, signs, crates, furniture, stoves, windows, doors, plants or creatures " +
+    "that are not listed above. Match the surrounding painting style, lighting, colours and perspective exactly."
+  );
+}
 
 /** Lado del cuadrado de trabajo (espejo del prestretch del ai_server). */
 export const STAGE_RENDER_SIZE = 1024;

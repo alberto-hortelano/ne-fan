@@ -11,7 +11,7 @@ import { IMAGE_SOLID_CHAR } from "../image-collision.js";
 import type { TerrainGridData } from "../terrain-collision.js";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import type { WorldRect } from "../tile.js";
-import { volumeFootprint } from "./render.js";
+import { volumeFootprint } from "./footprint.js";
 import type { Volume } from "./volumes.js";
 
 const OPEN_CHAR = "g";
