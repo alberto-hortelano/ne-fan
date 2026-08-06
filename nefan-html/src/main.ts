@@ -8,7 +8,7 @@ import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import {
-  composeBlueprint,
+  buildTileGreyboxSpec,
   deriveVolumesFromSchema,
   parseGround,
   parseVolumes,
@@ -743,18 +743,18 @@ function composeTilePlan(
   );
   const volumes = [...declared, ...derived];
   if (ground.length === 0 && volumes.length === 0) return null;
-  const composed = composeBlueprint(
-    { volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
+  const spec = buildTileGreyboxSpec(
+    { ground, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
     key,
   );
   return {
     ground,
     volumes,
     composed: {
-      svg: composed.svg,
-      view_box: composed.viewBox,
-      elements: composed.elements,
-      occluders: composed.occluders,
+      spec,
+      view_box: spec.camera.view_box,
+      elements: spec.elements,
+      occluders: spec.occluders,
     },
   };
 }

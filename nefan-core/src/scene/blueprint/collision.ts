@@ -2,9 +2,9 @@
  *  celdas de mundo, NUNCA los píxeles pintados (bajo perspectiva la pintura
  *  de una cara cae al norte de la huella real).
  *
- *  Devuelve el mismo shape que `svgCollisionGrid`/`solidGridFromMasks`
+ *  Devuelve el mismo shape que `groundCollisionGrid`/`solidGridFromMasks`
  *  (`TerrainGridData` con chars `S`), así el cliente lo une con la colisión
- *  de agua del `map_ground` y con la derivada de imagen por el camino de
+ *  de agua del plan declarado y con la derivada de imagen por el camino de
  *  siempre. Puro y sin DOM: testeable en node. */
 
 import { IMAGE_SOLID_CHAR } from "../image-collision.js";

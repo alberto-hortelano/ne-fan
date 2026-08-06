@@ -17,6 +17,7 @@
  *  and rejects; no silent placeholder.
  */
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import { canonicalGreyboxJson } from "@nefan-core/src/scene/blueprint/index.js";
 import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 import {
   solidGridFromMasks,
@@ -328,10 +329,10 @@ export class SceneImageController {
     try {
       const prompt = this.buildPrompt(scene as unknown as SceneSummary);
       const composed = (scene as { __composed?: ComposedTilePlan }).__composed;
-      // Con plan compuesto el blueprint es el plano vectorial rico: el
-      // servidor usa la instrucción de REPINTADO total en vez de la de cajas
-      // de colores. Esperar a su raster para no capturar el fallback.
-      const blueprintKind = composed ? "svg" : "boxes";
+      // Con plan compuesto el blueprint es el CLAY three.js del spec: el
+      // servidor usa la instrucción de repintado del blockout en vez de la de
+      // cajas de colores. Esperar a su render para no capturar el fallback.
+      const blueprintKind = composed ? "tile" : "boxes";
       if (composed) await this.waitForPlan(key);
       // La captura cubre el canvas de VISTA del tile (voladizo de alturas
       // incluido): la imagen resultante cubre el mismo canvas y el
@@ -341,6 +342,16 @@ export class SceneImageController {
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, tileExt);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
+      // Clave de layout ESTABLE: el PNG del clay WebGL no es
+      // byte-determinista — la clave es el hash del spec canónico + el
+      // contexto de vecinos pintados (mismo plan + mismos vecinos ⇒ CACHE
+      // HIT del server en el resume).
+      const layoutKey = composed
+        ? await sha256Hex(
+            canonicalGreyboxJson(composed.spec) +
+              `|ctx:${contextSides.join("+")}|img:${[...imageTileKeys].sort().join(",")}`,
+          )
+        : undefined;
       const res = await fetch(`${this.urls.remote}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -349,6 +360,7 @@ export class SceneImageController {
           prompt,
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
+          ...(layoutKey ? { layout_key: layoutKey } : {}),
           // Si el plano no tiene agua, el servidor omite las cláusulas de agua
           // de la instrucción — mencionarla en un plano seco ceba ríos
           // alucinados (bench 002_repaint_fidelity).
@@ -657,6 +669,12 @@ interface ExpectedInfo {
 
 /** Convierte los elementos del blueprint compuesto a la guía del clasificador
  *  (bbox en píxeles de la imagen instalada). Solo solid/tall interesan. */
+/** sha256 hex de un string (clave de layout del spec canónico). */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** true si el plan de suelo declara agua. Sin plan (escenas legacy/boxes)
  *  devuelve true: no sabemos, y es más seguro dejar la instrucción de agua
  *  que suprimirla en un plano que sí la tenga. */

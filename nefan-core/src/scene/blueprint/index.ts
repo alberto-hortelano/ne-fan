@@ -1,13 +1,27 @@
-/** Compositor de blueprints — API pública.
+/** Plan del tile oblicuo — API pública.
  *
- *  El motor narrativo declara el tile de forma semántica (`map_ground` plano
- *  + `volumes` tipados) y este módulo lo proyecta a la oblicua única del
- *  formato 2D (suelo identidad + cizalla KX en la altura). Consumers: el
- *  cliente 2D (rasteriza el SVG compuesto, colisión, occluders) y el bridge
- *  (validación). */
+ *  El motor narrativo declara el tile de forma semántica (`ground` plano +
+ *  `volumes` tipados) y el builder greybox lo convierte en una escena 3D que
+ *  el cliente renderiza con three.js en la oblicua única del formato 2D
+ *  (suelo identidad + cizalla KX en la altura). Consumers: el cliente 2D
+ *  (render + occluders + expected_elements), la colisión declarativa y el
+ *  bridge (validación). */
 
-export { composeBlueprint, COMPOSER_VERSION } from "./compose.js";
-export type { BlueprintPlan, ComposedBlueprint, ComposedElement, ComposedOccluder } from "./compose.js";
+export {
+  buildTileGreyboxSpec,
+  TILE_GREYBOX_VERSION,
+  TILE_GREYBOX_PX_PER_CELL,
+} from "./greybox.js";
+export type {
+  TileGreyboxPlan,
+  TileGreyboxSpec,
+  TileGreyboxCamera,
+  TileOccluderSpec,
+  ComposedElement,
+} from "./greybox.js";
+export { CANOPY_OPACITY, classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
+export { canonicalGreyboxJson } from "../greybox/common.js";
+export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
 export { volumeCollisionGrid } from "./collision.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";

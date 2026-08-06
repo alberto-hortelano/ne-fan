@@ -73,7 +73,7 @@ export function roofColors(material?: string, override?: string): { lit: string;
   return { ...base, lit: override, shade: override };
 }
 
-/** Color base por bioma (fallback cuando el tile no trae `map_ground`). */
+/** Color base por bioma (el suelo del greybox del tile). */
 export const BIOME_COLORS: Record<string, string> = {
   grass: PALETTE.grassBase,
   forest_floor: "#3d5a2c",

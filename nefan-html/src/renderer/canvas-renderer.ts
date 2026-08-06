@@ -6,6 +6,11 @@ import type { Vec3 } from "@nefan-core/src/types.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { prismQuads, cylinderGeom, type ViewPoint } from "@nefan-core/src/scene/view-prism.js";
 import { darken } from "@nefan-core/src/scene/blueprint/palette.js";
+import type {
+  ComposedElement,
+  TileGreyboxSpec,
+  TileOccluderSpec,
+} from "@nefan-core/src/scene/blueprint/index.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
@@ -43,18 +48,14 @@ export interface SceneData {
     closed?: boolean;
     color?: string;
   }[];
-  /** Capa SVG opcional de terreno (Format D). viewBox en celdas, mismo espacio
-   *  que terrain_features; ai_server la sanea (sin script/foreignObject/href).
-   *  Se rasteriza async al cargar la escena y se compone en el schematic. */
-  terrain_svg?: string;
-  /** Plan del tile: arte plano del suelo (capas g#ground/#water/#deck?) y
-   *  volúmenes tipados. Sanitizados río arriba (ai_server / bridge). */
-  map_ground?: string;
+  /** Plan del tile: rasgos de suelo declarativos y volúmenes tipados.
+   *  Validados río arriba (ai_server / bridge). */
+  ground?: unknown[];
   volumes?: unknown[];
-  /** Blueprint COMPUESTO en la perspectiva de la sesión + metadatos —
-   *  inyectado por addTile (main.ts) con el compositor de nefan-core.
-   *  Sustituye al pintado grid+features+cajas en el schematic y en la capa
-   *  viva; la colisión base se deriva de agua + huellas (world/collision.ts). */
+  /** Plan COMPUESTO del tile (spec greybox 3D + metadatos analíticos) —
+   *  inyectado por addTile (main.ts) con el builder de nefan-core. Su render
+   *  three.js sustituye al pintado grid+features+cajas en el schematic y en
+   *  la capa viva; la colisión base es declarativa (world/collision.ts). */
   __composed?: ComposedTilePlan;
   objects: {
     id: string;
@@ -109,15 +110,15 @@ interface RendererTile {
    *  Cuando existe es la capa base del render (los cutouts pintan los
    *  objetos encima y el fade por proximidad revela el suelo real). */
   plateImage: HTMLImageElement | null;
-  svgImage: HTMLImageElement | null;
-  /** Blueprint COMPUESTO rasterizado: cuando existe, ES el dibujo del tile —
-   *  el schematic y la capa viva lo pintan en vez de grid+features+cajas.
-   *  Su viewBox define el canvas del tile en vista (voladizo incluido); la
-   *  imagen IA enmascarada cubre el MISMO canvas. */
-  planImage: HTMLImageElement | null;
-  /** Blueprint compuesto COMPLETO (con los tramos tall/canopy que planImage
-   *  excluye), rasterizado lazy solo para la vista debug "blueprint" (B). */
-  planFullImage: HTMLImageElement | null;
+  /** CLAY del plan (render three.js del spec, SIN los tramos de occluder):
+   *  cuando existe, ES el dibujo del tile — el schematic y la capa viva lo
+   *  pintan en vez de grid+features+cajas. Su view_box define el canvas del
+   *  tile en vista (voladizo incluido); la imagen IA enmascarada cubre el
+   *  MISMO canvas. */
+  planImage: HTMLCanvasElement | null;
+  /** Clay COMPLETO (base + tramos de occluder compuestos encima) — solo para
+   *  la vista debug "blueprint" (B). */
+  planFullImage: HTMLCanvasElement | null;
   planViewBox: ComposedTilePlan["view_box"] | null;
   /** Análisis derivado de la imagen (mundo derivado): grid de colisión de los
    *  segmentos sólidos (null = analizado sin sólidos) y flag de analizado.
@@ -130,39 +131,17 @@ interface RendererTile {
   svgApplied: boolean;
 }
 
-/** Blueprint compuesto de un tile (salida del compositor de nefan-core,
- *  serializable — viaja dentro de SceneData). Su view_box define el canvas
- *  del tile en vista, voladizo de alturas incluido (el compositing por
- *  profundidad lo pisa sobre el vecino de detrás). */
+/** Plan compuesto de un tile (salida del builder greybox de nefan-core —
+ *  viaja dentro de SceneData). Su view_box define el canvas del tile en
+ *  vista, voladizo de alturas incluido (el compositing por profundidad lo
+ *  pisa sobre el vecino de detrás). `spec` es la escena 3D completa que el
+ *  intérprete three.js renderiza; elements/occluders son sus metadatos
+ *  analíticos (guía de visión y depth-sort). */
 export interface ComposedTilePlan {
-  svg: string;
+  spec: TileGreyboxSpec;
   view_box: { minX: number; minY: number; width: number; height: number };
-  elements: Array<{
-    id: string;
-    label: string;
-    solid: boolean;
-    tall: boolean;
-    /** [x, y, w, h] en unidades de usuario del SVG compuesto. */
-    bbox: [number, number, number, number];
-    baseline_y: number;
-    /** Huella en celdas de mundo [minU, minV, maxU, maxV]. */
-    footprint_cells: [number, number, number, number];
-  }>;
-  /** Tramos recortables de los volúmenes altos (SVG standalone + bbox +
-   *  baseline, unidades de usuario). El renderer los rasteriza como occluders
-   *  de depth-sort mientras el tile no tenga imagen IA analizada. */
-  occluders: Array<{
-    id: string;
-    vid: string;
-    label: string;
-    svg: string;
-    bbox: [number, number, number, number];
-    baseline_y: number;
-    /** Huella del tramo en celdas de mundo [minU, minV, maxU, maxV]. */
-    footprint_cells: [number, number, number, number];
-    /** true = tramo aéreo (copa): se pinta encima de las entidades. */
-    overhead?: boolean;
-  }>;
+  elements: ComposedElement[];
+  occluders: TileOccluderSpec[];
 }
 
 /** Shape mínimo del grid derivado que pinta el overlay (espejo de
@@ -378,7 +357,7 @@ export interface Occluder {
   id: string;
   /** Bitmap recortado (occluders de imagen/plan). Ausente en los occluders
    *  VECTORIALES (cajas altas del esquema), que pintan con `paintVector`. */
-  img?: HTMLImageElement;
+  img?: HTMLImageElement | HTMLCanvasElement;
   /** Pintado vectorial del occluder (prisma del esquema). El caller fija
    *  globalAlpha con el fade antes de llamar. */
   paintVector?: () => void;
@@ -478,8 +457,6 @@ export class CanvasRenderer {
    *  segments / plate) sustituyen la capa base del tile por esa fase del
    *  pipeline de imagen para comparar unas con otras. */
   private debugView: DebugView = "collision"; // en desarrollo, colisiones ON por defecto
-  /** Tiles con el raster del blueprint COMPLETO en vuelo (vista blueprint). */
-  private planFullLoading = new Set<string>();
   /** True only while rendering the offscreen schematic for capture — suppresses
    *  text labels, which would pollute the canny edge map. */
   private _capturing = false;
@@ -546,7 +523,7 @@ export class CanvasRenderer {
 
   /** Añade (o reemplaza) un tile/escena del plano. ADITIVO: los tiles previos
    *  siguen pintándose — el mundo es continuo. La capa se hornea lazy en
-   *  render() (con LRU); el terrain_svg se rasteriza async por tile.
+   *  render() (con LRU); el clay del plan se renderiza async por tile.
    *  Re-registrar la misma clave con la MISMA escena (resume, re-broadcast)
    *  preserva las capas visuales — incluida la imagen IA, que costó créditos;
    *  con escena distinta se invalidan imagen, capas y occluders del tile. */
@@ -573,7 +550,6 @@ export class CanvasRenderer {
       layerLastUsed: same ? prev.layerLastUsed : 0,
       sceneImage: same ? prev.sceneImage : null,
       plateImage: same ? prev.plateImage : null,
-      svgImage: same ? prev.svgImage : null,
       planImage: same ? prev.planImage : null,
       planFullImage: same ? prev.planFullImage : null,
       planViewBox: scene.__composed?.view_box ?? null,
@@ -587,85 +563,77 @@ export class CanvasRenderer {
       this.occluders = this.occluders.filter((o) => o.tileKey !== key);
     }
     if (this.activeKey === null || this.activeKey === key) this.setActiveTile(key);
-    if (scene.terrain_svg && !same) this.loadSvgLayer(tile, scene.terrain_svg, "svgImage");
     if (scene.__composed && !same) {
-      // Los tramos con cutout se excluyen de la capa base y los pinta SIEMPRE
-      // su occluder en el depth-sort (loadPlanOccluders): las copas
-      // (data-part="canopy", traslúcidas) para no aplicar su alpha dos veces,
-      // y los tramos altos (data-part="tall": edificios, muros, troncos…)
-      // para que el fade por proximidad revele el suelo real de debajo.
-      const baseSvg = scene.__composed.svg.replace(
-        />/,
-        "><style>[data-part=canopy],[data-part=tall]{display:none}</style>",
-      );
-      this.loadSvgLayer(tile, baseSvg, "planImage");
-      this.loadPlanOccluders(tile, scene.__composed);
+      void this.renderPlanArt(tile, scene.__composed);
     }
     return { sceneChanged: prev !== undefined && !same };
   }
 
-  /** Rasteriza los tramos de volúmenes altos del blueprint compuesto y los
-   *  instala como occluders de depth-sort — el jugador queda tapado por el
-   *  árbol/muro/edificio que tiene delante aunque el tile no tenga imagen IA
-   *  (modo vectorial, o interim hasta que el análisis instale los suyos).
-   *  Cada occluder pinta LOS MISMOS píxeles que la capa base en su misma
-   *  posición (patrón de los recortes de imagen): invisible salvo que haya
-   *  una entidad en medio. */
-  private loadPlanOccluders(tile: RendererTile, composed: ComposedTilePlan): void {
-    if (!Array.isArray(composed.occluders) || composed.occluders.length === 0) return;
-    const vb = composed.view_box;
+  /** Renderiza el CLAY three.js del plan (import dinámico — GL solo cuando
+   *  hay plan) e instala la base como arte del tile y cada tramo como
+   *  occluder de depth-sort: el jugador queda tapado por el árbol/muro/
+   *  edificio que tiene delante aunque el tile no tenga imagen IA. Cada
+   *  occluder pinta LOS MISMOS píxeles que el clay completo en su posición
+   *  (patrón de los recortes de imagen). */
+  private async renderPlanArt(tile: RendererTile, composed: ComposedTilePlan): Promise<void> {
     const key = tile.key;
-    for (const occ of composed.occluders) {
-      const [bx, by, bw, bh] = occ.bbox;
-      if (!(bw > 0) || !(bh > 0)) continue;
-      // Misma resolución que el planImage (16 px por unidad de usuario).
-      const src = `<svg width="${Math.max(1, Math.round(bw * 16))}" height="${Math.max(1, Math.round(bh * 16))}" ${occ.svg.slice("<svg ".length)}`;
-      const blob = new Blob([src], { type: "image/svg+xml" });
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        // El tile fue reemplazado, o ya tiene imagen IA (que pinta los
-        // volúmenes y trae sus propios occluders del análisis) → descartar.
-        const current = this.tiles.get(key);
-        if (current !== tile || tile.sceneImage || tile.imageAnalyzed) return;
-        // bbox/baseline en unidades de usuario → coords de VISTA: mapeo
-        // lineal del viewBox del blueprint sobre el canvas de vista del tile.
-        const full = this.projection.tileViewRect(tile.rect, vb);
-        const sx = full.w / vb.width;
-        const sy = full.h / vb.height;
-        // Huella del tramo: celdas del tile → metros de MUNDO (ancla NW del
-        // rect del tile) — el comparador del depth-sort opera en mundo.
-        const [fu0, fv0, fu1, fv1] = occ.footprint_cells;
-        this.addOccluders([
-          {
-            id: `plan:${key}:${occ.id}`,
-            tileKey: key,
-            kind: "plan",
-            label: occ.label,
-            img,
-            view: {
-              minX: full.x + (bx - vb.minX) * sx,
-              minZ: full.y + (by - vb.minY) * sy,
-              maxX: full.x + (bx + bw - vb.minX) * sx,
-              maxZ: full.y + (by + bh - vb.minY) * sy,
-            },
-            baselineView: full.y + (occ.baseline_y - vb.minY) * sy,
-            ...(occ.overhead ? { overhead: true } : {}),
-            footprintWorld: {
-              minX: tile.rect.minX + fu0 * TILE_MPC,
-              minZ: tile.rect.minZ + fv0 * TILE_MPC,
-              maxX: tile.rect.minX + fu1 * TILE_MPC,
-              maxZ: tile.rect.minZ + fv1 * TILE_MPC,
-            },
-          },
-        ]);
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        errors.push("scene", `occluder del blueprint (${occ.label}) no decodifica; se omite su depth-sort`);
-      };
-      img.src = url;
+    try {
+      const { renderTileGreybox } = await import("../scene/tile-greybox-render.js");
+      const { base, occluders } = renderTileGreybox(composed.spec);
+      // El tile pudo reemplazarse mientras el módulo GL cargaba.
+      const current = this.tiles.get(key);
+      if (!current || current.sceneFingerprint !== tile.sceneFingerprint) return;
+      current.planImage = base;
+      current.terrainLayer = null; // la capa horneada pasa a pintar el clay
+      const vb = composed.view_box;
+      const px = composed.spec.camera.px_per_cell;
+      // Clay COMPLETO (vista debug B): base + tramos compuestos encima.
+      const full = document.createElement("canvas");
+      full.width = base.width;
+      full.height = base.height;
+      const fctx = full.getContext("2d")!;
+      fctx.drawImage(base, 0, 0);
+      for (const { occ, canvas } of occluders) {
+        fctx.drawImage(canvas, (occ.bbox[0] - vb.minX) * px, (occ.bbox[1] - vb.minY) * px);
+      }
+      current.planFullImage = full;
+      if (current.sceneImage || current.imageAnalyzed) return; // la imagen manda
+      const fullView = this.projection.tileViewRect(current.rect, vb);
+      const sx = fullView.w / vb.width;
+      const sy = fullView.h / vb.height;
+      this.addOccluders(
+        occluders
+          .filter(({ occ }) => occ.bbox[2] > 0 && occ.bbox[3] > 0)
+          .map(({ occ, canvas }) => {
+            const [bx, by, bw, bh] = occ.bbox;
+            // Huella del tramo: celdas del tile → metros de MUNDO (ancla NW
+            // del rect) — el comparador del depth-sort opera en mundo.
+            const [fu0, fv0, fu1, fv1] = occ.footprint_cells;
+            return {
+              id: `plan:${key}:${occ.id}`,
+              tileKey: key,
+              kind: "plan" as const,
+              label: occ.label,
+              img: canvas,
+              view: {
+                minX: fullView.x + (bx - vb.minX) * sx,
+                minZ: fullView.y + (by - vb.minY) * sy,
+                maxX: fullView.x + (bx + bw - vb.minX) * sx,
+                maxZ: fullView.y + (by + bh - vb.minY) * sy,
+              },
+              baselineView: fullView.y + (occ.baseline_y - vb.minY) * sy,
+              ...(occ.overhead ? { overhead: true } : {}),
+              footprintWorld: {
+                minX: current.rect.minX + fu0 * TILE_MPC,
+                minZ: current.rect.minZ + fv0 * TILE_MPC,
+                maxX: current.rect.minX + fu1 * TILE_MPC,
+                maxZ: current.rect.minZ + fv1 * TILE_MPC,
+              },
+            };
+          }),
+      );
+    } catch (err) {
+      errors.push("scene", `clay del plan de ${key} no renderiza; queda la capa del esquema`, err);
     }
   }
 
@@ -708,50 +676,6 @@ export class CanvasRenderer {
     this.addTile(String(data.scene_id ?? data.room_id ?? "scene"), data);
   }
 
-  /** Rasteriza una capa SVG de UN tile a una Image (async): `svgImage`
-   *  (terrain_svg, refino visual) o `planImage` (el blueprint compuesto).
-   *  Cuando decodifica se invalida su capa horneada (se re-hornea con la
-   *  SVG). Decode fallido → errors.push. */
-  private loadSvgLayer(
-    tile: RendererTile,
-    svg: string,
-    target: "svgImage" | "planImage" | "planFullImage",
-  ): void {
-    // Un SVG con solo viewBox no tiene tamaño intrínseco y algunos navegadores
-    // no lo rasterizan: inyectar width/height desde el viewBox si faltan.
-    let src = svg;
-    if (!/\bwidth\s*=/.test(src)) {
-      const vb = /viewBox\s*=\s*"([\d.\s-]+)"/.exec(src);
-      const parts = vb?.[1].trim().split(/\s+/).map(Number);
-      if (parts && parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-        // 16 px por celda: resolución de sobra para el blueprint de 1024².
-        src = src.replace("<svg", `<svg width="${Math.round(parts[2] * 16)}" height="${Math.round(parts[3] * 16)}"`);
-      }
-    }
-    const blob = new Blob([src], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      if (target === "planFullImage") this.planFullLoading.delete(tile.key);
-      // El tile pudo re-registrarse (misma escena) mientras decodificaba: la
-      // capa se instala en el registro VIGENTE, no en el objeto capturado.
-      const current = this.tiles.get(tile.key);
-      const dst = current && current.sceneFingerprint === tile.sceneFingerprint ? current : tile;
-      dst[target] = img;
-      if (target !== "planFullImage") {
-        // La capa horneada aún no incluía el SVG (decodifica async) — rehacer.
-        dst.terrainLayer = null;
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      if (target === "planFullImage") this.planFullLoading.delete(tile.key);
-      errors.push("scene", `${target === "svgImage" ? "terrain_svg" : "blueprint compuesto"} no decodifica como imagen; se omite la capa SVG`);
-    };
-    img.src = url;
-  }
-
   getSceneData(): SceneData | null {
     return this.sceneData;
   }
@@ -774,16 +698,16 @@ export class CanvasRenderer {
     return Boolean(this.tiles.get(key)?.sceneImage);
   }
 
-  /** ¿El blueprint compuesto del tile ya está rasterizado (decodifica
-   *  async)? Los callers que capturan el blueprint esperan a esto para no
+  /** ¿El clay del plan del tile ya está renderizado (el módulo GL carga
+   *  async)? Los callers que capturan el plan esperan a esto para no
    *  capturar el fallback. */
   tilePlanReady(key: string): boolean {
     return Boolean(this.tiles.get(key)?.planImage);
   }
 
-  /** Blueprint compuesto rasterizado de un tile (enmascarado de la imagen
-   *  IA), o null si no hay o aún decodifica. */
-  getTilePlanImage(key: string): HTMLImageElement | null {
+  /** Clay del plan de un tile (la máscara de la imagen IA), o null si no hay
+   *  plan o aún renderiza. */
+  getTilePlanImage(key: string): HTMLCanvasElement | null {
     return this.tiles.get(key)?.planImage ?? null;
   }
 
@@ -877,19 +801,13 @@ export class CanvasRenderer {
    *  capa horneada del esquema (fallback de siempre). Las vistas de fase
    *  degradan a la fase más cercana disponible (un tile sin imagen IA enseña
    *  su blueprint, uno sin placa su imagen…). */
-  private tileBaseImage(tile: RendererTile): HTMLImageElement | null {
+  private tileBaseImage(tile: RendererTile): HTMLImageElement | HTMLCanvasElement | null {
     switch (this.debugView) {
-      case "blueprint": {
-        const composed = tile.scene.__composed;
-        if (!composed) return null; // sin plan: la capa horneada ES el esquema
-        // El planImage base excluye los tramos tall/canopy (los pinta el
-        // depth-sort): la vista blueprint rasteriza lazy el SVG COMPLETO.
-        if (!tile.planFullImage && !this.planFullLoading.has(tile.key)) {
-          this.planFullLoading.add(tile.key);
-          this.loadSvgLayer(tile, composed.svg, "planFullImage");
-        }
+      case "blueprint":
+        // El planImage base excluye los tramos de occluder (los pinta el
+        // depth-sort): la vista blueprint enseña el clay COMPLETO, compuesto
+        // al renderizar el plan.
         return tile.planFullImage ?? tile.planImage;
-      }
       case "image":
         return tile.sceneImage;
       case "segments":
@@ -1046,10 +964,10 @@ export class CanvasRenderer {
     const vw = v.w * this.scale;
     const vh = v.h * this.scale;
 
-    // Blueprint compuesto: ES el dibujo del tile — cubre su canvas de vista
-    // (voladizo de alturas incluido) con su propio suelo, agua, muros y
-    // copas. Grid, features y terrain_svg quedan detrás sin aportar (se
-    // saltan). Hasta que decodifica (async) se pinta el fallback.
+    // Clay del plan: ES el dibujo del tile — cubre su canvas de vista
+    // (voladizo de alturas incluido) con su propio suelo, agua y volúmenes.
+    // Grid y features quedan detrás sin aportar (se saltan). Hasta que el
+    // módulo GL renderiza (async) se pinta el fallback.
     if (tile.planImage) {
       ctx.drawImage(tile.planImage, vx0, vy0, vw, vh);
       return;
@@ -1067,15 +985,6 @@ export class CanvasRenderer {
     // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
     // encima del grid: las features refinan lo que el grid solo aproxima.
     this.paintTerrainFeatures(tile);
-
-    // Capa SVG de terreno (opcional) estirada sobre el rect, entre el
-    // terreno y los objetos. Si aún no decodificó, se pinta sin ella (el
-    // onload invalida la capa horneada para re-hornear con la SVG).
-    if (tile.svgImage) {
-      const [sx0, sy0] = this.toScreen(tile.rect.minX, tile.rect.minZ);
-      const [sx1, sy1] = this.toScreen(tile.rect.maxX, tile.rect.maxZ);
-      ctx.drawImage(tile.svgImage, sx0, sy0, sx1 - sx0, sy1 - sy0);
-    }
   }
 
   /** Hornea la capa de terreno de UN tile a resolución fija TILE_PPM, con
@@ -1596,7 +1505,7 @@ export class CanvasRenderer {
       }
     }
 
-    // Colisión BASE del plan (agua del map_ground + huellas de volumes): celdas azules.
+    // Colisión BASE del plan (agua∖decks del ground + huellas de volumes): celdas azules.
     // Activa desde que llega el tile, antes de imagen y análisis.
     ctx.fillStyle = "rgba(80,140,255,0.35)";
     for (const tile of this.tiles.values()) {

@@ -13,7 +13,9 @@ import { STAGE_RENDER_SIZE } from "@nefan-core/src/scene/stage/segments.js";
 
 let renderer: THREE.WebGLRenderer | null = null;
 
-function getRenderer(): THREE.WebGLRenderer {
+/** Renderer singleton compartido por los greybox de plató Y de tile (cada
+ *  render fija su tamaño con setSize). */
+export function getRenderer(): THREE.WebGLRenderer {
   if (renderer) return renderer;
   const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
   r.setSize(STAGE_RENDER_SIZE, STAGE_RENDER_SIZE, false);
@@ -44,7 +46,8 @@ function gableGeometry(w: number, h: number, d: number): THREE.ExtrudeGeometry {
   return g;
 }
 
-function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
+/** Malla de una primitiva del spec — compartida por plató y tile. */
+export function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
   let geo: THREE.BufferGeometry;
   switch (p.shape) {
     case "box": {

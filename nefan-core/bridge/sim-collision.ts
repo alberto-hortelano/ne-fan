@@ -1,15 +1,12 @@
 /** Colisión server-side por tile para la vida ambiental de NPCs.
  *
- *  Espejo degradado del CollisionSystem del cliente 2D (tres fuentes en
- *  unión), construido solo con lo que el bridge tiene persistido en
- *  NarrativeState:
+ *  Espejo del CollisionSystem del cliente 2D (fuentes en unión), construido
+ *  solo con lo que el bridge tiene persistido en NarrativeState:
  *  1. terrain_grid del esquema (formatDToWorld — muros W, agua w, leyenda);
- *  2. huellas analíticas de los volúmenes del plan (volumeCollisionGrid);
- *  3. rects sólidos del análisis de imagen (rec.analysis.elements).
- *
- *  Lo que NO hay server-side: el raster fino del agua del map_ground SVG
- *  (requiere canvas del navegador). El agua gruesa ya está en el terrain_grid
- *  del esquema; los NPC usan radio 0.5 (> 0.4 del jugador) como mitigación.
+ *  2. agua∖decks del plan de suelo declarativo (groundCollisionGrid — al ser
+ *     datos puros, el agua fina ya NO es exclusiva del navegador);
+ *  3. huellas analíticas de los volúmenes del plan (volumeCollisionGrid);
+ *  4. rects sólidos del análisis de imagen (rec.analysis.elements).
  *
  *  Lazy + caché por sceneId; `invalidate(sceneId)` desde map_plan_update /
  *  tile_analysis. Un grid inconsistente degrada ese tile a "sin esa fuente"
@@ -23,7 +20,7 @@ import {
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
-import { parseVolumes, volumeCollisionGrid } from "../src/scene/blueprint/index.js";
+import { groundCollisionGrid, parseGround, parseVolumes, volumeCollisionGrid } from "../src/scene/blueprint/index.js";
 import {
   TILE_CELLS,
   TILE_MPC,
@@ -94,9 +91,24 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       console.warn(`[sim-collision] ${sceneId}: terrain_grid no deriva colisión —`, err);
     }
 
-    // 2 y 3 solo aplican a tiles del plano continuo (tienen rect mundial).
+    // 2..4 solo aplican a tiles del plano continuo (tienen rect mundial).
     if (rec.tile) {
       const rect = tileWorldRect(rec.tile.tx, rec.tile.ty);
+
+      const rawGround = rec.scene_data.ground;
+      if (Array.isArray(rawGround) && rawGround.length > 0) {
+        const parsed = parseGround(rawGround);
+        if (parsed.ok) {
+          try {
+            const tc = createTerrainCollider(groundCollisionGrid(parsed.features, rect));
+            if (tc) colliders.push(tc);
+          } catch (err) {
+            console.warn(`[sim-collision] ${sceneId}: ground no deriva colisión —`, err);
+          }
+        } else {
+          console.warn(`[sim-collision] ${sceneId}: ground inválido (${parsed.error}) — sin agua declarada`);
+        }
+      }
 
       const rawVolumes = rec.scene_data.volumes;
       if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
