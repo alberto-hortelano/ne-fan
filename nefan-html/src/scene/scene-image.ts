@@ -94,8 +94,8 @@ export interface BlueprintReview {
     terrain?: string[];
     terrain_features?: Record<string, unknown>[];
     entity_moves?: { id: string; cell: [number, number] }[];
-    /** Documento map_ground COMPLETO corregido (arte plano del suelo). */
-    map_ground?: string;
+    /** Array COMPLETO de rasgos de suelo corregido. */
+    ground?: Record<string, unknown>[];
     /** Array COMPLETO de volúmenes corregido. */
     volumes?: Record<string, unknown>[];
   };
@@ -352,7 +352,7 @@ export class SceneImageController {
           // Si el plano no tiene agua, el servidor omite las cláusulas de agua
           // de la instrucción — mencionarla en un plano seco ceba ríos
           // alucinados (bench 002_repaint_fidelity).
-          has_water: groundHasWater((scene as { map_ground?: string }).map_ground),
+          has_water: planHasWater((scene as { ground?: unknown[] }).ground),
           style_id: this.styleId,
           // Zona de estilo del tile: la etiqueta del motor narrativo afinada
           // por el bioma real del tile (un tile de pantano al borde de un
@@ -408,7 +408,7 @@ export class SceneImageController {
     }
     this.busy = true;
     try {
-      const hasPlan = typeof scene.map_ground === "string" || Array.isArray(scene.volumes);
+      const hasPlan = Array.isArray(scene.ground) || Array.isArray(scene.volumes);
       if (tileKey && hasPlan) await this.waitForPlan(tileKey);
       // La imagen revisada incluye el voladizo del blueprint compuesto.
       const composed = tileKey
@@ -657,14 +657,12 @@ interface ExpectedInfo {
 
 /** Convierte los elementos del blueprint compuesto a la guía del clasificador
  *  (bbox en píxeles de la imagen instalada). Solo solid/tall interesan. */
-/** true si la capa `g#water` del map_ground tiene contenido real. Sin plan
- *  (escenas legacy/boxes) devuelve true: no sabemos, y es más seguro dejar la
- *  instrucción de agua que suprimirla en un plano que sí la tenga. */
-function groundHasWater(mapGround: string | undefined): boolean {
-  if (typeof mapGround !== "string") return true;
-  const m = mapGround.match(/<g id="water"[^>]*?(\/>|>([\s\S]*?)<\/g>)/);
-  if (!m) return false;
-  return Boolean(m[2] && m[2].includes("<"));
+/** true si el plan de suelo declara agua. Sin plan (escenas legacy/boxes)
+ *  devuelve true: no sabemos, y es más seguro dejar la instrucción de agua
+ *  que suprimirla en un plano que sí la tenga. */
+function planHasWater(ground: unknown[] | undefined): boolean {
+  if (!Array.isArray(ground)) return true;
+  return ground.some((f) => (f as { kind?: string } | null)?.kind === "water");
 }
 
 function expectedFromComposed(composed: ComposedTilePlan, imgW: number, imgH: number): ExpectedInfo[] {

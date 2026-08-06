@@ -102,21 +102,20 @@ describe("bridge request_tile (plano continuo)", () => {
     const { ctx, narrative } = makeCtx();
     seedTile00(narrative);
     const { socket } = makeSocket();
-    const svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><g id="ground"/><g id="water"/></svg>';
+    const ground = [{ id: "lago", kind: "water", rect: [20, 20, 10, 10] }];
     const volumes = [{ id: "roble", label: "roble", type: "tree", at: [10, 10] }];
-    await routeMessage({ type: "map_plan_update", tx: 0, ty: 0, map_ground: svg, volumes }, socket, ctx);
+    await routeMessage({ type: "map_plan_update", tx: 0, ty: 0, ground, volumes }, socket, ctx);
     const rec = narrative.getTile(0, 0)!;
-    assert.equal(rec.scene_data.map_ground, svg);
+    assert.deepEqual(rec.scene_data.ground, ground);
     assert.deepEqual(rec.scene_data.volumes, volumes);
     assert.equal(rec.scene_data.map_plan_reviewed, true);
-    // Sin la capa #water el sanitizador lo rechaza y el persistido no cambia.
+    // Un rasgo sin forma se rechaza entero y el persistido no cambia.
     await routeMessage(
-      { type: "map_plan_update", tx: 0, ty: 0, map_ground: svg.replace('<g id="water"/>', "") },
+      { type: "map_plan_update", tx: 0, ty: 0, ground: [{ id: "lago", kind: "water" }] },
       socket,
       ctx,
     );
-    assert.equal(narrative.getTile(0, 0)!.scene_data.map_ground, svg);
+    assert.deepEqual(narrative.getTile(0, 0)!.scene_data.ground, ground);
     // Volumes inválidos (id duplicado) también se rechazan enteros.
     await routeMessage(
       { type: "map_plan_update", tx: 0, ty: 0, volumes: [...volumes, ...volumes] },
@@ -125,7 +124,7 @@ describe("bridge request_tile (plano continuo)", () => {
     );
     assert.deepEqual(narrative.getTile(0, 0)!.scene_data.volumes, volumes);
     // Tile no registrado: se ignora con warn, sin lanzar.
-    await routeMessage({ type: "map_plan_update", tx: 5, ty: 5, map_ground: svg }, socket, ctx);
+    await routeMessage({ type: "map_plan_update", tx: 5, ty: 5, ground }, socket, ctx);
     assert.ok(!narrative.hasTile(5, 5));
   });
 

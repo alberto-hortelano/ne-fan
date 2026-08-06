@@ -166,8 +166,8 @@ export interface MapPlanUpdateMessage {
   type: "map_plan_update";
   tx: number;
   ty: number;
-  /** SVG plano del suelo corregido (documento COMPLETO), si cambió. */
-  map_ground?: string;
+  /** Rasgos de suelo declarativos corregidos (array COMPLETO), si cambió. */
+  ground?: unknown[];
   /** Array COMPLETO de volúmenes corregido, si cambió. */
   volumes?: unknown[];
 }

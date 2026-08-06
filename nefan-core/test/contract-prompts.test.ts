@@ -4,7 +4,7 @@
  *  motor MCP) y ai_server (compone sus system prompts del fallback API). Este
  *  test falla si un archivo desaparece, queda vacío o pierde los
  *  identificadores que el código de nefan-core espera del LLM (claves del
- *  Format D, tipos de consequence, capas del map_ground…). No valida prosa:
+ *  Format D, tipos de consequence, kinds del ground…). No valida prosa:
  *  valida que el prompt siga hablando el idioma del validador. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -15,11 +15,11 @@ import { resolve } from "node:path";
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
 /** Marcadores load-bearing por archivo: identificadores que también existen
- *  en el código (scene-expand, consequence-handler, map-svg, volumes). */
+ *  en el código (scene-expand, consequence-handler, ground, volumes). */
 const CONTRACT_MARKERS: Record<string, string[]> = {
   "world_rules.md": ["style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request"],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
-  "tile_instructions.md": ["map_ground", "volumes", "viewBox", "g id=", "terrain"],
+  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "structures", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
@@ -27,7 +27,7 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "scene_classify.md": ["solid", "tall"],
   "develop_world.md": ["world_brief", "world_md", "game_id"],
   "narrative_event.md": ["consequences", "dialogue", "story_update", "spawn_entity", "plugin_event", "choices"],
-  "blueprint_review.md": ["map_ground", "volumes"],
+  "blueprint_review.md": ["ground", "volumes"],
 };
 
 const TOOLS_DIR = fileURLToPath(new URL("../data/contract/tools", import.meta.url));

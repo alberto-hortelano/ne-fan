@@ -226,22 +226,22 @@ describe("NarrativeState — análisis de imagen por tile (mundo derivado)", () 
     s.startNewSession("plugtest");
     const sessionId = s.session_id;
     s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
-    const svg = '<svg viewBox="0 0 128 128"><g id="ground"/><g id="water"/></svg>';
+    const ground = [{ id: "lago", kind: "water", rect: [20, 20, 10, 10] }];
     const volumes = [{ id: "roble", label: "roble", type: "tree", at: [10, 10] }];
-    assert.ok(s.setTileMapPlan(0, 0, { map_ground: svg, volumes }));
-    assert.ok(!s.setTileMapPlan(9, 9, { map_ground: svg }), "tile inexistente → false");
+    assert.ok(s.setTileMapPlan(0, 0, { ground, volumes }));
+    assert.ok(!s.setTileMapPlan(9, 9, { ground }), "tile inexistente → false");
     await s.save();
 
     const s2 = new NarrativeState(storage);
     assert.ok(await s2.loadSession(sessionId));
     const rec = s2.getTile(0, 0)!;
-    assert.equal(rec.scene_data.map_ground, svg);
+    assert.deepEqual(rec.scene_data.ground, ground);
     assert.deepEqual(rec.scene_data.volumes, volumes);
     assert.equal(rec.scene_data.map_plan_reviewed, true);
 
     // Retoque parcial: solo volumes — el ground persistido no cambia.
     assert.ok(s2.setTileMapPlan(0, 0, { volumes: [] }));
-    assert.equal(s2.getTile(0, 0)!.scene_data.map_ground, svg);
+    assert.deepEqual(s2.getTile(0, 0)!.scene_data.ground, ground);
     assert.deepEqual(s2.getTile(0, 0)!.scene_data.volumes, []);
   });
 

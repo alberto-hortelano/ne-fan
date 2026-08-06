@@ -1,0 +1,9 @@
+{
+  "description": "un camino mínimo (path con dos puntos)",
+  "expect": "accept",
+  "payload": {
+    "ground": [
+      { "id": "camino_real", "kind": "path", "points": [[0, 64], [128, 64]], "w": 5, "material": "dirt" }
+    ]
+  }
+}

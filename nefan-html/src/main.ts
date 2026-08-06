@@ -10,7 +10,9 @@ import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene
 import {
   composeBlueprint,
   deriveVolumesFromSchema,
+  parseGround,
   parseVolumes,
+  type GroundFeature,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
@@ -621,7 +623,7 @@ const reviewDeps: ReviewDeps = {
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
  *  actual y aplica los fixes parciales que devuelva (terrain /
- *  terrain_features / entity_moves / map_ground / volumes) sobre el Format D,
+ *  terrain_features / entity_moves / ground / volumes) sobre el Format D,
  *  recargando la escena. El jugador conserva su posición (dev pre-generación). */
 async function reviewBlueprintAndApply(): Promise<void> {
   const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
@@ -636,9 +638,9 @@ async function reviewBlueprintAndApply(): Promise<void> {
     errors.push("scene", "review (R): no hay tile activo");
     return;
   }
-  // Tiles con plan (map_ground/volumes): mismo camino que la fase automática
+  // Tiles con plan (ground/volumes): mismo camino que la fase automática
   // (re-registro por addTile + persistencia al bridge), sin recargar el mundo.
-  if ((typeof fd.map_ground === "string" || Array.isArray(fd.volumes)) && activeTileKey) {
+  if ((Array.isArray(fd.ground) || Array.isArray(fd.volumes)) && activeTileKey) {
     await reviewTileBlueprint(activeTileKey, reviewDeps);
     return;
   }
@@ -695,15 +697,15 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
 
 /** Plan compuesto de un tile: campos del plan + blueprint proyectado. */
 interface TilePlanInfo {
-  map_ground?: string;
+  ground: GroundFeature[];
   volumes: Volume[];
   composed: ComposedTilePlan;
 }
 
-/** Compone el blueprint del tile con la perspectiva de la sesión. Los
- *  volúmenes declarados por el LLM se completan con los derivados del esquema
- *  (vegetation_zones → árboles, structures → edificios cutaway). Devuelve
- *  null en escenas legacy sin plan ni primitivas derivables. */
+/** Compone el blueprint del tile. Los volúmenes declarados por el LLM se
+ *  completan con los derivados del esquema (vegetation_zones → árboles,
+ *  structures → edificios cutaway). Devuelve null en escenas legacy sin plan
+ *  ni primitivas derivables. */
 function composeTilePlan(
   raw: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -711,7 +713,15 @@ function composeTilePlan(
   isGridTile: boolean,
 ): TilePlanInfo | null {
   if (!isGridTile) return null;
-  const mapGround = typeof data.map_ground === "string" ? data.map_ground : undefined;
+  let ground: GroundFeature[] = [];
+  if (Array.isArray(data.ground)) {
+    const parsed = parseGround(data.ground);
+    if (parsed.ok) {
+      ground = parsed.features;
+    } else {
+      errors.push("scene", `ground de ${key} inválido (${parsed.error}); se ignora`);
+    }
+  }
   let declared: Volume[] = [];
   if (Array.isArray(data.volumes)) {
     const parsed = parseVolumes(data.volumes);
@@ -732,13 +742,13 @@ function composeTilePlan(
     declared,
   );
   const volumes = [...declared, ...derived];
-  if (!mapGround && volumes.length === 0) return null;
+  if (ground.length === 0 && volumes.length === 0) return null;
   const composed = composeBlueprint(
-    { map_ground: mapGround, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
+    { volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
     key,
   );
   return {
-    map_ground: mapGround,
+    ground,
     volumes,
     composed: {
       svg: composed.svg,
@@ -904,17 +914,17 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     tileStore.markAnalyzed(key, prevEntry.imageCollider);
   }
   // Colisión base del plan: restaurar si la escena no cambió; derivar
-  // (async, ~ms) si es nueva o cambió. Agua del map_ground + huellas de
-  // volumes — espacio de mundo, idéntica en ambas perspectivas.
+  // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
+  // huellas de volumes — espacio de mundo.
   const plan = (data as { __plan?: TilePlanInfo }).__plan;
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
-    void applyPlanCollision(key, { map_ground: plan.map_ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
+    applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
   } else if (stageComposed && stageVolumes.length > 0) {
     // Plató: las huellas de sus volúmenes (mesas, barriles…) bloquean igual
     // que en la oblicua — colisión declarada, nunca de píxeles.
-    void applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
+    applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema

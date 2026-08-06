@@ -1,0 +1,9 @@
+{
+  "description": "material fuera del enum",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "plaza", "kind": "area", "rect": [10, 10, 20, 20], "material": "marble" }
+    ]
+  }
+}

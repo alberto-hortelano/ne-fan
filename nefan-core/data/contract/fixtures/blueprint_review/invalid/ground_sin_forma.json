@@ -1,0 +1,15 @@
+{
+  "description": "fixes.ground con un rasgo sin forma (rect/polygon/ellipse)",
+  "expect": "reject",
+  "payload": {
+    "approved": false,
+    "issues": [
+      "x"
+    ],
+    "fixes": {
+      "ground": [
+        { "id": "lago", "kind": "water" }
+      ]
+    }
+  }
+}

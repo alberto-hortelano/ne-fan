@@ -15,3 +15,6 @@ export { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
 export type { Projection } from "./projection.js";
 export { parseVolumes, VolumesSchema, VolumeSchema, MAX_VOLUMES, TREE_MAX_S } from "./volumes.js";
 export type { Volume } from "./volumes.js";
+export { parseGround, groundHasWater, GroundSchema, GroundFeatureSchema, MAX_GROUND_FEATURES } from "./ground.js";
+export type { GroundFeature, GroundPath, GroundArea, GroundWater, GroundDeck } from "./ground.js";
+export { groundCollisionGrid } from "./ground-collision.js";

@@ -1,0 +1,12 @@
+{
+  "description": "los cuatro kinds: camino, plaza elíptica, río poligonal y puente (deck)",
+  "expect": "accept",
+  "payload": {
+    "ground": [
+      { "id": "camino_real", "kind": "path", "points": [[0, 64], [60, 62], [128, 64]], "w": 5, "material": "cobble" },
+      { "id": "plaza_mayor", "kind": "area", "label": "plaza mayor", "ellipse": { "center": [60, 60], "rx": 16, "ry": 12 }, "material": "cobble" },
+      { "id": "rio_este", "kind": "water", "label": "río", "polygon": [[100, 0], [110, 0], [112, 128], [98, 128]] },
+      { "id": "puente_rio", "kind": "deck", "label": "puente de madera", "rect": [98, 60, 16, 8], "material": "wood" }
+    ]
+  }
+}

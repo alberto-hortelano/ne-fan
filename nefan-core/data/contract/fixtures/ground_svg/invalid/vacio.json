@@ -1,7 +1,0 @@
-{
-  "description": "string vacío",
-  "expect": "reject",
-  "payload": {
-    "svg": ""
-  }
-}

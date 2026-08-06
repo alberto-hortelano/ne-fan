@@ -1,0 +1,7 @@
+{
+  "description": "ground no es una lista",
+  "expect": "reject",
+  "payload": {
+    "ground": "<svg viewBox=\"0 0 128 128\"><g id=\"ground\"/><g id=\"water\"/></svg>"
+  }
+}

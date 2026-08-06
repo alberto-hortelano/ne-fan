@@ -1,0 +1,9 @@
+{
+  "description": "lago rectangular sin material (water solo necesita su forma)",
+  "expect": "accept",
+  "payload": {
+    "ground": [
+      { "id": "lago", "kind": "water", "rect": [20, 20, 30, 24] }
+    ]
+  }
+}

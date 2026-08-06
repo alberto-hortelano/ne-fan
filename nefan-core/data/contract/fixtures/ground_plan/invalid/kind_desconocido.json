@@ -1,0 +1,9 @@
+{
+  "description": "kind desconocido (lava no es un rasgo de suelo)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "rio_lava", "kind": "lava", "rect": [0, 0, 10, 10] }
+    ]
+  }
+}

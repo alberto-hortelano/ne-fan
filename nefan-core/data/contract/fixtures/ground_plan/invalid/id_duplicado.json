@@ -1,0 +1,10 @@
+{
+  "description": "dos rasgos con el mismo id",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "lago", "kind": "water", "rect": [20, 20, 10, 10] },
+      { "id": "lago", "kind": "water", "rect": [60, 60, 10, 10] }
+    ]
+  }
+}

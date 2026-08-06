@@ -130,13 +130,9 @@ Example — a meandering river crossed by a bridge, with a road reaching it:
     { "type": "path",   "points": [[24,29],[23.5,22],[23,17]], "width": 1.5 }
   ]
 
-TERRAIN SVG (advanced, RARELY needed — only when grid + terrain_features cannot
-express the shape): "terrain_svg" is an SVG string of pure shapes drawn over the
-terrain, under the entities. viewBox EXACTLY "0 0 <cols> <rows>" (units = cells),
-max 20 KB, only shape elements (path/rect/circle/ellipse/polygon/line) — no
-<script>, no foreignObject, no href. Most scenes need no SVG at all.
-TILES: do NOT use terrain_svg — the tile's map plan ("map_ground" +
-"volumes", see MAP PLAN in the tile section) supersedes it entirely.
+Do NOT emit SVG of any kind (the old "terrain_svg"/"map_ground" fields are
+gone): everything is declarative data. TILES describe their ground with the
+typed "ground" features + "volumes" (see MAP PLAN in the tile section).
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need
