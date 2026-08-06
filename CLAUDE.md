@@ -603,7 +603,7 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.
 - **MCP bridge sobre API directa** — usuario tiene Claude Max, no necesita API key.
 - **En desarrollo, subir iluminacion ambient** para ver bien objetos y geometria.
-- **No borrar archivos de test** sin confirmacion explicita del usuario.
+- **Tests obsoletos se borran** junto al cambio que los deja sin sentido (mencionándolo en el resumen); lo que no se elimina es cobertura de comportamiento vivo por conveniencia. El material de sesión (runs de labs, capturas) sí requiere confirmación antes de borrarse.
 - **Logica en nefan-core, Godot solo visual** — prepararse para cambio de motor. Datos compartidos (escenas, config) en nefan-core, no en godot/.
 - **AnimationTree con StateMachine (Souls-Like pattern)** — no usar AnimationPlayer directo. `travel()` para transiciones, `start()` para interrupciones.
 - **Sin root motion** — todo el movimiento via velocity del CharacterBody3D. Animaciones puramente visuales. Lockear Hips XZ solo en walk/run.
