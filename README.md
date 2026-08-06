@@ -70,8 +70,7 @@ ne-fan/
 ├── nefan-html/        # 2D top-down client (Canvas) — dev/story iteration
 ├── ai_server/         # FastAPI: textures, models, skins, scene gen (:8765)
 ├── narrative-mcp/     # MCP bridge: Claude ↔ ai_server (:3737)
-├── skinning_lab/      # Reusable bench for AI skinning experiments
-├── narrative_lab/     # Bench for testing the narrative engine as-the-game
+├── labs/              # Experiment benches (skinning, style, stage, render, escenografia, narrative)
 └── docs/              # Design documents (Spanish)
 ```
 

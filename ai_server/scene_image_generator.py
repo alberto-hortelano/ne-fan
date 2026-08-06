@@ -79,7 +79,7 @@ class SceneImageGenerator:
         self._model = model
         #: Modelo del repintado del PLATÓ (greybox clay → imagen), vía fal
         #: DIRECTO (sin Meshy): gpt-image-2 dio la mayor fidelidad de layout
-        #: del bench escenografia_lab/greybox sobre bases clay.
+        #: del bench labs/escenografia/greybox sobre bases clay.
         self._stage_model = stage_model
         self._meshy = MeshyImageToImage()  # reads MESHY_API_KEY
         self._style_path = Path(style_image_path)
@@ -232,7 +232,7 @@ class SceneImageGenerator:
             )
         elif blueprint_kind == "stage":
             # Vista proscenio: la base es un RENDER 3D GREYBOX (clay iluminado
-            # con cámara a nivel de ojo, bench escenografia_lab/greybox) — la
+            # con cámara a nivel de ojo, bench labs/escenografia/greybox) — la
             # composición, la perspectiva y la LUZ ya son correctas y hay que
             # conservarlas EXACTAS (preámbulo KEEP del bench). PROHIBIDO
             # cualquier vocabulario teatral (stage/wings/backdrop/plató): el

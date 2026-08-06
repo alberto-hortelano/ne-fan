@@ -202,7 +202,7 @@ def _skin_sheet_key(
 async def skin_sprite_sheet_endpoint(request: Request):
     """Skinnea una anim de un sheet Mixamo con el prompt del personaje vía
     Meshy (hero-shot de identidad + atlas de keyframes por dirección — el
-    pipeline validado en skinning_lab; la vía local SD+ControlNet quedó
+    pipeline validado en labs/skinning; la vía local SD+ControlNet quedó
     descartada) y sirve los frames desde
     `/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png`.
 

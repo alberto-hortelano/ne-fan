@@ -168,7 +168,7 @@ preservada como 400, ver contrato).
 
 **Fuera de contrato** (deliberado): el remote control TCP :9876 de Godot
 (herramienta de test,
-no servicio) y los benches (`narrative_lab/fake-ai-server.mjs` emula S3-S6 en
+no servicio) y los benches (`labs/narrative/fake-ai-server.mjs` emula S3-S6 en
 :18765 y es la spec ejecutable para validarlos).
 
 ## Consumidores por servicio

@@ -52,7 +52,7 @@ export interface PeelPlan {
 /** Instrucción de inpaint para un hueco con `behindLabels` pintado detrás.
  *  `removed` nombra el objeto retirado — sin la prohibición explícita, un
  *  modelo de fill rellena un hueco con forma de mesa con OTRA mesa (bench
- *  stage_lab 003). */
+ *  labs/stage 003). */
 export function buildPeelPrompt(behindLabels: string[], backdrop?: string, removed?: string): string {
   const behind =
     behindLabels.length > 0

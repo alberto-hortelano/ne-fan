@@ -2,7 +2,7 @@
  *
  *  Produce un `GreyboxSpec`: la descripción completa de una escena 3D
  *  (primitivas, luces, cielo, cámara) que el cliente renderiza con three.js
- *  como plano base del repintado (bench escenografia_lab/greybox: la vía
+ *  como plano base del repintado (bench labs/escenografia/greybox: la vía
  *  clay→gpt-image-2 da la mayor fidelidad de layout). DETERMINISTA: mismo
  *  plan + seedKey ⇒ mismo spec ⇒ mismo `canonicalGreyboxJson` — ese hash es
  *  la clave de caché del repintado (el PNG WebGL NO es byte-determinista y

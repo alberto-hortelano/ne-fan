@@ -5,7 +5,7 @@ IMPRECISAS los objetos que el modelo de imagen inventó; SAM2 con box prompt
 recorta su silueta exacta y de ella se deriva la línea de contacto con el
 suelo (contorno inferior suavizado) — la base de colisión que el cliente
 extruye `depth_cells` hacia el norte, siguiendo la inclinación pintada
-(validado en render_lab, run 001).
+(validado en labs/render, run 001).
 """
 
 from __future__ import annotations

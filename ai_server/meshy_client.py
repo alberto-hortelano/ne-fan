@@ -345,7 +345,7 @@ class MeshyImageToImage:
 class FalImageToImage:
     """Los mismos modelos i2i servidos por fal.ai — fallback de
     MeshyImageToImage con el MISMO id de modelo (validado en
-    style_lab/{README.md,fidelity.py}). Endpoints REST síncronos con
+    labs/style/{README.md,fidelity.py}). Endpoints REST síncronos con
     `image_urls` (admite data URIs — el mismo formato de refs que usa el
     pipeline con Meshy); la respuesta puede traer la imagen como URL http o
     como data URI."""

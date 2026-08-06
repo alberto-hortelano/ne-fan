@@ -246,24 +246,25 @@ ai_server/                Python FastAPI — 3 procesos: main.py (narrativa :876
                           gpu_worker_main.py (:8766), remote_gen_main.py (:8768)
 narrative-mcp/            Node.js MCP bridge
 
-skinning_lab/             Bench reusable de skinning AI sobre sprites Mixamo
-  run.py                   CLI principal — --preset, --preview-only, --list-presets
-  serve.sh                 HTTP server local en :8911 para navegar runs
-  presets/*.json           Configs reutilizables (anim, frames, variants, models)
-  runs/                    (gitignored) cada run = subdir self-contained con index.html
-  README.md                Workflow + cómo añadir un proveedor nuevo
-
-style_lab/                Bench de fidelidad de layout del repintado de escenas
-  fidelity.py              CLI: raster del blueprint, generate (fal), segment (SAM2), score, report
-  fidelity_score.py        Métrica pura (port de matchExpected) + overlays — testeable sin red
-  dump_blueprint.ts        Dump SVG+elements del compositor desde cualquier árbol
-  runs/                    (gitignored) cada run = manifest + imágenes + index.html navegable
-  README.md                Hallazgos del run 002: oblicua + prestretch-a-cuadrado gana
+labs/                     Benches de experimentación (ver labs/README.md)
+  common/                  Helpers compartidos: env (claves), fal (fal_call con
+                           caché+gasto), images (data URIs, raster), sam (SAM2
+                           cacheado), fidelity_score, report, capture.sh
+  serve.sh                 Servidor estático de labs/ entero en :8912 (sin caché)
+  skinning/                Skinning AI sobre sprites Mixamo (run.py --preset;
+                           generador interactivo FastAPI en :8911)
+  style/                   Referencias de estilo + fidelidad de layout del repintado
+                           (gen.py, fidelity.py, dump_blueprint.ts)
+  stage/                   Segmentación del plató pintado — proscenio (run.py, score.py)
+  render/                  Alternativas de generación del tile 2D (run 001 cerrado)
+  escenografia/            Platós de cine SVG + bench greybox (base del compositor)
+  narrative/               Motor narrativo sin gráficos: game-emulator, fake-ai-server,
+                           replay-server, check-scene.ts (tooling de E2E)
 ```
 
-## skinning_lab — pruebas de IA sobre sprites
+## labs/skinning — pruebas de IA sobre sprites
 
-Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets generados por el renderer Godot. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `skinning_lab/README.md` para detalles. Hallazgos consolidados:
+Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets generados por el renderer Godot. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `labs/skinning/README.md` para detalles. Hallazgos consolidados:
 - **V1 single** y **V2 anchor** dan deriva inaceptable.
 - **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
 - **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
@@ -445,12 +446,12 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   captureSchematic) quedan apagados en proscenio.
 - **E2E sin LLM**: fixtures enlazadas `data/scenes/proscenio/posada_*.json`
   (funcionan desde el room-selector SIN sesión — fallback local de
-  transiciones) y `narrative_lab/fake-ai-server.mjs` con `stage_request`
+  transiciones) y `labs/narrative/fake-ai-server.mjs` con `stage_request`
   (siembra el world map de la posada vía State API). Bench:
   `window.__nefan.view()/stage()/probeCollide()`.
 - **Plano base GREYBOX 3D + segmentación del plató pintado (entrega 2,
   `render_mode: "image"`)**: el plano base del repintado es un **render
-  three.js clay** del plan (bench `escenografia_lab/greybox`: la vía
+  three.js clay** del plan (bench `labs/escenografia/greybox`: la vía
   clay→gpt-image-2 da la máxima fidelidad de layout). `buildGreyboxSpec`
   (`nefan-core/src/scene/stage/greybox.ts`, puro y determinista,
   `STAGE_GREYBOX_VERSION`) emite primitivas + luces sembradas + suelo por
@@ -484,9 +485,9 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   (`applyStageDerivedCollision`, terrain retirado); sin visión → placa sola
   (alineada por construcción) + colisión declarada. Recortes como drawables a
   su z pintada + fade 0.45. Tecla B: overlay de debug. Chequeo de
-  reconstrucción como smoke-test. Benches: `escenografia_lab/greybox`
-  (formatos de plano), `stage_lab/` (score de coincidencia); E2E sin
-  créditos: `narrative_lab/stage-cutouts-e2e.md` (OJO: la tecla G solo se
+  reconstrucción como smoke-test. Benches: `labs/escenografia/greybox`
+  (formatos de plano), `labs/stage/` (score de coincidencia); E2E sin
+  créditos: `labs/narrative/stage-cutouts-e2e.md` (OJO: la tecla G solo se
   consume con el bridge arriba). Auto al instalar el plató; G = manual; todo
   cacheado (resume gratis).
 
