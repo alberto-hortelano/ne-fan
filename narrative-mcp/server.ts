@@ -42,8 +42,6 @@ const STAGE_INSTRUCTIONS = loadPrompt('stage_instructions.md');
 
 const SCENE_INSTRUCTIONS = loadPrompt('scene_instructions.md');
 
-const ROOM_INSTRUCTIONS = loadPrompt('room_instructions.md');
-
 const WEAPON_ORIENT_INSTRUCTIONS = loadPrompt('weapon_orient.md');
 
 const WEAPON_VERIFY_INSTRUCTIONS = loadPrompt('weapon_verify.md');
@@ -84,7 +82,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'room' | 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'stage_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'room';
+  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'stage_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'scene';
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
@@ -117,7 +115,6 @@ not need to memorise it from this description.
 
 Request kinds you may receive:
 - "scene"           → generate a top-down 2D map (Map Format D).
-- "room"            → legacy enclosed-room schema (only when format != scene).
 - "weapon_orient"   → orient a 3D weapon mesh from 3 orthographic renders.
 - "weapon_verify"   → check a weapon is correctly placed in a character's hand.
 - "scene_classify"  → classify segmented regions of a painted scene image
@@ -252,14 +249,20 @@ into context:
           };
         }
 
-        // room_request — distingue entre open-world ('scene') y legacy ('room')
-        // según el campo `format` que envía el ai_server. Dentro de 'scene',
-        // una petición con generate_tile usa las instrucciones de TILE
-        // (plano continuo) delante de la referencia estándar; una con
+        // room_request — siempre open-world ('scene'; el formato legacy 'room'
+        // se retiró). Una petición con generate_tile usa las instrucciones de
+        // TILE (plano continuo) delante de la referencia estándar; una con
         // stage_request (mundos proscenio) usa las de STAGE (plató discreto).
-        const format = msg.format ?? 'extended';
-        currentKind = format === 'scene' ? 'scene' : 'room';
-        const kindLabel = currentKind;
+        if (msg.format !== undefined && msg.format !== 'scene') {
+          return {
+            content: [{
+              type: 'text',
+              text: `Unsupported scene format '${String(msg.format)}': the legacy 'room' format was removed; only 'scene' (Map Format D) is served.`,
+            }],
+            isError: true,
+          };
+        }
+        currentKind = 'scene';
         const ws = msg.world_state as
           | { generate_tile?: unknown; stage_request?: unknown }
           | undefined;
@@ -270,14 +273,11 @@ into context:
           : isStageRequest
             ? STAGE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
             : SCENE_INSTRUCTIONS;
-        const instructions = kindLabel !== 'scene'
-          ? ROOM_INSTRUCTIONS
-          : sceneVariant + '\n\n' + WORLD_RULES;
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ kind: kindLabel, world_state: msg.world_state }, null, 2) +
-              '\n\n' + instructions,
+            text: JSON.stringify({ kind: 'scene', world_state: msg.world_state }, null, 2) +
+              '\n\n' + sceneVariant + '\n\n' + WORLD_RULES,
           }],
         };
       } catch (e) {
@@ -292,7 +292,6 @@ into context:
     'narrative_listen. The room_data field is a JSON string whose shape depends on ' +
     'the kind of the pending request (the listen message embedded the exact schema):\n' +
     '  scene          → Map Format D map JSON\n' +
-    '  room           → legacy enclosed-room JSON\n' +
     '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
@@ -415,7 +414,7 @@ into context:
 
         const reqId = currentRequestId;
         currentRequestId = null;
-        currentKind = 'room';
+        currentKind = 'scene';
         currentClassifyIndices = null;
 
         if (kind === 'weapon_orient' || kind === 'weapon_verify' || kind === 'scene_classify') {
@@ -434,7 +433,7 @@ into context:
         }
 
         bridge.sendResponse(reqId, parsed);
-        return { content: [{ type: 'text', text: `Room sent for request ${reqId}` }] };
+        return { content: [{ type: 'text', text: `Scene sent for request ${reqId}` }] };
       } catch (e) {
         return { content: [{ type: 'text', text: (e as Error).message }], isError: true };
       }

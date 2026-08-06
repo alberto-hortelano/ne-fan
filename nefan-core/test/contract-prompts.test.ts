@@ -22,7 +22,6 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "tile_instructions.md": ["map_ground", "volumes", "viewBox", "g id=", "terrain"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "structures", "meters_per_cell"],
-  "room_instructions.md": ["room_id"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
   "scene_classify.md": ["solid", "tall"],

@@ -1,6 +1,7 @@
 /** F8 (next.md §7.7) — el plugin commerce v1 SHIPPED de toledo_1200, end-to-end
  *  sin WS: carga real desde data/games/toledo_1200/plugins, génesis, market_open
- *  en runtime, trade_offered → trade_completed, persistencia en save/resume. */
+ *  en runtime, trade_offered → trade_completed. La persistencia save→resume del
+ *  slice es mecanismo genérico, cubierto en plugin-loader/bridge-session. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,6 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import {
   loadGamePluginManifests,
   activatePluginsForNewSession,
-  bindPluginsForResume,
 } from "../src/plugins/loader.js";
 import { dispatchPluginEvents } from "../src/plugins/dispatcher.js";
 
@@ -107,37 +107,5 @@ describe("commerce plugin shipped (F8)", () => {
     ]);
     assert.equal(ghost.ok, true);
     assert.equal(state.player.gold, 10);
-  });
-
-  it("el mercado y la compra sobreviven save → resume (rebind por id desde el FS)", async () => {
-    const storage = new MemorySessionStorage();
-    const { loaded, id } = loadCommerce();
-    const s1 = new NarrativeState(storage);
-    s1.startNewSession("toledo_1200");
-    const active1 = activatePluginsForNewSession(s1, loaded);
-    s1.player.gold = 100;
-    dispatchPluginEvents(s1, active1, [
-      { pluginId: id, type: "market_open", payload: { market_id: "blacksmith_01", name: "Herrería", stock: { iron_sword: 3 } } },
-    ]);
-    dispatchPluginEvents(s1, active1, [
-      { pluginId: id, type: "trade_offered", payload: { market_id: "blacksmith_01", item_id: "iron_sword", price: 30 } },
-    ]);
-    await s1.save();
-
-    const s2 = new NarrativeState(storage);
-    assert.equal(await s2.loadSession(s1.session_id), true);
-    const active2 = bindPluginsForResume(s2, loadGamePluginManifests(GAMES_DIR, "toledo_1200"));
-    assert.ok(active2.has(id), "el plugin shipped se rebindea por id desde el FS");
-    const slice = s2.getPluginRecord(id)?.slice as { markets: Record<string, { stock: Record<string, number> }> };
-    assert.equal(slice.markets.blacksmith_01.stock.iron_sword, 2);
-
-    // segunda compra tras el resume: continúa desde el estado guardado
-    const tick = dispatchPluginEvents(s2, active2, [
-      { pluginId: id, type: "trade_offered", payload: { market_id: "blacksmith_01", item_id: "iron_sword", price: 30 } },
-    ]);
-    assert.equal(tick.ok, true, tick.error);
-    assert.equal(s2.player.gold, 40);
-    const slice2 = s2.getPluginRecord(id)?.slice as { markets: Record<string, { stock: Record<string, number> }> };
-    assert.equal(slice2.markets.blacksmith_01.stock.iron_sword, 1);
   });
 });
