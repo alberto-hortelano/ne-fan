@@ -43,6 +43,8 @@ propio.
 - **runs/ gitignored** en todos los labs salvo `escenografia/`, que commitea
   sus salidas deliberadamente (son la referencia visual del veredicto).
 - Los `.ts` de los labs (`check-scene.ts`, `dump_stage.ts`,
-  `dump_blueprint.ts`, `fixtures/dump_*.ts`) se ejecutan con `npx tsx` desde
-  `nefan-core/` y quedan fuera de tsc/eslint del CI; el Python pasa por
-  `compileall labs` en CI como guard de sintaxis.
+  `fixtures/dump_*.ts`) se ejecutan con `npx tsx` desde `nefan-core/` y
+  quedan fuera de tsc/eslint del CI; el Python pasa por `compileall labs` en
+  CI como guard de sintaxis. (Los dumps del compositor SVG — dump_blueprint,
+  dump_occluders — murieron con él en agosto de 2026; los artefactos de sus
+  runs históricos siguen en disco.)
