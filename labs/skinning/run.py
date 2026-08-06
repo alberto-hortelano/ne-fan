@@ -35,28 +35,22 @@ LAB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAB_DIR.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from labs.common.env import load_env_file  # noqa: E402
 
-def _load_env_file(env_path: Path) -> None:
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-_load_env_file(REPO_ROOT / ".env")
+load_env_file()
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from ai_server.meshy_client import MeshyImageToImage
+from labs.skinning.sheet import (  # noqa: E402
+    atlas_layout,
+    compose_atlas,
+    keyframe_indices,
+    png_to_data_uri,
+    split_atlas,
+    write_gif,
+)
 
 SPRITES_ROOT = REPO_ROOT / "nefan-html" / "public" / "sprites"
 RUNS_DIR = LAB_DIR / "runs"
@@ -138,21 +132,6 @@ def sample_frame_indices_stride(src_count: int, src_fps: int, target_fps: int, w
     return indices[:want]
 
 
-def keyframe_indices(src_count: int, n: int) -> list[int]:
-    """N frames evenly distributed across the WHOLE cycle.
-    src_count=13, n=4 → [0, 3, 6, 10]."""
-    if n <= 0 or src_count <= 0:
-        return []
-    out: list[int] = []
-    for i in range(n):
-        idx = int(round(i * src_count / n))
-        if idx >= src_count:
-            idx = src_count - 1
-        if not out or idx != out[-1]:
-            out.append(idx)
-    return out
-
-
 def auto_anchors(base_rel: str, meta: dict) -> list[Path]:
     """V2 default anchors: front-facing frame 0 + mid-loop frame from dir 0."""
     fc = meta["frame_count"]
@@ -210,63 +189,6 @@ def build_keyframes_preview(picked_paths: list[Path], picked_indices: list[int],
         sheet.paste(cell_label, (i * fw, 0))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(out_path)
-
-
-# ---------------------------------------------------------------------------
-# Atlas
-# ---------------------------------------------------------------------------
-
-
-def atlas_layout(n: int) -> tuple[int, int]:
-    cols = int(math.ceil(math.sqrt(n)))
-    rows = int(math.ceil(n / cols))
-    if cols < rows:
-        cols, rows = rows, cols
-    return cols, rows
-
-
-def compose_atlas(frame_paths: list[Path], frame_size: tuple[int, int]) -> tuple[Image.Image, tuple[int, int]]:
-    cols, rows = atlas_layout(len(frame_paths))
-    fw, fh = frame_size
-    atlas = Image.new("RGBA", (cols * fw, rows * fh), (0, 0, 0, 0))
-    for i, p in enumerate(frame_paths):
-        r, c = divmod(i, cols)
-        atlas.paste(Image.open(p).convert("RGBA"), (c * fw, r * fh))
-    return atlas, (cols, rows)
-
-
-def split_atlas(atlas: Image.Image, layout: tuple[int, int], n: int, frame_size: tuple[int, int]) -> list[Image.Image]:
-    cols, rows = layout
-    fw, fh = frame_size
-    expected = (cols * fw, rows * fh)
-    if atlas.size != expected:
-        atlas = atlas.resize(expected, Image.LANCZOS)
-    return [atlas.crop((c * fw, r * fh, (c + 1) * fw, (r + 1) * fh))
-            for i in range(n) for r, c in [divmod(i, cols)]]
-
-
-# ---------------------------------------------------------------------------
-# GIF
-# ---------------------------------------------------------------------------
-
-
-def write_gif(frames: list[Image.Image], out_path: Path, fps: int) -> None:
-    if not frames:
-        return
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    duration_ms = int(1000 / max(fps, 1))
-    rgba = [f.convert("RGBA") for f in frames]
-    rgba[0].save(out_path, save_all=True, append_images=rgba[1:],
-                 duration=duration_ms, loop=0, disposal=2)
-
-
-# ---------------------------------------------------------------------------
-# Encoding
-# ---------------------------------------------------------------------------
-
-
-def png_to_data_uri(path: Path) -> str:
-    return f"data:image/png;base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +276,7 @@ async def run_v3(client, api, prompt, src_paths, model, out_dir):
 async def run_v4(client, api, prompt, src_paths, model, out_dir, frame_size):
     out_dir.mkdir(parents=True, exist_ok=True)
     n = len(src_paths)
-    atlas, layout = compose_atlas(src_paths, frame_size)
+    atlas, layout, _ = compose_atlas(src_paths, frame_size)
     atlas_in = out_dir / "grid_input.png"
     atlas.save(atlas_in)
     atlas_prompt = (

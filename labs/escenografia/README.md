@@ -104,10 +104,10 @@ salen gratis y el manifest da colisión/recortes sin calibración.
 ## Navegar
 
 ```bash
-cd labs/escenografia && python3 -m http.server 8912
-# → http://localhost:8912/           (galería de bases SVG)
-# → http://localhost:8912/estilos/   (referencias de estilo)
-# → http://localhost:8912/greybox/out/  (bench greybox vs SVG)
+./labs/serve.sh   # :8912 (sirve labs/ entero)
+# → http://localhost:8912/escenografia/           (galería de bases SVG)
+# → http://localhost:8912/escenografia/estilos/   (referencias de estilo)
+# → http://localhost:8912/escenografia/greybox/out/  (bench greybox vs SVG)
 ```
 
 (o abrir `index.html` directamente con file://)

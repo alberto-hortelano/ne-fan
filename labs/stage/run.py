@@ -37,10 +37,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "ai_server"))
 
 from image_review import bottom_contour, mask_bbox, mask_from_png  # noqa: E402
 from scene_segmenter import crop_sprite, scene_rgb_from_png, _to_data_uri  # noqa: E402
+from labs.common.env import load_env_file  # noqa: E402
 
 RENDER = 1024
 CELL_MPC = 0.5
@@ -52,18 +54,6 @@ SAM_CACHE = RUNS / ".sam_cache"
 
 PALETTE = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#46f0f0",
            "#f032e6", "#bcf60c", "#fabebe", "#008080", "#9a6324", "#800000"]
-
-
-def load_env_key() -> None:
-    env = ROOT / ".env"
-    if not env.exists():
-        return
-    import os
-    for line in env.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 # ── Geometría (espejo de nefan-core/src/scene/stage/{projection,segments}.ts) ──
@@ -386,7 +376,7 @@ def main() -> None:
                     help="relleno: lama local (no inventa; default) o FLUX Fill (créditos)")
     args = ap.parse_args()
 
-    load_env_key()
+    load_env_file()
     dump = json.loads(Path(args.stage).read_text())
     review = json.loads(Path(args.boxes).read_text())
     base = Image.open(args.image).convert("RGB")

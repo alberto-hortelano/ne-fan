@@ -21,10 +21,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import io
 import json
-import math
 import os
 import sys
 import time
@@ -38,23 +36,9 @@ SPRITES_ROOT = REPO_ROOT / "nefan-html" / "public" / "sprites"
 CHARACTERS_DIR = LAB_DIR / "characters"
 sys.path.insert(0, str(REPO_ROOT))
 
+from labs.common.env import load_env_file  # noqa: E402
 
-def _load_env_file(env_path: Path) -> None:
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-_load_env_file(REPO_ROOT / ".env")
+load_env_file()
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -64,6 +48,14 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from ai_server.meshy_client import MeshyImageToImage
+from labs.skinning.sheet import (  # noqa: E402
+    image_to_data_uri as _image_to_data_uri,
+    keyframe_indices as _keyframe_indices,
+    png_to_data_uri as _png_to_data_uri,
+    split_atlas as _split_atlas,
+    write_gif as _write_gif,
+)
+from labs.skinning.sheet import compose_atlas  # noqa: E402
 
 # Same per-anim keyframe profiles used by build_base_browser.
 # Keep these in sync.
@@ -93,72 +85,6 @@ DEFAULT_ANGLE = "isometric_30"
 def _slug(name: str) -> str:
     s = "".join(c if (c.isalnum() or c in "-_") else "_" for c in name.strip().lower())
     return s.strip("_") or "character"
-
-
-def _png_to_data_uri(path: Path) -> str:
-    return f"data:image/png;base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
-
-
-def _image_to_data_uri(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
-
-
-def _keyframe_indices(src_count: int, n: int) -> list[int]:
-    if n <= 0 or src_count <= 0:
-        return []
-    out: list[int] = []
-    for i in range(n):
-        idx = int(round(i * src_count / n))
-        if idx >= src_count:
-            idx = src_count - 1
-        if not out or idx != out[-1]:
-            out.append(idx)
-    return out
-
-
-def _atlas_layout(n: int) -> tuple[int, int]:
-    cols = int(math.ceil(math.sqrt(n)))
-    rows = int(math.ceil(n / cols))
-    if cols < rows:
-        cols, rows = rows, cols
-    return cols, rows
-
-
-def _compose_atlas(frame_paths: list[Path]) -> tuple[Image.Image, tuple[int, int], tuple[int, int]]:
-    first = Image.open(frame_paths[0])
-    fw, fh = first.size
-    cols, rows = _atlas_layout(len(frame_paths))
-    atlas = Image.new("RGBA", (cols * fw, rows * fh), (0, 0, 0, 0))
-    for i, p in enumerate(frame_paths):
-        r, c = divmod(i, cols)
-        atlas.paste(Image.open(p).convert("RGBA"), (c * fw, r * fh))
-    return atlas, (cols, rows), (fw, fh)
-
-
-def _split_atlas(atlas: Image.Image, layout: tuple[int, int], n: int,
-                 frame_size: tuple[int, int]) -> list[Image.Image]:
-    cols, rows = layout
-    fw, fh = frame_size
-    expected = (cols * fw, rows * fh)
-    if atlas.size != expected:
-        atlas = atlas.resize(expected, Image.LANCZOS)
-    frames: list[Image.Image] = []
-    for i in range(n):
-        r, c = divmod(i, cols)
-        frames.append(atlas.crop((c * fw, r * fh, (c + 1) * fw, (r + 1) * fh)))
-    return frames
-
-
-def _write_gif(frames: list[Image.Image], out_path: Path, fps: float) -> None:
-    if not frames:
-        return
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    duration_ms = max(1, int(round(1000 / max(fps, 0.1))))
-    rgba = [f.convert("RGBA") for f in frames]
-    rgba[0].save(out_path, save_all=True, append_images=rgba[1:],
-                 duration=duration_ms, loop=0, disposal=2)
 
 
 def _meta_path(model: str, anim: str, angle: str) -> Path:
@@ -407,7 +333,7 @@ async def _skin_one_dir(client: httpx.AsyncClient, api: MeshyImageToImage,
                                  error=f"missing source frames: {missing[0].name}",
                                  cost_usd=0.0, latency_s=time.perf_counter() - t0)
 
-        atlas, layout, frame_size = _compose_atlas(frame_paths)
+        atlas, layout, frame_size = compose_atlas(frame_paths)
         atlas_prompt = (
             f"{prompt}. Same {layout[0]}x{layout[1]} grid layout, same number of frames, "
             f"keep each cell aligned, do not add new cells, do not crop frames. "

@@ -17,22 +17,23 @@ Coste run completo ≈ $0.70.
 from __future__ import annotations
 
 import argparse
-import base64
 import html
-import io
 import json
-import os
+import sys
 import time
 from pathlib import Path
 
 import httpx
-from PIL import Image
 
 GREYBOX = Path(__file__).resolve().parent
 LAB = GREYBOX.parent
 REPO_ROOT = LAB.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from labs.common.env import load_key  # noqa: E402
+from labs.common.fal import FAL_BASE, download_image  # noqa: E402
+from labs.common.images import png_data_uri  # noqa: E402
+
 OUT_DIR = GREYBOX / "out"
-FAL_BASE = "https://fal.run"
 IMAGE_SIZE = {"width": 1280, "height": 800}
 
 MAGIC = (
@@ -98,29 +99,6 @@ CASES: list[tuple[str, str]] = [
 ]
 
 
-def load_fal_key() -> str:
-    key = os.environ.get("FAL_KEY", "")
-    if not key:
-        env = REPO_ROOT / ".env"
-        if env.exists():
-            for line in env.read_text(encoding="utf-8").splitlines():
-                if line.startswith("FAL_KEY="):
-                    key = line.split("=", 1)[1].strip()
-    if not key:
-        raise SystemExit("FAL_KEY no está ni en el entorno ni en .env")
-    return key
-
-
-def to_data_uri(path: Path, long_side: int = 1280) -> str:
-    img = Image.open(path).convert("RGB")
-    scale = long_side / max(img.size)
-    if scale < 1:
-        img = img.resize(
-            (round(img.width * scale), round(img.height * scale)), Image.LANCZOS
-        )
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def build_request(case: str, scene: str) -> tuple[str, dict, float]:
@@ -132,7 +110,7 @@ def build_request(case: str, scene: str) -> tuple[str, dict, float]:
             "openai/gpt-image-2/edit",
             {
                 "prompt": prompt,
-                "image_urls": [to_data_uri(GREYBOX / scene / "clay.png")],
+                "image_urls": [png_data_uri(GREYBOX / scene / "clay.png", long_side=1280)],
                 "quality": "high",
                 "image_size": IMAGE_SIZE,
                 "num_images": 1,
@@ -146,7 +124,7 @@ def build_request(case: str, scene: str) -> tuple[str, dict, float]:
             "fal-ai/flux-control-lora-depth",
             {
                 "prompt": prompt,
-                "control_lora_image_url": to_data_uri(GREYBOX / scene / "depth.png"),
+                "control_lora_image_url": png_data_uri(GREYBOX / scene / "depth.png", long_side=1280),
                 "preprocess_depth": False,
                 "image_size": IMAGE_SIZE,
                 "num_inference_steps": 28,
@@ -163,7 +141,7 @@ def build_request(case: str, scene: str) -> tuple[str, dict, float]:
             "fal-ai/bytedance/seedream/v4/edit",
             {
                 "prompt": prompt,
-                "image_urls": [to_data_uri(GREYBOX / scene / "clay.png")],
+                "image_urls": [png_data_uri(GREYBOX / scene / "clay.png", long_side=1280)],
                 "image_size": IMAGE_SIZE,
                 "num_images": 1,
             },
@@ -243,7 +221,7 @@ def main() -> None:
         else []
     )
 
-    key = load_fal_key()
+    key = load_key('FAL_KEY')
     with httpx.Client(
         headers={"Authorization": f"Key {key}"}, timeout=httpx.Timeout(400.0)
     ) as client:
@@ -255,13 +233,7 @@ def main() -> None:
             if resp.status_code != 200:
                 raise RuntimeError(f"{case}: fal {resp.status_code}: {resp.text[:2000]}")
             image = resp.json()["images"][0]
-            url = image["url"]
-            if url.startswith("data:"):
-                png = base64.b64decode(url.split(",", 1)[1])
-            else:
-                dl = client.get(url)
-                dl.raise_for_status()
-                png = dl.content
+            png = download_image(image, client)
             (OUT_DIR / f"{case}.png").write_bytes(png)
             elapsed = round(time.time() - t0, 1)
             print(f"  ✓ {case} ({elapsed}s, {len(png) // 1024} KB)", flush=True)

@@ -22,7 +22,7 @@ python3 labs/render/fixtures/build_saves.py
 cd nefan-core && npx tsx ../labs/render/fixtures/dump_occluders.ts $PWD \
   ../labs/render/runs/_cache/save_medieval.json tile_0_0 ../labs/render/fixtures/medieval
 # ... experimentos: ver cada exp*/ y report.py
-./labs/render/serve.sh   # :8912
+./labs/serve.sh   # :8912 (sirve labs/ entero)
 ```
 
 Todas las llamadas de pago pasan por `common.py:fal_call` (caché en disco en
@@ -90,9 +90,9 @@ con la rampa OCCLUDER_FADE; cutaway = solo muros traseros; muros por tramo;
 copas de árbol solo por proximidad).
 
 ```bash
-./labs/render/serve.sh   # :8912
-# → http://localhost:8912/exp2_three/demo.html?tile=medieval            (arte vector)
-# → http://localhost:8912/exp2_three/demo.html?tile=medieval&art=hybrid (arte IA)
+./labs/serve.sh   # :8912 (sirve labs/ entero)
+# → http://localhost:8912/render/exp2_three/demo.html?tile=medieval            (arte vector)
+# → http://localhost:8912/render/exp2_three/demo.html?tile=medieval&art=hybrid (arte IA)
 ```
 
 Teclas: WASD/flechas mover · **C rota las vistas de debug** (normal → colisión

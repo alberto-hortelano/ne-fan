@@ -20,11 +20,7 @@ segmentos contra los elements del compositor con la métrica del cliente
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
-import io
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -32,10 +28,14 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).parent))
-import fidelity_score as fs
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from labs.common import fidelity_score as fs  # noqa: E402
+from labs.common import sam as _sam  # noqa: E402
+from labs.common.env import load_key  # noqa: E402
+from labs.common.fal import FAL_BASE, download_image  # noqa: E402
+from labs.common.images import PX_PER_UNIT, jpeg_data_uri, png_data_uri  # noqa: E402,F401
+
 RUN_DIR = Path(__file__).resolve().parent / "runs" / "002_repaint_fidelity"
 BLUEPRINTS = RUN_DIR / "blueprints"
 IMAGES = RUN_DIR / "images"
@@ -43,70 +43,21 @@ MASKS = RUN_DIR / "masks"
 OVERLAYS = RUN_DIR / "overlays"
 MANIFEST = RUN_DIR / "manifest.json"
 
-FAL_BASE = "https://fal.run"
-SAM_MODEL = "fal-ai/sam2/auto-segment"
-#: Fondo de la captura del cliente (DEFAULT_TERRAIN_COLOR de canvas-renderer.ts).
-CAPTURE_BG = "#1d2a18"
-PX_PER_UNIT = 4  # misma escala que el blueprint.png que envía el juego
-
 FORMATS = ("oblique", "topdown", "iso")
-
-
-def load_fal_key() -> str:  # mismo comportamiento que gen.py
-    key = os.environ.get("FAL_KEY", "")
-    if not key:
-        env = REPO_ROOT / ".env"
-        if env.exists():
-            for line in env.read_text(encoding="utf-8").splitlines():
-                if line.startswith("FAL_KEY="):
-                    key = line.split("=", 1)[1].strip()
-    if not key:
-        raise SystemExit("FAL_KEY no está ni en el entorno ni en .env")
-    return key
-
-
-def png_data_uri(img: Image.Image, long_side: int) -> str:
-    """PNG RGB con lado largo `long_side` — el contrato del juego para el
-    esquema (scene_image_generator._to_data_uri con formato PNG y 768)."""
-    img = img.convert("RGB")
-    scale = long_side / max(img.size)
-    if scale < 1:
-        img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
-
-
-def jpeg_data_uri(path: Path, long_side: int = 1024) -> str:
-    img = Image.open(path).convert("RGB")
-    scale = long_side / max(img.size)
-    if scale < 1:
-        img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 # ---------------------------------------------------------------- raster
 
 
 def cmd_raster(_args: argparse.Namespace) -> None:
-    import cairosvg
+    from labs.common.images import raster_svg
 
     for fmt in FORMATS:
-        svg = BLUEPRINTS / f"{fmt}.svg"
         dump = json.loads((BLUEPRINTS / f"{fmt}.json").read_text())
         vb = dump["view_box"]
-        w, h = vb["width"] * PX_PER_UNIT, vb["height"] * PX_PER_UNIT
         out = BLUEPRINTS / f"{fmt}.png"
-        cairosvg.svg2png(
-            url=str(svg),
-            write_to=str(out),
-            output_width=w,
-            output_height=h,
-            background_color=CAPTURE_BG,
-        )
-        print(f"{fmt}: {w}x{h} -> {out.relative_to(REPO_ROOT)}")
+        raster_svg(BLUEPRINTS / f"{fmt}.svg", out, vb)
+        print(f"{fmt}: {vb['width'] * PX_PER_UNIT}x{vb['height'] * PX_PER_UNIT} -> {out.relative_to(REPO_ROOT)}")
 
 
 def cmd_overlay_expected(_args: argparse.Namespace) -> None:
@@ -124,60 +75,9 @@ def cmd_overlay_expected(_args: argparse.Namespace) -> None:
 
 
 def segment_bboxes(image_path: Path, client: httpx.Client) -> list[tuple[float, float, float, float]]:
-    """Bboxes de las masks de SAM2 auto-segment (cacheadas por sha de la imagen
-    para no re-pagar al re-puntuar)."""
-    import numpy as np
-
-    raw = image_path.read_bytes()
-    sha = hashlib.sha256(raw).hexdigest()[:16]
-    cache = MASKS / f"{sha}.json"
-    if cache.exists():
-        return [tuple(b) for b in json.loads(cache.read_text())["bboxes"]]
-
-    img = Image.open(io.BytesIO(raw))
-    payload = {  # payload exacto de FalSamClient.auto_segment (ai_server/fal_client.py)
-        "image_url": png_data_uri(img, long_side=1024),
-        "points_per_side": 32,
-        "pred_iou_thresh": 0.88,
-        "stability_score_thresh": 0.95,
-        "min_mask_region_area": 100,
-        "sync_mode": True,
-        "output_format": "png",
-    }
-    t0 = time.time()
-    resp = client.post(f"{FAL_BASE}/{SAM_MODEL}", json=payload)
-    if resp.status_code != 200:
-        raise RuntimeError(f"SAM2 devolvió {resp.status_code}: {resp.text[:500]}")
-    masks = resp.json().get("individual_masks") or []
-    bboxes: list[tuple[float, float, float, float]] = []
-    # Las masks vienen al tamaño que SAM procesó (lado largo 1024): reescalar
-    # los bbox al tamaño real de la imagen puntuada.
-    for m in masks:
-        url = m.get("url", "")
-        if url.startswith("data:"):
-            mask_png = base64.b64decode(url.split(",", 1)[1])
-        else:
-            got = client.get(url)
-            got.raise_for_status()
-            mask_png = got.content
-        arr = np.asarray(Image.open(io.BytesIO(mask_png)).convert("L"))
-        ys, xs = np.nonzero(arr > 127)
-        if len(xs) == 0:
-            continue
-        sx = img.width / arr.shape[1]
-        sy = img.height / arr.shape[0]
-        bboxes.append(
-            (
-                float(xs.min()) * sx,
-                float(ys.min()) * sy,
-                float(xs.max() - xs.min() + 1) * sx,
-                float(ys.max() - ys.min() + 1) * sy,
-            )
-        )
-    MASKS.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"image": image_path.name, "bboxes": bboxes}))
-    print(f"  SAM2: {len(bboxes)} masks ({time.time() - t0:.0f}s)")
-    return bboxes
+    """SAM2 auto-segment (labs.common.sam), con la caché histórica de este
+    run: MASKS/<sha>.json — sin prefijo, no renombrar o se re-paga."""
+    return _sam.segment_bboxes(image_path, client, MASKS, cache_name="{sha}.json")
 
 
 def score_image(image_path: Path, fmt: str, name: str, client: httpx.Client) -> dict:
@@ -195,7 +95,7 @@ def score_image(image_path: Path, fmt: str, name: str, client: httpx.Client) -> 
 
 def cmd_score(args: argparse.Namespace) -> None:
     client = httpx.Client(
-        headers={"Authorization": f"Key {load_fal_key()}"}, timeout=httpx.Timeout(300.0)
+        headers={"Authorization": f"Key {load_key('FAL_KEY')}"}, timeout=httpx.Timeout(300.0)
     )
     image = Path(args.image)
     name = args.name or image.stem
@@ -438,13 +338,7 @@ def run_case(
     if resp.status_code != 200:
         raise RuntimeError(f"{name}: fal devolvió {resp.status_code}: {resp.text[:400]}")
     image = resp.json()["images"][0]
-    url = image["url"]
-    if url.startswith("data:"):
-        png = base64.b64decode(url.split(",", 1)[1])
-    else:
-        dl = client.get(url)
-        dl.raise_for_status()
-        png = dl.content
+    png = download_image(image, client)
     IMAGES.mkdir(parents=True, exist_ok=True)
     out_path = IMAGES / f"{name}.png"
     out_path.write_bytes(png)
@@ -484,7 +378,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
     print(f"{len(cases)} casos, coste estimado ~${total_cost:.2f} (+SAM ~$0.01/img)")
     entries: list[dict] = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else []
     client = httpx.Client(
-        headers={"Authorization": f"Key {load_fal_key()}"}, timeout=httpx.Timeout(600.0)
+        headers={"Authorization": f"Key {load_key('FAL_KEY')}"}, timeout=httpx.Timeout(600.0)
     )
     for name, model, fmt in cases:
         try:

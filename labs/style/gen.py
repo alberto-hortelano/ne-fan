@@ -16,23 +16,20 @@ FAL_KEY en el entorno o en .env de la raíz del repo.
 from __future__ import annotations
 
 import argparse
-import base64
 import html
-import io
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
-from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RUNS_DIR = Path(__file__).resolve().parent / "runs"
 STYLES_DIR = REPO_ROOT / "nefan-core" / "data" / "styles"
 
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ai_server"))
 from style_pack_builder import (  # noqa: E402
     CATEGORY_SCENES,
@@ -40,34 +37,13 @@ from style_pack_builder import (  # noqa: E402
     ENV_FRAME_TOPDOWN,
 )
 
-FAL_BASE = "https://fal.run"
+from labs.common.env import load_key  # noqa: E402
+from labs.common.fal import FAL_BASE, download_image  # noqa: E402
+from labs.common.images import jpeg_data_uri  # noqa: E402
+from labs.common.report import PAGE_CSS, manifest_upsert, render_page  # noqa: E402
+
 T2I = "openai/gpt-image-2"
 EDIT = "openai/gpt-image-2/edit"
-
-
-def load_fal_key() -> str:
-    key = os.environ.get("FAL_KEY", "")
-    if not key:
-        env = REPO_ROOT / ".env"
-        if env.exists():
-            for line in env.read_text(encoding="utf-8").splitlines():
-                if line.startswith("FAL_KEY="):
-                    key = line.split("=", 1)[1].strip()
-    if not key:
-        raise SystemExit("FAL_KEY no está ni en el entorno ni en .env")
-    return key
-
-
-def to_data_uri(path: Path, long_side: int = 1024) -> str:
-    img = Image.open(path).convert("RGB")
-    scale = long_side / max(img.size)
-    if scale < 1:
-        img = img.resize(
-            (round(img.width * scale), round(img.height * scale)), Image.LANCZOS
-        )
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 @dataclass
@@ -92,7 +68,7 @@ def run_case(client: httpx.Client, case: Case, out_dir: Path) -> dict:
     if case.endpoint == EDIT:
         if not case.refs:
             raise ValueError(f"{case.name}: EDIT requiere refs")
-        payload["image_urls"] = [to_data_uri(p) for p in case.refs]
+        payload["image_urls"] = [jpeg_data_uri(p) for p in case.refs]
     t0 = time.time()
     resp = client.post(f"{FAL_BASE}/{case.endpoint}", json=payload)
     if resp.status_code != 200:
@@ -101,13 +77,7 @@ def run_case(client: httpx.Client, case: Case, out_dir: Path) -> dict:
         )
     data = resp.json()
     image = data["images"][0]
-    url = image["url"]
-    if url.startswith("data:"):
-        png = base64.b64decode(url.split(",", 1)[1])
-    else:
-        dl = client.get(url)
-        dl.raise_for_status()
-        png = dl.content
+    png = download_image(image, client)
     out_path = out_dir / f"{case.name}.png"
     out_path.write_bytes(png)
     elapsed = round(time.time() - t0, 1)
@@ -148,23 +118,11 @@ def render_index(out_dir: Path, entries: list[dict]) -> None:
     </div>
   </div>"""
         )
-    out_dir.joinpath("index.html").write_text(
-        f"""<!doctype html><meta charset="utf-8">
-<title>{html.escape(out_dir.name)}</title>
-<style>
-  body {{ background:#1c1c1c; color:#ddd; font:15px/1.5 system-ui; margin:24px; }}
-  .card {{ display:grid; grid-template-columns: 560px 1fr; gap:20px;
-          border-bottom:1px solid #333; padding:24px 0; }}
-  img {{ width:560px; height:auto; image-rendering:auto; }}
-  pre {{ white-space:pre-wrap; background:#252525; padding:12px; font-size:12.5px; }}
-  .params {{ color:#8fb35c; font-family:monospace; font-size:13px; }}
-  .note {{ color:#aaa; }} .refs {{ color:#d9a24a; font-size:13px; }}
-  h1 {{ font-size:20px; }} h2 {{ font-size:16px; margin:0 0 4px; }}
-</style>
-<h1>{html.escape(out_dir.name)} — {len(entries)} imágenes</h1>
-{''.join(cards)}
-""",
-        encoding="utf-8",
+    render_page(
+        html.escape(out_dir.name),
+        f"<h1>{html.escape(out_dir.name)} — {len(entries)} imágenes</h1>\n{''.join(cards)}",
+        out_dir / "index.html",
+        css=PAGE_CSS,
     )
 
 
@@ -187,17 +145,14 @@ def main(cases: list[Case]) -> None:
         json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else []
     )
 
-    key = load_fal_key()
+    key = load_key("FAL_KEY")
     with httpx.Client(
         headers={"Authorization": f"Key {key}"}, timeout=httpx.Timeout(300.0)
     ) as client:
         for case in cases:
             print(f"→ {case.name} [{case.endpoint}, {case.quality}]")
             entry = run_case(client, case, out_dir)
-            entries = [e for e in entries if e["file"] != entry["file"]] + [entry]
-            manifest_path.write_text(
-                json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            entries = manifest_upsert(manifest_path, entry, key="file")
             render_index(out_dir, entries)
     print(f"\nrun completo: {out_dir}/index.html ({len(entries)} imágenes en manifest)")
 

@@ -26,15 +26,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 
 LAB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAB_DIR.parent.parent
 SPRITES_ROOT = REPO_ROOT / "nefan-html" / "public" / "sprites"
+sys.path.insert(0, str(REPO_ROOT))
 
 from PIL import Image  # noqa: E402
+
+from labs.skinning.sheet import keyframe_indices  # noqa: E402
 
 
 # Friendly cardinal labels for the 8 directions.
@@ -79,21 +81,6 @@ ANIM_PROFILES: dict[str, tuple[int, float]] = {
 }
 # Fallback for anims not in the table (ambient, future).
 DEFAULT_PROFILE: tuple[int, float] = (4, 4.0)
-
-
-def keyframe_indices(src_count: int, n: int) -> list[int]:
-    """Pick n indices evenly distributed across the WHOLE cycle.
-    Same algorithm as labs/skinning/run.py:keyframe_indices()."""
-    if n <= 0 or src_count <= 0:
-        return []
-    out: list[int] = []
-    for i in range(n):
-        idx = int(round(i * src_count / n))
-        if idx >= src_count:
-            idx = src_count - 1
-        if not out or idx != out[-1]:
-            out.append(idx)
-    return out
 
 
 def discover_anims(model: str, angle: str, requested: list[str] | None) -> list[str]:
