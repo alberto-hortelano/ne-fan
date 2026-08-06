@@ -15,7 +15,7 @@ let renderer: THREE.WebGLRenderer | null = null;
 
 function getRenderer(): THREE.WebGLRenderer {
   if (renderer) return renderer;
-  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
   r.setSize(STAGE_RENDER_SIZE, STAGE_RENDER_SIZE, false);
   r.shadowMap.enabled = true;
   r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -115,16 +115,24 @@ function skyMesh(top: string, bottom: string, zNorth: number): THREE.Mesh {
   return m;
 }
 
-/** Renderiza el spec a un canvas 2D nuevo de STAGE_RENDER_SIZE². */
-export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
+/** Monta escena+cámara del spec, filtrando primitivas, y la renderiza a un
+ *  canvas 2D nuevo de STAGE_RENDER_SIZE². `transparent` omite fondo/cielo y
+ *  deja alpha 0 fuera de las mallas (recortes clay). */
+function renderSpec(
+  spec: GreyboxSpec,
+  keep: (p: GreyboxPrimitive) => boolean,
+  transparent: boolean,
+): HTMLCanvasElement {
   const r = getRenderer();
   const scene = new THREE.Scene();
-  if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, spec.fog.near, spec.fog.far);
-  if (spec.sky) {
-    scene.background = new THREE.Color(spec.sky.bottom);
-    scene.add(skyMesh(spec.sky.top, spec.sky.bottom, spec.camera.pos[2] - 600));
-  } else {
-    scene.background = new THREE.Color("#0c0a0e");
+  if (!transparent) {
+    if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, spec.fog.near, spec.fog.far);
+    if (spec.sky) {
+      scene.background = new THREE.Color(spec.sky.bottom);
+      scene.add(skyMesh(spec.sky.top, spec.sky.bottom, spec.camera.pos[2] - 600));
+    } else {
+      scene.background = new THREE.Color("#0c0a0e");
+    }
   }
 
   const shadowSpan = Math.max(40, spec.proj.width_m * 1.5 + spec.proj.depth_m);
@@ -152,7 +160,9 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
     }
   }
 
-  for (const p of spec.primitives) scene.add(primitiveMesh(p));
+  for (const p of spec.primitives) {
+    if (keep(p)) scene.add(primitiveMesh(p));
+  }
 
   // Cámara EXACTA del spec: mirada horizontal al norte, frame simétrico
   // respecto al horizonte recortado al view_box con setViewOffset.
@@ -164,6 +174,7 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
   cam.updateProjectionMatrix();
 
   try {
+    r.setClearColor(0x000000, transparent ? 0 : 1);
     r.render(scene, cam);
     const out = document.createElement("canvas");
     out.width = STAGE_RENDER_SIZE;
@@ -183,4 +194,28 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
       }
     });
   }
+}
+
+/** Renderiza el spec COMPLETO (plano base del repintado). */
+export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
+  return renderSpec(spec, () => true, false);
+}
+
+/** Render por CAPAS del clay para el modo vector: placa (escena sin
+ *  volúmenes) + un recorte RGBA por volumen del manifest, todos con la misma
+ *  cámara/luces. Al ser render PROPIO (no pintura IA), las siluetas del spec
+ *  son exactas — la prohibición de recortar con siluetas declaradas aplica
+ *  solo a imágenes repintadas. */
+export function renderGreyboxLayers(spec: GreyboxSpec): {
+  plate: HTMLCanvasElement;
+  cutouts: Array<{ volId: string; canvas: HTMLCanvasElement }>;
+} {
+  const plate = renderSpec(spec, (p) => p.volId === undefined, false);
+  const volIds = [...new Set(spec.manifest.map((m) => m.id))];
+  const cutouts = volIds.map((volId) => ({
+    volId,
+    // Las primitivas llevan el MISMO id "vol_<id>" que el manifest.
+    canvas: renderSpec(spec, (p) => p.volId === volId, true),
+  }));
+  return { plate, cutouts };
 }

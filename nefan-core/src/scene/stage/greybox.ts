@@ -24,7 +24,7 @@ import {
   type GreyboxLight,
   type GreyboxPrimitive,
 } from "../greybox/common.js";
-import { volumeFootprintCells, type StageScenePlan } from "./compose.js";
+import type { StageBlock } from "./schema.js";
 import { stageToViewAt, type StageProjParams } from "./projection.js";
 import { STAGE_RENDER_SIZE, type StageExpectedElement, type ViewBox } from "./segments.js";
 
@@ -109,6 +109,70 @@ export interface GreyboxSpec {
 }
 
 const rad = (deg: number): number => (deg * Math.PI) / 180;
+
+/** Plan de escena de un plató: el bloque `stage` + los volúmenes (declarados
+ *  y derivados) en celdas de la escena. */
+export interface StageScenePlan {
+  size: { cols: number; rows: number; meters_per_cell: number };
+  stage: StageBlock;
+  /** Volúmenes declarados + derivados (deriveVolumesFromSchema del caller),
+   *  en celdas de la escena. */
+  volumes: Volume[];
+  biome?: string;
+  /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
+   *  bandas de tipo. */
+  terrain?: string[];
+  terrain_legend?: Record<string, string>;
+}
+
+/** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
+ *  compartido por el manifest del greybox y la colisión declarada (si
+ *  divergieran, colisión y render dejarían de casar). null = sin huella
+ *  razonable (prop sin at ni rect). */
+export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
+  switch (v.type) {
+    case "building":
+      return v.rect;
+    case "wall": {
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      for (const [c, r] of v.points) {
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+      }
+      const half = (v.width ?? 3) / 2;
+      return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
+    }
+    case "tower": {
+      const r = v.r ?? 3;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "gate": {
+      const w = v.w ?? 8;
+      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
+    }
+    case "tree": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
+    }
+    case "bush": {
+      const s = v.s ?? 1;
+      return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
+    }
+    case "rock": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
+    }
+    case "fountain": {
+      const r = v.r ?? 4;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "prop": {
+      if (v.rect) return v.rect;
+      if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
+      return null;
+    }
+  }
+}
 
 export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): GreyboxSpec {
   const { cols, rows } = plan.size;
@@ -750,7 +814,7 @@ function buildVolumePrimitives(
 }
 
 /** Pistas para la visión (stage_review) desde el manifest del greybox —
- *  mismo contrato que expectedElementsFor (compositor SVG). */
+ *  cajas proyectadas EXACTAS en px del cuadrado de trabajo. */
 export function expectedElementsFromGreybox(spec: GreyboxSpec): StageExpectedElement[] {
   return spec.manifest.map((m) => ({
     id: m.id,

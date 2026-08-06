@@ -6,11 +6,13 @@ import {
   canonicalGreyboxJson,
   expectedElementsFromGreybox,
   volumeHeightM,
+  volumeFootprintCells,
   GREYBOX_EYE_M,
   STAGE_GREYBOX_VERSION,
   type GreyboxSpec,
+  type StageScenePlan,
 } from "../src/scene/stage/greybox.js";
-import { composeStage, volumeFootprintCells, type StageScenePlan } from "../src/scene/stage/compose.js";
+import { composeStageScene } from "../src/scene/stage/scene.js";
 import { stageToViewAt, stageToView } from "../src/scene/stage/projection.js";
 import { STAGE_RENDER_SIZE } from "../src/scene/stage/segments.js";
 
@@ -122,13 +124,13 @@ describe("buildGreyboxSpec", () => {
     assert.ok(buildGreyboxSpec(interiorPlan(), "eye").camera.eye_m < 3.2);
   });
 
-  it("manifest: mismos ids vol_* que las capas del compositor, cajas dentro del cuadrado", () => {
+  it("manifest: mismos ids vol_* que los items de la escena, cajas dentro del cuadrado", () => {
     const plan = interiorPlan();
     const spec = buildGreyboxSpec(plan, "posada_salon");
-    const composed = composeStage(plan, "posada_salon");
-    const volLayerIds = composed.layers.filter((l) => l.id.startsWith("vol_")).map((l) => l.id).sort();
+    const composed = composeStageScene(plan, "posada_salon");
+    const itemIds = composed.items.map((i) => i.id).sort();
     const manifestIds = spec.manifest.map((m) => m.id).sort();
-    assert.deepEqual(manifestIds, volLayerIds);
+    assert.deepEqual(manifestIds, itemIds);
     for (const m of spec.manifest) {
       const [x, y, w, h] = m.box_px;
       assert.ok(x >= 0 && y >= 0 && x + w <= STAGE_RENDER_SIZE && y + h <= STAGE_RENDER_SIZE, m.id);

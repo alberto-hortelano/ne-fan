@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 
 import { validateScene, type PlaceContext } from "../src/scene/scene-validate.js";
 import { stagePlanFromScene } from "../src/scene/stage/plan.js";
-import { composeStage } from "../src/scene/stage/compose.js";
+import { composeStageScene } from "../src/scene/stage/scene.js";
 import { spawnPointForEntry, exitZoneAt } from "../src/scene/stage/entry.js";
 
 const DIR = fileURLToPath(new URL("../data/scenes/proscenio", import.meta.url));
@@ -45,26 +45,25 @@ describe("fixtures proscenio de la posada", () => {
     }
   });
 
-  it("cada fixture compone determinista con capas y salidas", () => {
+  it("cada fixture compone determinista con items y salidas", () => {
     for (const f of ["posada_salon.json", "posada_cocina.json", "posada_calle.json"]) {
       const raw = load(f);
       const plan = stagePlanFromScene(raw);
       assert.ok(plan, `${f} es proscenio`);
-      const a = composeStage(plan!, String(raw.scene_id));
-      const b = composeStage(plan!, String(raw.scene_id));
+      const a = composeStageScene(plan!, String(raw.scene_id));
+      const b = composeStageScene(plan!, String(raw.scene_id));
       assert.equal(JSON.stringify(a), JSON.stringify(b), `${f} determinista`);
-      assert.ok(a.layers.length >= 3, `${f}: capas suficientes (${a.layers.length})`);
+      assert.ok(a.spec.primitives.length >= 3, `${f}: primitivas suficientes (${a.spec.primitives.length})`);
       assert.ok(a.exits.length >= 1, `${f}: salidas compuestas`);
-      // Los props derivados de entities se pintan como capas con huella.
-      const conHuella = a.layers.filter((l) => l.footprint);
-      assert.ok(conHuella.length >= 1, `${f}: al menos un volumen derivado pintado`);
+      // Los props derivados de entities entran al manifest con huella.
+      assert.ok(a.items.length >= 1, `${f}: al menos un volumen derivado en el manifest`);
     }
   });
 
   it("las salidas están espejadas: salir y volver deja al jugador junto a la puerta", () => {
-    const salon = composeStage(stagePlanFromScene(load("posada_salon.json"))!, "posada_salon");
-    const cocina = composeStage(stagePlanFromScene(load("posada_cocina.json"))!, "posada_cocina");
-    const calle = composeStage(stagePlanFromScene(load("posada_calle.json"))!, "posada_calle");
+    const salon = composeStageScene(stagePlanFromScene(load("posada_salon.json"))!, "posada_salon");
+    const cocina = composeStageScene(stagePlanFromScene(load("posada_cocina.json"))!, "posada_cocina");
+    const calle = composeStageScene(stagePlanFromScene(load("posada_calle.json"))!, "posada_calle");
 
     // salón → cocina: la cocina tiene spawn de vuelta desde el salón.
     const enCocina = spawnPointForEntry(cocina, "posada_salon");

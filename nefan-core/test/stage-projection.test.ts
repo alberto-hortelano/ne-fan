@@ -11,7 +11,6 @@ import {
   type StageBounds,
 } from "../src/scene/stage/projection.js";
 import { railCamera } from "../src/scene/stage/camera.js";
-import { fourthWallAlpha, FOURTH_WALL_FADE_DEFAULTS } from "../src/scene/stage/fade.js";
 
 const P: StageProjParams = {
   focal_m: 12,
@@ -115,21 +114,5 @@ describe("cámara de raíl", () => {
     let cam = 9.9;
     for (let i = 0; i < 200; i++) cam = railCamera(cam, 50, 1 / 30, OPTS);
     assert.equal(cam, 10);
-  });
-});
-
-describe("cuarta pared — fade por proximidad", () => {
-  it("alpha mínimo pegado a la embocadura, máximo lejos, monótono", () => {
-    const d = FOURTH_WALL_FADE_DEFAULTS;
-    // Pegado a la embocadura (z mundo ≈ maxZ).
-    assert.equal(fourthWallAlpha(B.maxZ, B), d.minAlpha);
-    // Al fondo del plató.
-    assert.equal(fourthWallAlpha(B.minZ, B), d.maxAlpha);
-    let prev = fourthWallAlpha(B.maxZ, B);
-    for (let z = B.maxZ - 0.5; z >= B.minZ; z -= 0.5) {
-      const a = fourthWallAlpha(z, B);
-      assert.ok(a >= prev);
-      prev = a;
-    }
   });
 });

@@ -6,7 +6,7 @@
 import { parseVolumes, type Volume } from "../blueprint/volumes.js";
 import { deriveVolumesFromSchema, type DeriveInput } from "../blueprint/derive.js";
 import { parseStage } from "./schema.js";
-import type { StageScenePlan } from "./compose.js";
+import type { StageScenePlan } from "./greybox.js";
 
 /** null si la escena no es proscenio (sin bloque `stage`). */
 export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan | null {

@@ -15,7 +15,7 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import {
-  composeStage,
+  composeStageScene,
   stagePlanFromScene,
   type ComposedStage,
   type StageScenePlan,
@@ -284,8 +284,8 @@ function applySessionView(view: string): void {
       if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
     }
     activeRenderer = prosceniumRenderer;
-    // Sin pipeline de imagen en proscenio v1 (vector-only): el repintado por
-    // capas (peeling) llega en la entrega 2.
+    // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
+    // pipeline (StageImageController: clay local + repintado bajo demanda).
     autoPipeline.setEnabled(false);
     if (changed) log("Vista: proscenio (plató de cine, cámara al sur)");
   } else {
@@ -751,7 +751,7 @@ function composeTilePlan(
 
 /** Geometría del plató con indirección MUTABLE: el accept de HMR de abajo
  *  la reasigna al editar nefan-core/stage — sin recargar la página. */
-let hotComposeStage = composeStage;
+let hotComposeStage = composeStageScene;
 let hotStagePlanFromScene = stagePlanFromScene;
 
 /** Metadatos del repintado de un plató, desde el Format D crudo. */
@@ -851,25 +851,27 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     if (CONFIG.graphics.character_sprites && playerModel === null) {
       void setPlayerAppearance("", "");
     }
-    // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
-    // reinstalar de la caché cliente si ya se pintó (volver a una escena no
-    // pierde la imagen) o, con gráficos "imagen IA", greybox + repintar +
-    // pelar. La clave de caché es el hash del GreyboxSpec del plan.
+    // TRAS instalarse el plató (installStage resetea los bitmaps): reinstalar
+    // de la caché cliente si ya se pintó (volver a una escena no pierde la
+    // imagen); si no, instalar el CLAY three.js local (el arte del modo
+    // vector, y el placeholder instantáneo del modo imagen) y, con gráficos
+    // "imagen IA", lanzar greybox → repintar → pelar. La clave de caché es el
+    // hash del GreyboxSpec del plan.
     const stageForImages = stageComposed;
     const stagePlanForImages = stagePlanCaptured;
     const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
-    void prosceniumRenderer!
-      .installStage(stageComposed, key)
-      .then(async () => {
-        if (!stagePlanForImages) return;
-        const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
-        if (!reinstalled && sessionRenderMode === "image") {
-          void stageImageController.runFor(
-            stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
-          );
-        }
-      })
-      .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
+    prosceniumRenderer!.installStage(stageComposed, key);
+    void (async () => {
+      if (!stagePlanForImages) return;
+      const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
+      if (reinstalled) return;
+      await stageImageController.installClay(key, stagePlanForImages);
+      if (sessionRenderMode === "image") {
+        void stageImageController.runFor(
+          stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
+        );
+      }
+    })().catch((err: unknown) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
   } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
     applySessionView("");
   }
@@ -2245,11 +2247,11 @@ scheduleNextFrame();
 if (import.meta.hot) {
   import.meta.hot.accept("@nefan-core/src/scene/stage/index.js", (mod) => {
     const m = mod as {
-      composeStage?: typeof composeStage;
+      composeStageScene?: typeof composeStageScene;
       stagePlanFromScene?: typeof stagePlanFromScene;
     } | undefined;
-    if (!m?.composeStage || !m?.stagePlanFromScene) return;
-    hotComposeStage = m.composeStage;
+    if (!m?.composeStageScene || !m?.stagePlanFromScene) return;
+    hotComposeStage = m.composeStageScene;
     hotStagePlanFromScene = m.stagePlanFromScene;
     if (sessionView === "proscenium" && sceneData && activeTileKey && prosceniumRenderer) {
       const key = activeTileKey;
@@ -2260,9 +2262,11 @@ if (import.meta.hot) {
           const composed = hotComposeStage(plan, key);
           activeStage = composed;
           (sceneData as Record<string, unknown>).__stage = composed;
-          void prosceniumRenderer.installStage(composed, key).then(() => {
-            void stageImageController.reinstallIfCached(plan, key);
-          });
+          prosceniumRenderer.installStage(composed, key);
+          void (async () => {
+            const reinstalled = await stageImageController.reinstallIfCached(plan, key);
+            if (!reinstalled) await stageImageController.installClay(key, plan);
+          })().catch((err: unknown) => errors.push("scene", "reinstalación HMR del plató falló", err));
           console.log("[hmr] plató recompuesto en caliente");
         }
       } catch (err) {

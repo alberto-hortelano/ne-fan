@@ -13,7 +13,7 @@
  *  renderSize² (espejo del prestretch del servidor); la inversa exacta es
  *  lineal contra el view_box del compositor. */
 
-import type { ComposedStage, ComposedStageExit, StageLayer } from "./compose.js";
+import type { ComposedStageExit } from "./scene.js";
 import { viewToStage, stageToWorld, type StageProjParams, type StageBounds } from "./projection.js";
 import type { TerrainGridData } from "../terrain-collision.js";
 
@@ -21,12 +21,6 @@ import type { TerrainGridData } from "../terrain-collision.js";
  *  cliente/ai_server: cambiar el plan o el prompt regenera, nunca sirve
  *  rellenos del algoritmo anterior. */
 export const STAGE_PEEL_VERSION = 3;
-
-/** Capas de volumen repintables (props/muros). El orden del array respeta el
- *  orden del pintor del compositor (fondo → frente). */
-export function paintableVolumeLayers(stage: ComposedStage): StageLayer[] {
-  return stage.layers.filter((l) => l.kind === "prop" || l.kind === "wall");
-}
 
 /** Instrucción de inpaint para un hueco con `behindLabels` pintado detrás.
  *  `removed` nombra el objeto retirado — sin la prohibición explícita, un
@@ -249,32 +243,6 @@ export interface CutoutPose {
   contactWorld: [number, number][];
 }
 
-/** Elementos esperados para la visión: los volúmenes pintables del compositor
- *  con su caja proyectada al cuadrado de trabajo. */
-export function expectedElementsFor(
-  stage: ComposedStage,
-  renderSize: number = STAGE_RENDER_SIZE,
-): StageExpectedElement[] {
-  const vb = stage.view_box;
-  return paintableVolumeLayers(stage).map((layer: StageLayer) => {
-    const [minX, minY, maxX, maxY] = layer.bbox;
-    const x = ((minX - vb.minX) / vb.width) * renderSize;
-    const y = ((minY - vb.minY) / vb.height) * renderSize;
-    return {
-      id: layer.id,
-      label: layer.label ?? layer.id,
-      box_px: [
-        Math.round(x),
-        Math.round(y),
-        Math.round(((maxX - minX) / vb.width) * renderSize),
-        Math.round(((maxY - minY) / vb.height) * renderSize),
-      ],
-      tall: true,
-      solid: layer.footprint !== undefined,
-    };
-  });
-}
-
 /** Píxel del cuadrado de trabajo → unidades de vista (inversa exacta del
  *  estirado de rasterizeSvgSquare / prestretch). */
 export function pxToView(
@@ -291,19 +259,6 @@ const median = (xs: number[]): number => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-
-/** Altura DECLARADA (m) de un volumen reconstruida de su capa del compositor:
- *  (baseline_y − bbox.minY) / (ppm · s(z)) con la proyección ORIGINAL del
- *  compositor (no la calibrada). null si la capa no tiene altura pintable. */
-export function declaredLayerHeightM(
-  layer: Pick<StageLayer, "z" | "bbox" | "baseline_y">,
-  proj: StageProjParams,
-): number | null {
-  const s = proj.focal_m / (proj.focal_m + Math.max(0, layer.z));
-  const hView = layer.baseline_y - layer.bbox[1];
-  if (hView <= 0) return null;
-  return hView / (proj.px_per_m * s);
-}
 
 /** Rango sano de la razón MEDIA pintado/declarado observada (fuera de él,
  *  algo raro pasó con las máscaras y es mejor no distorsionar). El clamp se
