@@ -42,8 +42,12 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  NATIVO (`render_px`) en vez del cuadrado anamórfico ×2.
  *  v4 (luz con intención): presets de hora del día (stage.ambience o
  *  inferida del texto), luces prácticas por label (chimenea/farol/vela) con
- *  point lights y resplandor en el clay, cielo/niebla por preset. */
-export const STAGE_GREYBOX_VERSION = 4;
+ *  point lights y resplandor en el clay, cielo/niebla por preset.
+ *  v5 (luz convencional): el sol queda SIEMPRE en el cono frontal (±60° desde
+ *  el sur, lado cámara) — los sprites de personajes llevan luz genérica y una
+ *  escena a contraluz los deja sin integrar; los atardeceres son laterales
+ *  con la cara sur iluminada, nunca silueta. */
+export const STAGE_GREYBOX_VERSION = 5;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -531,16 +535,22 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     });
   } else {
     // Sol/luna por preset: elevación y color cuentan la hora; el azimut
-    // sembrado da variedad entre platós.
+    // sembrado da variedad entre platós PERO siempre dentro del cono FRONTAL
+    // (±60° desde el sur, lado cámara): los sprites de personajes llevan luz
+    // genérica y un set a contraluz los deja sin integrar. Los atardeceres
+    // son laterales-frontales (cara sur iluminada), nunca silueta.
     const preset = {
-      amanecer: { sun: "#ffd9a0", elev: 11, azBase: 70, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
+      amanecer: { sun: "#ffd9a0", elev: 18, azBase: 55, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
       dia: { sun: "#fff2dd", elev: 40, azBase: -45, intensity: 2.2, hemi: "#bfd4e6", ground: "#8a795a", hemiI: 0.6 },
-      atardecer: { sun: "#ffb36b", elev: 12, azBase: -70, intensity: 2.6, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
+      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
       noche: { sun: "#9ab0d8", elev: 50, azBase: -30, intensity: 0.9, hemi: "#4a5878", ground: "#2e3040", hemiI: 0.8 },
     }[tod];
     lights.push({ kind: "hemi", color: preset.hemi, groundColor: preset.ground, intensity: preset.hemiI });
     if (tod === "noche") lights.push({ kind: "ambient", color: "#30405c", intensity: 0.4 });
-    const az = rad(preset.azBase + uniform(lrng, -15, 15));
+    const FRONT_CONE_DEG = 60;
+    const az = rad(
+      Math.max(-FRONT_CONE_DEG, Math.min(FRONT_CONE_DEG, preset.azBase + uniform(lrng, -10, 10))),
+    );
     const dist = 90;
     lights.push({
       kind: "sun",
@@ -697,9 +707,11 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     sky: interiorLike
       ? null
       : {
-          amanecer: { top: "#7a88aa", bottom: "#f0d0a0" },
+          // Horizontes SUAVES: un cielo-ascua tras el set lee como contraluz
+          // aunque el sol venga de cámara (y los sprites no lo llevarían).
+          amanecer: { top: "#7a88aa", bottom: "#e4cca8" },
           dia: { top: "#7593b4", bottom: "#cfd8dc" },
-          atardecer: { top: "#5a5a7e", bottom: "#e8a860" },
+          atardecer: { top: "#6a6488", bottom: "#d8ac84" },
           noche: { top: "#101828", bottom: "#2e3e5e" },
         }[tod],
     fog: interiorLike

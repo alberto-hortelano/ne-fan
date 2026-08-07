@@ -1,6 +1,7 @@
-// 06_puerta — greybox 3D de la Puerta del Poniente con el sol poniéndose
-// justo tras el arco: muralla a contraluz (silueta morada), el vano como un
-// ascua y el chorro de luz derramándose calzada abajo hacia cámara.
+// 06_puerta — greybox 3D de la Puerta del Poniente a media tarde: sol
+// FRONTAL-LATERAL desde el suroeste (lado cámara — los personajes compuestos
+// deben compartir la luz: nada de contraluces), muralla de sillería legible,
+// rastrillo levantado visible en el vano y la calzada con roderas.
 import { makeLib } from "../lib.mjs";
 
 export async function build(THREE) {
@@ -8,20 +9,19 @@ export async function build(THREE) {
   const g = new THREE.Group();
 
   // ---- suelo y calzada ----------------------------------------------
-  g.add(L.ground(400, 0x7d6c60));
+  g.add(L.ground(400, 0x8a7a66));
   const road = [
     [1.5, 10], [0.8, -4], [0.2, -14], [0, -24], [0, -34],
   ];
-  g.add(L.ribbon(road, 5.4, 0x86756a, "street", 0.1));
-  // chorro de luz por el arco: lámina cálida calzada abajo + roderas encendidas
-  g.add(L.ribbon([[0, -33], [0.4, -20], [1.0, -6], [1.6, 8]], 2.6, 0xd89a58, "street", 0.16));
-  g.add(L.ribbon([[-0.9, -32], [-0.6, -18], [0.0, -2]], 0.4, 0xe8b070, "street", 0.2));
-  g.add(L.ribbon([[1.0, -32], [1.4, -18], [2.0, -2]], 0.4, 0xe8b070, "street", 0.2));
+  g.add(L.ribbon(road, 5.4, 0x9a8878, "street", 0.1));
+  // roderas de carro marcadas en la calzada
+  g.add(L.ribbon([[-0.9, -32], [-0.6, -18], [0.0, -2], [0.4, 8]], 0.45, 0x83705f, "street", 0.16));
+  g.add(L.ribbon([[1.0, -32], [1.4, -18], [2.0, -2], [2.4, 8]], 0.45, 0x83705f, "street", 0.16));
 
   // ---- muralla a contraluz ------------------------------------------
   const WALL_Z = -34;
-  const wallC = 0x5f5062; // silueta morada, abierta
-  const merlonC = 0x6a5a6e;
+  const wallC = 0x9c9082; // sillería al sol de la tarde
+  const merlonC = 0xa89c8c;
   const wall = (x, w, h = 8.5) => {
     const m = L.box(w, h, 2.6, wallC, "building");
     m.position.set(x, 0, WALL_Z);
@@ -38,15 +38,15 @@ export async function build(THREE) {
   wall(24.5, 41); // lienzo este
   // cubos de la puerta (tambores redondos)
   for (const s of [-1, 1]) {
-    const drum = L.cylinder(3.4, 12.5, 0x655468, "building");
+    const drum = L.cylinder(3.4, 12.5, 0x968a7c, "building");
     drum.position.set(s * 6.2, 0, WALL_Z);
     g.add(drum);
-    const cap = L.cylinder(3.7, 1.1, 0x5a4a5e, "building");
+    const cap = L.cylinder(3.7, 1.1, 0xa89c8c, "building");
     cap.position.set(s * 6.2, 12.5, WALL_Z);
     g.add(cap);
     // almenas del cubo
     for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
-      const mer = L.box(0.8, 0.7, 0.6, 0x5a4a5e, "building");
+      const mer = L.box(0.8, 0.7, 0.6, 0xa89c8c, "building");
       mer.position.set(s * 6.2 + Math.cos(a) * 3.3, 13.6, WALL_Z + Math.sin(a) * 3.3);
       g.add(mer);
     }
@@ -57,38 +57,44 @@ export async function build(THREE) {
   lintel.position.set(0, 0, WALL_Z);
   lintel.translateY(8.8);
   g.add(lintel);
-  // EL ASCUA: plano emisivo llenando el vano (el sol justo detrás)
-  const glow = new THREE.Mesh(
+  // Vano en penumbra con el camino continuando al otro lado
+  const inner = new THREE.Mesh(
     new THREE.PlaneGeometry(5.6, 8.8),
-    new THREE.MeshBasicMaterial({ color: 0xffcf86 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 1 }),
   );
-  glow.position.set(0, 4.4, WALL_Z + 0.2);
-  L.tag(glow, "building");
-  glow.userData.noShadow = true;
-  g.add(glow);
+  inner.position.set(0, 4.4, WALL_Z + 0.2);
+  L.tag(inner, "building");
+  inner.userData.noShadow = true;
+  g.add(inner);
+  // Rastrillo LEVANTADO: la fila de púas asoma bajo el dintel
+  for (let bx = -2.4; bx <= 2.4; bx += 0.8) {
+    const spike = L.box(0.18, 1.3, 0.18, 0x3a332c, "prop");
+    spike.position.set(bx, 7.4, WALL_Z + 0.3);
+    g.add(spike);
+  }
   // hoja del portón abierta hacia dentro (silueta contra el ascua)
-  const gateLeaf = L.box(2.6, 7.6, 0.35, 0x2e2620, "prop");
+  const gateLeaf = L.box(2.6, 7.6, 0.35, 0x5c4a36, "prop");
   gateLeaf.position.set(-2.6, 0, WALL_Z - 0.9);
   gateLeaf.rotation.y = -0.55;
   g.add(gateLeaf);
   // pendón lacio del cubo derecho
-  const banner = L.box(0.9, 4.6, 0.08, 0x5e3038, "prop");
+  const banner = L.box(0.9, 4.6, 0.08, 0x8a4048, "prop");
   banner.position.set(6.2, 0, WALL_Z + 1.6);
   banner.translateY(6.8);
   g.add(banner);
 
   // ---- por el vano: colinas ámbar y el camino que sigue -------------
-  g.add(L.hill(90, 9, 0x8a6a54, -10, -70));
-  g.add(L.hill(70, 6, 0x96745a, 25, -75));
+  g.add(L.hill(90, 9, 0x8a8a6e, -10, -70));
+  g.add(L.hill(70, 6, 0x96967a, 25, -75));
 
   // ---- primer término: crucero inclinado y rocas en silueta ---------
   const cross = new THREE.Group();
-  const shaft = L.box(0.5, 3.4, 0.5, 0x5c5156, "prop");
+  const shaft = L.box(0.5, 3.4, 0.5, 0x8f867c, "prop");
   cross.add(shaft);
-  const arm = L.box(1.7, 0.45, 0.45, 0x5c5156, "prop");
+  const arm = L.box(1.7, 0.45, 0.45, 0x8f867c, "prop");
   arm.position.y = 2.6;
   cross.add(arm);
-  const base = L.box(1.4, 0.55, 1.4, 0x635459, "prop");
+  const base = L.box(1.4, 0.55, 1.4, 0x968c80, "prop");
   cross.add(base);
   cross.position.set(5.2, 0, -6);
   cross.rotation.z = -0.09;
@@ -102,7 +108,7 @@ export async function build(THREE) {
   }
   // rocas abajo-izquierda
   for (const [x, z, s] of [[-5.8, -7, 0.9], [-7.2, -5.5, 0.6], [-4.9, -8.6, 0.5]]) {
-    const r = L.box(s * 1.6, s, s * 1.3, 0x615459, "rock");
+    const r = L.box(s * 1.6, s, s * 1.3, 0x8a8276, "rock");
     r.position.set(x, 0, z);
     r.rotation.y = x;
     g.add(r);
@@ -116,23 +122,18 @@ export async function build(THREE) {
   }
 
   // ---- luz y atmósfera ----------------------------------------------
-  // contraluz total: el sol DETRÁS de la puerta, de cara a cámara
-  g.add(L.sun(0xffb870, 3.2, [2, 10, -70], [0.5, 0, 6], 110));
-  // rim/relleno frío tenue para que el primer término no muera en negro
-  g.add(new THREE.HemisphereLight(0x8a7a96, 0x4a4038, 1.7));
-  // rebote frontal suave: el personaje y el primer término se leen sin
-  // matar el contraluz (sin sombras — es luz de relleno)
-  const bounce = new THREE.DirectionalLight(0xd8a878, 1.1);
-  bounce.position.set(6, 12, 40);
-  bounce.target.position.set(0, 2, -20);
-  g.add(bounce, bounce.target);
-  g.add(L.sky(0x5a4468, 0xf0a860, -400));
+  // sol de media tarde desde el SUROESTE (lado cámara): la muralla y el
+  // primer término comparten la luz que llevarán los personajes compuestos —
+  // nada de contraluces (los sprites llevan luz genérica)
+  g.add(L.sun(0xffd9a8, 3.0, [-48, 34, 55], [0, 4, -30], 110));
+  g.add(new THREE.HemisphereLight(0xa8b0c8, 0x6b6055, 1.25));
+  g.add(L.sky(0x7590b0, 0xd8c8a8, -400));
 
   return {
     group: g,
     camera: { pos: [0.8, 1.7, 6], look: [0, 4.5, -34], fov: 38 },
-    background: new THREE.Color(0xe8a05c),
-    fog: new THREE.Fog(0xb98a68, 34, 120),
+    background: new THREE.Color(0xd8c8a8),
+    fog: new THREE.Fog(0xbcc0b8, 40, 130),
     depthMax: 80,
     manifest: L.manifest,
   };

@@ -282,6 +282,11 @@ class SceneImageGenerator:
                 f"Render the scene as: {prompt.strip()}. "
                 "Give the background and sky depth and atmosphere consistent "
                 "with the scene description (time of day, weather, mood). "
+                "CONVENTIONAL LIGHTING ONLY: keep the light direction of the "
+                "blockout — the scene is lit from the camera side; NEVER "
+                "backlight the set, no sun glow or bright sky burning behind "
+                "the buildings, no silhouettes (characters are composited "
+                "later and must sit in the same light). "
                 + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
                 + (_STYLE_ROLE_RULES if stage_has_style_ref else "")
                 + _STYLE_RULES

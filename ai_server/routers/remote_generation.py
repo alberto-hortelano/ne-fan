@@ -139,8 +139,9 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # stage_greybox2: encuadre v3 (ventana anclada al horizonte, clay a aspect
     # nativo sin anamórfico, backdrop en el prompt) — invalida el greybox1.
     # tile_greybox1: la base pasa de SVG rasterizado a render 3D greybox.
+    # stage_greybox3: luz convencional (cono frontal, cláusula anti-contraluz).
     if body.blueprint_kind == "stage":
-        context["pipeline"] = "stage_greybox2"
+        context["pipeline"] = "stage_greybox3"
     elif body.blueprint_kind == "tile":
         context["pipeline"] = "tile_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
