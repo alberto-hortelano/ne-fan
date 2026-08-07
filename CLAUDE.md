@@ -481,7 +481,7 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   mezclar el view_box del compositor SVG con la placa greybox desalinea.
   **Caché por hash del spec canónico** (floats redondeados 1e-4): el PNG
   WebGL NO es byte-determinista — el cliente manda `layout_key` y el server
-  clava `layout: "gb:<hash>"` (pipeline `stage_greybox1`, modelo
+  clava `layout: "gb:<hash>"` (pipeline `stage_greybox2`, modelo
   `stage_scene_model: "gpt-image-2"` vía fal DIRECTO, ~210 s/plató,
   cacheado). El `StageImageController` (`nefan-html/src/scene/stage-image.ts`)
   repinta el plató ENTERO y deriva el mundo jugable de LO PINTADO.

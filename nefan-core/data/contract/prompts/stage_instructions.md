@@ -29,7 +29,7 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
   "structures": [ ],                     // optional interior sub-rooms
   "entities": [ ... ],                   // furniture, props, NPCs; include "player" ONLY on bootstrap or when no entry edge is known
   "stage": {
-    "focal_m": 30,                       // optional; default 30 (telephoto). 22 = intimate close room, 40 = very deep stage
+    "focal_m": 12,                       // optional CAMERA DISTANCE in meters behind the south edge; ~6-8 = intimate room, 12-18 = street, 20+ = wide establishing shot. Clamped so the frame always covers the stage width.
     "exits": [
       { "id": "puerta_cocina", "edge": "north", "to_place_id": "posada_cocina",
         "zone": [14, 0, 4, 2], "kind": "door", "label": "Puerta a la cocina" },
@@ -76,8 +76,9 @@ HARD RULES OF THE STAGE:
   (12–24 m wide). Exteriors (streets, plazas, fields, forest clearings):
   48–80 cols × 16–40 rows at 0.5, or meters_per_cell 1.0 for truly big open
   stages (up to 80 m wide — the camera rails along, the player walks). For
-  very deep stages raise focal_m toward 40 so the far end stays readable;
-  for intimate close rooms ~22. Omit it otherwise (default 30, telephoto).
+  very deep stages raise focal_m (camera further back, flatter) so the far
+  end stays readable; for intimate close rooms lower it toward 6-8. Omit it
+  otherwise (the engine derives a good default from the stage width).
 - NEVER build a pass-through stage that exists only to be crossed: if a
   location is mere transit, FOLD it into a bigger neighbouring stage and
   save the transition. Every stage must justify itself: someone to talk to,

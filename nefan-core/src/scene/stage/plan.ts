@@ -34,7 +34,9 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
   // mobiliario de dentro). Los cutaway declarados a mano se filtran igual;
   // los buildings normales (una caseta al fondo de un patio) sí se pintan.
   const derived = deriveVolumesFromSchema(
-    { ...(raw as DeriveInput), structures: undefined },
+    // meters_per_cell activa el respeto del `h` declarado por entity (solo
+    // proscenio — el derive del tile no cambia).
+    { ...(raw as DeriveInput), structures: undefined, meters_per_cell: size.meters_per_cell },
     declared,
   );
   const volumes = [...declared, ...derived].filter(

@@ -17,6 +17,8 @@ export interface GreyboxPrimitive {
    *  mundo del builder (metros en proscenio, celdas en el tile). */
   points?: [number, number][];
   rotY?: number;
+  /** Rotación sobre X tras rotY (p. ej. cilindro tumbado como rueda). */
+  rotX?: number;
   color: string;
   roughness?: number;
   cat: "building" | "prop" | "terrain" | "wall" | "tree" | "water" | "decor";

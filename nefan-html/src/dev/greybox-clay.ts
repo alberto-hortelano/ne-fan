@@ -19,8 +19,12 @@ import {
   type TileGreyboxPlan,
 } from "@nefan-core/src/scene/blueprint/index.js";
 
-// Los JSON entran al bundle vía glob (sin server.fs ni rutas absolutas).
-const STAGE_FIXTURES = import.meta.glob("@nefan-core/data/scenes/proscenio/*.json");
+// Los JSON entran al bundle vía glob (sin server.fs ni rutas absolutas). Los
+// dumps de labs/stage son platós REALES sacados de saves (harness de calidad).
+const STAGE_FIXTURES = {
+  ...import.meta.glob("@nefan-core/data/scenes/proscenio/*.json"),
+  ...import.meta.glob("../../../labs/stage/dumps/*.scene.json"),
+};
 const TILE_PLANS = import.meta.glob("@nefan-core/data/styles/_plantilla/planes/*.json");
 
 function fail(msg: string, err?: unknown): never {
@@ -37,7 +41,9 @@ async function loadJson(
   glob: Record<string, () => Promise<unknown>>,
   name: string,
 ): Promise<Record<string, unknown>> {
-  const key = Object.keys(glob).find((k) => k.endsWith(`/${name}.json`));
+  const key = Object.keys(glob).find(
+    (k) => k.endsWith(`/${name}.json`) || k.endsWith(`/${name}.scene.json`),
+  );
   if (!key) {
     fail(`no existe "${name}.json" — disponibles: ${Object.keys(glob).map((k) => k.split("/").pop()).join(", ")}`);
   }

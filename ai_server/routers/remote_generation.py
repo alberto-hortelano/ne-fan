@@ -136,11 +136,11 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # stage_greybox1 / tile_greybox1: la base pasa de SVG rasterizado a render
-    # 3D greybox (clay) con prompt propio — las generaciones del pipeline
-    # anterior quedan invalidadas.
+    # stage_greybox2: encuadre v3 (ventana anclada al horizonte, clay a aspect
+    # nativo sin anamórfico, backdrop en el prompt) — invalida el greybox1.
+    # tile_greybox1: la base pasa de SVG rasterizado a render 3D greybox.
     if body.blueprint_kind == "stage":
-        context["pipeline"] = "stage_greybox1"
+        context["pipeline"] = "stage_greybox2"
     elif body.blueprint_kind == "tile":
         context["pipeline"] = "tile_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
