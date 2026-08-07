@@ -228,7 +228,7 @@ describe("games loader", () => {
   it("los juegos y estilos shipped del repo validan", () => {
     const games = listGames(REAL_GAMES);
     const ids = games.map((g) => g.game_id);
-    assert.deepEqual(ids, ["alta_fantasia", "colonia_aster", "cuentos_oscuros", "dev_combate_basico", "dev_proscenio", "toledo_1200"]);
+    assert.deepEqual(ids, ["alta_fantasia", "colonia_aster", "cuentos_oscuros", "toledo_1200"]);
     for (const g of games) {
       assert.ok(g.world_brief.length >= 100, `${g.game_id} brief too short`);
       // Su estilo por defecto debe existir y validar.
@@ -240,16 +240,14 @@ describe("games loader", () => {
       styles.map((s) => s.style_id),
       ["acero_neon", "acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
     );
-    // Vistas: todos los packs sirven overworld; medievo_crudo además declara
-    // refs de plató (estilo default de dev_proscenio).
+    // Vistas: los 4 packs shipped sirven a AMBAS (refs de zona + de plató).
     for (const s of styles) {
-      assert.ok(s.views.includes("overworld"), `${s.style_id} sin overworld`);
+      assert.deepEqual(s.views, ["overworld", "proscenium"], s.style_id);
     }
-    const medievo = styles.find((s) => s.style_id === "medievo_crudo");
-    assert.deepEqual(medievo?.views, ["overworld", "proscenium"]);
-    // La vista default de cada mundo viaja resuelta en el listado.
-    const byId = Object.fromEntries(games.map((g) => [g.game_id, g.view]));
-    assert.equal(byId.dev_proscenio, "proscenium");
-    assert.equal(byId.alta_fantasia, "overworld");
+    // La vista default de cada mundo viaja resuelta en el listado (ninguno
+    // declara view ⇒ overworld; la vista es del jugador, no del mundo).
+    for (const g of games) {
+      assert.equal(g.view, "overworld", g.game_id);
+    }
   });
 });
