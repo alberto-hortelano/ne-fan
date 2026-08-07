@@ -5,8 +5,8 @@
  *
  *      pt(u, v, h) = [u + h·KX, v − h·KY]
  *
- *  El plano del suelo (h=0) es la IDENTIDAD — el arte plano del LLM
- *  (`map_ground`) se incrusta sin transform, la colisión y las costuras entre
+ *  El plano del suelo (h=0) es la IDENTIDAD — los rasgos planos del plan
+ *  viven en celdas de mundo sin transform, la colisión y las costuras entre
  *  tiles son triviales (mundo == vista). La altura desplaza en −y (voladizo
  *  norte, como la cenital clásica) y además ciza en −x (KX negativo): los
  *  volúmenes muestran su cara sur (iluminada) y su cara este (en sombra),

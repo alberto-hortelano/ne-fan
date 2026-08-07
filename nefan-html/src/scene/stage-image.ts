@@ -106,6 +106,9 @@ export interface StageImages {
   /** Modelo de talla de sprites vs el mobiliario PINTADO (los TAMAÑOS de la
    *  pintura llevan su propia perspectiva, distinta de la del suelo). */
   spriteScale: SpriteScaleModel;
+  /** true = render clay LOCAL (modo vector / placeholder): sin repintado IA.
+   *  Los recortes salen del propio render three.js (siluetas exactas). */
+  clay?: boolean;
 }
 
 export interface StageImageMeta {
@@ -181,6 +184,53 @@ export class StageImageController {
     this.deps.install(key, hit.images);
     console.log(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.length} recortes)`);
     return true;
+  }
+
+  /** Instala el CLAY local del plató (render three.js por capas): el arte del
+   *  modo vector y el placeholder instantáneo del modo imagen mientras el
+   *  repintado corre. Sin red y sin colisión derivada (sigue la declarada). */
+  async installClay(key: string, plan: StageScenePlan): Promise<void> {
+    const spec = buildGreyboxSpec(plan, key);
+    const { renderGreyboxLayers } = await import("./stage-greybox-render.js");
+    const { plate, cutouts } = renderGreyboxLayers(spec);
+    const manifestById = new Map(spec.manifest.map((m) => [m.id, m]));
+    const vb = spec.view_box;
+    const stageCutouts: StageCutout[] = [];
+    for (const c of cutouts) {
+      const m = manifestById.get(c.volId);
+      if (!m) {
+        errors.push("scene", `recorte clay ${c.volId} de ${key} sin entrada de manifest — se omite`);
+        continue;
+      }
+      const [bx, by, bw, bh] = m.box_px;
+      const [vx0, vy0] = pxToView(vb, bx, by);
+      const [vx1, vy1] = pxToView(vb, bx + bw, by + bh);
+      stageCutouts.push({
+        id: m.id,
+        layerId: m.id,
+        label: m.label,
+        canvas: c.canvas,
+        z: m.zStage,
+        bboxView: [vx0, vy0, vx1, vy1],
+        footprintWorld: m.solid
+          ? { minX: m.footprintWorld[0], minZ: m.footprintWorld[1], maxX: m.footprintWorld[2], maxZ: m.footprintWorld[3] }
+          : null,
+        solid: m.solid,
+        tall: m.tall,
+      });
+    }
+    this.deps.install(key, {
+      peelVersion: STAGE_PEEL_VERSION,
+      plate,
+      cutouts: stageCutouts,
+      collision: null,
+      missing: [],
+      paintedProj: spec.proj,
+      paintedViewBox: spec.view_box,
+      spriteScale: SPRITE_SCALE_IDENTITY,
+      clay: true,
+    });
+    console.log(`[stage-img] ${key}: clay instalado (${stageCutouts.length} recortes three.js)`);
   }
 
   /** Renderiza el greybox, repinta, inventaría por visión, segmenta y pela el

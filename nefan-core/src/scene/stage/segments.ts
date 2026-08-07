@@ -13,10 +13,35 @@
  *  renderSize² (espejo del prestretch del servidor); la inversa exacta es
  *  lineal contra el view_box del compositor. */
 
-import type { ComposedStage, ComposedStageExit, StageLayer } from "./compose.js";
+import type { ComposedStageExit } from "./scene.js";
 import { viewToStage, stageToWorld, type StageProjParams, type StageBounds } from "./projection.js";
-import { paintableVolumeLayers, buildPeelPrompt } from "./peel.js";
 import type { TerrainGridData } from "../terrain-collision.js";
+
+/** Versión del pipeline de pelado — va en las claves de caché de imagen del
+ *  cliente/ai_server: cambiar el plan o el prompt regenera, nunca sirve
+ *  rellenos del algoritmo anterior. */
+export const STAGE_PEEL_VERSION = 3;
+
+/** Instrucción de inpaint para un hueco con `behindLabels` pintado detrás.
+ *  `removed` nombra el objeto retirado — sin la prohibición explícita, un
+ *  modelo de fill rellena un hueco con forma de mesa con OTRA mesa (bench
+ *  labs/stage 003). */
+export function buildPeelPrompt(behindLabels: string[], backdrop?: string, removed?: string): string {
+  const behind =
+    behindLabels.length > 0
+      ? `these elements that are partially hidden behind it: ${behindLabels.join(", ")}`
+      : "ONLY the empty ground";
+  const far = backdrop ? ` and, at the far end, the background (${backdrop})` : "";
+  const removedClause = removed
+    ? `The object being removed is: ${removed}. Do NOT paint the ${removed} back, nor any similar object. `
+    : "";
+  return (
+    `${removedClause}Fill the masked region by continuing EXACTLY what lies behind the removed object: ${behind}${far}. ` +
+    "Extend the floor and the already-visible surfaces seamlessly. " +
+    "Do NOT invent any new object: no planks, fences, signs, crates, furniture, stoves, windows, doors, plants or creatures " +
+    "that are not listed above. Match the surrounding painting style, lighting, colours and perspective exactly."
+  );
+}
 
 /** Lado del cuadrado de trabajo (espejo del prestretch del ai_server). */
 export const STAGE_RENDER_SIZE = 1024;
@@ -218,32 +243,6 @@ export interface CutoutPose {
   contactWorld: [number, number][];
 }
 
-/** Elementos esperados para la visión: los volúmenes pintables del compositor
- *  con su caja proyectada al cuadrado de trabajo. */
-export function expectedElementsFor(
-  stage: ComposedStage,
-  renderSize: number = STAGE_RENDER_SIZE,
-): StageExpectedElement[] {
-  const vb = stage.view_box;
-  return paintableVolumeLayers(stage).map((layer: StageLayer) => {
-    const [minX, minY, maxX, maxY] = layer.bbox;
-    const x = ((minX - vb.minX) / vb.width) * renderSize;
-    const y = ((minY - vb.minY) / vb.height) * renderSize;
-    return {
-      id: layer.id,
-      label: layer.label ?? layer.id,
-      box_px: [
-        Math.round(x),
-        Math.round(y),
-        Math.round(((maxX - minX) / vb.width) * renderSize),
-        Math.round(((maxY - minY) / vb.height) * renderSize),
-      ],
-      tall: true,
-      solid: layer.footprint !== undefined,
-    };
-  });
-}
-
 /** Píxel del cuadrado de trabajo → unidades de vista (inversa exacta del
  *  estirado de rasterizeSvgSquare / prestretch). */
 export function pxToView(
@@ -260,19 +259,6 @@ const median = (xs: number[]): number => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-
-/** Altura DECLARADA (m) de un volumen reconstruida de su capa del compositor:
- *  (baseline_y − bbox.minY) / (ppm · s(z)) con la proyección ORIGINAL del
- *  compositor (no la calibrada). null si la capa no tiene altura pintable. */
-export function declaredLayerHeightM(
-  layer: Pick<StageLayer, "z" | "bbox" | "baseline_y">,
-  proj: StageProjParams,
-): number | null {
-  const s = proj.focal_m / (proj.focal_m + Math.max(0, layer.z));
-  const hView = layer.baseline_y - layer.bbox[1];
-  if (hView <= 0) return null;
-  return hView / (proj.px_per_m * s);
-}
 
 /** Rango sano de la razón MEDIA pintado/declarado observada (fuera de él,
  *  algo raro pasó con las máscaras y es mejor no distorsionar). El clamp se

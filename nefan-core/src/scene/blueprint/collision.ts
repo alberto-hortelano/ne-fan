@@ -2,16 +2,16 @@
  *  celdas de mundo, NUNCA los píxeles pintados (bajo perspectiva la pintura
  *  de una cara cae al norte de la huella real).
  *
- *  Devuelve el mismo shape que `svgCollisionGrid`/`solidGridFromMasks`
+ *  Devuelve el mismo shape que `groundCollisionGrid`/`solidGridFromMasks`
  *  (`TerrainGridData` con chars `S`), así el cliente lo une con la colisión
- *  de agua del `map_ground` y con la derivada de imagen por el camino de
+ *  de agua del plan declarado y con la derivada de imagen por el camino de
  *  siempre. Puro y sin DOM: testeable en node. */
 
 import { IMAGE_SOLID_CHAR } from "../image-collision.js";
 import type { TerrainGridData } from "../terrain-collision.js";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import type { WorldRect } from "../tile.js";
-import { volumeFootprint } from "./render.js";
+import { volumeFootprint } from "./footprint.js";
 import type { Volume } from "./volumes.js";
 
 const OPEN_CHAR = "g";

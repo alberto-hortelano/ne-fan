@@ -339,66 +339,77 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.
 
-## Proyección oblicua 2D y plan de tile (map_ground + volumes)
+## Proyección oblicua 2D y plan de tile (ground + volumes → greybox 3D)
 
 El cliente 2D renderiza el mundo por tiles en UNA única proyección
 **oblicua**: el suelo queda sin proyectar (vista == mundo, rejilla cuadrada) y
 la altura se dibuja con cizalla — `pt(u,v,h) = [u + h·KX, v − h·KY]` con
 `OBLIQUE_KX = −0.35`, `OBLIQUE_KY = 1` (`blueprint/projection.ts`). Los
-volúmenes muestran su **cara sur iluminada y su cara este en sombra** (look
-"3/4"/oblicua militar); con KX=0 sería la cenital pura, y ambos tratamientos
-pueden mezclarse porque colisión y baselines salen de la huella declarada,
-nunca de los píxeles. (Sustituye a las dos perspectivas topdown/isometric de
-antes: ya no hay selector, ni `world.perspective` en el save, ni refs `_iso`
-en los style packs; los saves viejos con el campo lo conservan en el JSON pero
-nadie lo lee.)
+volúmenes muestran su **cara sur iluminada y su cara este en sombra** (sol
+FIJO desde el suroeste, look "3/4"/oblicua militar); colisión y baselines
+salen de la huella declarada, nunca de los píxeles. (Sustituye a las dos
+perspectivas topdown/isometric de antes; los saves viejos con
+`world.perspective` lo conservan en el JSON pero nadie lo lee.)
 
-**El motor narrativo NO dibuja la proyección.** Cada tile declara un plan
-semántico y el **compositor determinista** (`nefan-core/src/scene/blueprint/`)
-lo proyecta:
+**El motor narrativo NO dibuja nada — todo es DECLARATIVO** (el SVG murió:
+ni `map_ground` ni `terrain_svg`; los saves viejos con esos campos los
+conservan pero nadie los lee). Cada tile declara un plan semántico y el
+**builder greybox determinista** (`nefan-core/src/scene/blueprint/greybox.ts`)
+lo convierte en una escena 3D que el cliente renderiza con **three.js**
+(bench labs/render E2a: fidelidad 100/100 a coste 0):
 
-- `map_ground`: SVG plano del suelo (viewBox "0 0 128 128", capas
-  `g#ground`+`g#water`, `g#deck` opcional) — celdas de mundo SIN proyectar,
-  libertad artística total; se incrusta identidad (sin transform).
+- `ground`: rasgos PLANOS del suelo, tipados (`path` polilínea+ancho, `area`
+  rect|polygon|ellipse+material, `water` (bloquea), `deck` transitable SOBRE
+  el agua). Schema zod en `blueprint/ground.ts`; espejo Python
+  `validate_ground` (fixtures `data/contract/fixtures/ground_plan/`).
 - `volumes`: todo lo que tiene altura, tipado — `building` (con `roof`,
   `walls`, `doors`, `cutaway:true` para edificios enterables), `wall`,
-  `tower`, `gate` (vano transitable), `tree`, `bush`, `rock`, `fountain`,
-  `prop`. Huella en celdas + altura; `label` en español guía al clasificador.
-  Sin volumes explícitos, el compositor los deriva del esquema
+  `tower`, `gate` (vano transitable, tallado en su muro anfitrión), `tree`,
+  `bush`, `rock`, `fountain`, `prop`. Huella en celdas + altura; `label` en
+  español guía al clasificador. Sin volumes explícitos se derivan del esquema
   (`vegetation_zones` → árboles, `structures` → cutaway).
-- `composeBlueprint(plan, tileKey)` → SVG proyectado (orden del pintor
-  `v + u/512` — el desempate en u ordena los solapes de la cizalla —,
-  voladizo norte + oeste, viewBox `-12 -32 140 160`) + `elements` (bbox
-  proyectado + baseline + huella por volumen). **Determinista byte a byte**
-  (SeededRng; `COMPOSER_VERSION` — v8 — en la clave de caché de imagen): el
-  resume hace cache-hit. OJO: cambiar cualquier byte de salida invalida la
-  caché de imágenes Meshy de TODOS los saves (regeneración al revisitar).
+- `buildTileGreyboxSpec(plan, tileKey)` → `TileGreyboxSpec`
+  (`TILE_GREYBOX_VERSION`): primitivas en celdas (suelo de bioma + detalle
+  sembrado + rasgos ground escalonados en y + volúmenes por TRAMOS vía
+  `greybox/volume-prims.ts`), luces fijas, cámara `ortho_shear` (view_box
+  `-12 -32 140 160`, voladizo norte+oeste) y `elements`/`occluders`
+  analíticos (bbox proyectado + baseline + huella por tramo). DETERMINISTA:
+  `canonicalGreyboxJson(spec)` hasheado es el `layout_key` de la caché de
+  imagen (el PNG WebGL no es byte-determinista) — el resume hace cache-hit.
+- Cliente: `tile-greybox-render.ts` (three.js, comparte renderer con el
+  stage) — cámara ortográfica cenital + cizalla en la matriz del grupo raíz
+  (equivalencia con `pt()` verificada por tests). La base clay es el arte del
+  modo "vector" y el plano base del repintado (`blueprint_kind: "tile"`,
+  pipeline `tile_greybox1`); cada occluder se renderiza aparte re-encuadrando
+  la misma cámara a su bbox (depth-sort + fade de proximidad; copas con
+  `CANOPY_OPACITY` horneada).
 
 **Consecuencias en el pipeline** (cliente 2D):
-- Colisión = agua del `map_ground` (raster sin proyectar) ∪ huellas
-  analíticas (`volumeCollisionGrid`) — espacio de MUNDO; NUNCA de píxeles
-  proyectados.
-- La imagen de Meshy se **enmascara con el alpha del blueprint** antes de
+- Colisión = agua∖decks del `ground` (`groundCollisionGrid`, point-in-shape
+  por celda — también server-side en `bridge/sim-collision.ts`) ∪ huellas
+  analíticas (`volumeCollisionGrid`) — espacio de MUNDO; NUNCA de píxeles.
+- La imagen repintada se **enmascara con el alpha del clay** antes de
   instalarse (los voladizos norte/oeste recortan lo del vecino); los tiles se
   pintan por profundidad (`ty·4096 + tx`), así los voladizos pisan a vecinos
   ya pintados.
 - El renderer trabaja en **espacio de vista** (`renderer/projection.ts`,
   `VIEW_PROJECTION` único): vista == mundo en el suelo; los prismas
   vectoriales (`view-prism.ts`) desplazan la tapa `(+h·shearX, −h)` — espejo
-  exacto del compositor. Simulación e input no cambian.
-- **PROHIBIDO recortar la imagen pintada con siluetas DECLARADAS** (el
-  extinto modo `image_analysis: "masks"`: rasterizar el SVG del compositor
-  como máscara sobre la imagen repintada). Se probó y NO funciona — el modelo
-  de imagen recoloca y reorienta lo declarado, la máscara declarada recorta
-  SUELO con forma de objeto y el objeto real queda cocido en la placa. Jamás
-  va a funcionar; no reintroducirlo. Los recortes salen SIEMPRE de segmentar
-  lo que el modelo PINTÓ: `/analyze_scene_image` (SAM2 auto-segment + visión
-  + refinado `segment_boxes` por caja). Lo declarado solo sirve de PISTA:
-- `expected_elements` del análisis salen del compositor; los segmentos
+  exacto de la cizalla. Simulación e input no cambian.
+- **PROHIBIDO recortar la imagen pintada con siluetas DECLARADAS** (SVG en su
+  día, spec 3D hoy). Se probó y NO funciona — el modelo de imagen recoloca y
+  reorienta lo declarado, la máscara declarada recorta SUELO con forma de
+  objeto y el objeto real queda cocido en la placa. Jamás va a funcionar; no
+  reintroducirlo. Los recortes salen SIEMPRE de segmentar lo que el modelo
+  PINTÓ: `/analyze_scene_image` (SAM2 auto-segment + visión + refinado
+  `segment_boxes` por caja). Lo declarado solo sirve de PISTA (el clay del
+  modo vector es la excepción: es render PROPIO, no pintura IA, y sus
+  siluetas son exactas por construcción).
+- `expected_elements` del análisis salen de `spec.elements`; los segmentos
   casados toman baseline/colisión de su huella declarada; los no casados
   (añadidos del modelo de imagen) aportan una franja en su línea de suelo.
-- El retoque de visión (`blueprint_review`) corrige `{map_ground, volumes}`
-  (documentos COMPLETOS) y se persiste con `map_plan_update`.
+- El retoque de visión (`blueprint_review`) corrige `{ground, volumes}`
+  (arrays COMPLETOS, nunca SVG) y se persiste con `map_plan_update`.
 
 Godot (cliente 3D) no participa: la proyección solo afecta al mundo 2D.
 
@@ -417,33 +428,34 @@ la puerta de vuelta (patrón puertas de Resident Evil).
 
 - **Selección**: `game.json → view` (enum `overworld|proscenium`), congelada
   en `world.view` como el estilo; resume con view desconocida aborta. Ambos
-  `render_mode` valen: "vector" (arte del compositor) e "image" (repintado +
-  pelado por capas, ver abajo). Juego dev: `data/games/dev_proscenio`.
+  `render_mode` valen: "vector" (clay three.js local, sin créditos) e "image"
+  (repintado + pelado por capas, ver abajo). Juego dev:
+  `data/games/dev_proscenio`.
 - **Formato**: escena Format D clásica por place + bloque `stage` OBLIGATORIO
   (`exits[]` con `edge`/`to_place_id`/`zone` en celdas, `backdrop`,
   `fourth_wall`; zod estricto en `src/scene/stage/schema.ts`). Validación:
   exits⇔links del place en AMBOS sentidos, zonas transitables y alcanzables;
   sin regla de "borde alcanzable". Prompt: `stage_instructions.md` (se antepone
   cuando `world_state.stage_request` está presente, patrón generate_tile).
-- **Compositor** (`nefan-core/src/scene/stage/`): `composeStage(plan, key)`
-  determinista, `STAGE_COMPOSER_VERSION` propia (cero bytes compartidos con la
-  oblicua) — proyección `s(z)=f/(f+z)`, capas fondo→frente (backdrop, suelo en
-  perspectiva A TODO EL ANCHO, volúmenes como billboards frontales, paredes
-  laterales solo en interiores, cuarta pared), cada una SVG standalone con
-  huella/exits en METROS de mundo. Colisión de huellas vía
-  `applyPlanCollision`, nunca de píxeles. **v3: cero pistas teatrales** — sin
-  bastidores negros (exterior: el mundo continúa hasta el borde del encuadre;
-  interior: paredes reales con sus vanos) y el prompt del repintado no
-  menciona teatro; el modelo de imagen pintaba cortinas/marcos de escenario
-  con la versión anterior. El renderer tampoco dibuja marco a pantalla ni las
-  capas `wing` sobre la placa en modo imagen.
+- **Composición** (`nefan-core/src/scene/stage/`): `composeStageScene(plan,
+  key)` (`stage/scene.ts`) — geometría jugable PURA derivada del
+  `GreyboxSpec`: `proj`/`view_box` DEL GREYBOX (proyección única en ambos
+  modos), `bounds`, `exits` en metros de mundo e `items` (espejo del
+  manifest: id/z/huella/altura por volumen). El spec 3D viaja dentro; NO hay
+  capas SVG. Colisión de huellas vía `applyPlanCollision`, nunca de píxeles.
+  Cero pistas teatrales (exterior: el mundo continúa hasta el borde;
+  interior: paredes reales con sus vanos) — el modelo de imagen pintaba
+  cortinas/marcos con las pistas de la versión SVG antigua.
 - **Cliente**: `rendererRegistry` (`renderer/registry.ts`, patrón
-  createSystemRegistry) con `ProsceniumRenderer` — rasteriza las capas una vez
-  por escena, cámara de **raíl** en X (zona muerta + lerp, paneo UNIFORME: el
-  decorado es una pintura con perspectiva horneada), sprites insertados entre
-  capas por zStage con escala de profundidad (clamp 0.55). Transiciones en
-  `world/stage-transitions.ts`. Los subsistemas oblicua-only (tiles, Auto-img,
-  captureSchematic) quedan apagados en proscenio.
+  createSystemRegistry) con `ProsceniumRenderer` — el arte son SIEMPRE
+  bitmaps (`StageImages`): en modo vector el clay local por capas
+  (`renderGreyboxLayers`: placa sin volúmenes + un recorte RGBA por volumen,
+  instalado vía `installClay`), en modo imagen el repintado segmentado (el
+  clay queda de placeholder instantáneo mientras corre). Cámara de **raíl**
+  en X (zona muerta + lerp), placa warpeada por bandas, sprites y recortes
+  intercalados por zStage con escala de profundidad (clamp 0.55).
+  Transiciones en `world/stage-transitions.ts`. Los subsistemas oblicua-only
+  (tiles, Auto-img, captureSchematic) quedan apagados en proscenio.
 - **E2E sin LLM**: fixtures enlazadas `data/scenes/proscenio/posada_*.json`
   (funcionan desde el room-selector SIN sesión — fallback local de
   transiciones) y `labs/narrative/fake-ai-server.mjs` con `stage_request`
@@ -538,7 +550,7 @@ Distintos de los plugins declarativos: **módulos TS de hot loop** con varias im
 
 Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
-**1. Format D** — lo que produce el motor narrativo (`generate_scene`): rejilla 2D (`size{cols,rows,meters_per_cell}` + `terrain[]` strings + `terrain_legend`) con `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `texture_hash?`), y en tiles v3 `tile{tx,ty}` + `biome` + `map_ground`/`volumes`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
+**1. Format D** — lo que produce el motor narrativo (`generate_scene`): rejilla 2D (`size{cols,rows,meters_per_cell}` + `terrain[]` strings + `terrain_legend`) con `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `texture_hash?`), y en tiles v3 `tile{tx,ty}` + `biome` + `ground`/`volumes` (declarativos — nada de SVG). Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
 
 **2. World scene** — el contrato de render que consumen AMBOS clientes: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
@@ -610,7 +622,8 @@ Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.aut
 - **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluido del SpringArm collision.
 - **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
 - **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
-- **Proyección oblicua 2D única** (suelo cenital sin proyectar + cizalla en la altura: cara sur iluminada, cara este en sombra) — sustituyó a la doble perspectiva topdown/isometric; el LLM declara planes semánticos (`map_ground`+`volumes`) y el compositor de nefan-core proyecta. Colisión desde huellas, nunca desde píxeles pintados.
+- **Proyección oblicua 2D única** (suelo cenital sin proyectar + cizalla en la altura: cara sur iluminada, cara este en sombra) — sustituyó a la doble perspectiva topdown/isometric. Colisión desde huellas, nunca desde píxeles pintados.
+- **El motor narrativo NUNCA emite SVG ni dibuja: solo planes declarativos** (`ground`+`volumes`, bloque `stage`) que los builders greybox de nefan-core convierten en escenas 3D deterministas renderizadas con three.js en el cliente (clay = arte del modo vector Y plano base del repintado). Los compositores SVG (oblicua y proscenio) se eliminaron en agosto de 2026; los benches labs/render (E2a) y labs/escenografia/greybox son la evidencia.
 
 ## Hardware
 

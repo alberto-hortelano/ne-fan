@@ -244,8 +244,8 @@ export class BridgeClient {
     this.send({ type: "tile_analysis", tx, ty, elements });
   }
 
-  sendMapPlanUpdate(tx: number, ty: number, plan: { map_ground?: string; volumes?: unknown[] }): void {
-    this.send({ type: "map_plan_update", tx, ty, map_ground: plan.map_ground, volumes: plan.volumes });
+  sendMapPlanUpdate(tx: number, ty: number, plan: { ground?: unknown[]; volumes?: unknown[] }): void {
+    this.send({ type: "map_plan_update", tx, ty, ground: plan.ground, volumes: plan.volumes });
   }
 
   /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile

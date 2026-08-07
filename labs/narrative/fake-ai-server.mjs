@@ -137,39 +137,25 @@ const OPP = { west: "east", east: "west", north: "south", south: "north" };
  *  con puerta sur, mostrador, pinos). El cliente compone el blueprint con la
  *  perspectiva de la sesión.  */
 // Sin rect de fondo: el compositor pone el bioma con su textura (manchas,
-// flores) y el arte del LLM dibuja SOLO features encima. El bootstrap es el
+// flores) y los rasgos declarativos del LLM van encima. El bootstrap es el
 // PUEBLO de las demos del blueprint lab (taberna cutaway amueblada, plaza
 // empedrada con fuente, casa de entramado, muralla sur con torres y puerta,
-// mercado) — el bench de calidad visual del compositor, comparable 1:1 con
-// referencia.html. Camino con doble trazo, plaza con adoquines.
-const COBBLES = Array.from({ length: 14 }, (_, i) => {
-  const a = (i / 14) * Math.PI * 2;
-  const r = 3 + (i % 3) * 3.4;
-  const cx = (64 + Math.cos(a) * r * 1.9).toFixed(1);
-  const cy = (80 + Math.sin(a) * r).toFixed(1);
-  const tone = ["#8f887a", "#b0a999", "#988f7e"][i % 3];
-  return `<ellipse cx="${cx}" cy="${cy}" rx="1.4" ry="0.9" fill="${tone}" opacity="0.85"/>`;
-}).join("");
-const BOOTSTRAP_MAP_GROUND =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">' +
-  '<g id="ground">' +
+// mercado) — el bench de calidad visual, comparable 1:1 con referencia.html.
+// BUG PLANTADO: el estanque no tiene deck — la revisión falsa lo añade
+// (ejercita blueprint_review completo con fixes.ground).
+const BOOTSTRAP_GROUND = [
   // camino N-S que cruza el pueblo y sale por la puerta sur de la muralla
-  '<path d="M64,30 L64,128" fill="none" stroke="#8a7650" stroke-width="5.4" stroke-linecap="round" opacity="0.6"/>' +
-  '<path d="M64,30 L64,128" fill="none" stroke="#a29b8b" stroke-width="4" stroke-linecap="round"/>' +
+  { id: "camino_ns", kind: "path", label: "camino principal", points: [[64, 30], [64, 128]], w: 5, material: "cobble" },
   // ramal este hacia el vecino
-  '<path d="M64,80 C84,84 110,86 128,88" fill="none" stroke="#8a7650" stroke-width="4.6" stroke-linecap="round" opacity="0.6"/>' +
-  '<path d="M64,80 C84,84 110,86 128,88" fill="none" stroke="#a89162" stroke-width="3.4" stroke-linecap="round"/>' +
-  // plaza empedrada con adoquines
-  '<ellipse cx="64" cy="80" rx="15" ry="8.5" fill="#8f887a"/>' +
-  '<ellipse cx="64" cy="80" rx="14" ry="7.8" fill="#a29b8b"/>' +
-  COBBLES +
+  { id: "camino_este", kind: "path", label: "ramal del este", points: [[64, 80], [96, 85], [128, 88]], w: 4, material: "dirt" },
+  // plaza empedrada
+  { id: "plaza", kind: "area", label: "plaza empedrada", ellipse: { center: [64, 80], rx: 15, ry: 8.5 }, material: "cobble" },
   // tierra pisada ante la puerta de la taberna y orilla del estanque
-  '<ellipse cx="65" cy="66" rx="6" ry="3" fill="#a89162" opacity="0.55"/>' +
-  '<ellipse cx="26" cy="94" rx="12" ry="8" fill="#b8ab8a" opacity="0.5"/>' +
-  "</g>" +
-  '<g id="water"><ellipse cx="25" cy="92" rx="9" ry="5.5" fill="#4d7fa8"/></g>' +
-  '<g id="deck"/>' +
-  "</svg>";
+  { id: "tierra_taberna", kind: "area", label: "tierra pisada", ellipse: { center: [65, 66], rx: 6, ry: 3 }, material: "dirt" },
+  { id: "orilla", kind: "area", label: "orilla arenosa", ellipse: { center: [26, 94], rx: 12, ry: 8 }, material: "sand" },
+  // estanque (agua: bloquea) — SIN deck a propósito (lo añade el review)
+  { id: "estanque", kind: "water", label: "estanque", ellipse: { center: [25, 92], rx: 9, ry: 5.5 } },
+];
 
 const BOOTSTRAP_VOLUMES = [
   // ── taberna cutaway amueblada ──
@@ -244,7 +230,7 @@ function bootstrapTile() {
       { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14], glyph: "C" },
     ],
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
-    map_ground: BOOTSTRAP_MAP_GROUND,
+    ground: BOOTSTRAP_GROUND,
     volumes: BOOTSTRAP_VOLUMES,
     ambient_event: "El fuego crepita dentro.",
   };
@@ -538,10 +524,11 @@ const server = http.createServer((req, res) => {
         );
         return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
       }
-      // Retoque falso del blueprint: si el map_ground trae la capa #deck
-      // vacía (el bug plantado en BOOTSTRAP_MAP_GROUND), el fix añade el
-      // embarcadero sobre el estanque; si no, se aprueba. Ejercita la fase
-      // "revisión" completa: aplicar, perforar el agua y persistir al bridge.
+      // Retoque falso del blueprint: si el ground declara agua sin ningún
+      // deck (el bug plantado en BOOTSTRAP_GROUND), el fix devuelve el array
+      // COMPLETO con el embarcadero sobre el estanque; si no, se aprueba.
+      // Ejercita la fase "revisión" completa: aplicar, perforar el agua y
+      // persistir al bridge (map_plan_update con fixes.ground).
       if (req.method === "POST" && req.url === "/review_scene_blueprint") {
         let body = {};
         try {
@@ -549,17 +536,19 @@ const server = http.createServer((req, res) => {
         } catch {
           return send(400, { detail: "fake-ai: body no es JSON" });
         }
-        const svg = body.scene?.map_ground;
-        if (typeof svg === "string" && svg.includes('<g id="deck"/>')) {
-          console.error("[fake-ai] review: deck vacío → fix con embarcadero");
+        const ground = body.scene?.ground;
+        const hasWater = Array.isArray(ground) && ground.some((f) => f?.kind === "water");
+        const hasDeck = Array.isArray(ground) && ground.some((f) => f?.kind === "deck");
+        if (hasWater && !hasDeck) {
+          console.error("[fake-ai] review: agua sin deck → fix con embarcadero");
           return send(200, {
             approved: false,
-            issues: ["el embarcadero no está dibujado sobre el estanque (capa deck vacía)"],
+            issues: ["el estanque no tiene embarcadero transitable (falta un deck)"],
             fixes: {
-              map_ground: svg.replace(
-                '<g id="deck"/>',
-                '<g id="deck"><rect x="36" y="87.5" width="7" height="3" fill="#8a6238"/></g>',
-              ),
+              ground: [
+                ...ground,
+                { id: "embarcadero", kind: "deck", label: "embarcadero", rect: [36, 87.5, 7, 3], material: "wood" },
+              ],
             },
           });
         }

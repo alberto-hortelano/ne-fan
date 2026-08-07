@@ -15,12 +15,20 @@
  *  estos números (spec.camera), así `stageToViewAt` y el render coinciden
  *  por construcción: cero calibración de trapecios pintados. */
 
-import { seededRng, uniform } from "../blueprint/svg.js";
+import { seededRng, uniform } from "../../rng.js";
 import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import type { Volume } from "../blueprint/volumes.js";
-import { volumeFootprintCells, type StageScenePlan } from "./compose.js";
+import {
+  canonicalGreyboxJson,
+  groundColorFor,
+  type GreyboxLight,
+  type GreyboxPrimitive,
+} from "../greybox/common.js";
+import type { StageBlock } from "./schema.js";
 import { stageToViewAt, type StageProjParams } from "./projection.js";
 import { STAGE_RENDER_SIZE, type StageExpectedElement, type ViewBox } from "./segments.js";
+
+export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPrimitive };
 
 /** Versión del builder: viaja dentro del spec (y por tanto dentro del hash de
  *  caché). Bump ⇒ regeneración de todos los platós en modo imagen.
@@ -58,31 +66,6 @@ const GREYBOX_VIEW_ASPECT = 2.0;
 const INTERIOR_WALL_H_M = 3.2;
 const DOOR_H_M = 2.1;
 const OPENING_H_M = 2.4;
-
-export interface GreyboxPrimitive {
-  shape: "box" | "gable" | "cylinder" | "cone";
-  /** box/gable: [w, h, d] m (gable: cumbrera a lo largo de d antes de rotY).
-   *  cylinder: [r, h, rTop?]. cone: [r, h, segmentos?]. */
-  size: number[];
-  /** Posición MUNDO: x centrado, y = BASE de la pieza, z mundo (+z sur). */
-  pos: [number, number, number];
-  rotY?: number;
-  color: string;
-  roughness?: number;
-  cat: "building" | "prop" | "terrain" | "wall" | "tree" | "water" | "decor";
-  /** "vol_<id>" del volumen al que pertenece (ausente en decorado). */
-  volId?: string;
-  noShadow?: boolean;
-}
-
-export interface GreyboxLight {
-  kind: "sun" | "hemi" | "ambient";
-  color: string;
-  intensity: number;
-  pos?: [number, number, number];
-  groundColor?: string;
-  castShadow?: boolean;
-}
 
 export interface GreyboxManifestItem {
   /** "vol_<id>" — mismo id que la capa equivalente del compositor SVG. */
@@ -127,21 +110,68 @@ export interface GreyboxSpec {
 
 const rad = (deg: number): number => (deg * Math.PI) / 180;
 
-/** Color de suelo por tipo de terreno de la leyenda (matching por
- *  subcadena, la leyenda es texto libre del motor narrativo). null = tipo
- *  desconocido o muro (los muros son volúmenes, no suelo). */
-export function groundColorFor(type: string): string | null {
-  const t = type.toLowerCase();
-  if (t.includes("muro") || t.includes("wall")) return null;
-  if (t.includes("water") || t.includes("agua")) return PALETTE.water;
-  if (t.includes("bridge") || t.includes("puente")) return PALETTE.woodTop;
-  if (t.includes("wood") || t.includes("madera")) return PALETTE.woodTop;
-  if (t.includes("stone") || t.includes("piedra") || t.includes("empedrado")) return "#8b8678";
-  if (t.includes("path") || t.includes("camino") || t.includes("tierra") || t.includes("dirt")) return "#8f7757";
-  if (t.includes("sand") || t.includes("arena")) return "#c2b184";
-  if (t.includes("snow") || t.includes("nieve")) return "#dfe5ea";
-  if (t.includes("grass") || t.includes("hierba") || t.includes("prado")) return PALETTE.grassBase;
-  return null;
+/** Plan de escena de un plató: el bloque `stage` + los volúmenes (declarados
+ *  y derivados) en celdas de la escena. */
+export interface StageScenePlan {
+  size: { cols: number; rows: number; meters_per_cell: number };
+  stage: StageBlock;
+  /** Volúmenes declarados + derivados (deriveVolumesFromSchema del caller),
+   *  en celdas de la escena. */
+  volumes: Volume[];
+  biome?: string;
+  /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
+   *  bandas de tipo. */
+  terrain?: string[];
+  terrain_legend?: Record<string, string>;
+}
+
+/** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
+ *  compartido por el manifest del greybox y la colisión declarada (si
+ *  divergieran, colisión y render dejarían de casar). null = sin huella
+ *  razonable (prop sin at ni rect). */
+export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
+  switch (v.type) {
+    case "building":
+      return v.rect;
+    case "wall": {
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      for (const [c, r] of v.points) {
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+      }
+      const half = (v.width ?? 3) / 2;
+      return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
+    }
+    case "tower": {
+      const r = v.r ?? 3;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "gate": {
+      const w = v.w ?? 8;
+      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
+    }
+    case "tree": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
+    }
+    case "bush": {
+      const s = v.s ?? 1;
+      return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
+    }
+    case "rock": {
+      const s = v.s ?? 1;
+      return [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
+    }
+    case "fountain": {
+      const r = v.r ?? 4;
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+    }
+    case "prop": {
+      if (v.rect) return v.rect;
+      if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
+      return null;
+    }
+  }
 }
 
 export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): GreyboxSpec {
@@ -784,7 +814,7 @@ function buildVolumePrimitives(
 }
 
 /** Pistas para la visión (stage_review) desde el manifest del greybox —
- *  mismo contrato que expectedElementsFor (compositor SVG). */
+ *  cajas proyectadas EXACTAS en px del cuadrado de trabajo. */
 export function expectedElementsFromGreybox(spec: GreyboxSpec): StageExpectedElement[] {
   return spec.manifest.map((m) => ({
     id: m.id,
@@ -795,21 +825,3 @@ export function expectedElementsFromGreybox(spec: GreyboxSpec): StageExpectedEle
   }));
 }
 
-/** JSON canónico del spec: claves ordenadas + números redondeados a 1e-4.
- *  Su sha256 es la clave de caché del repintado (cliente y servidor). */
-export function canonicalGreyboxJson(spec: GreyboxSpec): string {
-  const canon = (v: unknown): unknown => {
-    if (typeof v === "number") return Math.round(v * 1e4) / 1e4;
-    if (Array.isArray(v)) return v.map(canon);
-    if (v && typeof v === "object") {
-      const out: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        const val = (v as Record<string, unknown>)[k];
-        if (val !== undefined) out[k] = canon(val);
-      }
-      return out;
-    }
-    return v;
-  };
-  return JSON.stringify(canon(spec));
-}

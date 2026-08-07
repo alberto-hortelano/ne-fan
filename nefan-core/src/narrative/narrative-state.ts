@@ -139,11 +139,11 @@ export class NarrativeState {
   setTileMapPlan(
     tx: number,
     ty: number,
-    plan: { map_ground?: string; volumes?: unknown[] },
+    plan: { ground?: unknown[]; volumes?: unknown[] },
   ): boolean {
     const rec = this.getTile(tx, ty);
     if (!rec) return false;
-    if (plan.map_ground !== undefined) rec.scene_data.map_ground = plan.map_ground;
+    if (plan.ground !== undefined) rec.scene_data.ground = plan.ground;
     if (plan.volumes !== undefined) rec.scene_data.volumes = plan.volumes;
     // Marca de revisado: el pipeline del cliente no re-revisa en resume.
     rec.scene_data.map_plan_reviewed = true;

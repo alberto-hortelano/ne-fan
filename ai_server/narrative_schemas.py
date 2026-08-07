@@ -51,10 +51,11 @@ RESERVED_TERRAIN = {
 
 VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
 
-# Capas obligatorias del arte plano del suelo (map_ground). Espejo de
-# GROUND_SVG_LAYERS en nefan-core/src/scene/map-svg.ts. La capa `deck`
-# (transitable sobre agua) es opcional.
-GROUND_SVG_LAYERS = ("ground", "water")
+# Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
+# GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.
+GROUND_KINDS = {"path", "area", "water", "deck"}
+GROUND_MATERIALS = {"dirt", "cobble", "stone", "sand", "wood", "gravel", "grass"}
+MAX_GROUND_FEATURES = 64
 
 # Tipos de volumen del plan de tile. Espejo de VolumeSchema en
 # nefan-core/src/scene/blueprint/volumes.ts (zod es la fuente de verdad; aquí
@@ -69,6 +70,73 @@ def _num(v) -> bool:
 
 def _cell_pair(v) -> bool:
     return isinstance(v, list) and len(v) == 2 and all(_num(n) for n in v)
+
+
+def _has_one_shape(f: dict) -> bool:
+    """Exactamente una de rect | polygon | ellipse, bien formada."""
+    shapes = 0
+    r = f.get("rect")
+    if r is not None:
+        if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
+            return False
+        shapes += 1
+    poly = f.get("polygon")
+    if poly is not None:
+        if not (isinstance(poly, list) and len(poly) >= 3 and all(_cell_pair(p) for p in poly)):
+            return False
+        shapes += 1
+    ell = f.get("ellipse")
+    if ell is not None:
+        if not (
+            isinstance(ell, dict)
+            and _cell_pair(ell.get("center"))
+            and _num(ell.get("rx"))
+            and _num(ell.get("ry"))
+        ):
+            return False
+        shapes += 1
+    return shapes == 1
+
+
+def validate_ground(raw, *, field: str = "ground"):
+    """Valida el array `ground` del plan de tile (rasgos de suelo
+    declarativos: path/area/water/deck). Devuelve la lista limpia o None con
+    traza del motivo (el caller degrada descartando el campo). Espejo laxo de
+    parseGround (nefan-core/src/scene/blueprint/ground.ts)."""
+    if not isinstance(raw, list):
+        print(f"validate_scene: {field} descartado (no es lista)")
+        return None
+    if len(raw) > MAX_GROUND_FEATURES:
+        print(f"validate_scene: {field} descartado ({len(raw)} > {MAX_GROUND_FEATURES})")
+        return None
+    seen_ids = set()
+    for i, f in enumerate(raw):
+        ctx = f"{field}[{i}]"
+        if not isinstance(f, dict):
+            print(f"validate_scene: {ctx} no es objeto — {field} descartado")
+            return None
+        fid = f.get("id")
+        kind = f.get("kind")
+        if not isinstance(fid, str) or not fid or fid in seen_ids:
+            print(f"validate_scene: {ctx} id inválido/duplicado — {field} descartado")
+            return None
+        seen_ids.add(fid)
+        if kind not in GROUND_KINDS:
+            print(f"validate_scene: {ctx} kind desconocido {kind!r} — {field} descartado")
+            return None
+        if kind == "path":
+            pts = f.get("points")
+            if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(p) for p in pts)):
+                print(f"validate_scene: {ctx} path sin points válidos — {field} descartado")
+                return None
+        elif not _has_one_shape(f):
+            print(f"validate_scene: {ctx} necesita exactamente una de rect|polygon|ellipse — {field} descartado")
+            return None
+        mat = f.get("material")
+        if mat is not None and mat not in GROUND_MATERIALS:
+            print(f"validate_scene: {ctx} material desconocido {mat!r} — {field} descartado")
+            return None
+    return raw
 
 
 def validate_volumes(raw, *, field: str = "volumes"):
@@ -126,65 +194,6 @@ def validate_volumes(raw, *, field: str = "volumes"):
                 print(f"validate_scene: {ctx} {vtype} sin at válido — {field} descartado")
                 return None
     return raw
-
-
-def _sanitize_svg_field(
-    svg,
-    cols: int,
-    rows: int,
-    *,
-    max_bytes: int,
-    required_layers: tuple = (),
-    field: str,
-):
-    """Valida un documento SVG de capa de escena (terrain_svg / map_ground).
-
-    Devuelve el SVG limpio o None con traza del motivo. Solo formas puras:
-    rechaza script/foreignObject/href, exige viewBox exacto "0 0 cols rows"
-    y, si se piden, las capas <g id="..."> obligatorias.
-    """
-    if not isinstance(svg, str) or not svg.strip():
-        return None
-    svg = svg.strip()
-    reason = None
-    if len(svg.encode("utf-8")) > max_bytes:
-        reason = f"supera {max_bytes // 1000}KB"
-    elif not svg.startswith("<svg"):
-        reason = "no empieza por <svg"
-    else:
-        low = svg.lower()
-        if "<script" in low or "foreignobject" in low or "href=" in low:
-            reason = "contiene script/foreignObject/href"
-        else:
-            import re as _re
-
-            vb = _re.search(r'viewBox\s*=\s*"([\d.\s-]+)"', svg)
-            parts = vb.group(1).split() if vb else []
-            ok = (
-                len(parts) == 4
-                and float(parts[0]) == 0
-                and float(parts[1]) == 0
-                and abs(float(parts[2]) - cols) < 0.01
-                and abs(float(parts[3]) - rows) < 0.01
-            )
-            if not ok:
-                reason = f'viewBox debe ser "0 0 {cols} {rows}"'
-            else:
-                missing = [
-                    layer
-                    for layer in required_layers
-                    if f'id="{layer}"' not in svg and f"id='{layer}'" not in svg
-                ]
-                if missing:
-                    reason = f"faltan capas obligatorias: {', '.join(missing)}"
-    if reason:
-        print(f"validate_scene_response: {field} descartado ({reason})", flush=True)
-        return None
-    # Sin xmlns el navegador no rasteriza el SVG (Blob→Image). Los LLM lo
-    # omiten a menudo: inyectarlo (espejo de sanitizeMapSvg en nefan-core).
-    if "xmlns=" not in svg:
-        svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
-    return svg
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -398,35 +407,22 @@ def validate_scene_response(data: dict) -> dict:
             clean_features.append(clean_feat)
     data["terrain_features"] = clean_features
 
-    # ── Terrain SVG (capa opcional avanzada) ─────────────────────────────
-    # Solo formas puras: se descarta (con traza) si excede 20 KB, si el viewBox
-    # no casa con el size, o si contiene script/foreignObject/href.
-    svg = _sanitize_svg_field(data.get("terrain_svg"), cols, rows, max_bytes=20_000, field="terrain_svg")
-    if svg:
-        data["terrain_svg"] = svg
-    else:
-        data.pop("terrain_svg", None)
-
-    # ── Map plan (map_ground + volumes) ──────────────────────────────────
-    # Espejo de sanitizeGroundSvg/parseVolumes en nefan-core: mismo criterio
-    # en ambos lados o un plan aceptado aquí lo rechazaría el bridge al
-    # persistir el retoque. map_ground exige las capas g#ground/#water.
-    if "map_svg" in data:
-        # Formato legacy anterior al compositor: ya no se acepta.
-        print("validate_scene: map_svg legacy descartado (usa map_ground + volumes)")
-        data.pop("map_svg", None)
-    svg = _sanitize_svg_field(
-        data.get("map_ground"),
-        cols,
-        rows,
-        max_bytes=32_000,
-        required_layers=GROUND_SVG_LAYERS,
-        field="map_ground",
-    )
-    if svg:
-        data["map_ground"] = svg
-    else:
-        data.pop("map_ground", None)
+    # ── Map plan (ground + volumes) ──────────────────────────────────────
+    # Espejo de parseGround/parseVolumes en nefan-core: mismo criterio en
+    # ambos lados o un plan aceptado aquí lo rechazaría el bridge al
+    # persistir el retoque. Los formatos SVG antiguos (map_svg, map_ground,
+    # terrain_svg) ya no se aceptan: descartar en silencio con traza — nunca
+    # 422 (los saves viejos deben resumir sin error).
+    for legacy in ("map_svg", "map_ground", "terrain_svg"):
+        if legacy in data:
+            print(f"validate_scene: {legacy} SVG legacy descartado (usa ground + volumes)")
+            data.pop(legacy, None)
+    if "ground" in data:
+        feats = validate_ground(data.get("ground"))
+        if feats is not None:
+            data["ground"] = feats
+        else:
+            data.pop("ground", None)
     if "volumes" in data:
         vols = validate_volumes(data.get("volumes"))
         if vols is not None:
@@ -831,7 +827,7 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        allowed = {"terrain", "terrain_features", "entity_moves", "map_ground", "volumes"}
+        allowed = {"terrain", "terrain_features", "entity_moves", "ground", "volumes"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:
             raise ValueError(
@@ -892,21 +888,17 @@ def validate_blueprint_review(data: dict | None) -> dict:
                 clean_moves.append({"id": m["id"], "cell": [m["cell"][0], m["cell"][1]]})
             fixes["entity_moves"] = clean_moves
 
-        raw_svg = raw_fixes.get("map_ground")
-        if raw_svg is not None:
-            # Fail-loud (no descartar en silencio): un SVG corregido inválido
-            # debe volver como 422 para que el modelo lo re-emita bien. Solo
-            # aplica a tiles, cuyo viewBox es siempre 0 0 128 128.
-            svg = _sanitize_svg_field(
-                raw_svg, 128, 128,
-                max_bytes=32_000, required_layers=GROUND_SVG_LAYERS, field="fixes.map_ground",
-            )
-            if svg is None:
+        raw_ground = raw_fixes.get("ground")
+        if raw_ground is not None:
+            # Fail-loud (no descartar en silencio): un plan corregido inválido
+            # debe volver como 422 para que el modelo lo re-emita bien.
+            feats = validate_ground(raw_ground, field="fixes.ground")
+            if feats is None:
                 raise ValueError(
-                    "blueprint_review fixes.map_ground is not a valid map_ground document "
-                    '(viewBox "0 0 128 128", layers ground/water, ≤32KB, shapes only)'
+                    "blueprint_review fixes.ground is not a valid ground array "
+                    "(typed features path/area/water/deck with unique id and one shape each)"
                 )
-            fixes["map_ground"] = svg
+            fixes["ground"] = feats
 
         raw_vols = raw_fixes.get("volumes")
         if raw_vols is not None:

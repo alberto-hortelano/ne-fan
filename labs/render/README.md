@@ -12,15 +12,14 @@ Compara enfoques de generación de la imagen de tile contra el pipeline actual
 - **exp4_vector** — el propio SVG del compositor con texturas IA como patterns.
 
 Fixtures: `fixtures/{medieval,scifi}/` — plan crudo + blueprint compuesto +
-occluders por tramo, volcados con `fixtures/dump_occluders.ts` desde
-save-wrappers (`fixtures/build_saves.py`; el medieval se reconstruye de los
-artefactos del run 002 de labs/style, validado byte-idéntico al recomponer).
+occluders por tramo, volcados en su día con `fixtures/dump_occluders.ts`
+desde save-wrappers (`fixtures/build_saves.py`). OJO: el dump murió con el
+compositor SVG (agosto 2026 — el motor pasó al greybox three.js, que es
+precisamente la conclusión E2a de este bench); las fixtures volcadas siguen
+en disco y los experimentos se re-ejecutan sobre ellas.
 
 ```bash
 source .venv/bin/activate
-python3 labs/render/fixtures/build_saves.py
-cd nefan-core && npx tsx ../labs/render/fixtures/dump_occluders.ts $PWD \
-  ../labs/render/runs/_cache/save_medieval.json tile_0_0 ../labs/render/fixtures/medieval
 # ... experimentos: ver cada exp*/ y report.py
 ./labs/serve.sh   # :8912 (sirve labs/ entero)
 ```

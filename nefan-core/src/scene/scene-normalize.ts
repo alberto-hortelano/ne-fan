@@ -273,18 +273,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // Formas vectoriales de terreno (ríos con meandros, caminos curvos…).
     // El orden del array es el orden de pintado (río antes que puente).
     terrain_features: normalizeTerrainFeatures(raw.terrain_features),
-    // Capa SVG opcional de terreno (viewBox en celdas). La valida ai_server;
-    // aquí solo passthrough — el cliente la rasteriza para el schematic.
-    terrain_svg: typeof raw.terrain_svg === "string" && raw.terrain_svg.trim().startsWith("<svg")
-      ? raw.terrain_svg
-      : undefined,
-    // Plan del tile (arte plano del suelo + volúmenes tipados). Validado por
-    // ai_server (y por sanitizeGroundSvg/parseVolumes en el bridge al
-    // persistir retoques); aquí passthrough — el cliente compone el blueprint
-    // con la perspectiva de la sesión y deriva la colisión de agua + huellas.
-    map_ground: typeof raw.map_ground === "string" && raw.map_ground.trim().startsWith("<svg")
-      ? raw.map_ground
-      : undefined,
+    // Plan del tile (rasgos de suelo declarativos + volúmenes tipados).
+    // Validado por ai_server (y por parseGround/parseVolumes en el bridge al
+    // persistir retoques); aquí passthrough — el cliente construye el greybox
+    // 3D del tile y deriva la colisión de agua/decks + huellas. Los campos
+    // SVG antiguos (map_ground, terrain_svg) de saves viejos se IGNORAN
+    // (precedente world.perspective: se conservan en el JSON, nadie los lee).
+    ground: Array.isArray(raw.ground) ? raw.ground : undefined,
     volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
     // Bloque stage (mundos proscenio): passthrough — el cliente detecta la
     // escena de plató por este campo y compone las capas con

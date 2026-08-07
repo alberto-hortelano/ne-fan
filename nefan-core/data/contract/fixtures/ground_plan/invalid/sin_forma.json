@@ -1,0 +1,9 @@
+{
+  "description": "area sin ninguna forma (rect/polygon/ellipse)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "plaza", "kind": "area", "material": "cobble" }
+    ]
+  }
+}

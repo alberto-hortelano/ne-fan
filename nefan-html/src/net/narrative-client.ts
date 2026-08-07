@@ -142,9 +142,9 @@ export class NarrativeClient {
     this.bridge.sendTileAnalysis(tx, ty, elements);
   }
 
-  /** Persiste el map_svg de un tile tras el retoque de visión (corregido o
-   *  aprobado sin cambios — estampa map_svg_reviewed en el save). */
-  reportMapPlan(tx: number, ty: number, plan: { map_ground?: string; volumes?: unknown[] }): void {
+  /** Persiste el plan de un tile tras el retoque de visión (corregido o
+   *  aprobado sin cambios — estampa map_plan_reviewed en el save). */
+  reportMapPlan(tx: number, ty: number, plan: { ground?: unknown[]; volumes?: unknown[] }): void {
     this.bridge.sendMapPlanUpdate(tx, ty, plan);
   }
 

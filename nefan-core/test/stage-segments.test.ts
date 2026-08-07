@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { composeStage, type StageScenePlan } from "../src/scene/stage/compose.js";
+import { composeStageScene } from "../src/scene/stage/scene.js";
+import type { StageScenePlan } from "../src/scene/stage/greybox.js";
 import { stageToView, viewToStage, worldToStage } from "../src/scene/stage/projection.js";
 import {
-  expectedElementsFor,
   pxToView,
   calibratedProjection,
   contactToPose,
@@ -14,7 +14,6 @@ import {
   collisionGridFromCutouts,
   reconstructionDiff,
   STAGE_RENDER_SIZE,
-  declaredLayerHeightM,
   fitSpriteScale,
   spriteScaleAt,
   SPRITE_SCALE_IDENTITY,
@@ -40,7 +39,7 @@ function makePlan(): StageScenePlan {
   };
 }
 
-const stage = composeStage(makePlan(), "segments_test");
+const stage = composeStageScene(makePlan(), "segments_test");
 const rect = { minX: -8, minZ: -5, maxX: 8, maxZ: 5 };
 
 /** Proyecta un punto de mundo a píxel del cuadrado (ida del pipeline). */
@@ -53,23 +52,6 @@ function worldToPx(x: number, z: number): [number, number] {
     ((vy - vb.minY) / vb.height) * STAGE_RENDER_SIZE,
   ];
 }
-
-describe("expectedElementsFor", () => {
-  it("un expected por volumen pintable, con caja en píxeles del cuadrado", () => {
-    const expected = expectedElementsFor(stage);
-    assert.deepEqual(
-      expected.map((e) => e.id).sort(),
-      ["vol_barril", "vol_mesa", "vol_muro_fondo"],
-    );
-    for (const e of expected) {
-      assert.ok(e.label.length > 0);
-      const [x, y, w, h] = e.box_px;
-      assert.ok(w > 0 && h > 0);
-      assert.ok(x >= 0 && y >= 0 && x + w <= STAGE_RENDER_SIZE && y + h <= STAGE_RENDER_SIZE);
-      assert.equal(e.solid, true); // los tres volúmenes tienen huella
-    }
-  });
-});
 
 describe("pxToView / contactToPose", () => {
   it("round-trip mundo → px → pose recupera la z de plató", () => {
@@ -282,13 +264,6 @@ describe("fitSpriteScale / spriteScaleAt", () => {
     assert.ok(Math.abs(spriteScaleAt(flat, painted, 5) - 1.4) < 0.05, "factor constante 1.4");
     assert.deepEqual(fitSpriteScale([], painted), SPRITE_SCALE_IDENTITY);
     assert.equal(spriteScaleAt(SPRITE_SCALE_IDENTITY, painted, 4), 1);
-  });
-
-  it("declaredLayerHeightM reconstruye una altura plausible del compositor", () => {
-    const layer = stage.layers.find((l) => l.id === "vol_mesa");
-    assert.ok(layer);
-    const hM = declaredLayerHeightM(layer!, stage.proj);
-    assert.ok(hM && hM > 0.5 && hM < 4, `altura declarada ${hM} plausible`);
   });
 });
 

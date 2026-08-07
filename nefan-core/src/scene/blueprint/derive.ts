@@ -11,8 +11,8 @@
  *  declarado no se deriva. */
 
 import { TILE_CELLS } from "../tile.js";
-import { volumeFootprint } from "./render.js";
-import { fnv1a, seededRng, uniform } from "./svg.js";
+import { volumeFootprint } from "./footprint.js";
+import { fnv1a, seededRng, uniform } from "../../rng.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
 
 interface RawDoor {

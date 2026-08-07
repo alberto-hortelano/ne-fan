@@ -4,7 +4,7 @@ The world is NOT a continuous plane — it is a chain of discrete STAGES
 (theatre sets / classic film sets), one per world-map place, connected ONLY
 through physical exits. Walking into an exit zone transitions to the linked
 place's stage with a fade (think classic survival-horror doors). There are NO
-tiles here: never emit "tile", "biome", "map_ground" or "volumes"-only tiles.
+tiles here: never emit "tile", "biome", "ground" or "volumes"-only tiles.
 
 CAMERA CONVENTION (fixed, never changes): the camera sits at the SOUTH edge
 of the stage, low, looking north.

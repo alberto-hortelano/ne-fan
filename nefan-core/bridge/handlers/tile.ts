@@ -10,8 +10,7 @@ import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
 import type { MapPlanUpdateMessage, RequestTileMessage, TileAnalysisMessage } from "../../src/protocol/messages.js";
-import { sanitizeGroundSvg } from "../../src/scene/map-svg.js";
-import { parseVolumes, type Volume } from "../../src/scene/blueprint/index.js";
+import { parseGround, parseVolumes, type GroundFeature, type Volume } from "../../src/scene/blueprint/index.js";
 
 const EDGE_ES: Record<Edge, string> = {
   north: "norte",
@@ -229,16 +228,16 @@ export async function handleMapPlanUpdate(
     console.error(`map_plan_update inválido: (${tx}, ${ty})`);
     return;
   }
-  let ground: string | undefined;
-  if (msg.map_ground !== undefined) {
-    const res = sanitizeGroundSvg(msg.map_ground, TILE_CELLS, TILE_CELLS);
+  let ground: GroundFeature[] | undefined;
+  if (msg.ground !== undefined) {
+    const res = parseGround(msg.ground);
     if (!res.ok) {
-      // Fail-loud: un SVG que el validador del ai_server aceptó no debería
-      // fallar aquí — sería una divergencia entre sanitizadores espejo.
-      console.error(`map_plan_update (${tx}, ${ty}): map_ground rechazado: ${res.error}`);
+      // Fail-loud: un plan que el validador del ai_server aceptó no debería
+      // fallar aquí — sería una divergencia entre validadores espejo.
+      console.error(`map_plan_update (${tx}, ${ty}): ground rechazado: ${res.error}`);
       return;
     }
-    ground = res.svg;
+    ground = res.features;
   }
   let volumes: Volume[] | undefined;
   if (msg.volumes !== undefined) {
@@ -249,7 +248,7 @@ export async function handleMapPlanUpdate(
     }
     volumes = res.volumes;
   }
-  if (!ctx.narrative.setTileMapPlan(tx, ty, { map_ground: ground, volumes })) {
+  if (!ctx.narrative.setTileMapPlan(tx, ty, { ground, volumes })) {
     console.warn(`map_plan_update para tile (${tx}, ${ty}) no registrado — ignorado`);
     return;
   }
@@ -257,7 +256,7 @@ export async function handleMapPlanUpdate(
   ctx.simCollision.invalidate(tileKey(tx, ty));
   console.log(
     `map_plan_update (${tx}, ${ty}): plan revisado persistido` +
-      ` (ground=${ground ? `${ground.length}B` : "sin cambios"}, volumes=${volumes ? volumes.length : "sin cambios"})`,
+      ` (ground=${ground ? `${ground.length} rasgos` : "sin cambios"}, volumes=${volumes ? volumes.length : "sin cambios"})`,
   );
 }
 

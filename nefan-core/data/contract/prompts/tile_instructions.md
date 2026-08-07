@@ -20,8 +20,8 @@ Call narrative_respond with this JSON (Tile Format):
   "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres)
   "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
-  "map_ground": "<svg viewBox=\"0 0 128 128\">…</svg>",  // ground-plane art — see MAP PLAN below
-  "volumes": [ … ],                                    // everything with HEIGHT — see MAP PLAN below
+  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see MAP PLAN below
+  "volumes": [ … ],  // everything with HEIGHT — see MAP PLAN below
   "ambient_event": "…"
 }
 
@@ -58,41 +58,32 @@ HARD RULES OF THE TILE:
   it with its cell rect — its triggers fire when the player steps inside.
 
 MAP PLAN — the tile's semantic blueprint (STRONGLY recommended):
-The plan has two halves: flat ground art + typed volumes. You declare WHAT
-exists in flat world cells; the engine's blueprint composer projects it to
-the session's frozen perspective (world.perspective: top-down with visible
-south faces, or 2:1 isometric), derives the walk collision from the declared
-FOOTPRINTS and guides the vision classifier with the projected bboxes. Never
-draw projected/foreshortened geometry yourself — this is where the tile stops
-being boxes and becomes a place, so invest your design effort here.
+The plan has two halves: flat ground features + typed volumes. You declare
+WHAT exists in flat world cells as PURE DATA — never draw anything yourself.
+The engine builds a deterministic 3D scene from your plan (the base plate of
+the repaint), derives the walk collision from the declared FOOTPRINTS (water
+blocks, decks punch it open) and guides the vision classifier with the
+projected boxes. This is where the tile stops being boxes and becomes a
+place, so invest your design effort here.
 
-1) "map_ground" — the GROUND-PLANE art, a complete SVG:
-- viewBox EXACTLY "0 0 128 128" (units = cells), max 32 KB. Shape elements
-  only (path/rect/circle/ellipse/polygon/polyline/line + g/defs/symbol/use);
-  no <script>, no foreignObject, no href.
-- <g> layers in this exact order:
-  <g id="ground">: REQUIRED — the ground FEATURES on a TRANSPARENT
-    background: dirt roads, stone plazas, sandy banks, interior floors
-    (wood), clearings. Do NOT paint a full-tile base rect: the composer
-    already lays the biome base with organic variation (blobs, flowers,
-    pebbles) underneath your art, and a full-tile fill would erase it.
-  <g id="water">: REQUIRED (may be empty) — rivers/ponds/moats as thick
-    stroked paths following the SAME course as your water terrain_features.
-    NOT walkable.
-  <g id="deck">: optional — walkable surfaces OVER water: bridge planks,
-    jetties, stepping stones (collision punches these out of the water).
-- ONLY flat ground art here. NO walls, trees, furniture or anything with
+1) "ground" — flat ground FEATURES, as typed objects (max 64):
+Common fields: "id" (unique slug), optional "label" (Spanish noun),
+"kind". Coordinates in cells (0..128). Area-like kinds (area/water/deck)
+take EXACTLY ONE shape: "rect": [col,row,w,d] | "polygon": [[c,r],…] (3..32
+points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
+- path { points:[[c,r],…] (2..16), w?=4, material? } — roads and trails as a
+  polyline. Continue every neighbour crossing with a path whose endpoints
+  reach the shared edge cells.
+- area { shape, material } — plazas, courtyards, interior floors, sandy
+  banks, clearings. Materials: "dirt"|"cobble"|"stone"|"sand"|"wood"|
+  "gravel"|"grass".
+- water { shape } — rivers/ponds/moats, following the SAME course as your
+  water terrain_features. NOT walkable (declarative collision).
+- deck { shape, material?:"wood"|"stone" } — walkable surfaces OVER water:
+  bridges, jetties, stepping platforms (collision punches these out of the
+  water). Wherever a road crosses water there MUST be a deck.
+- ONLY flat ground here. NO walls, trees, furniture or anything with
   height — those are volumes.
-- STYLE of good ground art (invest here — flat shapes, layered):
-  · Roads: TWO strokes on the same path — a darker/wider edge stroke under a
-    lighter fill stroke (e.g. #8a7650 w=5.4 under #a29b8b w=4), linecap
-    round. Dirt tracks in warm tan (#a89162/#8a7650), stone roads in grey.
-  · Plazas/courtyards: a base ellipse or polygon in cobble grey (#a29b8b)
-    topped with a dozen small cobble ellipses in 2-3 tones (#8f887a,
-    #b0a999) at opacity .8 — reads as paving.
-  · Banks/transitions: soft ellipses at opacity .4-.6 bridging two grounds
-    (sand #b8ab8a around water, packed dirt near doors).
-  · Interior floors: warm wood (#7c5a36) rect with 2-3 darker plank lines.
 
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
 Common fields: "id" (unique slug), "label" (Spanish noun — it guides the
@@ -127,14 +118,14 @@ door is a sealed box (bug); doors/gates ARE the openings. Trees block only
 at the trunk.
 
 Design doctrine (what makes the plan GOOD):
-- Roads first: lay the road/river network in map_ground (continuing every
+- Roads first: lay the road/river network in ground (continuing every
   crossing and neighbour image_element), THEN snap buildings to the roads
   with a door facing them. A building nobody can reach is a bug.
 - Centerpiece → surroundings → filler: one anchor feature (plaza with a
   fountain, a bridge, a shrine), support structures around it, then frame
   with vegetation MASSES — clustered trees leaving clearings, not uniform
   scatter.
-- COHERENCE with the schema: volumes and map_ground draw the SAME world the
+- COHERENCE with the schema: volumes and ground describe the SAME world the
   JSON declares — every terrain_feature follows its own points and reaches
   its at_edges cells; every structure keeps its footprint. The plan adds the
   detail the schema cannot express (interiors, curves, materials).
@@ -157,7 +148,10 @@ is {type:"path", at:41}) and seeding an east exit:
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
-  "map_ground": "<svg viewBox=\"0 0 128 128\"><g id=\"ground\"><ellipse cx=\"40\" cy=\"80\" rx=\"18\" ry=\"12\" fill=\"#48682f\" opacity=\"0.6\"/><path d=\"M0,41 Q70,45 128,50\" fill=\"none\" stroke=\"#6e5c3e\" stroke-width=\"5.4\" stroke-linecap=\"round\" opacity=\"0.6\"/><path d=\"M0,41 Q70,45 128,50\" fill=\"none\" stroke=\"#a89162\" stroke-width=\"4\" stroke-linecap=\"round\"/></g><g id=\"water\"/></svg>",
+  "ground": [
+    { "id": "claro_sur", "kind": "area", "label": "claro del bosque", "ellipse": { "center": [40, 80], "rx": 18, "ry": 12 }, "material": "grass" },
+    { "id": "senda", "kind": "path", "label": "senda de tierra", "points": [[0, 41], [70, 45], [128, 50]], "w": 4, "material": "dirt" }
+  ],
   "volumes": [
     { "id": "roca_musgo", "label": "roca", "type": "rock", "at": [81, 31], "s": 1.4 },
     { "id": "pino_1", "label": "pino", "type": "tree", "at": [30, 20], "species": "pino" },

@@ -8,14 +8,16 @@ import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import {
-  composeBlueprint,
+  buildTileGreyboxSpec,
   deriveVolumesFromSchema,
+  parseGround,
   parseVolumes,
+  type GroundFeature,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import {
-  composeStage,
+  composeStageScene,
   stagePlanFromScene,
   type ComposedStage,
   type StageScenePlan,
@@ -284,8 +286,8 @@ function applySessionView(view: string): void {
       if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
     }
     activeRenderer = prosceniumRenderer;
-    // Sin pipeline de imagen en proscenio v1 (vector-only): el repintado por
-    // capas (peeling) llega en la entrega 2.
+    // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
+    // pipeline (StageImageController: clay local + repintado bajo demanda).
     autoPipeline.setEnabled(false);
     if (changed) log("Vista: proscenio (plató de cine, cámara al sur)");
   } else {
@@ -621,7 +623,7 @@ const reviewDeps: ReviewDeps = {
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
  *  actual y aplica los fixes parciales que devuelva (terrain /
- *  terrain_features / entity_moves / map_ground / volumes) sobre el Format D,
+ *  terrain_features / entity_moves / ground / volumes) sobre el Format D,
  *  recargando la escena. El jugador conserva su posición (dev pre-generación). */
 async function reviewBlueprintAndApply(): Promise<void> {
   const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
@@ -636,9 +638,9 @@ async function reviewBlueprintAndApply(): Promise<void> {
     errors.push("scene", "review (R): no hay tile activo");
     return;
   }
-  // Tiles con plan (map_ground/volumes): mismo camino que la fase automática
+  // Tiles con plan (ground/volumes): mismo camino que la fase automática
   // (re-registro por addTile + persistencia al bridge), sin recargar el mundo.
-  if ((typeof fd.map_ground === "string" || Array.isArray(fd.volumes)) && activeTileKey) {
+  if ((Array.isArray(fd.ground) || Array.isArray(fd.volumes)) && activeTileKey) {
     await reviewTileBlueprint(activeTileKey, reviewDeps);
     return;
   }
@@ -695,15 +697,15 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
 
 /** Plan compuesto de un tile: campos del plan + blueprint proyectado. */
 interface TilePlanInfo {
-  map_ground?: string;
+  ground: GroundFeature[];
   volumes: Volume[];
   composed: ComposedTilePlan;
 }
 
-/** Compone el blueprint del tile con la perspectiva de la sesión. Los
- *  volúmenes declarados por el LLM se completan con los derivados del esquema
- *  (vegetation_zones → árboles, structures → edificios cutaway). Devuelve
- *  null en escenas legacy sin plan ni primitivas derivables. */
+/** Compone el blueprint del tile. Los volúmenes declarados por el LLM se
+ *  completan con los derivados del esquema (vegetation_zones → árboles,
+ *  structures → edificios cutaway). Devuelve null en escenas legacy sin plan
+ *  ni primitivas derivables. */
 function composeTilePlan(
   raw: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -711,7 +713,15 @@ function composeTilePlan(
   isGridTile: boolean,
 ): TilePlanInfo | null {
   if (!isGridTile) return null;
-  const mapGround = typeof data.map_ground === "string" ? data.map_ground : undefined;
+  let ground: GroundFeature[] = [];
+  if (Array.isArray(data.ground)) {
+    const parsed = parseGround(data.ground);
+    if (parsed.ok) {
+      ground = parsed.features;
+    } else {
+      errors.push("scene", `ground de ${key} inválido (${parsed.error}); se ignora`);
+    }
+  }
   let declared: Volume[] = [];
   if (Array.isArray(data.volumes)) {
     const parsed = parseVolumes(data.volumes);
@@ -732,26 +742,26 @@ function composeTilePlan(
     declared,
   );
   const volumes = [...declared, ...derived];
-  if (!mapGround && volumes.length === 0) return null;
-  const composed = composeBlueprint(
-    { map_ground: mapGround, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
+  if (ground.length === 0 && volumes.length === 0) return null;
+  const spec = buildTileGreyboxSpec(
+    { ground, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
     key,
   );
   return {
-    map_ground: mapGround,
+    ground,
     volumes,
     composed: {
-      svg: composed.svg,
-      view_box: composed.viewBox,
-      elements: composed.elements,
-      occluders: composed.occluders,
+      spec,
+      view_box: spec.camera.view_box,
+      elements: spec.elements,
+      occluders: spec.occluders,
     },
   };
 }
 
 /** Geometría del plató con indirección MUTABLE: el accept de HMR de abajo
  *  la reasigna al editar nefan-core/stage — sin recargar la página. */
-let hotComposeStage = composeStage;
+let hotComposeStage = composeStageScene;
 let hotStagePlanFromScene = stagePlanFromScene;
 
 /** Metadatos del repintado de un plató, desde el Format D crudo. */
@@ -851,25 +861,27 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     if (CONFIG.graphics.character_sprites && playerModel === null) {
       void setPlayerAppearance("", "");
     }
-    // Entrega 2: TRAS instalarse el plató (installStage resetea los bitmaps),
-    // reinstalar de la caché cliente si ya se pintó (volver a una escena no
-    // pierde la imagen) o, con gráficos "imagen IA", greybox + repintar +
-    // pelar. La clave de caché es el hash del GreyboxSpec del plan.
+    // TRAS instalarse el plató (installStage resetea los bitmaps): reinstalar
+    // de la caché cliente si ya se pintó (volver a una escena no pierde la
+    // imagen); si no, instalar el CLAY three.js local (el arte del modo
+    // vector, y el placeholder instantáneo del modo imagen) y, con gráficos
+    // "imagen IA", lanzar greybox → repintar → pelar. La clave de caché es el
+    // hash del GreyboxSpec del plan.
     const stageForImages = stageComposed;
     const stagePlanForImages = stagePlanCaptured;
     const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
-    void prosceniumRenderer!
-      .installStage(stageComposed, key)
-      .then(async () => {
-        if (!stagePlanForImages) return;
-        const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
-        if (!reinstalled && sessionRenderMode === "image") {
-          void stageImageController.runFor(
-            stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
-          );
-        }
-      })
-      .catch((err) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
+    prosceniumRenderer!.installStage(stageComposed, key);
+    void (async () => {
+      if (!stagePlanForImages) return;
+      const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
+      if (reinstalled) return;
+      await stageImageController.installClay(key, stagePlanForImages);
+      if (sessionRenderMode === "image") {
+        void stageImageController.runFor(
+          stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
+        );
+      }
+    })().catch((err: unknown) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
   } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
     applySessionView("");
   }
@@ -902,17 +914,17 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     tileStore.markAnalyzed(key, prevEntry.imageCollider);
   }
   // Colisión base del plan: restaurar si la escena no cambió; derivar
-  // (async, ~ms) si es nueva o cambió. Agua del map_ground + huellas de
-  // volumes — espacio de mundo, idéntica en ambas perspectivas.
+  // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
+  // huellas de volumes — espacio de mundo.
   const plan = (data as { __plan?: TilePlanInfo }).__plan;
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
-    void applyPlanCollision(key, { map_ground: plan.map_ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
+    applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
   } else if (stageComposed && stageVolumes.length > 0) {
     // Plató: las huellas de sus volúmenes (mesas, barriles…) bloquean igual
     // que en la oblicua — colisión declarada, nunca de píxeles.
-    void applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
+    applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
@@ -2245,11 +2257,11 @@ scheduleNextFrame();
 if (import.meta.hot) {
   import.meta.hot.accept("@nefan-core/src/scene/stage/index.js", (mod) => {
     const m = mod as {
-      composeStage?: typeof composeStage;
+      composeStageScene?: typeof composeStageScene;
       stagePlanFromScene?: typeof stagePlanFromScene;
     } | undefined;
-    if (!m?.composeStage || !m?.stagePlanFromScene) return;
-    hotComposeStage = m.composeStage;
+    if (!m?.composeStageScene || !m?.stagePlanFromScene) return;
+    hotComposeStage = m.composeStageScene;
     hotStagePlanFromScene = m.stagePlanFromScene;
     if (sessionView === "proscenium" && sceneData && activeTileKey && prosceniumRenderer) {
       const key = activeTileKey;
@@ -2260,9 +2272,11 @@ if (import.meta.hot) {
           const composed = hotComposeStage(plan, key);
           activeStage = composed;
           (sceneData as Record<string, unknown>).__stage = composed;
-          void prosceniumRenderer.installStage(composed, key).then(() => {
-            void stageImageController.reinstallIfCached(plan, key);
-          });
+          prosceniumRenderer.installStage(composed, key);
+          void (async () => {
+            const reinstalled = await stageImageController.reinstallIfCached(plan, key);
+            if (!reinstalled) await stageImageController.installClay(key, plan);
+          })().catch((err: unknown) => errors.push("scene", "reinstalación HMR del plató falló", err));
           console.log("[hmr] plató recompuesto en caliente");
         }
       } catch (err) {

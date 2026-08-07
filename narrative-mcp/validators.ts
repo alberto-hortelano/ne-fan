@@ -64,6 +64,59 @@ export function validateNarrativeReaction(data: unknown): { ok: true } | { ok: f
   return { ok: true };
 }
 
+/** Pre-flight estructural del array `ground` (rasgos de suelo declarativos:
+ *  path/area/water/deck), espejo laxo de validate_ground
+ *  (ai_server/narrative_schemas.py) y de parseGround (nefan-core, zod — la
+ *  fuente de verdad). */
+export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: false, error: 'ground must be an array of feature objects' };
+  if (raw.length > 64) return { ok: false, error: `ground has ${raw.length} features, max is 64` };
+  const kinds = new Set(['path', 'area', 'water', 'deck']);
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  const pair = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(num);
+  const seen = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const f = raw[i] as Record<string, unknown>;
+    if (typeof f !== 'object' || f === null) return { ok: false, error: `ground[${i}] must be an object` };
+    if (typeof f.id !== 'string' || !f.id) return { ok: false, error: `ground[${i}].id must be a non-empty string` };
+    if (seen.has(f.id)) return { ok: false, error: `ground id "${f.id}" appears twice` };
+    seen.add(f.id);
+    if (typeof f.kind !== 'string' || !kinds.has(f.kind)) {
+      return { ok: false, error: `ground[${i}].kind='${String(f.kind)}' invalid; allowed: ${[...kinds].sort().join(', ')}` };
+    }
+    if (f.kind === 'path') {
+      if (!Array.isArray(f.points) || f.points.length < 2 || !f.points.every(pair)) {
+        return { ok: false, error: `ground[${i}] path needs \`points\` (≥2 [col,row] pairs)` };
+      }
+    } else {
+      let shapes = 0;
+      if (f.rect !== undefined) {
+        if (!Array.isArray(f.rect) || f.rect.length !== 4 || !f.rect.every(num)) {
+          return { ok: false, error: `ground[${i}].rect must be [col, row, w, d]` };
+        }
+        shapes++;
+      }
+      if (f.polygon !== undefined) {
+        if (!Array.isArray(f.polygon) || f.polygon.length < 3 || !f.polygon.every(pair)) {
+          return { ok: false, error: `ground[${i}].polygon must be ≥3 [col,row] pairs` };
+        }
+        shapes++;
+      }
+      if (f.ellipse !== undefined) {
+        const e = f.ellipse as Record<string, unknown>;
+        if (typeof e !== 'object' || e === null || !pair(e.center) || !num(e.rx) || !num(e.ry)) {
+          return { ok: false, error: `ground[${i}].ellipse must be { center: [col,row], rx, ry }` };
+        }
+        shapes++;
+      }
+      if (shapes !== 1) {
+        return { ok: false, error: `ground[${i}] ("${f.id}") needs exactly one of rect | polygon | ellipse (has ${shapes})` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
 /** Pre-flight de una respuesta blueprint_review, espejo de
  *  ai_server/narrative_schemas.py:validate_blueprint_review. Misma razón que
  *  validateNarrativeReaction: el 422 del ai_server no vuelve a esta sesión. */
@@ -86,12 +139,13 @@ export function validateBlueprintReview(data: unknown): { ok: true } | { ok: fal
       return { ok: false, error: '`fixes` must be an object' };
     }
     const f = o.fixes as Record<string, unknown>;
-    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'map_ground', 'volumes']);
+    const allowed = new Set(['terrain', 'terrain_features', 'entity_moves', 'ground', 'volumes']);
     for (const k of Object.keys(f)) {
       if (!allowed.has(k)) return { ok: false, error: `fixes.${k} is not a valid fix; allowed: ${[...allowed].sort().join(', ')}` };
     }
-    if (f.map_ground !== undefined && (typeof f.map_ground !== 'string' || !f.map_ground.trim().startsWith('<svg'))) {
-      return { ok: false, error: 'fixes.map_ground must be the FULL corrected SVG document (a string starting with <svg)' };
+    if (f.ground !== undefined) {
+      const g = validateGroundFeatures(f.ground);
+      if (!g.ok) return { ok: false, error: `fixes.ground must be the FULL replacement ground array: ${g.error}` };
     }
     if (f.volumes !== undefined && !Array.isArray(f.volumes)) {
       return { ok: false, error: 'fixes.volumes must be the FULL replacement volumes array' };

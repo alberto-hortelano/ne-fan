@@ -1,0 +1,9 @@
+{
+  "description": "path con un solo punto (mínimo 2)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "camino", "kind": "path", "points": [[64, 64]], "w": 4 }
+    ]
+  }
+}

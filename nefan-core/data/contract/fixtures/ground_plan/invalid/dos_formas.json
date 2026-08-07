@@ -1,0 +1,9 @@
+{
+  "description": "water con rect Y polygon a la vez (exactamente una forma)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "lago", "kind": "water", "rect": [20, 20, 10, 10], "polygon": [[0, 0], [10, 0], [10, 10]] }
+    ]
+  }
+}

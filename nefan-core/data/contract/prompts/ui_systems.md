@@ -77,11 +77,12 @@ follows the active system automatically.
 
 ── 7. GRAPHICS MODE (world.render_mode) ───────────────────────────────────
 - "image": the image model repaints your plans (costs credits). Overworld:
-  map_ground + volumes per tile feed the repaint; vision passes
-  (blueprint_review / image_review) may ask you to fix plans — answer with
-  the COMPLETE corrected documents.
-- "vector": the player sees the composed vector plans directly; no image
-  calls. The proscenium view v1 is vector-only.
+  ground + volumes per tile feed a deterministic 3D render (the base plate);
+  vision passes (blueprint_review / image_review) may ask you to fix plans —
+  answer with the COMPLETE corrected documents (typed arrays, never SVG).
+- "vector": the player sees the engine's untextured 3D render of your plans
+  directly; no image calls. Both views (overworld and proscenium) support
+  both modes.
 
 ── 8. PLUGINS (gameplay systems) ──────────────────────────────────────────
 Active plugins ship their derived views in every turn (`plugins[]`). You

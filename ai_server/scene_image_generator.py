@@ -172,11 +172,13 @@ class SceneImageGenerator:
         side = max(sch.size)
         if sch.size != (side, side):
             sch = sch.resize((side, side), Image.LANCZOS)
-        if blueprint_kind == "svg":
-            # Blueprint compuesto: plano vectorial rico YA PROYECTADO en la
-            # oblicua del compositor. Dos diales validados empíricamente
-            # (experimento svg_test): la FIDELIDAD al plano viene sola; el
-            # REPINTADO total hay que exigirlo o el modelo devuelve el vector
+        if blueprint_kind == "tile":
+            # Tile oblicuo: la base es un RENDER 3D GREYBOX (clay cenital con
+            # cizalla oblicua y sol fijo desde el sur — bench labs/render E2a,
+            # fidelidad 100/100). La geometría y la LUZ ya son correctas y hay
+            # que conservarlas EXACTAS (preámbulo KEEP del stage), con el
+            # lenguaje de proyección heredado del pipeline SVG anterior; el
+            # REPINTADO total hay que exigirlo o el modelo devuelve el clay
             # casi tal cual. Specs negativas contra las invenciones observadas.
             view = (
                 "Top-down 3/4 RPG game map. The plan is ALREADY projected: "
@@ -202,8 +204,10 @@ class SceneImageGenerator:
             )
             instruction = (
                 view
-                + "The FIRST reference image is ONLY a schematic LAYOUT plan drawn "
-                "with flat placeholder colours — it is NOT final art. Fully REPAINT "
+                + "The FIRST reference image is an untextured 3D blockout render "
+                "(flat clay volumes with correct projection and lighting) — it is "
+                "NOT final art, but its GEOMETRY is the truth: keep the position "
+                "and silhouette of every volume exactly. Fully REPAINT "
                 "the whole map in the painterly, richly textured style of the "
                 "SECOND reference image: dense textured grass with tufts and "
                 "colour variation, detailed tree canopies with individual foliage "
@@ -212,7 +216,7 @@ class SceneImageGenerator:
                 "grass, individually drawn cobblestones, wooden floors with plank "
                 "grain, stone walls with individual masonry blocks, roof tiles "
                 "drawn one by one. The finished map must NOT look flat, "
-                "vector-like or diagram-like anywhere. "
+                "vector-like or 3D-render-like anywhere. "
                 "Buildings drawn open (no roof, interior floors and furniture "
                 "visible over low front walls) are CUTAWAY interiors — keep them "
                 "open exactly as drawn; buildings drawn with a roof keep their "

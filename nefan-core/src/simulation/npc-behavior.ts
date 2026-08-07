@@ -76,8 +76,8 @@ export interface NpcBehaviorDeps {
   world: NpcWorldAdapter;
 }
 
-/** Radio de colisión del NPC — mayor que el del jugador (0.4) porque la
- *  colisión server-side no tiene el raster fino del map_ground SVG. */
+/** Radio de colisión del NPC — mayor que el del jugador (0.4): margen de
+ *  seguridad contra las fuentes que el server aproxima por celdas. */
 const NPC_RADIUS = 0.5;
 /** Cadencia de decisión (re-lectura de directiva, proximidad del jugador). */
 const DECIDE_INTERVAL = 0.25;

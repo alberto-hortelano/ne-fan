@@ -214,13 +214,9 @@
         },
         "maxItems": 24
       },
-      "terrain_svg": {
-        "type": "string",
-        "description": "Optional, rarely needed. SVG of pure shapes over the terrain: viewBox EXACTLY \"0 0 <cols> <rows>\" (cell units), max 20KB, no script/foreignObject/href. Use only when grid + terrain_features cannot express the shape."
-      },
-      "map_ground": {
-        "type": "string",
-        "description": "Tiles only, strongly recommended. Ground-plane SVG of the tile (FLAT art only): viewBox EXACTLY \"0 0 128 128\", max 32KB, shape elements only, with the layers <g id=\"ground\">, <g id=\"water\"> and optional <g id=\"deck\"> (walkable over water). Anything with height goes in `volumes` instead."
+      "ground": {
+        "type": "array",
+        "description": "Tiles only, strongly recommended. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
       },
       "volumes": {
         "type": "array",
@@ -245,41 +241,100 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string" },
-                "edge": { "type": "string", "enum": ["north", "south", "east", "west"] },
-                "to_place_id": { "type": "string", "description": "Destination place; a map_link between this place and it MUST exist." },
-                "zone": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
-                "kind": { "type": "string", "enum": ["door", "opening", "stairs"] },
-                "label": { "type": "string", "description": "Visible label in Spanish, e.g. 'Puerta a la cocina'." }
+                "id": {
+                  "type": "string"
+                },
+                "edge": {
+                  "type": "string",
+                  "enum": [
+                    "north",
+                    "south",
+                    "east",
+                    "west"
+                  ]
+                },
+                "to_place_id": {
+                  "type": "string",
+                  "description": "Destination place; a map_link between this place and it MUST exist."
+                },
+                "zone": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "door",
+                    "opening",
+                    "stairs"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Visible label in Spanish, e.g. 'Puerta a la cocina'."
+                }
               },
-              "required": ["id", "edge", "to_place_id", "zone", "kind", "label"]
+              "required": [
+                "id",
+                "edge",
+                "to_place_id",
+                "zone",
+                "kind",
+                "label"
+              ]
             }
           },
           "backdrop": {
             "type": "object",
             "description": "Optional description of the painted backdrop seen at the north edge (in Spanish).",
-            "properties": { "description": { "type": "string" } },
-            "required": ["description"]
+            "properties": {
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "description"
+            ]
           },
           "fourth_wall": {
             "type": "object",
             "description": "Optional front wall on the camera side; it fades out when the player approaches. doors = gaps [start col + width in cells].",
             "properties": {
-              "present": { "type": "boolean" },
+              "present": {
+                "type": "boolean"
+              },
               "doors": {
                 "type": "array",
                 "maxItems": 4,
                 "items": {
                   "type": "object",
-                  "properties": { "col": { "type": "number" }, "w": { "type": "number" } },
-                  "required": ["col", "w"]
+                  "properties": {
+                    "col": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "col",
+                    "w"
+                  ]
                 }
               }
             },
-            "required": ["present"]
+            "required": [
+              "present"
+            ]
           }
         },
-        "required": ["exits"]
+        "required": [
+          "exits"
+        ]
       },
       "structures": {
         "type": "array",

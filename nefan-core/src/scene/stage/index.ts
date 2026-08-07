@@ -19,20 +19,18 @@ export {
   type StageBounds,
 } from "./projection.js";
 export {
-  composeStage,
-  volumeFootprintCells,
-  STAGE_COMPOSER_VERSION,
+  composeStageScene,
   type ComposedStage,
   type ComposedStageExit,
-  type StageLayer,
-  type StageScenePlan,
-} from "./compose.js";
+  type StageItem,
+} from "./scene.js";
 export { stageToViewAt } from "./projection.js";
 export {
   buildGreyboxSpec,
   expectedElementsFromGreybox,
   canonicalGreyboxJson,
   volumeHeightM,
+  volumeFootprintCells,
   STAGE_GREYBOX_VERSION,
   GREYBOX_EYE_M,
   type GreyboxSpec,
@@ -40,18 +38,12 @@ export {
   type GreyboxLight,
   type GreyboxCamera,
   type GreyboxManifestItem,
+  type StageScenePlan,
 } from "./greybox.js";
 export { stagePlanFromScene } from "./plan.js";
 export {
-  peelPlanFor,
-  paintableVolumeLayers,
   buildPeelPrompt,
   STAGE_PEEL_VERSION,
-  type PeelPlan,
-  type PeelStep,
-} from "./peel.js";
-export {
-  expectedElementsFor,
   pxToView,
   calibratedProjection,
   contactToPose,
@@ -60,7 +52,6 @@ export {
   peelStepsFromInventory,
   collisionGridFromCutouts,
   reconstructionDiff,
-  declaredLayerHeightM,
   fitSpriteScale,
   spriteScaleAt,
   SPRITE_SCALE_IDENTITY,
@@ -94,4 +85,3 @@ export {
 } from "./framing.js";
 export { railCamera, type RailCameraOpts } from "./camera.js";
 export { exitZoneAt, spawnPointForEntry } from "./entry.js";
-export { fourthWallAlpha, FOURTH_WALL_FADE_DEFAULTS, type FourthWallFadeOpts } from "./fade.js";

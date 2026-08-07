@@ -17,6 +17,7 @@
  *  and rejects; no silent placeholder.
  */
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import { canonicalGreyboxJson } from "@nefan-core/src/scene/blueprint/index.js";
 import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 import {
   solidGridFromMasks,
@@ -27,7 +28,20 @@ import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js
 import { errors } from "../ui/error-log.js";
 import type { GenServiceUrls } from "../net/service-urls.js";
 import type { CanvasRenderer, ComposedTilePlan, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
-import type { ExpectedElement } from "./svg-collision.js";
+
+/** Elemento que el plan del tile declara, con su bbox en píxeles de la
+ *  imagen pintada — guía para el clasificador de visión del análisis. Se
+ *  construye desde los elementos del plan compuesto. */
+export interface ExpectedElement {
+  /** Id del volumen en el plan compuesto — la visión lo devuelve en
+   *  `element_id` al ordenar las regiones contra el plan. */
+  id?: string;
+  label: string;
+  solid: boolean;
+  tall: boolean;
+  /** [x, y, w, h] en píxeles de la imagen (imgW×imgH). */
+  bbox_px: [number, number, number, number];
+}
 
 /** Un segmento jugable devuelto por /analyze_scene_image. */
 interface AnalyzedSegment {
@@ -81,8 +95,8 @@ export interface BlueprintReview {
     terrain?: string[];
     terrain_features?: Record<string, unknown>[];
     entity_moves?: { id: string; cell: [number, number] }[];
-    /** Documento map_ground COMPLETO corregido (arte plano del suelo). */
-    map_ground?: string;
+    /** Array COMPLETO de rasgos de suelo corregido. */
+    ground?: Record<string, unknown>[];
     /** Array COMPLETO de volúmenes corregido. */
     volumes?: Record<string, unknown>[];
   };
@@ -315,10 +329,10 @@ export class SceneImageController {
     try {
       const prompt = this.buildPrompt(scene as unknown as SceneSummary);
       const composed = (scene as { __composed?: ComposedTilePlan }).__composed;
-      // Con plan compuesto el blueprint es el plano vectorial rico: el
-      // servidor usa la instrucción de REPINTADO total en vez de la de cajas
-      // de colores. Esperar a su raster para no capturar el fallback.
-      const blueprintKind = composed ? "svg" : "boxes";
+      // Con plan compuesto el blueprint es el CLAY three.js del spec: el
+      // servidor usa la instrucción de repintado del blockout en vez de la de
+      // cajas de colores. Esperar a su render para no capturar el fallback.
+      const blueprintKind = composed ? "tile" : "boxes";
       if (composed) await this.waitForPlan(key);
       // La captura cubre el canvas de VISTA del tile (voladizo de alturas
       // incluido): la imagen resultante cubre el mismo canvas y el
@@ -328,6 +342,16 @@ export class SceneImageController {
       const { expanded, contextSides, imageTileKeys } = this.neighborContext(key, tileExt);
       const ppm = this.ppmFor(expanded);
       const dataUrl = this.renderer.captureSchematic(expanded, ppm, { imageTileKeys });
+      // Clave de layout ESTABLE: el PNG del clay WebGL no es
+      // byte-determinista — la clave es el hash del spec canónico + el
+      // contexto de vecinos pintados (mismo plan + mismos vecinos ⇒ CACHE
+      // HIT del server en el resume).
+      const layoutKey = composed
+        ? await sha256Hex(
+            canonicalGreyboxJson(composed.spec) +
+              `|ctx:${contextSides.join("+")}|img:${[...imageTileKeys].sort().join(",")}`,
+          )
+        : undefined;
       const res = await fetch(`${this.urls.remote}/generate_scene_image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -336,10 +360,11 @@ export class SceneImageController {
           prompt,
           context_sides: contextSides,
           blueprint_kind: blueprintKind,
+          ...(layoutKey ? { layout_key: layoutKey } : {}),
           // Si el plano no tiene agua, el servidor omite las cláusulas de agua
           // de la instrucción — mencionarla en un plano seco ceba ríos
           // alucinados (bench 002_repaint_fidelity).
-          has_water: groundHasWater((scene as { map_ground?: string }).map_ground),
+          has_water: planHasWater((scene as { ground?: unknown[] }).ground),
           style_id: this.styleId,
           // Zona de estilo del tile: la etiqueta del motor narrativo afinada
           // por el bioma real del tile (un tile de pantano al borde de un
@@ -395,7 +420,7 @@ export class SceneImageController {
     }
     this.busy = true;
     try {
-      const hasPlan = typeof scene.map_ground === "string" || Array.isArray(scene.volumes);
+      const hasPlan = Array.isArray(scene.ground) || Array.isArray(scene.volumes);
       if (tileKey && hasPlan) await this.waitForPlan(tileKey);
       // La imagen revisada incluye el voladizo del blueprint compuesto.
       const composed = tileKey
@@ -644,14 +669,18 @@ interface ExpectedInfo {
 
 /** Convierte los elementos del blueprint compuesto a la guía del clasificador
  *  (bbox en píxeles de la imagen instalada). Solo solid/tall interesan. */
-/** true si la capa `g#water` del map_ground tiene contenido real. Sin plan
- *  (escenas legacy/boxes) devuelve true: no sabemos, y es más seguro dejar la
- *  instrucción de agua que suprimirla en un plano que sí la tenga. */
-function groundHasWater(mapGround: string | undefined): boolean {
-  if (typeof mapGround !== "string") return true;
-  const m = mapGround.match(/<g id="water"[^>]*?(\/>|>([\s\S]*?)<\/g>)/);
-  if (!m) return false;
-  return Boolean(m[2] && m[2].includes("<"));
+/** sha256 hex de un string (clave de layout del spec canónico). */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** true si el plan de suelo declara agua. Sin plan (escenas legacy/boxes)
+ *  devuelve true: no sabemos, y es más seguro dejar la instrucción de agua
+ *  que suprimirla en un plano que sí la tenga. */
+function planHasWater(ground: unknown[] | undefined): boolean {
+  if (!Array.isArray(ground)) return true;
+  return ground.some((f) => (f as { kind?: string } | null)?.kind === "water");
 }
 
 function expectedFromComposed(composed: ComposedTilePlan, imgW: number, imgH: number): ExpectedInfo[] {

@@ -13,9 +13,11 @@ import { STAGE_RENDER_SIZE } from "@nefan-core/src/scene/stage/segments.js";
 
 let renderer: THREE.WebGLRenderer | null = null;
 
-function getRenderer(): THREE.WebGLRenderer {
+/** Renderer singleton compartido por los greybox de plató Y de tile (cada
+ *  render fija su tamaño con setSize). */
+export function getRenderer(): THREE.WebGLRenderer {
   if (renderer) return renderer;
-  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
   r.setSize(STAGE_RENDER_SIZE, STAGE_RENDER_SIZE, false);
   r.shadowMap.enabled = true;
   r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -44,7 +46,8 @@ function gableGeometry(w: number, h: number, d: number): THREE.ExtrudeGeometry {
   return g;
 }
 
-function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
+/** Malla de una primitiva del spec — compartida por plató y tile. */
+export function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
   let geo: THREE.BufferGeometry;
   switch (p.shape) {
     case "box": {
@@ -68,6 +71,22 @@ function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
       const [r, h, segments] = p.size;
       geo = new THREE.ConeGeometry(r, h, Math.max(3, Math.round(segments ?? 16)));
       geo.translate(0, h / 2, 0);
+      break;
+    }
+    case "polygon": {
+      // Contorno plano horizontal: points absolutos [x, z], grosor en size[0];
+      // pos solo aporta la y de la base (contrato de greybox/common.ts).
+      const pts = p.points ?? [];
+      if (pts.length < 3) throw new Error(`greybox polygon con ${pts.length} points (mínimo 3)`);
+      const t = p.size[0] ?? 0.02;
+      const shape = new THREE.Shape();
+      shape.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], pts[i][1]);
+      shape.closePath();
+      const g = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
+      g.rotateX(Math.PI / 2); // el shape vive en XY → tumbarlo al plano XZ
+      g.translate(0, t, 0); // extrusión hacia ARRIBA desde la base y=0
+      geo = g;
       break;
     }
   }
@@ -99,16 +118,24 @@ function skyMesh(top: string, bottom: string, zNorth: number): THREE.Mesh {
   return m;
 }
 
-/** Renderiza el spec a un canvas 2D nuevo de STAGE_RENDER_SIZE². */
-export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
+/** Monta escena+cámara del spec, filtrando primitivas, y la renderiza a un
+ *  canvas 2D nuevo de STAGE_RENDER_SIZE². `transparent` omite fondo/cielo y
+ *  deja alpha 0 fuera de las mallas (recortes clay). */
+function renderSpec(
+  spec: GreyboxSpec,
+  keep: (p: GreyboxPrimitive) => boolean,
+  transparent: boolean,
+): HTMLCanvasElement {
   const r = getRenderer();
   const scene = new THREE.Scene();
-  if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, spec.fog.near, spec.fog.far);
-  if (spec.sky) {
-    scene.background = new THREE.Color(spec.sky.bottom);
-    scene.add(skyMesh(spec.sky.top, spec.sky.bottom, spec.camera.pos[2] - 600));
-  } else {
-    scene.background = new THREE.Color("#0c0a0e");
+  if (!transparent) {
+    if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, spec.fog.near, spec.fog.far);
+    if (spec.sky) {
+      scene.background = new THREE.Color(spec.sky.bottom);
+      scene.add(skyMesh(spec.sky.top, spec.sky.bottom, spec.camera.pos[2] - 600));
+    } else {
+      scene.background = new THREE.Color("#0c0a0e");
+    }
   }
 
   const shadowSpan = Math.max(40, spec.proj.width_m * 1.5 + spec.proj.depth_m);
@@ -136,7 +163,9 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
     }
   }
 
-  for (const p of spec.primitives) scene.add(primitiveMesh(p));
+  for (const p of spec.primitives) {
+    if (keep(p)) scene.add(primitiveMesh(p));
+  }
 
   // Cámara EXACTA del spec: mirada horizontal al norte, frame simétrico
   // respecto al horizonte recortado al view_box con setViewOffset.
@@ -148,6 +177,7 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
   cam.updateProjectionMatrix();
 
   try {
+    r.setClearColor(0x000000, transparent ? 0 : 1);
     r.render(scene, cam);
     const out = document.createElement("canvas");
     out.width = STAGE_RENDER_SIZE;
@@ -167,4 +197,28 @@ export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
       }
     });
   }
+}
+
+/** Renderiza el spec COMPLETO (plano base del repintado). */
+export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
+  return renderSpec(spec, () => true, false);
+}
+
+/** Render por CAPAS del clay para el modo vector: placa (escena sin
+ *  volúmenes) + un recorte RGBA por volumen del manifest, todos con la misma
+ *  cámara/luces. Al ser render PROPIO (no pintura IA), las siluetas del spec
+ *  son exactas — la prohibición de recortar con siluetas declaradas aplica
+ *  solo a imágenes repintadas. */
+export function renderGreyboxLayers(spec: GreyboxSpec): {
+  plate: HTMLCanvasElement;
+  cutouts: Array<{ volId: string; canvas: HTMLCanvasElement }>;
+} {
+  const plate = renderSpec(spec, (p) => p.volId === undefined, false);
+  const volIds = [...new Set(spec.manifest.map((m) => m.id))];
+  const cutouts = volIds.map((volId) => ({
+    volId,
+    // Las primitivas llevan el MISMO id "vol_<id>" que el manifest.
+    canvas: renderSpec(spec, (p) => p.volId === volId, true),
+  }));
+  return { plate, cutouts };
 }

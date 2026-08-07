@@ -177,7 +177,7 @@ export const CONFIG: NefanConfig = {
   },
   ai_server: {
     llm_model: "claude-sonnet-4-5-20250514",
-    // El bootstrap del formato de plan (mapa del mundo + map_ground +
+    // El bootstrap del formato de plan (mapa del mundo + ground +
     // volumes) puede tardar >5 min en escribirse con Claude Code Max.
     llm_timeout_s: 900,
     port: 8765,

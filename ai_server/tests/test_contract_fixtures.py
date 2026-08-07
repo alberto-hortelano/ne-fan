@@ -14,9 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from narrative_schemas import (  # noqa: E402
-    GROUND_SVG_LAYERS,
-    _sanitize_svg_field,
     validate_blueprint_review,
+    validate_ground,
     validate_narrative_reaction,
     validate_scene_classify_response,
     validate_stage_review,
@@ -96,26 +95,19 @@ class TestContractFixtures(unittest.TestCase):
             lambda fx: accepts_stage_review(fx["payload"], fx.get("expected_ids")),
         )
 
-    def test_ground_svg(self):
-        """Sanitizador de map_ground: espejo de nefan-core sanitizeGroundSvg
-        (mismas reglas y misma normalización de xmlns)."""
-        for name, fx in load_fixtures("ground_svg"):
+    def test_ground_plan(self):
+        """Plan de suelo declarativo: espejo de parseGround (nefan-core, zod)."""
+        for name, fx in load_fixtures("ground_plan"):
             with self.subTest(fixture=name):
-                result = _sanitize_svg_field(
-                    fx["payload"]["svg"], 128, 128,
-                    max_bytes=32_000, required_layers=GROUND_SVG_LAYERS, field="map_ground",
-                )
+                result = validate_ground(fx["payload"]["ground"])
                 expected = fx["expect"] == "accept"
                 self.assertEqual(
                     result is not None,
                     expected,
-                    f"ground_svg/{name}: esperaba {fx['expect']} — {fx['description']}. "
-                    "Si el cambio es intencional, actualiza sanitizeGroundSvg (nefan-core) "
+                    f"ground_plan/{name}: esperaba {fx['expect']} — {fx['description']}. "
+                    "Si el cambio es intencional, actualiza parseGround (nefan-core) "
                     "Y la fixture.",
                 )
-                if result is not None and "expected_output" in fx:
-                    self.assertEqual(result, fx["expected_output"],
-                                     "la normalización Python difiere del output esperado")
 
 
 if __name__ == "__main__":

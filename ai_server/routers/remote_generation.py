@@ -37,13 +37,13 @@ class SceneImageRequest(BaseModel):
     already-painted art from an adjacent tile (not schematic). The model is
     instructed to reproduce those strips and continue them seamlessly.
 
-    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes)
-    or "svg" (rich map_svg blueprint: the instruction asks for a full painterly
-    REPAINT with cutaway buildings instead of the box legend)."""
+    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes),
+    "tile" (clay greybox 3D del tile oblicuo: instrucción de repintado del
+    blockout) or "stage" (clay greybox del plató proscenio)."""
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|svg|stage)$")
+    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|tile|stage)$")
     # False = el plano NO tiene agua: la instrucción omite las cláusulas de
     # agua (mencionarla en planos secos ceba ríos alucinados — bench
     # 002_repaint_fidelity). Default True = comportamiento clásico.
@@ -57,10 +57,10 @@ class SceneImageRequest(BaseModel):
         default="",
         pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
     )
-    # Clave de layout ESTABLE aportada por el cliente (hash del GreyboxSpec
-    # canónico del plató). El render WebGL no es byte-determinista: sin esta
-    # clave, cada arranque hashearía píxeles distintos ⇒ miss (~$0.2/plató).
-    # Vacía ⇒ se hashea el PNG (camino clásico de la oblicua).
+    # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
+    # canónico del plató o del tile). El render WebGL no es byte-determinista:
+    # sin esta clave, cada arranque hashearía píxeles distintos ⇒ miss.
+    # Vacía ⇒ se hashea el PNG (camino legacy "boxes").
     layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
     @field_validator("context_sides")
     @classmethod
@@ -122,11 +122,13 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # stage_greybox1: la base pasa de SVG rasterizado a render 3D greybox
-    # (clay) con prompt KEEP y modelo de plató propio — todas las generaciones
-    # stage previas quedan invalidadas.
+    # stage_greybox1 / tile_greybox1: la base pasa de SVG rasterizado a render
+    # 3D greybox (clay) con prompt propio — las generaciones del pipeline
+    # anterior quedan invalidadas.
     if body.blueprint_kind == "stage":
         context["pipeline"] = "stage_greybox1"
+    elif body.blueprint_kind == "tile":
+        context["pipeline"] = "tile_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.
     context = DEV_API_CACHE.namespace_context(context)

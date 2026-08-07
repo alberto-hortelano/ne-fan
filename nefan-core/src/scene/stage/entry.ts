@@ -1,7 +1,7 @@
 /** Zonas de salida y spawn de entrada del plató — lógica pura en metros de
  *  MUNDO (la consumen las transiciones del cliente y los tests). */
 
-import type { ComposedStage, ComposedStageExit } from "./compose.js";
+import type { ComposedStage, ComposedStageExit } from "./scene.js";
 
 /** Distancia hacia el interior del plató a la que spawnea el jugador desde el
  *  borde interior de la zona de su salida de entrada — fuera de la zona, para

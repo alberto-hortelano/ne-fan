@@ -17,8 +17,7 @@ import {
   validateSceneClassify,
   validateStageReview,
 } from "../../narrative-mcp/validators.js";
-import { sanitizeGroundSvg } from "../src/scene/map-svg.js";
-import { TILE_CELLS } from "../src/scene/tile.js";
+import { parseGround } from "../src/scene/blueprint/ground.js";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../data/contract/fixtures", import.meta.url));
 
@@ -53,8 +52,9 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   blueprint_review: (fx) => validateBlueprintReview(fx.payload),
   scene_classify: (fx) => validateSceneClassify(fx.payload, fx.expected_indices ?? null),
   stage_review: (fx) => validateStageReview(fx.payload, fx.expected_ids ?? null),
-  ground_svg: (fx) =>
-    sanitizeGroundSvg((fx.payload as { svg: unknown }).svg, TILE_CELLS, TILE_CELLS),
+  // El plan de suelo declarativo lo valida el zod de producción (parseGround)
+  // — el espejo Python (validate_ground) corre el MISMO set de fixtures.
+  ground_plan: (fx) => parseGround((fx.payload as { ground: unknown }).ground),
 };
 
 for (const [kind, run] of Object.entries(VALIDATORS)) {
