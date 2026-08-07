@@ -59,5 +59,9 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     ...(terrain ? { terrain } : {}),
     ...(legend ? { terrain_legend: legend } : {}),
+    // Texto de escena: alimenta el detector de hora del día del greybox.
+    ...(typeof raw.scene_description === "string" && raw.scene_description
+      ? { description: raw.scene_description }
+      : {}),
   };
 }

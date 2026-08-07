@@ -148,6 +148,10 @@ function renderSpec(
       scene.add(new THREE.AmbientLight(l.color, l.intensity));
     } else if (l.kind === "hemi") {
       scene.add(new THREE.HemisphereLight(l.color, l.groundColor ?? "#6a6055", l.intensity));
+    } else if (l.kind === "point") {
+      const p = new THREE.PointLight(l.color, l.intensity, l.distance ?? 0, l.decay ?? 2);
+      p.position.set(...(l.pos ?? [0, 1, 0]));
+      scene.add(p);
     } else {
       const sun = new THREE.DirectionalLight(l.color, l.intensity);
       sun.position.set(...(l.pos ?? [40, 60, 40]));

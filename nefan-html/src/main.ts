@@ -772,12 +772,17 @@ let hotStagePlanFromScene = stagePlanFromScene;
 function stageImageMeta(
   rawFd: Record<string, unknown>,
   data: Record<string, unknown>,
-): { description: string; backdrop?: string; styleTag: string } {
-  const stageBlock = rawFd.stage as { backdrop?: { description?: string }; fourth_wall?: { present?: boolean } } | undefined;
+): { description: string; backdrop?: string; mood?: string; styleTag: string } {
+  const stageBlock = rawFd.stage as {
+    backdrop?: { description?: string };
+    fourth_wall?: { present?: boolean };
+    ambience?: { mood?: string };
+  } | undefined;
   const rawTag = typeof rawFd.style_tag === "string" ? rawFd.style_tag : undefined;
   return {
     description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
     backdrop: stageBlock?.backdrop?.description,
+    mood: stageBlock?.ambience?.mood,
     styleTag: stageCategoryForScene(rawTag, Boolean(stageBlock?.fourth_wall?.present)),
   };
 }

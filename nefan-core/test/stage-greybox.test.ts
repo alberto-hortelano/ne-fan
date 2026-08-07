@@ -280,6 +280,47 @@ describe("buildGreyboxSpec", () => {
     assert.ok(alturas.size >= 2, "dos filas de ventanas a alturas distintas");
   });
 
+  it("F3: hora del día — declarada, inferida del texto y default", async () => {
+    const { resolveTimeOfDay } = await import("../src/scene/stage/greybox.js");
+    const base = exteriorPlan();
+    assert.equal(resolveTimeOfDay(base), "dia");
+    // Inferida del backdrop (el save real dice "luz de atardecer").
+    base.stage.backdrop = { description: "Fachadas encaladas; luz de atardecer." };
+    assert.equal(resolveTimeOfDay(base), "atardecer");
+    // La declarada MANDA sobre el texto.
+    base.stage.ambience = { time_of_day: "noche" };
+    assert.equal(resolveTimeOfDay(base), "noche");
+    // El preset cambia sol, cielo y niebla del spec.
+    const dia = buildGreyboxSpec(exteriorPlan(), "tod");
+    const noche = buildGreyboxSpec(base, "tod");
+    assert.notEqual(dia.sky!.top, noche.sky!.top);
+    assert.notEqual(dia.fog!.color, noche.fog!.color);
+    const sunDia = dia.lights.find((l) => l.kind === "sun")!;
+    const sunNoche = noche.lights.find((l) => l.kind === "sun")!;
+    assert.notEqual(sunDia.color, sunNoche.color);
+  });
+
+  it("F3: labels de fuego encienden una luz práctica + resplandor en el clay", () => {
+    const plan = interiorPlan();
+    plan.volumes.push({
+      id: "chimenea_salon", label: "chimenea encendida", type: "prop",
+      rect: [20, 2, 2, 3], shape: "box", h: 5,
+    });
+    const spec = buildGreyboxSpec(plan, "fuego");
+    const points = spec.lights.filter((l) => l.kind === "point");
+    assert.equal(points.length, 1);
+    assert.ok(points[0].pos![1] > 0, "punto sobre el volumen");
+    const glow = spec.primitives.find(
+      (p) => p.volId === "vol_chimenea_salon" && p.color === "#ffa04e",
+    );
+    assert.ok(glow, "resplandor en el clay");
+    // Sin labels de fuego, cero prácticas.
+    assert.equal(
+      buildGreyboxSpec(interiorPlan(), "fuego").lights.filter((l) => l.kind === "point").length,
+      0,
+    );
+  });
+
   it("expectedElementsFromGreybox conserva el contrato de pistas", () => {
     const spec = buildGreyboxSpec(interiorPlan(), "hints");
     const els = expectedElementsFromGreybox(spec);

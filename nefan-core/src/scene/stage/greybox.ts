@@ -39,8 +39,11 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  horizonte (v2 dejaba 75% de cielo en un plató de 32 m — el modelo pintaba
  *  casetas perdidas en un campo), el retroceso respeta `stage.focal_m` como
  *  intención (clampado por cobertura del ancho) y el clay se pinta a aspect
- *  NATIVO (`render_px`) en vez del cuadrado anamórfico ×2. */
-export const STAGE_GREYBOX_VERSION = 3;
+ *  NATIVO (`render_px`) en vez del cuadrado anamórfico ×2.
+ *  v4 (luz con intención): presets de hora del día (stage.ambience o
+ *  inferida del texto), luces prácticas por label (chimenea/farol/vela) con
+ *  point lights y resplandor en el clay, cielo/niebla por preset. */
+export const STAGE_GREYBOX_VERSION = 4;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -145,7 +148,32 @@ export interface StageScenePlan {
    *  bandas de tipo. */
   terrain?: string[];
   terrain_legend?: Record<string, string>;
+  /** scene_description del Format D — fallback del detector de hora del día
+   *  cuando el stage no declara `ambience`. */
+  description?: string;
 }
+
+/** Hora del día del plató: la declarada en `stage.ambience`, o inferida del
+ *  texto (backdrop + descripción + mood) — "luz de atardecer" en el backdrop
+ *  debe atardecer aunque el motor no rellene el campo. Default "dia". */
+export type TimeOfDay = "amanecer" | "dia" | "atardecer" | "noche";
+export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
+  const declared = plan.stage.ambience?.time_of_day;
+  if (declared) return declared;
+  const text = [
+    plan.stage.backdrop?.description ?? "",
+    plan.description ?? "",
+    plan.stage.ambience?.mood ?? "",
+  ].join(" ").toLowerCase();
+  if (/amanecer|alba\b|aurora|primera luz/.test(text)) return "amanecer";
+  if (/atardecer|ocaso|poniente|caer la tarde|crep[uú]sculo|sol bajo/.test(text)) return "atardecer";
+  if (/\bnoche\b|nocturn|luna|estrellas|medianoche/.test(text)) return "noche";
+  return "dia";
+}
+
+/** Labels que encienden una luz práctica cálida sobre el volumen. */
+const PRACTICAL_LIGHT_RE =
+  /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
 
 /** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
  *  compartido por el manifest del greybox y la colisión declarada (si
@@ -481,35 +509,79 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     buildVolumePrimitives(v, plan, rect, mpc, seedKey, primitives);
   }
 
-  // ── Luces ─────────────────────────────────────────────────────────────────
+  // ── Luces: preset por HORA DEL DÍA + prácticas por label ─────────────────
+  const tod = resolveTimeOfDay(plan);
   const lights: GreyboxLight[] = [];
   const lrng = seededRng(`stage:${seedKey}:light`);
   if (interiorLike) {
     // Interior cálido (posada del bench): ambient alta para que techo y
-    // rincones no se hundan a negro, y una clave cálida desde la cuarta
-    // pared ausente.
-    lights.push({ kind: "ambient", color: "#8a7c6a", intensity: 0.85 });
+    // rincones no se hundan a negro, y una clave desde la cuarta pared
+    // ausente cuyo color sigue la hora (la "ventana" del set).
+    const key = { amanecer: "#ffe0b0", dia: "#ffd9a8", atardecer: "#ffbe82", noche: "#7a8cb8" }[tod];
+    const keyIntensity = tod === "noche" ? 0.8 : 1.7;
+    lights.push({ kind: "ambient", color: "#8a7c6a", intensity: tod === "noche" ? 0.7 : 0.85 });
     lights.push({ kind: "hemi", color: "#a89a86", groundColor: "#6a5c4c", intensity: 0.6 });
     const az = rad(uniform(lrng, -12, 12));
     lights.push({
       kind: "sun",
-      color: "#ffd9a8",
-      intensity: 1.7,
+      color: key,
+      intensity: keyIntensity,
       pos: [Math.sin(az) * 14, 6.5, rect.maxZ + retreat * 0.6],
       castShadow: true,
     });
   } else {
-    lights.push({ kind: "hemi", color: "#bfd4e6", groundColor: "#8a795a", intensity: 0.6 });
-    // Sol del suroeste ± variación sembrada, elevación 40°.
-    const az = rad(-45 + uniform(lrng, -35, 35));
+    // Sol/luna por preset: elevación y color cuentan la hora; el azimut
+    // sembrado da variedad entre platós.
+    const preset = {
+      amanecer: { sun: "#ffd9a0", elev: 11, azBase: 70, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
+      dia: { sun: "#fff2dd", elev: 40, azBase: -45, intensity: 2.2, hemi: "#bfd4e6", ground: "#8a795a", hemiI: 0.6 },
+      atardecer: { sun: "#ffb36b", elev: 12, azBase: -70, intensity: 2.6, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
+      noche: { sun: "#9ab0d8", elev: 50, azBase: -30, intensity: 0.9, hemi: "#4a5878", ground: "#2e3040", hemiI: 0.8 },
+    }[tod];
+    lights.push({ kind: "hemi", color: preset.hemi, groundColor: preset.ground, intensity: preset.hemiI });
+    if (tod === "noche") lights.push({ kind: "ambient", color: "#30405c", intensity: 0.4 });
+    const az = rad(preset.azBase + uniform(lrng, -15, 15));
     const dist = 90;
     lights.push({
       kind: "sun",
-      color: "#fff2dd",
-      intensity: 2.2,
-      pos: [dist * Math.sin(az), dist * Math.tan(rad(40)), dist * Math.cos(az)],
+      color: preset.sun,
+      intensity: preset.intensity,
+      pos: [dist * Math.sin(az), dist * Math.tan(rad(preset.elev)), dist * Math.cos(az)],
       castShadow: true,
     });
+  }
+  // Luces prácticas: un volumen etiquetado como fuego/farol/vela enciende un
+  // punto cálido encima (y un pequeño resplandor en el clay) — la chimenea
+  // del bench como sistema. Cap 6 por plató.
+  let practicals = 0;
+  for (const v of plan.volumes) {
+    if (practicals >= 6 || !PRACTICAL_LIGHT_RE.test(v.label)) continue;
+    const fp = volumeFootprintCells(v);
+    if (!fp) continue;
+    const px = rect.minX + (fp[0] + fp[2] / 2) * mpc;
+    const pz = rect.minZ + (fp[1] + fp[3] / 2) * mpc;
+    const hM = volumeHeightM(v, mpc);
+    const py = Math.min(Math.max(hM * 0.6, 0.5), 2.2);
+    lights.push({
+      kind: "point",
+      color: "#ff9b4a",
+      intensity: interiorLike ? 18 : 12,
+      pos: [px, py, pz],
+      distance: 9,
+      decay: 1.8,
+    });
+    // Resplandor visible en el clay (la "ascua" del bench): el modelo de
+    // imagen lo lee como fuego/farol encendido y pinta la fuente de luz.
+    primitives.push({
+      shape: "box",
+      size: [0.35, 0.5, 0.35],
+      pos: [px, Math.max(0.05, py - 0.45), pz],
+      color: "#ffa04e",
+      cat: "prop",
+      volId: `vol_${v.id}`,
+      noShadow: true,
+    });
+    practicals++;
   }
 
   // ── view_box: ventana colocada por FRACCIÓN sobre el horizonte ────────────
@@ -622,10 +694,21 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     view_box: viewBox,
     camera,
     render_px: renderPx,
-    sky: interiorLike ? null : { top: "#7593b4", bottom: "#cfd8dc" },
+    sky: interiorLike
+      ? null
+      : {
+          amanecer: { top: "#7a88aa", bottom: "#f0d0a0" },
+          dia: { top: "#7593b4", bottom: "#cfd8dc" },
+          atardecer: { top: "#5a5a7e", bottom: "#e8a860" },
+          noche: { top: "#101828", bottom: "#2e3e5e" },
+        }[tod],
     fog: interiorLike
       ? null
-      : { color: "#c3cdd4", near: retreat + depthM * 0.6, far: retreat + depthM + 130 },
+      : {
+          color: { amanecer: "#d8c8b0", dia: "#c3cdd4", atardecer: "#c39a74", noche: "#223048" }[tod],
+          near: retreat + depthM * 0.6,
+          far: retreat + depthM + 130,
+        },
     lights,
     primitives,
     manifest,
