@@ -4,5 +4,8 @@
   "description": "Fixture de estilo para tests.",
   "style_token": "test style token",
   "cover": "cover.jpg",
-  "refs": []
+  "refs": [
+    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
+    { "category": "stage_interior", "file": "stage_interior.jpg", "tags": [], "view": "proscenium" }
+  ]
 }

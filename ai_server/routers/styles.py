@@ -16,7 +16,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from deps import deps
-from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES
+from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, STAGE_CATEGORIES
 
 router = APIRouter()
 
@@ -37,15 +37,22 @@ class StyleCompleteRequest(BaseModel):
     confirm: bool = False
 
 
-_STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES)
+_STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES, *STAGE_CATEGORIES)
 
 
-def default_manifest_refs() -> list[dict]:
+def default_manifest_refs(extra_stage: tuple[str, ...] = ()) -> list[dict]:
     """Los 12 refs canónicos de un pack: las 9 zonas (proyección oblicua
-    única) más los 3 personajes (model sheets)."""
+    única) más los 3 personajes (model sheets). Las categorías de plató NO se
+    auto-declaran (declararlas dispararía el coste de /complete para todo el
+    mundo): solo entran las que el usuario haya subido (`extra_stage`) —
+    un estilo de usuario sirve a proscenium si aporta al menos una imagen de
+    plató."""
     refs: list[dict] = []
     for c in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES):
         refs.append({"category": c, "file": f"{c}.jpg", "tags": []})
+    for c in STAGE_CATEGORIES:
+        if c in extra_stage:
+            refs.append({"category": c, "file": f"{c}.jpg", "tags": [], "view": "proscenium"})
     return refs
 
 
@@ -107,7 +114,9 @@ async def styles_upload(body: StyleUploadRequest):
         "style_token": body.style_token
             or f"consistent hand-crafted art style of the reference images ({body.name})",
         "cover": "cover.jpg",
-        "refs": default_manifest_refs(),
+        "refs": default_manifest_refs(
+            extra_stage=tuple(c for c in uploaded if c in STAGE_CATEGORIES),
+        ),
     }
     (pack_dir / "style.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -35,6 +35,28 @@ ENV_CATEGORIES = (
 )
 CHARACTER_CATEGORIES = ("character_commoner", "character_noble", "character_warrior")
 
+# Categorías de PLATÓ (vista proscenio): referencias a nivel de suelo. Espejo
+# de STYLE_STAGE_CATEGORIES en nefan-core/src/games/style-categories.ts.
+STAGE_CATEGORIES = (
+    "stage_interior", "stage_street", "stage_plaza",
+    "stage_nature", "stage_harbor", "stage_gate",
+)
+
+# Zona cenital → plató más cercano (espejo de ZONE_TO_STAGE en TS): red de
+# seguridad para escenas proscenio etiquetadas con vocabulario de zona.
+ZONE_TO_STAGE = {
+    "interior": "stage_interior",
+    "underground": "stage_interior",
+    "settlement": "stage_street",
+    "farmland": "stage_street",
+    "fortress": "stage_gate",
+    "forest": "stage_nature",
+    "wetland": "stage_nature",
+    "desert": "stage_nature",
+    "snow": "stage_nature",
+    "nature": "stage_nature",
+}
+
 # Alias legacy: packs y escenas anteriores al set de zonas usaban "nature".
 LEGACY_ALIASES = {"nature": "forest"}
 
@@ -53,6 +75,19 @@ _ENV_FALLBACK = {
     "underground": ("interior", "fortress", "settlement", "forest", "farmland", "wetland", "snow", "desert"),
 }
 _CHARACTER_FALLBACK_ORDER = CHARACTER_CATEGORIES
+
+# Fallback de plató: cada cadena cubre las 6 y NUNCA cruza a las zonas
+# cenitales — una referencia aérea contamina el repintado ground-level (el
+# modelo calca el punto de vista). Agotada la cadena se devuelve None y el
+# plató se repinta solo con el blueprint (rama ya existente del generador).
+_STAGE_FALLBACK = {
+    "stage_interior": ("stage_street", "stage_plaza", "stage_gate", "stage_harbor", "stage_nature"),
+    "stage_street": ("stage_plaza", "stage_gate", "stage_harbor", "stage_nature", "stage_interior"),
+    "stage_plaza": ("stage_street", "stage_harbor", "stage_gate", "stage_nature", "stage_interior"),
+    "stage_nature": ("stage_harbor", "stage_gate", "stage_plaza", "stage_street", "stage_interior"),
+    "stage_harbor": ("stage_plaza", "stage_street", "stage_nature", "stage_gate", "stage_interior"),
+    "stage_gate": ("stage_street", "stage_plaza", "stage_harbor", "stage_nature", "stage_interior"),
+}
 
 
 @dataclass(frozen=True)
@@ -119,9 +154,18 @@ class StylePackResolver:
             cat = LEGACY_ALIASES.get(str(r.get("category")), r.get("category"))
             refs.setdefault(cat, r.get("file"))
         category = LEGACY_ALIASES.get(category, category)
-        is_char = category in CHARACTER_CATEGORIES
-        if is_char:
+        is_stage = category.startswith("stage_")
+        if category in CHARACTER_CATEGORIES:
             order = (category, *_CHARACTER_FALLBACK_ORDER)
+        elif is_stage:
+            fallback = _STAGE_FALLBACK.get(category)
+            if fallback is None:
+                print(
+                    f"StylePacks WARNING: categoría de plató desconocida '{category}' — usando stage_street",
+                    flush=True,
+                )
+                category, fallback = "stage_street", _STAGE_FALLBACK["stage_street"]
+            order = (category, *fallback)
         else:
             fallback = _ENV_FALLBACK.get(category)
             if fallback is None:
@@ -147,7 +191,8 @@ class StylePackResolver:
                 )
         print(
             f"StylePacks: '{style_id}' sin imagen utilizable para '{category}' "
-            f"(pack aún sin generar?) — se usará la referencia global",
+            f"(pack aún sin generar?) — "
+            + ("el plató irá solo con el blueprint" if is_stage else "se usará la referencia global"),
             flush=True,
         )
         return None

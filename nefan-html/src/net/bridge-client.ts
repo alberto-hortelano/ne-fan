@@ -281,8 +281,9 @@ export class BridgeClient {
     appearance?: { model_id: string; skin_path: string },
     styleId?: string,
     renderMode?: string,
+    view?: string,
   ): Promise<SessionStartedMessage> {
-    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode });
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode, view });
   }
 
   resumeSession(sessionId: string): Promise<SessionStartedMessage> {

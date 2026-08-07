@@ -28,6 +28,9 @@ export type TitleAction =
       styleId: string;
       /** Modo de render, congelado en la sesión: imagen IA o vectorial. */
       renderMode: "image" | "vector";
+      /** Vista del mundo elegida (game.json solo aporta el default).
+       *  Congelada en la sesión como el estilo. */
+      view: "overworld" | "proscenium";
       appearance: { model_id: string; skin_path: string };
     };
 
@@ -52,6 +55,12 @@ const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
   { id: "character_commoner", label: "Personaje plebeyo" },
   { id: "character_noble", label: "Personaje noble" },
   { id: "character_warrior", label: "Personaje guerrero" },
+  { id: "stage_interior", label: "Plató: interior" },
+  { id: "stage_street", label: "Plató: calle" },
+  { id: "stage_plaza", label: "Plató: plaza" },
+  { id: "stage_nature", label: "Plató: naturaleza" },
+  { id: "stage_harbor", label: "Plató: puerto" },
+  { id: "stage_gate", label: "Plató: puerta" },
 ];
 
 const MIXAMO_MODELS: { id: string; name: string }[] = [
@@ -203,6 +212,19 @@ export class TitleScreen {
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Elige un mundo</h1>
       <p style="margin-bottom:16px;color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
       <div id="ts-worlds" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px"></div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Vista <span style="color:#666">(fija para toda la partida)</span></div>
+        <div id="ts-view" style="display:flex;gap:8px">
+          <button data-view="overworld" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Mundo abierto</div>
+            <div style="font-size:10px;color:#888">Plano continuo de tiles visto desde arriba</div>
+          </button>
+          <button data-view="proscenium" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Proscenio</div>
+            <div style="font-size:10px;color:#888">Escenas discretas tipo plató de cine, a pie de calle</div>
+          </button>
+        </div>
+      </div>
       <label style="display:block;margin-bottom:14px">
         <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>
         <select id="ts-style" style="${SELECT_CSS}"></select>
@@ -231,8 +253,13 @@ export class TitleScreen {
     const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
     const styleSel = this.content.querySelector("#ts-style") as HTMLSelectElement;
     const styleDesc = this.content.querySelector("#ts-style-desc") as HTMLElement;
+    const viewEl = this.content.querySelector("#ts-view") as HTMLElement;
     const renderModeEl = this.content.querySelector("#ts-rendermode") as HTMLElement;
+    const continueBtn = this.content.querySelector("#ts-continue") as HTMLButtonElement;
     let selectedRenderMode: "image" | "vector" = "image";
+    // La vista es del jugador, no del mundo: game.json solo la preselecciona.
+    let selectedView: "overworld" | "proscenium" =
+      selectedGame.view === "proscenium" ? "proscenium" : "overworld";
     const refreshRenderMode = (): void => {
       for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
         const active = btn.dataset.rendermode === selectedRenderMode;
@@ -247,18 +274,48 @@ export class TitleScreen {
       });
     }
     refreshRenderMode();
+    const refreshView = (): void => {
+      for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
+        const active = btn.dataset.view === selectedView;
+        btn.style.borderColor = active ? "#da6" : "#2a2a30";
+        btn.style.background = active ? "#201c14" : "#181820";
+      }
+    };
+    for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
+      btn.addEventListener("click", () => {
+        selectedView = btn.dataset.view === "proscenium" ? "proscenium" : "overworld";
+        refreshView();
+        refreshStyleOptions();
+      });
+    }
 
     worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
     const refreshStyleOptions = (): void => {
-      styleSel.innerHTML = styles
+      // Solo estilos con referencias para la vista elegida (styles.views,
+      // derivado por el bridge de las refs declaradas de cada pack).
+      const compatible = styles.filter((st) => st.views.includes(selectedView));
+      styleSel.innerHTML = compatible
         .map((st) => {
           const def = st.style_id === selectedGame.style_id ? " (del mundo)" : "";
           return `<option value="${escapeAttr(st.style_id)}">${escapeHtml(st.name)}${def}</option>`;
         })
         .join("");
-      styleSel.value = selectedGame.style_id;
-      styleDesc.textContent = styleById.get(selectedGame.style_id)?.description ?? "";
+      if (compatible.length === 0) {
+        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con esta vista —</option>`;
+        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo tiene referencias para esta vista todavía.</span>`;
+        continueBtn.disabled = true;
+        continueBtn.style.opacity = "0.4";
+        return;
+      }
+      continueBtn.disabled = false;
+      continueBtn.style.opacity = "";
+      // Preselección: el estilo del mundo si es compatible; si no, el primero.
+      const preferred = compatible.some((st) => st.style_id === selectedGame.style_id)
+        ? selectedGame.style_id
+        : compatible[0].style_id;
+      styleSel.value = preferred;
+      styleDesc.textContent = styleById.get(preferred)?.description ?? "";
     };
     const refreshSelection = (): void => {
       for (const card of worldsEl.querySelectorAll<HTMLElement>("[data-game-id]")) {
@@ -272,7 +329,11 @@ export class TitleScreen {
         const game = games.find((g) => g.game_id === card.dataset.gameId);
         if (!game) return;
         selectedGame = game;
+        // Cambiar de mundo resetea la vista a la default del juego (mismo
+        // criterio que el estilo, que vuelve al del mundo).
+        selectedView = game.view === "proscenium" ? "proscenium" : "overworld";
         refreshSelection();
+        refreshView();
         refreshStyleOptions();
       });
     }
@@ -280,14 +341,15 @@ export class TitleScreen {
       styleDesc.textContent = styleById.get(styleSel.value)?.description ?? "";
     });
     refreshSelection();
+    refreshView();
     refreshStyleOptions();
 
     (this.content.querySelector("#ts-back") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderHome());
-    (this.content.querySelector("#ts-continue") as HTMLButtonElement)
-      .addEventListener("click", () => {
-        void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode);
-      });
+    continueBtn.addEventListener("click", () => {
+      if (!styleSel.value) return;
+      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedView);
+    });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
     (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
@@ -475,6 +537,7 @@ export class TitleScreen {
     game: GameInfo,
     styleId: string,
     renderMode: "image" | "vector",
+    view: "overworld" | "proscenium",
   ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
@@ -522,6 +585,7 @@ export class TitleScreen {
         gameId: game.game_id,
         styleId,
         renderMode,
+        view,
         appearance: {
           model_id: modelSel ? modelSel.value : "",
           skin_path: skinInput ? skinInput.value.trim() : "",

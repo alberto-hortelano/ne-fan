@@ -266,7 +266,9 @@ export class StageImageController {
         blueprint_kind: "stage",
         has_water: false,
         style_id: this.styleId,
-        style_tag: meta.styleTag,
+        // "" = sin información — se omite y el server aplica su default de
+        // plató (el pattern del endpoint no admite cadena vacía).
+        style_tag: meta.styleTag || undefined,
         // Clave de layout estable: el PNG WebGL no es byte-determinista; el
         // hash del spec canónico sí (misma escena ⇒ CACHE HIT en el server).
         layout_key: specHash,

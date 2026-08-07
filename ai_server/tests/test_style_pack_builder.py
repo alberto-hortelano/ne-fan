@@ -10,15 +10,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from style_pack_builder import (  # noqa: E402
     CATEGORY_SCENES,
+    _view_of,
     build_prompt,
     missing_categories,
+    seed_for,
 )
-from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES  # noqa: E402
+from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, STAGE_CATEGORIES  # noqa: E402
 
 
 class BuilderTest(unittest.TestCase):
     def test_todas_las_categorias_tienen_escena(self):
-        for cat in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES):
+        for cat in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES, *STAGE_CATEGORIES):
             self.assertIn(cat, CATEGORY_SCENES)
 
     def test_build_prompt_texto_vs_refs(self):
@@ -50,6 +52,32 @@ class BuilderTest(unittest.TestCase):
         for cat in ("forest", "wetland", "desert", "snow"):
             self.assertIn("NO buildings", CATEGORY_SCENES[cat])
             self.assertIn("blending into", CATEGORY_SCENES[cat])
+
+    def test_prompt_de_plato_es_eye_level(self):
+        for cat in STAGE_CATEGORIES:
+            p = build_prompt(cat, "token", has_style_refs=False)
+            self.assertIn("eye-level ground view", p)
+            self.assertIn("blockout", p)
+            self.assertNotIn("top-down", p)
+            # Sin vocabulario teatral (el modelo pinta cortinas si se insinúa).
+            self.assertIn("no curtains", p)
+
+    def test_view_of_por_namespace(self):
+        self.assertEqual(_view_of("stage_street"), "proscenium")
+        self.assertEqual(_view_of("settlement"), "overworld")
+        self.assertEqual(_view_of("character_noble"), "overworld")
+
+    def test_seed_de_plato_sin_plantilla_es_error(self):
+        # Fail-loud: sin la plantilla clay no hay encuadre que enseñar.
+        categorias_sin_plantilla = [
+            c for c in STAGE_CATEGORIES
+            if not (Path(__file__).resolve().parents[2]
+                    / "nefan-core" / "data" / "styles" / "_plantilla" / "proscenio"
+                    / f"{c}.png").exists()
+        ]
+        for cat in categorias_sin_plantilla:
+            with self.assertRaises(FileNotFoundError):
+                seed_for(cat)
 
     def test_missing_categories(self):
         with tempfile.TemporaryDirectory() as tmp:

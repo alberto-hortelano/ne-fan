@@ -1,0 +1,11 @@
+{
+  "style_id": "estilo_solo_topdown",
+  "name": "Estilo solo top-down",
+  "description": "Fixture: pack sin refs de plató, incompatible con proscenium.",
+  "style_token": "test style token",
+  "cover": "cover.jpg",
+  "refs": [
+    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
+    { "category": "forest", "file": "forest.jpg", "tags": [] }
+  ]
+}
