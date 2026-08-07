@@ -1,0 +1,281 @@
+{
+  "scene_id": "calle_mayor",
+  "place_id": "calle_mayor",
+  "style_tag": "settlement",
+  "scene_description": "La calle Mayor del caserío al caer la tarde: tierra apisonada entre fachadas encaladas de entramado, con la puerta de la posada del Roble bajo su cartel colgante. Al oeste la calle se abre hacia la plaza del pozo.",
+  "size": {
+    "cols": 64,
+    "rows": 20,
+    "meters_per_cell": 0.5
+  },
+  "terrain": [
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "________________________________________________________________",
+    "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+    "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+  ],
+  "terrain_legend": {
+    "g": "grass",
+    "w": "water",
+    "_": "path",
+    "s": "stone",
+    "b": "bridge",
+    "d": "dirt",
+    "a": "sand",
+    "o": "wood",
+    "W": "muro"
+  },
+  "entities": [
+    {
+      "id": "casa_oeste",
+      "kind": "building",
+      "name": "casa encalada con entramado",
+      "cell": [
+        2,
+        0
+      ],
+      "footprint": [
+        20,
+        4
+      ],
+      "glyph": "C",
+      "h": 5.5
+    },
+    {
+      "id": "posada",
+      "kind": "building",
+      "name": "posada del Roble",
+      "cell": [
+        22,
+        0
+      ],
+      "footprint": [
+        12,
+        4
+      ],
+      "glyph": "P",
+      "h": 6
+    },
+    {
+      "id": "casa_este",
+      "kind": "building",
+      "name": "casona de postigos cerrados",
+      "cell": [
+        36,
+        0
+      ],
+      "footprint": [
+        26,
+        4
+      ],
+      "glyph": "K",
+      "h": 5
+    },
+    {
+      "id": "carro_varas",
+      "kind": "prop",
+      "name": "carro de varas descargado",
+      "cell": [
+        10,
+        9
+      ],
+      "footprint": [
+        4,
+        2
+      ],
+      "glyph": "c",
+      "h": 1.4
+    },
+    {
+      "id": "barril_1",
+      "kind": "prop",
+      "name": "barril de cerveza",
+      "cell": [
+        34,
+        5
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "k",
+      "shape": "cylinder",
+      "h": 0.9
+    },
+    {
+      "id": "barril_2",
+      "kind": "prop",
+      "name": "barril de cerveza",
+      "cell": [
+        35,
+        6
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "k",
+      "shape": "cylinder",
+      "h": 0.9
+    },
+    {
+      "id": "banco_posada",
+      "kind": "prop",
+      "name": "banco de madera junto a la puerta",
+      "cell": [
+        23,
+        5
+      ],
+      "footprint": [
+        2,
+        1
+      ],
+      "glyph": "=",
+      "h": 0.5
+    },
+    {
+      "id": "poste_indicador",
+      "kind": "prop",
+      "name": "poste indicador de madera",
+      "cell": [
+        5,
+        7
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "!",
+      "shape": "cylinder",
+      "h": 2.2
+    },
+    {
+      "id": "olmo_viejo",
+      "kind": "tree",
+      "name": "olmo viejo",
+      "cell": [
+        48,
+        8
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "T",
+      "h": 7
+    },
+    {
+      "id": "arriero",
+      "kind": "npc",
+      "name": "Arriero cansado",
+      "cell": [
+        12,
+        11
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "parroquiano",
+      "kind": "npc",
+      "name": "Parroquiano achispado",
+      "cell": [
+        24,
+        6
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "n"
+    },
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Tú",
+      "cell": [
+        44,
+        12
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "@"
+    }
+  ],
+  "stage": {
+    "exits": [
+      {
+        "id": "puerta_posada",
+        "edge": "north",
+        "to_place_id": "posada_salon",
+        "zone": [
+          26,
+          4,
+          4,
+          2
+        ],
+        "kind": "door",
+        "label": "Puerta de la posada del Roble"
+      },
+      {
+        "id": "salida_plaza",
+        "edge": "west",
+        "to_place_id": "plaza_del_pozo",
+        "zone": [
+          0,
+          4,
+          2,
+          14
+        ],
+        "kind": "opening",
+        "label": "Hacia la plaza del Pozo"
+      }
+    ],
+    "backdrop": {
+      "description": "Fachadas encaladas de dos plantas con entramado de madera oscura, tejados de teja vieja y el cartel de la posada del Roble colgando sobre su puerta; luz de atardecer."
+    }
+  },
+  "ambient_event": "Una golondrina cruza la calle rasando los tejados y el cartel de la posada chirría con la brisa del atardecer.",
+  "room_id": "calle_mayor",
+  "room_description": "La calle Mayor del caserío al caer la tarde: tierra apisonada entre fachadas encaladas de entramado, con la puerta de la posada del Roble bajo su cartel colgante. Al oeste la calle se abre hacia la plaza del pozo.",
+  "terrain_features": [],
+  "exits": [
+    {
+      "place_id": "plaza_del_pozo",
+      "name": "Plaza del Pozo",
+      "link_kind": "road",
+      "travel_hours": 0.02,
+      "description": "La calle Mayor se abre al oeste en la plaza del pozo.",
+      "edge": "west"
+    },
+    {
+      "place_id": "posada_salon",
+      "name": "Salón de la posada",
+      "link_kind": "door",
+      "travel_hours": 0.01,
+      "description": "La puerta de la posada del Roble, bajo su cartel colgante.",
+      "edge": "north"
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import {
   loadGameMeta,
   loadStyleManifest,
   loadWorldDoc,
+  styleViews,
 } from "../src/games/loader.js";
 
 const REAL_GAMES = fileURLToPath(new URL("../data/games", import.meta.url));
@@ -121,6 +122,66 @@ describe("games loader", () => {
     assert.equal(listed[0].cover_url, "/styles/mi_estilo/cover.jpg");
   });
 
+  it("refs por vista: view se deriva del namespace y la incoherente se rechaza", () => {
+    const base = {
+      style_id: "x",
+      name: "x",
+      description: "x",
+      style_token: "x",
+      cover: "cover.jpg",
+    };
+    // Ref de plató sin view explícita parsea (la vista la da el namespace).
+    const m = StyleManifestSchema.parse({
+      ...base,
+      refs: [
+        { category: "settlement", file: "settlement.jpg" },
+        { category: "stage_street", file: "stage_street.jpg" },
+        { category: "stage_interior", file: "stage_interior.jpg", view: "proscenium" },
+      ],
+    });
+    assert.deepEqual(styleViews(m), ["overworld", "proscenium"]);
+    // view explícita que no casa con la categoría → fail-loud.
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [{ category: "stage_street", file: "a.jpg", view: "overworld" }],
+      }),
+    );
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [{ category: "settlement", file: "a.jpg", view: "proscenium" }],
+      }),
+    );
+  });
+
+  it("styleViews: personajes e isometric legacy no cuentan; refs vacías → sin vistas", () => {
+    const base = {
+      style_id: "x",
+      name: "x",
+      description: "x",
+      style_token: "x",
+      cover: "cover.jpg",
+    };
+    const soloChars = StyleManifestSchema.parse({
+      ...base,
+      refs: [
+        { category: "character_noble", file: "n.jpg" },
+        { category: "settlement", file: "s.jpg", perspective: "isometric" },
+      ],
+    });
+    assert.deepEqual(styleViews(soloChars), []);
+    const soloStage = StyleManifestSchema.parse({
+      ...base,
+      refs: [
+        { category: "stage_nature", file: "sn.jpg" },
+        { category: "character_warrior", file: "w.jpg" },
+      ],
+    });
+    assert.deepEqual(styleViews(soloStage), ["proscenium"]);
+    assert.deepEqual(styleViews(StyleManifestSchema.parse({ ...base, refs: [] })), []);
+  });
+
   it("schema estricto: categoría de ref desconocida es rechazada", () => {
     assert.throws(() =>
       StyleManifestSchema.parse({
@@ -167,7 +228,7 @@ describe("games loader", () => {
   it("los juegos y estilos shipped del repo validan", () => {
     const games = listGames(REAL_GAMES);
     const ids = games.map((g) => g.game_id);
-    assert.deepEqual(ids, ["alta_fantasia", "colonia_aster", "cuentos_oscuros", "dev_combate_basico", "dev_proscenio", "toledo_1200"]);
+    assert.deepEqual(ids, ["alta_fantasia", "colonia_aster", "cuentos_oscuros", "toledo_1200"]);
     for (const g of games) {
       assert.ok(g.world_brief.length >= 100, `${g.game_id} brief too short`);
       // Su estilo por defecto debe existir y validar.
@@ -179,5 +240,14 @@ describe("games loader", () => {
       styles.map((s) => s.style_id),
       ["acero_neon", "acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
     );
+    // Vistas: los 4 packs shipped sirven a AMBAS (refs de zona + de plató).
+    for (const s of styles) {
+      assert.deepEqual(s.views, ["overworld", "proscenium"], s.style_id);
+    }
+    // La vista default de cada mundo viaja resuelta en el listado (ninguno
+    // declara view ⇒ overworld; la vista es del jugador, no del mundo).
+    for (const g of games) {
+      assert.equal(g.view, "overworld", g.game_id);
+    }
   });
 });

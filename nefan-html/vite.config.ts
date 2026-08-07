@@ -12,5 +12,10 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    fs: {
+      // La página dev greybox-clay importa fixtures de nefan-core/data y
+      // dumps de labs/stage (harness de calidad del plató) vía glob.
+      allow: [resolve(__dirname, "..")],
+    },
   },
 });

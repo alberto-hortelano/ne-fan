@@ -17,6 +17,8 @@ export interface GreyboxPrimitive {
    *  mundo del builder (metros en proscenio, celdas en el tile). */
   points?: [number, number][];
   rotY?: number;
+  /** Rotación sobre X tras rotY (p. ej. cilindro tumbado como rueda). */
+  rotX?: number;
   color: string;
   roughness?: number;
   cat: "building" | "prop" | "terrain" | "wall" | "tree" | "water" | "decor";
@@ -26,12 +28,15 @@ export interface GreyboxPrimitive {
 }
 
 export interface GreyboxLight {
-  kind: "sun" | "hemi" | "ambient";
+  kind: "sun" | "hemi" | "ambient" | "point";
   color: string;
   intensity: number;
   pos?: [number, number, number];
   groundColor?: string;
   castShadow?: boolean;
+  /** Solo "point": alcance en metros (0/ausente = infinito) y decaimiento. */
+  distance?: number;
+  decay?: number;
 }
 
 /** Color de suelo por tipo de terreno de la leyenda (matching por

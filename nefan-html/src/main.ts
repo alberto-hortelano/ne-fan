@@ -7,6 +7,7 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
+import { stageCategoryForScene } from "@nefan-core/src/games/style-categories.js";
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
@@ -764,21 +765,25 @@ function composeTilePlan(
 let hotComposeStage = composeStageScene;
 let hotStagePlanFromScene = stagePlanFromScene;
 
-/** Metadatos del repintado de un plató, desde el Format D crudo. */
+/** Metadatos del repintado de un plató, desde el Format D crudo. La categoría
+ *  de ref de estilo es de PLATÓ (stage_*): el tag del motor se respeta si ya
+ *  es de plató, una zona cenital legacy se mapea (ZONE_TO_STAGE) y sin tag
+ *  decide la cuarta pared; "" = default del server. */
 function stageImageMeta(
   rawFd: Record<string, unknown>,
   data: Record<string, unknown>,
-): { description: string; backdrop?: string; styleTag: string } {
-  const stageBlock = rawFd.stage as { backdrop?: { description?: string }; fourth_wall?: { present?: boolean } } | undefined;
-  const styleTag = typeof rawFd.style_tag === "string" && rawFd.style_tag
-    ? rawFd.style_tag
-    : stageBlock?.fourth_wall?.present
-      ? "interior"
-      : "settlement";
+): { description: string; backdrop?: string; mood?: string; styleTag: string } {
+  const stageBlock = rawFd.stage as {
+    backdrop?: { description?: string };
+    fourth_wall?: { present?: boolean };
+    ambience?: { mood?: string };
+  } | undefined;
+  const rawTag = typeof rawFd.style_tag === "string" ? rawFd.style_tag : undefined;
   return {
     description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
     backdrop: stageBlock?.backdrop?.description,
-    styleTag,
+    mood: stageBlock?.ambience?.mood,
+    styleTag: stageCategoryForScene(rawTag, Boolean(stageBlock?.fourth_wall?.present)),
   };
 }
 
@@ -2181,6 +2186,7 @@ async function runTitleFlow(): Promise<void> {
         action.appearance,
         action.styleId || undefined,
         action.renderMode,
+        action.view,
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");

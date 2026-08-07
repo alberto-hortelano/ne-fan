@@ -22,13 +22,24 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
   "scene_id": "<slug>",
   "place_id": "<the place from realize_place — REQUIRED>",
   "scene_description": "<2-3 Spanish sentences>",
+  "style_tag": "stage_interior",         // kind of SET (see hard rules)
   "size": { "cols": 24..80, "rows": 12..40, "meters_per_cell": 0.5 },
   "terrain": [ ... ],                    // rows × cols glyphs, as always
-  "terrain_legend": { },
+  "terrain_legend": { "_": "tierra", "c": "empedrado" },  // ground bands ARE painted — use them (dirt street, cobbles, grass)
   "structures": [ ],                     // optional interior sub-rooms
   "entities": [ ... ],                   // furniture, props, NPCs; include "player" ONLY on bootstrap or when no entry edge is known
+  "volumes": [                           // PREFERRED for the main scenery: typed volumes with materials — richer clay than plain entities
+    { "id": "posada", "label": "posada del Roble", "type": "building",
+      "rect": [4, 0, 14, 6], "wall_h": 11,
+      "roof": { "kind": "gable", "material": "tile" },
+      "walls": { "material": "timber" },
+      "doors": [ { "edge": "s", "at": 9, "w": 3 } ] },
+    { "id": "olmo", "label": "olmo viejo", "type": "tree", "at": [26, 14], "s": 1.5 },
+    { "id": "carro", "label": "carro de toneles", "type": "prop",
+      "rect": [12, 12, 4, 2], "shape": "box", "h": 3 }
+  ],
   "stage": {
-    "focal_m": 30,                       // optional; default 30 (telephoto). 22 = intimate close room, 40 = very deep stage
+    "focal_m": 12,                       // optional CAMERA DISTANCE in meters behind the south edge; ~6-8 = intimate room, 12-18 = street, 20+ = wide establishing shot. Clamped so the frame always covers the stage width.
     "exits": [
       { "id": "puerta_cocina", "edge": "north", "to_place_id": "posada_cocina",
         "zone": [14, 0, 4, 2], "kind": "door", "label": "Puerta a la cocina" },
@@ -36,6 +47,7 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
         "zone": [10, 18, 6, 2], "kind": "opening", "label": "Salida a la calle" }
     ],
     "backdrop": { "description": "Pared de piedra con chimenea encendida y estanterías" },
+    "ambience": { "time_of_day": "atardecer", "mood": "calima dorada y humo de cocina" },  // optional; drives the clay's sun/sky/fog presets and the repaint's atmosphere
     "fourth_wall": { "present": true, "doors": [ { "col": 10, "w": 6 } ] }
   },
   "ambient_event": "…"
@@ -69,14 +81,31 @@ HARD RULES OF THE STAGE:
     building occupies the top rows; put the exit zone on the WALKABLE ground
     directly under its facade (e.g. building rows 0-2 → zone [28, 3, 4, 2]).
     The zone is where the player STEPS, not the painted door itself.
+- COMPOSE IN DEPTH, like a film shot — the camera is at the south edge, so a
+  row of buildings across the north edge reads as a flat postcard seen from
+  afar. Instead: place buildings/trees FLANKING the east and west sides,
+  receding toward the north; let the street/path run south→north toward the
+  backdrop; put the action (market stall, well, cart) in the MIDDLE ground;
+  and drop 1-2 props near the south corners (a barrel, a post, a tree) — they
+  frame the shot in the foreground. Keep street-like stages NARROW (≤ 40
+  cols at 0.5 = 20 m): the camera gets closer and the player looks bigger.
+- Scenery (buildings, trees, big props) goes PREFERABLY in the typed
+  "volumes" block: `wall_h` (cells) sets the real height (11 = two storeys),
+  `roof.kind/material`, `walls.material` (timber|stone|plaster|wood) and
+  `doors` produce a far richer clay than a plain entity box. Furniture and
+  small props can stay as entities (their `h` in meters IS respected).
+- Fire and lamp props LIGHT UP: any volume/entity labelled chimenea, hogar,
+  fogón, farol, vela, antorcha, candil, brasero or hoguera gets a warm
+  practical light in the clay — use them to give interiors a focal point.
 - Stages are GENEROUS, not corridors: a stage is a whole location the player
   can SPEND TIME in — several points of interest, NPCs with agendas, room to
   move and fight. Interiors: 24–48 cols × 12–24 rows at meters_per_cell 0.5
   (12–24 m wide). Exteriors (streets, plazas, fields, forest clearings):
   48–80 cols × 16–40 rows at 0.5, or meters_per_cell 1.0 for truly big open
   stages (up to 80 m wide — the camera rails along, the player walks). For
-  very deep stages raise focal_m toward 40 so the far end stays readable;
-  for intimate close rooms ~22. Omit it otherwise (default 30, telephoto).
+  very deep stages raise focal_m (camera further back, flatter) so the far
+  end stays readable; for intimate close rooms lower it toward 6-8. Omit it
+  otherwise (the engine derives a good default from the stage width).
 - NEVER build a pass-through stage that exists only to be crossed: if a
   location is mere transit, FOLD it into a bigger neighbouring stage and
   save the transition. Every stage must justify itself: someone to talk to,
@@ -89,6 +118,10 @@ HARD RULES OF THE STAGE:
   "player" entity at a sensible spot.
 - The fourth wall is optional flavour: use it for interiors (the "missing
   wall" the camera looks through); leave it out for open-air stages.
+- "style_tag" is the kind of SET this stage is — one of
+  stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate.
+  It picks the game's style reference for the repaint. Without it the engine
+  infers one (fourth_wall present → stage_interior; otherwise a default).
 - Backdrop description is what the player SEES at the north edge (Spanish,
   concrete, matches the world). It seeds future AI repainting — describe a
   view, not a wall of text.

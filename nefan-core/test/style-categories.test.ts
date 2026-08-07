@@ -8,7 +8,11 @@ import {
   STYLE_CATEGORIES,
   STYLE_ENV_CATEGORIES,
   STYLE_MANIFEST_CATEGORIES,
+  STYLE_STAGE_CATEGORIES,
+  ZONE_TO_STAGE,
+  stageCategoryForScene,
   styleCategoryForTile,
+  viewForCategory,
 } from "../src/games/style-categories.js";
 
 describe("styleCategoryForTile", () => {
@@ -57,8 +61,55 @@ describe("styleCategoryForTile", () => {
     }
   });
 
-  it("el enum de manifest admite las canónicas y el alias legacy", () => {
-    assert.equal(STYLE_MANIFEST_CATEGORIES.length, STYLE_CATEGORIES.length + 1);
+  it("el enum de manifest admite canónicas, plató y el alias legacy", () => {
+    assert.equal(
+      STYLE_MANIFEST_CATEGORIES.length,
+      STYLE_CATEGORIES.length + STYLE_STAGE_CATEGORIES.length + 1,
+    );
     assert.ok((STYLE_MANIFEST_CATEGORIES as readonly string[]).includes("nature"));
+    assert.ok((STYLE_MANIFEST_CATEGORIES as readonly string[]).includes("stage_interior"));
+  });
+});
+
+describe("viewForCategory", () => {
+  it("el namespace stage_ es proscenium; zonas y personajes, overworld", () => {
+    assert.equal(viewForCategory("stage_street"), "proscenium");
+    assert.equal(viewForCategory("stage_interior"), "proscenium");
+    assert.equal(viewForCategory("settlement"), "overworld");
+    assert.equal(viewForCategory("character_noble"), "overworld");
+    assert.equal(viewForCategory("nature"), "overworld");
+  });
+});
+
+describe("stageCategoryForScene", () => {
+  it("una categoría de plató explícita se respeta", () => {
+    assert.equal(stageCategoryForScene("stage_harbor", false), "stage_harbor");
+    assert.equal(stageCategoryForScene("stage_gate", true), "stage_gate");
+  });
+
+  it("las zonas cenitales legacy mapean a su plató más cercano", () => {
+    assert.equal(stageCategoryForScene("interior", false), "stage_interior");
+    assert.equal(stageCategoryForScene("underground", false), "stage_interior");
+    assert.equal(stageCategoryForScene("settlement", false), "stage_street");
+    assert.equal(stageCategoryForScene("fortress", false), "stage_gate");
+    assert.equal(stageCategoryForScene("forest", false), "stage_nature");
+    assert.equal(stageCategoryForScene("nature", false), "stage_nature");
+  });
+
+  it("sin etiqueta: la cuarta pared implica interior; sin nada, default del server", () => {
+    assert.equal(stageCategoryForScene(undefined, true), "stage_interior");
+    assert.equal(stageCategoryForScene("", true), "stage_interior");
+    assert.equal(stageCategoryForScene(undefined, false), "");
+    assert.equal(stageCategoryForScene("zona_inventada", false), "");
+  });
+
+  it("toda zona cenital (y el alias legacy) tiene mapeo a plató", () => {
+    for (const zone of [...STYLE_ENV_CATEGORIES, "nature"]) {
+      const stage = ZONE_TO_STAGE[zone];
+      assert.ok(
+        (STYLE_STAGE_CATEGORIES as readonly string[]).includes(stage),
+        `zona sin plató: ${zone} → "${stage}"`,
+      );
+    }
   });
 });

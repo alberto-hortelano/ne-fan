@@ -76,6 +76,48 @@
       "file": "character_warrior.jpg",
       "tags": [],
       "scene": "a colony security trooper in an armored exosuit carrying a compact sidearm"
+    },
+    {
+      "category": "stage_interior",
+      "file": "stage_interior.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "the cantina of a starship: metal wall panels with neon strips, bolted-down tables, a counter with drink dispensers, a wide viewport onto space at the far end"
+    },
+    {
+      "category": "stage_street",
+      "file": "stage_street.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "a curved ring-corridor street inside a space station: deck plating underfoot, habitat module fronts with glowing signage on both sides, overhead conduits and pipes, a service cart mid-corridor"
+    },
+    {
+      "category": "stage_plaza",
+      "file": "stage_plaza.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "the central concourse of a colony under a transparent dome: a holographic kiosk in the middle, stalls built from crates, module facades closing the far side"
+    },
+    {
+      "category": "stage_nature",
+      "file": "stage_nature.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "a hydroponics dome with alien flora: bioluminescent plants flanking a metal walkway, a water channel crossed by a grated bridge, mist"
+    },
+    {
+      "category": "stage_harbor",
+      "file": "stage_harbor.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "a docking bay: the edge of a landing pad with a parked shuttle, a crane arm holding a container, stacked crates and fuel hoses along the deck"
+    },
+    {
+      "category": "stage_gate",
+      "file": "stage_gate.jpg",
+      "tags": [],
+      "view": "proscenium",
+      "scene": "the main airlock gate of the colony perimeter: reinforced blast doors between two floodlight towers, a paved causeway leading in, arid alien terrain at the sides"
     }
   ]
 }

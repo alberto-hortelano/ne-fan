@@ -93,6 +93,7 @@ export function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
   const mesh = new THREE.Mesh(geo, material(p.color, p.roughness ?? 0.92));
   mesh.position.set(...p.pos);
   if (p.rotY) mesh.rotation.y = p.rotY;
+  if (p.rotX) mesh.rotation.x = p.rotX;
   mesh.castShadow = !p.noShadow;
   mesh.receiveShadow = true;
   return mesh;
@@ -125,8 +126,11 @@ function renderSpec(
   spec: GreyboxSpec,
   keep: (p: GreyboxPrimitive) => boolean,
   transparent: boolean,
+  outW: number = STAGE_RENDER_SIZE,
+  outH: number = STAGE_RENDER_SIZE,
 ): HTMLCanvasElement {
   const r = getRenderer();
+  r.setSize(outW, outH, false);
   const scene = new THREE.Scene();
   if (!transparent) {
     if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, spec.fog.near, spec.fog.far);
@@ -144,6 +148,10 @@ function renderSpec(
       scene.add(new THREE.AmbientLight(l.color, l.intensity));
     } else if (l.kind === "hemi") {
       scene.add(new THREE.HemisphereLight(l.color, l.groundColor ?? "#6a6055", l.intensity));
+    } else if (l.kind === "point") {
+      const p = new THREE.PointLight(l.color, l.intensity, l.distance ?? 0, l.decay ?? 2);
+      p.position.set(...(l.pos ?? [0, 1, 0]));
+      scene.add(p);
     } else {
       const sun = new THREE.DirectionalLight(l.color, l.intensity);
       sun.position.set(...(l.pos ?? [40, 60, 40]));
@@ -180,11 +188,11 @@ function renderSpec(
     r.setClearColor(0x000000, transparent ? 0 : 1);
     r.render(scene, cam);
     const out = document.createElement("canvas");
-    out.width = STAGE_RENDER_SIZE;
-    out.height = STAGE_RENDER_SIZE;
+    out.width = outW;
+    out.height = outH;
     const ctx = out.getContext("2d");
     if (!ctx) throw new Error("renderGreybox: sin contexto 2d");
-    ctx.drawImage(r.domElement, 0, 0, STAGE_RENDER_SIZE, STAGE_RENDER_SIZE);
+    ctx.drawImage(r.domElement, 0, 0, outW, outH);
     return out;
   } finally {
     // Liberar la escena (el renderer singleton se conserva).
@@ -199,9 +207,12 @@ function renderSpec(
   }
 }
 
-/** Renderiza el spec COMPLETO (plano base del repintado). */
+/** Renderiza el spec COMPLETO (plano base del repintado) a su tamaño NATIVO
+ *  (`spec.render_px`): el modelo pinta sin estirado anamórfico; el cliente
+ *  normaliza la respuesta a su cuadrado 1024² al recibirla (fetchToSquare). */
 export function renderGreybox(spec: GreyboxSpec): HTMLCanvasElement {
-  return renderSpec(spec, () => true, false);
+  const [w, h] = spec.render_px ?? [STAGE_RENDER_SIZE, STAGE_RENDER_SIZE];
+  return renderSpec(spec, () => true, false, w, h);
 }
 
 /** Render por CAPAS del clay para el modo vector: placa (escena sin

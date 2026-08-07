@@ -160,9 +160,8 @@ describe("buildGreyboxSpec", () => {
     const spec = buildGreyboxSpec(interiorPlan(), "posada_salon");
     assert.equal(spec.sky, null);
     assert.equal(spec.fog, null);
-    // v2: encuadre de cámara real — aspect FIJO (el prestretch a cuadrado
-    // queda acotado; el recorte ceñido de v1 deformaba ×3-5).
-    assert.ok(Math.abs(spec.view_box.width / spec.view_box.height - 2.0) < 1e-9, "aspect 2.0");
+    // v3: aspect FIJO por modo (interior 1.6, más íntimo que el 2.0 exterior).
+    assert.ok(Math.abs(spec.view_box.width / spec.view_box.height - 1.6) < 1e-9, "aspect 1.6");
     // El techo cubre desde la pared del fondo hasta la cámara (banda superior
     // del frame sin vacío negro).
     const ceiling = spec.primitives.find((p) => p.pos[1] === 3.2 && p.size[2] > spec.proj.depth_m);
@@ -181,6 +180,145 @@ describe("buildGreyboxSpec", () => {
     const casa = spec.manifest.find((m) => m.id === "vol_casa_alta")!;
     // La caja del edificio no toca el borde superior (el view_box se amplió).
     assert.ok(casa.box_px[1] > 0, "top del edificio dentro del encuadre");
+  });
+
+  it("v3: ventana anclada al horizonte — fracción sobre el horizonte por modo", () => {
+    // Exterior: ~38% de cielo (v2 dejaba 75% en platós anchos); interior ~44%
+    // de techo+pared. La salvaguarda de volúmenes altos puede ABRIR la
+    // ventana hacia arriba (fracción mayor), nunca cerrarla.
+    for (const [plan, frac] of [
+      [exteriorPlan(), 0.38],
+      [interiorPlan(), 0.44],
+    ] as const) {
+      const spec = buildGreyboxSpec(plan, "frac");
+      const above = (spec.proj.horizon_y - spec.view_box.minY) / spec.view_box.height;
+      assert.ok(above >= frac - 1e-9 && above <= frac + 0.25, `sobre-horizonte ${above.toFixed(3)} vs ${frac}`);
+    }
+  });
+
+  it("v3: stage.focal_m es la intención de cámara, clampada por cobertura del ancho", () => {
+    const base = exteriorPlan(); // 24 m de ancho
+    const rDefault = buildGreyboxSpec(base, "f").camera.retreat_m;
+    // focal_m corto acerca la cámara (hasta el clamp de hfov 100°).
+    const cerca = { ...base, stage: { ...base.stage, focal_m: 6 } };
+    const rCerca = buildGreyboxSpec(cerca, "f").camera.retreat_m;
+    assert.ok(rCerca < rDefault, `${rCerca} < ${rDefault}`);
+    const halfW = 24 / 2 + 0.8;
+    assert.ok(Math.abs(rCerca - halfW / Math.tan((100 / 2) * Math.PI / 180)) < 1e-9, "clamp gran angular");
+    // focal_m largo aleja, con techo en hfov 70°.
+    const lejos = { ...base, stage: { ...base.stage, focal_m: 99 } };
+    const rLejos = buildGreyboxSpec(lejos, "f").camera.retreat_m;
+    assert.ok(rLejos > rDefault);
+    assert.ok(Math.abs(rLejos - halfW / Math.tan((70 / 2) * Math.PI / 180)) < 1e-9, "clamp tele");
+    // Dentro del rango, se respeta tal cual.
+    const medio = { ...base, stage: { ...base.stage, focal_m: rDefault + 1 } };
+    assert.ok(Math.abs(buildGreyboxSpec(medio, "f").camera.retreat_m - (rDefault + 1)) < 1e-9);
+  });
+
+  it("v3: render_px nativo — múltiplos de 16 y mismo aspect que el view_box", () => {
+    for (const plan of [interiorPlan(), exteriorPlan()]) {
+      const spec = buildGreyboxSpec(plan, "px");
+      const [w, h] = spec.render_px;
+      assert.equal(w % 16, 0);
+      assert.equal(h % 16, 0);
+      const vbAspect = spec.view_box.width / spec.view_box.height;
+      assert.ok(Math.abs(w / h - vbAspect) < 0.05, `aspect render ${w / h} vs vb ${vbAspect}`);
+    }
+    assert.deepEqual(buildGreyboxSpec(exteriorPlan(), "px").render_px, [1280, 640]);
+    assert.deepEqual(buildGreyboxSpec(interiorPlan(), "px").render_px, [1280, 800]);
+  });
+
+  it("v3: un volumen muy alto abre la ventana hacia arriba (no se decapita)", () => {
+    const plan = exteriorPlan();
+    plan.volumes.push({
+      id: "torre_vigia", label: "torre vigía", type: "tower", at: [24, 6], r: 3, h: 24,
+    });
+    const spec = buildGreyboxSpec(plan, "torre");
+    const torre = spec.manifest.find((m) => m.id === "vol_torre_vigia")!;
+    assert.ok(torre.box_px[1] > 0, "top de la torre dentro del encuadre");
+  });
+
+  it("F2: el h declarado por entity manda en el clay del proscenio (vía derive)", async () => {
+    const { stagePlanFromScene } = await import("../src/scene/stage/plan.js");
+    const raw = {
+      size: { cols: 24, rows: 16, meters_per_cell: 0.5 },
+      stage: {
+        exits: [
+          { id: "s", edge: "south", to_place_id: "x", zone: [10, 14, 4, 2], kind: "opening", label: "Salida" },
+        ],
+      },
+      entities: [
+        { id: "barril", kind: "prop", name: "barril de cerveza", cell: [4, 4], footprint: [1, 1], glyph: "k", shape: "cylinder", h: 0.9 },
+        { id: "casa", kind: "building", name: "casa alta", cell: [10, 2], footprint: [8, 4], glyph: "C", h: 6 },
+        { id: "olmo", kind: "tree", name: "olmo viejo", cell: [20, 8], footprint: [2, 2], glyph: "T", h: 7 },
+      ],
+    };
+    const plan = stagePlanFromScene(raw)!;
+    const spec = buildGreyboxSpec(plan, "h-test");
+    const hOf = (id: string): number => spec.manifest.find((m) => m.id === `vol_derived_ent_${id}`)!.hM;
+    // v2 aplastaba TODO a 1.5 m (props) y 3.75 m (buildings).
+    assert.ok(Math.abs(hOf("barril") - 0.9) < 0.11, `barril ${hOf("barril")} ≈ 0.9 m`);
+    assert.ok(Math.abs(hOf("casa") - 6) < 0.31, `casa ${hOf("casa")} ≈ 6 m`);
+    assert.ok(Math.abs(hOf("olmo") - 7) < 0.5, `olmo ${hOf("olmo")} ≈ 7 m`);
+  });
+
+  it("F2: heurísticas de silueta — mesa con patas, carro con ruedas, edificio con plantas", () => {
+    const plan = exteriorPlan();
+    plan.volumes.push(
+      { id: "mesa_taberna", label: "mesa de la taberna", type: "prop", rect: [30, 10, 4, 2], shape: "box", h: 2 },
+      { id: "carro_heno", label: "carro de heno", type: "prop", rect: [36, 14, 4, 2], shape: "box", h: 3 },
+      // Casa de dos plantas (muros de 6 m): dos filas de ventanas.
+      { id: "casa_dos_plantas", label: "casa de dos plantas", type: "building", rect: [24, 4, 10, 8], wall_h: 12 },
+    );
+    const spec = buildGreyboxSpec(plan, "siluetas");
+    const of = (volId: string) => spec.primitives.filter((p) => p.volId === `vol_${volId}`);
+    assert.ok(of("mesa_taberna").length >= 5, "mesa = tablero + 4 patas");
+    assert.ok(of("carro_heno").some((p) => p.rotX !== undefined), "carro con ruedas tumbadas");
+    const ventanas = of("casa_dos_plantas").filter((p) => p.size[0] === 0.7);
+    assert.ok(ventanas.length >= 3, `ventanas por planta (${ventanas.length})`);
+    const alturas = new Set(ventanas.map((p) => p.pos[1]));
+    assert.ok(alturas.size >= 2, "dos filas de ventanas a alturas distintas");
+  });
+
+  it("F3: hora del día — declarada, inferida del texto y default", async () => {
+    const { resolveTimeOfDay } = await import("../src/scene/stage/greybox.js");
+    const base = exteriorPlan();
+    assert.equal(resolveTimeOfDay(base), "dia");
+    // Inferida del backdrop (el save real dice "luz de atardecer").
+    base.stage.backdrop = { description: "Fachadas encaladas; luz de atardecer." };
+    assert.equal(resolveTimeOfDay(base), "atardecer");
+    // La declarada MANDA sobre el texto.
+    base.stage.ambience = { time_of_day: "noche" };
+    assert.equal(resolveTimeOfDay(base), "noche");
+    // El preset cambia sol, cielo y niebla del spec.
+    const dia = buildGreyboxSpec(exteriorPlan(), "tod");
+    const noche = buildGreyboxSpec(base, "tod");
+    assert.notEqual(dia.sky!.top, noche.sky!.top);
+    assert.notEqual(dia.fog!.color, noche.fog!.color);
+    const sunDia = dia.lights.find((l) => l.kind === "sun")!;
+    const sunNoche = noche.lights.find((l) => l.kind === "sun")!;
+    assert.notEqual(sunDia.color, sunNoche.color);
+  });
+
+  it("F3: labels de fuego encienden una luz práctica + resplandor en el clay", () => {
+    const plan = interiorPlan();
+    plan.volumes.push({
+      id: "chimenea_salon", label: "chimenea encendida", type: "prop",
+      rect: [20, 2, 2, 3], shape: "box", h: 5,
+    });
+    const spec = buildGreyboxSpec(plan, "fuego");
+    const points = spec.lights.filter((l) => l.kind === "point");
+    assert.equal(points.length, 1);
+    assert.ok(points[0].pos![1] > 0, "punto sobre el volumen");
+    const glow = spec.primitives.find(
+      (p) => p.volId === "vol_chimenea_salon" && p.color === "#ffa04e",
+    );
+    assert.ok(glow, "resplandor en el clay");
+    // Sin labels de fuego, cero prácticas.
+    assert.equal(
+      buildGreyboxSpec(interiorPlan(), "fuego").lights.filter((l) => l.kind === "point").length,
+      0,
+    );
   });
 
   it("expectedElementsFromGreybox conserva el contrato de pistas", () => {

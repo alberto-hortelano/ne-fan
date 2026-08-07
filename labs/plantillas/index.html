@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Plantillas clay de estilos — revisión</title>
+  <style>
+    body { background: #14141a; color: #ccc; font: 14px system-ui, sans-serif; margin: 24px; }
+    h1 { color: #da6; font-size: 22px; }
+    h2 { color: #bbb; margin-top: 32px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+    figure { margin: 0; background: #1b1b22; border: 1px solid #2a2a30; border-radius: 6px; padding: 10px; }
+    img { width: 100%; display: block; border-radius: 3px; image-rendering: auto; }
+    figcaption { margin-top: 8px; font-size: 13px; color: #9a9; }
+    figcaption code { color: #da6; }
+    p.nota { color: #888; max-width: 900px; }
+  </style>
+</head>
+<body>
+  <h1>Plantillas clay de estilos (render three.js de producción)</h1>
+  <p class="nota">
+    Seeds de encuadre para la generación de packs de estilo. Las de PLATÓ salen de
+    las escenas de cine del bench labs/escenografia/greybox (cámara dentro de la
+    escena, términos de profundidad, acción al centro); las OBLICUAS del builder
+    de tile de producción. La plantilla es referencia NO estricta: fija
+    cámara/composición, el contenido lo pone la escena de cada estilo. Iterar una
+    plantilla es gratis (editar escena/plan + recapturar).
+  </p>
+  <h2>Proscenio (6 categorías de plató)</h2>
+  <div class="grid" id="stage"></div>
+  <h2>Oblicua (9 zonas)</h2>
+  <div class="grid" id="tile"></div>
+  <script>
+    const BASE = "/nefan-core/data/styles/_plantilla";
+    const stage = ["stage_street", "stage_plaza", "stage_interior", "stage_nature", "stage_harbor", "stage_gate"];
+    const tile = ["settlement", "farmland", "forest", "wetland", "desert", "snow", "fortress", "interior", "underground"];
+    const fixtures = {
+      stage_street: "greybox/01_calle", stage_plaza: "greybox/02_plaza", stage_interior: "greybox/03_taberna",
+      stage_nature: "greybox/04_bosque", stage_harbor: "greybox/05_puerto", stage_gate: "greybox/06_puerta",
+    };
+    for (const [dir, names, sub] of [["stage", stage, "proscenio"], ["tile", tile, "oblicua"]]) {
+      const el = document.getElementById(dir);
+      for (const n of names) {
+        const fig = document.createElement("figure");
+        const src = `${BASE}/${sub}/${n}.png`;
+        const origen = dir === "stage" ? ` — fixture <code>${fixtures[n]}</code>` : ` — plan <code>planes/${n}.json</code>`;
+        fig.innerHTML = `<img src="${src}" loading="lazy"><figcaption><code>${n}</code>${origen}</figcaption>`;
+        el.appendChild(fig);
+      }
+    }
+  </script>
+</body>
+</html>

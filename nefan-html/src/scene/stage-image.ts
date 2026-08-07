@@ -116,6 +116,8 @@ export interface StageImageMeta {
   description: string;
   /** stage.backdrop.description — guía del telón en los prompts de pelado. */
   backdrop?: string;
+  /** stage.ambience.mood — matiz de atmósfera para el repintado. */
+  mood?: string;
   /** style_tag del motor narrativo ("interior", "settlement"…). */
   styleTag: string;
 }
@@ -260,13 +262,22 @@ export class StageImageController {
       const blueprint = renderGreybox(spec);
       if (token !== this.token) return;
       this.deps.status(`plató ${key}: repintando…`);
+      // El backdrop del stage block describe lo que se VE al fondo — se
+      // escribió para sembrar el repintado (stage_instructions) y entra en la
+      // clave de caché del server vía `prompt`. El mood de ambience matiza.
+      const repaintPrompt =
+        meta.description +
+        (meta.backdrop ? ` Al fondo: ${meta.backdrop}` : "") +
+        (meta.mood ? ` Ambiente: ${meta.mood}.` : "");
       const repaintRes = await this.post(this.urls.remote, "/generate_scene_image", {
         image_b64: canvasB64(blueprint),
-        prompt: meta.description,
+        prompt: repaintPrompt,
         blueprint_kind: "stage",
         has_water: false,
         style_id: this.styleId,
-        style_tag: meta.styleTag,
+        // "" = sin información — se omite y el server aplica su default de
+        // plató (el pattern del endpoint no admite cadena vacía).
+        style_tag: meta.styleTag || undefined,
         // Clave de layout estable: el PNG WebGL no es byte-determinista; el
         // hash del spec canónico sí (misma escena ⇒ CACHE HIT en el server).
         layout_key: specHash,

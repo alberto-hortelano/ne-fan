@@ -1,0 +1,24 @@
+{
+  "biome": "grass",
+  "ground": [
+    { "id": "camino_puerta", "kind": "path", "points": [[64, 128], [64, 88]], "w": 6, "material": "dirt" },
+    { "id": "patio_armas", "kind": "area", "rect": [38, 38, 52, 44], "material": "cobble" },
+    { "id": "campo_1", "kind": "area", "rect": [6, 100, 26, 18], "material": "dirt" }
+  ],
+  "volumes": [
+    { "id": "muralla", "label": "muralla del castillo", "type": "wall", "points": [[34, 34], [94, 34], [94, 86], [34, 86], [34, 34]], "width": 3, "h": 12, "crenellated": true },
+    { "id": "torre_no", "label": "torre noroeste", "type": "tower", "at": [34, 34], "r": 4, "h": 16, "crenellated": true },
+    { "id": "torre_ne", "label": "torre nordeste", "type": "tower", "at": [94, 34], "r": 4, "h": 16, "crenellated": true },
+    { "id": "torre_so", "label": "torre suroeste", "type": "tower", "at": [34, 86], "r": 4, "h": 16, "crenellated": true },
+    { "id": "torre_se", "label": "torre sureste", "type": "tower", "at": [94, 86], "r": 4, "h": 16, "crenellated": true },
+    { "id": "puerta", "label": "puerta del castillo", "type": "gate", "at": [64, 86], "w": 9, "h": 14, "orient": "x", "banners": true },
+    { "id": "torreon", "label": "torreón del homenaje", "type": "building", "rect": [68, 40, 18, 18], "wall_h": 14, "roof": { "kind": "hip", "material": "slate" }, "walls": { "material": "stone" } },
+    { "id": "barracones", "label": "barracones", "type": "building", "rect": [40, 40, 18, 10], "wall_h": 6, "roof": { "kind": "shed", "material": "wood" }, "walls": { "material": "wood" } },
+    { "id": "establo", "label": "establo", "type": "building", "rect": [40, 66, 14, 12], "wall_h": 5, "roof": { "kind": "shed", "material": "thatch" }, "walls": { "material": "timber" } },
+    { "id": "pozo_patio", "label": "pozo del patio", "type": "prop", "rect": [62, 62, 3, 3], "shape": "cylinder", "h": 2 },
+    { "id": "arbol_1", "label": "roble", "type": "tree", "at": [12, 18], "s": 1.5 },
+    { "id": "arbol_2", "label": "roble", "type": "tree", "at": [112, 16], "s": 1.4 },
+    { "id": "arbol_3", "label": "olmo del camino", "type": "tree", "at": [80, 112], "s": 1.4 },
+    { "id": "roca_1", "label": "roca", "type": "rock", "at": [18, 60], "s": 1.8 }
+  ]
+}

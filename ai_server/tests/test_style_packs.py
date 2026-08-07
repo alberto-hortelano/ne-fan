@@ -135,6 +135,52 @@ class StylePacksTest(unittest.TestCase):
         )
         self.assertIsNone(self.resolver.resolve("vacio", "forest"))
 
+    def test_stage_resuelve_directa_y_con_fallback(self):
+        d = self.styles_dir / "mi_estilo"
+        manifest = json.loads((d / "style.json").read_text(encoding="utf-8"))
+        manifest["refs"] += [
+            {"category": "stage_interior", "file": "stage_interior.jpg", "tags": [], "view": "proscenium"},
+            {"category": "stage_street", "file": "stage_street.jpg", "tags": [], "view": "proscenium"},
+        ]
+        (d / "style.json").write_text(json.dumps(manifest), encoding="utf-8")
+        _write_jpg(d / "stage_interior.jpg", (60, 60, 90))
+        # stage_street declarado SIN archivo → cae por su cadena de plató.
+        resolver = StylePackResolver(styles_dir=self.styles_dir)
+        ref = resolver.resolve("mi_estilo", "stage_interior")
+        self.assertEqual(ref.category, "stage_interior")
+        ref = resolver.resolve("mi_estilo", "stage_street")
+        self.assertEqual(ref.category, "stage_interior")
+
+    def test_stage_nunca_cae_a_zona_cenital(self):
+        # El pack tiene forest.jpg pero NINGUNA imagen de plató: una petición
+        # stage devuelve None (blueprint-solo), jamás la ref aérea.
+        self.assertIsNone(self.resolver.resolve("mi_estilo", "stage_nature"))
+
+    def test_stage_desconocida_usa_stage_street(self):
+        d = self.styles_dir / "mi_estilo"
+        manifest = json.loads((d / "style.json").read_text(encoding="utf-8"))
+        manifest["refs"].append(
+            {"category": "stage_street", "file": "stage_street.jpg", "tags": []},
+        )
+        (d / "style.json").write_text(json.dumps(manifest), encoding="utf-8")
+        _write_jpg(d / "stage_street.jpg", (90, 90, 90))
+        resolver = StylePackResolver(styles_dir=self.styles_dir)
+        ref = resolver.resolve("mi_estilo", "stage_volcano")
+        self.assertEqual(ref.category, "stage_street")
+
+    def test_cadenas_stage_cubren_todo_el_namespace(self):
+        from style_packs import _STAGE_FALLBACK, STAGE_CATEGORIES
+        for cat in STAGE_CATEGORIES:
+            chain = {cat, *_STAGE_FALLBACK[cat]}
+            self.assertEqual(chain, set(STAGE_CATEGORIES), f"cadena incompleta: {cat}")
+            # Regla dura: nada de zonas cenitales en las cadenas de plató.
+            self.assertFalse(chain & set(ENV_CATEGORIES), f"cadena cruza namespace: {cat}")
+
+    def test_zone_to_stage_cubre_todas_las_zonas(self):
+        from style_packs import STAGE_CATEGORIES, ZONE_TO_STAGE
+        for zone in (*ENV_CATEGORIES, "nature"):
+            self.assertIn(ZONE_TO_STAGE.get(zone), STAGE_CATEGORIES, f"zona sin plató: {zone}")
+
     def test_recarga_por_mtime(self):
         ref1 = self.resolver.resolve("mi_estilo", "forest")
         path = self.styles_dir / "mi_estilo" / "forest.jpg"

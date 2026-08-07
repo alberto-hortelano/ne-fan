@@ -66,6 +66,10 @@ export interface StartSessionMessage {
    *  Ausente = "image". Congelado en el save: mezclar tiles pintados y
    *  vectoriales rompe la continuidad visual entre vecinos. */
   renderMode?: string;
+  /** Vista del mundo elegida en el título: "overworld" | "proscenium".
+   *  Ausente = la default del juego (game.json). Congelada en el save
+   *  (`world.view`) como el estilo. */
+  view?: string;
 }
 
 export interface ResumeSessionMessage {
@@ -320,6 +324,9 @@ export interface GamesListedMessage {
     style_id: string;
     /** Resumen del mundo (~1.200 chars) — la tarjeta puede mostrar un extracto. */
     world_brief: string;
+    /** Vista DEFAULT del mundo, ya resuelta ("overworld" si game.json no la
+     *  declara). El selector del título la preselecciona. */
+    view: string;
   }>;
   /** Estilos disponibles para el selector; cover_url es relativo y se
    *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
@@ -329,6 +336,9 @@ export interface GamesListedMessage {
     name: string;
     description: string;
     cover_url?: string;
+    /** Vistas a las que sirve el estilo (derivadas de sus refs declaradas).
+     *  El selector del título filtra con esto. */
+    views: string[];
   }>;
 }
 

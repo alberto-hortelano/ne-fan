@@ -169,9 +169,15 @@ class SceneImageGenerator:
         # obliga al modelo a un estiramiento anamórfico que desalinea las
         # huellas (~45 puntos de fidelidad con gpt2; con nano-banana-pro el
         # prestretch dio el mejor caso del bench: 100% edificios, 0 inventos).
-        side = max(sch.size)
-        if sch.size != (side, side):
-            sch = sch.resize((side, side), Image.LANCZOS)
+        # EXCEPCIÓN stage (greybox v3): el clay llega a su aspect NATIVO
+        # (spec.render_px) y gpt-image-2 vía fal SÍ respeta `aspect` — el
+        # modelo pinta sin deformación y el cliente normaliza a su cuadrado al
+        # recibir (fetchToSquare). Estirarlo aquí reintroduciría el anamórfico
+        # ×2 que arruinaba la composición (dos casetas en un campo).
+        if blueprint_kind != "stage":
+            side = max(sch.size)
+            if sch.size != (side, side):
+                sch = sch.resize((side, side), Image.LANCZOS)
         if blueprint_kind == "tile":
             # Tile oblicuo: la base es un RENDER 3D GREYBOX (clay cenital con
             # cizalla oblicua y sol fijo desde el sur — bench labs/render E2a,
@@ -274,6 +280,13 @@ class SceneImageGenerator:
                 "Do NOT move, remove, merge or duplicate objects. Do NOT invent "
                 "new objects, buildings, doors or windows that are not in the plan. "
                 f"Render the scene as: {prompt.strip()}. "
+                "Give the background and sky depth and atmosphere consistent "
+                "with the scene description (time of day, weather, mood). "
+                "CONVENTIONAL LIGHTING ONLY: keep the light direction of the "
+                "blockout — the scene is lit from the camera side; NEVER "
+                "backlight the set, no sun glow or bright sky burning behind "
+                "the buildings, no silhouettes (characters are composited "
+                "later and must sit in the same light). "
                 + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
                 + (_STYLE_ROLE_RULES if stage_has_style_ref else "")
                 + _STYLE_RULES
@@ -305,11 +318,17 @@ class SceneImageGenerator:
                 "them with no visible seam (same palette, same ground texture)."
             )
         # Stage sin pack: solo el blueprint (la ref global es un battlemap
-        # cenital y contamina la vista lateral). El resto, como siempre.
+        # cenital y contamina la vista lateral). El clay del stage viaja a
+        # resolución completa (1280 — con el default 768 el modelo perdía el
+        # detalle fino del blockout). El resto, como siempre.
+        clay_long_side = 1280 if blueprint_kind == "stage" else 768
         refs = (
-            [_to_data_uri(sch, "PNG")]
+            [_to_data_uri(sch, "PNG", long_side=clay_long_side)]
             if blueprint_kind == "stage" and style_ref_uri is None
-            else [_to_data_uri(sch, "PNG"), style_ref_uri or self._style_uri]
+            else [
+                _to_data_uri(sch, "PNG", long_side=clay_long_side),
+                style_ref_uri or self._style_uri,
+            ]
         )
         start = time.perf_counter()
         run = self._run_stage if blueprint_kind == "stage" else self._run

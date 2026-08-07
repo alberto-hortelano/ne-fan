@@ -13,6 +13,7 @@ import {
   listStyles,
   loadGameMeta,
   loadStyleManifest,
+  styleViews,
   loadWorldDoc,
 } from "../../src/games/loader.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
@@ -204,10 +205,23 @@ export async function handleStartSession(
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }
-    // Vista del mundo: la declara game.json y queda CONGELADA en el save
-    // (como el estilo). Con renderMode "image", el proscenio repinta y pela
-    // cada plató por capas (entrega 2 — StageImageController en el cliente).
-    view = meta.view ?? "overworld";
+    // Vista del mundo: la elegida en el título (msg.view), con game.json como
+    // default del mundo. Queda CONGELADA en el save (como el estilo). Con
+    // renderMode "image", el proscenio repinta y pela cada plató por capas
+    // (entrega 2 — StageImageController en el cliente).
+    view = msg.view || meta.view || "overworld";
+    if (view !== "overworld" && view !== "proscenium") {
+      throw new Error(`vista desconocida "${view}" (esperaba overworld|proscenium)`);
+    }
+    // El estilo debe servir a la vista elegida: sus refs declaradas derivan
+    // las vistas compatibles (styleViews). Incompatible = aborta, no degrada.
+    const compatibleViews = styleViews(style);
+    if (!compatibleViews.includes(view)) {
+      throw new Error(
+        `estilo "${style.style_id}" sin referencias para la vista "${view}"` +
+          ` (declara: ${compatibleViews.join("|") || "ninguna"})`,
+      );
+    }
     // Sistema de combate: el que declare game.json (systems.combat) o el
     // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
     // fuera del registro aborta (fail-loud), no degrada en silencio.
@@ -227,7 +241,9 @@ export async function handleStartSession(
     }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
-    worldKey = `${worldDocHash}:${style.style_id}`;
+    // La vista entra en la clave: el initialSceneCache no puede servir un
+    // bootstrap de tiles a una sesión proscenio del mismo juego+estilo.
+    worldKey = `${worldDocHash}:${style.style_id}:${view}`;
     ctx.activePlugins = new Map();
     ctx.narrative.startNewSession(msg.gameId);
     ctx.narrative.setWorldInfo({

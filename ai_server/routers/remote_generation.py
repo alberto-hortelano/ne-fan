@@ -20,6 +20,7 @@ from dev_api_cache import DEV_API_CACHE
 from request_util import decode_b64_png
 from scene_image_generator import SIDES
 from sprite_skin_meshy import SpriteSkinMeshy
+from style_packs import ZONE_TO_STAGE
 
 logger = logging.getLogger("ai_server")
 
@@ -52,10 +53,16 @@ class SceneImageRequest(BaseModel):
     # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
     # referencia global fija de siempre.
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    # Zonas de estilo (espejo de style-categories.ts; "nature" = legacy).
+    # Zonas de estilo + categorías de plató (espejo de style-categories.ts;
+    # "nature" = legacy). Las stage_* solo tienen sentido con
+    # blueprint_kind="stage"; una zona en petición stage se mapea a plató
+    # (ZONE_TO_STAGE) al resolver.
     style_tag: str = Field(
         default="",
-        pattern="^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature)?$",
+        pattern=(
+            "^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature"
+            "|stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate)?$"
+        ),
     )
     # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
     # canónico del plató o del tile). El render WebGL no es byte-determinista:
@@ -114,7 +121,14 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # estilo, para no fragmentar el cache preexistente.
     style_ref = None
     if body.style_id and deps.style_packs is not None:
-        style_ref = deps.style_packs.resolve(body.style_id, body.style_tag or "settlement")
+        if body.blueprint_kind == "stage":
+            # Plató: SIEMPRE una categoría stage_* — una zona legacy se mapea
+            # (ZONE_TO_STAGE) y sin tag se aplica stage_street. Nunca se
+            # resuelve una ref cenital para el repintado ground-level.
+            tag = ZONE_TO_STAGE.get(body.style_tag, body.style_tag) or "stage_street"
+        else:
+            tag = body.style_tag or "settlement"
+        style_ref = deps.style_packs.resolve(body.style_id, tag)
         if style_ref is not None:
             context["style"] = f"{style_ref.style_id}/{style_ref.category}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
@@ -122,11 +136,12 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # stage_greybox1 / tile_greybox1: la base pasa de SVG rasterizado a render
-    # 3D greybox (clay) con prompt propio — las generaciones del pipeline
-    # anterior quedan invalidadas.
+    # stage_greybox2: encuadre v3 (ventana anclada al horizonte, clay a aspect
+    # nativo sin anamórfico, backdrop en el prompt) — invalida el greybox1.
+    # tile_greybox1: la base pasa de SVG rasterizado a render 3D greybox.
+    # stage_greybox3: luz convencional (cono frontal, cláusula anti-contraluz).
     if body.blueprint_kind == "stage":
-        context["pipeline"] = "stage_greybox1"
+        context["pipeline"] = "stage_greybox3"
     elif body.blueprint_kind == "tile":
         context["pipeline"] = "tile_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):

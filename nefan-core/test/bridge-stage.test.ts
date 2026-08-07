@@ -208,6 +208,71 @@ describe("bridge — mundos proscenio", () => {
     assert.equal(h.narrative.world.view, "proscenium");
   });
 
+  it("start_session con view explícita manda sobre el default del juego", async () => {
+    // combatbasic no declara view (default overworld); el título puede pedir
+    // proscenium igualmente — la vista es del jugador, no del mundo.
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          seedPosadaMap(h.narrative);
+          return { ok: true, scene: stageScene("posada", [{ id: "n", edge: "north", to: "cocina" }]) };
+        },
+      },
+    });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "start_session",
+        requestId: "r1",
+        gameId: "combatbasic",
+        renderMode: "vector",
+        view: "proscenium",
+      },
+      socket,
+      h.ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true, started.error);
+    assert.equal(started.state?.world.view, "proscenium");
+    await waitFor(() =>
+      h.broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    const llmCtx = h.aiCalls.scene[0] as Record<string, unknown>;
+    assert.deepEqual(llmCtx.stage_request, { bootstrap: true });
+  });
+
+  it("start_session con view fuera del enum aborta (fail-loud)", async () => {
+    const h = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "stagetest", view: "cinemascope" },
+      socket,
+      h.ctx,
+    );
+    const bad = sent[0] as SessionStartedMessage;
+    assert.equal(bad.ok, false);
+    assert.match(bad.error ?? "", /vista desconocida "cinemascope"/);
+  });
+
+  it("start_session con estilo incompatible con la vista aborta (fail-loud)", async () => {
+    // estilo_solo_topdown solo declara refs de zona ⇒ no sirve a proscenium.
+    const h = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      {
+        type: "start_session",
+        requestId: "r1",
+        gameId: "stagetest",
+        styleId: "estilo_solo_topdown",
+      },
+      socket,
+      h.ctx,
+    );
+    const bad = sent[0] as SessionStartedMessage;
+    assert.equal(bad.ok, false);
+    assert.match(bad.error ?? "", /sin referencias para la vista "proscenium"/);
+  });
+
   it("resume con view desconocida en el save aborta (fail-loud)", async () => {
     const h = makeCtx({
       ai: {
