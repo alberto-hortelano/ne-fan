@@ -27,7 +27,11 @@
   <script>
     const style = new URLSearchParams(location.search).get("style") || "medievo_crudo";
     document.getElementById("titulo").textContent = `_staging/${style}`;
-    const cats = ["stage_street", "stage_plaza", "stage_interior", "stage_nature", "stage_harbor", "stage_gate"];
+    const cats = [
+      "stage_street", "stage_plaza", "stage_interior", "stage_nature", "stage_harbor", "stage_gate",
+      // Top-down en staging (fix de composición): solo existen en algunos estilos.
+      "fortress", "character_commoner", "character_noble", "character_warrior",
+    ];
     const el = document.getElementById("refs");
     for (const c of cats) {
       const fig = document.createElement("figure");
