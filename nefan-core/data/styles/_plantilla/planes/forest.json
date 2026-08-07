@@ -1,0 +1,36 @@
+{
+  "biome": "forest_floor",
+  "ground": [
+    { "id": "senda", "kind": "path", "points": [[64, 0], [58, 40], [66, 80], [60, 128]], "w": 3, "material": "dirt" },
+    { "id": "arroyo", "kind": "water", "rect": [0, 86, 128, 8] },
+    { "id": "tablones", "kind": "deck", "rect": [58, 85, 10, 10], "material": "wood" },
+    { "id": "claro", "kind": "area", "ellipse": { "center": [64, 46], "rx": 16, "ry": 12 }, "material": "grass" },
+    { "id": "pradera", "kind": "area", "rect": [106, 0, 22, 128], "material": "grass" }
+  ],
+  "volumes": [
+    { "id": "arbol_1", "label": "roble", "type": "tree", "at": [12, 10], "s": 1.6 },
+    { "id": "arbol_2", "label": "haya", "type": "tree", "at": [28, 6], "s": 1.4 },
+    { "id": "arbol_3", "label": "roble", "type": "tree", "at": [44, 14], "s": 1.5 },
+    { "id": "arbol_4", "label": "roble", "type": "tree", "at": [86, 8], "s": 1.6 },
+    { "id": "arbol_5", "label": "haya", "type": "tree", "at": [20, 30], "s": 1.5 },
+    { "id": "arbol_6", "label": "roble", "type": "tree", "at": [38, 34], "s": 1.3 },
+    { "id": "arbol_7", "label": "roble", "type": "tree", "at": [90, 30], "s": 1.4 },
+    { "id": "arbol_8", "label": "haya", "type": "tree", "at": [12, 52], "s": 1.6 },
+    { "id": "arbol_9", "label": "roble", "type": "tree", "at": [32, 60], "s": 1.4 },
+    { "id": "arbol_10", "label": "roble", "type": "tree", "at": [88, 54], "s": 1.5 },
+    { "id": "arbol_11", "label": "haya", "type": "tree", "at": [24, 74], "s": 1.3 },
+    { "id": "arbol_12", "label": "roble", "type": "tree", "at": [44, 72], "s": 1.5 },
+    { "id": "arbol_13", "label": "roble", "type": "tree", "at": [86, 74], "s": 1.4 },
+    { "id": "arbol_14", "label": "haya", "type": "tree", "at": [16, 106], "s": 1.6 },
+    { "id": "arbol_15", "label": "roble", "type": "tree", "at": [36, 112], "s": 1.4 },
+    { "id": "arbol_16", "label": "roble", "type": "tree", "at": [84, 108], "s": 1.5 },
+    { "id": "arbol_17", "label": "haya", "type": "tree", "at": [98, 118], "s": 1.3 },
+    { "id": "roca_1", "label": "roca del arroyo", "type": "rock", "at": [30, 88], "s": 1.8 },
+    { "id": "roca_2", "label": "roca del arroyo", "type": "rock", "at": [46, 92], "s": 1.4 },
+    { "id": "roca_3", "label": "roca", "type": "rock", "at": [92, 88], "s": 2.0 },
+    { "id": "arbusto_1", "label": "zarza", "type": "bush", "at": [52, 28], "s": 0.9 },
+    { "id": "arbusto_2", "label": "helechos", "type": "bush", "at": [76, 44], "s": 1.0 },
+    { "id": "arbusto_3", "label": "zarza", "type": "bush", "at": [28, 46], "s": 0.8 },
+    { "id": "arbusto_4", "label": "helechos", "type": "bush", "at": [70, 108], "s": 0.9 }
+  ]
+}

@@ -101,7 +101,13 @@ export function makeLib(THREE) {
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const m = new THREE.Mesh(g, mat(color, 0.95));
+    const material = mat(color, 0.95);
+    // El winding depende de la DIRECCIÓN de la polilínea: una curva
+    // recorrida "hacia el norte" deja la cara frontal mirando al suelo y
+    // FrontSide la descarta. DoubleSide pinta siempre (el shader ya invierte
+    // la normal en las caras traseras — no tocarla a mano).
+    material.side = THREE.DoubleSide;
+    const m = new THREE.Mesh(g, material);
     m.userData.noShadow = true;
     return tag(m, cat);
   }

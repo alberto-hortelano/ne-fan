@@ -1,0 +1,27 @@
+{
+  "biome": "grass",
+  "ground": [
+    { "id": "camino", "kind": "path", "points": [[0, 90], [60, 86], [128, 80]], "w": 6, "material": "dirt" },
+    { "id": "senda_granja", "kind": "path", "points": [[70, 86], [70, 66]], "w": 3, "material": "dirt" },
+    { "id": "campo_1", "kind": "area", "rect": [10, 20, 40, 24], "material": "dirt" },
+    { "id": "campo_2", "kind": "area", "rect": [10, 50, 40, 24], "material": "dirt" },
+    { "id": "campo_3", "kind": "area", "rect": [60, 24, 36, 20], "material": "dirt" }
+  ],
+  "volumes": [
+    { "id": "granja", "label": "casa de labranza", "type": "building", "rect": [62, 52, 16, 12], "roof": { "kind": "gable", "material": "thatch" }, "walls": { "material": "plaster" } },
+    { "id": "granero", "label": "granero", "type": "building", "rect": [84, 56, 14, 16], "wall_h": 7, "roof": { "kind": "gable", "material": "wood" }, "walls": { "material": "wood" } },
+    { "id": "pozo", "label": "pozo", "type": "prop", "rect": [79, 60, 2, 2], "shape": "cylinder", "h": 2 },
+    { "id": "carro", "label": "carro de labranza", "type": "prop", "rect": [66, 68, 5, 3], "shape": "box", "h": 2 },
+    { "id": "seto_1", "label": "seto", "type": "bush", "at": [12, 46], "s": 1.0 },
+    { "id": "seto_2", "label": "seto", "type": "bush", "at": [20, 46], "s": 1.0 },
+    { "id": "seto_3", "label": "seto", "type": "bush", "at": [28, 46], "s": 1.0 },
+    { "id": "seto_4", "label": "seto", "type": "bush", "at": [36, 46], "s": 1.0 },
+    { "id": "arbol_lindero", "label": "olmo del lindero", "type": "tree", "at": [54, 34], "s": 1.4 },
+    { "id": "bosque_1", "label": "roble", "type": "tree", "at": [8, 6], "s": 1.4 },
+    { "id": "bosque_2", "label": "roble", "type": "tree", "at": [22, 4], "s": 1.3 },
+    { "id": "bosque_3", "label": "haya", "type": "tree", "at": [36, 8], "s": 1.5 },
+    { "id": "bosque_4", "label": "roble", "type": "tree", "at": [50, 6], "s": 1.2 },
+    { "id": "bosque_5", "label": "roble", "type": "tree", "at": [64, 10], "s": 1.4 },
+    { "id": "arbol_camino", "label": "olmo del camino", "type": "tree", "at": [30, 98], "s": 1.5 }
+  ]
+}

@@ -340,13 +340,18 @@ async def generate_missing(
         category = entry["category"]
         is_stage = category in STAGE_CATEGORIES
         style_paths = style_refs_for(category)
-        refs = [_to_data_uri(seed_for(category))] + [_to_data_uri(p) for p in style_paths]
+        seed = seed_for(category)
+        refs = [_to_data_uri(seed)] + [_to_data_uri(p) for p in style_paths]
         prompt = build_prompt(category, style_token, bool(style_paths), entry["scene"] or None)
         if is_stage:
             if fal_api is None:
                 fal_api = FalImageToImage()
+            # Aspect del seed (plantillas del bench: 1600×1000 → gpt-image-2
+            # 1280×800, el encuadre exacto del bench greybox).
+            with Image.open(seed) as seed_img:
+                aspect = seed_img.size
             log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={STAGE_AI_MODEL} (fal)")
-            png, _task = await fal_api.run_one(prompt, refs, ai_model=STAGE_AI_MODEL)
+            png, _task = await fal_api.run_one(prompt, refs, ai_model=STAGE_AI_MODEL, aspect=aspect)
             cost += FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
         else:
             if meshy_api is None:
