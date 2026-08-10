@@ -416,6 +416,28 @@ describe("buildGreyboxSpec", () => {
     assert.notEqual(sunDia.color, sunNoche.color);
   });
 
+  it("v7: tierra y empedrado se distinguen en el clay", async () => {
+    const { groundColorFor } = await import("../src/scene/greybox/common.js");
+    const tierra = groundColorFor("tierra apisonada");
+    const empedrado = groundColorFor("empedrado");
+    assert.ok(tierra && empedrado, "ambos materiales tienen color de suelo");
+    assert.notEqual(tierra, empedrado, "la pareja tierra/empedrado debe contrastar");
+  });
+
+  it("v7: el atardecer lleva relleno hemisférico cálido y el sol sigue frontal", () => {
+    const plan = exteriorPlan();
+    plan.stage.ambience = { time_of_day: "atardecer" };
+    const spec = buildGreyboxSpec(plan, "ocaso");
+    const hemi = spec.lights.find((l) => l.kind === "hemi")!;
+    assert.ok(hemi.intensity >= 1.3, "hemisférica de relleno intensa");
+    // groundColor cálido: canal rojo dominante sobre el azul.
+    const g = parseInt(hemi.groundColor!.slice(1), 16);
+    assert.ok(((g >> 16) & 255) > (g & 255), "rebote del suelo cálido");
+    const sun = spec.lights.find((l) => l.kind === "sun")!;
+    const az = Math.abs((Math.atan2(sun.pos![0], sun.pos![2]) * 180) / Math.PI);
+    assert.ok(az <= 60.01, `sol dentro del cono frontal (az=${az.toFixed(1)}°)`);
+  });
+
   it("F3: labels de fuego encienden una luz práctica + resplandor en el clay", () => {
     const plan = interiorPlan();
     plan.volumes.push({

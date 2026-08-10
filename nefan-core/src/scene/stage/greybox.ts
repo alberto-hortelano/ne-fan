@@ -54,8 +54,14 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  ventana hacia arriba anclando el borde inferior (v5 la trasladaba y
  *  recortaba el delantal) con render_px al aspect real; mobiliario sin `h`
  *  recibe altura SEMÁNTICA por label (prop-heights.ts) — dos mesas de la
- *  misma escena ya no salen a alturas dispares. */
-export const STAGE_GREYBOX_VERSION = 6;
+ *  misma escena ya no salen a alturas dispares.
+ *  v7 (pueblo creíble, bench 07_zocodover): `angle` en building/prop (huella
+ *  rotada en colisión, manifest por esquinas rotadas, prims con rotY); capa
+ *  `stage.surroundings` (decorado FUERA de bounds con elevación, sin colisión
+ *  ni manifest — sustituye a las 4 colinas genéricas); contraste real
+ *  tierra/empedrado en groundColorFor; atardecer con relleno hemisférico
+ *  cálido (1.45) para que las caras sur no se hundan en negro. */
+export const STAGE_GREYBOX_VERSION = 7;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -565,7 +571,10 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     const preset = {
       amanecer: { sun: "#ffd9a0", elev: 18, azBase: 55, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
       dia: { sun: "#fff2dd", elev: 40, azBase: -45, intensity: 2.2, hemi: "#bfd4e6", ground: "#8a795a", hemiI: 0.6 },
-      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
+      // Atardecer con RELLENO (bench 07_zocodover): hemi violácea intensa con
+      // suelo cálido — sin ella las caras sur (todas, con el sol frontal bajo)
+      // y el tercio del delantal se hunden a negro.
+      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9a86a0", ground: "#8a6a4a", hemiI: 1.45 },
       noche: { sun: "#9ab0d8", elev: 50, azBase: -30, intensity: 0.9, hemi: "#4a5878", ground: "#2e3040", hemiI: 0.8 },
     }[tod];
     lights.push({ kind: "hemi", color: preset.hemi, groundColor: preset.ground, intensity: preset.hemiI });
