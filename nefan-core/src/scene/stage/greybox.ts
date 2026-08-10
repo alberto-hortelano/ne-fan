@@ -597,6 +597,19 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
             color: wallColors("stone").top,
             cat: "decor",
           });
+          // Parapeto almenado: sin él la torre lee como silo/torre de
+          // refrigeración — la silueta medieval es el 90% del landmark.
+          const merlons = 8;
+          for (let mi = 0; mi < merlons; mi++) {
+            const a = (mi / merlons) * Math.PI * 2;
+            primitives.push({
+              shape: "box",
+              size: [Math.max(0.5, r * 0.32), h * 0.08, Math.max(0.5, r * 0.32)],
+              pos: [sx + Math.cos(a) * r * 0.92, yBase + h + h * 0.06, sz + Math.sin(a) * r * 0.92],
+              color: PALETTE.merlon,
+              cat: "decor",
+            });
+          }
           break;
         }
         case "wall":
