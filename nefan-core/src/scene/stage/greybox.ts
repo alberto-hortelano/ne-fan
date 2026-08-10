@@ -18,6 +18,8 @@
 import { seededRng, uniform } from "../../rng.js";
 import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import type { Volume } from "../blueprint/volumes.js";
+import type { GroundFeature } from "../blueprint/ground.js";
+import { groundFeaturePrims } from "../blueprint/ground-prims.js";
 import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
 import {
   canonicalGreyboxJson,
@@ -61,8 +63,13 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  `stage.surroundings` (decorado FUERA de bounds con elevación, sin colisión
  *  ni manifest — sustituye a las 4 colinas genéricas); contraste real
  *  tierra/empedrado en groundColorFor; atardecer con relleno hemisférico
- *  cálido (1.45) para que las caras sur no se hundan en negro. */
-export const STAGE_GREYBOX_VERSION = 7;
+ *  cálido (1.45) para que las caras sur no se hundan en negro.
+ *  v8 (suelo vectorial): el plató acepta el bloque `ground` del tile
+ *  (path/area/water/deck) — calles CURVAS de verdad (Catmull-Rom muestreado,
+ *  elipses a 32 segmentos) en metros sobre las bandas de terrain, que quedan
+ *  como base. Siluetas: copas esféricas, soportales por label, chimeneas en
+ *  el caserío de surroundings. */
+export const STAGE_GREYBOX_VERSION = 8;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -170,9 +177,13 @@ export interface StageScenePlan {
   volumes: Volume[];
   biome?: string;
   /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
-   *  bandas de tipo. */
+   *  bandas de tipo. Base debajo de `ground`. */
   terrain?: string[];
   terrain_legend?: Record<string, string>;
+  /** Rasgos vectoriales del suelo (mismo schema que el tile): calles curvas,
+   *  plazas orgánicas, agua/decks — se pintan ENCIMA de las bandas de terrain
+   *  y su agua entra en colisión y validación. En celdas de la escena. */
+  ground?: GroundFeature[];
   /** scene_description del Format D — fallback del detector de hora del día
    *  cuando el stage no declara `ambience`. */
   description?: string;
@@ -369,6 +380,27 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       }
       r0 = r1 + 1;
     }
+  }
+
+  // ── Rasgos vectoriales del suelo (v8): calles curvas, plazas orgánicas,
+  // agua/decks ENCIMA de las bandas de terrain (que coronan en +0.02). Mismo
+  // helper que el tile, aquí en METROS con suavizado Catmull-Rom. ───────────
+  if (plan.ground?.length) {
+    primitives.push(
+      ...groundFeaturePrims(plan.ground, {
+        toXZ: (u, v) => [rect.minX + u * mpc, rect.minZ + v * mpc],
+        scale: mpc,
+        yArea: 0.03,
+        yPath: 0.05,
+        yWater: 0.07,
+        yDeck: 0.09,
+        layerT: 0.03,
+        // Pareja de contraste del plató (contrato del test tierra≠empedrado).
+        colors: { dirt: "#8d6f4e", cobble: "#a4937c" },
+        smoothPathSubdiv: 4,
+        ellipseSegments: 32,
+      }),
+    );
   }
 
   /** Caminos que continúan las salidas norte más allá del telón (exterior). */

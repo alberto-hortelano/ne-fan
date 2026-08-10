@@ -494,6 +494,46 @@ describe("buildGreyboxSpec", () => {
     }, /DENTRO del plató/);
   });
 
+  it("v8: ground vectorial — capas, curvas suavizadas y agua", async () => {
+    const { stagePlanFromScene } = await import("../src/scene/stage/index.js");
+    const plan = exteriorPlan();
+    plan.ground = [
+      { id: "plaza", kind: "area", ellipse: { center: [24, 12], rx: 10, ry: 6 }, material: "cobble" },
+      { id: "calle", kind: "path", points: [[0, 18], [16, 14], [30, 16]], w: 4, material: "dirt" },
+      { id: "arroyo", kind: "water", rect: [40, 0, 4, 24] },
+      { id: "puente", kind: "deck", rect: [40, 10, 4, 4], material: "wood" },
+    ];
+    const spec = buildGreyboxSpec(plan, "suelo");
+    // Escalonado de capas en metros, todo por encima del corona de bandas (+0.02).
+    const at = (y: number) => spec.primitives.filter((p) => p.pos[1] === y);
+    assert.ok(at(0.03).length >= 1, "área a Y_AREA_M");
+    assert.ok(at(0.05).length >= 3, "camino a Y_PATH_M");
+    assert.equal(at(0.07)[0]?.cat, "water", "agua a Y_WATER_M");
+    assert.ok(at(0.09).length >= 1, "deck a Y_DECK_M");
+    // Elipse del plató a 32 segmentos; camino de 3 puntos SUAVIZADO (4
+    // subdivisiones/segmento ⇒ 9 puntos ⇒ 8 cajas + 9 juntas, no 2+3).
+    const plazaPrim = at(0.03).find((p) => p.shape === "polygon")!;
+    assert.equal(plazaPrim.points!.length, 32);
+    const calleBoxes = at(0.05).filter((p) => p.shape === "box");
+    assert.ok(calleBoxes.length >= 8, `camino subdividido (${calleBoxes.length} cajas)`);
+    // Determinismo.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "suelo")));
+    // plan.ts: ground inválido y coord fuera de grid lanzan.
+    const rawBase = {
+      scene_id: "x",
+      size: { cols: 24, rows: 18, meters_per_cell: 0.5 },
+      stage: { exits: [{ id: "s", edge: "south", to_place_id: "p", zone: [10, 16, 4, 2], kind: "opening", label: "Sur" }] },
+    };
+    assert.throws(
+      () => stagePlanFromScene({ ...rawBase, ground: [{ id: "a", kind: "area", material: "cobble" }] }),
+      /ground/,
+    );
+    assert.throws(
+      () => stagePlanFromScene({ ...rawBase, ground: [{ id: "lejos", kind: "path", points: [[0, 4], [100, 4]] }] }),
+      /fuera del grid/,
+    );
+  });
+
   it("v7: tierra y empedrado se distinguen en el clay", async () => {
     const { groundColorFor } = await import("../src/scene/greybox/common.js");
     const tierra = groundColorFor("tierra apisonada");
