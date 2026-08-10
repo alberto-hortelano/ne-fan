@@ -5,10 +5,16 @@ de TODA la generación de imagen del cliente 2D: el repintado de cada tile del
 mundo y el skin de cada personaje. El jugador lo elige en la pantalla de título
 (junto al mundo) y queda **congelado en el save**.
 
-Esta carpeta contiene los packs shipped (`acuarela_luminosa`, `medievo_crudo`,
-`sombra_de_cuento`), los subidos por jugadores (`user_*`) y la plantilla
-documental [`_plantilla/`](_plantilla/) con un SVG esquemático por categoría
-que muestra la composición que debe tener cada referencia.
+Esta carpeta contiene los packs shipped (`acero_neon`, `acuarela_luminosa`,
+`medievo_crudo`, `sombra_de_cuento`), los subidos por jugadores (`user_*`) y
+[`_plantilla/`](_plantilla/): los renders clay three.js que sirven de SEED de
+encuadre por vista y categoría (los SVG esquemáticos de la era del compositor
+se eliminaron en 2026-08-07).
+
+Un estilo sirve a una o dos VISTAS según las refs que declare: las 9 zonas
+cenitales + 3 personajes sirven a `overworld`; las 6 categorías de PLATÓ
+(`stage_*`) sirven a `proscenium`. El selector del título filtra los estilos
+compatibles con la vista elegida (`styleViews` derivada de las refs).
 
 Fuente de verdad del formato y las categorías:
 `nefan-core/src/games/style-categories.ts` (re-exportado por `games/loader.ts`).
@@ -46,6 +52,10 @@ data/styles/{style_id}/
   character_commoner.jpg      ┐ 3 PERSONAJES: model sheet (el MISMO
   character_noble.jpg         ├ personaje en frente, 3/4 y espalda)
   character_warrior.jpg      ┘
+  stage_interior.jpg          ┐ 6 PLATÓS (vista proscenio, nivel de suelo,
+  stage_street.jpg            │ 1280×800/1.6:1): interior, street, plaza,
+  …                           ┘ nature, harbor, gate — refs con "view":
+                                "proscenium" en style.json
 ```
 
 Campos de `style.json`:
@@ -56,7 +66,7 @@ Campos de `style.json`:
 | `name`, `description` | Lo que ve el jugador en el selector. |
 | `style_token` | Frase en inglés que complementa a las imágenes en cada prompt. Ver [style_token](#el-style_token). |
 | `cover` | Archivo de portada. Si falta, el builder copia el primer entorno disponible. |
-| `refs` | Lista `{category, file, tags, scene?}` — una entrada por categoría. `nature` es alias legacy de `forest`. (Campo legacy `perspective`: se acepta en el schema pero las entradas `"isometric"` se IGNORAN — era de dos proyecciones.) |
+| `refs` | Lista `{category, file, tags, scene?, view?}` — una entrada por categoría. `nature` es alias legacy de `forest`. `view` es opcional y redundante (el namespace `stage_*` ya implica `proscenium`); declararla explícita es autodocumentación. (Campo legacy `perspective`: se acepta pero las entradas `"isometric"` se IGNORAN.) |
 | `refs[].scene` | OPCIONAL, solo afecta a la GENERACIÓN del pack (`build_style_pack`): sustituye el contenido canónico de la categoría (`CATEGORY_SCENES`, redactado en clave medieval) por una escena propia en inglés. Un pack de otra ambientación (p. ej. sci-fi, `acero_neon`) lo necesita para no pedir graneros o tabernas; debe respetar las mismas reglas de composición de zona (escena completa + transición, NO buildings donde toque). |
 
 Formato técnico: JPEG o PNG; el resolver (`ai_server/style_packs.py`) las
@@ -77,6 +87,31 @@ pipeline usa 2):
 El trazado del tile lo pone el blueprint; la referencia fija CÓMO se pinta —
 materiales, luz, paleta, densidad de detalle — y cómo se tratan alturas y
 caras (cara sur iluminada, cara este en sombra, igual que el compositor).
+
+## Refs de PLATÓ (vista proscenio)
+
+Las 6 categorías `stage_*` son escenas a NIVEL DE SUELO (cámara al sur mirando
+al norte, la convención del proscenio) que alimentan el repintado del plató
+(`/generate_scene_image` con `blueprint_kind: "stage"`, modelo gpt-image-2 vía
+fal). Reglas propias:
+
+- **Encuadre del bench**: se generan desde las plantillas clay de
+  `_plantilla/proscenio/` (1600×1000 → 1280×800). La plantilla es referencia
+  NO estricta — fija cámara y composición; el CONTENIDO lo pone la escena del
+  estilo (`refs[].scene`): `acero_neon` pinta una cantina de nave donde la
+  plantilla enseña una taberna.
+- **Iluminación CONVENCIONAL**: luz desde el lado de cámara, nunca contraluz
+  ni siluetas — los sprites de personajes llevan luz genérica y deben
+  integrarse (greybox v5).
+- **Mismos vetos**: sin texto de interfaz, sin marcos, sin personajes, full
+  bleed.
+- **Resolver**: el `style_tag` de un plató es una categoría `stage_*` (una
+  zona legacy se mapea con `ZONE_TO_STAGE`); el fallback recorre SOLO el
+  namespace de plató — jamás cae a una ref cenital (contaminaría la vista a
+  nivel de suelo). Sin ref de plató, el repintado va solo con el blueprint.
+- **Escenas canónicas** en clave medieval en `STAGE_CATEGORY_SCENES`
+  (`ai_server/style_pack_builder.py`); un pack de otra ambientación las
+  sustituye con `refs[].scene`.
 
 ## Cómo se elige la referencia de cada tile
 
@@ -120,14 +155,16 @@ el pack entero, así que un pack parcial funciona desde el primer día):
    biomas (Miravanda tiene pantanos; un mundo desértico las necesita el día 1).
 8. `character_noble`, `character_warrior`, `cover`.
 
-**Set completo recomendado: 9 entornos + 3 personajes + cover** (~$2.16
-generarlas todas — la cover se copia gratis; ver
-[coste](#las-tres-vías-de-creación)).
+**Set completo recomendado: 9 entornos + 3 personajes + 6 platós + cover**
+(~$2.16 Meshy + ~$1.02 fal para los platós — la cover se copia gratis; ver
+[coste](#las-tres-vías-de-creación)). Un estilo solo-overworld puede omitir
+los platós (no aparecerá al elegir la vista proscenio).
 
 ## Reglas de composición por imagen
 
-Los SVG de [`_plantilla/`](_plantilla/) muestran cada composición. Reglas
-duras comunes:
+La referencia visual de composición top-down es el pack completo
+`medievo_crudo` (9/9 zonas); las plantillas clay de `_plantilla/` fijan el
+encuadre exacto que ve el modelo. Reglas duras comunes:
 
 - **Sin texto, sin UI, sin marcos ni bordes** (las etiquetas de los SVG son
   solo de la plantilla).
@@ -194,15 +231,22 @@ falten (`--only` acepta categorías: `forest`, `settlement`…):
 ```bash
 python ai_server/tools/build_style_pack.py mi_estilo            # solo ausentes
 python ai_server/tools/build_style_pack.py mi_estilo --only forest,settlement
+python ai_server/tools/build_style_pack.py mi_estilo --view proscenium  # solo platós
 python ai_server/tools/build_style_pack.py mi_estilo --dry-run  # coste sin gastar
+# Flujo de APROBACIÓN (re-tirada incondicional a staging, sin tocar el pack):
+python ai_server/tools/build_style_pack.py mi_estilo \
+    --only stage_street --out nefan-core/data/styles/_staging/mi_estilo
+# aprobar = cp del staging al pack (las refs ya están declaradas)
 ```
 
-Sin imágenes previas, el estilo sale del `style_token`; el ENCUADRE lo pone un
-seed fijo por tipo (battlemap para entornos, frame de y_bot para personajes) y
-la COMPOSICIÓN de zona la describe el prompt de cada categoría
-(`CATEGORY_SCENES` en `ai_server/style_pack_builder.py`). Si el pack ya tiene
-imágenes, se usan como referencias de estilo (hasta 3) y el prompt exige
-calcarlas. Requiere `MESHY_API_KEY`.
+Sin imágenes previas, el estilo sale del `style_token`; el ENCUADRE lo pone el
+seed de la categoría (plantillas clay de `_plantilla/{oblicua,proscenio}/` —
+con fallback al battlemap para zonas sin clay — y el frame de y_bot para
+personajes) y la COMPOSICIÓN la describe el prompt de cada categoría
+(`CATEGORY_SCENES`/`STAGE_CATEGORY_SCENES` en `ai_server/style_pack_builder.py`).
+Si el pack ya tiene imágenes, se usan como referencias de estilo y el prompt
+exige calcarlas. Requiere `MESHY_API_KEY` (zonas/personajes) y `FAL_KEY`
+(platós — van SIEMPRE por gpt-image-2 vía fal, el camino del bench).
 
 **2. Subida de jugador (in-game)** — `POST /styles/upload` valida y guarda las
 imágenes en `user_{slug}/` sin gastar créditos, y responde con las categorías
@@ -216,21 +260,19 @@ calcándolas.
 nombre declarado en `refs` y listo: el resolver recarga por mtime, sin
 reiniciar ai_server.
 
-Coste por imagen generada (Meshy image-to-image, plan Pro $0.02/crédito):
-`nano-banana` 3 cr ($0.06) · `nano-banana-2` 6 cr ($0.12) ·
+Coste por imagen generada: zonas/personajes por Meshy (plan Pro
+$0.02/crédito): `nano-banana` 3 cr ($0.06) · `nano-banana-2` 6 cr ($0.12) ·
 **`nano-banana-pro` 9 cr ($0.18, default)** · `gpt-image-2` 12 cr ($0.24).
-Un pack completo desde cero: 12 × $0.18 ≈ **$2.16** (la cover se copia del
-primer entorno sin coste).
+Platós por fal directo: **gpt-image-2 $0.17**. Un pack completo desde cero:
+12 × $0.18 + 6 × $0.17 ≈ **$3.18** (la cover se copia gratis).
 
-**Nota de migración (estado actual): NO regenerar aún.** Los packs shipped
-declaran los 12 refs, pero TODAS sus imágenes presentes son anteriores al set
-de zonas: se generaron con los prompts viejos de sujeto aislado (`forest.jpg`
-es el antiguo `nature.jpg` renombrado — sin senda, sin transición;
-`fortress.jpg` es una fortaleza aislada; los personajes son una sola vista,
-no un model sheet). Cuando la plantilla quede CERRADA hay que regenerar el
-pack ENTERO de cada estilo (borrar los .jpg y correr el CLI), no solo los
-ausentes. Hasta entonces, no lanzar `build_style_pack.py` ni
-`/styles/{id}/complete`. Packs viejos con categoría `nature` siguen
+**Nota de migración (2026-08-07)**: las plantillas clay están CERRADAS y los
+packs se van regenerando con aprobación imagen a imagen. Estado: los 6 platós
+de `medievo_crudo` y `acero_neon` aprobados e instalados; `sombra_de_cuento`
+top-down en regeneración (sus `character_*` eran figuras aisladas y su
+`fortress` un recinto centrado — la composición vieja de sujeto aislado);
+el resto de zonas top-down de los packs siguen siendo de la era anterior y se
+regenerarán por tandas. Packs viejos con categoría `nature` siguen
 funcionando (alias de `forest` en schema y resolver).
 
 ## Mejoras pendientes (documentadas, no implementadas)
@@ -248,8 +290,21 @@ funcionando (alias de `forest` en schema y resolver).
 
 ## La plantilla `_plantilla/`
 
-No es un estilo (los listers ignoran directorios `_*`): es documentación.
-Contiene un SVG esquemático por categoría (+ cover) con la composición
-requerida y sus reglas duras, y `style.json.example` como manifest de
-partida. Para previsualizarlos: `xdg-open _plantilla/settlement.svg` o
-cualquier navegador.
+No es un estilo (los listers ignoran directorios `_*`): son los SEEDS de
+encuadre del builder, renders clay three.js de los pipelines de PRODUCCIÓN:
+
+```
+_plantilla/
+  proscenio/stage_*.png   6 platós del bench labs/escenografia/greybox
+                          (cámara de cine dentro de la escena, 1600×1000)
+  oblicua/{zona}.png      9 tiles del builder tile-greybox real (1024²,
+                          recortados a las 128 celdas)
+  planes/{zona}.json      los planes declarativos de los tiles oblicuos
+  style.json.example      manifest de partida (18 refs: 12 + 6 stage)
+```
+
+Regenerarlas es GRATIS (render local, sin API):
+`./labs/plantillas/capture.sh all` (requiere `npm run dev` en nefan-html para
+las oblicuas; las de plató usan el viewer del bench). Galería de revisión:
+`labs/plantillas/index.html`. Los PNG se commitean y JAMÁS se hashean (el
+render WebGL no es byte-determinista).

@@ -109,6 +109,9 @@ export interface NefanConfig {
     /** fal.ai SAM2 auto-segment model id: segmentación automática completa de
      *  la escena pintada (mundo derivado de imagen). Needs FAL_KEY. */
     auto_segment_model: string;
+    /** Tasa fija USD→EUR para el contador de gasto del panel de dev (los
+     *  precios de Meshy/fal son USD; el cliente 2D muestra euros). */
+    usd_eur_rate: number;
     texture_lazy_load: boolean;
     /** Mount the /diagnostic/* router (skin_test_* endpoints used for manual
      *  parameter sweeps with curl). Off in production: the routes 404. */
@@ -203,6 +206,7 @@ export const CONFIG: NefanConfig = {
     sprite_skin_model: "gpt-image-2",
     scene_style_image: "nefan-core/data/styles/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",
+    usd_eur_rate: 0.86,
     texture_lazy_load: true,
     expose_diagnostic: false,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB

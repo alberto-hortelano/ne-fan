@@ -71,6 +71,35 @@ describe("frameStage", () => {
     assert.ok(f.railHalfM >= 0);
   });
 
+  it("centerVertical: cover centrado — cobertura en ambos ejes y recorte simétrico", () => {
+    // Interior profundo 24×16 (posada_salon): con el encuadre viejo
+    // (groundAnchor 0.98 + maxZoom del renderer) quedaba un +8% del canvas
+    // sin pintar arriba (franja negra) y el delantal cortado por abajo.
+    const p = projFor(24, 16);
+    const vb: ViewBoxRect = { ...VB, minX: -128, width: 256, height: 160 };
+    const f = frameStage(p, vb, 1280, 720, { centerVertical: true, maxZoom: 1 });
+    const destYof = (vy: number): number => f.groundScreenY + (vy - p.ground_y) * f.fit;
+    // Cobertura: el viewBox tapa el canvas entero en ambos ejes.
+    assert.ok(destYof(vb.minY) <= 1e-9, `techo del vb en ${destYof(vb.minY)} ≤ 0`);
+    assert.ok(destYof(vb.minY + vb.height) >= 720 - 1e-9, "suelo del vb ≥ borde inferior");
+    assert.ok(vb.width * f.fit >= 1280 - 1e-6, "cubre el ancho");
+    // Centrado: recorte simétrico arriba/abajo.
+    const cropTop = -destYof(vb.minY);
+    const cropBottom = destYof(vb.minY + vb.height) - 720;
+    assert.ok(Math.abs(cropTop - cropBottom) < 1e-6, `recorte ${cropTop} ≈ ${cropBottom}`);
+    // Sin zoom de raíl: el zoom es el mínimo que cubre (aquí manda el ancho).
+    assert.ok(Math.abs(f.zoom - 1280 / (vb.width * (720 / vb.height))) < 1e-9);
+  });
+
+  it("centerVertical con viewBox del aspect del canvas: cero recorte (zoom 1)", () => {
+    const p = projFor(16);
+    const vb: ViewBoxRect = { minX: -88, minY: -28, width: 1280 / (720 / 138), height: 138 };
+    const f = frameStage(p, vb, 1280, 720, { centerVertical: true, maxZoom: 1 });
+    assert.equal(f.zoom, 1);
+    const top = f.groundScreenY + (vb.minY - p.ground_y) * f.fit;
+    assert.ok(Math.abs(top) < 1e-9, `borde superior clavado a 0 (${top})`);
+  });
+
   it("ancla la línea de suelo al 78% del canvas", () => {
     const f = frameStage(projFor(16), VB, 1280, 720);
     assert.equal(f.groundScreenY, 0.78 * 720);

@@ -11,7 +11,7 @@ import type {
   TileGreyboxSpec,
   TileOccluderSpec,
 } from "@nefan-core/src/scene/blueprint/index.js";
-import type { SpriteRenderer } from "./sprite-renderer.js";
+import { spritePitchCos, type SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
 import { VIEW_PROJECTION, type ViewProjection, type ViewRect } from "./projection.js";
@@ -2202,9 +2202,10 @@ export class CanvasRenderer {
   }
 
   /** Alto EN PANTALLA (px) del frame completo de un sprite de personaje a la
-   *  escala/proyección actuales. Labels y barras de HP se anclan con esto. */
+   *  escala/proyección actuales. Labels y barras de HP se anclan con esto.
+   *  La oblicua dibuja SIEMPRE el set del worldAngle del constructor. */
   spriteFrameScreenH(): number {
-    return SHEET_FRAME_WORLD_M / Math.cos(Math.PI / 6) * this.projection.verticalScale * this.scale;
+    return SHEET_FRAME_WORLD_M / spritePitchCos(this.worldAngle) * this.projection.verticalScale * this.scale;
   }
 
   private drawHpBar(cx: number, cy: number, hp: number, maxHp: number, color: string): void {

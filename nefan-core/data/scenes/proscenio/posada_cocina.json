@@ -1,6 +1,7 @@
 {
   "scene_id": "posada_cocina",
   "place_id": "posada_cocina",
+  "style_tag": "stage_interior",
   "scene_description": "La cocina de la posada: el fogón de leña ocupa la pared del fondo, cuelgan ristras de ajos y una mesa central llena de harina. Hace calor.",
   "size": {
     "cols": 20,
@@ -116,6 +117,7 @@
     "backdrop": {
       "description": "El fogón de leña encendido con ollas de cobre y ristras de ajos colgando"
     },
+    "wall_h_m": 2.8,
     "fourth_wall": {
       "present": true,
       "doors": [

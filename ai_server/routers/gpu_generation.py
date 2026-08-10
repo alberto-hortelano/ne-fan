@@ -17,8 +17,10 @@ from pydantic import BaseModel, Field
 
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
+from fal_client import FalFillClient
 from plate_inpainter import PLATE_ALGO
 from request_util import decode_b64_png
+from spend_tracker import SPEND
 
 logger = logging.getLogger("ai_server")
 
@@ -281,6 +283,7 @@ async def peel_scene_layer_endpoint(body: PeelLayerRequest):
             filled = await asyncio.to_thread(
                 deps.fill_client.fill, image_png, dilated_png, body.prompt
             )
+            SPEND.add(FalFillClient.COST_USD, f"peel: {body.prompt[:50]}", "gpu-worker")
         except Exception as e:
             # Sin saldo / fallo remoto: degradar a LaMa local con SU clave de
             # caché (nunca cachear un relleno LaMa bajo la clave flux).

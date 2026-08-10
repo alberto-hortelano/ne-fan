@@ -1,0 +1,354 @@
+{
+ "scene_id": "zocodover_atardecer",
+ "place_id": "zocodover",
+ "scene_description": "Zocodover al caer la tarde: la plaza del mercado se va vaciando entre pregones, humo de asador y el tintineo de la mesa del cambista. Sobre los tejados, los muros del Alcázar guardan la última luz. Junto al rollo de justicia, corre el rumor de un clérigo traductor desaparecido.",
+ "style_tag": "stage_plaza",
+ "size": {
+  "cols": 60,
+  "rows": 24,
+  "meters_per_cell": 0.5
+ },
+ "terrain": [
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________ssss____________",
+  "____________________________________________ssss____________",
+  "____ssssssssssssss__________________________ssss____________",
+  "____ssssssssssssss__________________________ssss____________",
+  "____________________________________________ssss____________",
+  "____________________________________________ssss____________",
+  "____________________________________________ssss____________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________",
+  "____________________________________________________________"
+ ],
+ "terrain_legend": {
+  "_": "tierra apisonada",
+  "s": "empedrado",
+  "g": "grass",
+  "w": "water",
+  "b": "bridge",
+  "d": "dirt",
+  "a": "sand",
+  "o": "wood",
+  "W": "muro"
+ },
+ "volumes": [
+  {
+   "id": "meson",
+   "label": "mesón del Cordero",
+   "type": "building",
+   "rect": [
+    4,
+    0,
+    14,
+    5
+   ],
+   "wall_h": 11,
+   "roof": {
+    "kind": "gable",
+    "material": "tile"
+   },
+   "walls": {
+    "material": "timber"
+   },
+   "doors": [
+    {
+     "edge": "s",
+     "at": 10,
+     "w": 3
+    }
+   ]
+  },
+  {
+   "id": "casa_cambista",
+   "label": "casa del cambista",
+   "type": "building",
+   "rect": [
+    48,
+    3,
+    12,
+    7
+   ],
+   "wall_h": 10,
+   "roof": {
+    "kind": "gable",
+    "material": "tile"
+   },
+   "walls": {
+    "material": "plaster"
+   },
+   "doors": [
+    {
+     "edge": "w",
+     "at": 5,
+     "w": 2
+    }
+   ]
+  },
+  {
+   "id": "casa_oeste",
+   "label": "casona de postigos cerrados",
+   "type": "building",
+   "rect": [
+    0,
+    8,
+    6,
+    10
+   ],
+   "wall_h": 12,
+   "roof": {
+    "kind": "gable",
+    "material": "tile"
+   },
+   "walls": {
+    "material": "plaster"
+   }
+  },
+  {
+   "id": "rollo",
+   "label": "rollo de justicia",
+   "type": "prop",
+   "rect": [
+    29,
+    11,
+    1,
+    1
+   ],
+   "shape": "cylinder",
+   "h": 8
+  },
+  {
+   "id": "tenderete",
+   "label": "tenderete de asador",
+   "type": "prop",
+   "rect": [
+    36,
+    14,
+    4,
+    2
+   ],
+   "shape": "box",
+   "h": 5
+  },
+  {
+   "id": "barriles",
+   "label": "barriles junto al soportal",
+   "type": "prop",
+   "rect": [
+    7,
+    21,
+    2,
+    1
+   ],
+   "shape": "cylinder",
+   "h": 2
+  },
+  {
+   "id": "poste_pregones",
+   "label": "poste de pregones",
+   "type": "prop",
+   "rect": [
+    50,
+    20,
+    1,
+    1
+   ],
+   "shape": "cylinder",
+   "h": 6
+  }
+ ],
+ "entities": [
+  {
+   "id": "mesa_cambista",
+   "kind": "prop",
+   "name": "mesa del cambista",
+   "cell": [
+    45,
+    5
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "glyph": "m",
+   "h": 0.9
+  },
+  {
+   "id": "guillem",
+   "kind": "npc",
+   "name": "Guillem de Moissac, cambista",
+   "cell": [
+    45,
+    6
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "n"
+  },
+  {
+   "id": "mayor",
+   "kind": "npc",
+   "name": "Doña Mayor Gutiérrez, mesonera",
+   "cell": [
+    15,
+    6
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "n"
+  },
+  {
+   "id": "pregonero",
+   "kind": "npc",
+   "name": "Pregonero del concejo",
+   "cell": [
+    31,
+    12
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "n"
+  },
+  {
+   "id": "sancha",
+   "kind": "npc",
+   "name": "Sancha, vendedora de asaduras",
+   "cell": [
+    37,
+    13
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "n"
+  },
+  {
+   "id": "domingo",
+   "kind": "npc",
+   "name": "Domingo, andador del concejo",
+   "cell": [
+    24,
+    17
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "n"
+  },
+  {
+   "id": "player",
+   "kind": "player",
+   "name": "Tú",
+   "cell": [
+    30,
+    20
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "glyph": "@"
+  }
+ ],
+ "stage": {
+  "focal_m": 16,
+  "exits": [
+   {
+    "id": "puerta_meson",
+    "edge": "north",
+    "to_place_id": "meson_cordero",
+    "zone": [
+     10,
+     5,
+     4,
+     2
+    ],
+    "kind": "door",
+    "label": "Puerta del Mesón del Cordero"
+   },
+   {
+    "id": "calle_ancha",
+    "edge": "west",
+    "to_place_id": "barrio_catedral",
+    "zone": [
+     0,
+     18,
+     2,
+     6
+    ],
+    "kind": "opening",
+    "label": "Calle Ancha hacia la catedral"
+   },
+   {
+    "id": "cuesta_alcazar",
+    "edge": "east",
+    "to_place_id": "alcazar",
+    "zone": [
+     58,
+     11,
+     2,
+     9
+    ],
+    "kind": "opening",
+    "label": "Cuesta al Alcázar"
+   }
+  ],
+  "backdrop": {
+   "description": "Fachadas encaladas de dos y tres plantas con soportales de madera y, sobre los tejados, los muros del Alcázar dorados por el sol de la tarde."
+  },
+  "ambience": {
+   "time_of_day": "atardecer",
+   "mood": "polvo dorado, pregones y humo de asador"
+  }
+ },
+ "ambient_event": "El pregonero repite por tercera vez el aviso del concejo mientras el asador humea y alguien murmura que el clérigo don Esteban lleva dos semanas sin aparecer por su escribanía.",
+ "room_id": "zocodover_atardecer",
+ "room_description": "Zocodover al caer la tarde: la plaza del mercado se va vaciando entre pregones, humo de asador y el tintineo de la mesa del cambista. Sobre los tejados, los muros del Alcázar guardan la última luz. Junto al rollo de justicia, corre el rumor de un clérigo traductor desaparecido.",
+ "terrain_features": [],
+ "exits": [
+  {
+   "place_id": "barrio_catedral",
+   "name": "Barrio de la catedral",
+   "link_kind": "path",
+   "travel_hours": 0.2,
+   "description": "La calle Ancha baja de Zocodover hacia las escribanías y la catedral.",
+   "edge": "west"
+  },
+  {
+   "place_id": "alcazar",
+   "name": "El Alcázar",
+   "link_kind": "path",
+   "travel_hours": 0.1,
+   "description": "La cuesta empedrada que sube de la plaza a la puerta del Alcázar.",
+   "edge": "east"
+  },
+  {
+   "place_id": "meson_cordero",
+   "name": "Mesón del Cordero",
+   "link_kind": "door",
+   "description": "La puerta del Mesón del Cordero bajo los soportales del norte de la plaza.",
+   "edge": "north"
+  }
+ ]
+}

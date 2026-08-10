@@ -34,8 +34,28 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  caché). Bump ⇒ regeneración de todos los platós en modo imagen.
  *  v2: view_box con ASPECT FIJO — el recorte vertical ceñido de v1 producía
  *  encuadres 5:1 que el prestretch a cuadrado deformaba ×5 (casas como
- *  torres, props como tablones: el modelo pintaba ESA arquitectura). */
-export const STAGE_GREYBOX_VERSION = 2;
+ *  torres, props como tablones: el modelo pintaba ESA arquitectura).
+ *  v3 (encuadre de cine): la ventana se coloca por FRACCIÓN sobre el
+ *  horizonte (v2 dejaba 75% de cielo en un plató de 32 m — el modelo pintaba
+ *  casetas perdidas en un campo), el retroceso respeta `stage.focal_m` como
+ *  intención (clampado por cobertura del ancho) y el clay se pinta a aspect
+ *  NATIVO (`render_px`) en vez del cuadrado anamórfico ×2.
+ *  v4 (luz con intención): presets de hora del día (stage.ambience o
+ *  inferida del texto), luces prácticas por label (chimenea/farol/vela) con
+ *  point lights y resplandor en el clay, cielo/niebla por preset.
+ *  v5 (luz convencional): el sol queda SIEMPRE en el cono frontal (±60° desde
+ *  el sur, lado cámara) — los sprites de personajes llevan luz genérica y una
+ *  escena a contraluz los deja sin integrar; los atardeceres son laterales
+ *  con la cara sur iluminada, nunca silueta.
+ *  v6 (escala y encuadre de sala): interior por style_tag ADEMÁS de
+ *  fourth_wall (que es opcional); techo declarable por escena
+ *  (stage.wall_h_m, default 3,5 m) con INT_CEIL_FRAC 0,32 (el techo deja de
+ *  ser losa protagonista); la salvaguarda de volúmenes altos AMPLÍA la
+ *  ventana hacia arriba anclando el borde inferior (v5 la trasladaba y
+ *  recortaba el delantal) con render_px al aspect real; mobiliario sin `h`
+ *  recibe altura SEMÁNTICA por label (prop-heights.ts) — dos mesas de la
+ *  misma escena ya no salen a alturas dispares. */
+export const STAGE_GREYBOX_VERSION = 6;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -43,27 +63,45 @@ export const STAGE_GREYBOX_VERSION = 2;
  *  cámara a pie de calle — da banda de suelo sin caer en el picado del
  *  compositor v3 (10 m). */
 export const GREYBOX_EYE_M = 3.2;
-/** Altura de ojos INTERIOR (m): dentro de una sala de techo 3,2 m la cámara
- *  debe quedar bajo el techo (a 3,2 lo vería de canto y el frame queda negro
- *  encima); 1,8 = la lectura eye-level del bench de la taberna. */
+/** Altura de ojos INTERIOR (m): la cámara debe quedar bien por debajo del
+ *  techo (wall_h_m, mínimo 2,2) — a la altura del techo lo vería de canto y
+ *  el frame queda negro encima; 1,8 = la lectura eye-level del bench de la
+ *  taberna. */
 export const GREYBOX_EYE_INTERIOR_M = 1.8;
-/** FOV horizontal fijo; el retroceso se deriva del ancho del plató. Focal
- *  CORTA a propósito: acerca la cámara y estira la profundidad percibida de
- *  un plató somero (con 56° el fondo a 10 m apenas convergía). */
-export const GREYBOX_HFOV_DEG = 75;
+/** FOV horizontal DEFAULT por modo; el retroceso default se deriva del ancho
+ *  del plató con él. `stage.focal_m` (intención del motor narrativo) manda
+ *  sobre el default, clampado a [MIN_HFOV, MAX_HFOV] para que la placa siga
+ *  cubriendo TODO el ancho (la cámara de raíl panea sobre ella) sin smear de
+ *  gran angular en los bordes. */
+export const EXT_HFOV_DEG = 84;
+export const INT_HFOV_DEG = 96;
+const MIN_HFOV_DEG = 70; // retreat máximo (focal_m grande clampa aquí)
+const MAX_HFOV_DEG = 100; // retreat mínimo
 
 const PX_PER_M = 10;
 const GROUND_Y = 100;
 const VIEW_MARGIN_X = 8;
-const VIEW_BOTTOM_PAD = 10;
 const MIN_RETREAT_M = 4;
-/** Aspect FIJO del view_box (ancho/alto). El cuadrado de trabajo 1024² lo
- *  estira solo ×1.5 en vertical (rango validado por el prestretch de la
- *  oblicua); el encuadre resultante es el de una cámara real fotografiando
- *  la escena completa — cielo/techo incluidos, como las bases del bench. */
-const GREYBOX_VIEW_ASPECT = 2.0;
-/** Altura real de las paredes de un interior (m). */
-const INTERIOR_WALL_H_M = 3.2;
+/** Aspect del view_box (ancho/alto) por modo y colocación de la ventana:
+ *  fracción del alto POR ENCIMA del horizonte (cielo en exterior, techo+pared
+ *  en interior). v2 anclaba la ventana al suelo y en platós anchos dejaba el
+ *  75% de cielo; v3 la ancla al horizonte — composición de cine con el mundo
+ *  jugable dominando el encuadre. El pinhole sigue siendo horizontal: esto es
+ *  un desplazamiento de ventana (principal point), no una cámara inclinada. */
+const EXT_ASPECT = 2.0;
+const INT_ASPECT = 1.6;
+const EXT_SKY_FRAC = 0.38;
+// v6: 0.44 → 0.32 — con casi la mitad del frame por encima del horizonte el
+// techo era una losa protagonista; 0.32 lo deja como cuña de perspectiva en
+// el borde superior y el mundo jugable domina el encuadre.
+const INT_CEIL_FRAC = 0.32;
+/** Lado largo del render nativo que pinta el modelo (el alto sale del
+ *  aspect, en múltiplos de 16 para gpt-image-2). */
+const RENDER_LONG_PX = 1280;
+/** Altura DEFAULT de las paredes de un interior (m) — escala humana de una
+ *  taberna. El motor puede declarar `stage.wall_h_m` por escena (choza 2.4,
+ *  salón noble 5+); el schema lo acota a [2.2, 8]. */
+const INTERIOR_WALL_H_M = 3.5;
 const DOOR_H_M = 2.1;
 const OPENING_H_M = 2.4;
 
@@ -99,6 +137,11 @@ export interface GreyboxSpec {
   proj: StageProjParams;
   view_box: ViewBox;
   camera: GreyboxCamera;
+  /** Tamaño NATIVO [w, h] al que se renderiza y pinta el clay (aspect ==
+   *  view_box, sin estirado anamórfico). El cliente lo normaliza a su
+   *  cuadrado de trabajo 1024² al RECIBIR la pintura (fetchToSquare):
+   *  box_px/SAM/pelado siguen en el cuadrado. */
+  render_px: [number, number];
   /** Gradiente de cielo (exterior); null = interior (fondo lo dan las paredes). */
   sky: { top: string; bottom: string } | null;
   /** Niebla atmosférica (exterior): distancias DESDE LA CÁMARA en metros. */
@@ -123,7 +166,35 @@ export interface StageScenePlan {
    *  bandas de tipo. */
   terrain?: string[];
   terrain_legend?: Record<string, string>;
+  /** scene_description del Format D — fallback del detector de hora del día
+   *  cuando el stage no declara `ambience`. */
+  description?: string;
+  /** style_tag de la escena (stage_interior, stage_street…) — segunda señal
+   *  de interior además de fourth_wall (que es opcional en el prompt). */
+  style_tag?: string;
 }
+
+/** Hora del día del plató: la declarada en `stage.ambience`, o inferida del
+ *  texto (backdrop + descripción + mood) — "luz de atardecer" en el backdrop
+ *  debe atardecer aunque el motor no rellene el campo. Default "dia". */
+export type TimeOfDay = "amanecer" | "dia" | "atardecer" | "noche";
+export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
+  const declared = plan.stage.ambience?.time_of_day;
+  if (declared) return declared;
+  const text = [
+    plan.stage.backdrop?.description ?? "",
+    plan.description ?? "",
+    plan.stage.ambience?.mood ?? "",
+  ].join(" ").toLowerCase();
+  if (/amanecer|alba\b|aurora|primera luz/.test(text)) return "amanecer";
+  if (/atardecer|ocaso|poniente|caer la tarde|crep[uú]sculo|sol bajo/.test(text)) return "atardecer";
+  if (/\bnoche\b|nocturn|luna|estrellas|medianoche/.test(text)) return "noche";
+  return "dia";
+}
+
+/** Labels que encienden una luz práctica cálida sobre el volumen. */
+const PRACTICAL_LIGHT_RE =
+  /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
 
 /** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
  *  compartido por el manifest del greybox y la colisión declarada (si
@@ -183,13 +254,25 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
   const widthM = cols * mpc;
   const depthM = rows * mpc;
   const rect = { minX: -widthM / 2, minZ: -depthM / 2, maxX: widthM / 2, maxZ: depthM / 2 };
-  const interiorLike = plan.stage.fourth_wall?.present === true;
+  // Interior por CUALQUIERA de las dos señales: `fourth_wall` es opcional en
+  // el prompt — un interior que solo declare style_tag no debe salir con
+  // cielo, colinas y ojo de exterior (3,2 m).
+  const interiorLike =
+    plan.stage.fourth_wall?.present === true || plan.style_tag === "stage_interior";
   const eyeM = interiorLike ? GREYBOX_EYE_INTERIOR_M : GREYBOX_EYE_M;
   const horizonY = GROUND_Y - eyeM * PX_PER_M;
 
+  // Retroceso: `stage.focal_m` es la INTENCIÓN de distancia de cámara del
+  // motor narrativo (22 sala íntima … 30+ plano general), clampada para que
+  // el frame cubra el ancho completo sin pasar de gran angular.
+  const halfWM = widthM / 2 + VIEW_MARGIN_X / PX_PER_M;
+  const hfovDefault = interiorLike ? INT_HFOV_DEG : EXT_HFOV_DEG;
+  const rDefault = halfWM / Math.tan(rad(hfovDefault / 2));
+  const rMin = halfWM / Math.tan(rad(MAX_HFOV_DEG / 2));
+  const rMax = halfWM / Math.tan(rad(MIN_HFOV_DEG / 2));
   const retreat = Math.max(
     MIN_RETREAT_M,
-    (widthM / 2 + VIEW_MARGIN_X / PX_PER_M) / Math.tan(rad(GREYBOX_HFOV_DEG / 2)),
+    Math.min(rMax, Math.max(rMin, plan.stage.focal_m ?? rDefault)),
   );
   const proj: StageProjParams = {
     focal_m: retreat,
@@ -270,11 +353,13 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     }
   }
 
-  // ── Interior: paredes reales con sus vanos; techo bajo ────────────────────
+  // ── Interior: paredes reales con sus vanos; techo a escala de la sala ─────
   if (interiorLike) {
     const wall = wallColors("plaster");
     const wallT = 0.18; // grosor
     const sideTone = darken(wall.lit, 0.12);
+    // Altura de sala declarada por el motor (wall_h_m) o default de taberna.
+    const wallHM = plan.stage.wall_h_m ?? INTERIOR_WALL_H_M;
 
     /** Segmentos [a,b] de una pared tras restarle los vanos (rangos abiertos). */
     const carve = (full: [number, number], holes: Array<[number, number]>): Array<[number, number]> => {
@@ -301,7 +386,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       holeH: number,
     ): void => {
       const len = b - a;
-      const h = INTERIOR_WALL_H_M - holeH;
+      const h = wallHM - holeH;
       if (h <= 0.02 || len <= 0.02) return;
       primitives.push({
         shape: "box",
@@ -347,7 +432,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     for (const [a, b] of carve(backSpan, backHoles)) {
       primitives.push({
         shape: "box",
-        size: [b - a, INTERIOR_WALL_H_M, wallT],
+        size: [b - a, wallHM, wallT],
         pos: [(a + b) / 2, 0, rect.minZ],
         color: wall.lit,
         cat: "wall",
@@ -388,7 +473,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       for (const [a, b] of carve([rect.minZ, rect.maxZ], holes)) {
         primitives.push({
           shape: "box",
-          size: [wallT, INTERIOR_WALL_H_M, b - a],
+          size: [wallT, wallHM, b - a],
           pos: [x, 0, (a + b) / 2],
           color: sideTone,
           cat: "wall",
@@ -404,7 +489,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     primitives.push({
       shape: "box",
       size: [floorSpanX, 0.12, ceilDepth],
-      pos: [0, INTERIOR_WALL_H_M, rect.minZ + ceilDepth / 2],
+      pos: [0, wallHM, rect.minZ + ceilDepth / 2],
       // Madera clara: la cara inferior solo recibe ambient/hemi — un tono
       // oscuro se hunde a negro y devora el tercio superior del encuadre.
       color: lighten(PALETTE.woodTop, 0.18),
@@ -451,54 +536,132 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     buildVolumePrimitives(v, plan, rect, mpc, seedKey, primitives);
   }
 
-  // ── Luces ─────────────────────────────────────────────────────────────────
+  // ── Luces: preset por HORA DEL DÍA + prácticas por label ─────────────────
+  const tod = resolveTimeOfDay(plan);
   const lights: GreyboxLight[] = [];
   const lrng = seededRng(`stage:${seedKey}:light`);
   if (interiorLike) {
     // Interior cálido (posada del bench): ambient alta para que techo y
-    // rincones no se hundan a negro, y una clave cálida desde la cuarta
-    // pared ausente.
-    lights.push({ kind: "ambient", color: "#8a7c6a", intensity: 0.85 });
+    // rincones no se hundan a negro, y una clave desde la cuarta pared
+    // ausente cuyo color sigue la hora (la "ventana" del set).
+    const key = { amanecer: "#ffe0b0", dia: "#ffd9a8", atardecer: "#ffbe82", noche: "#7a8cb8" }[tod];
+    const keyIntensity = tod === "noche" ? 0.8 : 1.7;
+    lights.push({ kind: "ambient", color: "#8a7c6a", intensity: tod === "noche" ? 0.7 : 0.85 });
     lights.push({ kind: "hemi", color: "#a89a86", groundColor: "#6a5c4c", intensity: 0.6 });
     const az = rad(uniform(lrng, -12, 12));
     lights.push({
       kind: "sun",
-      color: "#ffd9a8",
-      intensity: 1.7,
+      color: key,
+      intensity: keyIntensity,
       pos: [Math.sin(az) * 14, 6.5, rect.maxZ + retreat * 0.6],
       castShadow: true,
     });
   } else {
-    lights.push({ kind: "hemi", color: "#bfd4e6", groundColor: "#8a795a", intensity: 0.6 });
-    // Sol del suroeste ± variación sembrada, elevación 40°.
-    const az = rad(-45 + uniform(lrng, -35, 35));
+    // Sol/luna por preset: elevación y color cuentan la hora; el azimut
+    // sembrado da variedad entre platós PERO siempre dentro del cono FRONTAL
+    // (±60° desde el sur, lado cámara): los sprites de personajes llevan luz
+    // genérica y un set a contraluz los deja sin integrar. Los atardeceres
+    // son laterales-frontales (cara sur iluminada), nunca silueta.
+    const preset = {
+      amanecer: { sun: "#ffd9a0", elev: 18, azBase: 55, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
+      dia: { sun: "#fff2dd", elev: 40, azBase: -45, intensity: 2.2, hemi: "#bfd4e6", ground: "#8a795a", hemiI: 0.6 },
+      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
+      noche: { sun: "#9ab0d8", elev: 50, azBase: -30, intensity: 0.9, hemi: "#4a5878", ground: "#2e3040", hemiI: 0.8 },
+    }[tod];
+    lights.push({ kind: "hemi", color: preset.hemi, groundColor: preset.ground, intensity: preset.hemiI });
+    if (tod === "noche") lights.push({ kind: "ambient", color: "#30405c", intensity: 0.4 });
+    const FRONT_CONE_DEG = 60;
+    const az = rad(
+      Math.max(-FRONT_CONE_DEG, Math.min(FRONT_CONE_DEG, preset.azBase + uniform(lrng, -10, 10))),
+    );
     const dist = 90;
     lights.push({
       kind: "sun",
-      color: "#fff2dd",
-      intensity: 2.2,
-      pos: [dist * Math.sin(az), dist * Math.tan(rad(40)), dist * Math.cos(az)],
+      color: preset.sun,
+      intensity: preset.intensity,
+      pos: [dist * Math.sin(az), dist * Math.tan(rad(preset.elev)), dist * Math.cos(az)],
       castShadow: true,
     });
   }
+  // Luces prácticas: un volumen etiquetado como fuego/farol/vela enciende un
+  // punto cálido encima (y un pequeño resplandor en el clay) — la chimenea
+  // del bench como sistema. Cap 6 por plató.
+  let practicals = 0;
+  for (const v of plan.volumes) {
+    if (practicals >= 6 || !PRACTICAL_LIGHT_RE.test(v.label)) continue;
+    const fp = volumeFootprintCells(v);
+    if (!fp) continue;
+    const px = rect.minX + (fp[0] + fp[2] / 2) * mpc;
+    const pz = rect.minZ + (fp[1] + fp[3] / 2) * mpc;
+    const hM = volumeHeightM(v, mpc);
+    const py = Math.min(Math.max(hM * 0.6, 0.5), 2.2);
+    lights.push({
+      kind: "point",
+      color: "#ff9b4a",
+      intensity: interiorLike ? 18 : 12,
+      pos: [px, py, pz],
+      distance: 9,
+      decay: 1.8,
+    });
+    // Resplandor visible en el clay (la "ascua" del bench): el modelo de
+    // imagen lo lee como fuego/farol encendido y pinta la fuente de luz.
+    primitives.push({
+      shape: "box",
+      size: [0.35, 0.5, 0.35],
+      pos: [px, Math.max(0.05, py - 0.45), pz],
+      color: "#ffa04e",
+      cat: "prop",
+      volId: `vol_${v.id}`,
+      noShadow: true,
+    });
+    practicals++;
+  }
 
-  // ── view_box: aspect FIJO (cámara real, no recorte ceñido) ────────────────
-  // El alto sale del ancho: la banda superior es cielo (exterior) o techo
-  // (interior, extendido hasta la cámara) — como en las bases del bench.
+  // ── view_box: ventana colocada por FRACCIÓN sobre el horizonte ────────────
+  // Aspect fijo por modo; la banda superior (cielo o techo) queda acotada y
+  // el mundo jugable domina el encuadre. Salvaguarda: si un volumen alto
+  // sobresale de la ventana, se abre hacia arriba para no decapitarlo.
   const vbMinX = -(widthM / 2) * PX_PER_M - VIEW_MARGIN_X;
   const vbWidth = widthM * PX_PER_M + 2 * VIEW_MARGIN_X;
-  const vbHeight = vbWidth / GREYBOX_VIEW_ASPECT;
+  const vbAspect = interiorLike ? INT_ASPECT : EXT_ASPECT;
+  const vbHeightBase = vbWidth / vbAspect;
+  let vbMinY = horizonY - (interiorLike ? INT_CEIL_FRAC : EXT_SKY_FRAC) * vbHeightBase;
+  // El borde INFERIOR queda FIJO: la salvaguarda de volúmenes altos amplía la
+  // ventana hacia arriba (crece height), nunca la traslada — trasladarla
+  // recortaba suelo y delantal por abajo (cartel de salida decapitado).
+  const vbMaxY = vbMinY + vbHeightBase;
+  // Tope superior de los volúmenes en vista (proyección pura, sin view_box).
+  let minTopVy = Infinity;
+  for (const v of plan.volumes) {
+    const fp = volumeFootprintCells(v);
+    if (!fp) continue;
+    const hM = volumeHeightM(v, mpc);
+    for (const x of [rect.minX + fp[0] * mpc, rect.minX + (fp[0] + fp[2]) * mpc]) {
+      for (const zWorld of [rect.minZ + fp[1] * mpc, rect.minZ + (fp[1] + fp[3]) * mpc]) {
+        const zS = Math.max(0.05, rect.maxZ - zWorld);
+        minTopVy = Math.min(minTopVy, stageToViewAt(proj, x, zS, hM)[1]);
+      }
+    }
+  }
+  if (Number.isFinite(minTopVy)) vbMinY = Math.min(vbMinY, minTopVy - 6);
+  const vbHeight = vbMaxY - vbMinY;
   const viewBox: ViewBox = {
     minX: vbMinX,
-    minY: GROUND_Y + VIEW_BOTTOM_PAD - vbHeight,
+    minY: vbMinY,
     width: vbWidth,
     height: vbHeight,
   };
+  // Render nativo: aspect REAL del view_box (puede ser más alto que el base
+  // si la salvaguarda amplió la ventana), múltiplos de 16 — un aspect
+  // constante con height variable pintaría anamórfico (lección de v2).
+  const renderPx: [number, number] = [
+    RENDER_LONG_PX,
+    Math.round((RENDER_LONG_PX * vbHeight) / vbWidth / 16) * 16,
+  ];
 
   // ── Cámara three.js derivada de proj + view_box ───────────────────────────
   const F = PX_PER_M * retreat; // focal en unidades de vista
   const vbMaxX = viewBox.minX + viewBox.width;
-  const vbMaxY = viewBox.minY + viewBox.height;
   const halfW = Math.max(Math.abs(viewBox.minX), Math.abs(vbMaxX));
   const halfH = Math.max(Math.abs(horizonY - viewBox.minY), Math.abs(vbMaxY - horizonY));
   const camera: GreyboxCamera = {
@@ -569,10 +732,24 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     proj,
     view_box: viewBox,
     camera,
-    sky: interiorLike ? null : { top: "#7593b4", bottom: "#cfd8dc" },
+    render_px: renderPx,
+    sky: interiorLike
+      ? null
+      : {
+          // Horizontes SUAVES: un cielo-ascua tras el set lee como contraluz
+          // aunque el sol venga de cámara (y los sprites no lo llevarían).
+          amanecer: { top: "#7a88aa", bottom: "#e4cca8" },
+          dia: { top: "#7593b4", bottom: "#cfd8dc" },
+          atardecer: { top: "#6a6488", bottom: "#d8ac84" },
+          noche: { top: "#101828", bottom: "#2e3e5e" },
+        }[tod],
     fog: interiorLike
       ? null
-      : { color: "#c3cdd4", near: retreat + depthM * 0.6, far: retreat + depthM + 130 },
+      : {
+          color: { amanecer: "#d8c8b0", dia: "#c3cdd4", atardecer: "#c39a74", noche: "#223048" }[tod],
+          near: retreat + depthM * 0.6,
+          far: retreat + depthM + 130,
+        },
     lights,
     primitives,
     manifest,
@@ -636,27 +813,48 @@ function buildVolumePrimitives(
   switch (v.type) {
     case "building": {
       const wallHM = (v.wall_h ?? 5) * mpc;
-      const wall = wallColors(v.walls?.material, v.walls?.color);
-      const roof = roofColors(v.roof?.material, v.roof?.color);
+      // Variación de tono sembrada por edificio: dos casas iguales del plan
+      // dejan de ser gemelas clónicas (el modelo pintaba ESA monotonía).
+      const tone = uniform(rng, -0.08, 0.08);
+      const baseWall = wallColors(v.walls?.material, v.walls?.color);
+      const baseRoof = roofColors(v.roof?.material, v.roof?.color);
+      const wall = {
+        lit: tone >= 0 ? lighten(baseWall.lit, tone) : darken(baseWall.lit, -tone),
+        top: baseWall.top,
+      };
+      const roofTone = uniform(rng, -0.07, 0.07);
+      const roof = {
+        lit: roofTone >= 0 ? lighten(baseRoof.lit, roofTone) : darken(baseRoof.lit, -roofTone),
+      };
       push({ shape: "box", size: [w, wallHM, d], pos: [cx, 0, cz], color: wall.lit, cat: "building" });
-      // Puerta y ventanas en la fachada sur (cara a cámara).
+      // Puerta en la fachada sur (cara a cámara), descentrada y sembrada.
+      const doorX = cx + uniform(rng, -w * 0.28, w * 0.28);
       push({
         shape: "box",
         size: [0.9, 1.9, 0.08],
-        pos: [cx, 0, southZ + 0.05],
+        pos: [doorX, 0, southZ + 0.05],
         color: PALETTE.woodFace,
         cat: "building",
       });
-      const nWin = w > 3.5 ? 2 : 1;
-      for (let i = 0; i < nWin; i++) {
-        const wx = cx + (i === 0 ? -1 : 1) * uniform(rng, w * 0.22, w * 0.34);
-        push({
-          shape: "box",
-          size: [0.7, 0.7, 0.08],
-          pos: [wx, wallHM - 1.3, southZ + 0.05],
-          color: darken(wall.lit, 0.45),
-          cat: "building",
-        });
+      // Ventanas por PLANTA: una fila por cada ~2.4 m de muro (v2 ponía 1-2
+      // ventanas fijas arriba — una casa de dos plantas leía como nave ciega).
+      const nFloors = Math.max(1, Math.floor(wallHM / 2.4));
+      const winPerFloor = Math.max(1, Math.min(4, Math.round(w / 2.6)));
+      const winColor = darken(wall.lit, 0.45);
+      for (let f = 0; f < nFloors; f++) {
+        const wy = f === 0 ? Math.min(wallHM - 1.1, 1.3) : 1.1 + f * 2.4;
+        if (wy + 0.9 > wallHM - 0.1) break;
+        for (let i = 0; i < winPerFloor; i++) {
+          const wx = cx + ((i + 0.5) / winPerFloor - 0.5) * w * 0.82 + uniform(rng, -0.12, 0.12);
+          if (f === 0 && Math.abs(wx - doorX) < 0.9) continue; // no pisar la puerta
+          push({
+            shape: "box",
+            size: [0.7, 0.9, 0.08],
+            pos: [wx, wy, southZ + 0.05],
+            color: winColor,
+            cat: "building",
+          });
+        }
       }
       const roofKind = v.roof?.kind ?? "gable";
       if (roofKind === "flat" || roofKind === "none") {
@@ -679,6 +877,18 @@ function buildVolumePrimitives(
           color: roof.lit,
           cat: "building",
         });
+        // Chimenea sembrada (2 de cada 3 edificios): silueta de tejado viva.
+        if (uniform(rng, 0, 1) < 0.67) {
+          const chX = cx + uniform(rng, -w * 0.3, w * 0.3);
+          const chZ = cz + uniform(rng, -d * 0.2, d * 0.2);
+          push({
+            shape: "box",
+            size: [0.5, roofH + 0.9, 0.5],
+            pos: [chX, wallHM, chZ],
+            color: darken(wall.lit, 0.12),
+            cat: "building",
+          });
+        }
       }
       break;
     }
@@ -796,7 +1006,49 @@ function buildVolumePrimitives(
     case "prop": {
       const hM = (v.h ?? 2) * mpc;
       const color = v.color ?? PALETTE.woodTop;
-      if (v.shape === "cylinder") {
+      const label = v.label.toLowerCase();
+      // Tres heurísticas de silueta (solo las que el modelo confundía de
+      // verdad: una caja llamada "mesa" pintaba un arcón; una llamada "carro"
+      // pintaba un portón). El resto: caja/cilindro del TAMAÑO declarado —
+      // el tamaño correcto es el 80% del valor.
+      if (v.shape !== "cylinder" && /\bmesa|banco\b/.test(label) && w >= 0.8 && d >= 0.4) {
+        // Tablero + patas: silueta inequívoca de mueble.
+        const topH = Math.max(0.06, hM * 0.1);
+        const legH = hM - topH;
+        push({ shape: "box", size: [w, topH, d], pos: [cx, legH, cz], color, cat: "prop" });
+        const legR = 0.06;
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            push({
+              shape: "box",
+              size: [legR * 2, legH, legR * 2],
+              pos: [cx + sx * (w / 2 - 0.12), 0, cz + sz * (d / 2 - 0.12)],
+              color: darken(color, 0.15),
+              cat: "prop",
+            });
+          }
+        }
+      } else if (v.shape !== "cylinder" && /carro|carreta/.test(label) && w >= 1) {
+        // Caja del carro elevada + dos ruedas: deja de leer como portón.
+        const boxH = hM * 0.5;
+        const wheelR = Math.min(0.55, hM * 0.4);
+        push({ shape: "box", size: [w, boxH, d * 0.85], pos: [cx, wheelR * 0.9, cz], color, cat: "prop" });
+        const along = w >= d;
+        for (const s of [-1, 1]) {
+          push({
+            shape: "cylinder",
+            size: [wheelR, 0.12],
+            // rotX tumba el cilindro sobre su base: el centro del disco queda
+            // en pos.y — a la altura del radio para que apoye en el suelo.
+            pos: along
+              ? [cx + s * w * 0.28, wheelR, cz + d * 0.35]
+              : [cx + w * 0.35, wheelR, cz + s * d * 0.28],
+            rotX: Math.PI / 2,
+            color: darken(color, 0.25),
+            cat: "prop",
+          });
+        }
+      } else if (v.shape === "cylinder") {
         push({ shape: "cylinder", size: [Math.min(w, d) / 2, hM], pos: [cx, 0, cz], color, cat: "prop" });
         push({
           shape: "cylinder",

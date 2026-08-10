@@ -31,14 +31,22 @@ import {
   STYLE_CHARACTER_CATEGORIES,
   STYLE_ENV_CATEGORIES,
   STYLE_MANIFEST_CATEGORIES,
+  STYLE_STAGE_CATEGORIES,
+  WORLD_VIEWS,
+  viewForCategory,
   type StyleCategory,
+  type WorldView,
 } from "./style-categories.js";
 
 export {
   STYLE_CATEGORIES,
   STYLE_CHARACTER_CATEGORIES,
   STYLE_ENV_CATEGORIES,
+  STYLE_STAGE_CATEGORIES,
+  WORLD_VIEWS,
+  viewForCategory,
   type StyleCategory,
+  type WorldView,
 };
 
 const SafeId = z.string().regex(SAFE_ID, "id must be filesystem-safe (A-Za-z0-9_.-)");
@@ -95,17 +103,52 @@ export const StyleManifestSchema = z
              *  categoría (CATEGORY_SCENES, redactada en clave medieval) — un
              *  pack sci-fi lo necesita para no pedir graneros o tabernas. */
             scene: z.string().min(1).optional(),
+            /** Vista a la que sirve esta ref. OPCIONAL y redundante: el
+             *  namespace de la categoría ya la determina (`stage_*` →
+             *  proscenium, resto → overworld); declararla explícita es
+             *  autodocumentación en packs proscenio. Si no casa con la
+             *  categoría, el schema rechaza (fail-loud). */
+            view: z.enum(WORLD_VIEWS).optional(),
             /** LEGACY (era de dos proyecciones): se acepta para no romper
              *  packs de usuario en disco, pero las entradas "isometric" se
              *  IGNORAN en todos los consumidores. */
             perspective: z.enum(["topdown", "isometric"]).optional(),
           })
-          .strict(),
+          .strict()
+          .superRefine((ref, ctx) => {
+            if (ref.view && ref.view !== viewForCategory(ref.category)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message:
+                  `ref "${ref.category}" pertenece a la vista ` +
+                  `"${viewForCategory(ref.category)}" y no puede declarar ` +
+                  `view "${ref.view}"`,
+              });
+            }
+          }),
       )
       .default([]),
   })
   .strict();
 export type StyleManifest = z.infer<typeof StyleManifestSchema>;
+
+/** Vistas a las que sirve un estilo, DERIVADAS de sus refs de entorno
+ *  declaradas (no de los archivos en disco — un pack "en construcción" ya
+ *  aparece en el selector y el runtime degrada a blueprint-solo mientras
+ *  falten imágenes). Las refs de personaje no cuentan (compartidas entre
+ *  vistas) y las "isometric" legacy se ignoran. `refs: []` → sin vistas:
+ *  el estilo queda invisible en el selector. */
+export function styleViews(manifest: StyleManifest): WorldView[] {
+  const present = new Set<WorldView>();
+  for (const ref of manifest.refs) {
+    if (ref.perspective === "isometric") continue;
+    if ((STYLE_CHARACTER_CATEGORIES as readonly string[]).includes(ref.category)) {
+      continue;
+    }
+    present.add(viewForCategory(ref.category));
+  }
+  return WORLD_VIEWS.filter((v) => present.has(v));
+}
 
 /** Entrada del listado para la title screen (games_listed). */
 export interface GameListing {
@@ -114,6 +157,9 @@ export interface GameListing {
   description: string;
   style_id: string;
   world_brief: string;
+  /** Vista DEFAULT del mundo (game.json, ya resuelta: ausente = overworld).
+   *  El selector del título la preselecciona; el jugador puede cambiarla. */
+  view: WorldView;
 }
 
 export interface StyleListing {
@@ -123,6 +169,8 @@ export interface StyleListing {
   /** Ruta servida por el State API del bridge (GET /styles/{id}/{file}),
    *  ausente si el archivo de portada aún no existe en disco. */
   cover_url?: string;
+  /** Vistas a las que sirve el estilo (styleViews). El título filtra con esto. */
+  views: WorldView[];
 }
 
 /** Carga y valida `game.json` + presencia de `world.md`. Fail-loud: se usa al
@@ -208,6 +256,7 @@ export function listGames(gamesDir: string): GameListing[] {
         description: meta.description,
         style_id: meta.style_id,
         world_brief: meta.world_brief,
+        view: meta.view ?? "overworld",
       });
     } catch (err) {
       console.warn(
@@ -238,6 +287,7 @@ export function listStyles(stylesDir: string): StyleListing[] {
         name: manifest.name,
         description: manifest.description,
         cover_url: hasCover ? `/styles/${manifest.style_id}/${manifest.cover}` : undefined,
+        views: styleViews(manifest),
       });
     } catch (err) {
       console.warn(

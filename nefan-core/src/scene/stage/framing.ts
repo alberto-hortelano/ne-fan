@@ -51,6 +51,11 @@ export interface FramingOpts {
   minZoom?: number;
   /** Fracción de la altura del canvas donde se ancla ground_y. */
   groundAnchor?: number;
+  /** Centra el viewBox verticalmente en el canvas: el recorte sobrante se
+   *  reparte simétrico arriba/abajo e ignora groundAnchor. La composición
+   *  vertical (horizonte, cielo/techo) queda en manos del SPEC del greybox
+   *  (SKY_FRAC/CEIL_FRAC), no del canvas del cliente. */
+  centerVertical?: boolean;
 }
 
 export const FRAMING_DEFAULTS: Required<FramingOpts> = {
@@ -60,6 +65,7 @@ export const FRAMING_DEFAULTS: Required<FramingOpts> = {
   maxZoom: 2.8,
   minZoom: 1,
   groundAnchor: 0.78,
+  centerVertical: false,
 };
 
 export function frameStage(
@@ -76,13 +82,19 @@ export function frameStage(
   // maxZoom; los gigantes a minZoom, donde fit0 ya deja raíl de sobra).
   const zoomRaw = canvasW / (o.coverFraction * p.width_m * p.px_per_m * fit0);
   let zoom = Math.min(o.maxZoom, Math.max(o.minZoom, zoomRaw));
-  // Cobertura TOTAL: la escena debe llenar el canvas de borde a borde — sin
-  // bandas vacías en los flancos (v3: ya no existe el marco de proscenio que
-  // las tapaba). Gana incluso a maxZoom: mejor ampliar la pintura que
-  // enseñar el vacío. El raíl pierde recorrido (railHalfM clampa a 0).
-  zoom = Math.max(zoom, canvasW / (vb.width * fit0));
+  // Cobertura TOTAL en AMBOS ejes: la escena debe llenar el canvas de borde
+  // a borde — sin bandas vacías en los flancos ni franjas sin pintar arriba
+  // (v3: ya no existe el marco de proscenio que las tapaba). Gana incluso a
+  // maxZoom: mejor ampliar la pintura que enseñar el vacío. El raíl pierde
+  // recorrido (railHalfM clampa a 0).
+  zoom = Math.max(zoom, canvasW / (vb.width * fit0), canvasH / (vb.height * fit0));
   const fit = fit0 * zoom;
-  const groundScreenY = o.groundAnchor * canvasH;
+  // centerVertical: recorte simétrico — el borde superior del viewBox queda
+  // en (canvasH − vb.height·fit)/2 ≤ 0 (cobertura garantizada por el zoom) y
+  // ground_y cae donde el spec lo compuso, no donde lo ancle el cliente.
+  const groundScreenY = o.centerVertical
+    ? (canvasH - vb.height * fit) / 2 + (p.ground_y - vb.minY) * fit
+    : o.groundAnchor * canvasH;
   // Con proyección calibrada a la pintura (center_x/cam_x_m ≠ 0) el suelo
   // pintado está descentrado en el viewBox y la garantía anti-huecos del
   // header deja de ser simétrica: recortar el raíl por la asimetría es la

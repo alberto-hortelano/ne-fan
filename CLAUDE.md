@@ -89,6 +89,17 @@ El comando `status` devuelve: player_pos, camera_yaw/pitch, fps, room, combat_hp
 
 **IMPORTANTE:** Cada vez que se modifique algo visual (animaciones, movimiento, cámara, colisiones), ejecutar los tests automatizados y verificar los screenshots.
 
+### Comprobación final crítica (definición de hecho)
+
+Una tarea NO está terminada cuando "funciona lo que construí": está terminada cuando se cumple **lo que se pidió**. Antes de cerrar cualquier tarea:
+
+1. **Releer la petición ORIGINAL del usuario** (no el plan propio) y convertirla en criterios de aceptación literales. Un requisito absoluto ("siempre", "en todo momento", "cualquier") obliga a enumerar TODOS los estados del sistema (arranque/título, diálogo, overlays, history browser, offline, fixtures…) y probar el criterio en cada uno.
+2. **Verificar en el flujo real del usuario, empezando donde él empieza** (arrancar el juego desde cero), no en un escenario preparado para que la prueba pase.
+3. **Regla del workaround:** si durante la verificación hay que ocultar/forzar/stubear algo para ver la feature (un `display:none` a un overlay, estado sintético, saltarse una pantalla), el usuario tendrá ese mismo obstáculo delante — es un HALLAZGO que arreglar o reportar, nunca un paso de la receta de captura.
+4. **Pasada adversarial:** el último paso es intentar FALSIFICAR cada criterio ("¿en qué situación NO se cumple?"), no confirmarlo una vez y declararlo hecho.
+
+Caso de referencia (2026-08-09): panel de dev "siempre visible" — renderizaba bien, pero el title-screen lo tapaba justo en el flujo donde más importaba (crear mundo/estilo = gastar créditos). La captura de verificación YA lo mostraba tapado y se ocultó el overlay para fotografiar en vez de leerlo como bug.
+
 ### Principios de testing visual
 
 1. **Los tests deben simular el input real del jugador.** Usar `{"cmd":"attack","type":"quick"}` (pasa por `sync.attack()`) en vez de `{"cmd":"play_anim","name":"quick"}` (va directo al animator). El camino debe ser idéntico al del click del jugador.
@@ -426,11 +437,13 @@ de viajar es pisar una **zona de salida** → corte a negro (`#scene-fade`) +
 `player_entered_place` → lazy realize o re-broadcast cacheado → spawn junto a
 la puerta de vuelta (patrón puertas de Resident Evil).
 
-- **Selección**: `game.json → view` (enum `overworld|proscenium`), congelada
-  en `world.view` como el estilo; resume con view desconocida aborta. Ambos
-  `render_mode` valen: "vector" (clay three.js local, sin créditos) e "image"
-  (repintado + pelado por capas, ver abajo). Juego dev:
-  `data/games/dev_proscenio`.
+- **Selección**: la vista se elige en el TÍTULO (selector propio; `game.json
+  → view` solo aporta el default del mundo), viaja en `start_session.view` y
+  queda congelada en `world.view` como el estilo; el selector de estilos
+  filtra los compatibles con la vista (`styleViews` de las refs declaradas);
+  resume con view desconocida aborta. Ambos `render_mode` valen: "vector"
+  (clay three.js local, sin créditos) e "image" (repintado + pelado por
+  capas, ver abajo).
 - **Formato**: escena Format D clásica por place + bloque `stage` OBLIGATORIO
   (`exits[]` con `edge`/`to_place_id`/`zone` en celdas, `backdrop`,
   `fourth_wall`; zod estricto en `src/scene/stage/schema.ts`). Validación:
@@ -481,7 +494,7 @@ la puerta de vuelta (patrón puertas de Resident Evil).
   mezclar el view_box del compositor SVG con la placa greybox desalinea.
   **Caché por hash del spec canónico** (floats redondeados 1e-4): el PNG
   WebGL NO es byte-determinista — el cliente manda `layout_key` y el server
-  clava `layout: "gb:<hash>"` (pipeline `stage_greybox1`, modelo
+  clava `layout: "gb:<hash>"` (pipeline `stage_greybox2`, modelo
   `stage_scene_model: "gpt-image-2"` vía fal DIRECTO, ~210 s/plató,
   cacheado). El `StageImageController` (`nefan-html/src/scene/stage-image.ts`)
   repinta el plató ENTERO y deriva el mundo jugable de LO PINTADO.
@@ -522,7 +535,7 @@ Sistemas de juego completos (comercio, reputación…) como **manifests JSON pur
 
 Distintos de los plugins declarativos: **módulos TS de hot loop** con varias implementaciones tras una interfaz, registrados en un `createSystemRegistry` (`nefan-core/src/systems/registry.ts`). Regla común: id ausente → default (la implementación actual); id desconocido → error con la lista de disponibles (fail-loud).
 
-- **Combate** (`nefan-core/src/combat/registry.ts`): interfaz `CombatSystem` (catálogo `attacks`, `normalizeAttack`, `windUpTime`, `addPendingImpact`, `resolve`) inyectada en `GameSimulation`; la orquestación y la state machine de `combatant.ts` son compartidas, así el protocolo del bridge no cambia entre implementaciones. Implementaciones: `standard` (envuelve CombatManager/resolver, fórmula completa) y `basic` (un solo ataque "strike", daño fijo 15 a ≤2 m, sin armas ni matriz). Selección: `game.json` → `systems: {combat: "basic"}` (schema en `games/loader.ts`), validada y CONGELADA en el save (`world.combat_system`) en `start_session`; el resume la restaura (save sin campo = estándar; id retirado = resume abortado). `load_room` sin sesión vuelve al estándar (los fixtures asumen ese catálogo). Juego dev de prueba: `data/games/dev_combate_basico`.
+- **Combate** (`nefan-core/src/combat/registry.ts`): interfaz `CombatSystem` (catálogo `attacks`, `normalizeAttack`, `windUpTime`, `addPendingImpact`, `resolve`) inyectada en `GameSimulation`; la orquestación y la state machine de `combatant.ts` son compartidas, así el protocolo del bridge no cambia entre implementaciones. Implementaciones: `standard` (envuelve CombatManager/resolver, fórmula completa) y `basic` (un solo ataque "strike", daño fijo 15 a ≤2 m, sin armas ni matriz). Selección: `game.json` → `systems: {combat: "basic"}` (schema en `games/loader.ts`), validada y CONGELADA en el save (`world.combat_system`) en `start_session`; el resume la restaura (save sin campo = estándar; id retirado = resume abortado). `load_room` sin sesión vuelve al estándar (los fixtures asumen ese catálogo). Fixture de test: `nefan-core/test/fixtures/games/combatbasic`.
 - **Cliente 2D**: el HUD de ataques se genera desde el catálogo del sistema de la sesión (`applySessionCombatSystem` en main.ts) — con `basic` hay un solo botón "1:Golpe" y las teclas 1..N se remapean.
 - **Input del cliente 2D** (`nefan-html/src/input/registry.ts`): interfaz `InputProvider` (estado continuo + one-shots consumibles + `setAttackBindings`/`selectAttack`). Implementaciones: `keyboard` (default) y `scripted` (driver programático para bench E2E, expuesto como `window.__nefan.inputDriver`). Selección por query param `?input=` (capacidad del cliente, no del mundo). Las teclas dev (G/X/B/N/R-review) viven en `DevToolsInput`, fijo y fuera del provider.
 - **Renderer 2D** (`nefan-html/src/renderer/registry.ts`): interfaz `Renderer2D` (contrato por-frame: `render` + `drawAttackArea`); implementaciones `oblique` (default, la instancia CanvasRenderer ya cableada) y `proscenium` (vista de plató). Selección por `world.view` congelada en el save (o fixture local con bloque `stage`).

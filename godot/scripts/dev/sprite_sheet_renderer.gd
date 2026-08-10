@@ -56,6 +56,10 @@ const ANGLE_CAMERA := {
 	"isometric_30": {"pitch_deg": -30.0, "distance": 4.0, "ortho": 2.4},
 	"isometric_45": {"pitch_deg": -45.0, "distance": 4.0, "ortho": 2.4},
 	"frontal": {"pitch_deg": 0.0, "distance": 4.0, "ortho": 2.4},
+	# Vista proscenio: la cámara del plató es horizontal con ojo a 1,8-3,2 m —
+	# ve a los personajes con ~5-11° de depresión. -8° es el compromiso que
+	# casa con el exterior a media profundidad sin picarse en interiores.
+	"frontal_8": {"pitch_deg": -8.0, "distance": 4.0, "ortho": 2.4},
 }
 
 # Mid-body of a 1.8 m Mixamo humanoid (X-bot rest pose). Used as the look-at

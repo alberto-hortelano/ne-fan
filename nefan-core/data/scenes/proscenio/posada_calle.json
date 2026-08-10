@@ -1,6 +1,7 @@
 {
   "scene_id": "posada_calle",
   "place_id": "calle_mayor",
+  "style_tag": "stage_street",
   "scene_description": "La calle Mayor frente a la posada del Roble: fachadas encaladas, un camino de tierra apisonada y la puerta de la posada bajo su cartel de madera.",
   "size": {
     "cols": 32,

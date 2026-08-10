@@ -7,10 +7,14 @@ routers/asset_proxy.py proxya esas rutas para los clientes no migrados
 (remote-gen, F4), no del almacén de assets.
 """
 
-from fastapi import APIRouter
+import os
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from deps import deps
 from dev_api_cache import DEV_API_CACHE
+from spend_tracker import SPEND
 
 router = APIRouter()
 
@@ -33,3 +37,40 @@ async def dev_api_cache_toggle(body: DevApiCacheRequest):
     de llamar de verdad. Persiste en disco (sobrevive reinicios)."""
     DEV_API_CACHE.set_enabled(body.enabled)
     return DEV_API_CACHE.status()
+
+
+@router.get("/dev/status")
+async def dev_status():
+    """Estado agregado para el panel de dev del cliente 2D (un solo poll):
+    dev-cache + gasto acumulado + config de generación activa + presencia de
+    claves (NUNCA sus valores). Contrato en nefan-core/src/contracts."""
+    cfg = deps.config
+    if not cfg:
+        raise HTTPException(status_code=503, detail="config aún no cargada (lifespan)")
+    missing = [
+        k
+        for k in ("scene_model", "stage_scene_model", "sprite_skin_model", "usd_eur_rate")
+        if k not in cfg
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"runtime_config.json sin {missing}: regenerar con "
+                "`cd nefan-core && npx tsx scripts/dump-config.ts` y reiniciar"
+            ),
+        )
+    return {
+        "api_cache": DEV_API_CACHE.status(),
+        "spend": SPEND.status(),
+        "config": {
+            "scene_model": cfg["scene_model"],
+            "stage_scene_model": cfg["stage_scene_model"],
+            "sprite_skin_model": cfg["sprite_skin_model"],
+            "usd_eur_rate": cfg["usd_eur_rate"],
+        },
+        "keys": {
+            "meshy": bool(os.environ.get("MESHY_API_KEY")),
+            "fal": bool(os.environ.get("FAL_KEY")),
+        },
+    }

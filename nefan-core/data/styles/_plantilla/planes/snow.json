@@ -1,0 +1,26 @@
+{
+  "biome": "snow",
+  "ground": [
+    { "id": "senda_pisada", "kind": "path", "points": [[64, 0], [58, 56], [68, 128]], "w": 4, "material": "dirt" },
+    { "id": "arroyo_helado", "kind": "water", "rect": [0, 62, 128, 8] },
+    { "id": "prado_alpino", "kind": "area", "rect": [0, 116, 128, 12], "material": "grass" }
+  ],
+  "volumes": [
+    { "id": "pino_1", "label": "pino", "type": "tree", "at": [14, 12], "s": 1.5, "species": "pino" },
+    { "id": "pino_2", "label": "pino", "type": "tree", "at": [28, 8], "s": 1.3, "species": "pino" },
+    { "id": "pino_3", "label": "pino", "type": "tree", "at": [42, 16], "s": 1.6, "species": "pino" },
+    { "id": "pino_4", "label": "pino", "type": "tree", "at": [90, 10], "s": 1.4, "species": "pino" },
+    { "id": "pino_5", "label": "pino", "type": "tree", "at": [104, 20], "s": 1.5, "species": "pino" },
+    { "id": "pino_6", "label": "pino", "type": "tree", "at": [20, 40], "s": 1.4, "species": "pino" },
+    { "id": "pino_7", "label": "pino", "type": "tree", "at": [96, 44], "s": 1.6, "species": "pino" },
+    { "id": "pino_8", "label": "pino", "type": "tree", "at": [16, 88], "s": 1.5, "species": "pino" },
+    { "id": "pino_9", "label": "pino", "type": "tree", "at": [34, 96], "s": 1.3, "species": "pino" },
+    { "id": "pino_10", "label": "pino", "type": "tree", "at": [88, 92], "s": 1.5, "species": "pino" },
+    { "id": "pino_11", "label": "pino", "type": "tree", "at": [106, 102], "s": 1.4, "species": "pino" },
+    { "id": "roca_1", "label": "roca nevada", "type": "rock", "at": [48, 50], "s": 2.0 },
+    { "id": "roca_2", "label": "roca nevada", "type": "rock", "at": [78, 56], "s": 1.5 },
+    { "id": "roca_3", "label": "roca", "type": "rock", "at": [30, 74], "s": 1.6 },
+    { "id": "arbusto_1", "label": "matorral helado", "type": "bush", "at": [70, 30], "s": 0.8 },
+    { "id": "arbusto_2", "label": "matorral helado", "type": "bush", "at": [52, 104], "s": 0.7 }
+  ]
+}

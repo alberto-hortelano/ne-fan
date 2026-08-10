@@ -47,6 +47,20 @@ export const StageBlockSchema = z
     exits: z.array(StageExitSchema).min(1).max(MAX_STAGE_EXITS),
     /** Guía del telón de fondo (y del repintado por capas futuro). */
     backdrop: z.object({ description: z.string().min(1).max(400) }).strict().optional(),
+    /** Atmósfera del plató: hora del día (presets de sol/cielo/niebla del
+     *  greybox) y mood en texto libre (entra al prompt del repintado). Sin
+     *  ella el greybox infiere la hora del texto de backdrop/descripción. */
+    ambience: z
+      .object({
+        time_of_day: z.enum(["amanecer", "dia", "atardecer", "noche"]).optional(),
+        mood: z.string().min(1).max(80).optional(),
+      })
+      .strict()
+      .optional(),
+    /** Altura de las paredes/techo de un INTERIOR en metros — a escala de la
+     *  sala (choza 2.4, taberna 3.5, salón noble 5+). Default del motor si
+     *  falta; en exteriores se ignora. */
+    wall_h_m: z.number().min(2.2).max(8).optional(),
     /** Cuarta pared frontal (lado cámara); se desvanece por proximidad. */
     fourth_wall: z
       .object({

@@ -32,18 +32,21 @@ import {
   type BandPlan,
 } from "@nefan-core/src/scene/stage/index.js";
 import type { StageProjParams } from "@nefan-core/src/scene/stage/index.js";
-import type { SpriteRenderer } from "./sprite-renderer.js";
+import { spritePitchCos, type SpriteRenderer } from "./sprite-renderer.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { StageImages, StageCutout } from "../scene/stage-image.js";
 import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
 import { errors } from "../ui/error-log.js";
 
-/** Espejo de las constantes de sprites del CanvasRenderer (encuadre ortho 2.4
- *  del renderer Godot + pitch −30° de los sheets isometric_30). */
+/** Encuadre ortho 2.4 del renderer Godot (metros de plano de imagen por
+ *  frame); el cos(pitch) del SET ACTIVO de cada sprite (spritePitchCos)
+ *  recupera metros de mundo — la vista proscenio usa el set frontal_8. */
 const SHEET_FRAME_WORLD_M = 2.4;
-const SPRITE_PITCH_COS = Math.cos(Math.PI / 6);
-/** Clamp inferior de la escala por profundidad: por debajo, los 8 octantes
- *  isometric_30 dejan de leerse. */
+/** Set por defecto de la vista (para dimensionar sombra/círculo de entidades
+ *  aún sin sprite) — el sprite de cada entidad manda cuando existe. */
+const STAGE_SPRITE_ANGLE = "frontal_8";
+/** Clamp inferior de la escala por profundidad: por debajo, los octantes del
+ *  sheet dejan de leerse. */
 const MIN_DEPTH_SCALE = 0.55;
 const RAIL_DEAD_ZONE_M = 1.5;
 const RAIL_RATE = 6;
@@ -296,18 +299,16 @@ export class ProsceniumRenderer implements Renderer2D {
     const proj = this.effProj();
     const fk = `${this.stageKey}:${canvas.width}x${canvas.height}`;
     if (fk !== this.frameKey || !this.framing || !this.bandPlan) {
-      // z=0 cae en el borde INFERIOR de la placa — anclarlo casi al fondo del
-      // canvas y CAPAR el zoom para que la base de la pared (z=depth) y un
-      // 55% de telón por encima queden SIEMPRE en pantalla (sin cap, el zoom
-      // de raíl solo enseñaría tablones gigantes).
-      const vyWall = stageToView(proj, 0, proj.depth_m)[1];
-      const spanUnits = (vb.minY + vb.height - vyWall) * 1.55;
-      const fit0 = canvas.height / vb.height;
-      const opts = {
-        groundAnchor: 0.98,
-        maxZoom: Math.max(1, canvas.height / (spanUnits * fit0)),
-      };
-      this.framing = frameStage(proj, vb, canvas.width, canvas.height, opts);
+      // Encuadre = COVER CENTRADO del viewBox: el spec del greybox ya compone
+      // el frame (horizonte, techo/cielo, delantal) — el cliente solo lo
+      // ajusta al canvas con el mínimo zoom que cubre ambos ejes y reparte el
+      // recorte sobrante simétrico. Sin zoom de raíl (maxZoom 1): ampliar
+      // para dar recorrido a la cámara recortaba la escena por arriba y por
+      // abajo (cartel de salida cortado, franja sin pintar sobre el clear).
+      this.framing = frameStage(proj, vb, canvas.width, canvas.height, {
+        centerVertical: true,
+        maxZoom: 1,
+      });
       this.bandPlan = bandPlanFor(proj, vb, this.framing, canvas.width, canvas.height);
       this.frameKey = fk;
     }
@@ -671,7 +672,8 @@ export class ProsceniumRenderer implements Renderer2D {
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
     const depth = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
-    const frameH = (SHEET_FRAME_WORLD_M / SPRITE_PITCH_COS) * proj.px_per_m * depth * fit * this.spriteScaleFactor(proj, zs);
+    const pitchCos = spritePitchCos(e.sprite?.angle ?? STAGE_SPRITE_ANGLE);
+    const frameH = (SHEET_FRAME_WORLD_M / pitchCos) * proj.px_per_m * depth * fit * this.spriteScaleFactor(proj, zs);
 
     // Sombra de contacto (sin ella los recortes flotan).
     ctx.fillStyle = "rgba(0,0,0,0.3)";

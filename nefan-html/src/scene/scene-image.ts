@@ -116,10 +116,12 @@ export class SceneImageController {
 
   /** urls: reparto por servicio — narrative (reviews/análisis con visión),
    *  gpu (placa LaMa), remote (repintado Meshy/fal), assets (blobs /cache/*;
-   *  los endpoints devuelven *_url RELATIVAS al cache). */
+   *  los endpoints devuelven *_url RELATIVAS al cache).
+   *  onGeneration: hit/miss del repintado de tile para el panel de dev. */
   constructor(
     private renderer: CanvasRenderer,
     private urls: GenServiceUrls,
+    private onGeneration?: (e: { kind: "tile"; cached: boolean }) => void,
   ) {}
 
   setStyle(styleId: string): void {
@@ -378,10 +380,16 @@ export class SceneImageController {
       if (!res.ok) {
         throw new Error(`/generate_scene_image HTTP ${res.status}`);
       }
-      const data = (await res.json()) as { hash?: string; scene_url?: string; error?: string };
+      const data = (await res.json()) as {
+        hash?: string;
+        scene_url?: string;
+        cached?: boolean;
+        error?: string;
+      };
       if (!data.scene_url) {
         throw new Error(`/generate_scene_image returned no scene_url: ${data.error ?? "unknown"}`);
       }
+      this.onGeneration?.({ kind: "tile", cached: !!data.cached });
       let img = await this.loadImage(`${this.urls.assets}${data.scene_url}`);
       if (contextSides.length > 0) {
         img = await this.cropToTile(img, expanded, tileExt);

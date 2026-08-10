@@ -52,7 +52,7 @@ DEFAULT_ANIMS = [
     "hit_react",
     "death",
 ]
-SUPPORTED_ANGLES = ["top_down", "isometric_30", "isometric_45", "frontal"]
+SUPPORTED_ANGLES = ["top_down", "isometric_30", "isometric_45", "frontal", "frontal_8"]
 
 
 def parse_args() -> argparse.Namespace:
