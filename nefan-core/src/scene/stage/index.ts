@@ -80,6 +80,7 @@ export {
   maxDollyFor,
   bandPlanFor,
   bandDestRect,
+  bandPlanDestRects,
   FRAMING_DEFAULTS,
   BAND_PLAN_DEFAULTS,
   STAGE_CAM_ZERO,

@@ -358,3 +358,31 @@ export function bandDestRect(
   const x = canvasW / 2 + (cx + (vb.minX - cx) * rC - pan) * f.fit;
   return [x, yTop, vb.width * rC * f.fit, yBot - yTop];
 }
+
+/** Rects destino de TODO el plan con la cámara de runtime y bordes
+ *  verticales redondeados a FILAS ENTERAS de canvas — cada frontera se
+ *  redondea UNA vez y la comparten las dos bandas vecinas. Sin esto, los
+ *  bordes fraccionarios del dolly dejan en cada frontera un píxel de
+ *  cobertura parcial que el antialias mezcla con el fondo del clear: una
+ *  franja oscura por banda, moviéndose con el zoom. */
+export function bandPlanDestRects(
+  p: StageProjParams,
+  vb: ViewBoxRect,
+  f: StageFraming,
+  canvasW: number,
+  canvasH: number,
+  plan: BandPlan,
+  cam: StageCam,
+): Array<{ band: GroundBand; x: number; y: number; w: number; h: number }> {
+  const seq = [plan.backdrop, ...plan.ground, plan.apron];
+  const rects = seq.map((band) => bandDestRect(p, vb, f, canvasW, canvasH, band, cam));
+  const out: Array<{ band: GroundBand; x: number; y: number; w: number; h: number }> = [];
+  for (let i = 0; i < seq.length; i++) {
+    const top = Math.round(rects[i][1]);
+    // La frontera inferior ES la superior de la banda siguiente (mismo borde
+    // continuo) — redondearla desde ahí garantiza la fila compartida.
+    const bottom = i + 1 < seq.length ? Math.round(rects[i + 1][1]) : Math.round(rects[i][1] + rects[i][3]);
+    out.push({ band: seq[i], x: rects[i][0], y: top, w: rects[i][2], h: bottom - top });
+  }
+  return out;
+}

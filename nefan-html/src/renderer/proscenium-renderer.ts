@@ -25,6 +25,7 @@ import {
   frameStage,
   bandPlanFor,
   bandDestRect,
+  bandPlanDestRects,
   viewToScreenCam,
   layerRectCam,
   sCamAt,
@@ -605,16 +606,16 @@ export class ProsceniumRenderer implements Renderer2D {
     const proj = this.effProj();
     const f = this.framing!;
     const plan = this.bandPlan!;
-    const bands = [plan.backdrop, ...plan.ground, plan.apron];
-    for (const b of bands) {
-      if (b.destH <= 0) continue;
-      const sy = ((b.srcVy - vb.minY) / vb.height) * srcH;
-      const sh = Math.max(1e-3, (b.srcVh / vb.height) * srcH);
-      // Destino reproyectado con la cámara actual: pan lateral + escala y
-      // posición vertical del dolly, con bordes CONTINUOS entre bandas.
-      const [dx, dy, dw, dh] = bandDestRect(proj, vb, f, canvas.width, canvas.height, b, cam);
-      if (dh <= 0) continue;
-      ctx.drawImage(src, 0, sy, srcW, sh, dx, dy, dw, dh);
+    // Destinos reproyectados con la cámara actual (pan + dolly) y fronteras
+    // redondeadas a FILAS ENTERAS compartidas: bordes fraccionarios dejaban
+    // una franja oscura de antialias por banda al mover el dolly.
+    for (const { band, x, y, w, h } of bandPlanDestRects(
+      proj, vb, f, canvas.width, canvas.height, plan, cam,
+    )) {
+      if (h <= 0) continue;
+      const sy = ((band.srcVy - vb.minY) / vb.height) * srcH;
+      const sh = Math.max(1e-3, (band.srcVh / vb.height) * srcH);
+      ctx.drawImage(src, 0, sy, srcW, sh, x, y, w, h);
     }
   }
 

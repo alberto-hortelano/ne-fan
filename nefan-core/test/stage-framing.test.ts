@@ -361,3 +361,30 @@ describe("bandDestRect: destino por frame con la cámara de runtime", () => {
     assert.deepEqual(a, b);
   });
 });
+
+describe("bandPlanDestRects: fronteras redondeadas compartidas (fix de franjas)", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("filas ENTERAS contiguas bajo cualquier dolly; cam 0 ≡ plan clásico", async () => {
+    const { bandPlanDestRects, maxDollyFor, STAGE_CAM_ZERO } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    for (const d of [0, maxD * 0.6, maxD]) {
+      const rects = bandPlanDestRects(P, VB, F, 1280, 720, plan, { camXM: 0.3, dollyM: d });
+      for (let i = 0; i < rects.length; i++) {
+        assert.ok(Number.isInteger(rects[i].y), `y entero (${rects[i].y})`);
+        assert.ok(Number.isInteger(rects[i].h), `h entero (${rects[i].h})`);
+        if (i + 1 < rects.length) {
+          assert.equal(rects[i].y + rects[i].h, rects[i + 1].y, `contiguas en ${i} con dolly ${d}`);
+        }
+      }
+    }
+    // Con cámara base, reproduce exactamente el plan clásico (ya entero).
+    const zero = bandPlanDestRects(P, VB, F, 1280, 720, plan, STAGE_CAM_ZERO);
+    const seq = [plan.backdrop, ...plan.ground, plan.apron];
+    zero.forEach((r, i) => {
+      assert.equal(r.y, seq[i].destY);
+      if (i < zero.length - 1) assert.equal(r.h, seq[i].destH);
+    });
+  });
+});
