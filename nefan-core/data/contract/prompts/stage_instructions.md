@@ -4,7 +4,8 @@ The world is NOT a continuous plane — it is a chain of discrete STAGES
 (theatre sets / classic film sets), one per world-map place, connected ONLY
 through physical exits. Walking into an exit zone transitions to the linked
 place's stage with a fade (think classic survival-horror doors). There are NO
-tiles here: never emit "tile", "biome", "ground" or "volumes"-only tiles.
+tiles here: never emit "tile" or "biome" (but "ground" and "volumes" ARE
+used by stages — see below).
 
 CAMERA CONVENTION (fixed, never changes): the camera sits at the SOUTH edge
 of the stage, low, looking north.
@@ -46,7 +47,13 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
   "style_tag": "stage_interior",         // kind of SET (see hard rules)
   "size": { "cols": 24..80, "rows": 12..40, "meters_per_cell": 0.5 },
   "terrain": [ ... ],                    // rows × cols glyphs, as always
-  "terrain_legend": { "_": "tierra", "c": "empedrado" },  // ground bands ARE painted — use them (dirt street, cobbles, grass)
+  "terrain_legend": { "_": "tierra", "c": "empedrado" },  // base wash under `ground` (and walkability grid)
+  "ground": [                            // PREFERRED for streets, plazas, water and courtyards: typed VECTOR features painted OVER the terrain base — real curves, no grid teeth. Coordinates in cells of THIS scene (0..cols, 0..rows). Same language as the tile MAP PLAN.
+    { "id": "calle", "kind": "path", "points": [[0, 18], [16, 14], [30, 16]], "w": 5, "material": "dirt" },   // polyline + width; the engine SMOOTHES it (Catmull-Rom) — 3+ points give a real curve
+    { "id": "plaza", "kind": "area", "ellipse": { "center": [30, 12], "rx": 14, "ry": 7 }, "material": "cobble" },  // also "rect": [c,r,w,d] or "polygon": [[c,r],…] (3..32 pts). Materials: dirt|cobble|stone|sand|wood|gravel|grass
+    { "id": "arroyo", "kind": "water", "rect": [40, 0, 4, 24] },              // NOT walkable — collision AND the reachability validator see it
+    { "id": "puente", "kind": "deck", "rect": [40, 10, 4, 4], "material": "wood" }  // walkable OVER water: without one, an exit across a river is REJECTED
+  ],
   "structures": [ ],                     // optional interior sub-rooms
   "entities": [ ... ],                   // furniture, props, NPCs; include "player" ONLY on bootstrap or when no entry edge is known
   "volumes": [                           // PREFERRED for the main scenery: typed volumes with materials — richer clay than plain entities
@@ -156,7 +163,11 @@ HARD RULES OF THE STAGE:
   corners of a wide stage — the camera crops wider than you think and corner
   props fall out of frame. And mind the APRON: the southernmost terrain row
   extends toward the camera as the foreground ground — give it the material
-  you want to SEE up close (the plaza's cobbles, not a leftover dirt band).
+  you want to SEE up close (the plaza's cobbles, not a leftover dirt band),
+  or better: extend a `ground` area/path into the southern rows.
+- PORCHES: a building whose label says soportal/pórtico/porche/arcada/logia
+  gets a real colonnade (columns + eave) on its south facade in the clay —
+  the classic arcaded plaza front. Use it on inns and market halls.
 - Fire and lamp props LIGHT UP: any volume/entity labelled chimenea, hogar,
   fogón, farol, vela, antorcha, candil, brasero or hoguera gets a warm
   practical light in the clay — use them to give interiors a focal point.

@@ -20,7 +20,7 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "world_rules.md": ["style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request", "stage_interior"],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
   "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain"],
-  "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_tag", "stage_interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO"],
+  "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_tag", "stage_interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "structures", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],

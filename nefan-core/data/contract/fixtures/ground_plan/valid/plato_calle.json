@@ -1,0 +1,60 @@
+{
+ "description": "plan de suelo de un PLATÓ proscenio 24×18 — el mismo schema sirve a ambas vistas",
+ "expect": "accept",
+ "payload": {
+  "ground": [
+   {
+    "id": "calle",
+    "kind": "path",
+    "points": [
+     [
+      0,
+      12
+     ],
+     [
+      10,
+      10
+     ],
+     [
+      24,
+      11
+     ]
+    ],
+    "w": 4,
+    "material": "dirt"
+   },
+   {
+    "id": "patio",
+    "kind": "area",
+    "rect": [
+     6,
+     4,
+     8,
+     5
+    ],
+    "material": "cobble"
+   },
+   {
+    "id": "acequia",
+    "kind": "water",
+    "rect": [
+     18,
+     0,
+     2,
+     18
+    ]
+   },
+   {
+    "id": "tablas",
+    "kind": "deck",
+    "rect": [
+     18,
+     10,
+     2,
+     3
+    ],
+    "material": "wood"
+   }
+  ]
+ }
+}
