@@ -296,3 +296,68 @@ describe("cámara de runtime (StageCam): pan + dolly", () => {
     assert.ok(Math.abs(one.camXM - two.camXM) < 1e-6, "frame-rate independence");
   });
 });
+
+describe("bandDestRect: destino por frame con la cámara de runtime", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("con cam ZERO reproduce el plan clásico (destY/destH/dx)", async () => {
+    const { bandDestRect, STAGE_CAM_ZERO } = await import("../src/scene/stage/framing.js");
+    const plan = bandPlanFor(P, VB, F, 1280, 720);
+    for (const b of [plan.backdrop, ...plan.ground]) {
+      const [x, y, w, h] = bandDestRect(P, VB, F, 1280, 720, b, STAGE_CAM_ZERO);
+      assert.ok(Math.abs(y - b.destY) < 1e-6, `yTop ${y} vs ${b.destY}`);
+      assert.ok(Math.abs(h - b.destH) < 1e-6, `destH ${h} vs ${b.destH}`);
+      assert.ok(Math.abs(w - VB.width * F.fit) < 1e-9, "ancho sin dolly = viewBox");
+      const dx = 1280 / 2 + VB.minX * F.fit;
+      assert.ok(Math.abs(x - dx) < 1e-9, "x sin pan = colocación clásica");
+    }
+    const [, ay, , ah] = bandDestRect(P, VB, F, 1280, 720, plan.apron, STAGE_CAM_ZERO);
+    assert.ok(Math.abs(ay - plan.apron.destY) < 1e-6);
+    assert.ok(ah >= plan.apron.destH - 1e-6, "el delantal cubre hasta el fondo");
+  });
+
+  it("contigüidad exacta bajo dolly: bottom(i) === top(i+1) en todo el plan", async () => {
+    const { bandDestRect, maxDollyFor } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    for (const d of [0, maxD * 0.4, maxD]) {
+      const cam = { camXM: 0.5, dollyM: d };
+      const seq = [plan.backdrop, ...plan.ground, plan.apron];
+      for (let i = 0; i + 1 < seq.length; i++) {
+        const a = bandDestRect(P, VB, F, 1280, 720, seq[i], cam);
+        const b = bandDestRect(P, VB, F, 1280, 720, seq[i + 1], cam);
+        assert.ok(
+          Math.abs(a[1] + a[3] - b[1]) < 1e-6,
+          `costura entre banda ${i} y ${i + 1} con dolly ${d}: ${a[1] + a[3]} vs ${b[1]}`,
+        );
+      }
+    }
+  });
+
+  it("presupuesto en el peor caso: Δ budget ≤ maxShiftPx entre bordes de banda", async () => {
+    const { sCamAt, camRatio, maxDollyFor } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    const camMax = { camXM: 0, dollyM: maxD };
+    const budget = (z: number): number =>
+      F.railHalfM * P.px_per_m * F.fit * sCamAt(P, camMax, z) +
+      (VB.width / 2) * F.fit * camRatio(P, camMax, z);
+    for (const b of plan.ground) {
+      // Tolerancia +1: el plan corta al superar el presupuesto en el borde
+      // h+1 (la banda emitida termina en h, dentro del presupuesto).
+      assert.ok(
+        Math.abs(budget(b.zBot) - budget(b.zTop)) <= 0.75 + 1.0,
+        `banda a z=[${b.zTop.toFixed(2)},${b.zBot.toFixed(2)}] pasa el presupuesto`,
+      );
+    }
+    // Determinismo del plan.
+    const plan2 = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    assert.deepEqual(plan, plan2);
+  });
+
+  it("maxDollyM 0 ⇒ plan idéntico al clásico", async () => {
+    const a = bandPlanFor(P, VB, F, 1280, 720);
+    const b = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: 0 });
+    assert.deepEqual(a, b);
+  });
+});
