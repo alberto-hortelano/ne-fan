@@ -122,12 +122,35 @@ export interface StageImageMeta {
   styleTag: string;
 }
 
+/** Estado estructurado del pipeline para el panel de dev (null = reposo). */
+export interface StageImageStatus {
+  /** Escena (place) en curso. */
+  key: string;
+  phase: "greybox" | "repaint" | "review" | "segment" | "peel";
+  /** Elemento en curso (segment/peel). */
+  label?: string;
+  /** Paso actual 1-based (peel). */
+  step?: number;
+  /** Total de pasos (peel) o de elementos declarados (review). */
+  total?: number;
+  /** true = la fase está a punto de lanzar una llamada de PAGO. */
+  paid?: boolean;
+}
+
+/** Resultado de una operación de imagen: hit/miss del server o reinstalación
+ *  desde la caché cliente — alimenta los contadores del panel de dev. */
+export interface StageGenerationEvent {
+  kind: "repaint" | "peel" | "client";
+  cached: boolean;
+}
+
 export interface StageImageDeps {
   /** Instalación atómica en el renderer + colisión (ignora si la escena cambió). */
   install(key: string, images: StageImages): void;
   log(msg: string): void;
-  /** Progreso vivo para el HUD (null = pipeline en reposo). */
-  status(text: string | null): void;
+  /** Progreso vivo para el panel de dev (null = pipeline en reposo). */
+  status(s: StageImageStatus | null): void;
+  onGeneration?(e: StageGenerationEvent): void;
 }
 
 /** Cap de la caché cliente de platós pintados (un playthrough ronda pocos
@@ -184,6 +207,7 @@ export class StageImageController {
     const hit = this.cache.get(key);
     if (!hit || hit.specHash !== specHash || hit.images.peelVersion !== STAGE_PEEL_VERSION) return false;
     this.deps.install(key, hit.images);
+    this.deps.onGeneration?.({ kind: "client", cached: true });
     console.log(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.length} recortes)`);
     return true;
   }
@@ -251,7 +275,7 @@ export class StageImageController {
     try {
       // ── 1. Greybox 3D + repintado ────────────────────────────────────────
       this.deps.log(`🎨 repintando plató ${key}…`);
-      this.deps.status(`plató ${key}: renderizando greybox…`);
+      this.deps.status({ key, phase: "greybox" });
       console.log(
         `[stage-img] ${key}: greybox → /generate_scene_image ` +
         `(spec=${specHash.slice(0, 12)}, style=${this.styleId || "(global)"}, ` +
@@ -261,7 +285,8 @@ export class StageImageController {
       const { renderGreybox } = await import("./stage-greybox-render.js");
       const blueprint = renderGreybox(spec);
       if (token !== this.token) return;
-      this.deps.status(`plató ${key}: repintando…`);
+      // Aviso ANTES del POST: la única llamada de pago del pipeline (1 imagen).
+      this.deps.status({ key, phase: "repaint", paid: true });
       // El backdrop del stage block describe lo que se VE al fondo — se
       // escribió para sembrar el repintado (stage_instructions) y entra en la
       // clave de caché del server vía `prompt`. El mood de ambience matiza.
@@ -283,6 +308,7 @@ export class StageImageController {
         layout_key: specHash,
       });
       if (token !== this.token) return;
+      this.deps.onGeneration?.({ kind: "repaint", cached: !!repaintRes.cached });
       console.log(
         `[stage-img] ${key}: repintado ${repaintRes.cached ? "CACHE HIT" : "generado"} ` +
         `hash=${repaintRes.hash} (${ms()})`,
@@ -292,7 +318,7 @@ export class StageImageController {
 
       // ── 2. Inventario por visión + SAM ───────────────────────────────────
       const expected = expectedElementsFromGreybox(spec);
-      this.deps.status(`plató ${key}: inventario por visión (${expected.length} declarados)…`);
+      this.deps.status({ key, phase: "review", total: expected.length });
       let review: ReviewResponse;
       try {
         review = (await this.post(this.urls.narrative, "/review_stage_image", {
@@ -372,7 +398,7 @@ export class StageImageController {
       }
       const work: WorkItem[] = [];
       for (const item of review.items) {
-        this.deps.status(`plató ${key}: segmentando ${item.label}…`);
+        this.deps.status({ key, phase: "segment", label: item.label });
         const mask = item.mask_url ? await this.fetchToSquare(item.mask_url) : null;
         if (token !== this.token) return;
         let z: number | null = null;
@@ -411,7 +437,7 @@ export class StageImageController {
         const step = steps[i];
         const w = workById.get(step.itemId)!;
         this.deps.log(`🫳 pelando ${step.label} (${i + 1}/${steps.length})`);
-        this.deps.status(`plató ${key}: pelando ${step.label} (${i + 1}/${steps.length})`);
+        this.deps.status({ key, phase: "peel", label: step.label, step: i + 1, total: steps.length });
         // El recorte se toma de la imagen ANTES de pelar este item —
         // máscara SAM del elemento PINTADO, jamás una silueta declarada.
         if (step.action === "keep" && w.z !== null) {
@@ -440,6 +466,7 @@ export class StageImageController {
           backend: "lama",
         });
         if (token !== this.token) return;
+        this.deps.onGeneration?.({ kind: "peel", cached: !!peelRes.cached });
         console.log(
           `[stage-img] ${key}: pelada "${step.label}" (${i + 1}/${steps.length}) ` +
           `backend=${peelRes.backend ?? "?"} ${peelRes.cached ? "CACHE HIT" : "generado"} ` +

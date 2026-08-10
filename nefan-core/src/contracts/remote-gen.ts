@@ -176,6 +176,45 @@ export interface DevApiCacheToggleRequest {
   enabled: boolean;
 }
 
+// ── Estado agregado del panel de dev del cliente 2D ──
+
+/** Una llamada REAL a una API de pago (nunca cache-hits). Coste ESTIMADO por
+ *  tabla estática (meshy_client.py), no facturación real. */
+export interface DevSpendCall {
+  /** Epoch seconds. */
+  t: number;
+  usd: number;
+  /** Qué se generó (prompt recortado, categoría de style pack…). */
+  what: string;
+  /** Proceso que lanzó la llamada ("remote-gen", "gpu-worker"…). */
+  service: string;
+}
+
+export interface DevSpendStatus {
+  total_usd: number;
+  call_count: number;
+  /** Últimas N llamadas (append-only en cache/spend/events.jsonl). */
+  calls: DevSpendCall[];
+}
+
+/** GET /dev/status — un solo poll para el panel de dev: dev-cache + gasto +
+ *  config de generación activa + presencia de claves (nunca sus valores). */
+export interface DevStatus {
+  api_cache: DevApiCacheStatus;
+  spend: DevSpendStatus;
+  config: {
+    scene_model: string;
+    stage_scene_model: string;
+    sprite_skin_model: string;
+    /** Tasa fija USD→EUR (config.ts → runtime_config.json). */
+    usd_eur_rate: number;
+  };
+  keys: {
+    meshy: boolean;
+    fal: boolean;
+  };
+}
+
 export const RemoteGenApi = {
   generateSceneImage: endpoint<GenerateSceneImageRequest, GenerateSceneImageResponse>(
     "POST",
@@ -202,6 +241,8 @@ export const RemoteGenApi = {
     "POST",
     "/dev/api_cache",
   ),
+  /** Panel de dev del cliente 2D (routers/cache_assets.py). */
+  devStatus: endpoint<void, DevStatus>("GET", "/dev/status"),
 } as const;
 
 export type RemoteGenApi = typeof RemoteGenApi;

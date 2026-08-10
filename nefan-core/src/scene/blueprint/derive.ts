@@ -14,6 +14,7 @@ import { TILE_CELLS } from "../tile.js";
 import { volumeFootprint } from "./footprint.js";
 import { fnv1a, seededRng, uniform } from "../../rng.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
+import { defaultPropHeightM, PROP_H_MAX_M, PROP_H_MIN_M } from "./prop-heights.js";
 
 interface RawDoor {
   side?: string;
@@ -192,9 +193,17 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
       });
     } else {
       const shape = ent.shape === "cylinder" || ent.shape === "sphere" ? "cylinder" : "box";
-      const hCells = entH !== undefined && mpc !== undefined
+      let hCells = entH !== undefined && mpc !== undefined
         ? round1(Math.min(16, Math.max(0.4, entH / mpc)))
         : undefined;
+      // Proscenio (con mpc) sin `h` declarado: altura SEMÁNTICA por label —
+      // sin ella dos mesas de la misma escena salían a alturas dispares según
+      // el kind. El camino tile (sin mpc) conserva sus defaults en celdas.
+      if (hCells === undefined && mpc !== undefined) {
+        const semantic = defaultPropHeightM(label) ?? (kind === "decor" ? 0.5 : 1.0);
+        const hM = Math.min(PROP_H_MAX_M, Math.max(PROP_H_MIN_M, semantic));
+        hCells = round1(hM / mpc);
+      }
       out.push(
         kind === "decor"
           ? { id, label, type: "prop", rect, shape, h: hCells ?? 1, passable: true }

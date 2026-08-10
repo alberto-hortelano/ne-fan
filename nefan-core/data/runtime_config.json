@@ -35,6 +35,7 @@
     "sprite_skin_model": "gpt-image-2",
     "scene_style_image": "nefan-core/data/styles/battlemap-town-style.png",
     "auto_segment_model": "fal-ai/sam2/auto-segment",
+    "usd_eur_rate": 0.86,
     "texture_lazy_load": true,
     "expose_diagnostic": false,
     "cache_max_bytes": 2147483648,

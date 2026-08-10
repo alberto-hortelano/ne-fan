@@ -26,7 +26,9 @@ export type TitleAction =
       gameId: string;
       /** Estilo visual elegido ("" = el por defecto del juego). */
       styleId: string;
-      /** Modo de render, congelado en la sesión: imagen IA o vectorial. */
+      /** Modo de render, congelado en la sesión: imagen IA o maqueta 3D clay
+       *  (id interno "vector", heredado del compositor SVG — congelado en
+       *  saves y contratos, NO renombrar). */
       renderMode: "image" | "vector";
       /** Vista del mundo elegida (game.json solo aporta el default).
        *  Congelada en la sesión como el estilo. */
@@ -238,8 +240,8 @@ export class TitleScreen {
             <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (gasta créditos)</div>
           </button>
           <button data-rendermode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Vectorial</div>
-            <div style="font-size:10px;color:#888">El mundo se ve con los planos del motor narrativo, sin coste</div>
+            <div style="font-size:13px">Maqueta 3D</div>
+            <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, sin coste)</div>
           </button>
         </div>
       </div>

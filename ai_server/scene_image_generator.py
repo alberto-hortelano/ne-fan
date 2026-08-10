@@ -111,6 +111,7 @@ class SceneImageGenerator:
         Pasa por DevApiCache: en modo dev devuelve la última escena generada
         (0 créditos); la task dict se sustituye por un stub sin credits."""
         from dev_api_cache import DEV_API_CACHE
+        from spend_tracker import SPEND
 
         task_holder: list[dict] = []
 
@@ -121,7 +122,9 @@ class SceneImageGenerator:
             task_holder.append(task)
             return [png]
 
-        blobs, _cached = DEV_API_CACHE.through_sync("meshy_i2i_scene", _call, note=prompt)
+        blobs, cached = DEV_API_CACHE.through_sync("meshy_i2i_scene", _call, note=prompt)
+        if not cached:
+            SPEND.add(MeshyImageToImage.cost_usd(self._model), prompt[:60], "remote-gen")
         return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
     def _run_stage(
@@ -132,6 +135,7 @@ class SceneImageGenerator:
         Canal DEV_API_CACHE propio para no contaminar el de Meshy."""
         from dev_api_cache import DEV_API_CACHE
         from meshy_client import FalImageToImage
+        from spend_tracker import SPEND
 
         task_holder: list[dict] = []
 
@@ -143,7 +147,13 @@ class SceneImageGenerator:
             task_holder.append(task)
             return [png]
 
-        blobs, _cached = DEV_API_CACHE.through_sync("fal_i2i_stage", _call, note=prompt)
+        blobs, cached = DEV_API_CACHE.through_sync("fal_i2i_stage", _call, note=prompt)
+        if not cached:
+            SPEND.add(
+                FalImageToImage.COST_USD.get(self._stage_model, 0.17),
+                prompt[:60],
+                "remote-gen",
+            )
         return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
     def generate_full(

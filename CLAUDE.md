@@ -89,6 +89,17 @@ El comando `status` devuelve: player_pos, camera_yaw/pitch, fps, room, combat_hp
 
 **IMPORTANTE:** Cada vez que se modifique algo visual (animaciones, movimiento, cámara, colisiones), ejecutar los tests automatizados y verificar los screenshots.
 
+### Comprobación final crítica (definición de hecho)
+
+Una tarea NO está terminada cuando "funciona lo que construí": está terminada cuando se cumple **lo que se pidió**. Antes de cerrar cualquier tarea:
+
+1. **Releer la petición ORIGINAL del usuario** (no el plan propio) y convertirla en criterios de aceptación literales. Un requisito absoluto ("siempre", "en todo momento", "cualquier") obliga a enumerar TODOS los estados del sistema (arranque/título, diálogo, overlays, history browser, offline, fixtures…) y probar el criterio en cada uno.
+2. **Verificar en el flujo real del usuario, empezando donde él empieza** (arrancar el juego desde cero), no en un escenario preparado para que la prueba pase.
+3. **Regla del workaround:** si durante la verificación hay que ocultar/forzar/stubear algo para ver la feature (un `display:none` a un overlay, estado sintético, saltarse una pantalla), el usuario tendrá ese mismo obstáculo delante — es un HALLAZGO que arreglar o reportar, nunca un paso de la receta de captura.
+4. **Pasada adversarial:** el último paso es intentar FALSIFICAR cada criterio ("¿en qué situación NO se cumple?"), no confirmarlo una vez y declararlo hecho.
+
+Caso de referencia (2026-08-09): panel de dev "siempre visible" — renderizaba bien, pero el title-screen lo tapaba justo en el flujo donde más importaba (crear mundo/estilo = gastar créditos). La captura de verificación YA lo mostraba tapado y se ocultó el overlay para fotografiar en vez de leerlo como bug.
+
 ### Principios de testing visual
 
 1. **Los tests deben simular el input real del jugador.** Usar `{"cmd":"attack","type":"quick"}` (pasa por `sync.attack()`) en vez de `{"cmd":"play_anim","name":"quick"}` (va directo al animator). El camino debe ser idéntico al del click del jugador.

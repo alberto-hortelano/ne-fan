@@ -21,6 +21,7 @@ ANGLE_PROMPT_FRAGMENTS = {
     "isometric_30": "isometric view from 30 degree elevation, classic RPG angle",
     "isometric_45": "isometric view from 45 degree elevation, three-quarter perspective",
     "frontal": "side view, frontal elevation, no perspective",
+    "frontal_8": "eye-level view with a slight 8 degree downward tilt, near-frontal camera",
 }
 
 

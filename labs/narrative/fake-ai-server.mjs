@@ -421,6 +421,21 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/dev/api_cache") {
     return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
   }
+  // Estado agregado del panel de dev (contrato DevStatus): el fake no gasta
+  // créditos, así el E2E ejercita el panel con spend 0 y claves "presentes".
+  if (req.method === "GET" && req.url === "/dev/status") {
+    return send(200, {
+      api_cache: { enabled: fakeDevCacheEnabled, channels: {} },
+      spend: { total_usd: 0, call_count: 0, calls: [] },
+      config: {
+        scene_model: "fake-scene-model",
+        stage_scene_model: "fake-stage-model",
+        sprite_skin_model: "fake-skin-model",
+        usd_eur_rate: 0.86,
+      },
+      keys: { meshy: true, fal: true },
+    });
+  }
   if (req.method === "GET" && req.url?.startsWith("/cache/scene/")) {
     const hash = req.url.slice("/cache/scene/".length);
     const png = sceneImages.get(hash);

@@ -140,6 +140,8 @@ class FalFillClient:
     negativas duras contra invenciones donde no hay nada declarado)."""
 
     BASE_URL = "https://fal.run"
+    #: Coste estimado por relleno (experimento de julio, dashboard fal).
+    COST_USD = 0.03
 
     def __init__(
         self,

@@ -5,6 +5,7 @@
 
 import { parseVolumes, type Volume } from "../blueprint/volumes.js";
 import { deriveVolumesFromSchema, type DeriveInput } from "../blueprint/derive.js";
+import { defaultPropHeightM, PROP_H_MAX_M, PROP_H_MIN_M } from "../blueprint/prop-heights.js";
 import { parseStage } from "./schema.js";
 import type { StageScenePlan } from "./greybox.js";
 
@@ -21,11 +22,35 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
   ) {
     throw new Error("stagePlanFromScene: la escena proscenio necesita size {cols, rows, meters_per_cell}");
   }
+  const mpc = size.meters_per_cell;
+  // Señal de interior: style_tag y fourth_wall deben ser coherentes — un
+  // plató "bajo techo" (fourth_wall) etiquetado con un tag exterior es una
+  // contradicción del motor narrativo, no algo que adivinar.
+  const styleTag = typeof raw.style_tag === "string" ? raw.style_tag : undefined;
+  const EXTERIOR_STAGE_TAGS = new Set([
+    "stage_street", "stage_plaza", "stage_nature", "stage_harbor", "stage_gate",
+  ]);
+  if (stage.stage.fourth_wall?.present === true && styleTag && EXTERIOR_STAGE_TAGS.has(styleTag)) {
+    throw new Error(
+      `stagePlanFromScene: fourth_wall.present=true con style_tag exterior "${styleTag}" — ` +
+        "un interior debe etiquetarse stage_interior",
+    );
+  }
   let declared: Volume[] = [];
   if (raw.volumes !== undefined) {
     const parsed = parseVolumes(raw.volumes);
     if (!parsed.ok) throw new Error(`stagePlanFromScene: ${parsed.error}`);
-    declared = parsed.volumes;
+    // Props declarados SIN `h`: altura semántica por label (misma tabla que
+    // el derive) — sin esto volumeHeightM les aplicaba su default en celdas
+    // y el mobiliario salía a alturas dispares.
+    declared = parsed.volumes.map((v) => {
+      if (v.type !== "prop" || v.h !== undefined) return v;
+      const hM = Math.min(
+        PROP_H_MAX_M,
+        Math.max(PROP_H_MIN_M, defaultPropHeightM(v.label) ?? 1.0),
+      );
+      return { ...v, h: hM / mpc };
+    });
   }
   // En proscenio la habitación enterable ES el plató: sus muros ya van
   // estampados en el terrain (expandScenePrimitives) y pintarla como fachada
@@ -63,5 +88,6 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     ...(typeof raw.scene_description === "string" && raw.scene_description
       ? { description: raw.scene_description }
       : {}),
+    ...(styleTag ? { style_tag: styleTag } : {}),
   };
 }

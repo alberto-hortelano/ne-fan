@@ -46,8 +46,16 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  v5 (luz convencional): el sol queda SIEMPRE en el cono frontal (±60° desde
  *  el sur, lado cámara) — los sprites de personajes llevan luz genérica y una
  *  escena a contraluz los deja sin integrar; los atardeceres son laterales
- *  con la cara sur iluminada, nunca silueta. */
-export const STAGE_GREYBOX_VERSION = 5;
+ *  con la cara sur iluminada, nunca silueta.
+ *  v6 (escala y encuadre de sala): interior por style_tag ADEMÁS de
+ *  fourth_wall (que es opcional); techo declarable por escena
+ *  (stage.wall_h_m, default 3,5 m) con INT_CEIL_FRAC 0,32 (el techo deja de
+ *  ser losa protagonista); la salvaguarda de volúmenes altos AMPLÍA la
+ *  ventana hacia arriba anclando el borde inferior (v5 la trasladaba y
+ *  recortaba el delantal) con render_px al aspect real; mobiliario sin `h`
+ *  recibe altura SEMÁNTICA por label (prop-heights.ts) — dos mesas de la
+ *  misma escena ya no salen a alturas dispares. */
+export const STAGE_GREYBOX_VERSION = 6;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -55,9 +63,10 @@ export const STAGE_GREYBOX_VERSION = 5;
  *  cámara a pie de calle — da banda de suelo sin caer en el picado del
  *  compositor v3 (10 m). */
 export const GREYBOX_EYE_M = 3.2;
-/** Altura de ojos INTERIOR (m): dentro de una sala de techo 3,2 m la cámara
- *  debe quedar bajo el techo (a 3,2 lo vería de canto y el frame queda negro
- *  encima); 1,8 = la lectura eye-level del bench de la taberna. */
+/** Altura de ojos INTERIOR (m): la cámara debe quedar bien por debajo del
+ *  techo (wall_h_m, mínimo 2,2) — a la altura del techo lo vería de canto y
+ *  el frame queda negro encima; 1,8 = la lectura eye-level del bench de la
+ *  taberna. */
 export const GREYBOX_EYE_INTERIOR_M = 1.8;
 /** FOV horizontal DEFAULT por modo; el retroceso default se deriva del ancho
  *  del plató con él. `stage.focal_m` (intención del motor narrativo) manda
@@ -82,12 +91,17 @@ const MIN_RETREAT_M = 4;
 const EXT_ASPECT = 2.0;
 const INT_ASPECT = 1.6;
 const EXT_SKY_FRAC = 0.38;
-const INT_CEIL_FRAC = 0.44;
+// v6: 0.44 → 0.32 — con casi la mitad del frame por encima del horizonte el
+// techo era una losa protagonista; 0.32 lo deja como cuña de perspectiva en
+// el borde superior y el mundo jugable domina el encuadre.
+const INT_CEIL_FRAC = 0.32;
 /** Lado largo del render nativo que pinta el modelo (el alto sale del
  *  aspect, en múltiplos de 16 para gpt-image-2). */
 const RENDER_LONG_PX = 1280;
-/** Altura real de las paredes de un interior (m). */
-const INTERIOR_WALL_H_M = 3.2;
+/** Altura DEFAULT de las paredes de un interior (m) — escala humana de una
+ *  taberna. El motor puede declarar `stage.wall_h_m` por escena (choza 2.4,
+ *  salón noble 5+); el schema lo acota a [2.2, 8]. */
+const INTERIOR_WALL_H_M = 3.5;
 const DOOR_H_M = 2.1;
 const OPENING_H_M = 2.4;
 
@@ -155,6 +169,9 @@ export interface StageScenePlan {
   /** scene_description del Format D — fallback del detector de hora del día
    *  cuando el stage no declara `ambience`. */
   description?: string;
+  /** style_tag de la escena (stage_interior, stage_street…) — segunda señal
+   *  de interior además de fourth_wall (que es opcional en el prompt). */
+  style_tag?: string;
 }
 
 /** Hora del día del plató: la declarada en `stage.ambience`, o inferida del
@@ -237,7 +254,11 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
   const widthM = cols * mpc;
   const depthM = rows * mpc;
   const rect = { minX: -widthM / 2, minZ: -depthM / 2, maxX: widthM / 2, maxZ: depthM / 2 };
-  const interiorLike = plan.stage.fourth_wall?.present === true;
+  // Interior por CUALQUIERA de las dos señales: `fourth_wall` es opcional en
+  // el prompt — un interior que solo declare style_tag no debe salir con
+  // cielo, colinas y ojo de exterior (3,2 m).
+  const interiorLike =
+    plan.stage.fourth_wall?.present === true || plan.style_tag === "stage_interior";
   const eyeM = interiorLike ? GREYBOX_EYE_INTERIOR_M : GREYBOX_EYE_M;
   const horizonY = GROUND_Y - eyeM * PX_PER_M;
 
@@ -332,11 +353,13 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     }
   }
 
-  // ── Interior: paredes reales con sus vanos; techo bajo ────────────────────
+  // ── Interior: paredes reales con sus vanos; techo a escala de la sala ─────
   if (interiorLike) {
     const wall = wallColors("plaster");
     const wallT = 0.18; // grosor
     const sideTone = darken(wall.lit, 0.12);
+    // Altura de sala declarada por el motor (wall_h_m) o default de taberna.
+    const wallHM = plan.stage.wall_h_m ?? INTERIOR_WALL_H_M;
 
     /** Segmentos [a,b] de una pared tras restarle los vanos (rangos abiertos). */
     const carve = (full: [number, number], holes: Array<[number, number]>): Array<[number, number]> => {
@@ -363,7 +386,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       holeH: number,
     ): void => {
       const len = b - a;
-      const h = INTERIOR_WALL_H_M - holeH;
+      const h = wallHM - holeH;
       if (h <= 0.02 || len <= 0.02) return;
       primitives.push({
         shape: "box",
@@ -409,7 +432,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     for (const [a, b] of carve(backSpan, backHoles)) {
       primitives.push({
         shape: "box",
-        size: [b - a, INTERIOR_WALL_H_M, wallT],
+        size: [b - a, wallHM, wallT],
         pos: [(a + b) / 2, 0, rect.minZ],
         color: wall.lit,
         cat: "wall",
@@ -450,7 +473,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       for (const [a, b] of carve([rect.minZ, rect.maxZ], holes)) {
         primitives.push({
           shape: "box",
-          size: [wallT, INTERIOR_WALL_H_M, b - a],
+          size: [wallT, wallHM, b - a],
           pos: [x, 0, (a + b) / 2],
           color: sideTone,
           cat: "wall",
@@ -466,7 +489,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     primitives.push({
       shape: "box",
       size: [floorSpanX, 0.12, ceilDepth],
-      pos: [0, INTERIOR_WALL_H_M, rect.minZ + ceilDepth / 2],
+      pos: [0, wallHM, rect.minZ + ceilDepth / 2],
       // Madera clara: la cara inferior solo recibe ambient/hemi — un tono
       // oscuro se hunde a negro y devora el tercio superior del encuadre.
       color: lighten(PALETTE.woodTop, 0.18),
@@ -601,8 +624,12 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
   const vbMinX = -(widthM / 2) * PX_PER_M - VIEW_MARGIN_X;
   const vbWidth = widthM * PX_PER_M + 2 * VIEW_MARGIN_X;
   const vbAspect = interiorLike ? INT_ASPECT : EXT_ASPECT;
-  const vbHeight = vbWidth / vbAspect;
-  let vbMinY = horizonY - (interiorLike ? INT_CEIL_FRAC : EXT_SKY_FRAC) * vbHeight;
+  const vbHeightBase = vbWidth / vbAspect;
+  let vbMinY = horizonY - (interiorLike ? INT_CEIL_FRAC : EXT_SKY_FRAC) * vbHeightBase;
+  // El borde INFERIOR queda FIJO: la salvaguarda de volúmenes altos amplía la
+  // ventana hacia arriba (crece height), nunca la traslada — trasladarla
+  // recortaba suelo y delantal por abajo (cartel de salida decapitado).
+  const vbMaxY = vbMinY + vbHeightBase;
   // Tope superior de los volúmenes en vista (proyección pura, sin view_box).
   let minTopVy = Infinity;
   for (const v of plan.volumes) {
@@ -617,22 +644,24 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     }
   }
   if (Number.isFinite(minTopVy)) vbMinY = Math.min(vbMinY, minTopVy - 6);
+  const vbHeight = vbMaxY - vbMinY;
   const viewBox: ViewBox = {
     minX: vbMinX,
     minY: vbMinY,
     width: vbWidth,
     height: vbHeight,
   };
-  // Render nativo: mismo aspect que el view_box, múltiplos de 16.
+  // Render nativo: aspect REAL del view_box (puede ser más alto que el base
+  // si la salvaguarda amplió la ventana), múltiplos de 16 — un aspect
+  // constante con height variable pintaría anamórfico (lección de v2).
   const renderPx: [number, number] = [
     RENDER_LONG_PX,
-    Math.round(RENDER_LONG_PX / vbAspect / 16) * 16,
+    Math.round((RENDER_LONG_PX * vbHeight) / vbWidth / 16) * 16,
   ];
 
   // ── Cámara three.js derivada de proj + view_box ───────────────────────────
   const F = PX_PER_M * retreat; // focal en unidades de vista
   const vbMaxX = viewBox.minX + viewBox.width;
-  const vbMaxY = viewBox.minY + viewBox.height;
   const halfW = Math.max(Math.abs(viewBox.minX), Math.abs(vbMaxX));
   const halfH = Math.max(Math.abs(horizonY - viewBox.minY), Math.abs(vbMaxY - horizonY));
   const camera: GreyboxCamera = {

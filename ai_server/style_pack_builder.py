@@ -23,6 +23,7 @@ from pathlib import Path
 from PIL import Image
 
 from meshy_client import FalImageToImage, MeshyImageToImage
+from spend_tracker import SPEND
 from style_packs import (
     CHARACTER_CATEGORIES,
     ENV_CATEGORIES,
@@ -352,13 +353,17 @@ async def generate_missing(
                 aspect = seed_img.size
             log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={STAGE_AI_MODEL} (fal)")
             png, _task = await fal_api.run_one(prompt, refs, ai_model=STAGE_AI_MODEL, aspect=aspect)
-            cost += FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
+            per_image = FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
+            cost += per_image
+            SPEND.add(per_image, f"style {style_id}/{category}", "remote-gen")
         else:
             if meshy_api is None:
                 meshy_api = MeshyImageToImage()
             log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={ai_model}")
             png, _task = await meshy_api.run_one(ai_model, prompt, refs)
-            cost += MeshyImageToImage.cost_usd(ai_model)
+            per_image = MeshyImageToImage.cost_usd(ai_model)
+            cost += per_image
+            SPEND.add(per_image, f"style {style_id}/{category}", "remote-gen")
         out_path = dest_dir / entry["file"]
         img = Image.open(io.BytesIO(png)).convert("RGB")
         buf = io.BytesIO()

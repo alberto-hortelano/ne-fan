@@ -34,6 +34,7 @@ from PIL import Image
 
 from dev_api_cache import DEV_API_CACHE
 from meshy_client import MeshyImageToImage
+from spend_tracker import SPEND
 
 # Densidad de keyframes por anim: (n_keyframes, fps de reproducción).
 # Tuneados a mano en labs/skinning/build_base_browser.py:ANIM_PROFILES para
@@ -56,10 +57,28 @@ DEFAULT_PROFILE = (4, 4.0)
 # lab_server; el límite real lo pone la API remota, no la GPU local.
 MESHY_CONCURRENCY = 6
 
-HERO_PROMPT_SUFFIX = (
-    ", full body character, T-pose stance, isometric view, neutral background, "
-    "hero shot, character reference"
-)
+# Fragmento de vista del hero-shot por ÁNGULO del set base (espejo de
+# ANGLE_CAMERA en godot/scripts/dev/sprite_sheet_renderer.gd). Un ángulo sin
+# fragmento es un error de contrato, no algo que adivinar.
+HERO_VIEW_FRAGMENTS = {
+    "isometric_30": "isometric view",
+    "isometric_45": "isometric view",
+    "frontal": "front view, eye-level camera",
+    "frontal_8": "front view, eye-level camera",
+}
+
+
+def hero_prompt_suffix(angle: str) -> str:
+    view = HERO_VIEW_FRAGMENTS.get(angle)
+    if view is None:
+        raise ValueError(
+            f"hero_prompt_suffix: ángulo de sprite sin fragmento de vista: {angle!r} "
+            f"(conocidos: {sorted(HERO_VIEW_FRAGMENTS)})"
+        )
+    return (
+        f", full body character, T-pose stance, {view}, neutral background, "
+        "hero shot, character reference"
+    )
 
 
 def keyframe_indices(src_count: int, n: int) -> list[int]:
@@ -165,13 +184,15 @@ class SpriteSkinMeshy:
         # deben generar dos identidades distintas en paralelo.
         self._hero_locks: dict[str, asyncio.Lock] = {}
 
-    def hero_key(self, prompt: str, base_model: str, style_key: str = "") -> str:
+    def hero_key(self, prompt: str, base_model: str, style_key: str = "", angle: str = "isometric_30") -> str:
         # namespace_suffix: un hero rancio de modo dev no debe ocupar el slot
         # real de este prompt. style_key ("{style_id}:{hash}") separa el mismo
-        # personaje pintado con estilos de juego distintos.
+        # personaje pintado con estilos de juego distintos; angle separa los
+        # sets por vista (el hero de isometric_30 no vale para frontal_8 —
+        # la pose base y el fragmento de vista del prompt cambian).
         payload = "\n".join(
             [prompt.strip().lower(), base_model, self.ai_model, style_key,
-             DEV_API_CACHE.namespace_suffix()]
+             angle, DEV_API_CACHE.namespace_suffix()]
         )
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
@@ -190,7 +211,7 @@ class SpriteSkinMeshy:
         `style_uri`/`style_token`: referencia de personaje del style pack del
         juego — el hero adopta ese estilo y las direcciones lo heredan del
         hero (el atlas no necesita ref extra)."""
-        key = self.hero_key(prompt, base_model, style_key)
+        key = self.hero_key(prompt, base_model, style_key, angle)
         hero_path = self.heroes_dir / f"{key}.png"
         lock = self._hero_locks.setdefault(key, asyncio.Lock())
         async with lock:
@@ -200,7 +221,7 @@ class SpriteSkinMeshy:
             if not base_frame.exists():
                 raise FileNotFoundError(f"base frame missing: {base_frame}")
 
-            hero_prompt = prompt.strip() + HERO_PROMPT_SUFFIX
+            hero_prompt = prompt.strip() + hero_prompt_suffix(angle)
             refs = [_png_to_data_uri(base_frame)]
             if style_uri:
                 refs.append(style_uri)
@@ -218,9 +239,11 @@ class SpriteSkinMeshy:
                 )
                 return [png]
 
-            blobs, _cached = await DEV_API_CACHE.through(
+            blobs, cached = await DEV_API_CACHE.through(
                 "meshy_i2i_sprite_hero", _call, note=prompt
             )
+            if not cached:
+                SPEND.add(self.api.cost_usd(self.ai_model), f"hero: {prompt[:50]}", "remote-gen")
             png_bytes = blobs[0]
             self.heroes_dir.mkdir(parents=True, exist_ok=True)
             hero_path.write_bytes(png_bytes)
@@ -255,9 +278,13 @@ class SpriteSkinMeshy:
             )
             return [png]
 
-        blobs, _cached = await DEV_API_CACHE.through(
+        blobs, cached = await DEV_API_CACHE.through(
             "meshy_i2i_sprite_atlas", _call, note=f"{prompt} [{direction}]"
         )
+        if not cached:
+            SPEND.add(
+                self.api.cost_usd(self.ai_model), f"atlas d{direction}: {prompt[:44]}", "remote-gen"
+            )
         png_bytes = blobs[0]
         frames = split_atlas(
             Image.open(io.BytesIO(png_bytes)).convert("RGBA"), layout, len(indices), frame_size

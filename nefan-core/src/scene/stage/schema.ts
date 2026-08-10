@@ -57,6 +57,10 @@ export const StageBlockSchema = z
       })
       .strict()
       .optional(),
+    /** Altura de las paredes/techo de un INTERIOR en metros — a escala de la
+     *  sala (choza 2.4, taberna 3.5, salón noble 5+). Default del motor si
+     *  falta; en exteriores se ignora. */
+    wall_h_m: z.number().min(2.2).max(8).optional(),
     /** Cuarta pared frontal (lado cámara); se desvanece por proximidad. */
     fourth_wall: z
       .object({

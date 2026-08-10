@@ -48,6 +48,7 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
     ],
     "backdrop": { "description": "Pared de piedra con chimenea encendida y estanterías" },
     "ambience": { "time_of_day": "atardecer", "mood": "calima dorada y humo de cocina" },  // optional; drives the clay's sun/sky/fog presets and the repaint's atmosphere
+    "wall_h_m": 3.5,                     // optional, INTERIORS only: wall/ceiling height in meters, at the scale of the room — hut 2.4, tavern 3.5, noble hall 5+. Range [2.2, 8]; default 3.5
     "fourth_wall": { "present": true, "doors": [ { "col": 10, "w": 6 } ] }
   },
   "ambient_event": "…"
@@ -122,6 +123,11 @@ HARD RULES OF THE STAGE:
   stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate.
   It picks the game's style reference for the repaint. Without it the engine
   infers one (fourth_wall present → stage_interior; otherwise a default).
+- HARD RULE: a roofed stage MUST declare style_tag "stage_interior" (and
+  usually a fourth_wall). Without either signal the engine renders it as an
+  EXTERIOR — open sky, distant hills, high 3.2 m camera eye. Declaring
+  fourth_wall together with an exterior style_tag is a contradiction and the
+  scene is rejected.
 - Backdrop description is what the player SEES at the north edge (Spanish,
   concrete, matches the world). It seeds future AI repainting — describe a
   view, not a wall of text.

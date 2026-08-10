@@ -41,7 +41,7 @@ import {
   type DerivedCollisionDeps,
 } from "./world/collision.js";
 import { StageTransitions } from "./world/stage-transitions.js";
-import { AutoImagePipeline, type PipelineStatus } from "./scene/auto-pipeline.js";
+import { AutoImagePipeline } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
   BASE_ANIMS,
@@ -62,6 +62,7 @@ import { DevToolsInput } from "./input/dev-tools-input.js";
 import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
+import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { errors } from "./ui/error-log.js";
 import {
   createGameClient,
@@ -127,7 +128,7 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
       // Secuencial y abortando al primer fallo: un modelo sin sheets solo
       // genera UNA entrada en el error-log (la del fetch), no diez.
       for (const anim of BASE_ANIMS) {
-        await spriteRenderer.loadAnimation(modelId, anim, WORLD_ANGLE);
+        await spriteRenderer.loadAnimation(modelId, anim, worldAngle);
       }
       base = modelId;
     } catch {
@@ -157,7 +158,14 @@ const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
 const canvas = document.getElementById("game") as HTMLCanvasElement;
-const WORLD_ANGLE = "isometric_30";
+/** Set de sprites por VISTA: los sheets del y_bot van renderizados desde un
+ *  ángulo de cámara fijo y los personajes quedan fijos a ese ángulo — la
+ *  oblicua usa el clásico picado 30°; el proscenio (cámara horizontal, ojo
+ *  1,8-3,2 m) usa el set casi frontal −8° para que no parezcan torcidos. */
+const OBLIQUE_ANGLE = "isometric_30";
+const PROSCENIUM_ANGLE = "frontal_8";
+/** Ángulo del set de la vista ACTIVA (lo conmuta applySessionView). */
+let worldAngle: string = OBLIQUE_ANGLE;
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
 // en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
 // así que `?ai=` cubre las cuatro.
@@ -177,7 +185,7 @@ const GEN_URLS = {
   assets: ASSET_STORE_URL,
 };
 const spriteRenderer = new SpriteRenderer("/sprites", REMOTE_GEN_URL, ASSET_STORE_URL);
-const characterSprites = new CharacterSpriteManager(spriteRenderer, WORLD_ANGLE);
+const characterSprites = new CharacterSpriteManager(spriteRenderer, OBLIQUE_ANGLE);
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
  *  `entity.sprite` a partir de ese momento (antes, círculos). */
 let baseSheetsLoaded = false;
@@ -196,12 +204,19 @@ const assetCache = new AssetCache(GPU_WORKER_URL, ASSET_STORE_URL);
 const renderer = new CanvasRenderer(canvas, {
   spriteRenderer,
   assetCache,
-  worldAngle: WORLD_ANGLE,
+  worldAngle: OBLIQUE_ANGLE,
 });
+// Panel de dev (segunda fila del HUD, #dev-status): estado de la generación
+// de imágenes IA, contadores de caché, gasto estimado en € (poll a
+// GET /dev/status de remote-gen) y config activa. Siempre visible.
+const devPanel = new DevStatusPanel(REMOTE_GEN_URL, (msg) => log(msg));
+
 // Generación IA del fondo de escena (img2img desde el blueprint del tile).
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
 // visual: no toca colisiones ni SceneData.
-const sceneImageController = new SceneImageController(renderer, GEN_URLS);
+const sceneImageController = new SceneImageController(renderer, GEN_URLS, (e) =>
+  devPanel.recordGeneration(e),
+);
 // Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
 // visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
 // si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
@@ -212,12 +227,10 @@ const stageImageController = new StageImageController(GEN_URLS, {
     if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);
   },
   log: (msg) => log(msg),
-  // Progreso del repintado/pelado en el HUD (mismo indicador que el Auto-img
-  // de la oblicua — nunca corren a la vez).
-  status: (text) => {
-    autoimgStatus.textContent = text ?? "";
-    autoimgStatus.className = text ? "working" : "";
-  },
+  // Progreso del repintado/pelado en el panel de dev (mismo slot que el
+  // Auto-img de la oblicua — nunca corren a la vez).
+  status: (s) => devPanel.setStage(s),
+  onGeneration: (e) => devPanel.recordGeneration(e),
 });
 
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
@@ -226,6 +239,7 @@ function applySessionStyle(styleId: string): void {
   sceneImageController.setStyle(styleId);
   stageImageController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
+  devPanel.setSession({ styleId });
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
 
@@ -245,12 +259,13 @@ const sessionProjection = VIEW_PROJECTION;
 let sessionRenderMode: "image" | "vector" | "" = "";
 function applySessionRenderMode(renderMode: string): void {
   sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
-  // Los skins IA de personajes siguen al modo del mundo: en vectorial todos
+  devPanel.setSession({ renderMode: sessionRenderMode });
+  // Los skins IA de personajes siguen al modo del mundo: en maqueta 3D todos
   // los personajes usan la base y_bot (sin encolar repintados de Meshy).
   characterSprites.setSkinsAllowed(sessionRenderMode !== "vector");
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
-    log("Gráficos: vectorial (planos del motor narrativo, sin imagen IA; personajes en base y_bot)");
+    log("Gráficos: maqueta 3D (clay local, sin imagen IA; personajes en base y_bot)");
   } else if (sessionRenderMode === "image") {
     autoPipeline.setEnabled(true);
     log("Gráficos: imagen IA (Auto-img activo)");
@@ -275,6 +290,21 @@ function applySessionView(view: string): void {
   const next = view === "proscenium" ? "proscenium" : "";
   const changed = next !== sessionView;
   sessionView = next;
+  devPanel.setSession({ view: next });
+  // Set de sprites de la vista: el proscenio usa el y_bot casi frontal
+  // (frontal_8); la oblicua el picado clásico. El cambio invalida los skins
+  // listos (son por ángulo) y precarga el set nuevo; mientras llega, las
+  // entidades cargan lazy por getCached (se autocorrige en frames).
+  const nextAngle = next === "proscenium" ? PROSCENIUM_ANGLE : OBLIQUE_ANGLE;
+  if (nextAngle !== worldAngle) {
+    worldAngle = nextAngle;
+    characterSprites.setAngle(nextAngle);
+    if (CONFIG.graphics.character_sprites) {
+      characterSprites.preloadBase().catch((err) =>
+        errors.push("sprite", `set base ${BASE_MODEL} (${nextAngle}) incompleto`, err),
+      );
+    }
+  }
   if (next === "proscenium") {
     if (!prosceniumRenderer) {
       prosceniumRenderer = rendererRegistry.create("proscenium", {
@@ -421,28 +451,10 @@ const EDGE_ES: Record<FrontierEdge, string> = {
 let activeTileKey: string | null = null;
 
 // --- Auto-img: pipeline automático de imagen IA por tile ---
-// Persistido en localStorage (patrón ZOOM_KEY). Ya SIN toggle visible: su
-// hueco de la top bar lo ocupa Dev-cache. Se sigue controlando por
-// localStorage["nefan.autoimg"] y su progreso se muestra en #autoimg-status.
-const autoimgStatus = document.getElementById("autoimg-status") as HTMLElement;
+// Persistido en localStorage (patrón ZOOM_KEY). Sin toggle visible: se
+// controla por localStorage["nefan.autoimg"] y su progreso se muestra en el
+// panel de dev (#dev-status, DevStatusPanel).
 const AUTOIMG_KEY = "nefan.autoimg";
-
-function renderAutoImgStatus(s: PipelineStatus): void {
-  if (s.paused) {
-    autoimgStatus.textContent = `pausado: ai_server no responde · cola ${s.queued}`;
-    autoimgStatus.className = "paused";
-  } else if (s.current) {
-    autoimgStatus.textContent = `${s.current.key} · ${s.current.phase}` +
-      (s.queued > 0 ? ` · cola ${s.queued}` : "");
-    autoimgStatus.className = "working";
-  } else if (s.enabled) {
-    autoimgStatus.textContent = "al día";
-    autoimgStatus.className = "";
-  } else {
-    autoimgStatus.textContent = "";
-    autoimgStatus.className = "";
-  }
-}
 
 const autoPipeline = new AutoImagePipeline({
   hasImage: (k) => renderer.tileHasImage(k),
@@ -453,7 +465,7 @@ const autoPipeline = new AutoImagePipeline({
   generate: (k) => sceneImageController.generateForTile(k),
   analyze: (k) => sceneImageController.analyzeSceneForTile(k),
   onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
-  onStatus: renderAutoImgStatus,
+  onStatus: (s) => devPanel.setTilePipeline(s),
   onDisabled: () => {
     localStorage.setItem(AUTOIMG_KEY, "0");
   },
@@ -461,44 +473,8 @@ const autoPipeline = new AutoImagePipeline({
 });
 autoPipeline.setEnabled(localStorage.getItem(AUTOIMG_KEY) === "1");
 
-// --- Dev-cache: toggle del cache de modo dev del ai_server -----------------
-// Con él activo, cada API de IA de pago (Meshy i2i, Meshy 3D, fal) devuelve
-// su ÚLTIMA respuesta cacheada en vez de llamar de verdad — cero créditos
-// mientras se itera. El estado vive y persiste en el ai_server
-// (cache/dev_api_cache/state.json); el checkbox solo lo refleja.
-const devcacheToggle = document.getElementById("devcache-toggle") as HTMLInputElement;
-
-async function initDevCacheToggle(): Promise<void> {
-  try {
-    const res = await fetch(`${REMOTE_GEN_URL}/dev/api_cache`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const st = (await res.json()) as { enabled?: boolean };
-    devcacheToggle.checked = !!st.enabled;
-  } catch {
-    // ai_server apagado: sin servidor no hay APIs que cachear — el toggle no
-    // aplica. Deshabilitado explícitamente, no un fallback silencioso.
-    devcacheToggle.disabled = true;
-    devcacheToggle.parentElement!.title = "ai_server no responde — dev-cache no disponible";
-  }
-}
-void initDevCacheToggle();
-
-devcacheToggle.addEventListener("change", () => {
-  const enabled = devcacheToggle.checked;
-  void fetch(`${REMOTE_GEN_URL}/dev/api_cache`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      log(`dev-cache ${enabled ? "ON — las APIs de IA sirven su última respuesta (0 créditos)" : "OFF — llamadas reales"}`);
-    })
-    .catch((err) => {
-      devcacheToggle.checked = !enabled;
-      errors.push("config", "no se pudo cambiar dev-cache en ai_server", err);
-    });
-});
+// El toggle Dev-cache vive ahora en el panel de dev (DevStatusPanel es su
+// único dueño: estado inicial, cambios y deshabilitado con ai_server caído).
 
 // Entity arrays
 let enemyEntities: Entity[] = [];
@@ -569,7 +545,7 @@ function updateEntitySprite(e: Entity, now: number, opts: { npc: boolean }): voi
   e.sprite = {
     model: characterSprites.modelFor(e.skinPrompt, track.state.anim),
     anim: track.state.anim,
-    angle: WORLD_ANGLE,
+    angle: worldAngle,
     animStartedAt: track.state.animStartedAt,
   };
 }
@@ -1261,6 +1237,9 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     }),
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
+    // estado (setStage/setTilePipeline/recordGeneration) sin tocar píxeles.
+    devPanel,
     probeCollide: (x: number, z: number) => collidesAt(x, z),
     // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
@@ -1459,7 +1438,7 @@ function gameLoop(now: number): void {
   // a ErrorLog; el .catch evita unhandled rejection.
   if (devInput.consumeGenerateScene()) {
     if (sessionRenderMode === "vector") {
-      log("G ignorada: la partida es vectorial (elegido al crearla)");
+      log("G ignorada: la partida es maqueta 3D sin imagen IA (elegido al crearla)");
     } else if (sessionView === "proscenium") {
       // Proscenio: G repinta + pela el plató activo (manual, aunque el auto
       // ya lo haga al instalarse — reintento tras un fallo).
@@ -1789,7 +1768,7 @@ function gameLoop(now: number): void {
     playerSprite = {
       model: characterSprites.modelFor(playerSkinPrompt, playerAnim.anim, playerModel),
       anim: playerAnim.anim,
-      angle: WORLD_ANGLE,
+      angle: worldAngle,
       animStartedAt: playerAnim.animStartedAt,
     };
   }
