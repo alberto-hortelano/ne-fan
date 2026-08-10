@@ -73,9 +73,17 @@ export {
   frameStage,
   parallaxPanX,
   viewToScreen,
+  viewToScreenCam,
+  layerRectCam,
+  sCamAt,
+  camRatio,
+  maxDollyFor,
   bandPlanFor,
   FRAMING_DEFAULTS,
   BAND_PLAN_DEFAULTS,
+  STAGE_CAM_ZERO,
+  MAX_NEAR_ZOOM,
+  type StageCam,
   type StageFraming,
   type FramingOpts,
   type ViewBoxRect,
@@ -83,5 +91,12 @@ export {
   type BandPlan,
   type BandPlanOpts,
 } from "./framing.js";
-export { railCamera, type RailCameraOpts } from "./camera.js";
+export {
+  railCamera,
+  stageFollow,
+  FOLLOW_X,
+  FOLLOW_Z,
+  type RailCameraOpts,
+  type StageFollowOpts,
+} from "./camera.js";
 export { exitZoneAt, spawnPointForEntry } from "./entry.js";

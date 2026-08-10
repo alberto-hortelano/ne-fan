@@ -109,6 +109,87 @@ export function parallaxPanX(p: StageProjParams, zStage: number, camOffsetM: num
   return camOffsetM * p.px_per_m * scaleAt(p, zStage);
 }
 
+// ── Cámara de RUNTIME con seguimiento (pan X + dolly Z) ─────────────────────
+// La cámara de PINTADO (spec.proj) no cambia jamás: el runtime reproyecta la
+// vista base con una cámara trasladada — lateral (camXM) y adelantada
+// (dollyM, hacia el norte). Sin yaw ni pitch: las iso-z siguen siendo filas
+// horizontales y el horizonte queda FIJO en pantalla; el dolly escala cada
+// profundidad en torno a (center_x, horizon_y).
+
+export interface StageCam {
+  /** Offset lateral de cámara en metros (respecto al centro del plató). */
+  camXM: number;
+  /** Avance hacia el norte en metros (≥ 0; 0 = cámara base). */
+  dollyM: number;
+}
+
+export const STAGE_CAM_ZERO: StageCam = { camXM: 0, dollyM: 0 };
+
+/** Ampliación máxima de la placa en la embocadura por dolly (la pintura de
+ *  1280 px de ancho aguanta ~1.35× sin ablandarse). */
+export const MAX_NEAR_ZOOM = 1.35;
+
+/** Escala de proyección a profundidad z con la cámara adelantada dollyM.
+ *  Misma lente (focal en px fija = ppm·focal_m), distancia acortada:
+ *  sCam(z) = focal_m/(focal_m − dollyM + z). Con dollyM 0 ≡ scaleAt. */
+export function sCamAt(p: StageProjParams, cam: StageCam, zStage: number): number {
+  const z = Math.max(0, zStage);
+  return p.focal_m / (p.focal_m - cam.dollyM + z);
+}
+
+/** Razón sCam/s a profundidad z (≥ 1 para dollyM ≥ 0): el factor de escala
+ *  que el dolly aplica a lo pintado/proyectado con la cámara base. */
+export function camRatio(p: StageProjParams, cam: StageCam, zStage: number): number {
+  const z = Math.max(0, zStage);
+  return (p.focal_m + z) / (p.focal_m - cam.dollyM + z);
+}
+
+/** Dolly máximo: el 20% de la profundidad, acotado para que la ampliación de
+ *  la placa en la embocadura no pase de MAX_NEAR_ZOOM (y el denominador de
+ *  sCam quede siempre positivo). */
+export function maxDollyFor(p: StageProjParams, followZ: number): number {
+  return Math.min(followZ * p.depth_m, p.focal_m * (1 - 1 / MAX_NEAR_ZOOM));
+}
+
+/** Vista base → canvas con la cámara de runtime (pan + dolly). Exacta a
+ *  cualquier altura: vy − horizon_y ∝ s(z), así que escalar por r(z) en
+ *  torno al horizonte ES la reproyección del pinhole adelantado. Con
+ *  dollyM 0 se reduce término a término a viewToScreen. */
+export function viewToScreenCam(
+  p: StageProjParams,
+  f: StageFraming,
+  canvasW: number,
+  vx: number,
+  vy: number,
+  zStage: number,
+  cam: StageCam,
+): [number, number] {
+  const cx = p.center_x ?? 0;
+  const r = camRatio(p, cam, zStage);
+  const vxCam = cx + (vx - cx) * r - cam.camXM * p.px_per_m * sCamAt(p, cam, zStage);
+  const vyCam = p.horizon_y + (vy - p.horizon_y) * r;
+  return [canvasW / 2 + vxCam * f.fit, f.groundScreenY + (vyCam - p.ground_y) * f.fit];
+}
+
+/** Rect destino en canvas de un bitmap full-viewBox a profundidad zStage con
+ *  la cámara de runtime — placa y recortes: escala afín por r(z) en torno a
+ *  (center_x, horizon_y) + pan lateral. */
+export function layerRectCam(
+  p: StageProjParams,
+  vb: ViewBoxRect,
+  f: StageFraming,
+  canvasW: number,
+  zStage: number,
+  cam: StageCam,
+): [number, number, number, number] {
+  const cx = p.center_x ?? 0;
+  const r = camRatio(p, cam, zStage);
+  const pan = cam.camXM * p.px_per_m * sCamAt(p, cam, zStage);
+  const x = canvasW / 2 + (cx + (vb.minX - cx) * r - pan) * f.fit;
+  const y = f.groundScreenY + (p.horizon_y + (vb.minY - p.horizon_y) * r - p.ground_y) * f.fit;
+  return [x, y, vb.width * r * f.fit, vb.height * r * f.fit];
+}
+
 /** Vista → canvas con parallax por profundidad y anclaje vertical. */
 export function viewToScreen(
   p: StageProjParams,
@@ -119,10 +200,7 @@ export function viewToScreen(
   zStage: number,
   camOffsetM: number,
 ): [number, number] {
-  return [
-    canvasW / 2 + (vx - parallaxPanX(p, zStage, camOffsetM)) * f.fit,
-    f.groundScreenY + (vy - p.ground_y) * f.fit,
-  ];
+  return viewToScreenCam(p, f, canvasW, vx, vy, zStage, { camXM: camOffsetM, dollyM: 0 });
 }
 
 /** Banda horizontal del warp del suelo. Destino en FILAS ENTERAS de canvas

@@ -211,3 +211,88 @@ describe("bandPlanFor", () => {
     assert.ok(p2.ground.length <= Math.ceil((0.78 * 720) / 8) + 2);
   });
 });
+
+describe("cámara de runtime (StageCam): pan + dolly", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("dolly 0 ≡ viewToScreen actual (regresión término a término)", async () => {
+    const { viewToScreenCam } = await import("../src/scene/stage/framing.js");
+    for (const [vx, vy, z, cam] of [
+      [0, 100, 0, 0], [40, 60, 4, 1.2], [-70, 20, 9, -2], [15, 0, 5, 0.4],
+    ] as Array<[number, number, number, number]>) {
+      const a = viewToScreen(P, F, 1280, vx, vy, z, cam);
+      const b = viewToScreenCam(P, F, 1280, vx, vy, z, { camXM: cam, dollyM: 0 });
+      assert.ok(Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9);
+    }
+  });
+
+  it("identidad pinhole: dolly d ≡ proyectar con la cámara adelantada", async () => {
+    const { viewToScreenCam, sCamAt } = await import("../src/scene/stage/framing.js");
+    const { stageToViewAt } = await import("../src/scene/stage/projection.js");
+    const d = 1.8;
+    // Cámara adelantada d: misma lente (F_px = ppm·focal se conserva), mismo
+    // plano z=0 (su retroceso es focal−d) ⇒ focal' = focal−d,
+    // ppm' = ppm·focal/(focal−d), y ground_y' ajustado para conservar eyeM.
+    const ppmAdv = (P.px_per_m * P.focal_m) / (P.focal_m - d);
+    const eyeM = (P.ground_y - P.horizon_y) / P.px_per_m;
+    const pAdv: StageProjParams = {
+      ...P,
+      focal_m: P.focal_m - d,
+      px_per_m: ppmAdv,
+      ground_y: P.horizon_y + eyeM * ppmAdv,
+    };
+    for (const [x, h, z] of [
+      [0, 0, 0.5], [3, 1.7, 4], [-5, 0, 8.5], [2.5, 6, 2],
+    ] as Array<[number, number, number]>) {
+      // El punto de mundo (x, h, z) visto por la cámara base + dolly runtime:
+      const [vx, vy] = stageToViewAt(P, x, z, h);
+      const got = viewToScreenCam(P, F, 1280, vx, vy, z, { camXM: 0, dollyM: d });
+      // Y visto directamente por la cámara adelantada (mismo z), mapeado con
+      // el anclaje de pantalla BASE:
+      const [vx2, vy2] = stageToViewAt(pAdv, x, z, h);
+      const want = viewToScreen(P, F, 1280, vx2, vy2, z, 0);
+      assert.ok(Math.abs(got[0] - want[0]) < 1e-6, `x: ${got[0]} vs ${want[0]} en z=${z}`);
+      assert.ok(Math.abs(got[1] - want[1]) < 1e-6, `y: ${got[1]} vs ${want[1]} en z=${z}`);
+      // Y la escala del dolly es la del pinhole adelantado:
+      assert.ok(
+        Math.abs(sCamAt(P, { camXM: 0, dollyM: d }, z) * P.px_per_m - ppmAdv * (pAdv.focal_m / (pAdv.focal_m + z))) < 1e-9,
+      );
+    }
+  });
+
+  it("el horizonte queda fijo en pantalla bajo cualquier dolly", async () => {
+    const { viewToScreenCam } = await import("../src/scene/stage/framing.js");
+    const base = viewToScreenCam(P, F, 1280, 30, P.horizon_y, 9, { camXM: 0, dollyM: 0 });
+    for (const d of [0.5, 1.5, 2.8]) {
+      const y = viewToScreenCam(P, F, 1280, 30, P.horizon_y, 9, { camXM: 0, dollyM: d })[1];
+      assert.ok(Math.abs(y - base[1]) < 1e-9, `horizonte se mueve con dolly ${d}`);
+    }
+  });
+
+  it("camRatio ≥ 1 y maxDollyFor acota la ampliación de la embocadura", async () => {
+    const { camRatio, maxDollyFor, sCamAt, MAX_NEAR_ZOOM } = await import("../src/scene/stage/framing.js");
+    const d = maxDollyFor(P, 0.2);
+    assert.ok(d > 0 && d <= 0.2 * P.depth_m);
+    for (const z of [0, 2, 5, 9]) {
+      assert.ok(camRatio(P, { camXM: 0, dollyM: d }, z) >= 1);
+    }
+    assert.ok(sCamAt(P, { camXM: 0, dollyM: d }, 0) <= MAX_NEAR_ZOOM + 1e-9, "zoom de embocadura acotado");
+  });
+
+  it("stageFollow: convergencia, clamps y dolly nunca negativo", async () => {
+    const { stageFollow } = await import("../src/scene/stage/camera.js");
+    const opts = { rate: 5, railHalfM: 1.0, maxDollyM: 1.6 };
+    let cam = { camXM: 0, dollyM: 0 };
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: 0.6, dollyM: 1.2 }, 1 / 60, opts);
+    assert.ok(Math.abs(cam.camXM - 0.6) < 1e-3 && Math.abs(cam.dollyM - 1.2) < 1e-3, "converge al target");
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: 5, dollyM: 9 }, 1 / 60, opts);
+    assert.ok(cam.camXM <= 1.0 + 1e-9 && cam.dollyM <= 1.6 + 1e-9, "clamps");
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: -5, dollyM: -3 }, 1 / 60, opts);
+    assert.ok(cam.camXM >= -1.0 - 1e-9 && cam.dollyM >= 0, "dolly ≥ 0");
+    // Independencia de framerate: dos pasos de dt/2 ≈ un paso de dt.
+    const one = stageFollow({ camXM: 0, dollyM: 0 }, { camXM: 0.5, dollyM: 0.5 }, 0.1, opts);
+    let two = stageFollow({ camXM: 0, dollyM: 0 }, { camXM: 0.5, dollyM: 0.5 }, 0.05, opts);
+    two = stageFollow(two, { camXM: 0.5, dollyM: 0.5 }, 0.05, opts);
+    assert.ok(Math.abs(one.camXM - two.camXM) < 1e-6, "frame-rate independence");
+  });
+});
