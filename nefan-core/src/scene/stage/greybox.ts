@@ -371,6 +371,23 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     }
   }
 
+  /** Caminos que continúan las salidas norte más allá del telón (exterior). */
+  const emitNorthExitPaths = (): void => {
+    for (const e of plan.stage.exits) {
+      if (e.edge !== "north") continue;
+      const w = zoneToWorld(e.zone);
+      primitives.push({
+        shape: "box",
+        size: [w.maxX - w.minX, 0.04, 34],
+        pos: [(w.minX + w.maxX) / 2, -0.02, rect.minZ - 17],
+        color: darken(floorColor, 0.08),
+        roughness: 0.97,
+        cat: "terrain",
+        noShadow: true,
+      });
+    }
+  };
+
   // ── Interior: paredes reales con sus vanos; techo a escala de la sala ─────
   if (interiorLike) {
     const wall = wallColors("plaster");
@@ -514,8 +531,107 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       cat: "wall",
       noShadow: true,
     });
+  } else if (plan.stage.surroundings?.length) {
+    // ── Exterior con DECORADO DECLARADO: el motor dice qué hay más allá de
+    // los bounds (caserío, cerro con su castillo, tapias, árboles) — pura
+    // escenografía: sin volId, sin manifest, sin colisión. Sustituye a las
+    // colinas genéricas del else de abajo.
+    const srng = seededRng(`stage:${seedKey}:gbsur`);
+    for (const s of plan.stage.surroundings) {
+      const [sx, sz] = s.pos;
+      const yBase = "y_base" in s ? (s.y_base ?? 0) : 0;
+      const rotY = "angle" in s && s.angle ? (s.angle * Math.PI) / 180 : undefined;
+      switch (s.kind) {
+        case "hill":
+          primitives.push({
+            shape: "cone",
+            size: [s.r, s.h, 24],
+            pos: [sx, 0, sz],
+            color: s.color ?? darken("#8a744f", uniform(srng, 0.05, 0.2)),
+            roughness: 1,
+            cat: "terrain",
+            noShadow: true,
+          });
+          break;
+        case "house": {
+          const tone = uniform(srng, -0.1, 0.08);
+          const wallC = wallColors("plaster").lit;
+          const wall = s.wall_color ?? (tone >= 0 ? lighten(wallC, tone) : darken(wallC, -tone));
+          const roof = s.roof_color ?? darken(roofColors("tile").lit, uniform(srng, 0, 0.15));
+          const wallH = s.h * 0.72;
+          primitives.push({
+            shape: "box",
+            size: [s.w, wallH, s.d],
+            pos: [sx, yBase, sz],
+            rotY,
+            color: wall,
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "gable",
+            // Cumbrera a lo largo del lado largo (contrato: a lo largo de d
+            // antes de rotY ⇒ lado largo en d con giro extra si hace falta).
+            size: s.w >= s.d ? [s.d, s.h - wallH, s.w] : [s.w, s.h - wallH, s.d],
+            pos: [sx, yBase + wallH, sz],
+            rotY: (rotY ?? 0) + (s.w >= s.d ? Math.PI / 2 : 0),
+            color: roof,
+            cat: "decor",
+          });
+          break;
+        }
+        case "tower": {
+          const r = s.r ?? 3;
+          const h = s.h ?? 12;
+          const stoneC = wallColors("stone").lit;
+          primitives.push({
+            shape: "cylinder",
+            size: [r, h],
+            pos: [sx, yBase, sz],
+            color: lighten(stoneC, uniform(srng, 0, 0.08)),
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "cylinder",
+            size: [r * 1.1, h * 0.06],
+            pos: [sx, yBase + h, sz],
+            color: wallColors("stone").top,
+            cat: "decor",
+          });
+          break;
+        }
+        case "wall":
+          primitives.push({
+            shape: "box",
+            size: [s.len, s.h ?? 4, 1.4],
+            pos: [sx, yBase, sz],
+            rotY,
+            color: darken(wallColors("stone").lit, uniform(srng, 0, 0.1)),
+            cat: "decor",
+          });
+          break;
+        case "tree": {
+          const sc = s.s ?? 1;
+          primitives.push({
+            shape: "cylinder",
+            size: [0.2 * sc, 1.7 * sc],
+            pos: [sx, yBase, sz],
+            color: PALETTE.trunk,
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "cone",
+            size: [1.8 * sc, 3.6 * sc, 10],
+            pos: [sx, yBase + 1.4 * sc, sz],
+            color: darken(PALETTE.canopy, uniform(srng, 0, 0.12)),
+            cat: "decor",
+          });
+          break;
+        }
+      }
+    }
+    emitNorthExitPaths();
   } else {
-    // ── Exterior: colinas de fondo + caminos de las salidas norte ──────────
+    // ── Exterior SIN decorado declarado: colinas de fondo genéricas ────────
     // Colinas LEJANAS y tendidas (media loma, no picos): en v1 una colina a
     // 35 m con h 9 llenaba el telón como una montaña-pirámide.
     const rng = seededRng(`stage:${seedKey}:gbback`);
@@ -534,19 +650,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
         noShadow: true,
       });
     }
-    for (const e of plan.stage.exits) {
-      if (e.edge !== "north") continue;
-      const w = zoneToWorld(e.zone);
-      primitives.push({
-        shape: "box",
-        size: [w.maxX - w.minX, 0.04, 34],
-        pos: [(w.minX + w.maxX) / 2, -0.02, rect.minZ - 17],
-        color: darken(floorColor, 0.08),
-        roughness: 0.97,
-        cat: "terrain",
-        noShadow: true,
-      });
-    }
+    emitNorthExitPaths();
   }
 
   // ── Volúmenes ─────────────────────────────────────────────────────────────

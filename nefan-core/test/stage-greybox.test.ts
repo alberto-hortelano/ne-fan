@@ -450,6 +450,50 @@ describe("buildGreyboxSpec", () => {
     assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "giro")));
   });
 
+  it("v7: surroundings — decorado sin manifest que sustituye a las colinas", async () => {
+    const { stagePlanFromScene } = await import("../src/scene/stage/index.js");
+    const base = exteriorPlan();
+    const spec0 = buildGreyboxSpec(base, "sur");
+    const plan = exteriorPlan();
+    plan.stage.surroundings = [
+      { kind: "hill", pos: [30, -60], r: 60, h: 12 },
+      { kind: "house", pos: [-20, -25], w: 8, d: 6, h: 6, angle: -15 },
+      { kind: "tower", pos: [34, -58], r: 4, h: 40, y_base: 11 },
+      { kind: "wall", pos: [20, -30], len: 18, h: 5, angle: 30 },
+      { kind: "tree", pos: [-16, 10], s: 1.2 },
+    ];
+    const spec = buildGreyboxSpec(plan, "sur");
+    // Ni una entrada nueva en el manifest; los prims nuevos no llevan volId.
+    assert.equal(spec.manifest.length, spec0.manifest.length);
+    const decor = spec.primitives.filter((p) => p.cat === "decor");
+    assert.ok(decor.length >= 6, "casa+torre+tapia+árbol emiten decor");
+    assert.ok(decor.every((p) => p.volId === undefined));
+    // Elevación: la torre arranca en su y_base sobre el cerro.
+    const torre = spec.primitives.find((p) => p.shape === "cylinder" && p.pos[1] === 11);
+    assert.ok(torre, "torre a cota del cerro");
+    // Las colinas genéricas (a z < minZ−70 = −76) desaparecen al declarar:
+    // el único cono lejano que queda es el cerro declarado (z=−60).
+    const farCones0 = spec0.primitives.filter((p) => p.shape === "cone" && p.pos[2] < -70).length;
+    const farCones = spec.primitives.filter((p) => p.shape === "cone" && p.pos[2] < -70).length;
+    assert.equal(farCones0, 4, "sin declarar hay 4 colinas genéricas");
+    assert.equal(farCones, 0, "declarar surroundings las sustituye");
+    // Una torre altísima de decorado NO abre la ventana del view_box.
+    assert.deepEqual(spec.view_box, spec0.view_box, "la salvaguarda solo mira plan.volumes");
+    // Determinismo.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "sur")));
+    // Un surrounding con el centro DENTRO del plató: fail-loud en el plan.
+    assert.throws(() => {
+      stagePlanFromScene({
+        scene_id: "x",
+        size: { cols: 48, rows: 24, meters_per_cell: 0.5 },
+        stage: {
+          exits: [{ id: "s", edge: "south", to_place_id: "p", zone: [20, 22, 6, 2], kind: "opening", label: "Sur" }],
+          surroundings: [{ kind: "tree", pos: [0, 0] }],
+        },
+      });
+    }, /DENTRO del plató/);
+  });
+
   it("v7: tierra y empedrado se distinguen en el clay", async () => {
     const { groundColorFor } = await import("../src/scene/greybox/common.js");
     const tierra = groundColorFor("tierra apisonada");

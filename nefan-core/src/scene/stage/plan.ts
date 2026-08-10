@@ -67,6 +67,20 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
   const volumes = [...declared, ...derived].filter(
     (v) => !(v.type === "building" && v.cutaway === true),
   );
+  // Surroundings: decorado FUERA de bounds. Un centro DENTRO del rect jugable
+  // es un error del motor (taparía el plató sin colisión ni manifest) — la
+  // falda de un cerro sí puede solapar, por eso solo se valida el centro.
+  const halfW = (size.cols * mpc) / 2;
+  const halfD = (size.rows * mpc) / 2;
+  for (const s of stage.stage.surroundings ?? []) {
+    const [sx, sz] = s.pos;
+    if (Math.abs(sx) < halfW && Math.abs(sz) < halfD) {
+      throw new Error(
+        `stagePlanFromScene: surroundings "${s.kind}" en (${sx}, ${sz}) cae DENTRO del plató ` +
+          `(±${halfW}×±${halfD} m) — el decorado va fuera de bounds`,
+      );
+    }
+  }
   // Rejilla de terreno (opcional): el greybox pinta el suelo por bandas de
   // tipo (la calle de tierra, el prado, el empedrado) — sin ella todo el
   // suelo sería un color plano.
