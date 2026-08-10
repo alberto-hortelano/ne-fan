@@ -324,6 +324,9 @@ function applySessionView(view: string): void {
       // Palanca dev del clamp de escala por profundidad (?minscale=0.4).
       const minScale = parseFloat(new URLSearchParams(location.search).get("minscale") ?? "");
       if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
+      // Palanca dev del gain de seguimiento de cámara (?follow=0.35; 0 = fija).
+      const follow = parseFloat(new URLSearchParams(location.search).get("follow") ?? "");
+      if (Number.isFinite(follow)) prosceniumRenderer.followOverride = follow;
     }
     activeRenderer = prosceniumRenderer;
     // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio

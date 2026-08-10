@@ -21,12 +21,20 @@ import {
   spriteScaleAt,
   stageToView,
   worldToStage,
-  railCamera,
   exitZoneAt,
   frameStage,
   bandPlanFor,
-  parallaxPanX,
-  viewToScreen,
+  bandDestRect,
+  viewToScreenCam,
+  layerRectCam,
+  sCamAt,
+  camRatio,
+  maxDollyFor,
+  stageFollow,
+  FOLLOW_X,
+  FOLLOW_Z,
+  STAGE_CAM_ZERO,
+  type StageCam,
   type ComposedStage,
   type StageFraming,
   type BandPlan,
@@ -48,8 +56,8 @@ const STAGE_SPRITE_ANGLE = "frontal_8";
 /** Clamp inferior de la escala por profundidad: por debajo, los octantes del
  *  sheet dejan de leerse. */
 const MIN_DEPTH_SCALE = 0.55;
-const RAIL_DEAD_ZONE_M = 1.5;
-const RAIL_RATE = 6;
+/** Velocidad del lerp del seguimiento de cámara (el gain 20% ya suaviza). */
+const FOLLOW_RATE = 5;
 const PLAYER_COLOR = "#e8a13c";
 const NPC_COLOR = "#6688cc";
 
@@ -87,14 +95,19 @@ export class ProsceniumRenderer implements Renderer2D {
    *  al pintarlas sobre el viewBox. Clay three.js (modo vector / placeholder)
    *  o repintado IA segmentado. null = instalación en vuelo. */
   private images: StageImages | null = null;
-  private camX = 0;
+  /** Cámara de RUNTIME: seguimiento al 20% del jugador — offset lateral
+   *  respecto al centro del plató + dolly hacia el norte (paralaje de capas
+   *  en X y Z). La cámara de PINTADO (spec.proj) no cambia nunca. */
+  private cam: StageCam = { ...STAGE_CAM_ZERO };
   private lastNow = 0;
   /** Encuadre + plan de bandas, cacheados por (plató, tamaño de canvas). */
   private framing: StageFraming | null = null;
   private bandPlan: BandPlan | null = null;
   private frameKey = "";
-  /** Desplazamiento de cámara del último frame (drawAttackArea lo reutiliza). */
-  private lastCamOffsetM = 0;
+  /** Cámara del último frame (drawAttackArea la reutiliza). */
+  private lastCam: StageCam = { ...STAGE_CAM_ZERO };
+  /** Override dev del gain de seguimiento (?follow=). null = FOLLOW_X/Z. */
+  followOverride: number | null = null;
   /** Alphas vivos del fade de recortes (id → alpha, lerp temporal). */
   private cutFade = new Map<string, number>();
   /** Overlay de debug (tecla B): colisión reproyectada + cajas de recortes
@@ -140,11 +153,24 @@ export class ProsceniumRenderer implements Renderer2D {
     return this.debugView;
   }
 
-  /** Estado de cámara/encuadre para el bench (__nefan.stageCam). */
-  debugCamera(): { camX: number; railHalfM: number; zoom: number; fit: number } | null {
-    if (!this.framing) return null;
+  /** Estado de cámara/encuadre para el bench (__nefan.stageCam). camX se
+   *  conserva como X ABSOLUTA de mundo (compat con benches previos). */
+  debugCamera(): {
+    camX: number;
+    camXM: number;
+    dollyM: number;
+    follow: number;
+    railHalfM: number;
+    zoom: number;
+    fit: number;
+  } | null {
+    if (!this.framing || !this.stage) return null;
+    const centerX = (this.stage.bounds.minX + this.stage.bounds.maxX) / 2;
     return {
-      camX: this.camX,
+      camX: centerX + this.cam.camXM,
+      camXM: this.cam.camXM,
+      dollyM: this.cam.dollyM,
+      follow: this.followOverride ?? FOLLOW_X,
       railHalfM: this.framing.railHalfM,
       zoom: this.framing.zoom,
       fit: this.framing.fit,
@@ -239,13 +265,23 @@ export class ProsceniumRenderer implements Renderer2D {
     pzs: number,
     playerPos: { x: number; z: number },
     dt: number,
+    toScreen: (vx: number, vy: number, zStage: number) => [number, number],
+    fit: number,
   ): number {
     let target = 1;
     if (pzs > cut.z + BEHIND_EPS_M) {
-      const [pvx, pvy] = stageToView(proj, pxs, Math.max(0, pzs));
-      const m = CUTOUT_FADE_MARGIN_M * proj.px_per_m * scaleAt(proj, Math.max(0, pzs));
+      // Test de solape en espacio de PANTALLA: jugador y caja del recorte se
+      // proyectan CADA UNO con su z y la cámara actual — con la cámara base
+      // quieta equivale al test en vista de siempre; con pan/dolly compara
+      // lo que de verdad se superpone en el frame (fix del bug latente).
+      const pz = Math.max(0, pzs);
+      const [pvx, pvy] = stageToView(proj, pxs, pz);
+      const [psx, psy] = toScreen(pvx, pvy, pz);
       const [minX, minY, maxX, maxY] = cut.bboxView;
-      if (pvx >= minX - m && pvx <= maxX + m && pvy >= minY - m && pvy <= maxY + m) {
+      const [sx0, sy0] = toScreen(minX, minY, cut.z);
+      const [sx1, sy1] = toScreen(maxX, maxY, cut.z);
+      const m = CUTOUT_FADE_MARGIN_M * proj.px_per_m * sCamAt(proj, this.cam, pz) * fit;
+      if (psx >= sx0 - m && psx <= sx1 + m && psy >= sy0 - m && psy <= sy1 + m) {
         const d = cut.footprintWorld
           ? distPointToRect(playerPos.x, playerPos.z, cut.footprintWorld)
           : 0;
@@ -266,8 +302,8 @@ export class ProsceniumRenderer implements Renderer2D {
     this.stageKey = key;
     this.images = null; // plató nuevo: bitmaps del anterior fuera
     this.frameKey = ""; // encuadre/bandas se recalculan en el próximo frame
-    // Cámara al centro del raíl (el spawn la reencuadra en el primer frame).
-    this.camX = (stage.bounds.minX + stage.bounds.maxX) / 2;
+    // Cámara a la base (el seguimiento la lleva al jugador en el primer frame).
+    this.cam = { ...STAGE_CAM_ZERO };
   }
 
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
@@ -309,36 +345,42 @@ export class ProsceniumRenderer implements Renderer2D {
         centerVertical: true,
         maxZoom: 1,
       });
-      this.bandPlan = bandPlanFor(proj, vb, this.framing, canvas.width, canvas.height);
+      this.bandPlan = bandPlanFor(proj, vb, this.framing, canvas.width, canvas.height, {
+        maxDollyM: maxDollyFor(proj, this.followOverride ?? FOLLOW_Z),
+      });
       this.frameKey = fk;
     }
     const framing = this.framing;
     const fit = framing.fit;
     const centerX = (stage.bounds.minX + stage.bounds.maxX) / 2;
 
-    // ── Raíl ─────────────────────────────────────────────────────────────────
-    this.camX = framing.railHalfM > 0.01
-      ? railCamera(this.camX, player.pos.x, dt, {
-          deadZone: RAIL_DEAD_ZONE_M,
-          rate: RAIL_RATE,
-          minX: centerX - framing.railHalfM,
-          maxX: centerX + framing.railHalfM,
-        })
-      : centerX;
-    const camOffsetM = this.camX - centerX;
-    this.lastCamOffsetM = camOffsetM;
-    /** Vista → canvas con PARALLAX por profundidad: cada punto se proyecta
-     *  con el desplazamiento de SU z (identidad: proyectar respecto a la
-     *  cámara). Sprite y capa a la misma z quedan clavados entre sí. */
+    // ── Seguimiento con paralaje: pan X + dolly Z al 20% del jugador ────────
+    const followX = this.followOverride ?? FOLLOW_X;
+    const followZ = this.followOverride ?? FOLLOW_Z;
+    const playerZs = stage.bounds.maxZ - player.pos.z; // zStage del jugador
+    this.cam = stageFollow(
+      this.cam,
+      {
+        camXM: framing.railHalfM > 0.01 ? followX * (player.pos.x - centerX) : 0,
+        dollyM: followZ * Math.max(0, playerZs),
+      },
+      dt,
+      {
+        rate: FOLLOW_RATE,
+        railHalfM: framing.railHalfM,
+        maxDollyM: maxDollyFor(proj, followZ),
+      },
+    );
+    const cam = this.cam;
+    this.lastCam = cam;
+    /** Vista → canvas con la cámara de runtime: cada punto se reproyecta con
+     *  SU z (pan lateral + escala de dolly en torno al horizonte). Sprite y
+     *  capa a la misma z quedan clavados entre sí. */
     const toScreen = (vx: number, vy: number, zStage: number): [number, number] =>
-      viewToScreen(proj, framing, canvas.width, vx, vy, zStage, camOffsetM);
+      viewToScreenCam(proj, framing, canvas.width, vx, vy, zStage, cam);
     /** Rect destino de un bitmap full-viewBox que vive a profundidad z. */
-    const layerRect = (z: number): [number, number, number, number] => [
-      canvas.width / 2 + (vb.minX - parallaxPanX(proj, z, camOffsetM)) * fit,
-      framing.groundScreenY + (vb.minY - proj.ground_y) * fit,
-      vb.width * fit,
-      vb.height * fit,
-    ];
+    const layerRect = (z: number): [number, number, number, number] =>
+      layerRectCam(proj, vb, framing, canvas.width, z, cam);
 
     // ── Entidades ordenadas por profundidad de plató (lejos → cerca) ─────────
     const drawables: Array<{ zs: number; cutout?: boolean; draw: () => void }> = [];
@@ -397,7 +439,7 @@ export class ProsceniumRenderer implements Renderer2D {
     {
       const [pxs, pzs] = worldToStage(stage.bounds, player.pos.x, player.pos.z);
       for (const cut of images.cutouts) {
-        const fade = this.cutoutFade(cut, proj, pxs, pzs, player.pos, dt);
+        const fade = this.cutoutFade(cut, proj, pxs, pzs, player.pos, dt, toScreen, fit);
         drawables.push({
           zs: cut.z,
           cutout: true,
@@ -415,8 +457,8 @@ export class ProsceniumRenderer implements Renderer2D {
     drawables.sort((a, b) => b.zs - a.zs || (a.cutout ? 1 : 0) - (b.cutout ? 1 : 0));
 
     // ── Placa (telón + suelo sin volúmenes) + sprites/recortes por z ─────────
-    // Warp por bandas: cada franja de profundidad panea con su s(z).
-    this.drawBanded(images.plate, images.plate.width, images.plate.height, camOffsetM);
+    // Warp por bandas: cada franja de profundidad se reproyecta con su s(z).
+    this.drawBanded(images.plate, images.plate.width, images.plate.height, cam);
     this.drawExitZones(toScreen);
     for (const d of drawables) d.draw();
 
@@ -557,19 +599,22 @@ export class ProsceniumRenderer implements Renderer2D {
    *  parallax sin romperse. drawImage con rect de fuente; JAMÁS ctx.clip()
    *  por banda (congeló Chrome en julio). dx fraccionario a propósito: el
    *  suavizado sub-píxel es la segunda defensa anti-moiré. */
-  private drawBanded(src: CanvasImageSource, srcW: number, srcH: number, camOffsetM: number): void {
+  private drawBanded(src: CanvasImageSource, srcW: number, srcH: number, cam: StageCam): void {
     const { ctx, canvas } = this;
     const vb = this.effVb();
+    const proj = this.effProj();
     const f = this.framing!;
     const plan = this.bandPlan!;
-    const destW = vb.width * f.fit;
     const bands = [plan.backdrop, ...plan.ground, plan.apron];
     for (const b of bands) {
       if (b.destH <= 0) continue;
       const sy = ((b.srcVy - vb.minY) / vb.height) * srcH;
       const sh = Math.max(1e-3, (b.srcVh / vb.height) * srcH);
-      const dx = canvas.width / 2 + (vb.minX - parallaxPanX(this.effProj(), b.z, camOffsetM)) * f.fit;
-      ctx.drawImage(src, 0, sy, srcW, sh, dx, b.destY, destW, b.destH);
+      // Destino reproyectado con la cámara actual: pan lateral + escala y
+      // posición vertical del dolly, con bordes CONTINUOS entre bandas.
+      const [dx, dy, dw, dh] = bandDestRect(proj, vb, f, canvas.width, canvas.height, b, cam);
+      if (dh <= 0) continue;
+      ctx.drawImage(src, 0, sy, srcW, sh, dx, dy, dw, dh);
     }
   }
 
@@ -625,7 +670,8 @@ export class ProsceniumRenderer implements Renderer2D {
   ): void {
     const ctx = this.ctx;
     const proj = this.effProj();
-    const s = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
+    // camRatio: el dolly amplía lo cercano igual que a la placa (paralaje Z).
+    const s = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs)) * camRatio(proj, this.cam, zs);
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
     const ppm = proj.px_per_m * this.spriteScaleFactor(proj, zs);
@@ -671,7 +717,9 @@ export class ProsceniumRenderer implements Renderer2D {
     const proj = this.effProj();
     const [vx, vy] = stageToView(proj, xs, zs);
     const [sx, sy] = toScreen(vx, vy, Math.max(0, zs));
-    const depth = Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs));
+    // camRatio: el dolly amplía al personaje igual que a su capa (paralaje Z).
+    const depth =
+      Math.max(this.depthScaleFloor(proj), scaleAt(proj, zs)) * camRatio(proj, this.cam, zs);
     const pitchCos = spritePitchCos(e.sprite?.angle ?? STAGE_SPRITE_ANGLE);
     const frameH = (SHEET_FRAME_WORLD_M / pitchCos) * proj.px_per_m * depth * fit * this.spriteScaleFactor(proj, zs);
 
@@ -741,9 +789,9 @@ export class ProsceniumRenderer implements Renderer2D {
     const [xs, zs] = worldToStage(stage.bounds, cx, cz);
     const [vx, vy] = stageToView(proj, xs, zs);
     const zClamped = Math.max(0, zs);
-    const s = scaleAt(proj, zClamped);
-    // Mismo encuadre y desplazamiento de cámara que el último render().
-    const [sx, sy] = viewToScreen(proj, f, this.canvas.width, vx, vy, zClamped, this.lastCamOffsetM);
+    // Mismo encuadre y cámara que el último render() (pan + dolly).
+    const s = scaleAt(proj, zClamped) * camRatio(proj, this.lastCam, zClamped);
+    const [sx, sy] = viewToScreenCam(proj, f, this.canvas.width, vx, vy, zClamped, this.lastCam);
     const rx = params.area_radius * proj.px_per_m * s * f.fit;
     ctx.globalAlpha = opacity;
     ctx.fillStyle = mode === "impact" ? (impactQuality > 0.5 ? "#7fb07a" : "#b05c5c") : "#e6a63f";
