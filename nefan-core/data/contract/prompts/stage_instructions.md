@@ -140,10 +140,17 @@ HARD RULES OF THE STAGE:
 - SURROUNDINGS SCALE IS REAL-WORLD SCALE. Never oversize a distant landmark
   "so it shows" — a fat tower near the backdrop reads as a silo glued to the
   set. Towers r 3-5 m; houses h 5-8 m; put structures at least ~15 m beyond
-  the edge (z ≤ −(rows·mpc/2 + 15), or the equivalent past a wing) and let
-  perspective + haze do the work. A `hill` must sit mostly BEHIND the set:
-  its center at least half its radius beyond the nearest edge (the server
-  rejects a hill hugging the bounds — its skirt would wall off the stage).
+  the edge and let perspective + haze do the work. A `hill` must sit mostly
+  BEHIND the set: its center at least half its radius beyond the nearest
+  edge (the server rejects a hill hugging the bounds — its skirt would wall
+  off the stage).
+- TALL SURROUNDINGS GO BEHIND THE BACKDROP, NEVER PAST THE WINGS. The camera
+  frames wider than the stage: anything past the east/west edge sits CLOSE to
+  the lens, so a tower there becomes a giant pillar filling the frame. Rule:
+  structures taller than ~8 m need z ≤ −(rows·mpc/2 + 20) — on the north
+  skyline, where distance shrinks them. Past the wings only LOW scenery:
+  houses, walls, trees. If a landmark lives to the east in the world map,
+  express it as NORTH-EAST skyline (x positive, z far negative).
 - FRAMING PROPS placement: the southern-third props go in the CENTRAL half
   of the width (|x| between ~w/6 and ~w/3 from center), NOT at the far
   corners of a wide stage — the camera crops wider than you think and corner
