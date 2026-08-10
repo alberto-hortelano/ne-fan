@@ -19,6 +19,7 @@ import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import {
   groundCollisionGrid,
   volumeCollisionGrid,
+  type CollisionGridDims,
   type GroundFeature,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
@@ -147,12 +148,15 @@ export function applyPlanCollision(
   plan: { ground?: GroundFeature[]; volumes?: Volume[] },
   rect: { minX: number; minZ: number; maxX: number; maxZ: number },
   deps: DerivedCollisionDeps,
+  /** Dimensiones del grid (cols/rows/mpc de la escena) — el plató las pasa;
+   *  sin ellas, las del tile (fix del bug mpc≠0.5). */
+  dims?: CollisionGridDims,
 ): void {
   try {
     // Agua (menos decks) del suelo declarado — espacio de mundo.
-    const waterGrid = plan.ground?.length ? groundCollisionGrid(plan.ground, rect) : null;
+    const waterGrid = plan.ground?.length ? groundCollisionGrid(plan.ground, rect, dims) : null;
     // Huellas analíticas de los volúmenes (muros con puertas, troncos…).
-    const volumeGrid = plan.volumes?.length ? volumeCollisionGrid(plan.volumes, rect) : null;
+    const volumeGrid = plan.volumes?.length ? volumeCollisionGrid(plan.volumes, rect, dims) : null;
     const grid = unionGrids(waterGrid, volumeGrid);
     const collider = grid ? createTerrainCollider(grid) : null;
     deps.tileStore.setSvgCollider(key, collider);
@@ -194,17 +198,23 @@ export function applyStageDerivedCollision(
   key: string,
   grid: TerrainGridData | null,
   deps: DerivedCollisionDeps,
+  /** Agua∖decks del `ground` DECLARADO del plató: se une al grid derivado —
+   *  el modelo de imagen puede recolocar volúmenes, pero el agua declarada
+   *  gobierna la jugabilidad (un río no deja de bloquear porque el repintado
+   *  lo pinte medio metro más allá). */
+  declaredWaterGrid: TerrainGridData | null = null,
 ): void {
   if (grid === null) return;
+  const merged = declaredWaterGrid ? (unionGrids(grid, declaredWaterGrid) ?? grid) : grid;
   let collider: TerrainCollider | null;
   try {
-    collider = createTerrainCollider(grid);
+    collider = createTerrainCollider(merged);
   } catch (err) {
     errors.push("scene", `grid del plató ${key} inconsistente; sigue la colisión declarada`, err);
     return;
   }
   deps.tileStore.markAnalyzed(key, collider);
-  deps.setTileAnalysisGrid(key, grid);
+  deps.setTileAnalysisGrid(key, merged);
   // Retirar la declarada: la imagen manda (ni fantasmas de recolocados ni
   // bloqueos de elementos missing).
   deps.tileStore.setSvgCollider(key, null);

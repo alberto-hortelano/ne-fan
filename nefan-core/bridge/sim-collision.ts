@@ -134,6 +134,51 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
         }
       }
     }
+
+    // 5. Platós proscenio (bloque `stage`, sin rect de tile): agua del
+    // `ground` + huellas de volumes en su rect CENTRADO, con las dims de la
+    // ESCENA — sin esto los NPCs del plató atravesaban agua y edificios.
+    const sizeRaw = rec.scene_data.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
+    if (
+      !rec.tile &&
+      rec.scene_data.stage !== undefined &&
+      typeof sizeRaw?.cols === "number" &&
+      typeof sizeRaw?.rows === "number" &&
+      typeof sizeRaw?.meters_per_cell === "number"
+    ) {
+      const widthM = sizeRaw.cols * sizeRaw.meters_per_cell;
+      const depthM = sizeRaw.rows * sizeRaw.meters_per_cell;
+      const rect = { minX: -widthM / 2, minZ: -depthM / 2, maxX: widthM / 2, maxZ: depthM / 2 };
+      const dims = { cols: sizeRaw.cols, rows: sizeRaw.rows, mpc: sizeRaw.meters_per_cell };
+      const rawGround = rec.scene_data.ground;
+      if (Array.isArray(rawGround) && rawGround.length > 0) {
+        const parsed = parseGround(rawGround);
+        if (parsed.ok) {
+          try {
+            const tc = createTerrainCollider(groundCollisionGrid(parsed.features, rect, dims));
+            if (tc) colliders.push(tc);
+          } catch (err) {
+            console.warn(`[sim-collision] ${sceneId}: ground del plató no deriva colisión —`, err);
+          }
+        } else {
+          console.warn(`[sim-collision] ${sceneId}: ground del plató inválido (${parsed.error})`);
+        }
+      }
+      const rawVolumes = rec.scene_data.volumes;
+      if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
+        const parsed = parseVolumes(rawVolumes);
+        if (parsed.ok) {
+          try {
+            const tc = createTerrainCollider(volumeCollisionGrid(parsed.volumes, rect, dims));
+            if (tc) colliders.push(tc);
+          } catch (err) {
+            console.warn(`[sim-collision] ${sceneId}: volumes del plató no derivan colisión —`, err);
+          }
+        } else {
+          console.warn(`[sim-collision] ${sceneId}: volumes del plató inválidos (${parsed.error})`);
+        }
+      }
+    }
     return colliders;
   }
 

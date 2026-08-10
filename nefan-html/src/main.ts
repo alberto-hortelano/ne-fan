@@ -11,6 +11,7 @@ import { stageCategoryForScene } from "@nefan-core/src/games/style-categories.js
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
+  groundCollisionGrid,
   parseGround,
   parseVolumes,
   type GroundFeature,
@@ -221,10 +222,18 @@ const sceneImageController = new SceneImageController(renderer, GEN_URLS, (e) =>
 // visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
 // si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
 // declarada (closure: se resuelve al llegar las imágenes, no al construir).
+// Agua∖decks del `ground` DECLARADO por plató instalado: la colisión derivada
+// de la imagen la une (el repintado puede recolocar volúmenes; el agua
+// declarada gobierna la jugabilidad).
+const stageDeclaredWater = new Map<string, TerrainGridData | null>();
 const stageImageController = new StageImageController(GEN_URLS, {
   install: (key, images) => {
     const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
-    if (accepted) applyStageDerivedCollision(key, images.collision, derivedCollisionDeps);
+    if (accepted) {
+      applyStageDerivedCollision(
+        key, images.collision, derivedCollisionDeps, stageDeclaredWater.get(key) ?? null,
+      );
+    }
   },
   log: (msg) => log(msg),
   // Progreso del repintado/pelado en el panel de dev (mismo slot que el
@@ -902,10 +911,29 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
     applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
-  } else if (stageComposed && stageVolumes.length > 0) {
-    // Plató: las huellas de sus volúmenes (mesas, barriles…) bloquean igual
-    // que en la oblicua — colisión declarada, nunca de píxeles.
-    applyPlanCollision(key, { volumes: stageVolumes }, rect, derivedCollisionDeps);
+  } else if (stageComposed && stagePlanCaptured && (stageVolumes.length > 0 || stagePlanCaptured.ground?.length)) {
+    // Plató: huellas de sus volúmenes + agua∖decks del ground declarado —
+    // colisión declarada, nunca de píxeles. dims de la ESCENA (cols/rows/mpc
+    // propios: el grid del tile desalineaba platós con mpc ≠ 0.5).
+    const stageDims = {
+      cols: stagePlanCaptured.size.cols,
+      rows: stagePlanCaptured.size.rows,
+      mpc: stagePlanCaptured.size.meters_per_cell,
+    };
+    applyPlanCollision(
+      key,
+      { ground: stagePlanCaptured.ground, volumes: stageVolumes },
+      rect,
+      derivedCollisionDeps,
+      stageDims,
+    );
+    // Guardar el agua declarada para el modo imagen (ver stageImageController).
+    stageDeclaredWater.set(
+      key,
+      stagePlanCaptured.ground?.length
+        ? groundCollisionGrid(stagePlanCaptured.ground, rect, stageDims)
+        : null,
+    );
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema

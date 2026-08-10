@@ -31,4 +31,5 @@ export { parseVolumes, VolumesSchema, VolumeSchema, MAX_VOLUMES, TREE_MAX_S } fr
 export type { Volume } from "./volumes.js";
 export { parseGround, groundHasWater, GroundSchema, GroundFeatureSchema, MAX_GROUND_FEATURES } from "./ground.js";
 export type { GroundFeature, GroundPath, GroundArea, GroundWater, GroundDeck } from "./ground.js";
-export { groundCollisionGrid } from "./ground-collision.js";
+export { groundCollisionGrid, shapeContains, TILE_GRID_DIMS, type CollisionGridDims } from "./ground-collision.js";
+export { GROUND_MATERIAL_COLORS, groundFeaturePrims, catmullRomSample } from "./ground-prims.js";

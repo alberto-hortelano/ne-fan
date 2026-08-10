@@ -16,8 +16,18 @@ const OPEN_CHAR = "g";
 
 type Shaped = GroundWater | GroundDeck;
 
+/** Dimensiones del grid de colisión (default: las del tile). El plató pasa
+ *  las suyas — cols/rows de la escena y su meters_per_cell (fix del bug
+ *  latente: con mpc 1.0 el grid del tile quedaba desalineado del mundo). */
+export interface CollisionGridDims {
+  cols: number;
+  rows: number;
+  mpc: number;
+}
+export const TILE_GRID_DIMS: CollisionGridDims = { cols: TILE_CELLS, rows: TILE_CELLS, mpc: TILE_MPC };
+
 /** true si el centro de celda (u, v) cae dentro de la forma del rasgo. */
-function shapeContains(f: Shaped, u: number, v: number): boolean {
+export function shapeContains(f: Shaped, u: number, v: number): boolean {
   if (f.rect) {
     const [c0, r0, w, d] = f.rect;
     return u >= c0 && u < c0 + w && v >= r0 && v < r0 + d;
@@ -60,33 +70,37 @@ function shapeBounds(f: Shaped): [number, number, number, number] | null {
   return null;
 }
 
-function sweep(grid: Uint8Array, f: Shaped, value: 0 | 1): void {
+function sweep(grid: Uint8Array, f: Shaped, value: 0 | 1, dims: CollisionGridDims): void {
   const b = shapeBounds(f);
   if (!b) return;
   const c0 = Math.max(0, Math.floor(b[0]));
   const r0 = Math.max(0, Math.floor(b[1]));
-  const c1 = Math.min(TILE_CELLS, Math.ceil(b[2]));
-  const r1 = Math.min(TILE_CELLS, Math.ceil(b[3]));
+  const c1 = Math.min(dims.cols, Math.ceil(b[2]));
+  const r1 = Math.min(dims.rows, Math.ceil(b[3]));
   for (let r = r0; r < r1; r++) {
     for (let c = c0; c < c1; c++) {
-      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r * TILE_CELLS + c] = value;
+      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r * dims.cols + c] = value;
     }
   }
 }
 
 /** Grid de colisión del suelo declarado: agua ∖ decks. Devuelve null si no
  *  hay ninguna celda sólida (tile sin agua, o toda el agua cubierta). */
-export function groundCollisionGrid(features: GroundFeature[], rect: WorldRect): TerrainGridData | null {
-  const grid = new Uint8Array(TILE_CELLS * TILE_CELLS);
-  for (const f of features) if (f.kind === "water") sweep(grid, f, 1);
-  for (const f of features) if (f.kind === "deck") sweep(grid, f, 0);
+export function groundCollisionGrid(
+  features: GroundFeature[],
+  rect: WorldRect,
+  dims: CollisionGridDims = TILE_GRID_DIMS,
+): TerrainGridData | null {
+  const grid = new Uint8Array(dims.cols * dims.rows);
+  for (const f of features) if (f.kind === "water") sweep(grid, f, 1, dims);
+  for (const f of features) if (f.kind === "deck") sweep(grid, f, 0, dims);
 
   let any = false;
   const rows: string[] = [];
-  for (let r = 0; r < TILE_CELLS; r++) {
+  for (let r = 0; r < dims.rows; r++) {
     let row = "";
-    for (let c = 0; c < TILE_CELLS; c++) {
-      const solid = grid[r * TILE_CELLS + c] === 1;
+    for (let c = 0; c < dims.cols; c++) {
+      const solid = grid[r * dims.cols + c] === 1;
       any = any || solid;
       row += solid ? IMAGE_SOLID_CHAR : OPEN_CHAR;
     }
@@ -95,9 +109,9 @@ export function groundCollisionGrid(features: GroundFeature[], rect: WorldRect):
   if (!any) return null;
   return {
     grid: rows,
-    cols: TILE_CELLS,
-    rows: TILE_CELLS,
-    meters_per_cell: TILE_MPC,
+    cols: dims.cols,
+    rows: dims.rows,
+    meters_per_cell: dims.mpc,
     origin: [rect.minX, rect.minZ],
     solid_chars: [IMAGE_SOLID_CHAR],
   };
