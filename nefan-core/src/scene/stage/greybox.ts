@@ -211,6 +211,9 @@ export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
 }
 
 /** Labels que encienden una luz práctica cálida sobre el volumen. */
+/** Labels de edificio que ganan soportal (columnas + alero en la fachada). */
+const PORCH_LABEL_RE = /soportal|p[oó]rtico|porche|arcada|logia/i;
+
 const PRACTICAL_LIGHT_RE =
   /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
 
@@ -609,6 +612,23 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
             color: roof,
             cat: "decor",
           });
+          // Chimenea sembrada (v8): la silueta del caserío lejano cobra vida
+          // — caja, no cono (el test de colinas cuenta conos lejanos).
+          if (uniform(srng, 0, 1) < 0.6) {
+            const chAngle = "angle" in s && s.angle ? (s.angle * Math.PI) / 180 : 0;
+            const chDx = uniform(srng, -s.w * 0.3, s.w * 0.3);
+            const [rdx, rdz] = [
+              chDx * Math.cos(chAngle),
+              -chDx * Math.sin(chAngle),
+            ];
+            primitives.push({
+              shape: "box",
+              size: [0.5, s.h * 0.22, 0.5],
+              pos: [sx + rdx, yBase + wallH + (s.h - wallH) * 0.5, sz + rdz],
+              color: darken(wall, 0.15),
+              cat: "decor",
+            });
+          }
           break;
         }
         case "tower": {
@@ -664,9 +684,9 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
             cat: "decor",
           });
           primitives.push({
-            shape: "cone",
-            size: [1.8 * sc, 3.6 * sc, 10],
-            pos: [sx, yBase + 1.4 * sc, sz],
+            shape: "sphere",
+            size: [1.8 * sc, 12],
+            pos: [sx, yBase + 1.3 * sc, sz],
             color: darken(PALETTE.canopy, uniform(srng, 0, 0.12)),
             cat: "decor",
           });
@@ -1049,6 +1069,34 @@ function buildVolumePrimitives(
         color: PALETTE.woodFace,
         cat: "building",
       });
+      // Soportal por label (v8, patrón del mesón del bench 07_zocodover):
+      // fila de columnas delante de la fachada sur + alero. Ancho 0.45 — el
+      // test F2 identifica ventanas por size[0]===0.7, no pisar ese valor.
+      if (PORCH_LABEL_RE.test(v.label)) {
+        const colH = Math.min(3.0, wallHM * 0.8);
+        const nCols = Math.max(3, Math.min(9, Math.round(w / 2.2) + 1));
+        for (let i = 0; i < nCols; i++) {
+          const dx = ((i / (nCols - 1)) - 0.5) * (w - 1.0);
+          const [cxr, czr] = rot(dx, d / 2 + 1.4);
+          push({
+            shape: "box",
+            size: [0.45, colH, 0.45],
+            pos: [cx + cxr, 0, cz + czr],
+            rotY: rotYOr(),
+            color: darken(wall.lit, 0.08),
+            cat: "building",
+          });
+        }
+        const [adx, adz] = rot(0, d / 2 + 0.95);
+        push({
+          shape: "box",
+          size: [w * 0.97, 0.3, 1.8],
+          pos: [cx + adx, colH, cz + adz],
+          rotY: rotYOr(),
+          color: darken(roof.lit, 0.1),
+          cat: "building",
+        });
+      }
       // Ventanas por PLANTA: una fila por cada ~2.4 m de muro (v2 ponía 1-2
       // ventanas fijas arriba — una casa de dos plantas leía como nave ciega).
       const nFloors = Math.max(1, Math.floor(wallHM / 2.4));
@@ -1174,11 +1222,12 @@ function buildVolumePrimitives(
         color: PALETTE.trunk,
         cat: "tree",
       });
-      // Copa: cilindro achatado alto (legible como masa de copa en clay).
+      // Copa ESFÉRICA (v8): el cono leía como ciprés/abeto siempre — la masa
+      // redonda es el árbol genérico del bench.
       push({
-        shape: "cone",
-        size: [canopyR, canopyR * 2.1, 10],
-        pos: [cx, trunkH * 0.8, cz],
+        shape: "sphere",
+        size: [canopyR * 1.05, 14],
+        pos: [cx, trunkH * 0.7, cz],
         color: PALETTE.canopy,
         cat: "tree",
       });

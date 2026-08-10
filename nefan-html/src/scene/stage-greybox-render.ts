@@ -73,6 +73,13 @@ export function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
       geo.translate(0, h / 2, 0);
       break;
     }
+    case "sphere": {
+      const [r, segments] = p.size;
+      const seg = Math.max(6, Math.round(segments ?? 16));
+      geo = new THREE.SphereGeometry(r, seg, Math.max(4, Math.round(seg / 2)));
+      geo.translate(0, r, 0); // pos.y = BASE ⇒ centro a +r (contrato del spec)
+      break;
+    }
     case "polygon": {
       // Contorno plano horizontal: points absolutos [x, z], grosor en size[0];
       // pos solo aporta la y de la base (contrato de greybox/common.ts).

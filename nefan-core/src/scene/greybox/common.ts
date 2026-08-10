@@ -6,9 +6,10 @@
 import { PALETTE } from "../blueprint/palette.js";
 
 export interface GreyboxPrimitive {
-  shape: "box" | "gable" | "cylinder" | "cone" | "polygon";
+  shape: "box" | "gable" | "cylinder" | "cone" | "polygon" | "sphere";
   /** box/gable: [w, h, d] m (gable: cumbrera a lo largo de d antes de rotY).
-   *  cylinder: [r, h, rTop?]. cone: [r, h, segmentos?]. polygon: [grosor]. */
+   *  cylinder: [r, h, rTop?]. cone: [r, h, segmentos?]. polygon: [grosor].
+   *  sphere: [r, segmentos?] — como el resto, pos.y es la BASE (centro a +r). */
   size: number[];
   /** Posición MUNDO: x centrado, y = BASE de la pieza, z mundo (+z sur).
    *  polygon: los `points` son absolutos y pos solo aporta la y de la base. */

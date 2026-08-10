@@ -200,6 +200,19 @@ function primWorldAabb(p: GreyboxPrimitive): { minU: number; minV: number; maxU:
       }
       return { minU, minV, maxU, maxV, h0: p.pos[1], h1: p.pos[1] + p.size[0] };
     }
+    case "sphere": {
+      // size = [r, segmentos?] — la altura NO está en size[1] (el return
+      // genérico la leería mal): alto real = 2r desde la base.
+      const r = p.size[0];
+      return {
+        minU: p.pos[0] - r,
+        minV: p.pos[2] - r,
+        maxU: p.pos[0] + r,
+        maxV: p.pos[2] + r,
+        h0: p.pos[1],
+        h1: p.pos[1] + 2 * r,
+      };
+    }
   }
   return {
     minU: p.pos[0] - eu,

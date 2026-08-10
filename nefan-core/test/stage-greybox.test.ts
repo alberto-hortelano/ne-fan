@@ -494,6 +494,45 @@ describe("buildGreyboxSpec", () => {
     }, /DENTRO del plató/);
   });
 
+  it("v8: siluetas — copa esférica, soportal por label, chimeneas del caserío", () => {
+    // Copa esférica en el árbol del plató.
+    const plan = exteriorPlan();
+    plan.volumes.push({ id: "olmo", label: "olmo viejo", type: "tree", at: [30, 12], s: 1.2 });
+    const spec = buildGreyboxSpec(plan, "silu8");
+    const copa = spec.primitives.find((p) => p.volId === "vol_olmo" && p.shape === "sphere");
+    assert.ok(copa, "la copa es una esfera");
+    assert.ok(copa!.pos[1] > 0, "copa sobre el tronco");
+    // Soportal por label: columnas + alero, heredando el angle del edificio.
+    const plan2 = exteriorPlan();
+    plan2.volumes.push({
+      id: "meson", label: "mesón con soportal", type: "building",
+      rect: [20, 2, 16, 6], wall_h: 10, angle: 12,
+    });
+    const spec2 = buildGreyboxSpec(plan2, "silu8");
+    const piezas = spec2.primitives.filter((p) => p.volId === "vol_meson");
+    const columnas = piezas.filter((p) => p.shape === "box" && p.size[0] === 0.45 && p.size[2] === 0.45);
+    assert.ok(columnas.length >= 3, `soportal con columnas (${columnas.length})`);
+    const rad12 = (12 * Math.PI) / 180;
+    assert.ok(columnas.every((p) => Math.abs((p.rotY ?? 0) - rad12) < 1e-9), "columnas heredan el angle");
+    const alero = piezas.find((p) => p.shape === "box" && p.size[1] === 0.3 && p.size[2] === 1.8);
+    assert.ok(alero, "alero del soportal");
+    // Sin label de soportal: cero columnas de 0.45.
+    const specPlain = buildGreyboxSpec(exteriorPlan(), "silu8");
+    assert.equal(
+      specPlain.primitives.filter((p) => p.size[0] === 0.45 && p.size[2] === 0.45).length, 0,
+    );
+    // Chimeneas del caserío de surroundings: siguen siendo decor sin manifest.
+    const plan3 = exteriorPlan();
+    plan3.stage.surroundings = [
+      { kind: "house", pos: [-20, -25], w: 8, d: 6, h: 6 },
+      { kind: "house", pos: [-30, -30], w: 8, d: 6, h: 6 },
+      { kind: "house", pos: [20, -28], w: 8, d: 6, h: 6 },
+    ];
+    const spec3 = buildGreyboxSpec(plan3, "silu8");
+    assert.equal(spec3.manifest.length, specPlain.manifest.length, "chimeneas sin manifest");
+    assert.ok(spec3.primitives.filter((p) => p.cat === "decor").every((p) => p.volId === undefined));
+  });
+
   it("v8: ground vectorial — capas, curvas suavizadas y agua", async () => {
     const { stagePlanFromScene } = await import("../src/scene/stage/index.js");
     const plan = exteriorPlan();
