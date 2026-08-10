@@ -18,6 +18,7 @@
 import { seededRng, uniform } from "../../rng.js";
 import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import type { Volume } from "../blueprint/volumes.js";
+import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
 import {
   canonicalGreyboxJson,
   groundColorFor,
@@ -208,8 +209,13 @@ const PRACTICAL_LIGHT_RE =
  *  razonable (prop sin at ni rect). */
 export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
   switch (v.type) {
-    case "building":
+    case "building": {
+      if (v.angle) {
+        const { cells } = volumeFootprint(v);
+        return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
+      }
       return v.rect;
+    }
     case "wall": {
       let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
       for (const [c, r] of v.points) {
@@ -244,7 +250,13 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "prop": {
-      if (v.rect) return v.rect;
+      if (v.rect) {
+        if (v.angle) {
+          const { cells } = volumeFootprint(v);
+          return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
+        }
+        return v.rect;
+      }
       if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
       return null;
     }
@@ -701,15 +713,30 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     ];
     const hM = volumeHeightM(v, mpc);
     const zStage = cellsToZStage(fp[1], fp[3]);
+    // Con `angle` la caja proyectada sale de las 4 esquinas ROTADAS del rect
+    // (el AABB daría una caja engordada); sin angle, las del AABB — idéntico.
+    const hasAngle =
+      (v.type === "building" || v.type === "prop") && v.rect && v.angle ? true : false;
+    const cornersCells: [number, number][] = hasAngle
+      ? rotatedRectCorners(
+          (v as { rect: [number, number, number, number] }).rect,
+          (v as { angle: number }).angle,
+        )
+      : [
+          [fp[0], fp[1]],
+          [fp[0] + fp[2], fp[1]],
+          [fp[0] + fp[2], fp[1] + fp[3]],
+          [fp[0], fp[1] + fp[3]],
+        ];
     let minVx = Infinity, minVy = Infinity, maxVx = -Infinity, maxVy = -Infinity;
-    for (const x of [fw[0], fw[2]]) {
-      for (const zWorld of [fw[1], fw[3]]) {
-        const zS = Math.max(0.05, rect.maxZ - zWorld);
-        for (const h of [0, hM]) {
-          const [vx, vy] = stageToViewAt(proj, x, zS, h);
-          minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
-          minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
-        }
+    for (const [cu, cv] of cornersCells) {
+      const x = rect.minX + cu * mpc;
+      const zWorld = rect.minZ + cv * mpc;
+      const zS = Math.max(0.05, rect.maxZ - zWorld);
+      for (const h of [0, hM]) {
+        const [vx, vy] = stageToViewAt(proj, x, zS, h);
+        minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
+        minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
       }
     }
     const toPx = (vx: number, vy: number): [number, number] => [
@@ -811,8 +838,26 @@ function buildVolumePrimitives(
   const volId = `vol_${v.id}`;
   const cx = rect.minX + (fp[0] + fp[2] / 2) * mpc;
   const cz = rect.minZ + (fp[1] + fp[3] / 2) * mpc;
-  const w = fp[2] * mpc;
-  const d = fp[3] * mpc;
+  // Marco LOCAL (angle de building/prop-rect): `fp` es el AABB (expandido al
+  // rotar) — la GEOMETRÍA usa las dimensiones reales del rect y offsets
+  // locales girados con `rot()`; los sub-prims heredan rotY = angleRad. La
+  // rotación preserva el centro, así que cx/cz sirven tal cual. Con angle 0
+  // todo es identidad y los prims son idénticos a los de siempre.
+  const angleDeg = (v.type === "building" || v.type === "prop") && v.rect ? (v.angle ?? 0) : 0;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const ca = Math.cos(angleRad);
+  const sa = Math.sin(angleRad);
+  const rot = (dx: number, dz: number): [number, number] =>
+    angleDeg ? [dx * ca + dz * sa, -dx * sa + dz * ca] : [dx, dz];
+  /** rotY a emitir: undefined cuando 0 (se cae del canónico — caché estable). */
+  const rotYOr = (extra = 0): number | undefined => {
+    const total = angleRad + extra;
+    return total === 0 ? undefined : total;
+  };
+  const rectDims =
+    angleDeg && (v.type === "building" || v.type === "prop") && v.rect ? v.rect : null;
+  const w = (rectDims ? rectDims[2] : fp[2]) * mpc;
+  const d = (rectDims ? rectDims[3] : fp[3]) * mpc;
   const southZ = rect.minZ + (fp[1] + fp[3]) * mpc;
 
   const push = (p: Omit<GreyboxPrimitive, "volId" | "cat"> & { cat?: GreyboxPrimitive["cat"] }): void => {
@@ -835,13 +880,23 @@ function buildVolumePrimitives(
       const roof = {
         lit: roofTone >= 0 ? lighten(baseRoof.lit, roofTone) : darken(baseRoof.lit, -roofTone),
       };
-      push({ shape: "box", size: [w, wallHM, d], pos: [cx, 0, cz], color: wall.lit, cat: "building" });
+      push({
+        shape: "box",
+        size: [w, wallHM, d],
+        pos: [cx, 0, cz],
+        rotY: rotYOr(),
+        color: wall.lit,
+        cat: "building",
+      });
       // Puerta en la fachada sur (cara a cámara), descentrada y sembrada.
-      const doorX = cx + uniform(rng, -w * 0.28, w * 0.28);
+      // Offsets LOCALES a la fachada (d/2 + 0.05 == southZ + 0.05 sin angle).
+      const doorDx = uniform(rng, -w * 0.28, w * 0.28);
+      const [pdx, pdz] = rot(doorDx, d / 2 + 0.05);
       push({
         shape: "box",
         size: [0.9, 1.9, 0.08],
-        pos: [doorX, 0, southZ + 0.05],
+        pos: [cx + pdx, 0, cz + pdz],
+        rotY: rotYOr(),
         color: PALETTE.woodFace,
         cat: "building",
       });
@@ -854,12 +909,14 @@ function buildVolumePrimitives(
         const wy = f === 0 ? Math.min(wallHM - 1.1, 1.3) : 1.1 + f * 2.4;
         if (wy + 0.9 > wallHM - 0.1) break;
         for (let i = 0; i < winPerFloor; i++) {
-          const wx = cx + ((i + 0.5) / winPerFloor - 0.5) * w * 0.82 + uniform(rng, -0.12, 0.12);
-          if (f === 0 && Math.abs(wx - doorX) < 0.9) continue; // no pisar la puerta
+          const wdx = ((i + 0.5) / winPerFloor - 0.5) * w * 0.82 + uniform(rng, -0.12, 0.12);
+          if (f === 0 && Math.abs(wdx - doorDx) < 0.9) continue; // no pisar la puerta
+          const [wxr, wzr] = rot(wdx, d / 2 + 0.05);
           push({
             shape: "box",
             size: [0.7, 0.9, 0.08],
-            pos: [wx, wy, southZ + 0.05],
+            pos: [cx + wxr, wy, cz + wzr],
+            rotY: rotYOr(),
             color: winColor,
             cat: "building",
           });
@@ -871,6 +928,7 @@ function buildVolumePrimitives(
           shape: "box",
           size: [w + 0.4, 0.3, d + 0.4],
           pos: [cx, wallHM, cz],
+          rotY: rotYOr(),
           color: roof.lit,
           cat: "building",
         });
@@ -882,18 +940,20 @@ function buildVolumePrimitives(
           shape: "gable",
           size: axis === "x" ? [d + 0.5, roofH, w + 0.5] : [w + 0.5, roofH, d + 0.5],
           pos: [cx, wallHM, cz],
-          rotY: axis === "x" ? Math.PI / 2 : 0,
+          rotY: angleRad + (axis === "x" ? Math.PI / 2 : 0),
           color: roof.lit,
           cat: "building",
         });
         // Chimenea sembrada (2 de cada 3 edificios): silueta de tejado viva.
         if (uniform(rng, 0, 1) < 0.67) {
-          const chX = cx + uniform(rng, -w * 0.3, w * 0.3);
-          const chZ = cz + uniform(rng, -d * 0.2, d * 0.2);
+          const chDx = uniform(rng, -w * 0.3, w * 0.3);
+          const chDz = uniform(rng, -d * 0.2, d * 0.2);
+          const [cxr, czr] = rot(chDx, chDz);
           push({
             shape: "box",
             size: [0.5, roofH + 0.9, 0.5],
-            pos: [chX, wallHM, chZ],
+            pos: [cx + cxr, wallHM, cz + czr],
+            rotY: rotYOr(),
             color: darken(wall.lit, 0.12),
             cat: "building",
           });
@@ -1024,14 +1084,22 @@ function buildVolumePrimitives(
         // Tablero + patas: silueta inequívoca de mueble.
         const topH = Math.max(0.06, hM * 0.1);
         const legH = hM - topH;
-        push({ shape: "box", size: [w, topH, d], pos: [cx, legH, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, topH, d],
+          pos: [cx, legH, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
         const legR = 0.06;
         for (const sx of [-1, 1]) {
           for (const sz of [-1, 1]) {
+            const [lx, lz] = rot(sx * (w / 2 - 0.12), sz * (d / 2 - 0.12));
             push({
               shape: "box",
               size: [legR * 2, legH, legR * 2],
-              pos: [cx + sx * (w / 2 - 0.12), 0, cz + sz * (d / 2 - 0.12)],
+              pos: [cx + lx, 0, cz + lz],
               color: darken(color, 0.15),
               cat: "prop",
             });
@@ -1041,17 +1109,28 @@ function buildVolumePrimitives(
         // Caja del carro elevada + dos ruedas: deja de leer como portón.
         const boxH = hM * 0.5;
         const wheelR = Math.min(0.55, hM * 0.4);
-        push({ shape: "box", size: [w, boxH, d * 0.85], pos: [cx, wheelR * 0.9, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, boxH, d * 0.85],
+          pos: [cx, wheelR * 0.9, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
         const along = w >= d;
         for (const s of [-1, 1]) {
+          const [wxr, wzr] = along
+            ? rot(s * w * 0.28, d * 0.35)
+            : rot(w * 0.35, s * d * 0.28);
           push({
             shape: "cylinder",
             size: [wheelR, 0.12],
             // rotX tumba el cilindro sobre su base: el centro del disco queda
             // en pos.y — a la altura del radio para que apoye en el suelo.
-            pos: along
-              ? [cx + s * w * 0.28, wheelR, cz + d * 0.35]
-              : [cx + w * 0.35, wheelR, cz + s * d * 0.28],
+            // El eje de la rueda no puede seguir el yaw del carro (rotX+rotY
+            // componen Rx·Ry, y el pre-giro Y de un cilindro es invisible):
+            // con angle ≤ ~30° el disco desviado no se aprecia.
+            pos: [cx + wxr, wheelR, cz + wzr],
             rotX: Math.PI / 2,
             color: darken(color, 0.25),
             cat: "prop",
@@ -1067,7 +1146,14 @@ function buildVolumePrimitives(
           cat: "prop",
         });
       } else {
-        push({ shape: "box", size: [w, hM, d], pos: [cx, 0, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, hM, d],
+          pos: [cx, 0, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
       }
       break;
     }

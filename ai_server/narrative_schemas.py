@@ -193,6 +193,13 @@ def validate_volumes(raw, *, field: str = "volumes"):
             if not _cell_pair(v.get("at")):
                 print(f"validate_scene: {ctx} {vtype} sin at válido — {field} descartado")
                 return None
+        # `angle` (building/prop, GRADOS): laxo — un valor sin sentido se
+        # descarta con traza en vez de tumbar el array (zod hace el rechazo duro).
+        if "angle" in v and vtype in ("building", "prop"):
+            a = v.get("angle")
+            if not _num(a) or not -360 <= a <= 360:
+                print(f"validate_scene: {ctx} angle inválido {a!r} — campo descartado")
+                v.pop("angle", None)
     return raw
 
 

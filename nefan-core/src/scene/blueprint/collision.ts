@@ -75,17 +75,46 @@ function markBand(grid: Grid, points: [number, number][], width: number): void {
   }
 }
 
+/** Rect rotado `angleDeg` alrededor de su centro (patrón de markBand: barrer
+ *  el AABB y testear el centro de cada celda en el marco LOCAL del rect). */
+function markRotRect(
+  grid: Grid,
+  rect: [number, number, number, number],
+  angleDeg: number,
+): void {
+  const [u0, v0, w, d] = rect;
+  const cu = u0 + w / 2;
+  const cv = v0 + d / 2;
+  const a = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const eu = (Math.abs(c) * w + Math.abs(s) * d) / 2;
+  const ev = (Math.abs(s) * w + Math.abs(c) * d) / 2;
+  for (let v = Math.floor(cv - ev); v < Math.ceil(cv + ev); v++) {
+    for (let u = Math.floor(cu - eu); u < Math.ceil(cu + eu); u++) {
+      const du = u + 0.5 - cu;
+      const dv = v + 0.5 - cv;
+      // Marco local: rotar el offset por −angle (inversa de rotatedRectCorners).
+      const lu = du * c - dv * s;
+      const lv = du * s + dv * c;
+      if (Math.abs(lu) <= w / 2 && Math.abs(lv) <= d / 2) mark(grid, u + 0.5, v + 0.5);
+    }
+  }
+}
+
 /** Colisión de un edificio.
  *  - CON techo: es escenografía — huella COMPLETAMENTE sólida, sus puertas
  *    son decorativas (un jugador que "entrara" desaparecería bajo el techo
  *    sin ver nada). Enterable ⇒ cutaway.
- *  - Cutaway: anillo de muros (grosor 1.5 celdas) con huecos de puerta. */
+ *  - Cutaway: anillo de muros (grosor 1.5 celdas) con huecos de puerta.
+ *  - Con `angle` (nunca cutaway, lo rechaza parseVolumes): huella rotada. */
 function markBuilding(grid: Grid, v: Extract<Volume, { type: "building" }>): void {
   const [u0, v0, w, d] = v.rect;
   const u1 = u0 + w;
   const v1 = v0 + d;
   if (!v.cutaway) {
-    markRect(grid, u0, v0, u1, v1);
+    if (v.angle) markRotRect(grid, v.rect, v.angle);
+    else markRect(grid, u0, v0, u1, v1);
     return;
   }
   const t = 1.5;
@@ -161,7 +190,8 @@ export function volumeCollisionGrid(volumes: Volume[], rect: WorldRect): Terrain
       }
       case "prop": {
         if (v.passable) break;
-        if (v.rect) markRect(grid, v.rect[0], v.rect[1], v.rect[0] + v.rect[2], v.rect[1] + v.rect[3]);
+        if (v.rect && v.angle) markRotRect(grid, v.rect, v.angle);
+        else if (v.rect) markRect(grid, v.rect[0], v.rect[1], v.rect[0] + v.rect[2], v.rect[1] + v.rect[3]);
         else markDisc(grid, v.at![0], v.at![1], 1.3);
         break;
       }

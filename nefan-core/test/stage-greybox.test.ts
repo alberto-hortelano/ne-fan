@@ -416,6 +416,40 @@ describe("buildGreyboxSpec", () => {
     assert.notEqual(sunDia.color, sunNoche.color);
   });
 
+  it("v7: building con angle — prims rotados, manifest por esquinas rotadas", async () => {
+    const { parseVolumes } = await import("../src/scene/blueprint/index.js");
+    const base = exteriorPlan();
+    const spec0 = buildGreyboxSpec(base, "giro");
+    const plan = exteriorPlan();
+    const casa = plan.volumes.find((v) => v.id === "casa_alta")!;
+    (casa as { angle?: number }).angle = 20;
+    const spec = buildGreyboxSpec(plan, "giro");
+    // Todos los prims del edificio llevan la rotación (el gable la suma al axis).
+    const rad20 = (20 * Math.PI) / 180;
+    const prims = spec.primitives.filter((p) => p.volId === "vol_casa_alta");
+    assert.ok(prims.length >= 2);
+    for (const p of prims) {
+      const rotY = p.rotY ?? 0;
+      const residue = Math.abs(((rotY - rad20) % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2);
+      assert.ok(residue < 1e-9 || Math.abs(residue - Math.PI / 2) < 1e-9,
+        `prim con rotY ${rotY} no hereda los 20°`);
+    }
+    // Manifest: la caja de las esquinas rotadas es MENOR o igual que la del
+    // AABB pero mayor que la del edificio sin rotar en x (diagonal), y válida.
+    const m = spec.manifest.find((x) => x.id === "vol_casa_alta")!;
+    const m0 = spec0.manifest.find((x) => x.id === "vol_casa_alta")!;
+    assert.ok(m.box_px[2] > 0 && m.box_px[3] > 0);
+    assert.notDeepEqual(m.box_px, m0.box_px, "la caja proyectada cambia al girar");
+    // footprintWorld = AABB del rect rotado (más ancho y profundo que el rect).
+    assert.ok(m.footprintWorld[2] - m.footprintWorld[0] > m0.footprintWorld[2] - m0.footprintWorld[0]);
+    assert.ok(m.footprintWorld[3] - m.footprintWorld[1] > m0.footprintWorld[3] - m0.footprintWorld[1]);
+    // cutaway + angle: rechazado; prop `at` + angle: rechazado.
+    assert.equal(parseVolumes([{ id: "c", label: "casa", type: "building", rect: [4, 4, 8, 6], cutaway: true, angle: 10 }]).ok, false);
+    assert.equal(parseVolumes([{ id: "p", label: "poste", type: "prop", at: [4, 4], shape: "box", angle: 10 }]).ok, false);
+    // Determinismo con angle.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "giro")));
+  });
+
   it("v7: tierra y empedrado se distinguen en el clay", async () => {
     const { groundColorFor } = await import("../src/scene/greybox/common.js");
     const tierra = groundColorFor("tierra apisonada");

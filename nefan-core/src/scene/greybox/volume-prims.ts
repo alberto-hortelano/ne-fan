@@ -11,6 +11,7 @@
  *  front, muros troceados a ~14 celdas, árbol en tronco + copa aérea). */
 
 import { PALETTE, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
+import { volumeFootprint } from "../blueprint/footprint.js";
 import type { GateVolume, Volume } from "../blueprint/volumes.js";
 import type { GreyboxPrimitive } from "./common.js";
 
@@ -140,14 +141,28 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
           },
         ];
       }
-      // Edificio con techo: cuerpo + tejado + puertas pintadas.
+      // Edificio con techo: cuerpo + tejado + puertas pintadas. Con `angle`
+      // todo se emite en marco LOCAL rotado alrededor del centro (rotY) y la
+      // huella/depthPt pasan al AABB rotado (volumeFootprint).
+      const angleRad = ((v.angle ?? 0) * Math.PI) / 180;
+      const caA = Math.cos(angleRad);
+      const saA = Math.sin(angleRad);
+      const rotOff = (dx: number, dz: number): [number, number] =>
+        v.angle ? [dx * caA + dz * saA, -dx * saA + dz * caA] : [dx, dz];
+      const rotYOr = (extra = 0): number | undefined =>
+        angleRad + extra === 0 ? undefined : angleRad + extra;
       const prims: GreyboxPrimitive[] = [
-        box(w, wallH, d, cx, 0, cz, wc.lit, "building", { volId: `vol_${v.id}` }),
+        box(w, wallH, d, cx, 0, cz, wc.lit, "building", { volId: `vol_${v.id}`, rotY: rotYOr() }),
       ];
       const roofKind = v.roof?.kind ?? "gable";
       const rc = roofColors(v.roof?.material, v.roof?.color);
       if (roofKind === "flat") {
-        prims.push(box(w + 0.8, 0.4, d + 0.8, cx, wallH, cz, rc.lit, "building", { volId: `vol_${v.id}` }));
+        prims.push(
+          box(w + 0.8, 0.4, d + 0.8, cx, wallH, cz, rc.lit, "building", {
+            volId: `vol_${v.id}`,
+            rotY: rotYOr(),
+          }),
+        );
       } else if (roofKind !== "none") {
         const axis = v.roof?.axis ?? (w >= d ? "x" : "y");
         const rise = Math.min(w, d) * 0.45;
@@ -156,7 +171,7 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
           // gable: cumbrera a lo largo de d ANTES de rotY (contrato common).
           size: axis === "x" ? [d + 1.2, rise, w + 1.2] : [w + 1.2, rise, d + 1.2],
           pos: [cx, wallH, cz],
-          rotY: axis === "x" ? Math.PI / 2 : 0,
+          rotY: angleRad + (axis === "x" ? Math.PI / 2 : 0),
           color: rc.lit,
           cat: "building",
           volId: `vol_${v.id}`,
@@ -166,21 +181,25 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
         const dw = door.w ?? 3;
         const alongX = door.edge === "n" || door.edge === "s";
         const at = door.at ?? 0;
-        const pos: [number, number, number] =
-          door.edge === "s" ? [u0 + at + dw / 2, 0, v0 + d]
-          : door.edge === "n" ? [u0 + at + dw / 2, 0, v0]
-          : door.edge === "e" ? [u0 + w, 0, v0 + at + dw / 2]
-          : [u0, 0, v0 + at + dw / 2];
+        // Offset LOCAL de la puerta respecto al centro; rotado si hay angle.
+        const [ldx, ldz] =
+          door.edge === "s" ? [u0 + at + dw / 2 - cx, d / 2]
+          : door.edge === "n" ? [u0 + at + dw / 2 - cx, -d / 2]
+          : door.edge === "e" ? [w / 2, v0 + at + dw / 2 - cz]
+          : [-w / 2, v0 + at + dw / 2 - cz];
+        const [rdx, rdz] = rotOff(ldx, ldz);
         prims.push({
           shape: "box",
           size: alongX ? [dw, 3, 0.3] : [0.3, 3, dw],
-          pos,
+          pos: [cx + rdx, 0, cz + rdz],
+          rotY: rotYOr(),
           color: "#2a2018",
           cat: "building",
           volId: `vol_${v.id}`,
         });
       }
-      return [{ part: "base", prims, footprint: [u0, v0, u0 + w, v0 + d], depthPt: [u0 + w, v0 + d], occludes: true }];
+      const bfp = volumeFootprint(v);
+      return [{ part: "base", prims, footprint: bfp.cells, depthPt: bfp.depthPoint, occludes: true }];
     }
     case "wall": {
       const width = v.width ?? 3;
@@ -408,22 +427,24 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
     case "prop": {
       const h = v.h ?? 2;
       const color = v.color ?? PALETTE.woodTop;
-      const fp: [number, number, number, number] = v.rect
-        ? [v.rect[0], v.rect[1], v.rect[0] + v.rect[2], v.rect[1] + v.rect[3]]
-        : [v.at![0] - 1.4, v.at![1] - 1.4, v.at![0] + 1.4, v.at![1] + 1.4];
+      // Con `angle` (solo rect): geometría con las dimensiones REALES del rect
+      // + rotY; huella/depthPt del AABB rotado (volumeFootprint).
+      const pfp = volumeFootprint(v);
+      const fp: [number, number, number, number] = pfp.cells;
       const cx = (fp[0] + fp[2]) / 2;
       const cz = (fp[1] + fp[3]) / 2;
-      const w = fp[2] - fp[0];
-      const d = fp[3] - fp[1];
+      const w = v.rect && v.angle ? v.rect[2] : fp[2] - fp[0];
+      const d = v.rect && v.angle ? v.rect[3] : fp[3] - fp[1];
+      const propRotY = v.angle ? (v.angle * Math.PI) / 180 : undefined;
       const prims: GreyboxPrimitive[] =
         v.shape === "cylinder"
           ? [
               { shape: "cylinder", size: [Math.min(w, d) / 2, h], pos: [cx, 0, cz], color, cat: "prop", volId: `vol_${v.id}` },
               { shape: "cylinder", size: [Math.min(w, d) / 2, 0.06], pos: [cx, h, cz], color: lighten(color, 0.15), cat: "prop", volId: `vol_${v.id}`, noShadow: true },
             ]
-          : [box(w, h, d, cx, 0, cz, color, "prop", { volId: `vol_${v.id}` })];
+          : [box(w, h, d, cx, 0, cz, color, "prop", { volId: `vol_${v.id}`, rotY: propRotY })];
       return [
-        { part: "base", prims, footprint: fp, depthPt: [fp[2], fp[3]], occludes: classifyVolume(v).tall },
+        { part: "base", prims, footprint: fp, depthPt: pfp.depthPoint, occludes: classifyVolume(v).tall },
       ];
     }
   }

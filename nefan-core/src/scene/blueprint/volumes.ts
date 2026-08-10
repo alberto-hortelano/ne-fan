@@ -23,6 +23,12 @@ const base = {
   label: z.string().min(1).max(48),
 };
 
+/** Rotación en GRADOS alrededor del centro de la huella, positivo antihorario
+ *  visto desde arriba (mismo signo que `rotY`). Las casas de un pueblo real no
+ *  comparten retícula: ±5..±30° rompen la monotonía. Solo building/prop; los
+ *  builders convierten a radianes una única vez. */
+const angle = z.number().min(-180).max(180);
+
 export const RoofKindSchema = z.enum(["gable", "hip", "shed", "flat", "none"]);
 export const RoofMaterialSchema = z.enum(["slate", "tile", "thatch", "wood"]);
 export const WallMaterialSchema = z.enum(["timber", "stone", "wood", "plaster"]);
@@ -59,6 +65,9 @@ export const BuildingSchema = z
     /** Cutaway (edificio interactivo): sin techo y muros frontales bajos —
      *  el jugador ve el interior. Los muebles interiores son `prop`s. */
     cutaway: z.boolean().optional(),
+    /** Incompatible con `cutaway` (el anillo de muros/puertas es axis-aligned
+     *  y rotar el edificio jugable perjudica la navegación). */
+    angle: angle.optional(),
   })
   .strict();
 
@@ -137,6 +146,8 @@ export const PropSchema = z
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     /** true = decorativo, no bloquea (alfombras, toldos). */
     passable: z.boolean().optional(),
+    /** Solo con `rect` (un `at` es un punto: no hay nada que rotar). */
+    angle: angle.optional(),
   })
   .strict();
 
@@ -183,6 +194,12 @@ export function parseVolumes(raw: unknown): ParseVolumesResult {
     seen.add(v.id);
     if (v.type === "prop" && (v.at !== undefined) === (v.rect !== undefined)) {
       return { ok: false, error: `volumes: prop "${v.id}" necesita exactamente uno de \`at\` o \`rect\`` };
+    }
+    if (v.type === "building" && v.cutaway && v.angle !== undefined) {
+      return { ok: false, error: `volumes: building "${v.id}" no admite \`angle\` con \`cutaway\`` };
+    }
+    if (v.type === "prop" && v.at !== undefined && v.angle !== undefined) {
+      return { ok: false, error: `volumes: prop "${v.id}" solo admite \`angle\` con \`rect\`` };
     }
   }
   // Tope de escala de árbol: clamp (no rechazo) — todos los consumidores

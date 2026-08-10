@@ -4,16 +4,55 @@
 
 import type { Volume } from "./volumes.js";
 
+/** Las 4 esquinas de un rect rotado `angle` GRADOS (antihorario visto desde
+ *  arriba, convención de `rotY`) alrededor de su centro. En el plano de celdas
+ *  (v crece hacia el sur) un rotY antihorario es horario visto en pantalla,
+ *  de ahí el signo de `s` en la fila de v. */
+export function rotatedRectCorners(
+  rect: [number, number, number, number],
+  angleDeg: number,
+): [number, number][] {
+  const [u0, v0, w, d] = rect;
+  const cu = u0 + w / 2;
+  const cv = v0 + d / 2;
+  const a = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return ([[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]] as const).map(
+    ([du, dv]) => [cu + du * c + dv * s, cv - du * s + dv * c] as [number, number],
+  );
+}
+
+function rotatedFootprint(
+  rect: [number, number, number, number],
+  angleDeg: number,
+): { depthPoint: [number, number]; cells: [number, number, number, number] } {
+  const corners = rotatedRectCorners(rect, angleDeg);
+  let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+  let depth: [number, number] = corners[0];
+  for (const [u, vv] of corners) {
+    minU = Math.min(minU, u);
+    minV = Math.min(minV, vv);
+    maxU = Math.max(maxU, u);
+    maxV = Math.max(maxV, vv);
+    if (vv > depth[1]) depth = [u, vv];
+  }
+  return { depthPoint: depth, cells: [minU, minV, maxU, maxV] };
+}
+
 /** Punto de contacto con el suelo más profundo (clave del orden del pintor)
- *  y huella en celdas [minU, minV, maxU, maxV] de un volumen. */
+ *  y huella en celdas [minU, minV, maxU, maxV] de un volumen. Con `angle`, la
+ *  huella es el AABB del rect rotado (colisión y orden conservadores). */
 export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cells: [number, number, number, number] } {
   switch (v.type) {
     case "building": {
+      if (v.angle) return rotatedFootprint(v.rect, v.angle);
       const [u0, v0, w, d] = v.rect;
       return { depthPoint: [u0 + w, v0 + d], cells: [u0, v0, u0 + w, v0 + d] };
     }
     case "prop": {
       if (v.rect) {
+        if (v.angle) return rotatedFootprint(v.rect, v.angle);
         const [u0, v0, w, d] = v.rect;
         return { depthPoint: [u0 + w, v0 + d], cells: [u0, v0, u0 + w, v0 + d] };
       }
