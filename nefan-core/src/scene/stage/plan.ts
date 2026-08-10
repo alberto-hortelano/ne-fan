@@ -80,6 +80,18 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
           `(±${halfW}×±${halfD} m) — el decorado va fuera de bounds`,
       );
     }
+    // Un cerro pegado al borde mete su falda EN el plató como una pared de
+    // tierra: el centro debe quedar al menos 0.4·r más allá del bound más
+    // cercano (la falda puede asomar, la masa no).
+    if (s.kind === "hill") {
+      const out = Math.max(Math.abs(sx) - halfW, Math.abs(sz) - halfD);
+      if (out < 0.4 * s.r) {
+        throw new Error(
+          `stagePlanFromScene: hill en (${sx}, ${sz}) con r=${s.r} demasiado pegado al plató ` +
+            `— aleja el centro al menos ${Math.ceil(0.4 * s.r)} m más allá del borde`,
+        );
+      }
+    }
   }
   // Rejilla de terreno (opcional): el greybox pinta el suelo por bandas de
   // tipo (la calle de tierra, el prado, el empedrado) — sin ella todo el

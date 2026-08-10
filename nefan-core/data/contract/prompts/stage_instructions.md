@@ -137,6 +137,19 @@ HARD RULES OF THE STAGE:
   center must lie OUTSIDE the playable bounds (the server rejects it
   otherwise). Keep it coherent with the world map: what each neighbouring
   place is, seen from here.
+- SURROUNDINGS SCALE IS REAL-WORLD SCALE. Never oversize a distant landmark
+  "so it shows" — a fat tower near the backdrop reads as a silo glued to the
+  set. Towers r 3-5 m; houses h 5-8 m; put structures at least ~15 m beyond
+  the edge (z ≤ −(rows·mpc/2 + 15), or the equivalent past a wing) and let
+  perspective + haze do the work. A `hill` must sit mostly BEHIND the set:
+  its center at least half its radius beyond the nearest edge (the server
+  rejects a hill hugging the bounds — its skirt would wall off the stage).
+- FRAMING PROPS placement: the southern-third props go in the CENTRAL half
+  of the width (|x| between ~w/6 and ~w/3 from center), NOT at the far
+  corners of a wide stage — the camera crops wider than you think and corner
+  props fall out of frame. And mind the APRON: the southernmost terrain row
+  extends toward the camera as the foreground ground — give it the material
+  you want to SEE up close (the plaza's cobbles, not a leftover dirt band).
 - Fire and lamp props LIGHT UP: any volume/entity labelled chimenea, hogar,
   fogón, farol, vela, antorcha, candil, brasero or hoguera gets a warm
   practical light in the clay — use them to give interiors a focal point.

@@ -64,7 +64,7 @@ export const StageSurroundingSchema = z.discriminatedUnion("kind", [
       /** Ancho × fondo × alto de muros, en metros. */
       w: z.number().min(2).max(40),
       d: z.number().min(2).max(40),
-      h: z.number().min(2).max(30),
+      h: z.number().min(2).max(20),
       wall_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       roof_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       y_base: surYBase,
@@ -75,8 +75,10 @@ export const StageSurroundingSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("tower"),
       pos: surPos,
-      r: z.number().min(1).max(20).optional(),
-      h: z.number().min(3).max(60).optional(),
+      /** Radio REAL de torre (3-5 m lo normal): la perspectiva hace el resto
+       *  — un r grande "para que se vea" produce un silo pegado al telón. */
+      r: z.number().min(1).max(6).optional(),
+      h: z.number().min(3).max(40).optional(),
       y_base: surYBase,
     })
     .strict(),
