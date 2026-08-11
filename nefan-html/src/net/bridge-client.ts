@@ -12,6 +12,7 @@ import type {
   GamesListedMessage,
   GameCreatedMessage,
   SessionDeletedMessage,
+  RenderModeSetMessage,
   SessionSavedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
@@ -292,6 +293,11 @@ export class BridgeClient {
 
   deleteSession(sessionId: string): Promise<SessionDeletedMessage> {
     return this.request<SessionDeletedMessage>({ type: "delete_session", sessionId });
+  }
+
+  /** Activa las imágenes IA en un save vector (upgrade in-place). */
+  setRenderMode(sessionId: string, renderMode: "image"): Promise<RenderModeSetMessage> {
+    return this.request<RenderModeSetMessage>({ type: "set_render_mode", sessionId, renderMode });
   }
 
   saveSession(): Promise<SessionSavedMessage> {

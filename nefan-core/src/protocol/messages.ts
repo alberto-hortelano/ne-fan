@@ -84,6 +84,16 @@ export interface DeleteSessionMessage {
   sessionId: string;
 }
 
+/** Activa las imágenes IA en una partida empezada en vector (solo upgrade:
+ *  la inversa dejaría el mundo mezclado clay/pintado para siempre). El save
+ *  puede no ser la sesión activa — se parchea en disco desde el título. */
+export interface SetRenderModeMessage {
+  type: "set_render_mode";
+  requestId: string;
+  sessionId: string;
+  renderMode: "image";
+}
+
 export interface DialogueChoiceMessage {
   type: "dialogue_choice";
   requestId?: string;
@@ -220,6 +230,7 @@ export type ClientMessage =
   | StartSessionMessage
   | ResumeSessionMessage
   | DeleteSessionMessage
+  | SetRenderModeMessage
   | DialogueChoiceMessage
   | CreateGameMessage
   | ListGamesMessage
@@ -357,6 +368,13 @@ export interface SessionDeletedMessage {
   ok: boolean;
 }
 
+export interface RenderModeSetMessage {
+  type: "render_mode_set";
+  requestId: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface SessionSavedMessage {
   type: "session_saved";
   requestId?: string;
@@ -373,4 +391,5 @@ export type ServerMessage =
   | GamesListedMessage
   | GameCreatedMessage
   | SessionDeletedMessage
+  | RenderModeSetMessage
   | SessionSavedMessage;

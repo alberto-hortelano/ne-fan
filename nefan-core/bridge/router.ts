@@ -14,6 +14,7 @@ import {
   handleDeleteSession,
   handleListGames,
   handleListSessions,
+  handleSetRenderMode,
   handleResumeSession,
   handleSaveSession,
   handleStartSession,
@@ -60,6 +61,9 @@ export async function routeMessage(
       break;
     case "delete_session":
       await handleDeleteSession(msg, ws, ctx);
+      break;
+    case "set_render_mode":
+      await handleSetRenderMode(msg, ws, ctx);
       break;
     case "save_session":
       await handleSaveSession(msg, ws, ctx);

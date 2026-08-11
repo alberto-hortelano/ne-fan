@@ -36,6 +36,7 @@ import { runBootstrapStage } from "./bootstrap-stage.js";
 import type {
   CreateGameMessage,
   DeleteSessionMessage,
+  SetRenderModeMessage,
   ListGamesMessage,
   ListSessionsMessage,
   ResumeSessionMessage,
@@ -490,6 +491,42 @@ export async function handleDeleteSession(
 ): Promise<void> {
   const ok = await ctx.sessionStorage.delete(msg.sessionId);
   ctx.send(ws, { type: "session_deleted", requestId: msg.requestId, ok });
+}
+
+/** Activa las imágenes IA en un save empezado en vector (upgrade in-place,
+ *  desde el título — la sesión no tiene por qué estar activa). Solo
+ *  vector→image: quitar imágenes dejaría el mundo mezclado clay/pintado.
+ *  El Auto-img del cliente pinta los tiles ya explorados al reanudar. */
+export async function handleSetRenderMode(
+  msg: SetRenderModeMessage,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): Promise<void> {
+  const fail = (error: string): void =>
+    ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: false, error });
+  if (msg.renderMode !== "image") {
+    return fail(`solo se admite activar imágenes (renderMode "image"), no "${msg.renderMode}"`);
+  }
+  const data = await ctx.sessionStorage.read(msg.sessionId);
+  if (!data) return fail(`la partida ${msg.sessionId} no existe`);
+  const current = data.world?.render_mode;
+  if (current !== "vector") {
+    return fail(
+      current === "image"
+        ? "la partida ya tiene imágenes activadas"
+        : `la partida no está en modo vector (render_mode=${JSON.stringify(current)})`,
+    );
+  }
+  data.world.render_mode = "image";
+  data.updated_at = new Date().toISOString();
+  await ctx.sessionStorage.write(msg.sessionId, data);
+  // Si es la sesión ACTIVA del proceso, el espejo en memoria también cambia
+  // (un save_session posterior no debe revertir el upgrade).
+  if (ctx.narrative.session_id === msg.sessionId) {
+    ctx.narrative.world.render_mode = "image";
+  }
+  console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (vector → image)`);
+  ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });
 }
 
 export async function handleSaveSession(

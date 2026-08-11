@@ -191,6 +191,29 @@ export class TitleScreen {
           }
         });
       }
+      // Activar Imagen IA en una partida vector: confirmación INLINE en dos
+      // clicks (el segundo deja claro que empieza a gastar créditos) y
+      // recarga de la lista — el badge pasa a "Imagen IA" al instante.
+      for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=enable-images]")) {
+        btn.addEventListener("click", async () => {
+          if (btn.dataset.armed !== "1") {
+            btn.dataset.armed = "1";
+            btn.textContent = "¿Confirmar? Gastará créditos";
+            btn.style.borderColor = "#a63";
+            btn.style.color = "#da6";
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Activando…";
+          try {
+            await this.narrative.enableImages(btn.dataset.sessionId!);
+            await this.renderHome();
+          } catch (err) {
+            alert(`No se pudo activar Imagen IA: ${(err as Error).message}`);
+            await this.renderHome();
+          }
+        });
+      }
     }
 
     newBtn.addEventListener("click", () => {
@@ -638,6 +661,7 @@ function sessionRowHtml(s: SessionMetadata): string {
         <div style="color:#666;font-size:11px;margin-top:3px">${updated} · ${s.scene_count} escenas · ${s.entity_count} entidades</div>
       </div>
       <div style="display:flex;gap:6px;margin-left:14px">
+        ${s.render_mode === "vector" ? `<button data-action="enable-images" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar Imagen IA</button>` : ""}
         <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
         <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
       </div>
@@ -676,6 +700,10 @@ const BTN_SMALL_PRIMARY_CSS = [
 ].join(";");
 const BTN_SMALL_DANGER_CSS = [
   "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
+  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
+].join(";");
+const BTN_SMALL_SECONDARY_CSS = [
+  "background:transparent","color:#9ab","border:1px solid #345","padding:5px 12px",
   "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
 ].join(";");
 const SELECT_CSS = [

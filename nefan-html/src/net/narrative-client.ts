@@ -90,6 +90,13 @@ export class NarrativeClient {
     return { state: res.state };
   }
 
+  /** Activa las imágenes IA en una partida vector. Lanza si el bridge
+   *  rechaza (ya en image, save inexistente…) — fail-loud al title screen. */
+  async enableImages(sessionId: string): Promise<void> {
+    const res = await this.bridge.setRenderMode(sessionId, "image");
+    if (!res.ok) throw new Error(res.error ?? "el bridge rechazó el cambio de modo");
+  }
+
   async deleteSession(sessionId: string): Promise<boolean> {
     const res = await this.bridge.deleteSession(sessionId);
     return res.ok;
