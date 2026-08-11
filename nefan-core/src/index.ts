@@ -51,3 +51,10 @@ export { validateManifestStatic } from "./plugins/validate.js";
 export { registerRuntimePlugin, PluginRegisterError } from "./plugins/register.js";
 export { buildPluginLlmViews, inspectPlugin } from "./plugins/views.js";
 export type { PluginViewSources, ManifestResolver } from "./plugins/views.js";
+
+// Parsers zod de escena (fuente de verdad) — los consume el preflight de
+// narrative-mcp para que el MCP rechace EXACTAMENTE lo que el cliente
+// rechazaría (un espejo a mano siempre acaba más laxo que el zod).
+export { parseVolumes } from "./scene/blueprint/volumes.js";
+export { parseGround } from "./scene/blueprint/ground.js";
+export { stagePlanFromScene } from "./scene/stage/plan.js";

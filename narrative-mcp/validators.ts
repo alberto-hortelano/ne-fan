@@ -4,6 +4,8 @@
  *  las fixtures compartidas de nefan-core/data/contract/fixtures/ los
  *  ejecutan junto a los de Python y CI grita si divergen. */
 
+import { parseVolumes, parseGround } from '@nefan/core';
+
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')
  *  BEFORE it is forwarded to the Python ai_server. The ai_server applies the
  *  same strict rules (ai_server/narrative_schemas.py:validate_narrative_reaction)
@@ -114,6 +116,10 @@ export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false
       }
     }
   }
+  // Pasada final con el zod de produccion (mismas razones que en volumes:
+  // p.ej. \`area\` sin \`material\` o un material fuera del enum).
+  const strictG = parseGround(raw);
+  if (!strictG.ok) return { ok: false, error: strictG.error };
   return { ok: true };
 }
 
@@ -178,6 +184,11 @@ export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error
       }
     }
   }
+  // Pasada final con el zod de PRODUCCION (el que ejecuta el cliente): las
+  // reglas que este espejo no replica (claves desconocidas, rangos, enums)
+  // rebotan aqui al motor en vez de tumbar el array entero en el cliente.
+  const strict = parseVolumes(raw);
+  if (!strict.ok) return { ok: false, error: strict.error };
   return { ok: true };
 }
 
@@ -211,8 +222,9 @@ export function validateBlueprintReview(data: unknown): { ok: true } | { ok: fal
       const g = validateGroundFeatures(f.ground);
       if (!g.ok) return { ok: false, error: `fixes.ground must be the FULL replacement ground array: ${g.error}` };
     }
-    if (f.volumes !== undefined && !Array.isArray(f.volumes)) {
-      return { ok: false, error: 'fixes.volumes must be the FULL replacement volumes array' };
+    if (f.volumes !== undefined) {
+      const v = validateVolumes(f.volumes);
+      if (!v.ok) return { ok: false, error: `fixes.volumes must be the FULL replacement volumes array: ${v.error}` };
     }
     if (f.terrain !== undefined && (!Array.isArray(f.terrain) || f.terrain.some((r) => typeof r !== 'string'))) {
       return { ok: false, error: 'fixes.terrain must be the FULL list of terrain row strings' };

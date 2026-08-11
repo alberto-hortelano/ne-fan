@@ -1,0 +1,19 @@
+{
+ "description": "prop con at + angle: un punto no tiene nada que rotar — el MCP exige rect para angle; Python quita el campo angle",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "barril",
+    "label": "barril",
+    "type": "prop",
+    "shape": "cylinder",
+    "at": [
+     12,
+     14
+    ],
+    "angle": 45
+   }
+  ]
+ }
+}

@@ -100,10 +100,14 @@ class TestContractFixtures(unittest.TestCase):
         """Plan de suelo declarativo: espejo de parseGround (nefan-core, zod)."""
         for name, fx in load_fixtures("ground_plan"):
             with self.subTest(fixture=name):
-                result = validate_ground(fx["payload"]["ground"])
+                raw = fx["payload"]["ground"]
+                result = validate_ground(
+                    [dict(f) if isinstance(f, dict) else f for f in raw]
+                    if isinstance(raw, list) else raw
+                )
                 expected = fx["expect"] == "accept"
                 self.assertEqual(
-                    result is not None,
+                    result is not None and result == raw,
                     expected,
                     f"ground_plan/{name}: esperaba {fx['expect']} — {fx['description']}. "
                     "Si el cambio es intencional, actualiza parseGround (nefan-core) "
@@ -119,7 +123,9 @@ class TestContractFixtures(unittest.TestCase):
             with self.subTest(fixture=name):
                 raw = fx["payload"]["volumes"]
                 clean = validate_volumes([dict(v) for v in raw])
-                intact = clean is not None and len(clean) == len(raw)
+                # Igualdad profunda: un item DESCARTADO o un campo SANEADO
+                # (p.ej. angle fuera de rango eliminado) cuentan como detección.
+                intact = clean is not None and clean == raw
                 expected = fx["expect"] == "accept"
                 self.assertEqual(
                     intact,
