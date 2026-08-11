@@ -613,13 +613,27 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   `;
 }
 
+/** Etiquetas de vista/gráficos congelados en el save — los MISMOS nombres que
+ *  los selectores de partida nueva, para que el jugador reconozca qué eligió.
+ *  Saves antiguos sin los campos: sin badge (no adivinar). */
+const VIEW_LABELS: Record<string, string> = { overworld: "Mundo abierto", proscenium: "Proscenio" };
+const RENDER_MODE_LABELS: Record<string, string> = { image: "Imagen IA", vector: "Maqueta 3D" };
+const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
+
 function sessionRowHtml(s: SessionMetadata): string {
   const summary = s.summary || "(sin narrativa todavía)";
   const updated = s.updated_at ? formatDate(s.updated_at) : "?";
+  const badges = [
+    s.view ? VIEW_LABELS[s.view] ?? s.view : null,
+    s.render_mode ? RENDER_MODE_LABELS[s.render_mode] ?? s.render_mode : null,
+  ]
+    .filter((b): b is string => b !== null)
+    .map((b) => `<span style="${BADGE_CSS}">${escapeHtml(b)}</span>`)
+    .join(" ");
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:#181820;border:1px solid #2a2a30">
       <div style="flex:1;min-width:0">
-        <div style="color:#bdf;font-size:13px">${escapeHtml(s.game_id)} <span style="color:#666;font-size:11px">· ${escapeHtml(s.session_id)}</span></div>
+        <div style="color:#bdf;font-size:13px">${escapeHtml(s.game_id)} <span style="color:#666;font-size:11px">· ${escapeHtml(s.session_id)}</span>${badges ? " " + badges : ""}</div>
         <div style="color:#999;font-size:12px;margin-top:3px">${escapeHtml(summary)}</div>
         <div style="color:#666;font-size:11px;margin-top:3px">${updated} · ${s.scene_count} escenas · ${s.entity_count} entidades</div>
       </div>

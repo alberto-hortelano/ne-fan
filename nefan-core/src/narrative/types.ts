@@ -177,6 +177,12 @@ export interface SessionMetadata {
   summary: string;
   scene_count: number;
   entity_count: number;
+  /** Vista congelada en el save ("overworld" | "proscenium") — el title
+   *  screen la muestra en la lista de partidas. Ausente en saves antiguos. */
+  view?: string;
+  /** Modo de gráficos congelado ("image" | "vector") — si la partida gasta
+   *  créditos de imagen o va en maqueta 3D. Ausente en saves antiguos. */
+  render_mode?: string;
 }
 
 export interface AssetEntry {
