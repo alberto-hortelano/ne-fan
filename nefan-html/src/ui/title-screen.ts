@@ -718,7 +718,15 @@ function sessionRowHtml(s: SessionMetadata): string {
       </div>
       <div style="display:flex;gap:6px;margin-left:14px">
         ${s.render_mode === "vector" ? `<button data-action="enable-images" data-facet="scenes" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar escenarios IA</button>` : ""}
-        ${effectiveCharMode(s) === "vector" && CONFIG.graphics.ai_skin ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>` : ""}
+        ${
+          effectiveCharMode(s) !== "vector"
+            ? ""
+            : CONFIG.graphics.ai_skin
+              ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>`
+              : // Backend de skins apagado: botón deshabilitado CON el motivo —
+                // ocultarlo hacía parecer que la opción se había perdido.
+                `<button disabled title="Activa graphics.ai_skin en config.ts para poder generar skins IA" style="${BTN_SMALL_SECONDARY_CSS};opacity:.45;cursor:default">Skins IA (requiere ai_skin)</button>`
+        }
         <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
         <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
       </div>
