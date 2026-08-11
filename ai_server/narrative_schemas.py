@@ -176,6 +176,9 @@ def validate_volumes(raw, *, field: str = "volumes"):
             if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
                 print(f"validate_scene: {ctx} building sin rect válido — volumen descartado")
                 continue
+            if v.get("cutaway") is True and "angle" in v:
+                print(f"validate_scene: {ctx} building cutaway no admite angle — volumen descartado")
+                continue
         elif vtype == "wall":
             pts = v.get("points")
             if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(pp) for pp in pts)):
