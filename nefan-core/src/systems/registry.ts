@@ -27,10 +27,13 @@ export function createSystemRegistry<TImpl, TDeps>(
     kind,
     defaultId,
     ids: () => Object.keys(factories),
-    has: (id: string) => id in factories,
+    // Object.hasOwn, no `in`: `"constructor" in factories` es true por el
+    // prototipo y create() devolvería Object como "sistema" saltándose el
+    // fail-loud (un game.json con systems:{combat:"constructor"} lo dispara).
+    has: (id: string) => Object.hasOwn(factories, id),
     create(id: string | undefined, deps: TDeps): TImpl {
       const effective = id || defaultId;
-      const factory = factories[effective];
+      const factory = Object.hasOwn(factories, effective) ? factories[effective] : undefined;
       if (!factory) {
         throw new Error(
           `unknown ${kind} system "${effective}" (available: ${Object.keys(factories).join(", ")})`,

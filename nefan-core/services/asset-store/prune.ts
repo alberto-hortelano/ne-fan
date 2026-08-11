@@ -1,10 +1,10 @@
 /** Prune LRU por grupos (type, hash) — port de AssetManifest.prune con la
- *  keep-list de world-state (F2, decisión abierta 2 → tomada: pull S6→S2
- *  best-effort).
+ *  keep-list de world-state (F2, decisión abierta 2 → tomada: pull S6→S2).
  *
- *  Si world-state no responde (timeout 3 s, stack parcial), se poda SIN
- *  keep-list con un warning: es exactamente el status quo pre-F2 (el prune
- *  nunca miró los saves), no una regresión. */
+ *  Si world-state no responde, el CALLER (http-server) ABORTA el prune: los
+ *  saves post-F2 referencian assets por hash, así que podar sin keep-list
+ *  borraría assets en uso. `keep === null` aquí solo se da en tests/CLI que
+ *  asumen explícitamente ese riesgo. */
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 

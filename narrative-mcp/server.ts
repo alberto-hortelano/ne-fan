@@ -9,14 +9,6 @@ import { stagePlanFromScene } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
-// ── Per-kind response instructions ───────────────────────────────────────────
-// Single source of truth for "how to answer each request kind". These are
-// emitted INSIDE the narrative_listen return payload (adjacent to each request)
-// so the schema is always in context when the engine decides its response —
-// instead of living only in the (long, truncatable) narrative_listen tool
-// description. Keep wording in sync with ai_server/narrative_schemas.py.
-
-
 // ── Prompts del contrato narrativo ─────────────────────────────────────────
 // El texto canónico de las instrucciones vive en
 // nefan-core/data/contract/prompts/*.md, COMPARTIDO con ai_server (que compone
@@ -458,6 +450,7 @@ into context:
         currentRequestId = null;
         currentKind = 'scene';
         currentClassifyIndices = null;
+        currentStageExpectedIds = null;
 
         if (kind === 'weapon_orient' || kind === 'weapon_verify' || kind === 'scene_classify') {
           bridge.sendVisionResponse(reqId, parsed);
