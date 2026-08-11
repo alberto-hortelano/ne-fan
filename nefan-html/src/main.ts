@@ -266,18 +266,21 @@ const sessionProjection = VIEW_PROJECTION;
  *  - "" (saves previos al campo): comportamiento legacy — manda el toggle
  *    persistido en localStorage. */
 let sessionRenderMode: "image" | "vector" | "" = "";
-function applySessionRenderMode(renderMode: string): void {
+function applySessionRenderMode(renderMode: string, characterMode = ""): void {
   sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
   devPanel.setSession({ renderMode: sessionRenderMode });
-  // Los skins IA de personajes siguen al modo del mundo: en maqueta 3D todos
-  // los personajes usan la base y_bot (sin encolar repintados de Meshy).
-  characterSprites.setSkinsAllowed(sessionRenderMode !== "vector");
+  // Personajes por SEPARADO (world.character_mode): skins IA o base y_bot.
+  // Sin campo (saves previos), siguen al modo de escenarios — el
+  // comportamiento de siempre.
+  const effectiveCharMode = characterMode || sessionRenderMode;
+  characterSprites.setSkinsAllowed(effectiveCharMode !== "vector");
+  const charLabel = effectiveCharMode === "vector" ? "personajes en base y_bot" : "skins IA";
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
-    log("Gráficos: maqueta 3D (clay local, sin imagen IA; personajes en base y_bot)");
+    log(`Gráficos: maqueta 3D (clay local, sin imagen IA; ${charLabel})`);
   } else if (sessionRenderMode === "image") {
     autoPipeline.setEnabled(true);
-    log("Gráficos: imagen IA (Auto-img activo)");
+    log(`Gráficos: imagen IA (Auto-img activo; ${charLabel})`);
   }
 }
 /** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
@@ -2197,10 +2200,11 @@ async function runTitleFlow(): Promise<void> {
         action.styleId || undefined,
         action.renderMode,
         action.view,
+        action.characterMode,
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);
@@ -2211,7 +2215,7 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);

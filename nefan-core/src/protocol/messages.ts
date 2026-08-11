@@ -66,6 +66,9 @@ export interface StartSessionMessage {
    *  Ausente = "image". Congelado en el save: mezclar tiles pintados y
    *  vectoriales rompe la continuidad visual entre vecinos. */
   renderMode?: string;
+  /** Modo de imagen de PERSONAJES: "image" (skins IA por descripción) |
+   *  "vector" (base y_bot). Ausente = sigue a renderMode. */
+  characterMode?: string;
   /** Vista del mundo elegida en el título: "overworld" | "proscenium".
    *  Ausente = la default del juego (game.json). Congelada en el save
    *  (`world.view`) como el estilo. */
@@ -92,6 +95,9 @@ export interface SetRenderModeMessage {
   requestId: string;
   sessionId: string;
   renderMode: "image";
+  /** Qué se activa: escenarios (render_mode) o personajes (character_mode).
+   *  Ausente = "scenes" (compat). */
+  facet?: "scenes" | "characters";
 }
 
 export interface DialogueChoiceMessage {

@@ -72,12 +72,13 @@ export class NarrativeClient {
     styleId?: string,
     renderMode?: string,
     view?: string,
+    characterMode?: string,
   ): Promise<{
     sessionId: string;
     gameId: string;
     state: SessionData;
   }> {
-    const res = await this.bridge.startSession(gameId, appearance, styleId, renderMode, view);
+    const res = await this.bridge.startSession(gameId, appearance, styleId, renderMode, view, characterMode);
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }
@@ -92,8 +93,8 @@ export class NarrativeClient {
 
   /** Activa las imágenes IA en una partida vector. Lanza si el bridge
    *  rechaza (ya en image, save inexistente…) — fail-loud al title screen. */
-  async enableImages(sessionId: string): Promise<void> {
-    const res = await this.bridge.setRenderMode(sessionId, "image");
+  async enableImages(sessionId: string, facet: "scenes" | "characters"): Promise<void> {
+    const res = await this.bridge.setRenderMode(sessionId, "image", facet);
     if (!res.ok) throw new Error(res.error ?? "el bridge rechazó el cambio de modo");
   }
 

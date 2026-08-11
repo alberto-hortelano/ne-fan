@@ -30,6 +30,9 @@ export type TitleAction =
        *  (id interno "vector", heredado del compositor SVG — congelado en
        *  saves y contratos, NO renombrar). */
       renderMode: "image" | "vector";
+      /** Modo de imagen de los PERSONAJES (skins IA vs base y_bot),
+       *  independiente de los escenarios. */
+      characterMode: "image" | "vector";
       /** Vista del mundo elegida (game.json solo aporta el default).
        *  Congelada en la sesión como el estilo. */
       view: "overworld" | "proscenium";
@@ -206,7 +209,10 @@ export class TitleScreen {
           btn.disabled = true;
           btn.textContent = "Activando…";
           try {
-            await this.narrative.enableImages(btn.dataset.sessionId!);
+            await this.narrative.enableImages(
+              btn.dataset.sessionId!,
+              btn.dataset.facet === "characters" ? "characters" : "scenes",
+            );
             await this.renderHome();
           } catch (err) {
             alert(`No se pudo activar Imagen IA: ${(err as Error).message}`);
@@ -255,8 +261,8 @@ export class TitleScreen {
         <select id="ts-style" style="${SELECT_CSS}"></select>
         <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
       </label>
-      <div style="margin-bottom:18px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Gráficos <span style="color:#666">(fijo para toda la partida)</span></div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(fijo para toda la partida; activable después)</span></div>
         <div id="ts-rendermode" style="display:flex;gap:8px">
           <button data-rendermode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
             <div style="font-size:13px">Imagen IA</div>
@@ -265,6 +271,19 @@ export class TitleScreen {
           <button data-rendermode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
             <div style="font-size:13px">Maqueta 3D</div>
             <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, sin coste)</div>
+          </button>
+        </div>
+      </div>
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Personajes <span style="color:#666">(independiente de los escenarios)</span></div>
+        <div id="ts-charmode" style="display:flex;gap:8px">
+          <button data-charmode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Skins IA</div>
+            <div style="font-size:10px;color:#888">Cada personaje se viste por su descripción (gasta créditos)</div>
+          </button>
+          <button data-charmode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Base y_bot</div>
+            <div style="font-size:10px;color:#888">Maniquí neutro para todos (sin coste)</div>
           </button>
         </div>
       </div>
@@ -280,8 +299,10 @@ export class TitleScreen {
     const styleDesc = this.content.querySelector("#ts-style-desc") as HTMLElement;
     const viewEl = this.content.querySelector("#ts-view") as HTMLElement;
     const renderModeEl = this.content.querySelector("#ts-rendermode") as HTMLElement;
+    const charModeEl = this.content.querySelector("#ts-charmode") as HTMLElement;
     const continueBtn = this.content.querySelector("#ts-continue") as HTMLButtonElement;
     let selectedRenderMode: "image" | "vector" = "image";
+    let selectedCharMode: "image" | "vector" = "image";
     // La vista es del jugador, no del mundo: game.json solo la preselecciona.
     let selectedView: "overworld" | "proscenium" =
       selectedGame.view === "proscenium" ? "proscenium" : "overworld";
@@ -299,6 +320,20 @@ export class TitleScreen {
       });
     }
     refreshRenderMode();
+    const refreshCharMode = (): void => {
+      for (const btn of charModeEl.querySelectorAll<HTMLElement>("[data-charmode]")) {
+        const active = btn.dataset.charmode === selectedCharMode;
+        btn.style.borderColor = active ? "#da6" : "#2a2a30";
+        btn.style.background = active ? "#201c14" : "#181820";
+      }
+    };
+    for (const btn of charModeEl.querySelectorAll<HTMLElement>("[data-charmode]")) {
+      btn.addEventListener("click", () => {
+        selectedCharMode = btn.dataset.charmode === "vector" ? "vector" : "image";
+        refreshCharMode();
+      });
+    }
+    refreshCharMode();
     const refreshView = (): void => {
       for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
         const active = btn.dataset.view === selectedView;
@@ -373,7 +408,7 @@ export class TitleScreen {
       .addEventListener("click", () => void this.renderHome());
     continueBtn.addEventListener("click", () => {
       if (!styleSel.value) return;
-      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedView);
+      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode, selectedView);
     });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
@@ -562,6 +597,7 @@ export class TitleScreen {
     game: GameInfo,
     styleId: string,
     renderMode: "image" | "vector",
+    characterMode: "image" | "vector",
     view: "overworld" | "proscenium",
   ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
@@ -610,6 +646,7 @@ export class TitleScreen {
         gameId: game.game_id,
         styleId,
         renderMode,
+        characterMode,
         view,
         appearance: {
           model_id: modelSel ? modelSel.value : "",
@@ -641,14 +678,21 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
  *  Saves antiguos sin los campos: sin badge (no adivinar). */
 const VIEW_LABELS: Record<string, string> = { overworld: "Mundo abierto", proscenium: "Proscenio" };
 const RENDER_MODE_LABELS: Record<string, string> = { image: "Imagen IA", vector: "Maqueta 3D" };
+const CHAR_MODE_LABELS: Record<string, string> = { image: "Skins IA", vector: "Personajes base" };
+/** Modo EFECTIVO de personajes: sin campo, sigue a los escenarios (legacy). */
+function effectiveCharMode(s: SessionMetadata): string | undefined {
+  return s.character_mode || s.render_mode;
+}
 const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
 
 function sessionRowHtml(s: SessionMetadata): string {
   const summary = s.summary || "(sin narrativa todavía)";
   const updated = s.updated_at ? formatDate(s.updated_at) : "?";
+  const charMode = effectiveCharMode(s);
   const badges = [
     s.view ? VIEW_LABELS[s.view] ?? s.view : null,
     s.render_mode ? RENDER_MODE_LABELS[s.render_mode] ?? s.render_mode : null,
+    charMode ? CHAR_MODE_LABELS[charMode] ?? charMode : null,
   ]
     .filter((b): b is string => b !== null)
     .map((b) => `<span style="${BADGE_CSS}">${escapeHtml(b)}</span>`)
@@ -661,7 +705,8 @@ function sessionRowHtml(s: SessionMetadata): string {
         <div style="color:#666;font-size:11px;margin-top:3px">${updated} · ${s.scene_count} escenas · ${s.entity_count} entidades</div>
       </div>
       <div style="display:flex;gap:6px;margin-left:14px">
-        ${s.render_mode === "vector" ? `<button data-action="enable-images" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar Imagen IA</button>` : ""}
+        ${s.render_mode === "vector" ? `<button data-action="enable-images" data-facet="scenes" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar escenarios IA</button>` : ""}
+        ${effectiveCharMode(s) === "vector" ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>` : ""}
         <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
         <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
       </div>

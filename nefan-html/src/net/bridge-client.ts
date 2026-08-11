@@ -283,8 +283,9 @@ export class BridgeClient {
     styleId?: string,
     renderMode?: string,
     view?: string,
+    characterMode?: string,
   ): Promise<SessionStartedMessage> {
-    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode, view });
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode, view, characterMode });
   }
 
   resumeSession(sessionId: string): Promise<SessionStartedMessage> {
@@ -295,9 +296,10 @@ export class BridgeClient {
     return this.request<SessionDeletedMessage>({ type: "delete_session", sessionId });
   }
 
-  /** Activa las imágenes IA en un save vector (upgrade in-place). */
-  setRenderMode(sessionId: string, renderMode: "image"): Promise<RenderModeSetMessage> {
-    return this.request<RenderModeSetMessage>({ type: "set_render_mode", sessionId, renderMode });
+  /** Activa las imágenes IA en un save vector (upgrade in-place), por
+   *  faceta: escenarios o personajes. */
+  setRenderMode(sessionId: string, renderMode: "image", facet: "scenes" | "characters"): Promise<RenderModeSetMessage> {
+    return this.request<RenderModeSetMessage>({ type: "set_render_mode", sessionId, renderMode, facet });
   }
 
   saveSession(): Promise<SessionSavedMessage> {

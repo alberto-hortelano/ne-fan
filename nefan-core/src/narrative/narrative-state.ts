@@ -57,6 +57,7 @@ const DEFAULT_WORLD: NarrativeWorldState = {
   style_id: "",
   world_doc_hash: "",
   render_mode: "",
+  character_mode: "",
   combat_system: "",
 };
 
@@ -214,6 +215,7 @@ export class NarrativeState {
     style_token: string;
     world_doc_hash: string;
     render_mode: string;
+    character_mode: string;
     combat_system: string;
     view: string;
   }): void {
@@ -223,6 +225,7 @@ export class NarrativeState {
     this.world.style_token = info.style_token;
     this.world.world_doc_hash = info.world_doc_hash;
     this.world.render_mode = info.render_mode;
+    this.world.character_mode = info.character_mode;
     this.world.combat_system = info.combat_system;
     this.world.view = info.view;
     this.dirty = true;

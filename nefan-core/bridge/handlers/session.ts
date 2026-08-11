@@ -206,6 +206,12 @@ export async function handleStartSession(
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }
+    // Personajes por separado: skins IA o base y_bot. Default = el modo de
+    // escenarios (una sola elección sigue funcionando como siempre).
+    const characterMode = msg.characterMode || renderMode;
+    if (characterMode !== "image" && characterMode !== "vector") {
+      throw new Error(`modo de personajes desconocido "${characterMode}" (esperaba image|vector)`);
+    }
     // Vista del mundo: la elegida en el título (msg.view), con game.json como
     // default del mundo. Queda CONGELADA en el save (como el estilo). Con
     // renderMode "image", el proscenio repinta y pela cada plató por capas
@@ -254,6 +260,7 @@ export async function handleStartSession(
       style_token: style.style_token,
       world_doc_hash: worldDocHash,
       render_mode: renderMode,
+      character_mode: characterMode,
       combat_system: combatId,
       view,
     });
@@ -507,25 +514,41 @@ export async function handleSetRenderMode(
   if (msg.renderMode !== "image") {
     return fail(`solo se admite activar imágenes (renderMode "image"), no "${msg.renderMode}"`);
   }
+  const facet = msg.facet ?? "scenes";
   const data = await ctx.sessionStorage.read(msg.sessionId);
   if (!data) return fail(`la partida ${msg.sessionId} no existe`);
-  const current = data.world?.render_mode;
-  if (current !== "vector") {
-    return fail(
-      current === "image"
-        ? "la partida ya tiene imágenes activadas"
-        : `la partida no está en modo vector (render_mode=${JSON.stringify(current)})`,
-    );
+  if (facet === "scenes") {
+    const current = data.world?.render_mode;
+    if (current !== "vector") {
+      return fail(
+        current === "image"
+          ? "la partida ya tiene los escenarios con imágenes"
+          : `la partida no está en modo vector (render_mode=${JSON.stringify(current)})`,
+      );
+    }
+    data.world.render_mode = "image";
+  } else {
+    // Personajes: "" legacy = sigue a render_mode — el modo EFECTIVO es el
+    // que debe estar en vector para poder activar.
+    const effective = data.world?.character_mode || data.world?.render_mode;
+    if (effective !== "vector") {
+      return fail(
+        effective === "image"
+          ? "la partida ya tiene los personajes con skins IA"
+          : `la partida no está en modo vector (character_mode=${JSON.stringify(effective)})`,
+      );
+    }
+    data.world.character_mode = "image";
   }
-  data.world.render_mode = "image";
   data.updated_at = new Date().toISOString();
   await ctx.sessionStorage.write(msg.sessionId, data);
   // Si es la sesión ACTIVA del proceso, el espejo en memoria también cambia
   // (un save_session posterior no debe revertir el upgrade).
   if (ctx.narrative.session_id === msg.sessionId) {
-    ctx.narrative.world.render_mode = "image";
+    if (facet === "scenes") ctx.narrative.world.render_mode = "image";
+    else ctx.narrative.world.character_mode = "image";
   }
-  console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (vector → image)`);
+  console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image)`);
   ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });
 }
 
