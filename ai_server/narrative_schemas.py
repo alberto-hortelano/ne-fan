@@ -140,67 +140,77 @@ def validate_ground(raw, *, field: str = "ground"):
 
 
 def validate_volumes(raw, *, field: str = "volumes"):
-    """Valida el array `volumes` del plan de tile. Devuelve la lista limpia o
-    None con traza del motivo (el caller degrada descartando el campo).
-    Espejo laxo de parseVolumes (nefan-core/src/scene/blueprint/volumes.ts)."""
+    """Valida el array `volumes` del plan. Devuelve la lista LIMPIA — los
+    items inválidos se descartan UNO A UNO con traza: un solo prop malformado
+    NO puede tirar el pueblo entero (2026-08-11: un prop sin shape descartaba
+    el campo completo y el tile salía sin un solo edificio, en silencio).
+    None solo si el campo entero es inutilizable (no-lista). Espejo laxo de
+    parseVolumes: el rechazo duro por-array lo hace el zod del bridge."""
     if not isinstance(raw, list):
         print(f"validate_scene: {field} descartado (no es lista)")
         return None
     if len(raw) > MAX_VOLUMES:
-        print(f"validate_scene: {field} descartado ({len(raw)} > {MAX_VOLUMES})")
-        return None
+        print(f"validate_scene: {field} truncado ({len(raw)} > {MAX_VOLUMES})")
+        raw = raw[:MAX_VOLUMES]
+    clean = []
     seen_ids = set()
     for i, v in enumerate(raw):
         ctx = f"{field}[{i}]"
         if not isinstance(v, dict):
-            print(f"validate_scene: {ctx} no es objeto — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} no es objeto — volumen descartado")
+            continue
         vid = v.get("id")
         label = v.get("label")
         vtype = v.get("type")
         if not isinstance(vid, str) or not vid or vid in seen_ids:
-            print(f"validate_scene: {ctx} id inválido/duplicado — {field} descartado")
-            return None
-        seen_ids.add(vid)
+            print(f"validate_scene: {ctx} id inválido/duplicado — volumen descartado")
+            continue
         if not isinstance(label, str) or not label:
-            print(f"validate_scene: {ctx} sin label — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} sin label — volumen descartado")
+            continue
         if vtype not in VOLUME_TYPES:
-            print(f"validate_scene: {ctx} type desconocido {vtype!r} — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} type desconocido {vtype!r} — volumen descartado")
+            continue
         if vtype == "building":
             r = v.get("rect")
             if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
-                print(f"validate_scene: {ctx} building sin rect válido — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} building sin rect válido — volumen descartado")
+                continue
         elif vtype == "wall":
             pts = v.get("points")
             if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(pp) for pp in pts)):
-                print(f"validate_scene: {ctx} wall sin points válidos — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} wall sin points válidos — volumen descartado")
+                continue
         elif vtype == "gate":
             if not _cell_pair(v.get("at")) or v.get("orient") not in ("x", "y"):
-                print(f"validate_scene: {ctx} gate sin at/orient válidos — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} gate sin at/orient válidos — volumen descartado")
+                continue
         elif vtype == "prop":
             has_at = _cell_pair(v.get("at"))
             r = v.get("rect")
             has_rect = isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)
             if has_at == has_rect or v.get("shape") not in ("box", "cylinder"):
-                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — volumen descartado")
+                continue
         else:  # tower/tree/bush/rock/fountain
             if not _cell_pair(v.get("at")):
-                print(f"validate_scene: {ctx} {vtype} sin at válido — {field} descartado")
-                return None
-        # `angle` (building/prop, GRADOS): laxo — un valor sin sentido se
-        # descarta con traza en vez de tumbar el array (zod hace el rechazo duro).
+                print(f"validate_scene: {ctx} {vtype} sin at válido — volumen descartado")
+                continue
+        # `angle` (building/prop, GRADOS): un valor sin sentido se descarta
+        # del item con traza (zod hace el rechazo duro).
         if "angle" in v and vtype in ("building", "prop"):
             a = v.get("angle")
             if not _num(a) or not -360 <= a <= 360:
                 print(f"validate_scene: {ctx} angle inválido {a!r} — campo descartado")
                 v.pop("angle", None)
-    return raw
+        seen_ids.add(vid)
+        clean.append(v)
+    if len(clean) < len(raw):
+        print(
+            f"validate_scene: {field}: {len(raw) - len(clean)} volúmenes inválidos "
+            f"descartados, {len(clean)} conservados"
+        )
+    return clean
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -913,7 +923,10 @@ def validate_blueprint_review(data: dict | None) -> dict:
         raw_vols = raw_fixes.get("volumes")
         if raw_vols is not None:
             vols = validate_volumes(raw_vols, field="fixes.volumes")
-            if vols is None:
+            # fixes.volumes es un array de REEMPLAZO COMPLETO: si el saneado
+            # per-item vació un array que venía con contenido, rechazar — un
+            # retoque no puede borrar el pueblo por accidente.
+            if vols is None or (len(vols) == 0 and len(raw_vols) > 0):
                 raise ValueError(
                     "blueprint_review fixes.volumes is not a valid volumes array "
                     "(typed objects with unique id, Spanish label and per-type footprint)"
