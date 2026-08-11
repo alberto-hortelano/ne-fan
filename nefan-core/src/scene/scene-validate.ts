@@ -13,6 +13,8 @@
  *  warnings = sospechoso pero jugable. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import { parseGround } from "./blueprint/ground.js";
+import { shapeContains } from "./blueprint/ground-collision.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
 import { parseStage, type StageBlock } from "./stage/schema.js";
 import { computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
@@ -214,6 +216,32 @@ export function validateScene(
     for (let rr = r; rr < r + (fp[1] ?? 1); rr++) {
       for (let cc = c; cc < c + (fp[0] ?? 1); cc++) {
         if (cc >= 0 && rr >= 0 && cc < cols && rr < rows) walkable[rr * cols + cc] = false;
+      }
+    }
+  }
+  // ── Agua declarada del `ground` (v8, platós): water∖deck resta walkable —
+  // el flood-fill ve el río ANTES de runtime (una salida al otro lado sin
+  // deck es error del motor aquí, no una sorpresa jugable). Solo escenas
+  // no-tile: la validación del tile conserva su contrato actual. ────────────
+  if (rawScene.tile === undefined && rawScene.ground !== undefined) {
+    const parsedGround = parseGround(rawScene.ground);
+    if (!parsedGround.ok) {
+      errors.push(`ground inválido: ${parsedGround.error}`);
+    } else {
+      const waters = parsedGround.features.filter((f) => f.kind === "water");
+      const decks = parsedGround.features.filter((f) => f.kind === "deck");
+      for (let r = 0; waters.length > 0 && r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (!walkable[r * cols + c]) continue;
+          const u = c + 0.5;
+          const v = r + 0.5;
+          if (
+            waters.some((w) => shapeContains(w, u, v)) &&
+            !decks.some((d) => shapeContains(d, u, v))
+          ) {
+            walkable[r * cols + c] = false;
+          }
+        }
       }
     }
   }

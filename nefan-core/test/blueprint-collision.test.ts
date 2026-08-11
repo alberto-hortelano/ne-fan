@@ -103,4 +103,25 @@ describe("blueprint/collision", () => {
     assert.ok(solidAt(g.grid, 0, 10));
     assert.ok(solidAt(g.grid, 127, 10));
   });
+
+  it("v7: building con angle — huella rotada, no el AABB", () => {
+    // Rect 20×8 centrado en (40,40), girado 45°: el centro sigue sólido, el
+    // punto en el eje largo LOCAL rotado también; la esquina del AABB que el
+    // rect rotado ya no cubre queda libre.
+    const vols: Volume[] = [
+      { id: "casa", label: "casona girada", type: "building", rect: [30, 36, 20, 8], angle: 45 },
+    ];
+    const g = volumeCollisionGrid(vols, RECT)!;
+    assert.ok(solidAt(g.grid, 40, 40), "centro sólido");
+    // Eje largo local u girado +45° (antihorario ⇒ v decrece): (40+6/√2, 40−6/√2).
+    assert.ok(solidAt(g.grid, 44, 36), "punta del eje largo rotado");
+    // Esquina del AABB sin rotar (49,43): con 45° el rect ya no llega ahí.
+    assert.ok(!solidAt(g.grid, 49, 43), "esquina del AABB fuera del rect rotado");
+    // Sin angle esa esquina SÍ es sólida (control del test).
+    const g0 = volumeCollisionGrid(
+      [{ id: "casa", label: "casona", type: "building", rect: [30, 36, 20, 8] }],
+      RECT,
+    )!;
+    assert.ok(solidAt(g0.grid, 49, 43));
+  });
 });

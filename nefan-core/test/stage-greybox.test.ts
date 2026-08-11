@@ -416,6 +416,185 @@ describe("buildGreyboxSpec", () => {
     assert.notEqual(sunDia.color, sunNoche.color);
   });
 
+  it("v7: building con angle — prims rotados, manifest por esquinas rotadas", async () => {
+    const { parseVolumes } = await import("../src/scene/blueprint/index.js");
+    const base = exteriorPlan();
+    const spec0 = buildGreyboxSpec(base, "giro");
+    const plan = exteriorPlan();
+    const casa = plan.volumes.find((v) => v.id === "casa_alta")!;
+    (casa as { angle?: number }).angle = 20;
+    const spec = buildGreyboxSpec(plan, "giro");
+    // Todos los prims del edificio llevan la rotación (el gable la suma al axis).
+    const rad20 = (20 * Math.PI) / 180;
+    const prims = spec.primitives.filter((p) => p.volId === "vol_casa_alta");
+    assert.ok(prims.length >= 2);
+    for (const p of prims) {
+      const rotY = p.rotY ?? 0;
+      const residue = Math.abs(((rotY - rad20) % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2);
+      assert.ok(residue < 1e-9 || Math.abs(residue - Math.PI / 2) < 1e-9,
+        `prim con rotY ${rotY} no hereda los 20°`);
+    }
+    // Manifest: la caja de las esquinas rotadas es MENOR o igual que la del
+    // AABB pero mayor que la del edificio sin rotar en x (diagonal), y válida.
+    const m = spec.manifest.find((x) => x.id === "vol_casa_alta")!;
+    const m0 = spec0.manifest.find((x) => x.id === "vol_casa_alta")!;
+    assert.ok(m.box_px[2] > 0 && m.box_px[3] > 0);
+    assert.notDeepEqual(m.box_px, m0.box_px, "la caja proyectada cambia al girar");
+    // footprintWorld = AABB del rect rotado (más ancho y profundo que el rect).
+    assert.ok(m.footprintWorld[2] - m.footprintWorld[0] > m0.footprintWorld[2] - m0.footprintWorld[0]);
+    assert.ok(m.footprintWorld[3] - m.footprintWorld[1] > m0.footprintWorld[3] - m0.footprintWorld[1]);
+    // cutaway + angle: rechazado; prop `at` + angle: rechazado.
+    assert.equal(parseVolumes([{ id: "c", label: "casa", type: "building", rect: [4, 4, 8, 6], cutaway: true, angle: 10 }]).ok, false);
+    assert.equal(parseVolumes([{ id: "p", label: "poste", type: "prop", at: [4, 4], shape: "box", angle: 10 }]).ok, false);
+    // Determinismo con angle.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "giro")));
+  });
+
+  it("v7: surroundings — decorado sin manifest que sustituye a las colinas", async () => {
+    const { stagePlanFromScene } = await import("../src/scene/stage/index.js");
+    const base = exteriorPlan();
+    const spec0 = buildGreyboxSpec(base, "sur");
+    const plan = exteriorPlan();
+    plan.stage.surroundings = [
+      { kind: "hill", pos: [30, -60], r: 60, h: 12 },
+      { kind: "house", pos: [-20, -25], w: 8, d: 6, h: 6, angle: -15 },
+      { kind: "tower", pos: [34, -58], r: 4, h: 40, y_base: 11 },
+      { kind: "wall", pos: [20, -30], len: 18, h: 5, angle: 30 },
+      { kind: "tree", pos: [-16, 10], s: 1.2 },
+    ];
+    const spec = buildGreyboxSpec(plan, "sur");
+    // Ni una entrada nueva en el manifest; los prims nuevos no llevan volId.
+    assert.equal(spec.manifest.length, spec0.manifest.length);
+    const decor = spec.primitives.filter((p) => p.cat === "decor");
+    assert.ok(decor.length >= 6, "casa+torre+tapia+árbol emiten decor");
+    assert.ok(decor.every((p) => p.volId === undefined));
+    // Elevación: la torre arranca en su y_base sobre el cerro.
+    const torre = spec.primitives.find((p) => p.shape === "cylinder" && p.pos[1] === 11);
+    assert.ok(torre, "torre a cota del cerro");
+    // Las colinas genéricas (a z < minZ−70 = −76) desaparecen al declarar:
+    // el único cono lejano que queda es el cerro declarado (z=−60).
+    const farCones0 = spec0.primitives.filter((p) => p.shape === "cone" && p.pos[2] < -70).length;
+    const farCones = spec.primitives.filter((p) => p.shape === "cone" && p.pos[2] < -70).length;
+    assert.equal(farCones0, 4, "sin declarar hay 4 colinas genéricas");
+    assert.equal(farCones, 0, "declarar surroundings las sustituye");
+    // Una torre altísima de decorado NO abre la ventana del view_box.
+    assert.deepEqual(spec.view_box, spec0.view_box, "la salvaguarda solo mira plan.volumes");
+    // Determinismo.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "sur")));
+    // Un surrounding con el centro DENTRO del plató: fail-loud en el plan.
+    assert.throws(() => {
+      stagePlanFromScene({
+        scene_id: "x",
+        size: { cols: 48, rows: 24, meters_per_cell: 0.5 },
+        stage: {
+          exits: [{ id: "s", edge: "south", to_place_id: "p", zone: [20, 22, 6, 2], kind: "opening", label: "Sur" }],
+          surroundings: [{ kind: "tree", pos: [0, 0] }],
+        },
+      });
+    }, /DENTRO del plató/);
+  });
+
+  it("v8: siluetas — copa esférica, soportal por label, chimeneas del caserío", () => {
+    // Copa esférica en el árbol del plató.
+    const plan = exteriorPlan();
+    plan.volumes.push({ id: "olmo", label: "olmo viejo", type: "tree", at: [30, 12], s: 1.2 });
+    const spec = buildGreyboxSpec(plan, "silu8");
+    const copa = spec.primitives.find((p) => p.volId === "vol_olmo" && p.shape === "sphere");
+    assert.ok(copa, "la copa es una esfera");
+    assert.ok(copa!.pos[1] > 0, "copa sobre el tronco");
+    // Soportal por label: columnas + alero, heredando el angle del edificio.
+    const plan2 = exteriorPlan();
+    plan2.volumes.push({
+      id: "meson", label: "mesón con soportal", type: "building",
+      rect: [20, 2, 16, 6], wall_h: 10, angle: 12,
+    });
+    const spec2 = buildGreyboxSpec(plan2, "silu8");
+    const piezas = spec2.primitives.filter((p) => p.volId === "vol_meson");
+    const columnas = piezas.filter((p) => p.shape === "box" && p.size[0] === 0.45 && p.size[2] === 0.45);
+    assert.ok(columnas.length >= 3, `soportal con columnas (${columnas.length})`);
+    const rad12 = (12 * Math.PI) / 180;
+    assert.ok(columnas.every((p) => Math.abs((p.rotY ?? 0) - rad12) < 1e-9), "columnas heredan el angle");
+    const alero = piezas.find((p) => p.shape === "box" && p.size[1] === 0.3 && p.size[2] === 1.8);
+    assert.ok(alero, "alero del soportal");
+    // Sin label de soportal: cero columnas de 0.45.
+    const specPlain = buildGreyboxSpec(exteriorPlan(), "silu8");
+    assert.equal(
+      specPlain.primitives.filter((p) => p.size[0] === 0.45 && p.size[2] === 0.45).length, 0,
+    );
+    // Chimeneas del caserío de surroundings: siguen siendo decor sin manifest.
+    const plan3 = exteriorPlan();
+    plan3.stage.surroundings = [
+      { kind: "house", pos: [-20, -25], w: 8, d: 6, h: 6 },
+      { kind: "house", pos: [-30, -30], w: 8, d: 6, h: 6 },
+      { kind: "house", pos: [20, -28], w: 8, d: 6, h: 6 },
+    ];
+    const spec3 = buildGreyboxSpec(plan3, "silu8");
+    assert.equal(spec3.manifest.length, specPlain.manifest.length, "chimeneas sin manifest");
+    assert.ok(spec3.primitives.filter((p) => p.cat === "decor").every((p) => p.volId === undefined));
+  });
+
+  it("v8: ground vectorial — capas, curvas suavizadas y agua", async () => {
+    const { stagePlanFromScene } = await import("../src/scene/stage/index.js");
+    const plan = exteriorPlan();
+    plan.ground = [
+      { id: "plaza", kind: "area", ellipse: { center: [24, 12], rx: 10, ry: 6 }, material: "cobble" },
+      { id: "calle", kind: "path", points: [[0, 18], [16, 14], [30, 16]], w: 4, material: "dirt" },
+      { id: "arroyo", kind: "water", rect: [40, 0, 4, 24] },
+      { id: "puente", kind: "deck", rect: [40, 10, 4, 4], material: "wood" },
+    ];
+    const spec = buildGreyboxSpec(plan, "suelo");
+    // Escalonado de capas en metros, todo por encima del corona de bandas (+0.02).
+    const at = (y: number) => spec.primitives.filter((p) => p.pos[1] === y);
+    assert.ok(at(0.03).length >= 1, "área a Y_AREA_M");
+    assert.ok(at(0.05).length >= 3, "camino a Y_PATH_M");
+    assert.equal(at(0.07)[0]?.cat, "water", "agua a Y_WATER_M");
+    assert.ok(at(0.09).length >= 1, "deck a Y_DECK_M");
+    // Elipse del plató a 32 segmentos; camino de 3 puntos SUAVIZADO (4
+    // subdivisiones/segmento ⇒ 9 puntos ⇒ 8 cajas + 9 juntas, no 2+3).
+    const plazaPrim = at(0.03).find((p) => p.shape === "polygon")!;
+    assert.equal(plazaPrim.points!.length, 32);
+    const calleBoxes = at(0.05).filter((p) => p.shape === "box");
+    assert.ok(calleBoxes.length >= 8, `camino subdividido (${calleBoxes.length} cajas)`);
+    // Determinismo.
+    assert.equal(canonicalGreyboxJson(spec), canonicalGreyboxJson(buildGreyboxSpec(plan, "suelo")));
+    // plan.ts: ground inválido y coord fuera de grid lanzan.
+    const rawBase = {
+      scene_id: "x",
+      size: { cols: 24, rows: 18, meters_per_cell: 0.5 },
+      stage: { exits: [{ id: "s", edge: "south", to_place_id: "p", zone: [10, 16, 4, 2], kind: "opening", label: "Sur" }] },
+    };
+    assert.throws(
+      () => stagePlanFromScene({ ...rawBase, ground: [{ id: "a", kind: "area", material: "cobble" }] }),
+      /ground/,
+    );
+    assert.throws(
+      () => stagePlanFromScene({ ...rawBase, ground: [{ id: "lejos", kind: "path", points: [[0, 4], [100, 4]] }] }),
+      /fuera del grid/,
+    );
+  });
+
+  it("v7: tierra y empedrado se distinguen en el clay", async () => {
+    const { groundColorFor } = await import("../src/scene/greybox/common.js");
+    const tierra = groundColorFor("tierra apisonada");
+    const empedrado = groundColorFor("empedrado");
+    assert.ok(tierra && empedrado, "ambos materiales tienen color de suelo");
+    assert.notEqual(tierra, empedrado, "la pareja tierra/empedrado debe contrastar");
+  });
+
+  it("v7: el atardecer lleva relleno hemisférico cálido y el sol sigue frontal", () => {
+    const plan = exteriorPlan();
+    plan.stage.ambience = { time_of_day: "atardecer" };
+    const spec = buildGreyboxSpec(plan, "ocaso");
+    const hemi = spec.lights.find((l) => l.kind === "hemi")!;
+    assert.ok(hemi.intensity >= 1.3, "hemisférica de relleno intensa");
+    // groundColor cálido: canal rojo dominante sobre el azul.
+    const g = parseInt(hemi.groundColor!.slice(1), 16);
+    assert.ok(((g >> 16) & 255) > (g & 255), "rebote del suelo cálido");
+    const sun = spec.lights.find((l) => l.kind === "sun")!;
+    const az = Math.abs((Math.atan2(sun.pos![0], sun.pos![2]) * 180) / Math.PI);
+    assert.ok(az <= 60.01, `sol dentro del cono frontal (az=${az.toFixed(1)}°)`);
+  });
+
   it("F3: labels de fuego encienden una luz práctica + resplandor en el clay", () => {
     const plan = interiorPlan();
     plan.volumes.push({

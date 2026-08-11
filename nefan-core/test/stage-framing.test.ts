@@ -211,3 +211,180 @@ describe("bandPlanFor", () => {
     assert.ok(p2.ground.length <= Math.ceil((0.78 * 720) / 8) + 2);
   });
 });
+
+describe("cámara de runtime (StageCam): pan + dolly", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("dolly 0 ≡ viewToScreen actual (regresión término a término)", async () => {
+    const { viewToScreenCam } = await import("../src/scene/stage/framing.js");
+    for (const [vx, vy, z, cam] of [
+      [0, 100, 0, 0], [40, 60, 4, 1.2], [-70, 20, 9, -2], [15, 0, 5, 0.4],
+    ] as Array<[number, number, number, number]>) {
+      const a = viewToScreen(P, F, 1280, vx, vy, z, cam);
+      const b = viewToScreenCam(P, F, 1280, vx, vy, z, { camXM: cam, dollyM: 0 });
+      assert.ok(Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9);
+    }
+  });
+
+  it("identidad pinhole: dolly d ≡ proyectar con la cámara adelantada", async () => {
+    const { viewToScreenCam, sCamAt } = await import("../src/scene/stage/framing.js");
+    const { stageToViewAt } = await import("../src/scene/stage/projection.js");
+    const d = 1.8;
+    // Cámara adelantada d: misma lente (F_px = ppm·focal se conserva), mismo
+    // plano z=0 (su retroceso es focal−d) ⇒ focal' = focal−d,
+    // ppm' = ppm·focal/(focal−d), y ground_y' ajustado para conservar eyeM.
+    const ppmAdv = (P.px_per_m * P.focal_m) / (P.focal_m - d);
+    const eyeM = (P.ground_y - P.horizon_y) / P.px_per_m;
+    const pAdv: StageProjParams = {
+      ...P,
+      focal_m: P.focal_m - d,
+      px_per_m: ppmAdv,
+      ground_y: P.horizon_y + eyeM * ppmAdv,
+    };
+    for (const [x, h, z] of [
+      [0, 0, 0.5], [3, 1.7, 4], [-5, 0, 8.5], [2.5, 6, 2],
+    ] as Array<[number, number, number]>) {
+      // El punto de mundo (x, h, z) visto por la cámara base + dolly runtime:
+      const [vx, vy] = stageToViewAt(P, x, z, h);
+      const got = viewToScreenCam(P, F, 1280, vx, vy, z, { camXM: 0, dollyM: d });
+      // Y visto directamente por la cámara adelantada (mismo z), mapeado con
+      // el anclaje de pantalla BASE:
+      const [vx2, vy2] = stageToViewAt(pAdv, x, z, h);
+      const want = viewToScreen(P, F, 1280, vx2, vy2, z, 0);
+      assert.ok(Math.abs(got[0] - want[0]) < 1e-6, `x: ${got[0]} vs ${want[0]} en z=${z}`);
+      assert.ok(Math.abs(got[1] - want[1]) < 1e-6, `y: ${got[1]} vs ${want[1]} en z=${z}`);
+      // Y la escala del dolly es la del pinhole adelantado:
+      assert.ok(
+        Math.abs(sCamAt(P, { camXM: 0, dollyM: d }, z) * P.px_per_m - ppmAdv * (pAdv.focal_m / (pAdv.focal_m + z))) < 1e-9,
+      );
+    }
+  });
+
+  it("el horizonte queda fijo en pantalla bajo cualquier dolly", async () => {
+    const { viewToScreenCam } = await import("../src/scene/stage/framing.js");
+    const base = viewToScreenCam(P, F, 1280, 30, P.horizon_y, 9, { camXM: 0, dollyM: 0 });
+    for (const d of [0.5, 1.5, 2.8]) {
+      const y = viewToScreenCam(P, F, 1280, 30, P.horizon_y, 9, { camXM: 0, dollyM: d })[1];
+      assert.ok(Math.abs(y - base[1]) < 1e-9, `horizonte se mueve con dolly ${d}`);
+    }
+  });
+
+  it("camRatio ≥ 1 y maxDollyFor acota la ampliación de la embocadura", async () => {
+    const { camRatio, maxDollyFor, sCamAt, MAX_NEAR_ZOOM } = await import("../src/scene/stage/framing.js");
+    const d = maxDollyFor(P, 0.2);
+    assert.ok(d > 0 && d <= 0.2 * P.depth_m);
+    for (const z of [0, 2, 5, 9]) {
+      assert.ok(camRatio(P, { camXM: 0, dollyM: d }, z) >= 1);
+    }
+    assert.ok(sCamAt(P, { camXM: 0, dollyM: d }, 0) <= MAX_NEAR_ZOOM + 1e-9, "zoom de embocadura acotado");
+  });
+
+  it("stageFollow: convergencia, clamps y dolly nunca negativo", async () => {
+    const { stageFollow } = await import("../src/scene/stage/camera.js");
+    const opts = { rate: 5, railHalfM: 1.0, maxDollyM: 1.6 };
+    let cam = { camXM: 0, dollyM: 0 };
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: 0.6, dollyM: 1.2 }, 1 / 60, opts);
+    assert.ok(Math.abs(cam.camXM - 0.6) < 1e-3 && Math.abs(cam.dollyM - 1.2) < 1e-3, "converge al target");
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: 5, dollyM: 9 }, 1 / 60, opts);
+    assert.ok(cam.camXM <= 1.0 + 1e-9 && cam.dollyM <= 1.6 + 1e-9, "clamps");
+    for (let i = 0; i < 200; i++) cam = stageFollow(cam, { camXM: -5, dollyM: -3 }, 1 / 60, opts);
+    assert.ok(cam.camXM >= -1.0 - 1e-9 && cam.dollyM >= 0, "dolly ≥ 0");
+    // Independencia de framerate: dos pasos de dt/2 ≈ un paso de dt.
+    const one = stageFollow({ camXM: 0, dollyM: 0 }, { camXM: 0.5, dollyM: 0.5 }, 0.1, opts);
+    let two = stageFollow({ camXM: 0, dollyM: 0 }, { camXM: 0.5, dollyM: 0.5 }, 0.05, opts);
+    two = stageFollow(two, { camXM: 0.5, dollyM: 0.5 }, 0.05, opts);
+    assert.ok(Math.abs(one.camXM - two.camXM) < 1e-6, "frame-rate independence");
+  });
+});
+
+describe("bandDestRect: destino por frame con la cámara de runtime", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("con cam ZERO reproduce el plan clásico (destY/destH/dx)", async () => {
+    const { bandDestRect, STAGE_CAM_ZERO } = await import("../src/scene/stage/framing.js");
+    const plan = bandPlanFor(P, VB, F, 1280, 720);
+    for (const b of [plan.backdrop, ...plan.ground]) {
+      const [x, y, w, h] = bandDestRect(P, VB, F, 1280, 720, b, STAGE_CAM_ZERO);
+      assert.ok(Math.abs(y - b.destY) < 1e-6, `yTop ${y} vs ${b.destY}`);
+      assert.ok(Math.abs(h - b.destH) < 1e-6, `destH ${h} vs ${b.destH}`);
+      assert.ok(Math.abs(w - VB.width * F.fit) < 1e-9, "ancho sin dolly = viewBox");
+      const dx = 1280 / 2 + VB.minX * F.fit;
+      assert.ok(Math.abs(x - dx) < 1e-9, "x sin pan = colocación clásica");
+    }
+    const [, ay, , ah] = bandDestRect(P, VB, F, 1280, 720, plan.apron, STAGE_CAM_ZERO);
+    assert.ok(Math.abs(ay - plan.apron.destY) < 1e-6);
+    assert.ok(ah >= plan.apron.destH - 1e-6, "el delantal cubre hasta el fondo");
+  });
+
+  it("contigüidad exacta bajo dolly: bottom(i) === top(i+1) en todo el plan", async () => {
+    const { bandDestRect, maxDollyFor } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    for (const d of [0, maxD * 0.4, maxD]) {
+      const cam = { camXM: 0.5, dollyM: d };
+      const seq = [plan.backdrop, ...plan.ground, plan.apron];
+      for (let i = 0; i + 1 < seq.length; i++) {
+        const a = bandDestRect(P, VB, F, 1280, 720, seq[i], cam);
+        const b = bandDestRect(P, VB, F, 1280, 720, seq[i + 1], cam);
+        assert.ok(
+          Math.abs(a[1] + a[3] - b[1]) < 1e-6,
+          `costura entre banda ${i} y ${i + 1} con dolly ${d}: ${a[1] + a[3]} vs ${b[1]}`,
+        );
+      }
+    }
+  });
+
+  it("presupuesto en el peor caso: Δ budget ≤ maxShiftPx entre bordes de banda", async () => {
+    const { sCamAt, camRatio, maxDollyFor } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    const camMax = { camXM: 0, dollyM: maxD };
+    const budget = (z: number): number =>
+      F.railHalfM * P.px_per_m * F.fit * sCamAt(P, camMax, z) +
+      (VB.width / 2) * F.fit * camRatio(P, camMax, z);
+    for (const b of plan.ground) {
+      // Tolerancia +1: el plan corta al superar el presupuesto en el borde
+      // h+1 (la banda emitida termina en h, dentro del presupuesto).
+      assert.ok(
+        Math.abs(budget(b.zBot) - budget(b.zTop)) <= 0.75 + 1.0,
+        `banda a z=[${b.zTop.toFixed(2)},${b.zBot.toFixed(2)}] pasa el presupuesto`,
+      );
+    }
+    // Determinismo del plan.
+    const plan2 = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    assert.deepEqual(plan, plan2);
+  });
+
+  it("maxDollyM 0 ⇒ plan idéntico al clásico", async () => {
+    const a = bandPlanFor(P, VB, F, 1280, 720);
+    const b = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: 0 });
+    assert.deepEqual(a, b);
+  });
+});
+
+describe("bandPlanDestRects: fronteras redondeadas compartidas (fix de franjas)", () => {
+  const F = frameStage(P, VB, 1280, 720, { centerVertical: true, maxZoom: 1 });
+
+  it("filas ENTERAS contiguas bajo cualquier dolly; cam 0 ≡ plan clásico", async () => {
+    const { bandPlanDestRects, maxDollyFor, STAGE_CAM_ZERO } = await import("../src/scene/stage/framing.js");
+    const maxD = maxDollyFor(P, 0.2);
+    const plan = bandPlanFor(P, VB, F, 1280, 720, { maxDollyM: maxD });
+    for (const d of [0, maxD * 0.6, maxD]) {
+      const rects = bandPlanDestRects(P, VB, F, 1280, 720, plan, { camXM: 0.3, dollyM: d });
+      for (let i = 0; i < rects.length; i++) {
+        assert.ok(Number.isInteger(rects[i].y), `y entero (${rects[i].y})`);
+        assert.ok(Number.isInteger(rects[i].h), `h entero (${rects[i].h})`);
+        if (i + 1 < rects.length) {
+          assert.equal(rects[i].y + rects[i].h, rects[i + 1].y, `contiguas en ${i} con dolly ${d}`);
+        }
+      }
+    }
+    // Con cámara base, reproduce exactamente el plan clásico (ya entero).
+    const zero = bandPlanDestRects(P, VB, F, 1280, 720, plan, STAGE_CAM_ZERO);
+    const seq = [plan.backdrop, ...plan.ground, plan.apron];
+    zero.forEach((r, i) => {
+      assert.equal(r.y, seq[i].destY);
+      if (i < zero.length - 1) assert.equal(r.h, seq[i].destH);
+    });
+  });
+});

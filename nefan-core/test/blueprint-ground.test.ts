@@ -96,4 +96,26 @@ describe("groundCollisionGrid", () => {
     assert.deepEqual(grid.origin, [rect.minX, rect.minZ]);
     assert.equal(grid.meters_per_cell, 0.5);
   });
+
+  it("v8: dims de plató — grid a cols/rows/mpc de la escena, no del tile", () => {
+    // Plató 80×40 a 1 m/celda: con el grid del tile (128² a 0.5) el agua
+    // quedaba desalineada del mundo (bug latente arreglado al parametrizar).
+    const stageRect = { minX: -40, minZ: -20, maxX: 40, maxZ: 20 };
+    const dims = { cols: 80, rows: 40, mpc: 1.0 };
+    const grid = groundCollisionGrid(
+      features([
+        { id: "rio", kind: "water", rect: [30, 0, 6, 40] },
+        { id: "vado", kind: "deck", rect: [30, 18, 6, 4], material: "stone" },
+      ]),
+      stageRect,
+      dims,
+    )!;
+    assert.equal(grid.cols, 80);
+    assert.equal(grid.rows, 40);
+    assert.equal(grid.meters_per_cell, 1.0);
+    const solid = new Set(grid.solid_chars);
+    assert.ok(solid.has(grid.grid[5][32]), "río bloquea");
+    assert.ok(!solid.has(grid.grid[19][32]), "el vado perfora");
+    assert.ok(!solid.has(grid.grid[5][20]), "orilla libre");
+  });
 });

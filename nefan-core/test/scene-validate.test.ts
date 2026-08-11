@@ -248,6 +248,28 @@ describe("validateScene — escenas proscenio (stage)", () => {
     assert.equal(r.stats.border_reachable, true);
   });
 
+  it("v8: el agua del ground bloquea el flood-fill; un deck la perfora", () => {
+    // Río vertical entre el player (sur) y la salida norte.
+    const rio = { id: "rio", kind: "water", rect: [0, 4, 16, 2] };
+    const sinPuente = makeStageScene();
+    sinPuente.ground = [rio];
+    const r1 = validateScene(sinPuente, stagePlace);
+    assert.ok(
+      r1.errors.some((e) => e.includes("puerta_cocina")),
+      `la salida tras el río sin deck debe ser inalcanzable: ${r1.errors.join(" | ")}`,
+    );
+    const conPuente = makeStageScene();
+    conPuente.ground = [rio, { id: "puente", kind: "deck", rect: [7, 4, 2, 2], material: "wood" }];
+    const r2 = validateScene(conPuente, stagePlace);
+    assert.deepEqual(r2.errors, []);
+    assert.equal(r2.ok, true);
+    // Ground malformado: error claro, no crash.
+    const malo = makeStageScene();
+    malo.ground = [{ id: "x", kind: "area", material: "cobble" }];
+    const r3 = validateScene(malo, stagePlace);
+    assert.ok(r3.errors.some((e) => e.includes("ground inválido")), r3.errors.join(" | "));
+  });
+
   it("rechaza stage en un tile", () => {
     const tile = {
       tile: { tx: 0, ty: 0 },

@@ -62,6 +62,60 @@ async function main(): Promise<void> {
     const plan = stagePlanFromScene(raw);
     if (!plan) fail(`la fixture "${name}" no tiene bloque stage`);
     const spec = buildGreyboxSpec(plan, name);
+    if (params.get("cam") === "cine") {
+      // Modo CINE (solo dev): la MISMA geometría del spec de producción con
+      // cámara compuesta (yaw + tilt, dentro del pueblo) y luz rasante del
+      // bench 07_zocodover — el A/B que aísla cuánto del "cartón piedra" es
+      // de los contratos de cámara/luz y cuánto de la geometría declarada.
+      const { getRenderer, primitiveMesh } = await import("../scene/stage-greybox-render.js");
+      const THREE = await import("three");
+      const scene = new THREE.Scene();
+      if (spec.sky) scene.background = new THREE.Color(spec.sky.bottom);
+      if (spec.fog) scene.fog = new THREE.Fog(spec.fog.color, 45, 280);
+      for (const p of spec.primitives) scene.add(primitiveMesh(p));
+      const sun = new THREE.DirectionalLight(0xffc088, 3.0);
+      sun.position.set(-70, 34, -8);
+      sun.target.position.set(5, 0, -35);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(4096, 4096);
+      const half = 75;
+      sun.shadow.camera.left = -half;
+      sun.shadow.camera.right = half;
+      sun.shadow.camera.top = half;
+      sun.shadow.camera.bottom = -half;
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 500;
+      sun.shadow.bias = -0.0006;
+      scene.add(sun);
+      scene.add(sun.target);
+      scene.add(new THREE.HemisphereLight(0x9a86a0, 0x8a6a4a, 1.45));
+      const W = 1600;
+      const H = 1000;
+      // Cámara componible por query (?cpos=x,y,z&clook=x,y,z&fov=n) para
+      // iterar el encuadre sin tocar código; defaults del bench adaptados.
+      const vec = (key: string, def: [number, number, number]): [number, number, number] => {
+        const v = params.get(key)?.split(",").map(Number);
+        return v && v.length === 3 && v.every((n) => Number.isFinite(n)) ? (v as [number, number, number]) : def;
+      };
+      const cpos = vec("cpos", [-4, 2.4, 12]);
+      const clook = vec("clook", [5, 3.0, -45]);
+      const fov = Number(params.get("fov")) || 44;
+      const cam = new THREE.PerspectiveCamera(fov, W / H, 0.3, 1200);
+      cam.position.set(...cpos);
+      cam.lookAt(...clook);
+      const renderer = getRenderer();
+      renderer.setSize(W, H, false);
+      renderer.render(scene, cam);
+      const out = document.createElement("canvas");
+      out.width = W;
+      out.height = H;
+      const octx = out.getContext("2d");
+      if (!octx) fail("sin contexto 2d");
+      octx.drawImage(renderer.domElement, 0, 0);
+      document.body.appendChild(out);
+      document.title = "ready";
+      return;
+    }
     const { renderGreybox } = await import("../scene/stage-greybox-render.js");
     document.body.appendChild(renderGreybox(spec));
   } else if (mode === "tile") {

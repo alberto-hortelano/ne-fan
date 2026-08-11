@@ -109,6 +109,87 @@ export function parallaxPanX(p: StageProjParams, zStage: number, camOffsetM: num
   return camOffsetM * p.px_per_m * scaleAt(p, zStage);
 }
 
+// ── Cámara de RUNTIME con seguimiento (pan X + dolly Z) ─────────────────────
+// La cámara de PINTADO (spec.proj) no cambia jamás: el runtime reproyecta la
+// vista base con una cámara trasladada — lateral (camXM) y adelantada
+// (dollyM, hacia el norte). Sin yaw ni pitch: las iso-z siguen siendo filas
+// horizontales y el horizonte queda FIJO en pantalla; el dolly escala cada
+// profundidad en torno a (center_x, horizon_y).
+
+export interface StageCam {
+  /** Offset lateral de cámara en metros (respecto al centro del plató). */
+  camXM: number;
+  /** Avance hacia el norte en metros (≥ 0; 0 = cámara base). */
+  dollyM: number;
+}
+
+export const STAGE_CAM_ZERO: StageCam = { camXM: 0, dollyM: 0 };
+
+/** Ampliación máxima de la placa en la embocadura por dolly (la pintura de
+ *  1280 px de ancho aguanta ~1.35× sin ablandarse). */
+export const MAX_NEAR_ZOOM = 1.35;
+
+/** Escala de proyección a profundidad z con la cámara adelantada dollyM.
+ *  Misma lente (focal en px fija = ppm·focal_m), distancia acortada:
+ *  sCam(z) = focal_m/(focal_m − dollyM + z). Con dollyM 0 ≡ scaleAt. */
+export function sCamAt(p: StageProjParams, cam: StageCam, zStage: number): number {
+  const z = Math.max(0, zStage);
+  return p.focal_m / (p.focal_m - cam.dollyM + z);
+}
+
+/** Razón sCam/s a profundidad z (≥ 1 para dollyM ≥ 0): el factor de escala
+ *  que el dolly aplica a lo pintado/proyectado con la cámara base. */
+export function camRatio(p: StageProjParams, cam: StageCam, zStage: number): number {
+  const z = Math.max(0, zStage);
+  return (p.focal_m + z) / (p.focal_m - cam.dollyM + z);
+}
+
+/** Dolly máximo: el 20% de la profundidad, acotado para que la ampliación de
+ *  la placa en la embocadura no pase de MAX_NEAR_ZOOM (y el denominador de
+ *  sCam quede siempre positivo). */
+export function maxDollyFor(p: StageProjParams, followZ: number): number {
+  return Math.min(followZ * p.depth_m, p.focal_m * (1 - 1 / MAX_NEAR_ZOOM));
+}
+
+/** Vista base → canvas con la cámara de runtime (pan + dolly). Exacta a
+ *  cualquier altura: vy − horizon_y ∝ s(z), así que escalar por r(z) en
+ *  torno al horizonte ES la reproyección del pinhole adelantado. Con
+ *  dollyM 0 se reduce término a término a viewToScreen. */
+export function viewToScreenCam(
+  p: StageProjParams,
+  f: StageFraming,
+  canvasW: number,
+  vx: number,
+  vy: number,
+  zStage: number,
+  cam: StageCam,
+): [number, number] {
+  const cx = p.center_x ?? 0;
+  const r = camRatio(p, cam, zStage);
+  const vxCam = cx + (vx - cx) * r - cam.camXM * p.px_per_m * sCamAt(p, cam, zStage);
+  const vyCam = p.horizon_y + (vy - p.horizon_y) * r;
+  return [canvasW / 2 + vxCam * f.fit, f.groundScreenY + (vyCam - p.ground_y) * f.fit];
+}
+
+/** Rect destino en canvas de un bitmap full-viewBox a profundidad zStage con
+ *  la cámara de runtime — placa y recortes: escala afín por r(z) en torno a
+ *  (center_x, horizon_y) + pan lateral. */
+export function layerRectCam(
+  p: StageProjParams,
+  vb: ViewBoxRect,
+  f: StageFraming,
+  canvasW: number,
+  zStage: number,
+  cam: StageCam,
+): [number, number, number, number] {
+  const cx = p.center_x ?? 0;
+  const r = camRatio(p, cam, zStage);
+  const pan = cam.camXM * p.px_per_m * sCamAt(p, cam, zStage);
+  const x = canvasW / 2 + (cx + (vb.minX - cx) * r - pan) * f.fit;
+  const y = f.groundScreenY + (p.horizon_y + (vb.minY - p.horizon_y) * r - p.ground_y) * f.fit;
+  return [x, y, vb.width * r * f.fit, vb.height * r * f.fit];
+}
+
 /** Vista → canvas con parallax por profundidad y anclaje vertical. */
 export function viewToScreen(
   p: StageProjParams,
@@ -119,10 +200,7 @@ export function viewToScreen(
   zStage: number,
   camOffsetM: number,
 ): [number, number] {
-  return [
-    canvasW / 2 + (vx - parallaxPanX(p, zStage, camOffsetM)) * f.fit,
-    f.groundScreenY + (vy - p.ground_y) * f.fit,
-  ];
+  return viewToScreenCam(p, f, canvasW, vx, vy, zStage, { camXM: camOffsetM, dollyM: 0 });
 }
 
 /** Banda horizontal del warp del suelo. Destino en FILAS ENTERAS de canvas
@@ -134,6 +212,11 @@ export interface GroundBand {
   srcVh: number;
   /** zStage del centro de la banda — alimenta parallaxPanX. */
   z: number;
+  /** z del suelo en los BORDES fuente de la banda (superior/inferior) — el
+   *  destino bajo dolly se evalúa en los bordes con la función continua
+   *  compartida entre bandas contiguas: contigüidad exacta, sin costuras. */
+  zTop: number;
+  zBot: number;
 }
 
 export interface BandPlan {
@@ -149,11 +232,15 @@ export interface BandPlanOpts {
   /** Δdx máximo (px) dentro de una banda en el extremo del raíl. */
   maxShiftPx?: number;
   maxBandPx?: number;
+  /** Dolly máximo previsto (m): el presupuesto de banda se evalúa en el PEOR
+   *  caso (raíl extremo + dolly máximo). 0 = plan actual idéntico. */
+  maxDollyM?: number;
 }
 
 export const BAND_PLAN_DEFAULTS: Required<BandPlanOpts> = {
   maxShiftPx: 0.75,
   maxBandPx: 8,
+  maxDollyM: 0,
 };
 
 export function bandPlanFor(
@@ -185,12 +272,21 @@ export function bandPlanFor(
     srcVy: vyAt(backdropTop),
     srcVh: vyAt(backdropBottom) - vyAt(backdropTop),
     z: p.depth_m,
+    zTop: p.depth_m,
+    zBot: p.depth_m,
   };
 
-  // Franja de suelo: bandas adaptativas por presupuesto de desplazamiento.
+  // Franja de suelo: bandas adaptativas por presupuesto de desplazamiento —
+  // evaluado en el PEOR caso del recorrido (raíl extremo + dolly máximo): el
+  // término lateral mide el pan y el término de anchura la deformación de
+  // escala del dolly en los flancos. Con maxDollyM 0 el segundo término es
+  // constante (se cancela en las diferencias) ⇒ plan idéntico al clásico.
+  const camMax: StageCam = { camXM: 0, dollyM: o.maxDollyM };
   const ground: GroundBand[] = [];
   const groundEnd = Math.min(canvasH, Math.floor(f.groundScreenY));
-  const shiftAt = (z: number): number => f.railHalfM * p.px_per_m * f.fit * scaleAt(p, z);
+  const shiftAt = (z: number): number =>
+    f.railHalfM * p.px_per_m * f.fit * sCamAt(p, camMax, z) +
+    (vb.width / 2) * f.fit * camRatio(p, camMax, z);
   let y = backdropBottom;
   while (y < groundEnd) {
     const shiftTop = shiftAt(zAt(vyAt(y)));
@@ -208,20 +304,85 @@ export function bandPlanFor(
       srcVy: vyAt(y),
       srcVh: vyAt(y + h) - vyAt(y),
       z: zAt(vyAt(y + h / 2)),
+      zTop: zAt(vyAt(y)),
+      zBot: zAt(vyAt(y + h)),
     });
     y += h;
   }
 
   // Delantal: el resto del canvas, estirando la franja bajo ground_y (suelo
-  // cercano) — rellena el hueco que abre el anclaje vertical.
+  // cercano) — rellena el hueco que abre el anclaje vertical. Su borde
+  // superior COMPARTE (vy, z) con el borde inferior de la última banda de
+  // suelo: contigüidad exacta también bajo dolly.
   const viewBottom = vb.minY + vb.height;
+  const apronSrcTop = vyAt(groundEnd);
   const apron: GroundBand = {
     destY: groundEnd,
     destH: Math.max(0, canvasH - groundEnd),
-    srcVy: p.ground_y,
-    srcVh: Math.max(0.001, viewBottom - p.ground_y),
+    srcVy: apronSrcTop,
+    srcVh: Math.max(0.001, viewBottom - apronSrcTop),
     z: 0,
+    zTop: zAt(apronSrcTop),
+    zBot: 0,
   };
 
   return { backdrop, ground, apron };
+}
+
+/** Rect destino en canvas de una banda con la cámara de runtime. Los bordes
+ *  verticales se evalúan con la MISMA función continua (vy, z) que comparte
+ *  cada par de bandas contiguas ⇒ contigüidad exacta bajo cualquier dolly;
+ *  el lateral usa la z central de la banda (presupuestado por el plan).
+ *  Con cam = STAGE_CAM_ZERO reproduce destY/destH/dx del plan clásico. */
+export function bandDestRect(
+  p: StageProjParams,
+  vb: ViewBoxRect,
+  f: StageFraming,
+  canvasW: number,
+  canvasH: number,
+  band: GroundBand,
+  cam: StageCam,
+): [number, number, number, number] {
+  const cx = p.center_x ?? 0;
+  const hy = p.horizon_y;
+  const edgeY = (vy: number, z: number): number =>
+    f.groundScreenY + (hy + (vy - hy) * camRatio(p, cam, z) - p.ground_y) * f.fit;
+  const yTop = edgeY(band.srcVy, band.zTop);
+  let yBot = edgeY(band.srcVy + band.srcVh, band.zBot);
+  // El delantal (única banda que TERMINA en z=0): su borde inferior se
+  // extiende hasta el fondo del canvas (el dolly lo agranda, nunca debe
+  // encoger el relleno).
+  if (band.zBot === 0) yBot = Math.max(yBot, canvasH);
+  const rC = camRatio(p, cam, band.z);
+  const pan = cam.camXM * p.px_per_m * sCamAt(p, cam, band.z);
+  const x = canvasW / 2 + (cx + (vb.minX - cx) * rC - pan) * f.fit;
+  return [x, yTop, vb.width * rC * f.fit, yBot - yTop];
+}
+
+/** Rects destino de TODO el plan con la cámara de runtime y bordes
+ *  verticales redondeados a FILAS ENTERAS de canvas — cada frontera se
+ *  redondea UNA vez y la comparten las dos bandas vecinas. Sin esto, los
+ *  bordes fraccionarios del dolly dejan en cada frontera un píxel de
+ *  cobertura parcial que el antialias mezcla con el fondo del clear: una
+ *  franja oscura por banda, moviéndose con el zoom. */
+export function bandPlanDestRects(
+  p: StageProjParams,
+  vb: ViewBoxRect,
+  f: StageFraming,
+  canvasW: number,
+  canvasH: number,
+  plan: BandPlan,
+  cam: StageCam,
+): Array<{ band: GroundBand; x: number; y: number; w: number; h: number }> {
+  const seq = [plan.backdrop, ...plan.ground, plan.apron];
+  const rects = seq.map((band) => bandDestRect(p, vb, f, canvasW, canvasH, band, cam));
+  const out: Array<{ band: GroundBand; x: number; y: number; w: number; h: number }> = [];
+  for (let i = 0; i < seq.length; i++) {
+    const top = Math.round(rects[i][1]);
+    // La frontera inferior ES la superior de la banda siguiente (mismo borde
+    // continuo) — redondearla desde ahí garantiza la fila compartida.
+    const bottom = i + 1 < seq.length ? Math.round(rects[i + 1][1]) : Math.round(rects[i][1] + rects[i][3]);
+    out.push({ band: seq[i], x: rects[i][0], y: top, w: rects[i][2], h: bottom - top });
+  }
+  return out;
 }

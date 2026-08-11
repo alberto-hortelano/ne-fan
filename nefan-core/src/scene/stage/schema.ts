@@ -40,6 +40,81 @@ export const StageExitSchema = z
 
 export const MAX_STAGE_EXITS = 8;
 
+/** Coordenada de `surroundings` en METROS DE MUNDO relativos al CENTRO del
+ *  plató (mismo sistema que las primitivas del greybox): x crece al este,
+ *  z al sur (el fondo tras el telón es z NEGATIVA). Admite negativos y
+ *  posiciones mucho más allá de los bounds jugables. */
+const sm = z.number().min(-400).max(400);
+const surPos = z.tuple([sm, sm]);
+/** Altura de la base sobre el suelo (elevación decorativa, p. ej. un
+ *  edificio sobre su cerro). */
+const surYBase = z.number().min(0).max(60).optional();
+/** Rotación en grados, misma convención que `Volume.angle`. */
+const surAngle = z.number().min(-180).max(180).optional();
+
+/** Decorado FUERA de los bounds jugables: el caserío que recede, el castillo
+ *  en su cerro, tapias y árboles del borde. Sin colisión, sin manifest, sin
+ *  segmentación — pura escenografía del greybox (sustituye a las colinas
+ *  genéricas cuando se declara). */
+export const StageSurroundingSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("house"),
+      pos: surPos,
+      /** Ancho × fondo × alto de muros, en metros. */
+      w: z.number().min(2).max(40),
+      d: z.number().min(2).max(40),
+      h: z.number().min(2).max(20),
+      wall_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      roof_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      y_base: surYBase,
+      angle: surAngle,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("tower"),
+      pos: surPos,
+      /** Radio REAL de torre (3-5 m lo normal): la perspectiva hace el resto
+       *  — un r grande "para que se vea" produce un silo pegado al telón. */
+      r: z.number().min(1).max(6).optional(),
+      h: z.number().min(3).max(40).optional(),
+      y_base: surYBase,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("wall"),
+      pos: surPos,
+      /** Longitud del lienzo en metros (a lo largo de x local antes de girar). */
+      len: z.number().min(3).max(120),
+      h: z.number().min(1.5).max(20).optional(),
+      y_base: surYBase,
+      angle: surAngle,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("tree"),
+      pos: surPos,
+      s: z.number().min(0.4).max(2.5).optional(),
+      y_base: surYBase,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("hill"),
+      pos: surPos,
+      /** Radio de la falda y altura de la cima, en metros. */
+      r: z.number().min(5).max(300),
+      h: z.number().min(1).max(60),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    })
+    .strict(),
+]);
+
+export const MAX_STAGE_SURROUNDINGS = 48;
+
 export const StageBlockSchema = z
   .object({
     /** Distancia focal en metros para scaleAt(z) = f/(f+z). Default 12. */
@@ -70,16 +145,21 @@ export const StageBlockSchema = z
       })
       .strict()
       .optional(),
-    /** Tarimas/niveles elevados (v1: el compositor puede ignorarlos). */
+    /** Tarimas/niveles elevados. v1: NADIE los consume (ni compositor ni
+     *  greybox) — el suelo jugable es PLANO; la elevación decorativa va en
+     *  `surroundings` (y_base/hill). */
     platforms: z
       .array(z.object({ rect: zoneRect, h: z.number().positive().max(4), label: z.string().min(1).max(48) }).strict())
       .max(8)
       .optional(),
+    /** Decorado fuera de bounds (ver StageSurroundingSchema). */
+    surroundings: z.array(StageSurroundingSchema).max(MAX_STAGE_SURROUNDINGS).optional(),
   })
   .strict();
 
 export type StageExit = z.infer<typeof StageExitSchema> & { edge: Edge };
 export type StageBlock = z.infer<typeof StageBlockSchema>;
+export type StageSurrounding = z.infer<typeof StageSurroundingSchema>;
 
 export type ParseStageResult =
   | { ok: true; stage: StageBlock }

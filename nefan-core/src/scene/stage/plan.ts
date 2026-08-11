@@ -4,6 +4,7 @@
  *  en silencio a escena plana). */
 
 import { parseVolumes, type Volume } from "../blueprint/volumes.js";
+import { parseGround, type GroundFeature } from "../blueprint/ground.js";
 import { deriveVolumesFromSchema, type DeriveInput } from "../blueprint/derive.js";
 import { defaultPropHeightM, PROP_H_MAX_M, PROP_H_MIN_M } from "../blueprint/prop-heights.js";
 import { parseStage } from "./schema.js";
@@ -67,6 +68,61 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
   const volumes = [...declared, ...derived].filter(
     (v) => !(v.type === "building" && v.cutaway === true),
   );
+  // Surroundings: decorado FUERA de bounds. Un centro DENTRO del rect jugable
+  // es un error del motor (taparía el plató sin colisión ni manifest) — la
+  // falda de un cerro sí puede solapar, por eso solo se valida el centro.
+  const halfW = (size.cols * mpc) / 2;
+  const halfD = (size.rows * mpc) / 2;
+  for (const s of stage.stage.surroundings ?? []) {
+    const [sx, sz] = s.pos;
+    if (Math.abs(sx) < halfW && Math.abs(sz) < halfD) {
+      throw new Error(
+        `stagePlanFromScene: surroundings "${s.kind}" en (${sx}, ${sz}) cae DENTRO del plató ` +
+          `(±${halfW}×±${halfD} m) — el decorado va fuera de bounds`,
+      );
+    }
+    // Un cerro pegado al borde mete su falda EN el plató como una pared de
+    // tierra: el centro debe quedar al menos 0.4·r más allá del bound más
+    // cercano (la falda puede asomar, la masa no).
+    if (s.kind === "hill") {
+      const out = Math.max(Math.abs(sx) - halfW, Math.abs(sz) - halfD);
+      if (out < 0.4 * s.r) {
+        throw new Error(
+          `stagePlanFromScene: hill en (${sx}, ${sz}) con r=${s.r} demasiado pegado al plató ` +
+            `— aleja el centro al menos ${Math.ceil(0.4 * s.r)} m más allá del borde`,
+        );
+      }
+    }
+  }
+  // Rasgos vectoriales del suelo (v8, opcional): mismo schema que el tile.
+  // Fail-loud, y además rango: el schema del tile admite hasta 144 celdas —
+  // un path en la celda 100 de un plató de 24 cols pasa el zod pero es un
+  // error del motor.
+  let ground: GroundFeature[] | undefined;
+  if (raw.ground !== undefined) {
+    const parsed = parseGround(raw.ground);
+    if (!parsed.ok) throw new Error(`stagePlanFromScene: ${parsed.error}`);
+    const gridCols = size.cols;
+    const gridRows = size.rows;
+    const inGrid = (u: number, v: number): boolean =>
+      u >= -16 && u <= gridCols + 16 && v >= -16 && v <= gridRows + 16;
+    for (const f of parsed.features) {
+      const pts: [number, number][] =
+        f.kind === "path" ? (f.points as [number, number][])
+        : f.rect ? [[f.rect[0], f.rect[1]], [f.rect[0] + f.rect[2], f.rect[1] + f.rect[3]]]
+        : f.ellipse ? [[f.ellipse.center[0] - f.ellipse.rx, f.ellipse.center[1] - f.ellipse.ry], [f.ellipse.center[0] + f.ellipse.rx, f.ellipse.center[1] + f.ellipse.ry]]
+        : (f.polygon as [number, number][]);
+      for (const [u, v] of pts) {
+        if (!inGrid(u, v)) {
+          throw new Error(
+            `stagePlanFromScene: ground "${f.id}" con coord (${u}, ${v}) fuera del grid ` +
+              `${size.cols}×${size.rows} de la escena (margen ±16)`,
+          );
+        }
+      }
+    }
+    ground = parsed.features;
+  }
   // Rejilla de terreno (opcional): el greybox pinta el suelo por bandas de
   // tipo (la calle de tierra, el prado, el empedrado) — sin ella todo el
   // suelo sería un color plano.
@@ -84,6 +140,7 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     ...(terrain ? { terrain } : {}),
     ...(legend ? { terrain_legend: legend } : {}),
+    ...(ground ? { ground } : {}),
     // Texto de escena: alimenta el detector de hora del día del greybox.
     ...(typeof raw.scene_description === "string" && raw.scene_description
       ? { description: raw.scene_description }

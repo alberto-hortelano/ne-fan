@@ -220,7 +220,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt.",
+        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
         "items": {
           "type": "object"
         }
@@ -231,7 +231,7 @@
         "properties": {
           "focal_m": {
             "type": "number",
-            "description": "Optional focal length in meters for the ground perspective scaleAt(z)=f/(f+z). Default 30 (telephoto). ~22 for intimate close rooms, ~40 for very deep stages."
+            "description": "Optional CAMERA DISTANCE in meters behind the south edge. ~6-8 intimate room, 10-14 street/plaza, 16+ wide establishing shot; prefer the LOW end. Clamped so the frame covers the stage width."
           },
           "exits": {
             "type": "array",
@@ -330,6 +330,21 @@
             "required": [
               "present"
             ]
+          },
+          "ambience": {
+            "type": "object",
+            "description": "Optional atmosphere: time_of_day (amanecer|dia|atardecer|noche — drives the clay's sun/sky/fog preset) and mood (free text, feeds the repaint prompt)."
+          },
+          "wall_h_m": {
+            "type": "number",
+            "description": "INTERIORS only: wall/ceiling height in meters at the scale of the room (hut 2.4, tavern 3.5, noble hall 5+). Range [2.2, 8]."
+          },
+          "surroundings": {
+            "type": "array",
+            "description": "EXTERIOR sets: scenery beyond the playable bounds (no collision). Items {kind: house|tower|wall|tree|hill, pos:[x,z] in METERS from the stage center (beyond the backdrop is negative z), plus per-kind size fields, y_base for elevation, angle in degrees}. Declaring them replaces the generic background hills.",
+            "items": {
+              "type": "object"
+            }
           }
         },
         "required": [

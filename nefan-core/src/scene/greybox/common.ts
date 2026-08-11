@@ -6,9 +6,10 @@
 import { PALETTE } from "../blueprint/palette.js";
 
 export interface GreyboxPrimitive {
-  shape: "box" | "gable" | "cylinder" | "cone" | "polygon";
+  shape: "box" | "gable" | "cylinder" | "cone" | "polygon" | "sphere";
   /** box/gable: [w, h, d] m (gable: cumbrera a lo largo de d antes de rotY).
-   *  cylinder: [r, h, rTop?]. cone: [r, h, segmentos?]. polygon: [grosor]. */
+   *  cylinder: [r, h, rTop?]. cone: [r, h, segmentos?]. polygon: [grosor].
+   *  sphere: [r, segmentos?] — como el resto, pos.y es la BASE (centro a +r). */
   size: number[];
   /** Posición MUNDO: x centrado, y = BASE de la pieza, z mundo (+z sur).
    *  polygon: los `points` son absolutos y pos solo aporta la y de la base. */
@@ -48,8 +49,11 @@ export function groundColorFor(type: string): string | null {
   if (t.includes("water") || t.includes("agua")) return PALETTE.water;
   if (t.includes("bridge") || t.includes("puente")) return PALETTE.woodTop;
   if (t.includes("wood") || t.includes("madera")) return PALETTE.woodTop;
-  if (t.includes("stone") || t.includes("piedra") || t.includes("empedrado")) return "#8b8678";
-  if (t.includes("path") || t.includes("camino") || t.includes("tierra") || t.includes("dirt")) return "#8f7757";
+  // Tierra y empedrado con contraste REAL (pareja del bench 07_zocodover):
+  // con la pareja antigua (#8f7757/#8b8678) las bandas del plan eran
+  // indistinguibles en el clay y la pista de materiales no llegaba al repintado.
+  if (t.includes("stone") || t.includes("piedra") || t.includes("empedrado")) return "#a4937c";
+  if (t.includes("path") || t.includes("camino") || t.includes("tierra") || t.includes("dirt")) return "#8d6f4e";
   if (t.includes("sand") || t.includes("arena")) return "#c2b184";
   if (t.includes("snow") || t.includes("nieve")) return "#dfe5ea";
   if (t.includes("grass") || t.includes("hierba") || t.includes("prado")) return PALETTE.grassBase;

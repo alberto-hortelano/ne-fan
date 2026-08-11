@@ -18,6 +18,9 @@
 import { seededRng, uniform } from "../../rng.js";
 import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import type { Volume } from "../blueprint/volumes.js";
+import type { GroundFeature } from "../blueprint/ground.js";
+import { groundFeaturePrims } from "../blueprint/ground-prims.js";
+import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
 import {
   canonicalGreyboxJson,
   groundColorFor,
@@ -54,8 +57,19 @@ export { canonicalGreyboxJson, groundColorFor, type GreyboxLight, type GreyboxPr
  *  ventana hacia arriba anclando el borde inferior (v5 la trasladaba y
  *  recortaba el delantal) con render_px al aspect real; mobiliario sin `h`
  *  recibe altura SEMÁNTICA por label (prop-heights.ts) — dos mesas de la
- *  misma escena ya no salen a alturas dispares. */
-export const STAGE_GREYBOX_VERSION = 6;
+ *  misma escena ya no salen a alturas dispares.
+ *  v7 (pueblo creíble, bench 07_zocodover): `angle` en building/prop (huella
+ *  rotada en colisión, manifest por esquinas rotadas, prims con rotY); capa
+ *  `stage.surroundings` (decorado FUERA de bounds con elevación, sin colisión
+ *  ni manifest — sustituye a las 4 colinas genéricas); contraste real
+ *  tierra/empedrado en groundColorFor; atardecer con relleno hemisférico
+ *  cálido (1.45) para que las caras sur no se hundan en negro.
+ *  v8 (suelo vectorial): el plató acepta el bloque `ground` del tile
+ *  (path/area/water/deck) — calles CURVAS de verdad (Catmull-Rom muestreado,
+ *  elipses a 32 segmentos) en metros sobre las bandas de terrain, que quedan
+ *  como base. Siluetas: copas esféricas, soportales por label, chimeneas en
+ *  el caserío de surroundings. */
+export const STAGE_GREYBOX_VERSION = 8;
 
 /** Altura de ojos de la cámara EXTERIOR (m). Los platós del juego son ANCHOS
  *  y POCO profundos (~10 m de fondo): a 1,7-2,2 m el suelo jugable colapsa en
@@ -163,9 +177,13 @@ export interface StageScenePlan {
   volumes: Volume[];
   biome?: string;
   /** Rejilla de terreno Format D (opcional) — el greybox pinta el suelo por
-   *  bandas de tipo. */
+   *  bandas de tipo. Base debajo de `ground`. */
   terrain?: string[];
   terrain_legend?: Record<string, string>;
+  /** Rasgos vectoriales del suelo (mismo schema que el tile): calles curvas,
+   *  plazas orgánicas, agua/decks — se pintan ENCIMA de las bandas de terrain
+   *  y su agua entra en colisión y validación. En celdas de la escena. */
+  ground?: GroundFeature[];
   /** scene_description del Format D — fallback del detector de hora del día
    *  cuando el stage no declara `ambience`. */
   description?: string;
@@ -193,6 +211,9 @@ export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
 }
 
 /** Labels que encienden una luz práctica cálida sobre el volumen. */
+/** Labels de edificio que ganan soportal (columnas + alero en la fachada). */
+const PORCH_LABEL_RE = /soportal|p[oó]rtico|porche|arcada|logia/i;
+
 const PRACTICAL_LIGHT_RE =
   /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
 
@@ -202,8 +223,13 @@ const PRACTICAL_LIGHT_RE =
  *  razonable (prop sin at ni rect). */
 export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
   switch (v.type) {
-    case "building":
+    case "building": {
+      if (v.angle) {
+        const { cells } = volumeFootprint(v);
+        return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
+      }
       return v.rect;
+    }
     case "wall": {
       let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
       for (const [c, r] of v.points) {
@@ -238,7 +264,13 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "prop": {
-      if (v.rect) return v.rect;
+      if (v.rect) {
+        if (v.angle) {
+          const { cells } = volumeFootprint(v);
+          return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
+        }
+        return v.rect;
+      }
       if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
       return null;
     }
@@ -352,6 +384,44 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       r0 = r1 + 1;
     }
   }
+
+  // ── Rasgos vectoriales del suelo (v8): calles curvas, plazas orgánicas,
+  // agua/decks ENCIMA de las bandas de terrain (que coronan en +0.02). Mismo
+  // helper que el tile, aquí en METROS con suavizado Catmull-Rom. ───────────
+  if (plan.ground?.length) {
+    primitives.push(
+      ...groundFeaturePrims(plan.ground, {
+        toXZ: (u, v) => [rect.minX + u * mpc, rect.minZ + v * mpc],
+        scale: mpc,
+        yArea: 0.03,
+        yPath: 0.05,
+        yWater: 0.07,
+        yDeck: 0.09,
+        layerT: 0.03,
+        // Pareja de contraste del plató (contrato del test tierra≠empedrado).
+        colors: { dirt: "#8d6f4e", cobble: "#a4937c" },
+        smoothPathSubdiv: 4,
+        ellipseSegments: 32,
+      }),
+    );
+  }
+
+  /** Caminos que continúan las salidas norte más allá del telón (exterior). */
+  const emitNorthExitPaths = (): void => {
+    for (const e of plan.stage.exits) {
+      if (e.edge !== "north") continue;
+      const w = zoneToWorld(e.zone);
+      primitives.push({
+        shape: "box",
+        size: [w.maxX - w.minX, 0.04, 34],
+        pos: [(w.minX + w.maxX) / 2, -0.02, rect.minZ - 17],
+        color: darken(floorColor, 0.08),
+        roughness: 0.97,
+        cat: "terrain",
+        noShadow: true,
+      });
+    }
+  };
 
   // ── Interior: paredes reales con sus vanos; techo a escala de la sala ─────
   if (interiorLike) {
@@ -496,8 +566,137 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
       cat: "wall",
       noShadow: true,
     });
+  } else if (plan.stage.surroundings?.length) {
+    // ── Exterior con DECORADO DECLARADO: el motor dice qué hay más allá de
+    // los bounds (caserío, cerro con su castillo, tapias, árboles) — pura
+    // escenografía: sin volId, sin manifest, sin colisión. Sustituye a las
+    // colinas genéricas del else de abajo.
+    const srng = seededRng(`stage:${seedKey}:gbsur`);
+    for (const s of plan.stage.surroundings) {
+      const [sx, sz] = s.pos;
+      const yBase = "y_base" in s ? (s.y_base ?? 0) : 0;
+      const rotY = "angle" in s && s.angle ? (s.angle * Math.PI) / 180 : undefined;
+      switch (s.kind) {
+        case "hill":
+          primitives.push({
+            shape: "cone",
+            size: [s.r, s.h, 24],
+            pos: [sx, 0, sz],
+            color: s.color ?? darken("#8a744f", uniform(srng, 0.05, 0.2)),
+            roughness: 1,
+            cat: "terrain",
+            noShadow: true,
+          });
+          break;
+        case "house": {
+          const tone = uniform(srng, -0.1, 0.08);
+          const wallC = wallColors("plaster").lit;
+          const wall = s.wall_color ?? (tone >= 0 ? lighten(wallC, tone) : darken(wallC, -tone));
+          const roof = s.roof_color ?? darken(roofColors("tile").lit, uniform(srng, 0, 0.15));
+          const wallH = s.h * 0.72;
+          primitives.push({
+            shape: "box",
+            size: [s.w, wallH, s.d],
+            pos: [sx, yBase, sz],
+            rotY,
+            color: wall,
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "gable",
+            // Cumbrera a lo largo del lado largo (contrato: a lo largo de d
+            // antes de rotY ⇒ lado largo en d con giro extra si hace falta).
+            size: s.w >= s.d ? [s.d, s.h - wallH, s.w] : [s.w, s.h - wallH, s.d],
+            pos: [sx, yBase + wallH, sz],
+            rotY: (rotY ?? 0) + (s.w >= s.d ? Math.PI / 2 : 0),
+            color: roof,
+            cat: "decor",
+          });
+          // Chimenea sembrada (v8): la silueta del caserío lejano cobra vida
+          // — caja, no cono (el test de colinas cuenta conos lejanos).
+          if (uniform(srng, 0, 1) < 0.6) {
+            const chAngle = "angle" in s && s.angle ? (s.angle * Math.PI) / 180 : 0;
+            const chDx = uniform(srng, -s.w * 0.3, s.w * 0.3);
+            const [rdx, rdz] = [
+              chDx * Math.cos(chAngle),
+              -chDx * Math.sin(chAngle),
+            ];
+            primitives.push({
+              shape: "box",
+              size: [0.5, s.h * 0.22, 0.5],
+              pos: [sx + rdx, yBase + wallH + (s.h - wallH) * 0.5, sz + rdz],
+              color: darken(wall, 0.15),
+              cat: "decor",
+            });
+          }
+          break;
+        }
+        case "tower": {
+          const r = s.r ?? 3;
+          const h = s.h ?? 12;
+          const stoneC = wallColors("stone").lit;
+          primitives.push({
+            shape: "cylinder",
+            size: [r, h],
+            pos: [sx, yBase, sz],
+            color: lighten(stoneC, uniform(srng, 0, 0.08)),
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "cylinder",
+            size: [r * 1.1, h * 0.06],
+            pos: [sx, yBase + h, sz],
+            color: wallColors("stone").top,
+            cat: "decor",
+          });
+          // Parapeto almenado: sin él la torre lee como silo/torre de
+          // refrigeración — la silueta medieval es el 90% del landmark.
+          const merlons = 8;
+          for (let mi = 0; mi < merlons; mi++) {
+            const a = (mi / merlons) * Math.PI * 2;
+            primitives.push({
+              shape: "box",
+              size: [Math.max(0.5, r * 0.32), h * 0.08, Math.max(0.5, r * 0.32)],
+              pos: [sx + Math.cos(a) * r * 0.92, yBase + h + h * 0.06, sz + Math.sin(a) * r * 0.92],
+              color: PALETTE.merlon,
+              cat: "decor",
+            });
+          }
+          break;
+        }
+        case "wall":
+          primitives.push({
+            shape: "box",
+            size: [s.len, s.h ?? 4, 1.4],
+            pos: [sx, yBase, sz],
+            rotY,
+            color: darken(wallColors("stone").lit, uniform(srng, 0, 0.1)),
+            cat: "decor",
+          });
+          break;
+        case "tree": {
+          const sc = s.s ?? 1;
+          primitives.push({
+            shape: "cylinder",
+            size: [0.2 * sc, 1.7 * sc],
+            pos: [sx, yBase, sz],
+            color: PALETTE.trunk,
+            cat: "decor",
+          });
+          primitives.push({
+            shape: "sphere",
+            size: [1.8 * sc, 12],
+            pos: [sx, yBase + 1.3 * sc, sz],
+            color: darken(PALETTE.canopy, uniform(srng, 0, 0.12)),
+            cat: "decor",
+          });
+          break;
+        }
+      }
+    }
+    emitNorthExitPaths();
   } else {
-    // ── Exterior: colinas de fondo + caminos de las salidas norte ──────────
+    // ── Exterior SIN decorado declarado: colinas de fondo genéricas ────────
     // Colinas LEJANAS y tendidas (media loma, no picos): en v1 una colina a
     // 35 m con h 9 llenaba el telón como una montaña-pirámide.
     const rng = seededRng(`stage:${seedKey}:gbback`);
@@ -516,19 +715,7 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
         noShadow: true,
       });
     }
-    for (const e of plan.stage.exits) {
-      if (e.edge !== "north") continue;
-      const w = zoneToWorld(e.zone);
-      primitives.push({
-        shape: "box",
-        size: [w.maxX - w.minX, 0.04, 34],
-        pos: [(w.minX + w.maxX) / 2, -0.02, rect.minZ - 17],
-        color: darken(floorColor, 0.08),
-        roughness: 0.97,
-        cat: "terrain",
-        noShadow: true,
-      });
-    }
+    emitNorthExitPaths();
   }
 
   // ── Volúmenes ─────────────────────────────────────────────────────────────
@@ -565,7 +752,10 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     const preset = {
       amanecer: { sun: "#ffd9a0", elev: 18, azBase: 55, intensity: 2.2, hemi: "#a8b4cc", ground: "#7a6a58", hemiI: 0.9 },
       dia: { sun: "#fff2dd", elev: 40, azBase: -45, intensity: 2.2, hemi: "#bfd4e6", ground: "#8a795a", hemiI: 0.6 },
-      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9aa2c8", ground: "#6b6055", hemiI: 1.0 },
+      // Atardecer con RELLENO (bench 07_zocodover): hemi violácea intensa con
+      // suelo cálido — sin ella las caras sur (todas, con el sol frontal bajo)
+      // y el tercio del delantal se hunden a negro.
+      atardecer: { sun: "#ffb36b", elev: 18, azBase: -55, intensity: 2.4, hemi: "#9a86a0", ground: "#8a6a4a", hemiI: 1.45 },
       noche: { sun: "#9ab0d8", elev: 50, azBase: -30, intensity: 0.9, hemi: "#4a5878", ground: "#2e3040", hemiI: 0.8 },
     }[tod];
     lights.push({ kind: "hemi", color: preset.hemi, groundColor: preset.ground, intensity: preset.hemiI });
@@ -692,15 +882,30 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     ];
     const hM = volumeHeightM(v, mpc);
     const zStage = cellsToZStage(fp[1], fp[3]);
+    // Con `angle` la caja proyectada sale de las 4 esquinas ROTADAS del rect
+    // (el AABB daría una caja engordada); sin angle, las del AABB — idéntico.
+    const hasAngle =
+      (v.type === "building" || v.type === "prop") && v.rect && v.angle ? true : false;
+    const cornersCells: [number, number][] = hasAngle
+      ? rotatedRectCorners(
+          (v as { rect: [number, number, number, number] }).rect,
+          (v as { angle: number }).angle,
+        )
+      : [
+          [fp[0], fp[1]],
+          [fp[0] + fp[2], fp[1]],
+          [fp[0] + fp[2], fp[1] + fp[3]],
+          [fp[0], fp[1] + fp[3]],
+        ];
     let minVx = Infinity, minVy = Infinity, maxVx = -Infinity, maxVy = -Infinity;
-    for (const x of [fw[0], fw[2]]) {
-      for (const zWorld of [fw[1], fw[3]]) {
-        const zS = Math.max(0.05, rect.maxZ - zWorld);
-        for (const h of [0, hM]) {
-          const [vx, vy] = stageToViewAt(proj, x, zS, h);
-          minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
-          minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
-        }
+    for (const [cu, cv] of cornersCells) {
+      const x = rect.minX + cu * mpc;
+      const zWorld = rect.minZ + cv * mpc;
+      const zS = Math.max(0.05, rect.maxZ - zWorld);
+      for (const h of [0, hM]) {
+        const [vx, vy] = stageToViewAt(proj, x, zS, h);
+        minVx = Math.min(minVx, vx); maxVx = Math.max(maxVx, vx);
+        minVy = Math.min(minVy, vy); maxVy = Math.max(maxVy, vy);
       }
     }
     const toPx = (vx: number, vy: number): [number, number] => [
@@ -802,8 +1007,26 @@ function buildVolumePrimitives(
   const volId = `vol_${v.id}`;
   const cx = rect.minX + (fp[0] + fp[2] / 2) * mpc;
   const cz = rect.minZ + (fp[1] + fp[3] / 2) * mpc;
-  const w = fp[2] * mpc;
-  const d = fp[3] * mpc;
+  // Marco LOCAL (angle de building/prop-rect): `fp` es el AABB (expandido al
+  // rotar) — la GEOMETRÍA usa las dimensiones reales del rect y offsets
+  // locales girados con `rot()`; los sub-prims heredan rotY = angleRad. La
+  // rotación preserva el centro, así que cx/cz sirven tal cual. Con angle 0
+  // todo es identidad y los prims son idénticos a los de siempre.
+  const angleDeg = (v.type === "building" || v.type === "prop") && v.rect ? (v.angle ?? 0) : 0;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const ca = Math.cos(angleRad);
+  const sa = Math.sin(angleRad);
+  const rot = (dx: number, dz: number): [number, number] =>
+    angleDeg ? [dx * ca + dz * sa, -dx * sa + dz * ca] : [dx, dz];
+  /** rotY a emitir: undefined cuando 0 (se cae del canónico — caché estable). */
+  const rotYOr = (extra = 0): number | undefined => {
+    const total = angleRad + extra;
+    return total === 0 ? undefined : total;
+  };
+  const rectDims =
+    angleDeg && (v.type === "building" || v.type === "prop") && v.rect ? v.rect : null;
+  const w = (rectDims ? rectDims[2] : fp[2]) * mpc;
+  const d = (rectDims ? rectDims[3] : fp[3]) * mpc;
   const southZ = rect.minZ + (fp[1] + fp[3]) * mpc;
 
   const push = (p: Omit<GreyboxPrimitive, "volId" | "cat"> & { cat?: GreyboxPrimitive["cat"] }): void => {
@@ -826,16 +1049,54 @@ function buildVolumePrimitives(
       const roof = {
         lit: roofTone >= 0 ? lighten(baseRoof.lit, roofTone) : darken(baseRoof.lit, -roofTone),
       };
-      push({ shape: "box", size: [w, wallHM, d], pos: [cx, 0, cz], color: wall.lit, cat: "building" });
+      push({
+        shape: "box",
+        size: [w, wallHM, d],
+        pos: [cx, 0, cz],
+        rotY: rotYOr(),
+        color: wall.lit,
+        cat: "building",
+      });
       // Puerta en la fachada sur (cara a cámara), descentrada y sembrada.
-      const doorX = cx + uniform(rng, -w * 0.28, w * 0.28);
+      // Offsets LOCALES a la fachada (d/2 + 0.05 == southZ + 0.05 sin angle).
+      const doorDx = uniform(rng, -w * 0.28, w * 0.28);
+      const [pdx, pdz] = rot(doorDx, d / 2 + 0.05);
       push({
         shape: "box",
         size: [0.9, 1.9, 0.08],
-        pos: [doorX, 0, southZ + 0.05],
+        pos: [cx + pdx, 0, cz + pdz],
+        rotY: rotYOr(),
         color: PALETTE.woodFace,
         cat: "building",
       });
+      // Soportal por label (v8, patrón del mesón del bench 07_zocodover):
+      // fila de columnas delante de la fachada sur + alero. Ancho 0.45 — el
+      // test F2 identifica ventanas por size[0]===0.7, no pisar ese valor.
+      if (PORCH_LABEL_RE.test(v.label)) {
+        const colH = Math.min(3.0, wallHM * 0.8);
+        const nCols = Math.max(3, Math.min(9, Math.round(w / 2.2) + 1));
+        for (let i = 0; i < nCols; i++) {
+          const dx = ((i / (nCols - 1)) - 0.5) * (w - 1.0);
+          const [cxr, czr] = rot(dx, d / 2 + 1.4);
+          push({
+            shape: "box",
+            size: [0.45, colH, 0.45],
+            pos: [cx + cxr, 0, cz + czr],
+            rotY: rotYOr(),
+            color: darken(wall.lit, 0.08),
+            cat: "building",
+          });
+        }
+        const [adx, adz] = rot(0, d / 2 + 0.95);
+        push({
+          shape: "box",
+          size: [w * 0.97, 0.3, 1.8],
+          pos: [cx + adx, colH, cz + adz],
+          rotY: rotYOr(),
+          color: darken(roof.lit, 0.1),
+          cat: "building",
+        });
+      }
       // Ventanas por PLANTA: una fila por cada ~2.4 m de muro (v2 ponía 1-2
       // ventanas fijas arriba — una casa de dos plantas leía como nave ciega).
       const nFloors = Math.max(1, Math.floor(wallHM / 2.4));
@@ -845,12 +1106,14 @@ function buildVolumePrimitives(
         const wy = f === 0 ? Math.min(wallHM - 1.1, 1.3) : 1.1 + f * 2.4;
         if (wy + 0.9 > wallHM - 0.1) break;
         for (let i = 0; i < winPerFloor; i++) {
-          const wx = cx + ((i + 0.5) / winPerFloor - 0.5) * w * 0.82 + uniform(rng, -0.12, 0.12);
-          if (f === 0 && Math.abs(wx - doorX) < 0.9) continue; // no pisar la puerta
+          const wdx = ((i + 0.5) / winPerFloor - 0.5) * w * 0.82 + uniform(rng, -0.12, 0.12);
+          if (f === 0 && Math.abs(wdx - doorDx) < 0.9) continue; // no pisar la puerta
+          const [wxr, wzr] = rot(wdx, d / 2 + 0.05);
           push({
             shape: "box",
             size: [0.7, 0.9, 0.08],
-            pos: [wx, wy, southZ + 0.05],
+            pos: [cx + wxr, wy, cz + wzr],
+            rotY: rotYOr(),
             color: winColor,
             cat: "building",
           });
@@ -862,6 +1125,7 @@ function buildVolumePrimitives(
           shape: "box",
           size: [w + 0.4, 0.3, d + 0.4],
           pos: [cx, wallHM, cz],
+          rotY: rotYOr(),
           color: roof.lit,
           cat: "building",
         });
@@ -873,18 +1137,20 @@ function buildVolumePrimitives(
           shape: "gable",
           size: axis === "x" ? [d + 0.5, roofH, w + 0.5] : [w + 0.5, roofH, d + 0.5],
           pos: [cx, wallHM, cz],
-          rotY: axis === "x" ? Math.PI / 2 : 0,
+          rotY: angleRad + (axis === "x" ? Math.PI / 2 : 0),
           color: roof.lit,
           cat: "building",
         });
         // Chimenea sembrada (2 de cada 3 edificios): silueta de tejado viva.
         if (uniform(rng, 0, 1) < 0.67) {
-          const chX = cx + uniform(rng, -w * 0.3, w * 0.3);
-          const chZ = cz + uniform(rng, -d * 0.2, d * 0.2);
+          const chDx = uniform(rng, -w * 0.3, w * 0.3);
+          const chDz = uniform(rng, -d * 0.2, d * 0.2);
+          const [cxr, czr] = rot(chDx, chDz);
           push({
             shape: "box",
             size: [0.5, roofH + 0.9, 0.5],
-            pos: [chX, wallHM, chZ],
+            pos: [cx + cxr, wallHM, cz + czr],
+            rotY: rotYOr(),
             color: darken(wall.lit, 0.12),
             cat: "building",
           });
@@ -956,11 +1222,12 @@ function buildVolumePrimitives(
         color: PALETTE.trunk,
         cat: "tree",
       });
-      // Copa: cilindro achatado alto (legible como masa de copa en clay).
+      // Copa ESFÉRICA (v8): el cono leía como ciprés/abeto siempre — la masa
+      // redonda es el árbol genérico del bench.
       push({
-        shape: "cone",
-        size: [canopyR, canopyR * 2.1, 10],
-        pos: [cx, trunkH * 0.8, cz],
+        shape: "sphere",
+        size: [canopyR * 1.05, 14],
+        pos: [cx, trunkH * 0.7, cz],
         color: PALETTE.canopy,
         cat: "tree",
       });
@@ -1015,14 +1282,22 @@ function buildVolumePrimitives(
         // Tablero + patas: silueta inequívoca de mueble.
         const topH = Math.max(0.06, hM * 0.1);
         const legH = hM - topH;
-        push({ shape: "box", size: [w, topH, d], pos: [cx, legH, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, topH, d],
+          pos: [cx, legH, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
         const legR = 0.06;
         for (const sx of [-1, 1]) {
           for (const sz of [-1, 1]) {
+            const [lx, lz] = rot(sx * (w / 2 - 0.12), sz * (d / 2 - 0.12));
             push({
               shape: "box",
               size: [legR * 2, legH, legR * 2],
-              pos: [cx + sx * (w / 2 - 0.12), 0, cz + sz * (d / 2 - 0.12)],
+              pos: [cx + lx, 0, cz + lz],
               color: darken(color, 0.15),
               cat: "prop",
             });
@@ -1032,17 +1307,28 @@ function buildVolumePrimitives(
         // Caja del carro elevada + dos ruedas: deja de leer como portón.
         const boxH = hM * 0.5;
         const wheelR = Math.min(0.55, hM * 0.4);
-        push({ shape: "box", size: [w, boxH, d * 0.85], pos: [cx, wheelR * 0.9, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, boxH, d * 0.85],
+          pos: [cx, wheelR * 0.9, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
         const along = w >= d;
         for (const s of [-1, 1]) {
+          const [wxr, wzr] = along
+            ? rot(s * w * 0.28, d * 0.35)
+            : rot(w * 0.35, s * d * 0.28);
           push({
             shape: "cylinder",
             size: [wheelR, 0.12],
             // rotX tumba el cilindro sobre su base: el centro del disco queda
             // en pos.y — a la altura del radio para que apoye en el suelo.
-            pos: along
-              ? [cx + s * w * 0.28, wheelR, cz + d * 0.35]
-              : [cx + w * 0.35, wheelR, cz + s * d * 0.28],
+            // El eje de la rueda no puede seguir el yaw del carro (rotX+rotY
+            // componen Rx·Ry, y el pre-giro Y de un cilindro es invisible):
+            // con angle ≤ ~30° el disco desviado no se aprecia.
+            pos: [cx + wxr, wheelR, cz + wzr],
             rotX: Math.PI / 2,
             color: darken(color, 0.25),
             cat: "prop",
@@ -1058,7 +1344,14 @@ function buildVolumePrimitives(
           cat: "prop",
         });
       } else {
-        push({ shape: "box", size: [w, hM, d], pos: [cx, 0, cz], color, cat: "prop" });
+        push({
+          shape: "box",
+          size: [w, hM, d],
+          pos: [cx, 0, cz],
+          rotY: rotYOr(),
+          color,
+          cat: "prop",
+        });
       }
       break;
     }

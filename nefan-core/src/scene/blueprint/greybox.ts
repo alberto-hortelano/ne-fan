@@ -17,9 +17,10 @@
 
 import { seededRng, uniform } from "../../rng.js";
 import { TILE_CELLS } from "../tile.js";
-import { BIOME_COLORS, PALETTE, darken, lighten } from "./palette.js";
+import { BIOME_COLORS, darken, lighten } from "./palette.js";
 import { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
 import { volumeFootprint } from "./footprint.js";
+import { ellipsePoints, groundFeaturePrims } from "./ground-prims.js";
 import type { GroundFeature } from "./ground.js";
 import type { GateVolume, Volume } from "./volumes.js";
 import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
@@ -95,17 +96,6 @@ export interface TileGreyboxSpec {
   occluders: TileOccluderSpec[];
 }
 
-/** Colores de suelo por material declarado (rasgos `ground`). */
-const GROUND_MATERIAL_COLORS: Record<string, string> = {
-  dirt: "#8f7757",
-  cobble: "#a29b8b",
-  stone: "#8b8678",
-  sand: "#c2b184",
-  wood: PALETTE.woodTop,
-  gravel: "#9a917f",
-  grass: PALETTE.grassBase,
-};
-
 /** Flores por bioma: tonos que leen como vegetación sin gritar. */
 const BIOME_FLOWERS: Record<string, string[]> = {
   grass: ["#d8c458", "#c8d2df", "#c98a9a"],
@@ -123,73 +113,6 @@ const Y_PATH = 0.09;
 const Y_WATER = 0.13;
 const Y_DECK = 0.18;
 const LAYER_T = 0.03;
-
-/** Polígono-elipse (16 segmentos, determinista). */
-function ellipsePoints(cx: number, cz: number, rx: number, rz: number): [number, number][] {
-  const pts: [number, number][] = [];
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
-    pts.push([cx + Math.cos(a) * rx, cz + Math.sin(a) * rz]);
-  }
-  return pts;
-}
-
-function flatShapePrims(
-  f: Extract<GroundFeature, { kind: "area" | "water" | "deck" }>,
-  yBase: number,
-  color: string,
-  cat: GreyboxPrimitive["cat"],
-): GreyboxPrimitive[] {
-  if (f.rect) {
-    const [c0, r0, w, d] = f.rect;
-    return [{ shape: "box", size: [w, LAYER_T, d], pos: [c0 + w / 2, yBase, r0 + d / 2], color, cat, noShadow: true }];
-  }
-  if (f.ellipse) {
-    return [
-      {
-        shape: "polygon",
-        size: [LAYER_T],
-        pos: [0, yBase, 0],
-        points: ellipsePoints(f.ellipse.center[0], f.ellipse.center[1], f.ellipse.rx, f.ellipse.ry),
-        color,
-        cat,
-        noShadow: true,
-      },
-    ];
-  }
-  if (f.polygon) {
-    return [
-      { shape: "polygon", size: [LAYER_T], pos: [0, yBase, 0], points: f.polygon as [number, number][], color, cat, noShadow: true },
-    ];
-  }
-  return [];
-}
-
-/** Camino como cajas por segmento + juntas cilíndricas (linecap round). */
-function pathPrims(f: Extract<GroundFeature, { kind: "path" }>, color: string): GreyboxPrimitive[] {
-  const w = f.w ?? 4;
-  const prims: GreyboxPrimitive[] = [];
-  const pts = f.points as [number, number][];
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const [ax, az] = pts[i];
-    const [bx, bz] = pts[i + 1];
-    const len = Math.hypot(bx - ax, bz - az);
-    if (len < 1e-3) continue;
-    prims.push({
-      shape: "box",
-      size: [len, LAYER_T, w],
-      pos: [(ax + bx) / 2, Y_PATH, (az + bz) / 2],
-      rotY: -Math.atan2(bz - az, bx - ax),
-      color,
-      cat: "terrain",
-      noShadow: true,
-    });
-  }
-  for (const [px, pz] of pts) {
-    prims.push({ shape: "cylinder", size: [w / 2, LAYER_T], pos: [px, Y_PATH, pz], color, cat: "terrain", noShadow: true });
-  }
-  return prims;
-}
 
 /** Detalle procedural del suelo — manchas orgánicas del bioma, piedritas y
  *  flores dispersas, sembradas por tile (determinista: caché intacta). */
@@ -277,6 +200,19 @@ function primWorldAabb(p: GreyboxPrimitive): { minU: number; minV: number; maxU:
       }
       return { minU, minV, maxU, maxV, h0: p.pos[1], h1: p.pos[1] + p.size[0] };
     }
+    case "sphere": {
+      // size = [r, segmentos?] — la altura NO está en size[1] (el return
+      // genérico la leería mal): alto real = 2r desde la base.
+      const r = p.size[0];
+      return {
+        minU: p.pos[0] - r,
+        minV: p.pos[2] - r,
+        maxU: p.pos[0] + r,
+        maxV: p.pos[2] + r,
+        h0: p.pos[1],
+        h1: p.pos[1] + 2 * r,
+      };
+    }
   }
   return {
     minU: p.pos[0] - eu,
@@ -329,25 +265,20 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
   });
   primitives.push(...groundDetailPrims(base, biome, seedKey));
 
-  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks). ────────
-  for (const f of plan.ground ?? []) {
-    if (f.kind === "area") {
-      primitives.push(...flatShapePrims(f, Y_AREA, GROUND_MATERIAL_COLORS[f.material] ?? "#8f7757", "terrain"));
-    }
-  }
-  for (const f of plan.ground ?? []) {
-    if (f.kind === "path") {
-      primitives.push(...pathPrims(f, GROUND_MATERIAL_COLORS[f.material ?? "dirt"] ?? "#8f7757"));
-    }
-  }
-  for (const f of plan.ground ?? []) {
-    if (f.kind === "water") primitives.push(...flatShapePrims(f, Y_WATER, PALETTE.water, "water"));
-  }
-  for (const f of plan.ground ?? []) {
-    if (f.kind === "deck") {
-      primitives.push(...flatShapePrims(f, Y_DECK, f.material === "stone" ? "#8b8678" : PALETTE.woodTop, "terrain"));
-    }
-  }
+  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks) — helper
+  // compartido con el plató; aquí transform identidad y celdas (byte-idéntico
+  // al emisor local que sustituye). ─────────────────────────────────────────
+  primitives.push(
+    ...groundFeaturePrims(plan.ground ?? [], {
+      toXZ: (u, v) => [u, v],
+      scale: 1,
+      yArea: Y_AREA,
+      yPath: Y_PATH,
+      yWater: Y_WATER,
+      yDeck: Y_DECK,
+      layerT: LAYER_T,
+    }),
+  );
 
   // ── Volúmenes por tramos + occluders/elements analíticos. ────────────────
   const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
