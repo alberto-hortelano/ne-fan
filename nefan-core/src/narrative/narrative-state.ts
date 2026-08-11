@@ -371,9 +371,23 @@ export class NarrativeState {
     spawnReason: string = "scene_init",
     spawnEventId: string = "",
     assetRefs: string[] = [],
-  ): void {
+  ): string {
+    // Unicidad de id: dos entidades con el mismo id colapsarían en el sim
+    // (behavior system keyed por id) y en getEntity. Si llega un duplicado
+    // (LLM reusando id, o el generador por defecto en el mismo segundo entre
+    // turnos), se sufija en vez de crear un choque silencioso. Devuelve el id
+    // realmente usado para que el caller emita el effect con ese mismo id.
+    let uniqueId = entityId;
+    if (this.entities.some((e) => e.id === uniqueId)) {
+      let n = 2;
+      while (this.entities.some((e) => e.id === `${entityId}_${n}`)) n++;
+      uniqueId = `${entityId}_${n}`;
+      console.warn(
+        `[narrative-state] id de entidad duplicado "${entityId}" → "${uniqueId}"`,
+      );
+    }
     this.entities.push({
-      id: entityId,
+      id: uniqueId,
       type: entityType,
       scene_id: sceneId,
       spawned_at: nowIso(),
@@ -384,6 +398,7 @@ export class NarrativeState {
       asset_refs: assetRefs,
     });
     this.dirty = true;
+    return uniqueId;
   }
 
   recordEntityDespawned(entityId: string): void {

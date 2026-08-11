@@ -1,6 +1,6 @@
 ## Persistent narrative state for the open-world RPG.
 ## Tracks world+player+story+spawned entities+dialogue history. Serializes to
-## ~/code/ne-fan/saves/{session_id}/state.json — a shared filesystem path so
+## <repo>/saves/{session_id}/state.json — a shared filesystem path so
 ## the HTML 2D client (via nefan-core/bridge) and Godot read the same saves.
 ## The narrative engine reads this for context and the title screen lists
 ## resumable sessions.
@@ -25,16 +25,17 @@ const MIRRORED_KEYS := [
 
 
 static func _saves_dir() -> String:
-	## Prefer the shared filesystem path under $HOME/code/ne-fan/saves/, falling
-	## back to user:// when the env var isn't set (e.g. exported builds).
+	## Prefer the shared filesystem path <repo>/saves/ (same default as start.sh
+	## and the bridge), falling back to user:// in exported builds where res://
+	## is not a real directory on disk.
 	var override: String = OS.get_environment("NEFAN_SAVES_DIR")
 	if override != "":
 		if not override.ends_with("/"):
 			override += "/"
 		return override
-	var home: String = OS.get_environment("HOME")
-	if home != "":
-		return home + "/code/ne-fan/saves/"
+	if OS.has_feature("editor"):
+		var project_dir: String = ProjectSettings.globalize_path("res://")
+		return project_dir.rstrip("/").get_base_dir() + "/saves/"
 	return SAVES_DIR_FALLBACK
 
 

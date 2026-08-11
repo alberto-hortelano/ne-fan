@@ -16,14 +16,14 @@ ver CLAUDE.md "Modo headless").
 
 ## Notas de arquitectura
 
-- **Rooms cerradas = legacy de tests.** `scripts/room/room_builder.gd` (schema
-  `surfaces/exits`) sólo lo alimentan los JSON de `test_rooms/` vía F1/F2/F3 o
-  el dev menu (F12). El flujo canónico es open-world: `outdoor_builder.gd` +
-  `world/chunk_manager.gd` + `world/terrain_generator.gd`.
-- `light_placer.gd` y `exit_builder.gd` NO son legacy: los comparten
-  `room_builder` (legacy) y `outdoor_builder` (canónico).
-- `room_geometry.gd` (transiciones de rooms legacy) se eliminó al quedarse sin
-  callers.
+- **Rooms cerradas = legacy de tests.** Los JSON de `test_rooms/` (world
+  scenes normalizadas) sólo alimentan el dev menu (F12) y estos scripts. El
+  flujo canónico es open-world: el motor narrativo produce Format D, el bridge
+  lo normaliza y `scripts/room/scene_builder.gd` + `object_spawner.gd` +
+  `light_placer.gd` construyen la escena (los antiguos `room_builder` /
+  `outdoor_builder` / `chunk_manager` / `terrain_generator` / `exit_builder`
+  ya no existen).
 - La aserción de animación de ataque valida comportamiento ("reproduce y
-  vuelve a idle"), no el nombre del clip: el selector puede elegir cualquier
+  vuelve a idle"), no el nombre del clip: el selector
+  (`combat_animation_sync.gd::_select_best_animation`) puede elegir cualquier
   clip cuyo reach/arco encaje con los parámetros del ataque.

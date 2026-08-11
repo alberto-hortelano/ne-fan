@@ -74,6 +74,21 @@ export class WorldMapManager {
     if (spec.parent_id !== null && !this.map.places[spec.parent_id]) {
       throw new Error(`upsertPlace: parent_id "${spec.parent_id}" not found`);
     }
+    // Rechaza ciclos de parent_id: un place que sea su propio ancestro haría
+    // que getAncestors bucle infinito y congele el event loop del bridge
+    // entero (lo dispara el LLM vía map_upsert_place → GET /map/place/{id}).
+    if (spec.parent_id !== null) {
+      if (spec.parent_id === spec.id) {
+        throw new Error(`upsertPlace: place "${spec.id}" cannot be its own parent`);
+      }
+      for (const anc of this.getAncestors(spec.parent_id)) {
+        if (anc.id === spec.id) {
+          throw new Error(
+            `upsertPlace: parent_id "${spec.parent_id}" is a descendant of "${spec.id}" (cycle)`,
+          );
+        }
+      }
+    }
     const existing = this.map.places[spec.id];
     const place: Place = {
       id: spec.id,
@@ -201,11 +216,15 @@ export class WorldMapManager {
     return Object.values(this.map.places).filter((p) => p.parent_id === parentId);
   }
 
-  /** Walk up parent chain, returning [self, parent, ..., root]. */
+  /** Walk up parent chain, returning [self, parent, ..., root]. `upsertPlace`
+   *  ya impide crear ciclos; el Set de visitados es un cinturón extra para
+   *  saves antiguos que pudieran traer uno (corta en vez de colgarse). */
   getAncestors(id: string): Place[] {
     const chain: Place[] = [];
+    const seen = new Set<string>();
     let cur: Place | undefined = this.map.places[id];
-    while (cur) {
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
       chain.push(cur);
       cur = cur.parent_id ? this.map.places[cur.parent_id] : undefined;
     }
