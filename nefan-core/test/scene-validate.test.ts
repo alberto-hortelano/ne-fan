@@ -173,6 +173,54 @@ describe("validateScene — tiles", () => {
     assert.ok(r.errors.some((e) => e.includes("no es alcanzable")), r.errors.join(" | "));
   });
 
+  it("acepta un río requerido continuado por río (no se exige llegar andando al agua)", () => {
+    // Bug histórico: la continuación del río (celda de agua, sólida) entraba
+    // como objetivo de alcanzabilidad y jamás era transitable → tile correcto
+    // rechazado. Debe aceptarse: el camino da el arranque, el río solo se
+    // valida como costura.
+    const tile = makeTile([
+      {
+        type: "path",
+        points: [[0, 41], [64, 46], [128, 52]],
+        width: 2,
+        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
+      },
+      // Río corto que entra por el norte SIN cruzar el camino (acaba en fila 18).
+      { type: "river", points: [[30, 0], [30, 18]], width: 4, at_edges: [{ edge: "north", at: 30 }] },
+    ]);
+    const ctx: TileValidationContext = {
+      required_crossings: [
+        pathCrossing("west", 41),
+        pathCrossing("east", 52),
+        { edge: "north", type: "river", at: 30, width: 4 },
+      ],
+      entry: { edge: "west", at: 41 },
+    };
+    const r = validateScene(tile, undefined, ctx);
+    assert.deepEqual(r.errors, [], r.errors.join(" | "));
+    assert.equal(r.ok, true);
+  });
+
+  it("entrada que casa con un río → avisa en vez de saltarse la validación en silencio", () => {
+    // La entrada casa con un río: el único startCell caía en agua y el flood
+    // no corría, aprobando el tile sin verificar nada. Ahora se avisa.
+    const tile = makeTile([
+      { type: "river", points: [[0, 40], [128, 40]], width: 4, at_edges: [{ edge: "west", at: 40 }, { edge: "east", at: 40 }] },
+    ]);
+    const ctx: TileValidationContext = {
+      required_crossings: [
+        { edge: "west", type: "river", at: 40, width: 4 },
+        { edge: "east", type: "river", at: 40, width: 4 },
+      ],
+      entry: { edge: "west", at: 40 },
+    };
+    const r = validateScene(tile, undefined, ctx);
+    assert.ok(
+      r.warnings.some((w) => w.includes("no cae en terreno transitable")),
+      `esperaba aviso de alcanzabilidad no verificada; warnings=${r.warnings.join(" | ")}`,
+    );
+  });
+
   it("player en un tile normal → error; en bootstrap es obligatorio", () => {
     const withPlayer = makeTile();
     (withPlayer.entities as Record<string, unknown>[]).push({

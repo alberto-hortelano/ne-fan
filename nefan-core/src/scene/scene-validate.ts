@@ -17,7 +17,7 @@ import { parseGround } from "./blueprint/ground.js";
 import { shapeContains } from "./blueprint/ground-collision.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
 import { parseStage, type StageBlock } from "./stage/schema.js";
-import { computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
+import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
 import { TILE_CELLS } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
@@ -246,6 +246,8 @@ export function validateScene(
     }
   }
   const walkableCells = walkable.filter(Boolean).length;
+  const cellWalkable = ([c, r]: [number, number]): boolean =>
+    c >= 0 && r >= 0 && c < cols && r < rows && walkable[r * cols + c];
 
   const stats = emptyStats(cols, rows);
   stats.walkable_cells = walkableCells;
@@ -332,10 +334,16 @@ export function validateScene(
       }
       // Las continuaciones reales de los cruces requeridos son OBJETIVOS de
       // alcanzabilidad (no arranques: sembrar el flood con todos los cruces
-      // los haría trivialmente alcanzables entre sí).
+      // los haría trivialmente alcanzables entre sí). SOLO cruces TRANSITABLES:
+      // un río continúa en una celda de agua (sólida), a la que no se llega
+      // andando — exigirle alcanzabilidad rechazaba tiles correctos. Su
+      // continuidad ya la valida el chequeo de costura de arriba; se casa por
+      // tipo compatible, no por proximidad ciega.
       for (const req of reqs) {
-        const match = actual.find((a) => Math.abs(a.at - req.at) <= 2);
-        if (match) {
+        const match = actual.find(
+          (a) => COMPATIBLE[req.type].has(a.type) && Math.abs(a.at - req.at) <= 2,
+        );
+        if (match && cellWalkable(edgeCell(edge, match.at))) {
           requiredReachCells.push({
             cell: edgeCell(edge, match.at),
             label: `cruce ${match.type} del borde ${edge} (celda ${match.at})`,
@@ -344,10 +352,14 @@ export function validateScene(
       }
     }
     // Arranque del flood: la entrada explícita (borde por el que viene el
-    // jugador) o, en su defecto, la primera continuación de cruce.
+    // jugador) o, en su defecto, la primera continuación de cruce. Debe ser
+    // TRANSITABLE: si la entrada casa con un río (agua), sembrar ahí dejaba
+    // walkableStarts vacío y se saltaba toda la validación en silencio.
     if (tileContext?.entry) {
       const { edge, at } = tileContext.entry;
-      const near = actualEdges[edge].crossings.find((a) => at === undefined || Math.abs(a.at - at) <= 2);
+      const near = actualEdges[edge].crossings.find(
+        (a) => (at === undefined || Math.abs(a.at - at) <= 2) && cellWalkable(edgeCell(edge, a.at)),
+      );
       if (near) startCells.push(edgeCell(edge, near.at));
     }
     if (startCells.length === 0 && requiredReachCells.length > 0) {
@@ -383,11 +395,25 @@ export function validateScene(
   }
   stats.doors_total = doorCells.length;
 
-  const walkableStarts = startCells.filter(([c, r]) => c >= 0 && r >= 0 && c < cols && r < rows && walkable[r * cols + c]);
-  if (isTile && startCells.length === 0) {
+  const walkableStarts = startCells.filter(([c, r]) => cellWalkable([c, r]));
+  // Un tile con cruces de vecinos o entrada declarada pero SIN terreno
+  // transitable es injugable: el jugador entraría en agua/roca y no podría
+  // moverse. Antes se aprobaba en silencio (el flood no arrancaba). Fail-loud.
+  const tileHasNeighborLink = requiredReachCells.length > 0 || Boolean(tileContext?.entry);
+  if (isTile && tileHasNeighborLink && walkableCells === 0) {
+    errors.push("tile sin terreno transitable: el jugador no podría moverse dentro (injugable)");
+  }
+  if (isTile && startCells.length === 0 && !tileHasNeighborLink) {
     // Tile aislado sin cruces requeridos ni entrada (p.ej. prefetch diagonal):
     // no hay punto de entrada que validar — se acepta con aviso.
     warnings.push("tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada");
+  } else if (isTile && tileHasNeighborLink && walkableStarts.length === 0 && walkableCells > 0) {
+    // Hay terreno transitable pero ningún arranque declarado cae en él (p.ej.
+    // la entrada casa con un río). ANTES el flood no corría y pasaba en
+    // silencio; ahora al menos se avisa de que la alcanzabilidad no se verificó.
+    warnings.push(
+      "la entrada del tile no cae en terreno transitable: alcanzabilidad no verificada",
+    );
   }
   if (walkableStarts.length > 0) {
     const reachable = new Uint8Array(cols * rows);
