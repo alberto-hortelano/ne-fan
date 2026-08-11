@@ -1,0 +1,30 @@
+{
+ "description": "dos volúmenes con el mismo id",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "casa",
+    "label": "casa",
+    "type": "building",
+    "rect": [
+     4,
+     4,
+     8,
+     6
+    ]
+   },
+   {
+    "id": "casa",
+    "label": "otra casa",
+    "type": "building",
+    "rect": [
+     20,
+     4,
+     8,
+     6
+    ]
+   }
+  ]
+ }
+}

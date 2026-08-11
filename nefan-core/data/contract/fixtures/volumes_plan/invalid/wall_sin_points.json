@@ -1,0 +1,19 @@
+{
+ "description": "wall sin points válidos",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "muro",
+    "label": "muro",
+    "type": "wall",
+    "points": [
+     [
+      4,
+      4
+     ]
+    ]
+   }
+  ]
+ }
+}

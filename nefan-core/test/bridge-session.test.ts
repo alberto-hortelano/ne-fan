@@ -660,3 +660,101 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   });
 });
 
+
+describe("set_render_mode (activación de imágenes por faceta)", () => {
+  /** Save mínimo en vector como los pre-facetas: sin character_mode. */
+  const legacyVectorSave = (id: string) =>
+    ({
+      schema_version: 3,
+      session_id: id,
+      game_id: "toledo_1200",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      world: { view: "proscenium", render_mode: "vector" },
+      player: {},
+      story_so_far: "",
+      scenes_loaded: {},
+      entities: [],
+      dialogue_history: [],
+      asset_index_snapshot: [],
+      world_map: { places: [], links: [], triggers: [] },
+      plugins: [],
+      _next_event_seq: 1,
+    }) as unknown as import("../src/narrative/types.js").SessionData;
+
+  it("activar escenarios en save legacy FIJA character_mode=vector (no arrastra los skins)", async () => {
+    const { ctx } = makeCtx();
+    await ctx.sessionStorage.write("s1", legacyVectorSave("s1"));
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s1", renderMode: "image", facet: "scenes" },
+      socket,
+      ctx,
+    );
+    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    const data = await ctx.sessionStorage.read("s1");
+    assert.equal(data?.world.render_mode, "image");
+    // Regresión: sin este pin, character_mode "" seguiría a render_mode y
+    // activar escenarios activaría también los skins IA (gasto no pedido).
+    assert.equal(data?.world.character_mode, "vector");
+  });
+
+  it("activar personajes deja los escenarios en vector", async () => {
+    const { ctx } = makeCtx();
+    await ctx.sessionStorage.write("s2", legacyVectorSave("s2"));
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s2", renderMode: "image", facet: "characters" },
+      socket,
+      ctx,
+    );
+    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    const data = await ctx.sessionStorage.read("s2");
+    assert.equal(data?.world.render_mode, "vector");
+    assert.equal(data?.world.character_mode, "image");
+  });
+
+  it("doble activación y sesión inexistente fallan con error claro", async () => {
+    const { ctx } = makeCtx();
+    await ctx.sessionStorage.write("s3", legacyVectorSave("s3"));
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s3", renderMode: "image", facet: "scenes" },
+      socket, ctx,
+    );
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r2", sessionId: "s3", renderMode: "image", facet: "scenes" },
+      socket, ctx,
+    );
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r3", sessionId: "no_existe", renderMode: "image" },
+      socket, ctx,
+    );
+    assert.equal((sent[1] as { ok: boolean }).ok, false);
+    assert.match((sent[1] as { error?: string }).error ?? "", /ya tiene los escenarios/);
+    assert.equal((sent[2] as { ok: boolean }).ok, false);
+    assert.match((sent[2] as { error?: string }).error ?? "", /no existe/);
+    // Facet desconocido: rechazar, no adivinar (un typo activaría otra faceta).
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r4", sessionId: "s3", renderMode: "image", facet: "scene" as never },
+      socket, ctx,
+    );
+    assert.equal((sent[3] as { ok: boolean }).ok, false);
+    assert.match((sent[3] as { error?: string }).error ?? "", /facet desconocido/);
+  });
+
+  it("con la sesión ACTIVA, el espejo en memoria fija ambos modos", async () => {
+    const { ctx, narrative } = makeCtx();
+    await ctx.sessionStorage.write("s4", legacyVectorSave("s4"));
+    narrative.session_id = "s4";
+    narrative.world.render_mode = "vector";
+    narrative.world.character_mode = "";
+    const { socket } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s4", renderMode: "image", facet: "scenes" },
+      socket, ctx,
+    );
+    assert.equal(narrative.world.render_mode, "image");
+    assert.equal(narrative.world.character_mode, "vector");
+  });
+});

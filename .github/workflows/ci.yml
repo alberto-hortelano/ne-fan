@@ -18,10 +18,19 @@ jobs:
           # Alineado con engines (>=24): node:sqlite del asset-store (F2).
           node-version: 24
           cache: npm
-          cache-dependency-path: nefan-core/package-lock.json
+          cache-dependency-path: |
+            nefan-core/package-lock.json
+            narrative-mcp/package-lock.json
       - run: npm ci
+      # contract-fixtures.test.ts carga narrative-mcp/validators.ts, que
+      # importa @nefan/core (los parsers zod de producción): hace falta el
+      # node_modules de narrative-mcp (symlink file:../nefan-core) y el dist
+      # del core compilado.
+      - run: npm ci
+        working-directory: narrative-mcp
       - run: npx tsc --noEmit
       - run: npm run lint
+      - run: npm run build
       - run: npm test
 
   narrative-mcp:

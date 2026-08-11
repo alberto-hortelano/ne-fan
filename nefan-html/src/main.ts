@@ -266,18 +266,30 @@ const sessionProjection = VIEW_PROJECTION;
  *  - "" (saves previos al campo): comportamiento legacy — manda el toggle
  *    persistido en localStorage. */
 let sessionRenderMode: "image" | "vector" | "" = "";
-function applySessionRenderMode(renderMode: string): void {
+function applySessionRenderMode(renderMode: string, characterMode = ""): void {
   sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
   devPanel.setSession({ renderMode: sessionRenderMode });
-  // Los skins IA de personajes siguen al modo del mundo: en maqueta 3D todos
-  // los personajes usan la base y_bot (sin encolar repintados de Meshy).
-  characterSprites.setSkinsAllowed(sessionRenderMode !== "vector");
+  // Personajes por SEPARADO (world.character_mode): skins IA o base y_bot.
+  // Sin campo (saves previos), siguen al modo de escenarios — el
+  // comportamiento de siempre.
+  const effectiveCharMode = characterMode || sessionRenderMode;
+  characterSprites.setSkinsAllowed(effectiveCharMode !== "vector");
+  // Fail-loud: el save pide skins IA pero el backend está apagado por config
+  // — sin este aviso, requestSkin haría no-op silencioso y el jugador que
+  // confirmó el gasto vería y_bot sin explicación.
+  if (effectiveCharMode === "image" && !CONFIG.graphics.ai_skin) {
+    errors.push(
+      "config",
+      "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
+    );
+  }
+  const charLabel = effectiveCharMode === "vector" ? "personajes en base y_bot" : "skins IA";
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
-    log("Gráficos: maqueta 3D (clay local, sin imagen IA; personajes en base y_bot)");
+    log(`Gráficos: maqueta 3D (clay local, sin imagen IA; ${charLabel})`);
   } else if (sessionRenderMode === "image") {
     autoPipeline.setEnabled(true);
-    log("Gráficos: imagen IA (Auto-img activo)");
+    log(`Gráficos: imagen IA (Auto-img activo; ${charLabel})`);
   }
 }
 /** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
@@ -326,7 +338,9 @@ function applySessionView(view: string): void {
       if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
       // Palanca dev del gain de seguimiento de cámara (?follow=0.35; 0 = fija).
       const follow = parseFloat(new URLSearchParams(location.search).get("follow") ?? "");
-      if (Number.isFinite(follow)) prosceniumRenderer.followOverride = follow;
+      // Clamp [0,1]: un gain negativo invierte el pan (mareo) y >1 satura clamps.
+      if (Number.isFinite(follow))
+        prosceniumRenderer.followOverride = Math.min(1, Math.max(0, follow));
     }
     activeRenderer = prosceniumRenderer;
     // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
@@ -2197,10 +2211,11 @@ async function runTitleFlow(): Promise<void> {
         action.styleId || undefined,
         action.renderMode,
         action.view,
+        action.characterMode,
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);
@@ -2211,7 +2226,7 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "");
+      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);

@@ -66,6 +66,9 @@ export interface StartSessionMessage {
    *  Ausente = "image". Congelado en el save: mezclar tiles pintados y
    *  vectoriales rompe la continuidad visual entre vecinos. */
   renderMode?: string;
+  /** Modo de imagen de PERSONAJES: "image" (skins IA por descripción) |
+   *  "vector" (base y_bot). Ausente = sigue a renderMode. */
+  characterMode?: string;
   /** Vista del mundo elegida en el título: "overworld" | "proscenium".
    *  Ausente = la default del juego (game.json). Congelada en el save
    *  (`world.view`) como el estilo. */
@@ -82,6 +85,19 @@ export interface DeleteSessionMessage {
   type: "delete_session";
   requestId: string;
   sessionId: string;
+}
+
+/** Activa las imágenes IA en una partida empezada en vector (solo upgrade:
+ *  la inversa dejaría el mundo mezclado clay/pintado para siempre). El save
+ *  puede no ser la sesión activa — se parchea en disco desde el título. */
+export interface SetRenderModeMessage {
+  type: "set_render_mode";
+  requestId: string;
+  sessionId: string;
+  renderMode: "image";
+  /** Qué se activa: escenarios (render_mode) o personajes (character_mode).
+   *  Ausente = "scenes" (compat). */
+  facet?: "scenes" | "characters";
 }
 
 export interface DialogueChoiceMessage {
@@ -220,6 +236,7 @@ export type ClientMessage =
   | StartSessionMessage
   | ResumeSessionMessage
   | DeleteSessionMessage
+  | SetRenderModeMessage
   | DialogueChoiceMessage
   | CreateGameMessage
   | ListGamesMessage
@@ -357,6 +374,13 @@ export interface SessionDeletedMessage {
   ok: boolean;
 }
 
+export interface RenderModeSetMessage {
+  type: "render_mode_set";
+  requestId: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface SessionSavedMessage {
   type: "session_saved";
   requestId?: string;
@@ -373,4 +397,5 @@ export type ServerMessage =
   | GamesListedMessage
   | GameCreatedMessage
   | SessionDeletedMessage
+  | RenderModeSetMessage
   | SessionSavedMessage;

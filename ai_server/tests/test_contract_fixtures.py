@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from narrative_schemas import (  # noqa: E402
     validate_blueprint_review,
     validate_ground,
+    validate_volumes,
     validate_narrative_reaction,
     validate_scene_classify_response,
     validate_stage_review,
@@ -99,14 +100,39 @@ class TestContractFixtures(unittest.TestCase):
         """Plan de suelo declarativo: espejo de parseGround (nefan-core, zod)."""
         for name, fx in load_fixtures("ground_plan"):
             with self.subTest(fixture=name):
-                result = validate_ground(fx["payload"]["ground"])
+                raw = fx["payload"]["ground"]
+                result = validate_ground(
+                    [dict(f) if isinstance(f, dict) else f for f in raw]
+                    if isinstance(raw, list) else raw
+                )
                 expected = fx["expect"] == "accept"
                 self.assertEqual(
-                    result is not None,
+                    result is not None and result == raw,
                     expected,
                     f"ground_plan/{name}: esperaba {fx['expect']} — {fx['description']}. "
                     "Si el cambio es intencional, actualiza parseGround (nefan-core) "
                     "Y la fixture.",
+                )
+
+    def test_volumes_plan(self):
+        """Volúmenes: el MCP rechaza estricto (fail-loud + re-responder); el
+        saneador Python es la última red para el camino API — el candado aquí
+        es que NO descarte ni un item de una fixture válida, y que en las
+        inválidas detecte el problema (descartaría ≥1)."""
+        for name, fx in load_fixtures("volumes_plan"):
+            with self.subTest(fixture=name):
+                raw = fx["payload"]["volumes"]
+                clean = validate_volumes([dict(v) for v in raw])
+                # Igualdad profunda: un item DESCARTADO o un campo SANEADO
+                # (p.ej. angle fuera de rango eliminado) cuentan como detección.
+                intact = clean is not None and clean == raw
+                expected = fx["expect"] == "accept"
+                self.assertEqual(
+                    intact,
+                    expected,
+                    f"volumes_plan/{name}: esperaba {fx['expect']} — {fx['description']}. "
+                    "Si el cambio de regla es intencional, actualiza validateVolumes "
+                    "(narrative-mcp) Y la fixture.",
                 )
 
 

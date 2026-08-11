@@ -1,0 +1,33 @@
+{
+ "description": "el caso real 2026-08-11: un prop sin shape en medio de un pueblo válido — se rechaza ENTERO para que el motor corrija (nunca descartar en silencio)",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "meson",
+    "label": "mesón",
+    "type": "building",
+    "rect": [
+     10,
+     10,
+     12,
+     8
+    ]
+   },
+   {
+    "id": "malo",
+    "label": "prop roto",
+    "type": "prop"
+   },
+   {
+    "id": "torre",
+    "label": "torreón",
+    "type": "tower",
+    "at": [
+     50,
+     6
+    ]
+   }
+  ]
+ }
+}

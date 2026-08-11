@@ -99,108 +99,139 @@ def _has_one_shape(f: dict) -> bool:
 
 
 def validate_ground(raw, *, field: str = "ground"):
-    """Valida el array `ground` del plan de tile (rasgos de suelo
-    declarativos: path/area/water/deck). Devuelve la lista limpia o None con
-    traza del motivo (el caller degrada descartando el campo). Espejo laxo de
-    parseGround (nefan-core/src/scene/blueprint/ground.ts)."""
+    """Valida el array `ground` del plan (rasgos de suelo declarativos:
+    path/area/water/deck). Devuelve la lista LIMPIA — los rasgos inválidos se
+    descartan UNO A UNO con traza (un área rota no puede borrar las calles y
+    el RÍO enteros: sin el agua, la colisión desaparece). None solo si el
+    campo entero es inutilizable (no-lista). Espejo laxo de parseGround
+    (nefan-core/src/scene/blueprint/ground.ts); el rechazo duro por-array lo
+    hace el preflight zod del MCP."""
     if not isinstance(raw, list):
         print(f"validate_scene: {field} descartado (no es lista)")
         return None
     if len(raw) > MAX_GROUND_FEATURES:
-        print(f"validate_scene: {field} descartado ({len(raw)} > {MAX_GROUND_FEATURES})")
-        return None
+        print(f"validate_scene: {field} truncado ({len(raw)} > {MAX_GROUND_FEATURES})")
+        raw = raw[:MAX_GROUND_FEATURES]
+    clean = []
     seen_ids = set()
     for i, f in enumerate(raw):
         ctx = f"{field}[{i}]"
         if not isinstance(f, dict):
-            print(f"validate_scene: {ctx} no es objeto — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} no es objeto — rasgo descartado")
+            continue
         fid = f.get("id")
         kind = f.get("kind")
         if not isinstance(fid, str) or not fid or fid in seen_ids:
-            print(f"validate_scene: {ctx} id inválido/duplicado — {field} descartado")
-            return None
-        seen_ids.add(fid)
+            print(f"validate_scene: {ctx} id inválido/duplicado — rasgo descartado")
+            continue
         if kind not in GROUND_KINDS:
-            print(f"validate_scene: {ctx} kind desconocido {kind!r} — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} kind desconocido {kind!r} — rasgo descartado")
+            continue
         if kind == "path":
             pts = f.get("points")
             if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(p) for p in pts)):
-                print(f"validate_scene: {ctx} path sin points válidos — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} path sin points válidos — rasgo descartado")
+                continue
         elif not _has_one_shape(f):
-            print(f"validate_scene: {ctx} necesita exactamente una de rect|polygon|ellipse — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} necesita exactamente una de rect|polygon|ellipse — rasgo descartado")
+            continue
         mat = f.get("material")
         if mat is not None and mat not in GROUND_MATERIALS:
-            print(f"validate_scene: {ctx} material desconocido {mat!r} — {field} descartado")
-            return None
-    return raw
+            print(f"validate_scene: {ctx} material desconocido {mat!r} — rasgo descartado")
+            continue
+        if kind == "area" and mat is None:
+            # El zod del cliente exige material en area — sin él, el array
+            # entero moriría en el cliente.
+            print(f"validate_scene: {ctx} area sin material — rasgo descartado")
+            continue
+        seen_ids.add(fid)
+        clean.append(f)
+    if len(clean) < len(raw):
+        print(
+            f"validate_scene: {field}: {len(raw) - len(clean)} rasgos inválidos "
+            f"descartados, {len(clean)} conservados"
+        )
+    return clean
 
 
 def validate_volumes(raw, *, field: str = "volumes"):
-    """Valida el array `volumes` del plan de tile. Devuelve la lista limpia o
-    None con traza del motivo (el caller degrada descartando el campo).
-    Espejo laxo de parseVolumes (nefan-core/src/scene/blueprint/volumes.ts)."""
+    """Valida el array `volumes` del plan. Devuelve la lista LIMPIA — los
+    items inválidos se descartan UNO A UNO con traza: un solo prop malformado
+    NO puede tirar el pueblo entero (2026-08-11: un prop sin shape descartaba
+    el campo completo y el tile salía sin un solo edificio, en silencio).
+    None solo si el campo entero es inutilizable (no-lista). Espejo laxo de
+    parseVolumes: el rechazo duro por-array lo hace el zod del bridge."""
     if not isinstance(raw, list):
         print(f"validate_scene: {field} descartado (no es lista)")
         return None
     if len(raw) > MAX_VOLUMES:
-        print(f"validate_scene: {field} descartado ({len(raw)} > {MAX_VOLUMES})")
-        return None
+        print(f"validate_scene: {field} truncado ({len(raw)} > {MAX_VOLUMES})")
+        raw = raw[:MAX_VOLUMES]
+    clean = []
     seen_ids = set()
     for i, v in enumerate(raw):
         ctx = f"{field}[{i}]"
         if not isinstance(v, dict):
-            print(f"validate_scene: {ctx} no es objeto — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} no es objeto — volumen descartado")
+            continue
         vid = v.get("id")
         label = v.get("label")
         vtype = v.get("type")
         if not isinstance(vid, str) or not vid or vid in seen_ids:
-            print(f"validate_scene: {ctx} id inválido/duplicado — {field} descartado")
-            return None
-        seen_ids.add(vid)
+            print(f"validate_scene: {ctx} id inválido/duplicado — volumen descartado")
+            continue
         if not isinstance(label, str) or not label:
-            print(f"validate_scene: {ctx} sin label — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} sin label — volumen descartado")
+            continue
         if vtype not in VOLUME_TYPES:
-            print(f"validate_scene: {ctx} type desconocido {vtype!r} — {field} descartado")
-            return None
+            print(f"validate_scene: {ctx} type desconocido {vtype!r} — volumen descartado")
+            continue
         if vtype == "building":
             r = v.get("rect")
             if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
-                print(f"validate_scene: {ctx} building sin rect válido — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} building sin rect válido — volumen descartado")
+                continue
+            if v.get("cutaway") is True and "angle" in v:
+                print(f"validate_scene: {ctx} building cutaway no admite angle — campo angle descartado")
+                v.pop("angle", None)
         elif vtype == "wall":
             pts = v.get("points")
             if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(pp) for pp in pts)):
-                print(f"validate_scene: {ctx} wall sin points válidos — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} wall sin points válidos — volumen descartado")
+                continue
         elif vtype == "gate":
             if not _cell_pair(v.get("at")) or v.get("orient") not in ("x", "y"):
-                print(f"validate_scene: {ctx} gate sin at/orient válidos — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} gate sin at/orient válidos — volumen descartado")
+                continue
         elif vtype == "prop":
             has_at = _cell_pair(v.get("at"))
             r = v.get("rect")
             has_rect = isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)
             if has_at == has_rect or v.get("shape") not in ("box", "cylinder"):
-                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — {field} descartado")
-                return None
+                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — volumen descartado")
+                continue
+            if has_at and "angle" in v:
+                print(f"validate_scene: {ctx} prop con at no admite angle — campo angle descartado")
+                v.pop("angle", None)
         else:  # tower/tree/bush/rock/fountain
             if not _cell_pair(v.get("at")):
-                print(f"validate_scene: {ctx} {vtype} sin at válido — {field} descartado")
-                return None
-        # `angle` (building/prop, GRADOS): laxo — un valor sin sentido se
-        # descarta con traza en vez de tumbar el array (zod hace el rechazo duro).
+                print(f"validate_scene: {ctx} {vtype} sin at válido — volumen descartado")
+                continue
+        # `angle` (building/prop, GRADOS): un valor sin sentido se descarta
+        # del item con traza (zod hace el rechazo duro).
         if "angle" in v and vtype in ("building", "prop"):
             a = v.get("angle")
-            if not _num(a) or not -360 <= a <= 360:
+            if not _num(a) or not -180 <= a <= 180:
                 print(f"validate_scene: {ctx} angle inválido {a!r} — campo descartado")
                 v.pop("angle", None)
-    return raw
+        seen_ids.add(vid)
+        clean.append(v)
+    if len(clean) < len(raw):
+        print(
+            f"validate_scene: {field}: {len(raw) - len(clean)} volúmenes inválidos "
+            f"descartados, {len(clean)} conservados"
+        )
+    return clean
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -902,8 +933,14 @@ def validate_blueprint_review(data: dict | None) -> dict:
         if raw_ground is not None:
             # Fail-loud (no descartar en silencio): un plan corregido inválido
             # debe volver como 422 para que el modelo lo re-emita bien.
-            feats = validate_ground(raw_ground, field="fixes.ground")
-            if feats is None:
+            feats = validate_ground(
+                [dict(f) if isinstance(f, dict) else f for f in raw_ground]
+                if isinstance(raw_ground, list) else raw_ground,
+                field="fixes.ground",
+            )
+            # Reemplazo COMPLETO: si el saneado tocó o descartó ALGO, 422 —
+            # un retoque no puede borrar calles/río por accidente.
+            if feats is None or feats != raw_ground:
                 raise ValueError(
                     "blueprint_review fixes.ground is not a valid ground array "
                     "(typed features path/area/water/deck with unique id and one shape each)"
@@ -912,8 +949,15 @@ def validate_blueprint_review(data: dict | None) -> dict:
 
         raw_vols = raw_fixes.get("volumes")
         if raw_vols is not None:
-            vols = validate_volumes(raw_vols, field="fixes.volumes")
-            if vols is None:
+            vols = validate_volumes(
+                [dict(v) if isinstance(v, dict) else v for v in raw_vols]
+                if isinstance(raw_vols, list) else raw_vols,
+                field="fixes.volumes",
+            )
+            # fixes.volumes es un array de REEMPLAZO COMPLETO: si el saneado
+            # per-item descartó O mutó cualquier volumen, rechazar con 422 —
+            # un retoque no puede borrar un edificio del pueblo en silencio.
+            if vols is None or vols != raw_vols:
                 raise ValueError(
                     "blueprint_review fixes.volumes is not a valid volumes array "
                     "(typed objects with unique id, Spanish label and per-type footprint)"

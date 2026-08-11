@@ -1,0 +1,29 @@
+{
+ "description": "building con angle 200 (fuera de [-180,180]): el MCP rechaza con el rango; el saneador Python solo quita el campo angle (conserva el edificio)",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "meson",
+    "label": "mesón",
+    "type": "building",
+    "rect": [
+     10,
+     10,
+     12,
+     8
+    ],
+    "angle": 200
+   },
+   {
+    "id": "torre",
+    "label": "torreón",
+    "type": "tower",
+    "at": [
+     50,
+     6
+    ]
+   }
+  ]
+ }
+}

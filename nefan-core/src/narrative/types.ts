@@ -55,6 +55,10 @@ export interface NarrativeWorldState {
    *  "vector" = se juega con los blueprints compuestos. Campo aditivo: saves
    *  previos ("") conservan el comportamiento legacy (toggle local). */
   render_mode: string;
+  /** Modo de imagen de los PERSONAJES ("image" = skins IA por descripción,
+   *  "vector" = base y_bot), independiente de los escenarios. Campo aditivo:
+   *  saves previos ("") siguen a render_mode (comportamiento de siempre). */
+  character_mode: string;
   /** Sistema de combate (id del combatRegistry: "standard" | "basic"),
    *  CONGELADO al crear la sesión desde game.json.systems.combat. Campo
    *  aditivo: saves previos ("") = "standard". */
@@ -177,6 +181,16 @@ export interface SessionMetadata {
   summary: string;
   scene_count: number;
   entity_count: number;
+  /** Vista congelada en el save ("overworld" | "proscenium") — el title
+   *  screen la muestra en la lista de partidas. Ausente en saves antiguos. */
+  view?: string;
+  /** Modo de gráficos de ESCENARIOS congelado ("image" | "vector") — si la
+   *  partida gasta créditos de imagen o va en maqueta 3D. Ausente en saves
+   *  antiguos. */
+  render_mode?: string;
+  /** Modo de imagen de PERSONAJES ("image" | "vector"). Ausente = sigue a
+   *  render_mode (legacy). */
+  character_mode?: string;
 }
 
 export interface AssetEntry {

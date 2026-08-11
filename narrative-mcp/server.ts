@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview } from './validators.js';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures } from './validators.js';
+import { stagePlanFromScene } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 
@@ -329,6 +330,47 @@ into context:
               content: [{ type: 'text', text: `Invalid consequences — fix the shape and call narrative_respond again: ${check.error}` }],
               isError: true,
             };
+          }
+        }
+        // FAIL-LOUD de volumes/ground de una escena: si algo está mal NO se
+        // elimina — se devuelve el error preciso al motor para que corrija y
+        // re-responda (el saneador del ai_server descartaba en silencio y un
+        // prop malformado dejaba el tile sin un solo edificio).
+        if (kind === 'scene') {
+          const scene = parsed as Record<string, unknown>;
+          if (scene.volumes !== undefined) {
+            const check = validateVolumes(scene.volumes);
+            if (!check.ok) {
+              return {
+                content: [{ type: 'text', text: `Invalid volumes — fix them and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}` }],
+                isError: true,
+              };
+            }
+          }
+          if (scene.ground !== undefined) {
+            const check = validateGroundFeatures(scene.ground);
+            if (!check.ok) {
+              return {
+                content: [{ type: 'text', text: `Invalid ground — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${check.error}` }],
+                isError: true,
+              };
+            }
+          }
+          // Platos: las reglas de composicion (surroundings center-outside,
+          // ground en rango, fourth_wall vs style_tag...) viven en
+          // stagePlanFromScene — sin esta llamada solo fallaban en el
+          // CLIENTE ("escena degradada a oblicua") y el motor nunca veia el
+          // error. Aqui rebotan con la pending viva para re-responder.
+          if (scene.stage !== undefined) {
+            try {
+              stagePlanFromScene(scene);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              return {
+                content: [{ type: 'text', text: `Invalid stage scene — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${msg}` }],
+                isError: true,
+              };
+            }
           }
         }
         if (kind === 'develop_world') {

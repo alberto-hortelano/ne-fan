@@ -95,6 +95,9 @@ export class FsSessionStorage implements SessionStorage {
         summary,
         scene_count: Object.keys(data.scenes_loaded ?? {}).length,
         entity_count: (data.entities ?? []).length,
+        ...(data.world?.view ? { view: data.world.view } : {}),
+        ...(data.world?.render_mode ? { render_mode: data.world.render_mode } : {}),
+        ...(data.world?.character_mode ? { character_mode: data.world.character_mode } : {}),
       });
     }
     result.sort((a, b) => (b.updated_at > a.updated_at ? 1 : -1));
@@ -135,6 +138,9 @@ export class MemorySessionStorage implements SessionStorage {
         summary,
         scene_count: Object.keys(data.scenes_loaded ?? {}).length,
         entity_count: (data.entities ?? []).length,
+        ...(data.world?.view ? { view: data.world.view } : {}),
+        ...(data.world?.render_mode ? { render_mode: data.world.render_mode } : {}),
+        ...(data.world?.character_mode ? { character_mode: data.world.character_mode } : {}),
       });
     }
     result.sort((a, b) => (b.updated_at > a.updated_at ? 1 : -1));

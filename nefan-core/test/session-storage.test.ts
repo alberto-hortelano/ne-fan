@@ -64,4 +64,40 @@ describe("FsSessionStorage fail-loud", () => {
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].session_id, "healthy");
   });
+
+  it("list expone view y render_mode del world (badges del title screen)", async () => {
+    const root = await makeRoot();
+    const storage = new FsSessionStorage(root);
+    await fs.mkdir(join(root, "s1"), { recursive: true });
+    await fs.writeFile(
+      join(root, "s1", "state.json"),
+      JSON.stringify({
+        session_id: "s1",
+        game_id: "toledo_1200",
+        updated_at: "2026-01-01T00:00:00Z",
+        story_so_far: "",
+        scenes_loaded: {},
+        entities: [],
+        world: { view: "proscenium", render_mode: "vector" },
+      }),
+      "utf-8",
+    );
+    const [meta] = await storage.list();
+    assert.equal(meta.view, "proscenium");
+    assert.equal(meta.render_mode, "vector");
+    // Save antiguo sin world: sin campos, sin inventar.
+    await fs.mkdir(join(root, "viejo"), { recursive: true });
+    await fs.writeFile(
+      join(root, "viejo", "state.json"),
+      JSON.stringify({
+        session_id: "viejo", game_id: "g", updated_at: "2025-01-01T00:00:00Z",
+        story_so_far: "", scenes_loaded: {}, entities: [],
+      }),
+      "utf-8",
+    );
+    const metas = await storage.list();
+    const old = metas.find((m) => m.session_id === "viejo")!;
+    assert.equal(old.view, undefined);
+    assert.equal(old.render_mode, undefined);
+  });
 });
