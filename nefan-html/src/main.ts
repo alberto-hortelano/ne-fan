@@ -274,6 +274,15 @@ function applySessionRenderMode(renderMode: string, characterMode = ""): void {
   // comportamiento de siempre.
   const effectiveCharMode = characterMode || sessionRenderMode;
   characterSprites.setSkinsAllowed(effectiveCharMode !== "vector");
+  // Fail-loud: el save pide skins IA pero el backend está apagado por config
+  // — sin este aviso, requestSkin haría no-op silencioso y el jugador que
+  // confirmó el gasto vería y_bot sin explicación.
+  if (effectiveCharMode === "image" && !CONFIG.graphics.ai_skin) {
+    errors.push(
+      "config",
+      "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
+    );
+  }
   const charLabel = effectiveCharMode === "vector" ? "personajes en base y_bot" : "skins IA";
   if (sessionRenderMode === "vector") {
     autoPipeline.setEnabled(false);
@@ -329,7 +338,9 @@ function applySessionView(view: string): void {
       if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
       // Palanca dev del gain de seguimiento de cámara (?follow=0.35; 0 = fija).
       const follow = parseFloat(new URLSearchParams(location.search).get("follow") ?? "");
-      if (Number.isFinite(follow)) prosceniumRenderer.followOverride = follow;
+      // Clamp [0,1]: un gain negativo invierte el pan (mareo) y >1 satura clamps.
+      if (Number.isFinite(follow))
+        prosceniumRenderer.followOverride = Math.min(1, Math.max(0, follow));
     }
     activeRenderer = prosceniumRenderer;
     // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio

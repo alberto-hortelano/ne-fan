@@ -515,7 +515,17 @@ export async function handleSetRenderMode(
     return fail(`solo se admite activar imágenes (renderMode "image"), no "${msg.renderMode}"`);
   }
   const facet = msg.facet ?? "scenes";
-  const data = await ctx.sessionStorage.read(msg.sessionId);
+  if (facet !== "scenes" && facet !== "characters") {
+    // El wire es JSON sin validar: un typo caería en la rama else y activaría
+    // los skins de otra faceta — rechazar en vez de adivinar.
+    return fail(`facet desconocido ${JSON.stringify(facet)} (válidos: scenes, characters)`);
+  }
+  let data;
+  try {
+    data = await ctx.sessionStorage.read(msg.sessionId);
+  } catch (err) {
+    return fail(`no se pudo leer la partida: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!data) return fail(`la partida ${msg.sessionId} no existe`);
   if (facet === "scenes") {
     const current = data.world?.render_mode;
@@ -526,6 +536,10 @@ export async function handleSetRenderMode(
           : `la partida no está en modo vector (render_mode=${JSON.stringify(current)})`,
       );
     }
+    // Fijar el modo de personajes ANTES de subir render_mode: "" legacy
+    // significa "sigue a render_mode", y sin fijarlo el upgrade de escenarios
+    // activaría también los skins IA en silencio (gasto no pedido).
+    if (!data.world.character_mode) data.world.character_mode = "vector";
     data.world.render_mode = "image";
   } else {
     // Personajes: "" legacy = sigue a render_mode — el modo EFECTIVO es el
@@ -541,12 +555,20 @@ export async function handleSetRenderMode(
     data.world.character_mode = "image";
   }
   data.updated_at = new Date().toISOString();
-  await ctx.sessionStorage.write(msg.sessionId, data);
+  try {
+    await ctx.sessionStorage.write(msg.sessionId, data);
+  } catch (err) {
+    return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
+  }
   // Si es la sesión ACTIVA del proceso, el espejo en memoria también cambia
   // (un save_session posterior no debe revertir el upgrade).
   if (ctx.narrative.session_id === msg.sessionId) {
-    if (facet === "scenes") ctx.narrative.world.render_mode = "image";
-    else ctx.narrative.world.character_mode = "image";
+    if (facet === "scenes") {
+      if (!ctx.narrative.world.character_mode) ctx.narrative.world.character_mode = "vector";
+      ctx.narrative.world.render_mode = "image";
+    } else {
+      ctx.narrative.world.character_mode = "image";
+    }
   }
   console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image)`);
   ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });

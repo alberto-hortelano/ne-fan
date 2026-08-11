@@ -277,9 +277,9 @@ export class TitleScreen {
       <div style="margin-bottom:18px">
         <div style="font-size:12px;color:#999;margin-bottom:4px">Personajes <span style="color:#666">(independiente de los escenarios)</span></div>
         <div id="ts-charmode" style="display:flex;gap:8px">
-          <button data-charmode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+          <button data-charmode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left${CONFIG.graphics.ai_skin ? "" : ";opacity:.45;cursor:default"}">
             <div style="font-size:13px">Skins IA</div>
-            <div style="font-size:10px;color:#888">Cada personaje se viste por su descripción (gasta créditos)</div>
+            <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? "Cada personaje se viste por su descripción (gasta créditos)" : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
           </button>
           <button data-charmode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
             <div style="font-size:13px">Base y_bot</div>
@@ -302,7 +302,13 @@ export class TitleScreen {
     const charModeEl = this.content.querySelector("#ts-charmode") as HTMLElement;
     const continueBtn = this.content.querySelector("#ts-continue") as HTMLButtonElement;
     let selectedRenderMode: "image" | "vector" = "image";
-    let selectedCharMode: "image" | "vector" = "image";
+    // Personajes: sigue a Escenarios hasta que el jugador lo toque — elegir
+    // "Maqueta 3D (sin coste)" no debe dejar los skins IA activados a
+    // escondidas. Con graphics.ai_skin apagado el backend de skins no existe:
+    // forzar vector para no vender una opción muerta.
+    const skinBackendOn = CONFIG.graphics.ai_skin;
+    let charModeTouched = false;
+    let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";
     // La vista es del jugador, no del mundo: game.json solo la preselecciona.
     let selectedView: "overworld" | "proscenium" =
       selectedGame.view === "proscenium" ? "proscenium" : "overworld";
@@ -316,6 +322,10 @@ export class TitleScreen {
     for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
       btn.addEventListener("click", () => {
         selectedRenderMode = btn.dataset.rendermode === "vector" ? "vector" : "image";
+        if (!charModeTouched && skinBackendOn) {
+          selectedCharMode = selectedRenderMode;
+          refreshCharMode();
+        }
         refreshRenderMode();
       });
     }
@@ -329,6 +339,8 @@ export class TitleScreen {
     };
     for (const btn of charModeEl.querySelectorAll<HTMLElement>("[data-charmode]")) {
       btn.addEventListener("click", () => {
+        if (btn.dataset.charmode === "image" && !skinBackendOn) return; // opción muerta sin backend
+        charModeTouched = true;
         selectedCharMode = btn.dataset.charmode === "vector" ? "vector" : "image";
         refreshCharMode();
       });
@@ -706,7 +718,7 @@ function sessionRowHtml(s: SessionMetadata): string {
       </div>
       <div style="display:flex;gap:6px;margin-left:14px">
         ${s.render_mode === "vector" ? `<button data-action="enable-images" data-facet="scenes" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar escenarios IA</button>` : ""}
-        ${effectiveCharMode(s) === "vector" ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>` : ""}
+        ${effectiveCharMode(s) === "vector" && CONFIG.graphics.ai_skin ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>` : ""}
         <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
         <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
       </div>
