@@ -142,6 +142,8 @@ export class ProsceniumRenderer implements Renderer2D {
     this.framing = null;
     this.bandPlan = null;
     this.frameKey = "";
+    this.cam = { ...STAGE_CAM_ZERO };
+    this.lastCam = { ...STAGE_CAM_ZERO };
   }
 
   /** Cicla el overlay de debug (tecla B en vista proscenio): off ↔ overlay.
@@ -302,8 +304,14 @@ export class ProsceniumRenderer implements Renderer2D {
     this.stageKey = key;
     this.images = null; // plató nuevo: bitmaps del anterior fuera
     this.frameKey = ""; // encuadre/bandas se recalculan en el próximo frame
+    // Encuadre del plató ANTERIOR fuera: render() hace early-return hasta que
+    // llegan los bitmaps, y drawAttackArea proyectaría con framing/cámara
+    // viejos sobre la geometría nueva.
+    this.framing = null;
+    this.bandPlan = null;
     // Cámara a la base (el seguimiento la lleva al jugador en el primer frame).
     this.cam = { ...STAGE_CAM_ZERO };
+    this.lastCam = { ...STAGE_CAM_ZERO };
   }
 
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
