@@ -395,7 +395,9 @@ const devInput = new DevToolsInput({
 
 // Hook de bench (labs/narrative / pruebas de navegador): estado vivo legible
 // desde la consola o la automatización. Solo lectura — no es API del juego.
-(window as unknown as { __nefan?: unknown }).__nefan = {
+// El bloque DEV de más abajo AÑADE claves sobre este mismo objeto (merge,
+// nunca reemplazo: pisar el hook dejaba a los benches sin tiles/frontier).
+const nefanHook: Record<string, unknown> = {
   input,
   get playerPos() { return playerPos; },
   get scene() { return sceneData; },
@@ -408,6 +410,7 @@ const devInput = new DevToolsInput({
   get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
 };
+(window as unknown as { __nefan?: unknown }).__nefan = nefanHook;
 
 // --- Zoom (px por metro) ---
 // El objetivo (zoomTarget) salta por pasos multiplicativos con la rueda/teclas;
@@ -1264,8 +1267,10 @@ let lastRenderError = "";
 
 // Hook de bench (solo dev): estado vivo para los drivers E2E de Chrome —
 // permite verificar movimiento/colisión sin depender de leer píxeles.
+// Merge sobre nefanHook (defineProperties preserva los getters de ambos):
+// las claves base (tiles/frontier/…) siguen disponibles también en DEV.
 if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
-  (window as unknown as Record<string, unknown>).__nefan = {
+  Object.defineProperties(nefanHook, Object.getOwnPropertyDescriptors({
     state: () => ({
       pos: { ...playerPos },
       forward: { ...playerForward },
@@ -1311,7 +1316,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     // Driver programático del provider "scripted" (?input=scripted) — API
     // limpia para el bench en vez de sintetizar KeyboardEvents.
     inputDriver: input instanceof ScriptedInputProvider ? input : undefined,
-  };
+  }));
 }
 
 // --- Orientación con flechas de dirección ---
