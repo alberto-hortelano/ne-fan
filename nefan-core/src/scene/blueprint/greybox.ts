@@ -17,7 +17,7 @@
 
 import { seededRng, uniform } from "../../rng.js";
 import { TILE_CELLS } from "../tile.js";
-import { BIOME_COLORS, PALETTE, darken, lighten } from "./palette.js";
+import { BIOME_COLORS, darken, lighten } from "./palette.js";
 import { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
 import { volumeFootprint } from "./footprint.js";
 import { ellipsePoints, groundFeaturePrims } from "./ground-prims.js";

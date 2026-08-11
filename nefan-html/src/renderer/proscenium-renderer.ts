@@ -24,7 +24,6 @@ import {
   exitZoneAt,
   frameStage,
   bandPlanFor,
-  bandDestRect,
   bandPlanDestRects,
   viewToScreenCam,
   layerRectCam,
