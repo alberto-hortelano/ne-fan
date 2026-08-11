@@ -117,6 +117,70 @@ export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false
   return { ok: true };
 }
 
+/** Pre-flight estructural del array `volumes` — espejo de parseVolumes
+ *  (nefan-core/src/scene/blueprint/volumes.ts, zod — la fuente de verdad).
+ *  FAIL-LOUD con reintento: el primer volumen inválido detiene la respuesta
+ *  con el índice y el motivo, y el motor re-responde corregido. Sin esto, el
+ *  saneador del ai_server descartaba y el pueblo llegaba mutilado en
+ *  silencio (2026-08-11: un prop sin shape ⇒ tile sin un solo edificio). */
+export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: false, error: 'volumes must be an array of typed objects' };
+  if (raw.length > 160) return { ok: false, error: `volumes has ${raw.length} items, max is 160` };
+  const types = new Set(['building', 'wall', 'tower', 'gate', 'tree', 'bush', 'rock', 'fountain', 'prop']);
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  const pair = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(num);
+  const rect4 = (v: unknown): boolean => Array.isArray(v) && v.length === 4 && v.every(num);
+  const seen = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i] as Record<string, unknown>;
+    const ctx = `volumes[${i}]`;
+    if (typeof v !== 'object' || v === null) return { ok: false, error: `${ctx} must be an object` };
+    if (typeof v.id !== 'string' || !v.id) return { ok: false, error: `${ctx}.id must be a non-empty string` };
+    if (seen.has(v.id)) return { ok: false, error: `volumes id "${v.id}" appears twice` };
+    seen.add(v.id);
+    if (typeof v.label !== 'string' || !v.label) {
+      return { ok: false, error: `${ctx} ("${v.id}") needs a Spanish \`label\`` };
+    }
+    if (typeof v.type !== 'string' || !types.has(v.type)) {
+      return { ok: false, error: `${ctx} ("${v.id}") type='${String(v.type)}' invalid; allowed: ${[...types].sort().join(', ')}` };
+    }
+    if (v.type === 'building') {
+      if (!rect4(v.rect)) return { ok: false, error: `${ctx} ("${v.id}") building needs \`rect\`: [col, row, w, d]` };
+      if (v.cutaway === true && v.angle !== undefined) {
+        return { ok: false, error: `${ctx} ("${v.id}") cutaway buildings cannot take \`angle\`` };
+      }
+    } else if (v.type === 'wall') {
+      if (!Array.isArray(v.points) || v.points.length < 2 || !v.points.every(pair)) {
+        return { ok: false, error: `${ctx} ("${v.id}") wall needs \`points\` (≥2 [col,row] pairs)` };
+      }
+    } else if (v.type === 'gate') {
+      if (!pair(v.at) || (v.orient !== 'x' && v.orient !== 'y')) {
+        return { ok: false, error: `${ctx} ("${v.id}") gate needs \`at\`: [col,row] and \`orient\`: "x"|"y"` };
+      }
+    } else if (v.type === 'prop') {
+      if (v.shape !== 'box' && v.shape !== 'cylinder') {
+        return { ok: false, error: `${ctx} ("${v.id}") prop needs \`shape\`: "box"|"cylinder"` };
+      }
+      const hasAt = pair(v.at);
+      const hasRect = rect4(v.rect);
+      if (hasAt === hasRect) {
+        return { ok: false, error: `${ctx} ("${v.id}") prop needs exactly one of \`at\` | \`rect\`` };
+      }
+      if (hasAt && v.angle !== undefined) {
+        return { ok: false, error: `${ctx} ("${v.id}") prop \`angle\` requires \`rect\` (an \`at\` point has nothing to rotate)` };
+      }
+    } else if (!pair(v.at)) {
+      return { ok: false, error: `${ctx} ("${v.id}") ${v.type} needs \`at\`: [col, row]` };
+    }
+    if (v.angle !== undefined && (v.type === 'building' || v.type === 'prop')) {
+      if (!num(v.angle) || v.angle < -180 || v.angle > 180) {
+        return { ok: false, error: `${ctx} ("${v.id}") \`angle\` must be a number in [-180, 180] degrees` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
 /** Pre-flight de una respuesta blueprint_review, espejo de
  *  ai_server/narrative_schemas.py:validate_blueprint_review. Misma razón que
  *  validateNarrativeReaction: el 422 del ai_server no vuelve a esta sesión. */

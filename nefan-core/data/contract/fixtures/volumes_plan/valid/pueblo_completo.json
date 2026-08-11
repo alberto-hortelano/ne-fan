@@ -1,0 +1,84 @@
+{
+ "description": "pueblo con tipos variados, angle en building/prop-rect y decorado",
+ "expect": "accept",
+ "payload": {
+  "volumes": [
+   {
+    "id": "meson",
+    "label": "mesón del Cordero",
+    "type": "building",
+    "rect": [
+     10,
+     10,
+     14,
+     6
+    ],
+    "wall_h": 11,
+    "angle": -12,
+    "roof": {
+     "kind": "gable",
+     "material": "tile"
+    },
+    "doors": [
+     {
+      "edge": "s",
+      "at": 8,
+      "w": 3
+     }
+    ]
+   },
+   {
+    "id": "muralla",
+    "label": "lienzo de muralla",
+    "type": "wall",
+    "points": [
+     [
+      40,
+      0
+     ],
+     [
+      52,
+      8
+     ]
+    ],
+    "width": 4,
+    "h": 12
+   },
+   {
+    "id": "torre",
+    "label": "torreón",
+    "type": "tower",
+    "at": [
+     50,
+     6
+    ],
+    "r": 4,
+    "h": 18
+   },
+   {
+    "id": "olmo",
+    "label": "olmo viejo",
+    "type": "tree",
+    "at": [
+     30,
+     40
+    ],
+    "s": 1.2
+   },
+   {
+    "id": "carro",
+    "label": "carro de toneles",
+    "type": "prop",
+    "rect": [
+     20,
+     30,
+     5,
+     2
+    ],
+    "shape": "box",
+    "h": 4,
+    "angle": 22
+   }
+  ]
+ }
+}

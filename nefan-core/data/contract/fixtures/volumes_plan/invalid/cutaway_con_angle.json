@@ -1,0 +1,21 @@
+{
+ "description": "building cutaway no admite angle (el interior jugable es axis-aligned)",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "posada",
+    "label": "posada",
+    "type": "building",
+    "rect": [
+     4,
+     4,
+     12,
+     8
+    ],
+    "cutaway": true,
+    "angle": 10
+   }
+  ]
+ }
+}

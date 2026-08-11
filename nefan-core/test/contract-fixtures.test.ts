@@ -16,6 +16,7 @@ import {
   validateBlueprintReview,
   validateSceneClassify,
   validateStageReview,
+  validateVolumes,
 } from "../../narrative-mcp/validators.js";
 import { parseGround } from "../src/scene/blueprint/ground.js";
 
@@ -55,6 +56,9 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   // El plan de suelo declarativo lo valida el zod de producción (parseGround)
   // — el espejo Python (validate_ground) corre el MISMO set de fixtures.
   ground_plan: (fx) => parseGround((fx.payload as { ground: unknown }).ground),
+  // volumes: el pre-flight ESTRICTO del MCP (narrative_respond rechaza con el
+  // error preciso y el motor re-responde — fail-loud, nunca descartar).
+  volumes_plan: (fx) => validateVolumes((fx.payload as { volumes: unknown }).volumes),
 };
 
 for (const [kind, run] of Object.entries(VALIDATORS)) {
