@@ -11,7 +11,17 @@ import {
   NarrativeReactionSchema,
   WeaponOrientSchema,
   WeaponVerifySchema,
+  FormatDSceneSchema,
 } from '@nefan/core';
+
+/** Gate ESTRUCTURAL de una escena Format D (entities, size, terrain, legend,
+ *  tile/biome + sub-partes ground/volumes/stage). Delega en el zod SoT. Antes
+ *  el top-level de la escena no se validaba en ninguna parte que volviera al
+ *  modelo: ai_server lo DEGRADABA en silencio (terrain mal → padding, entities
+ *  malformadas → clamp). La jugabilidad la valida aparte /scene/validate. */
+export function validateFormatDScene(data: unknown): { ok: true } | { ok: false; error: string } {
+  return validateContract(FormatDSceneSchema, data);
+}
 
 /** Pre-flight de una respuesta weapon_orient / weapon_verify — delega en el
  *  zod SoT. Antes NO existía: el kind pasaba directo a sendVisionResponse sin

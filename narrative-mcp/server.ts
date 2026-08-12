@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify } from './validators.js';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
 import { stagePlanFromScene } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
@@ -363,6 +363,18 @@ into context:
                 isError: true,
               };
             }
+          }
+          // Gate ESTRUCTURAL del top-level (entities, size, terrain grid,
+          // legend, tile/biome): antes NO se validaba en el camino del modelo
+          // — ai_server lo degradaba en silencio (filas de terrain rellenadas,
+          // entities clampadas). Ahora el error vuelve al modelo. La
+          // jugabilidad la valida /scene/validate más abajo.
+          const structural = validateFormatDScene(scene);
+          if (!structural.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid scene shape — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${structural.error}` }],
+              isError: true,
+            };
           }
         }
         if (kind === 'develop_world') {

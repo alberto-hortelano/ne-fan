@@ -72,3 +72,9 @@ export {
   CONTRACTS,
   type ContractSpec,
 } from "./contract/model-io/schemas.js";
+export {
+  FormatDSceneSchema,
+  EntitySchema,
+  SceneSizeSchema,
+  type FormatDScene,
+} from "./contract/model-io/scene-schema.js";
