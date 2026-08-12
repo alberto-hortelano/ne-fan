@@ -96,11 +96,15 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 
 ### Alta prioridad
 
-- **Input WS del bridge sin validación runtime** (`bridge/ws-server.ts:198`).
-  `JSON.parse(raw) as ClientMessage` sin comprobar; todo el input del cliente
-  llega a los handlers sin validar. `state-http-server` y `asset-store`
-  validan a mano pese a tener contratos tipados en `src/contracts/`. Propuesta:
-  validadores zod en el borde a partir de los contratos.
+- ~~**Input WS del bridge sin validación runtime**~~ **RESUELTO** (rama
+  `audit/ws-input-validation`). `ClientMessageSchema` (zod, espejo EXACTO del
+  union TS `ClientMessage`, con guardia de deriva a nivel de tipos en
+  `src/protocol/message-schema.ts`) valida cada frame en el borde
+  (`bridge/message-intake.ts`); JSON inválido o shape no conforme → rechazo
+  fail-loud con `narrative_status` error, sin alcanzar los handlers. Verificado
+  en vivo (cliente→bridge por WS) y contra las formas reales de HTML y Godot.
+  Pendiente análogo: `state-http-server` y `asset-store` siguen validando a
+  mano pese a tener contratos tipados en `src/contracts/`.
 - **`validate_scene_response` degrada a mapa de hierba en silencio**
   (`ai_server/narrative_schemas.py:237`). Contradice la doctrina fail-loud y la
   memoria del proyecto: un fallo del motor se vuelve un mapa vacío
