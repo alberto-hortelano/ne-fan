@@ -69,6 +69,24 @@ describe("WorldMapManager.upsertPlace", () => {
       }),
     );
   });
+
+  it("rechaza ciclos de parent_id (self y descendiente) sin colgar getAncestors", () => {
+    const m = makeManager();
+    m.upsertPlace({ id: "a", kind: "settlement", parent_id: "world", name: "A" });
+    m.upsertPlace({ id: "b", kind: "site", parent_id: "a", name: "B" });
+    // Self-parent.
+    assert.throws(
+      () => m.upsertPlace({ id: "a", kind: "settlement", parent_id: "a", name: "A" }),
+      /its own parent/,
+    );
+    // a pasaría a colgar de su descendiente b → ciclo.
+    assert.throws(
+      () => m.upsertPlace({ id: "a", kind: "settlement", parent_id: "b", name: "A" }),
+      /cycle/,
+    );
+    // getAncestors sigue terminando y da la cadena correcta.
+    assert.deepEqual(m.getAncestors("b").map((p) => p.id), ["b", "a", "world"]);
+  });
 });
 
 describe("WorldMapManager.removePlace", () => {

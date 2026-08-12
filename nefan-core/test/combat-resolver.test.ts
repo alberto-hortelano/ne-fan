@@ -125,22 +125,38 @@ describe("resolveAttack integration", () => {
     assert.equal(damage, 0);
   });
 
-  it("returns 0 when target is behind attacker", () => {
+  it("returns 0 when target is behind attacker (even within melee range)", () => {
     const weapon = config.weapons["unarmed"];
     const params = getEffectiveParams("medium", config.attack_types, weapon);
 
+    // Objetivo A LA ESPALDA pero DENTRO del alcance (a optimal_distance): sin
+    // el gate frontal daba calidad perfecta (offset 0). Debe ser 0 por estar
+    // detrás, no por distancia.
     const damage = resolveAttack(
       { x: 0, y: 0, z: 0 },
-      { x: 0, y: 0, z: -1 },
-      { x: 0, y: 0, z: 5 }, // behind
+      { x: 0, y: 0, z: -1 }, // mirando a -Z
+      { x: 0, y: 0, z: params.optimal_distance }, // a +Z: justo detrás, en alcance
       "idle",
       params,
       config.tactical_matrix,
       "medium",
     );
-
-    // At 5m distance with optimal ~1.5 and tolerance ~1.0, distance factor = 0
     assert.equal(damage, 0);
+  });
+
+  it("lands damage on a target directly in front at optimal distance", () => {
+    const weapon = config.weapons["unarmed"];
+    const params = getEffectiveParams("medium", config.attack_types, weapon);
+    const damage = resolveAttack(
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: -1 },
+      { x: 0, y: 0, z: -params.optimal_distance }, // al frente, en alcance
+      "idle",
+      params,
+      config.tactical_matrix,
+      "medium",
+    );
+    assert.ok(damage > 0, `esperaba daño frontal > 0, fue ${damage}`);
   });
 });
 

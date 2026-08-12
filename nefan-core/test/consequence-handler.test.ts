@@ -71,6 +71,32 @@ describe("dispatchConsequences", () => {
     }
   });
 
+  it("varios spawns del mismo turno reciben ids únicos (no colisionan)", () => {
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "npc", description: "guardia 1" },
+      { type: "spawn_entity", entity_kind: "npc", description: "guardia 2" },
+      { type: "spawn_entity", entity_kind: "npc", description: "guardia 3" },
+    ];
+    const r = dispatchConsequences(s, "evt_1", cs); // sin generateEntityId → default
+    const ids = s.entities.map((e) => e.id);
+    assert.equal(new Set(ids).size, 3, `ids duplicados: ${ids.join(",")}`);
+    // El effect emitido lleva el id realmente registrado.
+    const effIds = r.effects
+      .filter((e): e is Extract<typeof e, { kind: "spawn_entity" }> => e.kind === "spawn_entity")
+      .map((e) => e.entityId);
+    assert.deepEqual(effIds.sort(), ids.sort());
+  });
+
+  it("recordEntitySpawned sufija ids duplicados en vez de colapsarlos", () => {
+    const s = makeState();
+    const a = s.recordEntitySpawned("dup", "npc", "scene", [0, 0, 0], {});
+    const b = s.recordEntitySpawned("dup", "npc", "scene", [1, 0, 0], {});
+    assert.equal(a, "dup");
+    assert.equal(b, "dup_2");
+    assert.equal(s.entities.length, 2);
+  });
+
   it("schedule_event emits stub effect", () => {
     const s = makeState();
     const cs: Consequence[] = [

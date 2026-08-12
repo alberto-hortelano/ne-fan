@@ -10,7 +10,6 @@ import { WebSocketServer, WebSocket } from "ws";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
@@ -45,8 +44,9 @@ const GAMES_DIR = resolve(dataDir, "games");
 const STYLES_DIR = resolve(dataDir, "styles");
 
 // Saves live in a shared filesystem location accessible to every client
-// (HTML cannot read user:// from Godot). Override with NEFAN_SAVES_DIR.
-const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(homedir(), "code", "ne-fan", "saves");
+// (HTML cannot read user:// from Godot): <repo>/saves, igual que start.sh
+// ($PROJECT_DIR/saves). Override with NEFAN_SAVES_DIR.
+const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(dataDir, "..", "..", "saves");
 /** Destino del ai_server (S3 narrative-llm). NEFAN_AI_SERVER es el alias
  *  histórico y gana (lo usa el bench de labs/narrative documentado);
  *  @deprecated — usar NEFAN_URL_NARRATIVE_LLM (contrato F1); retirada en F5. */

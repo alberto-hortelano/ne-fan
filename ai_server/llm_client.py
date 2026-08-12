@@ -51,7 +51,7 @@ except ImportError:
 class LLMClient:
     def __init__(
         self,
-        model: str = "claude-sonnet-4-5-20250514",
+        model: str = "claude-sonnet-4-5-20250929",
         mcp_ws_url: str = "ws://127.0.0.1:3737",
         timeout: float = 60.0,
         asset_manifest=None,

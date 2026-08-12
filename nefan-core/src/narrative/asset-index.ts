@@ -12,12 +12,24 @@ export class AssetIndex {
   constructor(private manifestPath: string) {}
 
   async readAll(): Promise<AssetEntry[]> {
+    let text: string;
     try {
-      const text = await fs.readFile(this.manifestPath, "utf-8");
+      text = await fs.readFile(this.manifestPath, "utf-8");
+    } catch (err) {
+      // Manifest aún no creado: [] legítimo. Cualquier otro IO (EACCES…) sube.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+    try {
       const data = JSON.parse(text);
       return Array.isArray(data) ? (data as AssetEntry[]) : [];
-    } catch {
-      return [];
+    } catch (err) {
+      // Manifest corrupto: NO devolver [] — addEntry lo machacaría con una
+      // sola entrada, perdiendo el índice entero. Fail-loud.
+      throw new Error(
+        `manifest de assets corrupto en ${this.manifestPath}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   }
 

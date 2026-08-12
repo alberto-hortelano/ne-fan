@@ -85,9 +85,16 @@ async function handle(
     }
     const keep = await fetchKeepList(opts.worldStateUrl);
     if (keep === null) {
-      console.warn(
-        "asset-store prune: world-state sin respuesta — prune SIN keep-list (status quo pre-F2)",
-      );
+      // Sin keep-list no se puede saber qué assets referencian los saves; los
+      // saves post-F2 referencian por hash, así que podar sin ella borraría
+      // assets en uso (resume con texturas rotas). Se ABORTA en vez de podar
+      // a ciegas — mejor no liberar espacio que corromper una partida.
+      console.warn("asset-store prune: world-state sin respuesta — prune ABORTADO (sin keep-list)");
+      sendJson(res, 503, {
+        ok: false,
+        error: "world-state unavailable: prune aborted to avoid deleting in-use assets",
+      } satisfies ErrorResponse);
+      return;
     }
     const summary = prune(db, opts.dirsByType, opts.cacheMaxBytes, keep);
     sendJson(res, 200, { ok: true, ...summary } satisfies CachePruneResponse);

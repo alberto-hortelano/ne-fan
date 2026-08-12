@@ -81,6 +81,18 @@ describe("DSL paths", () => {
       DslError,
     );
   });
+
+  it("blocks prototype-pollution keys (literal and interpolated)", () => {
+    // Literal en el manifest: falla ya al parsear (génesis fail-loud).
+    for (const key of ["__proto__", "prototype", "constructor"]) {
+      assert.throws(() => parsePath(`slice.${key}.pwned`), DslError, `literal ${key}`);
+    }
+    // Interpolado desde el payload del evento: falla al concretizar.
+    const s: DslScope = { ...makeScope(), event: { k: "__proto__" } };
+    assert.throws(() => concretizeWritePath(s, parsePath("slice.{event.k}.pwned")), DslError);
+    // El prototipo global no quedó contaminado por ninguna de las dos vías.
+    assert.equal(({} as Record<string, unknown>).pwned, undefined);
+  });
 });
 
 describe("DSL predicates", () => {

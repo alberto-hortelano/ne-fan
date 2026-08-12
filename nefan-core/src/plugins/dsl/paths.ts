@@ -49,6 +49,11 @@ export function parsePath(template: string): PathAst {
   if (!CONTEXT_ROOTS.has(ast.root)) {
     throw new DslError(`raíz de path desconocida '${ast.root}'`, template);
   }
+  // Fail-loud en génesis ante segmentos literales prohibidos; las claves
+  // interpoladas se comprueban al concretizar (concretizeWritePath).
+  for (const seg of ast.segments) {
+    if (seg.kind === "key") assertSafeKey(seg.key, template);
+  }
   return ast;
 }
 
@@ -181,8 +186,24 @@ export function resolveRead(scope: DslScope, ast: PathAst, depth = 0): unknown {
   }
 }
 
+/** Claves que jamás pueden ser un segmento de path: descender por ellas
+ *  alcanza el prototipo y una escritura contaminaría Object/Array.prototype
+ *  del proceso entero (prototype pollution). Un manifest o payload de evento
+ *  —incluido texto libre del jugador enrutado a un plugin— podría intentarlo
+ *  vía literal, interpolación `{event.k}` o projection `{entity.id}`. */
+const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(["__proto__", "prototype", "constructor"]);
+
+/** Lanza DslError si la clave es una de las prohibidas (fail-loud en vez de
+ *  descender al prototipo). */
+export function assertSafeKey(key: string, source: string): void {
+  if (FORBIDDEN_KEYS.has(key)) {
+    throw new DslError(`clave de path prohibida '${key}'`, source);
+  }
+}
+
 function member(value: unknown, key: string): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (FORBIDDEN_KEYS.has(key)) return undefined;
   return (value as Record<string, unknown>)[key];
 }
 
@@ -203,6 +224,7 @@ export function concretizeWritePath(scope: DslScope, ast: PathAst): ConcretePath
   for (const seg of ast.segments) {
     switch (seg.kind) {
       case "key":
+        assertSafeKey(seg.key, ast.source);
         segs.push(seg.key);
         break;
       case "index":
@@ -218,6 +240,7 @@ export function concretizeWritePath(scope: DslScope, ast: PathAst): ConcretePath
             ast.source,
           );
         }
+        if (typeof key === "string") assertSafeKey(key, ast.source);
         segs.push(key);
         break;
       }
@@ -286,6 +309,7 @@ export function setAt(scope: DslScope, path: ConcretePath, value: unknown): void
     }
     cur[last] = value;
   } else {
+    assertSafeKey(last, path.canonical);
     (cur as Record<string, unknown>)[last] = value;
   }
 }
@@ -301,6 +325,7 @@ function descendForWrite(cur: unknown, seg: string | number, path: ConcretePath)
     }
     return next;
   }
+  assertSafeKey(seg, path.canonical);
   const obj = cur as Record<string, unknown>;
   let next = obj[seg];
   if (next === undefined) {

@@ -18,7 +18,7 @@
     "cache_initial_scene": false
   },
   "ai_server": {
-    "llm_model": "claude-sonnet-4-5-20250514",
+    "llm_model": "claude-sonnet-4-5-20250929",
     "llm_timeout_s": 900,
     "port": 8765,
     "cache_root": "cache",

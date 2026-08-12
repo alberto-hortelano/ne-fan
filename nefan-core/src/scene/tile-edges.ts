@@ -45,7 +45,7 @@ const CROSSING_BY_CHAR: Record<string, CrossingType> = {
 
 /** Categorías compatibles al continuar un cruce: un camino puede seguir como
  *  camino o carretera; el agua como río o puente (vado). */
-const COMPATIBLE: Record<CrossingType, ReadonlySet<CrossingType>> = {
+export const COMPATIBLE: Record<CrossingType, ReadonlySet<CrossingType>> = {
   path: new Set(["path", "road"]),
   road: new Set(["path", "road"]),
   river: new Set(["river", "bridge"]),

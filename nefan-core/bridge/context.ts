@@ -17,7 +17,7 @@ import type { PluginManifest } from "../src/plugins/types.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
-import { SeededRng } from "../src/rng.js";
+import { seededRng } from "../src/rng.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
 import type { SimCollisionProvider } from "./sim-collision.js";
 import {
@@ -269,7 +269,9 @@ export function createSessionNpcBehavior(
   id: string | undefined,
 ): NpcBehaviorSystem {
   return npcBehaviorRegistry.create(id, {
-    rng: new SeededRng(Date.now()),
+    // Sembrado por sesión (no por reloj): el wander es reproducible entre
+    // resumes y en tests — la flakiness de bridge-npc venía de Date.now().
+    rng: seededRng(`${ctx.narrative.session_id}:npc`),
     world: {
       blocksMove: (fx, fz, tx, tz, r) => ctx.simCollision.blocksMove(fx, fz, tx, tz, r),
       blocksCircle: (x, z, r) => ctx.simCollision.blocksCircle(x, z, r),

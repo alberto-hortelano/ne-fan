@@ -65,6 +65,40 @@ describe("FsSessionStorage fail-loud", () => {
     assert.equal(sessions[0].session_id, "healthy");
   });
 
+  it("rechaza session ids que se escapan del directorio de saves (path traversal)", async () => {
+    const root = await makeRoot();
+    const storage = new FsSessionStorage(root);
+    // Un canario fuera de saves/ que un delete con traversal borraría.
+    const canaryDir = await fs.mkdtemp(join(tmpdir(), "nefan-canary-"));
+    roots.push(canaryDir);
+    await fs.writeFile(join(canaryDir, "keep.txt"), "no me borres", "utf-8");
+    for (const evil of ["..", "../..", `../${canaryDir.split("/").pop()}`]) {
+      await assert.rejects(() => storage.delete(evil), /unsafe session id/);
+      await assert.rejects(() => storage.read(evil), /unsafe session id/);
+      await assert.rejects(() => storage.write(evil, {} as never), /unsafe session id/);
+    }
+    // El canario sigue intacto.
+    assert.equal(await fs.readFile(join(canaryDir, "keep.txt"), "utf-8"), "no me borres");
+  });
+
+  it("delete devuelve false si no existe pero propaga errores reales", async () => {
+    const storage = new FsSessionStorage(await makeRoot());
+    assert.equal(await storage.delete("no_existe"), false);
+  });
+
+  it("write es atómico: no deja state.json a medias ante un fallo de serialización", async () => {
+    const root = await makeRoot();
+    const storage = new FsSessionStorage(root);
+    const data = { session_id: "s", game_id: "g", updated_at: "t", story_so_far: "",
+      scenes_loaded: {}, entities: [] } as never;
+    await storage.write("s", data);
+    const back = await storage.read("s");
+    assert.equal((back as { session_id: string }).session_id, "s");
+    // No queda tmp huérfano tras un write correcto.
+    const files = await fs.readdir(join(root, "s"));
+    assert.deepEqual(files.filter((f) => f.endsWith(".tmp")), []);
+  });
+
   it("list expone view y render_mode del world (badges del title screen)", async () => {
     const root = await makeRoot();
     const storage = new FsSessionStorage(root);

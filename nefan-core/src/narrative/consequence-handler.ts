@@ -31,6 +31,10 @@ export function dispatchConsequences(
   opts: DispatchOptions = {},
 ): DispatchResult {
   const result: DispatchResult = { effects: [], injectedDialogue: false, pluginEvents: [] };
+  // Contador local: varias spawn_entity del mismo turno (p. ej. "aparecen tres
+  // guardias") caían en el mismo segundo con el generador por defecto y
+  // recibían el MISMO id → entidades duplicadas y NPCs colapsados en el sim.
+  let spawnOrdinal = 0;
 
   if (consequences.length === 0) {
     result.effects.push({ kind: "ambient_message", message: "💭 El mundo sigue su curso..." });
@@ -64,12 +68,15 @@ export function dispatchConsequences(
         const hint = c.position_hint ?? "near_player";
         const pos = resolvePositionHint(hint, opts.playerPosition, opts.playerForward);
         const entityId =
-          opts.generateEntityId?.(kind) ?? `narr_${kind}_${Math.floor(Date.now() / 1000)}`;
+          opts.generateEntityId?.(kind) ??
+          `narr_${kind}_${Math.floor(Date.now() / 1000)}_${spawnOrdinal++}`;
         const sceneId = state.world.active_scene_id;
-        state.recordEntitySpawned(entityId, kind, sceneId, pos, c, "narrative_request", eventId);
+        const finalId = state.recordEntitySpawned(
+          entityId, kind, sceneId, pos, c, "narrative_request", eventId,
+        );
         result.effects.push({
           kind: "spawn_entity",
-          entityId,
+          entityId: finalId,
           entityKind: kind,
           description,
           name: typeof c.name === "string" ? c.name : undefined,

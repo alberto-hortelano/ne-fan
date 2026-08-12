@@ -1,6 +1,6 @@
 /** Pluggable storage for narrative sessions. */
 import { promises as fs } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, sep } from "node:path";
 import type { SessionData, SessionMetadata } from "./types.js";
 
 export interface SessionStorage {
@@ -17,10 +17,27 @@ function isEnoent(err: unknown): boolean {
 
 /** Stores sessions on the local filesystem under {root}/{session_id}/state.json. */
 export class FsSessionStorage implements SessionStorage {
-  constructor(private root: string) {}
+  private readonly rootAbs: string;
+  constructor(private root: string) {
+    this.rootAbs = resolve(root);
+  }
+
+  /** Directorio del save, garantizado DENTRO de root. `sessionId` llega del
+   *  wire (WS sin auth): un id como ".." o "a/../../etc" escaparía de saves/
+   *  y `delete` haría rm -rf recursivo fuera. Fail-loud ante cualquier fuga. */
+  private dirFor(sessionId: string): string {
+    const dir = resolve(this.rootAbs, sessionId);
+    if (dir !== this.rootAbs && !dir.startsWith(this.rootAbs + sep)) {
+      throw new Error(`unsafe session id '${sessionId}': escapes saves directory`);
+    }
+    if (dir === this.rootAbs) {
+      throw new Error(`unsafe session id '${sessionId}': resolves to saves root`);
+    }
+    return dir;
+  }
 
   private pathFor(sessionId: string): string {
-    return resolve(this.root, sessionId, "state.json");
+    return resolve(this.dirFor(sessionId), "state.json");
   }
 
   async exists(sessionId: string): Promise<boolean> {
@@ -55,15 +72,22 @@ export class FsSessionStorage implements SessionStorage {
   async write(sessionId: string, data: SessionData): Promise<void> {
     const path = this.pathFor(sessionId);
     await fs.mkdir(dirname(path), { recursive: true });
-    await fs.writeFile(path, JSON.stringify(data, null, "\t"), "utf-8");
+    // Escritura atómica: un corte a mitad de writeFile dejaba state.json
+    // truncado y el resume posterior lanzaba (partida irrecuperable). Se
+    // escribe a un tmp y se renombra (rename es atómico en el mismo FS).
+    const tmp = `${path}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(data, null, "\t"), "utf-8");
+    await fs.rename(tmp, path);
   }
 
   async delete(sessionId: string): Promise<boolean> {
+    const dir = this.dirFor(sessionId); // lanza si el id se escapa de saves/
     try {
-      await fs.rm(resolve(this.root, sessionId), { recursive: true, force: true });
+      await fs.rm(dir, { recursive: true });
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (isEnoent(err)) return false; // borrar lo que no está: no es un error
+      throw err; // EACCES/EBUSY/… deben verse (fail-loud)
     }
   }
 

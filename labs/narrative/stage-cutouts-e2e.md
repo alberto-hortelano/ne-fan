@@ -55,7 +55,9 @@ Navegar (Playwright o Chrome) a:
 
 - Sin bridge NO hay movimiento (el sim vive en el bridge) — arrancarlo
   siempre, aunque la fixture se cargue en local.
-- El hook `__nefan` del modo DEV no expone `currentTile`/`tiles`; usar
-  `stageCutouts()/probeCollide()/state()`.
+- El hook `__nefan` expone en DEV la unión de las claves base
+  (`currentTile`/`tiles`/`frontier`…) y las de bench
+  (`stageCutouts()/probeCollide()/state()` etc.) — el bloque DEV hace merge
+  sobre el mismo objeto, no lo reemplaza.
 - `keyboard.press` de Playwright puede no llegar a DevToolsInput; despachar
   el `KeyboardEvent` a `window` es fiable.
