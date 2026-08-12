@@ -50,3 +50,25 @@ Reglas:
   sombras). Vacío es válido: `{ "extras": [] }` si la imagen no inventó nada.
 - Máximo 12 extras: prioriza los que afectan al juego (grandes, en zona
   transitable).
+
+<!-- SCHEMA:AUTO — generado por `npm run gen:contract` desde src/contract/model-io/schemas.ts; NO editar a mano -->
+```ts
+ImageReview = {
+  extras: Array<
+    | {
+      label: string /* no vacío */;
+      action: "keep";
+      box_px: [number, number, number /* >0 */, number /* >0 */];
+      tall: boolean;  // true si es más alto que un personaje (gana oclusión)
+      solid: boolean;  // false solo para decoración atravesable
+      h?: number /* >0 */;  // Altura estimada en celdas (un personaje ≈ 3.6)
+      depth_cells?: number /* >0 */;  // Profundidad de su base en celdas hacia el fondo
+    }
+    | {
+      label: string /* no vacío */;
+      action: "remove";
+      box_px: [number, number, number /* >0 */, number /* >0 */];
+    }> /* ≤12 items */;  // Máx 12 objetos inventados por la imagen; [] si no inventó nada
+}
+```
+<!-- /SCHEMA:AUTO -->

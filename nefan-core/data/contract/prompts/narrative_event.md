@@ -46,42 +46,21 @@ CRITICAL — when free_text is empty (numbered choice only):
 - Record a story_update whenever the choice changes what anyone knows, owes
   or intends — those deltas are your only long-term memory.
 
-Pass this JSON to narrative_respond:
-{
-  "consequences": [
-    { "type": "dialogue", "speaker": "NPC display name",
-      "text": "what they say (same language as free_text)",
-      "choices": ["optional", "2-3 follow-up", "options"] },
-    { "type": "story_update", "delta": "1-3 sentences appended to story_so_far" },
-    { "type": "spawn_entity", "entity_kind": "npc"|"building"|"object",
-      "description": "vivid English description for asset gen",
-      "name": "optional NPC name", "position_hint": "near_player|distant_east|...",
-      "role": "optional NPC ambient role: peasant|guard|villager|merchant",
-      "texture_hash": "optional reused asset hash",
-      "model_hash": "optional reused asset hash" },
-    { "type": "schedule_event", "description": "what to schedule",
-      "trigger": "next_scene|timer:60s|on_player_action:..." },
-    { "type": "plugin_event", "plugin_id": "sha256 of an ACTIVE plugin",
-      "event_type": "one of the plugin's events_consumed (e.g. trade_offered)",
-      "payload": { "any": "fields the plugin's rules read as event.*" } }
-  ]
-}
-Max 4 consequences. Reuse available_assets by hash when sensible.
+Pass `narrative_respond` an object matching the `NarrativeReaction` type in the
+SCHEMA block at the bottom of this document — that block is the AUTHORITATIVE
+shape (generated from the validator; `?` = optional, everything else REQUIRED).
+The pre-flight rejects anything that deviates and hands you the exact error to
+fix, so match the type rather than guessing field names.
 
-STRICT SHAPE — the validator REJECTS aliases:
-- type MUST be exactly one of "dialogue" | "story_update" | "spawn_entity"
-  | "schedule_event" | "plugin_event" | "noop". "show_dialogue" is NOT valid.
-- story_update REQUIRES a non-empty "delta" field. Do not use "text" or
-  "summary" — they will be rejected.
-- dialogue REQUIRES non-empty "speaker" and "text"; its options field is
-  "choices" (max 3), NOT "options". spawn_entity REQUIRES "entity_kind"
-  (npc/building/object) and "description". schedule_event REQUIRES
-  "description". plugin_event REQUIRES "plugin_id" and "event_type" and only
-  makes sense for plugins the session has active — the game engine runs the
-  plugin's declarative rules (commerce, reputation, ...); emit it instead of
-  hand-narrating what a plugin already models.
-If you produce an alias, narrative_respond rejects it here (and ai_server would
-return HTTP 422). Fix the response shape, not the validator.
+Semantic notes the type cannot express:
+- Max 4 consequences; reuse available_assets by hash when sensible.
+- No aliases: the discriminant is `type` and the options list is `choices`
+  (never `options`); a top-level `dialogue`/`show_dialogue` is rejected.
+- spawn_entity NPCs/enemies must be HUMANOID (never animals or non-humanoid
+  monsters) — the `description` feeds asset generation.
+- plugin_event only makes sense for plugins the session has ACTIVE — the engine
+  runs the plugin's declarative rules (commerce, reputation, …); emit it instead
+  of hand-narrating what a plugin already models.
 
 OTHER ACTIONS during this turn (optional, alongside consequences): you may also
 call the state tools to mutate authoritative state directly — inventory_add /
@@ -105,3 +84,46 @@ npc_set_directive changes the STANDING behaviour; executable directive types:
 - "hold" — stand still.
 Unknown directive types are ignored with a log (the NPC keeps wandering), so
 prefer this vocabulary.
+
+<!-- SCHEMA:AUTO — generado por `npm run gen:contract` desde src/contract/model-io/schemas.ts; NO editar a mano -->
+```ts
+NarrativeReaction = {
+  consequences: Array<
+    | {
+      type: "dialogue";
+      speaker: string /* no vacío */;  // Quién habla (nombre del NPC)
+      text: string /* no vacío */;  // Lo que dice
+      choices?: Array<string /* no vacío */> /* ≤3 items */;  // Hasta 3 opciones de respuesta ofrecidas al jugador
+    }
+    | {
+      type: "story_update";
+      delta: string /* no vacío */;  // Frase que se añade al hilo narrativo (story_so_far)
+    }
+    | {
+      type: "spawn_entity";
+      entity_kind: "npc"|"building"|"object";
+      description: string /* no vacío */;  // Descripción en español de la entidad a materializar
+      name?: string;  // Nombre propio (NPCs)
+      position_hint?: string;  // Pista de dónde aparece, p.ej. 'junto a la fuente'
+      role?: "peasant"|"guard"|"villager"|"merchant";  // Rol de comportamiento ambiental (NPCs); desconocido degrada a villager
+      texture_hash?: string;  // Reusar textura cacheada por hash
+      model_hash?: string;  // Reusar modelo cacheado por hash
+      character_type?: string;
+    }
+    | {
+      type: "schedule_event";
+      description: string /* no vacío */;  // Qué ocurrirá y bajo qué condición
+      trigger?: string;  // Condición de disparo (texto libre)
+    }
+    | {
+      type: "plugin_event";
+      plugin_id: string /* no vacío */;  // Id del plugin declarativo destino
+      event_type: string /* no vacío */;  // Tipo de evento que consume el plugin
+      payload?: Record<string, unknown>;  // Datos del evento (objeto)
+    }
+    | {
+      type: "noop";
+    }> /* ≤4 items */;  // Lista de consecuencias (máx 4). [] si no hay reacción
+}
+```
+<!-- /SCHEMA:AUTO -->

@@ -3,41 +3,48 @@
   "description": "Classify every numbered segmented region of the scene image.",
   "input_schema": {
     "type": "object",
-    "required": [
-      "segments"
-    ],
     "properties": {
       "segments": {
         "type": "array",
         "items": {
           "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Índice de la región del overlay"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Sustantivo corto en español"
+            },
+            "solid": {
+              "type": "boolean",
+              "description": "true si un personaje a pie NO puede atravesarlo"
+            },
+            "tall": {
+              "type": "boolean",
+              "description": "true si es más alto que un personaje (se dibuja por encima)"
+            },
+            "element_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "required": [
             "index",
             "label",
             "solid",
             "tall"
           ],
-          "properties": {
-            "index": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "label": {
-              "type": "string"
-            },
-            "solid": {
-              "type": "boolean"
-            },
-            "tall": {
-              "type": "boolean"
-            },
-            "element_id": {
-              "type": "string",
-              "description": "Id of the DECLARED plan element this region belongs to (from context.expected_elements). Several regions of the same object share it (windows/door/roof of one building). Omit for elements the image model added."
-            }
-          }
-        }
+          "additionalProperties": false
+        },
+        "description": "Una entrada por CADA índice del overlay, exactamente una vez"
       }
-    }
+    },
+    "required": [
+      "segments"
+    ]
   }
 }

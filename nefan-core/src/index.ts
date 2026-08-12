@@ -58,3 +58,29 @@ export type { PluginViewSources, ManifestResolver } from "./plugins/views.js";
 export { parseVolumes } from "./scene/blueprint/volumes.js";
 export { parseGround } from "./scene/blueprint/ground.js";
 export { stagePlanFromScene } from "./scene/stage/plan.js";
+
+// Contratos entrada/salida del modelo (SoT zod → prompt + tool JSON +
+// pre-flight): el pre-flight de narrative-mcp valida con estos schemas para
+// que "opcional en el prompt" == "opcional en el validador" por construcción.
+export { validateContract, type ContractCheck } from "./contract/model-io/validate.js";
+export {
+  NarrativeReactionSchema,
+  ConsequenceSchema,
+  MAX_CONSEQUENCES,
+  WeaponOrientSchema,
+  WeaponVerifySchema,
+  CONTRACTS,
+  type ContractSpec,
+} from "./contract/model-io/schemas.js";
+export {
+  FormatDSceneSchema,
+  EntitySchema,
+  SceneSizeSchema,
+  type FormatDScene,
+} from "./contract/model-io/scene-schema.js";
+export {
+  SceneClassifySchema,
+  ImageReviewSchema,
+  StageReviewSchema,
+  BlueprintReviewSchema,
+} from "./contract/model-io/review-schemas.js";

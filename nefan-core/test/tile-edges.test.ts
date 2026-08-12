@@ -78,6 +78,36 @@ describe("computeTileEdges", () => {
       new RegExp(`${TILE_CELLS}x${TILE_CELLS}`),
     );
   });
+
+  // Retirado terrain_features del contrato: `ground` es ahora la vía de
+  // costuras. Un tile que declara su camino/agua SOLO en `ground` debe seguir
+  // exponiendo los cruces en el grid (rasterizeGroundToGrid en scene-expand).
+  it("deriva cruces de `ground` (path→camino, water→río, deck→puente) sin terrain_features", () => {
+    const expanded = expandScenePrimitives({
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      biome: "grass",
+      ground: [
+        // Camino oeste→este que aterriza en ambos bordes (row ~64).
+        { id: "camino", kind: "path", points: [[0, 64], [64, 63], [128, 64]], w: 2 },
+        // Río vertical norte→sur en la columna 30.
+        { id: "rio", kind: "water", rect: [29, 0, 3, 128] },
+        // Puente (deck) que cruza el río donde pasa el camino.
+        { id: "puente", kind: "deck", rect: [29, 62, 3, 4], material: "wood" },
+      ],
+      entities: [],
+    });
+    const edges = computeTileEdges(expanded);
+    // Camino en oeste y este cerca de row 64.
+    assert.equal(edges.west.crossings[0]?.type, "path", `west: ${JSON.stringify(edges.west.crossings)}`);
+    assert.ok(Math.abs(edges.west.crossings[0].at - 64) <= 2);
+    assert.equal(edges.east.crossings[0]?.type, "path", `east: ${JSON.stringify(edges.east.crossings)}`);
+    assert.ok(Math.abs(edges.east.crossings[0].at - 64) <= 2);
+    // Río (water→river) en norte y sur cerca de col 30.
+    assert.equal(edges.north.crossings[0]?.type, "river", `north: ${JSON.stringify(edges.north.crossings)}`);
+    assert.ok(Math.abs(edges.north.crossings[0].at - 30) <= 2);
+    assert.equal(edges.south.crossings[0]?.type, "river");
+  });
 });
 
 describe("matchCrossings", () => {

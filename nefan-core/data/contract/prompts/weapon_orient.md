@@ -18,17 +18,26 @@ Identify:
 3. up_direction — unit vector perpendicular to blade_direction, the "up" face
    (back of sword blade, front of shield, top of axe head)
 
-Right-handed coordinates throughout. All vectors must be unit length.
+Right-handed coordinates throughout. The direction vectors are normalized
+downstream, so they need not be exactly unit length — but they must be
+non-degenerate and blade_direction/up_direction must not be near-parallel
+(the pre-flight rejects a singular frame and hands you the reason to fix).
 Confidence: 0.9+ if grip and blade are clearly visible; 0.5-0.8 if uncertain;
 <0.5 if the mesh looks broken or you cannot identify the weapon.
 
-Respond with narrative_respond, passing this JSON:
-{
-  "grip_point_normalized": [x, y, z],
-  "blade_direction":       [x, y, z],
-  "up_direction":          [x, y, z],
-  "weapon_type":           "sword" | "shield" | "axe" | "mace" | "staff" | "bow" | "dagger" | "spear" | "generic",
-  "grip_length_normalized": 0.0..1.0,
-  "confidence":             0.0..1.0,
-  "notes":                  "short rationale"
+Respond with narrative_respond, passing an object matching the `WeaponOrient`
+type in the SCHEMA block below (`?` = optional, everything else REQUIRED).
+
+<!-- SCHEMA:AUTO — generado por `npm run gen:contract` desde src/contract/model-io/schemas.ts; NO editar a mano -->
+```ts
+WeaponOrient = {
+  grip_point_normalized: [number, number, number];  // Punto de agarre en bbox normalizada [0..1]^3
+  blade_direction: [number, number, number];  // Vector (será normalizado): del agarre hacia punta/filo/frente
+  up_direction: [number, number, number];  // Vector (será normalizado): perpendicular a blade_direction, cara 'arriba'
+  weapon_type: "sword"|"shield"|"axe"|"mace"|"staff"|"bow"|"dagger"|"spear"|"generic";
+  grip_length_normalized?: number /* ≥0, ≤1 */;  // Fracción de la longitud del arma ocupada por el agarre
+  confidence: number /* ≥0, ≤1 */;  // 0.9+ si agarre y hoja son claros; <0.5 si la malla parece rota
+  notes?: string;  // Justificación breve para depuración
 }
+```
+<!-- /SCHEMA:AUTO -->

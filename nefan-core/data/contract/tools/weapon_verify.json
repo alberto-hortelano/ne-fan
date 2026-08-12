@@ -1,0 +1,35 @@
+{
+  "name": "verify_weapon",
+  "description": "Check that a weapon is correctly placed in a character's hand for combat stance, and suggest a rotation correction if not.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "description": "true si el arma está bien colocada en la mano para combate"
+      },
+      "issue": {
+        "type": "string"
+      },
+      "suggested_delta_euler": {
+        "type": "array",
+        "items": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
+    "required": [
+      "ok"
+    ]
+  }
+}

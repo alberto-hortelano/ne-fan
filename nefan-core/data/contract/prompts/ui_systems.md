@@ -71,8 +71,7 @@ follows the active system automatically.
 ── 6. STORY, AMBIENT & SCHEDULING ─────────────────────────────────────────
 - `story_update` consequences append to story_so_far; the player browses the
   full session timeline with the History Browser (key H).
-- `ambient_event` (one per scene) and `ambient_message` effects surface as
-  log lines — texture, not plot.
+- `ambient_message` effects surface as log lines — texture, not plot.
 - `schedule_event` plants a future beat the bridge will hand back to you.
 
 ── 7. GRAPHICS MODE (world.render_mode) ───────────────────────────────────
@@ -95,5 +94,5 @@ systems with plugin_register.
 `map_add_trigger` attaches consequences to a place that fire when the player
 enters / first visits / leaves it (evaluated by the bridge on movement).
 This is your tool for ambushes, arrivals and door-step beats — it needs the
-place to be anchored (overworld: place_anchors; proscenium: every stage IS
-its place).
+place to be reachable in the world (proscenium: every stage IS its place;
+overworld: the place must be realized as a scene the player can walk into).

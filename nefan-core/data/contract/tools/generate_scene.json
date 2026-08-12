@@ -24,66 +24,13 @@
         "type": "string",
         "description": "Tile base fill: grass|forest_floor|meadow|sand|dirt|stone|snow|swamp (tiles only)."
       },
-      "terrain_patches": {
-        "type": "array",
-        "description": "Optional ASCII detail stamps over the biome fill (tiles only).",
-        "maxItems": 24,
-        "items": {
-          "type": "object",
-          "properties": {
-            "at": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              },
-              "minItems": 2,
-              "maxItems": 2
-            },
-            "rows": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1
-            }
-          },
-          "required": [
-            "at",
-            "rows"
-          ]
-        }
-      },
-      "place_anchors": {
-        "type": "array",
-        "description": "World-map places physically living in this tile (tiles only).",
-        "maxItems": 8,
-        "items": {
-          "type": "object",
-          "properties": {
-            "place_id": {
-              "type": "string"
-            },
-            "rect": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              },
-              "minItems": 4,
-              "maxItems": 4
-            }
-          },
-          "required": [
-            "place_id"
-          ]
-        }
-      },
       "scene_id": {
         "type": "string",
         "description": "Unique slug identifying this map (e.g. 'tavern_clearing', 'robledo_village')."
       },
       "place_id": {
         "type": "string",
-        "description": "Optional. The world-map place id this scene realizes; the engine binds the scene to that place."
+        "description": "The world-map place id this scene realizes; the engine binds the scene to that place. Optional on tiles/scenes; REQUIRED for proscenium stages."
       },
       "scene_description": {
         "type": "string",
@@ -145,82 +92,13 @@
           ]
         }
       },
-      "terrain_features": {
-        "type": "array",
-        "description": "Optional. Smooth vector shapes painted over the grid: thick polylines (meandering river, curving road) or filled polygons (closed=true). points are [col,row] cell coords (floats allowed), width in cells. Array order = paint order (river first, bridge after).",
-        "items": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "description": "river|water|path|road|bridge|stone|paved|dirt|sand|wood|grass or a free Spanish name resolved by keywords."
-            },
-            "points": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 2,
-                "maxItems": 2
-              },
-              "minItems": 2,
-              "description": "[col,row] cell coordinates; floats allowed."
-            },
-            "width": {
-              "type": "number",
-              "minimum": 0.1,
-              "description": "Stroke width in cells (default 1). Ignored for closed polygons."
-            },
-            "closed": {
-              "type": "boolean",
-              "description": "true = filled polygon (3+ points)."
-            },
-            "color": {
-              "type": "string",
-              "description": "Optional #rrggbb override."
-            },
-            "at_edges": {
-              "type": "array",
-              "description": "Tile seams: exact border cells this feature enters/exits at.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "edge": {
-                    "type": "string",
-                    "enum": [
-                      "north",
-                      "south",
-                      "east",
-                      "west"
-                    ]
-                  },
-                  "at": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "edge",
-                  "at"
-                ]
-              }
-            }
-          },
-          "required": [
-            "type",
-            "points"
-          ]
-        },
-        "maxItems": 24
-      },
       "ground": {
         "type": "array",
-        "description": "Tiles only, strongly recommended. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
+        "description": "Tiles AND proscenium stages, strongly recommended. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles only, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
+        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
         "items": {
           "type": "object"
         }
@@ -351,121 +229,6 @@
           "exits"
         ]
       },
-      "structures": {
-        "type": "array",
-        "description": "Enterable rooms/buildings stamped deterministically by the engine: closed wall perimeter + floor + door gaps. NEVER hand-draw W borders when a structure can do it. rect = [col,row,w,h] outer rectangle (walls included, min 3x3); doors carve walkable gaps.",
-        "maxItems": 16,
-        "items": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "room"
-              ]
-            },
-            "rect": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              },
-              "minItems": 4,
-              "maxItems": 4,
-              "description": "[col, row, width_cells, height_cells], walls included."
-            },
-            "wall_char": {
-              "type": "string",
-              "description": "Terrain char for the walls (default W, always solid)."
-            },
-            "floor_char": {
-              "type": "string",
-              "description": "Terrain char for the interior floor (default o)."
-            },
-            "doors": {
-              "type": "array",
-              "description": "1+ door gaps or the room is sealed.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "side": {
-                    "type": "string",
-                    "enum": [
-                      "north",
-                      "south",
-                      "east",
-                      "west"
-                    ]
-                  },
-                  "at": {
-                    "type": "integer",
-                    "description": "Cells from the rect's top/left corner along that side (1..side-2; corners cannot be doors)."
-                  },
-                  "width": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "required": [
-                  "side",
-                  "at"
-                ]
-              }
-            }
-          },
-          "required": [
-            "type",
-            "rect"
-          ]
-        }
-      },
-      "vegetation_zones": {
-        "type": "array",
-        "description": "Deterministic tree scatter (seeded by scene_id) over walkable cells of the area, skipping rooms, doors and occupied cells. Use instead of hand-placing many trees; hand-placed trees remain fine for landmarks.",
-        "maxItems": 16,
-        "items": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "description": "Plant name in Spanish (pino, roble, matorral)."
-            },
-            "area": {
-              "description": "[col, row, width_cells, height_cells], or \"rest\" (tiles only: everything still bare biome).",
-              "oneOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  },
-                  "minItems": 4,
-                  "maxItems": 4
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "rest"
-                  ]
-                }
-              ]
-            },
-            "density": {
-              "type": "number",
-              "exclusiveMinimum": 0,
-              "maximum": 1,
-              "description": "Fraction of cells planted: 0.05 sparse, 0.25 thick."
-            },
-            "glyph": {
-              "type": "string",
-              "description": "Single ASCII char (default T)."
-            }
-          },
-          "required": [
-            "type",
-            "area",
-            "density"
-          ]
-        }
-      },
       "entities": {
         "type": "array",
         "description": "Every thing on the map that is NOT terrain.",
@@ -555,17 +318,12 @@
           ]
         },
         "maxItems": 80
-      },
-      "ambient_event": {
-        "type": "string",
-        "description": "One Spanish sentence of atmospheric flavour (wind, birdsong, smell of stew, etc.)."
       }
     },
     "required": [
       "scene_id",
       "scene_description",
-      "entities",
-      "ambient_event"
+      "entities"
     ]
   }
 }

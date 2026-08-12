@@ -79,12 +79,27 @@ export const GroundDeckSchema = z
   })
   .strict();
 
-export const GroundFeatureSchema = z.discriminatedUnion("kind", [
-  GroundPathSchema,
-  GroundAreaSchema,
-  GroundWaterSchema,
-  GroundDeckSchema,
-]);
+export const GroundFeatureSchema = z
+  .discriminatedUnion("kind", [
+    GroundPathSchema,
+    GroundAreaSchema,
+    GroundWaterSchema,
+    GroundDeckSchema,
+  ])
+  // Área/agua/deck necesitan EXACTAMENTE una forma (rect|polygon|ellipse). El
+  // schema por sí solo las deja opcionales; sin esta regla un rasgo sin forma
+  // se colaba (la comprobaba solo el validador a mano de narrative-mcp). Ahora
+  // es autoritativa: scene y blueprint_review la heredan.
+  .superRefine((f, ctx) => {
+    if (f.kind === "path") return;
+    const shapes = [f.rect, f.polygon, f.ellipse].filter((s) => s !== undefined).length;
+    if (shapes !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `ground "${f.id}" (${f.kind}) necesita exactamente una de rect|polygon|ellipse (tiene ${shapes})`,
+      });
+    }
+  });
 
 /** Cap de rasgos de suelo por tile. */
 export const MAX_GROUND_FEATURES = 64;

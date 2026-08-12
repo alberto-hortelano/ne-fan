@@ -1,6 +1,6 @@
 {
-  "description": "choices no-string: PY las coerciona, TS las filtra — ambos aceptan",
-  "expect": "accept",
+  "description": "choices no-string: rechazadas por ambos lados (fail-loud, no coercionar) — el modelo recibe el error y corrige",
+  "expect": "reject",
   "payload": {
     "consequences": [
       {

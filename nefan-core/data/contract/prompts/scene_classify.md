@@ -35,3 +35,17 @@ Respond with narrative_respond, passing EXACTLY:
 { "segments": [ { "index": 0, "label": "roble", "solid": true, "tall": true },
                 { "index": 3, "label": "bloque de viviendas", "solid": true, "tall": true, "element_id": "b1" }, ... ] }
 Every index from the overlay must appear exactly once. No other extra fields.
+
+<!-- SCHEMA:AUTO — generado por `npm run gen:contract` desde src/contract/model-io/schemas.ts; NO editar a mano -->
+```ts
+SceneClassify = {
+  segments: Array<{
+    index: number /* entero, ≥0 */;  // Índice de la región del overlay
+    label: string /* no vacío */;  // Sustantivo corto en español
+    solid: boolean;  // true si un personaje a pie NO puede atravesarlo
+    tall: boolean;  // true si es más alto que un personaje (se dibuja por encima)
+    element_id?: string /* no vacío */;  // id del volumen declarado al que pertenece (mismas partes = mismo id)
+  }>;  // Una entrada por CADA índice del overlay, exactamente una vez
+}
+```
+<!-- /SCHEMA:AUTO -->

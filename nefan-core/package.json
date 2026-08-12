@@ -30,6 +30,7 @@
     "dev": "tsx bridge/ws-server.ts",
     "dump-config": "tsx scripts/dump-config.ts",
     "dump-scene": "tsx scripts/dump-scene.ts",
+    "gen:contract": "tsx scripts/gen-contract.ts",
     "prebuild": "tsx scripts/dump-config.ts",
     "predev": "tsx scripts/dump-config.ts",
     "pretest": "tsx scripts/dump-config.ts"

@@ -3,40 +3,57 @@
   "description": "Return the grip point and orientation vectors for a 3D weapon mesh.",
   "input_schema": {
     "type": "object",
-    "required": [
-      "grip_point_normalized",
-      "blade_direction",
-      "up_direction",
-      "weapon_type",
-      "confidence"
-    ],
     "properties": {
       "grip_point_normalized": {
         "type": "array",
-        "items": {
-          "type": "number"
-        },
+        "items": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
         "minItems": 3,
         "maxItems": 3,
-        "description": "Grip point in normalized bbox space [0..1]^3"
+        "description": "Punto de agarre en bbox normalizada [0..1]^3"
       },
       "blade_direction": {
         "type": "array",
-        "items": {
-          "type": "number"
-        },
+        "items": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
         "minItems": 3,
         "maxItems": 3,
-        "description": "Unit vector: from grip toward tip/edge/front"
+        "description": "Vector (será normalizado): del agarre hacia punta/filo/frente"
       },
       "up_direction": {
         "type": "array",
-        "items": {
-          "type": "number"
-        },
+        "items": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
         "minItems": 3,
         "maxItems": 3,
-        "description": "Unit vector: perpendicular to blade_direction, 'up' face"
+        "description": "Vector (será normalizado): perpendicular a blade_direction, cara 'arriba'"
       },
       "weapon_type": {
         "type": "string",
@@ -55,18 +72,24 @@
       "grip_length_normalized": {
         "type": "number",
         "minimum": 0,
-        "maximum": 1,
-        "description": "Fraction of the weapon length occupied by the grip"
+        "maximum": 1
       },
       "confidence": {
         "type": "number",
         "minimum": 0,
-        "maximum": 1
+        "maximum": 1,
+        "description": "0.9+ si agarre y hoja son claros; <0.5 si la malla parece rota"
       },
       "notes": {
-        "type": "string",
-        "description": "Short rationale for debugging"
+        "type": "string"
       }
-    }
+    },
+    "required": [
+      "grip_point_normalized",
+      "blade_direction",
+      "up_direction",
+      "weapon_type",
+      "confidence"
+    ]
   }
 }
