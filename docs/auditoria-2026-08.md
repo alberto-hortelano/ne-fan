@@ -105,11 +105,17 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   en vivo (cliente→bridge por WS) y contra las formas reales de HTML y Godot.
   Pendiente análogo: `state-http-server` y `asset-store` siguen validando a
   mano pese a tener contratos tipados en `src/contracts/`.
-- **`validate_scene_response` degrada a mapa de hierba en silencio**
-  (`ai_server/narrative_schemas.py:237`). Contradice la doctrina fail-loud y la
-  memoria del proyecto: un fallo del motor se vuelve un mapa vacío
-  indistinguible de uno legítimo. Decidir si se quiere ese fallback o
-  fail-loud + reintento.
+- ~~**`validate_scene_response` degrada a mapa de hierba en silencio**~~
+  **RESUELTO en #118** (Stage 5b) y verificado de nuevo (2026-08-12). La función
+  es fail-loud en la forma (lanza `ValueError` en grid que no cuadra, entity con
+  kind/glyph/footprint inválido, tile sin biome; el caso exacto del bug —
+  `terrain: {type: "grass"}` que antes se volvía mapa de hierba — ahora lanza,
+  cubierto por `test_terrain_not_list_raises` + 12 tests). Toda la cadena aguas
+  abajo es fail-loud Y visible: `/generate_scene` → 503/504; `AiClient` →
+  `Result {ok:false,error}`; handlers scene.ts/tile.ts → `fail()` que
+  broadcastea `narrative_status: error` (sin inyectar escena de hierba); HTML
+  muestra overlay de error, Godot lo lleva al HUD. El "reintento" existe vía el
+  round-trip del pre-flight MCP (el modelo corrige y re-responde).
 - **`race` en `handleSetRenderMode`** (`bridge/handlers/session.ts:507`).
   Read-modify-write en disco de una sesión que puede ser la activa en memoria;
   last-writer-wins sin lock.
