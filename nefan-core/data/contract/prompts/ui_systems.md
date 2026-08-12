@@ -71,8 +71,7 @@ follows the active system automatically.
 ── 6. STORY, AMBIENT & SCHEDULING ─────────────────────────────────────────
 - `story_update` consequences append to story_so_far; the player browses the
   full session timeline with the History Browser (key H).
-- `ambient_event` (one per scene) and `ambient_message` effects surface as
-  log lines — texture, not plot.
+- `ambient_message` effects surface as log lines — texture, not plot.
 - `schedule_event` plants a future beat the bridge will hand back to you.
 
 ── 7. GRAPHICS MODE (world.render_mode) ───────────────────────────────────

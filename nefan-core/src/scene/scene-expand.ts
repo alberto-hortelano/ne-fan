@@ -24,6 +24,8 @@
 
 import { SeededRng, fnv1a } from "../rng.js";
 import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
+import { parseGround } from "./blueprint/ground.js";
+import { shapeContains } from "./blueprint/ground-collision.js";
 import type { Edge } from "../world-map/types.js";
 
 type Rect = [number, number, number, number]; // [col, row, w, h]
@@ -133,6 +135,54 @@ function rasterizeFeature(grid: string[][], points: [number, number][], width: n
   }
 }
 
+/** Auto-snap: un endpoint a ≤2 celdas de un borde se pega a él (conserva la
+ *  otra coordenada), evitando caminos que "casi" llegan a la costura. Mutación
+ *  in-place de los extremos. Compartido por terrain_features (legacy) y por la
+ *  rasterización de `ground` paths (la vía de costuras actual). */
+function snapPathEndpointsToEdges(pts: [number, number][]): void {
+  for (const idx of [0, pts.length - 1]) {
+    const [x, y] = pts[idx];
+    if (x > 0 && x <= 2) pts[idx] = [0, y];
+    else if (x < TILE_CELLS && x >= TILE_CELLS - 2) pts[idx] = [TILE_CELLS, y];
+    if (y > 0 && y <= 2) pts[idx] = [pts[idx][0], 0];
+    else if (y < TILE_CELLS && y >= TILE_CELLS - 2) pts[idx] = [pts[idx][0], TILE_CELLS];
+  }
+}
+
+/** Rasteriza los rasgos `ground` de un tile al grid de terreno para que las
+ *  COSTURAS entre tiles funcionen: computeTileEdges lee los cruces del grid, y
+ *  `ground` (no `terrain_features`, ya retirado del contrato) es hoy la vía
+ *  declarativa del suelo. path→"_" (camino, auto-snap al borde), water→"w"
+ *  (río, bloquea), deck→"b" (puente transitable, perfora el agua). `area` no
+ *  se rasteriza: no forma cruces y su render sale del greybox. Los rasgos
+ *  inválidos los rechaza parseGround aguas arriba (pre-flight / scene-validate);
+ *  aquí, si no parsean, se omiten sin tocar el grid. */
+function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
+  const parsed = parseGround(rawGround);
+  if (!parsed.ok) return;
+  // water primero, deck después (el puente perfora el agua) — igual que
+  // groundCollisionGrid.
+  for (const f of parsed.features) {
+    if (f.kind !== "path") continue;
+    const pts = f.points.map((p) => [p[0], p[1]] as [number, number]);
+    if (pts.length < 2) continue;
+    snapPathEndpointsToEdges(pts);
+    rasterizeFeature(grid, pts, f.w && f.w > 0 ? f.w : 1, "_");
+  }
+  for (const f of parsed.features) {
+    if (f.kind !== "water") continue;
+    for (let r = 0; r < TILE_CELLS; r++) for (let c = 0; c < TILE_CELLS; c++) {
+      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = "w";
+    }
+  }
+  for (const f of parsed.features) {
+    if (f.kind !== "deck") continue;
+    for (let r = 0; r < TILE_CELLS; r++) for (let c = 0; c < TILE_CELLS; c++) {
+      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = "b";
+    }
+  }
+}
+
 /** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
  *  terrain_patches + snap de endpoints a at_edges + rasterización de features
  *  al grid. Devuelve una copia con `size`/`terrain` sintetizados lista para la
@@ -217,6 +267,9 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
       rasterizeFeature(grid, pts, width, rasterChar);
     }
   }
+
+  // Ground declarativo → grid (vía de costuras actual; ver rasterizeGroundToGrid).
+  rasterizeGroundToGrid(raw.ground, grid);
 
   // Leyenda: el char del bioma hereda su nombre de catálogo si la leyenda no
   // lo declara ya (p.ej. forest_floor → g:"suelo de bosque").

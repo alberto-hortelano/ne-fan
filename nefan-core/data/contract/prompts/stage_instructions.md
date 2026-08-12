@@ -54,7 +54,6 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
     { "id": "arroyo", "kind": "water", "rect": [40, 0, 4, 24] },              // NOT walkable — collision AND the reachability validator see it
     { "id": "puente", "kind": "deck", "rect": [40, 10, 4, 4], "material": "wood" }  // walkable OVER water: without one, an exit across a river is REJECTED
   ],
-  "structures": [ ],                     // optional interior sub-rooms
   "entities": [ ... ],                   // furniture, props, NPCs; include "player" ONLY on bootstrap or when no entry edge is known
   "volumes": [                           // PREFERRED for the main scenery: typed volumes with materials — richer clay than plain entities
     { "id": "posada", "label": "posada del Roble", "type": "building",
@@ -86,8 +85,7 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
     ],
     "wall_h_m": 3.5,                     // optional, INTERIORS only: wall/ceiling height in meters, at the scale of the room — hut 2.4, tavern 3.5, noble hall 5+. Range [2.2, 8]; default 3.5
     "fourth_wall": { "present": true, "doors": [ { "col": 10, "w": 6 } ] }
-  },
-  "ambient_event": "…"
+  }
 }
 
 HARD RULES OF THE STAGE:
@@ -204,5 +202,5 @@ HARD RULES OF THE STAGE:
 - Backdrop description is what the player SEES at the north edge (Spanish,
   concrete, matches the world). It seeds future AI repainting — describe a
   view, not a wall of text.
-- Everything else (entities in Spanish, terrain glyphs, structures) works
+- Everything else (entities in Spanish, terrain glyphs, ground/volumes) works
   exactly as in a normal scene.

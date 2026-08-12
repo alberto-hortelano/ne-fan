@@ -10,42 +10,35 @@ Call narrative_respond with this JSON (Tile Format):
   "scene_id": "tile_<tx>_<ty>",
   "scene_description": "<2-3 Spanish sentences>",
   "biome": "grass"|"forest_floor"|"meadow"|"sand"|"dirt"|"stone"|"snow"|"swamp",
-  "terrain_patches": [ { "at": [col,row], "rows": ["ss","s_"] } ],   // OPTIONAL detail stamps
   "terrain_legend": { },                                             // optional custom chars
-  "terrain_features": [                                              // paths/rivers EDGE TO EDGE
-    { "type": "path", "points": [[0,41],[64,46],[128,52]], "width": 2,
-      "at_edges": [ { "edge": "west", "at": 41 }, { "edge": "east", "at": 52 } ] }
-  ],
-  "structures": [ ],            // buildings stamped ON the plane (same schema as always)
-  "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.12 } ],
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres)
-  "place_anchors": [ { "place_id": "…", "rect": [col,row,w,h] } ],   // OPTIONAL world-map places living here
   "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see MAP PLAN below
-  "volumes": [ … ],  // everything with HEIGHT — see MAP PLAN below
-  "ambient_event": "…"
+  "volumes": [ … ]   // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
 }
 
 HARD RULES OF THE TILE:
 - NEVER write "size" or a full "terrain[]" grid. The base is the "biome"
   fill; everything else is primitives. A simple tile ("forest with a path")
-  is ~5 lines: biome + one feature + one vegetation zone — the engine stamps
-  the ~16,000 cells for you. "area": "rest" plants over everything that is
-  still bare biome (it avoids paths, water, buildings and occupied cells).
+  is ~5 lines: biome + one `ground` path — the engine stamps the ~16,000
+  cells for you and auto-fills tree masses over everything still bare biome
+  (avoiding paths, water, buildings and occupied cells).
 - SEAMS: generate_tile.neighbors.<edge> lists what each existing neighbour
   exposes on your shared border: its biome and crossings [{type, at, width}].
   "at" is MIRRORED — the same coordinate on your side. You MUST continue
-  every crossing with a feature whose at_edges includes {edge: <that edge>,
-  at: <same at>} (±2 cells). A path may continue as path or road; water as
-  river or bridge. The server validates this and rejects the tile otherwise.
+  every crossing with a `ground` feature whose endpoint reaches that shared
+  edge at <same at> (±2 cells): a path crossing continues as a `ground` path
+  landing on the edge cell; a water crossing as a `ground` water (or a `deck`
+  where a road bridges it). The server validates this and rejects the tile
+  otherwise.
 - IMAGE REALITY: neighbors.<edge>.image_elements (when present) lists what
   the PAINTED image of that neighbour ACTUALLY contains near your shared
   border — vision-classified elements {label (Spanish), solid, tall,
   at: [c0, c1]} with their cell range along the border (same coordinate on
   your side, like crossings). The painted image is the REAL world the player
   sees, and may include large structures the schematic never had (walls,
-  rivers). CONTINUE those structures in your tile design: a "muralla"
-  spanning cells 20..90 on your shared border should continue as a wall
-  feature/structure at those cells; a solid "río" should continue as water.
+  rivers). CONTINUE them in your tile design: a "muralla"
+  spanning cells 20..90 on your shared border should continue as a `wall`
+  volume at those cells; a solid "río" should continue as a `ground` water.
   Leave an opening if a crossing overlaps it.
 - Extend features to OTHER edges when natural (a road usually crosses the
   whole tile) — that seeds where future tiles will grow.
@@ -53,9 +46,6 @@ HARD RULES OF THE TILE:
   open/walkable. Do NOT include a "player" entity.
 - Match the neighbour biome near the shared border (no hard forest→desert
   cuts without a visible transition strip).
-- place_anchors: if a world-map place should physically live in this tile
-  (see nearby_places, or one you just created with map_upsert_place), anchor
-  it with its cell rect — its triggers fire when the player steps inside.
 
 MAP PLAN — the tile's semantic blueprint (STRONGLY recommended):
 The plan has two halves: flat ground features + typed volumes. You declare
@@ -77,8 +67,9 @@ points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
 - area { shape, material } — plazas, courtyards, interior floors, sandy
   banks, clearings. Materials: "dirt"|"cobble"|"stone"|"sand"|"wood"|
   "gravel"|"grass".
-- water { shape } — rivers/ponds/moats, following the SAME course as your
-  water terrain_features. NOT walkable (declarative collision).
+- water { shape } — rivers/ponds/moats; continue any neighbour water crossing
+  along the SAME course out to the shared edge. NOT walkable (declarative
+  collision).
 - deck { shape, material?:"wood"|"stone" } — walkable surfaces OVER water:
   bridges, jetties, stepping platforms (collision punches these out of the
   water). Wherever a road crosses water there MUST be a deck.
@@ -125,13 +116,13 @@ Design doctrine (what makes the plan GOOD):
   fountain, a bridge, a shrine), support structures around it, then frame
   with vegetation MASSES — clustered trees leaving clearings, not uniform
   scatter.
-- COHERENCE with the schema: volumes and ground describe the SAME world the
-  JSON declares — every terrain_feature follows its own points and reaches
-  its at_edges cells; every structure keeps its footprint. The plan adds the
-  detail the schema cannot express (interiors, curves, materials).
-- The engine auto-derives volumes from vegetation_zones/structures when you
-  give none — declare explicit volumes where you want CONTROL (materials,
-  doors, cutaway interiors, landmarks) and let the fallback fill forests.
+- COHERENCE with the tile: ground and volumes describe ONE consistent world —
+  every `ground` path follows its own points and lands on its shared-edge
+  cells; every building keeps its footprint. The plan carries all the detail
+  (interiors, curves, materials).
+- The engine auto-fills forest masses over bare biome when you declare no tree
+  volumes — declare explicit volumes where you want CONTROL (materials, doors,
+  cutaway interiors, landmarks) and let the fallback fill the woods.
 
 EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
 is {type:"path", at:41}) and seeding an east exit:
@@ -140,11 +131,6 @@ is {type:"path", at:41}) and seeding an east exit:
   "scene_id": "tile_-1_0",
   "scene_description": "Bosque cerrado de pinos; la senda serpentea entre los troncos hacia el este.",
   "biome": "forest_floor",
-  "terrain_features": [
-    { "type": "path", "points": [[0,41],[70,45],[128,50]], "width": 2,
-      "at_edges": [ { "edge": "west", "at": 41 }, { "edge": "east", "at": 50 } ] }
-  ],
-  "vegetation_zones": [ { "type": "pino", "area": "rest", "density": 0.14 } ],
   "entities": [
     { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
   ],
@@ -156,25 +142,22 @@ is {type:"path", at:41}) and seeding an east exit:
     { "id": "roca_musgo", "label": "roca", "type": "rock", "at": [81, 31], "s": 1.4 },
     { "id": "pino_1", "label": "pino", "type": "tree", "at": [30, 20], "species": "pino" },
     { "id": "pino_2", "label": "pino", "type": "tree", "at": [50, 70], "species": "pino" }
-  ],
-  "ambient_event": "Un cuervo grazna en lo alto de los pinos."
+  ]
 }
-(a real forest tile leans on the vegetation_zones fallback for its tree
-masses and declares explicit volumes only for landmarks; the example is
+(a real forest tile leans on the engine's tree fallback for its dense masses
+and declares explicit volumes only for landmarks; the example is
 abbreviated.)
 
 BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - FIRST lay down the initial world map with the map tools (map_upsert_place ×
   several + map_link), as described in the WORLD MAP section.
-- Tile (0,0) carries the starting location: e.g. the tavern as "structures"
-  stamped on the plane (door + path to an edge), a "player" entity (REQUIRED
-  here, walkable spawn), and "place_anchors" anchoring those places (anchor
-  the tavern's rect!).
+- Tile (0,0) carries the starting location: e.g. the tavern as a cutaway
+  `volumes` building on the plane (door + a `ground` path to an edge) and a
+  "player" entity (REQUIRED here, walkable spawn).
 - There are no neighbours yet: extend a path to at least one edge so the
   world has somewhere to grow.
 
-Everything else (SOLIDITY, STRUCTURES details, VEGETATION ZONES, DECOR,
-GLYPH/NPC rules, ASSET REUSE, WORLD MAP tools) works exactly as in the
-standard scene reference that follows — but IGNORE its "size"/"terrain"
-schema, grid-size budgets and its examples' hand-written grids: tiles never
-write grids.
+Everything else (SOLIDITY, DECOR ATTACH, GLYPH/NPC rules, ASSET REUSE, WORLD
+MAP tools) works exactly as in the standard scene reference that follows — but
+IGNORE its "size"/"terrain" schema, grid-size budgets and its examples'
+hand-written grids: tiles never write grids.
