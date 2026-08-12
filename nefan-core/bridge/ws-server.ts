@@ -29,9 +29,10 @@ import { resolveServiceUrl } from "../src/contracts/common.js";
 import { createStateHttpServer } from "./state-http-server.js";
 import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
+import { intakeClientMessage } from "./message-intake.js";
 import type { BridgeContext } from "./context.js";
 import type { CombatConfig } from "../src/types.js";
-import type { ClientMessage, ServerMessage } from "../src/protocol/messages.js";
+import type { ServerMessage } from "../src/protocol/messages.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve paths relative to project root (works from both src/ and dist/)
@@ -193,21 +194,25 @@ wss.on("connection", (ws: WebSocket) => {
   console.log("Bridge: client connected");
 
   ws.on("message", async (raw: Buffer) => {
-    let msg: ClientMessage;
-    try {
-      msg = JSON.parse(raw.toString()) as ClientMessage;
-    } catch (err) {
+    // Borde fail-loud: el input del cliente (WS sin auth) NO llega crudo a los
+    // handlers. JSON inválido o shape no conforme al contrato → se rechaza con
+    // el error preciso, en vez de petar dentro de un handler con un TypeError.
+    const intake = intakeClientMessage(raw.toString());
+    if (!intake.ok) {
       const preview = raw.toString().slice(0, 200);
-      console.error(`Bridge: invalid WS frame, dropping: ${preview}`, err);
+      console.error(`Bridge: WS frame rejected (${intake.reason}): ${intake.error} — ${preview}`);
       ctx.send(ws, {
         type: "narrative_status",
         phase: "error",
         kind: "scene",
-        message: `Bridge recibió un frame WS inválido: ${(err as Error).message}`,
+        message:
+          intake.reason === "json"
+            ? `Bridge recibió un frame WS inválido: ${intake.error}`
+            : `Bridge rechazó un mensaje inválido: ${intake.error}`,
       });
       return;
     }
-    await routeMessage(msg, ws, ctx);
+    await routeMessage(intake.msg, ws, ctx);
   });
 
   ws.on("close", () => {
