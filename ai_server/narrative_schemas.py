@@ -235,12 +235,19 @@ def validate_volumes(raw, *, field: str = "volumes"):
 
 
 def validate_scene_response(data: dict) -> dict:
-    """Validate and sanitize a Map Format D scene returned by the LLM.
+    """Valida y normaliza una escena Map Format D del LLM.
 
-    Tolerant pass: when the LLM gets a field slightly wrong (wrong row length,
-    glyph collision, footprint out of bounds, missing glyph) we trim/fix it
-    instead of rejecting the whole map. Truly broken responses degrade to a
-    minimal grass-only fallback so the client never gets a 500.
+    FAIL-LOUD en la FORMA (espejo de FormatDSceneSchema, el gate del pre-flight
+    MCP): un error estructural que el modelo DEBE corregir (grid que no cuadra
+    con size, entity con kind fuera del enum o sin glyph/cell/footprint, tile
+    sin biome) LANZA `ValueError` con el motivo — antes se rellenaba/clampaba en
+    silencio y el mapa salía deformado sin que el modelo se enterara.
+
+    Se CONSERVAN las normalizaciones BENIGNAS que el gate del modelo tolera y
+    que por tanto no pueden rechazar tras el pre-flight: defaults de
+    scene_id/description, clamp de cell/footprint al grid, glifo de reserva ante
+    colisión con el terreno, enriquecimiento de la leyenda y descarte de campos
+    legacy/retirados.
     """
     import uuid as _uuid
 
@@ -292,8 +299,11 @@ def validate_scene_response(data: dict) -> dict:
         data.pop("terrain", None)
         cols, rows = 128, 128
         if not isinstance(data.get("biome"), str) or not data["biome"]:
-            print("validate_scene_response: tile sin biome — se asume grass", flush=True)
-            data["biome"] = "grass"
+            # Fail-loud (espejo de FormatDSceneSchema, variante tile): el bioma
+            # es la base del tile, no un default silencioso.
+            raise ValueError(
+                "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
+            )
         patches = data.get("terrain_patches")
         if isinstance(patches, list):
             clean_p = []
@@ -338,31 +348,36 @@ def validate_scene_response(data: dict) -> dict:
 
     # ── Size + terrain grid (solo escenas legacy; los tiles no llevan) ────
     if not is_tile:
-        size = data.get("size") or {}
-        cols = int(size.get("cols") or 24)
-        rows = int(size.get("rows") or 16)
-        mpc = float(size.get("meters_per_cell") or 2)
-        cols = max(12, min(cols, 80))
-        rows = max(8, min(rows, 60))
+        # Fail-loud (espejo de FormatDSceneSchema): size + terrain OBLIGATORIOS
+        # y el grid debe cuadrar EXACTAMENTE con size. Antes se clampaba el
+        # tamaño y se rellenaba/truncaba cada fila con "g" en silencio — la
+        # causa raíz de mapas deformados que el modelo nunca podía corregir.
+        size = data.get("size")
+        if not isinstance(size, dict) or not all(
+            isinstance(size.get(k), (int, float))
+            and not isinstance(size.get(k), bool)
+            and size.get(k)
+            for k in ("cols", "rows", "meters_per_cell")
+        ):
+            raise ValueError("una escena (no tile) necesita `size` {cols, rows, meters_per_cell}")
+        cols = int(size["cols"])
+        rows = int(size["rows"])
+        mpc = float(size["meters_per_cell"])
+        if cols < 1 or rows < 1 or mpc <= 0:
+            raise ValueError(f"`size` fuera de rango: cols={cols}, rows={rows}, meters_per_cell={mpc}")
         data["size"] = {"cols": cols, "rows": rows, "meters_per_cell": mpc}
 
         raw_terrain = data.get("terrain")
-        if not isinstance(raw_terrain, list) or not raw_terrain:
-            # Old schema with `terrain: { type, texture_prompt }` — replace with empty grass.
-            raw_terrain = []
-
-        # Normalize each row to exactly `cols` chars: pad with "g" or truncate.
-        normalized = []
-        for r in range(rows):
-            if r < len(raw_terrain) and isinstance(raw_terrain[r], str):
-                row = raw_terrain[r]
-            else:
-                row = ""
-            if len(row) > cols:
-                row = row[:cols]
-            elif len(row) < cols:
-                row = row + ("g" * (cols - len(row)))
-            normalized.append(row)
+        if not isinstance(raw_terrain, list) or len(raw_terrain) != rows:
+            got = len(raw_terrain) if isinstance(raw_terrain, list) else type(raw_terrain).__name__
+            raise ValueError(f"`terrain` debe ser una lista de {rows} filas (size.rows); got {got}")
+        for i, row in enumerate(raw_terrain):
+            if not isinstance(row, str) or len(row) != cols:
+                got = len(row) if isinstance(row, str) else type(row).__name__
+                raise ValueError(
+                    f"terrain[{i}] debe tener EXACTAMENTE {cols} caracteres (size.cols); got {got}"
+                )
+        normalized = list(raw_terrain)
         data["terrain"] = normalized
     else:
         normalized = []
@@ -487,30 +502,41 @@ def validate_scene_response(data: dict) -> dict:
             eid = f"{eid}_{_uuid.uuid4().hex[:4]}"
         seen_ids.add(eid)
 
-        kind = ent.get("kind") or "prop"
+        # Fail-loud en la FORMA (espejo de EntitySchema): kind del enum, cell
+        # par numérico, footprint par de enteros ≥1, glyph de 1 char. Se
+        # CONSERVAN las normalizaciones benignas que FormatDScene tolera y que
+        # por tanto NO deben rechazar tras el pre-flight: clamp de cell/footprint
+        # al grid y glifo de reserva ante colisión con el terreno.
+        kind = ent.get("kind")
         if kind not in VALID_ENTITY_KINDS:
-            kind = "prop"
+            raise ValueError(f"entity '{eid}': kind '{kind}' inválido; permitidos: {sorted(VALID_ENTITY_KINDS)}")
 
-        cell = ent.get("cell") or [0, 0]
-        if not (isinstance(cell, list) and len(cell) == 2):
-            cell = [0, 0]
+        cell = ent.get("cell")
+        if not (
+            isinstance(cell, list) and len(cell) == 2
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in cell)
+        ):
+            raise ValueError(f"entity '{eid}': `cell` debe ser [col, row] numérico")
         col = max(0, min(int(cell[0]), cols - 1))
         row = max(0, min(int(cell[1]), rows - 1))
 
-        fp = ent.get("footprint") or [1, 1]
-        if not (isinstance(fp, list) and len(fp) == 2):
-            fp = [1, 1]
+        fp = ent.get("footprint")
+        if not (
+            isinstance(fp, list) and len(fp) == 2
+            and all(isinstance(v, int) and not isinstance(v, bool) and v >= 1 for v in fp)
+        ):
+            raise ValueError(f"entity '{eid}': `footprint` debe ser [ancho, alto] de enteros ≥1")
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 
         glyph = ent.get("glyph")
-        if not (isinstance(glyph, str) and len(glyph) == 1) or glyph in terrain_chars:
-            # Pick a fallback glyph that's not used as terrain.
+        if not (isinstance(glyph, str) and len(glyph) == 1):
+            raise ValueError(f"entity '{eid}': `glyph` debe ser un único carácter")
+        if glyph in terrain_chars:
+            # Colisión con un char de terreno → glifo de reserva (benigno: el
+            # gate del modelo no comprueba unicidad de glyph).
             fallback_pool = "?xyzqXYZQ#&%$*+!"
-            glyph = next(
-                (c for c in fallback_pool if c not in terrain_chars),
-                "?",
-            )
+            glyph = next((c for c in fallback_pool if c not in terrain_chars), "?")
 
         clean_ent = {
             "id": eid,

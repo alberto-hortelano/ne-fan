@@ -411,7 +411,17 @@ class LLMClient:
                             "¿hay una terminal de Claude Code con narrative_listen?"
                         )
                         return None
-                    validated = validate_scene_response(result)
+                    try:
+                        validated = validate_scene_response(result)
+                    except ValueError as e:
+                        # El pre-flight MCP (FormatDSceneSchema en narrative-mcp)
+                        # ya validó la forma ANTES de "response sent"; si aun así
+                        # el saneador la rechaza es una DIVERGENCIA de reglas —
+                        # se reporta fail-loud (ni se degrada ni se crashea) para
+                        # corregirla, no se cuela una escena mutilada.
+                        print(f"LLM: escena MCP rechazada por el saneador ({e})")
+                        self._last_mcp_failure = f"escena inválida: {e}"
+                        return None
                     print(f"LLM: Scene via MCP ({len(validated.get('objects', []))} objects, "
                           f"{time.time() - start:.1f}s)")
                     return validated

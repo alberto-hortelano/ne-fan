@@ -87,14 +87,14 @@ export const FormatDSceneSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
       }
     } else {
-      // Escena/plató: el grid es la base. size y terrain van juntos y las
-      // filas deben cuadrar EXACTAMENTE (antes el saneador Python rellenaba/
-      // truncaba en silencio — la causa de mapas deformados).
-      if (s.size !== undefined && s.terrain === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: "falta el grid `terrain` (una escena con `size` lo necesita)" });
+      // Escena/plató: el grid es la base y es OBLIGATORIO. size y terrain van
+      // juntos y las filas deben cuadrar EXACTAMENTE (antes el saneador Python
+      // rellenaba/truncaba en silencio — la causa de mapas deformados).
+      if (s.size === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["size"], message: "una escena (no tile) necesita `size` {cols, rows, meters_per_cell}" });
       }
-      if (s.terrain !== undefined && s.size === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["size"], message: "falta `size` (un grid `terrain` necesita sus dimensiones)" });
+      if (s.terrain === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: "una escena (no tile) necesita el grid `terrain`" });
       }
       if (s.size && Array.isArray(s.terrain)) {
         if (s.terrain.length !== s.size.rows) {
