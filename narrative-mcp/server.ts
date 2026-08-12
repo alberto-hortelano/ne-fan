@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures } from './validators.js';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify } from './validators.js';
 import { stagePlanFromScene } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
@@ -415,6 +415,28 @@ into context:
           if (!check.ok) {
             return {
               content: [{ type: 'text', text: `Invalid stage review — fix the shape and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
+        // Visión de armas: antes NO se validaba (el kind pasaba directo a
+        // sendVisionResponse) y el ai_server devolvía None en silencio → 503,
+        // así que una orientación/verificación mal formada del modelo jamás
+        // volvía al modelo. Ahora rebota aquí con el error preciso.
+        if (kind === 'weapon_orient') {
+          const check = validateWeaponOrient(parsed);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid weapon orientation — fix and call narrative_respond again: ${check.error}` }],
+              isError: true,
+            };
+          }
+        }
+        if (kind === 'weapon_verify') {
+          const check = validateWeaponVerify(parsed);
+          if (!check.ok) {
+            return {
+              content: [{ type: 'text', text: `Invalid weapon verification — fix and call narrative_respond again: ${check.error}` }],
               isError: true,
             };
           }

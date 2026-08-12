@@ -17,7 +17,11 @@ import { renderContract } from "../src/contract/model-io/render.js";
 import { toJsonSchema } from "../src/contract/model-io/json-schema.js";
 import { extractRegion } from "../src/contract/model-io/regions.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
-import { NarrativeReactionSchema } from "../src/contract/model-io/schemas.js";
+import {
+  NarrativeReactionSchema,
+  WeaponOrientSchema,
+  WeaponVerifySchema,
+} from "../src/contract/model-io/schemas.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const promptsDir = join(here, "..", "data", "contract", "prompts");
@@ -87,4 +91,52 @@ test("narrative_event: el validador rechaza (y da error preciso) formas inválid
     assert.equal(res.ok, false, `debería rechazar ${JSON.stringify(payload)}`);
     if (!res.ok) assert.match(res.error, re, `error de ${JSON.stringify(payload)}: "${res.error}"`);
   }
+});
+
+test("weapon_orient: acepta un frame válido, rechaza degenerado/paralelo", () => {
+  const good = {
+    grip_point_normalized: [0.5, 0.1, 0.5],
+    blade_direction: [0, 1, 0],
+    up_direction: [0, 0, 1],
+    weapon_type: "sword",
+    confidence: 0.9,
+  };
+  assert.equal(validateContract(WeaponOrientSchema, good).ok, true);
+
+  // vector degenerado
+  const degenerate = { ...good, up_direction: [0, 0, 0] };
+  const r1 = validateContract(WeaponOrientSchema, degenerate);
+  assert.equal(r1.ok, false);
+  if (!r1.ok) assert.match(r1.error, /up_direction/);
+
+  // blade y up casi paralelos → frame singular
+  const parallel = { ...good, up_direction: [0, 1, 0] };
+  const r2 = validateContract(WeaponOrientSchema, parallel);
+  assert.equal(r2.ok, false);
+  if (!r2.ok) assert.match(r2.error, /paralelo|singular/);
+
+  // falta un campo requerido
+  const noConf = { ...good } as Record<string, unknown>;
+  delete noConf.confidence;
+  assert.equal(validateContract(WeaponOrientSchema, noConf).ok, false);
+
+  // weapon_type fuera del enum
+  assert.equal(validateContract(WeaponOrientSchema, { ...good, weapon_type: "gun" }).ok, false);
+});
+
+test("weapon_verify: ok solo es válido; issue/delta opcionales", () => {
+  assert.equal(validateContract(WeaponVerifySchema, { ok: true }).ok, true);
+  assert.equal(
+    validateContract(WeaponVerifySchema, {
+      ok: false,
+      issue: "gira 90º",
+      suggested_delta_euler: [0, 90, 0],
+    }).ok,
+    true,
+  );
+  assert.equal(validateContract(WeaponVerifySchema, {}).ok, false); // falta ok
+  assert.equal(
+    validateContract(WeaponVerifySchema, { ok: false, suggested_delta_euler: [1, 2] }).ok,
+    false, // delta debe ser 3 números
+  );
 });

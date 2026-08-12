@@ -4,7 +4,25 @@
  *  las fixtures compartidas de nefan-core/data/contract/fixtures/ los
  *  ejecutan junto a los de Python y CI grita si divergen. */
 
-import { parseVolumes, parseGround, validateContract, NarrativeReactionSchema } from '@nefan/core';
+import {
+  parseVolumes,
+  parseGround,
+  validateContract,
+  NarrativeReactionSchema,
+  WeaponOrientSchema,
+  WeaponVerifySchema,
+} from '@nefan/core';
+
+/** Pre-flight de una respuesta weapon_orient / weapon_verify — delega en el
+ *  zod SoT. Antes NO existía: el kind pasaba directo a sendVisionResponse sin
+ *  validar, y el ai_server devolvía None en silencio (503), así que una malla
+ *  mal orientada por el modelo NUNCA volvía al modelo. */
+export function validateWeaponOrient(data: unknown): { ok: true } | { ok: false; error: string } {
+  return validateContract(WeaponOrientSchema, data);
+}
+export function validateWeaponVerify(data: unknown): { ok: true } | { ok: false; error: string } {
+  return validateContract(WeaponVerifySchema, data);
+}
 
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')
  *  BEFORE it is forwarded to the Python ai_server. Delegates to the zod SoT
