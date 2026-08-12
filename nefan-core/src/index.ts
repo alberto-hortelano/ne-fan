@@ -78,3 +78,9 @@ export {
   SceneSizeSchema,
   type FormatDScene,
 } from "./contract/model-io/scene-schema.js";
+export {
+  SceneClassifySchema,
+  ImageReviewSchema,
+  StageReviewSchema,
+  BlueprintReviewSchema,
+} from "./contract/model-io/review-schemas.js";

@@ -872,15 +872,14 @@ def validate_narrative_reaction(data: dict | None) -> dict:
 def validate_blueprint_review(data: dict | None) -> dict:
     """Validate a Claude response to a blueprint_review request.
 
-    Strict mode (mirror of narrative-mcp/server.ts:validateBlueprintReview —
-    keep both in sync): the shape is { approved: bool, issues: [str],
-    fixes?: { terrain?, terrain_features?, entity_moves? } }. Any deviation
+    Strict mode (mirror of BlueprintReviewSchema en nefan-core — keep both in
+    sync): the shape is { approved: bool, issues: [str],
+    fixes?: { terrain?, entity_moves?, ground?, volumes? } }. Any deviation
     raises ValueError; the endpoint surfaces it as HTTP 422.
 
-    `fixes` son overrides PARCIALES pero de campo completo: si viene terrain,
-    son TODAS las filas; terrain_features reemplaza la lista entera. Las
-    terrain_features pasan por la misma limpieza tolerante que en
-    validate_scene_response (reutilizada aquí en miniatura).
+    `fixes` son overrides PARCIALES pero de campo completo: si viene terrain son
+    TODAS las filas; ground/volumes reemplazan la lista entera.
+    (`terrain_features` retirado: el suelo se corrige con `ground`.)
     """
     if not isinstance(data, dict):
         raise ValueError(f"blueprint_review payload must be an object, got {type(data).__name__}")
@@ -901,7 +900,9 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        allowed = {"terrain", "terrain_features", "entity_moves", "ground", "volumes"}
+        # `terrain_features` RETIRADO (campo obsoleto; el suelo se corrige con
+        # `ground`) — espejo de BlueprintFixesSchema en nefan-core.
+        allowed = {"terrain", "entity_moves", "ground", "volumes"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:
             raise ValueError(
@@ -915,33 +916,6 @@ def validate_blueprint_review(data: dict | None) -> dict:
                 raise ValueError("blueprint_review fixes.terrain must be the FULL list of row strings")
             fixes["terrain"] = terrain
 
-        feats = raw_fixes.get("terrain_features")
-        if feats is not None:
-            if not isinstance(feats, list):
-                raise ValueError("blueprint_review fixes.terrain_features must be a list")
-            clean: list = []
-            for feat in feats[:24]:
-                if not isinstance(feat, dict):
-                    continue
-                ftype = feat.get("type")
-                pts = feat.get("points")
-                if not isinstance(ftype, str) or not ftype or not isinstance(pts, list) or len(pts) < 2:
-                    continue
-                if any(
-                    not (isinstance(p, list) and len(p) >= 2 and all(isinstance(v, (int, float)) for v in p[:2]))
-                    for p in pts
-                ):
-                    continue
-                cf: dict = {"type": ftype, "points": [[float(p[0]), float(p[1])] for p in pts]}
-                width = feat.get("width")
-                if isinstance(width, (int, float)) and width > 0:
-                    cf["width"] = float(width)
-                if feat.get("closed") is True and len(pts) >= 3:
-                    cf["closed"] = True
-                if isinstance(feat.get("color"), str):
-                    cf["color"] = feat["color"]
-                clean.append(cf)
-            fixes["terrain_features"] = clean
 
         moves = raw_fixes.get("entity_moves")
         if moves is not None:

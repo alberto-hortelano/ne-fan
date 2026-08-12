@@ -30,7 +30,6 @@ Respond via narrative_respond with EXACTLY this JSON:
   "issues": ["<one short Spanish line per problem found>", ...],   // required when approved=false
   "fixes": {                    // optional — PARTIAL overrides, only what changes
     "terrain": ["<row>", ...],              // FULL grid replacement (all rows, exact cols)
-    "terrain_features": [ ... ],            // FULL replacement list (same schema as the scene)
     "entity_moves": [ { "id": "<entity id>", "cell": [col, row] }, ... ],
     "ground": [ … ],                        // FULL corrected ground features array, plan scenes only
     "volumes": [ … ]                        // FULL corrected volumes array, plan scenes only
@@ -39,5 +38,7 @@ Respond via narrative_respond with EXACTLY this JSON:
 - approved=true with no issues → the client proceeds to generation untouched.
 - approved=false SHOULD include "fixes" so the client can repair and re-render
   without another round-trip. Fixes replace whole fields: if you fix one terrain
-  row you must return ALL rows; same for terrain_features, ground and volumes.
-- Do NOT return a full scene; only the five fix fields above are applied.
+  row you must return ALL rows; same for ground and volumes.
+- Do NOT return a full scene; only the four fix fields above are applied. Any
+  other key (e.g. the retired `terrain_features`) is REJECTED — correct the
+  ground with `ground` features instead.

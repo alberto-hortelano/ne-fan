@@ -94,5 +94,5 @@ systems with plugin_register.
 `map_add_trigger` attaches consequences to a place that fire when the player
 enters / first visits / leaves it (evaluated by the bridge on movement).
 This is your tool for ambushes, arrivals and door-step beats — it needs the
-place to be anchored (overworld: place_anchors; proscenium: every stage IS
-its place).
+place to be reachable in the world (proscenium: every stage IS its place;
+overworld: the place must be realized as a scene the player can walk into).

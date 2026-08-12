@@ -14,6 +14,11 @@
  *  divergen. */
 
 import { z } from "zod";
+import {
+  SceneClassifySchema,
+  ImageReviewSchema,
+  StageReviewSchema,
+} from "./review-schemas.js";
 
 // ── narrative_event (reacción del motor a una elección del jugador) ─────────
 
@@ -200,4 +205,27 @@ export const CONTRACTS: ContractSpec[] = [
     promptFile: "weapon_verify.md",
     toolFile: "weapon_verify.json",
   },
+  {
+    kind: "scene_classify",
+    name: "SceneClassify",
+    schema: SceneClassifySchema,
+    promptFile: "scene_classify.md",
+    toolFile: "classify_scene.json",
+  },
+  {
+    kind: "image_review",
+    name: "ImageReview",
+    schema: ImageReviewSchema,
+    promptFile: "image_review.md",
+    toolFile: null,
+  },
+  {
+    kind: "stage_review",
+    name: "StageReview",
+    schema: StageReviewSchema,
+    promptFile: "stage_review.md",
+    toolFile: null,
+  },
+  // blueprint_review NO entra: su schema referencia ground/volumes completos y
+  // el bloque de tipo sería enorme. Se usa solo como validador del pre-flight.
 ];

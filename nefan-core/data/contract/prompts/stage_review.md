@@ -99,3 +99,38 @@ Reglas:
   expected.
 - Máximo 12 extras: prioriza los que afectan al juego (grandes, en zona
   transitable). `"extras": []` es válido.
+
+<!-- SCHEMA:AUTO — generado por `npm run gen:contract` desde src/contract/model-io/schemas.ts; NO editar a mano -->
+```ts
+StageReview = {
+  expected: Array<{
+    id: string /* no vacío */;
+    status: "found"|"missing";
+    box_px?: [number, number, number /* >0 */, number /* >0 */];  // Caja REAL pintada; obligatoria si status=found
+  }>;  // TODOS los ids de expected_elements, una vez cada uno
+  extras?: Array<
+    | {
+      label: string /* no vacío */;
+      action: "keep";
+      box_px: [number, number, number /* >0 */, number /* >0 */];
+      tall: boolean;  // true si es más alto que un personaje (gana oclusión)
+      solid: boolean;  // false solo para decoración atravesable
+      h?: number /* >0 */;  // Altura estimada en metros
+      depth_cells?: number /* >0 */;  // Profundidad de su base en celdas hacia el fondo
+    }
+    | {
+      label: string /* no vacío */;
+      action: "remove";
+      box_px: [number, number, number /* >0 */, number /* >0 */];
+    }> /* ≤12 items */;  // Objetos inventados no declarados; [] u omitido si ninguno
+  floor: {
+    wall_base_px: number /* >0 */;  // y donde el suelo transitable toca la pared del fondo
+    front_px?: number;  // y del borde delantero del suelo (opcional; debe ser > wall_base_px)
+    left_wall_px?: number;
+    right_wall_px?: number;
+    left_front_px?: number;
+    right_front_px?: number;
+  };  // Geometría del suelo pintado — calibra la perspectiva
+}
+```
+<!-- /SCHEMA:AUTO -->

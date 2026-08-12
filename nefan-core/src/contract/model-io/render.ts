@@ -40,8 +40,8 @@ function numericAnnotations(d: ZodDefLike): string[] {
   const checks = (d.checks as Array<{ kind: string; value?: number; inclusive?: boolean }>) ?? [];
   for (const c of checks) {
     if (c.kind === "int") notes.push("entero");
-    else if (c.kind === "min") notes.push(`≥${c.value}`);
-    else if (c.kind === "max") notes.push(`≤${c.value}`);
+    else if (c.kind === "min") notes.push(`${c.inclusive === false ? ">" : "≥"}${c.value}`);
+    else if (c.kind === "max") notes.push(`${c.inclusive === false ? "<" : "≤"}${c.value}`);
     else if (c.kind === "gt") notes.push(`>${c.value}`);
     else if (c.kind === "lt") notes.push(`<${c.value}`);
   }
