@@ -4,66 +4,19 @@
  *  las fixtures compartidas de nefan-core/data/contract/fixtures/ los
  *  ejecutan junto a los de Python y CI grita si divergen. */
 
-import { parseVolumes, parseGround } from '@nefan/core';
+import { parseVolumes, parseGround, validateContract, NarrativeReactionSchema } from '@nefan/core';
 
 /** Pre-flight check of a narrative_event response (kind === 'narrative_event')
- *  BEFORE it is forwarded to the Python ai_server. The ai_server applies the
- *  same strict rules (ai_server/narrative_schemas.py:validate_narrative_reaction)
- *  and returns HTTP 422 on any deviation — but that rejection never reaches this
- *  MCP session, so narrative_respond would report success while the player sees
- *  nothing. Validating here gives the engine the precise error so it can fix the
- *  shape and resend. Keep this mirror in sync with the Python validator. */
+ *  BEFORE it is forwarded to the Python ai_server. Delegates to the zod SoT
+ *  (`NarrativeReactionSchema` in nefan-core) — the SAME schema that renders the
+ *  contract block injected into narrative_event.md and the narrative_react.json
+ *  tool, so "optional in the prompt" == "optional in the validator" by
+ *  construction. The ai_server applies the mirror rules
+ *  (ai_server/narrative_schemas.py:validate_narrative_reaction) and returns 422,
+ *  but that rejection never reaches this MCP session — validating here hands the
+ *  engine the precise error so it can fix the shape and resend. */
 export function validateNarrativeReaction(data: unknown): { ok: true } | { ok: false; error: string } {
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return { ok: false, error: `payload must be an object, got ${Array.isArray(data) ? 'array' : typeof data}` };
-  }
-  const raw = (data as Record<string, unknown>).consequences;
-  if (!Array.isArray(raw)) {
-    return { ok: false, error: 'payload missing list `consequences`' };
-  }
-  if (raw.length > 4) {
-    return { ok: false, error: `returned ${raw.length} consequences, max is 4` };
-  }
-  const validTypes = new Set(['dialogue', 'story_update', 'spawn_entity', 'schedule_event', 'plugin_event', 'noop']);
-  const validKinds = new Set(['npc', 'building', 'object']);
-  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-  for (let idx = 0; idx < raw.length; idx++) {
-    const c = raw[idx];
-    if (typeof c !== 'object' || c === null || Array.isArray(c)) {
-      return { ok: false, error: `consequence[${idx}] is not an object` };
-    }
-    const o = c as Record<string, unknown>;
-    const t = o.type;
-    if (typeof t !== 'string' || !validTypes.has(t)) {
-      return { ok: false, error: `consequence[${idx}].type='${String(t)}' is invalid; allowed: ${[...validTypes].sort().join(', ')}` };
-    }
-    if (t === 'noop') continue;
-    if (t === 'dialogue') {
-      if (!str(o.speaker)) return { ok: false, error: `dialogue[${idx}] missing required field \`speaker\`` };
-      if (!str(o.text)) return { ok: false, error: `dialogue[${idx}] missing required field \`text\`` };
-      if (o.choices !== undefined && o.choices !== null) {
-        if (!Array.isArray(o.choices)) return { ok: false, error: `dialogue[${idx}].choices must be a list` };
-        const trimmed = o.choices.map(str).filter(Boolean);
-        if (trimmed.length > 3) return { ok: false, error: `dialogue[${idx}].choices has ${trimmed.length} entries, max is 3` };
-      }
-    } else if (t === 'story_update') {
-      if (!str(o.delta)) return { ok: false, error: `story_update[${idx}] missing required field \`delta\` (non-empty string)` };
-    } else if (t === 'spawn_entity') {
-      if (typeof o.entity_kind !== 'string' || !validKinds.has(o.entity_kind)) {
-        return { ok: false, error: `spawn_entity[${idx}].entity_kind='${String(o.entity_kind)}' invalid; allowed: ${[...validKinds].sort().join(', ')}` };
-      }
-      if (!str(o.description)) return { ok: false, error: `spawn_entity[${idx}] missing required field \`description\`` };
-    } else if (t === 'schedule_event') {
-      if (!str(o.description)) return { ok: false, error: `schedule_event[${idx}] missing required field \`description\`` };
-    } else if (t === 'plugin_event') {
-      if (!str(o.plugin_id)) return { ok: false, error: `plugin_event[${idx}] missing required field \`plugin_id\`` };
-      if (!str(o.event_type)) return { ok: false, error: `plugin_event[${idx}] missing required field \`event_type\`` };
-      if (o.payload !== undefined && (typeof o.payload !== 'object' || o.payload === null || Array.isArray(o.payload))) {
-        return { ok: false, error: `plugin_event[${idx}].payload must be an object` };
-      }
-    }
-  }
-  return { ok: true };
+  return validateContract(NarrativeReactionSchema, data);
 }
 
 /** Pre-flight estructural del array `ground` (rasgos de suelo declarativos:

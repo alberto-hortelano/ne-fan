@@ -1022,15 +1022,23 @@ class LLMClient:
                 tool_choice={"type": "tool", "name": "react_to_player"},
                 messages=[{"role": "user", "content": user_text}],
             )
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "react_to_player":
-                    validated = validate_narrative_reaction(block.input)
-                    print(f"LLM: narrative reaction via API ({len(validated['consequences'])} consequences)")
-                    return validated
         except Exception as e:
+            # Fallo de red/API — transitorio; el caller degrada a 503.
             print(f"LLM: react_to_player API error ({e})")
             return None
-        return {"consequences": []}
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "react_to_player":
+                # validate_narrative_reaction lanza ValueError con el motivo
+                # preciso ante forma inválida — se deja PROPAGAR para que el
+                # endpoint devuelva 422 (no un 503 genérico ni un [] silencioso).
+                validated = validate_narrative_reaction(block.input)
+                print(f"LLM: narrative reaction via API ({len(validated['consequences'])} consequences)")
+                return validated
+        # tool_choice forzó react_to_player: si no hay bloque tool_use la
+        # respuesta del modelo es inválida. Fail-loud (→422) en vez de fingir
+        # "no pasa nada" con {"consequences": []} y 200 OK (lo que el docstring
+        # de report_player_choice dice EVITAR).
+        raise ValueError("react_to_player: el modelo no emitió el bloque tool_use esperado")
 
     # ------------------------------------------------------------------
     # Blueprint review (visión sobre el schematic antes de gastar créditos)

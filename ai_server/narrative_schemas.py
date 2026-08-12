@@ -773,10 +773,17 @@ def validate_narrative_reaction(data: dict | None) -> dict:
             if raw_choices is not None:
                 if not isinstance(raw_choices, list):
                     raise ValueError(f"dialogue[{idx}].choices must be a list")
-                trimmed = [str(x).strip() for x in raw_choices if str(x).strip()]
+                # Fail-loud como el zod SoT (choices: string[] no vacías): una
+                # choice no-string o vacía es un error de forma que vuelve al
+                # modelo, no algo que coercionar/filtrar en silencio.
+                if len(raw_choices) > 3:
+                    raise ValueError(f"dialogue[{idx}].choices has {len(raw_choices)} entries, max is 3")
+                trimmed: list[str] = []
+                for x in raw_choices:
+                    if not isinstance(x, str) or not x.strip():
+                        raise ValueError(f"dialogue[{idx}].choices entries must be non-empty strings")
+                    trimmed.append(x.strip())
                 if trimmed:
-                    if len(trimmed) > 3:
-                        raise ValueError(f"dialogue[{idx}].choices has {len(trimmed)} entries, max is 3")
                     entry["choices"] = trimmed
             out.append(entry)
         elif t == "story_update":
