@@ -571,9 +571,10 @@ class LLMClient:
                         if msg:
                             print(f"LLM:   {msg}")
                         return None
-                    validated = validate_weapon_orient_response(result)
-                    if validated is None:
-                        print("LLM: Vision response failed validation")
+                    try:
+                        validated = validate_weapon_orient_response(result)
+                    except ValueError as e:
+                        print(f"LLM: Vision response failed validation — {e}")
                         return None
                     print(f"LLM: Vision response received ({time.time() - start:.1f}s, "
                           f"confidence={validated.get('confidence', 0):.2f})")
@@ -633,9 +634,10 @@ class LLMClient:
             )
             for block in response.content:
                 if block.type == "tool_use" and block.name == "orient_weapon":
-                    validated = validate_weapon_orient_response(block.input)
-                    if validated is None:
-                        print("LLM: Vision API response failed validation")
+                    try:
+                        validated = validate_weapon_orient_response(block.input)
+                    except ValueError as e:
+                        print(f"LLM: Vision API response failed validation — {e}")
                         return None
                     print(f"LLM: Vision API response (confidence="
                           f"{validated.get('confidence', 0):.2f})")

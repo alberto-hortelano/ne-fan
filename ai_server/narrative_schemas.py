@@ -637,23 +637,31 @@ WEAPON_ORIENT_SYSTEM_PROMPT = _prompt("weapon_orient.md")
 WEAPON_ORIENT_TOOL = _tool("weapon_orient.json")
 
 
-def validate_weapon_orient_response(data: dict) -> dict | None:
+def validate_weapon_orient_response(data: dict) -> dict:
     """Validate and normalize a weapon orientation response from the LLM.
 
-    Returns None if the response is malformed beyond repair.
+    Fail-loud: raises ValueError with the precise cause if the response is
+    malformed beyond repair — the caller logs it, never a silent None (patrón
+    validate_narrative_reaction).
     """
     if not isinstance(data, dict):
-        return None
+        raise ValueError(
+            f"weapon_orient: payload must be an object, got {type(data).__name__}"
+        )
 
     # Required vector fields
     for field in ("grip_point_normalized", "blade_direction", "up_direction"):
         v = data.get(field)
         if not isinstance(v, list) or len(v) != 3:
-            return None
+            raise ValueError(
+                f"weapon_orient: {field} must be a list of 3 numbers, got {v!r}"
+            )
         try:
             data[field] = [float(x) for x in v]
         except (TypeError, ValueError):
-            return None
+            raise ValueError(
+                f"weapon_orient: {field} contains non-numeric values: {v!r}"
+            )
 
     # Clamp grip point to [0, 1]
     data["grip_point_normalized"] = [
@@ -669,15 +677,20 @@ def validate_weapon_orient_response(data: dict) -> dict | None:
 
     blade = _normalize(data["blade_direction"])
     up = _normalize(data["up_direction"])
-    if blade is None or up is None:
-        return None
+    if blade is None:
+        raise ValueError("weapon_orient: blade_direction has ~zero length")
+    if up is None:
+        raise ValueError("weapon_orient: up_direction has ~zero length")
     data["blade_direction"] = blade
     data["up_direction"] = up
 
     # Reject if blade and up are nearly parallel (degenerate frame)
     dot = abs(blade[0] * up[0] + blade[1] * up[1] + blade[2] * up[2])
     if dot > 0.95:
-        return None
+        raise ValueError(
+            "weapon_orient: blade_direction and up_direction are nearly "
+            f"parallel (|dot|={dot:.3f}) — degenerate orientation frame"
+        )
 
     # Defaults for optional fields
     data.setdefault("weapon_type", "generic")

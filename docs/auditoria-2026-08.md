@@ -262,8 +262,16 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 - **Huecos de validación Python↔TS**: Python no valida rangos/límites de
   ground/volumes (TS sí); `stage` sin validación estructural Python;
   `image_review` sin fixtures de contrato (sin candado CI).
-- **`validate_weapon_orient_response` devuelve None en 6 puntos sin traza**
-  (`narrative_schemas.py`) — falla mudo contra la doctrina fail-loud.
+- ~~**`validate_weapon_orient_response` devuelve None en 6 puntos sin traza**
+  (`narrative_schemas.py`) — falla mudo contra la doctrina fail-loud.~~
+  **RESUELTO** (rama `audit/weapon-orient-fail-loud`). Ahora lanza
+  `ValueError` con la causa precisa (campo, aridad, valor no numérico,
+  vector ~cero, frame degenerado con el |dot|) — patrón
+  `validate_narrative_reaction`; los 2 callers de `llm_client.py` (MCP y API
+  directa) capturan y loguean el motivo, conservando el `return None` hacia
+  arriba (fallback de orientación por defecto intacto). Las normalizaciones
+  benignas (clamp de grip, unit vectors, defaults de confidence) no cambian.
+  8 tests (verificados discriminantes: 6 fallan contra el validador mudo).
 
 ### Prompts (contradicciones vistas de pasada; confirmar contra el consumidor)
 
