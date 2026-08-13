@@ -2,8 +2,11 @@
  *
  *  Tres fuentes de solidez por tile, en UNIÓN (todas bloquean):
  *  1. `collider`      — terrain_grid del esquema (muros W, agua w, features);
- *  2. `svgCollider`   — base derivada del map_svg (#water+#solid menos #deck),
- *                       activa desde que llega el tile;
+ *  2. `svgCollider`   — PLAN declarado: agua∖decks del `ground` + huellas de
+ *                       los `volumes`, derivados por la función de core
+ *                       compartida `planCollisionGrid` (el MISMO cálculo que el
+ *                       bridge en sim-collision → jugador y NPCs no divergen).
+ *                       Activa desde que llega el tile;
  *  3. `imageCollider` — derivada del análisis de la imagen IA (segmentos
  *                       `solid` clasificados por visión).
  *  Los AABBs de objetos del esquema solo aplican mientras el tile no tiene
@@ -17,8 +20,8 @@
 import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import {
-  groundCollisionGrid,
-  volumeCollisionGrid,
+  planCollisionGrid,
+  unionCollisionGrids,
   type CollisionGridDims,
   type GroundFeature,
   type Volume,
@@ -153,11 +156,10 @@ export function applyPlanCollision(
   dims?: CollisionGridDims,
 ): void {
   try {
-    // Agua (menos decks) del suelo declarado — espacio de mundo.
-    const waterGrid = plan.ground?.length ? groundCollisionGrid(plan.ground, rect, dims) : null;
-    // Huellas analíticas de los volúmenes (muros con puertas, troncos…).
-    const volumeGrid = plan.volumes?.length ? volumeCollisionGrid(plan.volumes, rect, dims) : null;
-    const grid = unionGrids(waterGrid, volumeGrid);
+    // Agua∖decks del suelo declarado + huellas de los volúmenes, unidos por la
+    // MISMA función de core que usa el bridge (sim-collision) — jugador y NPCs
+    // colisionan igual sobre el mismo plan.
+    const grid = planCollisionGrid(plan.ground, plan.volumes, rect, dims);
     const collider = grid ? createTerrainCollider(grid) : null;
     deps.tileStore.setSvgCollider(key, collider);
     deps.setTileSvgGrid(key, grid);
@@ -167,24 +169,6 @@ export function applyPlanCollision(
   } catch (err) {
     errors.push("scene", `plan de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
   }
-}
-
-/** Unión de dos grids de colisión del mismo tile (celda sólida si lo es en
- *  cualquiera de los dos). */
-function unionGrids(a: TerrainGridData | null, b: TerrainGridData | null): TerrainGridData | null {
-  if (!a) return b;
-  if (!b) return a;
-  const solidA = new Set(a.solid_chars ?? ["S"]);
-  const solidB = new Set(b.solid_chars ?? ["S"]);
-  const rows: string[] = [];
-  for (let r = 0; r < a.rows; r++) {
-    let row = "";
-    for (let c = 0; c < a.cols; c++) {
-      row += solidA.has(a.grid[r][c]) || solidB.has(b.grid[r][c]) ? "S" : "g";
-    }
-    rows.push(row);
-  }
-  return { ...a, grid: rows, solid_chars: ["S"] };
 }
 
 /** Colisión del plató en modo imagen: el grid derivado de los contactos
@@ -205,7 +189,7 @@ export function applyStageDerivedCollision(
   declaredWaterGrid: TerrainGridData | null = null,
 ): void {
   if (grid === null) return;
-  const merged = declaredWaterGrid ? (unionGrids(grid, declaredWaterGrid) ?? grid) : grid;
+  const merged = declaredWaterGrid ? (unionCollisionGrids(grid, declaredWaterGrid) ?? grid) : grid;
   let collider: TerrainCollider | null;
   try {
     collider = createTerrainCollider(merged);
