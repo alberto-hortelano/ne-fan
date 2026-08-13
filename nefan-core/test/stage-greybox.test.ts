@@ -171,6 +171,34 @@ describe("buildGreyboxSpec", () => {
     }
   });
 
+  it("manifest: solid/tall por TIPO (classifyVolume), no true/true a ciegas", () => {
+    // Regresión: el manifest hardcodeaba solid/tall=true → una alfombra
+    // (prop passable) o un arbusto pintados se volvían colisión sólida y
+    // occluder alto al casarse en el stage_review.
+    const plan: StageScenePlan = {
+      ...interiorPlan(),
+      volumes: [
+        { id: "casa", label: "casa de piedra", type: "building", rect: [2, 2, 4, 3] },
+        { id: "alfombra", label: "alfombra", type: "prop", rect: [8, 8, 3, 2], shape: "box", passable: true, h: 0.1 },
+        { id: "arbusto", label: "arbusto", type: "bush", at: [14, 6] },
+        { id: "roca", label: "roca baja", type: "rock", at: [16, 10] },
+        { id: "estatua", label: "estatua alta", type: "prop", at: [20, 4], shape: "cylinder", h: 5 },
+      ],
+    };
+    const byId = new Map(
+      expectedElementsFromGreybox(buildGreyboxSpec(plan, "solidtall")).map((e) => [e.id, e]),
+    );
+    const st = (id: string) => {
+      const e = byId.get(`vol_${id}`)!;
+      return { solid: e.solid, tall: e.tall };
+    };
+    assert.deepEqual(st("casa"), { solid: true, tall: true }, "edificio: sólido y alto");
+    assert.deepEqual(st("alfombra"), { solid: false, tall: false }, "prop passable: ni colisión ni occluder");
+    assert.deepEqual(st("arbusto"), { solid: false, tall: false }, "arbusto: decorativo, no bloquea ni tapa");
+    assert.deepEqual(st("roca"), { solid: true, tall: false }, "roca: sólida pero baja");
+    assert.deepEqual(st("estatua"), { solid: true, tall: true }, "prop alto (h>4): occluder");
+  });
+
   it("manifest: huellas == volumeFootprintCells en metros de mundo", () => {
     const plan = interiorPlan();
     const spec = buildGreyboxSpec(plan, "fp");
@@ -616,14 +644,22 @@ describe("buildGreyboxSpec", () => {
     );
   });
 
-  it("expectedElementsFromGreybox conserva el contrato de pistas", () => {
+  it("expectedElementsFromGreybox conserva el contrato de pistas (solid/tall del manifest)", () => {
     const spec = buildGreyboxSpec(interiorPlan(), "hints");
     const els = expectedElementsFromGreybox(spec);
     assert.equal(els.length, spec.manifest.length);
     for (const e of els) {
       assert.ok(e.id.startsWith("vol_"));
-      assert.equal(e.tall, true);
+      // El mapeo ESPEJA el manifest (que deriva solid/tall por tipo), no fija
+      // true/true.
+      const m = spec.manifest.find((x) => x.id === e.id)!;
+      assert.equal(e.tall, m.tall);
+      assert.equal(e.solid, m.solid);
+    }
+    // interiorPlan: dos props con h=2 → sólidos pero NO altos (h≤4).
+    for (const e of els) {
       assert.equal(e.solid, true);
+      assert.equal(e.tall, false);
     }
   });
 
