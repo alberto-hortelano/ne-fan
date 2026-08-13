@@ -217,6 +217,37 @@ describe("buildGreyboxSpec", () => {
     }
   });
 
+  it("wall: render por TRAMOS (no un AABB gigante) para muros diagonales/en L", () => {
+    // Muro en L: [4,4]→[20,4]→[20,20]. El AABB sería 16×16 celdas — una caja
+    // gigante que tapaba medio plató; ahora es una caja DELGADA por tramo.
+    const plan: StageScenePlan = {
+      ...interiorPlan(),
+      size: { cols: 48, rows: 48, meters_per_cell: 0.5 },
+      volumes: [
+        { id: "muralla", label: "muralla", type: "wall", points: [[4, 4], [20, 4], [20, 20]], width: 3, h: 5 },
+      ],
+    };
+    const spec = buildGreyboxSpec(plan, "wallseg");
+    const boxes = spec.primitives.filter(
+      (p) => p.volId === "vol_muralla" && p.cat === "wall" && p.shape === "box",
+    );
+    const mpc = 0.5;
+    const widthM = 3 * mpc;
+    // Dos segmentos → dos cajas (sin crenellations).
+    assert.equal(boxes.length, 2, "una caja por tramo de la polilínea");
+    for (const b of boxes) {
+      // Cada tramo es DELGADO en su eje transversal (≈widthM), no gigante.
+      assert.ok(Math.abs(b.size[2] - widthM) < 1e-6, `tramo grueso: size[2]=${b.size[2]}`);
+      // Largo acotado a su segmento (16 celdas) + solape de esquina, no la
+      // diagonal del AABB completo.
+      assert.ok(b.size[0] <= 16 * mpc + widthM + 1e-6, `tramo demasiado largo: ${b.size[0]}`);
+    }
+    // Un tramo horizontal (rotY≈0) y otro vertical (rotY≈±π/2).
+    const rots = boxes.map((b) => Math.abs(b.rotY ?? 0)).sort((a, z) => a - z);
+    assert.ok(rots[0] < 1e-6, "un tramo horizontal");
+    assert.ok(Math.abs(rots[1] - Math.PI / 2) < 1e-6, "un tramo vertical");
+  });
+
   it("interior: sin cielo, aspect fijo del encuadre, techo hasta cámara, vanos tallados", () => {
     const spec = buildGreyboxSpec(interiorPlan(), "posada_salon");
     assert.equal(spec.sky, null);

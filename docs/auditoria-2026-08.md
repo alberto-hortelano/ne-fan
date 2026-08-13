@@ -200,9 +200,17 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   un recorte pintado de alfombra o arbusto ya NO entra como colisión sólida ni
   occluder alto. Test de regresión por tipo + el test del contrato de pistas
   actualizado (espejaba el `true/true` viejo).
-- **`wall` no axis-aligned se renderiza como caja AABB gigante**
+- ~~**`wall` no axis-aligned se renderiza como caja AABB gigante**
   (`stage/greybox.ts:1161`): un muro diagonal/en L tapa medio plató mientras la
-  colisión deja pasar. El tile lo hace bien (tramos por segmento).
+  colisión deja pasar. El tile lo hace bien (tramos por segmento).~~ **RESUELTO**
+  (rama `audit/stage-wall-segments`). `buildVolumePrimitives` renderizaba el
+  wall como UNA caja del AABB de todos los puntos (`[w,hM,d]`); ahora emite una
+  caja por TRAMO de la polilínea, orientada con su `rotY` (`-atan2`), igual que
+  el tile (`volumePartsForTile`). La colisión ya era correcta (`markBand` por
+  segmento). Test de regresión con muro en L (2 tramos delgados, no una caja
+  16×16) verificado que falla contra el código anterior. El manifest sigue
+  usando el AABB como caja-pista de visión (aceptable: el recorte pintado casa
+  dentro; cambiarlo partiría un wall en N entradas de items/expected_elements).
 - **Defaults de radio divergentes render↔colisión** en tower/fountain/rock/prop
   (stage): el manifest y la colisión declarada usan defaults distintos cuando el
   motor omite `r` (frecuente).
