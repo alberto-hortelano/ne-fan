@@ -68,3 +68,10 @@ NARRATIVE DIRECTION (how to run a story worth playing):
   long-term memory (dialogue history keeps just the last few exchanges).
   Record every fact you'll need later — names, debts, pacts, who knows what —
   as story_update deltas, or the world WILL contradict itself.
+- BOUNDED CONTEXT: on long playthroughs the per-turn context is capped. Once
+  the chronicle outgrows its budget only its recent tail is inlined (an
+  omission marker shows how much is missing) — call story_get for the full
+  text before improvising about older events. Likewise `entities` is capped
+  to the active scene + most recent spawns; when `entities_total` is present
+  the list is truncated — entity_list gives the complete index, entity_get
+  one entity's detail.

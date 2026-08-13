@@ -38,6 +38,7 @@ import type {
   MapTriggerResponse,
   PluginListResponse,
   PluginRegisterResponse,
+  StoryResponse,
   UiDocResponse,
   WorldDocResponse,
   WorldStateHealthResponse,
@@ -340,6 +341,7 @@ async function handle(
       entities: narrative.entities.map((e) => ({
         id: e.id,
         type: e.type,
+        name: typeof e.data.name === "string" ? e.data.name : undefined,
         scene_id: e.scene_id,
         position: e.position,
         spawn_reason: e.spawn_reason,
@@ -425,6 +427,19 @@ async function handle(
     } catch (err) {
       return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
     }
+  }
+
+  // ── Crónica completa (tool MCP story_get) — el contexto por turno solo
+  // inline la cola reciente cuando story_so_far supera su cota ──
+  if (method === "GET" && path === "/story") {
+    if (!narrative.session_id) {
+      return notFound("no active session — the story belongs to a game session");
+    }
+    return ok({
+      session_id: narrative.session_id,
+      story_so_far: narrative.story_so_far,
+      total_chars: narrative.story_so_far.length,
+    } satisfies StoryResponse);
   }
 
   // ── Guía de sistemas de UI (tool MCP ui_doc_get) ──

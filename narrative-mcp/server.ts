@@ -158,7 +158,8 @@ to query or mutate authoritative game state without dumping the whole world
 into context:
 - map_get / map_upsert_place / map_link / map_add_trigger  — the world map.
 - plugin_list / plugin_inspect / plugin_register           — declarative systems.
-- entity_get / inventory_get / inventory_add / inventory_remove — entities & items.
+- entity_list / entity_get / inventory_get / inventory_add / inventory_remove — entities & items.
+- story_get — the FULL chronicle when the inlined story tail is not enough.
 - npc_arrive / npc_move_to_place / npc_set_directive       — NPC placement & behaviour.`,
     {},
     async () => {
@@ -774,6 +775,26 @@ into context:
       const qs = view ? `?view=${encodeURIComponent(view)}` : '';
       return reportBridge(await bridgeGet(`/plugins/${encodeURIComponent(plugin_id)}/inspect${qs}`));
     },
+  );
+
+  server.tool(
+    'story_get',
+    `Read the FULL chronicle (story_so_far) of the active session. Once it ` +
+    `outgrows its per-turn budget the request context only inlines the recent ` +
+    `tail (with an omission marker) — call this whenever you need an older ` +
+    `fact: names, debts, pacts, who knows what.`,
+    {},
+    async () => reportBridge(await bridgeGet('/story')),
+  );
+
+  server.tool(
+    'entity_list',
+    `List EVERY entity in the world (id, type, name, scene, position, ` +
+    `spawn_reason). The request context caps its entities list to the active ` +
+    `scene + most recent spawns (entities_total marks the cut) — call this ` +
+    `for the complete index, then entity_get for one entity's detail.`,
+    {},
+    async () => reportBridge(await bridgeGet('/entities')),
   );
 
   server.tool(
