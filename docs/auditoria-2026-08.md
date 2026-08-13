@@ -168,8 +168,24 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   tiles, viewConstraint (bounds del proscenio) y AABBs del esquema son del
   jugador, no de los NPCs. La opción "completo" (servidor con recortes pintados
   + clamp de bounds para NPCs) queda pendiente si se decide abordar.
-- **Reglas de juego solo en el cliente 2D** (`world/collision.ts` semántica
-  "salir sí, entrar no"; `world/frontier.ts` umbrales). Ni en core ni en 3D.
+- ~~**Reglas de juego solo en el cliente 2D** (`world/collision.ts` semántica
+  "salir sí, entrar no"; `world/frontier.ts` umbrales). Ni en core ni en 3D.~~
+  **RESUELTO — la parte con drift real** (rama `audit/player-radius-unify`). Al
+  auditar, la semántica "salir sí, entrar no" YA vive en core
+  (`terrain-collision.ts` → `TerrainCollider.blocksMove`) y la usan cliente y
+  bridge; la derivación de colisión se unificó en #122. Lo que quedaba disperso
+  con **drift real** era el radio del jugador `0.4`, copiado A MANO en TRES
+  sitios (dos con comentario "espejo de PLAYER_RADIUS"):
+  `nefan-html/world/collision.ts`, `nefan-core/scene/stage/segments.ts`
+  (inflado de zonas de salida) y `nefan-html/renderer/canvas-renderer.ts`
+  (tamaño de dibujo). Unificado en `PLAYER_RADIUS_M` (fuente única en core,
+  `terrain-collision.ts`) importado por los tres → cambiarlo los mueve a todos.
+  Verificado que el servidor NO colisiona al jugador (el cliente es autoritativo
+  de su movimiento; los NPCs usan su propio `NPC_RADIUS=0.5`), así que no había
+  desync server-side. **INTENCIONALMENTE client-2D-specific** (no son reglas
+  compartidas, no se tocan): los umbrales de `frontier.ts` (prefetch/veil/
+  blocking) son UX de generación de tiles del cliente, y las fuentes de colisión
+  frontera/AABB del esquema son del jugador (el bridge no las tiene).
 - **Migración v3→v4 corrompe spawns dinámicos** (`narrative-state`/`migrations`).
   Trata metros de mundo como celdas → teletransporte al resumir saves v3 con
   entidades `narrative_request`. Sin cobertura de test v3→v4. (Ver sección 3.)

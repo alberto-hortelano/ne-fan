@@ -76,8 +76,9 @@ export interface NpcBehaviorDeps {
   world: NpcWorldAdapter;
 }
 
-/** Radio de colisión del NPC — mayor que el del jugador (0.4): margen de
- *  seguridad contra las fuentes que el server aproxima por celdas. */
+/** Radio de colisión del NPC — mayor que el del jugador (PLAYER_RADIUS_M):
+ *  margen de seguridad contra las fuentes que el server aproxima por celdas.
+ *  Constante propia a propósito (los NPCs ocupan algo más). */
 const NPC_RADIUS = 0.5;
 /** Cadencia de decisión (re-lectura de directiva, proximidad del jugador). */
 const DECIDE_INTERVAL = 0.25;

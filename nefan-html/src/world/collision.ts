@@ -17,7 +17,7 @@
  *  solapa la posición actual no bloquea (permite des-penetrar tras un spawn
  *  solapado); solo bloquean los obstáculos NUEVOS del destino. */
 
-import { createTerrainCollider, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import {
   planCollisionGrid,
@@ -30,8 +30,9 @@ import type { TileAnalysis } from "../scene/scene-image.js";
 import { errors } from "../ui/error-log.js";
 import type { TileStore } from "./tile-store.js";
 
-/** Radio del jugador (punto inflado) para toda la resolución de colisión. */
-export const PLAYER_RADIUS = 0.4;
+/** Radio del jugador (punto inflado) para toda la resolución de colisión.
+ *  Reexporta la fuente única de core (`PLAYER_RADIUS_M`) — no redefinir aquí. */
+export const PLAYER_RADIUS = PLAYER_RADIUS_M;
 
 /** Obstáculo AABB del esquema (objeto de escena con footprint). */
 export interface CollisionObstacle {

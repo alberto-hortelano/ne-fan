@@ -15,7 +15,7 @@
 
 import type { ComposedStageExit } from "./scene.js";
 import { viewToStage, stageToWorld, type StageProjParams, type StageBounds } from "./projection.js";
-import type { TerrainGridData } from "../terrain-collision.js";
+import { PLAYER_RADIUS_M, type TerrainGridData } from "../terrain-collision.js";
 
 /** Versión del pipeline de pelado — va en las claves de caché de imagen del
  *  cliente/ai_server: cambiar el plan o el prompt regenera, nunca sirve
@@ -46,9 +46,8 @@ export function buildPeelPrompt(behindLabels: string[], backdrop?: string, remov
 /** Lado del cuadrado de trabajo (espejo del prestretch del ai_server). */
 export const STAGE_RENDER_SIZE = 1024;
 
-/** Radio del jugador (m) — espejo de PLAYER_RADIUS del cliente; las zonas de
- *  salida se limpian infladas por él para que siempre sean transitables. */
-const PLAYER_RADIUS_M = 0.4;
+// Radio del jugador (m): fuente única en terrain-collision — las zonas de
+// salida se limpian infladas por él para que siempre sean transitables.
 
 /** Mínimo de puntos de contacto válidos para derivar una pose. */
 const MIN_CONTACT_POINTS = 3;

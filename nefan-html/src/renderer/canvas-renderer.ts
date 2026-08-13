@@ -4,6 +4,7 @@
 
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
+import { PLAYER_RADIUS_M } from "@nefan-core/src/scene/terrain-collision.js";
 import { prismQuads, cylinderGeom, type ViewPoint } from "@nefan-core/src/scene/view-prism.js";
 import { darken } from "@nefan-core/src/scene/blueprint/palette.js";
 import type {
@@ -229,12 +230,12 @@ const GRID_COLOR = "rgba(0,0,0,0.05)";
 const PLAYER_COLOR = "#4a9";
 const NPC_COLOR = "#68c";
 
-/** Radio de un personaje en METROS. Coincide con PLAYER_RADIUS (colisión) en
- *  main.ts: dibujamos el cuerpo a su tamaño real de mundo en vez de un valor en
- *  píxeles fijo, para que escale coherente con los objetos (que van en
- *  metros·scale) y con el zoom. Un humano ~0.4m de radio queda legiblemente
- *  mayor que un taburete (~0.5m de lado). */
-const CHARACTER_RADIUS_M = 0.4;
+/** Radio de un personaje en METROS. ES el radio de colisión del jugador
+ *  (`PLAYER_RADIUS_M`, fuente única en core): dibujamos el cuerpo a su tamaño
+ *  real de mundo en vez de un valor en píxeles fijo, para que escale coherente
+ *  con los objetos (que van en metros·scale) y con el zoom. Un humano ~0.4m de
+ *  radio queda legiblemente mayor que un taburete (~0.5m de lado). */
+const CHARACTER_RADIUS_M = PLAYER_RADIUS_M;
 
 /** Fade de occluders por proximidad del jugador: cuando un tramo lo TAPA
  *  (el jugador tiene z-index menor) y está cerca, su cutout se funde para
