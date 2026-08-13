@@ -55,8 +55,6 @@ export interface EnemyPersonality {
   combat_range?: number;
   difficulty?: string;
   aggression_style?: string;
-  dodge_chance?: number;
-  damage_mult?: number;
   attack_cooldown_mult?: number;
   block_chance?: number;
   preferred_distance?: number;

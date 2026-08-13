@@ -33,8 +33,6 @@ const EnemyPersonalitySchema = z.object({
   combat_range: z.number().optional(),
   difficulty: z.string().optional(),
   aggression_style: z.string().optional(),
-  dodge_chance: z.number().optional(),
-  damage_mult: z.number().optional(),
   attack_cooldown_mult: z.number().optional(),
   block_chance: z.number().optional(),
   preferred_distance: z.number().optional(),

@@ -22,8 +22,6 @@ export class EnemyAI {
   preferredDistance: number;
 
   // Difficulty
-  dodgeChance: number;
-  damageMult: number;
   blockChance: number;
   attackCooldownMult: number;
 
@@ -56,8 +54,6 @@ export class EnemyAI {
     this.combatRange = (merged.combat_range as number) ?? 4.0;
     this.moveSpeed = (merged.move_speed as number) ?? 2.0;
     this.preferredDistance = (merged.preferred_distance as number) ?? 2.5;
-    this.dodgeChance = (merged.dodge_chance as number) ?? 0.0;
-    this.damageMult = (merged.damage_mult as number) ?? 1.0;
     this.blockChance = (merged.block_chance as number) ?? 0.0;
     this.attackCooldownMult = (merged.attack_cooldown_mult as number) ?? 1.0;
   }

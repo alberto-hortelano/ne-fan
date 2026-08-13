@@ -4,8 +4,6 @@
 export interface DifficultyParams {
   reaction_time: number;
   aggression: number;
-  dodge_chance: number;
-  damage_mult: number;
   move_speed: number;
 }
 
@@ -16,9 +14,9 @@ export interface AggressionParams {
 }
 
 export const DIFFICULTY: Record<string, DifficultyParams> = {
-  easy:   { reaction_time: 1.0, aggression: 0.4, dodge_chance: 0.1, damage_mult: 0.7, move_speed: 1.5 },
-  medium: { reaction_time: 0.5, aggression: 0.6, dodge_chance: 0.3, damage_mult: 1.0, move_speed: 2.0 },
-  hard:   { reaction_time: 0.2, aggression: 0.8, dodge_chance: 0.6, damage_mult: 1.3, move_speed: 2.5 },
+  easy:   { reaction_time: 1.0, aggression: 0.4, move_speed: 1.5 },
+  medium: { reaction_time: 0.5, aggression: 0.6, move_speed: 2.0 },
+  hard:   { reaction_time: 0.2, aggression: 0.8, move_speed: 2.5 },
 };
 
 export const AGGRESSION_STYLE: Record<string, AggressionParams> = {
