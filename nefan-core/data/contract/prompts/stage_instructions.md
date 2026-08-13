@@ -129,6 +129,9 @@ HARD RULES OF THE STAGE:
   `roof.kind/material`, `walls.material` (timber|stone|plaster|wood) and
   `doors` produce a far richer clay than a plain entity box. Furniture and
   small props can stay as entities (their `h` in meters IS respected).
+  For a shape no preset fits — the curved arc of a ruined tower wall, a broken
+  archway framing the stage — use a `prism` (free polygon outline + height),
+  same as in the tile MAP PLAN.
 - `angle` (buildings and rect-props, DEGREES −180..180, counter-clockwise
   from above): rotates the piece around its footprint center — collision and
   the vision manifest follow the rotation. USE IT: village houses at varied

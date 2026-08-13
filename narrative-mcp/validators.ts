@@ -117,7 +117,7 @@ export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false
 export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error: string } {
   if (!Array.isArray(raw)) return { ok: false, error: 'volumes must be an array of typed objects' };
   if (raw.length > 160) return { ok: false, error: `volumes has ${raw.length} items, max is 160` };
-  const types = new Set(['building', 'wall', 'tower', 'gate', 'tree', 'bush', 'rock', 'fountain', 'prop']);
+  const types = new Set(['building', 'wall', 'tower', 'gate', 'tree', 'bush', 'rock', 'fountain', 'prop', 'prism']);
   const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const pair = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(num);
   const rect4 = (v: unknown): boolean => Array.isArray(v) && v.length === 4 && v.every(num);
@@ -159,6 +159,13 @@ export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error
       }
       if (hasAt && v.angle !== undefined) {
         return { ok: false, error: `${ctx} ("${v.id}") prop \`angle\` requires \`rect\` (an \`at\` point has nothing to rotate)` };
+      }
+    } else if (v.type === 'prism') {
+      if (!Array.isArray(v.points) || v.points.length < 3 || !v.points.every(pair)) {
+        return { ok: false, error: `${ctx} ("${v.id}") prism needs \`points\` (≥3 [col,row] pairs — the outline)` };
+      }
+      if (!num(v.h) || v.h <= 0) {
+        return { ok: false, error: `${ctx} ("${v.id}") prism needs a positive \`h\` (height in cells)` };
       }
     } else if (!pair(v.at)) {
       return { ok: false, error: `${ctx} ("${v.id}") ${v.type} needs \`at\`: [col, row]` };

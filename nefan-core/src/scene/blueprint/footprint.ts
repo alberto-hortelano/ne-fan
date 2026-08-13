@@ -91,6 +91,16 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
       const r = v.r ?? 5;
       return { depthPoint: [v.at[0] + r, v.at[1] + r], cells: [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r] };
     }
+    case "prism": {
+      // Huella = AABB del contorno poligonal (sin margen: el polígono ES la
+      // huella).
+      let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+      for (const [u, vv] of v.points) {
+        minU = Math.min(minU, u); minV = Math.min(minV, vv);
+        maxU = Math.max(maxU, u); maxV = Math.max(maxV, vv);
+      }
+      return { depthPoint: [maxU, maxV], cells: [minU, minV, maxU, maxV] };
+    }
     default: {
       const s = ("s" in v ? v.s : 1) ?? 1;
       const r = v.type === "rock" ? 2.1 * s : 1.2 * s;

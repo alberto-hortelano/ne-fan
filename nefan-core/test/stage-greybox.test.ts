@@ -228,6 +228,26 @@ describe("buildGreyboxSpec", () => {
     }
   });
 
+  it("prism: geometría libre → primitiva polygon (metros) + huella AABB del contorno", () => {
+    const plan: StageScenePlan = {
+      ...interiorPlan(),
+      size: { cols: 48, rows: 48, meters_per_cell: 0.5 },
+      volumes: [
+        { id: "arco", label: "arco de torre derruida", type: "prism",
+          points: [[10, 10], [22, 12], [24, 20], [14, 18]], h: 6 },
+      ],
+    };
+    const spec = buildGreyboxSpec(plan, "prism");
+    const poly = spec.primitives.find((p) => p.volId === "vol_arco" && p.shape === "polygon");
+    assert.ok(poly, "debe emitir una primitiva polygon");
+    assert.equal(poly!.size[0], 6 * 0.5, "grosor = h·mpc");
+    // Puntos en METROS: rect.minX + celda·mpc (rect centrado de 24×24 m → minX=-12).
+    assert.deepEqual(poly!.points![0], [-12 + 10 * 0.5, -12 + 10 * 0.5]);
+    // Huella del manifest = AABB del contorno en metros de mundo.
+    const m = spec.manifest.find((x) => x.id === "vol_arco")!;
+    assert.deepEqual(m.footprintWorld, [-12 + 10 * 0.5, -12 + 10 * 0.5, -12 + 24 * 0.5, -12 + 20 * 0.5]);
+  });
+
   it("manifest: huellas == volumeFootprintCells en metros de mundo", () => {
     const plan = interiorPlan();
     const spec = buildGreyboxSpec(plan, "fp");

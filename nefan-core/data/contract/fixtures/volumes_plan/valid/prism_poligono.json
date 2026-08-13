@@ -1,0 +1,25 @@
+{
+ "description": "prism de geometría libre: arco/semicírculo del muro de una torre derruida, muestreado en puntos + altura",
+ "expect": "accept",
+ "payload": {
+  "volumes": [
+   {
+    "id": "torre_derruida",
+    "label": "muro curvo de la torre derruida",
+    "type": "prism",
+    "points": [
+     [40, 30],
+     [46, 31],
+     [50, 35],
+     [51, 41],
+     [48, 41],
+     [47, 36],
+     [44, 33],
+     [40, 33]
+    ],
+    "h": 6,
+    "color": "#8a8577"
+   }
+  ]
+ }
+}

@@ -98,7 +98,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
+        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop — or `prism` for a FREE polygon outline + height when no preset fits, e.g. a ruined tower's curved wall) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
         "items": {
           "type": "object"
         }

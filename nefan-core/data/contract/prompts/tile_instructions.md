@@ -79,7 +79,10 @@ points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
 Common fields: "id" (unique slug), "label" (Spanish noun — it guides the
 vision classifier later), "type". Coordinates in cells (0..128); heights in
-cells too (a character is ~3.6 cells tall). Types:
+cells too (a character is ~3.6 cells tall). The preset types below are
+SHORTCUTS — reach for them first. When NONE fits the shape you're imagining,
+do NOT force it: declare the geometry yourself with `prism` (an arbitrary
+polygon outline + height). Types:
 - building { rect:[col,row,w,d], wall_h?=5, roof?:{kind:"gable"|"hip"|"shed"|
   "flat"|"none", axis?:"x"|"y", material?:"slate"|"tile"|"thatch"|"wood",
   color?:"#rrggbb"}, walls?:{material:"timber"|"stone"|"wood"|"plaster",
@@ -101,6 +104,14 @@ cells too (a character is ~3.6 cells tall). Types:
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
   passable?:true } — tables, barrels, crates, wells, market stalls, carts,
   signs… passable=true for rugs/awnings that must not block movement.
+- prism { points:[[c,r],…] (3..24), h, solid?=true, tall?=true,
+  color?:"#rrggbb" } — FREE geometry: an arbitrary polygon footprint extruded
+  to height h, for shapes no preset expresses (the curved arc of a ruined
+  tower's wall, an L-shaped ruin, an irregular rock platform, a broken bridge
+  span). Sample curves into points (a semicircle ≈ 8–12 points). solid=false
+  for a decorative walkable shape; tall=false for a low platform. The image
+  model repaints it — the prism just sets the massing, collision and
+  occlusion. Compose several prisms/presets for one complex object.
 COLLISION comes from these footprints. A ROOFED building is pure scenery:
 its whole footprint is solid and its doors are decorative paint — the player
 can NEVER walk in (they would vanish under the roof). Any building the story

@@ -151,6 +151,27 @@ export const PropSchema = z
   })
   .strict();
 
+/** Geometría LIBRE: un contorno poligonal arbitrario extruido a una altura.
+ *  La escotilla para lo que ningún preset expresa (el arco de un muro de torre
+ *  derruida, un ala en L, una plataforma irregular). El greybox lo extruye y la
+ *  imagen IA lo repinta; el modelo declara `solid`/`tall` (no se infieren de una
+ *  forma cualquiera). Curvas: muestrear en puntos (semicírculo ≈ 8-12). */
+export const PrismSchema = z
+  .object({
+    ...base,
+    type: z.literal("prism"),
+    /** Contorno en celdas [col,row] (≥3, mismo `at` que el resto). */
+    points: z.array(at).min(3).max(24),
+    /** Altura en celdas (obligatoria: no hay preset del que heredar). */
+    h: z.number().positive().max(24),
+    /** Colisiona (default true); false = decorativo atravesable. */
+    solid: z.boolean().optional(),
+    /** Se dibuja sobre quien esté detrás (default true); false = plano bajo. */
+    tall: z.boolean().optional(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  })
+  .strict();
+
 export const VolumeSchema = z.discriminatedUnion("type", [
   BuildingSchema,
   WallSchema,
@@ -161,6 +182,7 @@ export const VolumeSchema = z.discriminatedUnion("type", [
   RockSchema,
   FountainSchema,
   PropSchema,
+  PrismSchema,
 ]);
 
 /** Cap de volúmenes por tile (un pueblo denso ronda 80–120). */
@@ -175,6 +197,7 @@ export type TowerVolume = z.infer<typeof TowerSchema>;
 export type GateVolume = z.infer<typeof GateSchema>;
 export type TreeVolume = z.infer<typeof TreeSchema>;
 export type PropVolume = z.infer<typeof PropSchema>;
+export type PrismVolume = z.infer<typeof PrismSchema>;
 
 export type ParseVolumesResult =
   | { ok: true; volumes: Volume[] }

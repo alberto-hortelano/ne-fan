@@ -75,6 +75,32 @@ function markBand(grid: Grid, points: [number, number][], width: number, dims: C
   }
 }
 
+/** Relleno de un polígono arbitrario (contorno de un `prism`): barre el AABB
+ *  del contorno y marca las celdas cuyo centro cae dentro (point-in-polygon por
+ *  ray-casting par-impar — el MISMO algoritmo que `shapeContains` para el agua
+ *  del ground). */
+function markPolygon(grid: Grid, points: [number, number][], dims: CollisionGridDims): void {
+  if (points.length < 3) return;
+  let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+  for (const [u, v] of points) {
+    minU = Math.min(minU, u); minV = Math.min(minV, v);
+    maxU = Math.max(maxU, u); maxV = Math.max(maxV, v);
+  }
+  for (let v = Math.floor(minV); v <= Math.ceil(maxV); v++) {
+    for (let u = Math.floor(minU); u <= Math.ceil(maxU); u++) {
+      const pu = u + 0.5;
+      const pv = v + 0.5;
+      let inside = false;
+      for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const [xi, yi] = points[i];
+        const [xj, yj] = points[j];
+        if (yi > pv !== yj > pv && pu < ((xj - xi) * (pv - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) mark(grid, pu, pv, dims);
+    }
+  }
+}
+
 /** Rect rotado `angleDeg` alrededor de su centro (patrón de markBand: barrer
  *  el AABB y testear el centro de cada celda en el marco LOCAL del rect). */
 function markRotRect(
@@ -222,6 +248,10 @@ export function volumeCollisionGrid(
         else markDisc(grid, v.at![0], v.at![1], volumeSolidDiscRadiusCells(v)!, dims);
         break;
       }
+      case "prism":
+        // Geometría libre: rellena su contorno salvo que se declare no-sólida.
+        if (v.solid !== false) markPolygon(grid, v.points, dims);
+        break;
       case "bush":
         break; // decorativo, no bloquea
     }

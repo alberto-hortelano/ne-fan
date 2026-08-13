@@ -281,6 +281,15 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       }
       return null;
     }
+    case "prism": {
+      // AABB del contorno poligonal (misma huella que footprint.ts y colisión).
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      for (const [c, r] of v.points) {
+        minC = Math.min(minC, c); minR = Math.min(minR, r);
+        maxC = Math.max(maxC, c); maxR = Math.max(maxR, r);
+      }
+      return [minC, minR, maxC - minC, maxR - minR];
+    }
   }
 }
 
@@ -1000,6 +1009,8 @@ export function volumeHeightM(v: Volume, mpc: number): number {
       return 1.4;
     case "prop":
       return (v.h ?? 2) * mpc;
+    case "prism":
+      return v.h * mpc;
   }
 }
 
@@ -1389,6 +1400,21 @@ function buildVolumePrimitives(
           cat: "prop",
         });
       }
+      break;
+    }
+    case "prism": {
+      // Contorno poligonal extruido a `h` — puntos en METROS (rect + celda·mpc).
+      // El render (three.js ExtrudeGeometry) ya sabe extruir `polygon`.
+      const hM = v.h * mpc;
+      const wall = wallColors("stone");
+      push({
+        shape: "polygon",
+        size: [hM],
+        pos: [0, 0, 0],
+        points: v.points.map(([u, vc]) => [rect.minX + u * mpc, rect.minZ + vc * mpc] as [number, number]),
+        color: v.color ?? wall.lit,
+        cat: "building",
+      });
       break;
     }
   }

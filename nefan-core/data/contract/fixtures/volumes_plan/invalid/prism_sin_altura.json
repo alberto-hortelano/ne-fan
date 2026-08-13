@@ -1,0 +1,19 @@
+{
+ "description": "prism sin altura h (obligatoria: no hay preset del que heredar)",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "mal",
+    "label": "plataforma sin altura",
+    "type": "prism",
+    "points": [
+     [10, 10],
+     [20, 10],
+     [20, 18],
+     [10, 18]
+    ]
+   }
+  ]
+ }
+}
