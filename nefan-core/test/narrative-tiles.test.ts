@@ -121,6 +121,72 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     assert.equal(s.entities.some((e) => e.id === "viejo"), false);
     assert.equal(s.entities.filter((e) => e.id === "aldeana").length, 1);
   });
+
+  it("mismo id en una escena NUEVA mueve al personaje (caso Nogala), y la re-entrada no lo devuelve", () => {
+    // Regresión del playtest 2026-08-13: un NPC spawneado dinámicamente en el
+    // tile y redeclarado en la escena realizada después debe ser UN solo
+    // record. El contrato: la escena nueva lo declara con su MISMO id y el
+    // registro lo MUEVE (scene_id + posición declarada) conservando data.
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("plugtest");
+    s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0, { entities: [] }));
+    s.recordEntitySpawned(
+      "nogala", "npc", "tile_0_0", [3, 0, -10],
+      { name: "Nogala Tres-Tratos", inventory: [{ id: "contratos" }] },
+      "react_to_player",
+    );
+
+    // El motor realiza la posada y declara a Nogala con su id existente.
+    const posada = {
+      scene_id: "posada_interior",
+      entities: [
+        { id: "nogala", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+      ],
+    };
+    s.recordSceneLoaded("posada_interior", posada);
+    const records = s.entities.filter((e) => e.id === "nogala");
+    assert.equal(records.length, 1, "un solo record — sin duplicado");
+    assert.equal(records[0].scene_id, "posada_interior", "movida a la escena nueva");
+    assert.deepEqual(records[0].position, [10, 0, 10], "toma la posición declarada (legacy: celdas locales)");
+    assert.deepEqual(records[0].data.inventory, [{ id: "contratos" }], "el estado viaja con ella");
+    assert.equal(records[0].spawn_reason, "react_to_player", "la procedencia se conserva");
+
+    // La vida ambiental la mueve dentro de la posada…
+    records[0].position = [4, 0, 4];
+    // …y RE-ENTRAR al tile cacheado (que no la declara) no la toca; re-entrar
+    // a la posada cacheada tampoco la teletransporta a su celda declarada.
+    s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0, { entities: [] }));
+    s.recordSceneLoaded("posada_interior", posada);
+    const after = s.entities.filter((e) => e.id === "nogala");
+    assert.equal(after.length, 1);
+    assert.equal(after[0].scene_id, "posada_interior");
+    assert.deepEqual(after[0].position, [4, 0, 4], "re-broadcast cacheado no resetea la posición viva");
+  });
+
+  it("NPC nuevo con nombre exacto de otro record → warning de duplicado (sin dedupe)", () => {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("plugtest");
+    s.recordEntitySpawned("narr_npc_1", "npc", "tile_0_0", [0, 0, 0], { name: "Nogala Tres-Tratos" }, "react_to_player");
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => { warnings.push(args.join(" ")); };
+    try {
+      s.recordSceneLoaded("posada_interior", {
+        scene_id: "posada_interior",
+        entities: [
+          { id: "nogala_tres_tratos", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+        ],
+      });
+    } finally {
+      console.warn = origWarn;
+    }
+    // Ambos records existen (no se dedupea por nombre) pero queda la traza.
+    assert.equal(s.entities.filter((e) => e.data.name === "Nogala Tres-Tratos").length, 2);
+    assert.ok(
+      warnings.some((w) => w.includes("comparte nombre exacto") && w.includes("narr_npc_1")),
+      `warning de gemelo emitido (${warnings.length} warnings)`,
+    );
+  });
 });
 
 describe("NarrativeState — migración v3→v4", () => {

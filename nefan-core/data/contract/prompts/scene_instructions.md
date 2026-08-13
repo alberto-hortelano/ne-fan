@@ -101,6 +101,12 @@ gone): everything is declarative data — typed "ground" features + "volumes".
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need
   different ids ("tree_n1", "tree_w2") even if they share name ("roble").
+- REUSE EXISTING CHARACTERS: if a character already in context.entities
+  appears in the scene you are generating (someone you spawned earlier, an
+  NPC who travelled here), declare them with their EXACT existing id — the
+  engine MOVES that record here with all its state (inventory, role,
+  directives). A new id would DUPLICATE the character (two records, one
+  orphaned in the old scene). Mint new ids only for brand-new characters.
 - cell is the TOP-LEFT of the footprint. cell + footprint must stay inside the grid.
 - Buildings (OUTDOOR scenes, mpc 2): ONE rectangular footprint each — a tavern
   seen from outside is one rectangle of 6×4 to 8×6 cells, NOT four wall slabs.
