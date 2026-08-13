@@ -31,6 +31,7 @@ import {
   type ClientSocket,
 } from "../context.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
+import { applyRenderModeUpgrade } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
 import { runBootstrapStage } from "./bootstrap-stage.js";
 import type {
@@ -520,6 +521,24 @@ export async function handleSetRenderMode(
     // los skins de otra faceta — rechazar en vez de adivinar.
     return fail(`facet desconocido ${JSON.stringify(facet)} (válidos: scenes, characters)`);
   }
+  // Sesión ACTIVA: el escritor único del save es NarrativeState. Mutar el
+  // mundo EN MEMORIA (la autoridad) y persistir con su save() — NUNCA un
+  // read-modify-write de disco independiente: ese toma un snapshot en el read
+  // y, si un save() concurrente (posición del jugador, tiles explorados,
+  // entities) escribe entremedias, el write posterior lo PISA (lost update).
+  if (ctx.narrative.session_id === msg.sessionId) {
+    const res = applyRenderModeUpgrade(ctx.narrative.world, facet);
+    if (!res.ok) return fail(res.error);
+    try {
+      await ctx.narrative.save();
+    } catch (err) {
+      return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image, sesión activa)`);
+    return ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });
+  }
+
+  // Partida INACTIVA: el read-modify-write de disco es el único escritor.
   let data;
   try {
     data = await ctx.sessionStorage.read(msg.sessionId);
@@ -527,48 +546,14 @@ export async function handleSetRenderMode(
     return fail(`no se pudo leer la partida: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (!data) return fail(`la partida ${msg.sessionId} no existe`);
-  if (facet === "scenes") {
-    const current = data.world?.render_mode;
-    if (current !== "vector") {
-      return fail(
-        current === "image"
-          ? "la partida ya tiene los escenarios con imágenes"
-          : `la partida no está en modo vector (render_mode=${JSON.stringify(current)})`,
-      );
-    }
-    // Fijar el modo de personajes ANTES de subir render_mode: "" legacy
-    // significa "sigue a render_mode", y sin fijarlo el upgrade de escenarios
-    // activaría también los skins IA en silencio (gasto no pedido).
-    if (!data.world.character_mode) data.world.character_mode = "vector";
-    data.world.render_mode = "image";
-  } else {
-    // Personajes: "" legacy = sigue a render_mode — el modo EFECTIVO es el
-    // que debe estar en vector para poder activar.
-    const effective = data.world?.character_mode || data.world?.render_mode;
-    if (effective !== "vector") {
-      return fail(
-        effective === "image"
-          ? "la partida ya tiene los personajes con skins IA"
-          : `la partida no está en modo vector (character_mode=${JSON.stringify(effective)})`,
-      );
-    }
-    data.world.character_mode = "image";
-  }
+  if (!data.world) return fail(`la partida ${msg.sessionId} no tiene bloque world (save corrupto)`);
+  const res = applyRenderModeUpgrade(data.world, facet);
+  if (!res.ok) return fail(res.error);
   data.updated_at = new Date().toISOString();
   try {
     await ctx.sessionStorage.write(msg.sessionId, data);
   } catch (err) {
     return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  // Si es la sesión ACTIVA del proceso, el espejo en memoria también cambia
-  // (un save_session posterior no debe revertir el upgrade).
-  if (ctx.narrative.session_id === msg.sessionId) {
-    if (facet === "scenes") {
-      if (!ctx.narrative.world.character_mode) ctx.narrative.world.character_mode = "vector";
-      ctx.narrative.world.render_mode = "image";
-    } else {
-      ctx.narrative.world.character_mode = "image";
-    }
   }
   console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image)`);
   ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });

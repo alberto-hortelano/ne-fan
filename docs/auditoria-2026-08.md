@@ -116,9 +116,21 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   broadcastea `narrative_status: error` (sin inyectar escena de hierba); HTML
   muestra overlay de error, Godot lo lleva al HUD. El "reintento" existe vía el
   round-trip del pre-flight MCP (el modelo corrige y re-responde).
-- **`race` en `handleSetRenderMode`** (`bridge/handlers/session.ts:507`).
+- ~~**`race` en `handleSetRenderMode`** (`bridge/handlers/session.ts:507`).
   Read-modify-write en disco de una sesión que puede ser la activa en memoria;
-  last-writer-wins sin lock.
+  last-writer-wins sin lock.~~ **RESUELTO** (rama `audit/render-mode-race`). Era
+  un **doble escritor** del save dentro del bridge: `ctx.narrative.save()`
+  escribe `saves/{id}/state.json` vía el mismo storage que
+  `ctx.sessionStorage.write`. El handler leía disco (snapshot en t0), mutaba el
+  flag y reescribía en t2 — pisando cualquier `save()` intermedio (posición,
+  tiles explorados, entities revertían a t0). Fix: la sesión ACTIVA muta el
+  mundo EN MEMORIA (la autoridad) y persiste por su `save()` (escritor único);
+  el read-modify-write de disco queda solo para partidas INACTIVAS. Lógica pura
+  extraída a `src/narrative/render-mode.ts` (`applyRenderModeUpgrade`, testeada)
+  compartida por ambas ramas. Test de regresión del clobber (verificado que
+  falla contra el handler anterior). Nota residual: dos `set_render_mode`
+  concurrentes sobre la MISMA partida inactiva (scenes+characters) aún podrían
+  competir; no realista desde el título (envío serial) y de menor impacto.
 - ~~**Enrutado de `image_review`/`stage_review` en narrative-mcp**
   (`server.ts:462`). Se responden como `room_response` en vez de
   `vision_response`; funciona por accidente (resolución por request_id) pero una
