@@ -249,8 +249,16 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   `name`). `world_rules.md` documenta el contexto acotado (BOUNDED CONTEXT).
   Tests de regresión de ambas cotas (verificados discriminantes) + `/story`;
   cadena MCP→bridge ejercitada en vivo (stdio client).
-- **`player` sin defaults al cargar** (`narrative-state.ts:247`): un save sin
-  `gold`/`inventory` deja NaN en la aritmética del plugin economy.
+- ~~**`player` sin defaults al cargar** (`narrative-state.ts:247`): un save sin
+  `gold`/`inventory` deja NaN en la aritmética del plugin economy.~~
+  **RESUELTO** (rama `audit/player-load-defaults`). `loadSession` hace ahora
+  spread sobre `DEFAULT_PLAYER` clonado (mismo criterio aditivo que `world`):
+  lo presente en el save se conserva, lo ausente cae al default (gold 0,
+  inventory [], appearance pete) — la aritmética de plugins (inc/dec sobre
+  `player.gold`, push a inventory) no vuelve a ver undefined. Test de
+  regresión con save v3 pre-economy (verificado que falla contra la copia
+  directa) que además cubre que el array default no se comparte entre
+  instancias.
 - **Huecos de validación Python↔TS**: Python no valida rangos/límites de
   ground/volumes (TS sí); `stage` sin validación estructural Python;
   `image_review` sin fixtures de contrato (sin candado CI).

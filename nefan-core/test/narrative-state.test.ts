@@ -74,6 +74,50 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(ok, false);
   });
 
+  it("load de save viejo sin gold/inventory/appearance → defaults (sin NaN en economy)", async () => {
+    // Regresión: this.player = data.player copiaba el save tal cual; un save
+    // viejo sin gold/inventory dejaba undefined y la aritmética de plugins
+    // (inc/dec sobre player.gold) producía NaN, el push a inventory crasheaba.
+    const storage = new MemorySessionStorage();
+    await storage.write("oldsess", {
+      schema_version: 3,
+      session_id: "oldsess",
+      game_id: "toledo_1200",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      world: { name: "Toledo", atmosphere: "", style_token: "", active_scene_id: "s1" },
+      // Save de la era pre-economy: sin gold, inventory ni appearance.
+      player: {
+        level: 3,
+        class: "rogue",
+        health: 80,
+        position: [1, 0, 2],
+        current_scene_id: "s1",
+      },
+      story_so_far: "",
+      scenes_loaded: {},
+      entities: [],
+      dialogue_history: [],
+      asset_index_snapshot: [],
+      _next_event_seq: 0,
+    } as never);
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("oldsess"), true);
+    // Lo presente en el save se conserva; lo ausente cae al default.
+    assert.equal(s.player.level, 3);
+    assert.equal(s.player.health, 80);
+    assert.deepEqual(s.player.position, [1, 0, 2]);
+    assert.equal(s.player.gold, 0, "gold default 0 — la aritmética no da NaN");
+    assert.equal(s.player.gold + 25, 25);
+    assert.deepEqual(s.player.inventory, [], "inventory default []");
+    assert.equal(s.player.appearance.model_id, "pete", "appearance default");
+    // El array default no se comparte entre instancias del default.
+    s.player.inventory.push({ id: "moneda" });
+    const s2 = new NarrativeState(new MemorySessionStorage());
+    s2.startNewSession("g");
+    assert.deepEqual(s2.player.inventory, []);
+  });
+
   it("listSessions returns metadata sorted by updated_at desc", async () => {
     const storage = new MemorySessionStorage();
     const s = new NarrativeState(storage);
