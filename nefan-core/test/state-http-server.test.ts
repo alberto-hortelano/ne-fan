@@ -146,6 +146,21 @@ describe("state HTTP API", () => {
     assert.equal(herrero.name, "Álvar");
   });
 
+  it("POST /scheduled_event/{id}/resolve retira el evento; id desconocido → 404 con los pendientes", async () => {
+    const schedId = narrative.addScheduledEvent("Vira se entera de la venta", "al volver a la plaza", "evt_1");
+    const before = mutations;
+    const okRes = await post(`/scheduled_event/${schedId}/resolve`, {});
+    assert.equal(okRes.status, 200);
+    assert.equal(okRes.body.ok, true);
+    assert.equal(okRes.body.id, schedId);
+    assert.equal(okRes.body.remaining, 0);
+    assert.ok(mutations > before, "resolver persiste (onMutation)");
+
+    const missing = await post("/scheduled_event/sched_9999/resolve", {});
+    assert.equal(missing.status, 404);
+    assert.match(String(missing.body.error), /pending ids/);
+  });
+
   it("ruta desconocida → 404 con error", async () => {
     const { status, body } = await get("/no/such/route");
     assert.equal(status, 404);

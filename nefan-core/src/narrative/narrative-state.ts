@@ -16,6 +16,7 @@ import {
   type NarrativePlayerState,
   type SceneRecord,
   type SessionData,
+  type ScheduledEventRecord,
   type SessionMetadata,
   type TileAnalysisRecord,
   type Vec3Like,
@@ -90,8 +91,13 @@ export class NarrativeState {
    *  transiciones del NpcBehaviorSystem, NUNCA per-tick. El LLM recibe las
    *  últimas 10 en serializeForLlm como `ambient_events`. */
   ambient_log: string[] = [];
+  /** Agenda del director: schedule_event pendientes. Reaparecen en cada
+   *  contexto LLM hasta que el motor los resuelve (antes se perdían al
+   *  emitirse y el motor los duplicaba en story_update por miedo). */
+  scheduled_events: ScheduledEventRecord[] = [];
 
   private nextEventSeq = 0;
+  private nextSchedSeq = 0;
   private dirty = false;
   /** Índice en memoria tileKey → sceneId (reconstruido en load, actualizado en
    *  recordSceneLoaded). No se persiste: se deriva de scenes_loaded[].tile. */
@@ -188,10 +194,46 @@ export class NarrativeState {
     this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
     this.plugins = [];
     this.ambient_log = [];
+    this.scheduled_events = [];
     this.nextEventSeq = 0;
+    this.nextSchedSeq = 0;
     this.tileIndex.clear();
     this.dirty = true;
     return this.session_id;
+  }
+
+  /** Programa un evento narrativo pendiente (consequence schedule_event).
+   *  Devuelve su id. Cap 20: por encima cae el MÁS ANTIGUO con traza — una
+   *  agenda que no se resuelve nunca no puede crecer el contexto sin cota. */
+  addScheduledEvent(description: string, trigger: string | undefined, eventId: string): string {
+    this.nextSchedSeq += 1;
+    const id = `sched_${String(this.nextSchedSeq).padStart(4, "0")}`;
+    this.scheduled_events.push({
+      id,
+      description,
+      ...(trigger ? { trigger } : {}),
+      created_at: nowIso(),
+      event_id: eventId,
+    });
+    if (this.scheduled_events.length > 20) {
+      const dropped = this.scheduled_events.shift()!;
+      console.warn(
+        `[narrative-state] agenda llena (20): cae el scheduled_event más antiguo ` +
+        `"${dropped.id}" (${dropped.description.slice(0, 60)}…)`,
+      );
+    }
+    this.dirty = true;
+    return id;
+  }
+
+  /** Resuelve (retira) un evento programado — el motor lo ha disparado o ha
+   *  quedado obsoleto. false si el id no existe. */
+  resolveScheduledEvent(id: string): boolean {
+    const idx = this.scheduled_events.findIndex((e) => e.id === id);
+    if (idx < 0) return false;
+    this.scheduled_events.splice(idx, 1);
+    this.dirty = true;
+    return true;
   }
 
   /** Añade una entrada al log ambiental (cap 30 — los saves no crecen sin
@@ -260,9 +302,11 @@ export class NarrativeState {
     this.worldMap = new WorldMapManager(wm);
     // Migración v2→v3 trivial: los saves anteriores no tienen plugins.
     this.plugins = data.plugins ?? [];
-    // Campo aditivo (sin bump de schema): saves previos no traen log ambiental.
+    // Campos aditivos (sin bump de schema): saves previos no los traen.
     this.ambient_log = data.ambient_log ?? [];
+    this.scheduled_events = data.scheduled_events ?? [];
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
+    this.nextSchedSeq = data._next_sched_seq ?? this.scheduled_events.length;
     // Migración v3→v4: la escena activa se envuelve como tile (0,0) del plano
     // continuo. Con el tile centrado en el origen las posiciones mundo no
     // cambian (el jugador y los NPC no se mueven).
@@ -603,7 +647,9 @@ export class NarrativeState {
       world_map: this.worldMap.serialize(),
       plugins: this.plugins,
       ambient_log: this.ambient_log,
+      scheduled_events: this.scheduled_events,
       _next_event_seq: this.nextEventSeq,
+      _next_sched_seq: this.nextSchedSeq,
     };
   }
 

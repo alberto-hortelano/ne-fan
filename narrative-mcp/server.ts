@@ -81,6 +81,7 @@ function describeStateCall(method: string, path: string): string {
   if (path === '/ui_doc') return 'leyendo la guía de sistemas de UI…';
   if (path === '/scene/validate') return 'validando la escena generada…';
   if (path.startsWith('/plugins')) return 'trabajando con los sistemas de juego (plugins)…';
+  if (path.startsWith('/scheduled_event')) return 'resolviendo un evento programado…';
   if (path.startsWith('/npc')) return 'dirigiendo a los personajes…';
   if (path.startsWith('/entity') || path.startsWith('/inventory')) return 'consultando entidades e inventario…';
   return `el motor consulta el estado (${method} ${path})…`;
@@ -160,6 +161,7 @@ into context:
 - plugin_list / plugin_inspect / plugin_register           — declarative systems.
 - entity_list / entity_get / inventory_get / inventory_add / inventory_remove — entities & items.
 - story_get — the FULL chronicle when the inlined story tail is not enough.
+- scheduled_event_resolve — retire a pending schedule_event you have fired.
 - npc_arrive / npc_move_to_place / npc_set_directive       — NPC placement & behaviour.`,
     {},
     async () => {
@@ -791,6 +793,20 @@ into context:
     `fact: names, debts, pacts, who knows what.`,
     {},
     async () => reportBridge(await bridgeGet('/story')),
+  );
+
+  server.tool(
+    'scheduled_event_resolve',
+    `Retire a scheduled narrative event from your pending agenda. Your ` +
+    `schedule_event consequences persist and reappear every turn in ` +
+    `context.scheduled_events until resolved — call this when you have FIRED ` +
+    `one (its complication happened on screen or in the story) or it became ` +
+    `obsolete. Record the outcome as a story_update in the same turn.`,
+    {
+      id: z.string().describe('The scheduled event id from context.scheduled_events (e.g. "sched_0001").'),
+    },
+    async ({ id }) =>
+      reportBridge(await bridgePost(`/scheduled_event/${encodeURIComponent(id)}/resolve`, {})),
   );
 
   server.tool(

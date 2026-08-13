@@ -363,10 +363,20 @@ Backlog derivado (ordenado por impacto):
   display name EXACTO de un record vivo (sin dedupe por nombre — dos
   "Guardia" son legítimos). Tests del caso Nogala completo (mover +
   re-entrada + warning), verificados discriminantes.
-- **`schedule_event` invisible tras emitirse**: no vuelve al contexto (ni
+- ~~**`schedule_event` invisible tras emitirse**: no vuelve al contexto (ni
   lista de pendientes ni confirmación) — el motor lo duplicó en story_update
-  para no perderlo. Falta un bloque `scheduled_events` en el contexto o
-  documentar que story_update es el mecanismo.
+  para no perderlo.~~ **RESUELTO** (rama `audit/scheduled-events-visibility`).
+  Agenda del director persistida: `NarrativeState.scheduled_events` (campo
+  aditivo del save, cap 20 cayendo el más antiguo con traza) alimentada por
+  el consequence-handler (el effect gana `id`); el contexto LLM lleva
+  `scheduled_events: [{id, description, trigger?}]` cada turno hasta que el
+  motor lo dispara y lo retira con la tool MCP nueva
+  `scheduled_event_resolve(id)` (→ `POST /scheduled_event/{id}/resolve`,
+  404 con la lista de pendientes si el id no existe). El `describe` del zod
+  documenta la persistencia (fluye a prompt+tool vía gen:contract) y
+  narrative_event.md instruye no duplicar en story_update al programar.
+  Tests: persistencia+contexto+resolución (discriminante contra el handler
+  viejo), save/load+cap, endpoint; tool verificada en vivo (stdio client).
 - **Pre-flight no avisa de links sin `edge`**: una escena puede realizarse
   con su link exterior sin edge (salir andando por el borde no viajará);
   warning barato en scene_validate.

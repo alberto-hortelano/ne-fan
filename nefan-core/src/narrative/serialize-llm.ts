@@ -65,6 +65,15 @@ export function buildLlmContext(
     recent_dialogues: recent,
     rooms_visited: Object.keys(state.scenes_loaded).length,
     ...(state.ambient_log.length ? { ambient_events: state.ambient_log.slice(-10) } : {}),
+    ...(state.scheduled_events.length
+      ? {
+          scheduled_events: state.scheduled_events.map((e) => ({
+            id: e.id,
+            description: e.description,
+            ...(e.trigger ? { trigger: e.trigger } : {}),
+          })),
+        }
+      : {}),
     ...activeSceneAnalysis(state),
     ...(state.plugins.length
       ? {

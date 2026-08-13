@@ -38,6 +38,7 @@ import type {
   MapTriggerResponse,
   PluginListResponse,
   PluginRegisterResponse,
+  ScheduledEventResolveResponse,
   StoryResponse,
   UiDocResponse,
   WorldDocResponse,
@@ -427,6 +428,28 @@ async function handle(
     } catch (err) {
       return notFound(`world.md unavailable for "${narrative.game_id}": ${(err as Error).message}`);
     }
+  }
+
+  // ── Agenda del director (tool MCP scheduled_event_resolve) ──
+  if (
+    method === "POST" &&
+    parts[0] === "scheduled_event" &&
+    parts[1] &&
+    parts[2] === "resolve" &&
+    parts.length === 3
+  ) {
+    const resolved = narrative.resolveScheduledEvent(parts[1]);
+    if (!resolved) {
+      return notFound(
+        `scheduled event "${parts[1]}" not found — pending ids: ` +
+        `[${narrative.scheduled_events.map((e) => e.id).join(", ")}]`,
+      );
+    }
+    return mutated({
+      ok: true,
+      id: parts[1],
+      remaining: narrative.scheduled_events.length,
+    } satisfies ScheduledEventResolveResponse);
   }
 
   // ── Crónica completa (tool MCP story_get) — el contexto por turno solo
