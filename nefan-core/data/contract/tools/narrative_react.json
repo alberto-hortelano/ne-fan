@@ -119,7 +119,7 @@
                 "description": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Qué ocurrirá y bajo qué condición"
+                  "description": "Qué ocurrirá y bajo qué condición. Persiste en tu agenda (context.scheduled_events) hasta que lo dispares y lo retires con la tool scheduled_event_resolve(id)"
                 },
                 "trigger": {
                   "type": "string"

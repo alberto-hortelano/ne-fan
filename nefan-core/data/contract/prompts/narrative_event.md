@@ -40,6 +40,11 @@ CRITICAL — when free_text is non-empty:
   duplicate record. To bring an existing character into a scene you
   generate later, declare them there with their SAME entity id (the engine
   moves them); meanwhile just reference them by name in dialogue/story.
+- schedule_event persists in your AGENDA: it reappears every turn in
+  context.scheduled_events (with its id) until you fire it — then call the
+  scheduled_event_resolve(id) tool and record the outcome as a story_update.
+  Do NOT duplicate it into story_update when scheduling: the agenda already
+  keeps it for you.
 
 CRITICAL — when free_text is empty (numbered choice only):
 - React in PROPORTION to what the choice means. If it asks a question, makes
@@ -117,7 +122,7 @@ NarrativeReaction = {
     }
     | {
       type: "schedule_event";
-      description: string /* no vacío */;  // Qué ocurrirá y bajo qué condición
+      description: string /* no vacío */;  // Qué ocurrirá y bajo qué condición. Persiste en tu agenda (context.scheduled_events) hasta que lo dispares y lo retires con la tool scheduled_event_resolve(id)
       trigger?: string;  // Condición de disparo (texto libre)
     }
     | {

@@ -58,7 +58,9 @@ const SpawnEntityConsequence = z
 const ScheduleEventConsequence = z
   .object({
     type: z.literal("schedule_event"),
-    description: z.string().min(1).describe("Qué ocurrirá y bajo qué condición"),
+    description: z.string().min(1).describe(
+      "Qué ocurrirá y bajo qué condición. Persiste en tu agenda (context.scheduled_events) hasta que lo dispares y lo retires con la tool scheduled_event_resolve(id)",
+    ),
     trigger: z.string().optional().describe("Condición de disparo (texto libre)"),
   })
   .passthrough();

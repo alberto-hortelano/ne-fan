@@ -97,13 +97,55 @@ describe("dispatchConsequences", () => {
     assert.equal(s.entities.length, 2);
   });
 
-  it("schedule_event emits stub effect", () => {
+  it("schedule_event persiste en la agenda, reaparece en el contexto y se resuelve", () => {
+    // Regresión (playtest 2026-08-13): el schedule_event se emitía como effect
+    // y se PERDÍA — el motor jamás volvía a ver sus eventos pendientes y los
+    // duplicaba en story_update por miedo. Ahora: agenda persistida + contexto.
     const s = makeState();
     const cs: Consequence[] = [
       { type: "schedule_event", description: "ambush", trigger: "timer:60" },
     ];
     const r = dispatchConsequences(s, "evt_1", cs);
-    assert.equal(r.effects[0].kind, "schedule_event");
+    const eff = r.effects[0];
+    assert.equal(eff.kind, "schedule_event");
+    const schedId = (eff as { id: string }).id;
+    assert.match(schedId, /^sched_\d{4}$/, "el effect lleva el id de la agenda");
+
+    // Persistido y visible para el motor en cada turno.
+    assert.equal(s.scheduled_events.length, 1);
+    const ctx = s.serializeForLlm();
+    assert.deepEqual(ctx.scheduled_events, [
+      { id: schedId, description: "ambush", trigger: "timer:60" },
+    ]);
+
+    // Resolver lo retira del contexto; id desconocido → false.
+    assert.equal(s.resolveScheduledEvent("sched_9999"), false);
+    assert.equal(s.resolveScheduledEvent(schedId), true);
+    assert.equal(s.scheduled_events.length, 0);
+    assert.equal(s.serializeForLlm().scheduled_events, undefined, "agenda vacía no viaja");
+  });
+
+  it("la agenda sobrevive al save/load y tiene cap 20 (cae el más antiguo)", async () => {
+    const storage = new MemorySessionStorage();
+    const s = new NarrativeState(storage);
+    const id = s.startNewSession("g");
+    for (let i = 0; i < 22; i++) {
+      s.addScheduledEvent(`evento ${i}`, undefined, "evt_1");
+    }
+    assert.equal(s.scheduled_events.length, 20, "cap 20");
+    assert.equal(
+      s.scheduled_events.some((e) => e.description === "evento 0"),
+      false,
+      "el más antiguo cayó",
+    );
+    await s.save();
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true);
+    assert.equal(s2.scheduled_events.length, 20, "la agenda sobrevive al load");
+    // El contador no se resetea: el siguiente id no colisiona con los vivos.
+    const nextId = s2.addScheduledEvent("nuevo", undefined, "evt_2");
+    assert.equal(s2.scheduled_events.some((e) => e.id === nextId && e.description === "nuevo"), true);
+    assert.equal(new Set(s2.scheduled_events.map((e) => e.id)).size, 20, "ids únicos tras resume");
   });
 
   it("records every consequence on the matching dialogue event", () => {

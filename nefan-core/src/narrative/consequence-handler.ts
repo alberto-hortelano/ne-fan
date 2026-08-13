@@ -87,10 +87,16 @@ export function dispatchConsequences(
         break;
       }
       case "schedule_event": {
+        // Persiste en la agenda: reaparece en cada contexto LLM hasta que el
+        // motor lo dispare y resuelva (tool scheduled_event_resolve).
+        const description = c.description ?? "";
+        const trigger = typeof c.trigger === "string" ? c.trigger : undefined;
+        const schedId = state.addScheduledEvent(description, trigger, eventId);
         result.effects.push({
           kind: "schedule_event",
-          description: c.description ?? "",
-          trigger: typeof c.trigger === "string" ? c.trigger : undefined,
+          id: schedId,
+          description,
+          trigger,
         });
         break;
       }

@@ -171,7 +171,24 @@ export interface SessionData {
    *  traen; default []). Cap 30 entradas, escrito por el bridge desde los
    *  NpcBehaviorEvents del sim. */
   ambient_log?: string[];
+  /** Eventos programados por el motor (consequence schedule_event) aún sin
+   *  resolver (campo aditivo; default []). Reaparecen en cada contexto LLM
+   *  hasta que el motor los dispara y resuelve (tool scheduled_event_resolve). */
+  scheduled_events?: ScheduledEventRecord[];
   _next_event_seq: number;
+  /** Contador de ids de scheduled_events (aditivo; default derivado). */
+  _next_sched_seq?: number;
+}
+
+/** Un schedule_event pendiente: la "agenda" del director. Persistido para que
+ *  el motor lo re-vea cada turno (antes se perdía tras emitirse). */
+export interface ScheduledEventRecord {
+  id: string;
+  description: string;
+  trigger?: string;
+  created_at: string;
+  /** Evento de diálogo en el que se programó (procedencia). */
+  event_id: string;
 }
 
 export interface SessionMetadata {
@@ -231,6 +248,9 @@ export interface LlmContext {
   /** Vida ambiental reciente (últimas 10): "guard_02 intervino en una pelea",
    *  "aldeana_1 llegó a plaza_mercado"… Contexto, no requiere reacción. */
   ambient_events?: string[];
+  /** Tus schedule_event PENDIENTES (la agenda del director) — presentes hasta
+   *  que los dispares y resuelvas con la tool scheduled_event_resolve(id). */
+  scheduled_events?: Array<{ id: string; description: string; trigger?: string }>;
   /** Documento COMPLETO del mundo (world.md). Solo se adjunta en el request
    *  de bootstrap de una sesión nueva — en turnos posteriores el motor usa
    *  world.description y la tool world_doc_get. */
@@ -337,7 +357,7 @@ export type ConsequenceEffect =
       data: Record<string, unknown>;
       eventId: string;
     }
-  | { kind: "schedule_event"; description: string; trigger?: string }
+  | { kind: "schedule_event"; id: string; description: string; trigger?: string }
   | { kind: "ambient_message"; message: string }
   /** Tick de plugins aplicado (F4): qué plugin procesó qué evento, qué paths
    *  cambiaron (externos + plugins.<id>.slice) y qué eventos emitió. Los

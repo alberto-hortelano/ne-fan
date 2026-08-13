@@ -120,6 +120,15 @@ export interface StoryResponse {
   total_chars: number;
 }
 
+/** POST /scheduled_event/{id}/resolve (tool MCP scheduled_event_resolve):
+ *  retira de la agenda un schedule_event ya disparado u obsoleto. */
+export interface ScheduledEventResolveResponse {
+  ok: true;
+  id: string;
+  /** Pendientes que quedan tras resolver. */
+  remaining: number;
+}
+
 export interface UiDocResponse {
   /** Configuración ACTIVA (congelada en el save) de la sesión. */
   ui_state: {
@@ -210,6 +219,10 @@ export const WorldStateApi = {
   getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc"),
   getUiDoc: endpoint<void, UiDocResponse>("GET", "/ui_doc"),
   getStory: endpoint<void, StoryResponse>("GET", "/story"),
+  resolveScheduledEvent: endpoint<void, ScheduledEventResolveResponse, "id">(
+    "POST",
+    "/scheduled_event/{id}/resolve",
+  ),
 
   // Validación de escenas (pre-flight de narrative_respond y tool
   // scene_validate; el SERVIDOR construye el TileValidationContext desde los
