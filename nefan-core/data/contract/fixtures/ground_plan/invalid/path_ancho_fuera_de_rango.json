@@ -1,0 +1,15 @@
+{
+  "description": "path.w 50 supera el máximo del contrato (24 celdas = 12 m de ancho)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      {
+        "id": "camino_imposible",
+        "label": "camino",
+        "kind": "path",
+        "points": [[0, 64], [128, 64]],
+        "w": 50
+      }
+    ]
+  }
+}

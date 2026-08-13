@@ -1,0 +1,9 @@
+{
+  "description": "at [500, 64] queda fuera del tile y su margen (−8..136 celdas)",
+  "expect": "reject",
+  "payload": {
+    "volumes": [
+      { "id": "torre_perdida", "label": "torre", "type": "tower", "at": [500, 64], "r": 6 }
+    ]
+  }
+}

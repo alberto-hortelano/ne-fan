@@ -46,6 +46,27 @@ class TestSceneValidateAcceptsReal(unittest.TestCase):
         self.assertEqual(len(out["entities"]), 1)
 
 
+class TestSceneStageHook(unittest.TestCase):
+    """El bloque stage de una escena proscenio pasa por validate_stage
+    (fail-loud); un tile lo descarta con traza (jamás lleva stage)."""
+
+    def test_bad_stage_raises(self):
+        s = base_scene()
+        s["stage"] = {"exits": []}  # sin exits → softlock
+        with self.assertRaisesRegex(ValueError, "stage.exits"):
+            validate_scene_response(s)
+
+    def test_tile_drops_stage(self):
+        s = base_scene()
+        s.pop("size")
+        s.pop("terrain")
+        s["tile"] = {"tx": 0, "ty": 0}
+        s["biome"] = "farmland"
+        s["stage"] = {"exits": []}  # ni se valida: se descarta con traza
+        out = validate_scene_response(s)
+        self.assertNotIn("stage", out)
+
+
 class TestSceneValidateFailLoud(unittest.TestCase):
     def test_terrain_row_wrong_width_raises(self):
         s = base_scene()

@@ -1,0 +1,18 @@
+{
+  "description": "zone con ancho 0: la zona de transición jamás se pisaría",
+  "expect": "reject",
+  "payload": {
+    "stage": {
+      "exits": [
+        {
+          "id": "salida_norte",
+          "edge": "north",
+          "to_place_id": "patio",
+          "zone": [10, 0, 0, 3],
+          "kind": "opening",
+          "label": "Arco al patio"
+        }
+      ]
+    }
+  }
+}

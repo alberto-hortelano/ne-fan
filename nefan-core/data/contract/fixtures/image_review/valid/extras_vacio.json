@@ -1,0 +1,5 @@
+{
+  "description": "La imagen no inventó nada: extras vacío es la respuesta normal",
+  "expect": "accept",
+  "payload": { "extras": [] }
+}
