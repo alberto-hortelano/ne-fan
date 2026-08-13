@@ -168,11 +168,50 @@ function markBuilding(grid: Grid, v: Extract<Volume, { type: "building" }>, dims
   }
 }
 
+/** Grosor (celdas) del muro anfitrión sobre el que se planta un `gate`: el wall
+ *  cuyo trazo pasa por el `at` de la puerta (misma proyección que usa el greybox
+ *  para tallar el vano). `null` si ninguno — el vano usa la holgura por defecto.
+ *  Con varios candidatos, el más grueso (el vano debe cruzarlos todos). */
+function gateHostWallWidth(
+  g: Extract<Volume, { type: "gate" }>,
+  walls: Array<Extract<Volume, { type: "wall" }>>,
+): number | null {
+  let best: number | null = null;
+  for (const wl of walls) {
+    const width = wl.width ?? 3;
+    const pts = wl.points as [number, number][];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [x1, z1] = pts[i];
+      const [x2, z2] = pts[i + 1];
+      const len = Math.hypot(x2 - x1, z2 - z1) || 1;
+      const dirU = (x2 - x1) / len;
+      const dirV = (z2 - z1) / len;
+      const t = (g.at[0] - x1) * dirU + (g.at[1] - z1) * dirV;
+      if (t < -2 || t > len + 2) continue; // fuera del tramo (con margen)
+      const px = x1 + dirU * t;
+      const pz = z1 + dirV * t;
+      if (Math.hypot(g.at[0] - px, g.at[1] - pz) > width / 2 + 2) continue; // lejos del trazo
+      best = Math.max(best ?? 0, width);
+    }
+  }
+  return best;
+}
+
 /** Puerta monumental: el vano queda LIBRE — limpia una franja transitable a
- *  través del cuerpo (el muro anfitrión ya habrá marcado sus celdas). */
-function clearGatePassage(grid: Grid, g: Extract<Volume, { type: "gate" }>, dims: CollisionGridDims): void {
+ *  través del cuerpo. La PROFUNDIDAD del vano (perpendicular al muro) sale del
+ *  GROSOR del muro anfitrión: con la holgura fija de 3.5 un muro grueso
+ *  (`width` hasta 12 → ±6) dejaba celdas sólidas a ambos lados del vano (puerta
+ *  abierta, colisión bloqueada). Suelo en 3.5 (cubre el cuerpo de la puerta y
+ *  los muros finos); crece a `width/2 + 0.5` para cruzar los gruesos. */
+function clearGatePassage(
+  grid: Grid,
+  g: Extract<Volume, { type: "gate" }>,
+  walls: Array<Extract<Volume, { type: "wall" }>>,
+  dims: CollisionGridDims,
+): void {
   const w = g.w ?? 8;
-  const dh = 3.5; // holgura: cruza el grosor típico del muro anfitrión
+  const hostWidth = gateHostWallWidth(g, walls);
+  const dh = Math.max(3.5, (hostWidth ?? 0) / 2 + 0.5);
   if (g.orient === "x") {
     for (let vv = Math.floor(g.at[1] - dh); vv <= Math.ceil(g.at[1] + dh); vv++) {
       for (let uu = Math.floor(g.at[0] - w / 2); uu < Math.ceil(g.at[0] + w / 2); uu++) clear(grid, uu + 0.5, vv + 0.5, dims);
@@ -256,7 +295,8 @@ export function volumeCollisionGrid(
         break; // decorativo, no bloquea
     }
   }
-  for (const v of volumes) if (v.type === "gate") clearGatePassage(grid, v, dims);
+  const walls = volumes.filter((v): v is Extract<Volume, { type: "wall" }> => v.type === "wall");
+  for (const v of volumes) if (v.type === "gate") clearGatePassage(grid, v, walls, dims);
 
   let any = false;
   const rows: string[] = [];

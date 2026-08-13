@@ -226,9 +226,16 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   fuera del helper a propósito (su excepción copa/tronco). Test anti-drift:
   media huella del manifest == radio de colisión; verificado que falla contra
   los defaults viejos.
-- **`clearGatePassage` holgura fija 3.5** (`blueprint/collision.ts:149`) no
+- ~~**`clearGatePassage` holgura fija 3.5** (`blueprint/collision.ts:149`) no
   atraviesa muros gruesos (`wall.width` hasta 12): puerta visualmente abierta,
-  colisión bloqueada.
+  colisión bloqueada.~~ **RESUELTO** (rama `audit/gate-passage-thickness`). La
+  profundidad del vano sale ahora del GROSOR del muro anfitrión (`gateHostWallWidth`
+  proyecta el `at` de la puerta sobre los muros, mismo criterio que el greybox
+  para tallar el vano) — `dh = max(3.5, width/2 + 0.5)`: suelo en 3.5 (cubre el
+  cuerpo de la puerta y muros finos, comportamiento previo intacto) y crece para
+  cruzar los gruesos. El greybox ya quitaba el tramo entero del muro en el vano,
+  así que el visual ya cruzaba; esto alinea la colisión. Test de regresión con
+  muro width 12 (verificado que falla contra la holgura fija).
 - **Contexto LLM sin cotas** (`serialize-llm`, `narrative-state`): `entities` y
   `story_so_far` crecen sin límite por playthrough (coste + degradación).
 - **`player` sin defaults al cargar** (`narrative-state.ts:247`): un save sin
