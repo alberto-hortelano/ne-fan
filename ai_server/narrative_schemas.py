@@ -661,7 +661,7 @@ def validate_weapon_orient_response(data: dict) -> dict:
         except (TypeError, ValueError):
             raise ValueError(
                 f"weapon_orient: {field} contains non-numeric values: {v!r}"
-            )
+            ) from None
 
     # Clamp grip point to [0, 1]
     data["grip_point_normalized"] = [
