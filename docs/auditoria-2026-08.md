@@ -119,11 +119,20 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 - **`race` en `handleSetRenderMode`** (`bridge/handlers/session.ts:507`).
   Read-modify-write en disco de una sesión que puede ser la activa en memoria;
   last-writer-wins sin lock.
-- **Enrutado de `image_review`/`stage_review` en narrative-mcp**
+- ~~**Enrutado de `image_review`/`stage_review` en narrative-mcp**
   (`server.ts:462`). Se responden como `room_response` en vez de
   `vision_response`; funciona por accidente (resolución por request_id) pero una
   respuesta tardía entra en la rama `_timed_out_scenes` de `llm_client.py`
-  pensada solo para escenas. Necesita rediseño con el lado ai_server delante.
+  pensada solo para escenas.~~ **RESUELTO** (rama `audit/vision-review-routing`).
+  El contrato del wire (`narrative-mcp-ws.ts` → `VisionRequestMsg.kind`) ya
+  incluye ambos kinds: ahora se enrutan por `sendVisionResponse` desde un
+  `VISION_KINDS` const con **guardia de deriva a nivel de tipos** (doble
+  asignación contra `VisionRequestMsg['kind']` — `tsc -b` rompe si el contrato
+  añade/quita un kind de visión). Verificado en runtime contra el `server.js`
+  real (cliente MCP por stdio + WS falso de ai_server): pre-fix devolvía
+  `room_response`/`room_data`, post-fix `vision_response`/`result` para
+  `image_review` y `stage_review`. El lado Python ya consumía `vision_response`
+  correctamente (mismo payload en `_pending`).
 
 ### Media
 
@@ -218,4 +227,5 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 - **A2/A3 animation-controller** (turn dura 1 frame; death resucita a idle):
   módulo sin consumidor de runtime (ni Godot ni HTML lo usan) — arreglar o
   documentar como muerto junto con animation-matcher.
-- **Enrutado image_review/stage_review** (ver sección 2, alta) — bug latente.
+- ~~**Enrutado image_review/stage_review** (ver sección 2, alta) — bug latente.~~
+  **RESUELTO** (rama `audit/vision-review-routing`; detalle en sección 2, alta).
