@@ -60,7 +60,7 @@ MAX_GROUND_FEATURES = 64
 # Tipos de volumen del plan de tile. Espejo de VolumeSchema en
 # nefan-core/src/scene/blueprint/volumes.ts (zod es la fuente de verdad; aquí
 # validamos shape suficiente para no persistir basura — el bridge re-valida).
-VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop"}
+VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop", "prism"}
 MAX_VOLUMES = 160
 
 
@@ -213,6 +213,14 @@ def validate_volumes(raw, *, field: str = "volumes"):
             if has_at and "angle" in v:
                 print(f"validate_scene: {ctx} prop con at no admite angle — campo angle descartado")
                 v.pop("angle", None)
+        elif vtype == "prism":
+            pts = v.get("points")
+            if not (isinstance(pts, list) and len(pts) >= 3 and all(_cell_pair(pp) for pp in pts)):
+                print(f"validate_scene: {ctx} prism sin points válidos (≥3) — volumen descartado")
+                continue
+            if not (_num(v.get("h")) and v.get("h") > 0):
+                print(f"validate_scene: {ctx} prism sin h positiva — volumen descartado")
+                continue
         else:  # tower/tree/bush/rock/fountain
             if not _cell_pair(v.get("at")):
                 print(f"validate_scene: {ctx} {vtype} sin at válido — volumen descartado")

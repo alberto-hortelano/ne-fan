@@ -50,6 +50,10 @@ export function classifyVolume(v: Volume): { solid: boolean; tall: boolean } {
       return { solid: true, tall: false };
     case "bush":
       return { solid: false, tall: false };
+    case "prism":
+      // Geometría libre: el modelo DECLARA la física (no se infiere de una
+      // forma arbitraria). Default sólido y alto.
+      return { solid: v.solid !== false, tall: v.tall !== false };
     case "prop":
     default:
       return { solid: v.passable !== true, tall: (v.h ?? 2) > 4 };
@@ -445,6 +449,31 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
           : [box(w, h, d, cx, 0, cz, color, "prop", { volId: `vol_${v.id}`, rotY: propRotY })];
       return [
         { part: "base", prims, footprint: fp, depthPt: pfp.depthPoint, occludes: classifyVolume(v).tall },
+      ];
+    }
+    case "prism": {
+      // Geometría libre: contorno poligonal (celdas) extruido a `h`. El
+      // repintado IA le da el aspecto; aquí solo la masa + oclusión.
+      const wc = wall("stone");
+      const pfp = volumeFootprint(v);
+      return [
+        {
+          part: "base",
+          prims: [
+            {
+              shape: "polygon",
+              size: [v.h],
+              pos: [0, 0, 0],
+              points: v.points.map(([u, vv]) => [u, vv] as [number, number]),
+              color: v.color ?? wc.lit,
+              cat: "building",
+              volId: `vol_${v.id}`,
+            },
+          ],
+          footprint: pfp.cells,
+          depthPt: pfp.depthPoint,
+          occludes: v.tall !== false,
+        },
       ];
     }
   }

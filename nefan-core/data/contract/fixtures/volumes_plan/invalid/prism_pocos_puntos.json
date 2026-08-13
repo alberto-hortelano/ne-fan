@@ -1,0 +1,18 @@
+{
+ "description": "prism con menos de 3 puntos (no es un contorno)",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "mal",
+    "label": "contorno degenerado",
+    "type": "prism",
+    "points": [
+     [10, 10],
+     [20, 10]
+    ],
+    "h": 4
+   }
+  ]
+ }
+}
