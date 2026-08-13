@@ -95,6 +95,47 @@ describe("validateScene", () => {
     assert.ok(r.errors.some((e) => e.includes('kind "player"')), r.errors.join(" | "));
   });
 
+  it("doors_total cuenta también las puertas de buildings cutaway en volumes", () => {
+    // Regresión (playtest 2026-08-13): una posada declarada como volumes
+    // cutaway CON doors reportaba doors_total: 0 (solo se contaban las
+    // structures legacy) — telemetría engañosa para el motor.
+    const s = makeScene();
+    delete s.structures;
+    s.volumes = [
+      {
+        id: "posada", label: "posada", type: "building",
+        rect: [2, 1, 10, 7], cutaway: true,
+        doors: [{ edge: "s", at: 4, w: 3 }],
+      },
+    ];
+    const r = validateScene(s, linkedPlace);
+    assert.equal(r.stats.doors_total, 3, "las 3 celdas del vano cutaway cuentan");
+    assert.equal(r.stats.doors_reachable, 3, "y son alcanzables desde el player");
+  });
+
+  it("warning cuando un link del place no declara edge (salir por el borde no viaja)", () => {
+    const withEdgeless = () => ({
+      exists: true, kind: "interior", outgoing_links: 2,
+      links: [
+        { to: "calle_mayor" },
+        { to: "patio", edge: "north" as const },
+      ],
+    });
+    const r = validateScene(makeScene(), withEdgeless);
+    assert.equal(r.ok, true, "es warning, no error");
+    const w = r.warnings.filter((x) => x.includes("no declara edge"));
+    assert.equal(w.length, 1, "solo el link sin edge avisa");
+    assert.ok(w[0].includes("calle_mayor"), w[0]);
+
+    // Con todos los edges declarados, silencio.
+    const allEdges = () => ({
+      exists: true, kind: "interior", outgoing_links: 1,
+      links: [{ to: "patio", edge: "north" as const }],
+    });
+    const r2 = validateScene(makeScene(), allEdges);
+    assert.equal(r2.warnings.some((x) => x.includes("no declara edge")), false);
+  });
+
   it("enforces the exterior link rule via placeContext", () => {
     const rMissing = validateScene(makeScene(), () => ({ exists: false, outgoing_links: 0 }));
     assert.ok(rMissing.errors.some((e) => e.includes("map_upsert_place")), rMissing.errors.join(" | "));

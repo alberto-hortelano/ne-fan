@@ -377,18 +377,24 @@ Backlog derivado (ordenado por impacto):
   narrative_event.md instruye no duplicar en story_update al programar.
   Tests: persistencia+contexto+resolución (discriminante contra el handler
   viejo), save/load+cap, endpoint; tool verificada en vivo (stdio client).
-- **Pre-flight no avisa de links sin `edge`**: una escena puede realizarse
-  con su link exterior sin edge (salir andando por el borde no viajará);
-  warning barato en scene_validate.
-- **`world_doc_get` redundante en bootstrap**: el listen ya embebe
-  world_document pero la doctrina empuja a llamarla → doc entero ×2 en el
-  mismo turno. Añadir "en bootstrap NO llames world_doc_get" a world_rules.
-- Menores: `scene_validate` reporta `doors_total: 0` con cutaway CON doors
-  (stat engañoso) y acepta Tile Format sin documentarlo; `is_resume: true` a
-  mitad de sesión sin guía para el motor; `plugin_list` duplica
-  events_consumed; `parent_id: "null"` string coercionado en silencio; el
-  tile no usó `angle` pese a la recomendación del prompt; README del
-  emulador desfasado (skin_path requerido, "único juego tavern_intro").
+- ~~**Pre-flight no avisa de links sin `edge`**~~ **RESUELTO** (rama
+  `audit/validate-warnings-pack`): warning en `validateScene` (ambas
+  vistas) por cada link saliente del place sin `edge` — "salir andando por
+  un borde no seguirá ese link; re-crea el map_link con su edge".
+- ~~**`world_doc_get` redundante en bootstrap**~~ **RESUELTO** (misma rama):
+  `world_rules.md` dice ahora explícitamente "do NOT call world_doc_get on
+  bootstrap — you already have the document".
+- ~~`scene_validate` reporta `doors_total: 0` con cutaway CON doors~~
+  **RESUELTO** (misma rama): las puertas de buildings `cutaway` declarados
+  en `volumes` cuentan en `doors_total`/`doors_reachable` (celdas del vano
+  como objetivo de alcanzabilidad; los muros del volume siguen sin
+  estamparse en walkable — divergencia documentada de #122).
+- Menores restantes: `scene_validate` acepta Tile Format sin documentarlo;
+  `is_resume: true` a mitad de sesión sin guía para el motor; `plugin_list`
+  duplica events_consumed; `parent_id: "null"` string coercionado en
+  silencio; el tile no usó `angle` pese a la recomendación del prompt;
+  README del emulador desfasado (skin_path requerido, "único juego
+  tavern_intro").
 
 ### Cobertura de tests (mejoras)
 
