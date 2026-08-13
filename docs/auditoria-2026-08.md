@@ -333,6 +333,46 @@ Matriz verificada y resuelta en rama `audit/prompt-consistency` (salvo
   alias `nature→forest`, `perspective:isometric` aún leído, campos `room_*`,
   menciones residuales a SVG.
 
+### Playtest con agente-motor (2026-08-13, alta_fantasia — Fase 5 cerrada)
+
+Sesión completa sin gráficos (game-emulator + bridge + ai_server + subagente
+Claude como motor; informe completo en
+`labs/narrative/runs/2026-08-13_19-50-33/INFORME.md`). **Funcionó en vivo**:
+bootstrap open-world (mapa 11 places + tile con `style_tag` — #134 verificado),
+candado WS #119 (frame inválido rebotado con mensaje preciso), `name` en
+`/entities` (#130), plugin economy end-to-end (oro 0→2→20 con aritmética de
+señal correcta), inventory_add real, texto libre tejido con consecuencia
+diferida (la tinta verificó el recuerdo inventado → tarifa 20 y no 50),
+schedule_event, lazy realize, save+resume íntegro, coherencia cross-NPC vía
+crónica. Cero rechazos de pre-flight (el motor usó `scene_validate` en seco).
+
+Backlog derivado (ordenado por impacto):
+
+- **NPC duplicado / falta `entity_ref`**: el motor spawneó a Nogala
+  (`spawn_entity` → `narr_npc_*` en el tile) y al realizar la posada tuvo
+  que REDECLARARLA como entity nueva — dos records para el mismo personaje,
+  el primero huérfano. Ni el schema de scene/spawn ofrece referenciar una
+  entidad existente ni las instrucciones dicen qué hacer (¿migran los NPCs
+  spawneados con el jugador?). Candidato: instrucción "reutiliza el id de un
+  NPC de context.entities" + soporte en registerSceneNpcs (mismo id ⇒ mover,
+  no duplicar) + quizá aviso del pre-flight ante display-name repetido.
+- **`schedule_event` invisible tras emitirse**: no vuelve al contexto (ni
+  lista de pendientes ni confirmación) — el motor lo duplicó en story_update
+  para no perderlo. Falta un bloque `scheduled_events` en el contexto o
+  documentar que story_update es el mecanismo.
+- **Pre-flight no avisa de links sin `edge`**: una escena puede realizarse
+  con su link exterior sin edge (salir andando por el borde no viajará);
+  warning barato en scene_validate.
+- **`world_doc_get` redundante en bootstrap**: el listen ya embebe
+  world_document pero la doctrina empuja a llamarla → doc entero ×2 en el
+  mismo turno. Añadir "en bootstrap NO llames world_doc_get" a world_rules.
+- Menores: `scene_validate` reporta `doors_total: 0` con cutaway CON doors
+  (stat engañoso) y acepta Tile Format sin documentarlo; `is_resume: true` a
+  mitad de sesión sin guía para el motor; `plugin_list` duplica
+  events_consumed; `parent_id: "null"` string coercionado en silencio; el
+  tile no usó `angle` pese a la recomendación del prompt; README del
+  emulador desfasado (skin_path requerido, "único juego tavern_intro").
+
 ### Cobertura de tests (mejoras)
 
 - Sin tests: `ws-server` (transporte), `tile_analysis` handler, blob-store
