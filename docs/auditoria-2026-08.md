@@ -189,9 +189,17 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 - **Migración v3→v4 corrompe spawns dinámicos** (`narrative-state`/`migrations`).
   Trata metros de mundo como celdas → teletransporte al resumir saves v3 con
   entidades `narrative_request`. Sin cobertura de test v3→v4. (Ver sección 3.)
-- **`stage/greybox` hardcodea `solid/tall=true`** para todo volumen
+- ~~**`stage/greybox` hardcodea `solid/tall=true`** para todo volumen
   (`greybox.ts:930`): alfombras (`prop passable`) y arbustos pintados se
-  vuelven colisión sólida al llegar la visión.
+  vuelven colisión sólida al llegar la visión.~~ **RESUELTO** (rama
+  `audit/stage-greybox-solid-tall`). El manifest del stage ahora deriva
+  `solid`/`tall` con `classifyVolume(v)` — la MISMA semántica que ya usaban el
+  clasificador de visión del tile y `volumeCollisionGrid` (bush → false/false;
+  rock/fountain → true/false; `prop passable` → solid:false; prop → tall si
+  h>4). Vía `expectedElementsFromGreybox` → `items` → `collisionGridFromCutouts`,
+  un recorte pintado de alfombra o arbusto ya NO entra como colisión sólida ni
+  occluder alto. Test de regresión por tipo + el test del contrato de pistas
+  actualizado (espejaba el `true/true` viejo).
 - **`wall` no axis-aligned se renderiza como caja AABB gigante**
   (`stage/greybox.ts:1161`): un muro diagonal/en L tapa medio plató mientras la
   colisión deja pasar. El tile lo hace bien (tramos por segmento).

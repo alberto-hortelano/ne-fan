@@ -21,6 +21,7 @@ import type { Volume } from "../blueprint/volumes.js";
 import type { GroundFeature } from "../blueprint/ground.js";
 import { groundFeaturePrims } from "../blueprint/ground-prims.js";
 import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
+import { classifyVolume } from "../greybox/volume-prims.js";
 import {
   canonicalGreyboxJson,
   groundColorFor,
@@ -915,6 +916,11 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     const [x0, y0] = toPx(minVx, minVy);
     const [x1, y1] = toPx(maxVx, maxVy);
     const clamp = (n: number): number => Math.max(0, Math.min(STAGE_RENDER_SIZE, n));
+    // solid/tall por TIPO (classifyVolume, la misma semántica del clasificador
+    // de visión y de volumeCollisionGrid) — no `true/true` a ciegas: una
+    // alfombra (`prop passable`) o un arbusto pintados no deben volverse
+    // colisión sólida ni occluder alto al casarse en el stage_review.
+    const { solid, tall } = classifyVolume(v);
     manifest.push({
       id: `vol_${v.id}`,
       label: v.label,
@@ -927,8 +933,8 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
         Math.round(clamp(x1) - clamp(x0)),
         Math.round(clamp(y1) - clamp(y0)),
       ],
-      solid: true,
-      tall: true,
+      solid,
+      tall,
     });
   }
 
