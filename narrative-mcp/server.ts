@@ -8,6 +8,27 @@ import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassi
 import { stagePlanFromScene } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
+import type { VisionRequestMsg } from './protocol.js';
+
+// Kinds que llegaron como `vision_request` y por tanto DEBEN responderse con
+// `vision_response` (payload en `result`). Fuente de verdad: el contrato del
+// wire (narrative-mcp-ws.ts → VisionRequestMsg.kind). La doble asignación de
+// abajo es una guardia de deriva a nivel de tipos: si el contrato añade o quita
+// un kind de visión, `tsc -b` rompe hasta que este conjunto lo refleje — así
+// ningún kind de visión puede volver a caer al fallthrough de escena
+// (room_response), como le pasaba a image_review/stage_review.
+const VISION_KINDS = [
+  'weapon_orient',
+  'weapon_verify',
+  'scene_classify',
+  'image_review',
+  'stage_review',
+] as const;
+type VisionKind = (typeof VISION_KINDS)[number];
+const _visionKindsCoverContract: VisionRequestMsg['kind'] = null as unknown as VisionKind;
+const _contractCoversVisionKinds: VisionKind = null as unknown as VisionRequestMsg['kind'];
+void _visionKindsCoverContract;
+void _contractCoversVisionKinds;
 
 // ── Prompts del contrato narrativo ─────────────────────────────────────────
 // El texto canónico de las instrucciones vive en
@@ -486,7 +507,13 @@ into context:
         currentClassifyIndices = null;
         currentStageExpectedIds = null;
 
-        if (kind === 'weapon_orient' || kind === 'weapon_verify' || kind === 'scene_classify') {
+        // Todos los kinds de VisionRequestMsg vuelven como vision_response
+        // (payload en `result`), como manda el contrato del wire. image_review
+        // y stage_review llegaron como vision_request: responderlos con un
+        // room_response (el fallthrough de escena) violaba el contrato y hacía
+        // que una respuesta TARDÍA cayera en la rama _timed_out_scenes/else del
+        // ai_server pensada solo para escenas.
+        if ((VISION_KINDS as readonly string[]).includes(kind)) {
           bridge.sendVisionResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
         }
