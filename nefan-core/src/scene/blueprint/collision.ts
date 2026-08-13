@@ -158,6 +158,30 @@ function clearGatePassage(grid: Grid, g: Extract<Volume, { type: "gate" }>, dims
   }
 }
 
+/** Radio (celdas) del disco de colisión de un volumen SÓLIDO UNIFORME
+ *  (tower/fountain/rock/prop-punto) — FUENTE ÚNICA compartida por
+ *  `volumeCollisionGrid` (markDisc) y la huella del manifest del stage
+ *  (`volumeFootprintCells`), para que la huella COLISIONABLE del manifest
+ *  coincida SIEMPRE con la colisión (antes los defaults divergían: tower r??3
+ *  vs r??6, etc.). `null` = no es un disco sólido uniforme (building/wall/gate,
+ *  prop con rect, y el ÁRBOL — cuya copa se dibuja grande pero colisiona solo
+ *  en el tronco, así que su huella NO sale de aquí). El RENDER es independiente
+ *  de este radio. */
+export function volumeSolidDiscRadiusCells(v: Volume): number | null {
+  switch (v.type) {
+    case "tower":
+      return v.r ?? 6;
+    case "fountain":
+      return v.r ?? 5;
+    case "rock":
+      return 2.1 * (v.s ?? 1);
+    case "prop":
+      return v.at !== undefined && v.rect === undefined ? 1.3 : null;
+    default:
+      return null;
+  }
+}
+
 /** Grid de colisión de las huellas de los volúmenes. Devuelve null si ningún
  *  volumen marca celdas (tile abierto). Las puertas (`gate` y `doors` de
  *  edificios) se aplican al final: SIEMPRE ganan al sólido. */
@@ -176,16 +200,14 @@ export function volumeCollisionGrid(
         markBand(grid, v.points as [number, number][], v.width ?? 3, dims);
         break;
       case "tower":
-        markDisc(grid, v.at[0], v.at[1], v.r ?? 6, dims);
+      case "fountain":
+      case "rock":
+        markDisc(grid, v.at[0], v.at[1], volumeSolidDiscRadiusCells(v)!, dims);
         break;
       case "tree":
+        // Árbol: colisión solo en el tronco (la copa se dibuja grande pero no
+        // bloquea) — radio propio, NO el disco sólido uniforme.
         markDisc(grid, v.at[0], v.at[1], Math.max(0.9, 0.9 * (v.s ?? 1)), dims);
-        break;
-      case "rock":
-        markDisc(grid, v.at[0], v.at[1], 2.1 * (v.s ?? 1), dims);
-        break;
-      case "fountain":
-        markDisc(grid, v.at[0], v.at[1], v.r ?? 5, dims);
         break;
       case "gate": {
         // jambas: cuerpo completo; el vano se limpia en la pasada final
@@ -197,7 +219,7 @@ export function volumeCollisionGrid(
         if (v.passable) break;
         if (v.rect && v.angle) markRotRect(grid, v.rect, v.angle, dims);
         else if (v.rect) markRect(grid, v.rect[0], v.rect[1], v.rect[0] + v.rect[2], v.rect[1] + v.rect[3], dims);
-        else markDisc(grid, v.at![0], v.at![1], 1.3, dims);
+        else markDisc(grid, v.at![0], v.at![1], volumeSolidDiscRadiusCells(v)!, dims);
         break;
       }
       case "bush":

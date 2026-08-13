@@ -12,6 +12,7 @@ import {
   type GreyboxSpec,
   type StageScenePlan,
 } from "../src/scene/stage/greybox.js";
+import { volumeSolidDiscRadiusCells } from "../src/scene/blueprint/collision.js";
 import { composeStageScene } from "../src/scene/stage/scene.js";
 import { stageToViewAt, stageToView } from "../src/scene/stage/projection.js";
 import { STAGE_RENDER_SIZE } from "../src/scene/stage/segments.js";
@@ -197,6 +198,34 @@ describe("buildGreyboxSpec", () => {
     assert.deepEqual(st("arbusto"), { solid: false, tall: false }, "arbusto: decorativo, no bloquea ni tapa");
     assert.deepEqual(st("roca"), { solid: true, tall: false }, "roca: sólida pero baja");
     assert.deepEqual(st("estatua"), { solid: true, tall: true }, "prop alto (h>4): occluder");
+  });
+
+  it("manifest: huella de sólidos uniformes == radio de colisión (defaults NO divergen)", () => {
+    // Regresión: la huella del manifest usaba radios propios (tower r??3,
+    // fountain r??4, rock 1.2s, prop-at 1) distintos de la colisión (r??6, r??5,
+    // 2.1s, 1.3) → el objeto colisionaba con un tamaño y el manifest reportaba
+    // otro. Ahora ambos salen de volumeSolidDiscRadiusCells.
+    const plan: StageScenePlan = {
+      ...interiorPlan(),
+      size: { cols: 48, rows: 48, meters_per_cell: 0.5 },
+      volumes: [
+        { id: "torre", label: "torre", type: "tower", at: [10, 10] },
+        { id: "fuente", label: "fuente", type: "fountain", at: [20, 10] },
+        { id: "roca", label: "roca", type: "rock", at: [30, 10] },
+        { id: "poste", label: "poste", type: "prop", at: [40, 10] },
+      ],
+    };
+    const spec = buildGreyboxSpec(plan, "radii");
+    const mpc = 0.5;
+    for (const v of plan.volumes) {
+      const rColision = volumeSolidDiscRadiusCells(v)!;
+      const m = spec.manifest.find((x) => x.id === `vol_${v.id}`)!;
+      const halfWcells = (m.footprintWorld[2] - m.footprintWorld[0]) / mpc / 2;
+      assert.ok(
+        Math.abs(halfWcells - rColision) < 1e-9,
+        `${v.id}: media huella ${halfWcells} celdas != radio de colisión ${rColision}`,
+      );
+    }
   });
 
   it("manifest: huellas == volumeFootprintCells en metros de mundo", () => {
