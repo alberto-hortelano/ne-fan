@@ -1165,23 +1165,47 @@ function buildVolumePrimitives(
       break;
     }
     case "wall": {
+      // Una caja por TRAMO de la polilínea (como el tile, volumePartsForTile),
+      // no una única caja del AABB: un muro diagonal o en L tenía un AABB
+      // gigante que tapaba medio plató mientras la colisión (markBand por
+      // segmento) dejaba pasar. Cada tramo se orienta con su rotY.
       const hM = (v.h ?? 5) * mpc;
+      const widthM = (v.width ?? 3) * mpc;
       const wall = wallColors("stone");
-      push({ shape: "box", size: [w, hM, d], pos: [cx, 0, cz], color: wall.lit, cat: "wall" });
-      if (v.crenellated) {
-        const along = w >= d;
-        const span = along ? w : d;
-        const step = 1.6;
-        const n = Math.min(30, Math.floor(span / step));
-        for (let i = 0; i < n; i++) {
-          const t = (i + 0.25) * step - span / 2;
-          push({
-            shape: "box",
-            size: [along ? 0.8 : Math.min(0.8, w), 0.4, along ? Math.min(0.8, d) : 0.8],
-            pos: along ? [cx + t, hM, cz] : [cx, hM, cz + t],
-            color: PALETTE.merlon,
-            cat: "wall",
-          });
+      const pts = v.points as [number, number][];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = rect.minX + pts[i][0] * mpc;
+        const az = rect.minZ + pts[i][1] * mpc;
+        const bx = rect.minX + pts[i + 1][0] * mpc;
+        const bz = rect.minZ + pts[i + 1][1] * mpc;
+        const clen = Math.hypot(bx - ax, bz - az);
+        if (clen < 1e-6) continue;
+        const segRotY = -Math.atan2(bz - az, bx - ax);
+        // +widthM en largo: media anchura por extremo, para juntar esquinas.
+        push({
+          shape: "box",
+          size: [clen + widthM, hM, widthM],
+          pos: [(ax + bx) / 2, 0, (az + bz) / 2],
+          rotY: segRotY,
+          color: wall.lit,
+          cat: "wall",
+        });
+        if (v.crenellated) {
+          const ux = (bx - ax) / clen;
+          const uz = (bz - az) / clen;
+          const step = 1.6;
+          const n = Math.min(30, Math.floor(clen / step));
+          for (let k = 0; k < n; k++) {
+            const t = (k + 0.25) * step;
+            push({
+              shape: "box",
+              size: [0.8, 0.4, Math.min(0.8, widthM)],
+              pos: [ax + ux * t, hM, az + uz * t],
+              rotY: segRotY,
+              color: PALETTE.merlon,
+              cat: "wall",
+            });
+          }
         }
       }
       break;
