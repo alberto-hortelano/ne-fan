@@ -59,7 +59,10 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
             detail="develop_world unavailable: no MCP listener (arranca Claude Code con narrative_listen) o timeout",
         )
     game = result.get("game") if isinstance(result.get("game"), dict) else result
-    required = ("game_id", "title", "description", "world_brief", "world_md")
+    # style_id requerido (espejo del pre-flight MCP): la plantilla exige
+    # elegirlo de available_styles — sin él el juego quedaría sin estilo y el
+    # título degradaría en silencio.
+    required = ("game_id", "title", "description", "style_id", "world_brief", "world_md")
     missing = [k for k in required if not isinstance(game.get(k), str) or not game.get(k)]
     if missing:
         raise HTTPException(
@@ -70,7 +73,7 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
         "game_id": game["game_id"],
         "title": game["title"],
         "description": game["description"],
-        "style_id": str(game.get("style_id", "")),
+        "style_id": game["style_id"],
         "world_brief": game["world_brief"],
         "world_md": game["world_md"],
     }}

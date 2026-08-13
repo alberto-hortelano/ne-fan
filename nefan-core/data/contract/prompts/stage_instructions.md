@@ -130,8 +130,9 @@ HARD RULES OF THE STAGE:
   `doors` produce a far richer clay than a plain entity box. Furniture and
   small props can stay as entities (their `h` in meters IS respected).
   For a shape no preset fits — the curved arc of a ruined tower wall, a broken
-  archway framing the stage — use a `prism` (free polygon outline + height),
-  same as in the tile MAP PLAN.
+  archway framing the stage — use a `prism`: FREE geometry
+  { points:[[c,r],…] (3..24), h (cells), solid?=true, tall?=true, color? }.
+  Sample curves into points (a semicircle ≈ 8-12).
 - `angle` (buildings and rect-props, DEGREES −180..180, counter-clockwise
   from above): rotates the piece around its footprint center — collision and
   the vision manifest follow the rotation. USE IT: village houses at varied
@@ -206,4 +207,6 @@ HARD RULES OF THE STAGE:
   concrete, matches the world). It seeds future AI repainting — describe a
   view, not a wall of text.
 - Everything else (entities in Spanish, terrain glyphs, ground/volumes) works
-  exactly as in a normal scene.
+  exactly as in a normal scene. Where these stage rules and the generic scene
+  reference that follows disagree (meters_per_cell, grid-size budgets, whether
+  to include the "player" entity), THE STAGE RULES WIN.

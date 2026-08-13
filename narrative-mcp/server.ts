@@ -400,14 +400,20 @@ into context:
           }
         }
         if (kind === 'develop_world') {
-          const missing = ['game_id', 'title', 'description', 'world_brief', 'world_md']
+          // style_id incluido: la plantilla lo exige (elegir de
+          // available_styles) y sin él el juego quedaría sin estilo asignado.
+          const missing = ['game_id', 'title', 'description', 'style_id', 'world_brief', 'world_md']
             .filter((k) => typeof (parsed as Record<string, unknown>)[k] !== 'string' || !(parsed as Record<string, unknown>)[k]);
-          const sections = typeof (parsed as { world_md?: string }).world_md === 'string'
-            ? ((parsed as { world_md: string }).world_md.match(/^## /gm) ?? []).length
-            : 0;
+          const worldMd = typeof (parsed as { world_md?: string }).world_md === 'string'
+            ? (parsed as { world_md: string }).world_md
+            : '';
+          const sections = (worldMd.match(/^## /gm) ?? []).length;
           const errs: string[] = [];
           if (missing.length) errs.push(`missing string fields: ${missing.join(', ')}`);
           if (sections < 10) errs.push(`world_md has ${sections} "## " sections, needs 10`);
+          if (worldMd && worldMd.length < 6000) {
+            errs.push(`world_md too short (${worldMd.length} chars — the template asks for 9k-12k)`);
+          }
           const brief = (parsed as { world_brief?: string }).world_brief ?? '';
           if (brief.length < 400) errs.push(`world_brief too short (${brief.length} chars, aim ~1200)`);
           if (errs.length) {

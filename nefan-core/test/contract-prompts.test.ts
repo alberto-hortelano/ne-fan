@@ -25,7 +25,13 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
   "scene_classify.md": ["solid", "tall"],
-  "develop_world.md": ["world_brief", "world_md", "game_id"],
+  // Las palabras de UNIDAD son contrato: image_review mide `h` en CELDAS
+  // (persona ≈ 3.6) y stage_review en METROS — divergen POR DISEÑO (zod:
+  // extrasArray(hUnit) en review-schemas.ts). Si una desaparece, alguien
+  // unificó las unidades sin tocar los consumidores.
+  "image_review.md": ["extras", "keep", "remove", "box_px", "tall", "solid", "celdas"],
+  "stage_review.md": ["expected", "missing", "extras", "box_px", "wall_base_px", "metros"],
+  "develop_world.md": ["world_brief", "world_md", "game_id", "style_id"],
   "narrative_event.md": ["consequences", "dialogue", "story_update", "spawn_entity", "plugin_event", "choices"],
   "blueprint_review.md": ["ground", "volumes"],
 };
@@ -50,6 +56,18 @@ describe("contrato narrativo — tool schemas compartidos", () => {
       assert.equal(tool.input_schema?.type, "object");
     });
   }
+
+  it("generate_scene.json declara style_tag con zonas Y categorías de plató", () => {
+    // WORLD_RULES exige style_tag en cada escena; sin la propiedad en el tool
+    // schema, el fallback API directa no sabía que podía emitirlo.
+    const tool = JSON.parse(
+      readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8"),
+    ) as { input_schema: { properties: Record<string, { enum?: string[] }> } };
+    const tags = tool.input_schema.properties.style_tag?.enum ?? [];
+    assert.ok(tags.includes("settlement"), "zona overworld presente");
+    assert.ok(tags.includes("stage_interior"), "categoría de plató presente");
+    assert.ok(!tags.includes("nature"), "'nature' es legacy — fuera del tool");
+  });
 });
 
 describe("contrato narrativo — prompts compartidos", () => {

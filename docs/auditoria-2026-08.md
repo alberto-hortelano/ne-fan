@@ -290,19 +290,44 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 
 ### Prompts (contradicciones vistas de pasada; confirmar contra el consumidor)
 
-- **"top-down 2D map" vs "single oblique projection"**: `scene_instructions.md`,
-  `server.ts` y `generate_scene.json` dicen cenital; `world_rules.md`/
-  `ui_systems.md` dicen oblicua. El motor pinta oblicua.
-- **Campo `h`: celdas vs metros**. `image_review.md` ("celdas, persona ≈3.6")
-  vs `stage_review.md` ("metros"); defaults de código divergentes
-  (`narrative_schemas.py:1007` h=6 vs `routers/generation.py:547` h=2.0).
-- **`style_tag` exigido pero ausente de `tools/generate_scene.json`**: el
-  fallback API directa no puede emitirlo aunque el validador Python lo exige.
-- **Composición stage**: STAGE+SCENE instructions se contradicen
-  (meters_per_cell, presupuestos); `scene_instructions` referencia una sección
-  de tile ausente; `tile_instructions` necesita "IGNORE su schema".
-- **`develop_world` con 3 niveles de exigencia** distintos (md ≠ server.ts ≠
-  narrative.py).
+Matriz verificada y resuelta en rama `audit/prompt-consistency` (salvo
+"Duplicación", abajo):
+
+- ~~**"top-down 2D map" vs "single oblique projection"**~~ **RESUELTO con
+  matiz**: NO era contradicción plena — "top-down" describe el DATO (grid
+  Format D en celdas planas) y "oblicua" el RENDER del cliente; la mayoría de
+  menciones eran correctas en su contexto. Se clarificaron los 2 puntos
+  ambiguos: `world_rules.md` (la cámara overworld explica ahora el render
+  oblicuo entre paréntesis — el dato sigue plano) y la description de
+  `generate_scene.json`.
+- ~~**Campo `h`: celdas vs metros**~~ **VERIFICADO: divergen POR DISEÑO** —
+  image_review mide en CELDAS del tile (persona ≈3.6; default código h=6
+  celdas) y stage_review en METROS del plató (default 2.0 m); cada prompt
+  declara su unidad correctamente y el zod lo parametriza
+  (`extrasArray(hUnit)`). Falsa alarma del audit. Candado nuevo: los markers
+  de `contract-prompts.test.ts` exigen "celdas" en image_review.md y
+  "metros" en stage_review.md.
+- ~~**`style_tag` exigido pero ausente de `tools/generate_scene.json`**~~
+  **RESUELTO**: propiedad `style_tag` añadida al tool con el enum completo
+  (9 zonas + 6 stage_*; "nature" legacy EXCLUIDO — Python lo tolera pero no
+  se ofrece). Test del canario que exige zona + plató y veta nature.
+- ~~**Composición stage**: STAGE+SCENE se contradicen; referencias a sección
+  de tile ausente~~ **RESUELTO**: `scene_instructions.md` ya no referencia
+  "the tile section" a secas (5 sitios reescritos — la variante STAGE+SCENE
+  y la SCENE sola no llevan tile_instructions) y su sección SCALE declara la
+  precedencia; `stage_instructions.md` cierra con la regla explícita "THE
+  STAGE RULES WIN" (mpc, presupuestos, player) e inlinea el mini-schema de
+  prism (su única referencia colgante al tile MAP PLAN). La cláusula "IGNORE
+  su schema" de tile_instructions se CONSERVA a propósito: es explícita y
+  funciona; separar scene_instructions en partes compartida/legacy sería un
+  refactor aparte.
+- ~~**`develop_world` con 3 niveles de exigencia**~~ **RESUELTO**: el
+  pre-flight MCP exige ahora también `style_id` (la plantilla obliga a
+  elegirlo de available_styles; sin él el juego quedaba sin estilo y el
+  endpoint degradaba a "" en silencio) y un suelo de longitud de `world_md`
+  (<6k rebota citando el objetivo 9k-12k); `routers/narrative.py` espeja el
+  requisito de style_id (422). Marker `style_id` añadido al canario de
+  develop_world.md.
 - **Duplicación**: tipos de consequence en ~7 sitios; schemas de review;
   vocabulario de directivas NPC; enum `style_tag` en 4 sitios. Legacy vivo:
   alias `nature→forest`, `perspective:isometric` aún leído, campos `room_*`,
@@ -311,10 +336,10 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 ### Cobertura de tests (mejoras)
 
 - Sin tests: `ws-server` (transporte), `tile_analysis` handler, blob-store
-  (path traversal), `llm_client.py`, `validate_scene_response` (360 líneas),
-  routers narrativa/generación Python; **nefan-html 0 tests**, **godot 0
-  unitarios**. `contract-prompts.test.ts` no cubre `image_review.md` ni
-  `stage_review.md`.
+  (path traversal), `llm_client.py`, routers narrativa/generación Python;
+  **nefan-html 0 tests**, **godot 0 unitarios**. (`validate_scene_response`
+  ganó suite en el trabajo del SoT; `contract-prompts.test.ts` cubre ya
+  `image_review.md` y `stage_review.md` con sus palabras de unidad.)
 
 ### Menores / higiene
 
