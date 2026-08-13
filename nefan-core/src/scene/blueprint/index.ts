@@ -22,7 +22,7 @@ export type {
 export { CANOPY_OPACITY, classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
 export { canonicalGreyboxJson } from "../greybox/common.js";
 export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
-export { volumeCollisionGrid } from "./collision.js";
+export { volumeCollisionGrid, volumeSolidDiscRadiusCells } from "./collision.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";
 export { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";

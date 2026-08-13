@@ -211,9 +211,21 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   16×16) verificado que falla contra el código anterior. El manifest sigue
   usando el AABB como caja-pista de visión (aceptable: el recorte pintado casa
   dentro; cambiarlo partiría un wall en N entradas de items/expected_elements).
-- **Defaults de radio divergentes render↔colisión** en tower/fountain/rock/prop
+- ~~**Defaults de radio divergentes render↔colisión** en tower/fountain/rock/prop
   (stage): el manifest y la colisión declarada usan defaults distintos cuando el
-  motor omite `r` (frecuente).
+  motor omite `r` (frecuente).~~ **RESUELTO** (rama `audit/stage-radius-source`).
+  Matiz (decisión del usuario): render ≠ colisión es LEGÍTIMO (un árbol dibuja
+  copa grande y colisiona solo en el tronco) — el bug real es que el MANIFEST
+  (`volumeFootprintCells`, la huella COLISIONABLE) usaba radios distintos que la
+  colisión (`volumeCollisionGrid`): tower r??3 vs r??6, fountain r??4 vs r??5,
+  rock 1.2s vs 2.1s, prop-punto 1 vs 1.3. Fix: fuente única
+  `volumeSolidDiscRadiusCells(v)` (en blueprint/collision.ts) para los sólidos
+  UNIFORMES (tower/fountain/rock/prop-punto), usada por la colisión (refactor
+  byte-idéntico) Y por la huella del manifest → coinciden por construcción. El
+  RENDER (`buildVolumePrimitives`) NO se toca (independiente). El ÁRBOL queda
+  fuera del helper a propósito (su excepción copa/tronco). Test anti-drift:
+  media huella del manifest == radio de colisión; verificado que falla contra
+  los defaults viejos.
 - **`clearGatePassage` holgura fija 3.5** (`blueprint/collision.ts:149`) no
   atraviesa muros gruesos (`wall.width` hasta 12): puerta visualmente abierta,
   colisión bloqueada.

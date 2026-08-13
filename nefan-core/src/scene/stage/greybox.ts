@@ -22,6 +22,7 @@ import type { GroundFeature } from "../blueprint/ground.js";
 import { groundFeaturePrims } from "../blueprint/ground-prims.js";
 import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
 import { classifyVolume } from "../greybox/volume-prims.js";
+import { volumeSolidDiscRadiusCells } from "../blueprint/collision.js";
 import {
   canonicalGreyboxJson,
   groundColorFor,
@@ -241,7 +242,9 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
     }
     case "tower": {
-      const r = v.r ?? 3;
+      // Radio de la MISMA fuente que la colisión (antes r??3 aquí vs r??6 en
+      // volumeCollisionGrid → la huella del manifest no casaba con el bloqueo).
+      const r = volumeSolidDiscRadiusCells(v)!;
       return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "gate": {
@@ -257,11 +260,11 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
     }
     case "rock": {
-      const s = v.s ?? 1;
-      return [v.at[0] - 1.2 * s, v.at[1] - 1.2 * s, 2.4 * s, 2.4 * s];
+      const r = volumeSolidDiscRadiusCells(v)!; // 2.1·s, igual que la colisión
+      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "fountain": {
-      const r = v.r ?? 4;
+      const r = volumeSolidDiscRadiusCells(v)!; // r??5, igual que la colisión
       return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "prop": {
@@ -272,7 +275,10 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
         }
         return v.rect;
       }
-      if (v.at) return [v.at[0] - 1, v.at[1] - 1, 2, 2];
+      if (v.at) {
+        const r = volumeSolidDiscRadiusCells(v)!; // 1.3, igual que la colisión
+        return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
+      }
       return null;
     }
   }
