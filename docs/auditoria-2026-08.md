@@ -148,9 +148,26 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 
 ### Media
 
-- **Colisión duplicada bridge↔cliente** (`bridge/sim-collision.ts` vs
+- ~~**Colisión duplicada bridge↔cliente** (`bridge/sim-collision.ts` vs
   `nefan-html/src/world/collision.ts`). Dos implementaciones separadas de las
-  mismas reglas → riesgo de desincronización de movimiento. Unificar en core.
+  mismas reglas → riesgo de desincronización de movimiento. Unificar en core.~~
+  **PARCIAL — foco: política del plan** (rama `audit/collision-plan-unify`). La
+  matemática (`TerrainCollider`, `groundCollisionGrid`, `volumeCollisionGrid`)
+  ya estaba en core; lo duplicado era la POLÍTICA. Divergencia estructural real
+  encontrada y eliminada: el cliente unía `ground`+`volumes` en UN grid mientras
+  el bridge los dejaba como dos colliders OR'd → en los solapes diferían por la
+  semántica salir-sí-entrar-no. Ahora ambos derivan la colisión del plan por la
+  MISMA función `planCollisionGrid` (core, `blueprint/plan-collision.ts`) — un
+  solo grid. Tests: unidad de `planCollisionGrid`/`unionCollisionGrids` +
+  **consistencia bridge↔cliente** (mismas decisiones de bloqueo sobre los mismos
+  datos). Divergencias intencionales restantes (documentadas en las cabeceras de
+  ambos ficheros, NO unificadas por falta de datos server-side): (a) grid del
+  análisis (rects de elementos en el bridge vs contactos pintados, más finos, en
+  el cliente); (b) platós modo imagen (el cliente sustituye la huella declarada
+  por los recortes pintados; el bridge mantiene la declarada); (c) frontera de
+  tiles, viewConstraint (bounds del proscenio) y AABBs del esquema son del
+  jugador, no de los NPCs. La opción "completo" (servidor con recortes pintados
+  + clamp de bounds para NPCs) queda pendiente si se decide abordar.
 - **Reglas de juego solo en el cliente 2D** (`world/collision.ts` semántica
   "salir sí, entrar no"; `world/frontier.ts` umbrales). Ni en core ni en 3D.
 - **Migración v3→v4 corrompe spawns dinámicos** (`narrative-state`/`migrations`).

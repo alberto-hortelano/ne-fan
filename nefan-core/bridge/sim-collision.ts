@@ -3,14 +3,22 @@
  *  Espejo del CollisionSystem del cliente 2D (fuentes en unión), construido
  *  solo con lo que el bridge tiene persistido en NarrativeState:
  *  1. terrain_grid del esquema (formatDToWorld — muros W, agua w, leyenda);
- *  2. agua∖decks del plan de suelo declarativo (groundCollisionGrid — al ser
- *     datos puros, el agua fina ya NO es exclusiva del navegador);
- *  3. huellas analíticas de los volúmenes del plan (volumeCollisionGrid);
- *  4. rects sólidos del análisis de imagen (rec.analysis.elements).
+ *  2. PLAN declarado: agua∖decks del `ground` + huellas de los `volumes`,
+ *     unidos por la MISMA función de core que el cliente (planCollisionGrid),
+ *     no dos colliders OR'd — así jugador y NPCs colisionan idéntico;
+ *  3. rects sólidos del análisis de imagen (rec.analysis.elements).
  *
  *  Lazy + caché por sceneId; `invalidate(sceneId)` desde map_plan_update /
  *  tile_analysis. Un grid inconsistente degrada ese tile a "sin esa fuente"
- *  con warning (mismo patrón que el cliente), nunca tumba el tick. */
+ *  con warning (mismo patrón que el cliente), nunca tumba el tick.
+ *
+ *  DIVERGENCIAS INTENCIONALES con el cliente (no unificadas — el bridge no
+ *  tiene esos datos): (a) el análisis lo rasteriza de los rects de elementos
+ *  (analysisGrid) mientras el cliente parte del grid de contactos PINTADOS,
+ *  más fino; (b) en platós modo imagen el cliente SUSTITUYE la huella declarada
+ *  por los recortes pintados (applyStageDerivedCollision) y aquí se mantiene la
+ *  declarada; (c) frontera de tiles, viewConstraint (bounds del proscenio) y
+ *  AABBs del esquema son del jugador (cliente), no de los NPCs. */
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { AnalyzedElement } from "../src/narrative/types.js";
@@ -20,7 +28,14 @@ import {
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
-import { groundCollisionGrid, parseGround, parseVolumes, volumeCollisionGrid } from "../src/scene/blueprint/index.js";
+import {
+  parseGround,
+  parseVolumes,
+  planCollisionGrid,
+  type CollisionGridDims,
+  type GroundFeature,
+  type Volume,
+} from "../src/scene/blueprint/index.js";
 import {
   TILE_CELLS,
   TILE_MPC,
@@ -73,6 +88,40 @@ function analysisGrid(elements: AnalyzedElement[], rect: WorldRect): TerrainGrid
   };
 }
 
+/** Collider del PLAN de una escena (agua∖decks del ground + huellas de los
+ *  volumes), unidos por la MISMA función de core que el cliente 2D
+ *  (applyPlanCollision) — un solo grid, no dos colliders OR'd, para que
+ *  jugador y NPCs colisionen idéntico. Un source con parse inválido degrada a
+ *  "sin esa fuente" con warning (nunca tumba el tick). */
+function buildPlanCollider(
+  sceneId: string,
+  sceneData: { ground?: unknown; volumes?: unknown },
+  rect: WorldRect,
+  dims?: CollisionGridDims,
+): TerrainCollider | null {
+  let ground: GroundFeature[] | undefined;
+  const rawGround = sceneData.ground;
+  if (Array.isArray(rawGround) && rawGround.length > 0) {
+    const parsed = parseGround(rawGround);
+    if (parsed.ok) ground = parsed.features;
+    else console.warn(`[sim-collision] ${sceneId}: ground inválido (${parsed.error}) — sin agua declarada`);
+  }
+  let volumes: Volume[] | undefined;
+  const rawVolumes = sceneData.volumes;
+  if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
+    const parsed = parseVolumes(rawVolumes);
+    if (parsed.ok) volumes = parsed.volumes;
+    else console.warn(`[sim-collision] ${sceneId}: volumes inválidos (${parsed.error}) — sin huellas`);
+  }
+  if (!ground && !volumes) return null;
+  try {
+    return createTerrainCollider(planCollisionGrid(ground, volumes, rect, dims));
+  } catch (err) {
+    console.warn(`[sim-collision] ${sceneId}: plan no deriva colisión —`, err);
+    return null;
+  }
+}
+
 export function createSimCollisionProvider(narrative: NarrativeState): SimCollisionProvider {
   const cache = new Map<string, TerrainCollider[]>();
 
@@ -95,35 +144,8 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     if (rec.tile) {
       const rect = tileWorldRect(rec.tile.tx, rec.tile.ty);
 
-      const rawGround = rec.scene_data.ground;
-      if (Array.isArray(rawGround) && rawGround.length > 0) {
-        const parsed = parseGround(rawGround);
-        if (parsed.ok) {
-          try {
-            const tc = createTerrainCollider(groundCollisionGrid(parsed.features, rect));
-            if (tc) colliders.push(tc);
-          } catch (err) {
-            console.warn(`[sim-collision] ${sceneId}: ground no deriva colisión —`, err);
-          }
-        } else {
-          console.warn(`[sim-collision] ${sceneId}: ground inválido (${parsed.error}) — sin agua declarada`);
-        }
-      }
-
-      const rawVolumes = rec.scene_data.volumes;
-      if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
-        const parsed = parseVolumes(rawVolumes);
-        if (parsed.ok) {
-          try {
-            const tc = createTerrainCollider(volumeCollisionGrid(parsed.volumes, rect));
-            if (tc) colliders.push(tc);
-          } catch (err) {
-            console.warn(`[sim-collision] ${sceneId}: volumes no derivan colisión —`, err);
-          }
-        } else {
-          console.warn(`[sim-collision] ${sceneId}: volumes inválidos (${parsed.error}) — sin huellas`);
-        }
-      }
+      const planCollider = buildPlanCollider(sceneId, rec.scene_data, rect);
+      if (planCollider) colliders.push(planCollider);
 
       if (rec.analysis) {
         try {
@@ -150,34 +172,8 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       const depthM = sizeRaw.rows * sizeRaw.meters_per_cell;
       const rect = { minX: -widthM / 2, minZ: -depthM / 2, maxX: widthM / 2, maxZ: depthM / 2 };
       const dims = { cols: sizeRaw.cols, rows: sizeRaw.rows, mpc: sizeRaw.meters_per_cell };
-      const rawGround = rec.scene_data.ground;
-      if (Array.isArray(rawGround) && rawGround.length > 0) {
-        const parsed = parseGround(rawGround);
-        if (parsed.ok) {
-          try {
-            const tc = createTerrainCollider(groundCollisionGrid(parsed.features, rect, dims));
-            if (tc) colliders.push(tc);
-          } catch (err) {
-            console.warn(`[sim-collision] ${sceneId}: ground del plató no deriva colisión —`, err);
-          }
-        } else {
-          console.warn(`[sim-collision] ${sceneId}: ground del plató inválido (${parsed.error})`);
-        }
-      }
-      const rawVolumes = rec.scene_data.volumes;
-      if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
-        const parsed = parseVolumes(rawVolumes);
-        if (parsed.ok) {
-          try {
-            const tc = createTerrainCollider(volumeCollisionGrid(parsed.volumes, rect, dims));
-            if (tc) colliders.push(tc);
-          } catch (err) {
-            console.warn(`[sim-collision] ${sceneId}: volumes del plató no derivan colisión —`, err);
-          }
-        } else {
-          console.warn(`[sim-collision] ${sceneId}: volumes del plató inválidos (${parsed.error})`);
-        }
-      }
+      const planCollider = buildPlanCollider(sceneId, rec.scene_data, rect, dims);
+      if (planCollider) colliders.push(planCollider);
     }
     return colliders;
   }
