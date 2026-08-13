@@ -156,6 +156,16 @@ function readTransitTo(rt: NpcRuntime): string | null {
   return null;
 }
 
+/** Clave de la META en curso: directiva + override de tránsito. Un cambio en
+ *  CUALQUIERA de los dos (incluida la retirada de in_transit) resetea waypoint/
+ *  reachedGoal/mode, evitando reusar un waypoint de goto ya cancelado. */
+function goalKeyOf(record: EntityRecord): string {
+  return JSON.stringify({
+    directive: record.data.directive ?? null,
+    in_transit: record.data.in_transit ?? null,
+  });
+}
+
 class AmbientNpcBehavior implements NpcBehaviorSystem {
   readonly id = "ambient";
   private npcs = new Map<string, NpcRuntime>();
@@ -190,7 +200,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       danger: null,
       dangerTimer: 0,
       threatTimer: 0,
-      directiveKey: JSON.stringify(record.data.directive ?? null),
+      directiveKey: goalKeyOf(record),
       reachedGoal: null,
     });
   }
@@ -319,10 +329,16 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       rt.params = resolveRoleParams(rt.record.data);
     }
 
-    // Cambio de directiva → resetear la meta en curso.
-    const directiveKey = JSON.stringify(rt.record.data.directive ?? null);
-    if (directiveKey !== rt.directiveKey) {
-      rt.directiveKey = directiveKey;
+    // Cambio de META en curso → resetear. La meta la fijan DOS campos: la
+    // directiva (data.directive) Y el override de tránsito (data.in_transit,
+    // npc_move_to_place). Serializar solo la directiva dejaba un waypoint de
+    // goto (hasta MAX_GOTO_DIST=128 m) VIVO cuando el bridge retiraba in_transit
+    // sin tocar la directiva: el NPC seguía caminando al destino ya cancelado en
+    // vez de micro-wander. La clave cubre ambos → añadir/retirar in_transit
+    // resetea la meta igual que cambiar la directiva.
+    const goalKey = goalKeyOf(rt.record);
+    if (goalKey !== rt.directiveKey) {
+      rt.directiveKey = goalKey;
       rt.waypoint = null;
       rt.reachedGoal = null;
       rt.mode = "idle";

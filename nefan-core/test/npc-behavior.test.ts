@@ -214,6 +214,39 @@ describe("AmbientNpcBehavior", () => {
     assert.equal(reached[0].placeId, "forja");
   });
 
+  it("retirar in_transit cancela el goto: NO sigue al destino stale, vuelve a micro-wander", () => {
+    // Regresión: el waypoint del goto (in_transit) se reutilizaba al retirar
+    // in_transit porque el goal key solo miraba data.directive → el NPC seguía
+    // caminando hasta 128 m al destino ya cancelado. Ahora el goal key cubre
+    // in_transit y el waypoint se resetea.
+    const world = openWorld({
+      resolvePlaceTarget: (id) => (id === "forja" ? { x: 40, z: 0 } : null),
+    });
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(23), world });
+    const rec = makeRecord("npc1", [0, 0, 0], {
+      role: "villager",
+      in_transit: { to: "forja", from: "", departed_at: "2026-01-01T00:00:00.000Z" },
+    });
+    sys.addNpc(rec);
+    // Arranca el goto hacia forja (waypoint = [40,0,0]).
+    runTicks(sys, 40, 0.05, ctxWith());
+    const midX = sys.states()[0].pos.x;
+    assert.ok(midX > 0.5, `debería haberse movido hacia forja (x=${midX})`);
+    // El bridge retira in_transit (viaje cancelado) sin tocar la directiva.
+    delete (rec.data as Record<string, unknown>).in_transit;
+    const events = runTicks(sys, 600, 0.05, ctxWith());
+    assert.equal(
+      events.filter((e) => e.type === "npc_reached_place").length,
+      0,
+      "no debe llegar a un place tras cancelar el tránsito",
+    );
+    const st = sys.states()[0];
+    const homeDist = distXZ({ x: st.pos.x, z: st.pos.z }, { x: 0, z: 0 });
+    const forjaDist = distXZ({ x: st.pos.x, z: st.pos.z }, { x: 40, z: 0 });
+    assert.ok(homeDist <= NPC_ROLE_PRESETS.villager.wander_radius + 2, `debe micro-wander cerca de casa, no seguir al destino stale (homeDist=${homeDist.toFixed(1)})`);
+    assert.ok(forjaDist > 25, `no debe acercarse a la forja cancelada (forjaDist=${forjaDist.toFixed(1)})`);
+  });
+
   it("goto_place lejano o sin anchor queda narrative-paced (sigue la rutina)", () => {
     const world = openWorld({
       resolvePlaceTarget: (id) => (id === "capital" ? { x: 500, z: 0 } : null),

@@ -239,22 +239,35 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
 
 ## 3. BUG_CLARO no arreglados (necesitan decisión/verificación)
 
-- **`dodge_chance`/`damage_mult` de dificultad inertes** (`enemy-ai.ts` +
-  `difficulty-presets.ts`): nadie los lee → easy y hard pegan igual. Cablearlos
-  requiere RNG en la resolución y decidir si el jugador también tiene mult;
-  toca balance y determinismo. → decisión de diseño.
-- **Migración v3→v4 metros-como-celdas** (`migrations.ts:85`): fix con riesgo de
-  romper resumes existentes; requiere fixtures v3→v4 antes de tocar.
-- **`animation-matcher.ts` huérfano** (186 líneas, cero importadores): candidato
-  a borrado, pero `data/animation_intrinsics.json` SÍ lo usa Godot
-  (`combat_animation_sync.gd`) — conservar el JSON, borrar solo el .ts. Confirmar
-  antes de borrar por si es API futura.
-- **Waypoint de `goto` obsoleto reutilizado por `wander`**
-  (`npc-behavior.ts`): un NPC camina hasta 128 m a un destino cancelado cuando
-  se retira `in_transit`. Fix acotado pero conviene test de comportamiento
-  antes.
-- **A2/A3 animation-controller** (turn dura 1 frame; death resucita a idle):
-  módulo sin consumidor de runtime (ni Godot ni HTML lo usan) — arreglar o
-  documentar como muerto junto con animation-matcher.
+Casi toda la tanda cerrada en la rama `audit/section3-cleanup` (decisiones del
+usuario 2026-08-13):
+
+- ~~**`dodge_chance`/`damage_mult` de dificultad inertes**~~ **RESUELTO** (campos
+  inertes retirados). Matiz del audit corregido: la dificultad NO era del todo
+  inerte — `reaction_time`, `aggression`, `move_speed`, `block_chance` y
+  `attack_cooldown_mult` SÍ se leen y difieren entre easy/hard. Solo
+  `dodge_chance` y `damage_mult` estaban muertos (guardados en `EnemyAI` pero
+  jamás leídos). Eliminados de `DifficultyParams`, `EnemyAI`, `EnemyPersonality`
+  (types.ts) y su espejo zod (`message-schema.ts`) — la guardia de deriva de
+  #119 aguanta. Se reintroducen si se implementan de verdad (necesitarían RNG en
+  la resolución + decisión de balance).
+- **Migración v3→v4 metros-como-celdas** (`migrations.ts`): **APLAZADO** (bajo
+  urgencia — saves v3 son de dev antiguos). Reconvierte posiciones celda→mundo y
+  puede doble-convertir un spawn ya en metros; riesgo de romper resumes. Se
+  aborda en PR propia con fixtures v3→v4 dedicadas, no en esta tanda.
+- ~~**`animation-matcher.ts` huérfano**~~ **RESUELTO**. Al investigar resultó que
+  TODO `src/animation/` (controller + state + transitions + matcher) no tenía
+  ningún consumidor de runtime (solo el barrel `index.ts` y su propio test).
+  Módulo entero borrado + su test + los exports de `index.ts`. El JSON
+  `data/animation_intrinsics.json` se conserva (lo lee Godot directo vía
+  `combat_animation_sync.gd`, symlink).
+- ~~**Waypoint de `goto` obsoleto reutilizado por `wander`**~~ **RESUELTO**. El
+  goal key que resetea la meta solo serializaba `data.directive`; ahora cubre
+  también `data.in_transit` (`goalKeyOf`) → retirar in_transit resetea el
+  waypoint del goto en vez de seguir hasta 128 m al destino cancelado. Test de
+  regresión verificado que falla contra el código anterior (homeDist=36.8).
+- ~~**A2/A3 animation-controller**~~ **RESUELTO** (borrado junto con el resto de
+  `src/animation/` — sin consumidor, no vale la pena arreglar bugs de código
+  muerto).
 - ~~**Enrutado image_review/stage_review** (ver sección 2, alta) — bug latente.~~
   **RESUELTO** (rama `audit/vision-review-routing`; detalle en sección 2, alta).
