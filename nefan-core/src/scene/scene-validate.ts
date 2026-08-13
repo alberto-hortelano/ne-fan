@@ -393,6 +393,29 @@ export function validateScene(
       }
     }
   }
+  // Puertas de buildings CUTAWAY declarados en `volumes` (el camino moderno:
+  // el greybox talla el hueco en runtime; aquí cuentan como telemetría y
+  // objetivo de alcanzabilidad — sus celdas son suelo llano para el flood,
+  // los muros del volume no se estampan en walkable). Antes doors_total = 0
+  // con un cutaway CON doors: stat engañoso (playtest 2026-08-13).
+  const rawVolumes = Array.isArray(scene.volumes) ? (scene.volumes as Record<string, unknown>[]) : [];
+  for (const v of rawVolumes) {
+    if (!v || v.type !== "building" || v.cutaway !== true) continue;
+    const rect = v.rect as [number, number, number, number] | undefined;
+    const doors = Array.isArray(v.doors) ? (v.doors as { edge: string; at: number; w?: number }[]) : [];
+    if (!Array.isArray(rect) || rect.length !== 4) continue;
+    const [c0, r0, w, d] = rect;
+    for (const door of doors) {
+      if (typeof door?.at !== "number") continue;
+      const dw = Math.max(1, Math.round(door.w ?? 4));
+      for (let k = 0; k < dw; k++) {
+        if (door.edge === "n") doorCells.push([Math.round(c0 + door.at) + k, Math.round(r0)]);
+        else if (door.edge === "s") doorCells.push([Math.round(c0 + door.at) + k, Math.round(r0 + d) - 1]);
+        else if (door.edge === "w") doorCells.push([Math.round(c0), Math.round(r0 + door.at) + k]);
+        else if (door.edge === "e") doorCells.push([Math.round(c0 + w) - 1, Math.round(r0 + door.at) + k]);
+      }
+    }
+  }
   stats.doors_total = doorCells.length;
 
   const walkableStarts = startCells.filter(([c, r]) => cellWalkable([c, r]));
@@ -549,6 +572,22 @@ export function validateScene(
         if (!exitTargetIds.has(link.to)) {
           errors.push(
             `el link ${placeId} → ${link.to} del world map no tiene salida física en stage.exits — declara un exit hacia "${link.to}" (en proscenio solo se viaja pisando salidas)`,
+          );
+        }
+      }
+    }
+    // Links sin `edge` (warning, ambas vistas): salir andando por un borde de
+    // la escena viaja el link DE ESE BORDE — un link sin edge nunca se
+    // dispara así (playtest 2026-08-13: la posada se realizó con su link
+    // door sin edge y el validador pasó mudo; el motor lo corrigió por
+    // iniciativa propia con un re-link).
+    if (info?.exists && info.links) {
+      for (const link of info.links) {
+        if (!link.edge) {
+          warnings.push(
+            `el link ${placeId} → ${link.to} no declara edge en el world map: salir andando ` +
+              `por un borde no seguirá ese link — si los places son espacialmente adyacentes, ` +
+              `re-crea el map_link con su edge`,
           );
         }
       }

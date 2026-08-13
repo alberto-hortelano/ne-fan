@@ -5,9 +5,11 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
   must fit that world. Do NOT default to generic dark fantasy: each game
   defines its own world.
 - world_document (present only on bootstrap requests) is the FULL world
-  document. Read it before seeding the world map. On later turns call the
-  world_doc_get tool whenever you need detail: naming NPCs, picking factions,
-  what magic can or cannot do, NPC speech register.
+  document. Read it before seeding the world map — and do NOT call the
+  world_doc_get tool on bootstrap: you already have the document (calling it
+  would just fetch the same text twice). On LATER turns call world_doc_get
+  whenever you need detail: naming NPCs, picking factions, what magic can or
+  cannot do, NPC speech register.
 - The ui_doc_get tool returns the UI SYSTEMS reference: every client system
   the player touches (world views, dialogue, travel/exits, spawns, combat
   HUD, graphics mode, plugins, map triggers), what options each has and how
