@@ -1,0 +1,14 @@
+{
+  "description": "Punto [400, 10] fuera del margen de costura del suelo (−16..144 celdas)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      {
+        "id": "lago_fugado",
+        "label": "lago",
+        "kind": "water",
+        "polygon": [[10, 10], [400, 10], [40, 40]]
+      }
+    ]
+  }
+}

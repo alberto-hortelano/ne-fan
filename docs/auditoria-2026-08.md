@@ -259,9 +259,24 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   regresión con save v3 pre-economy (verificado que falla contra la copia
   directa) que además cubre que el array default no se comparte entre
   instancias.
-- **Huecos de validación Python↔TS**: Python no valida rangos/límites de
+- ~~**Huecos de validación Python↔TS**: Python no valida rangos/límites de
   ground/volumes (TS sí); `stage` sin validación estructural Python;
-  `image_review` sin fixtures de contrato (sin candado CI).
+  `image_review` sin fixtures de contrato (sin candado CI).~~
+  **RESUELTO** (rama `audit/python-ts-validation-gaps`), los tres huecos:
+  (1) el espejo laxo Python de ground/volumes valida ahora RANGOS del zod
+  (celdas con margen ±8/±16, tamaños/anchos/alturas/escalas por tipo, topes
+  de puntos, ids/labels): campo opcional fuera de rango → descartado con
+  traza (el default del builder cubre); campo estructural → item descartado.
+  El clamp del árbol (s>1.8) sigue SOLO en parseVolumes (consumo) — fixture
+  `tamanos_al_limite` lo canda. (2) `validate_stage` nuevo: espejo
+  estructural fail-loud de parseStage (exits 1..8 con edge/zone/kind/label,
+  ids únicos, fourth_wall/backdrop coherentes) — antes cualquier dict colaba
+  como passthrough; tile con stage se sigue descartando con traza. (3) kinds
+  de fixtures nuevos `image_review` (5) y `stage` (6) cableados en AMBOS
+  arneses (TS: validateImageReview + parseStage zod de producción; Python:
+  validate_image_review + validate_stage) + 7 fixtures de rangos en
+  volumes_plan/ground_plan. Adversarial: 9 fixtures fallan contra los
+  validadores Python viejos.
 - ~~**`validate_weapon_orient_response` devuelve None en 6 puntos sin traza**
   (`narrative_schemas.py`) — falla mudo contra la doctrina fail-loud.~~
   **RESUELTO** (rama `audit/weapon-orient-fail-loud`). Ahora lanza

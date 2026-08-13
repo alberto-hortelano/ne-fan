@@ -64,34 +64,94 @@ VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fo
 MAX_VOLUMES = 160
 
 
+TILE_CELLS = 128
+# Márgenes de celda fuera del tile que admite cada schema (espejo de los
+# `cell` de volumes.ts (−8..136) y ground.ts (−16..144)).
+VOLUME_CELL_MARGIN = 8
+GROUND_CELL_MARGIN = 16
+
+
 def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _cell_pair(v) -> bool:
-    return isinstance(v, list) and len(v) == 2 and all(_num(n) for n in v)
+def _num_in(v, lo, hi) -> bool:
+    return _num(v) and lo <= v <= hi
+
+
+def _cell_pair(v, margin: int = VOLUME_CELL_MARGIN) -> bool:
+    return (
+        isinstance(v, list)
+        and len(v) == 2
+        and all(_num_in(n, -margin, TILE_CELLS + margin) for n in v)
+    )
+
+
+def _drop_field(v: dict, key: str, ctx: str, why: str) -> None:
+    """Campo OPCIONAL fuera de contrato: se descarta el campo con traza (el
+    default del builder lo cubre) en vez de tirar el item entero."""
+    print(f"validate_scene: {ctx} {key} {why} — campo descartado", flush=True)
+    v.pop(key, None)
+
+
+def _vol_rect(r) -> bool:
+    """[col, row, ancho, fondo] de volumen (espejo del `rect` de volumes.ts:
+    esquina 0..128, tamaños positivos ≤128)."""
+    return (
+        isinstance(r, list) and len(r) == 4
+        and all(_num_in(n, 0, TILE_CELLS) for n in r[:2])
+        and all(_num(n) and 0 < n <= TILE_CELLS for n in r[2:])
+    )
+
+
+def _doors_ok(doors) -> bool:
+    """Puertas de building (espejo de volumes.ts: ≤8, edge n|s|e|w,
+    at 0..128, w opcional 0<..16)."""
+    if not isinstance(doors, list) or len(doors) > 8:
+        return False
+    for d in doors:
+        if not isinstance(d, dict):
+            return False
+        if d.get("edge") not in ("n", "s", "e", "w"):
+            return False
+        if not _num_in(d.get("at"), 0, TILE_CELLS):
+            return False
+        w = d.get("w")
+        if w is not None and not (_num(w) and 0 < w <= 16):
+            return False
+    return True
 
 
 def _has_one_shape(f: dict) -> bool:
-    """Exactamente una de rect | polygon | ellipse, bien formada."""
+    """Exactamente una de rect | polygon | ellipse, bien formada y en rango
+    (espejo de shapeFields en ground.ts: celdas ±16, tamaños ≤160, radios ≤96,
+    polygon ≤32 puntos)."""
+    m = GROUND_CELL_MARGIN
     shapes = 0
     r = f.get("rect")
     if r is not None:
-        if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
+        if not (
+            isinstance(r, list) and len(r) == 4
+            and all(_num_in(n, -m, TILE_CELLS + m) for n in r[:2])
+            and all(_num(n) and 0 < n <= TILE_CELLS + 32 for n in r[2:])
+        ):
             return False
         shapes += 1
     poly = f.get("polygon")
     if poly is not None:
-        if not (isinstance(poly, list) and len(poly) >= 3 and all(_cell_pair(p) for p in poly)):
+        if not (
+            isinstance(poly, list) and 3 <= len(poly) <= 32
+            and all(_cell_pair(p, m) for p in poly)
+        ):
             return False
         shapes += 1
     ell = f.get("ellipse")
     if ell is not None:
         if not (
             isinstance(ell, dict)
-            and _cell_pair(ell.get("center"))
-            and _num(ell.get("rx"))
-            and _num(ell.get("ry"))
+            and _cell_pair(ell.get("center"), m)
+            and _num(ell.get("rx")) and 0 < ell["rx"] <= 96
+            and _num(ell.get("ry")) and 0 < ell["ry"] <= 96
         ):
             return False
         shapes += 1
@@ -121,7 +181,7 @@ def validate_ground(raw, *, field: str = "ground"):
             continue
         fid = f.get("id")
         kind = f.get("kind")
-        if not isinstance(fid, str) or not fid or fid in seen_ids:
+        if not isinstance(fid, str) or not fid or len(fid) > 64 or fid in seen_ids:
             print(f"validate_scene: {ctx} id inválido/duplicado — rasgo descartado")
             continue
         if kind not in GROUND_KINDS:
@@ -129,9 +189,15 @@ def validate_ground(raw, *, field: str = "ground"):
             continue
         if kind == "path":
             pts = f.get("points")
-            if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(p) for p in pts)):
-                print(f"validate_scene: {ctx} path sin points válidos — rasgo descartado")
+            if not (
+                isinstance(pts, list) and 2 <= len(pts) <= 16
+                and all(_cell_pair(p, GROUND_CELL_MARGIN) for p in pts)
+            ):
+                print(f"validate_scene: {ctx} path sin points válidos (2..16, en rango) — rasgo descartado")
                 continue
+            w = f.get("w")
+            if w is not None and not (_num(w) and 0 < w <= 24):
+                _drop_field(f, "w", ctx, f"fuera de rango {w!r} (0..24)")
         elif not _has_one_shape(f):
             print(f"validate_scene: {ctx} necesita exactamente una de rect|polygon|ellipse — rasgo descartado")
             continue
@@ -177,54 +243,88 @@ def validate_volumes(raw, *, field: str = "volumes"):
         vid = v.get("id")
         label = v.get("label")
         vtype = v.get("type")
-        if not isinstance(vid, str) or not vid or vid in seen_ids:
+        if not isinstance(vid, str) or not vid or len(vid) > 64 or vid in seen_ids:
             print(f"validate_scene: {ctx} id inválido/duplicado — volumen descartado")
             continue
-        if not isinstance(label, str) or not label:
-            print(f"validate_scene: {ctx} sin label — volumen descartado")
+        if not isinstance(label, str) or not label or len(label) > 48:
+            print(f"validate_scene: {ctx} label inválido — volumen descartado")
             continue
         if vtype not in VOLUME_TYPES:
             print(f"validate_scene: {ctx} type desconocido {vtype!r} — volumen descartado")
             continue
         if vtype == "building":
-            r = v.get("rect")
-            if not (isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)):
-                print(f"validate_scene: {ctx} building sin rect válido — volumen descartado")
+            if not _vol_rect(v.get("rect")):
+                print(f"validate_scene: {ctx} building sin rect válido (en rango) — volumen descartado")
                 continue
             if v.get("cutaway") is True and "angle" in v:
                 print(f"validate_scene: {ctx} building cutaway no admite angle — campo angle descartado")
                 v.pop("angle", None)
+            wall_h = v.get("wall_h")
+            if wall_h is not None and not (_num(wall_h) and 0 < wall_h <= 24):
+                _drop_field(v, "wall_h", ctx, f"fuera de rango {wall_h!r} (0..24)")
+            doors = v.get("doors")
+            if doors is not None and not _doors_ok(doors):
+                _drop_field(v, "doors", ctx, "malformadas (≤8, edge n|s|e|w, at 0..128, w 0..16)")
         elif vtype == "wall":
             pts = v.get("points")
-            if not (isinstance(pts, list) and len(pts) >= 2 and all(_cell_pair(pp) for pp in pts)):
-                print(f"validate_scene: {ctx} wall sin points válidos — volumen descartado")
+            if not (isinstance(pts, list) and 2 <= len(pts) <= 24 and all(_cell_pair(pp) for pp in pts)):
+                print(f"validate_scene: {ctx} wall sin points válidos (2..24, en rango) — volumen descartado")
                 continue
+            width = v.get("width")
+            if width is not None and not (_num(width) and 0 < width <= 12):
+                _drop_field(v, "width", ctx, f"fuera de rango {width!r} (0..12)")
+            h = v.get("h")
+            if h is not None and not (_num(h) and 0 < h <= 24):
+                _drop_field(v, "h", ctx, f"fuera de rango {h!r} (0..24)")
         elif vtype == "gate":
             if not _cell_pair(v.get("at")) or v.get("orient") not in ("x", "y"):
                 print(f"validate_scene: {ctx} gate sin at/orient válidos — volumen descartado")
                 continue
+            for key, top in (("w", 24), ("h", 24)):
+                val = v.get(key)
+                if val is not None and not (_num(val) and 0 < val <= top):
+                    _drop_field(v, key, ctx, f"fuera de rango {val!r} (0..{top})")
         elif vtype == "prop":
             has_at = _cell_pair(v.get("at"))
-            r = v.get("rect")
-            has_rect = isinstance(r, list) and len(r) == 4 and all(_num(n) for n in r)
+            has_rect = _vol_rect(v.get("rect"))
             if has_at == has_rect or v.get("shape") not in ("box", "cylinder"):
-                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect — volumen descartado")
+                print(f"validate_scene: {ctx} prop necesita shape y uno de at|rect (en rango) — volumen descartado")
                 continue
             if has_at and "angle" in v:
                 print(f"validate_scene: {ctx} prop con at no admite angle — campo angle descartado")
                 v.pop("angle", None)
+            h = v.get("h")
+            if h is not None and not (_num(h) and 0 < h <= 16):
+                _drop_field(v, "h", ctx, f"fuera de rango {h!r} (0..16)")
         elif vtype == "prism":
             pts = v.get("points")
-            if not (isinstance(pts, list) and len(pts) >= 3 and all(_cell_pair(pp) for pp in pts)):
-                print(f"validate_scene: {ctx} prism sin points válidos (≥3) — volumen descartado")
+            if not (isinstance(pts, list) and 3 <= len(pts) <= 24 and all(_cell_pair(pp) for pp in pts)):
+                print(f"validate_scene: {ctx} prism sin points válidos (3..24, en rango) — volumen descartado")
                 continue
-            if not (_num(v.get("h")) and v.get("h") > 0):
-                print(f"validate_scene: {ctx} prism sin h positiva — volumen descartado")
+            if not (_num(v.get("h")) and 0 < v["h"] <= 24):
+                print(f"validate_scene: {ctx} prism sin h válida (0..24) — volumen descartado")
                 continue
         else:  # tower/tree/bush/rock/fountain
             if not _cell_pair(v.get("at")):
                 print(f"validate_scene: {ctx} {vtype} sin at válido — volumen descartado")
                 continue
+            # Campos opcionales de tamaño, por tipo (espejo de volumes.ts).
+            # Tree: el TOPE del schema es 2.5 — parseVolumes CLAMPA a 1.8 en
+            # consumo; aquí NO se clampa (el harness exige fixture intacta).
+            _RANGES = {
+                "tower": (("r", 0, 16), ("h", 0, 32)),
+                "tree": (("s", 0.4, 2.5),),
+                "bush": (("s", 0.4, 2.5),),
+                "rock": (("s", 0.4, 4),),
+                "fountain": (("r", 0, 12),),
+            }
+            for key, lo, hi in _RANGES[vtype]:
+                val = v.get(key)
+                if val is None:
+                    continue
+                ok = _num(val) and (lo < val <= hi if lo == 0 else lo <= val <= hi)
+                if not ok:
+                    _drop_field(v, key, ctx, f"fuera de rango {val!r} ({lo}..{hi})")
         # `angle` (building/prop, GRADOS): un valor sin sentido se descarta
         # del item con traza (zod hace el rechazo duro).
         if "angle" in v and vtype in ("building", "prop"):
@@ -240,6 +340,69 @@ def validate_volumes(raw, *, field: str = "volumes"):
             f"descartados, {len(clean)} conservados"
         )
     return clean
+
+
+STAGE_EDGES = ("north", "south", "east", "west")
+STAGE_EXIT_KINDS = ("door", "opening", "stairs")
+MAX_STAGE_EXITS = 8
+
+
+def validate_stage(raw) -> dict:
+    """Espejo estructural de StageBlockSchema/parseStage (nefan-core, zod SoT)
+    para el camino API directa. Fail-loud: un plató con exits rotas softlockea
+    (la ÚNICA forma de viajar es pisar una zona de salida) — ValueError con la
+    causa, nunca descartar en silencio. Lo cosmético (surroundings, ambience,
+    platforms) queda al zod del bridge; aquí lo esencial de jugabilidad."""
+    if not isinstance(raw, dict):
+        raise ValueError(f"stage must be an object, got {type(raw).__name__}")
+    exits = raw.get("exits")
+    if not isinstance(exits, list) or not 1 <= len(exits) <= MAX_STAGE_EXITS:
+        raise ValueError(
+            f"stage.exits must be a list of 1..{MAX_STAGE_EXITS} exits"
+        )
+    seen: set = set()
+    for i, e in enumerate(exits):
+        ctx = f"stage.exits[{i}]"
+        if not isinstance(e, dict):
+            raise ValueError(f"{ctx} must be an object")
+        eid = e.get("id")
+        if not isinstance(eid, str) or not eid or len(eid) > 64:
+            raise ValueError(f"{ctx}.id must be a non-empty string (≤64)")
+        if eid in seen:
+            raise ValueError(f'stage.exits: id duplicado "{eid}"')
+        seen.add(eid)
+        if e.get("edge") not in STAGE_EDGES:
+            raise ValueError(
+                f"{ctx}.edge must be one of north|south|east|west, got {e.get('edge')!r}"
+            )
+        to = e.get("to_place_id")
+        if not isinstance(to, str) or not to:
+            raise ValueError(f"{ctx}.to_place_id must be a non-empty string")
+        zone = e.get("zone")
+        if not (
+            isinstance(zone, list) and len(zone) == 4
+            and all(_num(n) for n in zone)
+            and zone[2] > 0 and zone[3] > 0
+        ):
+            raise ValueError(f"{ctx}.zone must be [col, row, w, d] con w,d > 0")
+        if e.get("kind") not in STAGE_EXIT_KINDS:
+            raise ValueError(
+                f"{ctx}.kind must be door|opening|stairs, got {e.get('kind')!r}"
+            )
+        lbl = e.get("label")
+        if not isinstance(lbl, str) or not lbl:
+            raise ValueError(f"{ctx}.label must be a non-empty string (en español)")
+    fw = raw.get("fourth_wall")
+    if fw is not None and not (isinstance(fw, dict) and isinstance(fw.get("present"), bool)):
+        raise ValueError("stage.fourth_wall must be an object with boolean `present`")
+    bd = raw.get("backdrop")
+    if bd is not None and not (
+        isinstance(bd, dict)
+        and isinstance(bd.get("description"), str)
+        and bd["description"]
+    ):
+        raise ValueError("stage.backdrop must be an object with non-empty `description`")
+    return raw
 
 
 def validate_scene_response(data: dict) -> dict:
@@ -345,14 +508,16 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
-    # ── Stage (mundos proscenio): passthrough saneado — la validación real
-    # (zod + reglas de jugabilidad) vive en nefan-core y el bridge la aplica
-    # fail-loud; aquí solo evitamos persistir basura estructural. Un tile
-    # jamás lleva stage.
+    # ── Stage (mundos proscenio): espejo estructural fail-loud (exits de
+    # jugabilidad) — antes era passthrough y cualquier dict colaba; el zod
+    # completo lo re-aplica el bridge. Un tile jamás lleva stage.
     raw_stage = data.get("stage")
-    if raw_stage is not None and (is_tile or not isinstance(raw_stage, dict)):
-        print("validate_scene_response: stage descartado (tile o no es objeto)", flush=True)
-        data.pop("stage", None)
+    if raw_stage is not None:
+        if is_tile:
+            print("validate_scene_response: stage descartado (un tile no lleva stage)", flush=True)
+            data.pop("stage", None)
+        else:
+            validate_stage(raw_stage)
 
     # ── Size + terrain grid (solo escenas legacy; los tiles no llevan) ────
     if not is_tile:

@@ -1,0 +1,16 @@
+{
+  "description": "wall.width 50 supera el máximo del contrato (12 celdas = 6 m de grosor)",
+  "expect": "reject",
+  "payload": {
+    "volumes": [
+      {
+        "id": "muralla",
+        "label": "muralla",
+        "type": "wall",
+        "points": [[0, 64], [128, 64]],
+        "width": 50,
+        "h": 8
+      }
+    ]
+  }
+}

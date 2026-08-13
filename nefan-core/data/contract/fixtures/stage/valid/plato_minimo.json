@@ -1,0 +1,18 @@
+{
+  "description": "Plató mínimo: una sola salida sur bien formada",
+  "expect": "accept",
+  "payload": {
+    "stage": {
+      "exits": [
+        {
+          "id": "salida_plaza",
+          "edge": "south",
+          "to_place_id": "plaza_mayor",
+          "zone": [10, 20, 6, 3],
+          "kind": "opening",
+          "label": "Salida a la plaza"
+        }
+      ]
+    }
+  }
+}

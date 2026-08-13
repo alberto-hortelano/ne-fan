@@ -1,0 +1,21 @@
+{
+  "description": "Un río que entra por el borde usa puntos más allá de la costura (−16..144): válidos",
+  "expect": "accept",
+  "payload": {
+    "ground": [
+      {
+        "id": "rio_frontera",
+        "label": "río",
+        "kind": "water",
+        "polygon": [[-10, 5], [140, 8], [130, 30], [-12, 26]]
+      },
+      {
+        "id": "vado",
+        "label": "vado empedrado",
+        "kind": "deck",
+        "rect": [60, 4, 8, 24],
+        "material": "stone"
+      }
+    ]
+  }
+}
