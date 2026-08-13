@@ -348,14 +348,21 @@ crónica. Cero rechazos de pre-flight (el motor usó `scene_validate` en seco).
 
 Backlog derivado (ordenado por impacto):
 
-- **NPC duplicado / falta `entity_ref`**: el motor spawneó a Nogala
+- ~~**NPC duplicado / falta `entity_ref`**: el motor spawneó a Nogala
   (`spawn_entity` → `narr_npc_*` en el tile) y al realizar la posada tuvo
   que REDECLARARLA como entity nueva — dos records para el mismo personaje,
-  el primero huérfano. Ni el schema de scene/spawn ofrece referenciar una
-  entidad existente ni las instrucciones dicen qué hacer (¿migran los NPCs
-  spawneados con el jugador?). Candidato: instrucción "reutiliza el id de un
-  NPC de context.entities" + soporte en registerSceneNpcs (mismo id ⇒ mover,
-  no duplicar) + quizá aviso del pre-flight ante display-name repetido.
+  el primero huérfano.~~ **RESUELTO** (rama `audit/npc-dedupe-move`). El
+  contrato es ahora "reutiliza el id existente = mover": (1)
+  `registerSceneNpcs` con `firstRegistration` — un id ya vivo declarado por
+  una escena NUEVA mueve el record (scene_id + posición declarada)
+  conservando data/inventario/directivas; los re-broadcasts de escenas
+  cacheadas NO mueven (teletransportarían de vuelta a quien se marchó) ni
+  resetean la posición viva; (2) reglas en scene_instructions (ENTITY
+  RULES: "REUSE EXISTING CHARACTERS") y narrative_event (spawn_entity SOLO
+  para lo que no existe); (3) telemetría: warning al crear un NPC nuevo con
+  display name EXACTO de un record vivo (sin dedupe por nombre — dos
+  "Guardia" son legítimos). Tests del caso Nogala completo (mover +
+  re-entrada + warning), verificados discriminantes.
 - **`schedule_event` invisible tras emitirse**: no vuelve al contexto (ni
   lista de pendientes ni confirmación) — el motor lo duplicó en story_update
   para no perderlo. Falta un bloque `scheduled_events` en el contexto o

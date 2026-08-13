@@ -35,6 +35,11 @@ CRITICAL — when free_text is non-empty:
 - If the player expressed intent to go somewhere or find something
   (forge, healer, captain), also add a spawn_entity consequence and have
   the dialogue reference the newly-spawned thing.
+- spawn_entity is ONLY for characters/things that do NOT yet exist in
+  `entities`. NEVER respawn an existing character — that creates a
+  duplicate record. To bring an existing character into a scene you
+  generate later, declare them there with their SAME entity id (the engine
+  moves them); meanwhile just reference them by name in dialogue/story.
 
 CRITICAL — when free_text is empty (numbered choice only):
 - React in PROPORTION to what the choice means. If it asks a question, makes

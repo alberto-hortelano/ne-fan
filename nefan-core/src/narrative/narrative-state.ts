@@ -316,6 +316,9 @@ export class NarrativeState {
     opts: { activate?: boolean } = {},
   ): void {
     const activate = opts.activate ?? true;
+    // Primer registro vs re-broadcast de escena cacheada: decide la semántica
+    // de "mismo id en otra escena" de registerSceneNpcs (mover vs conservar).
+    const firstRegistration = !(sceneId in this.scenes_loaded);
     // Tile (Format D v3): coords derivadas del propio scene_data y costuras
     // computadas del grid expandido — el registro es autosuficiente.
     const rawTile = sceneData.tile as { tx?: unknown; ty?: unknown } | undefined;
@@ -361,7 +364,7 @@ export class NarrativeState {
         this.worldMap.attachRealizedScene(a.place_id, sceneId);
       }
     }
-    registerSceneNpcs(this, sceneId, sceneData);
+    registerSceneNpcs(this, sceneId, sceneData, { firstRegistration });
     this.dirty = true;
   }
 

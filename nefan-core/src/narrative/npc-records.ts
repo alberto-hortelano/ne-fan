@@ -15,6 +15,14 @@ export function registerSceneNpcs(
   state: NarrativeState,
   sceneId: string,
   sceneData: Record<string, unknown>,
+  opts: {
+    /** true cuando la escena se registra por PRIMERA vez (realize/generación
+     *  nueva): un id ya existente en otra escena expresa intención del motor
+     *  de MOVER al personaje aquí. false en re-broadcasts de escenas
+     *  cacheadas (re-entrada): ahí mover teletransportaría de vuelta a
+     *  personajes que se marcharon después. */
+    firstRegistration?: boolean;
+  } = {},
 ): void {
   // En tiles la posición registrada es GLOBAL (metros del plano continuo);
   // en escenas legacy se conserva el histórico (celdas locales).
@@ -114,7 +122,30 @@ export function registerSceneNpcs(
         existing.data.name = npc.name;
         state.markDirty();
       }
+      // Mismo id declarado por OTRA escena en el PRIMER registro = el
+      // personaje se MUEVE aquí con todo su estado (data: inventario, role,
+      // directive) y toma la posición que la escena le declara. Es el
+      // contrato del prompt "reutiliza el id existente" — sin esto, el
+      // record quedaba anclado a la escena vieja. Re-entrar a la MISMA
+      // escena (o re-broadcast cacheado) conserva la posición viva.
+      if (opts.firstRegistration && existing.scene_id !== sceneId) {
+        existing.scene_id = sceneId;
+        existing.position = [npc.pos[0], npc.pos[1], npc.pos[2]];
+        state.markDirty();
+      }
       continue;
+    }
+    // Telemetría de duplicados: un NPC NUEVO cuyo display name coincide
+    // EXACTO con el de un record vivo suele ser el mismo personaje
+    // redeclarado con otro id (visto en el playtest 2026-08-13: Nogala
+    // spawneada en el tile + redeclarada en la posada). No se dedupea por
+    // nombre (dos "Guardia" son legítimos) — se avisa.
+    const twin = state.entities.find((e) => e.type === "npc" && e.data.name === npc.name);
+    if (twin) {
+      console.warn(
+        `[npc-records] escena ${sceneId}: NPC nuevo "${npc.id}" comparte nombre exacto con ` +
+        `"${twin.id}" (${twin.scene_id}) — ¿personaje duplicado? Declarar el MISMO id lo movería.`,
+      );
     }
     state.recordEntitySpawned(
       npc.id,
