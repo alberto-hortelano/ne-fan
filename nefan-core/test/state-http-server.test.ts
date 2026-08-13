@@ -126,6 +126,26 @@ describe("state HTTP API", () => {
     assert.ok(doc.includes("proscenium") && doc.includes("dialogue"), "doc canónico servido");
   });
 
+  it("GET /story devuelve la crónica completa de la sesión activa", async () => {
+    narrative.appendStory("El herrero juró venganza contra el gremio.");
+    narrative.appendStory("La forastera pagó la deuda de Yishaq.");
+    const { status, body } = await get("/story");
+    assert.equal(status, 200);
+    assert.equal(body.session_id, narrative.session_id);
+    const story = String(body.story_so_far);
+    assert.ok(story.includes("herrero") && story.includes("forastera"), "crónica entera");
+    assert.equal(body.total_chars, story.length);
+  });
+
+  it("GET /entities incluye el name de data.name", async () => {
+    narrative.recordEntitySpawned("herrero_1", "npc", "s1", [0, 0, 0], { name: "Álvar" });
+    const { body } = await get("/entities");
+    const list = body.entities as Array<Record<string, unknown>>;
+    const herrero = list.find((e) => e.id === "herrero_1");
+    assert.ok(herrero, "entidad listada");
+    assert.equal(herrero.name, "Álvar");
+  });
+
   it("ruta desconocida → 404 con error", async () => {
     const { status, body } = await get("/no/such/route");
     assert.equal(status, 404);

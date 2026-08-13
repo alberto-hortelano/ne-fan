@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SCHEMA_VERSION } from "../src/narrative/types.js";
+import { LLM_ENTITIES_MAX, LLM_STORY_MAX_CHARS } from "../src/narrative/serialize-llm.js";
 import { makeNarrativeState } from "./helpers.js";
 
 function makeState() {
@@ -429,5 +430,77 @@ describe("NarrativeState.serializeForLlm", () => {
     assert.equal(ctx.entities[0].id, "e1");
     assert.deepEqual(ctx.entities[0].position, [1, 2, 3]);
     assert.equal(ctx.entities[0].spawn_reason, "scene_init");
+    assert.equal(ctx.entities_total, undefined, "sin recorte no hay entities_total");
+  });
+
+  it("cota de entities: escena activa completa + spawns recientes, entities_total avisa", () => {
+    // Regresión (contexto sin cotas): TODAS las entidades del playthrough
+    // viajaban en cada turno. Ahora: cap LLM_ENTITIES_MAX priorizando la
+    // escena activa entera y el resto por spawn reciente, en orden
+    // cronológico, con entities_total marcando el recorte.
+    const s = makeState();
+    s.startNewSession("g");
+    // 5 entidades viejas de otra escena (deben caer las más antiguas).
+    for (let i = 0; i < 5; i++) {
+      s.recordEntitySpawned(`viejo_${i}`, "npc", "tile_lejano", [i, 0, 0], {});
+    }
+    // Escena activa con 10 entidades — TODAS deben sobrevivir al recorte.
+    // (recordSceneLoaded ANTES de spawnear: registrar el record purga y
+    // re-registra los NPCs de esa escena desde scene_data.)
+    s.recordSceneLoaded("tile_activo", {});
+    for (let i = 0; i < 10; i++) {
+      s.recordEntitySpawned(`activo_${i}`, "npc", "tile_activo", [i, 0, 0], {});
+    }
+    // Relleno de otras escenas hasta desbordar el cap con holgura.
+    for (let i = 0; i < LLM_ENTITIES_MAX; i++) {
+      s.recordEntitySpawned(`otro_${i}`, "npc", `tile_${i % 7}x`, [i, 0, 0], {});
+    }
+    const total = 5 + 10 + LLM_ENTITIES_MAX;
+    const ctx = s.serializeForLlm();
+    assert.equal(ctx.entities.length, LLM_ENTITIES_MAX, "lista al cap");
+    assert.equal(ctx.entities_total, total, "total real expuesto");
+    for (let i = 0; i < 10; i++) {
+      assert.ok(
+        ctx.entities.some((e) => e.id === `activo_${i}`),
+        `la escena activa sobrevive entera (activo_${i})`,
+      );
+    }
+    assert.ok(
+      ctx.entities.some((e) => e.id === `otro_${LLM_ENTITIES_MAX - 1}`),
+      "el spawn más reciente sobrevive",
+    );
+    assert.ok(
+      !ctx.entities.some((e) => e.id === "viejo_0"),
+      "lo más viejo de otras escenas cae",
+    );
+    // Orden cronológico original preservado en la selección.
+    const ids = ctx.entities.map((e) => e.id);
+    assert.ok(
+      ids.indexOf("activo_0") < ids.indexOf(`otro_${LLM_ENTITIES_MAX - 1}`),
+      "selección emitida en orden de spawn",
+    );
+  });
+
+  it("cota de story_so_far: por encima del cap solo viaja la cola con marcador", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    // Crónica larga: párrafos numerados hasta superar el cap con holgura.
+    for (let i = 0; i < 200; i++) {
+      s.appendStory(`Párrafo ${i}: ${"x".repeat(60)}`);
+    }
+    assert.ok(s.story_so_far.length > LLM_STORY_MAX_CHARS, "precondición: crónica > cap");
+    const ctx = s.serializeForLlm();
+    assert.ok(ctx.story_so_far.length <= LLM_STORY_MAX_CHARS + 200, "contexto acotado");
+    assert.match(ctx.story_so_far, /earlier chronicle omitted .* story_get/, "marcador con la tool");
+    assert.ok(ctx.story_so_far.includes("Párrafo 199"), "la cola reciente viaja");
+    assert.ok(!ctx.story_so_far.includes("Párrafo 0:"), "el arranque queda fuera");
+    // El save NO se toca: la crónica completa sigue en el estado.
+    assert.ok(s.story_so_far.startsWith("Párrafo 0:"), "el save conserva todo");
+
+    // Crónica corta: pasa entera, sin marcador.
+    const s2 = makeState();
+    s2.startNewSession("g");
+    s2.appendStory("El herrero juró venganza.");
+    assert.equal(s2.serializeForLlm().story_so_far, "El herrero juró venganza.");
   });
 });

@@ -208,6 +208,9 @@ export interface LlmContext {
   game_id: string;
   world: NarrativeWorldState;
   player: NarrativePlayerState;
+  /** Crónica del playthrough. Por encima de LLM_STORY_MAX_CHARS solo viaja
+   *  la cola reciente con un marcador; la tool story_get da el texto entero
+   *  (el save siempre conserva todo). */
   story_so_far: string;
   current_scene_id: string;
   entities: Array<{
@@ -218,6 +221,11 @@ export interface LlmContext {
     position: [number, number, number];
     spawn_reason: string;
   }>;
+  /** Total real de entidades cuando `entities` viene TRUNCADO (cap
+   *  LLM_ENTITIES_MAX: escena activa completa + spawns más recientes).
+   *  Ausente si la lista está completa. El índice entero se pide con la tool
+   *  entity_list; el detalle por id con entity_get. */
+  entities_total?: number;
   recent_dialogues: Array<{ speaker: string; chosen: string; free_text: string; npc_reply?: string }>;
   rooms_visited: number;
   /** Vida ambiental reciente (últimas 10): "guard_02 intervino en una pelea",

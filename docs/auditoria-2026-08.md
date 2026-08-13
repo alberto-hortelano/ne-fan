@@ -236,8 +236,19 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   cruzar los gruesos. El greybox ya quitaba el tramo entero del muro en el vano,
   así que el visual ya cruzaba; esto alinea la colisión. Test de regresión con
   muro width 12 (verificado que falla contra la holgura fija).
-- **Contexto LLM sin cotas** (`serialize-llm`, `narrative-state`): `entities` y
-  `story_so_far` crecen sin límite por playthrough (coste + degradación).
+- ~~**Contexto LLM sin cotas** (`serialize-llm`, `narrative-state`): `entities` y
+  `story_so_far` crecen sin límite por playthrough (coste + degradación).~~
+  **RESUELTO** (rama `audit/llm-context-caps`). Cotas SOLO en la proyección
+  (`buildLlmContext`) — el save conserva todo, patrón world_doc (brief por
+  turno + tool para el detalle): `story_so_far` > `LLM_STORY_MAX_CHARS` (6k)
+  → solo la cola reciente cortada en párrafo con marcador que remite a la
+  tool nueva `story_get` (→ `GET /story` del State API); `entities` >
+  `LLM_ENTITIES_MAX` (60) → escena activa completa + spawns más recientes en
+  orden cronológico, con `entities_total` marcando el recorte y tool nueva
+  `entity_list` (→ `GET /entities`, que ya existía sin tool; ahora incluye
+  `name`). `world_rules.md` documenta el contexto acotado (BOUNDED CONTEXT).
+  Tests de regresión de ambas cotas (verificados discriminantes) + `/story`;
+  cadena MCP→bridge ejercitada en vivo (stdio client).
 - **`player` sin defaults al cargar** (`narrative-state.ts:247`): un save sin
   `gold`/`inventory` deja NaN en la aritmética del plugin economy.
 - **Huecos de validación Python↔TS**: Python no valida rangos/límites de

@@ -68,11 +68,12 @@ export interface MapTriggerResponse {
   trigger_id: string;
 }
 
-/** Resumen por entidad de GET /entities (subset de EntityRecord). */
+/** Resumen por entidad de GET /entities (subset de EntityRecord +
+ *  data.name si existe — mismo shape compacto que el contexto LLM). */
 export type EntitySummary = Pick<
   EntityRecord,
   "id" | "type" | "scene_id" | "position" | "spawn_reason"
->;
+> & { name?: string };
 
 export interface EntityListResponse {
   entities: EntitySummary[];
@@ -109,6 +110,14 @@ export interface WorldDocResponse {
   world_name: string;
   /** world.md completo del juego (10 secciones). */
   world_doc: string;
+}
+
+/** GET /story (tool MCP story_get): la crónica COMPLETA de la sesión — el
+ *  contexto por turno solo inline la cola reciente cuando crece. */
+export interface StoryResponse {
+  session_id: string;
+  story_so_far: string;
+  total_chars: number;
 }
 
 export interface UiDocResponse {
@@ -200,6 +209,7 @@ export const WorldStateApi = {
   // Documentos para el motor narrativo
   getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc"),
   getUiDoc: endpoint<void, UiDocResponse>("GET", "/ui_doc"),
+  getStory: endpoint<void, StoryResponse>("GET", "/story"),
 
   // Validación de escenas (pre-flight de narrative_respond y tool
   // scene_validate; el SERVIDOR construye el TileValidationContext desde los
