@@ -82,6 +82,27 @@ describe("blueprint/collision", () => {
     assert.ok(solidAt(g.grid, 56, 68), "jamba oeste sólida");
   });
 
+  it("wall GRUESO + gate: el vano cruza TODO el grosor (holgura del ancho del muro)", () => {
+    // Regresión: la holgura fija de 3.5 no atravesaba un muro width 12 (±6) →
+    // quedaban celdas sólidas a ±(3.5..6) del centro: puerta abierta, colisión
+    // bloqueada. Ahora la profundidad del vano sale del grosor del anfitrión.
+    const vols: Volume[] = [
+      { id: "muralla", label: "muralla ciclópea", type: "wall", points: [[0, 68], [128, 68]], width: 12, h: 10 },
+      { id: "puerta", label: "puerta", type: "gate", at: [64, 68], w: 9, orient: "x" },
+    ];
+    const g = volumeCollisionGrid(vols, RECT)!;
+    assert.ok(!solidAt(g.grid, 64, 68), "vano central libre");
+    // Borde grueso del muro (fila 63: dentro de ±6 del muro, MÁS ALLÁ del 3.5
+    // viejo): antes sólido, ahora libre.
+    assert.ok(!solidAt(g.grid, 64, 63), "vano libre en el grosor completo del muro");
+    assert.ok(!solidAt(g.grid, 64, 73), "vano libre también en el otro borde");
+    // El muro lejos de la puerta sigue sólido en todo su grosor.
+    assert.ok(solidAt(g.grid, 20, 63), "muro grueso bloquea lejos de la puerta");
+    assert.ok(solidAt(g.grid, 20, 73), "muro grueso bloquea (otro borde)");
+    // Jamba fuera del vano, sólida.
+    assert.ok(solidAt(g.grid, 54, 68), "jamba oeste sólida");
+  });
+
   it("tower y tree: discos según radio", () => {
     const vols: Volume[] = [
       { id: "torre", label: "torre", type: "tower", at: [40, 40], r: 6 },
