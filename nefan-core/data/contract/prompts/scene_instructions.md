@@ -12,8 +12,8 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
     ...   // EXACTLY rows strings total
   ],
   "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
-  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see MAP PLAN in the tile section
-  "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — see MAP PLAN in the tile section
+  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see the MAP PLAN reference: tile instructions in tile worlds; the stage instructions document them inline for proscenium
+  "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — same MAP PLAN reference as ground
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
@@ -25,7 +25,10 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
 
 COORDINATES: top-left is (0,0). col → east, row → south.
 
-SCALE — meters_per_cell (CHOOSE IT per scene; do NOT default to 2):
+SCALE — meters_per_cell (CHOOSE IT per scene; do NOT default to 2).
+PROSCENIUM stages have their OWN scale and size budgets (0.5–1.0 mpc, wider
+grids) — when the stage instructions are present and disagree with anything
+here, THE STAGE RULES WIN:
 A [1,1] footprint is meters_per_cell metres across, and the player is ~0.8 m.
 So pick meters_per_cell to match the smallest thing that matters in the scene,
 keeping cols/rows within the string budget (≤ 80×60). Real size = cols × mpc.
@@ -64,12 +67,13 @@ SOLIDITY — collision (the player physically CANNOT cross solid cells)
 ENTERABLE ROOMS & BUILDINGS: don't hand-draw a W border. Declare the shell as a
 `volumes` building with `cutaway:true` (walls, door gaps and interior visible
 from the camera come out deterministically), and write only the BASE terrain
-(grass, paths) in the grid. See MAP PLAN in the tile section for the volumes
-schema (rect, walls, roof, doors, cutaway).
+(grass, paths) in the grid. The volumes schema (rect, walls, roof, doors,
+cutaway) is in the MAP PLAN reference: the tile instructions (tile worlds) or
+the stage instructions' volumes examples (proscenium).
 
 VEGETATION: don't hand-place 20 trees. Declare tree `volumes` (or let the engine
-fill forest masses from the plan) — see MAP PLAN in the tile section. Hand-placed
-`tree` entities are still fine for singular landmarks.
+fill forest masses from the plan). Hand-placed `tree` entities are still fine
+for singular landmarks.
 
 DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
 the nearest wall cell (torches, hanging signs, banners).
@@ -86,14 +90,13 @@ LINEAR & ORGANIC GROUND (rivers, roads, plazas) — anything linear or organic
 makes far better maps than cell rows. Declare it as typed `ground` features:
 `path` polylines for roads/trails, `water` shapes for rivers/ponds (NOT
 walkable), `deck` for walkable surfaces over water (bridges), `area` for
-plazas/courtyards. Points are float cell coordinates and curves are smoothed —
-see MAP PLAN in the tile section for the full ground schema. Rule of thumb: a
+plazas/courtyards. Points are float cell coordinates and curves are smoothed
+(full ground schema in the MAP PLAN reference above). Rule of thumb: a
 river/road in `ground` should follow the same course as its "w"/"_" cells in
 the grid (the grid stays the coarse base; ground refines it with curves).
 
 Do NOT emit SVG of any kind (the old "terrain_svg"/"map_ground" fields are
-gone): everything is declarative data. TILES describe their ground with the
-typed "ground" features + "volumes" (see MAP PLAN in the tile section).
+gone): everything is declarative data — typed "ground" features + "volumes".
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need

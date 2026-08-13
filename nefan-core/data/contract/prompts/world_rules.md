@@ -22,11 +22,14 @@ WORLD FIDELITY — the request's world_state carries the game's world identity:
   described in the world document ("Registro y lenguaje").
 
 ENGINE LIMITS (hard constraints, never break):
-- The camera is FIXED and set by world.view — overworld: top-down 2D over a
-  continuous tile plane; proscenium: locked at the SOUTH edge of each stage
-  (see the STAGE instructions when stage_request is present). Never design
-  content that depends on any other angle, and never mix formats: tiles
-  belong to overworld worlds, stage blocks to proscenium worlds.
+- The camera is FIXED and set by world.view — overworld: top-down camera over
+  a continuous tile plane (the client paints it with the single oblique
+  projection: flat ground, height sheared, south faces lit / east in shade —
+  your DATA stays flat top-down cells either way); proscenium: locked at the
+  SOUTH edge of each stage (see the STAGE instructions when stage_request is
+  present). Never design content that depends on any other angle, and never
+  mix formats: tiles belong to overworld worlds, stage blocks to proscenium
+  worlds.
 - Scene/tile JSON should include "style_tag" — the image pipeline uses it to
   pick the game's style reference. The enum depends on world.view:
   * overworld: one of
