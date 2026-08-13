@@ -757,4 +757,31 @@ describe("set_render_mode (activación de imágenes por faceta)", () => {
     assert.equal(narrative.world.render_mode, "image");
     assert.equal(narrative.world.character_mode, "vector");
   });
+
+  it("con la sesión ACTIVA persiste vía narrative.save() SIN pisar el estado más nuevo en memoria", async () => {
+    const { ctx, narrative } = makeCtx();
+    // Disco tiene el snapshot inicial (story_so_far vacío).
+    await ctx.sessionStorage.write("s5", legacyVectorSave("s5"));
+    // La sesión activa avanzó EN MEMORIA (progreso aún no reflejado en ese
+    // snapshot de disco) — el escritor único es narrative.
+    narrative.session_id = "s5";
+    narrative.world.view = "proscenium";
+    narrative.world.render_mode = "vector";
+    narrative.world.character_mode = "";
+    narrative.story_so_far = "el jugador cruzó tres tiles";
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s5", renderMode: "image", facet: "scenes" },
+      socket, ctx,
+    );
+    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    const data = await ctx.sessionStorage.read("s5");
+    // El flag se activó en disco...
+    assert.equal(data?.world.render_mode, "image");
+    assert.equal(data?.world.character_mode, "vector");
+    // ...Y el estado MÁS NUEVO en memoria se preservó. Con el read-modify-write
+    // anterior (leer disco → mutar → escribir), story_so_far habría revertido a
+    // "" (el snapshot de disco), pisando el progreso.
+    assert.equal(data?.story_so_far, "el jugador cruzó tres tiles");
+  });
 });
