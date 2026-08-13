@@ -245,7 +245,10 @@ export class NarrativeState {
     // Spread sobre defaults: los saves v4 anteriores a la era de mundos no
     // traen description/style_id/world_doc_hash (campos aditivos, sin bump).
     this.world = { ...DEFAULT_WORLD, ...data.world };
-    this.player = data.player;
+    // Ídem para player: un save viejo sin gold/inventory dejaría undefined en
+    // la aritmética de los plugins (inc/dec sobre player.gold → NaN, push a
+    // inventory → crash). Mismo criterio aditivo que world.
+    this.player = { ...structuredClone(DEFAULT_PLAYER), ...data.player };
     this.story_so_far = data.story_so_far;
     this.scenes_loaded = data.scenes_loaded;
     this.entities = data.entities;
