@@ -495,7 +495,13 @@ function applySessionView(view: string): void {
         const plan = (entry.scene as { __plan?: TilePlanInfo }).__plan;
         if (plan) fpsRenderer.installTile(k, plan, entry.rect);
       }
-      if (activeTileKey) fpsRenderer.setActiveTile(activeTileKey);
+      if (activeTileKey) {
+        fpsRenderer.setActiveTile(activeTileKey);
+        // El tile activo pudo instalarse ANTES de conocer la vista (la escena
+        // llega antes que la respuesta de sesión): disparar aquí el atlas —
+        // setActiveClientTile no volverá a ejecutarse si el tile no cambia.
+        void fpsAtlasController.onActiveTile(activeTileKey).catch(() => {});
+      }
       log("Vista: primera persona (giro con ←/→, WASD para moverte)");
     }
   } else {
@@ -1087,6 +1093,9 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // fps solo PINTA distinto.
   if (sessionView === "fps" && isGridTile && planInfo) {
     fpsRenderer?.installTile(key, planInfo, rect);
+    // Si ESTE ya es el tile activo, setActiveClientTile no volverá a correr
+    // (solo se dispara al cambiar de tile): lanzar el atlas aquí.
+    if (key === activeTileKey) void fpsAtlasController.onActiveTile(key).catch(() => {});
   }
   // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
   // preserva la imagen y su análisis visual — conservar también la colisión

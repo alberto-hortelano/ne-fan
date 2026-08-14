@@ -71,9 +71,12 @@ export class FpsAtlasController {
     return this.inFlight;
   }
 
-  /** Tile activo nuevo: reinstala de caché o, con generación auto, pinta. */
+  /** Tile activo nuevo: reinstala de caché o, con generación auto, pinta.
+   *  Con un run en vuelo no relanza (los disparadores retro/addTile/
+   *  setActiveClientTile pueden solaparse en el arranque). */
   async onActiveTile(key: string): Promise<void> {
     if (await this.reinstallIfCached(key)) return;
+    if (this.inFlight) return;
     if (this.deps.generationOn()) await this.runFor(key);
   }
 

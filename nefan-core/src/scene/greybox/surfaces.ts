@@ -85,6 +85,22 @@ export const MAT_INFO: Record<string, MatInfo> = {
 const TIMBER_COLORS = new Set(["#6b543a", "#5c4832", "#765633"]);
 const PLASTER_COLORS = new Set(["#c9b89a", "#cfc0a2"]);
 
+/** Rasgos del `ground` (caminos/plazas) → clase de material, mapeados por su
+ *  color de GROUND_MATERIAL_COLORS (ground-prims.ts) + los dos contrastados
+ *  de groundColorFor (greybox/common.ts). Sin esto los caminos quedaban en
+ *  clay gris plano sobre el suelo texturizado (hallazgo de la prueba real
+ *  con motor 2026-08-14). */
+const GROUND_COLOR_TO_MAT: Record<string, string> = {
+  "#a29b8b": "path_cobble", // cobble
+  "#a4937c": "path_cobble", // stone/empedrado contrastado (groundColorFor)
+  "#8b8678": "stone_floor", // stone
+  "#8f7757": "ground_dirt", // dirt
+  "#8d6f4e": "ground_dirt", // dirt contrastado (groundColorFor)
+  "#c2b184": "ground_dirt", // sand (sin celda propia: arena ≈ tierra clara)
+  "#9a917f": "path_cobble", // gravel
+  "#547233": "ground_grass", // grass (PALETTE.grassBase)
+};
+
 /** Clase de material de un grupo de caras de una primitiva. `null` = se queda
  *  en clay (detalle de suelo, decoración menor). Con `mat` objeto, una clave
  *  ausente cae a las reglas por defecto y `false` fuerza clay. */
@@ -113,8 +129,14 @@ export function classify(prim: SurfacePrim, group: SurfaceGroup): string | null 
     return "wood_planks";
   }
   if (cat === "terrain") {
-    // Solo el suelo base grande se texturiza; el detalle sembrado queda clay.
     if (shape === "box" && size[0] >= 60) return "ground_dirt";
+    // Caminos/plazas del `ground` (polígonos con color de material conocido)
+    // se texturizan; el detalle procedural sembrado (elipses/piedritas de
+    // colores derivados del bioma) queda clay y se oculta al texturizar.
+    if (group === "caps" || group === "top") {
+      const mat = GROUND_COLOR_TO_MAT[color];
+      if (mat) return mat;
+    }
     return null;
   }
   return null;

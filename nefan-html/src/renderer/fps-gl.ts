@@ -127,13 +127,18 @@ function primitiveGeometry(p: SurfacePrim): {
 function scaleGroupUVs(geo: THREE.BufferGeometry, group: { start: number; count: number }, su: number, sv: number): void {
   const uv = geo.attributes.uv as THREE.BufferAttribute | undefined;
   if (!uv) return;
+  // Caras MENORES que el periodo (props de <2.5 m) muestrean una fracción de
+  // la celda: centrarla — el rango [0..frac] pegado al borde caía de lleno en
+  // la banda del feather y la cara salía lavada (prueba real 2026-08-14).
+  const ou = su < 1 ? (1 - su) / 2 : 0;
+  const ov = sv < 1 ? (1 - sv) / 2 : 0;
   const index = geo.index;
   const seen = new Set<number>();
   for (let i = group.start; i < group.start + group.count; i++) {
     const v = index ? index.getX(i) : i;
     if (seen.has(v)) continue;
     seen.add(v);
-    uv.setXY(v, uv.getX(v) * su, uv.getY(v) * sv);
+    uv.setXY(v, uv.getX(v) * su + ou, uv.getY(v) * sv + ov);
   }
   uv.needsUpdate = true;
 }
@@ -199,6 +204,12 @@ export class FpsGl {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Las luces del spec (ambient 0.85 + sol 1.6) están afinadas para el clay
+    // cenital; con texturas albedo realistas la cara al sol CLIPPEA a blanco
+    // (prueba real 2026-08-14: carros/puestos con la cara sur quemada). ACES
+    // comprime las altas luces sin apagar la escena.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.1;
     this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 600);
     this.sky = skyDome();
     this.scene.add(this.sky);
@@ -235,12 +246,14 @@ export class FpsGl {
         new THREE.MeshStandardMaterial({ color: prim.color, roughness: prim.roughness ?? 0.92 });
 
       const groupMaterial: Partial<Record<SurfaceGroup, THREE.MeshStandardMaterial>> = {};
+      let hasAnyCell = false;
       for (const [g, faceIdxs] of Object.entries(groups) as [SurfaceGroup, number[]][]) {
         const cellKey = assign?.groups?.[g] ?? null;
         const cell = cellKey ? cellByKey.get(cellKey) : null;
         const m = clay();
         groupMaterial[g] = m;
         if (cellKey && cell) {
+          hasAnyCell = true;
           const list = materialsByCell.get(cellKey) ?? [];
           list.push(m);
           materialsByCell.set(cellKey, list);
@@ -286,7 +299,9 @@ export class FpsGl {
       if (prim.rotX) mesh.rotation.x = prim.rotX;
       mesh.castShadow = !prim.noShadow;
       mesh.receiveShadow = true;
-      if (prim.cat === "terrain" && prim.shape !== "box") detailMeshes.push(mesh);
+      // Solo el detalle procedural SIN celda (elipses/piedritas clay) se
+      // oculta al texturizar — los caminos/plazas del ground ya llevan la suya.
+      if (prim.cat === "terrain" && prim.shape !== "box" && !hasAnyCell) detailMeshes.push(mesh);
       group.add(mesh);
     });
 
@@ -376,7 +391,9 @@ export class FpsGl {
       if (!mats) continue;
       const tex = new THREE.Texture(image as HTMLImageElement);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 4;
+      // Máxima anisotropía del hardware: la muralla (64 m de repeat) en
+      // ángulo rasante escupía ruido de mip con anisotropy 4.
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
       if (kind === "tile") tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       else tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.needsUpdate = true;
