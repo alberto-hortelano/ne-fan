@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
-import { stagePlanFromScene, ConsequenceSchema, NPC_DIRECTIVE_TYPES, type NpcDirectiveType } from '@nefan/core';
+import { stagePlanFromScene, ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
@@ -648,11 +648,11 @@ into context:
     `preserves fields you don't pass.`,
     {
       id: z.string().describe('Stable slug, e.g. "puerto_bajo".'),
-      kind: z.enum(['world', 'region', 'settlement', 'landmark', 'site', 'interior']),
+      kind: z.enum(PLACE_KINDS),
       parent_id: z.string().nullable().describe('Containing place id, or null only for the root world.'),
       name: z.string().describe('Display name shown to the player.'),
       description: z.string().optional().describe('Narrative description for reasoning.'),
-      approx_position: z.array(z.number()).optional().describe('[x, y] in the parent local 2D space (layout only, no fixed scale).'),
+      approx_position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in the parent local 2D space (layout only, no fixed scale).'),
       approx_radius: z.number().optional().describe('Approximate size, layout only.'),
       attrs_json: z.string().optional().describe('JSON object of free attributes, e.g. {"population":300,"faction":"neutral"}.'),
       anchor: z.object({
@@ -688,11 +688,11 @@ into context:
     {
       from: z.string(),
       to: z.string(),
-      kind: z.enum(['road', 'river', 'path', 'sea_route', 'passage', 'tunnel', 'door']),
+      kind: z.enum(LINK_KINDS),
       travel_hours: z.number().optional().describe('Approximate travel time on foot.'),
       description: z.string().optional(),
       bidirectional: z.boolean().optional().describe('Default true.'),
-      edge: z.enum(['north', 'south', 'east', 'west']).optional().describe(
+      edge: z.enum(EDGES).optional().describe(
         "Side of the FROM place's scene where this exit sits (north = top of " +
         'the grid, row 0). Walking off that scene edge follows this link; the ' +
         'reverse direction automatically uses the opposite edge. Set it ' +

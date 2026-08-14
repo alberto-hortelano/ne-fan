@@ -20,14 +20,25 @@ import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
-import type { PlaceUpsert, LinkSpec } from "../src/world-map/world-map.js";
-import { isEdge } from "../src/world-map/types.js";
-import type { NpcDirector, NpcDirective } from "../src/world-map/npc-director.js";
+import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { ErrorResponse, PluginInspectResult } from "../src/contracts/common.js";
+import {
+  InventoryAddRequestSchema,
+  InventoryRemoveRequestSchema,
+  LinkSpecSchema,
+  MapTriggerRequestSchema,
+  NarrativeProgressRequestSchema,
+  NpcDirectiveRequestSchema,
+  NpcMoveToPlaceRequestSchema,
+  PlaceUpsertSchema,
+  PluginRegisterRequestSchema,
+  SceneValidateRequestSchema,
+} from "../src/contracts/request-schemas.js";
+import { formatZodError } from "../src/contract/model-io/validate.js";
+import type { z, ZodTypeAny } from "zod";
 import { WorldStateApi } from "../src/contracts/world-state.js";
 import type { ResponseOf } from "../src/contracts/http.js";
 import type {
-  MapTriggerRequest,
   PlayerEntityResponse,
   EntityListResponse,
   InventoryGetResponse,
@@ -155,12 +166,10 @@ async function handle(
   }
 
   if (method === "POST" && path === "/plugins/register") {
-    const body = (await readJson(req)) as { manifest?: unknown };
-    if (!body || body.manifest === undefined) {
-      return bad("body requires { manifest: <PluginManifest> }");
-    }
+    const parsed = parseBody(PluginRegisterRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
     try {
-      const result = plugins.register(body.manifest);
+      const result = plugins.register(parsed.data.manifest);
       return mutated({ ok: true, ...result } satisfies PluginRegisterResponse);
     } catch (err) {
       return bad((err as Error).message);
@@ -171,10 +180,9 @@ async function handle(
   // narrative-mcp lo envía en cada paso observable (tool MCP llamada,
   // petición recogida). Sin sesión que mutar: solo difusión al cliente.
   if (method === "POST" && path === "/narrative_progress") {
-    const body = (await readJson(req)) as { message?: unknown };
-    const message = typeof body?.message === "string" ? body.message.slice(0, 300) : "";
-    if (!message) return bad("body requires { message: string }");
-    onProgress(message);
+    const parsed = parseBody(NarrativeProgressRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    onProgress(parsed.data.message.slice(0, 300));
     return { status: 200, body: { ok: true } satisfies ResponseOf<typeof WorldStateApi.narrativeProgress> };
   }
 
@@ -183,11 +191,9 @@ async function handle(
   // scene_validate). No muta nada; el contexto de world map alimenta la regla
   // de contexto exterior (place existente + link saliente).
   if (method === "POST" && path === "/scene/validate") {
-    const body = (await readJson(req)) as { scene?: unknown };
-    if (!body || typeof body.scene !== "object" || body.scene === null) {
-      return bad("body requires { scene: <Format D scene JSON> }");
-    }
-    const scene = body.scene as Record<string, unknown>;
+    const parsed = parseBody(SceneValidateRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const scene = parsed.data.scene as Record<string, unknown>;
     // Para tiles, el contexto de costuras lo construye el SERVIDOR desde los
     // edges de los vecinos registrados — el motor no puede olvidarse de
     // pasarlo y el pre-flight de narrative_respond no cambia.
@@ -283,18 +289,10 @@ async function handle(
   }
 
   if (method === "POST" && path === "/map/place") {
-    const body = (await readJson(req)) as PlaceUpsert;
-    if (!body || typeof body.id !== "string" || typeof body.kind !== "string") {
-      return bad("body requires at least { id, kind, parent_id, name }");
-    }
-    if (body.anchor !== undefined) {
-      const a = body.anchor as { tx?: unknown; ty?: unknown };
-      if (!a || !Number.isInteger(a.tx) || !Number.isInteger(a.ty)) {
-        return bad("anchor requires integer { tx, ty } (optional rect [col,row,w,h])");
-      }
-    }
+    const parsed = parseBody(PlaceUpsertSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
     try {
-      const place = wm.upsertPlace(body);
+      const place = wm.upsertPlace(parsed.data);
       narrative.markDirty();
       return mutated({ ok: true, place } satisfies PlaceUpsertResponse);
     } catch (err) {
@@ -303,15 +301,10 @@ async function handle(
   }
 
   if (method === "POST" && path === "/map/link") {
-    const body = (await readJson(req)) as LinkSpec;
-    if (!body || typeof body.from !== "string" || typeof body.to !== "string") {
-      return bad("body requires { from, to, kind }");
-    }
-    if (body.edge !== undefined && !isEdge(body.edge)) {
-      return bad(`edge must be one of north|south|east|west, got "${body.edge}"`);
-    }
+    const parsed = parseBody(LinkSpecSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
     try {
-      const link = wm.addLink(body);
+      const link = wm.addLink(parsed.data);
       narrative.markDirty();
       return mutated({ ok: true, link } satisfies MapLinkResponse);
     } catch (err) {
@@ -320,13 +313,9 @@ async function handle(
   }
 
   if (method === "POST" && path === "/map/trigger") {
-    const body = (await readJson(req)) as Partial<MapTriggerRequest>;
-    const placeId = body?.place_id;
-    const trigger = body?.trigger;
-    if (typeof placeId !== "string" || !trigger || typeof trigger.id !== "string" || !trigger.when) {
-      return bad("body requires { place_id, trigger: { id, when, consequences } }");
-    }
-    if (!Array.isArray(trigger.consequences)) trigger.consequences = [];
+    const parsed = parseBody(MapTriggerRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const { place_id: placeId, trigger } = parsed.data;
     try {
       wm.addTrigger(placeId, trigger);
       narrative.markDirty();
@@ -376,11 +365,9 @@ async function handle(
     parts[2] === "inventory" &&
     parts.length === 3
   ) {
-    const body = (await readJson(req)) as { item?: unknown };
-    if (!body || body.item === undefined) {
-      return bad("body requires { item }");
-    }
-    const added = narrative.addInventoryItem(parts[1], body.item);
+    const parsed = parseBody(InventoryAddRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const added = narrative.addInventoryItem(parts[1], parsed.data.item);
     if (!added) return notFound(`entity "${parts[1]}" not found`);
     return mutated({
       ok: true,
@@ -397,14 +384,12 @@ async function handle(
     parts[3] === "remove" &&
     parts.length === 4
   ) {
-    const body = (await readJson(req)) as { item_id?: unknown };
-    if (!body || typeof body.item_id !== "string" || !body.item_id) {
-      return bad("body requires { item_id: string }");
-    }
-    const removed = narrative.removeInventoryItem(parts[1], body.item_id);
+    const parsed = parseBody(InventoryRemoveRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const removed = narrative.removeInventoryItem(parts[1], parsed.data.item_id);
     if (!removed) {
       return notFound(
-        `entity "${parts[1]}" not found or no inventory item with id "${body.item_id}"`,
+        `entity "${parts[1]}" not found or no inventory item with id "${parsed.data.item_id}"`,
       );
     }
     return mutated({
@@ -507,11 +492,9 @@ async function handle(
     parts[2] === "move_to_place" &&
     parts.length === 3
   ) {
-    const body = (await readJson(req)) as { place_id?: string };
-    if (!body || typeof body.place_id !== "string") {
-      return bad("body requires { place_id }");
-    }
-    const result = npcDirector.moveNpcToPlace(parts[1], body.place_id);
+    const parsed = parseBody(NpcMoveToPlaceRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const result = npcDirector.moveNpcToPlace(parts[1], parsed.data.place_id);
     if (!result.ok) return bad(result.error ?? "move failed");
     return mutated(result satisfies ResponseOf<typeof WorldStateApi.moveNpcToPlace>);
   }
@@ -535,15 +518,9 @@ async function handle(
     parts[2] === "directive" &&
     parts.length === 3
   ) {
-    const body = (await readJson(req)) as { directive?: NpcDirective | null };
-    if (!body || !("directive" in body)) {
-      return bad("body requires { directive } (pass null to clear)");
-    }
-    const directive = body.directive ?? null;
-    if (directive !== null && (typeof directive !== "object" || typeof directive.type !== "string")) {
-      return bad("directive must be null or an object with a string `type`");
-    }
-    const result = npcDirector.setDirective(parts[1], directive);
+    const parsed = parseBody(NpcDirectiveRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    const result = npcDirector.setDirective(parts[1], parsed.data.directive);
     if (!result.ok) return bad(result.error ?? "set directive failed");
     return mutated(result satisfies ResponseOf<typeof WorldStateApi.setNpcDirective>);
   }
@@ -563,6 +540,19 @@ function mutated(body: unknown): RouteResult {
 
 function bad(message: string): RouteResult {
   return { status: 400, body: { ok: false, error: message } satisfies ErrorResponse };
+}
+
+/** Borde de entrada: valida el body contra su espejo zod del contrato
+ *  (contracts/request-schemas.ts, con guardia de deriva). Falla con 400 y el
+ *  error zod formateado (ruta + motivo) — nunca se enruta un body no
+ *  conforme a los mutadores. */
+function parseBody<S extends ZodTypeAny>(
+  schema: S,
+  body: unknown,
+): { ok: true; data: z.output<S> } | { ok: false; result: RouteResult } {
+  const res = schema.safeParse(body);
+  if (!res.success) return { ok: false, result: bad(formatZodError(res.error)) };
+  return { ok: true, data: res.data };
 }
 
 function notFound(message: string): RouteResult {

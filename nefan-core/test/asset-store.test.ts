@@ -155,6 +155,11 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
 describe("registro e índice", () => {
   it("POST /assets: shape inválido → 400; válido → {ok:true}; duplicado idempotente", async () => {
     assert.equal((await post("/assets", { hash: "x" })).status, 400);
+    // Borde zod (request-schemas): campo con tipo/rango inválido también 400.
+    assert.equal(
+      (await post("/assets", { hash: "y", type: "texture", subtype: "albedo", prompt: "p", size_bytes: -1 })).status,
+      400,
+    );
     const entry = { hash: "reg1", type: "texture", subtype: "albedo", prompt: "piedra", size_bytes: 10 };
     assert.deepEqual((await post("/assets", entry)).body, { ok: true });
     assert.deepEqual((await post("/assets", entry)).body, { ok: true }); // dup = éxito
