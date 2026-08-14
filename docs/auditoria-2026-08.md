@@ -483,16 +483,39 @@ Backlog derivado (ordenado por impacto):
 
 ### Menores / higiene
 
-- Puertos en dos registros (`config.ts` vs `contracts/service-registry.ts`).
+- ~~Puertos en dos registros (`config.ts` vs `contracts/service-registry.ts`).~~
+  **RESUELTO** (rama audit/hygiene-pack): `CONFIG.ports` y `ai_server.port`
+  DERIVAN de `SERVICES`; en config.ts solo quedan los puertos no-servicio
+  (narrative_ws, godot_remote, html). Snapshot `runtime_config.json` idéntico.
 - ~~`StyleTag` (`contracts/remote-gen.ts`) copia manual desincronizada de
   `style-categories.ts` (omite `stage_*`, arrastra `nature`).~~ **RESUELTO**
   en `audit/dedup-enums` (tipo derivado de la fuente única).
-- `contracts/{narrative-llm,gpu-worker,gateway}.ts` — cero importadores.
-- `DEV_AMBIENT_BOOST=3.0` congelado en `light_placer.gd` (la memoria dice que
-  subir ambient en dev es deseado — decidir mecanismo, no borrar).
-- ~28 `console.log` sin gatear en los pipelines de imagen del cliente.
-- `attack_mapping.py` autodeclarado desalineado → `animation_intrinsics.json`
-  derivado de él es sospechoso.
+- ~~`contracts/{narrative-llm,gpu-worker,gateway}.ts` — cero importadores.~~
+  **RESUELTO** (misma rama): narrative-llm cableado en AiClient (`satisfies`
+  en bodies + respuestas tipadas) y gpu-worker en los callers reales del
+  cliente 2D (inpaint/peel) — mutar un campo del contrato rompe tsc en el
+  caller (verificado adversarialmente). `gateway.ts` se queda sin
+  importadores A PROPÓSITO: es un reexport puro de `protocol/messages` (ya
+  candado por el espejo WS #119), no puede derivar.
+- ~~`DEV_AMBIENT_BOOST=3.0` congelado en `light_placer.gd` (la memoria dice que
+  subir ambient en dev es deseado — decidir mecanismo, no borrar).~~
+  **RESUELTO** (misma rama): mecanismo decidido = `OS.is_debug_build()` —
+  editor/debug aplican el 3.0, un export release queda a 1.0 sin tocar código.
+- ~~~28 `console.log` sin gatear en los pipelines de imagen del cliente.~~
+  **RESUELTO** (misma rama): 21 trazas de stage-image/scene-image/collision
+  tras `dlog` (`dev/debug-log.ts`) — apagadas por defecto, opt-in `?debug=1` /
+  `localStorage.nefan_debug` / `window.__nefan.debug(true)`. Quedan los
+  `[hmr]` (solo hot-reload) y los avisos one-shot de ciclo de vida
+  (bridge-client, title-screen); errores siguen por errors.push (fail-loud).
+- ~~`attack_mapping.py` autodeclarado desalineado → `animation_intrinsics.json`
+  derivado de él es sospechoso.~~ **RESUELTO** (misma rama): el tool emite el
+  MISMO schema que consume `combat_animation_sync.gd` (visual_* +
+  impact_fraction + fbx_name parseado del ANIM_MAP; `style` humano preservado
+  del shipped) y añade drift report campo a campo contra el shipped. La
+  sospecha era del TOOL, no de los datos: los `fbx_name` del shipped
+  coinciden 11/11 con el ANIM_MAP actual del animator (verificado). Un
+  re-run con Godot arriba queda como paso manual (el detector confunde
+  wind-ups con golpes — requiere revisión de screenshots).
 
 ---
 
