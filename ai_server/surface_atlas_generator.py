@@ -298,8 +298,20 @@ class SurfaceAtlasGenerator:
 
 
 def canonical_hints(hints: list | None) -> str:
-    """Serialización canónica de los hints para el context del hash (str(list)
-    de Python no es estable entre representaciones equivalentes)."""
+    """Serialización canónica de los hints para el context del hash: números
+    normalizados a float redondeado 1e-4 (json.dumps distingue 1 de 1.0 y el
+    wire puede traer cualquiera de los dos) — espejo de la canonicalización
+    del layout TS (canonicalSurfaceLayoutJson)."""
     if not hints:
         return ""
-    return json.dumps(hints, separators=(",", ":"), sort_keys=True)
+
+    def canon(v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return round(float(v) * 1e4) / 1e4
+        if isinstance(v, list):
+            return [canon(x) for x in v]
+        return v
+
+    return json.dumps(canon(hints), separators=(",", ":"), sort_keys=True)

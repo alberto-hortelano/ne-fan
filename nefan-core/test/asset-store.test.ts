@@ -31,6 +31,7 @@ function dirsByType(base: string): Record<string, string> {
     sprite: join(base, "sprites"),
     scene: join(base, "scenes"),
     segment: join(base, "segments"),
+    surface: join(base, "surfaces"),
   };
 }
 
@@ -213,9 +214,28 @@ describe("registro e índice", () => {
     const all = fresh.listAssets(undefined, 50);
     assert.deepEqual(all.map((e) => e.hash), ["c", "b", "a"]);
     assert.equal(all[2].prompt, "pa2");
+    // subtype viaja en el summary (fila ganadora del collapse).
+    assert.equal(all[2].subtype, "normal");
     assert.deepEqual(fresh.listAssets("texture", 50).map((e) => e.hash), ["c", "a"]);
     assert.equal(fresh.listAssets(undefined, 1).length, 1);
+    // Filtro CSV multi-tipo (librería del motor narrativo).
+    fresh.register({ hash: "d", type: "surface", subtype: "surface", prompt: "pd", size_bytes: 1 });
+    assert.deepEqual(
+      fresh.listAssets("texture,surface", 50).map((e) => e.hash),
+      ["d", "c", "a"],
+    );
     fresh.close();
+  });
+
+  it("kind surface: blob servido con touch y by_hash con cache_url", async () => {
+    writeBlob(root, "surface", "s1hash", "surface.png");
+    db.register({ hash: "s1hash", type: "surface", subtype: "surface", prompt: "aged plaster", size_bytes: 4 });
+    const blob = await getRaw("/cache/surface/s1hash");
+    assert.equal(blob.status, 200);
+    assert.equal(blob.contentType, "image/png");
+    const by = await getJson("/assets/by_hash/s1hash");
+    assert.equal(by.status, 200);
+    assert.equal(by.body.matches[0].cache_url, "/cache/surface/s1hash");
   });
 
   it("limit no numérico → 400 ErrorResponse (desviación documentada del 422)", async () => {
