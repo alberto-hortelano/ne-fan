@@ -103,8 +103,23 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   (`bridge/message-intake.ts`); JSON inválido o shape no conforme → rechazo
   fail-loud con `narrative_status` error, sin alcanzar los handlers. Verificado
   en vivo (cliente→bridge por WS) y contra las formas reales de HTML y Godot.
-  Pendiente análogo: `state-http-server` y `asset-store` siguen validando a
-  mano pese a tener contratos tipados en `src/contracts/`.
+  ~~Pendiente análogo: `state-http-server` y `asset-store` siguen validando a
+  mano pese a tener contratos tipados en `src/contracts/`.~~ **RESUELTO**
+  (rama `audit/http-input-validation`): espejos zod de TODOS los request
+  bodies en `src/contracts/request-schemas.ts` con guardia de deriva en DOS
+  capas — asignabilidad bidireccional (campo requerido/tipo) + IGUALDAD DE
+  CLAVES (`assertSameKeys`: la asignabilidad estructural NO caza un campo
+  OPCIONAL caído del espejo, y el z.object no-strict lo striparía en
+  silencio; verificado que sin esa capa quitar `edge` de LinkSpecSchema
+  compilaba). Los enums del mapa ganan fuente única (`PLACE_KINDS`/
+  `LINK_KINDS` en world-map/types.ts) que consumen el espejo Y las tools de
+  narrative-mcp (antes re-copiadas a mano). Payloads con validación profunda
+  propia (manifest, escena, consequences) van con `z.custom<T>` superficial:
+  el borde garantiza el sobre, el especialista el contenido. CAZADO por el
+  borde nuevo: el test de map/link creaba un place con `kind: "wilderness"`
+  (fuera del vocabulario) que antes colaba en silencio; y un place sin
+  `name` guardaba `undefined`. 6 tests de borde nuevos + adversarial (5
+  fallan contra los servidores viejos).
 - ~~**`validate_scene_response` degrada a mapa de hierba en silencio**~~
   **RESUELTO en #118** (Stage 5b) y verificado de nuevo (2026-08-12). La función
   es fail-loud en la forma (lanza `ValueError` en grid que no cuadra, entity con

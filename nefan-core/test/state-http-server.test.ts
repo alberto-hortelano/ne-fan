@@ -248,15 +248,73 @@ describe("state HTTP API", () => {
     assert.equal(body.ok, false);
   });
 
+  // ── Borde zod (contracts/request-schemas.ts): lo que antes colaba con un
+  // cast ahora rebota con 400 y ruta+motivo ──
+
+  it("POST /map/place con kind fuera del vocabulario → 400 con la ruta", async () => {
+    const { status, body } = await post("/map/place", {
+      id: "paramo",
+      kind: "wilderness",
+      parent_id: "world",
+      name: "Páramo",
+    });
+    assert.equal(status, 400);
+    assert.match(String(body.error), /kind/);
+  });
+
+  it("POST /map/place sin name → 400 (antes guardaba name undefined)", async () => {
+    const { status, body } = await post("/map/place", {
+      id: "sin_nombre",
+      kind: "settlement",
+      parent_id: "world",
+    });
+    assert.equal(status, 400);
+    assert.match(String(body.error), /name/);
+  });
+
+  it("POST /map/link con kind inválido → 400 (antes colaba al world map)", async () => {
+    const { status, body } = await post("/map/link", {
+      from: "millhaven",
+      to: "millhaven_inn",
+      kind: "teleport",
+    });
+    assert.equal(status, 400);
+    assert.match(String(body.error), /kind/);
+  });
+
+  it("POST /map/trigger player_near sin radius → 400 (antes when colaba sin validar)", async () => {
+    const { status, body } = await post("/map/trigger", {
+      place_id: "millhaven",
+      trigger: { id: "t1", when: { type: "player_near" }, consequences: [] },
+    });
+    assert.equal(status, 400);
+    assert.match(String(body.error), /radius/);
+  });
+
+  it("POST /map/trigger con consequences no-array → 400 (antes se MACHACABA a [])", async () => {
+    const { status } = await post("/map/trigger", {
+      place_id: "millhaven",
+      trigger: { id: "t2", when: { type: "first_visit" }, consequences: "luego" },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("POST /npc/{id}/directive con directive no-objeto → 400", async () => {
+    const { status } = await post("/npc/alguien/directive", { directive: 42 });
+    assert.equal(status, 400);
+  });
+
   it("GET /map/place/{id} inexistente → 404", async () => {
     const { status } = await get("/map/place/nowhere");
     assert.equal(status, 404);
   });
 
   it("POST /map/link crea el enlace", async () => {
+    // "wilderness" (dato anterior del test) NO es un PlaceKind: el borde
+    // zod ahora lo rebota — antes colaba en silencio y corrompía el kind.
     await post("/map/place", {
       id: "forest",
-      kind: "wilderness",
+      kind: "landmark",
       parent_id: "world",
       name: "Bosque",
     });

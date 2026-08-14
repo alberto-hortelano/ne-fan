@@ -20,6 +20,10 @@ export type { FrameInputs, FrameResult } from "./simulation/game-loop.js";
 // Vocabulario NPC (fuente única): roles con preset + directivas ejecutables.
 export { NPC_ROLES, type NpcRole } from "./simulation/npc-roles.js";
 export { NPC_DIRECTIVE_TYPES, type NpcDirectiveType } from "./simulation/npc-behavior.js";
+// Enums del world map (fuente única): las tools de narrative-mcp y el espejo
+// zod de los requests HTTP derivan de estas listas.
+export { PLACE_KINDS, LINK_KINDS, EDGES } from "./world-map/types.js";
+export type { PlaceKind, LinkKind, Edge } from "./world-map/types.js";
 export { buildPersonality, DIFFICULTY, AGGRESSION_STYLE } from "./combat/difficulty-presets.js";
 export { NarrativeState } from "./narrative/narrative-state.js";
 export { FsSessionStorage, MemorySessionStorage } from "./narrative/session-storage.js";

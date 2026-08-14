@@ -34,3 +34,7 @@ export function validateContract(schema: ZodTypeAny, data: unknown): ContractChe
   if (res.success) return { ok: true };
   return { ok: false, error: formatError(res.error) };
 }
+
+/** Mismo formato ruta+motivo, exportado para los bordes HTTP internos
+ *  (contracts/request-schemas.ts → state-http-server / asset-store). */
+export const formatZodError = formatError;

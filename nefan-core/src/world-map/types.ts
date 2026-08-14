@@ -12,29 +12,36 @@ import type { Consequence } from "../narrative/types.js";
 
 export const WORLD_MAP_SCHEMA_VERSION = 1;
 
-export type PlaceKind =
-  | "world"
-  | "region"
-  | "settlement"
-  | "landmark"
-  | "site"
-  | "interior";
+/** Fuente única de los enums del mapa: el espejo zod de los requests HTTP
+ *  (contracts/request-schemas.ts) y las tools de narrative-mcp derivan de
+ *  estas listas — no re-copiarlas. */
+export const PLACE_KINDS = [
+  "world",
+  "region",
+  "settlement",
+  "landmark",
+  "site",
+  "interior",
+] as const;
+export type PlaceKind = (typeof PLACE_KINDS)[number];
 
-export type LinkKind =
-  | "road"
-  | "river"
-  | "path"
-  | "sea_route"
-  | "passage"
-  | "tunnel"
-  | "door";
+export const LINK_KINDS = [
+  "road",
+  "river",
+  "path",
+  "sea_route",
+  "passage",
+  "tunnel",
+  "door",
+] as const;
+export type LinkKind = (typeof LINK_KINDS)[number];
 
 /** Lado de una escena por el que se sale/entra. Mismos ejes que el cliente 2D:
  *  east = +x, west = -x, south = +z, north = -z; en `approx_position` [x, y]
  *  del espacio local del parent, y+ = south. */
 export type Edge = "north" | "south" | "east" | "west";
 
-export const EDGES: readonly Edge[] = ["north", "south", "east", "west"];
+export const EDGES = ["north", "south", "east", "west"] as const satisfies readonly Edge[];
 
 export function isEdge(v: unknown): v is Edge {
   return typeof v === "string" && (EDGES as readonly string[]).includes(v);

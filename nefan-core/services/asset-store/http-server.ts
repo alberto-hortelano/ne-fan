@@ -14,10 +14,11 @@ import type { ErrorResponse } from "../../src/contracts/common.js";
 import type {
   AssetByHashResponse,
   AssetListResponse,
-  AssetRegisterRequest,
   AssetRegisterResponse,
   CachePruneResponse,
 } from "../../src/contracts/asset-store.js";
+import { AssetRegisterRequestSchema } from "../../src/contracts/request-schemas.js";
+import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { ManifestDb } from "./manifest-db.js";
 import { readBlob, readSpriteSheetFrame, readStyleFile, type BlobResult } from "./blob-store.js";
 import { fetchKeepList, prune } from "./prune.js";
@@ -149,23 +150,13 @@ async function handle(
 
   // ── POST /assets (registro remoto — sustituye la escritura in-process) ──
   if (method === "POST" && path === "/assets") {
-    const body = (await readJson(req)) as Partial<AssetRegisterRequest> | undefined;
-    const invalid =
-      !body ||
-      typeof body.hash !== "string" ||
-      !body.hash ||
-      typeof body.type !== "string" ||
-      !body.type ||
-      typeof body.subtype !== "string" ||
-      !body.subtype ||
-      typeof body.prompt !== "string" ||
-      typeof body.size_bytes !== "number" ||
-      body.size_bytes < 0 ||
-      (body.extra !== undefined && (typeof body.extra !== "object" || body.extra === null));
-    if (invalid) {
+    // Borde de entrada: espejo zod del contrato (request-schemas.ts, con
+    // guardia de deriva) en vez del predicado a mano.
+    const parsed = AssetRegisterRequestSchema.safeParse(await readJson(req));
+    if (!parsed.success) {
       sendJson(res, 400, {
         ok: false,
-        error: "body requires { hash, type, subtype, prompt, size_bytes, extra? }",
+        error: `body requires { hash, type, subtype, prompt, size_bytes, extra? } — ${formatZodError(parsed.error)}`,
       } satisfies ErrorResponse);
       return;
     }
@@ -173,14 +164,7 @@ async function handle(
     // (mismo hash+type+subtype) = éxito idempotente, igual que el return
     // silencioso del Python. NO se verifica el blob en disco: hay entradas
     // legítimas sin blob propio (analysis, bbox legadas).
-    db.register({
-      hash: body.hash!,
-      type: body.type!,
-      subtype: body.subtype!,
-      prompt: body.prompt!,
-      size_bytes: body.size_bytes!,
-      extra: body.extra as Record<string, unknown> | undefined,
-    });
+    db.register(parsed.data);
     sendJson(res, 200, { ok: true } satisfies AssetRegisterResponse);
     return;
   }
