@@ -1,8 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { NarrativeState } from "../src/narrative/narrative-state.js";
-import { MemorySessionStorage } from "../src/narrative/session-storage.js";
+import { FsSessionStorage, MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { SessionData } from "../src/narrative/types.js";
 
@@ -210,8 +214,9 @@ describe("NarrativeState — migración v3→v4", () => {
     };
     s.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
     s.recordSceneLoaded("aldea", legacy);
-    // Spawn dinámico post-init en celda (5,2) → mundo ((5.5)*2-10, (2.5)*2-6) = (1, -1).
-    s.recordEntitySpawned("forastero", "npc", "aldea", { x: 5, y: 0, z: 2 }, { name: "Forastero" }, "react_to_player");
+    // Spawn dinámico post-init: dispatchConsequences guarda METROS de mundo
+    // (resolvePositionHint parte de la posición del jugador), nunca celdas.
+    s.recordEntitySpawned("forastero", "npc", "aldea", { x: 1, y: 0, z: -1 }, { name: "Forastero" }, "narrative_request");
     await s.save();
 
     // Degradar el save a v3 (como los reales pre-tiles).
@@ -237,9 +242,12 @@ describe("NarrativeState — migración v3→v4", () => {
     const vecina = s2.entities.find((e) => e.id === "vecina")!;
     assert.deepEqual(vecina.position, [-5, 0, -3]);
     assert.equal(vecina.scene_id, "tile_0_0");
-    // El spawn dinámico migra a global: celda (5,2) → (1, -1).
+    // El spawn dinámico CONSERVA sus metros de mundo (el tile (0,0) centrado
+    // es el mismo espacio físico): re-convertir celda→mundo aquí era el bug
+    // que teletransportaba spawns al resumir saves v3.
     const forastero = s2.entities.find((e) => e.id === "forastero")!;
-    assert.deepEqual(forastero.position, [1, 0, -1]);
+    assert.deepEqual(forastero.position, [1, 0, -1], "posición en metros intacta");
+    assert.equal(forastero.scene_id, "tile_0_0");
     // El muro viejo sobrevive re-muestreado 4×4 en el grid del tile:
     // celda vieja (0,0) → celdas nuevas (44..47, 52..55).
     const grid = rec!.scene_data.terrain as string[];
@@ -258,6 +266,59 @@ describe("NarrativeState — migración v3→v4", () => {
     assert.ok(await s2.loadSession(sessionId));
     assert.ok(s2.hasTile(0, 0));
     assert.equal(Object.keys(s2.scenes_loaded).length, 1);
+  });
+
+  it("fixture v3 real de disco: spawns dinámicos conservan metros; el distante queda latente en su tile", async () => {
+    // Save v3 COMMITEADO con la forma real pre-tiles: los narrative_request
+    // guardan metros de mundo (resolvePositionHint), los scene_init salen de
+    // las celdas de la escena. Se copia a tmp porque loadSession marca dirty
+    // y el flujo real re-guarda.
+    const src = fileURLToPath(new URL("./fixtures/saves/v3_aldea", import.meta.url));
+    const tmp = await fs.mkdtemp(join(tmpdir(), "nefan-v3-"));
+    try {
+      await fs.cp(src, join(tmp, "v3_aldea"), { recursive: true });
+      const storage = new FsSessionStorage(tmp);
+      const s = new NarrativeState(storage);
+      assert.ok(await s.loadSession("v3_aldea"), "el save v3 carga");
+
+      // La escena vieja se envolvió como tile (0,0) y el place la sigue.
+      assert.equal(s.scenes_loaded["aldea"], undefined);
+      assert.ok(s.hasTile(0, 0));
+      assert.equal(s.world.active_scene_id, "tile_0_0");
+      assert.equal(s.worldMap.get("aldea")?.realized_scene_id, "tile_0_0");
+
+      // scene_init: recreada desde la celda re-muestreada — misma posición
+      // física (celda (3,2) de 12×8@2 centrada = mundo (-5, -3)).
+      const vecina = s.entities.find((e) => e.id === "vecina")!;
+      assert.deepEqual(vecina.position, [-5, 0, -3]);
+      assert.equal(vecina.scene_id, "tile_0_0");
+
+      // narrative_request cercano: metros INTACTOS (el bug los re-convertía
+      // como celdas y lo teletransportaba), estado preservado.
+      const forastero = s.entities.find((e) => e.id === "narr_npc_1748772600")!;
+      assert.deepEqual(forastero.position, [3, 0, -2], "metros de mundo intactos");
+      assert.equal(forastero.scene_id, "tile_0_0");
+      assert.equal(forastero.data.name, "Forastero");
+      assert.equal(forastero.spawn_reason, "narrative_request");
+
+      // narrative_request distante (hint distant_north, z=-50): fuera del
+      // tile (0,0) — queda latente etiquetado con el tile que CONTIENE su
+      // posición, sin moverse.
+      const jinete = s.entities.find((e) => e.id === "narr_npc_1748773200")!;
+      assert.deepEqual(jinete.position, [0, 0, -50]);
+      assert.equal(jinete.scene_id, "tile_0_-1");
+
+      // Round-trip: el save migrado persiste como v4 y el segundo load es
+      // idempotente (nada vuelve a moverse).
+      await s.save();
+      const s2 = new NarrativeState(storage);
+      assert.ok(await s2.loadSession("v3_aldea"));
+      assert.deepEqual(s2.entities.find((e) => e.id === "narr_npc_1748772600")!.position, [3, 0, -2]);
+      assert.deepEqual(s2.entities.find((e) => e.id === "vecina")!.position, [-5, 0, -3]);
+      assert.ok(s2.hasTile(0, 0));
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

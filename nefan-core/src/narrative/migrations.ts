@@ -6,7 +6,7 @@
  *  place (loadSession las orquesta según data.schema_version). */
 import { WorldMapManager } from "../world-map/world-map.js";
 import type { WorldMap } from "../world-map/types.js";
-import { TILE_CELLS, TILE_MPC, tileKey } from "../scene/tile.js";
+import { TILE_CELLS, TILE_MPC, tileKey, worldToTile } from "../scene/tile.js";
 import { expandScenePrimitives } from "../scene/scene-expand.js";
 import type { SessionData } from "./types.js";
 import type { NarrativeState } from "./narrative-state.js";
@@ -73,21 +73,25 @@ export function migrateActiveSceneToTile(state: NarrativeState): void {
   });
 
   delete state.scenes_loaded[oldId];
-  // Los spawns dinámicos de la escena vieja (react_to_player…) migran de
-  // escena y a posición global (celda vieja → mundo, que con el tile (0,0)
-  // centrado es la misma posición física de siempre). Los scene_init se
-  // RETIRAN: el re-registro de abajo los recrea con posición global desde
-  // las celdas re-muestreadas (registerSceneNpcs preserva records vivos,
-  // así que la migración debe soltarlos explícitamente — un save v3 no
-  // tiene role/directive que perder).
-  const halfW = (cols * mpc) / 2;
-  const halfD = (rows * mpc) / 2;
+  // Los spawns dinámicos de la escena vieja (narrative_request) migran de
+  // escena CONSERVANDO su posición: siempre se guardaron en METROS de mundo
+  // (resolvePositionHint parte de la posición del jugador ± offsets), y la
+  // escena v3 estaba centrada en el origen igual que el tile (0,0) — la
+  // posición física es la misma. (La conversión celda→mundo que había aquí
+  // DOBLE-convertía esos metros como si fueran celdas y teletransportaba los
+  // spawns al resumir.) El scene_id pasa al tile que CONTIENE la posición —
+  // normalmente el (0,0); un spawn "distant_*" (±50 m) puede caer en un tile
+  // vecino aún no generado y quedará latente hasta que exista. Los
+  // scene_init se RETIRAN: el re-registro de abajo los recrea con posición
+  // global desde las celdas re-muestreadas (registerSceneNpcs preserva
+  // records vivos, así que la migración debe soltarlos explícitamente — un
+  // save v3 no tiene role/directive que perder).
   state.entities = state.entities.filter((e) => {
     if (e.scene_id !== oldId) return true;
     if (e.spawn_reason === "scene_init") return false;
-    e.scene_id = tileKey(0, 0);
-    const [c, , r] = e.position;
-    e.position = [(c + 0.5) * mpc - halfW, 0, (r + 0.5) * mpc - halfD];
+    const [x, , z] = e.position;
+    const t = worldToTile(x, z);
+    e.scene_id = tileKey(t.tx, t.ty);
     return true;
   });
   // Re-registro completo bajo la clave de tile (recalcula NPCs en global).
