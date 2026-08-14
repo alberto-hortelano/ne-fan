@@ -57,6 +57,12 @@ export class FpsAtlasController {
   private cache = new Map<string, { layoutKey: string; images: Map<string, AtlasImage> }>();
   private token = 0;
   private inFlight = false;
+  /** Tiles con un onActiveTile en curso — guarda SÍNCRONA contra el doble
+   *  disparo del arranque (dos triggers antes del primer await pagaban dos
+   *  veces la misma página; visto en vivo 2026-08-14, $0.15×2). */
+  private pendingTiles = new Set<string>();
+  /** Triggers llegados con otro en vuelo: se re-ejecutan al terminar. */
+  private queuedTiles = new Set<string>();
 
   constructor(
     private urls: FpsAtlasUrls,
@@ -71,13 +77,30 @@ export class FpsAtlasController {
     return this.inFlight;
   }
 
-  /** Tile activo nuevo: reinstala de caché o, con generación auto, pinta.
-   *  Con un run en vuelo no relanza (los disparadores retro/addTile/
-   *  setActiveClientTile pueden solaparse en el arranque). */
+  /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
+   *  modo vector — mismo criterio que el proscenio con su caché): memoria →
+   *  mapping persistido (solo asset-store) → resolve_only contra la librería
+   *  ($0). Pintar celdas nuevas solo con la generación activa. Con un run en
+   *  vuelo no relanza (los disparadores del arranque se solapan). */
   async onActiveTile(key: string): Promise<void> {
-    if (await this.reinstallIfCached(key)) return;
-    if (this.inFlight) return;
-    if (this.deps.generationOn()) await this.runFor(key);
+    // Un trigger solapado no se DESCARTA: se re-encola para cuando acabe el
+    // actual — el disparo temprano del arranque corre sin estilo/modos de la
+    // sesión y el retro-trigger correcto debe poder reintentar (sin esto, el
+    // resume con remote-gen caído se quedaba en clay pese al mapping local).
+    if (this.pendingTiles.has(key)) {
+      this.queuedTiles.add(key);
+      return;
+    }
+    this.pendingTiles.add(key);
+    try {
+      if (await this.reinstallIfCached(key)) return;
+      if (this.inFlight) return;
+      if (await this.reinstallFromStorage(key)) return;
+      await this.runFor(key, { resolveOnly: !this.deps.generationOn() });
+    } finally {
+      this.pendingTiles.delete(key);
+      if (this.queuedTiles.delete(key)) void this.onActiveTile(key).catch(() => {});
+    }
   }
 
   async reinstallIfCached(key: string): Promise<boolean> {
@@ -90,8 +113,9 @@ export class FpsAtlasController {
     return true;
   }
 
-  /** Generación manual (tecla G / menú dev) o auto (onActiveTile). */
-  async runFor(key: string): Promise<void> {
+  /** Generación manual (tecla G / menú dev) o auto (onActiveTile). Con
+   *  `resolveOnly` NUNCA pinta: restaura lo que ya exista en la librería. */
+  async runFor(key: string, { resolveOnly = false } = {}): Promise<void> {
     const tile = this.deps.getTile(key);
     if (!tile) return;
     const token = ++this.token;
@@ -100,7 +124,7 @@ export class FpsAtlasController {
       const layoutKey = await this.layoutKeyFor(tile.layout);
       const cells = this.flattenCells(tile.layout);
       if (cells.length === 0) return;
-      this.deps.log(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
+      if (!resolveOnly) this.deps.log(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
       const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,12 +134,23 @@ export class FpsAtlasController {
           style_id: this.styleId || undefined,
           style_tag: styleCategoryForTile(tile.styleTag, tile.biome) || undefined,
           layout_key: layoutKey.slice(0, 64),
+          resolve_only: resolveOnly || undefined,
         }),
       });
       if (!res.ok) throw new Error(`generate_surface_atlas: HTTP ${res.status} ${await res.text()}`);
       const data = (await res.json()) as GenerateSurfaceAtlasResponse;
-      this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
+      if (!resolveOnly) this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
       if (token !== this.token) return; // el tile activo cambió en vuelo
+
+      const resolvedKeys = Object.keys(data.cells);
+      if (resolvedKeys.length === 0) {
+        // Nada en la librería para este layout+estilo (tile aún sin pagar).
+        if (resolveOnly) {
+          this.deps.log(`Atlas fps de ${key}: sin celdas en la librería (clay — G o Imágenes… para pintar)`);
+          return;
+        }
+        throw new Error("atlas sin celdas descargables");
+      }
 
       const kindByKey = new Map(cells.map((c) => [c.key, c.kind]));
       const images = new Map<string, AtlasImage>();
@@ -137,22 +172,86 @@ export class FpsAtlasController {
         errors.push("scene", `atlas fps de ${key}: ${failures.length} celdas sin textura (clay)`);
       }
       this.deps.apply(key, images);
-      this.cache.set(key, { layoutKey, images });
-      while (this.cache.size > CLIENT_CACHE_MAX) {
-        const oldest = this.cache.keys().next().value as string | undefined;
-        if (oldest === undefined) break;
-        this.cache.delete(oldest);
+      // Caché (memoria + persistida) solo con el atlas COMPLETO: un parcial
+      // debe reintentarse en la próxima visita.
+      const complete = data.missing === 0 && failures.length === 0;
+      if (complete) {
+        this.cache.set(key, { layoutKey, images });
+        while (this.cache.size > CLIENT_CACHE_MAX) {
+          const oldest = this.cache.keys().next().value as string | undefined;
+          if (oldest === undefined) break;
+          this.cache.delete(oldest);
+        }
+        this.persistMapping(layoutKey, data.cells, kindByKey);
       }
       void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
       this.deps.log(
-        `Atlas fps de ${key} instalado (${data.pages_painted} página(s) nuevas` +
-          `${data.cached ? ", todo de la librería" : `, $${data.cost_usd}`})`,
+        data.missing > 0
+          ? `Atlas fps de ${key}: ${images.size} superficies de la librería; faltan ${data.missing} por pintar (G o Imágenes…)`
+          : `Atlas fps de ${key} instalado (${data.pages_painted} página(s) nuevas` +
+            `${data.cached ? ", todo de la librería" : `, $${data.cost_usd}`})`,
       );
     } catch (err) {
       errors.push("scene", `el atlas fps de ${key} falló — se queda en clay`, err);
     } finally {
       if (token === this.token) this.inFlight = false;
     }
+  }
+
+  /** Mapping celda→{hash,url,kind} persistido por layoutKey: el resume
+   *  restaura el arte pagado con SOLO el asset-store arriba (sin remote-gen).
+   *  Best-effort: localStorage lleno/bloqueado no es un error. */
+  private persistMapping(
+    layoutKey: string,
+    cells: Record<string, { hash: string; url: string }>,
+    kindByKey: Map<string, "tile" | "unique">,
+  ): void {
+    try {
+      const entry = Object.fromEntries(
+        Object.entries(cells).map(([k, c]) => [k, { url: c.url, kind: kindByKey.get(k) ?? "tile" }]),
+      );
+      localStorage.setItem(`fps_atlas:${layoutKey}`, JSON.stringify(entry));
+    } catch (err) {
+      // best-effort, pero visible: sin el mapping, el resume offline degrada.
+      console.warn("fps-atlas: mapping local no persistido:", err);
+    }
+  }
+
+  private async reinstallFromStorage(key: string): Promise<boolean> {
+    const tile = this.deps.getTile(key);
+    if (!tile) return false;
+    const layoutKey = await this.layoutKeyFor(tile.layout);
+    type StoredMap = Record<string, { url: string; kind: "tile" | "unique" }>;
+    let stored: StoredMap | null = null;
+    try {
+      const raw = localStorage.getItem(`fps_atlas:${layoutKey}`);
+      stored = raw ? (JSON.parse(raw) as StoredMap) : null;
+    } catch {
+      stored = null;
+    }
+    if (!stored) return false;
+    const images = new Map<string, AtlasImage>();
+    try {
+      await Promise.all(
+        Object.entries(stored).map(async ([cellKey, c]) => {
+          const img = await this.fetchImage(`${this.urls.assets}${c.url}`);
+          images.set(cellKey, { image: img, kind: c.kind });
+        }),
+      );
+    } catch {
+      // Blob podado o asset-store caído: invalidar y seguir por resolve.
+      try {
+        localStorage.removeItem(`fps_atlas:${layoutKey}`);
+      } catch {
+        /* best-effort */
+      }
+      return false;
+    }
+    if (images.size === 0) return false;
+    this.deps.apply(key, images);
+    this.cache.set(key, { layoutKey, images });
+    this.deps.log(`Atlas fps de ${key} restaurado (mapping local, $0)`);
+    return true;
   }
 
   private async layoutKeyFor(layout: SurfaceLayout): Promise<string> {

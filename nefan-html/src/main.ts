@@ -233,6 +233,9 @@ const sceneImageController = new SceneImageController(renderer, GEN_URLS, (e) =>
 // de la imagen la une (el repintado puede recolocar volúmenes; el agua
 // declarada gobierna la jugabilidad).
 const stageDeclaredWater = new Map<string, TerrainGridData | null>();
+/** true cuando los modos de render del SAVE ya están aplicados (respuesta de
+ *  start/resume) — gate del gasto automático del atlas fps (ver abajo). */
+let sessionModesApplied = false;
 const stageImageController = new StageImageController(GEN_URLS, {
   install: (key, images) => {
     const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
@@ -268,7 +271,12 @@ const fpsAtlasController = new FpsAtlasController(
     },
     apply: (key, images) => fpsRenderer?.applyAtlas(key, images),
     clear: (key) => fpsRenderer?.clearAtlas(key),
-    generationOn: () => scenesGenerationOn(),
+    // Gate por sesión: entre el broadcast de la escena y la respuesta de
+    // start/resume, scenesMode aún es el default del cliente ("image") — sin
+    // el gate, reanudar una partida VECTOR pintaba atlas de pago en esa
+    // ventana (visto en vivo 2026-08-14). Hasta aplicar los modos del save,
+    // el controller solo RESUELVE contra la librería ($0).
+    generationOn: () => sessionModesApplied && scenesGenerationOn(),
     log: (msg) => log(msg),
     onGeneration: (e) => devPanel.recordGeneration(e),
   },
@@ -2525,6 +2533,7 @@ async function runTitleFlow(): Promise<void> {
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
+      sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = toClientView(res.state.world?.view);
       applySessionView(sessionWorldView);
@@ -2536,6 +2545,7 @@ async function runTitleFlow(): Promise<void> {
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
+      sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = toClientView(res.state.world?.view);
       applySessionView(sessionWorldView);

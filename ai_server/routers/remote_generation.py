@@ -207,6 +207,10 @@ class SurfaceAtlasRequest(BaseModel):
     # Hash del layout canónico del cliente — solo logging/debug: la caché es
     # POR CELDA (independiente de la escena y del layout).
     layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
+    # true = SOLO resolver contra la librería (gratis, $0): devuelve las
+    # celdas ya pintadas y cuántas faltan, sin pintar nada. Es el camino del
+    # resume (restaurar arte pagado aunque la generación esté en OFF).
+    resolve_only: bool = False
 
 
 @router.post("/generate_surface_atlas")
@@ -260,9 +264,9 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         else:
             missing.append(cell)
 
-    if not missing:
-        return {"cells": resolved, "pages_painted": 0, "cached": True,
-                "cost_usd": 0.0, "generation_time_ms": 0}
+    if not missing or body.resolve_only:
+        return {"cells": resolved, "pages_painted": 0, "cached": not missing,
+                "cost_usd": 0.0, "generation_time_ms": 0, "missing": len(missing)}
 
     print(
         f"SurfaceAtlas: {len(missing)} celdas nuevas de {len(body.cells)} "
@@ -305,6 +309,7 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         "cached": False,
         "cost_usd": result["cost_usd"],
         "generation_time_ms": result["generation_time_ms"],
+        "missing": 0,
     }
 
 

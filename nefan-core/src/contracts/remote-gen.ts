@@ -80,6 +80,9 @@ export interface GenerateSurfaceAtlasRequest {
   /** Hash del layout canónico del cliente — logging/debug (la caché es por
    *  celda, no por atlas). */
   layout_key?: string;
+  /** true = solo resolver contra la librería ($0): devuelve las celdas ya
+   *  pintadas + `missing`, sin pintar. Camino del resume. */
+  resolve_only?: boolean;
 }
 
 export interface SurfaceCellResult {
@@ -95,6 +98,8 @@ export interface GenerateSurfaceAtlasResponse {
   cached: boolean;
   cost_usd: number;
   generation_time_ms: number;
+  /** Celdas de la petición SIN pintar aún (con resolve_only no se pintan). */
+  missing: number;
 }
 
 /** Sprite sheet de personaje skinneado por IA (Meshy i2i hero-shot + atlas
