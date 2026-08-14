@@ -12,7 +12,7 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
-import { inspectPlugin } from "../src/plugins/views.js";
+import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { createStateHttpServer } from "../bridge/state-http-server.js";
 
@@ -56,7 +56,9 @@ before(async () => {
         };
       },
       list: () =>
-        [...activePlugins.entries()].map(([id, m]) => ({ id, name: m.name, version: m.version })),
+        [...activePlugins.entries()].map(([id, m]) =>
+          pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
+        ),
       inspect: (id, view) =>
         inspectPlugin(
           {
@@ -260,6 +262,20 @@ describe("state HTTP API", () => {
     });
     assert.equal(status, 400);
     assert.match(String(body.error), /kind/);
+  });
+
+  it('POST /map/place con parent_id "null" (string) → 400 pidiendo el null de JSON', async () => {
+    // El emisor que escribe la CADENA "null" quería el null de JSON; aceptarla
+    // colgaría el place de un padre fantasma (o dependería de que el harness
+    // MCP la coercione en silencio, que es lo que vio el playtest 2026-08-13).
+    const { status, body } = await post("/map/place", {
+      id: "mundo_raiz",
+      kind: "world",
+      parent_id: "null",
+      name: "Mundo",
+    });
+    assert.equal(status, 400);
+    assert.match(String(body.error), /JSON null.*not the string/);
   });
 
   it("POST /map/place sin name → 400 (antes guardaba name undefined)", async () => {

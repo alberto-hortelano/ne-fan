@@ -76,7 +76,7 @@ curl -s 'localhost:9899/wait?type=games_listed&timeoutMs=10000'
 
 # arrancar sesión y esperar la escena inicial generada por el motor
 curl -s -XPOST localhost:9899/send \
-  -d '{"type":"start_session","requestId":"s1","gameId":"tavern_intro","appearance":{"model_id":"pete"}}'
+  -d '{"type":"start_session","requestId":"s1","gameId":"alta_fantasia","appearance":{"model_id":"pete","skin_path":""}}'
 curl -s 'localhost:9899/wait?type=narrative_event&timeoutMs=300000'
 
 # hablar con un NPC
@@ -137,7 +137,9 @@ Formatos verificados en `nefan-core/bridge/ws-server.ts` y `nefan-core/src/proto
 
 - `{type:"list_games", requestId}` → `games_listed`
 - `{type:"list_sessions", requestId}` → `sessions_listed`
-- `{type:"start_session", requestId, gameId, appearance:{model_id, skin_path?}}` → `session_started`
+- `{type:"start_session", requestId, gameId, appearance:{model_id, skin_path}}` → `session_started`
+  (`appearance` es opcional, pero si va, `skin_path` es REQUERIDO por el zod del bridge — usar
+  `""` si no hay skin; omitirlo rebota con `narrative_status: error`)
   + (async) `narrative_status` y `narrative_event` con la escena
 - `{type:"resume_session", requestId, sessionId}` → `session_started` (isResume)
 - `{type:"interact_entity", entityId, entityName}` → `narrative_event` (consequences)
@@ -145,5 +147,7 @@ Formatos verificados en `nefan-core/bridge/ws-server.ts` y `nefan-core/src/proto
 - `{type:"player_entered_place", placeId}` → `narrative_event` con la escena del lugar
 - `{type:"save_session"}` → `session_saved`
 
-El único juego en disco es `tavern_intro` ("The Calling"). `start_session` deja que el LLM
-conduzca el mundo abierto (ignora los `beats` scriptados, que son del camino `load_game`).
+Los juegos en disco son los de `nefan-core/data/games/` (`alta_fantasia`, `cuentos_oscuros`,
+`toledo_1200`, `colonia_aster`, más los `user_*` subidos) — comprobar con `list_games`.
+`start_session` deja que el LLM conduzca el mundo abierto; no hay historia predefinida
+(`tavern_intro` solo pervive en la grabación que sirve el replay-server, ver arriba).

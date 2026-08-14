@@ -577,10 +577,14 @@ into context:
   server.tool(
     'scene_validate',
     `Dry-run the playability validator on a Format D scene JSON BEFORE calling ` +
-    `narrative_respond. Runs the same server-side checks as the respond ` +
-    `pre-flight: expandable primitives, declared terrain chars, walkable player ` +
-    `spawn, flood-fill reachability (doors, map edge, NPCs), and the world-map ` +
-    `exterior link for place_id. Returns { ok, errors, warnings, stats }.`,
+    `narrative_respond. Accepts BOTH shapes generate_scene can produce: a ` +
+    `classic place scene AND a tile scene (with tile:{tx,ty} — validated with ` +
+    `the tile rules instead: edge-crossing continuity with realized ` +
+    `neighbours, no "player" entity outside bootstrap, walkable entry). Runs ` +
+    `the same server-side checks as the respond pre-flight: expandable ` +
+    `primitives, declared terrain chars, walkable player spawn, flood-fill ` +
+    `reachability (doors, map edge, NPCs), and the world-map exterior link ` +
+    `for place_id. Returns { ok, errors, warnings, stats }.`,
     {
       scene_json: z.string().describe('The Format D scene JSON string to validate.'),
     },
@@ -649,7 +653,7 @@ into context:
     {
       id: z.string().describe('Stable slug, e.g. "puerto_bajo".'),
       kind: z.enum(PLACE_KINDS),
-      parent_id: z.string().nullable().describe('Containing place id, or null only for the root world.'),
+      parent_id: z.string().nullable().describe('Containing place id, or JSON null only for the root world (never the string "null" — the bridge rejects it).'),
       name: z.string().describe('Display name shown to the player.'),
       description: z.string().optional().describe('Narrative description for reasoning.'),
       approx_position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in the parent local 2D space (layout only, no fixed scale).'),

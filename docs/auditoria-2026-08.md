@@ -450,12 +450,28 @@ Backlog derivado (ordenado por impacto):
   en `volumes` cuentan en `doors_total`/`doors_reachable` (celdas del vano
   como objetivo de alcanzabilidad; los muros del volume siguen sin
   estamparse en walkable — divergencia documentada de #122).
-- Menores restantes: `scene_validate` acepta Tile Format sin documentarlo;
+- ~~Menores restantes: `scene_validate` acepta Tile Format sin documentarlo;
   `is_resume: true` a mitad de sesión sin guía para el motor; `plugin_list`
   duplica events_consumed; `parent_id: "null"` string coercionado en
   silencio; el tile no usó `angle` pese a la recomendación del prompt;
   README del emulador desfasado (skin_path requerido, "único juego
-  tavern_intro").
+  tavern_intro").~~ **RESUELTOS** (rama audit/playtest-minors): description
+  del tool `scene_validate` documenta ambas formas (place scene y tile con
+  sus reglas propias); `world_rules.md` explica el bloque `session` y que
+  `is_resume: true` persiste todo el proceso (no es señal por-request ni
+  motivo de re-bootstrap); `pluginListSummary` (src/plugins/views.ts, usado
+  por ws-server y test HTTP) dedupea los tipos de `events_consumed`;
+  `PlaceUpsertSchema` rechaza la cadena literal `"null"` con 400 pidiendo el
+  null de JSON (la coerción silenciosa la hacía el harness MCP, fuera del
+  repo — nuestro borde ahora es fail-loud) y la description del tool lo
+  avisa; `tile_instructions.md` documenta `angle` en building/prop con la
+  exigencia de ángulos variados (±5..±30°) para casas de pueblo (antes solo
+  vivía enterrado en la description de generate_scene.json); README del
+  emulador con `skin_path` requerido en el ejemplo y la lista real de juegos
+  (el `tavern_intro` del replay-server es la grabación, y se mantiene).
+  Sin resolver a propósito: aviso del validador por "tile sin angles" — es
+  dirección de arte, no jugabilidad, y el pack de avisos (#137) se reserva
+  para lo segundo.
 
 ### Cobertura de tests (mejoras)
 
