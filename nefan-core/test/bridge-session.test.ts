@@ -661,7 +661,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 });
 
 
-describe("set_render_mode (activación de imágenes por faceta)", () => {
+describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   /** Save mínimo en vector como los pre-facetas: sin character_mode. */
   const legacyVectorSave = (id: string) =>
     ({
@@ -691,7 +691,9 @@ describe("set_render_mode (activación de imágenes por faceta)", () => {
       socket,
       ctx,
     );
-    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    assert.deepEqual(sent[0], {
+      type: "render_mode_set", requestId: "r1", ok: true, facet: "scenes", renderMode: "image",
+    });
     const data = await ctx.sessionStorage.read("s1");
     assert.equal(data?.world.render_mode, "image");
     // Regresión: sin este pin, character_mode "" seguiría a render_mode y
@@ -708,7 +710,9 @@ describe("set_render_mode (activación de imágenes por faceta)", () => {
       socket,
       ctx,
     );
-    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    assert.deepEqual(sent[0], {
+      type: "render_mode_set", requestId: "r1", ok: true, facet: "characters", renderMode: "image",
+    });
     const data = await ctx.sessionStorage.read("s2");
     assert.equal(data?.world.render_mode, "vector");
     assert.equal(data?.world.character_mode, "image");
@@ -741,6 +745,53 @@ describe("set_render_mode (activación de imágenes por faceta)", () => {
     );
     assert.equal((sent[3] as { ok: boolean }).ok, false);
     assert.match((sent[3] as { error?: string }).error ?? "", /facet desconocido/);
+    // renderMode fuera del enum: rechazar (mismo motivo, el wire no está validado aquí).
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r5", sessionId: "s3", renderMode: "clay" as never, facet: "scenes" },
+      socket, ctx,
+    );
+    assert.equal((sent[4] as { ok: boolean }).ok, false);
+    assert.match((sent[4] as { error?: string }).error ?? "", /renderMode desconocido/);
+  });
+
+  it("image → vector en save inactivo: lo baja y no arrastra los skins legacy", async () => {
+    const { ctx } = makeCtx();
+    const save = legacyVectorSave("s6");
+    (save.world as { render_mode: string }).render_mode = "image";
+    await ctx.sessionStorage.write("s6", save);
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s6", renderMode: "vector", facet: "scenes" },
+      socket, ctx,
+    );
+    assert.deepEqual(sent[0], {
+      type: "render_mode_set", requestId: "r1", ok: true, facet: "scenes", renderMode: "vector",
+    });
+    const data = await ctx.sessionStorage.read("s6");
+    assert.equal(data?.world.render_mode, "vector");
+    // Sin el pin, character_mode "" seguiría a render_mode y bajar escenarios
+    // apagaría también los skins IA (apagado no pedido).
+    assert.equal(data?.world.character_mode, "image");
+  });
+
+  it("con la sesión ACTIVA, el cambio se difunde como render_mode_changed", async () => {
+    const { ctx, narrative, broadcasts } = makeCtx();
+    await ctx.sessionStorage.write("s7", legacyVectorSave("s7"));
+    narrative.session_id = "s7";
+    narrative.world.render_mode = "image";
+    narrative.world.character_mode = "image";
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r1", sessionId: "s7", renderMode: "vector", facet: "characters" },
+      socket, ctx,
+    );
+    assert.deepEqual(sent[0], {
+      type: "render_mode_set", requestId: "r1", ok: true, facet: "characters", renderMode: "vector",
+    });
+    assert.equal(narrative.world.character_mode, "vector");
+    assert.deepEqual(broadcasts.at(-1), {
+      type: "render_mode_changed", sessionId: "s7", facet: "characters", renderMode: "vector",
+    });
   });
 
   it("con la sesión ACTIVA, el espejo en memoria fija ambos modos", async () => {
@@ -774,7 +825,9 @@ describe("set_render_mode (activación de imágenes por faceta)", () => {
       { type: "set_render_mode", requestId: "r1", sessionId: "s5", renderMode: "image", facet: "scenes" },
       socket, ctx,
     );
-    assert.deepEqual(sent[0], { type: "render_mode_set", requestId: "r1", ok: true });
+    assert.deepEqual(sent[0], {
+      type: "render_mode_set", requestId: "r1", ok: true, facet: "scenes", renderMode: "image",
+    });
     const data = await ctx.sessionStorage.read("s5");
     // El flag se activó en disco...
     assert.equal(data?.world.render_mode, "image");

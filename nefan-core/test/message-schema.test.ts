@@ -31,6 +31,7 @@ test("un frame válido de cada tipo pasa la validación", () => {
     { type: "resume_session", requestId: "r2", sessionId: "s1" },
     { type: "delete_session", requestId: "r3", sessionId: "s1" },
     { type: "set_render_mode", requestId: "r4", sessionId: "s1", renderMode: "image" },
+    { type: "set_render_mode", requestId: "r5", sessionId: "s1", renderMode: "vector", facet: "characters" },
     {
       type: "dialogue_choice",
       eventId: "e1",
@@ -68,6 +69,13 @@ test("un frame válido de cada tipo pasa la validación", () => {
     const res = validateContract(ClientMessageSchema, msg);
     assert.equal(res.ok, true, `debería aceptar ${msg.type}: ${res.ok ? "" : res.error}`);
   }
+});
+
+test("set_render_mode con renderMode fuera del enum se rechaza", () => {
+  const res = validateContract(ClientMessageSchema, {
+    type: "set_render_mode", requestId: "r1", sessionId: "s1", renderMode: "clay",
+  });
+  assert.equal(res.ok, false);
 });
 
 test("un type desconocido se rechaza con error del discriminador", () => {

@@ -82,6 +82,9 @@ follows the active system automatically.
 - "vector": the player sees the engine's untextured 3D render of your plans
   directly; no image calls. Both views (overworld and proscenium) support
   both modes.
+- The mode is NOT frozen: the player can switch it (per facet: scenes /
+  characters) at any time from the client's dev menu. Already-painted images
+  are kept when switching to "vector" — only NEW generation stops.
 
 ── 8. PLUGINS (gameplay systems) ──────────────────────────────────────────
 Active plugins ship their derived views in every turn (`plugins[]`). You

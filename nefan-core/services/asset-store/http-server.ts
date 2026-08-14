@@ -44,6 +44,19 @@ export interface AssetStoreHealthResponse {
 
 export function createAssetStoreServer(opts: AssetStoreServerOptions): Server {
   const server = createServer((req, res) => {
+    // Espejo del CORSMiddleware(allow_origins=["*"]) de los FastAPI del
+    // stack: el cliente 2D corre en localhost:3000 y pide los blobs con
+    // crossOrigin="anonymous" (necesita acceso a píxeles — sin la cabecera,
+    // Chrome bloquea la respuesta y el decode() revienta en EncodingError).
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      });
+      res.end();
+      return;
+    }
     void handle(req, res, opts).catch((err) => {
       sendJson(res, 500, { ok: false, error: String((err as Error)?.message ?? err) } satisfies ErrorResponse);
     });

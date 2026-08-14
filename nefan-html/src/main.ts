@@ -30,7 +30,7 @@ import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js"
 import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
 import { rendererRegistry } from "./renderer/registry.js";
 import type { Renderer2D } from "./renderer/renderer2d.js";
-import { ProsceniumRenderer } from "./renderer/proscenium-renderer.js";
+import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { StageImageController } from "./scene/stage-image.js";
@@ -65,6 +65,7 @@ import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
+import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { errors } from "./ui/error-log.js";
 import {
   createGameClient,
@@ -212,6 +213,9 @@ const renderer = new CanvasRenderer(canvas, {
 // de imágenes IA, contadores de caché, gasto estimado en € (poll a
 // GET /dev/status de remote-gen) y config activa. Siempre visible.
 const devPanel = new DevStatusPanel(REMOTE_GEN_URL, (msg) => log(msg));
+/** Menú dev de imágenes (toggles + fake list). Se construye tras el bridge
+ *  (sus deps tocan narrativeClient); hasta entonces los refresh son no-op. */
+let devMenu: DevMenu | null = null;
 
 // Generación IA del fondo de escena (img2img desde el blueprint del tile).
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
@@ -259,38 +263,121 @@ function applySessionStyle(styleId: string): void {
  *  refreshPlayerForward). */
 const sessionProjection = VIEW_PROJECTION;
 
-/** Modo de render de la sesión activa, congelado en el save:
- *  - "image": el pipeline Auto-img repinta cada blueprint con el modelo de
- *    imagen (créditos) — se enciende solo al entrar en la sesión.
- *  - "vector": el mundo se juega con los blueprints compuestos; el pipeline
- *    queda apagado y la generación manual (G) bloqueada.
- *  - "" (saves previos al campo): comportamiento legacy — manda el toggle
- *    persistido en localStorage. */
-let sessionRenderMode: "image" | "vector" | "" = "";
-function applySessionRenderMode(renderMode: string, characterMode = ""): void {
-  sessionRenderMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
-  devPanel.setSession({ renderMode: sessionRenderMode });
-  // Personajes por SEPARADO (world.character_mode): skins IA o base y_bot.
-  // Sin campo (saves previos), siguen al modo de escenarios — el
-  // comportamiento de siempre.
-  const effectiveCharMode = characterMode || sessionRenderMode;
-  characterSprites.setSkinsAllowed(effectiveCharMode !== "vector");
-  // Fail-loud: el save pide skins IA pero el backend está apagado por config
-  // — sin este aviso, requestSkin haría no-op silencioso y el jugador que
-  // confirmó el gasto vería y_bot sin explicación.
-  if (effectiveCharMode === "image" && !CONFIG.graphics.ai_skin) {
+/** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
+ *  menú dev lo cambia en runtime (el bridge lo persiste en el save y lo
+ *  difunde con render_mode_changed). Valores:
+ *  - "image": generación IA activa (Auto-img de tiles / repintado de platós,
+ *    skins de personaje) — créditos.
+ *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
+ *    base y_bot. Lo ya pintado se conserva.
+ *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
+ *    el toggle persistido en localStorage (AUTOIMG_KEY). */
+let scenesMode: "image" | "vector" | "" = "";
+let charactersMode: "image" | "vector" | "" = "";
+
+/** ¿Debe generarse imagen NUEVA de escenario? (auto-pipeline y runFor del
+ *  plató; la generación MANUAL —tecla G, botón del menú dev— no pasa por
+ *  aquí: es siempre permitida). */
+function scenesGenerationOn(): boolean {
+  if (scenesMode) return scenesMode === "image";
+  return localStorage.getItem(AUTOIMG_KEY) === "1";
+}
+
+/** Modo efectivo de personajes ("" legacy sigue a escenarios). */
+function effectiveCharactersMode(): "image" | "vector" | "" {
+  return charactersMode || scenesMode;
+}
+
+/** ¿Skins IA activos? Sin sesión ("" en ambas facetas) manda el toggle local
+ *  persistido — OFF por defecto: cargar una fixture con NPCs descritos no
+ *  debe gastar créditos sin que nadie lo pida. */
+function charactersGenerationOn(): boolean {
+  const eff = effectiveCharactersMode();
+  if (eff) return eff === "image";
+  return localStorage.getItem(AICHAR_KEY) === "1";
+}
+
+function applyRenderModes(renderMode: string, characterMode = ""): void {
+  const prevCharOn = characterSprites.skinsAllowed;
+  scenesMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
+  charactersMode =
+    characterMode === "vector" ? "vector" : characterMode === "image" ? "image" : "";
+  devPanel.setSession({ renderMode: scenesMode });
+  const effChar = effectiveCharactersMode();
+  characterSprites.setSkinsAllowed(charactersGenerationOn());
+  // Fail-loud: la partida pide skins IA pero el backend está apagado por
+  // config — sin este aviso, requestSkin haría no-op silencioso y el jugador
+  // que confirmó el gasto vería y_bot sin explicación.
+  if (effChar === "image" && !CONFIG.graphics.ai_skin) {
     errors.push(
       "config",
       "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
     );
   }
-  const charLabel = effectiveCharMode === "vector" ? "personajes en base y_bot" : "skins IA";
-  if (sessionRenderMode === "vector") {
-    autoPipeline.setEnabled(false);
-    log(`Gráficos: maqueta 3D (clay local, sin imagen IA; ${charLabel})`);
-  } else if (sessionRenderMode === "image") {
-    autoPipeline.setEnabled(true);
-    log(`Gráficos: imagen IA (Auto-img activo; ${charLabel})`);
+  // El Auto-img por tiles es oblicua-only: en proscenio queda apagado sea
+  // cual sea el modo (el plató tiene su propio pipeline gateado por
+  // scenesGenerationOn en la instalación).
+  autoPipeline.setEnabled(scenesGenerationOn() && sessionView !== "proscenium");
+  const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
+    ? "skins IA" : "personajes en base y_bot";
+  if (scenesMode === "vector") {
+    log(`Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`);
+  } else if (scenesMode === "image") {
+    log(`Gráficos: imagen IA (${charLabel})`);
+  }
+  // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
+  // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
+  if (!prevCharOn && characterSprites.skinsAllowed) {
+    characterSprites.resetFailureBreaker();
+    reRequestAllSkins();
+  }
+  devMenu?.refresh();
+}
+
+/** Re-encola los skins IA de todas las entidades vivas (player + NPCs +
+ *  enemigos). requestSkin es idempotente por prompt y respeta ai_skin. */
+function reRequestAllSkins(): void {
+  if (playerSkinPrompt) characterSprites.requestSkin(playerSkinPrompt);
+  for (const e of [...npcEntities, ...enemyEntities]) {
+    if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt);
+  }
+}
+
+/** Cambio de modo pedido por el usuario (menú dev). Con sesión, el bridge es
+ *  la autoridad (persiste el save y difunde); sin sesión, estado local puro
+ *  (facet scenes se persiste en AUTOIMG_KEY, patrón legacy). Lanza si el
+ *  bridge rechaza — el menú lo captura y revierte el checkbox. */
+async function requestModeChange(
+  facet: "scenes" | "characters",
+  mode: "image" | "vector",
+): Promise<void> {
+  if (activeSessionId) {
+    await narrativeClient.setRenderMode(activeSessionId, facet, mode);
+  } else if (facet === "scenes") {
+    localStorage.setItem(AUTOIMG_KEY, mode === "image" ? "1" : "0");
+  } else {
+    localStorage.setItem(AICHAR_KEY, mode === "image" ? "1" : "0");
+  }
+  applyRenderModes(
+    facet === "scenes" ? mode : scenesMode,
+    facet === "characters" ? mode : charactersMode,
+  );
+}
+
+/** Repinta + pela el plató ACTIVO (manual: tecla G o botón del menú dev —
+ *  reintento tras un fallo o generación selectiva con el auto en OFF). */
+function generateActiveStage(): void {
+  if (!activeStage || !activeTileKey || !sceneData) return;
+  const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
+  try {
+    const plan = hotStagePlanFromScene(rawFd);
+    if (plan) {
+      void stageImageController.runFor(
+        activeStage, activeTileKey, stageImageMeta(rawFd, sceneData), plan,
+      );
+    }
+  } catch (err) {
+    errors.push("scene", "el plan del plató activo no parsea", err);
   }
 }
 /** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
@@ -433,7 +520,7 @@ let currentZoom = zoomTarget;
 renderer.setScale(currentZoom);
 
 // --- Sistema de combate de la sesión (catálogo → HUD + teclas) ---
-// Espejo de applySessionRenderMode: el id viene congelado en el save
+// Espejo de applyRenderModes: el id viene congelado en el save
 // (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
 // y el mapeo 1..N se regeneran desde el catálogo que declara el sistema.
 let attackCatalog: readonly AttackSpec[] = [];
@@ -484,10 +571,12 @@ const EDGE_ES: Record<FrontierEdge, string> = {
 let activeTileKey: string | null = null;
 
 // --- Auto-img: pipeline automático de imagen IA por tile ---
-// Persistido en localStorage (patrón ZOOM_KEY). Sin toggle visible: se
-// controla por localStorage["nefan.autoimg"] y su progreso se muestra en el
-// panel de dev (#dev-status, DevStatusPanel).
+// Persistido en localStorage (patrón ZOOM_KEY). Es el estado del toggle de
+// escenarios SIN sesión (fixtures); con sesión manda world.render_mode. El
+// toggle visible vive en el menú dev (DevMenu) y el progreso en #dev-status.
 const AUTOIMG_KEY = "nefan.autoimg";
+/** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
+const AICHAR_KEY = "nefan.aichar";
 
 const autoPipeline = new AutoImagePipeline({
   hasImage: (k) => renderer.tileHasImage(k),
@@ -500,11 +589,18 @@ const autoPipeline = new AutoImagePipeline({
   onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
   onStatus: (s) => devPanel.setTilePipeline(s),
   onDisabled: () => {
+    // Backend caído (503): apagar el pipeline auto SIN tocar el modo del
+    // save (fallo ≠ intención del usuario); el menú dev refleja el estado.
     localStorage.setItem(AUTOIMG_KEY, "0");
+    devMenu?.refresh();
   },
   healthUrl: `${AI_SERVER_URL}/health`,
 });
 autoPipeline.setEnabled(localStorage.getItem(AUTOIMG_KEY) === "1");
+// Arranque sin sesión: los skins IA parten del toggle local (OFF por
+// defecto) — el manager nace con allowed=true y sin esto una fixture con
+// NPCs descritos encolaría skins de pago nada más cargar.
+characterSprites.setSkinsAllowed(charactersGenerationOn());
 
 // El toggle Dev-cache vive ahora en el panel de dev (DevStatusPanel es su
 // único dueño: estado inicial, cambios y deshabilitado con ai_server caído).
@@ -890,7 +986,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
       if (reinstalled) return;
       await stageImageController.installClay(key, stagePlanForImages);
-      if (sessionRenderMode === "image") {
+      if (scenesGenerationOn()) {
         void stageImageController.runFor(
           stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
         );
@@ -1491,24 +1587,10 @@ function gameLoop(now: number): void {
   // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
   // a ErrorLog; el .catch evita unhandled rejection.
   if (devInput.consumeGenerateScene()) {
-    if (sessionRenderMode === "vector") {
-      log("G ignorada: la partida es maqueta 3D sin imagen IA (elegido al crearla)");
-    } else if (sessionView === "proscenium") {
-      // Proscenio: G repinta + pela el plató activo (manual, aunque el auto
-      // ya lo haga al instalarse — reintento tras un fallo).
-      if (activeStage && activeTileKey && sceneData) {
-        const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
-        try {
-          const plan = hotStagePlanFromScene(rawFd);
-          if (plan) {
-            void stageImageController.runFor(
-              activeStage, activeTileKey, stageImageMeta(rawFd, sceneData), plan,
-            );
-          }
-        } catch (err) {
-          errors.push("scene", "G: el plan del plató activo no parsea", err);
-        }
-      }
+    // Manual = siempre permitida, también con la generación auto en OFF
+    // (misma semántica que el botón por-item del menú dev).
+    if (sessionView === "proscenium") {
+      generateActiveStage();
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
@@ -1525,11 +1607,12 @@ function gameLoop(now: number): void {
   // B cicla la vista de debug: off → colisiones → fases del pipeline de
   // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
   // para comparar in situ el plan declarado con lo que pintó el modelo. En
-  // proscenio, overlay propio: colisión reproyectada + recortes con su z.
+  // proscenio, ciclo propio: overlay (colisión reproyectada + recortes con
+  // su z) y recortes opacos (segmentación, como en la oblicua).
   if (devInput.consumeToggleCollisionDebug()) {
     if (sessionView === "proscenium" && prosceniumRenderer) {
       const mode = prosceniumRenderer.cycleDebugView();
-      log(`B · overlay plató: ${mode === "overlay" ? "colisión + recortes por z" : "off"}`);
+      log(`B · overlay plató: ${STAGE_DEBUG_VIEW_LABELS[mode]}`);
     } else {
       const mode = renderer.cycleDebugView();
       log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
@@ -1884,6 +1967,95 @@ const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
 let activeSessionId: string | null = null;
 
+// Cambio de modo de render difundido por el bridge (otro cliente de la misma
+// sesión, o el eco de este — re-aplicar es idempotente).
+sharedBridge.on("render_mode_changed", (msg) => {
+  if (msg.sessionId !== activeSessionId) return;
+  applyRenderModes(
+    msg.facet === "scenes" ? msg.renderMode : scenesMode,
+    msg.facet === "characters" ? msg.renderMode : charactersMode,
+  );
+});
+
+/** Imágenes actualmente FAKE: plató activo en clay (proscenio), tiles del
+ *  grid sin imagen IA (oblicua) y skins de personaje aún sobre la base
+ *  y_bot. La identidad del item es la clave del tile/plató o el prompt. */
+function listFakeItems(): FakeItem[] {
+  const items: FakeItem[] = [];
+  if (sessionView === "proscenium") {
+    if (prosceniumRenderer && activeStage && activeTileKey && !prosceniumRenderer.hasImages()) {
+      items.push({
+        kind: "stage",
+        id: activeTileKey,
+        label: `Plató ${activeTileKey} (clay 3D)`,
+        thumb: prosceniumRenderer.getInstalledPlate(),
+        inFlight: stageImageController.running,
+      });
+    }
+  } else {
+    for (const t of tileStore.entries.values()) {
+      if (t.tx === undefined || renderer.tileHasImage(t.key)) continue;
+      items.push({
+        kind: "tile",
+        id: t.key,
+        label: `Tile ${t.key} (clay 3D)`,
+        thumb: renderer.getTilePlanFullImage(t.key),
+        inFlight: false,
+      });
+    }
+  }
+  const prompts = new Set<string>();
+  if (playerSkinPrompt) prompts.add(playerSkinPrompt);
+  for (const e of [...npcEntities, ...enemyEntities]) {
+    if (e.skinPrompt) prompts.add(e.skinPrompt);
+  }
+  const yBotSheet = spriteRenderer.getCached(BASE_MODEL, "idle", characterSprites.activeAngle);
+  const yBotThumb = yBotSheet?.frames[0]?.[0] ?? null;
+  for (const prompt of prompts) {
+    const status = characterSprites.skinStatus(prompt);
+    if (status === "ready") continue;
+    const statusEs =
+      status === "pending" ? "generándose" : status === "failed" ? "falló" : "base y_bot";
+    items.push({
+      kind: "skin",
+      id: prompt,
+      label: `Skin: ${prompt.length > 70 ? `${prompt.slice(0, 70)}…` : prompt} (${statusEs})`,
+      thumb: yBotThumb,
+      inFlight: status === "pending",
+      disabledReason: CONFIG.graphics.ai_skin
+        ? undefined
+        : "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts",
+    });
+  }
+  return items;
+}
+
+/** Generación selectiva de UN item fake (siempre permitida, con el toggle
+ *  global en OFF incluido — es la vía de gasto controlado del menú dev). */
+async function generateFakeItem(item: FakeItem): Promise<void> {
+  if (item.kind === "stage") {
+    generateActiveStage();
+    return;
+  }
+  if (item.kind === "tile") {
+    await sceneImageController.generateForTile(item.id);
+    return;
+  }
+  characterSprites.requestSkin(item.id, { force: true });
+}
+
+devMenu = new DevMenu({
+  getToggles: () => ({
+    scenes: scenesGenerationOn(),
+    characters: characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
+    charactersAvailable: CONFIG.graphics.ai_skin,
+  }),
+  setToggle: (facet, on) => requestModeChange(facet, on ? "image" : "vector"),
+  listFakeItems,
+  generate: generateFakeItem,
+  log: (msg) => log(msg),
+});
+
 dialoguePanel.onChoice = (idx, text) => {
   input.dialogueActive = false;
   if (!activeSessionId) return;
@@ -2224,7 +2396,7 @@ async function runTitleFlow(): Promise<void> {
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
+      applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);
@@ -2235,7 +2407,7 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
-      applySessionRenderMode(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
+      applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
       sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
       applySessionView(sessionWorldView);

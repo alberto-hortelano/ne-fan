@@ -91,10 +91,15 @@ export class NarrativeClient {
     return { state: res.state };
   }
 
-  /** Activa las imágenes IA en una partida vector. Lanza si el bridge
-   *  rechaza (ya en image, save inexistente…) — fail-loud al title screen. */
-  async enableImages(sessionId: string, facet: "scenes" | "characters"): Promise<void> {
-    const res = await this.bridge.setRenderMode(sessionId, "image", facet);
+  /** Cambia el modo de render de una partida (image⇄vector) por faceta.
+   *  Lanza si el bridge rechaza (ya en ese modo, save inexistente…) —
+   *  fail-loud al caller (menú dev). */
+  async setRenderMode(
+    sessionId: string,
+    facet: "scenes" | "characters",
+    mode: "image" | "vector",
+  ): Promise<void> {
+    const res = await this.bridge.setRenderMode(sessionId, mode, facet);
     if (!res.ok) throw new Error(res.error ?? "el bridge rechazó el cambio de modo");
   }
 

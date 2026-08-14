@@ -31,7 +31,7 @@ import {
   type ClientSocket,
 } from "../context.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
-import { applyRenderModeUpgrade } from "../../src/narrative/render-mode.js";
+import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
 import { runBootstrapStage } from "./bootstrap-stage.js";
 import type {
@@ -501,10 +501,10 @@ export async function handleDeleteSession(
   ctx.send(ws, { type: "session_deleted", requestId: msg.requestId, ok });
 }
 
-/** Activa las imágenes IA en un save empezado en vector (upgrade in-place,
- *  desde el título — la sesión no tiene por qué estar activa). Solo
- *  vector→image: quitar imágenes dejaría el mundo mezclado clay/pintado.
- *  El Auto-img del cliente pinta los tiles ya explorados al reanudar. */
+/** Cambia el modo de render de un save por faceta y en ambos sentidos
+ *  (image⇄vector), desde el título o en plena partida — la sesión no tiene
+ *  por qué estar activa. Bajar a vector no borra lo pintado: el cliente
+ *  conserva las imágenes existentes y solo deja de generar nuevas. */
 export async function handleSetRenderMode(
   msg: SetRenderModeMessage,
   ws: ClientSocket,
@@ -512,8 +512,9 @@ export async function handleSetRenderMode(
 ): Promise<void> {
   const fail = (error: string): void =>
     ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: false, error });
-  if (msg.renderMode !== "image") {
-    return fail(`solo se admite activar imágenes (renderMode "image"), no "${msg.renderMode}"`);
+  if (msg.renderMode !== "image" && msg.renderMode !== "vector") {
+    // El wire es JSON sin validar en este punto — rechazar en vez de adivinar.
+    return fail(`renderMode desconocido ${JSON.stringify(msg.renderMode)} (válidos: image, vector)`);
   }
   const facet = msg.facet ?? "scenes";
   if (facet !== "scenes" && facet !== "characters") {
@@ -527,15 +528,30 @@ export async function handleSetRenderMode(
   // y, si un save() concurrente (posición del jugador, tiles explorados,
   // entities) escribe entremedias, el write posterior lo PISA (lost update).
   if (ctx.narrative.session_id === msg.sessionId) {
-    const res = applyRenderModeUpgrade(ctx.narrative.world, facet);
+    const res = applyRenderModeChange(ctx.narrative.world, facet, msg.renderMode);
     if (!res.ok) return fail(res.error);
     try {
       await ctx.narrative.save();
     } catch (err) {
       return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
     }
-    console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image, sesión activa)`);
-    return ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });
+    console.log(`Bridge: modo de render cambiado en ${msg.sessionId} (${facet} → ${msg.renderMode}, sesión activa)`);
+    ctx.send(ws, {
+      type: "render_mode_set",
+      requestId: msg.requestId,
+      ok: true,
+      facet,
+      renderMode: msg.renderMode,
+    });
+    // Push para el resto de clientes de la sesión (el requester ya tiene el
+    // eco en la respuesta; re-aplicarlo es idempotente).
+    ctx.broadcastNarrative({
+      type: "render_mode_changed",
+      sessionId: msg.sessionId,
+      facet,
+      renderMode: msg.renderMode,
+    });
+    return;
   }
 
   // Partida INACTIVA: el read-modify-write de disco es el único escritor.
@@ -547,7 +563,7 @@ export async function handleSetRenderMode(
   }
   if (!data) return fail(`la partida ${msg.sessionId} no existe`);
   if (!data.world) return fail(`la partida ${msg.sessionId} no tiene bloque world (save corrupto)`);
-  const res = applyRenderModeUpgrade(data.world, facet);
+  const res = applyRenderModeChange(data.world, facet, msg.renderMode);
   if (!res.ok) return fail(res.error);
   data.updated_at = new Date().toISOString();
   try {
@@ -555,8 +571,14 @@ export async function handleSetRenderMode(
   } catch (err) {
     return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
   }
-  console.log(`Bridge: imágenes IA activadas en ${msg.sessionId} (${facet}: vector → image)`);
-  ctx.send(ws, { type: "render_mode_set", requestId: msg.requestId, ok: true });
+  console.log(`Bridge: modo de render cambiado en ${msg.sessionId} (${facet} → ${msg.renderMode})`);
+  ctx.send(ws, {
+    type: "render_mode_set",
+    requestId: msg.requestId,
+    ok: true,
+    facet,
+    renderMode: msg.renderMode,
+  });
 }
 
 export async function handleSaveSession(

@@ -111,7 +111,7 @@ const SetRenderModeMessageSchema = z.object({
   type: z.literal("set_render_mode"),
   requestId: z.string(),
   sessionId: z.string(),
-  renderMode: z.literal("image"),
+  renderMode: z.enum(["image", "vector"]),
   facet: z.enum(["scenes", "characters"]).optional(),
 });
 

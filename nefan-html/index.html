@@ -146,6 +146,102 @@
       cursor: pointer;
       margin: 0;
     }
+    #ds-menu-btn {
+      background: #222;
+      color: #ccc;
+      border: 1px solid #555;
+      padding: 1px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    #ds-menu-btn:hover { border-color: #da6; color: #da6; }
+    /* Menú dev de imágenes: panel flotante anclado sobre #dev-status, por
+       encima de todos los overlays (mismo criterio que #dev-status). */
+    #dev-menu {
+      position: fixed;
+      right: 8px;
+      top: 64px;
+      width: 380px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      background: #181818;
+      border: 1px solid #444;
+      z-index: 10001;
+      font-size: 12px;
+      color: #bbb;
+    }
+    #dev-menu[hidden] { display: none; }
+    #dev-menu .dm-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      background: #202020;
+      border-bottom: 1px solid #333;
+      color: #da6;
+    }
+    #dev-menu .dm-head button {
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    #dev-menu .dm-toggles {
+      display: flex;
+      gap: 18px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #333;
+    }
+    #dev-menu .dm-toggles label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #dev-menu .dm-toggles label.dm-off { opacity: 0.45; cursor: default; }
+    #dev-menu .dm-toggles input { accent-color: #da6; margin: 0; }
+    #dev-menu-items { overflow-y: auto; padding: 6px 10px; }
+    #dev-menu-items .dm-empty { color: #777; padding: 8px 0; }
+    #dev-menu-items .dm-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid #262626;
+    }
+    #dev-menu-items .dm-item img,
+    #dev-menu-items .dm-item canvas {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+      background: #111;
+      border: 1px solid #333;
+      flex-shrink: 0;
+    }
+    #dev-menu-items .dm-item .dm-label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+      word-break: break-word;
+    }
+    #dev-menu-items .dm-item button {
+      background: #222;
+      color: #ccc;
+      border: 1px solid #555;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #dev-menu-items .dm-item button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
     #room-selector {
       background: #222;
       color: #ccc;
@@ -433,6 +529,20 @@
     <span class="ds-spend" id="ds-spend"></span>
     <span class="ds-config" id="ds-config"></span>
     <span class="ds-session" id="ds-session"></span>
+    <button id="ds-menu-btn" title="Toggles de generación IA por faceta y lista de imágenes fake (clay / y_bot) pendientes de generar">Imágenes…</button>
+  </div>
+  <!-- Menú dev de imágenes (dev-menu.ts): toggles escenarios/personajes IA +
+       lista de imágenes actualmente fake con generación por item. -->
+  <div id="dev-menu" hidden>
+    <div class="dm-head">
+      <span>Generación de imágenes IA</span>
+      <button id="dm-close" title="Cerrar">×</button>
+    </div>
+    <div class="dm-toggles">
+      <label><input type="checkbox" id="dm-scenes"><span>Escenarios IA</span></label>
+      <label><input type="checkbox" id="dm-chars"><span>Personajes IA (skins)</span></label>
+    </div>
+    <div id="dev-menu-items"></div>
   </div>
   <canvas id="game"></canvas>
   <div id="combat-log"></div>

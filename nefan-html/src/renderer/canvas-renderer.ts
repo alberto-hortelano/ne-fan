@@ -712,6 +712,13 @@ export class CanvasRenderer {
     return this.tiles.get(key)?.planImage ?? null;
   }
 
+  /** Clay COMPLETO (base + volúmenes altos) de un tile — miniatura para el
+   *  menú dev; cae a la base si el compuesto aún no está. */
+  getTilePlanFullImage(key: string): HTMLCanvasElement | null {
+    const tile = this.tiles.get(key);
+    return tile?.planFullImage ?? tile?.planImage ?? null;
+  }
+
   /** Instala la imagen IA de UN tile (cubre exactamente su rect). Libera su
    *  capa horneada (slot del LRU; re-horneable si la imagen se invalida) y
    *  purga los occluders recortados de la imagen anterior de ese tile. */

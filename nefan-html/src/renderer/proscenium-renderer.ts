@@ -71,6 +71,18 @@ const CUTOUT_FADE_MARGIN_M = 0.5;
 /** Margen del test "jugador detrás" (zStage del jugador > z del recorte). */
 const BEHIND_EPS_M = 0.05;
 
+/** Vistas de debug de la tecla B en proscenio — espejo del `DebugView` de la
+ *  oblicua: `overlay` superpone la verdad jugable (colisión + cajas por z),
+ *  `cutouts` enseña la segmentación (cada recorte OPACO con caja y etiqueta,
+ *  como el estado `segments` de la vista top-down). */
+export type StageDebugView = "off" | "overlay" | "cutouts";
+export const STAGE_DEBUG_VIEW_LABELS: Record<StageDebugView, string> = {
+  off: "sin overlay",
+  overlay: "colisión + recortes por z",
+  cutouts: "recortes (segmentación)",
+};
+const STAGE_DEBUG_VIEW_CYCLE: StageDebugView[] = ["off", "overlay", "cutouts"];
+
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
 function distPointToRect(
@@ -110,9 +122,8 @@ export class ProsceniumRenderer implements Renderer2D {
   followOverride: number | null = null;
   /** Alphas vivos del fade de recortes (id → alpha, lerp temporal). */
   private cutFade = new Map<string, number>();
-  /** Overlay de debug (tecla B): colisión reproyectada + cajas de recortes
-   *  con su z pintada. */
-  private debugView: "off" | "overlay" = "off";
+  /** Vista de debug (tecla B): ver `StageDebugView`. */
+  private debugView: StageDebugView = "off";
   /** Override dev del clamp de escala por profundidad (?minscale=). null =
    *  política por defecto (ver depthScaleFloor). */
   minScaleOverride: number | null = null;
@@ -146,12 +157,16 @@ export class ProsceniumRenderer implements Renderer2D {
     this.lastCam = { ...STAGE_CAM_ZERO };
   }
 
-  /** Cicla el overlay de debug (tecla B en vista proscenio): off ↔ overlay.
-   *  El overlay superpone la colisión ACTIVA reproyectada al suelo pintado
-   *  (celdas del grid derivado; huellas declaradas si no hay imágenes) y, por
-   *  cada recorte, su caja de vista a su z con etiqueta `#orden id z=…`. */
-  cycleDebugView(): "off" | "overlay" {
-    this.debugView = this.debugView === "off" ? "overlay" : "off";
+  /** Cicla la vista de debug (tecla B en vista proscenio):
+   *  off → overlay → cutouts → off. `overlay` superpone la colisión ACTIVA
+   *  reproyectada al suelo pintado (celdas del grid derivado; huellas
+   *  declaradas si no hay imágenes) y, por cada recorte, su caja de vista a
+   *  su z con etiqueta `#orden id z=…`. `cutouts` es el espejo del estado
+   *  `segments` de la oblicua: veladura + cada recorte OPACO (sin fade) con
+   *  su caja y etiqueta — se ve qué píxeles exactos tiene cada capa. */
+  cycleDebugView(): StageDebugView {
+    const i = STAGE_DEBUG_VIEW_CYCLE.indexOf(this.debugView);
+    this.debugView = STAGE_DEBUG_VIEW_CYCLE[(i + 1) % STAGE_DEBUG_VIEW_CYCLE.length];
     return this.debugView;
   }
 
@@ -196,6 +211,11 @@ export class ProsceniumRenderer implements Renderer2D {
   /** true = repintado IA instalado (el clay local no cuenta: es el arte base). */
   hasImages(): boolean {
     return this.images !== null && this.images.clay !== true;
+  }
+
+  /** Placa instalada (clay o repintado) — miniatura para el menú dev. */
+  getInstalledPlate(): HTMLCanvasElement | null {
+    return this.images?.plate ?? null;
   }
 
   /** Recortes instalados con su fade vivo (__nefan.stageCutouts). */
@@ -443,8 +463,10 @@ export class ProsceniumRenderer implements Renderer2D {
     }
     // ── Recortes del plató (clay o segmentados de la pintura): drawables a su
     // z (la oclusión del jugador emerge del mismo orden que las entidades) con
-    // fade cuando el jugador queda detrás — el patrón de la oblicua. ────────
-    {
+    // fade cuando el jugador queda detrás — el patrón de la oblicua. En la
+    // vista de debug `cutouts` NO se empujan: los pinta el pase de debug,
+    // opacos y con caja/etiqueta. ────────────────────────────────────────────
+    if (this.debugView !== "cutouts") {
       const [pxs, pzs] = worldToStage(stage.bounds, player.pos.x, player.pos.z);
       for (const cut of images.cutouts) {
         const fade = this.cutoutFade(cut, proj, pxs, pzs, player.pos, dt, toScreen, fit);
@@ -467,10 +489,17 @@ export class ProsceniumRenderer implements Renderer2D {
     // ── Placa (telón + suelo sin volúmenes) + sprites/recortes por z ─────────
     // Warp por bandas: cada franja de profundidad se reproyecta con su s(z).
     this.drawBanded(images.plate, images.plate.width, images.plate.height, cam);
+    if (this.debugView === "cutouts") {
+      // Veladura de la vista de segmentación (análogo de la veladura por tile
+      // de la oblicua): entidades y recortes de debug quedan por encima.
+      ctx.fillStyle = "rgba(8,8,14,0.55)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     this.drawExitZones(toScreen);
     for (const d of drawables) d.draw();
 
     if (this.debugView === "overlay") this.drawDebugOverlay(toScreen, player);
+    else if (this.debugView === "cutouts") this.drawCutoutsDebug(layerRect, toScreen);
   }
 
   /** Overlay B: la verdad jugable superpuesta a la pintura. Celdas SÓLIDAS de
@@ -600,6 +629,64 @@ export class ProsceniumRenderer implements Renderer2D {
     ctx.fillRect(8, 8, ctx.measureText(head).width + 12, 18);
     ctx.fillStyle = "#ffd27a";
     ctx.fillText(head, 14, 21);
+  }
+
+  /** Vista de segmentación (B, estado `cutouts`) — espejo del
+   *  `drawSegmentsOverlay` de la oblicua: cada recorte del plató OPACO (sin
+   *  fade) sobre la veladura, ordenados lejos → cerca (el orden del pintor),
+   *  con su caja de vista discontinua y etiqueta `nombre z=…`. Cian los
+   *  segmentados de la pintura por visión, naranja los del clay (siluetas del
+   *  render propio, exactas por construcción). */
+  private drawCutoutsDebug(
+    layerRect: (z: number) => [number, number, number, number],
+    toScreen: (vx: number, vy: number, zStage: number) => [number, number],
+  ): void {
+    const { ctx } = this;
+    const images = this.images;
+    ctx.save();
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "left";
+    const cuts = images ? [...images.cutouts].sort((a, b) => b.z - a.z) : [];
+    const color = images?.clay ? "rgba(255,170,40,1)" : "rgba(60,255,255,1)";
+    for (const cut of cuts) {
+      const [lx, ly, lw, lh] = layerRect(cut.z);
+      ctx.drawImage(cut.canvas, lx, ly, lw, lh);
+      const [minX, minY, maxX, maxY] = cut.bboxView;
+      const [x0, y0] = toScreen(minX, minY, cut.z);
+      const [x1, y1] = toScreen(maxX, maxY, cut.z);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.setLineDash([]);
+      if (x1 - x0 >= 48) {
+        const name = cut.label || cut.id.replace("vol_derived_ent_", "").replace("vol_", "");
+        const tag = `${name} z=${cut.z.toFixed(2)}`;
+        ctx.fillStyle = "rgba(10,10,14,0.75)";
+        ctx.fillRect(x0, y0 - 15, ctx.measureText(tag).width + 8, 14);
+        ctx.fillStyle = color;
+        ctx.fillText(tag, x0 + 4, y0 - 4);
+      }
+    }
+    // Cabecera + aviso si la fase no está disponible.
+    const head = images
+      ? `B·recortes — ${images.cutouts.length} recortes · ${images.clay ? "clay" : "repintado"}`
+      : "B·recortes — sin bitmaps";
+    const note = !images || images.cutouts.length === 0
+      ? "sin recortes — G repinta el plató"
+      : "";
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "rgba(10, 8, 16, 0.75)";
+    ctx.fillRect(8, 8, ctx.measureText(head).width + 12, 18);
+    ctx.fillStyle = "#8df";
+    ctx.fillText(head, 14, 21);
+    if (note) {
+      ctx.fillStyle = "rgba(10, 8, 16, 0.75)";
+      ctx.fillRect(8, 30, ctx.measureText(note).width + 12, 18);
+      ctx.fillStyle = "rgba(255,200,80,1)";
+      ctx.fillText(note, 14, 43);
+    }
+    ctx.restore();
   }
 
   /** Warp por bandas de una imagen full-viewBox (placa o raster del suelo):

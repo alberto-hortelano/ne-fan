@@ -194,32 +194,9 @@ export class TitleScreen {
           }
         });
       }
-      // Activar Imagen IA en una partida vector: confirmación INLINE en dos
-      // clicks (el segundo deja claro que empieza a gastar créditos) y
-      // recarga de la lista — el badge pasa a "Imagen IA" al instante.
-      for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=enable-images]")) {
-        btn.addEventListener("click", async () => {
-          if (btn.dataset.armed !== "1") {
-            btn.dataset.armed = "1";
-            btn.textContent = "¿Confirmar? Gastará créditos";
-            btn.style.borderColor = "#a63";
-            btn.style.color = "#da6";
-            return;
-          }
-          btn.disabled = true;
-          btn.textContent = "Activando…";
-          try {
-            await this.narrative.enableImages(
-              btn.dataset.sessionId!,
-              btn.dataset.facet === "characters" ? "characters" : "scenes",
-            );
-            await this.renderHome();
-          } catch (err) {
-            alert(`No se pudo activar Imagen IA: ${(err as Error).message}`);
-            await this.renderHome();
-          }
-        });
-      }
+      // El cambio de modo de render (imagen IA ⇄ maqueta) ya no vive aquí:
+      // se hace EN PARTIDA desde el menú dev ("Imágenes…"), en runtime y en
+      // ambos sentidos. Los badges de la tarjeta siguen siendo informativos.
     }
 
     newBtn.addEventListener("click", () => {
@@ -262,7 +239,7 @@ export class TitleScreen {
         <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
       </label>
       <div style="margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(fijo para toda la partida; activable después)</span></div>
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(modo inicial; cambiable en partida desde el menú dev)</span></div>
         <div id="ts-rendermode" style="display:flex;gap:8px">
           <button data-rendermode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
             <div style="font-size:13px">Imagen IA</div>
@@ -717,16 +694,6 @@ function sessionRowHtml(s: SessionMetadata): string {
         <div style="color:#666;font-size:11px;margin-top:3px">${updated} · ${s.scene_count} escenas · ${s.entity_count} entidades</div>
       </div>
       <div style="display:flex;gap:6px;margin-left:14px">
-        ${s.render_mode === "vector" ? `<button data-action="enable-images" data-facet="scenes" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar escenarios IA</button>` : ""}
-        ${
-          effectiveCharMode(s) !== "vector"
-            ? ""
-            : CONFIG.graphics.ai_skin
-              ? `<button data-action="enable-images" data-facet="characters" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_SECONDARY_CSS}">Activar skins IA</button>`
-              : // Backend de skins apagado: botón deshabilitado CON el motivo —
-                // ocultarlo hacía parecer que la opción se había perdido.
-                `<button disabled title="Activa graphics.ai_skin en config.ts para poder generar skins IA" style="${BTN_SMALL_SECONDARY_CSS};opacity:.45;cursor:default">Skins IA (requiere ai_skin)</button>`
-        }
         <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
         <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
       </div>
@@ -765,10 +732,6 @@ const BTN_SMALL_PRIMARY_CSS = [
 ].join(";");
 const BTN_SMALL_DANGER_CSS = [
   "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
-const BTN_SMALL_SECONDARY_CSS = [
-  "background:transparent","color:#9ab","border:1px solid #345","padding:5px 12px",
   "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
 ].join(";");
 const SELECT_CSS = [
