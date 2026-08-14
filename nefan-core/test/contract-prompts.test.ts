@@ -12,12 +12,24 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
+import {
+  STYLE_ENV_CATEGORIES,
+  STYLE_STAGE_CATEGORIES,
+} from "../src/games/style-categories.js";
+
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
 /** Marcadores load-bearing por archivo: identificadores que también existen
  *  en el código (scene-expand, consequence-handler, ground, volumes). */
 const CONTRACT_MARKERS: Record<string, string[]> = {
-  "world_rules.md": ["style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request", "stage_interior"],
+  // world_rules enumera el enum COMPLETO de style_tag en prosa: candarlo
+  // contra la fuente única evita que una zona nueva se ofrezca en el tool
+  // pero no en las reglas (o al revés).
+  "world_rules.md": [
+    "style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request",
+    ...STYLE_ENV_CATEGORIES,
+    ...STYLE_STAGE_CATEGORIES,
+  ],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
   "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_tag", "stage_interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
@@ -57,16 +69,20 @@ describe("contrato narrativo — tool schemas compartidos", () => {
     });
   }
 
-  it("generate_scene.json declara style_tag con zonas Y categorías de plató", () => {
-    // WORLD_RULES exige style_tag en cada escena; sin la propiedad en el tool
-    // schema, el fallback API directa no sabía que podía emitirlo.
+  it("generate_scene.json declara style_tag EXACTAMENTE = zonas + categorías de plató", () => {
+    // WORLD_RULES exige style_tag en cada escena. Igualdad exacta contra la
+    // fuente única (games/style-categories.ts): una categoría añadida o
+    // retirada solo en un lado rompe aquí. "nature" es alias legacy — se
+    // tolera en entrada pero NO se ofrece al modelo.
     const tool = JSON.parse(
       readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8"),
     ) as { input_schema: { properties: Record<string, { enum?: string[] }> } };
     const tags = tool.input_schema.properties.style_tag?.enum ?? [];
-    assert.ok(tags.includes("settlement"), "zona overworld presente");
-    assert.ok(tags.includes("stage_interior"), "categoría de plató presente");
-    assert.ok(!tags.includes("nature"), "'nature' es legacy — fuera del tool");
+    assert.deepEqual(
+      [...tags].sort(),
+      [...STYLE_ENV_CATEGORIES, ...STYLE_STAGE_CATEGORIES].sort(),
+      "el enum del tool debe ser exactamente STYLE_ENV_CATEGORIES ∪ STYLE_STAGE_CATEGORIES",
+    );
   });
 });
 

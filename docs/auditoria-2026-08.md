@@ -328,10 +328,44 @@ Matriz verificada y resuelta en rama `audit/prompt-consistency` (salvo
   (<6k rebota citando el objetivo 9k-12k); `routers/narrative.py` espeja el
   requisito de style_id (422). Marker `style_id` añadido al canario de
   develop_world.md.
-- **Duplicación**: tipos de consequence en ~7 sitios; schemas de review;
+- ~~**Duplicación**: tipos de consequence en ~7 sitios; schemas de review;
   vocabulario de directivas NPC; enum `style_tag` en 4 sitios. Legacy vivo:
   alias `nature→forest`, `perspective:isometric` aún leído, campos `room_*`,
-  menciones residuales a SVG.
+  menciones residuales a SVG.~~ **RESUELTO** (rama `audit/dedup-enums`), por
+  frente:
+  - **`style_tag`**: fuente única `games/style-categories.ts` con candados en
+    cadena — `contracts/remote-gen.ts` DERIVA `StyleTag` (la copia a mano
+    omitía las `stage_*` y arrastraba "nature" como canónico); gen:contract
+    emite `data/contract/style_categories.json` (artefacto puente) y el lado
+    Python queda con UNA fuente (`ai_server/style_categories.py`, de la que
+    derivan style_packs, narrative_schemas y el patrón Pydantic de
+    remote_generation) candada contra ese JSON por
+    `test_style_categories_sync.py`; el tool `generate_scene.json` pasa de
+    spot-check a IGUALDAD EXACTA con el enum TS y `world_rules.md` canda las
+    15 categorías como markers.
+  - **Consequences**: el union del handler (`narrative/types.ts`) gana `noop`
+    y una guardia de deriva compile-time contra el zod del SoT (todo lo que el
+    pre-flight admite debe caber en el handler; el union del handler sigue MÁS
+    ancho a propósito por los saves antiguos); las 4 listas en prosa de
+    narrative-mcp se construyen desde `ConsequenceSchema.options`. El espejo
+    Python ya estaba candado por las fixtures de reaction (noop_only,
+    tipo_alias).
+  - **Vocabulario NPC**: `NPC_ROLES` (npc-roles, `Record<NpcRole,…>` obliga a
+    los presets) alimenta el `z.enum` del SoT (fluye a prompt+tool vía
+    gen:contract) y `NPC_DIRECTIVE_TYPES` (npc-behavior) alimenta la tool
+    `npc_set_directive` (hints por verbo en `Record<NpcDirectiveType,…>` —
+    verbo nuevo/retirado no compila) y el warning del sistema.
+  - **Schemas de review**: ya consolidados por #120/#133 (zod
+    `review-schemas.ts` + espejo Python candado por fixtures) — nada nuevo.
+  - **Legacy — decisiones**: alias `nature→forest` SE QUEDA (tolerancia
+    documentada de packs/escenas viejas; nunca se ofrece al modelo);
+    `perspective:isometric` SE QUEDA (se lee solo para IGNORAR entradas de
+    packs de usuario en disco, documentado en loader.ts/style_packs.py);
+    campos/kinds `room_*` SE QUEDAN (naming histórico del wire y del
+    GameStore, vivo y tipado — renombrarlo es churn cross-servicio sin riesgo
+    de deriva); el residuo SVG REAL era `blueprint_kind: "svg"` en
+    `contracts/remote-gen.ts` (muerto en el wire: el Pydantic acepta
+    `boxes|tile|stage` y el cliente envía "tile") — corregido el union TS.
 
 ### Playtest con agente-motor (2026-08-13, alta_fantasia — Fase 5 cerrada)
 
@@ -407,8 +441,9 @@ Backlog derivado (ordenado por impacto):
 ### Menores / higiene
 
 - Puertos en dos registros (`config.ts` vs `contracts/service-registry.ts`).
-- `StyleTag` (`contracts/remote-gen.ts`) copia manual desincronizada de
-  `style-categories.ts` (omite `stage_*`, arrastra `nature`).
+- ~~`StyleTag` (`contracts/remote-gen.ts`) copia manual desincronizada de
+  `style-categories.ts` (omite `stage_*`, arrastra `nature`).~~ **RESUELTO**
+  en `audit/dedup-enums` (tipo derivado de la fuente única).
 - `contracts/{narrative-llm,gpu-worker,gateway}.ts` — cero importadores.
 - `DEV_AMBIENT_BOOST=3.0` congelado en `light_placer.gd` (la memoria dice que
   subir ambient en dev es deseado — decidir mecanismo, no borrar).

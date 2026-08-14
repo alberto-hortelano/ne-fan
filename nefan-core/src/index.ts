@@ -17,6 +17,9 @@ export type { SystemRegistry } from "./systems/registry.js";
 export { GameStore, createInitialState } from "./store/game-store.js";
 export { GameSimulation } from "./simulation/game-loop.js";
 export type { FrameInputs, FrameResult } from "./simulation/game-loop.js";
+// Vocabulario NPC (fuente única): roles con preset + directivas ejecutables.
+export { NPC_ROLES, type NpcRole } from "./simulation/npc-roles.js";
+export { NPC_DIRECTIVE_TYPES, type NpcDirectiveType } from "./simulation/npc-behavior.js";
 export { buildPersonality, DIFFICULTY, AGGRESSION_STYLE } from "./combat/difficulty-presets.js";
 export { NarrativeState } from "./narrative/narrative-state.js";
 export { FsSessionStorage, MemorySessionStorage } from "./narrative/session-storage.js";

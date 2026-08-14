@@ -19,6 +19,7 @@ import {
   ImageReviewSchema,
   StageReviewSchema,
 } from "./review-schemas.js";
+import { NPC_ROLES } from "../../simulation/npc-roles.js";
 
 // ── narrative_event (reacción del motor a una elección del jugador) ─────────
 
@@ -46,7 +47,7 @@ const SpawnEntityConsequence = z
     name: z.string().optional().describe("Nombre propio (NPCs)"),
     position_hint: z.string().optional().describe("Pista de dónde aparece, p.ej. 'junto a la fuente'"),
     role: z
-      .enum(["peasant", "guard", "villager", "merchant"])
+      .enum(NPC_ROLES)
       .optional()
       .describe("Rol de comportamiento ambiental (NPCs); desconocido degrada a villager"),
     texture_hash: z.string().optional().describe("Reusar textura cacheada por hash"),

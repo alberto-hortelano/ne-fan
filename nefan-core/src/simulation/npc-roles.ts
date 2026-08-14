@@ -22,9 +22,17 @@ export interface NpcRoleParams {
   joins_combat: false;
 }
 
+/** Vocabulario de roles con preset de comportamiento — FUENTE ÚNICA. El zod
+ *  del SoT (SpawnEntityConsequence.role) y la prosa de narrative-mcp derivan
+ *  de esta lista; `Record<NpcRole, …>` obliga a que los presets la cubran
+ *  exactamente. Orden = el histórico del enum del contrato (minimiza el diff
+ *  de gen:contract). */
+export const NPC_ROLES = ["peasant", "guard", "villager", "merchant"] as const;
+export type NpcRole = (typeof NPC_ROLES)[number];
+
 /** Velocidades por debajo del jugador (walk 1.9 / sprint 3.8 en
  *  combat_config) para que los NPC se lean como fondo, no como amenaza. */
-export const NPC_ROLE_PRESETS: Record<string, NpcRoleParams> = {
+export const NPC_ROLE_PRESETS: Record<NpcRole, NpcRoleParams> = {
   villager: {
     role: "villager",
     wander_radius: 6,
@@ -82,7 +90,7 @@ const BOOLEAN_KEYS = ["flees_from_combat", "intervenes_in_combat"] as const;
  *  preset de `data.role` (default villager) + overrides de `data.behavior`. */
 export function resolveRoleParams(data: Record<string, unknown>): NpcRoleParams {
   const role = typeof data.role === "string" && data.role ? data.role : "villager";
-  let preset = NPC_ROLE_PRESETS[role];
+  let preset = (NPC_ROLE_PRESETS as Record<string, NpcRoleParams>)[role];
   if (!preset) {
     if (!warnedRoles.has(role)) {
       warnedRoles.add(role);

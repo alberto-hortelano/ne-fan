@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
-import { stagePlanFromScene } from '@nefan/core';
+import { stagePlanFromScene, ConsequenceSchema, NPC_DIRECTIVE_TYPES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
@@ -29,6 +29,24 @@ const _visionKindsCoverContract: VisionRequestMsg['kind'] = null as unknown as V
 const _contractCoversVisionKinds: VisionKind = null as unknown as VisionRequestMsg['kind'];
 void _visionKindsCoverContract;
 void _contractCoversVisionKinds;
+
+// Tipos de consequence, derivados del SoT zod (contract/model-io/schemas.ts):
+// la prosa de las tools no puede volver a desincronizarse de lo que el
+// pre-flight acepta.
+const CONSEQUENCE_TYPES = ConsequenceSchema.options.map((o) => o.shape.type.value);
+const CONSEQUENCE_TYPES_TEXT = CONSEQUENCE_TYPES.join(' / ');
+
+// Directivas NPC: la lista viene del motor (npc-behavior, fuente única); las
+// pistas de parámetros por verbo viven aquí pero Record<NpcDirectiveType, …>
+// obliga a cubrir el vocabulario exacto (verbo nuevo/retirado → no compila).
+const DIRECTIVE_VERB_HINTS: Record<NpcDirectiveType, string> = {
+  wander: '"wander" {radius?}',
+  patrol: '"patrol" (double-radius wander)',
+  goto_place: '"goto_place" {target_place_id}',
+  visit_npc: '"visit_npc" {target_npc_id}',
+  hold: '"hold"',
+};
+const DIRECTIVE_HINTS_TEXT = NPC_DIRECTIVE_TYPES.map((t) => DIRECTIVE_VERB_HINTS[t]).join(', ');
 
 // ── Prompts del contrato narrativo ─────────────────────────────────────────
 // El texto canónico de las instrucciones vive en
@@ -146,11 +164,10 @@ Request kinds you may receive:
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
-                      { "consequences": [ ... ] } — entries are dialogue /
-                      story_update / spawn_entity / schedule_event /
-                      plugin_event. (dialogue is an ENTRY in that array, never a
-                      top-level field; its option list is "choices", not
-                      "options".)
+                      { "consequences": [ ... ] } — entries are
+                      ${CONSEQUENCE_TYPES_TEXT}. (dialogue is an ENTRY in that
+                      array, never a top-level field; its option list is
+                      "choices", not "options".)
 - "blueprint_review" → LOOK at the rendered blueprint image and check it against
                       the scene JSON; return { approved, issues, fixes? }.
 
@@ -320,7 +337,7 @@ into context:
       room_data: z.string().describe(
         'JSON string matching the pending request kind. For narrative_event it MUST be ' +
         '{ "consequences": [ ... ] } whose entries each have a "type" ' +
-        '(dialogue/story_update/spawn_entity/schedule_event/plugin_event/noop). A ' +
+        `(${CONSEQUENCE_TYPES.join('/')}). A ` +
         'dialogue entry uses "speaker"+"text"+optional "choices" (max 3) — a top-level ' +
         '"dialogue" object or an "options" field is ignored. See the listen message for ' +
         'the full per-kind schema.'),
@@ -694,7 +711,7 @@ into context:
       trigger_id: z.string().describe('Unique within the place.'),
       when_type: z.enum(['player_entered', 'player_left', 'player_near', 'first_visit']),
       when_radius: z.number().optional().describe('Required only for when_type "player_near".'),
-      consequences_json: z.string().describe('JSON array of consequences, same shape as narrative_event consequences (dialogue / story_update / spawn_entity / schedule_event / plugin_event).'),
+      consequences_json: z.string().describe(`JSON array of consequences, same shape as narrative_event consequences (${CONSEQUENCE_TYPES_TEXT}).`),
     },
     async ({ place_id, trigger_id, when_type, when_radius, consequences_json }) => {
       let consequences: unknown;
@@ -911,14 +928,12 @@ into context:
   server.tool(
     'npc_set_directive',
     `Set or clear a standing high-level order on an NPC. The game engine ` +
-    `EXECUTES these directive types as ambient behaviour: "wander" {radius?}, ` +
-    `"patrol" (double-radius wander), "goto_place" {target_place_id}, ` +
-    `"visit_npc" {target_npc_id}, "hold". Other verbs are stored as intent but ` +
-    `ignored by the engine (the NPC keeps wandering), so prefer that ` +
-    `vocabulary. Pass clear=true to remove the directive.`,
+    `EXECUTES these directive types as ambient behaviour: ${DIRECTIVE_HINTS_TEXT}. ` +
+    `Other verbs are stored as intent but ignored by the engine (the NPC keeps ` +
+    `wandering), so prefer that vocabulary. Pass clear=true to remove the directive.`,
     {
       npc_id: z.string(),
-      type: z.string().optional().describe('Directive verb: wander | patrol | goto_place | visit_npc | hold. Required unless clear=true.'),
+      type: z.string().optional().describe(`Directive verb: ${NPC_DIRECTIVE_TYPES.join(' | ')}. Required unless clear=true.`),
       target_place_id: z.string().optional().describe('Place the directive applies to (goto_place).'),
       target_npc_id: z.string().optional().describe('Entity id of the NPC to visit (visit_npc).'),
       params_json: z.string().optional().describe('Optional JSON object of extra directive params (e.g. {"radius": 10} for wander).'),

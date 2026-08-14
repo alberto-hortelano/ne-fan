@@ -24,6 +24,13 @@ import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";
 
+/** Vocabulario de directivas que el motor EJECUTA — FUENTE ÚNICA. La tool MCP
+ *  npc_set_directive construye su descripción desde esta lista; un verbo fuera
+ *  de ella se guarda como intención pero degrada a micro-wander con warning
+ *  (el LLM puede inventar verbos; degradación esperable, no fail). */
+export const NPC_DIRECTIVE_TYPES = ["wander", "patrol", "goto_place", "visit_npc", "hold"] as const;
+export type NpcDirectiveType = (typeof NPC_DIRECTIVE_TYPES)[number];
+
 /** Lo que el sistema necesita del mundo — el bridge inyecta el real
  *  (colisión server-side + world map + entities); los tests, un fake. */
 export interface NpcWorldAdapter {
@@ -414,7 +421,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       default:
         this.warnOnce(
           `${rt.record.id}:${directive.type}`,
-          `directiva desconocida "${directive.type}" para "${rt.record.id}" — micro-wander (vocabulario: wander, patrol, goto_place, visit_npc, hold)`,
+          `directiva desconocida "${directive.type}" para "${rt.record.id}" — micro-wander (vocabulario: ${NPC_DIRECTIVE_TYPES.join(", ")})`,
         );
         rt.mode = rt.pauseTimer > 0 && rt.pauseTimer !== Infinity ? "idle" : "wander";
         if (rt.pauseTimer === Infinity) rt.pauseTimer = 0;
