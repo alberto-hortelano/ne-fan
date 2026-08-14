@@ -1,0 +1,166 @@
+{
+  "_comment": "Fixture v3 REAL (pre-tiles) para la migración v3→v4. Los spawns dinámicos (spawn_reason narrative_request/react_to_player) guardan METROS de mundo — resolvePositionHint siempre partió de la posición del jugador — nunca celdas. La escena activa es Format D expandido 12×8 @ mpc 2 (24×16 m) centrado en el origen.",
+  "schema_version": 3,
+  "session_id": "v3_aldea",
+  "game_id": "alta_fantasia",
+  "created_at": "2026-06-01T10:00:00.000Z",
+  "updated_at": "2026-06-01T10:30:00.000Z",
+  "world": {
+    "name": "Miravanda",
+    "description": "Un valle de aldeas",
+    "active_scene_id": "aldea",
+    "style_id": "",
+    "style_token": "",
+    "world_doc_hash": "",
+    "render_mode": "vector",
+    "character_mode": "capsule"
+  },
+  "player": {
+    "name": "Peregrino",
+    "position": [2, 0, 3],
+    "health": 100,
+    "gold": 12,
+    "inventory": []
+  },
+  "story_so_far": "El peregrino llegó a la aldea al anochecer.",
+  "scenes_loaded": {
+    "aldea": {
+      "scene_data": {
+        "scene_id": "aldea",
+        "scene_description": "La aldea del valle",
+        "size": { "cols": 12, "rows": 8, "meters_per_cell": 2 },
+        "terrain": [
+          "WWgggggggggg",
+          "Wggggggggggg",
+          "gggggggggggg",
+          "gggggggggggg",
+          "gggggggggggg",
+          "gggggggggggg",
+          "gggggggggggg",
+          "gggggggggggg"
+        ],
+        "terrain_legend": { "W": { "name": "muro", "solid": true } },
+        "entities": [
+          {
+            "id": "vecina",
+            "kind": "npc",
+            "name": "Vecina",
+            "cell": [3, 2],
+            "footprint": [1, 1],
+            "glyph": "n"
+          }
+        ],
+        "ambient_event": "",
+        "__expanded": true
+      },
+      "loaded_at": "2026-06-01T10:00:05.000Z",
+      "asset_refs": []
+    }
+  },
+  "entities": [
+    {
+      "id": "vecina",
+      "type": "npc",
+      "scene_id": "aldea",
+      "spawned_at": "2026-06-01T10:00:05.000Z",
+      "spawn_reason": "scene_init",
+      "spawn_event_id": "",
+      "position": [-5, 0, -3],
+      "data": { "name": "Vecina" },
+      "asset_refs": []
+    },
+    {
+      "id": "narr_npc_1748772600",
+      "type": "npc",
+      "scene_id": "aldea",
+      "spawned_at": "2026-06-01T10:10:00.000Z",
+      "spawn_reason": "narrative_request",
+      "spawn_event_id": "evt_0001",
+      "position": [3, 0, -2],
+      "data": { "name": "Forastero", "description": "Un forastero encapuchado" },
+      "asset_refs": []
+    },
+    {
+      "id": "narr_npc_1748773200",
+      "type": "npc",
+      "scene_id": "aldea",
+      "spawned_at": "2026-06-01T10:20:00.000Z",
+      "spawn_reason": "narrative_request",
+      "spawn_event_id": "evt_0002",
+      "position": [0, 0, -50],
+      "data": { "name": "Jinete lejano", "description": "Un jinete se acerca desde el norte" },
+      "asset_refs": []
+    }
+  ],
+  "dialogue_history": [
+    {
+      "id": "evt_0001",
+      "timestamp": "2026-06-01T10:10:00.000Z",
+      "scene_id": "aldea",
+      "speaker": "Vecina",
+      "text": "Alguien pregunta por vos en la plaza.",
+      "choices": ["¿Quién?", "No me interesa"],
+      "chosen_index": 0,
+      "free_text": "",
+      "narrative_consequences": [
+        {
+          "type": "spawn_entity",
+          "entity_kind": "npc",
+          "description": "Un forastero encapuchado",
+          "name": "Forastero",
+          "position_hint": "near_player"
+        }
+      ]
+    },
+    {
+      "id": "evt_0002",
+      "timestamp": "2026-06-01T10:20:00.000Z",
+      "scene_id": "aldea",
+      "speaker": "Forastero",
+      "text": "Mi señor cabalga hacia aquí.",
+      "choices": [],
+      "chosen_index": -1,
+      "free_text": "¿quién es tu señor?",
+      "narrative_consequences": [
+        {
+          "type": "spawn_entity",
+          "entity_kind": "npc",
+          "description": "Un jinete se acerca desde el norte",
+          "name": "Jinete lejano",
+          "position_hint": "distant_north"
+        }
+      ]
+    }
+  ],
+  "asset_index_snapshot": [],
+  "world_map": {
+    "schema_version": 1,
+    "places": {
+      "world": {
+        "id": "world",
+        "kind": "world",
+        "parent_id": null,
+        "name": "Miravanda",
+        "description": "",
+        "attrs": {},
+        "triggers": [],
+        "visited": false
+      },
+      "aldea": {
+        "id": "aldea",
+        "kind": "settlement",
+        "parent_id": "world",
+        "name": "Aldea",
+        "description": "",
+        "attrs": {},
+        "triggers": [],
+        "visited": true,
+        "realized_scene_id": "aldea"
+      }
+    },
+    "links": [],
+    "root_id": "world",
+    "active_place_id": "aldea"
+  },
+  "plugins": []
+}

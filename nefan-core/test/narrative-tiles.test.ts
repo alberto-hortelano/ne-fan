@@ -273,7 +273,9 @@ describe("NarrativeState — migración v3→v4", () => {
     // guardan metros de mundo (resolvePositionHint), los scene_init salen de
     // las celdas de la escena. Se copia a tmp porque loadSession marca dirty
     // y el flujo real re-guarda.
-    const src = fileURLToPath(new URL("./fixtures/saves/v3_aldea", import.meta.url));
+    // OJO: el dir se llama saves-v3 (no saves/) — el .gitignore raíz ignora
+    // cualquier dir "saves/" y una fixture ahí jamás llegaría a CI.
+    const src = fileURLToPath(new URL("./fixtures/saves-v3/v3_aldea", import.meta.url));
     const tmp = await fs.mkdtemp(join(tmpdir(), "nefan-v3-"));
     try {
       await fs.cp(src, join(tmp, "v3_aldea"), { recursive: true });
