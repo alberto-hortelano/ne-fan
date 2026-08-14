@@ -87,15 +87,16 @@ export interface DeleteSessionMessage {
   sessionId: string;
 }
 
-/** Activa las imágenes IA en una partida empezada en vector (solo upgrade:
- *  la inversa dejaría el mundo mezclado clay/pintado para siempre). El save
- *  puede no ser la sesión activa — se parchea en disco desde el título. */
+/** Cambia el modo de render de una partida, en cualquier sentido
+ *  (image⇄vector). Bajar a vector no borra lo pintado: el cliente conserva
+ *  las imágenes existentes y solo deja de generar nuevas. El save puede no
+ *  ser la sesión activa — se parchea en disco desde el título. */
 export interface SetRenderModeMessage {
   type: "set_render_mode";
   requestId: string;
   sessionId: string;
-  renderMode: "image";
-  /** Qué se activa: escenarios (render_mode) o personajes (character_mode).
+  renderMode: "image" | "vector";
+  /** Qué se cambia: escenarios (render_mode) o personajes (character_mode).
    *  Ausente = "scenes" (compat). */
   facet?: "scenes" | "characters";
 }
@@ -379,6 +380,19 @@ export interface RenderModeSetMessage {
   requestId: string;
   ok: boolean;
   error?: string;
+  /** Eco de lo aplicado (solo con ok:true) — evita que el cliente tenga que
+   *  releer el save para saber qué quedó. */
+  facet?: "scenes" | "characters";
+  renderMode?: "image" | "vector";
+}
+
+/** Push a TODOS los clientes suscritos a la sesión cuando cambia el modo de
+ *  render (otro cliente de la misma sesión debe reaccionar en caliente). */
+export interface RenderModeChangedMessage {
+  type: "render_mode_changed";
+  sessionId: string;
+  facet: "scenes" | "characters";
+  renderMode: "image" | "vector";
 }
 
 export interface SessionSavedMessage {
@@ -398,4 +412,5 @@ export type ServerMessage =
   | GameCreatedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
+  | RenderModeChangedMessage
   | SessionSavedMessage;

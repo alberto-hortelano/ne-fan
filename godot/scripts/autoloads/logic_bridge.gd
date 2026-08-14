@@ -283,6 +283,10 @@ func _handle_message(data: String) -> void:
 			session_saved.emit(bool(msg.get("ok", false)))
 		"pong":
 			pass
+		"render_mode_changed":
+			# Modo de render del cliente 2D (imágenes IA de tiles/skins) — el
+			# 3D no participa en ese pipeline; ignorar sin avisar de deriva.
+			pass
 		_:
 			# Unknown message type — log so we notice protocol drift instead of
 			# silently dropping a frame the bridge added without our knowing.

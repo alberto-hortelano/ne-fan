@@ -149,10 +149,43 @@ export class CharacterSpriteManager {
     this.allowed = allowed;
   }
 
-  requestSkin(prompt: string): void {
-    if (!this.allowed || !CONFIG.graphics.ai_skin || !prompt || this.skinsDisabled) return;
+  /** Rearma el cortacircuitos de fallos de backend. Se llama cuando el
+   *  usuario reactiva los personajes IA desde el menú dev — pide reintentar;
+   *  si el backend sigue caído, el primer fallo lo vuelve a disparar. */
+  resetFailureBreaker(): void {
+    this.skinsDisabled = false;
+  }
+
+  /** Estado de un skin por prompt, para el menú dev. "ready" = la anim idle
+   *  ya sustituye a la base; "pending" = pedido y en cola/generándose. */
+  skinStatus(prompt: string): "ready" | "pending" | "failed" | "unrequested" {
+    const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
+    if (this.readySkins.has(`${skinned}/idle`)) return "ready";
+    const state = this.skins.get(skinned);
+    if (!state) return "unrequested";
+    return state.failed ? "failed" : "pending";
+  }
+
+  /** `force` (botón por-item del menú dev): salta el gate de sesión
+   *  (`allowed`) y el cortacircuitos, y rearma un skin marcado failed para
+   *  reintentarlo. NUNCA salta CONFIG.graphics.ai_skin — con el flag apagado
+   *  no existe backend de skins que llamar (fail-loud en el caller). */
+  requestSkin(prompt: string, opts: { force?: boolean } = {}): void {
+    if (!CONFIG.graphics.ai_skin || !prompt) return;
+    if (!opts.force && (!this.allowed || this.skinsDisabled)) return;
     const skinnedModel = this.sprites.skinKey(BASE_MODEL, prompt);
-    if (this.skins.has(skinnedModel)) return;
+    const existing = this.skins.get(skinnedModel);
+    if (existing) {
+      if (!opts.force || !existing.failed) return;
+      // Reintento explícito: rearmar el skin y el cortacircuitos (el fallo
+      // global vino de este mismo tipo de error) y re-encolar las auto-anims.
+      existing.failed = false;
+      existing.queued.clear();
+      this.skinsDisabled = false;
+      for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, existing, anim);
+      return;
+    }
+    if (opts.force) this.skinsDisabled = false;
     const state: SkinState = { prompt, failed: false, queued: new Set() };
     this.skins.set(skinnedModel, state);
     for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);

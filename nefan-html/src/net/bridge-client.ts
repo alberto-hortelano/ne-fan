@@ -13,6 +13,7 @@ import type {
   GameCreatedMessage,
   SessionDeletedMessage,
   RenderModeSetMessage,
+  RenderModeChangedMessage,
   SessionSavedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
@@ -23,7 +24,8 @@ export type BridgeEvent =
   | "connected"
   | "disconnected"
   | "narrative_event"
-  | "narrative_status";
+  | "narrative_status"
+  | "render_mode_changed";
 
 type EventPayload = {
   state_update: StateUpdateMessage;
@@ -31,6 +33,7 @@ type EventPayload = {
   disconnected: undefined;
   narrative_event: NarrativeEventMessage;
   narrative_status: NarrativeStatusMessage;
+  render_mode_changed: RenderModeChangedMessage;
 };
 
 type Handler<E extends BridgeEvent> = (data: EventPayload[E]) => void;
@@ -149,6 +152,9 @@ export class BridgeClient {
         break;
       case "narrative_status":
         this.emit("narrative_status", msg);
+        break;
+      case "render_mode_changed":
+        this.emit("render_mode_changed", msg);
         break;
     }
   }
@@ -296,9 +302,9 @@ export class BridgeClient {
     return this.request<SessionDeletedMessage>({ type: "delete_session", sessionId });
   }
 
-  /** Activa las imágenes IA en un save vector (upgrade in-place), por
-   *  faceta: escenarios o personajes. */
-  setRenderMode(sessionId: string, renderMode: "image", facet: "scenes" | "characters"): Promise<RenderModeSetMessage> {
+  /** Cambia el modo de render de un save (image⇄vector), por faceta:
+   *  escenarios o personajes. Bajar a vector solo bloquea generación nueva. */
+  setRenderMode(sessionId: string, renderMode: "image" | "vector", facet: "scenes" | "characters"): Promise<RenderModeSetMessage> {
     return this.request<RenderModeSetMessage>({ type: "set_render_mode", sessionId, renderMode, facet });
   }
 

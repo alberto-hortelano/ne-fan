@@ -168,7 +168,10 @@ export interface NefanConfig {
 export const CONFIG: NefanConfig = {
   graphics: {
     character_sprites: true,
-    ai_skin: false,
+    // Backend de skins disponible: el gate de GASTO es el modo runtime de la
+    // faceta personajes (world.character_mode, toggle del menú dev). Sin
+    // MESHY_API_KEY el endpoint responde 503 y el cliente degrada a y_bot.
+    ai_skin: true,
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,

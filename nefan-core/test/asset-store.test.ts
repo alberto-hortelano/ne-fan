@@ -101,6 +101,24 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
 
+describe("CORS (espejo del CORSMiddleware de los FastAPI)", () => {
+  it("toda respuesta lleva Access-Control-Allow-Origin: * (el cliente 2D pide blobs con crossOrigin)", async () => {
+    // Blob (aunque sea miss), JSON y error: la cabecera va SIEMPRE — sin
+    // ella Chrome bloquea la imagen y el decode() del plató da EncodingError.
+    for (const path of ["/cache/albedo/nadaquever", "/health", "/no-existe"]) {
+      const res = await fetch(`${baseUrl}${path}`);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*", path);
+    }
+  });
+
+  it("preflight OPTIONS → 204 con métodos y cabeceras permitidos", async () => {
+    const res = await fetch(`${baseUrl}/assets`, { method: "OPTIONS" });
+    assert.equal(res.status, 204);
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.match(res.headers.get("access-control-allow-methods") ?? "", /GET/);
+  });
+});
+
 describe("cable exacto de blobs (cache_assets.py)", () => {
   it("/cache/check/{hash} sigue MUERTO: 400 texto 'Invalid map type'", async () => {
     const r = await getRaw("/cache/check/abc123");

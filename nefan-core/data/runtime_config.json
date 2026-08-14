@@ -1,7 +1,7 @@
 {
   "graphics": {
     "character_sprites": true,
-    "ai_skin": false,
+    "ai_skin": true,
     "ai_sprites": false,
     "ai_textures": false,
     "ai_models": false,
