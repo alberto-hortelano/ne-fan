@@ -412,6 +412,24 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  /** Append ADITIVO con dedupe a asset_refs de una escena cargada: los
+   *  hashes entran en la keep-list del prune del asset-store (p. ej. las
+   *  celdas de superficie que la vista fps instaló para ese tile). Devuelve
+   *  el total tras el append; lanza si la escena no existe (fail-loud). */
+  appendSceneAssetRefs(sceneId: string, refs: string[]): number {
+    const record = this.scenes_loaded[sceneId];
+    if (!record) throw new Error(`appendSceneAssetRefs: escena "${sceneId}" no cargada`);
+    const current = new Set(record.asset_refs);
+    for (const ref of refs) {
+      if (!current.has(ref)) {
+        current.add(ref);
+        record.asset_refs.push(ref);
+        this.dirty = true;
+      }
+    }
+    return record.asset_refs.length;
+  }
+
   recordEntitySpawned(
     entityId: string,
     entityType: string,

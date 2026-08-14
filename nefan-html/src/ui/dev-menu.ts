@@ -8,7 +8,7 @@
 import { errors } from "./error-log.js";
 
 export interface FakeItem {
-  kind: "stage" | "tile" | "skin";
+  kind: "stage" | "tile" | "skin" | "fps_atlas";
   /** Clave del tile/plató o prompt del skin — identidad estable del item. */
   id: string;
   label: string;

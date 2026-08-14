@@ -32,6 +32,7 @@ import { rendererRegistry } from "./renderer/registry.js";
 import type { Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
 import { FpsRenderer } from "./renderer/fps-renderer.js";
+import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { StageImageController } from "./scene/stage-image.js";
@@ -247,12 +248,38 @@ const stageImageController = new StageImageController(GEN_URLS, {
   status: (s) => devPanel.setStage(s),
   onGeneration: (e) => devPanel.recordGeneration(e),
 });
+// Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
+// celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
+// lo que falta y las escenas siguientes reutilizan por descripción+estilo.
+const fpsAtlasController = new FpsAtlasController(
+  { remote: REMOTE_GEN_URL, assets: ASSET_STORE_URL, state: serviceUrl("world-state") },
+  {
+    getTile: (key) => {
+      const surfaces = fpsRenderer?.getTileSurfaces(key);
+      const entry = tileStore.entries.get(key);
+      if (!surfaces || !entry) return null;
+      const scene = entry.scene as { scene_description?: string; style_tag?: string; biome?: string };
+      return {
+        layout: surfaces.layout,
+        sceneDescription: String(scene.scene_description ?? ""),
+        styleTag: String(scene.style_tag ?? ""),
+        biome: scene.biome,
+      };
+    },
+    apply: (key, images) => fpsRenderer?.applyAtlas(key, images),
+    clear: (key) => fpsRenderer?.clearAtlas(key),
+    generationOn: () => scenesGenerationOn(),
+    log: (msg) => log(msg),
+    onGeneration: (e) => devPanel.recordGeneration(e),
+  },
+);
 
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
  *  save) a los generadores de imagen: escena y skins de personaje. */
 function applySessionStyle(styleId: string): void {
   sceneImageController.setStyle(styleId);
   stageImageController.setStyle(styleId);
+  fpsAtlasController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
   devPanel.setSession({ styleId });
   if (styleId) log(`Estilo visual: ${styleId}`);
@@ -1306,7 +1333,12 @@ function setActiveClientTile(key: string): void {
   activeTileKey = key;
   sceneData = entry.scene;
   renderer.setActiveTile(key);
-  if (sessionView === "fps") fpsRenderer?.setActiveTile(key);
+  if (sessionView === "fps") {
+    fpsRenderer?.setActiveTile(key);
+    // Reinstala el atlas de caché o, con generación auto, lo pinta (el
+    // controller degrada a clay con error visible si algo falla).
+    void fpsAtlasController.onActiveTile(key).catch(() => {});
+  }
   currentExits = (entry.scene.exits ?? []) as SceneExit[];
   travelPanel.setExits(currentExits);
 }
@@ -1658,6 +1690,8 @@ function gameLoop(now: number): void {
     // (misma semántica que el botón por-item del menú dev).
     if (sessionView === "proscenium") {
       generateActiveStage();
+    } else if (sessionView === "fps") {
+      if (activeTileKey) void fpsAtlasController.runFor(activeTileKey).catch(() => {});
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
@@ -2059,6 +2093,20 @@ function listFakeItems(): FakeItem[] {
         inFlight: stageImageController.running,
       });
     }
+  } else if (sessionView === "fps") {
+    const textured = new Set(
+      ((fpsRenderer?.debugState() as { textured?: string[] })?.textured) ?? [],
+    );
+    for (const t of tileStore.entries.values()) {
+      if (t.tx === undefined || textured.has(t.key) || !fpsRenderer?.getTileSurfaces(t.key)) continue;
+      items.push({
+        kind: "fps_atlas",
+        id: t.key,
+        label: `Atlas fps ${t.key} (clay — celdas ya en la librería salen gratis)`,
+        thumb: renderer.getTilePlanFullImage(t.key),
+        inFlight: fpsAtlasController.running,
+      });
+    }
   } else {
     for (const t of tileStore.entries.values()) {
       if (t.tx === undefined || renderer.tileHasImage(t.key)) continue;
@@ -2106,6 +2154,10 @@ async function generateFakeItem(item: FakeItem): Promise<void> {
   }
   if (item.kind === "tile") {
     await sceneImageController.generateForTile(item.id);
+    return;
+  }
+  if (item.kind === "fps_atlas") {
+    await fpsAtlasController.runFor(item.id);
     return;
   }
   characterSprites.requestSkin(item.id, { force: true });

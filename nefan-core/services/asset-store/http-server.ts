@@ -151,7 +151,7 @@ async function handle(
       const cacheUrl =
         m.type === "texture"
           ? `/cache/${m.subtype}/${hash}`
-          : m.type === "model" || m.type === "skin" || m.type === "sprite"
+          : m.type === "model" || m.type === "skin" || m.type === "sprite" || m.type === "surface"
             ? `/cache/${m.type}/${hash}`
             : undefined;
       // scene/segment (y subtypes huérfanos) van SIN cache_url, como hoy.
