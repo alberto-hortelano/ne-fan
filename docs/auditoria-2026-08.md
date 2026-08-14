@@ -186,9 +186,21 @@ narrative-mcp, y smoke E2E (carga de plató, movimiento, colisión).
   compartidas, no se tocan): los umbrales de `frontier.ts` (prefetch/veil/
   blocking) son UX de generación de tiles del cliente, y las fuentes de colisión
   frontera/AABB del esquema son del jugador (el bridge no las tiene).
-- **Migración v3→v4 corrompe spawns dinámicos** (`narrative-state`/`migrations`).
+- ~~**Migración v3→v4 corrompe spawns dinámicos** (`narrative-state`/`migrations`).
   Trata metros de mundo como celdas → teletransporte al resumir saves v3 con
-  entidades `narrative_request`. Sin cobertura de test v3→v4. (Ver sección 3.)
+  entidades `narrative_request`. Sin cobertura de test v3→v4.~~ **RESUELTO**
+  (rama `audit/migration-v3-v4`). Verificado en la historia (el port original
+  9d2ec9f ya usaba `resolvePositionHint` relativo al jugador): los
+  `narrative_request` SIEMPRE guardaron metros de mundo — la conversión
+  celda→mundo de `migrateActiveSceneToTile` doble-convertía. Ahora conservan
+  su posición TAL CUAL (la escena v3 centrada en el origen == tile (0,0)) y el
+  `scene_id` pasa al tile que CONTIENE la posición (`worldToTile`) — un spawn
+  `distant_*` (±50 m) cae en un tile vecino aún no generado y queda latente.
+  El test viejo codificaba el bug (fixture sintética con celdas); reescrito, y
+  fixture v3 REAL commiteada (`test/fixtures/saves/v3_aldea/state.json`:
+  scene_init + narrative_request cercano y distante + dialogue_history +
+  world_map) cargada por `FsSessionStorage` con round-trip v4 idempotente.
+  Ambos tests verificados discriminantes contra la migración anterior.
 - ~~**`stage/greybox` hardcodea `solid/tall=true`** para todo volumen
   (`greybox.ts:930`): alfombras (`prop passable`) y arbustos pintados se
   vuelven colisión sólida al llegar la visión.~~ **RESUELTO** (rama
@@ -467,10 +479,11 @@ usuario 2026-08-13):
   (types.ts) y su espejo zod (`message-schema.ts`) — la guardia de deriva de
   #119 aguanta. Se reintroducen si se implementan de verdad (necesitarían RNG en
   la resolución + decisión de balance).
-- **Migración v3→v4 metros-como-celdas** (`migrations.ts`): **APLAZADO** (bajo
+- ~~**Migración v3→v4 metros-como-celdas** (`migrations.ts`): **APLAZADO** (bajo
   urgencia — saves v3 son de dev antiguos). Reconvierte posiciones celda→mundo y
   puede doble-convertir un spawn ya en metros; riesgo de romper resumes. Se
-  aborda en PR propia con fixtures v3→v4 dedicadas, no en esta tanda.
+  aborda en PR propia con fixtures v3→v4 dedicadas, no en esta tanda.~~
+  **RESUELTO** en `audit/migration-v3-v4` (detalle en sección 2, media).
 - ~~**`animation-matcher.ts` huérfano**~~ **RESUELTO**. Al investigar resultó que
   TODO `src/animation/` (controller + state + transitions + matcher) no tenía
   ningún consumidor de runtime (solo el barrel `index.ts` y su propio test).
