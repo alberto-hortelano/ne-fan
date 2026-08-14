@@ -56,7 +56,7 @@ export interface ReportPlayerChoiceRequest {
   speaker?: string;
   chosen_text?: string;
   free_text?: string;
-  context?: Record<string, unknown>;
+  context?: LlmContext;
 }
 
 export interface ReportPlayerChoiceResponse {

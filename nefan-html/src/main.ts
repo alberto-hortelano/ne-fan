@@ -2,6 +2,7 @@
  *  Dual mode: connects to nefan-core bridge (WebSocket) or falls back to local simulation. */
 
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
+import { setDebugLog } from "./dev/debug-log.js";
 import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
@@ -409,6 +410,9 @@ const nefanHook: Record<string, unknown> = {
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
+  /** Trazas de los pipelines de imagen/colisión (dev/debug-log.ts): apagadas
+   *  por defecto; también `?debug=1` en la URL. */
+  debug(on: boolean) { setDebugLog(on); },
 };
 (window as unknown as { __nefan?: unknown }).__nefan = nefanHook;
 

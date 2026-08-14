@@ -18,6 +18,7 @@ Output: /tmp/attack_mapping/ (screenshots + intrinsics JSON)
 
 import socket
 import json
+import re
 import time
 import sys
 import os
@@ -27,6 +28,32 @@ import argparse
 HOST = "127.0.0.1"
 PORT = 9876
 OUTPUT_DIR = "/tmp/attack_mapping"
+
+# El JSON que CONSUME el juego (combat_animation_sync.gd) y el ANIM_MAP del
+# animator — el tool emite el MISMO schema que el consumidor y compara contra
+# el shipped, para que un re-run sea diffeable (antes emitía first_hit_* y el
+# shipped usaba visual_*: incomparables).
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+SHIPPED_INTRINSICS = os.path.join(REPO_ROOT, "nefan-core", "data", "animation_intrinsics.json")
+ANIMATOR_GD = os.path.join(REPO_ROOT, "godot", "scripts", "combat", "combat_animator.gd")
+
+
+def load_anim_map() -> dict:
+    """fbx_name por clave, parseado del ANIM_MAP de combat_animator.gd (la
+    fuente de verdad de qué FBX suena bajo cada clave)."""
+    with open(ANIMATOR_GD) as f:
+        gd = f.read()
+    block = gd.split("ANIM_MAP")[1].split("}")[0]
+    return dict(re.findall(r'"([\w()]+)":\s*"([^"]+)"', block))
+
+
+def load_shipped_intrinsics() -> dict:
+    """attack_animations del JSON shipped ({} si no existe)."""
+    try:
+        with open(SHIPPED_INTRINSICS) as f:
+            return json.load(f).get("attack_animations", {})
+    except FileNotFoundError:
+        return {}
 
 ATTACK_ANIMS = [
     "quick", "heavy", "medium", "defensive", "precise",
@@ -297,6 +324,57 @@ def print_results_table(results: list[dict]):
     print("=" * 120)
 
 
+# Tolerancias del drift report: el detector de peaks es impreciso
+# (confunde wind-ups con golpes — ver ANIMATION_MAPPING.md), así que esto
+# SEÑALA divergencias para revisión humana, no las corrige solo.
+DRIFT_TOLERANCES = {
+    "visual_reach_m": 0.05,       # m
+    "visual_sweep_deg": 10.0,     # grados
+    "impact_fraction": 0.05,      # fracción de la duración
+    "duration": 0.05,             # s
+    "max_hips_displacement_m": 0.02,
+}
+
+
+def print_drift_report(measured: dict, shipped: dict) -> None:
+    """Compara lo medido con nefan-core/data/animation_intrinsics.json campo a
+    campo. Un drift NO se aplica automáticamente: revisar los screenshots
+    laterales frame a frame antes de actualizar el shipped (el detector
+    confunde wind-ups con golpes)."""
+    if not shipped:
+        print(f"(no shipped intrinsics at {SHIPPED_INTRINSICS} — drift report skipped)")
+        return
+    print(f"\nDrift vs shipped ({SHIPPED_INTRINSICS}):")
+    drifts = 0
+    for key, entry in measured.items():
+        base = shipped.get(key)
+        if base is None:
+            print(f"  {key}: NUEVA (no está en el shipped)")
+            drifts += 1
+            continue
+        if entry["fbx_name"] and base.get("fbx_name") and entry["fbx_name"] != base["fbx_name"]:
+            print(f"  {key}: fbx_name difiere — animator '{entry['fbx_name']}' vs shipped '{base['fbx_name']}'")
+            drifts += 1
+        for field, tol in DRIFT_TOLERANCES.items():
+            if field not in base:
+                continue
+            delta = abs(float(entry[field]) - float(base[field]))
+            if delta > tol:
+                print(f"  {key}.{field}: medido {entry[field]:.3f} vs shipped {base[field]:.3f} (Δ{delta:.3f} > {tol})")
+                drifts += 1
+        for flag in ("num_hits", "has_steps"):
+            if flag in base and entry[flag] != base[flag]:
+                print(f"  {key}.{flag}: medido {entry[flag]} vs shipped {base[flag]}")
+                drifts += 1
+    missing = sorted(set(shipped) - set(measured))
+    if missing:
+        print(f"  (sin medir en este run: {', '.join(missing)})")
+    if drifts == 0:
+        print("  sin drift — el shipped sigue vigente para lo medido")
+    else:
+        print(f"  {drifts} divergencia(s): revisar screenshots laterales antes de actualizar el shipped")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Attack animation mapping and measurement")
     parser.add_argument("anims", nargs="*", help="Animation names (default: all attack anims)")
@@ -336,25 +414,40 @@ def main():
 
     print_results_table(results)
 
-    # Save intrinsics (use first-hit data as primary)
+    # Save intrinsics in the SAME schema the game consumes
+    # (combat_animation_sync.gd: visual_reach_m / visual_sweep_deg /
+    # impact_fraction / has_steps / style). First-hit data is primary;
+    # max_reach/total_sweep stay as diagnostics (the consumer ignores them).
+    # `style` is human judgment: preserved from the shipped JSON, never
+    # auto-derived. `fbx_name` comes from the animator's ANIM_MAP.
+    anim_map = load_anim_map()
+    shipped = load_shipped_intrinsics()
     intrinsics = {}
     for r in results:
-        intrinsics[r["key"]] = {
+        key = r["key"]
+        entry = {
+            "fbx_name": anim_map.get(key, ""),
             "duration": r["duration"],
             "num_hits": r["num_hits"],
             "has_steps": r["has_steps"],
-            "first_hit_fraction": r["first_hit_fraction"],
-            "first_hit_reach_m": r["first_hit_reach_m"],
-            "first_hit_sweep_deg": r["first_hit_sweep_deg"],
+            "visual_reach_m": r["first_hit_reach_m"],
+            "visual_sweep_deg": r["first_hit_sweep_deg"],
+            "max_hips_displacement_m": r["max_hips_displacement_m"],
+            "impact_fraction": r["first_hit_fraction"],
+            # Diagnostics (not consumed by the game):
             "max_reach_m": r["max_reach_m"],
             "total_sweep_deg": r["total_sweep_deg"],
-            "max_hips_displacement_m": r["max_hips_displacement_m"],
         }
+        if key in shipped and "style" in shipped[key]:
+            entry["style"] = shipped[key]["style"]
+        intrinsics[key] = entry
 
     summary_path = os.path.join(OUTPUT_DIR, "intrinsics.json")
     with open(summary_path, "w") as f:
-        json.dump(intrinsics, f, indent=2)
+        json.dump({"attack_animations": intrinsics}, f, indent=2)
     print(f"\nIntrinsics saved to: {summary_path}")
+
+    print_drift_report(intrinsics, shipped)
 
     full_path = os.path.join(OUTPUT_DIR, "full_data.json")
     with open(full_path, "w") as f:

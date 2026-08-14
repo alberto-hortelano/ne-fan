@@ -5,6 +5,16 @@
  */
 import { CONFIG } from "../config.js";
 import { resolveServiceUrl } from "../contracts/common.js";
+// Contrato S3 narrative-llm: anotar los bodies/respuestas con estos tipos es
+// lo que mantiene contracts/narrative-llm.ts pegado a la realidad (si el
+// contrato deriva de lo que este cliente envía, tsc rompe aquí).
+import type {
+  DevelopWorldRequest,
+  DevelopWorldResponse,
+  NotifySessionRequest,
+  ReportPlayerChoiceRequest,
+  ReportPlayerChoiceResponse,
+} from "../contracts/narrative-llm.js";
 import type { Consequence, LlmContext } from "./types.js";
 
 export interface AiClientOptions {
@@ -80,7 +90,7 @@ export class AiClient {
         session_id: sessionId,
         game_id: gameId,
         is_resume: isResume,
-      }, 5_000);
+      } satisfies NotifySessionRequest, 5_000);
       return res.ok;
     } catch (err) {
       console.warn("AiClient.notifySessionStart failed:", (err as Error).message);
@@ -131,7 +141,7 @@ export class AiClient {
         chosen_text: payload.chosenText,
         free_text: payload.freeText,
         context: payload.context,
-      }, 120_000);
+      } satisfies ReportPlayerChoiceRequest, 120_000);
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         return {
@@ -139,7 +149,7 @@ export class AiClient {
           error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}`,
         };
       }
-      const data = (await res.json()) as { consequences?: Consequence[] };
+      const data = (await res.json()) as Partial<ReportPlayerChoiceResponse>;
       return {
         ok: true,
         consequences: Array.isArray(data.consequences) ? data.consequences : [],
@@ -157,14 +167,17 @@ export class AiClient {
     | { ok: false; error: string }
   > {
     try {
-      const res = await this.request("POST", "/develop_world", { draft_text: draftText }, 360_000);
+      const res = await this.request(
+        "POST",
+        "/develop_world",
+        { draft_text: draftText } satisfies DevelopWorldRequest,
+        360_000,
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         return { ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 2000)}` : ""}` };
       }
-      const data = (await res.json()) as {
-        game?: { game_id: string; title: string; description: string; style_id: string; world_brief: string; world_md: string };
-      };
+      const data = (await res.json()) as Partial<DevelopWorldResponse>;
       if (!data.game) return { ok: false, error: "develop_world returned no game" };
       return { ok: true, game: data.game };
     } catch (err) {

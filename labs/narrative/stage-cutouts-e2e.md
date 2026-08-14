@@ -28,7 +28,9 @@ Navegar (Playwright o Chrome) a:
    `floor` con `wall_base_px` + el TRAPECIO lateral (left/right_wall_px,
    left/right_front_px, descentrado) que ejercita la calibración COMPLETA
    (ppm/focal/centro — log `[stage-img] …: calibración COMPLETA`); las
-   máscaras son rects SVG de `/fake/stage_mask`.
+   máscaras son rects SVG de `/fake/stage_mask`. OJO: las trazas
+   `[stage-img]`/`[scene-image]` están GATEADAS por defecto — abrir el
+   cliente con `?debug=1` (o `window.__nefan.debug(true)`) para verlas.
 
 ## Asserts (todos verificados en verde el 2026-08-02)
 

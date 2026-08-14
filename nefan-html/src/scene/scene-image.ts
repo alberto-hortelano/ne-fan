@@ -19,6 +19,12 @@
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { canonicalGreyboxJson } from "@nefan-core/src/scene/blueprint/index.js";
 import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
+// Contrato S4 gpu-worker: anotar el body/respuesta mantiene el contrato
+// pegado a lo que este cliente envía de verdad.
+import type {
+  InpaintScenePlateRequest,
+  InpaintScenePlateResponse,
+} from "@nefan-core/src/contracts/gpu-worker.js";
 import {
   solidGridFromMasks,
   IMAGE_SOLID_CHAR,
@@ -26,6 +32,7 @@ import {
 } from "@nefan-core/src/scene/image-collision.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { errors } from "../ui/error-log.js";
+import { dlog } from "../dev/debug-log.js";
 import type { GenServiceUrls } from "../net/service-urls.js";
 import type { CanvasRenderer, ComposedTilePlan, SceneBounds, Occluder } from "../renderer/canvas-renderer.js";
 
@@ -280,19 +287,19 @@ export class SceneImageController {
       body: JSON.stringify({
         image_b64: this.imageToDataUrl(img),
         mask_b64: mask.toDataURL("image/png"),
-      }),
+      } satisfies InpaintScenePlateRequest),
     });
     if (!res.ok) {
       throw new Error(`/inpaint_scene_plate HTTP ${res.status}`);
     }
-    const data = (await res.json()) as { plate_url?: string };
+    const data = (await res.json()) as Partial<InpaintScenePlateResponse>;
     if (!data.plate_url) throw new Error("/inpaint_scene_plate sin plate_url");
     let plate = await this.loadImage(`${this.urls.assets}${data.plate_url}`);
     // El servidor aplana a RGB (el alpha del rombo/voladizo vuelve negro):
     // re-enmascarar con el blueprint compuesto, como la imagen original.
     plate = await this.maskByBlueprint(plate, key);
     this.renderer.setTilePlate(key, plate);
-    console.log(`[scene-image] ${key}: placa de fondo instalada (${tallCutouts.length} recortes)`);
+    dlog(`[scene-image] ${key}: placa de fondo instalada (${tallCutouts.length} recortes)`);
   }
 
   /** Enmascara la imagen generada con el alpha del blueprint compuesto: la
@@ -318,7 +325,7 @@ export class SceneImageController {
    *  available) and generate its scene image. */
   async generateForTile(key: string): Promise<void> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring generate");
+      dlog("[scene-image] busy, ignoring generate");
       return;
     }
     const rect = this.renderer.getTileRect(key);
@@ -400,7 +407,7 @@ export class SceneImageController {
         img = await this.maskByBlueprint(img, key);
       }
       this.renderer.setTileImage(key, img);
-      console.log(
+      dlog(
         `[scene-image] ${key} generated (${img.naturalWidth}x${img.naturalHeight}` +
         `${contextSides.length ? `, contexto: ${contextSides.join("+")}` : ""})`,
       );
@@ -497,7 +504,7 @@ export class SceneImageController {
    *  materializa el grid en el collider del tile. */
   async analyzeSceneForTile(key: string): Promise<TileAnalysis> {
     if (this.busy) {
-      console.log("[scene-image] busy, ignoring analyze");
+      dlog("[scene-image] busy, ignoring analyze");
       return { occluders: [], grid: null, elements: [] };
     }
     const img = this.renderer.getTileImage(key);
@@ -642,7 +649,7 @@ export class SceneImageController {
         : null;
 
       this.renderer.setOccludersForTile(key, occluders);
-      console.log(
+      dlog(
         `[scene-image] ${key}: analyzed — ${occluders.length} occluders, ` +
         `${solids} sólidos, ${data.discarded ?? 0} suelo`,
       );
