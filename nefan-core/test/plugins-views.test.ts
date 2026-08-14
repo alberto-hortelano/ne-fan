@@ -13,6 +13,7 @@ import {
 import {
   buildPluginLlmViews,
   inspectPlugin,
+  pluginListSummary,
   type PluginViewSources,
 } from "../src/plugins/views.js";
 import { COMMERCE_MANIFEST } from "./fixtures/commerce-manifest.js";
@@ -138,6 +139,28 @@ describe("plugin views (F6)", () => {
       () => inspectPlugin(src, map, rec.id, "no_existe"),
       /no tiene derived_view 'no_existe'/,
     );
+  });
+
+  it("pluginListSummary dedupea events_consumed (varias reglas del mismo tipo = un tipo)", () => {
+    const m = commerce();
+    // Dos reglas para el mismo tipo de evento son legítimas en el manifest;
+    // el catálogo para el motor lista TIPOS objetivo, sin repetir.
+    m.events_consumed.push({ ...m.events_consumed[0] });
+    assert.equal(m.events_consumed.filter((e) => e.type === "trade_offered").length, 2);
+
+    const summary = pluginListSummary("commerce_id", m);
+    assert.deepEqual(
+      summary.events_consumed,
+      [...new Set(m.events_consumed.map((e) => e.type))],
+    );
+    assert.equal(
+      (summary.events_consumed as string[]).filter((t) => t === "trade_offered").length,
+      1,
+    );
+    assert.equal(summary.id, "commerce_id");
+    assert.equal(summary.origin_author, m.origin.author);
+    // El author explícito (record del save) tiene prioridad sobre el manifest.
+    assert.equal(pluginListSummary("x", m, "claude").origin_author, "claude");
   });
 
   it("NarrativeState.serializeForLlm inyecta el bloque plugins sólo si los hay", () => {

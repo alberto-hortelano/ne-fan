@@ -87,10 +87,16 @@ polygon outline + height). Types:
   "flat"|"none", axis?:"x"|"y", material?:"slate"|"tile"|"thatch"|"wood",
   color?:"#rrggbb"}, walls?:{material:"timber"|"stone"|"wood"|"plaster",
   color?}, doors?:[{edge:"n"|"s"|"e"|"w", at:<cells from the NW corner along
-  that edge>, w?=4}], cutaway?:true }
+  that edge>, w?=4}], angle?, cutaway?:true }
   cutaway=true = ENTERABLE building: no roof, low front walls, interior
   visible from the camera. Furniture inside = prop volumes within the rect.
   Buildings the player can enter MUST be cutaway; pure scenery keeps a roof.
+  angle (DEGREES −180..180, CCW seen from above; NOT combinable with
+  cutaway) rotates the whole footprint — collision and manifest follow the
+  rotated rect. USE IT: village houses must carry varied small angles
+  (±5..±30°, different per building), reserving 0° for one or two civic
+  buildings. A settlement of perfectly axis-aligned boxes reads as a
+  barracks grid, not a lived-in place.
 - wall { points:[[c,r],…], width?=3, h?=7, crenellated? } — city walls,
   garden fences (low h). Extend to the tile border when the wall continues
   in a neighbour (crossing/image_element continuity).
@@ -102,8 +108,9 @@ polygon outline + height). Types:
   the tile), species? } · bush { at, s? } · rock { at, s? } ·
   fountain { at, r?=5 }
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
-  passable?:true } — tables, barrels, crates, wells, market stalls, carts,
-  signs… passable=true for rugs/awnings that must not block movement.
+  passable?:true, angle? (rect only) } — tables, barrels, crates, wells,
+  market stalls, carts, signs… passable=true for rugs/awnings that must not
+  block movement; a slight angle on carts/stalls sells the clutter.
 - prism { points:[[c,r],…] (3..24), h, solid?=true, tall?=true,
   color?:"#rrggbb" } — FREE geometry: an arbitrary polygon footprint extruded
   to height h, for shapes no preset expresses (the curved arc of a ruined

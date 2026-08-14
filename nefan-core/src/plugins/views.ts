@@ -88,6 +88,27 @@ export function buildPluginLlmViews(
   return out;
 }
 
+/** Resumen de un plugin activo para `plugin_list` (GET /plugins). Los tipos
+ *  de `events_consumed` se DEDUPLICAN: un manifest puede tener varias reglas
+ *  when→do para el mismo tipo de evento (es su unidad de lógica), pero el
+ *  catálogo que lee el motor narrativo es de TIPOS objetivo, no de reglas. */
+export function pluginListSummary(
+  id: string,
+  m: PluginManifest,
+  originAuthor?: string,
+): Record<string, unknown> {
+  return {
+    id,
+    name: m.name,
+    version: m.version,
+    description: m.description,
+    origin_author: originAuthor ?? m.origin.author,
+    events_consumed: [...new Set(m.events_consumed.map((e) => e.type))],
+    events_produced: m.events_produced,
+    derived_views: m.derived_views.map((v) => v.name),
+  };
+}
+
 /** Detalle de un plugin bajo demanda (tool MCP `plugin_inspect`). Con
  *  `viewName` evalúa esa derived_view; sin él, devuelve el slice completo más
  *  el catálogo de vistas. Fail-loud: plugin o vista inexistentes lanzan. */

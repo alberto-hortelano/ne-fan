@@ -23,7 +23,7 @@ import { createSimCollisionProvider } from "./sim-collision.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
-import { inspectPlugin } from "../src/plugins/views.js";
+import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
 import { resolveServiceUrl } from "../src/contracts/common.js";
 import { createStateHttpServer } from "./state-http-server.js";
@@ -165,16 +165,9 @@ createStateHttpServer({
       };
     },
     list: () =>
-      [...ctx.activePlugins.entries()].map(([id, m]) => ({
-        id,
-        name: m.name,
-        version: m.version,
-        description: m.description,
-        origin_author: narrative.getPluginRecord(id)?.origin.author ?? m.origin.author,
-        events_consumed: m.events_consumed.map((e) => e.type),
-        events_produced: m.events_produced,
-        derived_views: m.derived_views.map((v) => v.name),
-      })),
+      [...ctx.activePlugins.entries()].map(([id, m]) =>
+        pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
+      ),
     inspect: (id, view) =>
       inspectPlugin(
         {

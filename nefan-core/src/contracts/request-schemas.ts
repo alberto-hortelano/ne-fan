@@ -76,7 +76,15 @@ const AnchorSchema = z.object({
 export const PlaceUpsertSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(PLACE_KINDS),
-  parent_id: z.string().nullable(),
+  // La cadena literal "null" es siempre un error del emisor (quiso el null de
+  // JSON); aceptarla crearía un place colgando de un padre "null" fantasma o
+  // dependería de que el harness MCP la coercione en silencio.
+  parent_id: z
+    .string()
+    .nullable()
+    .refine((v) => v !== "null", {
+      message: 'parent_id: use JSON null for the root world, not the string "null"',
+    }),
   name: z.string().min(1),
   description: z.string().optional(),
   approx_position: z.tuple([z.number(), z.number()]).optional(),
