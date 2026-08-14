@@ -62,7 +62,12 @@ El script:
 - Captura screenshots top-down y lateral
 - Mide weapon_tip trajectory a 20fps
 - Detecta peaks de alcance (candidatos a golpes)
-- Genera `/tmp/attack_mapping/intrinsics.json` y `/tmp/attack_mapping/full_data.json`
+- Genera `/tmp/attack_mapping/intrinsics.json` (MISMO schema que consume el
+  juego: `visual_reach_m`/`visual_sweep_deg`/`impact_fraction`/…, con
+  `fbx_name` sacado del ANIM_MAP del animator) y `/tmp/attack_mapping/full_data.json`
+- Imprime un **drift report** contra `nefan-core/data/animation_intrinsics.json`
+  (campo a campo con tolerancias) — las divergencias son PARA REVISAR con los
+  screenshots del paso 3, nunca para copiar a ciegas
 
 ## 3. Verificar visualmente (IMPRESCINDIBLE)
 

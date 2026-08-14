@@ -28,6 +28,7 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import type { TileAnalysis } from "../scene/scene-image.js";
 import { errors } from "../ui/error-log.js";
+import { dlog } from "../dev/debug-log.js";
 import type { TileStore } from "./tile-store.js";
 
 /** Radio del jugador (punto inflado) para toda la resolución de colisión.
@@ -164,7 +165,7 @@ export function applyPlanCollision(
     const collider = grid ? createTerrainCollider(grid) : null;
     deps.tileStore.setSvgCollider(key, collider);
     deps.setTileSvgGrid(key, grid);
-    console.log(
+    dlog(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );
   } catch (err) {
@@ -211,7 +212,7 @@ export function applyStageDerivedCollision(
   // exactamente en el borde pintado del suelo, y las zonas de salida siguen
   // gobernando el viaje.
   deps.tileStore.clearTerrainCollider(key);
-  console.log(
+  dlog(
     `[collision] ${key}: colisión del plató PINTADO instalada — ` +
     `${collider?.solidCellCount ?? 0} celdas sólidas (declarada y terreno retirados)`,
   );
@@ -235,7 +236,7 @@ export function applyTileAnalysis(
   }
   deps.tileStore.markAnalyzed(key, collider);
   deps.setTileAnalysisGrid(key, analysis.grid);
-  console.log(
+  dlog(
     `[collision] ${key}: análisis aplicado — ` +
     `${collider?.solidCellCount ?? 0} celdas sólidas, ${analysis.occluders.length} occluders`,
   );

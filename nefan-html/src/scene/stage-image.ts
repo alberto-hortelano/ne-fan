@@ -62,7 +62,14 @@ import {
 } from "@nefan-core/src/scene/stage/index.js";
 import type { ViewBox } from "@nefan-core/src/scene/stage/segments.js";
 import type { TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+// Contrato S4 gpu-worker: anotar el body/respuesta mantiene el contrato
+// pegado a lo que este cliente envía de verdad.
+import type {
+  PeelSceneLayerRequest,
+  PeelSceneLayerResponse,
+} from "@nefan-core/src/contracts/gpu-worker.js";
 import { errors } from "../ui/error-log.js";
+import { dlog } from "../dev/debug-log.js";
 import type { GenServiceUrls } from "../net/service-urls.js";
 
 const RENDER_SIZE = STAGE_RENDER_SIZE;
@@ -208,7 +215,7 @@ export class StageImageController {
     if (!hit || hit.specHash !== specHash || hit.images.peelVersion !== STAGE_PEEL_VERSION) return false;
     this.deps.install(key, hit.images);
     this.deps.onGeneration?.({ kind: "client", cached: true });
-    console.log(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.length} recortes)`);
+    dlog(`[stage-img] ${key}: reinstalado de caché cliente (${hit.images.cutouts.length} recortes)`);
     return true;
   }
 
@@ -256,7 +263,7 @@ export class StageImageController {
       spriteScale: SPRITE_SCALE_IDENTITY,
       clay: true,
     });
-    console.log(`[stage-img] ${key}: clay instalado (${stageCutouts.length} recortes three.js)`);
+    dlog(`[stage-img] ${key}: clay instalado (${stageCutouts.length} recortes three.js)`);
   }
 
   /** Renderiza el greybox, repinta, inventaría por visión, segmenta y pela el
@@ -276,7 +283,7 @@ export class StageImageController {
       // ── 1. Greybox 3D + repintado ────────────────────────────────────────
       this.deps.log(`🎨 repintando plató ${key}…`);
       this.deps.status({ key, phase: "greybox" });
-      console.log(
+      dlog(
         `[stage-img] ${key}: greybox → /generate_scene_image ` +
         `(spec=${specHash.slice(0, 12)}, style=${this.styleId || "(global)"}, ` +
         `tag=${meta.styleTag}, "${meta.description.slice(0, 60)}…")`,
@@ -309,7 +316,7 @@ export class StageImageController {
       });
       if (token !== this.token) return;
       this.deps.onGeneration?.({ kind: "repaint", cached: !!repaintRes.cached });
-      console.log(
+      dlog(
         `[stage-img] ${key}: repintado ${repaintRes.cached ? "CACHE HIT" : "generado"} ` +
         `hash=${repaintRes.hash} (${ms()})`,
       );
@@ -348,12 +355,12 @@ export class StageImageController {
           paintedViewBox: spec.view_box,
           spriteScale: SPRITE_SCALE_IDENTITY,
         });
-        console.log(`[stage-img] ${key}: DEGRADADO a placa sola (${ms()})`);
+        dlog(`[stage-img] ${key}: DEGRADADO a placa sola (${ms()})`);
         return;
       }
       if (token !== this.token) return;
       const inventory = matchInventory(expected.map((e) => e.id), review.items);
-      console.log(
+      dlog(
         `[stage-img] ${key}: inventario — ${inventory.matched.size} declarados encontrados, ` +
         `${inventory.extras.length} extras, missing=[${review.missing.join(", ") || "ninguno"}], ` +
         `floor.wall_base=${review.floor.wall_base_px}px`,
@@ -369,7 +376,7 @@ export class StageImageController {
         const calWarnings: string[] = [];
         const cal = calibratedProjection(spec.proj, vb, review.floor, RENDER_SIZE, calWarnings);
         const lateral = cal.center_x !== undefined;
-        console.log(
+        dlog(
           `[stage-img] ${key}: deriva de calibración (telemetría) — ` +
           `Δground=${(cal.ground_y - spec.proj.ground_y).toFixed(1)} ` +
           `Δhorizon=${(cal.horizon_y - spec.proj.horizon_y).toFixed(1)}` +
@@ -379,7 +386,7 @@ export class StageImageController {
           (calWarnings.length ? ` — ${calWarnings.join("; ")}` : ""),
         );
       } catch (err) {
-        console.log(`[stage-img] ${key}: telemetría de calibración no evaluable —`, err);
+        dlog(`[stage-img] ${key}: telemetría de calibración no evaluable —`, err);
       }
       const rect = {
         minX: -spec.proj.width_m / 2,
@@ -414,7 +421,7 @@ export class StageImageController {
             contactWorld = pose.contactWorld;
             const declaredZ = declared?.zStage;
             if (declaredZ !== undefined && Math.abs(z - declaredZ) > RELOCATION_LOG_M) {
-              console.log(
+              dlog(
                 `[stage-img] ${key}: "${item.label}" RECOLOCADO — z pintada ${z.toFixed(1)} vs declarada ${declaredZ.toFixed(1)}`,
               );
             }
@@ -459,15 +466,15 @@ export class StageImageController {
             tall: w.item.tall !== false,
           });
         }
-        const peelRes = await this.post(this.urls.gpu, "/peel_scene_layer", {
+        const peelRes = (await this.post(this.urls.gpu, "/peel_scene_layer", {
           image_b64: canvasB64(current),
           mask_b64: canvasB64(maskToWhite(w.mask!)),
           prompt: step.prompt,
           backend: "lama",
-        });
+        } satisfies PeelSceneLayerRequest)) as Partial<PeelSceneLayerResponse>;
         if (token !== this.token) return;
         this.deps.onGeneration?.({ kind: "peel", cached: !!peelRes.cached });
-        console.log(
+        dlog(
           `[stage-img] ${key}: pelada "${step.label}" (${i + 1}/${steps.length}) ` +
           `backend=${peelRes.backend ?? "?"} ${peelRes.cached ? "CACHE HIT" : "generado"} ` +
           `detrás=[${step.behindLabels.join(", ") || "suelo"}] (${ms()})`,
@@ -508,7 +515,7 @@ export class StageImageController {
       }
       const spriteScale = fitSpriteScale(scalePoints, paintedProj);
       if (Math.abs(spriteScale.k - 1) > 0.05 || spriteScale.focal_size_m > 0) {
-        console.log(
+        dlog(
           `[stage-img] ${key}: talla de sprites k=${spriteScale.k.toFixed(2)} ` +
           `focal_size=${spriteScale.focal_size_m.toFixed(1)}m (${scalePoints.length} puntos)`,
         );
@@ -524,7 +531,7 @@ export class StageImageController {
         spriteScale,
       });
       this.deps.log(`🎨 plató ${key} pintado (${cutouts.length} recortes segmentados)`);
-      console.log(
+      dlog(
         `[stage-img] ${key}: COMPLETO — placa + ${cutouts.length} recortes + ` +
         `${grid.grid.join("").split("S").length - 1} celdas sólidas pintadas (${ms()})`,
       );
@@ -590,7 +597,7 @@ export class StageImageController {
       const a = painted.getContext("2d")!.getImageData(0, 0, RENDER_SIZE, RENDER_SIZE).data;
       const b = rctx.getImageData(0, 0, RENDER_SIZE, RENDER_SIZE).data;
       const report = reconstructionDiff(a, b, RENDER_SIZE, RENDER_SIZE, exclMask);
-      console.log(
+      dlog(
         `[stage-img] ${key}: reconstrucción — diff medio ${report.meanDiff.toFixed(2)}/255, ` +
         `${report.hotBlocks.length} bloques calientes`,
       );

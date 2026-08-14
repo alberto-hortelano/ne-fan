@@ -1,8 +1,14 @@
 class_name LightPlacer
 extends RefCounted
 
-# DEV: boost ambient so objects are visible during development. Set to 1.0 for production.
-const DEV_AMBIENT_BOOST = 3.0
+# Boost de ambient en desarrollo para ver bien objetos y geometria (decision
+# de la guia). Mecanismo: builds de editor/debug lo aplican; un export release
+# queda con la iluminacion real (sin editar codigo al empaquetar).
+const DEV_AMBIENT_BOOST := 3.0
+
+
+static func _ambient_boost() -> float:
+	return DEV_AMBIENT_BOOST if OS.is_debug_build() else 1.0
 
 
 func place_lights(lighting_data: Dictionary, room: Node3D) -> void:
@@ -30,7 +36,7 @@ func _setup_ambient(ambient: Dictionary, room: Node3D) -> void:
 
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.6, 0.55, 0.5)
-	env.ambient_light_energy = float(ambient.get("intensity", 0.3)) * DEV_AMBIENT_BOOST
+	env.ambient_light_energy = float(ambient.get("intensity", 0.3)) * _ambient_boost()
 
 	env.glow_enabled = true
 	env.glow_intensity = 0.3
@@ -96,7 +102,7 @@ func _place_default_light(room: Node3D) -> void:
 	env.background_color = Color(0.35, 0.45, 0.6)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.6, 0.55, 0.5)
-	env.ambient_light_energy = 0.3 * DEV_AMBIENT_BOOST
+	env.ambient_light_energy = 0.3 * _ambient_boost()
 
 
 	var world_env := WorldEnvironment.new()
