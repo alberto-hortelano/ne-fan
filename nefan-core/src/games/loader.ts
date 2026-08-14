@@ -63,9 +63,10 @@ export const GameMetaSchema = z
     world_brief: z.string().min(100),
     /** Vista del mundo. "overworld" (default) = plano continuo de tiles;
      *  "proscenium" = escenas discretas tipo plató de cine enlazadas por el
-     *  world map (bloque `stage` obligatorio en cada escena). Congelada en
-     *  el save como el estilo. */
-    view: z.enum(["overworld", "proscenium"]).optional(),
+     *  world map (bloque `stage` obligatorio en cada escena); "fps" =
+     *  primera persona sobre los mismos tiles (atlas de superficies).
+     *  Congelada en el save como el estilo. */
+    view: z.enum(WORLD_VIEWS).optional(),
     /** Sistemas de juego intercambiables (registros de src/systems/). Ausente
      *  = defaults (combat: "standard"). La validación semántica del id la
      *  hace el bridge contra el registro — el loader es FS/zod puro. */
@@ -147,6 +148,10 @@ export function styleViews(manifest: StyleManifest): WorldView[] {
     }
     present.add(viewForCategory(ref.category));
   }
+  // La vista fps no tiene categorías propias: el atlas de superficies usa las
+  // refs cenitales solo como paleta, así que todo pack que sirva overworld
+  // sirve fps (viewForCategory nunca devuelve "fps" a propósito).
+  if (present.has("overworld")) present.add("fps");
   return WORLD_VIEWS.filter((v) => present.has(v));
 }
 

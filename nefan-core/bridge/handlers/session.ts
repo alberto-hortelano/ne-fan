@@ -15,6 +15,7 @@ import {
   loadStyleManifest,
   styleViews,
   loadWorldDoc,
+  WORLD_VIEWS,
 } from "../../src/games/loader.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
 import {
@@ -218,13 +219,13 @@ export async function handleStartSession(
     // renderMode "image", el proscenio repinta y pela cada plató por capas
     // (entrega 2 — StageImageController en el cliente).
     view = msg.view || meta.view || "overworld";
-    if (view !== "overworld" && view !== "proscenium") {
-      throw new Error(`vista desconocida "${view}" (esperaba overworld|proscenium)`);
+    if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
+      throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
     }
     // El estilo debe servir a la vista elegida: sus refs declaradas derivan
     // las vistas compatibles (styleViews). Incompatible = aborta, no degrada.
     const compatibleViews = styleViews(style);
-    if (!compatibleViews.includes(view)) {
+    if (!(compatibleViews as readonly string[]).includes(view)) {
       throw new Error(
         `estilo "${style.style_id}" sin referencias para la vista "${view}"` +
           ` (declara: ${compatibleViews.join("|") || "ninguna"})`,
@@ -400,12 +401,12 @@ export async function handleResumeSession(
   // Vista congelada en el save (saves previos sin campo → overworld). Un id
   // fuera del enum aborta el resume — fail-loud, como el combate.
   const savedView = ctx.narrative.world.view || "overworld";
-  if (savedView !== "overworld" && savedView !== "proscenium") {
+  if (!(WORLD_VIEWS as readonly string[]).includes(savedView)) {
     ctx.send(ws, {
       type: "session_started",
       requestId: msg.requestId,
       ok: false,
-      error: `view_unknown: "${savedView}" (esperaba overworld|proscenium)`,
+      error: `view_unknown: "${savedView}" (esperaba ${WORLD_VIEWS.join("|")})`,
     });
     return;
   }

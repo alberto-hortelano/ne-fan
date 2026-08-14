@@ -201,6 +201,38 @@ describe("bridge ciclo de sesión", () => {
     assert.match(started3.error ?? "", /modo de render desconocido/);
   });
 
+  it("start_session con vista fps: congela world.view y el resume la acepta", async () => {
+    const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", view: "fps" },
+      socket,
+      ctx,
+    );
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true);
+    // fps es un mundo de TILES (no de platós): la vista viaja congelada.
+    assert.equal(started.state?.world.view, "fps");
+    const sessionId = started.sessionId!;
+    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true);
+    assert.equal(resumed.state?.world.view, "fps");
+
+    // Vista fuera del enum → aborta con la lista completa.
+    const { socket: s3, sent: sent3 } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r4", gameId: "toledo_1200", view: "vr" },
+      s3,
+      ctx,
+    );
+    const bad = sent3[0] as SessionStartedMessage;
+    assert.equal(bad.ok, false);
+    assert.match(bad.error ?? "", /vista desconocida "vr".*fps/);
+  });
+
   it("start_session congela el sistema de combate de game.json (default standard)", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
