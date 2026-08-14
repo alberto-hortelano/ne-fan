@@ -31,6 +31,7 @@ import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity }
 import { rendererRegistry } from "./renderer/registry.js";
 import type { Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
+import { FpsRenderer } from "./renderer/fps-renderer.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
 import { StageImageController } from "./scene/stage-image.js";
@@ -317,7 +318,8 @@ function applyRenderModes(renderMode: string, characterMode = ""): void {
   // El Auto-img por tiles es oblicua-only: en proscenio queda apagado sea
   // cual sea el modo (el plató tiene su propio pipeline gateado por
   // scenesGenerationOn en la instalación).
-  autoPipeline.setEnabled(scenesGenerationOn() && sessionView !== "proscenium");
+  // El Auto-img por tiles es oblicua-only (proscenio y fps traen su pipeline).
+  autoPipeline.setEnabled(scenesGenerationOn() && sessionView === "");
   const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
     ? "skins IA" : "personajes en base y_bot";
   if (scenesMode === "vector") {
@@ -387,24 +389,34 @@ function generateActiveStage(): void {
  *  sesión (world.view congelado en el save) o una fixture con bloque stage. */
 let activeRenderer: Renderer2D = renderer;
 let prosceniumRenderer: ProsceniumRenderer | null = null;
-let sessionView: "" | "proscenium" = "";
+let fpsRenderer: FpsRenderer | null = null;
+/** Vista del cliente ("" = oblicua). */
+type ClientView = "" | "proscenium" | "fps";
+const toClientView = (v: unknown): ClientView =>
+  v === "proscenium" || v === "fps" ? v : "";
+let sessionView: ClientView = "";
 /** Vista que dicta la SESIÓN del bridge (las fixtures locales pueden
  *  activarla temporalmente sin sesión). */
-let sessionWorldView: "" | "proscenium" = "";
+let sessionWorldView: ClientView = "";
 /** Plató compuesto vivo (vista proscenio): clamp de movimiento (colisión) y
  *  transiciones por zona de salida. */
 let activeStage: ComposedStage | null = null;
 
 function applySessionView(view: string): void {
-  const next = view === "proscenium" ? "proscenium" : "";
+  const next = toClientView(view);
   const changed = next !== sessionView;
   sessionView = next;
   devPanel.setSession({ view: next });
-  // Set de sprites de la vista: el proscenio usa el y_bot casi frontal
-  // (frontal_8); la oblicua el picado clásico. El cambio invalida los skins
-  // listos (son por ángulo) y precarga el set nuevo; mientras llega, las
-  // entidades cargan lazy por getCached (se autocorrige en frames).
-  const nextAngle = next === "proscenium" ? PROSCENIUM_ANGLE : OBLIQUE_ANGLE;
+  // Set de sprites de la vista: proscenio y fps usan el y_bot casi frontal
+  // (frontal_8 — a nivel de ojos, pitch −8°); la oblicua el picado clásico.
+  // El cambio invalida los skins listos (son por ángulo) y precarga el set
+  // nuevo; mientras llega, las entidades cargan lazy por getCached.
+  const VIEW_ANGLES: Record<ClientView, string> = {
+    "": OBLIQUE_ANGLE,
+    proscenium: PROSCENIUM_ANGLE,
+    fps: PROSCENIUM_ANGLE,
+  };
+  const nextAngle = VIEW_ANGLES[next];
   if (nextAngle !== worldAngle) {
     worldAngle = nextAngle;
     characterSprites.setAngle(nextAngle);
@@ -434,11 +446,36 @@ function applySessionView(view: string): void {
     // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
     // pipeline (StageImageController: clay local + repintado bajo demanda).
     autoPipeline.setEnabled(false);
+    fpsRenderer?.setVisible(false);
     if (changed) log("Vista: proscenio (plató de cine, cámara al sur)");
+  } else if (next === "fps") {
+    if (!fpsRenderer) {
+      fpsRenderer = rendererRegistry.create("fps", {
+        canvas,
+        spriteRenderer,
+        oblique: renderer,
+      }) as FpsRenderer;
+    }
+    activeRenderer = fpsRenderer;
+    fpsRenderer.setVisible(true);
+    // El Auto-img por tiles pinta la vista cenital; el fps tiene su propio
+    // pipeline (atlas de superficies).
+    autoPipeline.setEnabled(false);
+    if (changed) {
+      // Tiles que llegaron ANTES de conocer la vista (bootstrap/resume
+      // difunden escenas antes de la respuesta de sesión): instalarlos ya.
+      for (const [k, entry] of tileStore.entries) {
+        const plan = (entry.scene as { __plan?: TilePlanInfo }).__plan;
+        if (plan) fpsRenderer.installTile(k, plan, entry.rect);
+      }
+      if (activeTileKey) fpsRenderer.setActiveTile(activeTileKey);
+      log("Vista: primera persona (giro con ←/→, WASD para moverte)");
+    }
   } else {
     activeRenderer = renderer;
     activeStage = null;
     prosceniumRenderer?.clearStage();
+    fpsRenderer?.setVisible(false);
   }
 }
 
@@ -805,6 +842,8 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
 interface TilePlanInfo {
   ground: GroundFeature[];
   volumes: Volume[];
+  /** Bioma del Format D crudo (la vista fps lo usa para el suelo/atlas). */
+  biome?: string;
   composed: ComposedTilePlan;
 }
 
@@ -849,13 +888,12 @@ function composeTilePlan(
   );
   const volumes = [...declared, ...derived];
   if (ground.length === 0 && volumes.length === 0) return null;
-  const spec = buildTileGreyboxSpec(
-    { ground, volumes, biome: typeof raw.biome === "string" ? raw.biome : undefined },
-    key,
-  );
+  const biome = typeof raw.biome === "string" ? raw.biome : undefined;
+  const spec = buildTileGreyboxSpec({ ground, volumes, biome }, key);
   return {
     ground,
     volumes,
+    biome,
     composed: {
       spec,
       view_box: spec.camera.view_box,
@@ -1017,6 +1055,12 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   const { sceneChanged } = stageComposed
     ? { sceneChanged: true }
     : renderer.addTile(key, data as unknown as Parameters<typeof renderer.setScene>[0]);
+  // Vista fps: instalar también el tile en el renderer 3D. El CanvasRenderer
+  // oblicuo sigue poblado (colisión, resume y restauración no cambian) — el
+  // fps solo PINTA distinto.
+  if (sessionView === "fps" && isGridTile && planInfo) {
+    fpsRenderer?.installTile(key, planInfo, rect);
+  }
   // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
   // preserva la imagen y su análisis visual — conservar también la colisión
   // derivada. Con escena distinta la imagen se invalida y se re-analiza.
@@ -1262,6 +1306,7 @@ function setActiveClientTile(key: string): void {
   activeTileKey = key;
   sceneData = entry.scene;
   renderer.setActiveTile(key);
+  if (sessionView === "fps") fpsRenderer?.setActiveTile(key);
   currentExits = (entry.scene.exits ?? []) as SceneExit[];
   travelPanel.setExits(currentExits);
 }
@@ -1393,6 +1438,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     probeCollide: (x: number, z: number) => collidesAt(x, z),
     // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
+    fps: () => fpsRenderer?.debugState() ?? null,
     stage: () => activeStage,
     stageImages: () => prosceniumRenderer?.hasImages() ?? false,
     stagePainting: () => stageImageController.running,
@@ -1436,7 +1482,28 @@ function refreshPlayerForward(): void {
  *  combinan en diagonales). Se pasan a dirección de MUNDO con la proyección
  *  de la sesión (viewToWorld es lineal, vale para vectores): en topdown
  *  coinciden; en isométrica ↑ apunta al noroeste del mundo, etc. */
+let prevTurnLeft = false;
+let prevTurnRight = false;
+
 function applyTurnKeys(): void {
+  // Vista fps: giro INCREMENTAL discreto — cada pulsación de ←/→ gira 45°
+  // (flanco de subida; mantener no repite). ↑/↓ no hacen nada (sin pitch).
+  // El snap a octante de refreshPlayerForward es idempotente sobre ±45°.
+  if (sessionView === "fps") {
+    if (input.state.turnLeft && !prevTurnLeft) {
+      playerYaw += Math.PI / 4;
+      refreshPlayerForward();
+    }
+    if (input.state.turnRight && !prevTurnRight) {
+      playerYaw -= Math.PI / 4;
+      refreshPlayerForward();
+    }
+    prevTurnLeft = input.state.turnLeft;
+    prevTurnRight = input.state.turnRight;
+    return;
+  }
+  prevTurnLeft = input.state.turnLeft;
+  prevTurnRight = input.state.turnRight;
   let vx = 0, vy = 0;
   if (input.state.turnUp) vy -= 1;
   if (input.state.turnDown) vy += 1;
@@ -2398,7 +2465,7 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
+      sessionWorldView = toClientView(res.state.world?.view);
       applySessionView(sessionWorldView);
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
@@ -2409,7 +2476,7 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      sessionWorldView = res.state.world?.view === "proscenium" ? "proscenium" : "";
+      sessionWorldView = toClientView(res.state.world?.view);
       applySessionView(sessionWorldView);
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
