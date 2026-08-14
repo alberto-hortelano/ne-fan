@@ -6,13 +6,13 @@
  * Cada categoría de entorno es una ZONA de mundo abierto: la imagen de
  * referencia debe ser una escena completa con varios elementos y transiciones
  * hacia las zonas vecinas (ver data/styles/README.md), no un sujeto aislado.
- * Espejos que deben mantenerse sincronizados: ai_server/style_packs.py
- * (ENV_CATEGORIES, STAGE_CATEGORIES, ZONE_TO_STAGE),
- * ai_server/narrative_schemas.py (_valid_style_tags),
- * ai_server/routers/remote_generation.py (regex de style_tag),
- * ai_server/routers/styles.py (_STYLE_CATEGORIES del upload) y
- * data/contract/prompts/world_rules.md + stage_instructions.md (enums en
- * prosa para el LLM).
+ * Espejos y candados: el codegen (`npm run gen:contract`) emite
+ * data/contract/style_categories.json desde estas constantes; el lado Python
+ * tiene UNA fuente (ai_server/style_categories.py — style_packs,
+ * narrative_schemas y remote_generation derivan de ella) candada contra ese
+ * JSON por ai_server/tests/test_style_categories_sync.py. Los enums en prosa
+ * de world_rules.md/stage_instructions.md y el tool generate_scene.json los
+ * canda contract-prompts.test.ts.
  */
 
 /** Vistas de mundo. La vista se elige en el título (game.json aporta el
@@ -60,17 +60,20 @@ export const STYLE_CATEGORIES = [
 ] as const;
 export type StyleCategory = (typeof STYLE_CATEGORIES)[number];
 
-/** Alias legacy: packs y escenas anteriores usaban "nature". */
-export const LEGACY_STYLE_ALIASES: Record<string, StyleEnvCategory> = {
+/** Alias legacy: packs y escenas anteriores usaban "nature". `satisfies`
+ *  conserva las claves literales (LegacyStyleTag) sin perder el chequeo del
+ *  valor. */
+export const LEGACY_STYLE_ALIASES = {
   nature: "forest",
-};
+} as const satisfies Record<string, StyleEnvCategory>;
+export type LegacyStyleTag = keyof typeof LEGACY_STYLE_ALIASES;
 
 /** Categorías admitidas en style.json: las canónicas + plató + alias legacy,
  *  para que un pack de usuario anterior al set de zonas siga cargando. */
 export const STYLE_MANIFEST_CATEGORIES = [
   ...STYLE_CATEGORIES,
   ...STYLE_STAGE_CATEGORIES,
-  ...(Object.keys(LEGACY_STYLE_ALIASES) as ["nature"]),
+  ...(Object.keys(LEGACY_STYLE_ALIASES) as LegacyStyleTag[]),
 ] as const;
 
 /** Vista a la que pertenece una categoría de ref: el namespace manda
@@ -118,7 +121,7 @@ export function styleCategoryForTile(
   biome: string | undefined,
 ): StyleEnvCategory | "" {
   const raw = styleTag ?? "";
-  const tag = LEGACY_STYLE_ALIASES[raw] ?? raw;
+  const tag = (LEGACY_STYLE_ALIASES as Record<string, StyleEnvCategory>)[raw] ?? raw;
   const known = (STYLE_ENV_CATEGORIES as readonly string[]).includes(tag)
     ? (tag as StyleEnvCategory)
     : undefined;

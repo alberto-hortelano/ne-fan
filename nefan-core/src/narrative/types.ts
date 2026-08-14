@@ -5,6 +5,7 @@ import type { WorldMap } from "../world-map/types.js";
 import type { PluginRecord, PluginLlmView } from "../plugins/types.js";
 import type { TileEdges } from "../scene/tile-edges.js";
 import type { TileCoord } from "../scene/tile.js";
+import type { Consequence as WireConsequence } from "../contract/model-io/schemas.js";
 
 // v3: añade `plugins: PluginRecord[]` (migración v2→v3: lista vacía).
 // v4: plano continuo de tiles — SceneRecord gana tile/edges, las posiciones de
@@ -149,7 +150,20 @@ export type Consequence =
    *  consequence-handler sólo lo recolecta; los efectos los resuelve el
    *  dispatcher de plugins en el nivel 3 del tick. snake_case como el resto;
    *  `event_type` evita colisionar con el discriminante `type`. */
-  | { type: "plugin_event"; plugin_id: string; event_type: string; payload?: Record<string, unknown> };
+  | { type: "plugin_event"; plugin_id: string; event_type: string; payload?: Record<string, unknown> }
+  /** Sin reacción explícita. El handler no emite efecto (cae del switch) pero
+   *  la consequence queda auditada en dialogue_history. */
+  | { type: "noop" };
+
+// ── Guardia de deriva (compile-time) ──
+// Todo lo que el pre-flight zod admite (contract/model-io/schemas.ts) debe
+// caber en el union del handler de arriba: si el SoT gana un tipo de
+// consequence o cambia un campo, esta asignación deja de compilar hasta que el
+// handler lo aprenda. Solo en ese sentido — el union del handler es MÁS ancho
+// a propósito (dialogue_history persiste choices-objeto de saves antiguos).
+// VIVE AQUÍ y no en un test porque test/ corre con tsx sin typecheck.
+const _wireConsequenceFitsHandler: Consequence = null as unknown as WireConsequence;
+void _wireConsequenceFitsHandler;
 
 export interface SessionData {
   schema_version: number;

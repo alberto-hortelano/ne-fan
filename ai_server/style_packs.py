@@ -21,44 +21,21 @@ from pathlib import Path
 
 from PIL import Image
 
+# Enum de categorías: fuente única Python en style_categories.py (candada
+# contra el JSON generado desde el TS por test_style_categories_sync.py).
+# Re-export aquí porque routers/styles.py y los tests importan de este módulo.
+from style_categories import (
+    CHARACTER_CATEGORIES as CHARACTER_CATEGORIES,
+    ENV_CATEGORIES as ENV_CATEGORIES,
+    LEGACY_ALIASES as LEGACY_ALIASES,
+    STAGE_CATEGORIES as STAGE_CATEGORIES,
+    ZONE_TO_STAGE as ZONE_TO_STAGE,
+)
+
 RUNTIME_CONFIG_PATH = (
     Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "runtime_config.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-# Zonas de mundo abierto: cada referencia es una escena completa con varios
-# elementos y transiciones a las zonas vecinas (ver data/styles/README.md).
-# Fuente de verdad del enum: nefan-core/src/games/style-categories.ts.
-ENV_CATEGORIES = (
-    "settlement", "farmland", "forest", "wetland", "desert", "snow",
-    "fortress", "interior", "underground",
-)
-CHARACTER_CATEGORIES = ("character_commoner", "character_noble", "character_warrior")
-
-# Categorías de PLATÓ (vista proscenio): referencias a nivel de suelo. Espejo
-# de STYLE_STAGE_CATEGORIES en nefan-core/src/games/style-categories.ts.
-STAGE_CATEGORIES = (
-    "stage_interior", "stage_street", "stage_plaza",
-    "stage_nature", "stage_harbor", "stage_gate",
-)
-
-# Zona cenital → plató más cercano (espejo de ZONE_TO_STAGE en TS): red de
-# seguridad para escenas proscenio etiquetadas con vocabulario de zona.
-ZONE_TO_STAGE = {
-    "interior": "stage_interior",
-    "underground": "stage_interior",
-    "settlement": "stage_street",
-    "farmland": "stage_street",
-    "fortress": "stage_gate",
-    "forest": "stage_nature",
-    "wetland": "stage_nature",
-    "desert": "stage_nature",
-    "snow": "stage_nature",
-    "nature": "stage_nature",
-}
-
-# Alias legacy: packs y escenas anteriores al set de zonas usaban "nature".
-LEGACY_ALIASES = {"nature": "forest"}
 
 # Fallback por VECINDAD de zona cuando la categoría pedida no tiene imagen:
 # primero lo pedido, luego zonas afines (mismo carácter natural/construido).

@@ -20,6 +20,7 @@ from dev_api_cache import DEV_API_CACHE
 from request_util import decode_b64_png
 from scene_image_generator import SIDES
 from sprite_skin_meshy import SpriteSkinMeshy
+from style_categories import STYLE_TAG_PATTERN
 from style_packs import ZONE_TO_STAGE
 
 logger = logging.getLogger("ai_server")
@@ -53,17 +54,11 @@ class SceneImageRequest(BaseModel):
     # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
     # referencia global fija de siempre.
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    # Zonas de estilo + categorías de plató (espejo de style-categories.ts;
-    # "nature" = legacy). Las stage_* solo tienen sentido con
-    # blueprint_kind="stage"; una zona en petición stage se mapea a plató
-    # (ZONE_TO_STAGE) al resolver.
-    style_tag: str = Field(
-        default="",
-        pattern=(
-            "^(settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground|nature"
-            "|stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate)?$"
-        ),
-    )
+    # Zonas de estilo + categorías de plató + alias legacy ("nature"). Patrón
+    # derivado de style_categories.py (fuente única, candada contra el TS).
+    # Las stage_* solo tienen sentido con blueprint_kind="stage"; una zona en
+    # petición stage se mapea a plató (ZONE_TO_STAGE) al resolver.
+    style_tag: str = Field(default="", pattern=STYLE_TAG_PATTERN)
     # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
     # canónico del plató o del tile). El render WebGL no es byte-determinista:
     # sin esta clave, cada arranque hashearía píxeles distintos ⇒ miss.

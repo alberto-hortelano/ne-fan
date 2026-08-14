@@ -10,19 +10,17 @@
  * `FastApiErrorResponse`; sin FAL_KEY los endpoints que la requieren dan 503.
  */
 import { endpoint } from "./http.js";
+import type {
+  StyleEnvCategory,
+  StyleStageCategory,
+  LegacyStyleTag,
+} from "../games/style-categories.js";
 
-/** Zonas de estilo (espejo de games/style-categories; "nature" = legacy). */
-export type StyleTag =
-  | "settlement"
-  | "farmland"
-  | "forest"
-  | "wetland"
-  | "desert"
-  | "snow"
-  | "fortress"
-  | "interior"
-  | "underground"
-  | "nature";
+/** Etiqueta de estilo del wire: zonas de mundo abierto + categorías de plató
+ *  (escenas proscenio) + alias legacy ("nature"). DERIVADO de la fuente única
+ *  games/style-categories.ts — la copia a mano anterior omitía las stage_* y
+ *  arrastraba nature como si fuera canónico. */
+export type StyleTag = StyleEnvCategory | StyleStageCategory | LegacyStyleTag;
 
 /** Repintado de la escena completa (tile oblicuo o plató proscenio). */
 export interface GenerateSceneImageRequest {
@@ -33,9 +31,12 @@ export interface GenerateSceneImageRequest {
   /** Bordes cuya franja exterior es arte REAL ya pintado del tile vecino
    *  (continuidad de costuras). Valores: north|south|east|west. */
   context_sides?: string[];
-  /** "boxes" (schematic legacy) | "svg" (blueprint oblicuo) | "stage"
-   *  (plató greybox → gpt-image-2 vía fal directo, ~210 s). Default "boxes". */
-  blueprint_kind?: "boxes" | "svg" | "stage";
+  /** "boxes" (schematic legacy) | "tile" (clay greybox del tile oblicuo,
+   *  pipeline tile_greybox1) | "stage" (plató greybox → gpt-image-2 vía fal
+   *  directo, ~210 s). Default "boxes". El valor "svg" murió con los
+   *  compositores SVG (agosto 2026) — el Pydantic (remote_generation.py) ya
+   *  solo acepta estos tres. */
+  blueprint_kind?: "boxes" | "tile" | "stage";
   /** false = el plano NO tiene agua (omite las cláusulas de agua: mencionarla
    *  en planos secos ceba ríos alucinados). Default true. */
   has_water?: boolean;

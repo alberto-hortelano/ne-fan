@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from style_categories import ALL_STYLE_TAGS
+
 _PROMPTS_DIR = Path(
     os.environ.get(
         "NEFAN_CONTRACT_PROMPTS",
@@ -433,16 +435,9 @@ def validate_scene_response(data: dict) -> dict:
     data["room_id"] = scene_id
     # style_tag: categoría de referencia de estilo para el repintado IA.
     # Valor fuera del enum se descarta con aviso (mejor sin tag que un 422 en
-    # /generate_scene_image cuando el cliente lo reenvíe).
-    # Espejo de nefan-core/src/games/style-categories.ts ("nature" = legacy;
-    # stage_* = categorías de plató para escenas proscenio).
-    _valid_style_tags = {
-        "settlement", "farmland", "forest", "wetland", "desert", "snow",
-        "fortress", "interior", "underground", "nature",
-        "stage_interior", "stage_street", "stage_plaza",
-        "stage_nature", "stage_harbor", "stage_gate",
-    }
-    if data.get("style_tag") and data["style_tag"] not in _valid_style_tags:
+    # /generate_scene_image cuando el cliente lo reenvíe). Enum en
+    # style_categories.py (fuente única, candada contra el TS).
+    if data.get("style_tag") and data["style_tag"] not in ALL_STYLE_TAGS:
         print(f"validate_scene: style_tag inválido '{data['style_tag']}' — descartado", flush=True)
         data.pop("style_tag", None)
     data["scene_description"] = (
