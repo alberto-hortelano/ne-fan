@@ -222,7 +222,7 @@ export class FpsAtlasController {
     if (!tile) return false;
     const layoutKey = await this.layoutKeyFor(tile.layout);
     type StoredMap = Record<string, { url: string; kind: "tile" | "unique" }>;
-    let stored: StoredMap | null = null;
+    let stored: StoredMap | null;
     try {
       const raw = localStorage.getItem(`fps_atlas:${layoutKey}`);
       stored = raw ? (JSON.parse(raw) as StoredMap) : null;
