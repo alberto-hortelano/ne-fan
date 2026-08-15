@@ -57,6 +57,21 @@ export interface MapLinkResponse {
   link: PlaceLink;
 }
 
+/** Registro ADITIVO de assets usados por una escena (append con dedupe a
+ *  scenes_loaded[scene_id].asset_refs): los hashes entran en la keep-list del
+ *  prune del asset-store. Lo emite el cliente al instalar arte derivado (p.
+ *  ej. las celdas de superficie de la vista fps). */
+export interface SceneAssetRefsRequest {
+  scene_id: string;
+  refs: string[];
+}
+
+export interface SceneAssetRefsResponse {
+  ok: true;
+  /** Total de refs de la escena tras el append. */
+  total: number;
+}
+
 export interface MapTriggerRequest {
   place_id: string;
   trigger: PlaceTriggerSpec;
@@ -201,6 +216,10 @@ export const WorldStateApi = {
   upsertPlace: endpoint<PlaceUpsert, PlaceUpsertResponse>("POST", "/map/place"),
   addLink: endpoint<LinkSpec, MapLinkResponse>("POST", "/map/link"),
   addTrigger: endpoint<MapTriggerRequest, MapTriggerResponse>("POST", "/map/trigger"),
+  appendSceneAssetRefs: endpoint<SceneAssetRefsRequest, SceneAssetRefsResponse>(
+    "POST",
+    "/scene/asset_refs",
+  ),
 
   // Entities / inventario
   listEntities: endpoint<void, EntityListResponse>("GET", "/entities"),

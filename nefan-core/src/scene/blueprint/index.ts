@@ -23,6 +23,8 @@ export { CANOPY_OPACITY, classifyVolume, volumePartsForTile } from "../greybox/v
 export { canonicalGreyboxJson } from "../greybox/common.js";
 export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
 export { volumeCollisionGrid, volumeSolidDiscRadiusCells } from "./collision.js";
+export { buildFpsTileSpec } from "./fps-spec.js";
+export type { FpsTileSpec } from "./fps-spec.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";
 export { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";

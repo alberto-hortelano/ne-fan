@@ -96,6 +96,9 @@ export interface NefanConfig {
     /** Cache for occluder sprites cut out of the scene image (SAM via fal.ai),
      *  served at /cache/segment/{hash}. */
     segment_cache_dir: string;
+    /** Librería de celdas de superficie de la vista fps (kind "surface"),
+     *  servida en /cache/surface/{hash}. */
+    surface_cache_dir: string;
     texture_resolution: number;
     texture_steps: number;
     /** Meshy image-to-image model for scene generation (best top-down:
@@ -109,6 +112,11 @@ export interface NefanConfig {
      *  atlas de keyframes por anim×dir — pipeline validado en labs/skinning;
      *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
     sprite_skin_model: string;
+    /** Modelos del atlas de superficies de la vista fps (bench labs/fps):
+     *  tileables (surface_model) y celdas hero (surface_hero_model), fal
+     *  directo. */
+    surface_model: string;
+    surface_hero_model: string;
     /** Path (relative to repo root) of the art-style reference image passed as
      *  the 2nd reference to Meshy so generated scenes match a target game look. */
     scene_style_image: string;
@@ -200,6 +208,7 @@ export const CONFIG: NefanConfig = {
     sprite_cache_dir: "cache/sprites",
     scene_cache_dir: "cache/scenes",
     segment_cache_dir: "cache/segments",
+    surface_cache_dir: "cache/surfaces",
     texture_resolution: 512,
     texture_steps: 4,
     // nano-banana-pro para escenas: en el bench de fidelidad de layout
@@ -213,6 +222,11 @@ export const CONFIG: NefanConfig = {
     // de layout conservando luz y hora). Vía fal directo, sin Meshy.
     stage_scene_model: "gpt-image-2",
     sprite_skin_model: "gpt-image-2",
+    // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
+    // para las celdas tileables (cohesión pintada a mano) y gpt-image-2 para
+    // las celdas hero (techo de calidad en piezas únicas).
+    surface_model: "nano-banana-pro",
+    surface_hero_model: "gpt-image-2",
     scene_style_image: "nefan-core/data/styles/battlemap-town-style.png",
     auto_segment_model: "fal-ai/sam2/auto-segment",
     usd_eur_rate: 0.86,

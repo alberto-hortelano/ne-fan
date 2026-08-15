@@ -70,6 +70,20 @@ async def lifespan(app: FastAPI):
         manifest=deps.asset_manifest,
     )
 
+    # Librería de superficies de la vista fps: cada celda es un asset
+    # reutilizable entre escenas (hash por descripción+estilo).
+    deps.surface_cache = AssetCache(
+        cache_dir=deps.config["surface_cache_dir"],
+        asset_type="surface",
+        manifest=deps.asset_manifest,
+    )
+    from surface_atlas_generator import SurfaceAtlasGenerator
+
+    deps.surface_atlas_gen = SurfaceAtlasGenerator(
+        model=deps.config["surface_model"],
+        hero_model=deps.config["surface_hero_model"],
+    )
+
     _repo_root = Path(__file__).resolve().parent.parent
     deps.scene_image_gen = SceneImageGenerator(
         style_image_path=str(_repo_root / deps.config["scene_style_image"]),

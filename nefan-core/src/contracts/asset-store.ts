@@ -32,7 +32,9 @@ export type AssetKind =
   | "sprite"
   | "scene"
   | "plate"
-  | "segment";
+  | "segment"
+  /** Celda de superficie de la vista fps (librería reutilizable). */
+  | "surface";
 
 /** Entrada del manifest — mismo shape que AssetEntry del save
  *  (asset_index_snapshot) más el touch LRU. */
@@ -57,6 +59,9 @@ export interface CachePruneResponse {
 export interface AssetSummary {
   hash: string;
   type: string;
+  /** Subtipo de la fila ganadora del collapse por (hash,type) — desambigua
+   *  texturas (albedo/normal) y viaja al motor narrativo en available_assets. */
+  subtype: string;
   prompt: string;
   created_at: string;
 }
@@ -68,8 +73,8 @@ export interface AssetListResponse {
 
 export interface AssetByHashResponse {
   /** cache_url solo para texture (→ /cache/{subtype}/{hash}) y
-   *  model|skin|sprite (→ /cache/{type}/{hash}); scene/segment van SIN él
-   *  (cable real del router original). */
+   *  model|skin|sprite|surface (→ /cache/{type}/{hash}); scene/segment van
+   *  SIN él (cable real del router original). */
   matches: Array<ManifestEntry & { cache_url?: string }>;
 }
 

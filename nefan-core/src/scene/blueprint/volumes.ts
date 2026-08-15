@@ -29,6 +29,14 @@ const base = {
  *  builders convierten a radianes una única vez. */
 const angle = z.number().min(-180).max(180);
 
+/** Descripción de la SUPERFICIE visible del volumen para la vista fps: si
+ *  está, sus caras laterales se pintan como celda "hero" única del atlas con
+ *  esta descripción (p. ej. "facade with a faded mural of a sun"), y la
+ *  textura resultante entra en la librería de superficies reutilizable.
+ *  Opcional siempre — sin ella la superficie se deriva del material/color.
+ *  Inglés recomendado (es un prompt de imagen). */
+const surfaceDesc = z.string().min(1).max(200);
+
 export const RoofKindSchema = z.enum(["gable", "hip", "shed", "flat", "none"]);
 export const RoofMaterialSchema = z.enum(["slate", "tile", "thatch", "wood"]);
 export const WallMaterialSchema = z.enum(["timber", "stone", "wood", "plaster"]);
@@ -68,6 +76,7 @@ export const BuildingSchema = z
     /** Incompatible con `cutaway` (el anillo de muros/puertas es axis-aligned
      *  y rotar el edificio jugable perjudica la navegación). */
     angle: angle.optional(),
+    surface_desc: surfaceDesc.optional(),
   })
   .strict();
 
@@ -81,6 +90,7 @@ export const WallSchema = z
     width: z.number().positive().max(12).optional(),
     h: z.number().positive().max(24).optional(),
     crenellated: z.boolean().optional(),
+    surface_desc: surfaceDesc.optional(),
   })
   .strict();
 
@@ -148,6 +158,7 @@ export const PropSchema = z
     passable: z.boolean().optional(),
     /** Solo con `rect` (un `at` es un punto: no hay nada que rotar). */
     angle: angle.optional(),
+    surface_desc: surfaceDesc.optional(),
   })
   .strict();
 
@@ -169,6 +180,7 @@ export const PrismSchema = z
     /** Se dibuja sobre quien esté detrás (default true); false = plano bajo. */
     tall: z.boolean().optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    surface_desc: surfaceDesc.optional(),
   })
   .strict();
 

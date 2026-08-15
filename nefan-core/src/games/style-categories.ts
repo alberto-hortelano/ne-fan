@@ -16,8 +16,12 @@
  */
 
 /** Vistas de mundo. La vista se elige en el título (game.json aporta el
- *  default del mundo) y queda CONGELADA en el save (`world.view`). */
-export const WORLD_VIEWS = ["overworld", "proscenium"] as const;
+ *  default del mundo) y queda CONGELADA en el save (`world.view`).
+ *  "fps" (primera persona, tiles en 3D con atlas de superficies) no tiene
+ *  categorías de ref propias: comparte las zonas cenitales de overworld
+ *  (el prompt del atlas es material-first y solo necesita paleta), así que
+ *  viewForCategory NUNCA la devuelve — styleViews la deriva de overworld. */
+export const WORLD_VIEWS = ["overworld", "proscenium", "fps"] as const;
 export type WorldView = (typeof WORLD_VIEWS)[number];
 
 export const STYLE_ENV_CATEGORIES = [

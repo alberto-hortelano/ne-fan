@@ -33,6 +33,7 @@ import type {
   NpcMoveToPlaceRequest,
   InventoryRemoveRequest,
   PluginRegisterRequest,
+  SceneAssetRefsRequest,
   SceneValidateRequest,
 } from "./world-state.js";
 import type { AssetRegisterRequest } from "./asset-store.js";
@@ -164,6 +165,11 @@ export const AssetRegisterRequestSchema = z.object({
   extra: z.record(z.unknown()).optional(),
 });
 
+export const SceneAssetRefsRequestSchema = z.object({
+  scene_id: z.string().min(1),
+  refs: z.array(z.string().min(1)).max(256),
+});
+
 // ── Guardia de deriva (compile-time) ──
 // Cada espejo debe coincidir EXACTAMENTE con su tipo del contrato, en DOS
 // capas: (1) asignabilidad en ambos sentidos (campo requerido de más/de
@@ -212,9 +218,12 @@ assertMirror<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>()
 assertMirror<z.infer<typeof SceneValidateRequestSchema>, SceneValidateRequest>();
 assertMirror<PluginRegisterRequest, z.infer<typeof PluginRegisterRequestSchema>>();
 assertMirror<z.infer<typeof PluginRegisterRequestSchema>, PluginRegisterRequest>();
+assertMirror<SceneAssetRefsRequest, z.infer<typeof SceneAssetRefsRequestSchema>>();
+assertMirror<z.infer<typeof SceneAssetRefsRequestSchema>, SceneAssetRefsRequest>();
 assertMirror<AssetRegisterRequest, z.infer<typeof AssetRegisterRequestSchema>>();
 assertMirror<z.infer<typeof AssetRegisterRequestSchema>, AssetRegisterRequest>();
 
+assertSameKeys<SceneAssetRefsRequest, z.infer<typeof SceneAssetRefsRequestSchema>>();
 assertSameKeys<PlaceUpsert, z.infer<typeof PlaceUpsertSchema>>();
 assertSameKeys<LinkSpec, z.infer<typeof LinkSpecSchema>>();
 assertSameKeys<MapTriggerRequest, z.infer<typeof MapTriggerRequestSchema>>();

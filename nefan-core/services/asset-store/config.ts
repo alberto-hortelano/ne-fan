@@ -42,6 +42,7 @@ export function loadAssetStoreConfig(env: Record<string, string | undefined> = {
       sprite: abs(ai.sprite_cache_dir),
       scene: abs(ai.scene_cache_dir),
       segment: abs(ai.segment_cache_dir),
+      surface: abs(ai.surface_cache_dir),
     },
     spriteSheetsDir: abs(`${ai.cache_root}/sprite_sheets`),
     stylesDir: abs(CONFIG.content.styles_dir),

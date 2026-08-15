@@ -330,6 +330,79 @@ describe("AmbientNpcBehavior", () => {
     assert.deepEqual(after, before);
     assert.equal(sys.ids().length, 1);
   });
+
+  it("watchdog de atasco: encajonado sin avance neto → se rinde a idle", () => {
+    // Bolsillo de radio 0.1 m: dentro se puede mover (nunca bloqueo total),
+    // pero el waypoint de wander queda siempre fuera → sin watchdog el NPC
+    // vibraría en wander para siempre.
+    const world = openWorld({
+      blocksMove: (_fx, _fz, tx, tz) => Math.hypot(tx, tz) > 0.1,
+    });
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(19), world });
+    sys.addNpc(makeRecord("npc1", [0, 0, 0], { role: "peasant" }));
+    let sawIdleAfterMoving = false;
+    let moved = false;
+    for (let i = 0; i < 700; i++) {
+      sys.tick(0.016, ctxWith());
+      const st = sys.states()[0];
+      if (st.moving) moved = true;
+      if (moved && st.mode === "idle") sawIdleAfterMoving = true;
+    }
+    assert.ok(moved, "debe intentar moverse dentro del bolsillo");
+    assert.ok(sawIdleAfterMoving, "el watchdog debe rendirse a idle (antes: wander eterno)");
+    const st = sys.states()[0];
+    assert.ok(Math.hypot(st.pos.x, st.pos.z) <= 0.11, "sigue dentro del bolsillo");
+  });
+
+  it("forward con slew: girar 180° hacia el jugador es gradual, no un salto", () => {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(23), world: openWorld() });
+    sys.addNpc(makeRecord("npc1", [0, 0, 0], { role: "villager" }));
+    // Encara al jugador al este.
+    runTicks(sys, 120, 0.016, ctxWith({ playerPos: { x: 1.5, y: 0, z: 0 } }));
+    assert.ok(sys.states()[0].forward.x > 0.9, "encarado al este");
+    // El jugador salta al oeste: un solo tick NO puede voltear el facing…
+    sys.tick(0.016, ctxWith({ playerPos: { x: -1.5, y: 0, z: 0 } }));
+    assert.ok(sys.states()[0].forward.x > 0.8, "sin salto instantáneo de 180°");
+    // …pero en ~1 s de ticks el giro completa.
+    runTicks(sys, 60, 0.016, ctxWith({ playerPos: { x: -1.5, y: 0, z: 0 } }));
+    assert.ok(sys.states()[0].forward.x < -0.9, "giro completado gradualmente");
+  });
+
+  it("esquina de muro: sin vibración de facing tick a tick y el paseo se rinde", () => {
+    // Pared al este (x>2) + techo al norte (z>0.3): la deflexión ±90° de un
+    // rumbo que rota se bloquea en ambos extremos. Antes: facing alternando
+    // 180° cada tick (vibración) o paseo eterno junto al muro. Ahora: el
+    // slew acota el giro por tick y el watchdog rinde el paseo a idle.
+    const world = openWorld({
+      blocksMove: (_fx, _fz, tx, tz) => tx > 2 || tz > 0.3,
+      blocksCircle: (x, z) => x > 2 || z > 0.3,
+      resolvePlaceTarget: (id) => (id === "plaza" ? { x: 10, z: 0 } : null),
+    });
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(29), world });
+    sys.addNpc(makeRecord("npc1", [1.9, 0, 0.25], {
+      role: "villager",
+      directive: { type: "goto_place", target_place_id: "plaza" },
+    }));
+    let rapidFlips = 0;
+    let sawIdle = false;
+    let prevZ: number | null = null;
+    for (let i = 0; i < 500; i++) {
+      sys.tick(0.016, ctxWith());
+      const st = sys.states()[0];
+      if (st.mode === "idle") sawIdle = true;
+      if (!st.moving) {
+        prevZ = null;
+        continue;
+      }
+      const z = st.forward.z;
+      if (prevZ !== null && Math.abs(z) > 0.5 && Math.abs(prevZ) > 0.5 && Math.sign(z) !== Math.sign(prevZ)) {
+        rapidFlips += 1;
+      }
+      prevZ = z;
+    }
+    assert.equal(rapidFlips, 0, `facing volteado 180° entre ticks consecutivos (${rapidFlips} veces)`);
+    assert.ok(sawIdle, "el watchdog debe rendir el paseo junto al muro a idle");
+  });
 });
 
 describe("npcBehaviorRegistry", () => {

@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas{display:block}
+  #hud{position:fixed;left:10px;bottom:10px;color:#cfe0c8;background:rgba(0,0,0,.55);
+    font:12px/1.5 monospace;padding:8px 10px;border-radius:4px;white-space:pre;pointer-events:none}
+  #err{position:fixed;left:10px;top:10px;color:#f66;font:13px monospace;white-space:pre-wrap}
+</style>
+<script type="importmap">
+  {"imports": {"three": "https://unpkg.com/three@0.170.0/build/three.module.js"}}
+</script>
+<div id="hud"></div>
+<div id="err"></div>
+<script type="module">
+  // viewer.html — modo FPS estilo Doom sobre una escena greybox.
+  //   ?scene=interior|exterior   escena de escenas/<n>/escena.mjs
+  //   &run=runs/<run>            atlas pintado (ausente = clay)
+  //   &variant=A|C               variante de atlas para el modo clay
+  //   &pose=p0..pN               pose fija de captura (de escena.poses)
+  //   &turn=tween|snap           giro discreto con tween corto o instantáneo
+  //   &filter=linear|nearest     filtrado de las texturas del atlas
+  //   &hud=0                     ocultar HUD (capturas limpias)
+  // Controles: W/S avanzar/retroceder, A/D strafe, Q/E o ←/→ girar 45°,
+  // Shift correr, P copia la pose actual al portapapeles.
+  import * as THREE from "three";
+  import { makeFpsLib } from "./lib.mjs";
+  import { buildLayout } from "./surfaces.mjs";
+
+  const params = new URLSearchParams(location.search);
+  const SCENE = params.get("scene") || "interior";
+  const RUN = params.get("run");
+  const VARIANT = params.get("variant") || "C";
+  const TURN = params.get("turn") || "tween";
+  const FILTER = params.get("filter") || "linear";
+  const EYE = 1.6;
+  const WALK = 4.0, RUN_SPEED = 6.5;
+  const TURN_TIME = 0.1;
+
+  const lib = makeFpsLib(THREE);
+  const err = (msg) => { document.getElementById("err").textContent += msg + "\n"; document.title = "error"; };
+  addEventListener("error", (e) => err(String(e.message)));
+  addEventListener("unhandledrejection", (e) => err(String(e.reason?.stack ?? e.reason)));
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+  addEventListener("resize", () => {
+    renderer.setSize(innerWidth, innerHeight);
+    cam.aspect = innerWidth / innerHeight;
+    cam.updateProjectionMatrix();
+  });
+
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 600);
+
+  const mod = await import(`./escenas/${SCENE}/escena.mjs`);
+  const data = await mod.load();
+
+  // Layout + texturas: con run, el layout CONGELADO del run (misma asignación
+  // que pintó gen.py); sin run, clay puro (texLib vacío).
+  let layout = null;
+  if (RUN) {
+    const res = await fetch(`${RUN}/layout.json`);
+    if (!res.ok) throw new Error(`${RUN}/layout.json: HTTP ${res.status}`);
+    layout = await res.json();
+    if (layout.scene !== SCENE) err(`AVISO: el run es de la escena "${layout.scene}", no "${SCENE}"`);
+  }
+  const localLayout = layout ?? buildLayout(data.prims, { variant: VARIANT });
+  const texLib = lib.makeTexLib(RUN, layout);
+
+  for (const [i, prim] of data.prims.entries()) {
+    // Con atlas pintado, el detalle procedural del suelo (elipses/piedritas
+    // clay del builder) lee como parches planos sobre la textura — fuera.
+    if (RUN && prim.cat === "terrain" && prim.shape !== "box") continue;
+    scene.add(lib.primitiveMesh(prim, localLayout.assign[i], texLib, { filter: FILTER }));
+  }
+  for (const l of lib.buildLights(data.lights)) scene.add(l);
+  if (data.env.sky) {
+    scene.add(lib.skyDome(data.env.sky.top, data.env.sky.bottom));
+  } else {
+    scene.background = new THREE.Color("#0a0908");
+  }
+  if (data.env.fog) scene.fog = new THREE.Fog(data.env.fog.color, data.env.fog.near, data.env.fog.far);
+
+  const collider = lib.makeCollider(lib.collidersFromPrims(data.prims));
+
+  // NPCs y_bot (sprites 8-dir).
+  const bank = lib.makeSpriteBank("./sprites");
+  const npcs = (data.npcs ?? []).map((def) => lib.makeNpc(def, bank));
+  for (const n of npcs) scene.add(n.mesh);
+  await Promise.all(npcs.map((n) => n.init()));
+  // Precargar TODOS los frames de las anims usadas (servidor local, y así la
+  // captura headless nunca fotografía un billboard sin textura).
+  const anims = [...new Set((data.npcs ?? []).map((d) => d.anim))];
+  await Promise.all(anims.flatMap((a) => Array.from({ length: 8 }, (_, d) => bank.preload(a, d))));
+
+  // Estado del jugador: posición continua + yaw DISCRETO (índice 0..7).
+  // ?at=x,z,yawIdx — pose arbitraria (tests, p.ej. orbitar un NPC); si no,
+  // ?pose=pN de la escena; si no, el playerStart.
+  const at = params.get("at")?.split(",").map(Number);
+  const pose = at
+    ? { pos: [at[0], at[1]], yawIdx: at[2] ?? 0 }
+    : params.get("pose")
+      ? (data.poses.find((p) => p.id === params.get("pose")) ??
+         (() => { throw new Error(`pose desconocida: ${params.get("pose")}`); })())
+      : data.playerStart;
+  const player = { x: pose.pos[0], z: pose.pos[1], yawIdx: pose.yawIdx ?? 0 };
+  let renderYaw = (player.yawIdx * Math.PI) / 4;
+
+  const keys = new Set();
+  addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === "KeyQ" || e.code === "ArrowLeft") player.yawIdx = (player.yawIdx + 7) % 8;
+    if (e.code === "KeyE" || e.code === "ArrowRight") player.yawIdx = (player.yawIdx + 1) % 8;
+    if (e.code === "KeyP") {
+      const j = JSON.stringify({ pos: [+player.x.toFixed(2), +player.z.toFixed(2)], yawIdx: player.yawIdx });
+      console.log("pose:", j);
+      navigator.clipboard?.writeText(j);
+    }
+  });
+  addEventListener("keyup", (e) => keys.delete(e.code));
+
+  const hud = document.getElementById("hud");
+  if (params.get("hud") === "0") hud.style.display = "none";
+
+  const DIRS = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+  let last = performance.now();
+  let frames = 0;
+
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    // Giro discreto: el estado es el índice; el tween es solo presentación.
+    const targetYaw = (player.yawIdx * Math.PI) / 4;
+    if (TURN === "snap") renderYaw = targetYaw;
+    else {
+      let d = targetYaw - renderYaw;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      const step = (dt / TURN_TIME) * Math.PI * 0.5; // rad/frame limitado
+      renderYaw = Math.abs(d) <= step ? targetYaw : renderYaw + Math.sign(d) * step;
+    }
+
+    // Movimiento en el yaw LÓGICO (no el tweened): respuesta inmediata.
+    const c = targetYaw;
+    const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? RUN_SPEED : WALK;
+    let mx = 0, mz = 0;
+    if (keys.has("KeyW")) { mx += Math.sin(c); mz += -Math.cos(c); }
+    if (keys.has("KeyS")) { mx -= Math.sin(c); mz -= -Math.cos(c); }
+    if (keys.has("KeyA")) { mx -= Math.cos(c); mz -= Math.sin(c); }
+    if (keys.has("KeyD")) { mx += Math.cos(c); mz += Math.sin(c); }
+    const len = Math.hypot(mx, mz);
+    if (len > 0) {
+      [player.x, player.z] = collider.move(player.x, player.z, (mx / len) * speed * dt, (mz / len) * speed * dt);
+    }
+
+    cam.position.set(player.x, EYE, player.z);
+    cam.rotation.set(0, -renderYaw, 0);
+
+    for (const n of npcs) n.update(dt, cam);
+
+    renderer.render(scene, cam);
+    hud.textContent =
+      `escena ${SCENE}  run ${RUN ?? "(clay)"}  filtro ${FILTER}\n` +
+      `pos ${player.x.toFixed(1)}, ${player.z.toFixed(1)}   yaw ${DIRS[player.yawIdx]} (${player.yawIdx})\n` +
+      `WASD mover · Q/E girar 45° · Shift correr · P copiar pose`;
+
+    frames += 1;
+    if (frames === 2) document.title = "ready";
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>

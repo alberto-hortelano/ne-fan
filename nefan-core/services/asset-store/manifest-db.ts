@@ -32,6 +32,7 @@ export interface ManifestEntryRow {
 export interface AssetSummaryRow {
   hash: string;
   type: string;
+  subtype: string;
   prompt: string;
   created_at: string;
 }
@@ -125,18 +126,27 @@ export class ManifestDb {
     }
   }
 
+  /** `assetType` admite lista CSV ("texture,model,surface") — la librería del
+   *  motor narrativo pide varios tipos reutilizables en una sola consulta. */
   listAssets(assetType?: string, limit = 50): AssetSummaryRow[] {
+    const types = (assetType ?? "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    const typeFilter = types.length
+      ? `type IN (${types.map(() => "?").join(",")})`
+      : "1=1";
     const rows = this.db
       .prepare(
-        `SELECT hash, type, prompt, created_at FROM (
-           SELECT hash, type, prompt, created_at,
+        `SELECT hash, type, subtype, prompt, created_at FROM (
+           SELECT hash, type, subtype, prompt, created_at,
                   ROW_NUMBER() OVER (PARTITION BY hash, type ORDER BY id DESC) AS rn,
                   id
            FROM assets
-           WHERE (?1 IS NULL OR type = ?1)
-         ) WHERE rn = 1 ORDER BY id DESC LIMIT ?2`,
+           WHERE ${typeFilter}
+         ) WHERE rn = 1 ORDER BY id DESC LIMIT ?`,
       )
-      .all(assetType ?? null, limit) as unknown as AssetSummaryRow[];
+      .all(...types, limit) as unknown as AssetSummaryRow[];
     return rows;
   }
 

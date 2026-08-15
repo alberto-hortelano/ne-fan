@@ -119,7 +119,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop — or `prism` for a FREE polygon outline + height when no preset fits, e.g. a ruined tower's curved wall) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses.",
+        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop — or `prism` for a FREE polygon outline + height when no preset fits, e.g. a ruined tower's curved wall) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses. building/wall/prop/prism accept optional `surface_desc` (English, <=200 chars): a description of that volume's visible surface for the first-person view — it is painted once as a unique texture and joins the reusable surface library. Use it only when a surface should look SPECIFIC (a faded mural, a heraldic gate); plain walls derive their look from material/color.",
         "items": {
           "type": "object"
         }

@@ -119,6 +119,12 @@ polygon outline + height). Types:
   for a decorative walkable shape; tall=false for a low platform. The image
   model repaints it — the prism just sets the massing, collision and
   occlusion. Compose several prisms/presets for one complex object.
+- building/wall/prop/prism accept optional surface_desc (English, <=200
+  chars): a description of that volume's visible surface for the
+  first-person view — painted once as a unique texture that joins the
+  reusable surface library. Use it ONLY when a surface should look SPECIFIC
+  (a faded mural on the tavern facade, a heraldic city gate); plain walls
+  already derive their look from material/color. Never required.
 COLLISION comes from these footprints. A ROOFED building is pure scenery:
 its whole footprint is solid and its doors are decorative paint — the player
 can NEVER walk in (they would vanish under the roof). Any building the story

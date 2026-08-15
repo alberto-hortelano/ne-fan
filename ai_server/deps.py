@@ -59,6 +59,9 @@ class Deps:
     sprite_cache: "AssetCache | None" = None
     scene_cache: "AssetCache | None" = None
     segment_cache: "AssetCache | None" = None
+    # Librería de superficies de la vista fps (kind "surface", remote-gen).
+    surface_cache: "AssetCache | None" = None
+    surface_atlas_gen = None
     # Cliente HTTP del asset-store (F2) — conserva el nombre histórico porque
     # AssetCache/llm_client lo consumen por duck typing (register/list_assets).
     asset_manifest: "AssetStoreClient | None" = None

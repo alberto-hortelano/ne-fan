@@ -188,6 +188,25 @@ describe("state HTTP API", () => {
     assert.equal(progressMessages.length, 1);
   });
 
+  it("POST /scene/asset_refs: append con dedupe, keep-list y 404 sin escena", async () => {
+    narrative.recordSceneLoaded("tile_refs", { scene_id: "tile_refs" });
+    const r1 = await post("/scene/asset_refs", { scene_id: "tile_refs", refs: ["h1", "h2"] });
+    assert.equal(r1.status, 200);
+    assert.equal(r1.body.total, 2);
+    // Append idempotente: repetir h2 no duplica, h3 se añade.
+    const r2 = await post("/scene/asset_refs", { scene_id: "tile_refs", refs: ["h2", "h3"] });
+    assert.equal(r2.body.total, 3);
+    // Los refs quedan en el record de la escena — /sessions/asset_refs (la
+    // keep-list del prune, cubierta por sus tests F2) los recoge del save.
+    assert.deepEqual(narrative.scenes_loaded["tile_refs"].asset_refs, ["h1", "h2", "h3"]);
+    // Escena desconocida → 404 (solo protegen escenas vivas).
+    const r404 = await post("/scene/asset_refs", { scene_id: "no_such", refs: ["x1"] });
+    assert.equal(r404.status, 404);
+    // Body inválido → 400.
+    const r400 = await post("/scene/asset_refs", { scene_id: "", refs: "no" });
+    assert.equal(r400.status, 400);
+  });
+
   it("POST /map/place + GET /map/place/{id} + onMutation", async () => {
     const beforeMutations = mutations;
     const created = await post("/map/place", {

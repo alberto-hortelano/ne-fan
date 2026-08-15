@@ -32,6 +32,7 @@ import {
   NpcMoveToPlaceRequestSchema,
   PlaceUpsertSchema,
   PluginRegisterRequestSchema,
+  SceneAssetRefsRequestSchema,
   SceneValidateRequestSchema,
 } from "../src/contracts/request-schemas.js";
 import { formatZodError } from "../src/contract/model-io/validate.js";
@@ -49,6 +50,7 @@ import type {
   MapTriggerResponse,
   PluginListResponse,
   PluginRegisterResponse,
+  SceneAssetRefsResponse,
   ScheduledEventResolveResponse,
   StoryResponse,
   UiDocResponse,
@@ -106,6 +108,18 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
 
   const server = createServer((req, res) => {
+    // CORS: el cliente 2D (localhost:3000) registra asset_refs de escena
+    // (/scene/asset_refs) directamente contra el State API — mismo criterio
+    // permisivo que el asset-store (362cc74: solo dev local en 127.0.0.1).
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      });
+      res.end();
+      return;
+    }
     handle(req, res, narrative, npcDirector, opts.plugins, opts.gamesDir, opts.onProgress, opts.sessionStorage)
       .then(async (result) => {
         if (result.mutated) {
@@ -297,6 +311,18 @@ async function handle(
       return mutated({ ok: true, place } satisfies PlaceUpsertResponse);
     } catch (err) {
       return bad((err as Error).message);
+    }
+  }
+
+  if (method === "POST" && path === "/scene/asset_refs") {
+    const parsed = parseBody(SceneAssetRefsRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    try {
+      const total = narrative.appendSceneAssetRefs(parsed.data.scene_id, parsed.data.refs);
+      return mutated({ ok: true, total } satisfies SceneAssetRefsResponse);
+    } catch (err) {
+      // Escena desconocida → 404 (la keep-list solo protege escenas vivas).
+      return notFound((err as Error).message);
     }
   }
 
@@ -593,6 +619,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(payload),
+    "Access-Control-Allow-Origin": "*",
   });
   res.end(payload);
 }

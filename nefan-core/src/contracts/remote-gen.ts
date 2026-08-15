@@ -58,6 +58,50 @@ export interface GenerateSceneImageResponse {
   generation_time_ms?: number;
 }
 
+/** Celda del atlas de superficies de la vista fps (espejo del Pydantic
+ *  SurfaceCellSpec). `desc` + estilo son la IDENTIDAD del asset: misma
+ *  descripción + mismo estilo ⇒ mismo hash ⇒ reuso entre escenas. */
+export interface SurfaceCellSpec {
+  key: string;
+  mat: string;
+  kind: "tile" | "unique";
+  desc: string;
+  base_color: string;
+  world_w: number;
+  world_h: number;
+  hints?: [number, number, number, number, string][];
+}
+
+export interface GenerateSurfaceAtlasRequest {
+  cells: SurfaceCellSpec[];
+  scene_description: string;
+  style_id?: string;
+  style_tag?: StyleTag | "";
+  /** Hash del layout canónico del cliente — logging/debug (la caché es por
+   *  celda, no por atlas). */
+  layout_key?: string;
+  /** true = solo resolver contra la librería ($0): devuelve las celdas ya
+   *  pintadas + `missing`, sin pintar. Camino del resume. */
+  resolve_only?: boolean;
+}
+
+export interface SurfaceCellResult {
+  hash: string;
+  /** Relativa al asset-store: /cache/surface/{hash}. */
+  url: string;
+  cached: boolean;
+}
+
+export interface GenerateSurfaceAtlasResponse {
+  cells: Record<string, SurfaceCellResult>;
+  pages_painted: number;
+  cached: boolean;
+  cost_usd: number;
+  generation_time_ms: number;
+  /** Celdas de la petición SIN pintar aún (con resolve_only no se pintan). */
+  missing: number;
+}
+
 /** Sprite sheet de personaje skinneado por IA (Meshy i2i hero-shot + atlas
  *  por dirección + rembg). OJO: el endpoint actual lee JSON crudo, sin
  *  modelo Pydantic — este shape es el contrato observado del wire. */
@@ -220,6 +264,12 @@ export const RemoteGenApi = {
   generateSceneImage: endpoint<GenerateSceneImageRequest, GenerateSceneImageResponse>(
     "POST",
     "/generate_scene_image",
+  ),
+  /** Atlas de superficies de la vista fps: pinta solo las celdas que faltan
+   *  en la librería (kind "surface") y devuelve el mapping por celda. */
+  generateSurfaceAtlas: endpoint<GenerateSurfaceAtlasRequest, GenerateSurfaceAtlasResponse>(
+    "POST",
+    "/generate_surface_atlas",
   ),
   skinSpriteSheet: endpoint<SkinSpriteSheetRequest, SkinSpriteSheetResponse>(
     "POST",
