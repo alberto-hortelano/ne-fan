@@ -1,7 +1,9 @@
 /** Proveedor de input por defecto: teclado + ratón.
  *
  *  WASD mueve (relativo al facing), las flechas orientan, Shift esprinta,
- *  E interactúa, LMB ataca (con pointer lock), rueda/+/- hacen zoom, 1..N
+ *  E interactúa, LMB ataca (con pointer lock), el ratón acumula lookDelta
+ *  bajo pointer lock (la vista fps lo convierte en yaw), rueda/+/- hacen
+ *  zoom, 1..N
  *  seleccionan ataque del catálogo de la sesión, Y/N responden a la propuesta
  *  de tile y R pide respawn. Las teclas de DESARROLLO no están aquí — ver
  *  dev-tools-input.ts. */
@@ -27,6 +29,7 @@ export class KeyboardInputProvider implements InputProvider {
   );
 
   private zoomAccum = 0;
+  private lookAccum = 0;
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
@@ -34,6 +37,7 @@ export class KeyboardInputProvider implements InputProvider {
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onMouseDown: (e: MouseEvent) => void;
+  private readonly onMouseMove: (e: MouseEvent) => void;
   private readonly onWheel: (e: WheelEvent) => void;
   private readonly canvas: HTMLCanvasElement;
 
@@ -104,10 +108,22 @@ export class KeyboardInputProvider implements InputProvider {
       }
     };
 
-    // Click to attack (only when pointer is locked)
+    // Click to attack (only when pointer is locked). En window y no en el
+    // canvas: en vista fps el lock vive en #fps-canvas (el #game 2D queda
+    // oculto) y el provider no conoce ese elemento; el lock solo lo pide
+    // nuestro código sobre los canvas del juego, así que basta con que haya
+    // alguno activo.
     this.onMouseDown = (e) => {
-      if (e.button === 0 && document.pointerLockElement === this.canvas && !this.dialogueActive) {
+      if (e.button === 0 && document.pointerLockElement !== null && !this.dialogueActive) {
         this.state.attackRequested = true;
+      }
+    };
+
+    // Delta de mirada: solo bajo pointer lock (movementX fuera de lock es
+    // movimiento de cursor normal, no intención de girar).
+    this.onMouseMove = (e) => {
+      if (document.pointerLockElement !== null) {
+        this.lookAccum += e.movementX;
       }
     };
 
@@ -121,7 +137,8 @@ export class KeyboardInputProvider implements InputProvider {
 
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
-    this.canvas.addEventListener("mousedown", this.onMouseDown);
+    window.addEventListener("mousedown", this.onMouseDown);
+    window.addEventListener("mousemove", this.onMouseMove);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
@@ -144,6 +161,12 @@ export class KeyboardInputProvider implements InputProvider {
     const z = this.zoomAccum;
     this.zoomAccum = 0;
     return z;
+  }
+
+  consumeLookDelta(): number {
+    const d = this.lookAccum;
+    this.lookAccum = 0;
+    return d;
   }
 
   consumeAttack(): boolean {
@@ -189,7 +212,8 @@ export class KeyboardInputProvider implements InputProvider {
   dispose(): void {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
-    this.canvas.removeEventListener("mousedown", this.onMouseDown);
+    window.removeEventListener("mousedown", this.onMouseDown);
+    window.removeEventListener("mousemove", this.onMouseMove);
     this.canvas.removeEventListener("wheel", this.onWheel);
   }
 }

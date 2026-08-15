@@ -52,6 +52,9 @@ export interface InputProvider {
   onAttackTypeChanged?: (typeId: string) => void;
   /** Intención de zoom acumulada con signo (+ acerca) — se resetea al leer. */
   consumeZoomDelta(): number;
+  /** Delta horizontal de ratón acumulado en píxeles (movementX bajo pointer
+   *  lock) — se resetea al leer. Solo la vista fps lo convierte en yaw. */
+  consumeLookDelta(): number;
   consumeAttack(): boolean;
   consumeInteract(): boolean;
   /** Aceptar/rechazar la propuesta de generar el tile vecino. */

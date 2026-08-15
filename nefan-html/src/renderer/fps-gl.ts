@@ -653,8 +653,9 @@ export class FpsGl {
     const dt = Math.min(0.05, (now - this.lastNow) / 1000 || 0.016);
     this.lastNow = now;
 
-    // Cámara: yaw lógico del forward (ya snapeado a 8 ejes en main.ts); el
-    // tween es presentación pura, con velocidad limitada.
+    // Cámara: yaw lógico del forward (continuo — mouse look en main.ts); el
+    // tween es presentación pura, con velocidad limitada (≈900°/s): suaviza
+    // los saltos de 45° de ←/→ y actúa de filtro leve sobre el ratón.
     const targetYaw = yawOf(player.forward.x, player.forward.z);
     let d = targetYaw - this.renderYaw;
     while (d > Math.PI) d -= 2 * Math.PI;
