@@ -250,23 +250,44 @@ class LLMClient:
         }
         print(f"LLM: active session set to {session_id} (game={game_id}, resume={is_resume})")
 
+    #: Tipos que el motor puede REUSAR (texture_hash/model_hash en entities,
+    #: superficies de la vista fps). scene/plate quedan FUERA: sus prompts son
+    #: instrucciones de repintado/inpaint ("The object being removed is…") y
+    #: con la DB real monopolizaban las 30 entradas — el motor no veía ni una
+    #: textura (hallazgo medido 2026-08-14).
+    REUSABLE_ASSET_TYPES = "texture,model,sprite,surface"
+
     def _inject_available_assets(self, payload: dict, limit: int = 30) -> dict:
         """Add `available_assets` and active session info to a request payload
         so the narrative engine knows what's already generated and which
         playthrough is in flight. Mutates and returns the payload.
 
-        Sólo assets REUSABLES por el motor (texturas/modelos/escenas con un
-        prompt humano): los `segment` del análisis de visión y los assets cuyo
-        prompt es otro hash/etiqueta interna no le dicen nada al LLM y estaban
-        inflando cada turno con ~100 entradas opacas."""
+        La librería que ve el motor: solo tipos reutilizables, descripciones
+        cortas admitidas ("banco de piedra" es una entrada válida), dedupe por
+        prompt (las celdas de superficie se repiten por estilo) e intercalado
+        round-robin por tipo — una muestra VARIADA, no el tipo más reciente
+        monopolizando la ventana."""
         if self.asset_manifest is not None:
             try:
-                assets = self.asset_manifest.list_assets(limit=200)
-                reusable = [
-                    a for a in assets
-                    if a.get("type") != "segment"
-                    and len(str(a.get("prompt", ""))) > 20
-                ][:limit]
+                assets = self.asset_manifest.list_assets(
+                    asset_type=self.REUSABLE_ASSET_TYPES, limit=200
+                )
+                by_type: dict[str, list[dict]] = {}
+                seen_prompts: set[str] = set()
+                for a in assets:
+                    prompt = str(a.get("prompt", "")).strip()
+                    if len(prompt) < 4:
+                        continue  # hashes/etiquetas internas, nada que leer
+                    norm = prompt.lower()
+                    if norm in seen_prompts:
+                        continue
+                    seen_prompts.add(norm)
+                    by_type.setdefault(str(a.get("type", "")), []).append(a)
+                reusable: list[dict] = []
+                while len(reusable) < limit and any(by_type.values()):
+                    for t in sorted(by_type.keys()):
+                        if by_type[t] and len(reusable) < limit:
+                            reusable.append(by_type[t].pop(0))
                 if reusable:
                     payload["available_assets"] = reusable
             except Exception as e:

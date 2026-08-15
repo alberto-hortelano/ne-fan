@@ -16,8 +16,9 @@ const POLL_MS = 5000;
 const TILE_PAID_PHASE = "imagen";
 
 export interface GenerationEvent {
-  /** repaint/peel = proscenio; tile = oblicua; client = caché cliente. */
-  kind: "repaint" | "peel" | "tile" | "client";
+  /** repaint/peel = proscenio; tile = oblicua; fps_atlas = superficies de la
+   *  vista fps; client = caché cliente. */
+  kind: "repaint" | "peel" | "tile" | "fps_atlas" | "client";
   cached: boolean;
 }
 

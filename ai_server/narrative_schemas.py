@@ -254,6 +254,16 @@ def validate_volumes(raw, *, field: str = "volumes"):
         if vtype not in VOLUME_TYPES:
             print(f"validate_scene: {ctx} type desconocido {vtype!r} — volumen descartado")
             continue
+        # surface_desc (vista fps): solo building|wall|prop|prism, string 1..200.
+        # El zod strict del bridge rechazaría el campo en otros tipos — aquí se
+        # descarta con traza (espejo laxo, mismo criterio que el resto).
+        sd = v.get("surface_desc")
+        if sd is not None and (
+            vtype not in ("building", "wall", "prop", "prism")
+            or not isinstance(sd, str)
+            or not (1 <= len(sd) <= 200)
+        ):
+            _drop_field(v, "surface_desc", ctx, "inválida (string 1..200, solo building|wall|prop|prism)")
         if vtype == "building":
             if not _vol_rect(v.get("rect")):
                 print(f"validate_scene: {ctx} building sin rect válido (en rango) — volumen descartado")

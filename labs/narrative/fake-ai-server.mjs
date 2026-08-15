@@ -22,6 +22,7 @@
 //                 errores fail-loud del handler de frontera en E2E.
 
 import http from "node:http";
+import zlib from "node:zlib";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -376,6 +377,57 @@ async function handleFrontier(frontier) {
 // Guardado en memoria por sha256[:16] y servido por /cache/scene/{hash}.
 const sceneImages = new Map();
 
+// ── Atlas de superficies fps: celdas como PNG de damero del color base ──
+// (plumbing E2E sin créditos: identidad por desc+estilo, cached en la 2ª
+// petición, servidas por /cache/surface/{hash} como el asset-store real).
+const surfaceImages = new Map();
+
+/** PNG RGB válido generado a pelo (zlib): damero 2 tonos del color base. */
+function checkerPng(hexColor, size = 64, cells = 8) {
+  const r = parseInt(hexColor.slice(1, 3), 16);
+  const g = parseInt(hexColor.slice(3, 5), 16);
+  const b = parseInt(hexColor.slice(5, 7), 16);
+  const lite = [Math.min(255, r + 25), Math.min(255, g + 25), Math.min(255, b + 25)];
+  const dark = [Math.max(0, r - 25), Math.max(0, g - 25), Math.max(0, b - 25)];
+  const raw = Buffer.alloc(size * (size * 3 + 1));
+  for (let y = 0; y < size; y++) {
+    const row = y * (size * 3 + 1);
+    raw[row] = 0; // filtro none
+    for (let x = 0; x < size; x++) {
+      const c = ((x * cells / size) | 0) + ((y * cells / size) | 0);
+      const [cr, cg, cb] = c % 2 === 0 ? lite : dark;
+      const o = row + 1 + x * 3;
+      raw[o] = cr; raw[o + 1] = cg; raw[o + 2] = cb;
+    }
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crcTable = [];
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      crcTable[n] = c >>> 0;
+    }
+    let crc = 0xffffffff;
+    for (const byte of body) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    const crcBuf = Buffer.alloc(4);
+    crcBuf.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([len, body, crcBuf]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; ihdr[9] = 2; // 8 bits, RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
 // Sprites de recorte falsos: PNGs 1×1 semitransparentes (cian, naranja,
 // magenta, verde) que el cliente estira al bbox del occluder.
 const FAKE_SPRITES = [
@@ -440,6 +492,13 @@ const server = http.createServer((req, res) => {
     const hash = req.url.slice("/cache/scene/".length);
     const png = sceneImages.get(hash);
     if (!png) return send(404, { detail: `fake-ai: imagen ${hash} no encontrada` });
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(png);
+  }
+  if (req.method === "GET" && req.url?.startsWith("/cache/surface/")) {
+    const hash = req.url.slice("/cache/surface/".length);
+    const png = surfaceImages.get(hash);
+    if (!png) return send(404, { detail: `fake-ai: superficie ${hash} no encontrada` });
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
   }
@@ -538,6 +597,40 @@ const server = http.createServer((req, res) => {
           `${body.context_sides?.length ? `, contexto: ${body.context_sides.join("+")}` : ""})`,
         );
         return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
+      }
+      // Atlas de superficies fps (vista fps): identidad por desc+estilo como
+      // el server real — segunda petición idéntica ⇒ todo cached:true.
+      if (req.method === "POST" && req.url === "/generate_surface_atlas") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const cells = Array.isArray(body.cells) ? body.cells : [];
+        if (cells.length === 0) return send(422, { detail: "fake-ai: cells requerido" });
+        const out = {};
+        let painted = 0;
+        for (const cell of cells) {
+          const hash = createHash("sha256")
+            .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}`)
+            .digest("hex")
+            .slice(0, 16);
+          const cached = surfaceImages.has(hash);
+          if (!cached) {
+            surfaceImages.set(hash, checkerPng(cell.base_color ?? "#808080"));
+            painted += 1;
+          }
+          out[cell.key] = { hash, url: `/cache/surface/${hash}`, cached };
+        }
+        console.error(`[fake-ai] surface_atlas: ${painted} nuevas de ${cells.length} celdas`);
+        return send(200, {
+          cells: out,
+          pages_painted: painted > 0 ? 1 : 0,
+          cached: painted === 0,
+          cost_usd: 0,
+          generation_time_ms: 5,
+        });
       }
       // Retoque falso del blueprint: si el ground declara agua sin ningún
       // deck (el bug plantado en BOOTSTRAP_GROUND), el fix devuelve el array

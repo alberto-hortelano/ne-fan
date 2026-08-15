@@ -9,6 +9,7 @@
 import { createSystemRegistry } from "@nefan-core/src/systems/registry.js";
 import type { Renderer2D } from "./renderer2d.js";
 import type { CanvasRenderer } from "./canvas-renderer.js";
+import { FpsRenderer } from "./fps-renderer.js";
 import { ProsceniumRenderer } from "./proscenium-renderer.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
@@ -26,5 +27,8 @@ export const rendererRegistry = createSystemRegistry<Renderer2D, RendererDeps>(
     oblique: (deps) => deps.oblique,
     proscenium: (deps) =>
       new ProsceniumRenderer(deps.canvas, { spriteRenderer: deps.spriteRenderer }),
+    // Primera persona: canvas WebGL propio (hermano del 2D); three.js se
+    // carga dinámico dentro de la fachada.
+    fps: (deps) => new FpsRenderer(deps.canvas, { spriteRenderer: deps.spriteRenderer }),
   },
 );

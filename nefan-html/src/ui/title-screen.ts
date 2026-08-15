@@ -17,7 +17,13 @@ import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
 import { CONFIG } from "@nefan-core/src/config.js";
+import { WORLD_VIEWS, type WorldView } from "@nefan-core/src/games/style-categories.js";
 import { serviceUrl } from "../net/service-urls.js";
+
+/** Normaliza una vista de fuente externa (game.json, botón) al enum. */
+function normalizeView(v: string | undefined, fallback: WorldView = "overworld"): WorldView {
+  return (WORLD_VIEWS as readonly string[]).includes(v ?? "") ? (v as WorldView) : fallback;
+}
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }
@@ -35,7 +41,7 @@ export type TitleAction =
       characterMode: "image" | "vector";
       /** Vista del mundo elegida (game.json solo aporta el default).
        *  Congelada en la sesión como el estilo. */
-      view: "overworld" | "proscenium";
+      view: WorldView;
       appearance: { model_id: string; skin_path: string };
     };
 
@@ -231,6 +237,10 @@ export class TitleScreen {
             <div style="font-size:13px">Proscenio</div>
             <div style="font-size:10px;color:#888">Escenas discretas tipo plató de cine, a pie de calle</div>
           </button>
+          <button data-view="fps" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
+            <div style="font-size:13px">Primera persona</div>
+            <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS con giro de 8 direcciones</div>
+          </button>
         </div>
       </div>
       <label style="display:block;margin-bottom:14px">
@@ -287,8 +297,7 @@ export class TitleScreen {
     let charModeTouched = false;
     let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";
     // La vista es del jugador, no del mundo: game.json solo la preselecciona.
-    let selectedView: "overworld" | "proscenium" =
-      selectedGame.view === "proscenium" ? "proscenium" : "overworld";
+    let selectedView: WorldView = normalizeView(selectedGame.view);
     const refreshRenderMode = (): void => {
       for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
         const active = btn.dataset.rendermode === selectedRenderMode;
@@ -332,7 +341,7 @@ export class TitleScreen {
     };
     for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
       btn.addEventListener("click", () => {
-        selectedView = btn.dataset.view === "proscenium" ? "proscenium" : "overworld";
+        selectedView = normalizeView(btn.dataset.view);
         refreshView();
         refreshStyleOptions();
       });
@@ -380,7 +389,7 @@ export class TitleScreen {
         selectedGame = game;
         // Cambiar de mundo resetea la vista a la default del juego (mismo
         // criterio que el estilo, que vuelve al del mundo).
-        selectedView = game.view === "proscenium" ? "proscenium" : "overworld";
+        selectedView = normalizeView(game.view);
         refreshSelection();
         refreshView();
         refreshStyleOptions();
@@ -587,7 +596,7 @@ export class TitleScreen {
     styleId: string,
     renderMode: "image" | "vector",
     characterMode: "image" | "vector",
-    view: "overworld" | "proscenium",
+    view: WorldView,
   ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
@@ -665,7 +674,11 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
 /** Etiquetas de vista/gráficos congelados en el save — los MISMOS nombres que
  *  los selectores de partida nueva, para que el jugador reconozca qué eligió.
  *  Saves antiguos sin los campos: sin badge (no adivinar). */
-const VIEW_LABELS: Record<string, string> = { overworld: "Mundo abierto", proscenium: "Proscenio" };
+const VIEW_LABELS: Record<string, string> = {
+  overworld: "Mundo abierto",
+  proscenium: "Proscenio",
+  fps: "Primera persona",
+};
 const RENDER_MODE_LABELS: Record<string, string> = { image: "Imagen IA", vector: "Maqueta 3D" };
 const CHAR_MODE_LABELS: Record<string, string> = { image: "Skins IA", vector: "Personajes base" };
 /** Modo EFECTIVO de personajes: sin campo, sigue a los escenarios (legacy). */

@@ -139,7 +139,8 @@ describe("games loader", () => {
         { category: "stage_interior", file: "stage_interior.jpg", view: "proscenium" },
       ],
     });
-    assert.deepEqual(styleViews(m), ["overworld", "proscenium"]);
+    // fps se deriva de overworld (sin categorías propias — ver styleViews).
+    assert.deepEqual(styleViews(m), ["overworld", "proscenium", "fps"]);
     // view explícita que no casa con la categoría → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({
@@ -178,8 +179,15 @@ describe("games loader", () => {
         { category: "character_warrior", file: "w.jpg" },
       ],
     });
+    // Un pack SOLO de plató no sirve fps (fps deriva de overworld).
     assert.deepEqual(styleViews(soloStage), ["proscenium"]);
     assert.deepEqual(styleViews(StyleManifestSchema.parse({ ...base, refs: [] })), []);
+    // Un pack solo cenital sirve overworld Y fps.
+    const soloEnv = StyleManifestSchema.parse({
+      ...base,
+      refs: [{ category: "forest", file: "f.jpg" }],
+    });
+    assert.deepEqual(styleViews(soloEnv), ["overworld", "fps"]);
   });
 
   it("schema estricto: categoría de ref desconocida es rechazada", () => {
@@ -240,9 +248,10 @@ describe("games loader", () => {
       styles.map((s) => s.style_id),
       ["acero_neon", "acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
     );
-    // Vistas: los 4 packs shipped sirven a AMBAS (refs de zona + de plató).
+    // Vistas: los 4 packs shipped sirven a TODAS (refs de zona + de plató;
+    // fps se deriva de overworld — no tiene categorías propias).
     for (const s of styles) {
-      assert.deepEqual(s.views, ["overworld", "proscenium"], s.style_id);
+      assert.deepEqual(s.views, ["overworld", "proscenium", "fps"], s.style_id);
     }
     // La vista default de cada mundo viaja resuelta en el listado (ninguno
     // declara view ⇒ overworld; la vista es del jugador, no del mundo).

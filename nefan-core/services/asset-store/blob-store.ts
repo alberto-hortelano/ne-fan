@@ -34,6 +34,7 @@ const KIND_TABLE: Record<string, { type: string; filename: string; contentType: 
   plate: { type: "scene", filename: "plate.png", contentType: "image/png" },
   segment: { type: "segment", filename: "segment.png", contentType: "image/png" },
   model: { type: "model", filename: "model.glb", contentType: "model/gltf-binary" },
+  surface: { type: "surface", filename: "surface.png", contentType: "image/png" },
 };
 
 const TEXTURE_MAPS = new Set(["albedo", "normal", "roughness"]);
