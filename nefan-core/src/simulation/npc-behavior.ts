@@ -112,6 +112,21 @@ const FIGHT_EVENT_TYPES = new Set(["attack_started", "attack_landed", "damage_re
 const DEFLECTION_ANGLES = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2,
   (3 * Math.PI) / 4, -(3 * Math.PI) / 4];
 
+/** Velocidad angular máxima del facing serializado (rad/s). Sin acotar, un
+ *  NPC atascado cuya deflexión aceptada alterna de signo cada tick emitía un
+ *  forward saltando 90-135°/tick y el billboard fps parpadeaba entre frames
+ *  de dirección a frecuencia de frame. */
+const FORWARD_SLEW_RAD_S = Math.PI * 2;
+/** Watchdog de atasco: la deflexión produce ciclos límite que el bloqueo
+ *  total de stepTowards no detecta — vibración sin avance neto, o "paseo"
+ *  de ida y vuelta a lo largo de un muro (el rodeo ±90° de un rumbo que
+ *  rota se bloquea en ambos extremos). Cada STUCK_WINDOW_S se compara la
+ *  posición con el ancla: avanzar menos de STUCK_DIST_M ⇒ rendirse igual
+ *  que en el bloqueo total. A velocidad de paseo (≥1 m/s) un avance real
+ *  recorre ≥3× la distancia umbral por ventana. */
+const STUCK_WINDOW_S = 3.0;
+const STUCK_DIST_M = 1.0;
+
 interface NpcRuntime {
   record: EntityRecord;
   params: NpcRoleParams;
@@ -134,6 +149,11 @@ interface NpcRuntime {
   directiveKey: string;
   /** Meta ya alcanzada ("place:<id>" | "npc:<id>") — evita re-emitir eventos. */
   reachedGoal: string | null;
+  /** Última deflexión aceptada — se reintenta antes que las demás para que
+   *  el rodeo de un obstáculo no alterne de signo entre ticks. */
+  lastDeflection: number | null;
+  /** Ancla del watchdog de atasco: posición + tiempo acumulado sin avance. */
+  stuckAnchor: { x: number; z: number; t: number } | null;
 }
 
 function rotate(dir: { x: number; z: number }, angle: number): { x: number; z: number } {
@@ -210,6 +230,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       threatTimer: 0,
       directiveKey: goalKeyOf(record),
       reachedGoal: null,
+      lastDeflection: null,
+      stuckAnchor: null,
     });
   }
 
@@ -470,7 +492,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       }
       rt.mode = "idle";
       rt.pauseTimer = Infinity; // quedarse de visita hasta nueva directiva
-      rt.forward = this.faceTowards(rt, target.x, target.z);
+      // Giro one-shot (en idle no se re-encara): sin slew.
+      rt.forward = this.faceTowards(rt, target.x, target.z, Number.POSITIVE_INFINITY);
       return;
     }
     rt.mode = "visit";
@@ -494,7 +517,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         return;
 
       case "react":
-        rt.forward = this.faceTowards(rt, ctx.playerPos.x, ctx.playerPos.z);
+        rt.forward = this.faceTowards(rt, ctx.playerPos.x, ctx.playerPos.z, delta);
         return;
 
       case "wander": {
@@ -544,7 +567,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         const dist = distXZ(px, pz, rt.danger.x, rt.danger.z);
         if (dist >= rt.params.perception_radius + FLEE_EXTRA_DIST) {
           // A salvo: parar y mirar hacia la pelea desde lejos.
-          rt.forward = this.faceTowards(rt, rt.danger.x, rt.danger.z);
+          rt.forward = this.faceTowards(rt, rt.danger.x, rt.danger.z, delta);
           return;
         }
         const away = {
@@ -569,7 +592,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         }
         // Plantado frente al hostil: encararlo y amenazar cíclicamente con el
         // sprite de ataque quick. Sin daño real en v1 (joins_combat: false).
-        rt.forward = this.faceTowards(rt, rt.danger.x, rt.danger.z);
+        rt.forward = this.faceTowards(rt, rt.danger.x, rt.danger.z, delta);
         rt.threatTimer += delta;
         if (rt.threatTimer >= THREAT_PERIOD) rt.threatTimer -= THREAT_PERIOD;
         rt.anim = rt.threatTimer < THREAT_ANIM_WINDOW ? "quick" : undefined;
@@ -591,31 +614,82 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     const px = rt.record.position[0];
     const pz = rt.record.position[2];
     const dist = distXZ(px, pz, tx, tz);
-    if (dist <= reachedDist) return true;
+    if (dist <= reachedDist) {
+      rt.stuckAnchor = null;
+      return true;
+    }
+
+    // Watchdog de atasco: al expirar cada ventana, rendirse si no hubo
+    // avance neto desde el ancla (el ancla NO se re-ancla antes: un paseo de
+    // ida y vuelta junto a un muro debe contar como atasco).
+    const anchor = rt.stuckAnchor;
+    if (!anchor) {
+      rt.stuckAnchor = { x: px, z: pz, t: 0 };
+    } else {
+      anchor.t += delta;
+      if (anchor.t >= STUCK_WINDOW_S) {
+        if (distXZ(px, pz, anchor.x, anchor.z) < STUCK_DIST_M) {
+          this.giveUpMove(rt);
+          return false;
+        }
+        anchor.x = px;
+        anchor.z = pz;
+        anchor.t = 0;
+      }
+    }
 
     const dir = { x: (tx - px) / dist, z: (tz - pz) / dist };
     const step = Math.min(speed * delta, dist);
     // TODO(A*): steering por deflexión se atasca en cul-de-sacs; la máscara
     // walkable + BFS de scene-validate.ts es el molde para pathfinding real.
-    for (const angle of DEFLECTION_ANGLES) {
+    // Orden: directa primero (que el rodeo no se eternice en espiral), luego
+    // la última deflexión aceptada (pegajosa: sin ella el rodeo alterna de
+    // signo entre ticks y el NPC vibra sin avanzar), luego el resto.
+    const last = rt.lastDeflection;
+    const angles = last !== null && last !== 0
+      ? [0, last, ...DEFLECTION_ANGLES.filter((a) => a !== 0 && a !== last)]
+      : DEFLECTION_ANGLES;
+    for (const angle of angles) {
       const d = angle === 0 ? dir : rotate(dir, angle);
       const nx = px + d.x * step;
       const nz = pz + d.z * step;
       if (this.world.blocksMove(px, pz, nx, nz, NPC_RADIUS)) continue;
       rt.record.position[0] = nx;
       rt.record.position[2] = nz;
-      rt.forward = { x: d.x, y: 0, z: d.z };
+      rt.lastDeflection = angle;
+      rt.forward = this.slewForward(rt, d.x, d.z, delta);
       rt.moving = true;
       return distXZ(nx, nz, tx, tz) <= reachedDist;
     }
     // Bloqueado en todas las direcciones: soltar el waypoint y pausar la
     // rutina. flee/intervene conservan su modo (updateDanger los gestiona).
+    this.giveUpMove(rt);
+    return false;
+  }
+
+  /** Rendición del steering (bloqueo total o watchdog): soltar waypoint y
+   *  pausar la rutina; flee/intervene conservan su modo. */
+  private giveUpMove(rt: NpcRuntime): void {
     rt.waypoint = null;
+    rt.stuckAnchor = null;
+    rt.lastDeflection = null;
     if (rt.mode === "wander" || rt.mode === "goto" || rt.mode === "visit") {
       rt.mode = "idle";
       rt.pauseTimer = 1 + this.rng.next() * 2;
     }
-    return false;
+  }
+
+  /** Gira rt.forward hacia (dirX,dirZ) acotado a FORWARD_SLEW_RAD_S. */
+  private slewForward(rt: NpcRuntime, dirX: number, dirZ: number, delta: number): Vec3 {
+    const cur = Math.atan2(rt.forward.x, rt.forward.z);
+    const tgt = Math.atan2(dirX, dirZ);
+    let diff = tgt - cur;
+    if (diff > Math.PI) diff -= Math.PI * 2;
+    else if (diff < -Math.PI) diff += Math.PI * 2;
+    const maxStep = FORWARD_SLEW_RAD_S * delta;
+    if (Math.abs(diff) <= maxStep) return { x: dirX, y: 0, z: dirZ };
+    const yaw = cur + Math.sign(diff) * maxStep;
+    return { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) };
   }
 
   private pickWanderWaypoint(rt: NpcRuntime): { x: number; z: number } | null {
@@ -636,12 +710,12 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     return null;
   }
 
-  private faceTowards(rt: NpcRuntime, tx: number, tz: number): Vec3 {
+  private faceTowards(rt: NpcRuntime, tx: number, tz: number, delta: number): Vec3 {
     const px = rt.record.position[0];
     const pz = rt.record.position[2];
     const d = distXZ(px, pz, tx, tz);
     if (d < 1e-6) return rt.forward;
-    return { x: (tx - px) / d, y: 0, z: (tz - pz) / d };
+    return this.slewForward(rt, (tx - px) / d, (tz - pz) / d, delta);
   }
 
   private warnOnce(key: string, msg: string): void {
