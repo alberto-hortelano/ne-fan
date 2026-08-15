@@ -25,6 +25,7 @@ export class ScriptedInputProvider implements InputProvider {
 
   private attackIds: readonly string[] = DEFAULT_ATTACK_IDS;
   private zoomAccum = 0;
+  private lookAccum = 0;
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
@@ -61,6 +62,11 @@ export class ScriptedInputProvider implements InputProvider {
     this.zoomAccum += steps;
   }
 
+  /** Equivalente a mover el ratón deltaX píxeles bajo pointer lock. */
+  queueLook(deltaX: number): void {
+    this.lookAccum += deltaX;
+  }
+
   queueTileConfirm(): void {
     this.tileConfirmRequested = true;
   }
@@ -93,6 +99,12 @@ export class ScriptedInputProvider implements InputProvider {
     const z = this.zoomAccum;
     this.zoomAccum = 0;
     return z;
+  }
+
+  consumeLookDelta(): number {
+    const d = this.lookAccum;
+    this.lookAccum = 0;
+    return d;
   }
 
   consumeAttack(): boolean {

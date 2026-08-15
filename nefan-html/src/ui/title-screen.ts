@@ -239,7 +239,7 @@ export class TitleScreen {
           </button>
           <button data-view="fps" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
             <div style="font-size:13px">Primera persona</div>
-            <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS con giro de 8 direcciones</div>
+            <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS: el ratón mira, WASD mueve</div>
           </button>
         </div>
       </div>

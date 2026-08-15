@@ -504,6 +504,14 @@ function applySessionView(view: string): void {
         }
         return { cells, size };
       });
+      // El canvas 2D (#game) queda oculto en fps, así que su listener de
+      // click → pointer lock no puede disparar: el lock se pide sobre el
+      // canvas WebGL propio de la vista, que es el que recibe los clicks.
+      fpsRenderer.element.addEventListener("click", () => {
+        if (!dialoguePanel.isVisible) {
+          fpsRenderer?.element.requestPointerLock();
+        }
+      });
     }
     activeRenderer = fpsRenderer;
     fpsRenderer.setVisible(true);
@@ -524,7 +532,7 @@ function applySessionView(view: string): void {
         // setActiveClientTile no volverá a ejecutarse si el tile no cambia.
         void fpsAtlasController.onActiveTile(activeTileKey).catch(() => {});
       }
-      log("Vista: primera persona (giro con ←/→, WASD para moverte)");
+      log("Vista: primera persona (click captura el ratón para mirar, ←/→ giran 45°, WASD para moverte)");
     }
   } else {
     activeRenderer = renderer;
@@ -532,6 +540,9 @@ function applySessionView(view: string): void {
     prosceniumRenderer?.clearStage();
     fpsRenderer?.setVisible(false);
   }
+  // El forward depende de la vista (fps = yaw libre; resto = snap a 8 ejes):
+  // resincronizar al cambiar de modo.
+  if (changed) refreshPlayerForward();
 }
 
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
@@ -1528,15 +1539,24 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
   }));
 }
 
-// --- Orientación con flechas de dirección ---
+// --- Orientación con flechas de dirección (y ratón en fps) ---
 let playerYaw = Math.PI; // facing -Z initially
 
-/** El giro NO es libre: las flechas fijan un yaw objetivo, pero el forward
- *  efectivo (facing del sprite Y marco del WASD relativo) se snapea al eje de
- *  ANIMACIÓN más cercano de los 8 — sprite y desplazamiento coinciden
- *  siempre. En isométrica los ejes diagonales son los ejes X/Z del mundo:
- *  andar en diagonal sigue las líneas de la cuadrícula sin desvío. */
+/** Sensibilidad del mouse look en fps: radianes de yaw por píxel de
+ *  movementX bajo pointer lock (~0.14°/px, en el rango típico de un FPS). */
+const MOUSE_SENS_RAD_PER_PX = 0.0025;
+
+/** En oblicua/proscenio el giro NO es libre: las flechas fijan un yaw
+ *  objetivo, pero el forward efectivo (facing del sprite Y marco del WASD
+ *  relativo) se snapea al eje de ANIMACIÓN más cercano de los 8 — sprite y
+ *  desplazamiento coinciden siempre. En fps el yaw es CONTINUO (mouse look):
+ *  el forward sale del yaw sin snap — el jugador no se dibuja como sprite y
+ *  los sprites 8-dir de los NPCs ya cuantizan solos desde yaw continuo. */
 function refreshPlayerForward(): void {
+  if (sessionView === "fps") {
+    playerForward = { x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) };
+    return;
+  }
   const [fx, fz] = sessionProjection.snapForwardToAxis(Math.sin(playerYaw), Math.cos(playerYaw));
   playerForward = { x: fx, y: 0, z: fz };
 }
@@ -1549,10 +1569,17 @@ let prevTurnLeft = false;
 let prevTurnRight = false;
 
 function applyTurnKeys(): void {
-  // Vista fps: giro INCREMENTAL discreto — cada pulsación de ←/→ gira 45°
+  // El delta de ratón se consume SIEMPRE (acumulador del provider): fuera de
+  // fps se descarta para que no se aplique de golpe al entrar en la vista.
+  const lookDx = input.consumeLookDelta();
+  // Vista fps: mouse look con yaw CONTINUO (ratón a la derecha = girar a la
+  // derecha, mismo signo que turnRight) + giro de 45° por pulsación de ←/→
   // (flanco de subida; mantener no repite). ↑/↓ no hacen nada (sin pitch).
-  // El snap a octante de refreshPlayerForward es idempotente sobre ±45°.
   if (sessionView === "fps") {
+    if (lookDx !== 0) {
+      playerYaw -= lookDx * MOUSE_SENS_RAD_PER_PX;
+      refreshPlayerForward();
+    }
     if (input.state.turnLeft && !prevTurnLeft) {
       playerYaw += Math.PI / 4;
       refreshPlayerForward();
@@ -1578,8 +1605,9 @@ function applyTurnKeys(): void {
   refreshPlayerForward();
 }
 
-// El pointer lock se conserva para atacar con LMB (y ocultar el cursor);
-// el ratón ya NO orienta al personaje.
+// Pointer lock en el canvas 2D: oculta el cursor y habilita atacar con LMB.
+// En oblicua/proscenio el ratón NO orienta al personaje (solo en fps, cuyo
+// lock vive en el canvas WebGL propio — ver applySessionView).
 canvas.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
     canvas.requestPointerLock();
@@ -1795,11 +1823,12 @@ function gameLoop(now: number): void {
       // lateral. El movimiento nunca toca la orientación: por eso se puede
       // retroceder o desplazarse de lado sin dejar de encarar al enemigo.
       // Se renormaliza para que la diagonal no sea más rápida.
-      // playerForward está SNAPEADO a los 8 ejes de animación
+      // Fuera de fps, playerForward está SNAPEADO a los 8 ejes de animación
       // (refreshPlayerForward) y las combinaciones de teclas bisecan ejes
       // adyacentes (45°), así que TODA dirección de desplazamiento cae en uno
       // de los 8 ejes — en isométrica, o sobre las líneas de la cuadrícula
       // (diagonales de pantalla) o de vértice a vértice (horizontal/vertical).
+      // En fps el forward es continuo (mouse look) y el marco vale igual.
       const rx = -playerForward.z; // right = forward rotado 90° horario
       const rz = playerForward.x;
       const mx = playerForward.x * inputFwd + rx * inputRight;

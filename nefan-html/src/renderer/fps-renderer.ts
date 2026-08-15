@@ -79,6 +79,12 @@ export class FpsRenderer implements Renderer2D {
       });
   }
 
+  /** Canvas WebGL propio de la vista fps (el #game 2D queda oculto): es el
+   *  elemento visible al que main.ts engancha el click → pointer lock. */
+  get element(): HTMLCanvasElement {
+    return this.el;
+  }
+
   private withGl(fn: (gl: FpsGl) => void): void {
     if (this.gl) fn(this.gl);
     else this.pending.push(fn);
