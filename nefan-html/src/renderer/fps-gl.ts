@@ -45,6 +45,28 @@ export interface AtlasImage {
   kind: "tile" | "unique";
 }
 
+/** Modos de la tecla B en fps (espejo del ciclo de las otras vistas). */
+export type FpsDebugView = "off" | "collision" | "surfaces";
+
+/** Celdas sólidas del tile activo, en METROS de mundo (esquina mínima). */
+export interface FpsDebugCollision {
+  cells: [number, number][];
+  size: number;
+}
+
+/** Altura del overlay de colisión: por encima del stack de suelo (deck top
+ *  ~0.105 m + stagger de fps-spec). */
+const DEBUG_COLLISION_Y = 0.2;
+
+/** Tinte determinista por celda de atlas (modo surfaces). */
+function tintColor(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  const c = new THREE.Color();
+  c.setHSL((h % 360) / 360, 0.75, 0.55);
+  return c.getHex();
+}
+
 interface TileEntry {
   group: THREE.Group;
   /** Materiales por celda del atlas (varios prims comparten celda). */
@@ -184,6 +206,17 @@ function skyDome(): THREE.Mesh {
 /** Yaw de un vector XZ (0 = +z, crece hacia +x). */
 const yawOf = (x: number, z: number) => Math.atan2(x, z);
 
+/** Diferencia angular normalizada a (−π, π]. */
+const angleDiff = (a: number, b: number) => {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  else if (d <= -Math.PI) d += Math.PI * 2;
+  return d;
+};
+
+/** Margen de histéresis del frame direccional del billboard (~10°). */
+const DIR_HYST_RAD = Math.PI / 18;
+
 export class FpsGl {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -191,11 +224,19 @@ export class FpsGl {
   private tiles = new Map<string, TileEntry>();
   private lightsGroup: THREE.Group | null = null;
   private sky: THREE.Mesh;
-  private billboards = new Map<string, { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial }>();
+  private billboards = new Map<
+    string,
+    { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial; lastDir?: number }
+  >();
   private texByImage = new WeakMap<HTMLImageElement, THREE.Texture>();
   private renderYaw = 0;
   private lastNow = 0;
   private activeKey: string | null = null;
+  private debugView: FpsDebugView = "off";
+  private collisionMesh: THREE.InstancedMesh | null = null;
+  private forwardArrows = new Map<string, THREE.ArrowHelper>();
+  /** map/color originales de los materiales tintados por el modo surfaces. */
+  private tintSaved = new Map<THREE.MeshStandardMaterial, { map: THREE.Texture | null; color: number }>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -210,7 +251,10 @@ export class FpsGl {
     // comprime las altas luces sin apagar la escena.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
-    this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 600);
+    // near 0.3 (no 0.1): ×3 de precisión de z-buffer — con 0.1 las capas del
+    // suelo (separadas 2 mm por el stagger de fps-spec) aún z-fighteaban a
+    // media distancia. Nada renderiza a <0.3 m del ojo (radio jugador 0.4).
+    this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.3, 600);
     this.sky = skyDome();
     this.scene.add(this.sky);
     this.scene.fog = new THREE.Fog(SKY_BOTTOM, FOG_NEAR, FOG_FAR);
@@ -355,6 +399,10 @@ export class FpsGl {
   removeTile(key: string): void {
     const entry = this.tiles.get(key);
     if (!entry) return;
+    // Los materiales del tile mueren con él: fuera del snapshot del tinte.
+    for (const mats of entry.materialsByCell.values()) {
+      for (const m of mats) this.tintSaved.delete(m);
+    }
     this.scene.remove(entry.group);
     entry.group.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -386,6 +434,10 @@ export class FpsGl {
   applyAtlas(key: string, images: Map<string, AtlasImage>): void {
     const entry = this.tiles.get(key);
     if (!entry) return;
+    // Con el tinte de surfaces activo, restaurar antes de mutar los
+    // materiales y re-tintar después (el snapshot quedaría stale).
+    const retint = this.debugView === "surfaces";
+    if (retint) this.clearTint();
     for (const [cellKey, { image, kind }] of images) {
       const mats = entry.materialsByCell.get(cellKey);
       if (!mats) continue;
@@ -406,11 +458,14 @@ export class FpsGl {
     // Con atlas, el detalle procedural clay lee como parches planos: fuera.
     for (const mesh of entry.detailMeshes) mesh.visible = false;
     entry.textured = true;
+    if (retint) this.applyTint();
   }
 
   clearAtlas(key: string): void {
     const entry = this.tiles.get(key);
     if (!entry) return;
+    const retint = this.debugView === "surfaces";
+    if (retint) this.clearTint();
     for (const mats of entry.materialsByCell.values()) {
       for (const m of mats) {
         m.map?.dispose();
@@ -420,6 +475,76 @@ export class FpsGl {
     }
     for (const mesh of entry.detailMeshes) mesh.visible = true;
     entry.textured = false;
+    if (retint) this.applyTint();
+  }
+
+  /** Tecla B: overlay de debug. `collision` sólo aplica al modo collision. */
+  setDebugView(mode: FpsDebugView, collision: FpsDebugCollision | null): void {
+    if (this.debugView === "surfaces" && mode !== "surfaces") this.clearTint();
+    if (this.debugView === "collision" && mode !== "collision") this.clearCollisionDebug();
+    this.debugView = mode;
+    if (mode === "collision") this.buildCollisionDebug(collision);
+    else if (mode === "surfaces") {
+      this.clearTint();
+      this.applyTint();
+    }
+  }
+
+  private buildCollisionDebug(c: FpsDebugCollision | null): void {
+    this.clearCollisionDebug();
+    if (!c || c.cells.length === 0) return;
+    const geo = new THREE.PlaneGeometry(c.size, c.size);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff3c3c,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+    const inst = new THREE.InstancedMesh(geo, mat, c.cells.length);
+    const m = new THREE.Matrix4();
+    c.cells.forEach(([x, z], i) => {
+      m.makeTranslation(x + c.size / 2, DEBUG_COLLISION_Y, z + c.size / 2);
+      inst.setMatrixAt(i, m);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    inst.frustumCulled = false;
+    this.collisionMesh = inst;
+    this.scene.add(inst);
+  }
+
+  private clearCollisionDebug(): void {
+    if (this.collisionMesh) {
+      this.scene.remove(this.collisionMesh);
+      this.collisionMesh.geometry.dispose();
+      (this.collisionMesh.material as THREE.Material).dispose();
+      this.collisionMesh = null;
+    }
+    for (const a of this.forwardArrows.values()) this.scene.remove(a);
+    this.forwardArrows.clear();
+  }
+
+  private applyTint(): void {
+    for (const entry of this.tiles.values()) {
+      for (const [cellKey, mats] of entry.materialsByCell) {
+        const color = tintColor(cellKey);
+        for (const m of mats) {
+          if (!this.tintSaved.has(m)) this.tintSaved.set(m, { map: m.map, color: m.color.getHex() });
+          m.map = null;
+          m.color.setHex(color);
+          m.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  private clearTint(): void {
+    for (const [m, saved] of this.tintSaved) {
+      m.map = saved.map;
+      m.color.setHex(saved.color);
+      m.needsUpdate = true;
+    }
+    this.tintSaved.clear();
   }
 
   /** Billboard 8-dir de una entidad con sprite; caja esquemática si no. */
@@ -440,6 +565,20 @@ export class FpsGl {
     const toCamX = this.cam.position.x - e.pos.x;
     const toCamZ = this.cam.position.z - e.pos.z;
     slot.mesh.rotation.y = yawOf(toCamX, toCamZ);
+    // Modo collision: flecha del forward del sim sobre cada personaje
+    // (diagnóstico de NPCs atascados cambiando de dirección).
+    if (this.debugView === "collision" && e.forward) {
+      const dir = new THREE.Vector3(e.forward.x, 0, e.forward.z).normalize();
+      let arrow = this.forwardArrows.get(e.id);
+      if (!arrow) {
+        arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(), 1.4, 0x22ddff, 0.4, 0.25);
+        this.forwardArrows.set(e.id, arrow);
+        this.scene.add(arrow);
+      }
+      arrow.position.set(e.pos.x, 2.1, e.pos.z);
+      arrow.setDirection(dir);
+      arrow.visible = true;
+    }
     if (e.sprite && this.spriteRenderer) {
       const sheet = this.spriteRenderer.getCached(e.sprite.model, e.sprite.anim, e.sprite.angle);
       if (sheet) {
@@ -449,8 +588,21 @@ export class FpsGl {
         // Signo calibrado (bench cardinal): rel = yaw(cam→npc) − yaw_npc.
         const rel = yawOf(toCamX, toCamZ) - yawOf(fwd.x, fwd.z);
         const dirCount = sheet.directions || 8;
-        let dir = Math.round(rel / ((2 * Math.PI) / dirCount)) % dirCount;
-        if (dir < 0) dir += dirCount;
+        const step = (2 * Math.PI) / dirCount;
+        // Histéresis: en el borde entre dos octantes el frame conmutaba a
+        // frecuencia de frame (yaw del sim + yaw de cámara son continuos).
+        // Se conserva el octante vigente hasta salirse paso/2 + margen.
+        let dir: number;
+        if (
+          slot.lastDir !== undefined &&
+          Math.abs(angleDiff(rel, slot.lastDir * step)) <= step / 2 + DIR_HYST_RAD
+        ) {
+          dir = slot.lastDir;
+        } else {
+          dir = Math.round(rel / step) % dirCount;
+          if (dir < 0) dir += dirCount;
+          slot.lastDir = dir;
+        }
         try {
           const img = this.spriteRenderer.pickImage(sheet, dir, frame);
           if (img !== SPRITE_PENDING) {
@@ -530,7 +682,11 @@ export class FpsGl {
       this.updateObject(e);
     }
     for (const [id, slot] of this.billboards) {
-      if (!seen.has(id)) slot.mesh.visible = false;
+      if (!seen.has(id)) {
+        slot.mesh.visible = false;
+        const arrow = this.forwardArrows.get(id);
+        if (arrow) arrow.visible = false;
+      }
     }
 
     this.renderer.render(this.scene, this.cam);
@@ -543,10 +699,12 @@ export class FpsGl {
       textured: [...this.tiles.entries()].filter(([, t]) => t.textured).map(([k]) => k),
       renderYawDeg: Math.round((this.renderYaw * 180) / Math.PI),
       billboards: [...this.billboards.entries()].filter(([, s]) => s.mesh.visible).length,
+      debugView: this.debugView,
     };
   }
 
   dispose(): void {
+    this.setDebugView("off", null);
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
     for (const slot of this.billboards.values()) {
       this.scene.remove(slot.mesh);

@@ -15,7 +15,7 @@ import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import { errors } from "../ui/error-log.js";
 import type { Entity } from "./canvas-renderer.js";
-import type { AtlasImage, FpsGl } from "./fps-gl.js";
+import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
 import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
@@ -30,6 +30,13 @@ export interface FpsTileSurfaces {
   layout: SurfaceLayout;
 }
 
+export const FPS_DEBUG_VIEW_LABELS: Record<FpsDebugView, string> = {
+  off: "off",
+  collision: "colisión",
+  surfaces: "celdas de atlas",
+};
+const FPS_DEBUG_VIEW_ORDER: FpsDebugView[] = ["off", "collision", "surfaces"];
+
 export class FpsRenderer implements Renderer2D {
   private el: HTMLCanvasElement;
   private gl: FpsGl | null = null;
@@ -37,6 +44,10 @@ export class FpsRenderer implements Renderer2D {
   private surfaces = new Map<string, FpsTileSurfaces>();
   private visible = false;
   private onResize = () => this.syncSize();
+  private debugView: FpsDebugView = "off";
+  private debugLabel: HTMLDivElement;
+  private activeKey: string | null = null;
+  private collisionCells: ((tileKey: string) => FpsDebugCollision | null) | null = null;
 
   constructor(
     private host: HTMLCanvasElement,
@@ -47,6 +58,14 @@ export class FpsRenderer implements Renderer2D {
     this.el.style.display = "none";
     // Hermano del canvas 2D: hereda el CSS de `canvas { flex: 1 }`.
     host.parentElement?.insertBefore(this.el, host.nextSibling);
+    // Píldora de la tecla B: el canvas es WebGL (sin ctx 2D para pintarla
+    // como en las otras vistas) → div fijo, mismo look que las píldoras.
+    this.debugLabel = document.createElement("div");
+    this.debugLabel.id = "fps-debug-label";
+    this.debugLabel.style.cssText =
+      "position:fixed;top:8px;left:8px;z-index:30;display:none;pointer-events:none;" +
+      "background:rgba(10,10,16,0.78);color:#fff;font:12px monospace;padding:4px 10px;border-radius:4px;";
+    document.body.appendChild(this.debugLabel);
     window.addEventListener("resize", this.onResize);
     void import("./fps-gl.js")
       .then(({ FpsGl }) => {
@@ -76,7 +95,35 @@ export class FpsRenderer implements Renderer2D {
     this.visible = on;
     this.el.style.display = on ? "" : "none";
     this.host.style.display = on ? "none" : "";
+    this.debugLabel.style.display = on && this.debugView !== "off" ? "" : "none";
     if (on) this.syncSize();
+  }
+
+  /** Celdas sólidas por tile para el overlay B (main inyecta el muestreo del
+   *  CollisionSystem — la colisión NO vive en este renderer). */
+  setCollisionCellsProvider(fn: (tileKey: string) => FpsDebugCollision | null): void {
+    this.collisionCells = fn;
+  }
+
+  /** Tecla B: off → colisión → celdas de atlas. Devuelve el modo nuevo. */
+  cycleDebugView(): FpsDebugView {
+    const i = FPS_DEBUG_VIEW_ORDER.indexOf(this.debugView);
+    this.debugView = FPS_DEBUG_VIEW_ORDER[(i + 1) % FPS_DEBUG_VIEW_ORDER.length];
+    this.syncDebugView();
+    return this.debugView;
+  }
+
+  private syncDebugView(): void {
+    const mode = this.debugView;
+    this.debugLabel.textContent = `B · fps: ${FPS_DEBUG_VIEW_LABELS[mode]}`;
+    this.debugLabel.style.display = this.visible && mode !== "off" ? "" : "none";
+    this.withGl((gl) => {
+      const cells =
+        mode === "collision" && this.activeKey && this.collisionCells
+          ? this.collisionCells(this.activeKey)
+          : null;
+      gl.setDebugView(mode, cells);
+    });
   }
 
   /** Instala (o reinstala) el tile: spec fps (cutaways cerrados, metros) +
@@ -107,7 +154,10 @@ export class FpsRenderer implements Renderer2D {
   }
 
   setActiveTile(key: string | null): void {
+    this.activeKey = key;
     this.withGl((gl) => gl.setActive(key));
+    // El overlay de colisión es del tile activo: reconstruirlo al cambiar.
+    if (this.debugView !== "off") this.syncDebugView();
   }
 
   applyAtlas(key: string, images: Map<string, AtlasImage>): void {
@@ -143,6 +193,7 @@ export class FpsRenderer implements Renderer2D {
   dispose(): void {
     window.removeEventListener("resize", this.onResize);
     this.gl?.dispose();
+    this.debugLabel.remove();
     this.el.remove();
   }
 }

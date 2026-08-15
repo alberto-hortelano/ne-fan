@@ -31,7 +31,7 @@ import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity }
 import { rendererRegistry } from "./renderer/registry.js";
 import type { Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
-import { FpsRenderer } from "./renderer/fps-renderer.js";
+import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
@@ -490,6 +490,20 @@ function applySessionView(view: string): void {
         spriteRenderer,
         oblique: renderer,
       }) as FpsRenderer;
+      // Overlay B "colisión": muestreo del CollisionSystem (fuente única de
+      // verdad, incluye imagen/plan/AABBs) por celda de 0.5 m del tile.
+      fpsRenderer.setCollisionCellsProvider((tileKey) => {
+        const entry = tileStore.entries.get(tileKey);
+        if (!entry) return null;
+        const size = 0.5; // TILE_MPC
+        const cells: [number, number][] = [];
+        for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += size) {
+          for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += size) {
+            if (collidesAt(x + size / 2, z + size / 2)) cells.push([x, z]);
+          }
+        }
+        return { cells, size };
+      });
     }
     activeRenderer = fpsRenderer;
     fpsRenderer.setVisible(true);
@@ -1731,6 +1745,12 @@ function gameLoop(now: number): void {
     if (sessionView === "proscenium" && prosceniumRenderer) {
       const mode = prosceniumRenderer.cycleDebugView();
       log(`B · overlay plató: ${STAGE_DEBUG_VIEW_LABELS[mode]}`);
+    } else if (sessionView === "fps" && fpsRenderer) {
+      // Ciclo propio fps: colisión (celdas sólidas + forward de NPCs) y
+      // celdas de atlas (tinte por celda) — el ciclo del oblicuo pintaría en
+      // el canvas #game, oculto en esta vista.
+      const mode = fpsRenderer.cycleDebugView();
+      log(`B · fps: ${FPS_DEBUG_VIEW_LABELS[mode]}`);
     } else {
       const mode = renderer.cycleDebugView();
       log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
