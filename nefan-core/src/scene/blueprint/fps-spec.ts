@@ -19,6 +19,31 @@ import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
 import { buildTileGreyboxSpec, type TileGreyboxPlan, type TileGreyboxSpec } from "./greybox.js";
 
+/** Separación extra por prim entre rasgos planos del suelo (metros). El
+ *  greybox escalona ENTRE capas (área<path<agua<deck) pero dentro de una capa
+ *  todas las prims comparten y — coplanares exactas (cajas de segmento +
+ *  cilindros de junta de un path). En la oblicua no importa (se rasteriza una
+ *  vez a PNG ortográfico); en la perspectiva fps en tiempo real z-fightean.
+ *  2 mm por prim es invisible a pie pero supera la precisión del z-buffer
+ *  hasta el fog (~1.6 mm a 90 m con near 0.3). No se toca el builder
+ *  compartido: su spec canónico es el layout_key del arte pagado. */
+const GROUND_STAGGER_M = 0.002;
+
+/** Banda de elevación (celdas) de los rasgos ground del greybox: Y_AREA 0.05
+ *  … Y_DECK 0.18. El detalle procedural queda por debajo (≤0.05 con cat
+ *  decor) y el agua de fuente muy por encima (1.05, cat water). */
+const GROUND_BAND_MIN = 0.045;
+const GROUND_BAND_MAX = 0.185;
+
+function isGroundFeaturePrim(p: GreyboxPrimitive): boolean {
+  return (
+    (p.cat === "terrain" || p.cat === "water") &&
+    p.noShadow === true &&
+    p.pos[1] >= GROUND_BAND_MIN &&
+    p.pos[1] <= GROUND_BAND_MAX
+  );
+}
+
 export interface FpsTileSpec {
   /** Spec del builder (unidades CELDAS — coherente con elements/occluders). */
   spec: TileGreyboxSpec;
@@ -56,8 +81,17 @@ export function buildFpsTileSpec(plan: TileGreyboxPlan, seedKey: string): FpsTil
     if (desc) heroByVolId.set(`vol_${v.id}`, desc);
   }
 
+  let groundIdx = 0;
   const primsM: SurfacePrim[] = spec.primitives.map((p) => {
     const scaled: SurfacePrim = scalePrim(p);
+    // Stagger intra-capa de los rasgos planos del suelo (anti z-fighting).
+    // El orden de emisión es el contractual (área→path→agua→deck, juntas
+    // tras sus cajas), así que el índice creciente preserva la prioridad
+    // visual del contrato y las juntas ganan en los codos.
+    if (isGroundFeaturePrim(p)) {
+      groundIdx += 1;
+      scaled.pos = [scaled.pos[0], scaled.pos[1] + groundIdx * GROUND_STAGGER_M, scaled.pos[2]];
+    }
     const desc = p.volId ? heroByVolId.get(p.volId) : undefined;
     if (desc) {
       scaled.hero = true;

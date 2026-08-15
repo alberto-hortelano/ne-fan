@@ -142,4 +142,41 @@ describe("buildFpsTileSpec", () => {
     assert.equal(hero.en, "facade with a faded sun mural");
     assert.equal(hero.kind, "unique");
   });
+
+  it("stagger anti z-fighting: los rasgos ground no comparten y, determinista", () => {
+    const plan = medievalPlan();
+    const parsed = parseVolumes(plan.volumes);
+    assert.ok(parsed.ok);
+    // Camino con codo (2 cajas + 3 juntas cilíndricas) + plaza: en el greybox
+    // compartido todas las prims de una capa son coplanares exactas.
+    const ground = [
+      { id: "camino", kind: "path" as const, points: [[20, 20], [80, 20], [80, 80]] as [number, number][], w: 4, material: "dirt" as const },
+      { id: "plaza", kind: "area" as const, rect: [30, 30, 20, 20] as [number, number, number, number], material: "cobblestone" as const },
+    ];
+    const build = () =>
+      buildFpsTileSpec({ ground, volumes: parsed.volumes, biome: "dirt" }, "test_fps");
+    const { spec, primsM } = build();
+    // Rasgos ground = prims terrain|water noShadow en la banda de capas
+    // (Y_AREA 0.05 … Y_DECK 0.18 en celdas → índice compartido con el spec).
+    const groundIdxs = spec.primitives
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => (p.cat === "terrain" || p.cat === "water") && p.noShadow && p.pos[1] >= 0.045 && p.pos[1] <= 0.185)
+      .map(({ i }) => i);
+    assert.ok(groundIdxs.length >= 6, `camino+plaza emiten ≥6 prims ground (hay ${groundIdxs.length})`);
+    const ys = groundIdxs.map((i) => primsM[i].pos[1]);
+    assert.equal(new Set(ys).size, ys.length, "ninguna pareja de rasgos ground comparte y exacta");
+    // Cada prim sube respecto a su y escalada, poco (stagger mm, no cm por prim).
+    for (const i of groundIdxs) {
+      const lift = primsM[i].pos[1] - spec.primitives[i].pos[1] * 0.5;
+      assert.ok(lift > 0 && lift <= groundIdxs.length * 0.002 + 1e-9, `lift ${lift} en rango`);
+    }
+    // Las prims NO ground (suelo base, detalle, volúmenes) no se desplazan.
+    for (let i = 0; i < spec.primitives.length; i++) {
+      if (groundIdxs.includes(i)) continue;
+      assert.ok(Math.abs(primsM[i].pos[1] - spec.primitives[i].pos[1] * 0.5) < 1e-9);
+    }
+    // Determinista: dos builds → mismas y.
+    const again = build();
+    assert.deepEqual(groundIdxs.map((i) => again.primsM[i].pos[1]), ys);
+  });
 });
