@@ -15,6 +15,7 @@
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains } from "./blueprint/ground-collision.js";
+import { parseScatter } from "./blueprint/scatter.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
 import { parseStage, type StageBlock } from "./stage/schema.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
@@ -245,6 +246,14 @@ export function validateScene(
       }
     }
   }
+  // ── Scatter declarativo (vista fps): validación fail-loud con ruta exacta
+  // (parseScatter) — el motor recibe el error preciso al responder, no un
+  // bloque silenciosamente ignorado en runtime. ────────────────────────────
+  if (rawScene.scatter_generators !== undefined || rawScene.scatter_zones !== undefined) {
+    const parsedScatter = parseScatter(rawScene.scatter_generators, rawScene.scatter_zones);
+    if (!parsedScatter.ok) errors.push(`scatter inválido: ${parsedScatter.error}`);
+  }
+
   const walkableCells = walkable.filter(Boolean).length;
   const cellWalkable = ([c, r]: [number, number]): boolean =>
     c >= 0 && r >= 0 && c < cols && r < rows && walkable[r * cols + c];

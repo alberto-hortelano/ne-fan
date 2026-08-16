@@ -1,0 +1,39 @@
+{
+ "description": "surface_desc por cara/rol (vista fps): un cartel con imagen distinta por cara grande y un edificio con fachadas/tejado/puerta separados",
+ "expect": "accept",
+ "payload": {
+  "volumes": [
+   {
+    "id": "cartel_plaza",
+    "label": "cartel de la plaza",
+    "type": "prop",
+    "rect": [40, 40, 8, 1],
+    "shape": "box",
+    "h": 6,
+    "surface_desc": {
+     "s": "painted wooden notice board with a market announcement",
+     "n": "weathered back of a wooden notice board, plain planks"
+    }
+   },
+   {
+    "id": "cantina",
+    "label": "cantina",
+    "type": "building",
+    "rect": [60, 60, 12, 10],
+    "doors": [{ "edge": "s", "at": 4 }],
+    "surface_desc": {
+     "side": "brushed steel prefab wall with a cyan neon sign",
+     "roof": "corrugated metal roofing with solar panels",
+     "door": "heavy airlock door with warning stripes"
+    }
+   },
+   {
+    "id": "muro_mural",
+    "label": "muro con mural",
+    "type": "wall",
+    "points": [[10, 20], [30, 20]],
+    "surface_desc": "long mural of a harvest festival painted on plaster"
+   }
+  ]
+ }
+}

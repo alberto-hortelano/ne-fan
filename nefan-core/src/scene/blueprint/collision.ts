@@ -291,6 +291,14 @@ export function volumeCollisionGrid(
         // Geometría libre: rellena su contorno salvo que se declare no-sólida.
         if (v.solid !== false) markPolygon(grid, v.points, dims);
         break;
+      case "custom": {
+        // Composición libre: estampa el AABB de sus piezas (la MISMA huella
+        // del manifest — footprint.ts) salvo que se declare no-sólida.
+        if (v.solid === false) break;
+        const fp = volumeFootprint(v).cells;
+        markRect(grid, fp[0], fp[1], fp[2], fp[3], dims);
+        break;
+      }
       case "bush":
         break; // decorativo, no bloquea
     }

@@ -281,6 +281,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // (precedente world.perspective: se conservan en el JSON, nadie los lee).
     ground: Array.isArray(raw.ground) ? raw.ground : undefined,
     volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
+    // Scatter declarativo (vista fps): passthrough crudo — lo valida el gate
+    // de escena y, en render, parseScatter (fail-loud con ruta).
+    scatter_generators:
+      raw.scatter_generators && typeof raw.scatter_generators === "object"
+        ? raw.scatter_generators
+        : undefined,
+    scatter_zones: Array.isArray(raw.scatter_zones) ? raw.scatter_zones : undefined,
     // Bloque stage (mundos proscenio): passthrough — el cliente detecta la
     // escena de plató por este campo y compone las capas con
     // stagePlanFromScene sobre el Format D crudo (__format_d).

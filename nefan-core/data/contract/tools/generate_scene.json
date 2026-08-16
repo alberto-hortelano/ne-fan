@@ -115,14 +115,22 @@
       },
       "ground": {
         "type": "array",
-        "description": "Tiles AND proscenium stages, strongly recommended. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
+        "description": "Tiles AND proscenium stages. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles AND proscenium stages, strongly recommended. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop — or `prism` for a FREE polygon outline + height when no preset fits, e.g. a ruined tower's curved wall) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings and rect-props accept `angle` (degrees, CCW from above): rotated footprint drives collision and manifest — use varied small angles for village houses. building/wall/prop/prism accept optional `surface_desc` (English, <=200 chars): a description of that volume's visible surface for the first-person view — it is painted once as a unique texture and joins the reusable surface library. Use it only when a surface should look SPECIFIC (a faded mural, a heraldic gate); plain walls derive their look from material/color.",
+        "description": "Tiles AND proscenium stages. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop, `prism` for a free polygon outline + height, or `custom` for a FREE 3D composition: any object built from solid pieces — box/cylinder/cone/sphere/gable with local pos/rot/scale and colors, optional per-piece `desc` — the SURFACE of that piece's faces seen square-on, painted literally into its texture cell (the object's other pieces are separate geometry)) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings, rect-props and customs accept `angle` (degrees, CCW from above): the rotated footprint drives collision and manifest. building/wall/prop/prism accept optional `surface_desc` for the first-person view — painted once as a unique texture that joins the reusable surface library. The description is the flat SURFACE of the faces it covers (seen square-on), painted literally. Either a string (<=200 chars: one texture for the BODY's side faces; roof/doors keep their derived material) or an object with a DIFFERENT description per face/role (keys n|s|e|w|side|roof|door|caps|top). Each description is its own asset; without one, surfaces derive from material/color.",
         "items": {
           "type": "object"
         }
+      },
+      "scatter_generators": {
+        "type": "object",
+        "description": "OPTIONAL (first-person view) — procedural filler generators as pure JSON: { \"<kind>\": { vars?, materials?, parts:[{shape:\"box\"|\"cylinder\"|\"cone\"|\"sphere\", mat?, seg?, pos?:[x,y,z] (y=BASE, cells), scale?, rotX?|rotY?|rotZ?, repeat?:{count}, vars?, + the shape's dims}] } }. Numeric fields accept literal | [min,max] | {var} | {int:[a,b]} | {op,a,b} | {lerp:[a,b]} (inside repeat). See the SCATTER section of the MAP PLAN instructions. Instances do not collide and cost no image credits."
+      },
+      "scatter_zones": {
+        "type": "array",
+        "description": "OPTIONAL, requires scatter_generators — zones to populate: [{kind, shape: {type:\"rect\",x0,z0,x1,z1}|{type:\"ellipse\",cx,cz,rx,rz}|{type:\"poly\",pts}, density (elements/m², 0..1.5; total capped at 240 instances/tile), seed?}] (cells; max 12). The engine samples deterministic positions avoiding buildings, water, decks and paths automatically."
       },
       "stage": {
         "type": "object",
