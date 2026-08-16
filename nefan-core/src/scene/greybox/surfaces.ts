@@ -14,28 +14,46 @@
 import type { GreyboxPrimitive } from "./common.js";
 
 /** Versión del pipeline de superficies: viaja dentro del layout canónico —
- *  bump ⇒ invalidación de todas las cachés de atlas (cliente y servidor). */
-export const SURFACE_LAYOUT_VERSION = 1;
+ *  bump ⇒ invalidación de todas las cachés de atlas (cliente y servidor).
+ *  v2: celdas hero por CARA/rol (`heroCells` + `SurfaceAssign.faces`). */
+export const SURFACE_LAYOUT_VERSION = 2;
 
 /** Metros de mundo por repetición de una textura tileable. */
 export const DENSITY_M = 2.5;
 
+/** Cara con celda hero propia: los grupos clásicos (side/caps/top cubren el
+ *  grupo entero) más las 4 caras laterales individuales de un box (frame
+ *  LOCAL pre-rotY; +z = sur ⇒ s). */
+export type HeroFace = "side" | "caps" | "top" | "n" | "s" | "e" | "w";
+
 /** Prim con los campos opcionales del bench FPS: material fijado a mano,
  *  celda hero única y descripción/hints para el pintor. */
 export interface SurfacePrim extends GreyboxPrimitive {
-  /** Clase de material u objeto por grupo de caras; `false` fuerza clay. */
-  mat?: string | Record<string, string | false>;
+  /** Clase de material u objeto por grupo de caras; `false` fuerza clay
+   *  (a nivel de prim o por grupo). */
+  mat?: string | false | Record<string, string | false>;
   /** Celda de atlas única para las caras laterales de esta prim. */
   hero?: boolean;
   /** Descripción para el prompt de la celda hero (inglés recomendado). */
   desc?: string;
+  /** Celdas hero por cara/rol con clave y descripción PROPIAS (imágenes
+   *  distintas por cara — el hash del asset es la descripción). Tiene
+   *  prioridad sobre `hero`/`desc` (la vía legacy de una celda por grupo). */
+  heroCells?: Partial<Record<HeroFace, { key: string; desc: string }>>;
   /** Sub-rects [x0,y0,x1,y1,"#hex"] en coords 0..1 de la celda: anclan la
    *  estructura interna (arco de chimenea, baldas…) y evitan que el modelo
    *  fragmente celdas anchas. */
   hints?: [number, number, number, number, string][];
+  /** Rejilla de relieve (metros) — SOLO el suelo del tile fps la lleva: el
+   *  renderer desplaza su tapa y ancla cámara/billboards/decor con ella. */
+  relief?: import("../blueprint/fps-relief.js").ReliefGrid;
 }
 
 export type SurfaceGroup = "side" | "top" | "bottom" | "caps";
+
+/** Slot de material de BoxGeometry por cara de mundo (orden three:
+ *  [+x,-x,+y,-y,+z,-z]; +x = este, +z = sur — contrato de common.ts). */
+export const BOX_FACE_SLOT: Record<"e" | "w" | "s" | "n", number> = { e: 0, w: 1, s: 4, n: 5 };
 
 /** Grupos de caras por shape → índices de material de three.js.
  *  box: [+x,-x,+y,-y,+z,-z]; extrude (gable/polygon): [caps, laterales];
@@ -80,6 +98,8 @@ export const MAT_INFO: Record<string, MatInfo> = {
   water: { tile: true, en: "still dark water with subtle ripples" },
   barrel_wood: { tile: false, en: "flat pattern of vertical wooden barrel staves crossed by two horizontal dark iron bands spanning the full width of the rectangle" },
   thatch: { tile: true, en: "thick layered straw thatch bundles" },
+  rock_stone: { tile: true, en: "weathered grey boulder rock surface, rough natural stone with fine cracks and sparse lichen spots, no marks" },
+  window_glass: { tile: false, en: "one single medieval window filling its rectangle completely edge to edge: small diamond leaded glass panes in a dark wooden frame, faint warm interior glow, no wall around it" },
 };
 
 const TIMBER_COLORS = new Set(["#6b543a", "#5c4832", "#765633"]);
@@ -105,9 +125,10 @@ const GROUND_COLOR_TO_MAT: Record<string, string> = {
  *  en clay (detalle de suelo, decoración menor). Con `mat` objeto, una clave
  *  ausente cae a las reglas por defecto y `false` fuerza clay. */
 export function classify(prim: SurfacePrim, group: SurfaceGroup): string | null {
+  if (prim.mat === false) return null;
   if (prim.mat != null) {
     if (typeof prim.mat === "string") return group === "bottom" ? null : prim.mat;
-    if (group in prim.mat) return prim.mat[group] || null;
+    if (typeof prim.mat === "object" && group in prim.mat) return prim.mat[group] || null;
   }
   const { shape, cat, color, size } = prim;
   if (group === "bottom") return null;
@@ -160,6 +181,17 @@ export interface SurfaceCell {
 export interface SurfaceAssign {
   primIndex: number;
   groups: Partial<Record<SurfaceGroup, string | null>>;
+  /** Overrides por SLOT de material de la geometría (clave = índice como
+   *  string, valor = celda): las caras n/s/e/w de un box con celda hero
+   *  propia. Los slots ausentes siguen el grupo. */
+  faces?: Record<string, string>;
+}
+
+/** [ancho, alto] en metros de UNA cara concreta de un box. */
+export function worldBoxFaceSize(prim: SurfacePrim, face: "n" | "s" | "e" | "w" | "top"): [number, number] {
+  const s = prim.size;
+  if (face === "top") return [s[0], s[2]];
+  return face === "n" || face === "s" ? [s[0], s[1]] : [s[2], s[1]];
 }
 
 /** [ancho, alto] en metros de la cara representativa de un grupo. */
@@ -197,9 +229,12 @@ export interface SurfaceCellsResult {
   assign: SurfaceAssign[];
 }
 
-/** Enumera celdas y asignaciones prim→celda por grupo de caras. `variant`:
- *  "A" ignora heroes (todo por clase de material), "C" (default) respeta
- *  `hero` (celda única por prim+grupo lateral). */
+/** Enumera celdas y asignaciones prim→celda por grupo de caras (y por CARA
+ *  individual con `heroCells` n/s/e/w). `variant`: "A" ignora heroes (todo por
+ *  clase de material), "C" (default) los respeta. Vías hero:
+ *  - `heroCells` (fps-spec): celda propia por rol/cara, clave y desc dadas.
+ *  - `hero`+`desc` legacy (escenas autoradas del bench): una celda por
+ *    prim+grupo lateral, clave `hero_<volId>_<grupo>`. */
 export function surfaceCells(
   prims: SurfacePrim[],
   { variant = "C" }: { variant?: "A" | "C" } = {},
@@ -210,6 +245,41 @@ export function surfaceCells(
     const groups = SHAPE_GROUPS[prim.shape];
     if (!groups) throw new Error(`surfaces: shape desconocida "${prim.shape}"`);
     const entry: SurfaceAssign = { primIndex, groups: {} };
+    const volKey = prim.volId ?? String(primIndex);
+    const heroCells =
+      variant === "A"
+        ? undefined
+        : prim.heroCells ??
+          (prim.hero
+            ? {
+                side: { key: `hero_${volKey}_side`, desc: prim.desc ?? "" },
+                caps: { key: `hero_${volKey}_caps`, desc: prim.desc ?? "" },
+              }
+            : undefined);
+    const addCell = (
+      key: string,
+      mat: string,
+      info: MatInfo,
+      heroDesc: string | undefined,
+      [worldW, worldH]: [number, number],
+    ): void => {
+      if (!cells.has(key)) {
+        cells.set(key, {
+          key,
+          mat,
+          kind: heroDesc !== undefined || !info.tile ? "unique" : "tile",
+          baseColor: prim.color,
+          en: heroDesc || info.en,
+          heroOf: heroDesc !== undefined ? volKey : undefined,
+          hints: heroDesc !== undefined ? prim.hints : undefined,
+          worldW,
+          worldH,
+          count: 0,
+        });
+      }
+      const cell = cells.get(key);
+      if (cell) cell.count += 1;
+    };
     for (const group of Object.keys(groups) as SurfaceGroup[]) {
       const mat = classify(prim, group);
       if (!mat) {
@@ -218,28 +288,25 @@ export function surfaceCells(
       }
       const info = MAT_INFO[mat];
       if (!info) throw new Error(`surfaces: clase de material sin catálogo "${mat}"`);
-      // Hero solo en las caras laterales (lo que el jugador mira de frente);
-      // la tapa de una barra o un sarcófago se queda en su clase genérica.
-      const isHero = variant !== "A" && !!prim.hero && (group === "side" || group === "caps");
-      const key = isHero ? `hero_${prim.volId ?? primIndex}_${group}` : mat;
-      if (!cells.has(key)) {
-        const [worldW, worldH] = worldFaceSize(prim, group);
-        cells.set(key, {
-          key,
-          mat,
-          kind: isHero || !info.tile ? "unique" : "tile",
-          baseColor: prim.color,
-          en: (isHero && prim.desc) || info.en,
-          heroOf: isHero ? (prim.volId ?? String(primIndex)) : undefined,
-          hints: isHero ? prim.hints : undefined,
-          worldW,
-          worldH,
-          count: 0,
-        });
-      }
-      const cell = cells.get(key);
-      if (cell) cell.count += 1;
+      // Hero de grupo: side/caps/top con celda única (bottom nunca es hero).
+      const hc = group === "bottom" ? undefined : heroCells?.[group];
+      const key = hc ? hc.key : mat;
+      addCell(key, mat, info, hc ? hc.desc : undefined, worldFaceSize(prim, group));
       entry.groups[group] = key;
+    }
+    // Caras laterales individuales de un box (n/s/e/w): celda propia por cara
+    // con su tamaño REAL — el resto de slots del grupo side no cambia.
+    if (heroCells && prim.shape === "box") {
+      const sideMat = classify(prim, "side");
+      if (sideMat) {
+        const info = MAT_INFO[sideMat];
+        for (const face of ["n", "s", "e", "w"] as const) {
+          const hc = heroCells[face];
+          if (!hc) continue;
+          addCell(hc.key, sideMat, info, hc.desc, worldBoxFaceSize(prim, face));
+          (entry.faces ??= {})[String(BOX_FACE_SLOT[face])] = hc.key;
+        }
+      }
     }
     assign.push(entry);
   });

@@ -11,6 +11,7 @@ import {
   STYLE_ENV_CATEGORIES,
   STYLE_CHARACTER_CATEGORIES,
   STYLE_STAGE_CATEGORIES,
+  STYLE_FPS_CATEGORIES,
   LEGACY_STYLE_ALIASES,
   ZONE_TO_STAGE,
 } from "../games/style-categories.js";
@@ -22,6 +23,7 @@ export function renderStyleCategoriesArtifact(): string {
     env: STYLE_ENV_CATEGORIES,
     character: STYLE_CHARACTER_CATEGORIES,
     stage: STYLE_STAGE_CATEGORIES,
+    fps: STYLE_FPS_CATEGORIES,
     legacy_aliases: LEGACY_STYLE_ALIASES,
     zone_to_stage: ZONE_TO_STAGE,
   };

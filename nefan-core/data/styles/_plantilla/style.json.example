@@ -5,23 +5,107 @@
   "style_token": "hand-painted gouache, warm earthy palette, soft diffuse light, storybook mood",
   "cover": "cover.jpg",
   "refs": [
-    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
-    { "category": "farmland", "file": "farmland.jpg", "tags": [] },
-    { "category": "forest", "file": "forest.jpg", "tags": [] },
-    { "category": "wetland", "file": "wetland.jpg", "tags": [] },
-    { "category": "desert", "file": "desert.jpg", "tags": [] },
-    { "category": "snow", "file": "snow.jpg", "tags": [] },
-    { "category": "fortress", "file": "fortress.jpg", "tags": [] },
-    { "category": "interior", "file": "interior.jpg", "tags": [] },
-    { "category": "underground", "file": "underground.jpg", "tags": [] },
-    { "category": "character_commoner", "file": "character_commoner.jpg", "tags": [] },
-    { "category": "character_noble", "file": "character_noble.jpg", "tags": [] },
-    { "category": "character_warrior", "file": "character_warrior.jpg", "tags": [] },
-    { "category": "stage_interior", "file": "stage_interior.jpg", "tags": [], "view": "proscenium" },
-    { "category": "stage_street", "file": "stage_street.jpg", "tags": [], "view": "proscenium" },
-    { "category": "stage_plaza", "file": "stage_plaza.jpg", "tags": [], "view": "proscenium" },
-    { "category": "stage_nature", "file": "stage_nature.jpg", "tags": [], "view": "proscenium" },
-    { "category": "stage_harbor", "file": "stage_harbor.jpg", "tags": [], "view": "proscenium" },
-    { "category": "stage_gate", "file": "stage_gate.jpg", "tags": [], "view": "proscenium" }
+    {
+      "category": "settlement",
+      "file": "settlement.jpg",
+      "tags": []
+    },
+    {
+      "category": "farmland",
+      "file": "farmland.jpg",
+      "tags": []
+    },
+    {
+      "category": "forest",
+      "file": "forest.jpg",
+      "tags": []
+    },
+    {
+      "category": "wetland",
+      "file": "wetland.jpg",
+      "tags": []
+    },
+    {
+      "category": "desert",
+      "file": "desert.jpg",
+      "tags": []
+    },
+    {
+      "category": "snow",
+      "file": "snow.jpg",
+      "tags": []
+    },
+    {
+      "category": "fortress",
+      "file": "fortress.jpg",
+      "tags": []
+    },
+    {
+      "category": "interior",
+      "file": "interior.jpg",
+      "tags": []
+    },
+    {
+      "category": "underground",
+      "file": "underground.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_commoner",
+      "file": "character_commoner.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_noble",
+      "file": "character_noble.jpg",
+      "tags": []
+    },
+    {
+      "category": "character_warrior",
+      "file": "character_warrior.jpg",
+      "tags": []
+    },
+    {
+      "category": "stage_interior",
+      "file": "stage_interior.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "stage_street",
+      "file": "stage_street.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "stage_plaza",
+      "file": "stage_plaza.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "stage_nature",
+      "file": "stage_nature.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "stage_harbor",
+      "file": "stage_harbor.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "stage_gate",
+      "file": "stage_gate.jpg",
+      "tags": [],
+      "view": "proscenium"
+    },
+    {
+      "category": "fps_surfaces",
+      "file": "fps_surfaces.jpg",
+      "tags": [],
+      "view": "fps"
+    }
   ]
 }

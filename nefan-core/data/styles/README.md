@@ -56,6 +56,8 @@ data/styles/{style_id}/
   stage_street.jpg            │ 1280×800/1.6:1): interior, street, plaza,
   …                           ┘ nature, harbor, gate — refs con "view":
                                 "proscenium" en style.json
+  fps_surfaces.jpg              1 LÁMINA DE MATERIALES (vista fps): rejilla
+                                de swatches planos a 90° — ver sección fps
 ```
 
 Campos de `style.json`:
@@ -82,6 +84,7 @@ pipeline usa 2):
 |---|---|---|
 | Zonas (`settlement`…`underground`) | Repintado de cada tile (`/generate_scene_image`). | 2ª referencia, detrás del **blueprint proyectado** del tile. El blueprint manda en layout y proyección exacta; la ref aporta composición de zona, paleta, técnica, materiales y cómo se pintan las caras/volúmenes. |
 | `character_*` | Skin de personaje (`/skin_sprite_sheet`), una por `style_role` (commoner/noble/warrior). | 2ª referencia del **hero-shot** (detrás del frame base de y_bot). Al ser un model sheet, enseña el diseño desde varios ángulos; los atlas de las 8 direcciones heredan del hero. |
+| `fps_surfaces` | Atlas de superficies de la vista fps (`/generate_surface_atlas`). | 2ª referencia de CADA página del atlas (vía fal), detrás de la base clay; fija paleta/materiales/factura de todas las celdas. |
 | `cover` | Solo UI de la pantalla de título. | Nunca. |
 
 El trazado del tile lo pone el blueprint; la referencia fija CÓMO se pinta —
@@ -112,6 +115,32 @@ fal). Reglas propias:
 - **Escenas canónicas** en clave medieval en `STAGE_CATEGORY_SCENES`
   (`ai_server/style_pack_builder.py`); un pack de otra ambientación las
   sustituye con `refs[].scene`.
+
+## Ref de la vista FPS (`fps_surfaces`)
+
+La vista fps pinta su arte como **atlas de superficies** (celdas de material
+por cara: muros, suelos, tejados — `/generate_surface_atlas`). Sin esta ref,
+la dirección de arte del atlas entra SOLO por el `style_token` (texto); con
+ella, la lámina viaja como **2ª referencia de cada página** del atlas y manda
+en paleta, materiales y factura.
+
+- **Qué es**: una rejilla 3×4 de **muestras de material planas a 90°**
+  (muro encalado, mampostería, madera, teja, tierra, empedrado, hierba…),
+  NUNCA escenas ni objetos — las mismas reglas duras que el atlas in-game
+  (swatch frontal, sin sombras arrojadas, sin texto). El seed de encuadre es
+  `_plantilla/fps/fps_surfaces.png` (regenerable con
+  `ai_server/tools/gen_fps_seed.py`); se genera con nano-banana-pro (fal),
+  el modelo del propio atlas.
+- **Contenido canónico** en clave medieval (`CATEGORY_SCENES["fps_surfaces"]`);
+  un pack de otra ambientación lo sustituye con `refs[].scene` (mismos 12
+  huecos, sus materiales).
+- **Sin fallback**: el resolver NUNCA cae a una zona cenital ni a un plató
+  (contaminarían los swatches). Sin lámina → atlas solo con token, como
+  hasta ahora — por eso `styleViews` sigue derivando fps de overworld: la
+  lámina mejora, no habilita.
+- **Caché**: el hash de la lámina entra en la clave de cada celda de la
+  librería de superficies SOLO cuando existe — añadirla (o regenerarla) a un
+  estilo repinta su librería; los estilos sin lámina conservan la suya.
 
 ## Cómo se elige la referencia de cada tile
 
@@ -155,7 +184,8 @@ el pack entero, así que un pack parcial funciona desde el primer día):
    biomas (Miravanda tiene pantanos; un mundo desértico las necesita el día 1).
 8. `character_noble`, `character_warrior`, `cover`.
 
-**Set completo recomendado: 9 entornos + 3 personajes + 6 platós + cover**
+**Set completo recomendado: 9 entornos + 3 personajes + 6 platós + 1 lámina
+fps + cover**
 (~$2.16 Meshy + ~$1.02 fal para los platós — la cover se copia gratis; ver
 [coste](#las-tres-vías-de-creación)). Un estilo solo-overworld puede omitir
 los platós (no aparecerá al elegir la vista proscenio).

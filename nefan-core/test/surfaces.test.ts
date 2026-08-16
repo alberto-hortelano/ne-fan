@@ -128,7 +128,7 @@ describe("buildFpsTileSpec", () => {
     assert.ok(wallPrim && wallPrim.size[1] <= 12, "alturas en metros, no celdas");
   });
 
-  it("surface_desc del volumen → celda hero con esa descripción", () => {
+  it("surface_desc string → hero SOLO en el cuerpo; tejado y puerta conservan su material", () => {
     const plan = medievalPlan();
     const parsed = parseVolumes(plan.volumes);
     assert.ok(parsed.ok);
@@ -137,10 +137,71 @@ describe("buildFpsTileSpec", () => {
     );
     const { primsM } = buildFpsTileSpec({ volumes, biome: "dirt" }, "k");
     const layout = buildLayout(primsM);
-    const hero = layout.pages.flatMap((p) => p.cells).find((c) => c.heroOf === "vol_taberna_serrana");
-    assert.ok(hero, "celda hero de la taberna");
-    assert.equal(hero.en, "facade with a faded sun mural");
-    assert.equal(hero.kind, "unique");
+    const cells = layout.pages.flatMap((p) => p.cells);
+    const heroes = cells.filter((c) => c.heroOf === "vol_taberna_serrana");
+    assert.equal(heroes.length, 1, "una sola celda hero (las paredes)");
+    assert.equal(heroes[0].key, "hero_vol_taberna_serrana_side");
+    assert.equal(heroes[0].en, "facade with a faded sun mural");
+    assert.equal(heroes[0].kind, "unique");
+    // El bug del playtest 2026-08-16: tejado y puerta caían en la MISMA celda
+    // hero. Ahora vuelven a sus clases (roof_tile/door_wood siguen existiendo
+    // como celdas del tile — la taberna las usa).
+    assert.ok(cells.some((c) => c.key === "roof_tile"), "el tejado sigue en roof_tile");
+    assert.ok(cells.some((c) => c.key === "door_wood"), "la puerta sigue en door_wood");
+  });
+
+  it("surface_desc objeto → celda propia por cara/rol con desc y tamaño de SU cara", () => {
+    const volumes = parseVolumes([
+      {
+        id: "cartel",
+        label: "cartel",
+        type: "prop",
+        rect: [40, 40, 8, 1],
+        shape: "box",
+        h: 6,
+        surface_desc: { s: "sign reading EL FILTRO", n: "weathered back of a metal sign" },
+      },
+      {
+        id: "casa",
+        label: "casa",
+        type: "building",
+        rect: [60, 60, 12, 10],
+        doors: [{ edge: "s", at: 4 }],
+        surface_desc: { side: "riveted hull plating facade", roof: "solar panel roof", door: "airlock door" },
+      },
+    ]);
+    assert.ok(volumes.ok, !volumes.ok ? volumes.error : "");
+    const { primsM } = buildFpsTileSpec({ volumes: volumes.volumes, biome: "dirt" }, "k");
+    const layout = buildLayout(primsM);
+    const byKey = new Map(layout.pages.flatMap((p) => p.cells).map((c) => [c.key, c]));
+    // Cartel: cara sur y norte con celdas DISTINTAS (desc propia ⇒ imagen
+    // propia); los cantos e/w quedan en el material del cuerpo.
+    const s = byKey.get("hero_vol_cartel_s");
+    const n = byKey.get("hero_vol_cartel_n");
+    assert.ok(s && n, "celdas por cara del cartel");
+    assert.equal(s.en, "sign reading EL FILTRO");
+    assert.equal(n.en, "weathered back of a metal sign");
+    // Tamaño de SU cara: s/n = [w, h] = [4 m, 3 m] (8×1 celdas, h 6).
+    assert.ok(Math.abs(s.worldW - 4) < 1e-6 && Math.abs(s.worldH - 3) < 1e-6, `cara s ${s.worldW}×${s.worldH}`);
+    assert.equal(byKey.has("hero_vol_cartel_side"), false, "sin celda side: solo caras declaradas");
+    // Casa: fachadas, tejado y puerta con celdas separadas.
+    assert.equal(byKey.get("hero_vol_casa_side")?.en, "riveted hull plating facade");
+    assert.equal(byKey.get("hero_vol_casa_roof")?.en, "solar panel roof");
+    assert.equal(byKey.get("hero_vol_casa_door")?.en, "airlock door");
+    // La asignación por SLOT del cartel apunta a las celdas por cara
+    // (BoxGeometry: +z=s → slot 4, −z=n → slot 5).
+    const cartelIdx = primsM.findIndex((p) => p.volId === "vol_cartel");
+    const faces = layout.assign[cartelIdx]?.faces;
+    assert.ok(faces, "assign.faces del cartel");
+    assert.equal(faces["4"], "hero_vol_cartel_s");
+    assert.equal(faces["5"], "hero_vol_cartel_n");
+  });
+
+  it("surface_desc objeto inválido (cara desconocida) se rechaza en el schema", () => {
+    const bad = parseVolumes([
+      { id: "x", label: "x", type: "prop", at: [10, 10], shape: "box", surface_desc: { techo: "no existe" } },
+    ]);
+    assert.equal(bad.ok, false);
   });
 
   it("stagger anti z-fighting: los rasgos ground no comparten y, determinista", () => {
@@ -158,25 +219,27 @@ describe("buildFpsTileSpec", () => {
     const { spec, primsM } = build();
     // Rasgos ground = prims terrain|water noShadow en la banda de capas
     // (Y_AREA 0.05 … Y_DECK 0.18 en celdas → índice compartido con el spec).
-    const groundIdxs = spec.primitives
-      .map((p, i) => ({ p, i }))
-      .filter(({ p }) => (p.cat === "terrain" || p.cat === "water") && p.noShadow && p.pos[1] >= 0.045 && p.pos[1] <= 0.185)
-      .map(({ i }) => i);
-    assert.ok(groundIdxs.length >= 6, `camino+plaza emiten ≥6 prims ground (hay ${groundIdxs.length})`);
-    const ys = groundIdxs.map((i) => primsM[i].pos[1]);
+    const isGroundBand = (p: { cat: string; noShadow?: boolean }, y: number, scale: number): boolean =>
+      (p.cat === "terrain" || p.cat === "water") && p.noShadow === true && y >= 0.045 * scale && y <= (0.185 + 60 * 0.004) * scale;
+    const specGround = spec.primitives.filter((p) => isGroundBand(p, p.pos[1], 1));
+    assert.ok(specGround.length >= 6, `camino+plaza emiten ≥6 prims ground (hay ${specGround.length})`);
+    // El enriquecimiento fps (fps-detail/scatter) rompe la paridad de índices
+    // pero PRESERVA el orden relativo de los rasgos ground y no añade prims
+    // en su banda: se casan por orden de emisión.
+    const primsGround = primsM.filter((p) => isGroundBand(p, p.pos[1], 0.5));
+    assert.equal(primsGround.length, specGround.length, "mismos rasgos ground en el spec fps");
+    const ys = primsGround.map((p) => p.pos[1]);
     assert.equal(new Set(ys).size, ys.length, "ninguna pareja de rasgos ground comparte y exacta");
     // Cada prim sube respecto a su y escalada, poco (stagger mm, no cm por prim).
-    for (const i of groundIdxs) {
-      const lift = primsM[i].pos[1] - spec.primitives[i].pos[1] * 0.5;
-      assert.ok(lift > 0 && lift <= groundIdxs.length * 0.002 + 1e-9, `lift ${lift} en rango`);
-    }
-    // Las prims NO ground (suelo base, detalle, volúmenes) no se desplazan.
-    for (let i = 0; i < spec.primitives.length; i++) {
-      if (groundIdxs.includes(i)) continue;
-      assert.ok(Math.abs(primsM[i].pos[1] - spec.primitives[i].pos[1] * 0.5) < 1e-9);
-    }
+    specGround.forEach((sp, j) => {
+      const lift = primsGround[j].pos[1] - sp.pos[1] * 0.5;
+      assert.ok(lift > 0 && lift <= specGround.length * 0.002 + 1e-9, `lift ${lift} en rango`);
+    });
     // Determinista: dos builds → mismas y.
     const again = build();
-    assert.deepEqual(groundIdxs.map((i) => again.primsM[i].pos[1]), ys);
+    assert.deepEqual(
+      again.primsM.filter((p) => isGroundBand(p, p.pos[1], 0.5)).map((p) => p.pos[1]),
+      ys,
+    );
   });
 });

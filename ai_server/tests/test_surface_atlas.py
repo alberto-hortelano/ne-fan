@@ -96,9 +96,30 @@ class TestBaseYPrompt(unittest.TestCase):
         self.assertIn(f"EXACTLY {len(page[0])} rectangles", p_tiles)
         self.assertIn("(seamless)", p_tiles)
         self.assertIn("estilo x", p_tiles)
+        # Página SOLO tiles: sin la regla de caras únicas.
+        self.assertNotIn("ONE FACE", p_tiles)
         p_hero = build_prompt(page[1], "una aldea", "", has_anchors=True)
         self.assertNotIn("(seamless)", p_hero)
         self.assertIn("ALREADY-PAINTED", p_hero)
+        # Heroes: cada celda es UNA CARA de una pieza — las demás partes del
+        # objeto (ruedas, patas…) son geometría aparte y no se pintan
+        # (regresión del carro con ruedas dibujadas, 2026-08-16).
+        self.assertIn("ONE FACE of a piece", p_hero)
+        self.assertIn("must NEVER be drawn inside the cell", p_hero)
+
+    def test_prompt_con_lamina_de_estilo(self):
+        # Con lámina fps_surfaces: cláusula de la 2ª referencia y los anchors
+        # pasan a describirse "after the second one" (la posición es contrato).
+        page = pack_missing([cell("wall_plaster")])
+        p = build_prompt(page[0], "una aldea", "estilo x", has_anchors=True,
+                         has_style_sheet=True)
+        self.assertIn("SECOND reference image is a painted material swatch sheet", p)
+        self.assertIn("after the second one", p)
+        self.assertNotIn("after the first one", p)
+        # Sin lámina, el prompt es byte-idéntico al histórico.
+        p_old = build_prompt(page[0], "una aldea", "estilo x", has_anchors=True)
+        self.assertNotIn("swatch sheet", p_old)
+        self.assertIn("after the first one", p_old)
 
 
 class TestPostproceso(unittest.TestCase):

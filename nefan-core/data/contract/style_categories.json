@@ -24,6 +24,9 @@
     "stage_harbor",
     "stage_gate"
   ],
+  "fps": [
+    "fps_surfaces"
+  ],
   "legacy_aliases": {
     "nature": "forest"
   },

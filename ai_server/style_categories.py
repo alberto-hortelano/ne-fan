@@ -26,6 +26,12 @@ STAGE_CATEGORIES = (
     "stage_nature", "stage_harbor", "stage_gate",
 )
 
+# Categorías de la vista FPS: fps_surfaces es una LÁMINA DE MUESTRAS de
+# materiales (rejilla de swatches frontales a 90°), no una escena — 2ª ref de
+# cada página del atlas de superficies. Su resolver NUNCA cae a las zonas
+# cenitales; sin lámina el atlas degrada a solo style_token.
+FPS_CATEGORIES = ("fps_surfaces",)
+
 # Alias legacy: packs y escenas anteriores al set de zonas usaban "nature".
 LEGACY_ALIASES = {"nature": "forest"}
 

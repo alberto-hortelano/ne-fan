@@ -17,10 +17,11 @@
 
 /** Vistas de mundo. La vista se elige en el título (game.json aporta el
  *  default del mundo) y queda CONGELADA en el save (`world.view`).
- *  "fps" (primera persona, tiles en 3D con atlas de superficies) no tiene
- *  categorías de ref propias: comparte las zonas cenitales de overworld
- *  (el prompt del atlas es material-first y solo necesita paleta), así que
- *  viewForCategory NUNCA la devuelve — styleViews la deriva de overworld. */
+ *  "fps" (primera persona, tiles en 3D con atlas de superficies) tiene UNA
+ *  categoría de ref propia OPCIONAL (`fps_surfaces`, lámina de muestras de
+ *  materiales); sin ella el atlas degrada a solo `style_token`, así que
+ *  styleViews sigue derivando fps de overworld (la lámina mejora, no
+ *  habilita). */
 export const WORLD_VIEWS = ["overworld", "proscenium", "fps"] as const;
 export type WorldView = (typeof WORLD_VIEWS)[number];
 
@@ -58,6 +59,15 @@ export const STYLE_STAGE_CATEGORIES = [
 ] as const;
 export type StyleStageCategory = (typeof STYLE_STAGE_CATEGORIES)[number];
 
+/** Categorías de la vista FPS (namespace `fps_`). `fps_surfaces` es una
+ *  LÁMINA DE MUESTRAS de materiales del estilo (rejilla de swatches frontales
+ *  a 90°: muro, piedra, madera, teja, suelo…), no una escena: alimenta como
+ *  2ª referencia cada página del atlas de superficies. Su resolver NO cae a
+ *  las zonas cenitales (una composición aérea contamina un swatch plano);
+ *  sin lámina, el atlas va solo con el style_token. */
+export const STYLE_FPS_CATEGORIES = ["fps_surfaces"] as const;
+export type StyleFpsCategory = (typeof STYLE_FPS_CATEGORIES)[number];
+
 export const STYLE_CATEGORIES = [
   ...STYLE_ENV_CATEGORIES,
   ...STYLE_CHARACTER_CATEGORIES,
@@ -77,15 +87,18 @@ export type LegacyStyleTag = keyof typeof LEGACY_STYLE_ALIASES;
 export const STYLE_MANIFEST_CATEGORIES = [
   ...STYLE_CATEGORIES,
   ...STYLE_STAGE_CATEGORIES,
+  ...STYLE_FPS_CATEGORIES,
   ...(Object.keys(LEGACY_STYLE_ALIASES) as LegacyStyleTag[]),
 ] as const;
 
 /** Vista a la que pertenece una categoría de ref: el namespace manda
- *  (`stage_*` → proscenium). Las categorías de personaje cuentan como
- *  overworld a efectos de declaración — los model sheets se comparten entre
- *  vistas en runtime. */
+ *  (`stage_*` → proscenium, `fps_*` → fps). Las categorías de personaje
+ *  cuentan como overworld a efectos de declaración — los model sheets se
+ *  comparten entre vistas en runtime. */
 export function viewForCategory(category: string): WorldView {
-  return category.startsWith("stage_") ? "proscenium" : "overworld";
+  if (category.startsWith("stage_")) return "proscenium";
+  if (category.startsWith("fps_")) return "fps";
+  return "overworld";
 }
 
 /** Bioma del tile (tile.ts BIOME_CATALOG) → zona de estilo más cercana.

@@ -118,6 +118,13 @@
       "tags": [],
       "view": "proscenium",
       "scene": "the main airlock gate of the colony perimeter: reinforced blast doors between two floodlight towers, a paved causeway leading in, arid alien terrain at the sides"
+    },
+    {
+      "category": "fps_surfaces",
+      "file": "fps_surfaces.jpg",
+      "tags": [],
+      "view": "fps",
+      "scene": "twelve different flat material swatches, one per grid cell, covering the colony's most common surfaces: brushed steel wall panel, riveted hull plating, concrete wall with embedded conduit, corrugated metal roofing, packed regolith ground, hexagonal alloy floor tiles, hydroponic turf, cable-strewn deck plating, woven composite mesh, dark basalt rock, cracked concrete with exposed glowing circuitry, worn pipes and valve fittings"
     }
   ]
 }

@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   STYLE_CATEGORIES,
   STYLE_ENV_CATEGORIES,
+  STYLE_FPS_CATEGORIES,
   STYLE_MANIFEST_CATEGORIES,
   STYLE_STAGE_CATEGORIES,
   ZONE_TO_STAGE,
@@ -61,13 +62,14 @@ describe("styleCategoryForTile", () => {
     }
   });
 
-  it("el enum de manifest admite canónicas, plató y el alias legacy", () => {
+  it("el enum de manifest admite canónicas, plató, fps y el alias legacy", () => {
     assert.equal(
       STYLE_MANIFEST_CATEGORIES.length,
-      STYLE_CATEGORIES.length + STYLE_STAGE_CATEGORIES.length + 1,
+      STYLE_CATEGORIES.length + STYLE_STAGE_CATEGORIES.length + STYLE_FPS_CATEGORIES.length + 1,
     );
     assert.ok((STYLE_MANIFEST_CATEGORIES as readonly string[]).includes("nature"));
     assert.ok((STYLE_MANIFEST_CATEGORIES as readonly string[]).includes("stage_interior"));
+    assert.ok((STYLE_MANIFEST_CATEGORIES as readonly string[]).includes("fps_surfaces"));
   });
 });
 
@@ -78,6 +80,10 @@ describe("viewForCategory", () => {
     assert.equal(viewForCategory("settlement"), "overworld");
     assert.equal(viewForCategory("character_noble"), "overworld");
     assert.equal(viewForCategory("nature"), "overworld");
+  });
+
+  it("el namespace fps_ es fps", () => {
+    assert.equal(viewForCategory("fps_surfaces"), "fps");
   });
 });
 

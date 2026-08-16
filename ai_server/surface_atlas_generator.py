@@ -61,10 +61,37 @@ TILE_RULE = (
     "darker borders or corners. "
 )
 
+# Regla de las celdas únicas (heroes): cada una viste UNA CARA de una pieza de
+# un objeto 3D mayor. Sin esto, una desc que nombra el objeto ("peddler cart")
+# hacía que el modelo pintase el objeto ENTERO — ruedas dibujadas sobre el
+# cuerpo del carro (playtest 2026-08-16, volumen custom por piezas).
+UNIQUE_RULE = (
+    "Non-seamless cells are each ONE FACE of a piece of a larger 3D object: paint "
+    "a flat straight-on close-up of that face's own surface, filling the rectangle "
+    "edge to edge. The object's OTHER parts (wheels, legs, posts, roof, supports) "
+    "exist as separate 3D geometry in the game and must NEVER be drawn inside the "
+    "cell — no object silhouette, no ground contact, no sky or background around "
+    "the face. "
+)
+
 ANCHOR_RULE = (
     "The additional reference images after the first one are ALREADY-PAINTED "
     "textures from this same material library: match their palette, style and "
     "level of detail exactly. Do NOT copy their content into the cells. "
+)
+
+# Lámina fps_surfaces del style pack (2ª referencia cuando el estilo la
+# tiene): manda sobre el style_token en paleta y factura.
+STYLE_SHEET_RULE = (
+    "The SECOND reference image is a painted material swatch sheet that "
+    "defines the TARGET ART STYLE: match its palette, material rendering and "
+    "brushwork exactly in every cell. Do NOT copy its layout — each cell "
+    "paints only the material its own description asks for. "
+)
+ANCHOR_RULE_AFTER_SHEET = (
+    "The reference images after the second one are ALREADY-PAINTED textures "
+    "from this same material library: match their palette, style and level "
+    "of detail exactly. Do NOT copy their content into the cells. "
 )
 
 
@@ -146,7 +173,10 @@ def draw_base(page: list[dict]) -> Image.Image:
     return img
 
 
-def build_prompt(page: list[dict], scene_description: str, style_token: str, has_anchors: bool) -> str:
+def build_prompt(
+    page: list[dict], scene_description: str, style_token: str, has_anchors: bool,
+    has_style_sheet: bool = False,
+) -> str:
     rows: dict[int, list[dict]] = {}
     for c in page:
         rows.setdefault(c["rect"][1], []).append(c)
@@ -155,6 +185,7 @@ def build_prompt(page: list[dict], scene_description: str, style_token: str, has
         for ci, c in enumerate(sorted(rows[yy], key=lambda c: c["rect"][0]), start=1):
             pos[c["key"]] = f"row {ri}, cell {ci}"
     has_tiles = any(c["kind"] == "tile" for c in page)
+    has_uniques = any(c["kind"] != "tile" for c in page)
     lines = []
     for c in page:
         seam = " (seamless)" if c["kind"] == "tile" else ""
@@ -165,11 +196,16 @@ def build_prompt(page: list[dict], scene_description: str, style_token: str, has
         "smaller panels and NEVER paint anything over the grey gutter. "
     )
     style = f"Art direction: {style_token}. " if style_token else ""
+    anchor_rule = ""
+    if has_anchors:
+        anchor_rule = ANCHOR_RULE_AFTER_SHEET if has_style_sheet else ANCHOR_RULE
     return (
         RULES
         + count_rule
         + (TILE_RULE if has_tiles else "")
-        + (ANCHOR_RULE if has_anchors else "")
+        + (UNIQUE_RULE if has_uniques else "")
+        + (STYLE_SHEET_RULE if has_style_sheet else "")
+        + anchor_rule
         + f"All materials come from the same location ({scene_description}) "
         + "and must share ONE consistent palette. "
         + style
@@ -263,8 +299,13 @@ class SurfaceAtlasGenerator:
         scene_description: str,
         style_token: str,
         anchors: list[bytes],
+        style_sheet_uri: str = "",
     ) -> dict:
-        """→ {"cells": {key: png_bytes}, "pages": [png_bytes], "pages_painted", "cost_usd"}"""
+        """→ {"cells": {key: png_bytes}, "pages": [png_bytes], "pages_painted", "cost_usd"}
+
+        `style_sheet_uri`: lámina fps_surfaces del style pack (data URI). Va
+        SIEMPRE como 2ª referencia de cada página — su posición es parte del
+        contrato del prompt (STYLE_SHEET_RULE)."""
         t0 = time.time()
         pages = pack_missing([dict(c) for c in missing_cells])
         painted: dict[str, bytes] = {}
@@ -276,10 +317,16 @@ class SurfaceAtlasGenerator:
             base = draw_base(page)
             ai_model = self._model if any(c["kind"] == "tile" for c in page) else self._hero_model
             refs = [_png_data_uri(base)]
+            if style_sheet_uri:
+                refs.append(style_sheet_uri)
             if prev_page_uri:
                 refs.append(prev_page_uri)
-            refs.extend(anchor_uris[: 5 - len(refs)])  # fal admite ≤5 refs
-            prompt = build_prompt(page, scene_description, style_token, len(refs) > 1)
+            refs.extend(anchor_uris[: max(0, 5 - len(refs))])  # fal admite ≤5 refs
+            has_anchors = len(refs) > (2 if style_sheet_uri else 1)
+            prompt = build_prompt(
+                page, scene_description, style_token, has_anchors,
+                has_style_sheet=bool(style_sheet_uri),
+            )
             png = self._run_page(prompt, refs, ai_model)
             gen = Image.open(io.BytesIO(png)).convert("RGB")
             if gen.size != (PAGE_PX, PAGE_PX):

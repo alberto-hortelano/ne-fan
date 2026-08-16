@@ -100,6 +100,12 @@
       "file": "stage_gate.jpg",
       "tags": [],
       "view": "proscenium"
+    },
+    {
+      "category": "fps_surfaces",
+      "file": "fps_surfaces.jpg",
+      "tags": [],
+      "view": "fps"
     }
   ]
 }
