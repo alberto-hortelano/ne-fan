@@ -1,0 +1,73 @@
+{
+  "runs": {
+    "001": {
+      "t0_experimento": 1786813779,
+      "fase_a_descripcion": { "inicio": 1786813779, "fin": 1786813843, "segundos": 64, "bytes": 6777, "tokens_sesion_aprox": 8000 },
+      "fase_b_three": {
+        "inicio": 1786813944, "fin": 1786814876, "segundos": 932,
+        "iteraciones": 4, "capturas_revisadas": 13, "bytes_codigo": 43397,
+        "tokens_sesion_aprox": 100000,
+        "errores_ejecucion": 0,
+        "defectos_visuales_corregidos": [
+          "cámara p0 pegada al lomo del espigón (banda negra)",
+          "interior de barca desalineado (orden rotación→escala)",
+          "texturas canvas con repeat corto (motas gigantes)"
+        ]
+      },
+      "fase_c_godot": {
+        "inicio": 1786814950, "fin": 1786815723, "segundos": 773,
+        "iteraciones": 5, "capturas_revisadas": 12, "bytes_codigo": 38808,
+        "tokens_sesion_aprox": 85000,
+        "errores_ejecucion": 0,
+        "defectos_visuales_corregidos": [
+          "shaders custom emiten lineal: paleta lavada (pow 2.2 · 1.2)",
+          "disco base del hemisferio de SphereMesh (interior de barca pálido)",
+          "costura del ruido de nubes con atan(azimut) (→ gnomónica)",
+          "aristas de caja del FogVolume (→ edge_fade)",
+          "omnis de ventana sin sombra atravesando muros"
+        ]
+      },
+      "fase_d_informe": { "inicio": 1786815723, "fin": 1786815898, "segundos": 175, "tokens_sesion_aprox": 25000 },
+      "total_segundos": 2119,
+      "notas": "tokens_sesion_aprox = delta del presupuesto de sesión por fase (incluye capturas revisadas, ~1.6k tokens/imagen). Sin gasto en APIs de pago."
+    },
+    "002": {
+      "descripcion": "luz de gameplay + scatter procedural declarativo (solo three, decisión previa)",
+      "inicio": 1786821630, "fin": 1786822427, "segundos": 797,
+      "iteraciones": 5, "capturas_revisadas": 13,
+      "bytes_codigo_nuevo": 4737,
+      "tokens_sesion_aprox": 95000,
+      "scatter": {
+        "api": "populate(scene, zones, generators, {groundH, seed, exclusions})",
+        "generadores_autor": ["pino", "matorral", "roca", "junco"],
+        "zonas": 8,
+        "instancias": { "pedidas": 166, "colocadas": 130, "descartes": "exclusiones (casas/muelle/callejón) + filtros minY/maxY de orilla" },
+        "determinismo": "md5 idéntico en dos capturas de p0"
+      },
+      "errores_ejecucion": 0,
+      "defectos_visuales_corregidos": [
+        "winding invertido de gableGeo (tejados negros a pleno sol; al anochecer pasaba inadvertido)",
+        "auto-sombra del terreno con sol alto (bias -> -0.0002 + normalBias 0.8)",
+        "albedos de terreno/piedra de anochecer demasiado oscuros para día",
+        "banda negra inferior (canvas sin re-render al asentar el viewport headless -> fit() en resize)",
+        "moiré de rejilla en el cabo (repeats de textura excesivos)",
+        "ventanas ámbar de cartón a pleno día (emisivos de noche)"
+      ]
+    },
+    "003": {
+      "descripcion": "generadores de scatter como JSON PURO del motor narrativo (árbol de primitivas con rangos) + compilador/validador",
+      "inicio": 1786822730, "fin": 1786822910, "segundos": 180,
+      "iteraciones": 1, "capturas_revisadas": 3,
+      "bytes": { "generadores_json": 4302, "gen_json_js": 7392 },
+      "tokens_sesion_aprox": 22000,
+      "scatter": {
+        "generadores_json": ["pino", "matorral", "roca", "junco", "olivo (tipo NUEVO declarado solo en JSON)"],
+        "instancias_colocadas": 130,
+        "determinismo": "md5 idéntico en dos capturas de p0",
+        "fail_loud": "shape inválida -> \"generador roca.parts[0]: shape 'dodecaedro' no es box|cylinder|cone|sphere|icosahedron\""
+      },
+      "errores_ejecucion": 0,
+      "defectos_visuales_corregidos": []
+    }
+  }
+}

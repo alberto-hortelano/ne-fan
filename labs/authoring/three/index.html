@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cala de Brumaluz — three.js</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+  {"imports": {"three": "https://unpkg.com/three@0.170.0/build/three.module.js"}}
+</script>
+<body>
+<script type="module">
+  import { boot } from "./escena.js";
+  boot().catch((e) => {
+    document.body.innerHTML = `<pre style="color:#f66">${e.stack}</pre>`;
+    console.error(e);
+  });
+</script>
+</body>

@@ -1,0 +1,22 @@
+; Bench de autoría libre — Cala de Brumaluz en Godot 4.6 (labs/authoring).
+; Proyecto mínimo sin dependencias del godot/ del juego: todo se construye
+; por código en main.gd a partir de DESCRIPCION.md.
+config_version=5
+
+[application]
+
+config/name="authoring_bench"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=1000
+
+[rendering]
+
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+anti_aliasing/quality/msaa_3d=2

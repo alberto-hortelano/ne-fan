@@ -1,0 +1,103 @@
+{
+  "_doc": "Generadores DECLARATIVOS de elementos de scatter — esto es lo que emitiría el motor narrativo (JSON puro, sin código). Cada generador es un árbol de primitivas con valores literales, rangos [min,max] (muestreados con el rng sembrado), referencias {var}, aritmética {op} y {lerp} dentro de repeat. Ver gen-json.js (compilador) y el espejo zod propuesto en INFORME.md.",
+  "pino": {
+    "vars": {
+      "h": [2.6, 5.4],
+      "trunkH": { "op": "*", "a": { "var": "h" }, "b": [0.25, 0.35] },
+      "r": { "op": "*", "a": { "var": "h" }, "b": [0.24, 0.32] },
+      "copaBase": { "op": "*", "a": { "var": "trunkH" }, "b": 0.8 },
+      "n": { "int": [2, 4] },
+      "step": { "op": "/", "a": { "op": "-", "a": { "var": "h" }, "b": { "var": "copaBase" } }, "b": { "var": "n" } }
+    },
+    "materials": {
+      "tronco": { "color": "#5a4632", "roughness": 1 },
+      "copa": { "color": "#35482c", "hslJitter": [0.05, 0.15, 0.07], "roughness": 1 }
+    },
+    "parts": [
+      {
+        "shape": "cylinder", "mat": "tronco", "seg": 6,
+        "rTop": [0.06, 0.11], "rBottom": [0.12, 0.18], "h": { "var": "trunkH" },
+        "pos": [0, { "op": "*", "a": { "var": "trunkH" }, "b": 0.5 }, 0]
+      },
+      {
+        "shape": "cone", "mat": "copa", "seg": 7, "repeat": { "count": { "var": "n" } },
+        "r": { "op": "*", "a": { "var": "r" }, "b": { "lerp": [1.0, 0.4] } },
+        "h": { "op": "*", "a": { "var": "step" }, "b": 1.55 },
+        "pos": [
+          [-0.06, 0.06],
+          { "op": "+", "a": { "var": "copaBase" }, "b": { "op": "*", "a": { "var": "step" }, "b": { "op": "+", "a": { "var": "i" }, "b": 0.5 } } },
+          [-0.06, 0.06]
+        ]
+      }
+    ]
+  },
+  "matorral": {
+    "vars": { "s": [0.35, 0.85], "n": { "int": [2, 4] } },
+    "materials": { "hoja": { "color": "#4a5a30", "hslJitter": [0.06, 0.2, 0.08], "roughness": 1 } },
+    "parts": [
+      {
+        "shape": "sphere", "mat": "hoja", "repeat": { "count": { "var": "n" } },
+        "r": { "op": "*", "a": { "var": "s" }, "b": [0.6, 1.2] },
+        "pos": [
+          { "op": "*", "a": { "var": "s" }, "b": [-0.8, 0.8] },
+          { "op": "*", "a": { "var": "s" }, "b": [0.35, 0.65] },
+          { "op": "*", "a": { "var": "s" }, "b": [-0.8, 0.8] }
+        ],
+        "scale": [1, [0.6, 0.85], 1]
+      }
+    ]
+  },
+  "roca": {
+    "vars": { "n": { "int": [1, 3] } },
+    "materials": { "piedra": { "color": "#7d7a72", "hslJitter": [0, 0, 0.16], "roughness": 0.95, "flat": true } },
+    "parts": [
+      {
+        "shape": "icosahedron", "mat": "piedra", "repeat": { "count": { "var": "n" } },
+        "r": [0.25, 0.8], "displace": [0.8, 1.2],
+        "pos": [[-0.35, 0.35], [0.05, 0.15], [-0.35, 0.35]],
+        "scale": [1, [0.55, 0.95], 1],
+        "rotY": [0, 6.28]
+      }
+    ]
+  },
+  "junco": {
+    "vars": { "n": { "int": [5, 9] } },
+    "materials": { "tallo": { "color": "#5f6b38", "hslJitter": [0.04, 0, 0.1], "roughness": 1 } },
+    "parts": [
+      {
+        "shape": "cylinder", "mat": "tallo", "seg": 4, "repeat": { "count": { "var": "n" } },
+        "vars": { "hh": [0.5, 1.2] },
+        "rTop": 0.012, "rBottom": 0.02, "h": { "var": "hh" },
+        "pos": [[-0.25, 0.25], { "op": "*", "a": { "var": "hh" }, "b": 0.5 }, [-0.25, 0.25]],
+        "rotX": [-0.18, 0.18], "rotZ": [-0.18, 0.18],
+        "castShadow": false
+      }
+    ]
+  },
+  "olivo": {
+    "vars": { "s": [1.6, 2.4] },
+    "materials": {
+      "tronco": { "color": "#6a5a44", "roughness": 1 },
+      "copa": { "color": "#5c6b46", "hslJitter": [0.03, 0.12, 0.06], "roughness": 1 }
+    },
+    "parts": [
+      {
+        "shape": "cylinder", "mat": "tronco", "seg": 6,
+        "rTop": [0.1, 0.14], "rBottom": [0.16, 0.24],
+        "h": { "op": "*", "a": { "var": "s" }, "b": 0.55 },
+        "pos": [0, { "op": "*", "a": { "var": "s" }, "b": 0.275 }, 0],
+        "rotZ": [-0.15, 0.15]
+      },
+      {
+        "shape": "sphere", "mat": "copa", "repeat": { "count": { "int": [3, 5] } },
+        "r": { "op": "*", "a": { "var": "s" }, "b": [0.32, 0.5] },
+        "pos": [
+          { "op": "*", "a": { "var": "s" }, "b": [-0.4, 0.4] },
+          { "op": "*", "a": { "var": "s" }, "b": [0.62, 0.85] },
+          { "op": "*", "a": { "var": "s" }, "b": [-0.4, 0.4] }
+        ],
+        "scale": [1, [0.55, 0.75], 1]
+      }
+    ]
+  }
+}

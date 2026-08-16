@@ -1,23 +1,30 @@
-/** Vuelca el spec greybox del tile medieval (fixture de labs/render) para el
- *  bench FPS. Usa el MISMO builder que el juego (buildTileGreyboxSpec) — la
- *  geometría del exterior es exactamente la del modo vector oblicuo, solo que
- *  el viewer FPS la recorre a nivel de suelo (celdas → metros ×0.5).
+/** Vuelca el spec greybox de un plan declarativo del juego para el bench FPS.
+ *  Usa el MISMO builder que el juego (buildTileGreyboxSpec) — la geometría es
+ *  exactamente la del modo vector oblicuo, solo que el viewer FPS la recorre a
+ *  nivel de suelo (celdas → metros ×0.5).
  *
- *  Uso: npx tsx labs/fps/dump_spec.ts   (desde la raíz del repo o nefan-core)
+ *  Uso: npx tsx labs/fps/dump_spec.ts [plan.json] [outDir] [tileId]
+ *  Sin argumentos conserva el comportamiento histórico (tile medieval de
+ *  labs/render → escenas/exterior).
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildTileGreyboxSpec } from "../../nefan-core/src/scene/blueprint/greybox.js";
 import { parseVolumes } from "../../nefan-core/src/scene/blueprint/volumes.js";
+import { parseGround } from "../../nefan-core/src/scene/blueprint/ground.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const planPath = join(here, "..", "render", "fixtures", "medieval", "plan.json");
-const outPath = join(here, "escenas", "exterior", "spec.json");
+const [planArg, outDirArg, tileIdArg] = process.argv.slice(2);
+const planPath = planArg ?? join(here, "..", "render", "fixtures", "medieval", "plan.json");
+const outDir = outDirArg ?? join(here, "escenas", "exterior");
+const tileId = tileIdArg ?? "fps_exterior";
+const outPath = join(outDir, "spec.json");
 
 const plan = JSON.parse(readFileSync(planPath, "utf-8")) as {
   volumes: unknown;
+  ground?: unknown;
   biome?: string;
   scene_description?: string;
 };
@@ -31,16 +38,25 @@ if (!parsed.ok) {
 for (const v of parsed.volumes) {
   if (v.type === "building" && v.cutaway) delete (v as { cutaway?: boolean }).cutaway;
 }
+let ground;
+if (plan.ground !== undefined) {
+  const g = parseGround(plan.ground);
+  if (!g.ok) {
+    console.error("ground inválido:", g.error);
+    process.exit(1);
+  }
+  ground = g.ground;
+}
 const spec = buildTileGreyboxSpec(
-  { volumes: parsed.volumes, biome: plan.biome ?? "grass" },
-  "fps_exterior",
+  { ground, volumes: parsed.volumes, biome: plan.biome ?? "grass" },
+  tileId,
 );
 
 writeFileSync(
   outPath,
   JSON.stringify(
     {
-      source: "labs/render/fixtures/medieval/plan.json",
+      source: relative(join(here, "..", ".."), planPath),
       scene_description: plan.scene_description ?? "",
       units: "cells",
       meters_per_cell: 0.5,

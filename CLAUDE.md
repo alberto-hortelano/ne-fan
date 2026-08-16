@@ -376,9 +376,19 @@ lo convierte en una escena 3D que el cliente renderiza con **three.js**
 - `volumes`: todo lo que tiene altura, tipado — `building` (con `roof`,
   `walls`, `doors`, `cutaway:true` para edificios enterables), `wall`,
   `tower`, `gate` (vano transitable, tallado en su muro anfitrión), `tree`,
-  `bush`, `rock`, `fountain`, `prop`. Huella en celdas + altura; `label` en
-  español guía al clasificador. Sin volumes explícitos se derivan del esquema
+  `bush`, `rock`, `fountain`, `prop`, `prism` (contorno libre + altura) y
+  `custom` (composición 3D LIBRE: piezas box/cylinder/cone/sphere/gable con
+  pos/rotX/rotY/rotZ/scale locales, color y `desc` opcional por pieza — la
+  vía del motor para cualquier objeto sin catálogo ni preset; el caso
+  fundacional es la carreta del playtest 2026-08-16, antes un prop box con
+  "skin" de carro). Huella en celdas + altura; `label` en español guía al
+  clasificador. Sin volumes explícitos se derivan del esquema
   (`vegetation_zones` → árboles, `structures` → cutaway).
+  FILOSOFÍA DE PROMPT (2026-08-16): los prompts del motor narrativo son
+  DOCUMENTACIÓN de herramientas y contrato, nunca recetas de uso — sin
+  listas de objetos-ejemplo, sin doctrina de diseño, sin "use it when": el
+  motor es tan capaz como nosotros y decide qué construir y cómo
+  (tile_instructions.md ya podado; stage/scene_instructions pendientes).
 - `buildTileGreyboxSpec(plan, tileKey)` → `TileGreyboxSpec`
   (`TILE_GREYBOX_VERSION`): primitivas en celdas (suelo de bioma + detalle
   sembrado + rasgos ground escalonados en y + volúmenes por TRAMOS vía
@@ -542,7 +552,7 @@ Distintos de los plugins declarativos: **módulos TS de hot loop** con varias im
 
 ## Vista fps (`view: "fps"` — primera persona estilo retro-FPS)
 
-Tercera vista del cliente 2D sobre los MISMOS tiles del overworld (bootstrap y escenas = rama tile; bench de origen en `labs/fps/`). Mouse look con yaw CONTINUO (pointer lock sobre `#fps-canvas`, click lo captura; sin pitch) más ←/→ (±45° por pulsación), WASD relativo al facing, colisión y sim idénticos a la oblicua (`CollisionSystem` intacto). `FpsRenderer` (canvas WebGL propio `#fps-canvas`, three con import dinámico — NUNCA el singleton offscreen del greybox) monta cada tile desde `buildFpsTileSpec` (`src/scene/blueprint/fps-spec.ts`: cierra cutaways, escala celdas→metros, propaga `surface_desc`); NPCs = billboards y_bot `frontal_8` (dir = `yaw(cám→npc) − yaw_npc`, signo calibrado). El arte es un **atlas de superficies**: `surfaces.ts` (`src/scene/greybox/`) clasifica las caras en celdas de material + celdas hero; `FpsAtlasController` pide `/generate_surface_atlas` (remote-gen) que resuelve POR CELDA contra la **librería de superficies** (asset-store kind `surface`, hash por descripción+estilo — reutilizable entre escenas, pinta solo lo que falta con nano-banana-pro/gpt-image-2) y aplica las texturas; sin render_mode imagen todo queda en clay gratis. Los volúmenes `building|wall|prop|prism` admiten `surface_desc` opcional (el motor narrativo pide una superficie concreta que entra en la librería). `available_assets` muestra al motor la librería reutilizable (texture/model/sprite/surface, round-robin, sin ruido de inpaint) — el reuso es opcional, nunca forzado. E2E sin créditos: fake-ai-server sirve `/generate_surface_atlas` con dameros.
+Tercera vista del cliente 2D sobre los MISMOS tiles del overworld (bootstrap y escenas = rama tile; bench de origen en `labs/fps/`). Mouse look con yaw CONTINUO (pointer lock sobre `#fps-canvas`, click lo captura; sin pitch) más ←/→ (±45° por pulsación), WASD relativo al facing, colisión y sim idénticos a la oblicua (`CollisionSystem` intacto). `FpsRenderer` (canvas WebGL propio `#fps-canvas`, three con import dinámico — NUNCA el singleton offscreen del greybox) monta cada tile desde `buildFpsTileSpec` (`src/scene/blueprint/fps-spec.ts`: cierra cutaways, escala celdas→metros, reparte `surface_desc` por rol/cara, y aplica dos post-procesos fps-only que NO tocan el builder compartido: `fps-detail.ts` — copas esféricas por `species`, rocas facetadas `rock_stone`, ventanas `window_glass` y chimeneas de building, tejado cónico de torre, arco escalonado de gate — y `scatter.ts` — scatter declarativo `scatter_generators`+`scatter_zones` del plan: generadores como JSON puro con rangos/vars/lerp (port del run 003 de labs/authoring), zonas con densidad elem/m², exclusión automática de huellas/agua/caminos, prims clay `cat: decor` a coste 0, tope 240 instancias reportado); NPCs = billboards y_bot `frontal_8` (dir = `yaw_npc − yaw(npc→cám)`, como pickDirection). El arte es un **atlas de superficies**: `surfaces.ts` (`src/scene/greybox/`) clasifica las caras en celdas de material + celdas hero; `FpsAtlasController` pide `/generate_surface_atlas` (remote-gen) que resuelve POR CELDA contra la **librería de superficies** (asset-store kind `surface`, hash por descripción+estilo — reutilizable entre escenas, pinta solo lo que falta con nano-banana-pro/gpt-image-2) y aplica las texturas; sin render_mode imagen todo queda en clay gratis. Los volúmenes `building|wall|prop|prism` admiten `surface_desc` opcional: string = celda hero para las caras del CUERPO (tejado/puerta conservan su material), u objeto por cara/rol `{n|s|e|w|side|roof|door|caps|top}` = celda propia por cara con su descripción (imagen distinta por cara; `SurfaceAssign.faces` asigna por slot de BoxGeometry y el renderer crea material por slot). `available_assets` muestra al motor la librería reutilizable (texture/model/sprite/surface, round-robin, sin ruido de inpaint) — el reuso es opcional, nunca forzado. E2E sin créditos: fake-ai-server sirve `/generate_surface_atlas` con dameros (bootstrap con cartel per-face + casa hero + scatter).
 - **Candidatos futuros** (mismo patrón): PlayerController (prerequisito para touch/gamepad), EnemyAI (`systems.enemy_ai`), transporte narrativo. CollisionSystem y el pipeline de imagen ya son inyectables vía `*Deps`; formalizar registro sólo si aparece una 2ª implementación.
 
 ## Sistema de combate
