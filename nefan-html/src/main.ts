@@ -910,6 +910,11 @@ interface TilePlanInfo {
   volumes: Volume[];
   /** Bioma del Format D crudo (la vista fps lo usa para el suelo/atlas). */
   biome?: string;
+  /** Scatter declarativo (crudo — solo lo consume la vista fps). */
+  scatter_generators?: unknown;
+  scatter_zones?: unknown;
+  /** Descripción de la escena — la ambientación fps infiere la hora de ella. */
+  scene_description?: string;
   composed: ComposedTilePlan;
 }
 
@@ -960,6 +965,12 @@ function composeTilePlan(
     ground,
     volumes,
     biome,
+    scatter_generators: data.scatter_generators ?? raw.scatter_generators,
+    scatter_zones: data.scatter_zones ?? raw.scatter_zones,
+    scene_description:
+      typeof raw.scene_description === "string" ? raw.scene_description
+      : typeof data.scene_description === "string" ? data.scene_description
+      : undefined,
     composed: {
       spec,
       view_box: spec.camera.view_box,

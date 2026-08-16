@@ -187,11 +187,38 @@ const BOOTSTRAP_VOLUMES = [
     roof: { kind: "gable", material: "slate" },
     walls: { material: "timber" },
     doors: [{ edge: "s", at: 9, w: 4 }],
+    surface_desc: {
+      side: "half-timbered facade with flower boxes under the windows",
+      roof: "mossy slate roof tiles",
+      door: "arched oak door with iron studs",
+    },
   },
   // ── mercado junto a la plaza ──
   { id: "puesto_mercado", label: "puesto de mercado", type: "prop", rect: [80, 74, 7, 4], shape: "box", h: 3, color: "#8a6a40" },
   { id: "caja_mercado", label: "caja de fruta", type: "prop", at: [88.5, 76.5], shape: "box", h: 1.2, color: "#a8853f" },
-  { id: "carro", label: "carro de mano", type: "prop", rect: [44, 76, 6, 3.4], shape: "box", h: 2, color: "#77572f" },
+  // Carro como volumen CUSTOM (composición 3D libre del motor): caja elevada
+  // + 4 ruedas tumbadas + toldo con superficie hero propia + varal. El caso
+  // que motivó la herramienta (antes: prop box con "skin" de carro).
+  {
+    id: "carro",
+    label: "carro de mano entoldado",
+    type: "custom",
+    at: [47, 77.7],
+    angle: -14,
+    parts: [
+      { shape: "box", size: [6, 1.4, 3], pos: [0, 1.1, 0], color: "#77572f",
+        desc: "weathered wooden cart bed with iron-banded side planks" },
+      { shape: "cylinder", rBottom: 0.9, h: 0.3, pos: [-1.7, 0, 1.55], rotX: 1.5708, color: "#4a3a26" },
+      { shape: "cylinder", rBottom: 0.9, h: 0.3, pos: [1.7, 0, 1.55], rotX: 1.5708, color: "#4a3a26" },
+      { shape: "cylinder", rBottom: 0.9, h: 0.3, pos: [-1.7, 0, -1.55], rotX: 1.5708, color: "#4a3a26" },
+      { shape: "cylinder", rBottom: 0.9, h: 0.3, pos: [1.7, 0, -1.55], rotX: 1.5708, color: "#4a3a26" },
+      { shape: "cylinder", rBottom: 1.5, rTop: 1.5, h: 5.6, pos: [2.8, 1.52, 0], rotZ: 1.5708,
+        scale: [0.72, 1, 0.95], color: "#8a7d63",
+        desc: "dark waxed canvas wagon tilt over hooped ribs, small hanging trinkets" },
+      { shape: "box", size: [0.35, 2.4, 0.35], pos: [3.1, 0.4, 0.9], rotY: 0.5, color: "#5a4632" },
+      { shape: "box", size: [0.35, 2.4, 0.35], pos: [3.1, 0.4, -0.9], rotY: -0.5, color: "#5a4632" }
+    ],
+  },
   // ── muralla sur con torres y puerta (el camino la cruza) ──
   { id: "muralla_sur", label: "muralla", type: "wall", points: [[0, 108], [128, 108]], width: 5, h: 7, crenellated: true },
   { id: "torre_o", label: "torre", type: "tower", at: [38, 108], r: 6.5, h: 11 },
@@ -205,7 +232,61 @@ const BOOTSTRAP_VOLUMES = [
   { id: "mata_1", label: "arbusto", type: "bush", at: [46, 68], s: 1.0 },
   { id: "mata_2", label: "arbusto", type: "bush", at: [84, 90], s: 0.9 },
   { id: "roca_1", label: "roca", type: "rock", at: [14, 74], s: 1.3 },
+  // ── heroes por cara (vista fps): cartel con anverso≠reverso y casa con
+  //    fachada/tejado/puerta separados — el fake atlas pinta un damero
+  //    DISTINTO por celda, así el E2E delata cualquier colapso de caras. ──
+  {
+    id: "cartel_plaza",
+    label: "cartel de la plaza",
+    type: "prop",
+    rect: [70, 72, 6, 0.8],
+    shape: "box",
+    h: 5,
+    surface_desc: {
+      s: "painted wooden sign reading LA POSADA with a boar emblem",
+      n: "weathered plank back of the sign with two crossbars",
+    },
+  },
 ];
+
+/** Scatter declarativo del bootstrap (vista fps): pinar de fondo al norte y
+ *  matorral alrededor de la plaza, con el generador del run 003. */
+const BOOTSTRAP_SCATTER = {
+  scatter_generators: {
+    pino: {
+      vars: { h: [5, 10], trunkH: { op: "*", a: { var: "h" }, b: 0.3 }, n: { int: [2, 4] } },
+      materials: {
+        tronco: { color: "#5a4632" },
+        copa: { color: "#35482c", hslJitter: [0.05, 0.15, 0.07] },
+      },
+      parts: [
+        { shape: "cylinder", mat: "tronco", rTop: 0.25, rBottom: 0.4, h: { var: "trunkH" }, pos: [0, 0, 0] },
+        {
+          shape: "cone", mat: "copa", seg: 7, repeat: { count: { var: "n" } },
+          r: { op: "*", a: { var: "h" }, b: { lerp: [0.3, 0.12] } },
+          h: { op: "*", a: { var: "h" }, b: 0.4 },
+          pos: [0, { op: "*", a: { var: "trunkH" }, b: { op: "+", a: { var: "i" }, b: 0.8 } }, 0],
+        },
+      ],
+    },
+    matorral: {
+      vars: { s: [0.7, 1.6] },
+      materials: { hoja: { color: "#4a5a30", hslJitter: [0.06, 0.2, 0.08] } },
+      parts: [
+        {
+          shape: "sphere", mat: "hoja", repeat: { count: { int: [1, 3] } },
+          r: { op: "*", a: { var: "s" }, b: [0.6, 1.1] },
+          pos: [{ op: "*", a: { var: "s" }, b: [-0.8, 0.8] }, 0, { op: "*", a: { var: "s" }, b: [-0.8, 0.8] }],
+          scale: [1, [0.55, 0.8], 1],
+        },
+      ],
+    },
+  },
+  scatter_zones: [
+    { kind: "pino", shape: { type: "rect", x0: 2, z0: 2, x1: 126, z1: 26 }, density: 0.05 },
+    { kind: "matorral", shape: { type: "ellipse", cx: 64, cz: 88, rx: 34, rz: 20 }, density: 0.06 },
+  ],
+};
 
 /** Tile de bootstrap (0,0): la taberna estampada en el plano + camino al este. */
 function bootstrapTile() {
@@ -233,6 +314,7 @@ function bootstrapTile() {
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
     ground: BOOTSTRAP_GROUND,
     volumes: BOOTSTRAP_VOLUMES,
+    ...BOOTSTRAP_SCATTER,
     ambient_event: "El fuego crepita dentro.",
   };
 }
