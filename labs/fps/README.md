@@ -60,7 +60,7 @@ runs/<run>/
   juego volcado con `buildTileGreyboxSpec` (dump_spec.ts, celdas ×0.5 → m).
 - Los sprites (`sprites/` → symlink a nefan-html/public/sprites/y_bot,
   gitignored por licencia) usan el set `frontal_8`; la dirección es
-  `yaw_entidad − yaw(cámara→entidad)` cuantizado a 8.
+  `yaw_entidad − yaw(entidad→cámara)` cuantizado a 8.
 
 ## Checklist de crítica (director de arte)
 
@@ -124,9 +124,88 @@ runs/<run>/
   perspectivas parásitas. La adherencia de estilo entre llamadas es floja —
   anclar la página 2 con la página 1 como referencia funciona.
 - **Sprites 8-dir:** el set frontal_8 real tiene dir0=frente/dir4=espalda
-  (el idle "sword and shield" engaña por el twist de la pose) y gira en
-  sentido CONTRARIO a `yaw_npc − yaw(cámara→entidad)` — calibrado con el
-  bench cardinal S/E/N/W (ver lib.mjs).
+  (el idle "sword and shield" engaña por el twist de la pose); la fórmula es
+  `yaw_npc − yaw(npc→cámara)`, la MISMA familia que pickDirection del juego.
+  La "calibración cardinal S/E/N/W" original invirtió el signo — un espejo
+  E/W que frente/espalda no delatan (corregido en el playtest 2026-08-16).
 - **Hastiales del gable = muro, no teja** (classify caps → wall_plaster).
 - El detalle procedural clay del suelo (elipses/piedritas del builder) sobre
   textura pintada lee como parches planos — se oculta en modo texturizado.
+
+## Bench Godot — three.js vs Godot 4.6 (comparativa de renderers)
+
+Implementación NUEVA en Godot (`godot/`, proyecto mínimo independiente del
+proyecto `godot/` del juego) que consume LOS MISMOS datos declarativos del
+motor narrativo: `escenas/<n>/escena.json` (volcado lossless de `load()` con
+`dump_escena.mjs`), el `layout.json` congelado del run y sus
+`textures/<cellKey>.png`. Dos modos: **parity** (parámetros three.js clavados:
+ACES 1.1, fog lineal 25→90, cielo gradiente, sol ORTHOGONAL 2048, energías
+calibradas por mediana de luminancia) y **quality** (Forward+: SDFGI + SSAO +
+soft shadows PSSM 4 splits + sombras en las omnis + sol ×2.2 para el rebote).
+
+### Uso
+
+```bash
+node dump_escena.mjs interior            # regen escena.json (tras tocar escena.mjs)
+./capture_godot.sh interior out/ parity 016_mix [p0 p1…]   # capturas 1600×1000
+./capture_godot.sh exterior out/ quality 015_ext_nano
+python3 compare.py runs/cmp_001 --scenes interior exterior nueva  # index.html pareado
+python3 compare.py --calibrate a.png b.png   # medianas de luminancia (calibración)
+# Interactivo (WASD + ratón, click captura):
+~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method forward_plus -- --scene interior --mode quality --run 016_mix
+```
+
+Gotchas de captura: SIEMPRE `xvfb-run` (jamás `--headless`: apaga el 3D);
+**Forward+ bajo xvfb SÍ usa la RTX 3060 real** (Vulkan no depende de GLX) —
+primera validación en el repo; gl_compatibility cae a llvmpipe (software).
+
+### Escena "nueva" (autoría del motor narrativo)
+
+`escenas/nueva/plan.json` — plan declarativo del juego ({ground, volumes,
+biome}) autorado por el motor: ermita + ábside prism + campanario + río con
+puente deck + molino + huerto. `dump_spec.ts` (ya parametrizado:
+`npx tsx labs/fps/dump_spec.ts <plan> <outDir> <tileId>`) lo convierte con el
+builder real. Fricciones de autoría registradas (4 iteraciones hasta spec
+limpio, todas fail-loud con mensaje zod preciso):
+1. `prop` exige `shape` (box|cylinder) — el error no lista los valores.
+2. Alturas en CELDAS (no metros) en volumes — fácil autorar a media altura.
+3. `label` obligatorio en TODOS los volumes (árboles/rocas incluidos).
+4. `deck.material` solo wood|stone; `path` usa `w`, no `width`.
+Límites de expresividad: ~~una rueda de molino VERTICAL no existe~~
+(RESUELTO 2026-08-16: el volumen `custom` compone piezas libres con
+rotX/rotZ — cilindros tumbados con el eje en Z o en X; escena de bench
+`escenas/carreta/`); el agua/camino planos apenas se leen a ras de
+suelo (sin hundimiento del cauce); el frame del idle de los NPC difiere entre
+capturas (el viewer arranca la animación en t aleatorio — Godot fija frame 0).
+
+### Veredicto (2026-08-15)
+
+Run `runs/cmp_001` — 3 escenas × 8 poses × {three, godot-parity,
+godot-quality}, texturizado con los atlas cacheados (interior 016_mix,
+exterior 015_ext_nano, nueva clay). Ver `runs/cmp_001/index.html` (servir con
+`../serve.sh`).
+
+- **Paridad alcanzada**: Δmediana de luminancia media vs three: interior
+  +0.4, exterior −1.1, nueva +5.5. La geometría es idéntica pose a pose
+  (mismo spec, misma cámara: `rotation.y = −yaw`); las texturas y sus UVs
+  (tile en metros/2.5, unique 0..1) calcan; los billboards y_bot 8-dir
+  funcionan con la misma fórmula de dirección e histéresis.
+- **Residuo irreducible** (%píxeles Δ>25: 4–24% según escena): las curvas
+  ACES de three (ACESFilmic) y Godot (ACES fitted) divergen en ALTAS luces —
+  clay vs clay queda Δ+8 con paredes +32 — y la distribución de sombras
+  difiere (PCF suave vs mapa orto 2048 con otro bias). Es tono, no layout.
+- **Modo calidad**: la diferencia REAL a favor de Godot. Interior con SDFGI +
+  sombras de las omnis: la chimenea rebota, los bajos de la barra se asientan
+  — lee a juego comercial donde three lee a maqueta iluminada. Exterior con
+  sol ×2.2 + GI: sombras largas nítidas, esquinas con oclusión, cielo
+  saturado. Gratis en autoría: MISMO JSON de entrada.
+- **Bugs que Godot corrige gratis** (three del juego, `fps-gl.ts`):
+  `sun.target` jamás posicionado (sombras rotas fuera del tile 0,0) y
+  `userData.noShadow` jamás escrito (al activar tile, suelos/techos noShadow
+  vuelven a proyectar). El bench three (lib.mjs) no los tiene.
+- **Coste/tooling**: captura Godot ~12 s/pose (Vulkan HW real bajo xvfb);
+  three headless ~45–90 s/pose (Chrome swiftshader). Godot necesitó 2
+  calibraciones no obvias (winding horario de Godot; equivalencia de
+  intensidades de luz three↔Godot que NO es 1:1 — 4 rondas de calibración) y
+  el quirk del cielo de three (gradiente en lineal crudo sin tonemap) hubo
+  que replicarlo linealizando dos veces.

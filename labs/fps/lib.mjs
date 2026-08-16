@@ -196,6 +196,8 @@ export function makeFpsLib(THREE) {
     mesh.position.set(...p.pos);
     if (p.rotY) mesh.rotation.y = p.rotY;
     if (p.rotX) mesh.rotation.x = p.rotX;
+    if (p.rotZ) mesh.rotation.z = p.rotZ;
+    if (p.scale) mesh.scale.set(...p.scale);
     mesh.castShadow = !p.noShadow;
     mesh.receiveShadow = true;
     return mesh;
@@ -417,10 +419,10 @@ export function makeFpsLib(THREE) {
         const m = bank.metaSync(def.anim);
         if (!m) return;
         const toCam = [cam.position.x - state.x, cam.position.z - state.z];
-        // Calibrado empíricamente (bench cardinal S/E/N/W): el set frontal_8
-        // gira en sentido contrario a yaw_npc − yaw(toCam) — con el orden
-        // invertido los perfiles E/W salen del lado correcto.
-        const rel = yawOf(toCam[0], toCam[1]) - state.yaw;
+        // rel = yaw_npc − yaw(npc→cám) — misma familia que pickDirection del
+        // juego. La "calibración cardinal" original tenía el signo al revés
+        // (espejo E/W); corregido junto al juego (playtest 2026-08-16).
+        const rel = state.yaw - yawOf(toCam[0], toCam[1]);
         const dirCount = m.directions ?? 8;
         let dir = Math.round(rel / ((2 * Math.PI) / dirCount)) % dirCount;
         if (dir < 0) dir += dirCount;

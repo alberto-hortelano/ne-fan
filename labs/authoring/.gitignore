@@ -1,0 +1,3 @@
+# Cada run pesa (capturas de los benches); no se versiona.
+runs/*
+!runs/.gitkeep

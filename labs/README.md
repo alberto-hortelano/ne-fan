@@ -15,6 +15,8 @@ propio.
 | `escenografia/` | Pares descripción↔plató de cine + bench greybox (clay 3D → imagen gana al SVG) | `python labs/escenografia/gen_estilos.py` · `greybox/gen.py` | cerrado (base del compositor de proscenio) |
 | `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,fake-ai-server,replay-server}.mjs` · `check-scene.ts` | activo (tooling de E2E) |
 | `fps/` | Modo 3D primera persona estilo Doom: atlas de superficies IA + sprites y_bot 8-dir | `viewer.html` en :8912 · `python3 labs/fps/gen.py <run>` | activo |
+| `fps/godot/` | Bench Godot 4.6 vs three.js de la vista fps: paridad medida + modo calidad (SDFGI) | `capture_godot.sh` · `compare.py` · veredicto en `fps/COMPARATIVA_GODOT.md` | activo |
+| `authoring/` | Autoría LIBRE del modelo: run 001 three vs Godot (misma descripción, medido); run 002 luz de gameplay + scatter procedural declarativo (zonas+densidad+generador de autor) | `three/capture.sh` · `godot/capture.sh` · veredicto en `authoring/INFORME.md` | activo |
 
 ## Convenciones comunes
 

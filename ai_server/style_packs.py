@@ -27,6 +27,7 @@ from PIL import Image
 from style_categories import (
     CHARACTER_CATEGORIES as CHARACTER_CATEGORIES,
     ENV_CATEGORIES as ENV_CATEGORIES,
+    FPS_CATEGORIES as FPS_CATEGORIES,
     LEGACY_ALIASES as LEGACY_ALIASES,
     STAGE_CATEGORIES as STAGE_CATEGORIES,
     ZONE_TO_STAGE as ZONE_TO_STAGE,
@@ -132,7 +133,13 @@ class StylePackResolver:
             refs.setdefault(cat, r.get("file"))
         category = LEGACY_ALIASES.get(category, category)
         is_stage = category.startswith("stage_")
-        if category in CHARACTER_CATEGORIES:
+        is_fps = category.startswith("fps_")
+        if is_fps:
+            # La lámina de materiales no admite sustituto: una escena cenital
+            # o de plató contaminaría los swatches planos. Existe o None (el
+            # atlas degrada a solo style_token).
+            order: tuple = (category,)
+        elif category in CHARACTER_CATEGORIES:
             order = (category, *_CHARACTER_FALLBACK_ORDER)
         elif is_stage:
             fallback = _STAGE_FALLBACK.get(category)
@@ -169,7 +176,11 @@ class StylePackResolver:
         print(
             f"StylePacks: '{style_id}' sin imagen utilizable para '{category}' "
             f"(pack aún sin generar?) — "
-            + ("el plató irá solo con el blueprint" if is_stage else "se usará la referencia global"),
+            + (
+                "el plató irá solo con el blueprint" if is_stage
+                else "el atlas de superficies irá solo con el style_token" if is_fps
+                else "se usará la referencia global"
+            ),
             flush=True,
         )
         return None

@@ -21,7 +21,7 @@ import type { Volume } from "../blueprint/volumes.js";
 import type { GroundFeature } from "../blueprint/ground.js";
 import { groundFeaturePrims } from "../blueprint/ground-prims.js";
 import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
-import { classifyVolume } from "../greybox/volume-prims.js";
+import { classifyVolume, customPartTop, customVolumePrims } from "../greybox/volume-prims.js";
 import { volumeSolidDiscRadiusCells } from "../blueprint/collision.js";
 import {
   canonicalGreyboxJson,
@@ -198,25 +198,35 @@ export interface StageScenePlan {
  *  texto (backdrop + descripción + mood) — "luz de atardecer" en el backdrop
  *  debe atardecer aunque el motor no rellene el campo. Default "dia". */
 export type TimeOfDay = "amanecer" | "dia" | "atardecer" | "noche";
+
+/** Hora inferida de un TEXTO (descripciones del motor) — compartida con la
+ *  vista fps, que no tiene campo declarado y escucha la narración. */
+export function timeOfDayFromText(text: string): TimeOfDay {
+  const t = text.toLowerCase();
+  // Raíces verbales incluidas: "atardece sobre el camino" atardece de verdad.
+  if (/amanec|alba\b|aurora|primera luz/.test(t)) return "amanecer";
+  if (/atardec|ocaso|poniente|ca(e|ía) la tarde|crep[uú]sculo|sol bajo/.test(t)) return "atardecer";
+  if (/\bnoche\b|anochec|nocturn|luna|estrellas|medianoche/.test(t)) return "noche";
+  return "dia";
+}
+
 export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
   const declared = plan.stage.ambience?.time_of_day;
   if (declared) return declared;
-  const text = [
-    plan.stage.backdrop?.description ?? "",
-    plan.description ?? "",
-    plan.stage.ambience?.mood ?? "",
-  ].join(" ").toLowerCase();
-  if (/amanecer|alba\b|aurora|primera luz/.test(text)) return "amanecer";
-  if (/atardecer|ocaso|poniente|caer la tarde|crep[uú]sculo|sol bajo/.test(text)) return "atardecer";
-  if (/\bnoche\b|nocturn|luna|estrellas|medianoche/.test(text)) return "noche";
-  return "dia";
+  return timeOfDayFromText(
+    [
+      plan.stage.backdrop?.description ?? "",
+      plan.description ?? "",
+      plan.stage.ambience?.mood ?? "",
+    ].join(" "),
+  );
 }
 
 /** Labels que encienden una luz práctica cálida sobre el volumen. */
 /** Labels de edificio que ganan soportal (columnas + alero en la fachada). */
 const PORCH_LABEL_RE = /soportal|p[oó]rtico|porche|arcada|logia/i;
 
-const PRACTICAL_LIGHT_RE =
+export const PRACTICAL_LIGHT_RE =
   /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
 
 /** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
@@ -289,6 +299,11 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
         maxC = Math.max(maxC, c); maxR = Math.max(maxR, r);
       }
       return [minC, minR, maxC - minC, maxR - minR];
+    }
+    case "custom": {
+      // Composición libre: la MISMA huella que footprint.ts (AABB de piezas).
+      const { cells } = volumeFootprint(v);
+      return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
     }
   }
 }
@@ -1011,6 +1026,8 @@ export function volumeHeightM(v: Volume, mpc: number): number {
       return (v.h ?? 2) * mpc;
     case "prism":
       return v.h * mpc;
+    case "custom":
+      return Math.max(...v.parts.map(customPartTop)) * mpc;
   }
 }
 
@@ -1415,6 +1432,22 @@ function buildVolumePrimitives(
         color: v.color ?? wall.lit,
         cat: "building",
       });
+      break;
+    }
+    case "custom": {
+      // Composición libre: las prims canónicas (celdas, pivote en `at`)
+      // escaladas a metros del plató. seg de cone (size[2]) y sphere
+      // (size[1]) NO se escalan (contrato de GreyboxPrimitive.size).
+      for (const prim of customVolumePrims(v)) {
+        const size = prim.size.map((s) => s * mpc);
+        if (prim.shape === "cone" && prim.size[2] !== undefined) size[2] = prim.size[2];
+        if (prim.shape === "sphere" && prim.size[1] !== undefined) size[1] = prim.size[1];
+        push({
+          ...prim,
+          size,
+          pos: [rect.minX + prim.pos[0] * mpc, prim.pos[1] * mpc, rect.minZ + prim.pos[2] * mpc],
+        });
+      }
       break;
     }
   }

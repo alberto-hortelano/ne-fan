@@ -16,7 +16,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from deps import deps
-from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, STAGE_CATEGORIES
+from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, FPS_CATEGORIES, STAGE_CATEGORIES
 
 router = APIRouter()
 
@@ -37,19 +37,22 @@ class StyleCompleteRequest(BaseModel):
     confirm: bool = False
 
 
-_STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES, *STAGE_CATEGORIES)
+_STYLE_CATEGORIES = (*ENV_CATEGORIES, *CHARACTER_CATEGORIES, *STAGE_CATEGORIES, *FPS_CATEGORIES)
 
 
 def default_manifest_refs(extra_stage: tuple[str, ...] = ()) -> list[dict]:
-    """Los 12 refs canónicos de un pack: las 9 zonas (proyección oblicua
-    única) más los 3 personajes (model sheets). Las categorías de plató NO se
-    auto-declaran (declararlas dispararía el coste de /complete para todo el
-    mundo): solo entran las que el usuario haya subido (`extra_stage`) —
-    un estilo de usuario sirve a proscenium si aporta al menos una imagen de
-    plató."""
+    """Los 13 refs canónicos de un pack: las 9 zonas (proyección oblicua
+    única), los 3 personajes (model sheets) y la lámina de materiales de la
+    vista fps (una sola imagen — sí se auto-declara). Las categorías de plató
+    NO se auto-declaran (declararlas dispararía el coste de /complete para
+    todo el mundo, son 6): solo entran las que el usuario haya subido
+    (`extra_stage`) — un estilo de usuario sirve a proscenium si aporta al
+    menos una imagen de plató."""
     refs: list[dict] = []
     for c in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES):
         refs.append({"category": c, "file": f"{c}.jpg", "tags": []})
+    for c in FPS_CATEGORIES:
+        refs.append({"category": c, "file": f"{c}.jpg", "tags": [], "view": "fps"})
     for c in STAGE_CATEGORIES:
         if c in extra_stage:
             refs.append({"category": c, "file": f"{c}.jpg", "tags": [], "view": "proscenium"})

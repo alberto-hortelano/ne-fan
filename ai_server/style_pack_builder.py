@@ -27,6 +27,7 @@ from spend_tracker import SPEND
 from style_packs import (
     CHARACTER_CATEGORIES,
     ENV_CATEGORIES,
+    FPS_CATEGORIES,
     LEGACY_ALIASES,
     REPO_ROOT,
     STAGE_CATEGORIES,
@@ -43,11 +44,16 @@ CHAR_SEED = (
 PLANTILLA_DIR = REPO_ROOT / "nefan-core" / "data" / "styles" / "_plantilla"
 STAGE_SEED_DIR = PLANTILLA_DIR / "proscenio"
 OBLIQUE_SEED_DIR = PLANTILLA_DIR / "oblicua"
+FPS_SEED_DIR = PLANTILLA_DIR / "fps"
 
 #: Modelo del repintado de refs de plató: clay → gpt-image-2 vía fal DIRECTO
 #: (máxima fidelidad de layout del bench labs/escenografia/greybox — el mismo
 #: camino que el repintado in-game del plató en scene_image_generator).
 STAGE_AI_MODEL = "gpt-image-2"
+#: Modelo de la lámina fps_surfaces: nano-banana-pro vía fal — el ganador del
+#: bench labs/fps para swatches de material tileables (mismo modelo que pinta
+#: las páginas tile del atlas in-game).
+FPS_AI_MODEL = "nano-banana-pro"
 
 
 def seed_for(category: str) -> Path:
@@ -55,6 +61,14 @@ def seed_for(category: str) -> Path:
     (la plantilla ES el encuadre; sin ella el modelo inventa la cámara)."""
     if category in CHARACTER_CATEGORIES:
         return CHAR_SEED
+    if category in FPS_CATEGORIES:
+        path = FPS_SEED_DIR / f"{category}.png"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"plantilla de rejilla fps ausente: {path} — regenerarla con "
+                "ai_server/tools/gen_fps_seed.py"
+            )
+        return path
     if category in STAGE_CATEGORIES:
         path = STAGE_SEED_DIR / f"{category}.png"
         if not path.exists():
@@ -119,6 +133,17 @@ CATEGORY_SCENES: dict[str, str] = {
         "a torch-lit dungeon: stone corridors, chambers of different sizes, "
         "stairs, pillars and rubble"
     ),
+    # Lámina de materiales de la vista fps: 12 swatches (uno por celda de la
+    # rejilla del seed). Redactada en clave medieval — un pack de otra
+    # ambientación la sustituye con `scene` (mismos 12 huecos, sus materiales).
+    "fps_surfaces": (
+        "twelve different flat material swatches, one per grid cell, covering "
+        "the world's most common surfaces: whitewashed plaster wall, rough "
+        "fieldstone masonry, weathered wooden planks, clay roof tiles, packed "
+        "dirt ground, cobblestone paving, short grass, forest floor with leaf "
+        "litter, thatch, dark rock, aged plaster with exposed brick, worn "
+        "metal fittings"
+    ),
     "character_commoner": "a common villager in simple, worn work clothes",
     "character_noble": "a richly dressed noble with fine fabrics and jewelry",
     "character_warrior": "an armed warrior with period-appropriate armor and weapons",
@@ -178,6 +203,18 @@ CHAR_FRAME = (
     "times full body — front view, three-quarter view and back view, "
     "standing side by side, neutral plain background, no text, no UI"
 )
+# Lámina fps_surfaces: mismas reglas duras que el atlas de superficies
+# in-game (surface_atlas_generator.RULES) — swatches planos a 90°, nunca
+# escenas dentro de una celda.
+FPS_FRAME = (
+    "a TEXTURE ATLAS SHEET for a retro first-person 3D game: a grid of "
+    "rectangular cells on a plain neutral grey background, each cell one "
+    "FLAT MATERIAL SWATCH seen straight-on at exactly 90 degrees, filling "
+    "its rectangle edge to edge. NEVER paint a scene, an object, a horizon "
+    "or a floor meeting a wall inside a cell. The grey gutter between cells "
+    "stays plain grey. Flat even lighting, albedo only: no cast shadows, no "
+    "perspective. No text, no numbers, no borders, no watermark"
+)
 # Plató: nivel de suelo, cámara al sur mirando al norte (convención del
 # proscenio). Sin vocabulario teatral — el modelo pinta cortinas/marcos si se
 # le insinúa un escenario (lección de la versión SVG del compositor).
@@ -211,7 +248,13 @@ def build_prompt(
     scene = scene_override or CATEGORY_SCENES[category]
     is_char = category in CHARACTER_CATEGORIES
     is_stage = category in STAGE_CATEGORIES
-    frame = CHAR_FRAME if is_char else STAGE_FRAME if is_stage else ENV_FRAME
+    is_fps = category in FPS_CATEGORIES
+    frame = (
+        CHAR_FRAME if is_char
+        else STAGE_FRAME if is_stage
+        else FPS_FRAME if is_fps
+        else ENV_FRAME
+    )
     if has_style_refs:
         style = (
             "Match the EXACT art style, palette and rendering technique of the "
@@ -224,6 +267,11 @@ def build_prompt(
         action = "Using the FIRST reference image only as body-proportion guide, draw"
     elif is_stage:
         action = STAGE_ACTION
+    elif is_fps:
+        action = (
+            "Repaint the first reference image keeping its grid layout EXACTLY "
+            "(same cells, same gutter): fill each grey cell with"
+        )
     else:
         action = "Fully REPAINT the first reference image, replacing ALL its content, as"
     return f"{frame}. {action}: {scene}. {style}."
@@ -245,8 +293,13 @@ def missing_categories(styles_dir: Path, style_id: str) -> list[str]:
 
 def _view_of(category: str) -> str:
     """Vista de una categoría (espejo de viewForCategory en TS): el namespace
-    manda — stage_* es proscenium, el resto (zonas y personajes) overworld."""
-    return "proscenium" if category.startswith("stage_") else "overworld"
+    manda — stage_* es proscenium, fps_* es fps, el resto (zonas y
+    personajes) overworld."""
+    if category.startswith("stage_"):
+        return "proscenium"
+    if category.startswith("fps_"):
+        return "fps"
+    return "overworld"
 
 
 async def generate_missing(
@@ -340,20 +393,22 @@ async def generate_missing(
     for entry in todo:
         category = entry["category"]
         is_stage = category in STAGE_CATEGORIES
+        is_fps = category in FPS_CATEGORIES
         style_paths = style_refs_for(category)
         seed = seed_for(category)
         refs = [_to_data_uri(seed)] + [_to_data_uri(p) for p in style_paths]
         prompt = build_prompt(category, style_token, bool(style_paths), entry["scene"] or None)
-        if is_stage:
+        if is_stage or is_fps:
             if fal_api is None:
                 fal_api = FalImageToImage()
-            # Aspect del seed (plantillas del bench: 1600×1000 → gpt-image-2
-            # 1280×800, el encuadre exacto del bench greybox).
+            # Aspect del seed (plató: plantillas del bench 1600×1000 →
+            # gpt-image-2 1280×800; fps: rejilla cuadrada 1024).
             with Image.open(seed) as seed_img:
                 aspect = seed_img.size
-            log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={STAGE_AI_MODEL} (fal)")
-            png, _task = await fal_api.run_one(prompt, refs, ai_model=STAGE_AI_MODEL, aspect=aspect)
-            per_image = FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
+            fal_model = FPS_AI_MODEL if is_fps else STAGE_AI_MODEL
+            log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={fal_model} (fal)")
+            png, _task = await fal_api.run_one(prompt, refs, ai_model=fal_model, aspect=aspect)
+            per_image = FalImageToImage.COST_USD.get(fal_model, 0.17)
             cost += per_image
             SPEND.add(per_image, f"style {style_id}/{category}", "remote-gen")
         else:

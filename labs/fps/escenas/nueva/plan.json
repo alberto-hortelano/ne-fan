@@ -1,0 +1,393 @@
+{
+ "tile_key": "tile_0_0",
+ "biome": "grass",
+ "scene_description": "Ermita románica junto a un río con puente de tablones: campanario, tapia del camposanto, molino de agua con su rueda en la orilla este, huerto y frutales. Camino de tierra que cruza el vado de oeste a este.",
+ "ground": [
+  {
+   "id": "rio",
+   "kind": "water",
+   "polygon": [
+    [
+     78,
+     0
+    ],
+    [
+     90,
+     0
+    ],
+    [
+     94,
+     40
+    ],
+    [
+     90,
+     78
+    ],
+    [
+     94,
+     108
+    ],
+    [
+     92,
+     128
+    ],
+    [
+     80,
+     128
+    ],
+    [
+     82,
+     100
+    ],
+    [
+     78,
+     64
+    ],
+    [
+     82,
+     34
+    ]
+   ]
+  },
+  {
+   "id": "puente",
+   "kind": "deck",
+   "rect": [
+    76,
+    58,
+    20,
+    10
+   ],
+   "material": "wood"
+  },
+  {
+   "id": "camino",
+   "kind": "path",
+   "points": [
+    [
+     6,
+     66
+    ],
+    [
+     40,
+     64
+    ],
+    [
+     70,
+     63
+    ],
+    [
+     86,
+     63
+    ],
+    [
+     108,
+     62
+    ],
+    [
+     124,
+     60
+    ]
+   ],
+   "material": "dirt",
+   "w": 6
+  },
+  {
+   "id": "senda_ermita",
+   "kind": "path",
+   "points": [
+    [
+     40,
+     64
+    ],
+    [
+     38,
+     48
+    ],
+    [
+     36,
+     40
+    ]
+   ],
+   "material": "dirt",
+   "w": 3.5
+  },
+  {
+   "id": "atrio",
+   "kind": "area",
+   "rect": [
+    28,
+    26,
+    22,
+    14
+   ],
+   "material": "cobble"
+  },
+  {
+   "id": "huerto",
+   "kind": "area",
+   "rect": [
+    12,
+    84,
+    24,
+    20
+   ],
+   "material": "dirt"
+  }
+ ],
+ "volumes": [
+  {
+   "id": "ermita",
+   "label": "ermita de piedra",
+   "type": "building",
+   "rect": [
+    28,
+    12,
+    20,
+    14
+   ],
+   "walls": {
+    "material": "stone",
+    "color": "#8a8378"
+   },
+   "doors": [
+    {
+     "edge": "s",
+     "at": 8,
+     "w": 4
+    }
+   ],
+   "surface_desc": "flat front elevation of a romanesque hermitage stone wall with a round-arched portal and a small rose window"
+  },
+  {
+   "id": "campanario",
+   "label": "campanario",
+   "type": "tower",
+   "at": [
+    50,
+    14
+   ],
+   "r": 3.5,
+   "h": 16
+  },
+  {
+   "id": "abside",
+   "label": "ábside semicircular",
+   "type": "prism",
+   "points": [
+    [
+     28,
+     12
+    ],
+    [
+     30,
+     7
+    ],
+    [
+     36,
+     4
+    ],
+    [
+     42,
+     4
+    ],
+    [
+     46,
+     7
+    ],
+    [
+     48,
+     12
+    ]
+   ],
+   "h": 9,
+   "color": "#8a8378"
+  },
+  {
+   "id": "tapia_camposanto",
+   "label": "tapia del camposanto",
+   "type": "wall",
+   "points": [
+    [
+     16,
+     12
+    ],
+    [
+     16,
+     34
+    ],
+    [
+     28,
+     34
+    ]
+   ],
+   "h": 3,
+   "width": 1
+  },
+  {
+   "id": "molino",
+   "label": "molino de agua",
+   "type": "building",
+   "rect": [
+    96,
+    70,
+    14,
+    12
+   ],
+   "walls": {
+    "material": "stone",
+    "color": "#8a8378"
+   },
+   "doors": [
+    {
+     "edge": "w",
+     "at": 5,
+     "w": 3
+    }
+   ],
+   "surface_desc": "flat side elevation of a stone watermill wall with a large wooden waterwheel mounted on it"
+  },
+  {
+   "id": "rueda_molino",
+   "label": "rueda del molino",
+   "type": "prop",
+   "rect": [
+    93,
+    74,
+    2,
+    6
+   ],
+   "h": 8,
+   "color": "#5c4832",
+   "shape": "box"
+  },
+  {
+   "id": "cruz_atrio",
+   "label": "crucero de piedra",
+   "type": "prop",
+   "at": [
+    39,
+    33
+   ],
+   "h": 5,
+   "shape": "cylinder"
+  },
+  {
+   "id": "banco_atrio",
+   "label": "banco de piedra",
+   "type": "prop",
+   "rect": [
+    30,
+    36,
+    5,
+    2
+   ],
+   "h": 0.9,
+   "color": "#8a8378",
+   "shape": "box"
+  },
+  {
+   "id": "roble_1",
+   "type": "tree",
+   "at": [
+    12,
+    50
+   ],
+   "s": 1.6,
+   "label": "roble"
+  },
+  {
+   "id": "roble_2",
+   "type": "tree",
+   "at": [
+    58,
+    30
+   ],
+   "s": 1.2,
+   "label": "roble"
+  },
+  {
+   "id": "frutal_1",
+   "type": "tree",
+   "at": [
+    16,
+    88
+   ],
+   "s": 0.9,
+   "species": "frutal",
+   "label": "frutal"
+  },
+  {
+   "id": "frutal_2",
+   "type": "tree",
+   "at": [
+    24,
+    92
+   ],
+   "s": 0.9,
+   "species": "frutal",
+   "label": "frutal"
+  },
+  {
+   "id": "frutal_3",
+   "type": "tree",
+   "at": [
+    32,
+    98
+   ],
+   "s": 1.0,
+   "species": "frutal",
+   "label": "frutal"
+  },
+  {
+   "id": "sauce_rio",
+   "type": "tree",
+   "at": [
+    72,
+    44
+   ],
+   "s": 1.8,
+   "label": "sauce"
+  },
+  {
+   "id": "roca_vado",
+   "type": "rock",
+   "at": [
+    74,
+    70
+   ],
+   "s": 1.4,
+   "label": "roca del vado"
+  },
+  {
+   "id": "roca_orilla",
+   "type": "rock",
+   "at": [
+    96,
+    46
+   ],
+   "s": 1.1,
+   "label": "roca"
+  },
+  {
+   "id": "arbusto_1",
+   "type": "bush",
+   "at": [
+    50,
+    40
+   ],
+   "s": 1.2,
+   "label": "arbusto"
+  },
+  {
+   "id": "arbusto_2",
+   "type": "bush",
+   "at": [
+    100,
+    88
+   ],
+   "s": 1.4,
+   "label": "arbusto"
+  }
+ ]
+}

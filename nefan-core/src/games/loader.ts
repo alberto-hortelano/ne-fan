@@ -148,9 +148,10 @@ export function styleViews(manifest: StyleManifest): WorldView[] {
     }
     present.add(viewForCategory(ref.category));
   }
-  // La vista fps no tiene categorías propias: el atlas de superficies usa las
-  // refs cenitales solo como paleta, así que todo pack que sirva overworld
-  // sirve fps (viewForCategory nunca devuelve "fps" a propósito).
+  // La vista fps se deriva de overworld: su categoría propia (fps_surfaces,
+  // lámina de materiales) es una MEJORA opcional del atlas de superficies —
+  // sin ella el atlas degrada a solo style_token, así que ningún pack pierde
+  // fps por no tenerla.
   if (present.has("overworld")) present.add("fps");
   return WORLD_VIEWS.filter((v) => present.has(v));
 }

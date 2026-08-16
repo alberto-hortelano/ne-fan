@@ -1,0 +1,32 @@
+{
+  "biome": "dirt",
+  "scene_description": "Claro de mercado con una carreta entoldada compuesta como volumen custom (el caso del playtest 2026-08-16: antes era un prop box con skin de carro).",
+  "ground": [
+    { "id": "camino", "kind": "path", "label": "camino de tierra", "points": [[0, 64], [128, 64]], "w": 5, "material": "dirt" },
+    { "id": "explanada", "kind": "area", "label": "explanada", "ellipse": { "center": [64, 72], "rx": 22, "ry": 14 }, "material": "gravel" }
+  ],
+  "volumes": [
+    {
+      "id": "carreta",
+      "label": "carreta entoldada del buhonero",
+      "type": "custom",
+      "at": [64, 74],
+      "angle": -14,
+      "parts": [
+        { "shape": "box", "size": [6, 1.4, 3], "pos": [0, 1.1, 0], "color": "#77572f",
+          "desc": "weathered wooden cart bed with iron-banded side planks" },
+        { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [-1.7, 0, 1.55], "rotX": 1.5708, "color": "#4a3a26" },
+        { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [1.7, 0, 1.55], "rotX": 1.5708, "color": "#4a3a26" },
+        { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [-1.7, 0, -1.55], "rotX": 1.5708, "color": "#4a3a26" },
+        { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [1.7, 0, -1.55], "rotX": 1.5708, "color": "#4a3a26" },
+        { "shape": "cylinder", "rBottom": 1.5, "rTop": 1.5, "h": 5.6, "pos": [2.8, 1.52, 0], "rotZ": 1.5708,
+          "scale": [0.72, 1, 0.95], "color": "#8a7d63",
+          "desc": "dark waxed canvas wagon tilt over hooped ribs" },
+        { "shape": "box", "size": [0.35, 2.4, 0.35], "pos": [3.1, 0.4, 0.9], "rotY": 0.5, "color": "#5a4632" },
+        { "shape": "box", "size": [0.35, 2.4, 0.35], "pos": [3.1, 0.4, -0.9], "rotY": -0.5, "color": "#5a4632" }
+      ]
+    },
+    { "id": "casa", "label": "casa", "type": "building", "rect": [40, 40, 14, 10], "doors": [{ "edge": "s", "at": 5 }] },
+    { "id": "roble", "label": "roble", "type": "tree", "at": [88, 80], "s": 1.2 }
+  ]
+}

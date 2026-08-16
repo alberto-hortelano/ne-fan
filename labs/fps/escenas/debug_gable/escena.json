@@ -1,0 +1,25 @@
+{
+ "scene": "debug_gable",
+ "meta": {"name": "debug_gable", "description": "un box con gable encima, para winding/UVs"},
+ "env": {"sky": {"top": "#8db4d6", "bottom": "#d8cfb4"}, "fog": null},
+ "playerStart": {"pos": [0, 8], "yawIdx": 0},
+ "poses": [
+  {"id": "p0", "pos": [0, 8], "yawIdx": 0, "note": "desde el sur"},
+  {"id": "p1", "pos": [8, 0], "yawIdx": 6, "note": "desde el este"},
+  {"id": "p2", "pos": [6, 7], "yawIdx": 7, "note": "tres cuartos SE"},
+  {"id": "p3", "pos": [0, -8], "yawIdx": 4, "note": "desde el norte"}
+ ],
+ "npcs": [],
+ "lights": [
+  {"kind": "ambient", "color": "#ffffff", "intensity": 0.85},
+  {"kind": "sun", "color": "#ffffff", "intensity": 1.6, "pos": [-40, 70, 110], "castShadow": true}
+ ],
+ "prims": [
+  {"shape": "box", "size": [40, 0.1, 40], "pos": [0, -0.1, 0], "color": "#8d6f4e", "cat": "terrain", "noShadow": true},
+  {"shape": "box", "size": [4, 3, 5], "pos": [0, 0, 0], "color": "#c9b89a", "cat": "building"},
+  {"shape": "gable", "size": [5, 2, 6], "pos": [0, 3, 0], "color": "#9a4f33", "cat": "building"},
+  {"shape": "cylinder", "size": [1, 2.5], "pos": [-5, 0, 0], "color": "#8a8378", "cat": "prop"},
+  {"shape": "cone", "size": [1.5, 3, 12], "pos": [5, 0, 0], "color": "#3a5a2a", "cat": "tree"}
+ ],
+ "elements": []
+}

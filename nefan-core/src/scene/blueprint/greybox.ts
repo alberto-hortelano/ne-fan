@@ -167,8 +167,25 @@ function groundDetailPrims(base: string, biome: string, seedKey: string): Greybo
   return out;
 }
 
-/** AABB de mundo (celdas + rango de altura) de una primitiva. */
+/** AABB de mundo (celdas + rango de altura) de una primitiva. Con `scale`
+ *  (piezas de volúmenes custom) los extents se escalan alrededor de pos —
+ *  las prims cenitales históricas no lo llevan, así que sus specs (y por
+ *  tanto los layout_key del arte pagado) no cambian. */
 function primWorldAabb(p: GreyboxPrimitive): { minU: number; minV: number; maxU: number; maxV: number; h0: number; h1: number } {
+  const a = primWorldAabbUnscaled(p);
+  if (!p.scale) return a;
+  const [sx, sy, sz] = p.scale;
+  return {
+    minU: p.pos[0] + (a.minU - p.pos[0]) * sx,
+    maxU: p.pos[0] + (a.maxU - p.pos[0]) * sx,
+    minV: p.pos[2] + (a.minV - p.pos[2]) * sz,
+    maxV: p.pos[2] + (a.maxV - p.pos[2]) * sz,
+    h0: p.pos[1] + (a.h0 - p.pos[1]) * sy,
+    h1: p.pos[1] + (a.h1 - p.pos[1]) * sy,
+  };
+}
+
+function primWorldAabbUnscaled(p: GreyboxPrimitive): { minU: number; minV: number; maxU: number; maxV: number; h0: number; h1: number } {
   let eu: number;
   let ev: number;
   switch (p.shape) {
@@ -183,13 +200,16 @@ function primWorldAabb(p: GreyboxPrimitive): { minU: number; minV: number; maxU:
     }
     case "cylinder": {
       const r = Math.max(p.size[0], p.size[2] ?? p.size[0]);
-      eu = r;
-      ev = r;
+      // Tumbado (rotX/rotZ, piezas custom): la altura entra en planta.
+      const e = p.rotX || p.rotZ ? Math.max(r, p.size[1] / 2) : r;
+      eu = e;
+      ev = e;
       break;
     }
     case "cone": {
-      eu = p.size[0];
-      ev = p.size[0];
+      const e = p.rotX || p.rotZ ? Math.max(p.size[0], p.size[1] / 2) : p.size[0];
+      eu = e;
+      ev = e;
       break;
     }
     case "polygon": {

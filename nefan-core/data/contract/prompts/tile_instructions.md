@@ -8,10 +8,10 @@ Call narrative_respond with this JSON (Tile Format):
 {
   "tile": { "tx": <from generate_tile>, "ty": <from generate_tile> },
   "scene_id": "tile_<tx>_<ty>",
-  "scene_description": "<2-3 Spanish sentences>",
+  "scene_description": "<2-3 Spanish sentences>",  // first person infers the tile's TIME OF DAY from this text (amanecer/atardecer/noche → sun, sky and fog follow); at dusk/night, volumes whose label names a light source (farol, vela, lámpara, chimenea, antorcha, brasero…) emit a warm practical light
   "biome": "grass"|"forest_floor"|"meadow"|"sand"|"dirt"|"stone"|"snow"|"swamp",
   "terrain_legend": { },                                             // optional custom chars
-  "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres)
+  "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres). In first person an entity renders as a single primitive (its `shape` + h); a `volumes` entry (prop/custom…) is what produces real composed geometry
   "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see MAP PLAN below
   "volumes": [ … ]   // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
 }
@@ -47,109 +47,155 @@ HARD RULES OF THE TILE:
 - Match the neighbour biome near the shared border (no hard forest→desert
   cuts without a visible transition strip).
 
-MAP PLAN — the tile's semantic blueprint (STRONGLY recommended):
-The plan has two halves: flat ground features + typed volumes. You declare
-WHAT exists in flat world cells as PURE DATA — never draw anything yourself.
-The engine builds a deterministic 3D scene from your plan (the base plate of
-the repaint), derives the walk collision from the declared FOOTPRINTS (water
-blocks, decks punch it open) and guides the vision classifier with the
-projected boxes. This is where the tile stops being boxes and becomes a
-place, so invest your design effort here.
+MAP PLAN — the tile's semantic blueprint. You declare WHAT exists in flat
+world cells as PURE DATA — never draw anything yourself. The engine builds a
+deterministic 3D scene from your plan (the base plate of the repaint),
+derives the walk collision from the declared FOOTPRINTS (water blocks, decks
+punch it open) and guides the vision classifier with the projected boxes.
+What you build and how you compose it is entirely your call — the sections
+below only document the tools and their contracts.
 
 1) "ground" — flat ground FEATURES, as typed objects (max 64):
 Common fields: "id" (unique slug), optional "label" (Spanish noun),
 "kind". Coordinates in cells (0..128). Area-like kinds (area/water/deck)
 take EXACTLY ONE shape: "rect": [col,row,w,d] | "polygon": [[c,r],…] (3..32
 points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
-- path { points:[[c,r],…] (2..16), w?=4, material? } — roads and trails as a
-  polyline. Continue every neighbour crossing with a path whose endpoints
-  reach the shared edge cells.
-- area { shape, material } — plazas, courtyards, interior floors, sandy
-  banks, clearings. Materials: "dirt"|"cobble"|"stone"|"sand"|"wood"|
-  "gravel"|"grass".
-- water { shape } — rivers/ponds/moats; continue any neighbour water crossing
-  along the SAME course out to the shared edge. NOT walkable (declarative
-  collision).
-- deck { shape, material?:"wood"|"stone" } — walkable surfaces OVER water:
-  bridges, jetties, stepping platforms (collision punches these out of the
-  water). Wherever a road crosses water there MUST be a deck.
-- ONLY flat ground here. NO walls, trees, furniture or anything with
-  height — those are volumes.
+- path { points:[[c,r],…] (2..16), w?=4, material? } — a flat strip along a
+  polyline.
+- area { shape, material } — a flat patch of material. Materials:
+  "dirt"|"cobble"|"stone"|"sand"|"wood"|"gravel"|"grass".
+- water { shape } — NOT walkable (declarative collision).
+- deck { shape, material?:"wood"|"stone" } — walkable surface OVER water
+  (collision punches it out of the water). Water without a deck is
+  impassable — the validator rejects a tile whose required crossings or
+  entry are unreachable.
+- ONLY flat ground here. Anything with height is a volume.
 
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
-Common fields: "id" (unique slug), "label" (Spanish noun — it guides the
+Common fields: "id" (unique slug), "label" (Spanish noun — it feeds the
 vision classifier later), "type". Coordinates in cells (0..128); heights in
-cells too (a character is ~3.6 cells tall). The preset types below are
-SHORTCUTS — reach for them first. When NONE fits the shape you're imagining,
-do NOT force it: declare the geometry yourself with `prism` (an arbitrary
-polygon outline + height). Types:
+cells too (a character is ~3.6 cells tall). The preset types are shortcuts
+with built-in detail; `prism` (free outline + height) and `custom` (free 3D
+composition of solid pieces) declare ANY geometry directly — you are never
+limited to the presets. Types:
 - building { rect:[col,row,w,d], wall_h?=5, roof?:{kind:"gable"|"hip"|"shed"|
   "flat"|"none", axis?:"x"|"y", material?:"slate"|"tile"|"thatch"|"wood",
   color?:"#rrggbb"}, walls?:{material:"timber"|"stone"|"wood"|"plaster",
   color?}, doors?:[{edge:"n"|"s"|"e"|"w", at:<cells from the NW corner along
   that edge>, w?=4}], angle?, cutaway?:true }
   cutaway=true = ENTERABLE building: no roof, low front walls, interior
-  visible from the camera. Furniture inside = prop volumes within the rect.
-  Buildings the player can enter MUST be cutaway; pure scenery keeps a roof.
-  angle (DEGREES −180..180, CCW seen from above; NOT combinable with
-  cutaway) rotates the whole footprint — collision and manifest follow the
-  rotated rect. USE IT: village houses must carry varied small angles
-  (±5..±30°, different per building), reserving 0° for one or two civic
-  buildings. A settlement of perfectly axis-aligned boxes reads as a
-  barracks grid, not a lived-in place.
-- wall { points:[[c,r],…], width?=3, h?=7, crenellated? } — city walls,
-  garden fences (low h). Extend to the tile border when the wall continues
-  in a neighbour (crossing/image_element continuity).
+  visible from the camera; a roofed building is sealed scenery (see
+  COLLISION below). angle (DEGREES −180..180, CCW seen from above; not
+  combinable with cutaway) rotates the whole footprint — collision and
+  manifest follow the rotated rect.
+- wall { points:[[c,r],…], width?=3, h?=7, crenellated? }. In first
+  person a LOW wall (h <= 2.4) renders as a wooden picket fence (posts +
+  rails); a label mentioning stone ("tapia de piedra") keeps the solid slab.
 - tower { at:[c,r], r?=6, h?=11, crenellated? }
-- gate { at:[c,r], w?=8, h?=10, orient:"x"|"y", banners? } — an arched gate
-  ON a wall run; its passage is collision-FREE. Wherever a road crosses a
-  wall there MUST be a gate (orient = the axis the host wall runs along).
-- tree { at, s?=1 (0.4..1.8 — bigger is clamped: the canopy would swallow
-  the tile), species? } · bush { at, s? } · rock { at, s? } ·
-  fountain { at, r?=5 }
+- gate { at:[c,r], w?=8, h?=10, orient:"x"|"y", banners? } — an arched
+  opening ON a wall run; its passage is collision-FREE (orient = the axis
+  the host wall runs along). A wall without a gate is impassable.
+- tree { at, s?=1 (0.4..1.8 — bigger is clamped), species? } ·
+  bush { at, s? } · rock { at, s? } · fountain { at, r?=5 }
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
-  passable?:true, angle? (rect only) } — tables, barrels, crates, wells,
-  market stalls, carts, signs… passable=true for rugs/awnings that must not
-  block movement; a slight angle on carts/stalls sells the clutter.
+  passable?:true, angle? (rect only) } — a single block or cylinder;
+  passable=true does not block movement.
 - prism { points:[[c,r],…] (3..24), h, solid?=true, tall?=true,
-  color?:"#rrggbb" } — FREE geometry: an arbitrary polygon footprint extruded
-  to height h, for shapes no preset expresses (the curved arc of a ruined
-  tower's wall, an L-shaped ruin, an irregular rock platform, a broken bridge
-  span). Sample curves into points (a semicircle ≈ 8–12 points). solid=false
-  for a decorative walkable shape; tall=false for a low platform. The image
-  model repaints it — the prism just sets the massing, collision and
-  occlusion. Compose several prisms/presets for one complex object.
+  color?:"#rrggbb" } — an arbitrary polygon footprint extruded to height h.
+  Sample curves into points (a semicircle ≈ 8–12 points). solid=false =
+  walkable; tall=false = drawn as a low platform.
+- custom { at:[c,r], angle?, parts:[…] (1..24), solid?=true, tall? } — FREE
+  3D composition: any object built from solid pieces, with no preset in
+  between. Each part: { shape:"box"|"cylinder"|"cone"|"sphere"|"gable",
+  dims (box/gable size:[w,h,d], gable ridge runs along d pre-rotY ·
+  cylinder rBottom,h,rTop? · cone r,h,seg? · sphere r,seg?),
+  pos?:[x,y,z] (cells, LOCAL to `at`; y is the BASE of the piece's bounding
+  box AFTER rotation and scale — resting on the ground is always y:0, so a
+  wheel is a rotX-lying cylinder at pos:[x,0,z] regardless of its radius),
+  rotX?/rotY?/rotZ? (radians — rotX lays a cylinder with its axis along z,
+  rotZ along x),
+  scale?:[x,y,z] (0.1..4), color?:"#rrggbb",
+  desc?: English <=200 chars — the SURFACE of that piece's faces, as seen
+  standing square in front of them; the painter fills the texture cell with
+  exactly what the text describes and the other pieces are separate 3D
+  geometry (it joins the reusable surface library; a piece without desc
+  renders in its flat color) }.
+  Collision = the parts' footprint (AABB, rotated by angle); solid=false =
+  walkable. `angle` rotates the whole assembly.
 - building/wall/prop/prism accept optional surface_desc (English, <=200
-  chars): a description of that volume's visible surface for the
-  first-person view — painted once as a unique texture that joins the
-  reusable surface library. Use it ONLY when a surface should look SPECIFIC
-  (a faded mural on the tavern facade, a heraldic city gate); plain walls
-  already derive their look from material/color. Never required.
-COLLISION comes from these footprints. A ROOFED building is pure scenery:
-its whole footprint is solid and its doors are decorative paint — the player
-can NEVER walk in (they would vanish under the roof). Any building the story
-needs the player to enter MUST be cutaway:true, and then a cutaway with no
-door is a sealed box (bug); doors/gates ARE the openings. Trees block only
-at the trunk.
+  chars each): a description of that volume's visible SURFACE for the
+  first-person view — the flat texture on the faces it covers, as seen
+  standing square in front of them. The painter fills the texture cell with
+  exactly what the text describes; parts of the object that are their own
+  geometry (roof, doors, wheels of a custom) are painted from their own
+  descriptions/materials. Painted once as a unique texture that joins the
+  reusable surface library; without it, surfaces derive from
+  material/color. Two forms:
+  · string — one texture for the BODY's side faces; the roof, doors and
+    narrow edges keep their derived material (tile, wood…).
+  · object — a DIFFERENT image per face/role. Keys: n|s|e|w (individual
+    side faces, local frame, same vocabulary as doors[].edge), side (all
+    side faces), roof, door, caps (gable ends / prism cap), top. Example, a
+    sign whose front and back differ:
+    "surface_desc": { "s": "painted sign reading THE GILDED BOAR",
+                      "n": "weathered plank back of the sign" }
+    Each description is its own asset (hash = description): faces sharing a
+    description share the image. Undescribed faces keep derived materials.
+COLLISION comes from these footprints. A ROOFED building is sealed: its
+whole footprint is solid and its doors are decorative paint — the player
+can never walk in. A cutaway building is enterable through its doors, and
+with no door it is a sealed box; doors/gates ARE the openings. Trees block
+only at the trunk. The validator rejects a tile whose entry or required
+neighbour crossings cannot reach walkable ground.
 
-Design doctrine (what makes the plan GOOD):
-- Roads first: lay the road/river network in ground (continuing every
-  crossing and neighbour image_element), THEN snap buildings to the roads
-  with a door facing them. A building nobody can reach is a bug.
-- Centerpiece → surroundings → filler: one anchor feature (plaza with a
-  fountain, a bridge, a shrine), support structures around it, then frame
-  with vegetation MASSES — clustered trees leaving clearings, not uniform
-  scatter.
-- COHERENCE with the tile: ground and volumes describe ONE consistent world —
-  every `ground` path follows its own points and lands on its shared-edge
-  cells; every building keeps its footprint. The plan carries all the detail
-  (interiors, curves, materials).
-- The engine auto-fills forest masses over bare biome when you declare no tree
-  volumes — declare explicit volumes where you want CONTROL (materials, doors,
-  cutaway interiors, landmarks) and let the fallback fill the woods.
+Engine facts: `ground` paths follow their declared points exactly and
+volumes keep their footprints (plan = truth for collision and the vision
+classifier). When a tile declares no tree volumes, the engine auto-fills
+tree masses over bare biome (avoiding paths, water, buildings and occupied
+cells).
 
-EXAMPLE — forest tile continuing a path from the WEST neighbour (its crossing
-is {type:"path", at:41}) and seeding an east exit:
+3) OPTIONAL "scatter_generators" + "scatter_zones" — procedural mass
+placement for the first-person view. You DEFINE a generator per kind as
+pure JSON and declare zones with a density; the engine samples
+deterministic positions (excluding buildings, water, decks and paths
+automatically) and builds varied instances. Scatter instances do not
+collide and cost no image credits (they render in their declared colors).
+- scatter_generators: { "<kind>": { vars?, materials?, parts:[…] } } (max 8
+  generators, 10 parts each). Each part: { shape:"box"|"cylinder"|"cone"|
+  "sphere", mat?:"<material name>", seg? (cone|sphere), pos?:[x,y,z]
+  (y = BASE, offsets in cells from the instance origin), scale?:[x,y,z],
+  rotX?|rotY?|rotZ?, repeat?:{count}, vars?, plus the shape's dims:
+  box size:[w,h,d] · cylinder rTop,rBottom,h · cone r,h · sphere r }.
+  Every numeric field accepts: a literal · a range [min,max] (sampled per
+  instance) · {"var":"name"} · {"int":[a,b]} · {"op":"+|-|*|/","a":…,"b":…}
+  · {"lerp":[from,to]} (only inside repeat; i/t/count are provided).
+  materials: { "<name>": { color:"#rrggbb", hslJitter?:[h,s,l],
+  roughness? } } — hslJitter varies the tone per instance.
+- scatter_zones: [{ kind:"<generator>", shape: {type:"rect",x0,z0,x1,z1} |
+  {type:"ellipse",cx,cz,rx,rz} | {type:"poly",pts:[[c,r],…]}, density
+  (elements/m², 0..1.5; total capped at 240 instances/tile), seed? }]
+  (max 12 zones; coordinates in cells).
+  Format example:
+  "scatter_generators": {
+    "pino": { "vars": { "h": [5,10], "trunkH": {"op":"*","a":{"var":"h"},"b":0.3}, "n": {"int":[2,4]} },
+      "materials": { "tronco": {"color":"#5a4632"}, "copa": {"color":"#35482c","hslJitter":[0.05,0.15,0.07]} },
+      "parts": [
+        { "shape":"cylinder","mat":"tronco","rTop":0.25,"rBottom":0.4,"h":{"var":"trunkH"},"pos":[0,0,0] },
+        { "shape":"cone","mat":"copa","seg":7,"repeat":{"count":{"var":"n"}},
+          "r":{"op":"*","a":{"var":"h"},"b":{"lerp":[0.3,0.12]}},"h":{"op":"*","a":{"var":"h"},"b":0.4},
+          "pos":[0,{"op":"*","a":{"var":"trunkH"},"b":{"op":"+","a":{"var":"i"},"b":0.8}},0] } ] },
+    "matorral": { "vars": { "s": [0.7,1.7] },
+      "materials": { "hoja": {"color":"#4a5a30","hslJitter":[0.06,0.2,0.08]} },
+      "parts": [ { "shape":"sphere","mat":"hoja","r":{"op":"*","a":{"var":"s"},"b":[0.6,1.2]},
+                   "scale":[1,[0.55,0.8],1],"pos":[0,0,0] } ] }
+  },
+  "scatter_zones": [
+    { "kind": "pino", "shape": {"type":"rect","x0":0,"z0":0,"x1":128,"z1":30}, "density": 0.06 },
+    { "kind": "matorral", "shape": {"type":"ellipse","cx":40,"cz":80,"rx":26,"rz":18}, "density": 0.1 }
+  ]
+
+FORMAT EXAMPLE — a tile continuing a path from the WEST neighbour (its
+crossing is {type:"path", at:41}); abbreviated:
 {
   "tile": { "tx": -1, "ty": 0 },
   "scene_id": "tile_-1_0",
@@ -168,9 +214,6 @@ is {type:"path", at:41}) and seeding an east exit:
     { "id": "pino_2", "label": "pino", "type": "tree", "at": [50, 70], "species": "pino" }
   ]
 }
-(a real forest tile leans on the engine's tree fallback for its dense masses
-and declares explicit volumes only for landmarks; the example is
-abbreviated.)
 
 BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - FIRST lay down the initial world map with the map tools (map_upsert_place ×

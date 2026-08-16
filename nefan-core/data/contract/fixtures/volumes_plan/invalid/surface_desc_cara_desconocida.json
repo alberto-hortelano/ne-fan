@@ -1,0 +1,17 @@
+{
+ "description": "surface_desc objeto con clave de cara desconocida ('techo' no es n|s|e|w|side|roof|door|caps|top) — rechazo fail-loud para que el motor corrija",
+ "expect": "reject",
+ "payload": {
+  "volumes": [
+   {
+    "id": "cartel",
+    "label": "cartel",
+    "type": "prop",
+    "rect": [40, 40, 8, 1],
+    "shape": "box",
+    "h": 6,
+    "surface_desc": { "techo": "no existe esta cara" }
+   }
+  ]
+ }
+}

@@ -8,8 +8,10 @@
  *    materiales por grupo de caras indexados por celda del atlas — el clay es
  *    el color del prim y applyAtlas() los texturiza sin reconstruir geometría.
  *  - Billboards y_bot de 8 direcciones: la dirección es
- *    `yaw(cámara→entidad) − yaw_entidad` (signo CALIBRADO en el bench con la
- *    pasada cardinal S/E/N/W — NO usar pickDirection, gira al revés).
+ *    `yaw_entidad − yaw(entidad→cámara)` — misma familia que pickDirection de
+ *    las otras vistas (allí la cámara está en +z ⇒ yaw(ent→cám) = 0). El signo
+ *    invertido espeja izquierda/derecha: frente/espalda coinciden y solo se
+ *    delata cuando el personaje CRUZA por delante (bug del playtest 2026-08-16).
  */
 
 import * as THREE from "three";
@@ -22,6 +24,11 @@ import {
   type SurfaceLayout,
   type SurfacePrim,
 } from "@nefan-core/src/scene/greybox/surfaces.js";
+import { reliefAtM, type ReliefGrid } from "@nefan-core/src/scene/blueprint/fps-relief.js";
+import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
+
+/** Lado del tile en metros (64). */
+const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { PlayerView } from "./renderer2d.js";
@@ -74,6 +81,15 @@ interface TileEntry {
   /** Detalle procedural clay del suelo: se oculta con atlas aplicado. */
   detailMeshes: THREE.Mesh[];
   textured: boolean;
+  /** Relieve del suelo (rejilla en metros) + origen del tile, para anclar
+   *  cámara, billboards y entidades a la altura visual del terreno. */
+  relief?: ReliefGrid;
+  rect: { minX: number; minZ: number };
+  /** Ambientación del tile: luces + cielo/niebla — se aplican cuando el
+   *  JUGADOR pisa el tile (no "el último instalado"): cruzar la frontera
+   *  día↔atardecer cambia la luz de verdad. */
+  lightsM: GreyboxLight[];
+  ambience?: { sky?: { top: string; bottom: string }; fog?: { color: string; near: number; far: number } };
 }
 
 function gableGeometry(w: number, h: number, d: number): THREE.ExtrudeGeometry {
@@ -97,6 +113,27 @@ function primitiveGeometry(p: SurfacePrim): {
   const s = p.size;
   switch (p.shape) {
     case "box": {
+      // Suelo con relieve: box subdividida y tapa desplazada por la rejilla
+      // (los faldones laterales siguen a la tapa — sin grietas en el borde).
+      if (p.relief) {
+        const grid = p.relief;
+        const g = new THREE.BoxGeometry(s[0], s[1], s[2], grid.n, 1, grid.n);
+        g.translate(0, s[1] / 2, 0);
+        const posAttr = g.attributes.position;
+        for (let vi = 0; vi < posAttr.count; vi++) {
+          if (posAttr.getY(vi) < s[1] - 1e-6) continue;
+          const lx = p.pos[0] + posAttr.getX(vi);
+          const lz = p.pos[2] + posAttr.getZ(vi);
+          posAttr.setY(vi, s[1] + reliefAtM(grid, lx, lz));
+        }
+        posAttr.needsUpdate = true;
+        g.computeVertexNormals();
+        return {
+          geo: g,
+          faceUvSizes: [[s[2], s[1]], [s[2], s[1]], [s[0], s[2]], [s[0], s[2]], [s[0], s[1]], [s[0], s[1]]],
+          extrude: false,
+        };
+      }
       const g = new THREE.BoxGeometry(s[0], s[1], s[2]);
       g.translate(0, s[1] / 2, 0);
       return {
@@ -184,6 +221,23 @@ function normalizeGroupUVs(geo: THREE.BufferGeometry, group: { start: number; co
   uv.needsUpdate = true;
 }
 
+/** Textura radial compartida para los halos de luces prácticas. */
+let glowTex: THREE.Texture | null = null;
+function glowTexture(): THREE.Texture {
+  if (glowTex) return glowTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.4, "rgba(255,255,255,0.35)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
+}
+
 function skyDome(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.SphereGeometry(400, 24, 12),
@@ -222,6 +276,8 @@ export class FpsGl {
   private scene = new THREE.Scene();
   private cam: THREE.PerspectiveCamera;
   private tiles = new Map<string, TileEntry>();
+  /** Tile cuya ambientación (luces/cielo/niebla) está aplicada. */
+  private ambienceKey: string | null = null;
   private lightsGroup: THREE.Group | null = null;
   private sky: THREE.Mesh;
   private billboards = new Map<
@@ -273,22 +329,45 @@ export class FpsGl {
     lightsM: GreyboxLight[],
     layout: SurfaceLayout,
     rect: { minX: number; minZ: number },
+    ambience?: { sky?: { top: string; bottom: string }; fog?: { color: string; near: number; far: number } },
   ): void {
     this.removeTile(key);
+    // Ambientación del tile (hora inferida): cielo y niebla siguen al ÚLTIMO
+    // tile instalado (como las luces); sin ambience, constantes históricas.
+    const skyMat = this.sky.material as THREE.ShaderMaterial;
+    (skyMat.uniforms.top.value as THREE.Color).set(ambience?.sky?.top ?? SKY_TOP);
+    (skyMat.uniforms.bottom.value as THREE.Color).set(ambience?.sky?.bottom ?? SKY_BOTTOM);
+    this.scene.fog = ambience?.fog
+      ? new THREE.Fog(ambience.fog.color, ambience.fog.near, ambience.fog.far)
+      : new THREE.Fog(SKY_BOTTOM, FOG_NEAR, FOG_FAR);
     const group = new THREE.Group();
     group.position.set(rect.minX, 0, rect.minZ);
     const materialsByCell = new Map<string, THREE.MeshStandardMaterial[]>();
     const detailMeshes: THREE.Mesh[] = [];
     const cellByKey = new Map<string, SurfaceCell>();
     for (const page of layout.pages) for (const c of page.cells) cellByKey.set(c.key, c);
+    const tileRelief = primsM.find((p) => p.relief)?.relief;
 
     primsM.forEach((prim, i) => {
       const assign: SurfaceAssign | undefined = layout.assign[i];
       const { geo, faceUvSizes, extrude } = primitiveGeometry(prim);
       const groups = SHAPE_GROUPS[prim.shape] ?? {};
       const clay = () =>
-        new THREE.MeshStandardMaterial({ color: prim.color, roughness: prim.roughness ?? 0.92 });
+        prim.cat === "water"
+          ? // Agua: lámina especular translúcida — la franja mate saturada
+            // cantaba contra el terreno pintado.
+            new THREE.MeshStandardMaterial({
+              color: prim.color,
+              roughness: 0.12,
+              metalness: 0.25,
+              transparent: true,
+              opacity: 0.86,
+            })
+          : new THREE.MeshStandardMaterial({ color: prim.color, roughness: prim.roughness ?? 0.92 });
 
+      const geoGroups = geo.groups.length
+        ? geo.groups
+        : [{ start: 0, count: geo.index ? geo.index.count : geo.attributes.position.count, materialIndex: 0 }];
       const groupMaterial: Partial<Record<SurfaceGroup, THREE.MeshStandardMaterial>> = {};
       let hasAnyCell = false;
       for (const [g, faceIdxs] of Object.entries(groups) as [SurfaceGroup, number[]][]) {
@@ -302,9 +381,6 @@ export class FpsGl {
           list.push(m);
           materialsByCell.set(cellKey, list);
           // UVs: metros/DENSITY_M para tileables; 0..1 para únicas.
-          const geoGroups = geo.groups.length
-            ? geo.groups
-            : [{ start: 0, count: geo.index ? geo.index.count : geo.attributes.position.count, materialIndex: 0 }];
           if (cell.kind === "tile") {
             if (faceUvSizes) {
               for (const fi of faceIdxs) {
@@ -328,10 +404,34 @@ export class FpsGl {
           }
         }
       }
+      // Overrides por SLOT (celda hero por cara n/s/e/w de un box): material
+      // propio para esa cara con la imagen ENTERA (UVs renormalizadas a 0..1 —
+      // el grupo pudo escalarlas a metros si su celda de grupo es tileable).
+      const faceMaterial = new Map<number, THREE.MeshStandardMaterial>();
+      if (assign?.faces) {
+        for (const [slotStr, cellKey] of Object.entries(assign.faces)) {
+          const slot = Number(slotStr);
+          const cell = cellByKey.get(cellKey);
+          const gg = geoGroups[slot];
+          if (!cell || !gg) continue;
+          hasAnyCell = true;
+          const m = clay();
+          faceMaterial.set(slot, m);
+          const list = materialsByCell.get(cellKey) ?? [];
+          list.push(m);
+          materialsByCell.set(cellKey, list);
+          normalizeGroupUVs(geo, gg);
+        }
+      }
 
       const nSlots = geo.groups.length || 1;
       const mats: THREE.Material[] = [];
       for (let slot = 0; slot < nSlots; slot++) {
+        const fm = faceMaterial.get(slot);
+        if (fm) {
+          mats.push(fm);
+          continue;
+        }
         const g = (Object.entries(groups) as [SurfaceGroup, number[]][]).find(([, idxs]) =>
           idxs.includes(slot),
         )?.[0];
@@ -341,8 +441,24 @@ export class FpsGl {
       mesh.position.set(...prim.pos);
       if (prim.rotY) mesh.rotation.y = prim.rotY;
       if (prim.rotX) mesh.rotation.x = prim.rotX;
+      if (prim.rotZ) mesh.rotation.z = prim.rotZ;
+      if (prim.scale) mesh.scale.set(...prim.scale);
       mesh.castShadow = !prim.noShadow;
       mesh.receiveShadow = true;
+      // Relieve: el detalle plano del suelo (manchas/piedritas/flores, sin
+      // sombra) se DRAPEA vértice a vértice sobre la rejilla; el scatter 3D
+      // (decor con sombra) se ancla por su centro.
+      if (tileRelief && !prim.relief) {
+        if (prim.noShadow && (prim.cat === "terrain" || prim.cat === "decor") && !prim.rotX && !prim.rotZ) {
+          const pa = geo.attributes.position;
+          for (let vi = 0; vi < pa.count; vi++) {
+            pa.setY(vi, pa.getY(vi) + reliefAtM(tileRelief, prim.pos[0] + pa.getX(vi), prim.pos[2] + pa.getZ(vi)));
+          }
+          pa.needsUpdate = true;
+        } else if (prim.cat === "decor") {
+          mesh.position.y += reliefAtM(tileRelief, prim.pos[0], prim.pos[2]);
+        }
+      }
       // Solo el detalle procedural SIN celda (elipses/piedritas clay) se
       // oculta al texturizar — los caminos/plazas del ground ya llevan la suya.
       if (prim.cat === "terrain" && prim.shape !== "box" && !hasAnyCell) detailMeshes.push(mesh);
@@ -350,7 +466,17 @@ export class FpsGl {
     });
 
     this.scene.add(group);
-    this.tiles.set(key, { group, materialsByCell, detailMeshes, textured: false });
+    this.tiles.set(key, {
+      group,
+      materialsByCell,
+      detailMeshes,
+      textured: false,
+      relief: tileRelief,
+      rect,
+      lightsM,
+      ambience,
+    });
+    this.ambienceKey = null; // el próximo frame re-aplica la del tile del jugador
     // Luces: las del último tile instalado mandan (son fijas por bioma y
     // compartirlas evita duplicar soles con sombras).
     this.installLights(lightsM);
@@ -372,6 +498,21 @@ export class FpsGl {
         const p = new THREE.PointLight(l.color, l.intensity, l.distance ?? 0, l.decay ?? 2);
         p.position.set(...(l.pos ?? [0, 1, 0]));
         holder.add(p);
+        // Halo aditivo de la práctica: sin él, un farol encendido "no emite"
+        // (crítica externa 2026-08-16 — lámparas apagadas al atardecer).
+        const halo = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glowTexture(),
+            color: l.color,
+            blending: THREE.AdditiveBlending,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+          }),
+        );
+        halo.position.set(...(l.pos ?? [0, 1, 0]));
+        halo.scale.set(1.6, 1.6, 1);
+        holder.add(halo);
       } else {
         const sun = new THREE.DirectionalLight(l.color, l.intensity);
         sun.position.set(...(l.pos ?? [40, 60, 40]));
@@ -394,6 +535,41 @@ export class FpsGl {
     }
     this.lightsGroup = holder;
     this.scene.add(holder);
+  }
+
+  /** Aplica la ambientación del tile que PISA el jugador (luces, cielo y
+   *  niebla) cuando cambia de tile — la del último instalado es solo el
+   *  estado inicial. */
+  private applyAmbienceAt(x: number, z: number): void {
+    for (const [key, t] of this.tiles) {
+      const size = TILE_SIZE_M;
+      const lx = x - t.rect.minX;
+      const lz = z - t.rect.minZ;
+      if (lx < 0 || lx > size || lz < 0 || lz > size) continue;
+      if (key === this.ambienceKey) return;
+      this.ambienceKey = key;
+      this.installLights(t.lightsM);
+      const skyMat = this.sky.material as THREE.ShaderMaterial;
+      (skyMat.uniforms.top.value as THREE.Color).set(t.ambience?.sky?.top ?? SKY_TOP);
+      (skyMat.uniforms.bottom.value as THREE.Color).set(t.ambience?.sky?.bottom ?? SKY_BOTTOM);
+      this.scene.fog = t.ambience?.fog
+        ? new THREE.Fog(t.ambience.fog.color, t.ambience.fog.near, t.ambience.fog.far)
+        : new THREE.Fog(SKY_BOTTOM, FOG_NEAR, FOG_FAR);
+      return;
+    }
+  }
+
+  /** Altura visual del terreno (relieve) en coords de MUNDO — 0 sin relieve.
+   *  La colisión y el sim siguen en el plano: esto es presentación pura. */
+  private reliefWorldAt(x: number, z: number): number {
+    for (const t of this.tiles.values()) {
+      if (!t.relief) continue;
+      const size = t.relief.n * t.relief.stepM;
+      const lx = x - t.rect.minX;
+      const lz = z - t.rect.minZ;
+      if (lx >= 0 && lx <= size && lz >= 0 && lz <= size) return reliefAtM(t.relief, lx, lz);
+    }
+    return 0;
   }
 
   removeTile(key: string): void {
@@ -561,7 +737,7 @@ export class FpsGl {
       this.scene.add(mesh);
     }
     slot.mesh.visible = true;
-    slot.mesh.position.set(e.pos.x, -FRAME_WORLD_M * FEET_FROM_BOTTOM, e.pos.z);
+    slot.mesh.position.set(e.pos.x, this.reliefWorldAt(e.pos.x, e.pos.z) - FRAME_WORLD_M * FEET_FROM_BOTTOM, e.pos.z);
     const toCamX = this.cam.position.x - e.pos.x;
     const toCamZ = this.cam.position.z - e.pos.z;
     slot.mesh.rotation.y = yawOf(toCamX, toCamZ);
@@ -575,7 +751,7 @@ export class FpsGl {
         this.forwardArrows.set(e.id, arrow);
         this.scene.add(arrow);
       }
-      arrow.position.set(e.pos.x, 2.1, e.pos.z);
+      arrow.position.set(e.pos.x, this.reliefWorldAt(e.pos.x, e.pos.z) + 2.1, e.pos.z);
       arrow.setDirection(dir);
       arrow.visible = true;
     }
@@ -585,8 +761,10 @@ export class FpsGl {
         const t = e.sprite.animStartedAt !== undefined ? (now - e.sprite.animStartedAt) / 1000 : now / 1000;
         const frame = this.spriteRenderer.pickFrame(sheet, t);
         const fwd = e.forward ?? { x: 0, y: 0, z: 1 };
-        // Signo calibrado (bench cardinal): rel = yaw(cam→npc) − yaw_npc.
-        const rel = yawOf(toCamX, toCamZ) - yawOf(fwd.x, fwd.z);
+        // rel = yaw_npc − yaw(npc→cám): dir 0 = de frente, d crece girando a
+        // la derecha de pantalla (verificado contra los PNG del rig frontal_8;
+        // toCam es npc→cámara). El orden inverso espejaba los perfiles E/W.
+        const rel = yawOf(fwd.x, fwd.z) - yawOf(toCamX, toCamZ);
         const dirCount = sheet.directions || 8;
         const step = (2 * Math.PI) / dirCount;
         // Histéresis: en el borde entre dos octantes el frame conmutaba a
@@ -634,9 +812,37 @@ export class FpsGl {
       const sx = e.sizeXZ?.x ?? e.radius * 2;
       const sz = e.sizeXZ?.z ?? e.radius * 2;
       const sy = e.sizeY ?? 1;
-      const geo = new THREE.BoxGeometry(sx, sy, sz);
-      geo.translate(0, sy / 2, 0);
-      const mat = new THREE.MeshStandardMaterial({ color: e.color || "#8a6b4a", roughness: 0.92 });
+      // La entity respeta su `shape` declarado (catálogo del world scene);
+      // sin shape (o shape plano/exótico) cae a caja — nunca más un fanal
+      // caído pintado como cajón.
+      let geo: THREE.BufferGeometry;
+      switch (e.shape) {
+        case "cylinder":
+        case "capsule":
+          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 14);
+          geo.translate(0, sy / 2, 0);
+          break;
+        case "sphere":
+          geo = new THREE.SphereGeometry(Math.max(sx, sy) / 2, 14, 10);
+          geo.translate(0, Math.max(sx, sy) / 2, 0);
+          break;
+        case "cone":
+          geo = new THREE.ConeGeometry(sx / 2, sy, 14);
+          geo.translate(0, sy / 2, 0);
+          break;
+        default:
+          geo = new THREE.BoxGeometry(sx, sy, sz);
+          geo.translate(0, sy / 2, 0);
+      }
+      // Paleta fps propia cuando la entity no declara color: main.ts rellena
+      // "#666"/"#aa8" (defaults del 2D cenital) y ese gris canta en primera
+      // persona — la mayoría de props de aldea son de madera.
+      const declared = e.color && e.color !== "#666" && e.color !== "#aa8" ? e.color : undefined;
+      const fallback =
+        e.category === "item" ? "#b0a878"
+        : e.category === "decor" ? "#8a7f6a"
+        : "#7a5c3e";
+      const mat = new THREE.MeshStandardMaterial({ color: declared ?? fallback, roughness: 0.92 });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -645,7 +851,7 @@ export class FpsGl {
       this.scene.add(mesh);
     }
     slot.mesh.visible = true;
-    slot.mesh.position.set(e.pos.x, 0, e.pos.z);
+    slot.mesh.position.set(e.pos.x, this.reliefWorldAt(e.pos.x, e.pos.z), e.pos.z);
   }
 
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
@@ -662,7 +868,8 @@ export class FpsGl {
     while (d < -Math.PI) d += 2 * Math.PI;
     const step = (dt / TURN_TIME_S) * Math.PI * 0.5;
     this.renderYaw = Math.abs(d) <= step ? targetYaw : this.renderYaw + Math.sign(d) * step;
-    this.cam.position.set(player.pos.x, EYE_M, player.pos.z);
+    this.applyAmbienceAt(player.pos.x, player.pos.z);
+    this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + EYE_M, player.pos.z);
     // rotation.y = π + yaw: la cámara de three mira −z con rotación 0 y
     // yawOf tiene 0 = +z (R_y(π+yaw)·(0,0,−1) = (sin yaw, 0, cos yaw)).
     this.cam.rotation.set(0, Math.PI + this.renderYaw, 0, "YXZ");
@@ -675,10 +882,10 @@ export class FpsGl {
       this.updateEntity(e, now);
     }
     for (const e of objects) {
-      // Los objetos DECLARADOS por la escena ya están en el greybox del tile
-      // (volumes declarados o derivados de entities): una caja encima los
-      // duplicaría. Solo se pintan los spawns dinámicos (react_to_player).
-      if (e.sceneDeclared) continue;
+      // Los edificios-entity legacy sí viven en el greybox (volumes); el resto
+      // de entities de escena (props/decor/items) NO se derivan a prims — sin
+      // esto eran invisibles en fps (mobiliario de interiores incluido).
+      if (e.sceneDeclared && e.category === "building") continue;
       seen.add(e.id);
       this.updateObject(e);
     }

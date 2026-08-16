@@ -20,9 +20,12 @@ import {
 import { errors } from "../ui/error-log.js";
 import type { AtlasImage } from "../renderer/fps-gl.js";
 
-/** Versión CLIENTE del pipeline: bump ⇒ invalida instalaciones previas. */
-const FPS_ATLAS_CLIENT_VERSION = 1;
+/** Versión CLIENTE del pipeline: bump ⇒ invalida instalaciones previas.
+ *  v2: celdas hero por cara/rol (SURFACE_LAYOUT_VERSION 2). */
+const FPS_ATLAS_CLIENT_VERSION = 2;
 const CLIENT_CACHE_MAX = 12;
+/** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */
+const MAX_CELLS_PER_REQUEST = 64;
 
 export interface FpsAtlasUrls {
   remote: string;
@@ -125,20 +128,37 @@ export class FpsAtlasController {
       const cells = this.flattenCells(tile.layout);
       if (cells.length === 0) return;
       if (!resolveOnly) this.deps.log(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
-      const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cells,
-          scene_description: tile.sceneDescription || "a medieval settlement",
-          style_id: this.styleId || undefined,
-          style_tag: styleCategoryForTile(tile.styleTag, tile.biome) || undefined,
-          layout_key: layoutKey.slice(0, 64),
-          resolve_only: resolveOnly || undefined,
-        }),
-      });
-      if (!res.ok) throw new Error(`generate_surface_atlas: HTTP ${res.status} ${await res.text()}`);
-      const data = (await res.json()) as GenerateSurfaceAtlasResponse;
+      // El server capa cells a 64 por petición: trocear y fusionar (cada
+      // celda se resuelve independiente contra la librería — mismo resultado).
+      const data: GenerateSurfaceAtlasResponse = {
+        cells: {},
+        pages_painted: 0,
+        cached: true,
+        cost_usd: 0,
+        missing: 0,
+        generation_time_ms: 0,
+      };
+      for (let i = 0; i < cells.length; i += MAX_CELLS_PER_REQUEST) {
+        const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cells: cells.slice(i, i + MAX_CELLS_PER_REQUEST),
+            scene_description: tile.sceneDescription || "a medieval settlement",
+            style_id: this.styleId || undefined,
+            style_tag: styleCategoryForTile(tile.styleTag, tile.biome) || undefined,
+            layout_key: layoutKey.slice(0, 64),
+            resolve_only: resolveOnly || undefined,
+          }),
+        });
+        if (!res.ok) throw new Error(`generate_surface_atlas: HTTP ${res.status} ${await res.text()}`);
+        const part = (await res.json()) as GenerateSurfaceAtlasResponse;
+        Object.assign(data.cells, part.cells);
+        data.pages_painted += part.pages_painted;
+        data.cached = data.cached && part.cached;
+        data.cost_usd = Math.round((data.cost_usd + part.cost_usd) * 100) / 100;
+        data.missing += part.missing;
+      }
       if (!resolveOnly) this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
       if (token !== this.token) return; // el tile activo cambió en vuelo
 

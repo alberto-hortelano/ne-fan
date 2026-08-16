@@ -1,0 +1,27 @@
+{
+ "description": "volumen custom (composición 3D libre): una carreta entoldada compuesta por el motor — caja elevada, cuatro ruedas tumbadas (cylinder rotX) y toldo con superficie hero propia",
+ "expect": "accept",
+ "payload": {
+  "volumes": [
+   {
+    "id": "carreta_buhonero",
+    "label": "carreta entoldada del buhonero",
+    "type": "custom",
+    "at": [72, 74],
+    "angle": -9,
+    "parts": [
+     { "shape": "box", "size": [6, 1.6, 3], "pos": [0, 1.1, 0], "color": "#77572f",
+       "desc": "weathered wooden cart bed with iron-banded side planks" },
+     { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [-1.8, 0, 1.5], "rotX": 1.5708, "color": "#4a3a26" },
+     { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [1.8, 0, 1.5], "rotX": 1.5708, "color": "#4a3a26" },
+     { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [-1.8, 0, -1.5], "rotX": 1.5708, "color": "#4a3a26" },
+     { "shape": "cylinder", "rBottom": 0.9, "h": 0.3, "pos": [1.8, 0, -1.5], "rotX": 1.5708, "color": "#4a3a26" },
+     { "shape": "cylinder", "rBottom": 1.5, "rTop": 1.5, "h": 5.6, "pos": [2.8, 1.52, 0], "rotZ": 1.5708,
+       "scale": [0.72, 1, 0.95], "color": "#8a7d63",
+       "desc": "dark waxed canvas wagon tilt with small hanging trinkets, folk-tale etching mood" },
+     { "shape": "box", "size": [0.4, 2.2, 0.4], "pos": [2.9, 0, 0.9], "rotY": 0.35, "color": "#5a4632" }
+    ]
+   }
+  ]
+ }
+}

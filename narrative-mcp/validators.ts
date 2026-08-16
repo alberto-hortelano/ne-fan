@@ -117,7 +117,7 @@ export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false
 export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error: string } {
   if (!Array.isArray(raw)) return { ok: false, error: 'volumes must be an array of typed objects' };
   if (raw.length > 160) return { ok: false, error: `volumes has ${raw.length} items, max is 160` };
-  const types = new Set(['building', 'wall', 'tower', 'gate', 'tree', 'bush', 'rock', 'fountain', 'prop', 'prism']);
+  const types = new Set(['building', 'wall', 'tower', 'gate', 'tree', 'bush', 'rock', 'fountain', 'prop', 'prism', 'custom']);
   const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const pair = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(num);
   const rect4 = (v: unknown): boolean => Array.isArray(v) && v.length === 4 && v.every(num);
@@ -166,6 +166,13 @@ export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error
       }
       if (!num(v.h) || v.h <= 0) {
         return { ok: false, error: `${ctx} ("${v.id}") prism needs a positive \`h\` (height in cells)` };
+      }
+    } else if (v.type === 'custom') {
+      if (!pair(v.at)) {
+        return { ok: false, error: `${ctx} ("${v.id}") custom needs \`at\`: [col, row]` };
+      }
+      if (!Array.isArray(v.parts) || v.parts.length === 0 || v.parts.length > 24) {
+        return { ok: false, error: `${ctx} ("${v.id}") custom needs \`parts\` (1..24 pieces)` };
       }
     } else if (!pair(v.at)) {
       return { ok: false, error: `${ctx} ("${v.id}") ${v.type} needs \`at\`: [col, row]` };

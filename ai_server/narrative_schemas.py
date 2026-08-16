@@ -62,7 +62,7 @@ MAX_GROUND_FEATURES = 64
 # Tipos de volumen del plan de tile. Espejo de VolumeSchema en
 # nefan-core/src/scene/blueprint/volumes.ts (zod es la fuente de verdad; aquí
 # validamos shape suficiente para no persistir basura — el bridge re-valida).
-VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop", "prism"}
+VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop", "prism", "custom"}
 MAX_VOLUMES = 160
 
 
@@ -222,6 +222,23 @@ def validate_ground(raw, *, field: str = "ground"):
     return clean
 
 
+_SURFACE_DESC_FACES = ("n", "s", "e", "w", "side", "roof", "door", "caps", "top")
+
+
+def _surface_desc_ok(sd, vtype) -> bool:
+    """Espejo laxo del union surfaceDesc de volumes.ts (string | por cara)."""
+    if vtype not in ("building", "wall", "prop", "prism"):
+        return False
+    if isinstance(sd, str):
+        return 1 <= len(sd) <= 200
+    if isinstance(sd, dict) and sd:
+        return all(
+            k in _SURFACE_DESC_FACES and isinstance(txt, str) and 1 <= len(txt) <= 200
+            for k, txt in sd.items()
+        )
+    return False
+
+
 def validate_volumes(raw, *, field: str = "volumes"):
     """Valida el array `volumes` del plan. Devuelve la lista LIMPIA — los
     items inválidos se descartan UNO A UNO con traza: un solo prop malformado
@@ -254,16 +271,18 @@ def validate_volumes(raw, *, field: str = "volumes"):
         if vtype not in VOLUME_TYPES:
             print(f"validate_scene: {ctx} type desconocido {vtype!r} — volumen descartado")
             continue
-        # surface_desc (vista fps): solo building|wall|prop|prism, string 1..200.
+        # surface_desc (vista fps): solo building|wall|prop|prism. String
+        # 1..200 u objeto por cara/rol {n|s|e|w|side|roof|door|caps|top:
+        # string 1..200, ≥1 clave} — espejo de surfaceDescFaces (volumes.ts).
         # El zod strict del bridge rechazaría el campo en otros tipos — aquí se
         # descarta con traza (espejo laxo, mismo criterio que el resto).
         sd = v.get("surface_desc")
-        if sd is not None and (
-            vtype not in ("building", "wall", "prop", "prism")
-            or not isinstance(sd, str)
-            or not (1 <= len(sd) <= 200)
-        ):
-            _drop_field(v, "surface_desc", ctx, "inválida (string 1..200, solo building|wall|prop|prism)")
+        if sd is not None and not _surface_desc_ok(sd, vtype):
+            _drop_field(
+                v, "surface_desc", ctx,
+                "inválida (string 1..200 u objeto por cara n|s|e|w|side|roof|door|caps|top; "
+                "solo building|wall|prop|prism)",
+            )
         if vtype == "building":
             if not _vol_rect(v.get("rect")):
                 print(f"validate_scene: {ctx} building sin rect válido (en rango) — volumen descartado")
@@ -308,6 +327,24 @@ def validate_volumes(raw, *, field: str = "volumes"):
             h = v.get("h")
             if h is not None and not (_num(h) and 0 < h <= 16):
                 _drop_field(v, "h", ctx, f"fuera de rango {h!r} (0..16)")
+        elif vtype == "custom":
+            # Composición 3D libre: at + parts (1..24 piezas con shape del
+            # enum). El detalle fino (dims por shape, rangos) lo rechaza el
+            # zod del bridge — aquí la forma gruesa (espejo laxo).
+            if not _cell_pair(v.get("at")):
+                print(f"validate_scene: {ctx} custom sin at válido — volumen descartado")
+                continue
+            parts = v.get("parts")
+            if not (
+                isinstance(parts, list) and 1 <= len(parts) <= 24
+                and all(
+                    isinstance(p, dict)
+                    and p.get("shape") in ("box", "cylinder", "cone", "sphere", "gable")
+                    for p in parts
+                )
+            ):
+                print(f"validate_scene: {ctx} custom sin parts válidas (1..24, shape del enum) — volumen descartado")
+                continue
         elif vtype == "prism":
             pts = v.get("points")
             if not (isinstance(pts, list) and 3 <= len(pts) <= 24 and all(_cell_pair(pp) for pp in pts)):
@@ -339,7 +376,7 @@ def validate_volumes(raw, *, field: str = "volumes"):
                     _drop_field(v, key, ctx, f"fuera de rango {val!r} ({lo}..{hi})")
         # `angle` (building/prop, GRADOS): un valor sin sentido se descarta
         # del item con traza (zod hace el rechazo duro).
-        if "angle" in v and vtype in ("building", "prop"):
+        if "angle" in v and vtype in ("building", "prop", "custom"):
             a = v.get("angle")
             if not _num(a) or not -180 <= a <= 180:
                 print(f"validate_scene: {ctx} angle inválido {a!r} — campo descartado")
@@ -663,6 +700,33 @@ def validate_scene_response(data: dict) -> dict:
             data["volumes"] = vols
         else:
             data.pop("volumes", None)
+
+    # ── Scatter declarativo (vista fps) ──────────────────────────────────
+    # Espejo LAXO de parseScatter (nefan-core/src/scene/blueprint/scatter.ts,
+    # la fuente de verdad con la gramática completa fail-loud): aquí solo la
+    # forma gruesa — mal formado se descarta ENTERO con traza (generators y
+    # zones van juntos: zonas sin generador no sirven).
+    if "scatter_generators" in data or "scatter_zones" in data:
+        gens = data.get("scatter_generators")
+        zones = data.get("scatter_zones")
+        ok = (
+            isinstance(gens, dict) and 0 < len(gens) <= 8
+            and all(
+                isinstance(g, dict) and isinstance(g.get("parts"), list) and 0 < len(g["parts"]) <= 10
+                for g in gens.values()
+            )
+            and isinstance(zones, list) and 0 < len(zones) <= 12
+            and all(
+                isinstance(z, dict) and z.get("kind") in gens
+                and isinstance(z.get("shape"), dict)
+                and isinstance(z.get("density"), (int, float)) and 0 <= z["density"] <= 1.5
+                for z in zones
+            )
+        )
+        if not ok:
+            print("validate_scene: scatter_generators/scatter_zones malformados — descartados")
+            data.pop("scatter_generators", None)
+            data.pop("scatter_zones", None)
 
     # ── Entities ─────────────────────────────────────────────────────────
     raw_entities = data.get("entities")

@@ -12,8 +12,139 @@
 
 import { PALETTE, wallColors, roofColors, darken, lighten } from "../blueprint/palette.js";
 import { volumeFootprint } from "../blueprint/footprint.js";
-import type { GateVolume, Volume } from "../blueprint/volumes.js";
+import type { CustomPart, CustomVolume, GateVolume, Volume } from "../blueprint/volumes.js";
 import type { GreyboxPrimitive } from "./common.js";
+
+/** size de prim de una pieza custom (contrato de GreyboxPrimitive.size). */
+export function customPartSize(p: CustomPart): { shape: GreyboxPrimitive["shape"]; size: number[] } {
+  switch (p.shape) {
+    case "box":
+    case "gable":
+      return { shape: p.shape, size: [...p.size!] };
+    case "cylinder":
+      return { shape: "cylinder", size: p.rTop !== undefined ? [p.rBottom!, p.h!, p.rTop] : [p.rBottom!, p.h!] };
+    case "cone":
+      return { shape: "cone", size: [p.r!, p.h!, p.seg ?? 12] };
+    case "sphere":
+      return { shape: "sphere", size: p.seg !== undefined ? [p.r!, p.seg] : [p.r!] };
+  }
+}
+
+/** Matriz M = R·S de una pieza (R = Rx·Ry·Rz, el orden del renderer:
+ *  v' = Rx(Ry(Rz(v))); S = diag(scale)). */
+function partMatrix(p: CustomPart, totalRotY: number): number[][] {
+  const [sxc, syc, szc] = p.scale ?? [1, 1, 1];
+  const cx = Math.cos(p.rotX ?? 0), sx = Math.sin(p.rotX ?? 0);
+  const cy = Math.cos(totalRotY), sy = Math.sin(totalRotY);
+  const cz = Math.cos(p.rotZ ?? 0), sz = Math.sin(p.rotZ ?? 0);
+  // Ry·Rz
+  const a = [
+    [cy * cz, -cy * sz, sy],
+    [sz, cz, 0],
+    [-sy * cz, sy * sz, cy],
+  ];
+  // R = Rx·(Ry·Rz)
+  const r = [
+    a[0],
+    [cx * a[1][0] - sx * a[2][0], cx * a[1][1] - sx * a[2][1], cx * a[1][2] - sx * a[2][2]],
+    [sx * a[1][0] + cx * a[2][0], sx * a[1][1] + cx * a[2][1], sx * a[1][2] + cx * a[2][2]],
+  ];
+  return r.map((row) => [row[0] * sxc, row[1] * syc, row[2] * szc]);
+}
+
+/** AABB EXACTO de una pieza tras scale y rotación, relativo a su origen (la
+ *  base sin rotar). Cilindro/cono = casco de sus dos círculos transformados
+ *  (invariante bajo yaw — una rueda no engorda al girar el conjunto); esfera
+ *  = elipsoide; box/gable = esquinas. `totalRotY` = angle del conjunto +
+ *  rotY de la pieza. */
+export function customPartAabb(
+  p: CustomPart,
+  totalRotY: number,
+): { min: [number, number, number]; max: [number, number, number] } {
+  const m = partMatrix(p, totalRotY);
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  const take = (lo: number, hi: number, i: number) => {
+    min[i] = Math.min(min[i], lo);
+    max[i] = Math.max(max[i], hi);
+  };
+  // Círculo horizontal local (centro (0,yc,0), radio r en el plano xz).
+  const circle = (yc: number, r: number) => {
+    for (let i = 0; i < 3; i++) {
+      const c = m[i][1] * yc;
+      const e = r * Math.hypot(m[i][0], m[i][2]);
+      take(c - e, c + e, i);
+    }
+  };
+  switch (p.shape) {
+    case "box":
+    case "gable": {
+      const [w, h, d] = p.size!;
+      for (const lx of [-w / 2, w / 2])
+        for (const ly of [0, h])
+          for (const lz of [-d / 2, d / 2])
+            for (let i = 0; i < 3; i++) {
+              const v = m[i][0] * lx + m[i][1] * ly + m[i][2] * lz;
+              take(v, v, i);
+            }
+      break;
+    }
+    case "cylinder":
+      circle(0, p.rBottom!);
+      circle(p.h!, p.rTop ?? p.rBottom!);
+      break;
+    case "cone":
+      circle(0, p.r!);
+      circle(p.h!, 0);
+      break;
+    case "sphere":
+      for (let i = 0; i < 3; i++) {
+        const c = m[i][1] * p.r!;
+        const e = p.r! * Math.hypot(m[i][0], m[i][1], m[i][2]);
+        take(c - e, c + e, i);
+      }
+      break;
+  }
+  return { min, max };
+}
+
+/** Cota superior (celdas) de una pieza custom — para tall/occluder. Rotación
+ *  y scale incluidos (una rueda rotX aporta 2r, no h). */
+export function customPartTop(p: CustomPart): number {
+  const { min, max } = customPartAabb(p, p.rotY ?? 0);
+  return (p.pos?.[1] ?? 0) + (max[1] - min[1]);
+}
+
+/** Prims de un volumen custom: UNA por pieza y EN EL ORDEN declarado —
+ *  contrato con fps-spec (el hero por pieza casa prims↔parts por índice). */
+export function customVolumePrims(v: CustomVolume): GreyboxPrimitive[] {
+  const angleRad = ((v.angle ?? 0) * Math.PI) / 180;
+  const ca = Math.cos(angleRad);
+  const sa = Math.sin(angleRad);
+  return v.parts.map((p) => {
+    const [ox, oy, oz] = p.pos ?? [0, 0, 0];
+    const [rx, rz] = v.angle ? [ox * ca + oz * sa, -ox * sa + oz * ca] : [ox, oz];
+    const { shape, size } = customPartSize(p);
+    // Contrato: pos.y de la PIEZA es la base de su AABB DESPUÉS de rotar y
+    // escalar ("apoyar en el suelo" = y:0 siempre, ruedas incluidas). El
+    // renderer pivota en el origen local, así que se compensa aquí.
+    const lift = -customPartAabb(p, angleRad + (p.rotY ?? 0)).min[1];
+    const prim: GreyboxPrimitive = {
+      shape,
+      size,
+      pos: [v.at[0] + rx, oy + lift, v.at[1] + rz],
+      color: p.color ?? "#9a938a",
+      cat: "prop",
+      volId: `vol_${v.id}`,
+    };
+    const rotY = angleRad + (p.rotY ?? 0);
+    if (rotY) prim.rotY = rotY;
+    if (p.rotX) prim.rotX = p.rotX;
+    if (p.rotZ) prim.rotZ = p.rotZ;
+    if (p.scale) prim.scale = [...p.scale];
+    return prim;
+  });
+}
 
 /** Opacidad de la copa del árbol al pintar su recorte (cubre sin ocultar del
  *  todo lo que hay debajo). La aplica el cliente al canvas del occluder. */
@@ -54,6 +185,11 @@ export function classifyVolume(v: Volume): { solid: boolean; tall: boolean } {
       // Geometría libre: el modelo DECLARA la física (no se infiere de una
       // forma arbitraria). Default sólido y alto.
       return { solid: v.solid !== false, tall: v.tall !== false };
+    case "custom":
+      return {
+        solid: v.solid !== false,
+        tall: v.tall ?? Math.max(...v.parts.map(customPartTop)) > 4,
+      };
     case "prop":
     default:
       return { solid: v.passable !== true, tall: (v.h ?? 2) > 4 };
@@ -449,6 +585,19 @@ export function volumePartsForTile(v: Volume, gates: GateVolume[]): VolumePart[]
           : [box(w, h, d, cx, 0, cz, color, "prop", { volId: `vol_${v.id}`, rotY: propRotY })];
       return [
         { part: "base", prims, footprint: fp, depthPt: pfp.depthPoint, occludes: classifyVolume(v).tall },
+      ];
+    }
+    case "custom": {
+      // Composición 3D libre del motor: una prim por pieza, en orden.
+      const pfp = volumeFootprint(v);
+      return [
+        {
+          part: "base",
+          prims: customVolumePrims(v),
+          footprint: pfp.cells,
+          depthPt: pfp.depthPoint,
+          occludes: classifyVolume(v).tall,
+        },
       ];
     }
     case "prism": {

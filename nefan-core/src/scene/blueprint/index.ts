@@ -24,13 +24,21 @@ export { canonicalGreyboxJson } from "../greybox/common.js";
 export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
 export { volumeCollisionGrid, volumeSolidDiscRadiusCells } from "./collision.js";
 export { buildFpsTileSpec } from "./fps-spec.js";
-export type { FpsTileSpec } from "./fps-spec.js";
+export type { FpsTileSpec, FpsTilePlanInput } from "./fps-spec.js";
+export { enrichFpsPrims } from "./fps-detail.js";
+export {
+  parseScatter,
+  runScatter,
+  buildScatterExclusions,
+  MAX_SCATTER_INSTANCES,
+} from "./scatter.js";
+export type { ScatterZone, ScatterCount, ScatterRunResult, ParseScatterResult } from "./scatter.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";
 export { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
 export type { Projection } from "./projection.js";
-export { parseVolumes, VolumesSchema, VolumeSchema, MAX_VOLUMES, TREE_MAX_S } from "./volumes.js";
-export type { Volume } from "./volumes.js";
+export { parseVolumes, VolumesSchema, VolumeSchema, CustomSchema, CustomPartSchema, MAX_VOLUMES, TREE_MAX_S } from "./volumes.js";
+export type { Volume, CustomVolume, CustomPart } from "./volumes.js";
 export { parseGround, groundHasWater, GroundSchema, GroundFeatureSchema, MAX_GROUND_FEATURES } from "./ground.js";
 export type { GroundFeature, GroundPath, GroundArea, GroundWater, GroundDeck } from "./ground.js";
 export { groundCollisionGrid, shapeContains, TILE_GRID_DIMS, type CollisionGridDims } from "./ground-collision.js";

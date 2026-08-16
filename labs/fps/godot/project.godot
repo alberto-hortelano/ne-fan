@@ -1,0 +1,21 @@
+; Bench FPS Godot — proyecto mínimo que consume las escenas declarativas de
+; labs/fps (escena.json + layout.json + texturas de runs/) para la comparativa
+; contra el renderer three.js. Sin autoloads ni dependencias del proyecto godot/.
+config_version=5
+
+[application]
+
+config/name="fps_bench"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=1000
+
+[rendering]
+
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+anti_aliasing/quality/msaa_3d=2

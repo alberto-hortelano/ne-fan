@@ -20,6 +20,7 @@ from style_categories import (  # noqa: E402
     ALL_STYLE_TAGS,
     CHARACTER_CATEGORIES,
     ENV_CATEGORIES,
+    FPS_CATEGORIES,
     LEGACY_ALIASES,
     STAGE_CATEGORIES,
     STYLE_TAG_PATTERN,
@@ -44,6 +45,15 @@ class TestStyleCategoriesSync(unittest.TestCase):
 
     def test_stage_categories(self) -> None:
         self.assertEqual(list(STAGE_CATEGORIES), self.artifact["stage"])
+
+    def test_fps_categories(self) -> None:
+        self.assertEqual(list(FPS_CATEGORIES), self.artifact["fps"])
+
+    def test_fps_not_in_style_tags(self) -> None:
+        # fps_surfaces es una categoría de REF del pack, no un style_tag de
+        # tile: no debe colarse en el vocabulario del wire.
+        for cat in FPS_CATEGORIES:
+            self.assertNotIn(cat, ALL_STYLE_TAGS)
 
     def test_legacy_aliases(self) -> None:
         self.assertEqual(LEGACY_ALIASES, self.artifact["legacy_aliases"])

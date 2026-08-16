@@ -30,12 +30,41 @@ const base = {
 const angle = z.number().min(-180).max(180);
 
 /** Descripción de la SUPERFICIE visible del volumen para la vista fps: si
- *  está, sus caras laterales se pintan como celda "hero" única del atlas con
+ *  está, las caras del CUERPO se pintan como celda "hero" única del atlas con
  *  esta descripción (p. ej. "facade with a faded mural of a sun"), y la
  *  textura resultante entra en la librería de superficies reutilizable.
  *  Opcional siempre — sin ella la superficie se deriva del material/color.
  *  Inglés recomendado (es un prompt de imagen). */
-const surfaceDesc = z.string().min(1).max(200);
+const surfaceDescStr = z.string().min(1).max(200);
+
+/** Forma objeto: una descripción DISTINTA por cara/rol (cada una es su propia
+ *  imagen — el hash del asset es la descripción). Claves: `n|s|e|w` caras
+ *  laterales individuales en el marco LOCAL del volumen (pre-`angle`, mismo
+ *  vocabulario que `doors[].edge`); `side` = todas las laterales (equivale a
+ *  la forma string); `roof` tejado; `door` puertas; `caps` hastiales del
+ *  gable / tapa de un prism; `top` cara superior de un prop/prism. Las caras
+ *  sin descripción usan su material derivado (teja, madera…). */
+const surfaceDescFaces = z
+  .object({
+    side: surfaceDescStr.optional(),
+    n: surfaceDescStr.optional(),
+    s: surfaceDescStr.optional(),
+    e: surfaceDescStr.optional(),
+    w: surfaceDescStr.optional(),
+    roof: surfaceDescStr.optional(),
+    door: surfaceDescStr.optional(),
+    caps: surfaceDescStr.optional(),
+    top: surfaceDescStr.optional(),
+  })
+  .strict()
+  .refine((o) => Object.values(o).some((v) => v !== undefined), {
+    message: "surface_desc objeto necesita al menos una cara",
+  });
+
+const surfaceDesc = z.union([surfaceDescStr, surfaceDescFaces]);
+
+export type SurfaceDescFaces = z.infer<typeof surfaceDescFaces>;
+export type SurfaceDesc = z.infer<typeof surfaceDesc>;
 
 export const RoofKindSchema = z.enum(["gable", "hip", "shed", "flat", "none"]);
 export const RoofMaterialSchema = z.enum(["slate", "tile", "thatch", "wood"]);
@@ -184,7 +213,71 @@ export const PrismSchema = z
   })
   .strict();
 
+/** Pieza de un volumen `custom`: misma gramática de campos que las parts del
+ *  scatter (una sola gramática de piezas para el motor), con valores
+ *  LITERALES. Coordenadas locales en celdas relativas al `at` del volumen;
+ *  `pos[1]` es la BASE de la pieza y las rotaciones (radianes) giran
+ *  alrededor de su origen local. `desc` opcional pinta la superficie de ESA
+ *  pieza como celda hero del atlas fps (entra en la librería); sin desc la
+ *  pieza queda en clay con su color. */
+const customDim = z.number().positive().max(64);
+const customLocal = z.number().min(-32).max(32);
+
+export const CustomPartSchema = z
+  .object({
+    shape: z.enum(["box", "cylinder", "cone", "sphere", "gable"]),
+    /** box|gable: [w, h, d] (gable: cumbrera a lo largo de d, pre-rotY). */
+    size: z.tuple([customDim, customDim, customDim]).optional(),
+    r: customDim.optional(),
+    h: customDim.optional(),
+    rBottom: customDim.optional(),
+    rTop: customDim.optional(),
+    seg: z.number().min(3).max(24).optional(),
+    pos: z.tuple([customLocal, z.number().min(-8).max(64), customLocal]).optional(),
+    rotX: z.number().min(-6.3).max(6.3).optional(),
+    rotY: z.number().min(-6.3).max(6.3).optional(),
+    rotZ: z.number().min(-6.3).max(6.3).optional(),
+    scale: z.tuple([z.number().min(0.1).max(4), z.number().min(0.1).max(4), z.number().min(0.1).max(4)]).optional(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    desc: z.string().min(1).max(200).optional(),
+  })
+  .strict()
+  .superRefine((p, ctx) => {
+    const need = (field: "size" | "r" | "h" | "rBottom", ok: boolean): void => {
+      if (!ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${p.shape} requiere \`${field}\`` });
+    };
+    if (p.shape === "box" || p.shape === "gable") need("size", p.size !== undefined);
+    if (p.shape === "cylinder") {
+      need("rBottom", p.rBottom !== undefined);
+      need("h", p.h !== undefined);
+    }
+    if (p.shape === "cone") {
+      need("r", p.r !== undefined);
+      need("h", p.h !== undefined);
+    }
+    if (p.shape === "sphere") need("r", p.r !== undefined);
+  });
+
+/** Composición 3D LIBRE: el motor declara cualquier objeto como piezas
+ *  sólidas con posiciones/rotaciones/escala locales — sin catálogo y sin
+ *  preset intermedio. Colisión = AABB de las piezas (rotado por `angle`)
+ *  salvo `solid: false`. */
+export const CustomSchema = z
+  .object({
+    ...base,
+    type: z.literal("custom"),
+    at,
+    /** Rotación del CONJUNTO en grados (mismo convenio que building/prop). */
+    angle: angle.optional(),
+    parts: z.array(CustomPartSchema).min(1).max(24),
+    solid: z.boolean().optional(),
+    /** Se dibuja sobre quien esté detrás; default: altura máxima > 4 celdas. */
+    tall: z.boolean().optional(),
+  })
+  .strict();
+
 export const VolumeSchema = z.discriminatedUnion("type", [
+  CustomSchema,
   BuildingSchema,
   WallSchema,
   TowerSchema,
@@ -203,6 +296,8 @@ export const MAX_VOLUMES = 160;
 export const VolumesSchema = z.array(VolumeSchema).max(MAX_VOLUMES);
 
 export type Volume = z.infer<typeof VolumeSchema>;
+export type CustomVolume = z.infer<typeof CustomSchema>;
+export type CustomPart = z.infer<typeof CustomPartSchema>;
 export type BuildingVolume = z.infer<typeof BuildingSchema>;
 export type WallVolume = z.infer<typeof WallSchema>;
 export type TowerVolume = z.infer<typeof TowerSchema>;

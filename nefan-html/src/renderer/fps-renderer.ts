@@ -23,6 +23,11 @@ export interface FpsTilePlan {
   ground: GroundFeature[];
   volumes: Volume[];
   biome?: string;
+  /** Bloque de scatter declarativo del tile (crudo — lo valida fps-spec). */
+  scatter_generators?: unknown;
+  scatter_zones?: unknown;
+  /** Descripción de la escena — la ambientación infiere la hora de ella. */
+  scene_description?: string;
 }
 
 export interface FpsTileSurfaces {
@@ -138,12 +143,29 @@ export class FpsRenderer implements Renderer2D {
   installTile(key: string, plan: FpsTilePlan, rect: { minX: number; minZ: number }): void {
     try {
       const fps = buildFpsTileSpec(
-        { ground: plan.ground, volumes: plan.volumes, biome: plan.biome },
+        {
+          ground: plan.ground,
+          volumes: plan.volumes,
+          biome: plan.biome,
+          scatter_generators: plan.scatter_generators,
+          scatter_zones: plan.scatter_zones,
+          scene_description: plan.scene_description,
+        },
         key,
       );
+      if (fps.timeOfDay && fps.timeOfDay !== "dia") {
+        console.info(`fps ambience ${key}: ${fps.timeOfDay}`);
+      }
+      if (fps.scatterError) {
+        errors.push("scene", `scatter de ${key} inválido (se ignora): ${fps.scatterError}`);
+      }
+      if (fps.scatterCounts) {
+        const summary = fps.scatterCounts.map((c) => `${c.kind} ${c.placed}/${c.wanted}`).join(", ");
+        console.info(`fps scatter ${key}: ${summary}`);
+      }
       const layout = buildLayout(fps.primsM);
       this.surfaces.set(key, { fps, layout });
-      this.withGl((gl) => gl.installTile(key, fps.primsM, fps.lightsM, layout, rect));
+      this.withGl((gl) => gl.installTile(key, fps.primsM, fps.lightsM, layout, rect, { sky: fps.sky, fog: fps.fog }));
     } catch (err) {
       errors.push("render", `el tile ${key} no compone en la vista fps`, err);
     }

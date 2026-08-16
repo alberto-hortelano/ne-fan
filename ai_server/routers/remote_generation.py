@@ -227,6 +227,7 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     # estilo (la misma "wall_plaster" en dos estilos son dos assets).
     style_token = ""
     style_key = ""
+    style_sheet = None  # lámina fps_surfaces del pack (2ª ref de cada página)
     if body.style_id and deps.style_packs is not None:
         tag = body.style_tag or "settlement"
         style_ref = deps.style_packs.resolve(body.style_id, tag)
@@ -235,9 +236,10 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
             style_key = f"{style_ref.style_id}:{style_ref.style_token}"
         else:
             style_key = body.style_id
+        style_sheet = deps.style_packs.resolve(body.style_id, "fps_surfaces")
 
     def cell_context(cell: SurfaceCellSpec, ai_model: str) -> dict:
-        return DEV_API_CACHE.namespace_context({
+        ctx = {
             "mat": cell.mat,
             "kind": cell.kind,
             "style": style_key,
@@ -245,7 +247,20 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
             "hints": canonical_hints(cell.hints),
             "pipeline": "surface1",
             "library": "1",
-        })
+        }
+        # Clave CONDICIONAL: sin lámina el contexto es byte-idéntico al
+        # histórico (la librería pintada sigue valiendo); añadir la lámina a
+        # un estilo invalida SOLO las celdas de ese estilo (repintado con la
+        # nueva dirección de arte), y cambiar la lámina vuelve a invalidar.
+        if style_sheet is not None:
+            ctx["fpsref"] = style_sheet.content_hash
+        # Versión del contrato de las celdas ÚNICAS (UNIQUE_RULE del pintor:
+        # una celda hero es UNA CARA, nunca el objeto entero). Solo en
+        # uniques: invalida los heroes ya pintados como objeto (ruedas
+        # dibujadas sobre el carro, 2026-08-16) sin repagar ni una tile.
+        if cell.kind != "tile":
+            ctx["unique_face_v"] = "2"
+        return DEV_API_CACHE.namespace_context(ctx)
 
     gen = deps.surface_atlas_gen
     resolved: dict[str, dict] = {}
@@ -280,6 +295,7 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
             body.scene_description,
             style_token,
             reused_pngs,
+            style_sheet.data_uri if style_sheet is not None else "",
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"surface atlas generation failed: {e}") from e

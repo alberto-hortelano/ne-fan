@@ -18,8 +18,16 @@ export interface GreyboxPrimitive {
    *  mundo del builder (metros en proscenio, celdas en el tile). */
   points?: [number, number][];
   rotY?: number;
-  /** Rotación sobre X tras rotY (p. ej. cilindro tumbado como rueda). */
+  /** Rotación sobre X tras rotY (cilindro tumbado con el eje en Z: ruedas). */
   rotX?: number;
+  /** Rotación sobre Z (cilindro tumbado con el eje en X: toldos, troncos
+   *  caídos). Solo la emiten los volúmenes custom y el scatter (fps). */
+  rotZ?: number;
+  /** Escala no uniforme del mesh (esferas achatadas de matorral/roca). La
+   *  base sigue en pos.y (la geometría se ancla en y=0 antes de escalar).
+   *  Solo la emite la vista fps (detalle/scatter) — los builders cenitales
+   *  no la usan y sus specs canónicos (claves de caché) no cambian. */
+  scale?: [number, number, number];
   color: string;
   roughness?: number;
   cat: "building" | "prop" | "terrain" | "wall" | "tree" | "water" | "decor";

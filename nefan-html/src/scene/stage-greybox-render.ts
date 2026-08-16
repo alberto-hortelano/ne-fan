@@ -101,6 +101,8 @@ export function primitiveMesh(p: GreyboxPrimitive): THREE.Mesh {
   mesh.position.set(...p.pos);
   if (p.rotY) mesh.rotation.y = p.rotY;
   if (p.rotX) mesh.rotation.x = p.rotX;
+  if (p.rotZ) mesh.rotation.z = p.rotZ;
+  if (p.scale) mesh.scale.set(...p.scale);
   mesh.castShadow = !p.noShadow;
   mesh.receiveShadow = true;
   return mesh;

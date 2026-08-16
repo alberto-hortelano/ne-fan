@@ -156,6 +156,24 @@ class StylePacksTest(unittest.TestCase):
         # stage devuelve None (blueprint-solo), jamás la ref aérea.
         self.assertIsNone(self.resolver.resolve("mi_estilo", "stage_nature"))
 
+    def test_fps_surfaces_resuelve_directa(self):
+        d = self.styles_dir / "mi_estilo"
+        manifest = json.loads((d / "style.json").read_text(encoding="utf-8"))
+        manifest["refs"].append(
+            {"category": "fps_surfaces", "file": "fps_surfaces.jpg", "tags": [], "view": "fps"})
+        (d / "style.json").write_text(json.dumps(manifest), encoding="utf-8")
+        _write_jpg(d / "fps_surfaces.jpg", (120, 120, 120))
+        resolver = StylePackResolver(styles_dir=self.styles_dir)
+        ref = resolver.resolve("mi_estilo", "fps_surfaces")
+        self.assertIsNotNone(ref)
+        self.assertEqual(ref.category, "fps_surfaces")
+
+    def test_fps_surfaces_sin_lamina_devuelve_none(self):
+        # El pack tiene forest.jpg y character_commoner.jpg, pero la lámina de
+        # materiales NO admite sustituto: sin ella, None (atlas solo-token) —
+        # jamás una escena cenital ni un model sheet.
+        self.assertIsNone(self.resolver.resolve("mi_estilo", "fps_surfaces"))
+
     def test_stage_desconocida_usa_stage_street(self):
         d = self.styles_dir / "mi_estilo"
         manifest = json.loads((d / "style.json").read_text(encoding="utf-8"))

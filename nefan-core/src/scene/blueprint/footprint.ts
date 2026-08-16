@@ -91,6 +91,42 @@ export function volumeFootprint(v: Volume): { depthPoint: [number, number]; cell
       const r = v.r ?? 5;
       return { depthPoint: [v.at[0] + r, v.at[1] + r], cells: [v.at[0] - r, v.at[1] - r, v.at[0] + r, v.at[1] + r] };
     }
+    case "custom": {
+      // AABB XZ de las piezas (dims × scale) alrededor de `at`, rotado por
+      // `angle` alrededor del origen (mismo convenio que las prims emitidas).
+      const angleRad = ((v.angle ?? 0) * Math.PI) / 180;
+      const ca = Math.cos(angleRad);
+      const sa = Math.sin(angleRad);
+      let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+      for (const p of v.parts) {
+        const [ox, , oz] = p.pos ?? [0, 0, 0];
+        const sx = p.scale?.[0] ?? 1;
+        const sz = p.scale?.[2] ?? 1;
+        let eu: number;
+        let ev: number;
+        if (p.shape === "box" || p.shape === "gable") {
+          eu = (p.size![0] / 2) * sx;
+          ev = (p.size![2] / 2) * sz;
+        } else {
+          const r = p.shape === "cylinder" ? Math.max(p.rBottom!, p.rTop ?? 0) : p.r!;
+          // Una pieza tumbada (rotX/rotZ) extiende su altura en planta.
+          const e = p.rotX || p.rotZ ? Math.max(r, (p.h ?? 2 * r) / 2) : r;
+          eu = e * sx;
+          ev = e * sz;
+        }
+        // Esquinas del AABB local de la pieza, rotadas por angle.
+        for (const [du, dv] of [[-eu, -ev], [eu, -ev], [-eu, ev], [eu, ev]] as const) {
+          const lu = ox + du;
+          const lv = oz + dv;
+          const [ru, rv] = v.angle ? [lu * ca + lv * sa, -lu * sa + lv * ca] : [lu, lv];
+          minU = Math.min(minU, v.at[0] + ru);
+          minV = Math.min(minV, v.at[1] + rv);
+          maxU = Math.max(maxU, v.at[0] + ru);
+          maxV = Math.max(maxV, v.at[1] + rv);
+        }
+      }
+      return { depthPoint: [maxU, maxV], cells: [minU, minV, maxU, maxV] };
+    }
     case "prism": {
       // Huella = AABB del contorno poligonal (sin margen: el polígono ES la
       // huella).
