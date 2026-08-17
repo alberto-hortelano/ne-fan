@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
 import { stagePlanFromScene, ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
-import { bridgeGet, bridgePost, postProgress, setActivityHook, type BridgeResult } from './bridge-http-client.js';
+import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
 
 // Kinds que llegaron como `vision_request` y por tanto DEBEN responderse con
@@ -105,6 +105,23 @@ function describeStateCall(method: string, path: string): string {
   return `el motor consulta el estado (${method} ${path})…`;
 }
 
+/** session_id del playthrough al que pertenece un request narrativo: viaja en
+ *  world_state (scene, de serializeForLlm), en context (narrative_event) o en
+ *  el bloque `session` que ai_server añade a ambos. null si el request no
+ *  lleva sesión (develop_world, vision sin contexto). */
+function extractSessionId(msg: unknown): string | null {
+  if (!msg || typeof msg !== 'object') return null;
+  for (const key of ['world_state', 'context'] as const) {
+    const c = (msg as Record<string, unknown>)[key];
+    if (!c || typeof c !== 'object') continue;
+    const obj = c as { session_id?: unknown; session?: { session_id?: unknown } };
+    if (typeof obj.session_id === 'string' && obj.session_id) return obj.session_id;
+    const nested = obj.session?.session_id;
+    if (typeof nested === 'string' && nested) return nested;
+  }
+  return null;
+}
+
 async function main() {
   const bridge = await WsBridge.create();
 
@@ -185,6 +202,10 @@ into context:
       try {
         const msg = await bridge.waitForRequest();
         currentRequestId = msg.request_id;
+        // Sesión del request: las tools de estado la adjuntan como cabecera
+        // para que el bridge rechace (409) lecturas/escrituras si un
+        // start/resume pisó la sesión con esta petición en vuelo.
+        setActiveSession(extractSessionId(msg));
         reportProgress('el motor narrativo ha recogido la petición y está trabajando…');
 
         if (msg.type === 'vision_request') {

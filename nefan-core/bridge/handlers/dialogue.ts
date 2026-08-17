@@ -3,7 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
-import { npcSync, runPluginTick, type BridgeContext } from "../context.js";
+import { npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
   InteractEntityMessage,
@@ -20,6 +20,7 @@ async function reportAndDispatch(
   freeText: string,
   logLabel: string,
 ): Promise<void> {
+  const jobSession = ctx.narrative.session_id;
   const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
   const result = await ctx.aiClient.reportPlayerChoice({
     eventId,
@@ -28,6 +29,20 @@ async function reportAndDispatch(
     freeText,
     context: llmCtx,
   });
+  // Defensa en profundidad (mismo patrón que los jobs de generación): si un
+  // start/resume pisó la sesión durante el await, las consequences NO se
+  // aplican a la sesión nueva.
+  const changed = sessionChangedError(ctx, jobSession);
+  if (changed) {
+    console.warn(`Bridge: reportPlayerChoice (${logLabel}) descartado — ${changed}`);
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "consequences",
+      message: changed,
+    });
+    return;
+  }
   if (!result.ok) {
     console.warn(`Bridge: reportPlayerChoice (${logLabel}) failed for ${eventId}: ${result.error}`);
     ctx.broadcastNarrative({

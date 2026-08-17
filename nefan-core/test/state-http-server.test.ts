@@ -99,6 +99,34 @@ async function post(
 }
 
 describe("state HTTP API", () => {
+  it("cabecera x-nefan-session: mismatch → 409 en cualquier ruta; sesión correcta o sin cabecera → pasa", async () => {
+    // Mismatch: la petición pertenece a otra sesión (takeover con request en
+    // vuelo) — 409 fail-loud en lectura Y escritura.
+    const mism = await fetch(`${baseUrl}/story`, {
+      headers: { "x-nefan-session": "sesion-pisada" },
+    });
+    assert.equal(mism.status, 409);
+    const mismBody = (await mism.json()) as Record<string, unknown>;
+    assert.match(String(mismBody.error), /session_mismatch/);
+    const mismPost = await fetch(`${baseUrl}/map/place`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-nefan-session": "sesion-pisada" },
+      body: JSON.stringify({ id: "no_debe_entrar", name: "No", kind: "settlement" }),
+    });
+    assert.equal(mismPost.status, 409);
+    assert.equal(narrative.worldMap.get("no_debe_entrar"), undefined);
+    // /health queda fuera de la guardia (diagnóstico de infra).
+    const health = await fetch(`${baseUrl}/health`, {
+      headers: { "x-nefan-session": "sesion-pisada" },
+    });
+    assert.equal(health.status, 200);
+    // Sesión correcta → pasa.
+    const okRes = await fetch(`${baseUrl}/story`, {
+      headers: { "x-nefan-session": narrative.session_id },
+    });
+    assert.equal(okRes.status, 200);
+  });
+
   it("GET /health refleja la sesión activa", async () => {
     const { status, body } = await get("/health");
     assert.equal(status, 200);

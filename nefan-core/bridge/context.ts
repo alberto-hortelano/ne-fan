@@ -86,6 +86,28 @@ export interface BridgeContext {
   broadcastNarrative(msg: ServerMessage): void;
 }
 
+/** Guardia anti-takeover de sesión: key del job de generación en vuelo (o del
+ *  primero encolado), o null con la cola vacía. `ctx.narrative` es un
+ *  SINGLETON: si un start/resume cambia la sesión activa con un job en vuelo,
+ *  el job escribiría su escena (y el motor sus tools de mapa) en la sesión
+ *  NUEVA — reproducido el 2026-08-17 contaminando el world_map de otro save.
+ *  Mientras esta función devuelva key, cambiar de sesión debe rechazarse. */
+export function generationBusyKey(ctx: BridgeContext): string | null {
+  return ctx.sceneGen.current ?? ctx.sceneGen.pending[0] ?? null;
+}
+
+/** Defensa en profundidad de los jobs con awaits largos: al resolver
+ *  `generateScene`/`reportPlayerChoice`, si la sesión activa ya no es la que
+ *  originó el job, el resultado se DESCARTA sin escribir (el caller difunde
+ *  su narrative_status de error con este mensaje). */
+export function sessionChangedError(ctx: BridgeContext, jobSessionId: string): string | null {
+  if (ctx.narrative.session_id === jobSessionId) return null;
+  return (
+    `la sesión activa cambió durante la generación (era ${jobSessionId}, ` +
+    `ahora ${ctx.narrative.session_id}) — resultado descartado sin escribir`
+  );
+}
+
 /** Añade a `sceneIds` los ids de escena del vecindario 3×3 alrededor del tile
  *  de `rec` (no-op si `rec` no es un tile). Criterio compartido por la
  *  proyección de enemigos y la vida ambiental de NPCs: el mundo es continuo y

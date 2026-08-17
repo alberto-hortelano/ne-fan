@@ -7,7 +7,7 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type PlaceContext } from "../../src/scene/scene-validate.js";
 import { resolveExitEdge } from "../../src/world-map/edges.js";
-import { broadcastScene, type BridgeContext } from "../context.js";
+import { broadcastScene, sessionChangedError, type BridgeContext } from "../context.js";
 
 /** placeContext con links (destino + edge efectivo) desde el world map del
  *  bridge — la regla proscenio exits⇔links del validador lo necesita. */
@@ -39,11 +39,15 @@ export async function runBootstrapStage(
       elapsedMs: Date.now() - sceneStart,
     });
   try {
+    const jobSession = ctx.narrative.session_id;
     const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
     llmCtx.bootstrap_world_map = true;
     llmCtx.world_document = loadWorldDoc(ctx.gamesDir, sessionGameId);
     llmCtx.stage_request = { bootstrap: true };
     const res = await ctx.aiClient.generateScene(llmCtx);
+    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+    const changed = sessionChangedError(ctx, jobSession);
+    if (changed) return fail(changed);
     if (!res.ok || !res.scene) {
       return fail(`No se pudo generar el escenario. ${res.error ?? "Revisa el motor narrativo."}`);
     }
