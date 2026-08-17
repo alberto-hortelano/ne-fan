@@ -47,6 +47,10 @@ export interface SurfacePrim extends GreyboxPrimitive {
   /** Rejilla de relieve (metros) — SOLO el suelo del tile fps la lleva: el
    *  renderer desplaza su tapa y ancla cámara/billboards/decor con ella. */
   relief?: import("../blueprint/fps-relief.js").ReliefGrid;
+  /** El renderer fps ancla esta prim al relieve por su centro. Lo marca
+   *  fps-spec en las prims de volúmenes que NO aplanan el relieve
+   *  (tree/bush/rock — viven sobre la ladera, no la allanan). */
+  anchor?: boolean;
 }
 
 export type SurfaceGroup = "side" | "top" | "bottom" | "caps";

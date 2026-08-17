@@ -50,6 +50,11 @@ const MASK_RADIUS = 10;
  *  que el relieve declarado muere en las costuras del tile (el vecino no
  *  conoce estas colinas — sin esto habría un escalón en el borde). */
 const HILL_RAMP = 12;
+/** Tipos de volumen que CABALGAN el relieve en vez de aplanarlo: el suelo
+ *  ondula bajo ellos y el renderer los ancla por su centro (prims `anchor`
+ *  de fps-spec). El resto (edificios, muros, props…) sigue exigiendo suelo
+ *  llano. */
+export const RELIEF_RIDERS = new Set<string>(["tree", "bush", "rock"]);
 
 /** Valor pseudoaleatorio [-1,1] estable por nodo GLOBAL de retícula. */
 function lattice(ix: number, iz: number, octave: number): number {
@@ -92,7 +97,12 @@ export function buildReliefGrid(
   const amp = BIOME_AMP[biome ?? ""] ?? 0.35;
   const hills = ground.filter((f): f is GroundHill => f.kind === "hill");
   if (amp <= 0 && hills.length === 0) return undefined;
-  const excluded = buildScatterExclusions(volumes, ground, { areas: true });
+  // Vegetación y rocas NO aplanan: viven SOBRE el relieve (fps-spec marca
+  // sus prims con `anchor` y el renderer las sube por su centro) — sin este
+  // filtro, un pinar declarado sobre una loma la convertía en un plano
+  // acribillado (cada tronco/roca abría un cráter de MASK_RADIUS).
+  const flatteners = volumes.filter((v) => !RELIEF_RIDERS.has(v.type));
+  const excluded = buildScatterExclusions(flatteners, ground, { areas: true });
   const [gx0, gz0] = tileOrigin(seedKey);
   const n = RELIEF_N;
   const stepC = TILE_CELLS / n;

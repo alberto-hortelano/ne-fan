@@ -103,7 +103,14 @@ describe("fps: relieve del suelo", () => {
       { id: "loma", kind: "hill", ellipse: { center: [96, 64], rx: 26, ry: 20 }, h: 4 },
     ]);
     assert.ok(g.ok, !g.ok ? g.error : "");
-    const volumes = vols([POSADA]);
+    // Vegetación y roca SOBRE la loma: cabalgan el relieve, no lo aplanan
+    // (regresión del playtest 2026-08-17: la "loma de los pinos" quedaba a
+    // 0.33 m porque cada tronco/roca abría un cráter en la máscara).
+    const volumes = vols([
+      POSADA,
+      { id: "pino_loma", label: "pino", type: "tree", at: [96, 64] },
+      { id: "roca_loma", label: "roca", type: "rock", at: [100, 60] },
+    ]);
     const a = buildReliefGrid("meadow", volumes, g.features, "tile_0_0");
     const b = buildReliefGrid("meadow", volumes, g.features, "tile_0_0");
     assert.ok(a && b);

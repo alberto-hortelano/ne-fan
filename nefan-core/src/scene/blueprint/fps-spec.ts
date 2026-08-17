@@ -26,7 +26,7 @@ import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
 import { enrichFpsPrims } from "./fps-detail.js";
 import { applyFpsCutawayInteriors } from "./fps-interior.js";
-import { buildReliefGrid } from "./fps-relief.js";
+import { buildReliefGrid, RELIEF_RIDERS } from "./fps-relief.js";
 import { buildFpsAmbience } from "./fps-ambience.js";
 import {
   buildScatterExclusions,
@@ -220,8 +220,13 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
 
   // Relieve del suelo (fps-only): rejilla determinista con aplanado bajo
   // huellas/caminos/agua/áreas. Se cuelga de la prim del suelo del bioma; el
-  // renderer desplaza su tapa y ancla cámara/billboards/decor.
+  // renderer desplaza su tapa y ancla cámara/billboards/decor. Las prims de
+  // los volúmenes que cabalgan el relieve (tree/bush/rock — no lo aplanan)
+  // se marcan `anchor` para que el renderer las suba por su centro.
   const reliefGrid = buildReliefGrid(plan.biome, volumes, plan.ground ?? [], seedKey);
+  const anchorVolIds = new Set(
+    volumes.filter((v) => RELIEF_RIDERS.has(v.type)).map((v) => `vol_${v.id}`),
+  );
 
   let groundIdx = 0;
   const primsM: SurfacePrim[] = enriched.map((p) => {
@@ -235,6 +240,7 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
     ) {
       scaled.relief = reliefGrid;
     }
+    if (reliefGrid && p.volId && anchorVolIds.has(p.volId)) scaled.anchor = true;
     // Stagger intra-capa de los rasgos planos del suelo (anti z-fighting).
     // El orden de emisión es el contractual (área→path→agua→deck, juntas
     // tras sus cajas), así que el índice creciente preserva la prioridad

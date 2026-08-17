@@ -192,7 +192,11 @@ and keeps your declared tree volumes as spacing seeds; the result is REAL
 tree/bush volumes (trunk collision, visible in every view). A `type`
 matching arbusto/mata/matorral/helecho/zarza/bush plants bushes; anything
 else plants trees. This is the tool for forests, hedgerows and
-undergrowth; hand-place `tree` volumes for singular specimens.
+undergrowth; hand-place `tree` volumes for singular specimens. The zones
+are DESIGN, not delegation: where each mass starts and ends, which species
+grows where and at what density is your composition — a single uniform
+"rest" blanket is rarely what the world doc implies, and vegetation alone
+does not make a tile rich: the QUALITY BAR applies to the whole plan.
 
 4) OPTIONAL "scatter_generators" + "scatter_zones" — procedural mass
 placement for the first-person view. You DEFINE a generator per kind as
