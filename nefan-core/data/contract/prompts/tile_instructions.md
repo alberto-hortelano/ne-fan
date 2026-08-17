@@ -67,6 +67,14 @@ credits; hand-place only what deserves individual placement. Before
 responding, re-read the plan as an art director — does it read as a real
 place, or as a plane with a few boxes on it? — and COUNT what you used: a
 lively place drawn with a small fraction of the budgets is below the bar.
+Density alone is not the bar either — COMPOSITION is: a settled tile has a
+SILHOUETTE (a dominant mass or landmark, secondary masses, small fill —
+never equal boxes evenly spaced), the world's identity must be legible in
+the shapes themselves, and in first person the read is carried by the 5-10
+m around walkable space — keep the player's near field dressed, and give
+scatter instances real volume and variation at eye height (hundreds of
+identical thin pins read as noise, not as crops). At dusk or night a lived
+place lights up — label your light sources so they ignite.
 A validator rejection is cheap and correctable: never thin a plan down to
 play it safe. Credit economy is not your job either: surface descriptions
 join a reusable library, so describe what the scene needs.
