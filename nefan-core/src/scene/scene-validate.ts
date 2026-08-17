@@ -13,9 +13,10 @@
  *  warnings = sospechoso pero jugable. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
-import { parseGround } from "./blueprint/ground.js";
+import { MAX_GROUND_FEATURES, parseGround } from "./blueprint/ground.js";
 import { shapeContains } from "./blueprint/ground-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
+import { MAX_VOLUMES } from "./blueprint/volumes.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
 import { parseStage, type StageBlock } from "./stage/schema.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
@@ -36,6 +37,16 @@ export interface SceneValidationResult {
     doors_reachable: number;
     npcs_total: number;
     npcs_reachable: number;
+    /** Utilización de los presupuestos del plan — telemetría OBJETIVA que el
+     *  MCP devuelve al motor con la escena aceptada ("lo que se valida es lo
+     *  que se optimiza"); el criterio de calidad vive en el prompt, no aquí. */
+    volumes_declared: number;
+    volumes_cap: number;
+    ground_features: number;
+    ground_cap: number;
+    scatter_zones: number;
+    vegetation_zones: number;
+    distinct_building_heights: number;
   };
 }
 
@@ -84,6 +95,13 @@ const emptyStats = (cols = 0, rows = 0): SceneValidationResult["stats"] => ({
   doors_reachable: 0,
   npcs_total: 0,
   npcs_reachable: 0,
+  volumes_declared: 0,
+  volumes_cap: MAX_VOLUMES,
+  ground_features: 0,
+  ground_cap: MAX_GROUND_FEATURES,
+  scatter_zones: 0,
+  vegetation_zones: 0,
+  distinct_building_heights: 0,
 });
 
 export function validateScene(
@@ -426,6 +444,23 @@ export function validateScene(
     }
   }
   stats.doors_total = doorCells.length;
+
+  // ── Utilización de presupuestos del plan (sobre lo DECLARADO, no lo
+  // expandido — el scatter de vegetación estampa entities que no son del
+  // motor). Telemetría objetiva; el criterio vive en la QUALITY BAR. ────────
+  stats.volumes_declared = Array.isArray(rawScene.volumes) ? (rawScene.volumes as unknown[]).length : 0;
+  stats.ground_features = Array.isArray(rawScene.ground) ? (rawScene.ground as unknown[]).length : 0;
+  stats.scatter_zones = Array.isArray(rawScene.scatter_zones) ? (rawScene.scatter_zones as unknown[]).length : 0;
+  stats.vegetation_zones = Array.isArray(rawScene.vegetation_zones)
+    ? (rawScene.vegetation_zones as unknown[]).length
+    : 0;
+  const buildingHeights = new Set<number>();
+  for (const v of rawVolumes) {
+    if (v?.type !== "building") continue;
+    const wallH = typeof v.wall_h === "number" && Number.isFinite(v.wall_h) ? v.wall_h : 5;
+    buildingHeights.add(Math.round(wallH * 2) / 2);
+  }
+  stats.distinct_building_heights = buildingHeights.size;
 
   const walkableStarts = startCells.filter(([c, r]) => cellWalkable([c, r]));
   // Un tile con cruces de vecinos o entrada declarada pero SIN terreno

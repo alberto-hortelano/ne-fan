@@ -10,11 +10,14 @@ import { IMAGE_SOLID_CHAR } from "../image-collision.js";
 import type { TerrainGridData } from "../terrain-collision.js";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import type { WorldRect } from "../tile.js";
-import type { GroundDeck, GroundFeature, GroundWater } from "./ground.js";
+import type { GroundArea, GroundDeck, GroundFeature, GroundHill, GroundWater } from "./ground.js";
 
 const OPEN_CHAR = "g";
 
-type Shaped = GroundWater | GroundDeck;
+/** Cualquier rasgo con forma (rect|polygon|ellipse). La colisión solo barre
+ *  water/deck; area y hill entran aquí por los consumidores geométricos
+ *  (exclusiones de scatter, relieve fps). */
+type Shaped = GroundWater | GroundDeck | GroundArea | GroundHill;
 
 /** Dimensiones del grid de colisión (default: las del tile). El plató pasa
  *  las suyas — cols/rows de la escena y su meters_per_cell (fix del bug

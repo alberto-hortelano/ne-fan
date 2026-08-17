@@ -115,7 +115,11 @@
       },
       "ground": {
         "type": "array",
-        "description": "Tiles AND proscenium stages. FLAT ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision). Area-like kinds take EXACTLY ONE shape. Anything with height goes in \"volumes\". See MAP PLAN in the tile instructions."
+        "description": "Tiles AND proscenium stages. Ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision), hill {rect|polygon|ellipse, h: METRES, -6..6 non-zero} (smooth declared relief: positive knoll, negative hollow; presentation-only — collision stays flat, it flattens under buildings/paths/areas/water and dies at tile seams; first-person view only today). Area-like kinds take EXACTLY ONE shape. Anything BUILT with height goes in \"volumes\". See MAP PLAN in the tile instructions."
+      },
+      "vegetation_zones": {
+        "type": "array",
+        "description": "OPTIONAL (tiles) — mass vegetation planted BY THE ENGINE: [{type: Spanish plant name ('pino', 'matorral'…), area: [col,row,w,h] in cells | \"rest\" (every bare-biome cell of the tile), density (0..1, fraction of eligible cells), glyph?}]. Deterministic; automatically avoids paths, water, buildings and occupied cells. Produces REAL tree/bush volumes and grid entities — trunk collision, visible in every view. Your declared tree volumes are kept and act as spacing seeds. This is the tool for forests and shrub masses; hand-place only singular specimens."
       },
       "volumes": {
         "type": "array",

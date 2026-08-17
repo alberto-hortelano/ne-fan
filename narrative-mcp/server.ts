@@ -528,10 +528,16 @@ into context:
         // map_upsert_place/map_link) y vuelve a llamar a narrative_respond.
         // Bridge caído → se avisa y se deja pasar (el flujo de generación no
         // depende del state API).
+        let sceneReport = '';
         if (kind === 'scene') {
           const check = await bridgePost('/scene/validate', { scene: parsed });
           if (check.ok) {
-            const v = check.data as { ok: boolean; errors: string[]; warnings: string[] };
+            const v = check.data as {
+              ok: boolean;
+              errors: string[];
+              warnings: string[];
+              stats?: Record<string, number | boolean>;
+            };
             if (!v.ok) {
               const lines = [
                 'Unplayable scene — fix these and call narrative_respond again (the request is still pending):',
@@ -540,9 +546,21 @@ into context:
               if (v.warnings?.length) lines.push('Warnings:', ...v.warnings.map((w) => `- ${w}`));
               return { content: [{ type: 'text', text: lines.join('\n') }], isError: true };
             }
-            if (v.warnings?.length) {
-              console.error(`[narrative-mcp] scene warnings: ${v.warnings.join(' | ')}`);
+            // Escena aceptada: warnings y utilización de presupuestos VUELVEN
+            // al motor (antes iban a stderr y el modelo solo veía "Scene
+            // sent" — lo que se valida es lo que se optimiza).
+            const lines: string[] = [];
+            if (v.warnings?.length) lines.push('Warnings (playable, but review):', ...v.warnings.map((w) => `- ${w}`));
+            const s = v.stats;
+            if (s && typeof s.volumes_declared === 'number') {
+              lines.push(
+                `Plan utilization: volumes ${s.volumes_declared}/${s.volumes_cap}, ` +
+                  `ground ${s.ground_features}/${s.ground_cap}, ` +
+                  `scatter zones ${s.scatter_zones}, vegetation zones ${s.vegetation_zones}, ` +
+                  `distinct building heights ${s.distinct_building_heights}`,
+              );
             }
+            if (lines.length) sceneReport = `\n${lines.join('\n')}`;
           } else {
             console.error(`[narrative-mcp] scene pre-flight skipped (state API unreachable): ${check.error}`);
           }
@@ -576,7 +594,7 @@ into context:
         }
 
         bridge.sendResponse(reqId, parsed);
-        return { content: [{ type: 'text', text: `Scene sent for request ${reqId}` }] };
+        return { content: [{ type: 'text', text: `Scene sent for request ${reqId}${sceneReport}` }] };
       } catch (e) {
         return { content: [{ type: 'text', text: (e as Error).message }], isError: true };
       }

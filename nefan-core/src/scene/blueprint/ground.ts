@@ -3,7 +3,8 @@
  *  declara caminos, plazas/parches, agua y decks como DATOS puros; el builder
  *  greybox los convierte en geometría plana three.js y la colisión
  *  (`ground-collision.ts`) sale de los polígonos declarados — nunca de
- *  píxeles pintados ni de rasterizar nada.
+ *  píxeles pintados ni de rasterizar nada. La única excepción a "plano" es
+ *  `hill`: relieve suave declarable (fps-relief.ts), sin efecto en colisión.
  *
  *  Unidades: celdas del tile (0..128, 1 celda = 0.5 m), como `volumes`.
  *  `label` es un sustantivo en español (guía del clasificador de visión). */
@@ -79,12 +80,35 @@ export const GroundDeckSchema = z
   })
   .strict();
 
+/** Cap de altura declarable de una colina/hondonada (metros). */
+export const HILL_MAX_H_M = 6;
+
+/** Colina/hondonada: relieve SUAVE del suelo. `h` en METROS (positivo =
+ *  loma, negativo = hondonada), rampa suave hacia el borde de la forma.
+ *  Presentación pura: la colisión sigue plana, se aplana bajo lo construido
+ *  (volúmenes/caminos/áreas/agua) y muere en las costuras del tile. Hoy solo
+ *  la vista fps la levanta; el clay cenital la ignora. */
+export const GroundHillSchema = z
+  .object({
+    ...base,
+    kind: z.literal("hill"),
+    ...shapeFields,
+    /** Altura en metros, |h| ≤ 6 y ≠ 0. */
+    h: z
+      .number()
+      .min(-HILL_MAX_H_M)
+      .max(HILL_MAX_H_M)
+      .refine((v) => v !== 0, { message: "h debe ser distinto de 0" }),
+  })
+  .strict();
+
 export const GroundFeatureSchema = z
   .discriminatedUnion("kind", [
     GroundPathSchema,
     GroundAreaSchema,
     GroundWaterSchema,
     GroundDeckSchema,
+    GroundHillSchema,
   ])
   // Área/agua/deck necesitan EXACTAMENTE una forma (rect|polygon|ellipse). El
   // schema por sí solo las deja opcionales; sin esta regla un rasgo sin forma
@@ -111,6 +135,7 @@ export type GroundPath = z.infer<typeof GroundPathSchema>;
 export type GroundArea = z.infer<typeof GroundAreaSchema>;
 export type GroundWater = z.infer<typeof GroundWaterSchema>;
 export type GroundDeck = z.infer<typeof GroundDeckSchema>;
+export type GroundHill = z.infer<typeof GroundHillSchema>;
 
 export type ParseGroundResult =
   | { ok: true; features: GroundFeature[] }

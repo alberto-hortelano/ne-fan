@@ -98,6 +98,40 @@ describe("fps: relieve del suelo", () => {
     }
   });
 
+  it("relieve DECLARADO: la colina levanta el campo, muere en la costura y se aplana bajo huellas", () => {
+    const g = parseGround([
+      { id: "loma", kind: "hill", ellipse: { center: [96, 64], rx: 26, ry: 20 }, h: 4 },
+    ]);
+    assert.ok(g.ok, !g.ok ? g.error : "");
+    const volumes = vols([POSADA]);
+    const a = buildReliefGrid("meadow", volumes, g.features, "tile_0_0");
+    const b = buildReliefGrid("meadow", volumes, g.features, "tile_0_0");
+    assert.ok(a && b);
+    assert.deepEqual(a, b, "determinista");
+    // Centro de la loma (celda 96,64 → 48,32 m): altura plena ± ruido meadow.
+    const centro = reliefAtM(a, 48, 32);
+    assert.ok(centro > 3.5 && centro < 4.5, `centro de la loma: ${centro}`);
+    // Costura este (x=64 m): el relieve declarado muere en el borde y la
+    // altura vuelve a casar EXACTA con el vecino sin colina (ruido global).
+    const vecino = buildReliefGrid("meadow", [], [], "tile_1_0");
+    assert.ok(vecino);
+    for (const z of [8, 32, 56]) {
+      assert.ok(Math.abs(reliefAtM(a, 64, z) - reliefAtM(vecino, 0, z)) < 1e-9, `costura en z=${z}`);
+    }
+    // Bajo la huella de la posada, plano aunque la colina no llegue.
+    assert.ok(Math.abs(reliefAtM(a, 26, 18)) < 1e-9, "huella plana");
+  });
+
+  it("relieve DECLARADO: una hondonada hunde el suelo (h negativa)", () => {
+    const g = parseGround([{ id: "vaguada", kind: "hill", rect: [40, 40, 48, 48], h: -3 }]);
+    assert.ok(g.ok, !g.ok ? g.error : "");
+    const grid = buildReliefGrid("meadow", [], g.features, "tile_0_0");
+    assert.ok(grid);
+    // Centro del rect (celda 64,64 → 32,32 m): hundido ≈ −3 ± ruido.
+    const fondo = reliefAtM(grid, 32, 32);
+    assert.ok(fondo < -2.5, `fondo de la hondonada: ${fondo}`);
+  });
+
   it("la prim del suelo del tile lleva la rejilla; las demás no", () => {
     const { primsM } = buildFpsTileSpec({ volumes: [], biome: "meadow" }, "tile_0_0");
     const withRelief = primsM.filter((p) => p.relief);

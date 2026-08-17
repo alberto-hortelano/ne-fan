@@ -457,7 +457,9 @@ export function buildScatterExclusions(
     const [x0, z0, x1, z1] = volumeFootprint(v).cells;
     return [x0 - 0.5, z0 - 0.5, x1 + 0.5, z1 + 0.5] as [number, number, number, number];
   });
-  const shaped = ground.filter((f) => f.kind !== "path");
+  // `hill` es relieve, no ocupación: el scatter puede poblar una loma y el
+  // relieve fps no debe aplanarse sobre ella.
+  const shaped = ground.filter((f) => f.kind !== "path" && f.kind !== "hill");
   const paths = ground.filter((f) => f.kind === "path");
   return (x, z) => {
     for (const [x0, z0, x1, z1] of rects) {

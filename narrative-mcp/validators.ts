@@ -52,13 +52,13 @@ export function validateNarrativeReaction(data: unknown): { ok: true } | { ok: f
 }
 
 /** Pre-flight estructural del array `ground` (rasgos de suelo declarativos:
- *  path/area/water/deck), espejo laxo de validate_ground
+ *  path/area/water/deck/hill), espejo laxo de validate_ground
  *  (ai_server/narrative_schemas.py) y de parseGround (nefan-core, zod — la
  *  fuente de verdad). */
 export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false; error: string } {
   if (!Array.isArray(raw)) return { ok: false, error: 'ground must be an array of feature objects' };
   if (raw.length > 64) return { ok: false, error: `ground has ${raw.length} features, max is 64` };
-  const kinds = new Set(['path', 'area', 'water', 'deck']);
+  const kinds = new Set(['path', 'area', 'water', 'deck', 'hill']);
   const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const pair = (v: unknown): boolean => Array.isArray(v) && v.length === 2 && v.every(num);
   const seen = new Set<string>();
@@ -98,6 +98,9 @@ export function validateGroundFeatures(raw: unknown): { ok: true } | { ok: false
       }
       if (shapes !== 1) {
         return { ok: false, error: `ground[${i}] ("${f.id}") needs exactly one of rect | polygon | ellipse (has ${shapes})` };
+      }
+      if (f.kind === 'hill' && (!num(f.h) || f.h === 0 || Math.abs(f.h) > 6)) {
+        return { ok: false, error: `ground[${i}] hill needs \`h\` in METRES (-6..6, non-zero; positive knoll, negative hollow)` };
       }
     }
   }

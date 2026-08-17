@@ -1,0 +1,10 @@
+{
+  "description": "relieve declarado: una loma (ellipse, h positiva) y una hondonada (polygon, h negativa)",
+  "expect": "accept",
+  "payload": {
+    "ground": [
+      { "id": "loma_este", "kind": "hill", "label": "loma", "ellipse": { "center": [90, 40], "rx": 24, "ry": 18 }, "h": 3.5 },
+      { "id": "vaguada", "kind": "hill", "label": "vaguada", "polygon": [[10, 80], [40, 90], [30, 118], [6, 110]], "h": -2 }
+    ]
+  }
+}

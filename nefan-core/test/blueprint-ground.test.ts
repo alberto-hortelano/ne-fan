@@ -39,6 +39,27 @@ describe("parseGround", () => {
     assert.equal(groundHasWater(features([{ id: "p", kind: "path", points: [[0, 0], [1, 1]] }])), false);
     assert.equal(groundHasWater(features([{ id: "w", kind: "water", rect: [0, 0, 4, 4] }])), true);
   });
+
+  it("acepta hill (loma/hondonada, h en metros) y rechaza h inválida", () => {
+    const feats = features([
+      { id: "loma", kind: "hill", label: "loma", ellipse: { center: [64, 64], rx: 24, ry: 18 }, h: 3.5 },
+      { id: "vaguada", kind: "hill", polygon: [[10, 80], [40, 90], [30, 118]], h: -2 },
+    ]);
+    assert.equal(feats.length, 2);
+    assert.equal(parseGround([{ id: "a", kind: "hill", rect: [0, 0, 10, 10], h: 0 }]).ok, false, "h=0");
+    assert.equal(parseGround([{ id: "a", kind: "hill", rect: [0, 0, 10, 10], h: 9 }]).ok, false, "h>6");
+    assert.equal(parseGround([{ id: "a", kind: "hill", rect: [0, 0, 10, 10], h: -9 }]).ok, false, "h<-6");
+    assert.equal(parseGround([{ id: "a", kind: "hill", rect: [0, 0, 10, 10] }]).ok, false, "sin h");
+    assert.equal(parseGround([{ id: "a", kind: "hill", h: 2 }]).ok, false, "sin forma");
+  });
+
+  it("hill no genera colisión (presentación pura)", () => {
+    const grid = groundCollisionGrid(
+      features([{ id: "monte", kind: "hill", rect: [0, 0, 128, 128], h: 5 }]),
+      rect,
+    );
+    assert.equal(grid, null);
+  });
 });
 
 describe("groundCollisionGrid", () => {
