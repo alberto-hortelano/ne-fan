@@ -25,6 +25,18 @@ const TIMEOUT_MS = 8_000;
  *  y alimenta el loader del cliente). */
 let activityHook: ((method: string, path: string) => void) | null = null;
 
+/** Sesión del request narrativo en curso (server.ts la fija al entregar cada
+ *  narrative_listen, leída del payload). Viaja como cabecera x-nefan-session
+ *  en todas las llamadas al State API: el bridge la contrasta con su sesión
+ *  activa y devuelve 409 si un start/resume la pisó con la petición en vuelo
+ *  — sin esto, las tools de mapa/entidades escribirían en el save equivocado
+ *  (reproducido 2026-08-17). null = petición sin sesión (p. ej. develop_world). */
+let activeSessionId: string | null = null;
+
+export function setActiveSession(sessionId: string | null): void {
+  activeSessionId = sessionId;
+}
+
 export function setActivityHook(fn: (method: string, path: string) => void): void {
   activityHook = fn;
 }
@@ -60,9 +72,12 @@ async function request(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (activeSessionId) headers["x-nefan-session"] = activeSessionId;
     const res = await fetch(`${BRIDGE_HTTP_URL}${path}`, {
       method,
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,
     });

@@ -158,6 +158,32 @@ async function handle(
   const parts = path.split("/").filter(Boolean); // e.g. ["entity", "boris", "inventory"]
   const wm = narrative.worldMap;
 
+  // Guardia de sesión: narrative-mcp adjunta en `x-nefan-session` la sesión
+  // del request narrativo en curso. NarrativeState es un singleton — si un
+  // start/resume lo pisó con la petición en vuelo, TODO lo que el motor lea
+  // o escriba iría a la sesión equivocada (reproducido 2026-08-17: places de
+  // un mundo inyectados en el world_map de otro save). 409 fail-loud; solo
+  // /health queda fuera. Sin cabecera (cliente 2D, benches) no hay guardia.
+  const claimedSession = req.headers["x-nefan-session"];
+  if (
+    typeof claimedSession === "string" &&
+    claimedSession !== "" &&
+    path !== "/health" &&
+    claimedSession !== narrative.session_id
+  ) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        error:
+          `session_mismatch: la petición pertenece a la sesión ${claimedSession} pero la ` +
+          `sesión activa del bridge es ${narrative.session_id} — un start/resume_session ` +
+          `pisó tu sesión con la petición en vuelo. NO sigas leyendo ni mutando estado: ` +
+          `deja caducar la petición sin responder.`,
+      } satisfies ErrorResponse,
+    };
+  }
+
   // ── Plugins (F5) ──
   if (method === "GET" && path === "/plugins") {
     return ok({ plugins: plugins.list() } satisfies PluginListResponse);

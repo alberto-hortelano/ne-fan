@@ -44,6 +44,17 @@ export class SceneGenQueue {
     return this.inFlight?.key ?? null;
   }
 
+  /** Abandona la generación de la sesión saliente (takeover de sesión):
+   *  vacía la cola y desancla la key del job en vuelo — su await no se puede
+   *  cancelar, pero deja de contar para el dedupe, así el job equivalente de
+   *  la sesión entrante encola DETRÁS (serialización intacta: el motor solo
+   *  atiende una petición a la vez). El resultado tardío del job abandonado
+   *  lo descarta su propia guardia de sesión (sessionChangedError). */
+  abandonAll(): void {
+    this.queue.length = 0;
+    if (this.inFlight) this.inFlight.key = `__abandonado__${this.seq++}`;
+  }
+
   /** Keys pendientes (sin contar el job en vuelo), en orden de despacho. */
   get pending(): string[] {
     return this.queue.map((j) => j.key);

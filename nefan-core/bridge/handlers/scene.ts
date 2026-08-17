@@ -6,6 +6,7 @@
 import {
   broadcastScene,
   fireMapTriggers,
+  sessionChangedError,
   type BridgeContext,
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
@@ -94,6 +95,7 @@ async function runPlaceRealize(
     // Pudo realizarse mientras esperaba en la cola.
     if (place.realized_scene_id && ctx.narrative.scenes_loaded[place.realized_scene_id]) return;
 
+    const jobSession = ctx.narrative.session_id;
     const realizeCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
     realizeCtx.realize_place = {
       id: place.id,
@@ -128,6 +130,9 @@ async function runPlaceRealize(
     });
 
     const res = await ctx.aiClient.generateScene(realizeCtx);
+    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+    const changed = sessionChangedError(ctx, jobSession);
+    if (changed) return fail(changed);
     if (!res.ok || !res.scene) {
       return fail(`No se pudo generar ${place.name}. ${res.error ?? "Revisa el motor narrativo."}`);
     }
@@ -209,6 +214,7 @@ async function runLegacyFrontier(
     const fromPlace = ctx.narrative.worldMap.get(fromPlaceId);
     if (!fromPlace) return fail(`Frontera sin place activo válido: "${fromPlaceId}"`);
 
+    const jobSession = ctx.narrative.session_id;
     const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
     genCtx.frontier_request = {
       from_place_id: fromPlaceId,
@@ -223,6 +229,9 @@ async function runLegacyFrontier(
     });
 
     const res = await ctx.aiClient.generateScene(genCtx);
+    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+    const changed = sessionChangedError(ctx, jobSession);
+    if (changed) return fail(changed);
     if (!res.ok || !res.scene) {
       return fail(`No se pudo expandir el mundo. ${res.error ?? "Revisa el motor narrativo."}`);
     }

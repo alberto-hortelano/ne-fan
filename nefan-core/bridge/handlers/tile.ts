@@ -2,7 +2,13 @@
  *  generados (re-render sin LLM) y generación encolada de tiles nuevos con el
  *  contexto de costuras de sus vecinos. */
 
-import { broadcastScene, fireMapTriggers, npcSync, type BridgeContext } from "../context.js";
+import {
+  broadcastScene,
+  fireMapTriggers,
+  npcSync,
+  sessionChangedError,
+  type BridgeContext,
+} from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
 import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile, type TileCoord } from "../../src/scene/tile.js";
@@ -135,6 +141,7 @@ export async function runTileGeneration(
     // El tile pudo generarse mientras esperaba en la cola.
     if (ctx.narrative.hasTile(tx, ty)) return;
 
+    const jobSession = ctx.narrative.session_id;
     const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
     const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge);
     genCtx.generate_tile = tileCtx;
@@ -150,6 +157,9 @@ export async function runTileGeneration(
     });
 
     const res = await ctx.aiClient.generateScene(genCtx);
+    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+    const changed = sessionChangedError(ctx, jobSession);
+    if (changed) return fail(changed);
     if (!res.ok || !res.scene) {
       return fail(`No se pudo generar el tile (${tx}, ${ty}). ${res.error ?? "Revisa el motor narrativo."}`);
     }

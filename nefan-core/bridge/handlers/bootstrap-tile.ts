@@ -8,7 +8,7 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
-import { broadcastScene, type BridgeContext } from "../context.js";
+import { broadcastScene, sessionChangedError, type BridgeContext } from "../context.js";
 
 /** Genera el tile (0,0) de una sesión nueva — corre dentro de la cola. El
  *  motor siembra el world map (map tools) y responde el tile de arranque con
@@ -29,6 +29,7 @@ export async function runBootstrapTile(
       elapsedMs: Date.now() - sceneStart,
     });
   try {
+    const jobSession = ctx.narrative.session_id;
     const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
     // Fresh session: ask the narrative engine to bootstrap the world map
     // (3-5 places + sites + links) via the map tools before it builds the
@@ -45,6 +46,10 @@ export async function runBootstrapTile(
       bootstrap: true,
     };
     const res = await ctx.aiClient.generateScene(llmCtx);
+    // Defensa en profundidad: si un takeover se coló pese a la guardia de
+    // session.ts, el tile NO se escribe en la sesión equivocada.
+    const changed = sessionChangedError(ctx, jobSession);
+    if (changed) return fail(changed);
     if (!res.ok || !res.scene) {
       return fail(`No se pudo generar la escena. ${res.error ?? "Revisa el motor narrativo."}`);
     }

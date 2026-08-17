@@ -26,6 +26,7 @@ import {
 import {
   broadcastScene,
   createSessionNpcBehavior,
+  generationBusyKey,
   npcSync,
   sessionDataForClient,
   type BridgeContext,
@@ -190,6 +191,21 @@ export async function handleStartSession(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Anti-takeover: NarrativeState es un singleton — con una generación en
+  // vuelo, cambiar de sesión haría que el job (y las tools de mapa del motor)
+  // escribieran en la sesión nueva (reproducido 2026-08-17). El takeover se
+  // PERMITE (el título debe poder arrancar partidas aunque una generación de
+  // 15 min siga en vuelo) pero la generación saliente queda ABANDONADA de
+  // forma segura: cola purgada, resultado tardío descartado por la guardia de
+  // sesión del job, y tools del motor rechazadas con 409 por el State API.
+  const busyKey = generationBusyKey(ctx);
+  if (busyKey) {
+    console.warn(
+      `Bridge: start_session con generación en vuelo ("${busyKey}", sesión ` +
+        `${ctx.narrative.session_id}) — generación abandonada, su resultado se descartará`,
+    );
+    ctx.sceneGen.abandonAll();
+  }
   // El juego debe existir y validar ANTES de crear la sesión — arrancar un
   // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
   let worldKey: string;
@@ -372,6 +388,18 @@ export async function handleResumeSession(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Anti-takeover (misma política que start_session): reanudar OTRA sesión
+  // con una generación en vuelo la abandona de forma segura. Reanudar la
+  // MISMA sesión (reconexión del cliente durante un bootstrap largo) no
+  // cambia la identidad — su generación sigue viva.
+  const busyKey = generationBusyKey(ctx);
+  if (busyKey && msg.sessionId !== ctx.narrative.session_id) {
+    console.warn(
+      `Bridge: resume_session(${msg.sessionId}) con generación en vuelo ("${busyKey}", sesión ` +
+        `${ctx.narrative.session_id}) — generación abandonada, su resultado se descartará`,
+    );
+    ctx.sceneGen.abandonAll();
+  }
   ctx.activePlugins = new Map();
   const ok = await ctx.narrative.loadSession(msg.sessionId);
   if (!ok) {
@@ -468,6 +496,17 @@ export async function handleResumeSession(
   // el bootstrap con la MISMA sesión — si la respuesta tardía del intento
   // anterior llegó a ai_server, la sirve al instante sin re-generar.
   if (Object.keys(ctx.narrative.scenes_loaded).length === 0) {
+    // Resume de la MISMA sesión con su bootstrap aún en vuelo (reconexión del
+    // cliente durante la generación): no re-encolar — habría DOS bootstraps
+    // idénticos hacia el motor. El job en curso difundirá la escena al llegar.
+    // (Un job __abandonado__ de OTRA sesión no cuenta: ese sí necesita retry.)
+    const bootstrapBusy = new Set([ctx.sceneGen.current, ...ctx.sceneGen.pending]);
+    if (bootstrapBusy.has("bootstrap") || bootstrapBusy.has("bootstrap_retry")) {
+      console.log(
+        `Bridge: resume de ${ctx.narrative.session_id} con bootstrap ya en vuelo — sin reintento`,
+      );
+      return;
+    }
     console.log(
       `Bridge: resume de sesión sin escenas (${ctx.narrative.session_id}) — reintentando bootstrap`,
     );
