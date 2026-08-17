@@ -18,9 +18,8 @@ Call narrative_respond with this JSON (Tile Format):
 
 HARD RULES OF THE TILE:
 - NEVER write "size" or a full "terrain[]" grid. The base is the "biome"
-  fill; everything else is primitives. A simple tile ("forest with a path")
-  is ~5 lines: biome + one `ground` path — the engine stamps the ~16,000
-  cells for you and auto-fills tree masses over everything still bare biome
+  fill; everything else is primitives — the engine stamps the ~16,000 cells
+  for you and auto-fills tree masses over everything still bare biome
   (avoiding paths, water, buildings and occupied cells).
 - SEAMS: generate_tile.neighbors.<edge> lists what each existing neighbour
   exposes on your shared border: its biome and crossings [{type, at, width}].
@@ -54,6 +53,31 @@ derives the walk collision from the declared FOOTPRINTS (water blocks, decks
 punch it open) and guides the vision classifier with the projected boxes.
 What you build and how you compose it is entirely your call — the sections
 below only document the tools and their contracts.
+
+QUALITY BAR — the plan you return IS the finished set the player inhabits
+in first person; no set-dresser runs after you. The standard is the
+density, variety and HEIGHT VARIATION of the real place your world doc
+implies: a settled tile reads as a lived-in place — it typically puts
+50-70% of the volume budget to work, with building heights that vary the
+way real ones do — and a wild tile is rich in its own way (terrain,
+vegetation, water, scatter). Repeated mass is CHEAP: that is what
+`scatter_generators` exist for, and they are material-agnostic — any
+repeated shape, grown or made, colliding with nothing and costing no
+credits; hand-place only what deserves individual placement. Before
+responding, re-read the plan as an art director — does it read as a real
+place, or as a plane with a few boxes on it? — and COUNT what you used: a
+lively place drawn with a small fraction of the budgets is below the bar.
+Density alone is not the bar either — COMPOSITION is: a settled tile has a
+SILHOUETTE (a dominant mass or landmark, secondary masses, small fill —
+never equal boxes evenly spaced), the world's identity must be legible in
+the shapes themselves, and in first person the read is carried by the 5-10
+m around walkable space — keep the player's near field dressed, and give
+scatter instances real volume and variation at eye height (hundreds of
+identical thin pins read as noise, not as crops). At dusk or night a lived
+place lights up — label your light sources so they ignite.
+A validator rejection is cheap and correctable: never thin a plan down to
+play it safe. Credit economy is not your job either: surface descriptions
+join a reusable library, so describe what the scene needs.
 
 1) "ground" — flat ground FEATURES, as typed objects (max 64):
 Common fields: "id" (unique slug), optional "label" (Spanish noun),
@@ -194,8 +218,10 @@ collide and cost no image credits (they render in their declared colors).
     { "kind": "matorral", "shape": {"type":"ellipse","cx":40,"cz":80,"rx":26,"rz":18}, "density": 0.1 }
   ]
 
-FORMAT EXAMPLE — a tile continuing a path from the WEST neighbour (its
-crossing is {type:"path", at:41}); abbreviated:
+FORMAT EXAMPLE — SYNTAX ONLY, deliberately minimal to show the field
+shapes; it is far below the QUALITY BAR and is NOT a density standard. A
+tile continuing a path from the WEST neighbour (its crossing is
+{type:"path", at:41}); abbreviated:
 {
   "tile": { "tx": -1, "ty": 0 },
   "scene_id": "tile_-1_0",
