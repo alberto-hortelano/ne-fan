@@ -175,6 +175,42 @@ describe("generate_game", () => {
     }
   });
 
+  it("un snapshot nuevo invalida las aplicaciones de estilo de su rama", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      const { STYLE_APPLICATION_SCHEMA_VERSION, writeStyleApplication, loadStyleApplication } =
+        await import("../src/games/style-application.js");
+      writeStyleApplication(gamesDir, {
+        schema_version: STYLE_APPLICATION_SCHEMA_VERSION,
+        game_id: GAME,
+        view: "fps",
+        style_id: "estilo_test",
+        world_doc_hash: "hash_viejo",
+        applied_at: "2026-08-18T00:00:00.000Z",
+        pinned_hashes: [],
+        summary: {
+          pack_generated: 0,
+          atlas_cells_painted: 0,
+          atlas_cells_total: 0,
+          skins_painted: 0,
+          skins_total: 0,
+          cost_usd: 0,
+        },
+        notes: [],
+      });
+      const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      motorFake(bundle);
+      await runGenerate(bundle);
+      assert.equal(
+        loadStyleApplication(gamesDir, GAME, "fps", "estilo_test"),
+        null,
+        "el registro de estilo de la rama regenerada se borra",
+      );
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
   it("vista desconocida ⇒ ok:false sin encolar nada", async () => {
     const bundle = makeCtx();
     const { socket, sent } = makeSocket();

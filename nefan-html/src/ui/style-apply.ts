@@ -367,6 +367,15 @@ export class StyleApplyController {
     if (pinnedHashes.size > 0) {
       onProgress("Protegiendo los assets pre-generados…");
       try {
+        // Regenerar estilo: soltar los pins de la aplicación anterior antes
+        // de pinear los nuevos (mismo ref) — los assets del snapshot viejo
+        // vuelven a ser podables.
+        await fetch(
+          `${this.urls.assets}/assets/pin/${encodeURIComponent(
+            styleApplicationPinRef(plan.gameId, plan.view, plan.styleId),
+          )}`,
+          { method: "DELETE" },
+        ).catch(() => undefined);
         const res = await fetch(`${this.urls.assets}/assets/pin`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

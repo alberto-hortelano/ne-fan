@@ -17,6 +17,12 @@ import {
 } from "../../src/games/loader.js";
 import { branchForView, type WorldBranch } from "../../src/games/world-snapshot.js";
 import {
+  deleteStyleApplication,
+  listStyleApplications,
+  styleApplicationPinRef,
+} from "../../src/games/style-application.js";
+import { resolveServiceUrl } from "../../src/contracts/common.js";
+import {
   activatePluginsForNewSession,
   loadGamePluginManifests,
 } from "../../src/plugins/loader.js";
@@ -89,6 +95,43 @@ export async function handleGenerateGame(
     gameId: msg.gameId,
     queued,
   });
+}
+
+/** Vistas cuyo contenido cuelga de una rama de snapshot. */
+const VIEWS_BY_BRANCH: Record<WorldBranch, string[]> = {
+  tile: ["overworld", "fps"],
+  stage: ["proscenium"],
+};
+
+/** Un snapshot NUEVO invalida las aplicaciones de estilo de su rama: sus
+ *  celdas/skins describen las escenas del snapshot viejo. Se borra el
+ *  registro (el chip vuelve a "sin aplicar") y se despinean sus assets en el
+ *  asset-store (best-effort REPORTADO — sin el store arriba, los pins viejos
+ *  quedan hasta el siguiente batch, que re-pinea bajo el mismo ref). */
+async function invalidateStyleApplications(
+  ctx: BridgeContext,
+  gameId: string,
+  branch: WorldBranch,
+): Promise<void> {
+  const assetStoreUrl = resolveServiceUrl("asset-store", process.env);
+  // Hash irrelevante para ENUMERAR (solo cambia el status devuelto).
+  const records = listStyleApplications(ctx.gamesDir, gameId, "");
+  for (const rec of records) {
+    if (!VIEWS_BY_BRANCH[branch].includes(rec.view)) continue;
+    deleteStyleApplication(ctx.gamesDir, gameId, rec.view, rec.style_id);
+    const ref = styleApplicationPinRef(gameId, rec.view, rec.style_id);
+    try {
+      const res = await fetch(`${assetStoreUrl}/assets/pin/${encodeURIComponent(ref)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      console.warn(`Bridge: unpin de "${ref}" falló (asset-store caído?):`, err);
+    }
+    console.log(
+      `Bridge: aplicación de estilo "${rec.style_id}" (${rec.view}) invalidada por el snapshot nuevo`,
+    );
+  }
 }
 
 /** Places clave aún sin escena: todo lo realizable por el jugador (se excluye
@@ -196,6 +239,7 @@ export async function runGameGeneration(
     }
 
     writeSessionSnapshot(ctx, gameId, branch, entrySceneId);
+    await invalidateStyleApplications(ctx, gameId, branch);
     const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
     const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas (rama ${branch}).`];
     if (skipped.length) {
