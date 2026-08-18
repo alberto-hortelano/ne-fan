@@ -12,15 +12,16 @@ Call narrative_respond with this JSON (Tile Format):
   "biome": "grass"|"forest_floor"|"meadow"|"sand"|"dirt"|"stone"|"snow"|"swamp",
   "terrain_legend": { },                                             // optional custom chars
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres). In first person an entity renders as a single primitive (its `shape` + h); a `volumes` entry (prop/custom…) is what produces real composed geometry
-  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see MAP PLAN below
-  "volumes": [ … ]   // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
+  "ground": [ … ],   // ground features (paths/plazas/water/decks/hills) — see MAP PLAN below
+  "volumes": [ … ],  // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
+  "vegetation_zones": [ … ]   // optional: engine-planted vegetation masses — see MAP PLAN below
 }
 
 HARD RULES OF THE TILE:
 - NEVER write "size" or a full "terrain[]" grid. The base is the "biome"
   fill; everything else is primitives — the engine stamps the ~16,000 cells
-  for you and auto-fills tree masses over everything still bare biome
-  (avoiding paths, water, buildings and occupied cells).
+  for you. NOTHING fills vegetation for you: a tile with no tree volumes,
+  no `vegetation_zones` and no scatter is BARE ground.
 - SEAMS: generate_tile.neighbors.<edge> lists what each existing neighbour
   exposes on your shared border: its biome and crossings [{type, at, width}].
   "at" is MIRRORED — the same coordinate on your side. You MUST continue
@@ -93,7 +94,12 @@ points) | "ellipse": { "center": [c,r], "rx", "ry" }. Kinds:
   (collision punches it out of the water). Water without a deck is
   impassable — the validator rejects a tile whose required crossings or
   entry are unreachable.
-- ONLY flat ground here. Anything with height is a volume.
+- hill { shape, h } — smooth declared RELIEF, `h` in METRES (positive =
+  knoll, negative = hollow; |h| <= 6, non-zero), soft skirt from the shape
+  edge. Presentation-only: collision stays flat, the relief flattens under
+  buildings/paths/areas/water and dies at the tile seams. First-person view
+  only today (the zenithal clay ignores it).
+- Anything BUILT with height is a volume; `hill` is the only ground relief.
 
 2) "volumes" — everything with HEIGHT, as typed objects (max 160):
 Common fields: "id" (unique slug), "label" (Spanish noun — it feeds the
@@ -174,11 +180,25 @@ neighbour crossings cannot reach walkable ground.
 
 Engine facts: `ground` paths follow their declared points exactly and
 volumes keep their footprints (plan = truth for collision and the vision
-classifier). When a tile declares no tree volumes, the engine auto-fills
-tree masses over bare biome (avoiding paths, water, buildings and occupied
-cells).
+classifier). Nothing fills vegetation for you: what you do not declare
+(as tree/bush volumes, `vegetation_zones` or scatter) does not exist.
 
-3) OPTIONAL "scatter_generators" + "scatter_zones" — procedural mass
+3) OPTIONAL "vegetation_zones" — mass vegetation planted BY THE ENGINE,
+deterministically: [{ "type": Spanish plant name ("pino", "matorral",
+"zarza"…), "area": [col,row,w,h] in cells | "rest" (every bare-biome cell
+of the whole tile), "density": 0..1 (fraction of eligible cells), "glyph"? }].
+The engine avoids paths, water, buildings and occupied cells automatically
+and keeps your declared tree volumes as spacing seeds; the result is REAL
+tree/bush volumes (trunk collision, visible in every view). A `type`
+matching arbusto/mata/matorral/helecho/zarza/bush plants bushes; anything
+else plants trees. This is the tool for forests, hedgerows and
+undergrowth; hand-place `tree` volumes for singular specimens. The zones
+are DESIGN, not delegation: where each mass starts and ends, which species
+grows where and at what density is your composition — a single uniform
+"rest" blanket is rarely what the world doc implies, and vegetation alone
+does not make a tile rich: the QUALITY BAR applies to the whole plan.
+
+4) OPTIONAL "scatter_generators" + "scatter_zones" — procedural mass
 placement for the first-person view. You DEFINE a generator per kind as
 pure JSON and declare zones with a density; the engine samples
 deterministic positions (excluding buildings, water, decks and paths

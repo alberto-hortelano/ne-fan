@@ -1,9 +1,11 @@
 /** Relieve del suelo — post-proceso FPS-ONLY (no toca el builder compartido
  *  ni sus hashes cenitales).
  *
- *  Heightfield determinista de ondulación suave: ruido de valor en una
+ *  Heightfield determinista: ruido de valor de ondulación suave en una
  *  RETÍCULA GLOBAL de celdas de mundo (dos octavas), así los tiles vecinos
- *  empalman sin costura, con amplitud por bioma y una máscara de aplanado
+ *  empalman sin costura, MÁS el relieve DECLARADO por el plan (rasgos
+ *  `ground` kind "hill": lomas/hondonadas con faldón suave, que mueren en
+ *  las costuras del tile), con amplitud por bioma y una máscara de aplanado
  *  alrededor de todo lo construido/declarado (huellas de volúmenes, caminos,
  *  agua, decks Y áreas de material — una plaza queda plana). El resultado es
  *  una rejilla de alturas en METROS que el renderer usa para desplazar el
@@ -13,7 +15,8 @@
 import { fnv1a } from "../../rng.js";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import { buildScatterExclusions } from "./scatter.js";
-import type { GroundFeature } from "./ground.js";
+import { shapeContains } from "./ground-collision.js";
+import type { GroundFeature, GroundHill } from "./ground.js";
 import type { Volume } from "./volumes.js";
 
 /** Rejilla de alturas (metros) de un tile: (n+1)×(n+1) muestras, fila a fila
@@ -42,6 +45,16 @@ const RELIEF_N = 32;
 const WAVELENGTHS = [48, 20] as const;
 /** Radio (celdas) del degradado de la máscara alrededor de lo excluido. */
 const MASK_RADIUS = 10;
+/** Faldón (celdas) de una colina declarada: 0 en el borde de su forma,
+ *  altura plena a esta profundidad hacia dentro. También es la rampa con la
+ *  que el relieve declarado muere en las costuras del tile (el vecino no
+ *  conoce estas colinas — sin esto habría un escalón en el borde). */
+const HILL_RAMP = 12;
+/** Tipos de volumen que CABALGAN el relieve en vez de aplanarlo: el suelo
+ *  ondula bajo ellos y el renderer los ancla por su centro (prims `anchor`
+ *  de fps-spec). El resto (edificios, muros, props…) sigue exigiendo suelo
+ *  llano. */
+export const RELIEF_RIDERS = new Set<string>(["tree", "bush", "rock"]);
 
 /** Valor pseudoaleatorio [-1,1] estable por nodo GLOBAL de retícula. */
 function lattice(ix: number, iz: number, octave: number): number {
@@ -82,8 +95,14 @@ export function buildReliefGrid(
   seedKey: string,
 ): ReliefGrid | undefined {
   const amp = BIOME_AMP[biome ?? ""] ?? 0.35;
-  if (amp <= 0) return undefined;
-  const excluded = buildScatterExclusions(volumes, ground, { areas: true });
+  const hills = ground.filter((f): f is GroundHill => f.kind === "hill");
+  if (amp <= 0 && hills.length === 0) return undefined;
+  // Vegetación y rocas NO aplanan: viven SOBRE el relieve (fps-spec marca
+  // sus prims con `anchor` y el renderer las sube por su centro) — sin este
+  // filtro, un pinar declarado sobre una loma la convertía en un plano
+  // acribillado (cada tronco/roca abría un cráter de MASK_RADIUS).
+  const flatteners = volumes.filter((v) => !RELIEF_RIDERS.has(v.type));
+  const excluded = buildScatterExclusions(flatteners, ground, { areas: true });
   const [gx0, gz0] = tileOrigin(seedKey);
   const n = RELIEF_N;
   const stepC = TILE_CELLS / n;
@@ -106,14 +125,48 @@ export function buildReliefGrid(
     return smooth(Math.min(1, d / MASK_RADIUS));
   };
 
+  // Relieve DECLARADO (`ground` hill): suma de colinas/hondonadas con faldón
+  // suave desde el borde de su forma (misma técnica de anillos que la máscara)
+  // y rampa a 0 en las costuras del tile.
+  const hillAt = (cx: number, cz: number): number => {
+    let sum = 0;
+    for (const hill of hills) {
+      if (!shapeContains(hill, cx, cz)) continue;
+      let d = HILL_RAMP;
+      for (let r = 2; r < HILL_RAMP; r += 2) {
+        let outside = false;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          if (!shapeContains(hill, cx + Math.cos(a) * r, cz + Math.sin(a) * r)) {
+            outside = true;
+            break;
+          }
+        }
+        if (outside) {
+          d = r;
+          break;
+        }
+      }
+      sum += hill.h * smooth(Math.min(1, d / HILL_RAMP));
+    }
+    return sum;
+  };
+  const borderT = (cx: number, cz: number): number => {
+    const d = Math.min(cx, cz, TILE_CELLS - cx, TILE_CELLS - cz);
+    return smooth(Math.max(0, Math.min(1, d / HILL_RAMP)));
+  };
+
   for (let j = 0; j <= n; j++) {
     for (let i = 0; i <= n; i++) {
       const cx = i * stepC;
       const cz = j * stepC;
       const noise =
-        valueNoise(gx0 + cx, gz0 + cz, WAVELENGTHS[0], 0) * 0.7 +
-        valueNoise(gx0 + cx, gz0 + cz, WAVELENGTHS[1], 1) * 0.3;
-      heights[j * (n + 1) + i] = noise * amp * maskAt(cx, cz);
+        amp > 0
+          ? valueNoise(gx0 + cx, gz0 + cz, WAVELENGTHS[0], 0) * 0.7 +
+            valueNoise(gx0 + cx, gz0 + cz, WAVELENGTHS[1], 1) * 0.3
+          : 0;
+      const declared = hills.length > 0 ? hillAt(cx, cz) * borderT(cx, cz) : 0;
+      heights[j * (n + 1) + i] = (declared + noise * amp) * maskAt(cx, cz);
     }
   }
   return { n, stepM: (TILE_CELLS * TILE_MPC) / n, heights };

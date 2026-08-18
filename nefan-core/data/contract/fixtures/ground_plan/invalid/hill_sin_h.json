@@ -1,0 +1,9 @@
+{
+  "description": "hill sin h (la altura en metros es obligatoria y distinta de 0)",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "loma_muda", "kind": "hill", "ellipse": { "center": [64, 64], "rx": 20, "ry": 20 } }
+    ]
+  }
+}

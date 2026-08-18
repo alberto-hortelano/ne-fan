@@ -458,4 +458,49 @@ describe("validateScene — realize de plató sin player", () => {
     const r = validateScene(s, linkedPlace);
     assert.ok(r.errors.some((e) => e.includes('falta la entity kind "player"')), r.errors.join(" | "));
   });
+
+  // ── Utilización de presupuestos: telemetría objetiva de vuelta al motor ────
+  function makeTilePlan(): Record<string, unknown> {
+    return {
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      scene_description: "Prado con dos casas.",
+      biome: "meadow",
+      entities: [],
+      ground: [{ id: "senda", kind: "path", points: [[0, 64], [128, 64]], w: 4, material: "dirt" }],
+      volumes: [
+        { id: "casa_a", label: "casa", type: "building", rect: [20, 20, 10, 8], wall_h: 5 },
+        { id: "casa_b", label: "casa", type: "building", rect: [40, 20, 10, 8], wall_h: 8 },
+        { id: "torre", label: "torre", type: "tower", at: [70, 30] },
+      ],
+      vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }],
+      scatter_generators: {
+        guijarro: { parts: [{ shape: "box", size: [0.4, 0.3, 0.4] }] },
+      },
+      scatter_zones: [
+        { kind: "guijarro", shape: { type: "rect", x0: 0, z0: 80, x1: 30, z1: 110 }, density: 0.1 },
+      ],
+    };
+  }
+
+  it("reporta la utilización de presupuestos del plan en stats", () => {
+    const r = validateScene(makeTilePlan());
+    assert.deepEqual(r.errors, [], r.errors.join(" | "));
+    assert.equal(r.stats.volumes_declared, 3);
+    assert.equal(r.stats.volumes_cap, 160);
+    assert.equal(r.stats.ground_features, 1);
+    assert.equal(r.stats.ground_cap, 64);
+    assert.equal(r.stats.scatter_zones, 1);
+    assert.equal(r.stats.vegetation_zones, 1);
+    // Dos wall_h de building distintos (5 y 8); la torre no cuenta.
+    assert.equal(r.stats.distinct_building_heights, 2);
+  });
+
+  it("rechaza vegetation_zones inválidas con error accionable (fail-loud del pre-flight)", () => {
+    const s = makeTilePlan();
+    s.vegetation_zones = [{ type: "pino", area: "rest", density: 2 }];
+    const r = validateScene(s);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes("density")), r.errors.join(" | "));
+  });
 });

@@ -55,7 +55,9 @@ VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "deco
 
 # Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
 # GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.
-GROUND_KINDS = {"path", "area", "water", "deck"}
+# "hill" = relieve suave declarable (h en metros, ±6, sin colisión).
+GROUND_KINDS = {"path", "area", "water", "deck", "hill"}
+HILL_MAX_H_M = 6
 GROUND_MATERIALS = {"dirt", "cobble", "stone", "sand", "wood", "gravel", "grass"}
 MAX_GROUND_FEATURES = 64
 
@@ -162,7 +164,7 @@ def _has_one_shape(f: dict) -> bool:
 
 def validate_ground(raw, *, field: str = "ground"):
     """Valida el array `ground` del plan (rasgos de suelo declarativos:
-    path/area/water/deck). Devuelve la lista LIMPIA — los rasgos inválidos se
+    path/area/water/deck/hill). Devuelve la lista LIMPIA — los rasgos inválidos se
     descartan UNO A UNO con traza (un área rota no puede borrar las calles y
     el RÍO enteros: sin el agua, la colisión desaparece). None solo si el
     campo entero es inutilizable (no-lista). Espejo laxo de parseGround
@@ -203,6 +205,11 @@ def validate_ground(raw, *, field: str = "ground"):
         elif not _has_one_shape(f):
             print(f"validate_scene: {ctx} necesita exactamente una de rect|polygon|ellipse — rasgo descartado")
             continue
+        if kind == "hill":
+            h = f.get("h")
+            if not (_num(h) and h != 0 and -HILL_MAX_H_M <= h <= HILL_MAX_H_M):
+                print(f"validate_scene: {ctx} hill sin h válida (metros, ±{HILL_MAX_H_M}, ≠0) — rasgo descartado")
+                continue
         mat = f.get("material")
         if mat is not None and mat not in GROUND_MATERIALS:
             print(f"validate_scene: {ctx} material desconocido {mat!r} — rasgo descartado")

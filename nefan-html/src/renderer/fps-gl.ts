@@ -447,7 +447,8 @@ export class FpsGl {
       mesh.receiveShadow = true;
       // Relieve: el detalle plano del suelo (manchas/piedritas/flores, sin
       // sombra) se DRAPEA vértice a vértice sobre la rejilla; el scatter 3D
-      // (decor con sombra) se ancla por su centro.
+      // (decor con sombra) y las prims `anchor` (vegetación/rocas de volumen
+      // — el relieve NO se aplana bajo ellas) se anclan por su centro.
       if (tileRelief && !prim.relief) {
         if (prim.noShadow && (prim.cat === "terrain" || prim.cat === "decor") && !prim.rotX && !prim.rotZ) {
           const pa = geo.attributes.position;
@@ -455,7 +456,7 @@ export class FpsGl {
             pa.setY(vi, pa.getY(vi) + reliefAtM(tileRelief, prim.pos[0] + pa.getX(vi), prim.pos[2] + pa.getZ(vi)));
           }
           pa.needsUpdate = true;
-        } else if (prim.cat === "decor") {
+        } else if (prim.cat === "decor" || prim.anchor) {
           mesh.position.y += reliefAtM(tileRelief, prim.pos[0], prim.pos[2]);
         }
       }

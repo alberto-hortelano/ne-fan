@@ -1,0 +1,9 @@
+{
+  "description": "hill con h fuera de rango (9 m > cap de 6) — el relieve declarado se capa a ±6 m",
+  "expect": "reject",
+  "payload": {
+    "ground": [
+      { "id": "monte", "kind": "hill", "rect": [20, 20, 40, 40], "h": 9 }
+    ]
+  }
+}

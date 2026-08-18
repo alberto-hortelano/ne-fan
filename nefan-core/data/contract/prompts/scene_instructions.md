@@ -71,9 +71,10 @@ from the camera come out deterministically), and write only the BASE terrain
 cutaway) is in the MAP PLAN reference: the tile instructions (tile worlds) or
 the stage instructions' volumes examples (proscenium).
 
-VEGETATION: don't hand-place 20 trees. Declare tree `volumes` (or let the engine
-fill forest masses from the plan). Hand-placed `tree` entities are still fine
-for singular landmarks.
+VEGETATION: don't hand-place 20 trees. Declare `vegetation_zones` (tile worlds:
+the engine plants real tree/bush masses per zone, deterministically) or tree
+`volumes`. Nothing fills vegetation on its own: undeclared vegetation does not
+exist. Hand-placed `tree` entities are still fine for singular landmarks.
 
 DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
 the nearest wall cell (torches, hanging signs, banners).
