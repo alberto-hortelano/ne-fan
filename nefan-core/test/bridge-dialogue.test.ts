@@ -14,6 +14,7 @@ import type { Consequence } from "../src/narrative/types.js";
 import {
   makeCtx,
   makeSocket,
+  waitFor,
   } from "./helpers.js";
 
 describe("bridge dialogue_choice", () => {
@@ -25,6 +26,14 @@ describe("bridge dialogue_choice", () => {
       ctxBundle.ctx,
     );
     assert.equal((sent[0] as SessionStartedMessage).ok, true);
+    // Drenar el bootstrap encolado antes de seguir: sin esto, su scene_init
+    // tardío se cuela entre los broadcasts del diálogo y el find() del test
+    // pesca el narrative_event equivocado (carrera de microtasks).
+    await waitFor(() =>
+      ctxBundle.broadcasts.some(
+        (m) => m.type === "narrative_status" && (m.phase === "ready" || m.phase === "error"),
+      ),
+    );
     return { socket, sent };
   }
 

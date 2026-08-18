@@ -4,6 +4,8 @@
  *  de forma que cada handler sea una función (msg, ws, ctx) testeable con
  *  fakes (socket capturador, AiClient falso) sin abrir sockets reales. */
 
+import { createHash } from "node:crypto";
+
 import type { GameSimulation } from "../src/simulation/game-loop.js";
 import type { CombatConfig } from "../src/types.js";
 import type { GameStore } from "../src/store/game-store.js";
@@ -12,7 +14,12 @@ import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { AiClient } from "../src/narrative/ai-client.js";
 import type { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
-import type { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
+import { loadWorldDoc } from "../src/games/loader.js";
+import {
+  WORLD_SNAPSHOT_SCHEMA_VERSION,
+  writeWorldSnapshot,
+  type WorldBranch,
+} from "../src/games/world-snapshot.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
@@ -62,13 +69,14 @@ export interface BridgeContext {
   npcDirector: NpcDirector;
   /** Colisión server-side por tile para el movimiento de NPCs. */
   simCollision: SimCollisionProvider;
-  initialSceneCache: InitialSceneCache;
   gamesDir: string;
   /** Directorio de style packs (data/styles) — manifests + imágenes de
    *  referencia; el State API los sirve como estáticos. */
   stylesDir: string;
-  /** CONFIG.dev.cache_initial_scene inyectado (tests lo apagan). */
-  cacheInitialScene: boolean;
+  /** Escribir snapshots de mundo en data/games/{id}/world/ al terminar un
+   *  bootstrap/generate_game. true en producción; los tests lo apagan para
+   *  no contaminar sus fixtures (inyección, como el resto del ctx). */
+  persistWorldSnapshots: boolean;
   /** Manifests de los plugins activos de la sesión en curso (id → manifest).
    *  Se reasigna al entrar a start_session/resume_session para que una sesión
    *  sin plugins no herede los de la anterior. */
@@ -84,6 +92,43 @@ export interface BridgeContext {
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;
   broadcastNarrative(msg: ServerMessage): void;
+}
+
+/** Escribe el snapshot de mundo de la sesión actual como artefacto del juego
+ *  (`data/games/{id}/world/{branch}.json`): TODAS las escenas registradas —
+ *  en el bootstrap vivo, solo la de entrada; en generate_game, el anillo 3×3
+ *  y los places realizados. Best-effort REPORTADO: un fallo de escritura no
+ *  tumba el arranque de la sesión, se loguea como warning. */
+export function writeSessionSnapshot(
+  ctx: BridgeContext,
+  gameId: string,
+  branch: WorldBranch,
+  entrySceneId: string,
+): void {
+  if (!ctx.persistWorldSnapshots) return;
+  try {
+    const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
+    const scenes: Record<string, Record<string, unknown>> = {};
+    for (const [id, rec] of Object.entries(ctx.narrative.scenes_loaded)) {
+      scenes[id] = structuredClone(rec.scene_data);
+    }
+    writeWorldSnapshot(ctx.gamesDir, {
+      schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
+      game_id: gameId,
+      world_doc_hash: createHash("sha256").update(worldDoc, "utf-8").digest("hex"),
+      branch,
+      generated_at: new Date().toISOString(),
+      world_map: structuredClone(ctx.narrative.worldMap.serialize()),
+      scenes,
+      entry_scene_id: entrySceneId,
+    });
+    console.log(
+      `Bridge: world snapshot escrito para "${gameId}" (${branch}, ` +
+        `${Object.keys(scenes).length} escenas)`,
+    );
+  } catch (err) {
+    console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
+  }
 }
 
 /** Guardia anti-takeover de sesión: key del job de generación en vuelo (o del

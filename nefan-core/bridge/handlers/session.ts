@@ -17,6 +17,11 @@ import {
   loadWorldDoc,
   WORLD_VIEWS,
 } from "../../src/games/loader.js";
+import {
+  branchForView,
+  loadWorldSnapshot,
+  type WorldSnapshot,
+} from "../../src/games/world-snapshot.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
 import {
   loadGamePluginManifests,
@@ -208,7 +213,7 @@ export async function handleStartSession(
   }
   // El juego debe existir y validar ANTES de crear la sesión — arrancar un
   // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
-  let worldKey: string;
+  let worldDocHash: string;
   let combatId: string;
   let npcBehaviorId: string | undefined;
   let view: string;
@@ -265,10 +270,7 @@ export async function handleStartSession(
       );
     }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
-    const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
-    // La vista entra en la clave: el initialSceneCache no puede servir un
-    // bootstrap de tiles a una sesión proscenio del mismo juego+estilo.
-    worldKey = `${worldDocHash}:${style.style_id}:${view}`;
+    worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
     ctx.activePlugins = new Map();
     ctx.narrative.startNewSession(msg.gameId);
     ctx.narrative.setWorldInfo({
@@ -323,28 +325,23 @@ export async function handleStartSession(
     isResume: false,
     state: sessionDataForClient(ctx.narrative.toSessionData()),
   });
-  // Dev-only shortcut: replay a cached bootstrap (world_map + first
-  // scene) for the same gameId instead of paying the ~90 s LLM cost.
-  // Gated by CONFIG.dev.cache_initial_scene; off in production.
-  const cached = ctx.cacheInitialScene ? ctx.initialSceneCache.get(msg.gameId, worldKey) : null;
-  if (cached) {
+  // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
+  // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
+  // snapshot malformado se REPORTA y degrada al bootstrap vivo (nunca se
+  // sirve contenido dudoso ni se deja al jugador sin partida).
+  let snapshot: WorldSnapshot | null = null;
+  try {
+    snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, branchForView(view), worldDocHash);
+  } catch (err) {
+    console.error(`Bridge: world snapshot ilegible para "${msg.gameId}":`, err);
+  }
+  if (snapshot) {
     console.log(
-      `Bridge: initial_scene_cache HIT for gameId="${msg.gameId}" ` +
-        `(cached_at=${cached.cached_at}); skipping LLM bootstrap`,
+      `Bridge: world snapshot HIT para "${msg.gameId}" (${snapshot.branch}, ` +
+        `${Object.keys(snapshot.scenes).length} escenas, generado ${snapshot.generated_at}) ` +
+        `— bootstrap sin motor`,
     );
-    // Restore the world map that the narrative engine bootstrapped on
-    // the cached run, then replay the scene through the normal
-    // recordSceneLoaded + broadcastScene path so NPCs, exits and the
-    // visited flag all line up.
-    ctx.narrative.worldMap = WorldMapManager.fromSerialized(
-      JSON.parse(JSON.stringify(cached.world_map)),
-    );
-    const cachedScene = JSON.parse(JSON.stringify(cached.scene)) as Record<string, unknown>;
-    const sceneId = String(cachedScene.room_id ?? `scene_${Date.now()}`);
-    ctx.narrative.recordSceneLoaded(sceneId, cachedScene);
-    await ctx.narrative.save();
-    broadcastScene(ctx, sceneId, cachedScene, 0);
-    await ctx.narrative.save();
+    await replayWorldSnapshot(ctx, snapshot);
     return;
   }
 
@@ -364,7 +361,7 @@ export async function handleStartSession(
     ctx.sceneGen.enqueue({
       key: "bootstrap",
       blocking: true,
-      run: () => runBootstrapStage(ctx, sessionGameId, worldKey),
+      run: () => runBootstrapStage(ctx, sessionGameId),
     });
     return;
   }
@@ -378,8 +375,26 @@ export async function handleStartSession(
   ctx.sceneGen.enqueue({
     key: "bootstrap",
     blocking: true,
-    run: () => runBootstrapTile(ctx, sessionGameId, worldKey),
+    run: () => runBootstrapTile(ctx, sessionGameId),
   });
+}
+
+/** Replay del snapshot de mundo por la ruta normal del bootstrap: restaura el
+ *  world map, registra TODAS las escenas (las no-entrada sin activar — el
+ *  anillo y los places pre-realizados quedan disponibles para request_tile y
+ *  player_entered_place al instante) y difunde la de entrada, que re-adjunta
+ *  sus exits desde el world map restaurado. */
+async function replayWorldSnapshot(ctx: BridgeContext, snap: WorldSnapshot): Promise<void> {
+  ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(snap.world_map));
+  for (const [id, scene] of Object.entries(snap.scenes)) {
+    if (id === snap.entry_scene_id) continue;
+    ctx.narrative.recordSceneLoaded(id, structuredClone(scene), [], { activate: false });
+  }
+  const entryScene = structuredClone(snap.scenes[snap.entry_scene_id]);
+  ctx.narrative.recordSceneLoaded(snap.entry_scene_id, entryScene);
+  await ctx.narrative.save();
+  broadcastScene(ctx, snap.entry_scene_id, entryScene, 0);
+  await ctx.narrative.save();
 }
 
 
@@ -525,7 +540,6 @@ export async function handleResumeSession(
       // finally corre un microtask después del broadcast de error).
       key: "bootstrap_retry",
       blocking: true,
-      // Sin worldKey: el initial-scene-cache es solo para el arranque dev.
       run: () =>
         isStageWorld ? runBootstrapStage(ctx, resumeGameId) : runBootstrapTile(ctx, resumeGameId),
     });

@@ -21,7 +21,6 @@ import { AiClient } from "../src/narrative/ai-client.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "./sim-collision.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
-import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
@@ -89,10 +88,9 @@ const ctx: BridgeContext = {
   mapTriggers: new MapTriggerEvaluator(narrative),
   npcDirector,
   simCollision,
-  initialSceneCache: new InitialSceneCache(resolve(dataDir, "initial_scene_cache")),
   gamesDir: GAMES_DIR,
   stylesDir: STYLES_DIR,
-  cacheInitialScene: CONFIG.dev.cache_initial_scene,
+  persistWorldSnapshots: true,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
   posTracking: { cellKey: null, placeId: null },

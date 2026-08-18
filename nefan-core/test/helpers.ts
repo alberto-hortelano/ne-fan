@@ -16,7 +16,6 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
-import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
 import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
@@ -67,7 +66,9 @@ export interface FakeAi {
 /** BridgeContext completo con fakes: sim determinista (seed 12345), storage
  *  en memoria, AiClient falso (respuestas mínimas, overrides vía opts.ai) y
  *  broadcast capturado en `broadcasts`. */
-export function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi } = {}) {
+export function makeCtx(
+  opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi; persistWorldSnapshots?: boolean } = {},
+) {
   const store = new GameStore();
   const sim = new GameSimulation(combatConfig, store, 12345);
   sim.addCombatant(
@@ -121,10 +122,11 @@ export function makeCtx(opts: { gamesDir?: string; stylesDir?: string; ai?: Fake
     mapTriggers: new MapTriggerEvaluator(narrative),
     npcDirector: new NpcDirector(narrative),
     simCollision: createSimCollisionProvider(narrative),
-    initialSceneCache: new InitialSceneCache(join(tmpdir(), "nefan-test-scene-cache-unused")),
     gamesDir: opts.gamesDir ?? FIXTURE_GAMES,
     stylesDir: opts.stylesDir ?? FIXTURE_STYLES,
-    cacheInitialScene: false,
+    // Apagado por defecto: la escritura pasiva contaminaría los fixtures (y
+    // el siguiente start_session replayearía el snapshot saltándose el fake).
+    persistWorldSnapshots: opts.persistWorldSnapshots ?? false,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
     posTracking: { cellKey: null, placeId: null },
