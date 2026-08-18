@@ -149,7 +149,9 @@ export class TitleScreen {
       "align-items: center",
       "justify-content: center",
       "z-index: 9999",
-      "padding: 32px",
+      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px):
+      // en viewports bajos el centrado vertical metía el título debajo.
+      "padding: 96px 32px 32px",
     ].join(";");
     this.content = document.createElement("div");
     this.content.style.cssText = [
@@ -201,6 +203,7 @@ export class TitleScreen {
   }
 
   private async renderHome(): Promise<void> {
+    this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
       <p style="margin-bottom:18px;color:#999">Cliente 2D — selecciona una partida o empieza una nueva.</p>
@@ -269,67 +272,79 @@ export class TitleScreen {
     let selectedGame = games.find((g) => g.game_id === preselectGameId) ?? games[0];
     this.lastSelectedGameId = selectedGame.game_id;
 
+    // Pantalla ancha a dos columnas (mundos | opciones): sin scroll de página
+    // — la lista de mundos scrollea DENTRO de su columna si hace falta. Las
+    // demás pantallas restauran el ancho de una columna.
+    this.content.style.maxWidth = "1100px";
+    // Botón de opción compacto (misma estética, menos padding vertical).
+    const OPT = `${BTN_SECONDARY_CSS};flex:1;text-align:left;padding:7px 10px`;
     this.content.innerHTML = `
-      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Elige un mundo</h1>
-      <p style="margin-bottom:16px;color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
-      <div id="ts-worlds" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px"></div>
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Vista <span style="color:#666">(fija para toda la partida)</span></div>
-        <div id="ts-view" style="display:flex;gap:8px">
-          <button data-view="overworld" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Mundo abierto</div>
-            <div style="font-size:10px;color:#888">Plano continuo de tiles visto desde arriba</div>
-          </button>
-          <button data-view="proscenium" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Proscenio</div>
-            <div style="font-size:10px;color:#888">Escenas discretas tipo plató de cine, a pie de calle</div>
-          </button>
-          <button data-view="fps" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Primera persona</div>
-            <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS: el ratón mira, WASD mueve</div>
-          </button>
-        </div>
+      <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:10px">
+        <h1 style="font-size:26px;color:#da6">Elige un mundo</h1>
+        <p style="color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
       </div>
-      <label style="display:block;margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>
-        <select id="ts-style" style="${SELECT_CSS}"></select>
-        <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
-      </label>
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(modo inicial; cambiable en partida desde el menú dev)</span></div>
-        <div id="ts-rendermode" style="display:flex;gap:8px">
-          <button data-rendermode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Imagen IA</div>
-            <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (gasta créditos)</div>
-          </button>
-          <button data-rendermode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Maqueta 3D</div>
-            <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, sin coste)</div>
-          </button>
+      <div style="display:grid;grid-template-columns:minmax(340px,1.15fr) minmax(330px,1fr);gap:20px;align-items:start;margin-bottom:14px">
+        <div id="ts-worlds" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 220px);min-height:120px;padding-right:4px"></div>
+        <div style="min-width:0;display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:12px;color:#999;margin-bottom:4px">Vista <span style="color:#666">(fija para toda la partida)</span></div>
+            <div id="ts-view" style="display:flex;gap:6px">
+              <button data-view="overworld" style="${OPT}">
+                <div style="font-size:13px">Mundo abierto</div>
+                <div style="font-size:10px;color:#888">Plano continuo de tiles visto desde arriba</div>
+              </button>
+              <button data-view="proscenium" style="${OPT}">
+                <div style="font-size:13px">Proscenio</div>
+                <div style="font-size:10px;color:#888">Escenas discretas tipo plató de cine, a pie de calle</div>
+              </button>
+              <button data-view="fps" style="${OPT}">
+                <div style="font-size:13px">Primera persona</div>
+                <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS: el ratón mira, WASD mueve</div>
+              </button>
+            </div>
+          </div>
+          <label style="display:block">
+            <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>
+            <select id="ts-style" style="${SELECT_CSS}"></select>
+            <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
+          </label>
+          <div>
+            <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(modo inicial; cambiable en partida desde el menú dev)</span></div>
+            <div id="ts-rendermode" style="display:flex;gap:6px">
+              <button data-rendermode="image" style="${OPT}">
+                <div style="font-size:13px">Imagen IA</div>
+                <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (gasta créditos)</div>
+              </button>
+              <button data-rendermode="vector" style="${OPT}">
+                <div style="font-size:13px">Maqueta 3D</div>
+                <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, sin coste)</div>
+              </button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:#999;margin-bottom:4px">Personajes <span style="color:#666">(independiente de los escenarios)</span></div>
+            <div id="ts-charmode" style="display:flex;gap:6px">
+              <button data-charmode="image" style="${OPT}${CONFIG.graphics.ai_skin ? "" : ";opacity:.45;cursor:default"}">
+                <div style="font-size:13px">Skins IA</div>
+                <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? "Cada personaje se viste por su descripción (gasta créditos)" : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
+              </button>
+              <button data-charmode="vector" style="${OPT}">
+                <div style="font-size:13px">Base y_bot</div>
+                <div style="font-size:10px;color:#888">Maniquí neutro para todos (sin coste)</div>
+              </button>
+            </div>
+          </div>
+          <div id="ts-gen" style="padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
+            <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(el mundo se genera por vista, sin estilo; el estilo se aplica sobre el mundo generado)</span></div>
+            <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
+            <div style="display:flex;gap:8px;margin-bottom:4px">
+              <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
+              <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
+            </div>
+            <div id="ts-style-plan"></div>
+            <div id="ts-gen-progress" style="font-size:12px;margin-top:4px"></div>
+          </div>
         </div>
-      </div>
-      <div style="margin-bottom:18px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Personajes <span style="color:#666">(independiente de los escenarios)</span></div>
-        <div id="ts-charmode" style="display:flex;gap:8px">
-          <button data-charmode="image" style="${BTN_SECONDARY_CSS};flex:1;text-align:left${CONFIG.graphics.ai_skin ? "" : ";opacity:.45;cursor:default"}">
-            <div style="font-size:13px">Skins IA</div>
-            <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? "Cada personaje se viste por su descripción (gasta créditos)" : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
-          </button>
-          <button data-charmode="vector" style="${BTN_SECONDARY_CSS};flex:1;text-align:left">
-            <div style="font-size:13px">Base y_bot</div>
-            <div style="font-size:10px;color:#888">Maniquí neutro para todos (sin coste)</div>
-          </button>
-        </div>
-      </div>
-      <div id="ts-gen" style="margin-bottom:18px;padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
-        <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(el mundo se genera por vista, sin estilo; el estilo se aplica sobre el mundo generado)</span></div>
-        <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
-        <div style="display:flex;gap:8px;margin-bottom:4px">
-          <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
-          <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
-        </div>
-        <div id="ts-style-plan"></div>
-        <div id="ts-gen-progress" style="font-size:12px;margin-top:4px"></div>
       </div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
@@ -494,7 +509,7 @@ export class TitleScreen {
             ? `<span style="color:#da6">⟳ obsoleto (regenera el mundo/estilo)</span>`
             : `<span style="color:#a66">— sin aplicar</span>`;
       genStateEl.innerHTML =
-        `Mundo <span style="color:#bdf">${escapeHtml(VIEW_LABELS[selectedView] ?? selectedView)}</span>: ${CONTENT_LABEL[cs]}` +
+        `Mundo (vista <span style="color:#bdf">${escapeHtml(VIEW_LABELS[selectedView] ?? selectedView)}</span>): ${CONTENT_LABEL[cs]}` +
         ` &nbsp;·&nbsp; Estilo <span style="color:#bdf">${escapeHtml(styleById.get(styleSel.value)?.name ?? "(ninguno)")}</span>: ${styleLabel}`;
       genWorldBtn.textContent = cs === "ready" ? "↻ Regenerar mundo" : "⚙ Generar mundo";
       genWorldBtn.disabled = false;
@@ -647,6 +662,7 @@ export class TitleScreen {
    *  categorías que falten se generan con IA usando las subidas como
    *  referencia — PREVIA confirmación explícita del coste. */
   private renderUploadStyle(): void {
+    this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Subir estilo</h1>
       <p style="margin-bottom:16px;color:#888;font-size:12px">
@@ -758,6 +774,7 @@ export class TitleScreen {
    *  desarrolla con el motor narrativo (tarda 1-3 min) y aparece como un
    *  mundo más en el selector. */
   private renderCreateWorld(): void {
+    this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear mundo</h1>
       <p style="margin-bottom:16px;color:#888;font-size:12px">
@@ -868,6 +885,7 @@ export class TitleScreen {
            Skin AI deshabilitada (activa <code>graphics.ai_skin</code> en config.ts para usarla).
          </div>`;
 
+    this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear personaje</h1>
       <p style="margin-bottom:18px;color:#888;font-size:12px">Mundo: <span style="color:#bdf">${escapeHtml(game.title)}</span></p>
@@ -926,15 +944,14 @@ function generationChipsHtml(g: GameInfo): string {
 
 function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   const cover = style?.cover_url
-    ? `<img src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" alt="" style="width:120px;height:80px;object-fit:cover;flex:none;border:1px solid #333">`
-    : `<div style="width:120px;height:80px;flex:none;border:1px solid #333;background:linear-gradient(135deg,#23202b,#161419);display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;text-align:center;padding:4px">${escapeHtml(style?.name ?? g.style_id)}</div>`;
+    ? `<img src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" alt="" style="width:96px;height:64px;object-fit:cover;flex:none;border:1px solid #333">`
+    : `<div style="width:96px;height:64px;flex:none;border:1px solid #333;background:linear-gradient(135deg,#23202b,#161419);display:flex;align-items:center;justify-content:center;color:#555;font-size:10px;text-align:center;padding:4px">${escapeHtml(style?.name ?? g.style_id)}</div>`;
   return `
-    <div data-game-id="${escapeAttr(g.game_id)}" style="display:flex;gap:14px;padding:12px;background:#181820;border:2px solid #2a2a30;cursor:pointer;border-radius:4px">
+    <div data-game-id="${escapeAttr(g.game_id)}" style="display:flex;gap:12px;padding:10px;background:#181820;border:2px solid #2a2a30;cursor:pointer;border-radius:4px">
       ${cover}
       <div style="flex:1;min-width:0">
-        <div style="color:#dcb;font-size:16px;margin-bottom:4px">${escapeHtml(g.title)}</div>
-        <div style="color:#999;font-size:12px;line-height:1.5">${escapeHtml(g.description)}</div>
-        <div style="color:#666;font-size:11px;margin-top:5px">Estilo: ${escapeHtml(style?.name ?? g.style_id)}</div>
+        <div style="color:#dcb;font-size:14px;margin-bottom:3px">${escapeHtml(g.title)} <span style="color:#666;font-size:11px;font-weight:normal">· Estilo: ${escapeHtml(style?.name ?? g.style_id)}</span></div>
+        <div style="color:#999;font-size:11px;line-height:1.45">${escapeHtml(g.description)}</div>
         ${generationChipsHtml(g)}
       </div>
     </div>
