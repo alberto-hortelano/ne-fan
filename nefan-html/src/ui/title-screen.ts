@@ -136,6 +136,42 @@ export class TitleScreen {
         }
       }
     });
+    // Distribución MÓVIL del selector de mundo: los estilos van inline (no
+    // hay hoja del título), así que los overrides responsive viven en este
+    // <style> con !important. Solo distribución: en pantallas estrechas la
+    // rejilla colapsa a una columna, las filas de opciones envuelven y los
+    // paddings de escritorio se reducen. Idempotente por id.
+    if (!document.getElementById("title-screen-responsive")) {
+      const css = document.createElement("style");
+      css.id = "title-screen-responsive";
+      css.textContent = `
+        @media (max-width: 900px) {
+          /* Solo laterales/inferior: el padding-top lo mide
+             reserveDevPanelSpace() del panel de dev real (inline). */
+          #title-screen {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+            padding-bottom: 16px !important;
+          }
+          #title-screen #ts-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
+          #title-screen #ts-worlds { max-height: 38vh !important; }
+          #title-screen #ts-view, #title-screen #ts-rendermode, #title-screen #ts-charmode {
+            flex-wrap: wrap !important;
+          }
+          #title-screen #ts-view button, #title-screen #ts-rendermode button,
+          #title-screen #ts-charmode button { min-width: 46% !important; }
+          #title-screen #ts-actions { flex-wrap: wrap !important; gap: 8px !important; }
+          #title-screen #ts-actions #ts-create-world { margin-left: 0 !important; }
+          #title-screen h1 { font-size: 22px !important; }
+        }
+      `;
+      document.head.appendChild(css);
+    }
+    // El padding superior sigue al panel de dev también al rotar/redimensionar
+    // (una sola suscripción: el título vive tanto como la app).
+    window.addEventListener("resize", () => {
+      if (this.root && this.root.style.display !== "none") this.reserveDevPanelSpace();
+    });
     this.root = document.createElement("div");
     this.root.id = "title-screen";
     this.root.style.cssText = [
@@ -190,8 +226,31 @@ export class TitleScreen {
     document.body.appendChild(this.root);
   }
 
+  /** El panel de dev (#dev-status, z-index 10000) queda POR ENCIMA del título
+   *  a propósito (caso de referencia 2026-08-09: coste visible al crear
+   *  mundo/estilo). Su altura varía con el ancho Y con el contenido (se
+   *  rellena async al conectar servicios; en móvil envuelve a varias líneas):
+   *  el padding superior se mide del panel real y se re-mide con un
+   *  ResizeObserver en vez de fijarse. */
+  private devObserver: ResizeObserver | null = null;
+
+  private reserveDevPanelSpace(): void {
+    const dev = document.getElementById("dev-status");
+    if (dev && !this.devObserver && "ResizeObserver" in window) {
+      this.devObserver = new ResizeObserver(() => {
+        if (this.root.style.display !== "none") this.reserveDevPanelSpace();
+      });
+      this.devObserver.observe(dev);
+    }
+    // bottom, no height: el panel no empieza en y=0 (la barra del HUD queda
+    // encima) — lo que hay que despejar es hasta dónde LLEGA.
+    const devBottom = dev ? Math.ceil(dev.getBoundingClientRect().bottom) : 0;
+    this.root.style.paddingTop = `${Math.max(96, devBottom + 10)}px`;
+  }
+
   async show(): Promise<TitleAction> {
     this.root.style.display = "flex";
+    this.reserveDevPanelSpace();
     await this.renderHome();
     return new Promise<TitleAction>((res) => {
       this.resolve = res;
@@ -279,11 +338,11 @@ export class TitleScreen {
     // Botón de opción compacto (misma estética, menos padding vertical).
     const OPT = `${BTN_SECONDARY_CSS};flex:1;text-align:left;padding:7px 10px`;
     this.content.innerHTML = `
-      <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:10px">
+      <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:10px">
         <h1 style="font-size:26px;color:#da6">Elige un mundo</h1>
         <p style="color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
       </div>
-      <div style="display:grid;grid-template-columns:minmax(340px,1.15fr) minmax(330px,1fr);gap:20px;align-items:start;margin-bottom:14px">
+      <div id="ts-columns" style="display:grid;grid-template-columns:minmax(340px,1.15fr) minmax(330px,1fr);gap:20px;align-items:start;margin-bottom:14px">
         <div id="ts-worlds" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 220px);min-height:120px;padding-right:4px"></div>
         <div style="min-width:0;display:flex;flex-direction:column;gap:12px">
           <div>
@@ -337,7 +396,7 @@ export class TitleScreen {
           <div id="ts-gen" style="padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
             <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(el mundo se genera por vista, sin estilo; el estilo se aplica sobre el mundo generado)</span></div>
             <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
-            <div style="display:flex;gap:8px;margin-bottom:4px">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">
               <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
               <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
             </div>
@@ -346,7 +405,7 @@ export class TitleScreen {
           </div>
         </div>
       </div>
-      <div style="display:flex;gap:12px">
+      <div id="ts-actions" style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
         <button id="ts-continue" style="${BTN_PRIMARY_CSS}">Continuar →</button>
         <button id="ts-create-world" style="${BTN_SECONDARY_CSS};margin-left:auto">✚ Crear mundo</button>
