@@ -21,6 +21,12 @@ import { CONFIG } from "@nefan-core/src/config.js";
 import { WORLD_VIEWS, type WorldView } from "@nefan-core/src/games/style-categories.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
+import {
+  CHAR_MODE_LABELS,
+  MODE_COST_LABELS,
+  RENDER_MODE_ICONS,
+  RENDER_MODE_LABELS,
+} from "./mode-labels.js";
 
 /** Normaliza una vista de fuente externa (game.json, botón) al enum. */
 function normalizeView(v: string | undefined, fallback: WorldView = "overworld"): WorldView {
@@ -76,6 +82,10 @@ const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
   { id: "stage_gate", label: "Plató: puerta" },
 ];
 
+/** Vida del estado "armado" (¿confirmar gasto?) antes de desarmarse solo —
+ *  mismo TTL que el chip de gráficos y el menú dev. */
+const ARM_TTL_MS = 5000;
+
 const MIXAMO_MODELS: { id: string; name: string }[] = [
   { id: "y_bot", name: "Y Bot (base)" },
   { id: "paladin", name: "Paladín" },
@@ -90,6 +100,10 @@ export class TitleScreen {
   private root: HTMLDivElement;
   private content: HTMLDivElement;
   private resolve: ((action: TitleAction) => void) | null = null;
+  /** Notifica show/hide al caller (main.ts oculta el chip de gráficos
+   *  mientras el título está abierto). Cubre TODOS los cierres, incluido el
+   *  modo fixtures por #ts-close, que no resuelve la promesa de show(). */
+  onVisibilityChange: ((visible: boolean) => void) | null = null;
   private styleApply: StyleApplyController;
   /** Última línea de progreso de generate_game (kind "game_gen"): la pinta
    *  el panel de generación del selector de mundo si está en pantalla. */
@@ -250,6 +264,7 @@ export class TitleScreen {
 
   async show(): Promise<TitleAction> {
     this.root.style.display = "flex";
+    this.onVisibilityChange?.(true);
     this.reserveDevPanelSpace();
     await this.renderHome();
     return new Promise<TitleAction>((res) => {
@@ -259,9 +274,11 @@ export class TitleScreen {
 
   hide(): void {
     this.root.style.display = "none";
+    this.onVisibilityChange?.(false);
   }
 
   private async renderHome(): Promise<void> {
+    this.modeArmed.clear();
     this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
@@ -283,7 +300,7 @@ export class TitleScreen {
       statusEl.textContent = `Bridge OK — ${sessions.length} partidas guardadas.`;
       statusEl.style.color = "#4a4";
     } catch (err) {
-      statusEl.innerHTML = `<span style="color:#a44">No se puede contactar al bridge (${(err as Error).message}). Arranca <code>./start.sh bridge</code>.</span>`;
+      statusEl.innerHTML = `<span style="color:#a44">No se puede contactar al bridge (${(err as Error).message}). Arranca <code>./start.sh</code> y elige un preset con bridge (p. ej. "Cliente web (dev)").</span>`;
     }
 
     if (sessions.length === 0) {
@@ -308,14 +325,68 @@ export class TitleScreen {
           }
         });
       }
-      // El cambio de modo de render (imagen IA ⇄ maqueta) ya no vive aquí:
-      // se hace EN PARTIDA desde el menú dev ("Imágenes…"), en runtime y en
-      // ambos sentidos. Los badges de la tarjeta siguen siendo informativos.
+      // Los badges de modo son SELECTORES: cambian el modo del save ANTES de
+      // cargar (set_render_mode sobre partida inactiva — el bridge escribe el
+      // state.json en disco). Así un save con Imagen IA se puede reanudar en
+      // maqueta sin que el auto-pipeline gaste créditos nada más entrar. En
+      // partida, el mismo campo lo cambia el chip de gráficos (🎨/🧱).
+      for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-mode-facet]")) {
+        btn.addEventListener("click", () => void this.onModeBadge(btn, sessions));
+      }
     }
 
     newBtn.addEventListener("click", () => {
       void this.renderWorldSelect();
     });
+  }
+
+  /** Badges de modo armados (primer click de encendido) → timestamp. Se
+   *  limpia en cada repintado de home (el re-render invalida los botones). */
+  private modeArmed = new Map<string, number>();
+
+  /** Click en un badge de modo de la lista de saves: alterna image⇄vector en
+   *  el save (partida inactiva) vía el bridge. Encender = confirmación en dos
+   *  clicks (patrón armed del chip); apagar es directo. Tras el cambio se
+   *  repinta home re-listando del bridge: el badge refleja lo PERSISTIDO. */
+  private async onModeBadge(
+    btn: HTMLButtonElement,
+    sessions: SessionMetadata[],
+  ): Promise<void> {
+    const sessionId = btn.dataset.sessionId!;
+    const facet = btn.dataset.modeFacet as "scenes" | "characters";
+    const s = sessions.find((x) => x.session_id === sessionId);
+    if (!s) return;
+    const current = facet === "scenes" ? s.render_mode : effectiveCharMode(s);
+    const target = current === "image" ? "vector" : "image";
+    const key = `${sessionId}:${facet}`;
+    if (target === "image" && !this.modeArmed.has(key)) {
+      this.modeArmed.set(key, performance.now());
+      const orig = btn.textContent ?? "";
+      btn.textContent = "¿Confirmar? Gastará créditos";
+      btn.style.borderColor = "#a63";
+      btn.style.color = "#da6";
+      setTimeout(() => {
+        if (!this.modeArmed.has(key) || !btn.isConnected) return;
+        this.modeArmed.delete(key);
+        btn.textContent = orig;
+        btn.style.borderColor = "";
+        btn.style.color = "";
+      }, ARM_TTL_MS);
+      return;
+    }
+    this.modeArmed.delete(key);
+    btn.disabled = true;
+    try {
+      await this.narrative.setRenderMode(sessionId, facet, target as "image" | "vector");
+    } catch (err) {
+      await this.renderHome();
+      const st = this.content.querySelector<HTMLElement>("#ts-status");
+      if (st) {
+        st.innerHTML = `<span style="color:#a44">No se pudo cambiar el modo de ${escapeHtml(sessionId)}: ${escapeHtml((err as Error).message)}</span>`;
+      }
+      return;
+    }
+    await this.renderHome();
   }
 
   /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
@@ -368,15 +439,15 @@ export class TitleScreen {
             <div id="ts-style-desc" style="font-size:11px;color:#777;margin-top:4px"></div>
           </label>
           <div>
-            <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(modo inicial; cambiable en partida desde el menú dev)</span></div>
+            <div style="font-size:12px;color:#999;margin-bottom:4px">Escenarios <span style="color:#666">(modo inicial; en partida se cambia desde el indicador ${RENDER_MODE_ICONS.image}/${RENDER_MODE_ICONS.vector} de la esquina inferior derecha)</span></div>
             <div id="ts-rendermode" style="display:flex;gap:6px">
               <button data-rendermode="image" style="${OPT}">
-                <div style="font-size:13px">Imagen IA</div>
-                <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (gasta créditos)</div>
+                <div style="font-size:13px">${RENDER_MODE_ICONS.image} ${RENDER_MODE_LABELS.image}</div>
+                <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (${MODE_COST_LABELS.image})</div>
               </button>
               <button data-rendermode="vector" style="${OPT}">
-                <div style="font-size:13px">Maqueta 3D</div>
-                <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, sin coste)</div>
+                <div style="font-size:13px">${RENDER_MODE_ICONS.vector} ${RENDER_MODE_LABELS.vector}</div>
+                <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, ${MODE_COST_LABELS.vector})</div>
               </button>
             </div>
           </div>
@@ -384,12 +455,12 @@ export class TitleScreen {
             <div style="font-size:12px;color:#999;margin-bottom:4px">Personajes <span style="color:#666">(independiente de los escenarios)</span></div>
             <div id="ts-charmode" style="display:flex;gap:6px">
               <button data-charmode="image" style="${OPT}${CONFIG.graphics.ai_skin ? "" : ";opacity:.45;cursor:default"}">
-                <div style="font-size:13px">Skins IA</div>
-                <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? "Cada personaje se viste por su descripción (gasta créditos)" : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
+                <div style="font-size:13px">${RENDER_MODE_ICONS.image} ${CHAR_MODE_LABELS.image}</div>
+                <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? `Cada personaje se viste por su descripción (${MODE_COST_LABELS.image})` : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
               </button>
               <button data-charmode="vector" style="${OPT}">
-                <div style="font-size:13px">Base y_bot</div>
-                <div style="font-size:10px;color:#888">Maniquí neutro para todos (sin coste)</div>
+                <div style="font-size:13px">${RENDER_MODE_ICONS.vector} Base y_bot</div>
+                <div style="font-size:10px;color:#888">Maniquí neutro para todos (${MODE_COST_LABELS.vector})</div>
               </button>
             </div>
           </div>
@@ -1025,25 +1096,42 @@ const VIEW_LABELS: Record<string, string> = {
   proscenium: "Proscenio",
   fps: "Primera persona",
 };
-const RENDER_MODE_LABELS: Record<string, string> = { image: "Imagen IA", vector: "Maqueta 3D" };
-const CHAR_MODE_LABELS: Record<string, string> = { image: "Skins IA", vector: "Personajes base" };
 /** Modo EFECTIVO de personajes: sin campo, sigue a los escenarios (legacy). */
 function effectiveCharMode(s: SessionMetadata): string | undefined {
   return s.character_mode || s.render_mode;
 }
 const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
+/** Badge de modo CLICABLE (selector antes de cargar): misma silueta que el
+ *  badge informativo, con cursor y hover del lado de button. */
+const MODE_BADGE_CSS = `${BADGE_CSS};cursor:pointer;font-family:inherit`;
+
+/** Badge-selector del modo de una faceta del save. Click = alternar
+ *  image⇄vector ANTES de cargar (onModeBadge). Saves legacy sin el campo: sin
+ *  badge (no adivinar). */
+function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): string {
+  const mode = facet === "scenes" ? s.render_mode : effectiveCharMode(s);
+  if (mode !== "image" && mode !== "vector") return "";
+  const labels = facet === "scenes" ? RENDER_MODE_LABELS : CHAR_MODE_LABELS;
+  const target = mode === "image" ? "vector" : "image";
+  const facetEs = facet === "scenes" ? "Escenarios" : "Personajes";
+  // Encender skins con el backend apagado por config: badge muerto con motivo
+  // (mismo criterio que el chip de gráficos).
+  const blocked = facet === "characters" && target === "image" && !CONFIG.graphics.ai_skin;
+  const title = blocked
+    ? "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts"
+    : `${facetEs}: click para cambiar a ${labels[target]} antes de cargar (${MODE_COST_LABELS[target]})`;
+  return `<button data-mode-facet="${facet}" data-session-id="${escapeAttr(s.session_id)}"${blocked ? " disabled" : ""} title="${escapeAttr(title)}" style="${MODE_BADGE_CSS}${blocked ? ";opacity:.45;cursor:default" : ""}">${RENDER_MODE_ICONS[mode]} ${escapeHtml(labels[mode])}</button>`;
+}
 
 function sessionRowHtml(s: SessionMetadata): string {
   const summary = s.summary || "(sin narrativa todavía)";
   const updated = s.updated_at ? formatDate(s.updated_at) : "?";
-  const charMode = effectiveCharMode(s);
   const badges = [
-    s.view ? VIEW_LABELS[s.view] ?? s.view : null,
-    s.render_mode ? RENDER_MODE_LABELS[s.render_mode] ?? s.render_mode : null,
-    charMode ? CHAR_MODE_LABELS[charMode] ?? charMode : null,
+    s.view ? `<span style="${BADGE_CSS}">${escapeHtml(VIEW_LABELS[s.view] ?? s.view)}</span>` : "",
+    modeBadgeHtml(s, "scenes"),
+    modeBadgeHtml(s, "characters"),
   ]
-    .filter((b): b is string => b !== null)
-    .map((b) => `<span style="${BADGE_CSS}">${escapeHtml(b)}</span>`)
+    .filter(Boolean)
     .join(" ");
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:#181820;border:1px solid #2a2a30">

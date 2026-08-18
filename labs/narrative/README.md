@@ -21,9 +21,11 @@ hacer `curl` directo a `ai_server`).
 
 ## Precondiciones (qué hay que arrancar)
 
-> ⚠️ **No uses `start.sh` para el `narrative-mcp`.** Lo arranca con `NARRATIVE_EAGER_BIND=1` y
-> robaría el puerto `:3737`, que debe poseer el terminal del **motor**. Cada Claude Code hace
-> *lazy bind* de `:3737`: solo lo toma quien llama `narrative_listen`.
+> ⚠️ **No dejes que `start.sh` arranque su placeholder de `narrative-mcp`** (por defecto lo hace
+> con `NARRATIVE_EAGER_BIND=1` y robaría el puerto `:3737`, que debe poseer el terminal del
+> **motor**). Lanza el launcher con `NEFAN_EAGER_BIND=0 ./start.sh` para que se lo salte, o no
+> selecciones el servicio. Cada Claude Code hace *lazy bind* de `:3737`: solo lo toma quien llama
+> `narrative_listen`.
 
 Orden recomendado (para que el motor tome `:3737` antes de que `ai_server` intente conectar):
 

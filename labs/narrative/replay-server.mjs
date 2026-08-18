@@ -43,7 +43,8 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WebSocketServer } from "../nefan-core/node_modules/ws/wrapper.mjs";
+// Import relativo a ESTE fichero (labs/narrative/ → raíz del repo → nefan-core).
+import { WebSocketServer } from "../../nefan-core/node_modules/ws/wrapper.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

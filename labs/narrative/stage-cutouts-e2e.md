@@ -7,6 +7,9 @@ fake-ai-server — cero créditos.
 
 ## Arranque
 
+`./start.sh` → preset 5 "E2E sin créditos" automatiza este stack (fake +
+bridge con `NEFAN_AI_SERVER` + HTML) e imprime la URL. Manual:
+
 ```bash
 node labs/narrative/fake-ai-server.mjs &                                  # :18765
 cd nefan-core && NEFAN_AI_SERVER=http://127.0.0.1:18765 npx tsx bridge/ws-server.ts &  # :9877 (el sim del movimiento)

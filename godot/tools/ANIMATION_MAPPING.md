@@ -4,7 +4,7 @@ Procedimiento para medir los atributos fisicos de animaciones de ataque y actual
 
 ## Prerequisitos
 
-- Godot corriendo headless: `./start.sh` → preset 2 "Automated tests" (o ejecuta `xvfb-run` a mano)
+- Godot corriendo headless: `./start.sh` → preset 3 "Automated tests" (o ejecuta `xvfb-run` a mano)
 - Bridge opcional: el comando remoto `load_game` ya solo conduce el flujo de título local (no toca el bridge)
 - Puerto 9876 accesible (remote control)
 

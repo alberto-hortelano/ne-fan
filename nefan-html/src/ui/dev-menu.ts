@@ -1,10 +1,11 @@
 /** Menú dev de imágenes IA (#dev-menu, botón "Imágenes…" de #dev-status).
- *  Único dueño del panel: toggles runtime por faceta (escenarios/personajes)
- *  y lista de las imágenes actualmente FAKE — platós en clay, tiles sin
- *  imagen IA, skins pendientes sobre la base y_bot — con generación por item
- *  (permitida aunque el toggle global esté OFF). Todo por ratón: cero atajos
- *  de teclado. Las acciones que gastan créditos piden confirmación en dos
- *  clicks (patrón armed del title-screen). */
+ *  Lista de las imágenes actualmente FAKE — platós en clay, tiles sin imagen
+ *  IA, skins pendientes sobre la base y_bot — con generación por item
+ *  (permitida aunque el modo global de gráficos esté en maqueta/y_bot). Los
+ *  toggles globales por faceta viven en el chip de gráficos del HUD
+ *  (graphics-mode.ts), UI de cliente. Todo por ratón: cero atajos de teclado.
+ *  Las acciones que gastan créditos piden confirmación en dos clicks (patrón
+ *  armed del title-screen). */
 import { errors } from "./error-log.js";
 
 export interface FakeItem {
@@ -18,18 +19,7 @@ export interface FakeItem {
   disabledReason?: string;
 }
 
-export interface DevMenuToggles {
-  scenes: boolean;
-  characters: boolean;
-  /** false = backend de skins apagado por config (graphics.ai_skin) — el
-   *  toggle de personajes se muestra deshabilitado con el motivo. */
-  charactersAvailable: boolean;
-}
-
 export interface DevMenuDeps {
-  getToggles(): DevMenuToggles;
-  /** Lanza si el bridge rechaza el cambio — el menú revierte el checkbox. */
-  setToggle(facet: "scenes" | "characters", on: boolean): Promise<void>;
   listFakeItems(): FakeItem[];
   generate(item: FakeItem): Promise<void>;
   log(msg: string): void;
@@ -43,10 +33,8 @@ const POLL_MS = 1000;
 export class DevMenu {
   private panel: HTMLElement;
   private itemsEl: HTMLElement;
-  private scenesToggle: HTMLInputElement;
-  private charsToggle: HTMLInputElement;
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** Items/toggles armados (primer click hecho) → timestamp del click. */
+  /** Items armados (primer click hecho) → timestamp del click. */
   private armed = new Map<string, number>();
   /** Generaciones lanzadas desde el menú aún sin resolver. */
   private inFlight = new Set<string>();
@@ -54,14 +42,10 @@ export class DevMenu {
   constructor(private deps: DevMenuDeps) {
     this.panel = document.getElementById("dev-menu") as HTMLElement;
     this.itemsEl = document.getElementById("dev-menu-items") as HTMLElement;
-    this.scenesToggle = document.getElementById("dm-scenes") as HTMLInputElement;
-    this.charsToggle = document.getElementById("dm-chars") as HTMLInputElement;
     const openBtn = document.getElementById("ds-menu-btn") as HTMLButtonElement;
     const closeBtn = document.getElementById("dm-close") as HTMLButtonElement;
     openBtn.addEventListener("click", () => (this.isOpen ? this.close() : this.open()));
     closeBtn.addEventListener("click", () => this.close());
-    this.scenesToggle.addEventListener("change", () => void this.onToggle("scenes"));
-    this.charsToggle.addEventListener("change", () => void this.onToggle("characters"));
   }
 
   get isOpen(): boolean {
@@ -81,60 +65,14 @@ export class DevMenu {
     this.armed.clear();
   }
 
-  /** Re-sincroniza toggles y lista con el estado real. No-op cerrado. */
+  /** Re-sincroniza la lista con el estado real. No-op cerrado. */
   refresh(): void {
     if (!this.isOpen) return;
     const now = performance.now();
     for (const [key, at] of this.armed) {
       if (now - at > ARM_TTL_MS) this.armed.delete(key);
     }
-    this.renderToggles();
     this.renderItems();
-  }
-
-  private async onToggle(facet: "scenes" | "characters"): Promise<void> {
-    const el = facet === "scenes" ? this.scenesToggle : this.charsToggle;
-    const on = el.checked;
-    // Encender = empezar a gastar créditos → confirmación en dos clicks.
-    const armKey = `toggle:${facet}`;
-    if (on && !this.armed.has(armKey)) {
-      el.checked = false;
-      this.armed.set(armKey, performance.now());
-      this.labelFor(el).textContent = "¿Confirmar? Gastará créditos";
-      return;
-    }
-    this.armed.delete(armKey);
-    el.disabled = true;
-    try {
-      await this.deps.setToggle(facet, on);
-    } catch (err) {
-      errors.push("dev-menu", `no se pudo cambiar ${facet} a ${on ? "image" : "vector"}`, err);
-    } finally {
-      el.disabled = false;
-      this.refresh();
-    }
-  }
-
-  private labelFor(input: HTMLInputElement): HTMLElement {
-    return input.parentElement!.querySelector("span")!;
-  }
-
-  private renderToggles(): void {
-    const t = this.deps.getToggles();
-    this.scenesToggle.checked = t.scenes;
-    if (!this.armed.has("toggle:scenes")) {
-      this.labelFor(this.scenesToggle).textContent = "Escenarios IA";
-    }
-    const charsLabel = this.charsToggle.parentElement as HTMLElement;
-    this.charsToggle.checked = t.characters && t.charactersAvailable;
-    this.charsToggle.disabled = !t.charactersAvailable;
-    charsLabel.classList.toggle("dm-off", !t.charactersAvailable);
-    charsLabel.title = t.charactersAvailable
-      ? "Skins IA por descripción sobre la base y_bot (créditos por personaje)"
-      : "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts";
-    if (!this.armed.has("toggle:characters")) {
-      this.labelFor(this.charsToggle).textContent = "Personajes IA (skins)";
-    }
   }
 
   private renderItems(): void {
