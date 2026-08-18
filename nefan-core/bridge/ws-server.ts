@@ -21,7 +21,6 @@ import { AiClient } from "../src/narrative/ai-client.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "./sim-collision.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
-import { InitialSceneCache } from "../src/dev/initial-scene-cache.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
@@ -41,7 +40,10 @@ const dataDir = resolve(projectRoot, "data").replace("/dist/data", "/data");
 const PORT = Number(process.env.NEFAN_BRIDGE_PORT ?? CONFIG.ports.bridge);
 // State HTTP API for the narrative engine's tools (map / entities / inventory).
 const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? CONFIG.ports.state_api);
-const GAMES_DIR = resolve(dataDir, "games");
+// Override para benches (labs/narrative): con el motor FAKE, los snapshots de
+// mundo se escriben en data/games/{id}/world/ — un games dir temporal evita
+// contaminar los juegos reales con génesis de bench.
+const GAMES_DIR = process.env.NEFAN_GAMES_DIR ?? resolve(dataDir, "games");
 const STYLES_DIR = resolve(dataDir, "styles");
 
 // Saves live in a shared filesystem location accessible to every client
@@ -89,10 +91,9 @@ const ctx: BridgeContext = {
   mapTriggers: new MapTriggerEvaluator(narrative),
   npcDirector,
   simCollision,
-  initialSceneCache: new InitialSceneCache(resolve(dataDir, "initial_scene_cache")),
   gamesDir: GAMES_DIR,
   stylesDir: STYLES_DIR,
-  cacheInitialScene: CONFIG.dev.cache_initial_scene,
+  persistWorldSnapshots: true,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
   posTracking: { cellKey: null, placeId: null },

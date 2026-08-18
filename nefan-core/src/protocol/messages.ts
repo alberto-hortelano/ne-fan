@@ -125,6 +125,20 @@ export interface ListGamesMessage {
   requestId: string;
 }
 
+/** Pre-generación del mundo de un juego desde el título: el bridge crea una
+ *  sesión EFÍMERA, corre el bootstrap + anillo 3×3 + places clave con el
+ *  motor narrativo y persiste el snapshot en data/games/{id}/world/ (rama
+ *  tile u stage según la vista). Respuesta game_generated al ENCOLAR; el
+ *  progreso y el final viajan por narrative_status kind "game_gen". */
+export interface GenerateGameMessage {
+  type: "generate_game";
+  requestId: string;
+  gameId: string;
+  /** Vista cuya rama de contenido se genera (overworld|fps ⇒ tile,
+   *  proscenium ⇒ stage). Ausente = vista default del juego. */
+  view?: string;
+}
+
 export interface SaveSessionMessage {
   type: "save_session";
   requestId?: string;
@@ -241,6 +255,9 @@ export type ClientMessage =
   | DialogueChoiceMessage
   | CreateGameMessage
   | ListGamesMessage
+  | GenerateGameMessage
+  | GetWorldSnapshotMessage
+  | RecordStyleApplicationMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | PlayerCrossedFrontierMessage
@@ -321,7 +338,10 @@ export interface NarrativeStatusMessage {
    *  llamada, un paso dado): resetea el timeout de inactividad de ai_server
    *  y alimenta el texto del loader del cliente. */
   phase: "generating" | "progress" | "ready" | "error";
-  kind: "scene" | "consequences" | "tile";
+  /** "game_gen" = pre-generación de mundo desde el título (generate_game):
+   *  no toca velos de tile ni loaders de escena — alimenta la barra de
+   *  progreso de la tarjeta del juego. */
+  kind: "scene" | "consequences" | "tile" | "game_gen";
   message?: string;
   elapsedMs?: number;
   /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
@@ -345,6 +365,17 @@ export interface GamesListedMessage {
     /** Vista DEFAULT del mundo, ya resuelta ("overworld" si game.json no la
      *  declara). El selector del título la preselecciona. */
     view: string;
+    /** Estado del contenido pre-generado por rama (data/games/{id}/world/):
+     *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
+     *  cambió desde la generación, "missing" = nunca generado. La rama tile
+     *  sirve a overworld Y fps; stage al proscenio. */
+    generation: {
+      tile: "ready" | "stale" | "missing";
+      stage: "ready" | "stale" | "missing";
+    };
+    /** Estilos aplicados al juego (batch de assets estilizados por vista):
+     *  "ready" = vigente, "stale" = el mundo se regeneró/editó después. */
+    styles_applied: Array<{ view: string; style_id: string; status: "ready" | "stale" }>;
   }>;
   /** Estilos disponibles para el selector; cover_url es relativo y se
    *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
@@ -366,6 +397,59 @@ export interface GameCreatedMessage {
   ok: boolean;
   gameId?: string;
   title?: string;
+  error?: string;
+}
+
+/** Lee el snapshot de mundo pre-generado de un juego (rama de la vista) más
+ *  su vocabulario canónico — lo consume el batch de "aplicar estilo" del
+ *  título para computar celdas de atlas y roster de skins. */
+export interface GetWorldSnapshotMessage {
+  type: "get_world_snapshot";
+  requestId: string;
+  gameId: string;
+  /** Ausente = vista default del juego. */
+  view?: string;
+}
+
+export interface WorldSnapshotMessage {
+  type: "world_snapshot";
+  requestId: string;
+  ok: boolean;
+  /** "ready" = snapshot devuelto; "stale"/"missing" = snapshot null (generar
+   *  el mundo primero — el batch de estilo cuelga del contenido vigente). */
+  status?: "ready" | "stale" | "missing";
+  snapshot?: Record<string, unknown> | null;
+  vocabulary?: Record<string, unknown> | null;
+  error?: string;
+}
+
+/** Persiste el registro de una aplicación de estilo (el bridge es el único
+ *  escritor del directorio del juego). El batch del cliente lo envía al
+ *  terminar; el registro alimenta los chips del título y la regeneración. */
+export interface RecordStyleApplicationMessage {
+  type: "record_style_application";
+  requestId: string;
+  /** StyleApplicationRecord completo — validado con zod en el bridge. */
+  record: Record<string, unknown>;
+}
+
+export interface StyleApplicationRecordedMessage {
+  type: "style_application_recorded";
+  requestId: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** Respuesta a generate_game: llega al ENCOLAR el job (ok:false si el juego o
+ *  la vista no validan). La finalización real viaja por narrative_status
+ *  kind "game_gen" (phase ready|error). */
+export interface GameGeneratedMessage {
+  type: "game_generated";
+  requestId: string;
+  ok: boolean;
+  gameId?: string;
+  /** Resultado del encolado ("queued" | "duplicate" | "promoted"). */
+  queued?: string;
   error?: string;
 }
 
@@ -410,6 +494,9 @@ export type ServerMessage =
   | NarrativeStatusMessage
   | GamesListedMessage
   | GameCreatedMessage
+  | GameGeneratedMessage
+  | WorldSnapshotMessage
+  | StyleApplicationRecordedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
   | RenderModeChangedMessage

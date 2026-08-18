@@ -117,6 +117,7 @@ export class SpriteRenderer {
     anim: string,
     angle: string,
     skinPrompt: string,
+    styleRole?: string,
   ): Promise<SpriteSheet> {
     if (!skinPrompt) {
       const msg = "loadSkinnedAnimation called with empty skinPrompt";
@@ -141,6 +142,10 @@ export class SpriteRenderer {
             angle,
             prompt: skinPrompt,
             style_id: this.styleId,
+            // Rol de estilo del personaje (ref character_* del pack). Sin él
+            // el server cae a "commoner" — TODOS los skins usaban esa ref
+            // (bug latente hasta 2026-08-18).
+            ...(styleRole ? { style_role: styleRole } : {}),
           }),
         });
         if (!res.ok) {

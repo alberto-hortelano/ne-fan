@@ -8,7 +8,7 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
-import { stageCategoryForScene } from "@nefan-core/src/games/style-categories.js";
+import { stageCategoryForScene, styleRoleForNpc } from "@nefan-core/src/games/style-categories.js";
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
@@ -376,7 +376,7 @@ function applyRenderModes(renderMode: string, characterMode = ""): void {
 function reRequestAllSkins(): void {
   if (playerSkinPrompt) characterSprites.requestSkin(playerSkinPrompt);
   for (const e of [...npcEntities, ...enemyEntities]) {
-    if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt);
+    if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt, { role: e.styleRole });
   }
 }
 
@@ -1321,6 +1321,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       continue;
     }
     const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
+    const npcStyleRole = styleRoleForNpc(npc.role as string | undefined);
     const entity: Entity = {
       id: npcId,
       pos: {
@@ -1336,9 +1337,10 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       alive: true,
       category: "creature",
       skinPrompt: npcPrompt,
+      styleRole: npcStyleRole,
       tileKey: key,
     };
-    characterSprites.requestSkin(npcPrompt);
+    characterSprites.requestSkin(npcPrompt, { role: npcStyleRole });
     newNpcs.push(entity);
   }
   npcEntities.push(...newNpcs);
@@ -2443,6 +2445,9 @@ function materializeSpawn(effect: {
     // El caso central del skin IA: la descripción del motor narrativo es el
     // prompt con el que se repinta la base y_bot frame a frame.
     const npcPrompt = effect.description || (effect.name ?? effect.entityId);
+    const spawnStyleRole = styleRoleForNpc(
+      typeof effect.data.role === "string" ? effect.data.role : undefined,
+    );
     npcEntities.push({
       id: effect.entityId,
       pos,
@@ -2455,8 +2460,9 @@ function materializeSpawn(effect: {
       category: "creature",
       spriteHash,
       skinPrompt: npcPrompt,
+      styleRole: spawnStyleRole,
     });
-    characterSprites.requestSkin(npcPrompt);
+    characterSprites.requestSkin(npcPrompt, { role: spawnStyleRole });
     log(`✨ ${effect.name ?? "NPC"} aparece`);
     return;
   }

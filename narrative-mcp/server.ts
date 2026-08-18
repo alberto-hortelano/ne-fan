@@ -778,6 +778,31 @@ into context:
   );
 
   server.tool(
+    'vocabulary_set',
+    `Declare the world's canonical reusable vocabulary (only honored while ` +
+    `world_state carries generate_world_vocabulary: true — the game-genesis ` +
+    `request). Each entry is a stable id plus the CANONICAL description text: ` +
+    `kind "surface" = a material/facade/prop description (the exact text you ` +
+    `would later put in a volume's surface_desc), kind "character" = a ` +
+    `character archetype description (the exact text a skin prompt would ` +
+    `use), optionally with the world roles it serves. Styled image assets are ` +
+    `cached BY DESCRIPTION (+style): every future tile that reuses one of ` +
+    `these descs verbatim hits an already-painted asset instead of paying a ` +
+    `new image. Later tile/realize requests receive the vocabulary back as ` +
+    `world_state.world_vocabulary; reusing it is optional. Calling this again ` +
+    `REPLACES the whole vocabulary (max 64 entries).`,
+    {
+      entries: z.array(z.object({
+        id: z.string().describe('Stable slug, e.g. "fachada_encalada".'),
+        kind: z.enum(['surface', 'character']),
+        desc: z.string().describe('The canonical description text (8-300 chars), verbatim-reusable.'),
+        roles: z.array(z.string()).optional().describe('Only kind "character": world roles this archetype serves.'),
+      })).describe('The complete vocabulary (replaces any previous set).'),
+    },
+    async ({ entries }) => reportBridge(await bridgePost('/vocabulary', { entries })),
+  );
+
+  server.tool(
     'plugin_list',
     `List the declarative plugins active in the current session: id, name, ` +
     `version, description, events_consumed (types you can target with a ` +

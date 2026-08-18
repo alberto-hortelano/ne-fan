@@ -276,6 +276,17 @@ A third flag can appear in world_state:
   world map has NO destination in that direction. Extend the world on the
   fly (see FRONTIER below).
 
+Two world_state fields carry the world's canonical VOCABULARY (reusable
+descriptions; styled image assets are cached by description+style, so a
+verbatim reuse is a cache hit instead of a new image):
+- generate_world_vocabulary: true  → game-genesis request. The
+  vocabulary_set tool is honored on this turn: you may declare the world's
+  canonical surface/facade/prop descriptions and character archetypes (see
+  the tool's own doc for the entry shape).
+- world_vocabulary: [{id, kind, desc, roles?}]  → the declared vocabulary,
+  echoed back on tile/realize requests. Reusing an entry's desc verbatim
+  (in a volume's surface_desc, or as a character description) is optional.
+
 FRONTIER (on-the-fly world expansion)
 
 When world_state carries frontier_request, the player is standing at the

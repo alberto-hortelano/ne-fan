@@ -14,10 +14,15 @@ import type { ErrorResponse } from "../../src/contracts/common.js";
 import type {
   AssetByHashResponse,
   AssetListResponse,
+  AssetPinResponse,
   AssetRegisterResponse,
+  AssetUnpinResponse,
   CachePruneResponse,
 } from "../../src/contracts/asset-store.js";
-import { AssetRegisterRequestSchema } from "../../src/contracts/request-schemas.js";
+import {
+  AssetPinRequestSchema,
+  AssetRegisterRequestSchema,
+} from "../../src/contracts/request-schemas.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { ManifestDb } from "./manifest-db.js";
 import { readBlob, readSpriteSheetFrame, readStyleFile, type BlobResult } from "./blob-store.js";
@@ -51,7 +56,8 @@ export function createAssetStoreServer(opts: AssetStoreServerOptions): Server {
     res.setHeader("Access-Control-Allow-Origin", "*");
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        // DELETE: unpin del batch de estilos desde el navegador (/assets/pin/{ref}).
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       });
       res.end();
@@ -110,8 +116,33 @@ async function handle(
       } satisfies ErrorResponse);
       return;
     }
+    // Protegidos = referenciados por saves vivos ∪ pineados (aplicaciones de
+    // estilo a juegos: assets pre-generados sin save que los referencie aún).
+    for (const h of db.pinnedHashes()) keep.add(h);
     const summary = prune(db, opts.dirsByType, opts.cacheMaxBytes, keep);
     sendJson(res, 200, { ok: true, ...summary } satisfies CachePruneResponse);
+    return;
+  }
+
+  // ── POST /assets/pin · DELETE /assets/pin/{ref} ──
+  if (method === "POST" && path === "/assets/pin") {
+    const parsed = AssetPinRequestSchema.safeParse(await readJson(req));
+    if (!parsed.success) {
+      sendJson(res, 400, { ok: false, error: formatZodError(parsed.error) } satisfies ErrorResponse);
+      return;
+    }
+    db.pin(parsed.data.ref, parsed.data.hashes);
+    sendJson(res, 200, {
+      ok: true,
+      ref: parsed.data.ref,
+      pinned: parsed.data.hashes.length,
+    } satisfies AssetPinResponse);
+    return;
+  }
+  if (method === "DELETE" && parts[0] === "assets" && parts[1] === "pin" && parts.length === 3) {
+    const ref = decodeURIComponent(parts[2]);
+    const removed = db.unpin(ref);
+    sendJson(res, 200, { ok: true, ref, removed } satisfies AssetUnpinResponse);
     return;
   }
 

@@ -209,10 +209,17 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       if (!ent.name) {
         throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
       }
+      const role = (ent as { role?: unknown }).role;
+      const description = (ent as { description?: unknown }).description;
       npcs.push({
         id: ent.id,
         name: ent.name,
         position: [x, 0, z],
+        // Rol del mundo (guard/merchant/…): el cliente deriva de él el
+        // style_role del skin (styleRoleForNpc) — debe viajar o el skin en
+        // partida y el del batch de estilo divergen de clave.
+        ...(typeof role === "string" && role ? { role } : {}),
+        ...(typeof description === "string" && description ? { description } : {}),
       });
       continue;
     }

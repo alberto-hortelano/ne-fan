@@ -136,6 +136,28 @@ const ListGamesMessageSchema = z.object({
   requestId: z.string(),
 });
 
+const GenerateGameMessageSchema = z.object({
+  type: z.literal("generate_game"),
+  requestId: z.string(),
+  gameId: z.string(),
+  view: z.string().optional(),
+});
+
+const GetWorldSnapshotMessageSchema = z.object({
+  type: z.literal("get_world_snapshot"),
+  requestId: z.string(),
+  gameId: z.string(),
+  view: z.string().optional(),
+});
+
+const RecordStyleApplicationMessageSchema = z.object({
+  type: z.literal("record_style_application"),
+  requestId: z.string(),
+  // Validación profunda aguas abajo (StyleApplicationRecordSchema en el
+  // handler) — el borde garantiza el sobre.
+  record: z.record(z.string(), z.unknown()),
+});
+
 const SaveSessionMessageSchema = z.object({
   type: z.literal("save_session"),
   requestId: z.string().optional(),
@@ -213,6 +235,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   DialogueChoiceMessageSchema,
   CreateGameMessageSchema,
   ListGamesMessageSchema,
+  GenerateGameMessageSchema,
+  GetWorldSnapshotMessageSchema,
+  RecordStyleApplicationMessageSchema,
   SaveSessionMessageSchema,
   PlayerEnteredPlaceMessageSchema,
   PlayerCrossedFrontierMessageSchema,

@@ -27,6 +27,7 @@ import type {
   SceneValidationResult,
   FormatDScene,
 } from "./common.js";
+import type { VocabularyEntry } from "../games/vocabulary.js";
 import { endpoint } from "./http.js";
 
 // ── Sobres request/response (hoy implícitos en state-http-server.ts) ──
@@ -125,6 +126,20 @@ export interface WorldDocResponse {
   world_name: string;
   /** world.md completo del juego (10 secciones). */
   world_doc: string;
+}
+
+/** POST /vocabulary (tool MCP vocabulary_set, solo génesis generate_game):
+ *  el motor declara el vocabulario canónico reutilizable del mundo. El
+ *  bridge lo persiste en data/games/{id}/world/vocabulary.json con el
+ *  world_doc_hash de la sesión. */
+export interface VocabularySetRequest {
+  entries: VocabularyEntry[];
+}
+
+export interface VocabularySetResponse {
+  ok: true;
+  game_id: string;
+  count: number;
 }
 
 /** GET /story (tool MCP story_get): la crónica COMPLETA de la sesión — el
@@ -233,6 +248,9 @@ export const WorldStateApi = {
     "POST",
     "/entity/{id}/inventory/remove",
   ),
+
+  // Vocabulario canónico (génesis generate_game)
+  setVocabulary: endpoint<VocabularySetRequest, VocabularySetResponse>("POST", "/vocabulary"),
 
   // Documentos para el motor narrativo
   getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc"),

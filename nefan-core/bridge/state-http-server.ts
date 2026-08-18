@@ -34,7 +34,12 @@ import {
   PluginRegisterRequestSchema,
   SceneAssetRefsRequestSchema,
   SceneValidateRequestSchema,
+  VocabularySetRequestSchema,
 } from "../src/contracts/request-schemas.js";
+import {
+  WORLD_VOCABULARY_SCHEMA_VERSION,
+  writeWorldVocabulary,
+} from "../src/games/vocabulary.js";
 import { formatZodError } from "../src/contract/model-io/validate.js";
 import type { z, ZodTypeAny } from "zod";
 import { WorldStateApi } from "../src/contracts/world-state.js";
@@ -54,6 +59,7 @@ import type {
   ScheduledEventResolveResponse,
   StoryResponse,
   UiDocResponse,
+  VocabularySetResponse,
   WorldDocResponse,
   WorldStateHealthResponse,
   NpcsInTransitResponse,
@@ -449,6 +455,31 @@ async function handle(
       entity_id: parts[1],
       inventory: narrative.getInventory(parts[1]),
     } satisfies InventoryMutationResponse);
+  }
+
+  // ── Vocabulario canónico (tool MCP vocabulary_set, génesis generate_game) ──
+  if (method === "POST" && path === "/vocabulary") {
+    if (!narrative.session_id || !narrative.game_id) {
+      return notFound("no active session — vocabulary belongs to a game session");
+    }
+    const parsed = parseBody(VocabularySetRequestSchema, await readJson(req));
+    if (!parsed.ok) return parsed.result;
+    try {
+      writeWorldVocabulary(gamesDir, {
+        schema_version: WORLD_VOCABULARY_SCHEMA_VERSION,
+        game_id: narrative.game_id,
+        world_doc_hash: narrative.world.world_doc_hash,
+        generated_at: new Date().toISOString(),
+        entries: parsed.data.entries,
+      });
+      return mutated({
+        ok: true,
+        game_id: narrative.game_id,
+        count: parsed.data.entries.length,
+      } satisfies VocabularySetResponse);
+    } catch (err) {
+      return bad((err as Error).message);
+    }
   }
 
   // ── Documento del mundo (bajo demanda para el motor narrativo) ──

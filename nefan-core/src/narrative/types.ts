@@ -287,6 +287,21 @@ export interface LlmContext {
    *  should bootstrap the world map (3-5 places + their sites + links) via the
    *  map tools before generating the starting scene. */
   bootstrap_world_map?: boolean;
+  /** Solo en el bootstrap del job generate_game: habilita la tool
+   *  vocabulary_set — el motor puede declarar el vocabulario canónico del
+   *  mundo (descripciones de superficies/fachadas y arquetipos de personaje)
+   *  que los tiles futuros reutilizan verbatim (cache-hit por descripción). */
+  generate_world_vocabulary?: boolean;
+  /** Vocabulario canónico del mundo (data/games/{id}/world/vocabulary.json),
+   *  adjuntado en turnos de tile/realize. Reusar una desc verbatim en
+   *  surface_desc o como prompt de skin es un cache-hit del asset estilizado
+   *  ya pintado; el reuso es opcional (mismo contrato que available_assets). */
+  world_vocabulary?: Array<{
+    id: string;
+    kind: "surface" | "character";
+    desc: string;
+    roles?: string[];
+  }>;
   /** Present only on lazy-realize scene requests: the world-map place the
    *  player just entered, so the narrative engine builds a scene that fits it. */
   realize_place?: {

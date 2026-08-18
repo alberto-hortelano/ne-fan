@@ -152,6 +152,17 @@ export interface StyleUploadResponse {
   estimated_cost_usd: number;
 }
 
+/** GET /styles/{style_id}/missing — dry-run del completado de un pack (vale
+ *  para cualquier pack, shipped incluidos): categorías sin imagen + coste
+ *  estimado. NO gasta. Es la mitad "estimación" del flujo upload→complete,
+ *  usada por el diálogo de coste de "aplicar estilo a un juego". */
+export interface StylesMissingResponse {
+  style_id: string;
+  missing: string[];
+  cost_per_image_usd: number;
+  estimated_cost_usd: number;
+}
+
 export interface StyleCompleteRequest {
   /** Confirmación explícita: gasta créditos Meshy. 422 si no es true. */
   confirm: boolean;
@@ -276,6 +287,10 @@ export const RemoteGenApi = {
     "/skin_sprite_sheet",
   ),
   uploadStyle: endpoint<StyleUploadRequest, StyleUploadResponse>("POST", "/styles/upload"),
+  stylesMissing: endpoint<void, StylesMissingResponse, "style_id">(
+    "GET",
+    "/styles/{style_id}/missing",
+  ),
   completeStyle: endpoint<StyleCompleteRequest, StyleCompleteResponse, "style_id">(
     "POST",
     "/styles/{style_id}/complete",

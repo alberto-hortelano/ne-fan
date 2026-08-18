@@ -539,6 +539,7 @@ const server = http.createServer((req, res) => {
   // lo ignora. ACAO en TODAS las respuestas + preflight OPTIONS.
   const cors = {
     "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
   const send = (status, body) => {
@@ -550,6 +551,19 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   if (req.method === "GET" && req.url === "/health") return send(200, { status: "ready" });
+  // Unpin fake (batch "aplicar estilo" — el re-pin va por POST /assets/pin).
+  if (req.method === "DELETE" && (req.url ?? "").startsWith("/assets/pin/")) {
+    return send(200, { ok: true, ref: decodeURIComponent((req.url ?? "").slice("/assets/pin/".length)), removed: 0 });
+  }
+  // Dry-run del pack de estilo (batch "aplicar estilo" sin créditos).
+  if (req.method === "GET" && /^\/styles\/[A-Za-z0-9_.-]+\/missing$/.test(req.url ?? "")) {
+    return send(200, {
+      style_id: (req.url ?? "").split("/")[2],
+      missing: [],
+      cost_per_image_usd: 0.18,
+      estimated_cost_usd: 0,
+    });
+  }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
   // el fake no llama APIs de pago, pero el checkbox del cliente debe operar.
   if (req.method === "GET" && req.url === "/dev/api_cache") {
@@ -624,6 +638,26 @@ const server = http.createServer((req, res) => {
     void (async () => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
       if (req.method === "POST" && req.url === "/notify_session") return send(200, { ok: true });
+      // Mundo de usuario fake (E2E de crear mundo + encadenado generate_game).
+      if (req.method === "POST" && req.url === "/develop_world") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);
+        return send(200, {
+          game: {
+            game_id: "mundo_bench",
+            title: "Mundo del Bench",
+            description: "Mundo de prueba desarrollado por el fake.",
+            style_id: "acuarela_luminosa",
+            world_brief: "b".repeat(150),
+            world_md: "# Mundo del Bench\n\n" + "lore del bench. ".repeat(200),
+          },
+        });
+      }
       if (req.method === "POST" && req.url === "/report_player_choice") return send(200, { consequences: [] });
       if (req.method === "POST" && req.url === "/dev/api_cache") {
         try {
@@ -691,28 +725,57 @@ const server = http.createServer((req, res) => {
         }
         const cells = Array.isArray(body.cells) ? body.cells : [];
         if (cells.length === 0) return send(422, { detail: "fake-ai: cells requerido" });
+        // resolve_only ($0, camino del resume y del plan de "aplicar estilo"):
+        // solo lo ya pintado, con el recuento de missing — como el server real.
+        const resolveOnly = body.resolve_only === true;
         const out = {};
         let painted = 0;
+        let missing = 0;
         for (const cell of cells) {
           const hash = createHash("sha256")
             .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}`)
             .digest("hex")
             .slice(0, 16);
           const cached = surfaceImages.has(hash);
+          if (!cached && resolveOnly) {
+            missing += 1;
+            continue;
+          }
           if (!cached) {
             surfaceImages.set(hash, checkerPng(cell.base_color ?? "#808080"));
             painted += 1;
           }
           out[cell.key] = { hash, url: `/cache/surface/${hash}`, cached };
         }
-        console.error(`[fake-ai] surface_atlas: ${painted} nuevas de ${cells.length} celdas`);
+        console.error(
+          `[fake-ai] surface_atlas: ${painted} nuevas de ${cells.length} celdas` +
+          (resolveOnly ? ` (resolve_only, ${missing} missing)` : ""),
+        );
         return send(200, {
           cells: out,
           pages_painted: painted > 0 ? 1 : 0,
           cached: painted === 0,
           cost_usd: 0,
           generation_time_ms: 5,
+          missing,
         });
+      }
+      // Pins del asset-store (batch "aplicar estilo"): en memoria, para que
+      // el run del bench termine sin el store real.
+      if (req.method === "POST" && req.url === "/assets/pin") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { ok: false, error: "fake-ai: body no es JSON" });
+        }
+        const hashes = Array.isArray(body.hashes) ? body.hashes : [];
+        console.error(`[fake-ai] assets/pin ${body.ref}: ${hashes.length} hashes`);
+        return send(200, { ok: true, ref: String(body.ref ?? ""), pinned: hashes.length });
+      }
+      // Completado fake del pack (batch "aplicar estilo" sin créditos).
+      if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(req.url ?? "")) {
+        return send(200, { generated: [], cost_usd: 0, message: "fake: pack ya completo" });
       }
       // Retoque falso del blueprint: si el ground declara agua sin ningún
       // deck (el bug plantado en BOOTSTRAP_GROUND), el fix devuelve el array

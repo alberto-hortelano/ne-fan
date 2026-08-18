@@ -61,6 +61,26 @@ export class NarrativeClient {
     return { gameId: res.gameId, title: res.title ?? res.gameId };
   }
 
+  /** Encola la pre-generación del mundo de un juego para una vista. Resuelve
+   *  al encolar; el progreso llega por onNarrativeStatus (kind "game_gen"). */
+  async generateGame(gameId: string, view?: string): Promise<{ queued: string }> {
+    const res = await this.bridge.generateGame(gameId, view);
+    if (!res.ok) {
+      throw new Error(res.error ?? "generate_game failed");
+    }
+    return { queued: res.queued ?? "queued" };
+  }
+
+  /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo). */
+  getWorldSnapshot(gameId: string, view?: string) {
+    return this.bridge.getWorldSnapshot(gameId, view);
+  }
+
+  /** Persiste el registro de una aplicación de estilo (escritor: el bridge). */
+  recordStyleApplication(record: Record<string, unknown>) {
+    return this.bridge.recordStyleApplication(record);
+  }
+
   async listSessions(): Promise<SessionMetadata[]> {
     const res = await this.bridge.listSessions();
     return res.sessions;
