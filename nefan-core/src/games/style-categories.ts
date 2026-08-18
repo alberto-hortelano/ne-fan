@@ -25,6 +25,12 @@
 export const WORLD_VIEWS = ["overworld", "proscenium", "fps"] as const;
 export type WorldView = (typeof WORLD_VIEWS)[number];
 
+/** Ids usables como nombre de archivo/clave de caché sin sorpresas (juegos,
+ *  estilos, snapshots). Vive aquí (módulo puro) para que los schemas
+ *  importables desde el navegador no arrastren node:fs; loader.ts la
+ *  re-exporta. */
+export const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
+
 export const STYLE_ENV_CATEGORIES = [
   "settlement",
   "farmland",
@@ -150,6 +156,23 @@ export function styleCategoryForTile(
 /** Zona cenital → categoría de plató más cercana. Red de seguridad para
  *  escenas proscenio cuyo `style_tag` sigue en vocabulario de zona (motor
  *  legacy, fixtures viejas). Espejo Python: ai_server/style_packs.py. */
+/** Rol de estilo de personaje para un rol de mundo de NPC (peasant/guard/…):
+ *  decide qué referencia character_* del pack guía el skin. FUENTE ÚNICA —
+ *  el cliente en partida y el batch de "aplicar estilo" deben derivar el
+ *  MISMO rol o la clave de caché del skin diverge (doble pago). */
+export function styleRoleForNpc(role?: string): "commoner" | "noble" | "warrior" {
+  switch ((role ?? "").toLowerCase()) {
+    case "guard":
+    case "soldier":
+    case "warrior":
+      return "warrior";
+    case "noble":
+      return "noble";
+    default:
+      return "commoner";
+  }
+}
+
 export const ZONE_TO_STAGE: Record<string, StyleStageCategory> = {
   interior: "stage_interior",
   underground: "stage_interior",

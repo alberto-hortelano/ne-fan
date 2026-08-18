@@ -71,6 +71,16 @@ export class NarrativeClient {
     return { queued: res.queued ?? "queued" };
   }
 
+  /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo). */
+  getWorldSnapshot(gameId: string, view?: string) {
+    return this.bridge.getWorldSnapshot(gameId, view);
+  }
+
+  /** Persiste el registro de una aplicación de estilo (escritor: el bridge). */
+  recordStyleApplication(record: Record<string, unknown>) {
+    return this.bridge.recordStyleApplication(record);
+  }
+
   async listSessions(): Promise<SessionMetadata[]> {
     const res = await this.bridge.listSessions();
     return res.sessions;

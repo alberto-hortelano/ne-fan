@@ -140,6 +140,34 @@ async def styles_upload(body: StyleUploadRequest):
     }
 
 
+@router.get("/styles/{style_id}/missing")
+async def styles_missing(style_id: str):
+    """Dry-run del completado de un pack: categorías declaradas sin imagen y
+    coste estimado de generarlas. NO gasta nada — es la mitad "estimación" del
+    flujo upload→complete, reutilizable para cualquier pack (también los
+    shipped). Sirve al diálogo de coste de "aplicar estilo a un juego"."""
+    import re as _re
+
+    from style_pack_builder import missing_categories
+    from style_packs import _styles_dir_from_config
+
+    if not _re.fullmatch(r"[A-Za-z0-9_.-]+", style_id):
+        raise HTTPException(status_code=422, detail="invalid style_id")
+    styles_dir = _styles_dir_from_config()
+    if not (styles_dir / style_id / "style.json").exists():
+        raise HTTPException(status_code=404, detail=f"style not found: {style_id}")
+
+    from meshy_client import MeshyImageToImage
+    missing = missing_categories(styles_dir, style_id)
+    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if deps.config else 0.18
+    return {
+        "style_id": style_id,
+        "missing": missing,
+        "cost_per_image_usd": per_image,
+        "estimated_cost_usd": round(len(missing) * per_image, 2),
+    }
+
+
 @router.post("/styles/{style_id}/complete")
 async def styles_complete(style_id: str, body: StyleCompleteRequest):
     """Genera las categorías que faltan de un pack de usuario usando sus

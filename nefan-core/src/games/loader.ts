@@ -20,13 +20,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
-/** Ids usables como nombre de archivo/clave de cache sin sorpresas (misma
- *  regla en world-snapshot.ts y en los blobs del asset-store). */
-export const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
 
 /** Categorías de referencia de un style pack: viven en style-categories.ts
  *  (módulo puro, importable desde el navegador); aquí se re-exportan. */
 import {
+  SAFE_ID,
   STYLE_CATEGORIES,
   STYLE_CHARACTER_CATEGORIES,
   STYLE_ENV_CATEGORIES,
@@ -39,6 +37,7 @@ import {
 } from "./style-categories.js";
 
 export {
+  SAFE_ID,
   STYLE_CATEGORIES,
   STYLE_CHARACTER_CATEGORIES,
   STYLE_ENV_CATEGORIES,

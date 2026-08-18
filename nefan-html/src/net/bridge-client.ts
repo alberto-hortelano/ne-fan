@@ -12,6 +12,8 @@ import type {
   GamesListedMessage,
   GameCreatedMessage,
   GameGeneratedMessage,
+  WorldSnapshotMessage,
+  StyleApplicationRecordedMessage,
   SessionDeletedMessage,
   RenderModeSetMessage,
   RenderModeChangedMessage,
@@ -289,6 +291,24 @@ export class BridgeClient {
    *  "game_gen". */
   generateGame(gameId: string, view?: string): Promise<GameGeneratedMessage> {
     return this.request<GameGeneratedMessage>({ type: "generate_game", gameId, view });
+  }
+
+  /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo).
+   *  Timeout largo: el snapshot con anillo+places puede pesar varios MB. */
+  getWorldSnapshot(gameId: string, view?: string): Promise<WorldSnapshotMessage> {
+    return this.request<WorldSnapshotMessage>(
+      { type: "get_world_snapshot", gameId, view },
+      120_000,
+    );
+  }
+
+  recordStyleApplication(
+    record: Record<string, unknown>,
+  ): Promise<StyleApplicationRecordedMessage> {
+    return this.request<StyleApplicationRecordedMessage>({
+      type: "record_style_application",
+      record,
+    });
   }
 
   startSession(

@@ -23,6 +23,7 @@ import {
   loadWorldSnapshot,
   type WorldSnapshot,
 } from "../../src/games/world-snapshot.js";
+import { listStyleApplications } from "../../src/games/style-application.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
 import {
   loadGamePluginManifests,
@@ -61,10 +62,23 @@ export function handleListGames(
   ctx.send(ws, {
     type: "games_listed",
     requestId: msg.requestId,
-    games: listGames(ctx.gamesDir).map((g) => ({
-      ...g,
-      generation: gameGenerationStatus(ctx.gamesDir, g.game_id),
-    })),
+    games: listGames(ctx.gamesDir).map((g) => {
+      let worldDocHash = "";
+      try {
+        worldDocHash = createHash("sha256")
+          .update(loadWorldDoc(ctx.gamesDir, g.game_id), "utf-8")
+          .digest("hex");
+      } catch (err) {
+        console.warn(`handleListGames: world.md ilegible para "${g.game_id}":`, err);
+      }
+      return {
+        ...g,
+        generation: gameGenerationStatus(ctx.gamesDir, g.game_id),
+        styles_applied: worldDocHash
+          ? listStyleApplications(ctx.gamesDir, g.game_id, worldDocHash)
+          : [],
+      };
+    }),
     styles: listStyles(ctx.stylesDir),
   });
 }

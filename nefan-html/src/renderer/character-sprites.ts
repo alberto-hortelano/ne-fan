@@ -78,6 +78,9 @@ export interface AnimInputs {
 
 interface SkinState {
   prompt: string;
+  /** Rol de estilo (commoner|noble|warrior) — elige la ref character_* del
+   *  pack en el servidor. Ausente = commoner (default del server). */
+  role?: string;
   /** Un fallo (Meshy caído, sin API key) marca el skin entero: no se
    *  reintenta ni se encolan más anims — la entidad vive en la base y_bot. */
   failed: boolean;
@@ -170,9 +173,12 @@ export class CharacterSpriteManager {
    *  (`allowed`) y el cortacircuitos, y rearma un skin marcado failed para
    *  reintentarlo. NUNCA salta CONFIG.graphics.ai_skin — con el flag apagado
    *  no existe backend de skins que llamar (fail-loud en el caller). */
-  requestSkin(prompt: string, opts: { force?: boolean } = {}): void {
+  requestSkin(prompt: string, opts: { force?: boolean; role?: string } = {}): void {
     if (!CONFIG.graphics.ai_skin || !prompt) return;
     if (!opts.force && (!this.allowed || this.skinsDisabled)) return;
+    // La identidad cliente del skin sigue siendo el prompt (skinKey): dos
+    // NPCs con el mismo prompt y rol distinto compartirían la primera hoja
+    // pedida — caso raro; el servidor sí cachea ambas variantes por rol.
     const skinnedModel = this.sprites.skinKey(BASE_MODEL, prompt);
     const existing = this.skins.get(skinnedModel);
     if (existing) {
@@ -186,7 +192,7 @@ export class CharacterSpriteManager {
       return;
     }
     if (opts.force) this.skinsDisabled = false;
-    const state: SkinState = { prompt, failed: false, queued: new Set() };
+    const state: SkinState = { prompt, role: opts.role, failed: false, queued: new Set() };
     this.skins.set(skinnedModel, state);
     for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
   }
@@ -197,7 +203,7 @@ export class CharacterSpriteManager {
       if (state.failed || this.skinsDisabled) return;
       try {
         const sheet = await this.sprites.loadSkinnedAnimation(
-          BASE_MODEL, anim, this.angle, state.prompt,
+          BASE_MODEL, anim, this.angle, state.prompt, state.role,
         );
         // Espera a que los PNG decodifiquen antes de marcar la anim lista:
         // la sustitución debe ser atómica, sin frames SPRITE_PENDING.

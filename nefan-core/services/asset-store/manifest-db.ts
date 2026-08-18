@@ -74,7 +74,40 @@ export class ManifestDb {
       );
       CREATE INDEX IF NOT EXISTS idx_assets_type_hash ON assets(type, hash);
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS pins (
+        ref  TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        PRIMARY KEY (ref, hash)
+      );
     `);
+  }
+
+  /** Pin de hashes bajo una referencia lógica (p. ej. la aplicación de un
+   *  estilo a un juego: "game_style:{game}:{view}:{style}"): los hashes
+   *  pineados quedan protegidos del prune aunque ningún save los referencie.
+   *  Re-pinear el mismo ref AÑADE (idempotente por PK). */
+  pin(ref: string, hashes: string[]): void {
+    const stmt = this.db.prepare(`INSERT OR IGNORE INTO pins (ref, hash) VALUES (?, ?)`);
+    this.transaction(() => {
+      for (const h of hashes) stmt.run(ref, h);
+    });
+  }
+
+  /** Retira TODOS los pins de un ref. Devuelve cuántos había. */
+  unpin(ref: string): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM pins WHERE ref = ?`).get(ref) as {
+      n: number;
+    };
+    this.db.prepare(`DELETE FROM pins WHERE ref = ?`).run(ref);
+    return row.n;
+  }
+
+  /** Unión de hashes pineados por cualquier ref (protección del prune). */
+  pinnedHashes(): Set<string> {
+    const rows = this.db.prepare(`SELECT DISTINCT hash FROM pins`).all() as unknown as Array<{
+      hash: string;
+    }>;
+    return new Set(rows.map((r) => r.hash));
   }
 
   /** Registro normal (POST /assets): created_at lo estampa el store, igual

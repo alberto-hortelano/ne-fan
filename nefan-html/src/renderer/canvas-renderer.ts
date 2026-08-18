@@ -185,6 +185,9 @@ export interface Entity {
   attackType?: string;
   /** Descripción narrativa usada como prompt del skin IA del sprite. */
   skinPrompt?: string;
+  /** Rol de estilo del skin ("commoner"|"noble"|"warrior", styleRoleForNpc):
+   *  decide qué ref character_* del pack guía el hero-shot. */
+  styleRole?: string;
   /** Anim pedida por la vida ambiental (state_update.npcs[].anim). */
   requestedAnim?: string;
   /** true mientras el NPC huye (state_update.npcs[].run) → anim run. */

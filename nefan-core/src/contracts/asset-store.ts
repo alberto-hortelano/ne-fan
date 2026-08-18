@@ -80,6 +80,27 @@ export interface AssetByHashResponse {
 
 /** PLANNED F2 — registro remoto de un asset ya subido/escrito por un
  *  generador (sustituye la escritura in-process del manifest). */
+/** POST /assets/pin — protege hashes del prune bajo una referencia lógica
+ *  (aplicación de estilo a juego: "game_style:{game}:{view}:{style}").
+ *  Re-pinear el mismo ref AÑADE hashes; DELETE /assets/pin/{ref} los retira
+ *  todos (regenerar estilo = unpin del ref viejo + pin del nuevo). */
+export interface AssetPinRequest {
+  ref: string;
+  hashes: string[];
+}
+
+export interface AssetPinResponse {
+  ok: true;
+  ref: string;
+  pinned: number;
+}
+
+export interface AssetUnpinResponse {
+  ok: true;
+  ref: string;
+  removed: number;
+}
+
 export interface AssetRegisterRequest {
   hash: string;
   type: string;
@@ -114,6 +135,8 @@ export const AssetStoreApi = {
     "/assets",
   ),
   getAssetByHash: endpoint<void, AssetByHashResponse, "hash">("GET", "/assets/by_hash/{hash}"),
+  pinAssets: endpoint<AssetPinRequest, AssetPinResponse>("POST", "/assets/pin"),
+  unpinAssets: endpoint<void, AssetUnpinResponse, "ref">("DELETE", "/assets/pin/{ref}"),
   /** PLANNED F2. */
   registerAsset: endpoint<AssetRegisterRequest, AssetRegisterResponse>("POST", "/assets"),
   /** Movido desde world-state :9878 en F2 (mismo contrato binario). */

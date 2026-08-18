@@ -256,6 +256,8 @@ export type ClientMessage =
   | CreateGameMessage
   | ListGamesMessage
   | GenerateGameMessage
+  | GetWorldSnapshotMessage
+  | RecordStyleApplicationMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | PlayerCrossedFrontierMessage
@@ -371,6 +373,9 @@ export interface GamesListedMessage {
       tile: "ready" | "stale" | "missing";
       stage: "ready" | "stale" | "missing";
     };
+    /** Estilos aplicados al juego (batch de assets estilizados por vista):
+     *  "ready" = vigente, "stale" = el mundo se regeneró/editó después. */
+    styles_applied: Array<{ view: string; style_id: string; status: "ready" | "stale" }>;
   }>;
   /** Estilos disponibles para el selector; cover_url es relativo y se
    *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
@@ -392,6 +397,46 @@ export interface GameCreatedMessage {
   ok: boolean;
   gameId?: string;
   title?: string;
+  error?: string;
+}
+
+/** Lee el snapshot de mundo pre-generado de un juego (rama de la vista) más
+ *  su vocabulario canónico — lo consume el batch de "aplicar estilo" del
+ *  título para computar celdas de atlas y roster de skins. */
+export interface GetWorldSnapshotMessage {
+  type: "get_world_snapshot";
+  requestId: string;
+  gameId: string;
+  /** Ausente = vista default del juego. */
+  view?: string;
+}
+
+export interface WorldSnapshotMessage {
+  type: "world_snapshot";
+  requestId: string;
+  ok: boolean;
+  /** "ready" = snapshot devuelto; "stale"/"missing" = snapshot null (generar
+   *  el mundo primero — el batch de estilo cuelga del contenido vigente). */
+  status?: "ready" | "stale" | "missing";
+  snapshot?: Record<string, unknown> | null;
+  vocabulary?: Record<string, unknown> | null;
+  error?: string;
+}
+
+/** Persiste el registro de una aplicación de estilo (el bridge es el único
+ *  escritor del directorio del juego). El batch del cliente lo envía al
+ *  terminar; el registro alimenta los chips del título y la regeneración. */
+export interface RecordStyleApplicationMessage {
+  type: "record_style_application";
+  requestId: string;
+  /** StyleApplicationRecord completo — validado con zod en el bridge. */
+  record: Record<string, unknown>;
+}
+
+export interface StyleApplicationRecordedMessage {
+  type: "style_application_recorded";
+  requestId: string;
+  ok: boolean;
   error?: string;
 }
 
@@ -450,6 +495,8 @@ export type ServerMessage =
   | GamesListedMessage
   | GameCreatedMessage
   | GameGeneratedMessage
+  | WorldSnapshotMessage
+  | StyleApplicationRecordedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
   | RenderModeChangedMessage
