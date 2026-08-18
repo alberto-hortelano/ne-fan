@@ -74,6 +74,75 @@ export async function handlePlayerEnteredPlace(
   }
 }
 
+/** Núcleo del realize de un place, compartido por la sesión en vivo y por
+ *  generate_game: LLM con el contexto del place, validación (stage plan en
+ *  mundos proscenio), expansión y registro. `activate:false` deja la escena
+ *  servible sin robar la activa (pre-generación). "exists" si ya estaba
+ *  realizado; LANZA en cualquier fallo. */
+export async function realizePlaceScene(
+  ctx: BridgeContext,
+  placeId: string,
+  opts: { entryEdge?: Edge | null; activate?: boolean } = {},
+): Promise<{ sceneId: string; scene: Record<string, unknown> } | "exists"> {
+  const place = ctx.narrative.worldMap.get(placeId);
+  if (!place) throw new Error(`Lugar desconocido en el mapa: ${placeId}`);
+  // Pudo realizarse mientras esperaba en la cola.
+  if (place.realized_scene_id && ctx.narrative.scenes_loaded[place.realized_scene_id]) {
+    return "exists";
+  }
+
+  const jobSession = ctx.narrative.session_id;
+  const realizeCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
+  realizeCtx.realize_place = {
+    id: place.id,
+    kind: place.kind,
+    name: place.name,
+    description: place.description,
+    attrs: place.attrs,
+    sites: ctx.narrative.worldMap.getChildren(placeId).map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      name: s.name,
+      description: s.description,
+    })),
+    links: ctx.narrative.worldMap.getOutgoingLinks(placeId),
+  };
+  // Mundos proscenio: la escena del place es un PLATÓ (stage plan).
+  const isStageWorld = ctx.narrative.world.view === "proscenium";
+  if (isStageWorld) {
+    realizeCtx.stage_request = opts.entryEdge ? { entry_edge: opts.entryEdge } : {};
+  }
+
+  const res = await ctx.aiClient.generateScene(realizeCtx);
+  // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+  const changed = sessionChangedError(ctx, jobSession);
+  if (changed) throw new Error(changed);
+  if (!res.ok || !res.scene) {
+    throw new Error(`No se pudo generar ${place.name}. ${res.error ?? "Revisa el motor narrativo."}`);
+  }
+  const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
+  // Tag the scene with the place so recordSceneLoaded attaches it (y para
+  // que la validación proscenio cruce exits⇔links del place correcto).
+  res.scene.place_id = placeId;
+  if (isStageWorld) {
+    if (res.scene.stage === undefined) {
+      throw new Error(
+        `El motor narrativo respondió ${place.name} sin bloque \`stage\` en un mundo proscenio — el plató necesita sus salidas declaradas`,
+      );
+    }
+    const check = validateScene(res.scene, stagePlaceContext(ctx));
+    if (!check.ok) {
+      throw new Error(`${place.name} no es jugable: ${check.errors.join(" · ")}`);
+    }
+  }
+  // Expandir primitivas (structures/vegetation) ANTES de persistir: lo
+  // guardado y difundido es Format D plano.
+  res.scene = expandScenePrimitives(res.scene);
+  ctx.narrative.recordSceneLoaded(sceneId, res.scene, [], { activate: opts.activate ?? true });
+  await ctx.narrative.save();
+  return { sceneId, scene: res.scene };
+}
+
 /** Generación de la escena de un place — corre dentro de la cola. */
 async function runPlaceRealize(
   ctx: BridgeContext,
@@ -92,36 +161,13 @@ async function runPlaceRealize(
       elapsedMs: Date.now() - realizeStart,
     });
   try {
-    // Pudo realizarse mientras esperaba en la cola.
     if (place.realized_scene_id && ctx.narrative.scenes_loaded[place.realized_scene_id]) return;
-
-    const jobSession = ctx.narrative.session_id;
-    const realizeCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
-    realizeCtx.realize_place = {
-      id: place.id,
-      kind: place.kind,
-      name: place.name,
-      description: place.description,
-      attrs: place.attrs,
-      sites: ctx.narrative.worldMap.getChildren(placeId).map((s) => ({
-        id: s.id,
-        kind: s.kind,
-        name: s.name,
-        description: s.description,
-      })),
-      links: ctx.narrative.worldMap.getOutgoingLinks(placeId),
-    };
-    // Mundos proscenio: la escena del place es un PLATÓ (stage plan). El
-    // edge de entrada es el opuesto al edge del link que trae al jugador
+    // El edge de entrada es el opuesto al edge del link que trae al jugador
     // desde el place anterior (si el world map lo sabe).
-    const isStageWorld = ctx.narrative.world.view === "proscenium";
-    if (isStageWorld) {
-      const linkBack = ctx.narrative.worldMap
-        .getOutgoingLinks(placeId)
-        .find((l) => (l.from === placeId ? l.to : l.from) === prevPlaceId);
-      const entryEdge = linkBack ? resolveExitEdge(ctx.narrative.worldMap, placeId, linkBack) : null;
-      realizeCtx.stage_request = entryEdge ? { entry_edge: entryEdge } : {};
-    }
+    const linkBack = ctx.narrative.worldMap
+      .getOutgoingLinks(placeId)
+      .find((l) => (l.from === placeId ? l.to : l.from) === prevPlaceId);
+    const entryEdge = linkBack ? resolveExitEdge(ctx.narrative.worldMap, placeId, linkBack) : null;
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
@@ -129,34 +175,9 @@ async function runPlaceRealize(
       message: `Generando ${place.name}...`,
     });
 
-    const res = await ctx.aiClient.generateScene(realizeCtx);
-    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
-    const changed = sessionChangedError(ctx, jobSession);
-    if (changed) return fail(changed);
-    if (!res.ok || !res.scene) {
-      return fail(`No se pudo generar ${place.name}. ${res.error ?? "Revisa el motor narrativo."}`);
-    }
-    const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
-    // Tag the scene with the place so recordSceneLoaded attaches it (y para
-    // que la validación proscenio cruce exits⇔links del place correcto).
-    res.scene.place_id = placeId;
-    if (isStageWorld) {
-      if (res.scene.stage === undefined) {
-        return fail(
-          `El motor narrativo respondió ${place.name} sin bloque \`stage\` en un mundo proscenio — el plató necesita sus salidas declaradas`,
-        );
-      }
-      const check = validateScene(res.scene, stagePlaceContext(ctx));
-      if (!check.ok) {
-        return fail(`${place.name} no es jugable: ${check.errors.join(" · ")}`);
-      }
-    }
-    // Expandir primitivas (structures/vegetation) ANTES de persistir: lo
-    // guardado y difundido es Format D plano.
-    res.scene = expandScenePrimitives(res.scene);
-    ctx.narrative.recordSceneLoaded(sceneId, res.scene);
-    await ctx.narrative.save();
-    broadcastScene(ctx, sceneId, res.scene, Date.now() - realizeStart);
+    const res = await realizePlaceScene(ctx, placeId, { entryEdge });
+    if (res === "exists") return;
+    broadcastScene(ctx, res.sceneId, res.scene, Date.now() - realizeStart);
     await fireMapTriggers(ctx, prevPlaceId, placeId);
   } catch (err) {
     console.warn("Bridge: lazy realize failed:", err);

@@ -136,6 +136,13 @@ const ListGamesMessageSchema = z.object({
   requestId: z.string(),
 });
 
+const GenerateGameMessageSchema = z.object({
+  type: z.literal("generate_game"),
+  requestId: z.string(),
+  gameId: z.string(),
+  view: z.string().optional(),
+});
+
 const SaveSessionMessageSchema = z.object({
   type: z.literal("save_session"),
   requestId: z.string().optional(),
@@ -213,6 +220,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   DialogueChoiceMessageSchema,
   CreateGameMessageSchema,
   ListGamesMessageSchema,
+  GenerateGameMessageSchema,
   SaveSessionMessageSchema,
   PlayerEnteredPlaceMessageSchema,
   PlayerCrossedFrontierMessageSchema,

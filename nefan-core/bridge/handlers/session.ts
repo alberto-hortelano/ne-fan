@@ -19,6 +19,7 @@ import {
 } from "../../src/games/loader.js";
 import {
   branchForView,
+  gameGenerationStatus,
   loadWorldSnapshot,
   type WorldSnapshot,
 } from "../../src/games/world-snapshot.js";
@@ -60,7 +61,10 @@ export function handleListGames(
   ctx.send(ws, {
     type: "games_listed",
     requestId: msg.requestId,
-    games: listGames(ctx.gamesDir),
+    games: listGames(ctx.gamesDir).map((g) => ({
+      ...g,
+      generation: gameGenerationStatus(ctx.gamesDir, g.game_id),
+    })),
     styles: listStyles(ctx.stylesDir),
   });
 }

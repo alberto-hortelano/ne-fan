@@ -125,6 +125,20 @@ export interface ListGamesMessage {
   requestId: string;
 }
 
+/** Pre-generación del mundo de un juego desde el título: el bridge crea una
+ *  sesión EFÍMERA, corre el bootstrap + anillo 3×3 + places clave con el
+ *  motor narrativo y persiste el snapshot en data/games/{id}/world/ (rama
+ *  tile u stage según la vista). Respuesta game_generated al ENCOLAR; el
+ *  progreso y el final viajan por narrative_status kind "game_gen". */
+export interface GenerateGameMessage {
+  type: "generate_game";
+  requestId: string;
+  gameId: string;
+  /** Vista cuya rama de contenido se genera (overworld|fps ⇒ tile,
+   *  proscenium ⇒ stage). Ausente = vista default del juego. */
+  view?: string;
+}
+
 export interface SaveSessionMessage {
   type: "save_session";
   requestId?: string;
@@ -241,6 +255,7 @@ export type ClientMessage =
   | DialogueChoiceMessage
   | CreateGameMessage
   | ListGamesMessage
+  | GenerateGameMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | PlayerCrossedFrontierMessage
@@ -321,7 +336,10 @@ export interface NarrativeStatusMessage {
    *  llamada, un paso dado): resetea el timeout de inactividad de ai_server
    *  y alimenta el texto del loader del cliente. */
   phase: "generating" | "progress" | "ready" | "error";
-  kind: "scene" | "consequences" | "tile";
+  /** "game_gen" = pre-generación de mundo desde el título (generate_game):
+   *  no toca velos de tile ni loaders de escena — alimenta la barra de
+   *  progreso de la tarjeta del juego. */
+  kind: "scene" | "consequences" | "tile" | "game_gen";
   message?: string;
   elapsedMs?: number;
   /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
@@ -345,6 +363,14 @@ export interface GamesListedMessage {
     /** Vista DEFAULT del mundo, ya resuelta ("overworld" si game.json no la
      *  declara). El selector del título la preselecciona. */
     view: string;
+    /** Estado del contenido pre-generado por rama (data/games/{id}/world/):
+     *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
+     *  cambió desde la generación, "missing" = nunca generado. La rama tile
+     *  sirve a overworld Y fps; stage al proscenio. */
+    generation: {
+      tile: "ready" | "stale" | "missing";
+      stage: "ready" | "stale" | "missing";
+    };
   }>;
   /** Estilos disponibles para el selector; cover_url es relativo y se
    *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
@@ -366,6 +392,19 @@ export interface GameCreatedMessage {
   ok: boolean;
   gameId?: string;
   title?: string;
+  error?: string;
+}
+
+/** Respuesta a generate_game: llega al ENCOLAR el job (ok:false si el juego o
+ *  la vista no validan). La finalización real viaja por narrative_status
+ *  kind "game_gen" (phase ready|error). */
+export interface GameGeneratedMessage {
+  type: "game_generated";
+  requestId: string;
+  ok: boolean;
+  gameId?: string;
+  /** Resultado del encolado ("queued" | "duplicate" | "promoted"). */
+  queued?: string;
   error?: string;
 }
 
@@ -410,6 +449,7 @@ export type ServerMessage =
   | NarrativeStatusMessage
   | GamesListedMessage
   | GameCreatedMessage
+  | GameGeneratedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
   | RenderModeChangedMessage

@@ -117,6 +117,61 @@ export function buildGenerateTileCtx(
   };
 }
 
+/** Núcleo de generación de un tile, compartido por la sesión en vivo y por
+ *  generate_game: LLM con contexto de costuras, validación server-side,
+ *  expansión y registro SIN activar (la escena activa la decide la posición
+ *  del jugador). "exists" si el tile ya estaba; LANZA en cualquier fallo. */
+export async function generateTileScene(
+  ctx: BridgeContext,
+  tx: number,
+  ty: number,
+  approachEdge?: Edge,
+): Promise<{ sceneId: string; scene: Record<string, unknown> } | "exists"> {
+  const key = tileKey(tx, ty);
+  // El tile pudo generarse mientras esperaba en la cola.
+  if (ctx.narrative.hasTile(tx, ty)) return "exists";
+
+  const jobSession = ctx.narrative.session_id;
+  const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
+  const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge);
+  genCtx.generate_tile = tileCtx;
+
+  const res = await ctx.aiClient.generateScene(genCtx);
+  // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
+  const changed = sessionChangedError(ctx, jobSession);
+  if (changed) throw new Error(changed);
+  if (!res.ok || !res.scene) {
+    throw new Error(`No se pudo generar el tile (${tx}, ${ty}). ${res.error ?? "Revisa el motor narrativo."}`);
+  }
+  // El bridge fija la verdad geométrica aunque el motor invente otra cosa.
+  res.scene.tile = { tx, ty };
+  res.scene.scene_id = key;
+  res.scene.room_id = key;
+
+  // Red de seguridad server-side (el pre-flight MCP ya validó, pero el
+  // fake-ai del bench y la ruta API directa no pasan por él).
+  const required: TileValidationContext["required_crossings"] = [];
+  for (const [edge, n] of Object.entries(tileCtx.neighbors) as Array<[Edge, { crossings: { type: string; at: number; width: number }[] }]>) {
+    for (const c of n.crossings) {
+      required.push({ edge, ...(c as { type: "path" | "road" | "river" | "bridge"; at: number; width: number }) });
+    }
+  }
+  const check = validateScene(res.scene, undefined, {
+    required_crossings: required,
+    entry: tileCtx.entry as { edge: Edge; at?: number } | undefined,
+  });
+  if (!check.ok) {
+    throw new Error(`El tile (${tx}, ${ty}) no es jugable: ${check.errors.join(" · ")}`);
+  }
+
+  const expanded = expandScenePrimitives(res.scene);
+  // Sin activar: la escena activa la decide la POSICIÓN del jugador (el
+  // prefetch no roba el tile actual).
+  ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
+  await ctx.narrative.save();
+  return { sceneId: key, scene: expanded };
+}
+
 /** Genera el tile (tx,ty) — corre DENTRO de la cola (un job a la vez). Captura
  *  sus propios errores y los difunde como narrative_status. */
 export async function runTileGeneration(
@@ -140,11 +195,6 @@ export async function runTileGeneration(
   try {
     // El tile pudo generarse mientras esperaba en la cola.
     if (ctx.narrative.hasTile(tx, ty)) return;
-
-    const jobSession = ctx.narrative.session_id;
-    const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
-    const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge);
-    genCtx.generate_tile = tileCtx;
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
@@ -155,41 +205,9 @@ export async function runTileGeneration(
         ? `Explorando hacia el ${EDGE_ES[approachEdge]}...`
         : `Generando el tile (${tx}, ${ty})...`,
     });
-
-    const res = await ctx.aiClient.generateScene(genCtx);
-    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
-    const changed = sessionChangedError(ctx, jobSession);
-    if (changed) return fail(changed);
-    if (!res.ok || !res.scene) {
-      return fail(`No se pudo generar el tile (${tx}, ${ty}). ${res.error ?? "Revisa el motor narrativo."}`);
-    }
-    // El bridge fija la verdad geométrica aunque el motor invente otra cosa.
-    res.scene.tile = { tx, ty };
-    res.scene.scene_id = key;
-    res.scene.room_id = key;
-
-    // Red de seguridad server-side (el pre-flight MCP ya validó, pero el
-    // fake-ai del bench y la ruta API directa no pasan por él).
-    const required: TileValidationContext["required_crossings"] = [];
-    for (const [edge, n] of Object.entries(tileCtx.neighbors) as Array<[Edge, { crossings: { type: string; at: number; width: number }[] }]>) {
-      for (const c of n.crossings) {
-        required.push({ edge, ...(c as { type: "path" | "road" | "river" | "bridge"; at: number; width: number }) });
-      }
-    }
-    const check = validateScene(res.scene, undefined, {
-      required_crossings: required,
-      entry: tileCtx.entry as { edge: Edge; at?: number } | undefined,
-    });
-    if (!check.ok) {
-      return fail(`El tile (${tx}, ${ty}) no es jugable: ${check.errors.join(" · ")}`);
-    }
-
-    const expanded = expandScenePrimitives(res.scene);
-    // Sin activar: la escena activa la decide la POSICIÓN del jugador (el
-    // prefetch no roba el tile actual).
-    ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
-    await ctx.narrative.save();
-    broadcastScene(ctx, key, expanded, Date.now() - start, { edge: approachEdge });
+    const res = await generateTileScene(ctx, tx, ty, approachEdge);
+    if (res === "exists") return;
+    broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, { edge: approachEdge });
   } catch (err) {
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
     fail(`Error: ${(err as Error).message ?? err}`);

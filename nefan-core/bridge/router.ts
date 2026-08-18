@@ -19,6 +19,7 @@ import {
   handleSaveSession,
   handleStartSession,
 } from "./handlers/session.js";
+import { handleGenerateGame } from "./handlers/game-gen.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
 import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
 import { handleMapPlanUpdate, handleRequestTile, handleTileAnalysis } from "./handlers/tile.js";
@@ -49,6 +50,9 @@ export async function routeMessage(
       break;
     case "create_game":
       await handleCreateGame(msg, ws, ctx);
+      break;
+    case "generate_game":
+      await handleGenerateGame(msg, ws, ctx);
       break;
     case "list_sessions":
       await handleListSessions(msg, ws, ctx);

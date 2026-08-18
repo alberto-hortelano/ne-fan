@@ -11,6 +11,7 @@ import type {
   SessionStartedMessage,
   GamesListedMessage,
   GameCreatedMessage,
+  GameGeneratedMessage,
   SessionDeletedMessage,
   RenderModeSetMessage,
   RenderModeChangedMessage,
@@ -281,6 +282,13 @@ export class BridgeClient {
    *  timeout largo explícito. */
   createGame(draftText: string): Promise<GameCreatedMessage> {
     return this.request<GameCreatedMessage>({ type: "create_game", draftText }, 400_000);
+  }
+
+  /** Pre-generar el mundo de un juego (rama de la vista). La respuesta llega
+   *  al ENCOLAR; el progreso y el final viajan por narrative_status kind
+   *  "game_gen". */
+  generateGame(gameId: string, view?: string): Promise<GameGeneratedMessage> {
+    return this.request<GameGeneratedMessage>({ type: "generate_game", gameId, view });
   }
 
   startSession(

@@ -16,7 +16,9 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 import { z } from "zod";
 
-import { SAFE_ID } from "./loader.js";
+import { createHash } from "node:crypto";
+
+import { SAFE_ID, loadWorldDoc } from "./loader.js";
 import type { WorldMap } from "../world-map/types.js";
 
 /** Ramas de contenido: la vista fps comparte los tiles del overworld. */
@@ -138,6 +140,27 @@ export function deleteWorldSnapshot(
  *  juego como listGames: un snapshot malformado se reporta como "stale" con
  *  warning en vez de tumbar el listado — cargarlo de verdad (start_session)
  *  sigue siendo fail-loud. */
+/** Estado de generación de AMBAS ramas de un juego, para games_listed (los
+ *  chips del título). Degrada por juego: cualquier error ⇒ ambas "stale"
+ *  con warning (listGames ya filtró los juegos ilegibles). */
+export function gameGenerationStatus(
+  gamesDir: string,
+  gameId: string,
+): { tile: "ready" | "stale" | "missing"; stage: "ready" | "stale" | "missing" } {
+  try {
+    const hash = createHash("sha256")
+      .update(loadWorldDoc(gamesDir, gameId), "utf-8")
+      .digest("hex");
+    return {
+      tile: worldSnapshotStatus(gamesDir, gameId, "tile", hash),
+      stage: worldSnapshotStatus(gamesDir, gameId, "stage", hash),
+    };
+  } catch (err) {
+    console.warn(`gameGenerationStatus("${gameId}"): ${(err as Error).message}`);
+    return { tile: "stale", stage: "stale" };
+  }
+}
+
 export function worldSnapshotStatus(
   gamesDir: string,
   gameId: string,
