@@ -56,7 +56,8 @@ export function createAssetStoreServer(opts: AssetStoreServerOptions): Server {
     res.setHeader("Access-Control-Allow-Origin", "*");
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        // DELETE: unpin del batch de estilos desde el navegador (/assets/pin/{ref}).
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       });
       res.end();

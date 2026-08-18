@@ -83,6 +83,10 @@ export async function handleGenerateGame(
     );
     ctx.sceneGen.abandonAll();
   }
+  // El solicitante está en el TÍTULO (sin sesión): suscribirlo a los
+  // broadcasts o el progreso kind "game_gen" nunca le llegaría (los clientes
+  // solo se suscriben en start/resume_session).
+  ctx.subscribe(ws);
   const queued = ctx.sceneGen.enqueue({
     key: `gamegen:${msg.gameId}:${branch}`,
     blocking: false,

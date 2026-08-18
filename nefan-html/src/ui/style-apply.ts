@@ -24,7 +24,14 @@ import {
   STYLE_APPLICATION_SCHEMA_VERSION,
   styleApplicationPinRef,
 } from "@nefan-core/src/games/style-application-schema.js";
-import { buildFpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
+import {
+  buildFpsTileSpec,
+  deriveVolumesFromSchema,
+  parseGround,
+  parseVolumes,
+  type GroundFeature,
+  type Volume,
+} from "@nefan-core/src/scene/blueprint/index.js";
 import { buildLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
@@ -134,10 +141,35 @@ export class StyleApplyController {
         if (!sceneDescription && typeof scene.scene_description === "string") {
           sceneDescription = scene.scene_description;
         }
+        // MISMO plan que compone la partida (composeTilePlan de main.ts):
+        // ground/volumes parseados + volúmenes DERIVADOS del esquema — sin
+        // esto las celdas no casarían con las que pedirá la vista fps.
+        let ground: GroundFeature[] = [];
+        if (Array.isArray(scene.ground)) {
+          const parsed = parseGround(scene.ground);
+          if (parsed.ok) ground = parsed.features;
+        }
+        let declared: Volume[] = [];
+        if (Array.isArray(scene.volumes)) {
+          const parsed = parseVolumes(scene.volumes);
+          if (parsed.ok) declared = parsed.volumes;
+        }
+        const derived = deriveVolumesFromSchema(
+          {
+            scene_id: sceneId,
+            structures: scene.structures as never,
+            vegetation_zones: scene.vegetation_zones as never,
+            entities: scene.entities as never,
+            terrain_features: scene.terrain_features as never,
+          },
+          declared,
+        );
+        const volumes = [...declared, ...derived];
+        if (ground.length === 0 && volumes.length === 0) continue;
         const fps = buildFpsTileSpec(
           {
-            ground: scene.ground as never,
-            volumes: scene.volumes as never,
+            ground,
+            volumes,
             biome: scene.biome as never,
             scatter_generators: scene.scatter_generators as never,
             scatter_zones: scene.scatter_zones as never,

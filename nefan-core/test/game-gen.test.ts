@@ -94,8 +94,10 @@ async function runGenerate(bundle: ReturnType<typeof makeCtx>) {
     socket,
     bundle.ctx,
   );
-  const resp = sent[0] as GameGeneratedMessage;
-  assert.equal(resp.type, "game_generated");
+  // El handler suscribe al socket (progreso del título): la respuesta convive
+  // con los broadcasts — localizarla por tipo, no por posición.
+  const resp = sent.find((m) => m.type === "game_generated") as GameGeneratedMessage;
+  assert.ok(resp, "respuesta game_generated recibida");
   await waitFor(() =>
     bundle.broadcasts.some(
       (m) =>

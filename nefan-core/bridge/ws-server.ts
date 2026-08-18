@@ -40,7 +40,10 @@ const dataDir = resolve(projectRoot, "data").replace("/dist/data", "/data");
 const PORT = Number(process.env.NEFAN_BRIDGE_PORT ?? CONFIG.ports.bridge);
 // State HTTP API for the narrative engine's tools (map / entities / inventory).
 const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? CONFIG.ports.state_api);
-const GAMES_DIR = resolve(dataDir, "games");
+// Override para benches (labs/narrative): con el motor FAKE, los snapshots de
+// mundo se escriben en data/games/{id}/world/ — un games dir temporal evita
+// contaminar los juegos reales con génesis de bench.
+const GAMES_DIR = process.env.NEFAN_GAMES_DIR ?? resolve(dataDir, "games");
 const STYLES_DIR = resolve(dataDir, "styles");
 
 // Saves live in a shared filesystem location accessible to every client
