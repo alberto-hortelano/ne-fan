@@ -638,6 +638,26 @@ const server = http.createServer((req, res) => {
     void (async () => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
       if (req.method === "POST" && req.url === "/notify_session") return send(200, { ok: true });
+      // Mundo de usuario fake (E2E de crear mundo + encadenado generate_game).
+      if (req.method === "POST" && req.url === "/develop_world") {
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);
+        return send(200, {
+          game: {
+            game_id: "mundo_bench",
+            title: "Mundo del Bench",
+            description: "Mundo de prueba desarrollado por el fake.",
+            style_id: "acuarela_luminosa",
+            world_brief: "b".repeat(150),
+            world_md: "# Mundo del Bench\n\n" + "lore del bench. ".repeat(200),
+          },
+        });
+      }
       if (req.method === "POST" && req.url === "/report_player_choice") return send(200, { consequences: [] });
       if (req.method === "POST" && req.url === "/dev/api_cache") {
         try {
