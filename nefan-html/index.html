@@ -189,21 +189,6 @@
       cursor: pointer;
       padding: 0 4px;
     }
-    #dev-menu .dm-toggles {
-      display: flex;
-      gap: 18px;
-      padding: 8px 10px;
-      border-bottom: 1px solid #333;
-    }
-    #dev-menu .dm-toggles label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      user-select: none;
-    }
-    #dev-menu .dm-toggles label.dm-off { opacity: 0.45; cursor: default; }
-    #dev-menu .dm-toggles input { accent-color: #da6; margin: 0; }
     #dev-menu-items { overflow-y: auto; padding: 6px 10px; }
     #dev-menu-items .dm-empty { color: #777; padding: 8px 0; }
     #dev-menu-items .dm-item {
@@ -415,6 +400,79 @@
       background: #2c2a1e;
       color: #edb;
     }
+    /* Chip de gráficos (graphics-mode.ts): indicador permanente del modo de
+       generación de imágenes IA de la partida, abajo-derecha. UI de cliente,
+       no de dev: sobre el error-log (50) y bajo el narrative-loader (60). El
+       título (9999) queda encima; mientras está abierto el modo se elige allí
+       y main.ts oculta el chip. */
+    #gfx-chip {
+      position: fixed;
+      bottom: 8px;
+      right: 12px;
+      z-index: 55;
+      background: rgba(10, 10, 15, 0.85);
+      border: 1px solid #454;
+      border-radius: 4px;
+      padding: 5px 12px;
+      color: #cba;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #gfx-chip:hover { border-color: #da6; color: #da6; }
+    #gfx-chip[hidden] { display: none; }
+    /* Panel del chip: popover anclado sobre él. */
+    #gfx-panel {
+      position: fixed;
+      bottom: 44px;
+      right: 12px;
+      width: 340px;
+      z-index: 55;
+      background: rgba(14, 14, 20, 0.96);
+      border: 1px solid #454;
+      border-radius: 4px;
+      padding: 10px 12px;
+      color: #bbb;
+      font-size: 12px;
+    }
+    #gfx-panel[hidden] { display: none; }
+    #gfx-panel .gfx-note {
+      color: #888;
+      font-size: 11px;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    #gfx-panel .gfx-row { margin-bottom: 10px; }
+    #gfx-panel .gfx-row:last-child { margin-bottom: 0; }
+    #gfx-panel .gfx-row-label { color: #999; margin-bottom: 4px; }
+    #gfx-panel .gfx-seg { display: flex; gap: 6px; }
+    #gfx-panel .gfx-seg button {
+      flex: 1;
+      text-align: left;
+      background: #1c1c24;
+      border: 1px solid #3a3846;
+      border-radius: 3px;
+      padding: 6px 8px;
+      color: #bbb;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #gfx-panel .gfx-seg button:hover:not(:disabled):not(.active) { border-color: #776; }
+    #gfx-panel .gfx-seg button.active {
+      border-color: #da6;
+      background: #241f14;
+      color: #da6;
+      cursor: default;
+    }
+    #gfx-panel .gfx-seg button.armed { border-color: #a63; color: #da6; }
+    #gfx-panel .gfx-seg button:disabled { opacity: 0.45; cursor: default; }
+    #gfx-panel .gfx-seg .gfx-sub {
+      display: block;
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
     #interact-prompt {
       display: none;
       position: fixed;
@@ -529,24 +587,26 @@
     <span class="ds-spend" id="ds-spend"></span>
     <span class="ds-config" id="ds-config"></span>
     <span class="ds-session" id="ds-session"></span>
-    <button id="ds-menu-btn" title="Toggles de generación IA por faceta y lista de imágenes fake (clay / y_bot) pendientes de generar">Imágenes…</button>
+    <button id="ds-menu-btn" title="Lista de imágenes fake (clay / y_bot) con generación por item — los toggles globales viven en el chip de gráficos del HUD">Imágenes…</button>
   </div>
-  <!-- Menú dev de imágenes (dev-menu.ts): toggles escenarios/personajes IA +
-       lista de imágenes actualmente fake con generación por item. -->
+  <!-- Menú dev de imágenes (dev-menu.ts): lista de imágenes actualmente fake
+       con generación por item. Los toggles globales de generación IA son UI
+       de cliente: chip de gráficos (#gfx-chip, graphics-mode.ts). -->
   <div id="dev-menu" hidden>
     <div class="dm-head">
-      <span>Generación de imágenes IA</span>
+      <span>Imágenes pendientes de generar</span>
       <button id="dm-close" title="Cerrar">×</button>
-    </div>
-    <div class="dm-toggles">
-      <label><input type="checkbox" id="dm-scenes"><span>Escenarios IA</span></label>
-      <label><input type="checkbox" id="dm-chars"><span>Personajes IA (skins)</span></label>
     </div>
     <div id="dev-menu-items"></div>
   </div>
   <canvas id="game"></canvas>
   <div id="combat-log"></div>
   <div id="travel-panel"></div>
+  <!-- Chip de gráficos (graphics-mode.ts): modo de generación de imágenes IA
+       de la partida, siempre visible en juego; click abre el panel para
+       cambiarlo (con sesión lo persiste el bridge en el save). -->
+  <button id="gfx-chip" hidden></button>
+  <div id="gfx-panel" role="dialog" aria-label="Generación de imágenes IA" hidden></div>
   <div id="interact-prompt"></div>
   <div id="tile-confirm-prompt"></div>
   <div id="error-log"></div>

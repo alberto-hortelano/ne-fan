@@ -15,21 +15,26 @@ Sin argumentos, presenta un menú con presets que respetan dependencias entre se
 
 | Preset | Servicios | Cuándo |
 |--------|-----------|--------|
-| 1 · Play | bridge + narrative-mcp + ai_server + Godot + HTML + pausa Claude Code | Sesión narrativa completa |
-| 2 · Story 2D | bridge + narrative-mcp + ai_server + HTML + pausa Claude Code (sin Godot) | Testear historia/NPCs/mapas/diálogo con gráficos mínimos (cliente 2D) |
-| 3 · Automated tests | bridge + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares |
-| 4 · HTML 2D iteration | bridge + HTML | Iterar UI/renderer 2D sin Godot ni IA |
-| 5 · Godot offline | sólo Godot | Tests visuales rápidos con fallback rooms |
-| 6 · ai_server only | sólo Python ai_server | Dev del pipeline de IA |
-| 7 · Custom | toggle por servicio | Combinaciones puntuales |
-| s · Status | — | Listar puertos arriba/abajo |
+| 1 · Play | asset-store + gpu-worker + remote-gen + bridge + narrative-mcp + ai_server + pausa Claude Code + Godot + HTML | Sesión narrativa completa — GASTA créditos con Imagen IA |
+| 2 · Story web | como Play sin Godot | Historia/NPCs/mapas/diálogo con el cliente 2D; pre-generación de mundo/estilo desde el título — GASTA créditos con Imagen IA |
+| 3 · Automated tests | bridge + asset-store + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares — sin coste |
+| 4 · Cliente web (dev) | bridge + asset-store + remote-gen + HTML | Iterar UI/renderer 2D (las 3 vistas; fps y estilos operativos) — solo gasta si activas Imagen IA en el juego |
+| 5 · E2E sin créditos | fake-ai-server (:18765) + bridge (`NEFAN_AI_SERVER`) + HTML | Bench E2E todo mockeado, 0 créditos; imprime la URL con `?ai=` |
+| 6 · Story web sin imágenes | como Story web sin gpu-worker ni remote-gen | Jugar la narrativa en Maqueta 3D / y_bot con los servicios de imagen APAGADOS — imposible gastar en imágenes |
+| 7 · Playtest motor (bench) | bridge + ai_server + asset-store, SIN placeholder de narrative-mcp; pausa ANTES de ai_server | Flujo de `labs/narrative/`: el terminal del motor posee :3737; conducir con `game-emulator.mjs` (:9899) |
+| 8 · Replay web (película) | replay-server (suplanta al bridge :9877; `LOG=runs/…/events.ndjson`) + HTML | Reproducir una sesión grabada: renderer 2D determinista sin motor ni ai_server |
+| 9 · HTML fixtures | solo HTML | Iterar renderer/UI con las fixtures del selector Room, cero backend |
+| 10 · Custom | toggle por servicio | Combinaciones puntuales (Godot solo, ai_server solo…) |
+| s · Status | — | Listar puertos arriba/abajo (incluye State API :9878) |
 | k · Stop | — | Matar todo el stack |
 
 Cosas a tener en cuenta:
-- El launcher hace preflight (`.venv`, `node_modules`, binario de Godot, `nc`/`curl`) y aborta con instrucciones si falta algo.
+- El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "E2E sin créditos" no exige Godot ni `.venv`).
 - Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
 - Ctrl+C mata limpiamente todo lo que el launcher arrancó (`trap EXIT`).
 - Si detecta saves antiguos en `~/.local/share/godot/.../Never Ending Fantasy/saves/`, ofrece migrarlos a `$PROJECT_DIR/saves/`.
+- `NEFAN_EAGER_BIND=0 ./start.sh` no arranca el placeholder de narrative-mcp: el terminal de Claude Code del motor posee `:3737` (flujo de `labs/narrative/README.md`). `NEFAN_GAMES_DIR` se respeta y llega al bridge (juegos de bench aislados).
+- Antes de arrancar el bridge se refresca `data/runtime_config.json` (`scripts/dump-config.ts`), como hacen los hooks `predev` de nefan-core.
 
 ```bash
 # Manual (si prefieres arrancar servicios por separado):
@@ -45,7 +50,7 @@ cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_village`). Para combate y narrativa usar los presets 1–3.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_village`). Para combate y narrativa usar los presets 1–2 (o 6 sin servicios de imagen); para tests headless, el 3.
 
 ## Controles in-game
 
@@ -145,7 +150,7 @@ python3 godot/tools/movement_test.py capsule_sync attack_root_motion
 **IMPORTANTE:** Siempre arrancar Godot con `xvfb-run` para no bloquear la pantalla del usuario. Nunca usar `DISPLAY=:0`.
 
 ```bash
-./start.sh             # → preset 2 "Automated tests" (bridge + Godot headless)
+./start.sh             # → preset 3 "Automated tests" (bridge + Godot headless)
 # O manualmente:
 xvfb-run -a -s "-screen 0 1920x1080x24" ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
 # Luego ejecutar tests normalmente

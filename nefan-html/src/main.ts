@@ -68,6 +68,7 @@ import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
+import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { errors } from "./ui/error-log.js";
 import {
   createGameClient,
@@ -215,9 +216,14 @@ const renderer = new CanvasRenderer(canvas, {
 // de imágenes IA, contadores de caché, gasto estimado en € (poll a
 // GET /dev/status de remote-gen) y config activa. Siempre visible.
 const devPanel = new DevStatusPanel(REMOTE_GEN_URL, (msg) => log(msg));
-/** Menú dev de imágenes (toggles + fake list). Se construye tras el bridge
- *  (sus deps tocan narrativeClient); hasta entonces los refresh son no-op. */
+/** Menú dev de imágenes (lista de fakes con generación por item). Se
+ *  construye tras el bridge (sus deps tocan narrativeClient); hasta entonces
+ *  los refresh son no-op. */
 let devMenu: DevMenu | null = null;
+/** Chip de gráficos del HUD (UI de cliente): modo de generación de imágenes
+ *  IA de la partida, siempre visible en juego. Misma ventana de construcción
+ *  que devMenu. */
+let graphicsChip: GraphicsModeChip | null = null;
 
 // Generación IA del fondo de escena (img2img desde el blueprint del tile).
 // Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
@@ -300,8 +306,8 @@ function applySessionStyle(styleId: string): void {
 const sessionProjection = VIEW_PROJECTION;
 
 /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
- *  menú dev lo cambia en runtime (el bridge lo persiste en el save y lo
- *  difunde con render_mode_changed). Valores:
+ *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
+ *  el save y lo difunde con render_mode_changed). Valores:
  *  - "image": generación IA activa (Auto-img de tiles / repintado de platós,
  *    skins de personaje) — créditos.
  *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
@@ -312,7 +318,7 @@ let scenesMode: "image" | "vector" | "" = "";
 let charactersMode: "image" | "vector" | "" = "";
 
 /** ¿Debe generarse imagen NUEVA de escenario? (auto-pipeline y runFor del
- *  plató; la generación MANUAL —tecla G, botón del menú dev— no pasa por
+ *  plató; la generación MANUAL —tecla G, item del menú dev— no pasa por
  *  aquí: es siempre permitida). */
 function scenesGenerationOn(): boolean {
   if (scenesMode) return scenesMode === "image";
@@ -369,6 +375,7 @@ function applyRenderModes(renderMode: string, characterMode = ""): void {
     reRequestAllSkins();
   }
   devMenu?.refresh();
+  graphicsChip?.refresh();
 }
 
 /** Re-encola los skins IA de todas las entidades vivas (player + NPCs +
@@ -380,10 +387,10 @@ function reRequestAllSkins(): void {
   }
 }
 
-/** Cambio de modo pedido por el usuario (menú dev). Con sesión, el bridge es
- *  la autoridad (persiste el save y difunde); sin sesión, estado local puro
- *  (facet scenes se persiste en AUTOIMG_KEY, patrón legacy). Lanza si el
- *  bridge rechaza — el menú lo captura y revierte el checkbox. */
+/** Cambio de modo pedido por el usuario (chip de gráficos). Con sesión, el
+ *  bridge es la autoridad (persiste el save y difunde); sin sesión, estado
+ *  local puro (facet scenes se persiste en AUTOIMG_KEY, patrón legacy).
+ *  Lanza si el bridge rechaza — el chip lo captura y se re-lee (revert). */
 async function requestModeChange(
   facet: "scenes" | "characters",
   mode: "image" | "vector",
@@ -401,7 +408,7 @@ async function requestModeChange(
   );
 }
 
-/** Repinta + pela el plató ACTIVO (manual: tecla G o botón del menú dev —
+/** Repinta + pela el plató ACTIVO (manual: tecla G o item del menú dev —
  *  reintento tras un fallo o generación selectiva con el auto en OFF). */
 function generateActiveStage(): void {
   if (!activeStage || !activeTileKey || !sceneData) return;
@@ -676,7 +683,8 @@ let activeTileKey: string | null = null;
 // --- Auto-img: pipeline automático de imagen IA por tile ---
 // Persistido en localStorage (patrón ZOOM_KEY). Es el estado del toggle de
 // escenarios SIN sesión (fixtures); con sesión manda world.render_mode. El
-// toggle visible vive en el menú dev (DevMenu) y el progreso en #dev-status.
+// toggle visible es el chip de gráficos (GraphicsModeChip) y el progreso
+// vive en #dev-status.
 const AUTOIMG_KEY = "nefan.autoimg";
 /** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
 const AICHAR_KEY = "nefan.aichar";
@@ -693,9 +701,10 @@ const autoPipeline = new AutoImagePipeline({
   onStatus: (s) => devPanel.setTilePipeline(s),
   onDisabled: () => {
     // Backend caído (503): apagar el pipeline auto SIN tocar el modo del
-    // save (fallo ≠ intención del usuario); el menú dev refleja el estado.
+    // save (fallo ≠ intención del usuario); el chip refleja el estado.
     localStorage.setItem(AUTOIMG_KEY, "0");
     devMenu?.refresh();
+    graphicsChip?.refresh();
   },
   healthUrl: `${AI_SERVER_URL}/health`,
 });
@@ -2243,16 +2252,27 @@ async function generateFakeItem(item: FakeItem): Promise<void> {
 }
 
 devMenu = new DevMenu({
-  getToggles: () => ({
-    scenes: scenesGenerationOn(),
-    characters: characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
-    charactersAvailable: CONFIG.graphics.ai_skin,
-  }),
-  setToggle: (facet, on) => requestModeChange(facet, on ? "image" : "vector"),
   listFakeItems,
   generate: generateFakeItem,
   log: (msg) => log(msg),
 });
+
+// Chip de gráficos (UI de cliente): el MISMO modo que se elige al crear la
+// partida en el título, visible y cambiable en juego. El cambio va por
+// requestModeChange (bridge con sesión / localStorage sin ella) — nunca por
+// bridge-client directo.
+graphicsChip = new GraphicsModeChip({
+  getState: () => ({
+    scenesOn: scenesGenerationOn(),
+    charsOn: characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
+    charsAvailable: CONFIG.graphics.ai_skin,
+    hasSession: activeSessionId !== null,
+  }),
+  setMode: (facet, mode) => requestModeChange(facet, mode),
+});
+// Oculto mientras el título está abierto (ahí el modo se elige en el propio
+// título); reaparece al cerrarlo — incluido el cierre fixtures (#ts-close).
+titleScreen.onVisibilityChange = (visible) => graphicsChip?.setHidden(visible);
 
 dialoguePanel.onChoice = (idx, text) => {
   input.dialogueActive = false;

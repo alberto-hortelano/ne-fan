@@ -55,7 +55,7 @@ The interactive launcher offers presets that respect service dependencies (bridg
 | Preset | For |
 |--------|-----|
 | 1 · Play | Full narrative session (Godot 3D) |
-| 2 · Story 2D | Iterate story/NPCs/dialogue with the 2D client |
+| 2 · Story web | Iterate story/NPCs/dialogue with the 2D client |
 | 3 · Automated tests | Headless Godot (xvfb) + `godot/tools/movement_test.py` |
 | 5 · Godot offline | Quick visual tests, no AI |
 
