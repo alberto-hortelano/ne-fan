@@ -4,7 +4,7 @@
  *  mismo camino que las map tools (escribe en ctx.narrative.worldMap). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 

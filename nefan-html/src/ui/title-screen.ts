@@ -16,9 +16,11 @@ import type { NarrativeClient, GameInfo, StyleInfo } from "../net/narrative-clie
 import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
+import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { WORLD_VIEWS, type WorldView } from "@nefan-core/src/games/style-categories.js";
 import { serviceUrl } from "../net/service-urls.js";
+import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
 
 /** Normaliza una vista de fuente externa (game.json, botón) al enum. */
 function normalizeView(v: string | undefined, fallback: WorldView = "overworld"): WorldView {
@@ -88,8 +90,52 @@ export class TitleScreen {
   private root: HTMLDivElement;
   private content: HTMLDivElement;
   private resolve: ((action: TitleAction) => void) | null = null;
+  private styleApply: StyleApplyController;
+  /** Última línea de progreso de generate_game (kind "game_gen"): la pinta
+   *  el panel de generación del selector de mundo si está en pantalla. */
+  private gameGenStatus: NarrativeStatusMessage | null = null;
+  /** Mundo seleccionado la última vez que se pintó el selector — el refresh
+   *  tras un game_gen ready lo conserva. */
+  private lastSelectedGameId: string | null = null;
+
+  private renderGameGenProgress(line: HTMLElement): void {
+    const s = this.gameGenStatus;
+    if (!s) {
+      line.textContent = "";
+      return;
+    }
+    const mins = s.elapsedMs !== undefined ? ` · ${Math.round(s.elapsedMs / 60000)} min` : "";
+    if (s.phase === "error") {
+      line.innerHTML = `<span style="color:#a44">${escapeHtml(s.message ?? "la generación falló")}</span>`;
+    } else if (s.phase === "ready") {
+      line.innerHTML = `<span style="color:#4a4">${escapeHtml(s.message ?? "Mundo generado.")}</span>`;
+    } else {
+      line.innerHTML = `<span style="color:#da6">⚙ ${escapeHtml(s.message ?? "Generando…")}${mins}</span>`;
+    }
+  }
 
   constructor(private narrative: NarrativeClient) {
+    this.styleApply = new StyleApplyController(narrative, {
+      remote: AI_SERVER_HTTP,
+      assets: ASSET_STORE_URL,
+    });
+    // Progreso de la pre-generación de mundo: el job corre en el bridge y
+    // difunde narrative_status kind "game_gen" — el título lo refleja en la
+    // tarjeta/panel sin loaders de partida. Suscripción de vida completa
+    // (el título vive tanto como la app).
+    this.narrative.onNarrativeStatus((msg) => {
+      if (msg.kind !== "game_gen") return;
+      this.gameGenStatus = msg;
+      const line = this.content.querySelector<HTMLElement>("#ts-gen-progress");
+      if (line) this.renderGameGenProgress(line);
+      if (msg.phase === "ready" || msg.phase === "error") {
+        // Refrescar chips/botones si el selector de mundo sigue en pantalla.
+        const panel = this.content.querySelector("#ts-gen");
+        if (panel && this.root.style.display !== "none") {
+          void this.renderWorldSelect(this.lastSelectedGameId ?? undefined);
+        }
+      }
+    });
     this.root = document.createElement("div");
     this.root.id = "title-screen";
     this.root.style.cssText = [
@@ -212,7 +258,7 @@ export class TitleScreen {
 
   /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
    *  y selector de estilo con el del juego preseleccionado. */
-  private async renderWorldSelect(): Promise<void> {
+  private async renderWorldSelect(preselectGameId?: string): Promise<void> {
     // listGames must succeed — there's no scripted fallback any more. If it
     // throws, the title-screen surfaces the error and stops here.
     const { games, styles } = await this.narrative.listGames();
@@ -220,7 +266,8 @@ export class TitleScreen {
       throw new Error("no games available in bridge — check nefan-core/data/games/");
     }
     const styleById = new Map(styles.map((st) => [st.style_id, st]));
-    let selectedGame = games[0];
+    let selectedGame = games.find((g) => g.game_id === preselectGameId) ?? games[0];
+    this.lastSelectedGameId = selectedGame.game_id;
 
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Elige un mundo</h1>
@@ -273,6 +320,16 @@ export class TitleScreen {
             <div style="font-size:10px;color:#888">Maniquí neutro para todos (sin coste)</div>
           </button>
         </div>
+      </div>
+      <div id="ts-gen" style="margin-bottom:18px;padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
+        <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(el mundo se genera por vista, sin estilo; el estilo se aplica sobre el mundo generado)</span></div>
+        <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
+        <div style="display:flex;gap:8px;margin-bottom:4px">
+          <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
+          <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
+        </div>
+        <div id="ts-style-plan"></div>
+        <div id="ts-gen-progress" style="font-size:12px;margin-top:4px"></div>
       </div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
@@ -344,6 +401,7 @@ export class TitleScreen {
         selectedView = normalizeView(btn.dataset.view);
         refreshView();
         refreshStyleOptions();
+        refreshGenPanel();
       });
     }
 
@@ -387,20 +445,104 @@ export class TitleScreen {
         const game = games.find((g) => g.game_id === card.dataset.gameId);
         if (!game) return;
         selectedGame = game;
+        this.lastSelectedGameId = game.game_id;
         // Cambiar de mundo resetea la vista a la default del juego (mismo
         // criterio que el estilo, que vuelve al del mundo).
         selectedView = normalizeView(game.view);
         refreshSelection();
         refreshView();
         refreshStyleOptions();
+        refreshGenPanel();
       });
     }
     styleSel.addEventListener("change", () => {
       styleDesc.textContent = styleById.get(styleSel.value)?.description ?? "";
+      refreshGenPanel();
     });
+
+    // ── Panel de generación: mundo por (juego, vista) + estilo aplicado ──
+    const genStateEl = this.content.querySelector("#ts-gen-state") as HTMLElement;
+    const genWorldBtn = this.content.querySelector("#ts-gen-world") as HTMLButtonElement;
+    const applyStyleBtn = this.content.querySelector("#ts-apply-style") as HTMLButtonElement;
+    const stylePlanEl = this.content.querySelector("#ts-style-plan") as HTMLElement;
+    const genProgressEl = this.content.querySelector("#ts-gen-progress") as HTMLElement;
+    /** Confirmación en dos clicks para regenerar (patrón armed del dev-menu). */
+    let regenArmedUntil = 0;
+    const branchFor = (view: WorldView): "tile" | "stage" =>
+      view === "proscenium" ? "stage" : "tile";
+    const contentStatus = (): "ready" | "stale" | "missing" =>
+      selectedGame.generation?.[branchFor(selectedView)] ?? "missing";
+    const appliedStatus = (): "ready" | "stale" | null => {
+      const hit = (selectedGame.styles_applied ?? []).find(
+        (a) => a.view === selectedView && a.style_id === styleSel.value,
+      );
+      return hit ? hit.status : null;
+    };
+    const refreshGenPanel = (): void => {
+      const cs = contentStatus();
+      const as = appliedStatus();
+      const CONTENT_LABEL: Record<string, string> = {
+        ready: `<span style="color:#4a4">✓ generado</span>`,
+        stale: `<span style="color:#da6">⟳ obsoleto (world.md cambió)</span>`,
+        missing: `<span style="color:#a66">— sin generar</span>`,
+      };
+      const styleLabel = !styleSel.value
+        ? `<span style="color:#666">—</span>`
+        : as === "ready"
+          ? `<span style="color:#4a4">✓ aplicado</span>`
+          : as === "stale"
+            ? `<span style="color:#da6">⟳ obsoleto (regenera el mundo/estilo)</span>`
+            : `<span style="color:#a66">— sin aplicar</span>`;
+      genStateEl.innerHTML =
+        `Mundo <span style="color:#bdf">${escapeHtml(VIEW_LABELS[selectedView] ?? selectedView)}</span>: ${CONTENT_LABEL[cs]}` +
+        ` &nbsp;·&nbsp; Estilo <span style="color:#bdf">${escapeHtml(styleById.get(styleSel.value)?.name ?? "(ninguno)")}</span>: ${styleLabel}`;
+      genWorldBtn.textContent = cs === "ready" ? "↻ Regenerar mundo" : "⚙ Generar mundo";
+      genWorldBtn.disabled = false;
+      applyStyleBtn.textContent =
+        as === "ready" ? "↻ Regenerar estilo (ver coste)" : "🎨 Aplicar estilo (ver coste)";
+      const canApply = cs === "ready" && !!styleSel.value;
+      applyStyleBtn.disabled = !canApply;
+      applyStyleBtn.style.opacity = canApply ? "" : "0.45";
+      applyStyleBtn.title = canApply
+        ? "Pre-genera los assets estilizados del mundo (coste estimado antes de gastar)"
+        : "Genera primero el mundo para esta vista";
+      stylePlanEl.innerHTML = "";
+      regenArmedUntil = 0;
+      this.renderGameGenProgress(genProgressEl);
+    };
+    genWorldBtn.addEventListener("click", async () => {
+      if (contentStatus() === "ready") {
+        // Regenerar pisa el mundo actual y deja obsoletos sus estilos
+        // aplicados: dos clicks (armed, TTL 5 s), como las acciones de pago.
+        if (Date.now() > regenArmedUntil) {
+          regenArmedUntil = Date.now() + 5000;
+          genWorldBtn.textContent = "¿Regenerar? El mundo actual y sus estilos aplicados quedarán obsoletos";
+          return;
+        }
+      }
+      genWorldBtn.disabled = true;
+      genProgressEl.innerHTML = `<span style="color:#da6">⚙ Encolando la generación…</span>`;
+      try {
+        await this.narrative.generateGame(selectedGame.game_id, selectedView);
+        genProgressEl.innerHTML = `<span style="color:#da6">⚙ Generando el mundo (el motor narrativo tarda varios minutos)…</span>`;
+      } catch (err) {
+        genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
+        genWorldBtn.disabled = false;
+      }
+    });
+    applyStyleBtn.addEventListener("click", () => {
+      void this.renderStylePlan(
+        stylePlanEl,
+        selectedGame.game_id,
+        selectedView,
+        styleSel.value,
+      );
+    });
+
     refreshSelection();
     refreshView();
     refreshStyleOptions();
+    refreshGenPanel();
 
     (this.content.querySelector("#ts-back") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderHome());
@@ -412,6 +554,93 @@ export class TitleScreen {
       .addEventListener("click", () => void this.renderCreateWorld());
     (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderUploadStyle());
+  }
+
+  /** Panel de aplicación de estilo: plan con coste (SIN gastar) → checkboxes
+   *  por bloque → confirmación con el importe → batch con progreso. Patrón
+   *  upload→coste→complete de los estilos de usuario. */
+  private async renderStylePlan(
+    el: HTMLElement,
+    gameId: string,
+    view: WorldView,
+    styleId: string,
+  ): Promise<void> {
+    el.innerHTML = `<div style="font-size:12px;color:#da6;margin-top:6px">Calculando el coste (sin gastar)…</div>`;
+    let plan: StyleApplyPlan;
+    try {
+      plan = await this.styleApply.plan(gameId, view, styleId);
+    } catch (err) {
+      el.innerHTML = `<div style="font-size:12px;color:#a44;margin-top:6px">${escapeHtml((err as Error).message)}</div>`;
+      return;
+    }
+    const blocksHtml = plan.blocks
+      .map(
+        (b, i) => `
+          <label style="display:block;font-size:12px;color:#bbb;margin-bottom:3px">
+            <input type="checkbox" data-block-idx="${i}" ${b.selected ? "checked" : ""} ${b.missing === 0 ? "disabled" : ""}>
+            ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : `${b.exact ? "" : "~"}$${b.estCostUsd.toFixed(2)}`}
+          </label>`,
+      )
+      .join("");
+    const notesHtml = plan.notes
+      .map((n) => `<div style="color:#886;font-size:11px;margin-top:2px">· ${escapeHtml(n)}</div>`)
+      .join("");
+    el.innerHTML = `
+      <div style="margin-top:8px;padding:8px 10px;border:1px solid #333;border-radius:4px;background:#101016">
+        ${blocksHtml}
+        ${notesHtml}
+        <div id="ts-style-total" style="font-size:12px;color:#dcb;margin:8px 0 6px"></div>
+        <div style="display:flex;gap:8px">
+          <button id="ts-style-run" style="${BTN_PRIMARY_CSS};font-size:12px;padding:6px 14px"></button>
+          <button id="ts-style-cancel" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px">Cancelar</button>
+        </div>
+        <div id="ts-style-progress" style="font-size:12px;margin-top:6px;color:#da6"></div>
+      </div>`;
+    const totalEl = el.querySelector("#ts-style-total") as HTMLElement;
+    const runBtn = el.querySelector("#ts-style-run") as HTMLButtonElement;
+    const cancelBtn = el.querySelector("#ts-style-cancel") as HTMLButtonElement;
+    const progressEl = el.querySelector("#ts-style-progress") as HTMLElement;
+    const refreshTotal = (): void => {
+      const total = plan.blocks
+        .filter((b) => b.selected && b.missing > 0)
+        .reduce((acc, b) => acc + b.estCostUsd, 0);
+      const anything = plan.blocks.some((b) => b.selected && b.missing > 0);
+      totalEl.textContent = anything
+        ? `Coste estimado: ~$${total.toFixed(2)} (los skins y páginas ya en caché no se repagan)`
+        : "Nada seleccionado que genere coste.";
+      runBtn.textContent = anything ? `Aplicar estilo (~$${total.toFixed(2)})` : "Registrar (sin coste)";
+    };
+    for (const cb of el.querySelectorAll<HTMLInputElement>("input[data-block-idx]")) {
+      cb.addEventListener("change", () => {
+        plan.blocks[Number(cb.dataset.blockIdx)].selected = cb.checked;
+        refreshTotal();
+      });
+    }
+    refreshTotal();
+    cancelBtn.addEventListener("click", () => {
+      el.innerHTML = "";
+    });
+    runBtn.addEventListener("click", async () => {
+      runBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        const result = await this.styleApply.run(plan, (msg) => {
+          progressEl.textContent = msg;
+        });
+        const failNote = result.failures.length
+          ? ` · <span style="color:#a44">${result.failures.length} fallos (ver registro)</span>`
+          : "";
+        progressEl.innerHTML =
+          `<span style="color:#4a4">Estilo aplicado: ${result.cellsPainted} celdas y ` +
+          `${result.skinsPainted} skins nuevos ($${result.costUsd.toFixed(2)})${failNote}</span>`;
+        await new Promise((r) => setTimeout(r, 1200));
+        await this.renderWorldSelect(gameId);
+      } catch (err) {
+        progressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
+        runBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    });
   }
 
   /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
@@ -543,6 +772,11 @@ export class TitleScreen {
         <div style="font-size:12px;color:#999;margin-bottom:4px">…o sube un archivo</div>
         <input id="ts-draft-file" type="file" accept=".md,.txt,text/plain,text/markdown" style="color:#999;font-size:12px">
       </label>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:#999">
+        <input id="ts-pregen" type="checkbox" checked>
+        Generar el mundo al crearlo (mapa, escenas iniciales y personajes — el motor tarda varios
+        minutos en segundo plano; el estilo se aplica después con su coste a la vista)
+      </label>
       <div id="ts-create-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
@@ -582,7 +816,19 @@ export class TitleScreen {
       try {
         const created = await this.narrative.createGame(draft);
         statusEl.innerHTML = `<span style="color:#4a4">Mundo creado: ${escapeHtml(created.title)}.</span>`;
-        await this.renderWorldSelect();
+        // Encadenar la pre-generación del mundo (vista default del juego):
+        // corre en el bridge en segundo plano; el selector muestra el
+        // progreso (kind "game_gen") y los chips al terminar. El estilo se
+        // aplica después desde el panel (necesita confirmar su coste).
+        const pregen = (this.content.querySelector("#ts-pregen") as HTMLInputElement | null)?.checked;
+        if (pregen) {
+          try {
+            await this.narrative.generateGame(created.gameId);
+          } catch (err) {
+            statusEl.innerHTML += ` <span style="color:#a44">(pre-generación no encolada: ${escapeHtml((err as Error).message)})</span>`;
+          }
+        }
+        await this.renderWorldSelect(created.gameId);
       } catch (err) {
         statusEl.innerHTML = `<span style="color:#a44">No se pudo crear el mundo: ${escapeHtml((err as Error).message)}</span>`;
         createBtn.disabled = false;
@@ -655,6 +901,29 @@ export class TitleScreen {
   }
 }
 
+/** Chips de estado de generación de la tarjeta: qué ramas de contenido están
+ *  generadas y qué estilos aplicados — "los generados" visibles de un vistazo. */
+function generationChipsHtml(g: GameInfo): string {
+  const STATUS_CHIP: Record<string, { icon: string; color: string }> = {
+    ready: { icon: "✓", color: "#4a4" },
+    stale: { icon: "⟳", color: "#da6" },
+    missing: { icon: "—", color: "#555" },
+  };
+  const chip = (label: string, status: string): string => {
+    const s = STATUS_CHIP[status] ?? STATUS_CHIP.missing;
+    return `<span style="${BADGE_CSS};color:${s.color}">${escapeHtml(label)} ${s.icon}</span>`;
+  };
+  const gen = g.generation ?? { tile: "missing", stage: "missing" };
+  const chips = [
+    chip("Mundo abierto/1ª persona", gen.tile),
+    chip("Proscenio", gen.stage),
+    ...(g.styles_applied ?? []).map((a) =>
+      chip(`🎨 ${a.style_id} (${VIEW_LABELS[a.view] ?? a.view})`, a.status),
+    ),
+  ];
+  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${chips.join(" ")}</div>`;
+}
+
 function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   const cover = style?.cover_url
     ? `<img src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" alt="" style="width:120px;height:80px;object-fit:cover;flex:none;border:1px solid #333">`
@@ -666,6 +935,7 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
         <div style="color:#dcb;font-size:16px;margin-bottom:4px">${escapeHtml(g.title)}</div>
         <div style="color:#999;font-size:12px;line-height:1.5">${escapeHtml(g.description)}</div>
         <div style="color:#666;font-size:11px;margin-top:5px">Estilo: ${escapeHtml(style?.name ?? g.style_id)}</div>
+        ${generationChipsHtml(g)}
       </div>
     </div>
   `;

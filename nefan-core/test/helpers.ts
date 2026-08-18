@@ -4,8 +4,7 @@
  *  Los tests de bridge nuevos deben construir su ctx con makeCtx() de aquí. */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolve, dirname, join } from "node:path";
-import { tmpdir } from "node:os";
+import { resolve, dirname } from "node:path";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
 import { createCombatant } from "../src/combat/combatant.js";
