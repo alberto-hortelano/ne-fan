@@ -3,6 +3,7 @@
  *  contexto de costuras de sus vecinos. */
 
 import {
+  attachWorldVocabulary,
   broadcastScene,
   fireMapTriggers,
   npcSync,
@@ -135,6 +136,7 @@ export async function generateTileScene(
   const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
   const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge);
   genCtx.generate_tile = tileCtx;
+  attachWorldVocabulary(ctx, genCtx);
 
   const res = await ctx.aiClient.generateScene(genCtx);
   // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.

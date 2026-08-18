@@ -37,6 +37,11 @@ import type {
   SceneValidateRequest,
 } from "./world-state.js";
 import type { AssetRegisterRequest } from "./asset-store.js";
+import {
+  MAX_VOCABULARY_ENTRIES,
+  VocabularyEntrySchema,
+} from "../games/vocabulary.js";
+import type { VocabularySetRequest } from "./world-state.js";
 
 // ── Piezas compartidas ──
 
@@ -170,6 +175,10 @@ export const SceneAssetRefsRequestSchema = z.object({
   refs: z.array(z.string().min(1)).max(256),
 });
 
+export const VocabularySetRequestSchema = z.object({
+  entries: z.array(VocabularyEntrySchema).max(MAX_VOCABULARY_ENTRIES),
+});
+
 // ── Guardia de deriva (compile-time) ──
 // Cada espejo debe coincidir EXACTAMENTE con su tipo del contrato, en DOS
 // capas: (1) asignabilidad en ambos sentidos (campo requerido de más/de
@@ -235,3 +244,7 @@ assertSameKeys<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequest
 assertSameKeys<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>();
 assertSameKeys<PluginRegisterRequest, z.infer<typeof PluginRegisterRequestSchema>>();
 assertSameKeys<AssetRegisterRequest, z.infer<typeof AssetRegisterRequestSchema>>();
+
+assertMirror<VocabularySetRequest, z.infer<typeof VocabularySetRequestSchema>>();
+assertMirror<z.infer<typeof VocabularySetRequestSchema>, VocabularySetRequest>();
+assertSameKeys<VocabularySetRequest, z.infer<typeof VocabularySetRequestSchema>>();

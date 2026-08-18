@@ -4,6 +4,7 @@
  *  atiende una petición a la vez y las demás esperan en vez de perderse. */
 
 import {
+  attachWorldVocabulary,
   broadcastScene,
   fireMapTriggers,
   sessionChangedError,
@@ -107,6 +108,7 @@ export async function realizePlaceScene(
     })),
     links: ctx.narrative.worldMap.getOutgoingLinks(placeId),
   };
+  attachWorldVocabulary(ctx, realizeCtx);
   // Mundos proscenio: la escena del place es un PLATÓ (stage plan).
   const isStageWorld = ctx.narrative.world.view === "proscenium";
   if (isStageWorld) {

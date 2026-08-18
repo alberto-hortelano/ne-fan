@@ -20,6 +20,7 @@ import {
   writeWorldSnapshot,
   type WorldBranch,
 } from "../src/games/world-snapshot.js";
+import { loadWorldVocabulary } from "../src/games/vocabulary.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
@@ -128,6 +129,30 @@ export function writeSessionSnapshot(
     );
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
+  }
+}
+
+/** Adjunta el vocabulario canónico del juego (si existe y está vigente) al
+ *  contexto de un turno de tile/realize. Un vocabulario ilegible se REPORTA
+ *  y no rompe la generación (el turno va sin él). */
+export function attachWorldVocabulary(
+  ctx: BridgeContext,
+  llmCtx: import("../src/narrative/types.js").LlmContext,
+): void {
+  try {
+    const vocab = loadWorldVocabulary(
+      ctx.gamesDir,
+      ctx.narrative.game_id,
+      ctx.narrative.world.world_doc_hash,
+    );
+    if (vocab && vocab.entries.length > 0) {
+      llmCtx.world_vocabulary = vocab.entries;
+    }
+  } catch (err) {
+    console.warn(
+      `Bridge: world vocabulary ilegible para "${ctx.narrative.game_id}":`,
+      err,
+    );
   }
 }
 
