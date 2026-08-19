@@ -47,6 +47,9 @@ STAGE_AI_MODEL = "gpt-image-2"
 #: bench labs/fps para swatches de material tileables (mismo modelo que pinta
 #: las páginas tile del atlas in-game).
 FPS_AI_MODEL = "nano-banana-pro"
+#: Modelo de las refs temáticas de CARA (fps/ sin role): composiciones, no
+#: swatches — mismo modelo que el resto de composiciones del pack.
+FACE_AI_MODEL = "gpt-image-2"
 
 
 def seed_for(ref: dict) -> Path:
@@ -65,12 +68,15 @@ def seed_for(ref: dict) -> Path:
         return CHAR_SEED
     # Ref temática de CARA (fps/ sin role): el default.png de fps/ es la
     # rejilla de swatches de la lámina — un seed nefasto para una fachada.
-    # Fail-loud pidiendo seed declarado (run_one exige ≥1 referencia).
+    # Su default propio es face_default.png (plano clay a 90°); si falta,
+    # fail-loud pidiendo seed declarado (run_one exige ≥1 referencia).
     if folder == "fps" and str(ref.get("role") or "") != ROLE_FPS_SURFACES:
+        face_default = PLANTILLA_DIR / "fps" / "face_default.png"
+        if face_default.exists():
+            return face_default
         raise FileNotFoundError(
-            f"ref temática fps '{ref.get('id')}' sin `seed` declarado — las refs de "
-            "cara necesitan su propio encuadre (declara `seed` relativo a _plantilla/, "
-            "o captura _plantilla/fps/face_default.png como default futuro)"
+            f"ref temática fps '{ref.get('id')}' sin `seed` declarado y sin plantilla "
+            f"{face_default} — declara `seed` relativo a _plantilla/ o restaura la plantilla"
         )
     default = PLANTILLA_DIR / folder / "default.png"
     if default.exists():
@@ -235,7 +241,8 @@ async def generate_missing(
       (aunque su imagen exista — es la re-tirada del flujo de aprobación) y
       las escribe ahí, sin tocar pack, cover ni style.json.
     - Modelo por vista: proscenium → fal gpt-image-2 (clay → imagen, camino
-      del bench); fps → fal nano-banana-pro; el resto por Meshy `ai_model`.
+      del bench); lámina fps → fal nano-banana-pro; refs de cara fps → fal
+      gpt-image-2; el resto por Meshy `ai_model`.
     """
     pack_dir = styles_dir / style_id
     manifest_path = pack_dir / "style.json"
@@ -291,6 +298,7 @@ async def generate_missing(
         folder = ref_folder(str(entry["file"]))
         is_stage = folder == "proscenium"
         is_fps = folder == "fps"
+        is_face = is_fps and str(entry.get("role") or "") != ROLE_FPS_SURFACES
         style_paths = style_refs_for(entry)
         seed = seed_for(entry)
         refs = [_to_data_uri(seed)] + [_to_data_uri(p) for p in style_paths]
@@ -302,7 +310,11 @@ async def generate_missing(
             # gpt-image-2 1280×800; fps: rejilla cuadrada 1024).
             with Image.open(seed) as seed_img:
                 aspect = seed_img.size
-            fal_model = FPS_AI_MODEL if is_fps else STAGE_AI_MODEL
+            fal_model = (
+                FACE_AI_MODEL if is_face
+                else FPS_AI_MODEL if is_fps
+                else STAGE_AI_MODEL
+            )
             log(f"StylePackBuilder: {style_id}/{ref_id} ← {len(refs)} refs, model={fal_model} (fal)")
             png, _task = await fal_api.run_one(prompt, refs, ai_model=fal_model, aspect=aspect)
             per_image = FalImageToImage.COST_USD.get(fal_model, 0.17)

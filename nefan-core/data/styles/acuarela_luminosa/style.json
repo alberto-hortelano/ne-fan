@@ -124,6 +124,24 @@
       "role": "fps_surfaces"
     },
     {
+      "id": "fachada",
+      "file": "fps/fachada.jpg",
+      "description": "fachada de casa de cuento: yeso cálido, puerta de madera y ventanas con jardineras floridas",
+      "gen_scene": "the front face of a storybook cottage: warm plaster wall with soft color washes, a rounded wooden door, two windows with shutters and overflowing flower boxes, climbing ivy at one edge"
+    },
+    {
+      "id": "porton",
+      "file": "fps/porton.jpg",
+      "description": "portón de madera de doble hoja con herrajes, enmarcado en piedra clara con enredaderas",
+      "gen_scene": "a large wooden double gate with iron hinges and a small wicket door, framed by light stone blocks with soft moss and trailing vines"
+    },
+    {
+      "id": "tienda",
+      "file": "fps/tienda.jpg",
+      "description": "frente de tienda acogedor: mostrador con toldo de tela y cartel de madera pintado sobre el dintel",
+      "gen_scene": "the front face of a cozy village shop: a counter opening with a cloth awning rolled above it, a hand-painted wooden sign board flat over the lintel, warm plaster and timber wall"
+    },
+    {
       "id": "commoner",
       "file": "characters/commoner.jpg",
       "description": "una persona corriente con ropa de trabajo sencilla y gastada",

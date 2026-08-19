@@ -73,9 +73,13 @@ class BuilderTest(unittest.TestCase):
         self.assertIn("framing guide", p)
         self.assertNotIn("TEXTURE ATLAS SHEET", p)
 
-    def test_seed_de_ref_tematica_fps_es_obligatorio(self):
-        with self.assertRaises(FileNotFoundError):
-            seed_for(_ref("fachada", "fps/fachada.jpg", "fachada"))
+    def test_seed_de_ref_tematica_fps(self):
+        # Una ref de cara SIN seed declarado usa face_default.png (plano clay
+        # a 90°), NUNCA la rejilla de swatches default.png de la lámina.
+        self.assertEqual(
+            seed_for(_ref("fachada", "fps/fachada.jpg", "fachada")),
+            PLANTILLA_DIR / "fps" / "face_default.png",
+        )
         # La lámina (role) conserva su default de carpeta.
         lamina = _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces")
         self.assertEqual(seed_for(lamina), PLANTILLA_DIR / "fps" / "default.png")

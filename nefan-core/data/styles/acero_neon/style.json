@@ -124,6 +124,24 @@
       "role": "fps_surfaces"
     },
     {
+      "id": "fachada",
+      "file": "fps/fachada.jpg",
+      "description": "frente de módulo habitacional: paneles de metal cepillado, puerta estanca y ventanillas iluminadas",
+      "gen_scene": "the front face of a sci-fi habitat module: brushed steel and concrete panels with visible seams, a sealed airlock door with warning stripes, two small lit viewport windows, subtle grime and neon accent strips"
+    },
+    {
+      "id": "porton",
+      "file": "fps/porton.jpg",
+      "description": "portón blindado de carga de doble hoja con franjas de advertencia y balizas",
+      "gen_scene": "a heavy sci-fi cargo blast gate, two sliding armored leaves with hazard stripes, riveted frame, status lights and a small personnel hatch"
+    },
+    {
+      "id": "tienda",
+      "file": "fps/tienda.jpg",
+      "description": "frente de comercio de la colonia: escaparate con persiana, rótulo de neón sobre el dintel",
+      "gen_scene": "the front face of a colony shop: a display window with a half-open metal shutter, a glowing neon sign flat above the lintel, panel wall with conduits and grime"
+    },
+    {
       "id": "commoner",
       "file": "characters/commoner.jpg",
       "description": "una persona trabajadora de la colonia con rostro humano visible",

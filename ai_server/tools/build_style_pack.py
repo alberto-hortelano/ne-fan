@@ -3,8 +3,9 @@
 
 Las refs cenitales (overworld/) y de personaje (characters/) van por Meshy
 i2i (`--model`); las de PLATÓ (proscenium/) van SIEMPRE por fal gpt-image-2
-con la plantilla clay como base (bench labs/escenografia/greybox) y la
-lámina fps (fps/) por fal nano-banana-pro.
+con la plantilla clay como base (bench labs/escenografia/greybox); la
+lámina fps (fps/) va por fal nano-banana-pro y las refs temáticas de CARA
+(fps/ sin role) por fal gpt-image-2.
 
 Uso (desde la raíz del repo, con MESHY_API_KEY / FAL_KEY en .env):
 

@@ -130,17 +130,18 @@ de la página del atlas que pinta esas celdas hero.
 
 - Declararlas a mano: `{ "id": "fachada_casa", "file": "fps/fachada_casa.jpg",
   "description": "fachada de casa con puerta y dos ventanas", "gen_scene?":
-  …, "seed": "…" }` — **`seed` es obligatorio si se van a generar** con el
-  builder (el `default.png` de `fps/` es la rejilla de la lámina, un
-  encuadre nefasto para una cara; el builder falla pidiéndolo).
+  … }`. Sin `seed` declarado, el builder usa `_plantilla/fps/face_default.png`
+  (plano clay a 90°) como encuadre — NUNCA el `default.png` de `fps/`, que es
+  la rejilla de la lámina.
 - No habilitan la vista fps (eso sigue derivando de `overworld/`) ni tienen
   fallback: una ref desconocida deja la celda SIN ref (warning), nunca otra
   imagen.
 - Coste: cada ref distinta agrupa sus celdas en páginas PROPIAS del atlas
   (~$0.17/página gpt-image-2 extra). Su hash entra en la clave de las celdas
   que la usan (condicional): añadirla o regenerarla repinta solo esas.
-- Los packs shipped no declaran ninguna de fábrica (engordarían el coste de
-  "aplicar estilo"); añádelas al pack según lo pida el mundo.
+- Referencia shipped: `medievo_crudo` declara tres (`fachada`, `porton`,
+  `tienda`). Cada ref declarada suma su generación al coste de "aplicar
+  estilo" si falta la imagen; añade al pack solo las que pida el mundo.
 
 ## El `style_token`
 

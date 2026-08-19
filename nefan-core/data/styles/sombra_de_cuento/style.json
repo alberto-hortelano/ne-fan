@@ -124,6 +124,24 @@
       "role": "fps_surfaces"
     },
     {
+      "id": "fachada",
+      "file": "fps/fachada.jpg",
+      "description": "fachada de casa sombría de entramado: yeso agrietado entre vigas oscuras, puerta estrecha y ventanas apagadas",
+      "gen_scene": "the front face of a gloomy half-timbered house: cracked plaster between dark warped beams, a narrow plank door, two dim windows with crooked shutters, damp stains and moss"
+    },
+    {
+      "id": "porton",
+      "file": "fps/porton.jpg",
+      "description": "portón de madera ennegrecida con herrajes oxidados, enmarcado en piedra húmeda",
+      "gen_scene": "a large blackened wooden double gate with rusted iron studs and hinges and a small wicket door, framed by damp rough stone, faint moss in the joints"
+    },
+    {
+      "id": "tienda",
+      "file": "fps/tienda.jpg",
+      "description": "frente de tienda vieja: vano de mostrador con postigo torcido y cartel desvaído sobre el dintel",
+      "gen_scene": "the front face of an old village shop: a counter opening with a crooked fold-down shutter, a faded painted sign board flat above the lintel, dark timber and stained plaster wall"
+    },
+    {
       "id": "commoner",
       "file": "characters/commoner.jpg",
       "description": "una persona corriente con ropa de trabajo sencilla y gastada",

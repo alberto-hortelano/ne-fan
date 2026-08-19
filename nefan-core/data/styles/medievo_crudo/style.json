@@ -124,6 +124,24 @@
       "role": "fps_surfaces"
     },
     {
+      "id": "fachada",
+      "file": "fps/fachada.jpg",
+      "description": "fachada de casa de entramado de madera: yeso encalado entre vigas, puerta de tablones y ventanas con postigos",
+      "gen_scene": "the front face of a medieval half-timbered house: whitewashed plaster between dark oak beams, a plank door with iron hinges, two small windows with wooden shutters, weathered and patched"
+    },
+    {
+      "id": "porton",
+      "file": "fps/porton.jpg",
+      "description": "portón de madera de doble hoja con herrajes de hierro, enmarcado en piedra",
+      "gen_scene": "a large medieval wooden double gate with iron studs, hinges and a small wicket door, framed by rough stone blocks"
+    },
+    {
+      "id": "tienda",
+      "file": "fps/tienda.jpg",
+      "description": "frente de tienda medieval: vano de mostrador con postigo abatible y tablón de cartel pintado sobre el dintel",
+      "gen_scene": "the front face of a medieval shop: a counter opening with a fold-down wooden shutter, a painted sign board flat above the lintel, timber and plaster wall"
+    },
+    {
       "id": "commoner",
       "file": "characters/commoner.jpg",
       "description": "una persona corriente con ropa de trabajo sencilla y gastada",
