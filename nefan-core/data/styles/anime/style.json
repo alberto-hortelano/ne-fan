@@ -1,13 +1,13 @@
 {
-  "style_id": "sombra_de_cuento",
-  "name": "Sombra de cuento",
-  "description": "Ilustración de cuento antiguo: paleta terrosa apagada, sombras profundas, niebla y trazo de grabado. Lo siniestro asoma en lo cotidiano.",
-  "style_token": "dark folk-tale illustration, muted earthy palette, deep shadows, mist, old woodcut etching mood, eerie rural gothic",
+  "style_id": "anime",
+  "name": "Anime",
+  "description": "Manga seinen de fantasía oscura: línea de tinta marcada con tramas, color plano apagado y tono de pergamino envejecido.",
+  "style_token": "dark fantasy seinen manga illustration, bold clean ink outlines with crosshatch shading, flat muted earthy cel colors, aged parchment tone, gritty hand-drawn detail",
   "cover": "cover.jpg",
   "tags": [
-    "oscuro",
-    "cuento",
-    "fantasia"
+    "anime",
+    "fantasia",
+    "medieval"
   ],
   "refs": [
     {
@@ -117,11 +117,29 @@
     },
     {
       "id": "fps_surfaces",
-      "file": "fps/surfaces.jpg",
+      "file": "fps/surfaces.png",
       "description": "lámina de doce muestras planas de los materiales más comunes del mundo (muros, suelos, tejados, madera, piedra)",
       "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common surfaces: whitewashed plaster wall, rough fieldstone masonry, weathered wooden planks, clay roof tiles, packed dirt ground, cobblestone paving, short grass, forest floor with leaf litter, thatch, dark rock, aged plaster with exposed brick, worn metal fittings",
       "seed": "fps/fps_surfaces.png",
       "role": "fps_surfaces"
+    },
+    {
+      "id": "fachada",
+      "file": "fps/fachada.jpg",
+      "description": "fachada de casa de entramado de madera: yeso agrietado entre vigas oscuras, puerta de tablones y ventanas con postigos",
+      "gen_scene": "the front face of a medieval half-timbered house: cracked plaster between dark oak beams, a plank door with iron hinges, two small windows with wooden shutters, weathered"
+    },
+    {
+      "id": "porton",
+      "file": "fps/porton.jpg",
+      "description": "portón de madera de doble hoja con herrajes de hierro, enmarcado en piedra",
+      "gen_scene": "a large medieval wooden double gate with iron studs, hinges and a small wicket door, framed by rough stone blocks"
+    },
+    {
+      "id": "tienda",
+      "file": "fps/tienda.jpg",
+      "description": "frente de tienda medieval: vano de mostrador con postigo abatible y tablón de cartel pintado sobre el dintel",
+      "gen_scene": "the front face of a medieval shop: a counter opening with a fold-down wooden shutter, a painted sign board flat above the lintel, timber and plaster wall"
     },
     {
       "id": "commoner",
@@ -131,13 +149,13 @@
     },
     {
       "id": "noble",
-      "file": "characters/noble.jpg",
+      "file": "characters/noble.png",
       "description": "una persona de alta posición con ropas ricas y joyas",
       "gen_scene": "a richly dressed noble with fine fabrics and jewelry"
     },
     {
       "id": "warrior",
-      "file": "characters/warrior.jpg",
+      "file": "characters/warrior.png",
       "description": "una persona de armas con armadura y armas propias del mundo",
       "gen_scene": "an armed warrior with period-appropriate armor and weapons"
     }

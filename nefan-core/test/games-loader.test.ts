@@ -289,9 +289,9 @@ describe("games loader", () => {
     const styles = listStyles(REAL_STYLES);
     assert.deepEqual(
       styles.map((s) => s.style_id),
-      ["acero_neon", "acuarela_luminosa", "medievo_crudo", "sombra_de_cuento"],
+      ["acero_neon", "acuarela_luminosa", "anime", "medievo_crudo", "sombra_de_cuento"],
     );
-    // Vistas: los 4 packs shipped sirven a TODAS (refs de zona + de plató;
+    // Vistas: los packs shipped sirven a TODAS (refs de zona + de plató;
     // fps se deriva de overworld — no tiene categorías propias).
     for (const s of styles) {
       assert.deepEqual(s.views, ["overworld", "proscenium", "fps"], s.style_id);
