@@ -992,10 +992,10 @@ function composeTilePlan(
 let hotComposeStage = composeStageScene;
 let hotStagePlanFromScene = stagePlanFromScene;
 
-/** Metadatos del repintado de un plató, desde el Format D crudo. La categoría
- *  de ref de estilo es de PLATÓ (stage_*): el tag del motor se respeta si ya
- *  es de plató, una zona cenital legacy se mapea (ZONE_TO_STAGE) y sin tag
- *  decide la cuarta pared; "" = default del server. */
+/** Metadatos del repintado de un plató, desde el Format D crudo. La ref de
+ *  estilo es la elegida por el motor (`style_ref`; `style_tag` legacy en
+ *  saves viejos); "" = sin elección — el server usa la primera ref de plató
+ *  del manifest. */
 function stageImageMeta(
   rawFd: Record<string, unknown>,
   data: Record<string, unknown>,

@@ -37,7 +37,7 @@
       stage_street: "greybox/01_calle", stage_plaza: "greybox/02_plaza", stage_interior: "greybox/03_taberna",
       stage_nature: "greybox/04_bosque", stage_harbor: "greybox/05_puerto", stage_gate: "greybox/06_puerta",
     };
-    for (const [dir, names, sub] of [["stage", stage, "proscenio"], ["tile", tile, "oblicua"]]) {
+    for (const [dir, names, sub] of [["stage", stage, "proscenium"], ["tile", tile, "overworld"]]) {
       const el = document.getElementById(dir);
       for (const n of names) {
         const fig = document.createElement("figure");
