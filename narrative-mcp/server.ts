@@ -450,6 +450,13 @@ into context:
           const sections = (worldMd.match(/^## /gm) ?? []).length;
           const errs: string[] = [];
           if (missing.length) errs.push(`missing string fields: ${missing.join(', ')}`);
+          // tags temáticos: la plantilla exige 3-5 (filtran los estilos
+          // ofrecidos para el mundo en el título).
+          const tags = (parsed as { tags?: unknown }).tags;
+          if (!Array.isArray(tags) || tags.length === 0
+            || !tags.every((t) => typeof t === 'string' && t.length > 0)) {
+            errs.push('missing tags (non-empty array of lowercase theme strings, e.g. ["medieval","oscuro"])');
+          }
           if (sections < 10) errs.push(`world_md has ${sections} "## " sections, needs 10`);
           if (worldMd && worldMd.length < 6000) {
             errs.push(`world_md too short (${worldMd.length} chars — the template asks for 9k-12k)`);

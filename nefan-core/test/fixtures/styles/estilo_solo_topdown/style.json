@@ -4,8 +4,17 @@
   "description": "Fixture: pack sin refs de plató, incompatible con proscenium.",
   "style_token": "test style token",
   "cover": "cover.jpg",
+  "tags": ["medieval"],
   "refs": [
-    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
-    { "category": "forest", "file": "forest.jpg", "tags": [] }
+    {
+      "id": "settlement",
+      "file": "overworld/settlement.jpg",
+      "description": "una aldea de pruebas"
+    },
+    {
+      "id": "forest",
+      "file": "overworld/forest.jpg",
+      "description": "un bosque de pruebas"
+    }
   ]
 }

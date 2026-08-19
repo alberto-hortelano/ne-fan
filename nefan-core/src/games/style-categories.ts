@@ -15,21 +15,13 @@
  * canda contract-prompts.test.ts.
  */
 
-/** Vistas de mundo. La vista se elige en el título (game.json aporta el
- *  default del mundo) y queda CONGELADA en el save (`world.view`).
- *  "fps" (primera persona, tiles en 3D con atlas de superficies) tiene UNA
- *  categoría de ref propia OPCIONAL (`fps_surfaces`, lámina de muestras de
- *  materiales); sin ella el atlas degrada a solo `style_token`, así que
- *  styleViews sigue derivando fps de overworld (la lámina mejora, no
- *  habilita). */
-export const WORLD_VIEWS = ["overworld", "proscenium", "fps"] as const;
-export type WorldView = (typeof WORLD_VIEWS)[number];
+/** WORLD_VIEWS y SAFE_ID viven ahora en style-refs.ts (la fuente del formato
+ *  nuevo de packs); se re-exportan aquí para los consumidores transitorios de
+ *  este módulo (selección por bioma del cliente — muere en la fase 2 del
+ *  rediseño de estilos). */
+import { SAFE_ID, WORLD_VIEWS, type WorldView } from "./style-refs.js";
 
-/** Ids usables como nombre de archivo/clave de caché sin sorpresas (juegos,
- *  estilos, snapshots). Vive aquí (módulo puro) para que los schemas
- *  importables desde el navegador no arrastren node:fs; loader.ts la
- *  re-exporta. */
-export const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
+export { SAFE_ID, WORLD_VIEWS, type WorldView };
 
 export const STYLE_ENV_CATEGORIES = [
   "settlement",

@@ -64,6 +64,11 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
     # título degradaría en silencio.
     required = ("game_id", "title", "description", "style_id", "world_brief", "world_md")
     missing = [k for k in required if not isinstance(game.get(k), str) or not game.get(k)]
+    # tags requeridos (lista no vacía de strings): filtran qué estilos ofrece
+    # el título para este mundo.
+    tags = game.get("tags")
+    if not (isinstance(tags, list) and tags and all(isinstance(t, str) and t for t in tags)):
+        missing.append("tags")
     if missing:
         raise HTTPException(
             status_code=422,
@@ -76,6 +81,7 @@ async def develop_world_endpoint(body: DevelopWorldRequest):
         "style_id": game["style_id"],
         "world_brief": game["world_brief"],
         "world_md": game["world_md"],
+        "tags": [str(t) for t in game["tags"]],
     }}
 
 

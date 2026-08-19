@@ -8,9 +8,9 @@ de esos archivos — editar el texto allí, nunca aquí. Fail-loud si faltan.
 
 import json
 import os
+import re
 from pathlib import Path
 
-from style_categories import ALL_STYLE_TAGS
 
 _PROMPTS_DIR = Path(
     os.environ.get(
@@ -487,12 +487,13 @@ def validate_scene_response(data: dict) -> dict:
     data["scene_id"] = scene_id
     # Keep `room_id` as alias so older clients keep working.
     data["room_id"] = scene_id
-    # style_tag: categoría de referencia de estilo para el repintado IA.
-    # Valor fuera del enum se descarta con aviso (mejor sin tag que un 422 en
-    # /generate_scene_image cuando el cliente lo reenvíe). Enum en
-    # style_categories.py (fuente única, candada contra el TS).
-    if data.get("style_tag") and data["style_tag"] not in ALL_STYLE_TAGS:
-        print(f"validate_scene: style_tag inválido '{data['style_tag']}' — descartado", flush=True)
+    # style_tag: id de la ref de estilo del pack elegida para el repintado
+    # IA (id LIBRE del manifest — el catálogo lo conoce el bridge, que hace
+    # el pre-flight fail-loud; aquí solo se exige forma de slug). Un valor
+    # malformado se descarta con aviso (mejor sin ref que un 422 en
+    # /generate_scene_image cuando el cliente lo reenvíe).
+    if data.get("style_tag") and not re.fullmatch(r"[A-Za-z0-9_.-]+", str(data["style_tag"])):
+        print(f"validate_scene: style_tag malformado '{data['style_tag']}' — descartado", flush=True)
         data.pop("style_tag", None)
     data["scene_description"] = (
         data.get("scene_description") or data.get("room_description") or "Un paraje desolado."

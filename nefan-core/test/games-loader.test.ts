@@ -103,80 +103,110 @@ describe("games loader", () => {
         description: "desc",
         style_token: "token",
         cover: "cover.jpg",
+        tags: ["bosque", "fantasia"],
         refs: [
-          { category: "forest", file: "forest.jpg", tags: ["bosque"] },
-          // Alias legacy: un pack anterior al set de zonas sigue cargando.
-          { category: "nature", file: "nature.jpg", tags: [] },
+          { id: "bosque", file: "overworld/bosque.jpg", description: "un bosque frondoso" },
+          { id: "catedral", file: "overworld/catedral.jpg", description: "una catedral gótica" },
         ],
       }),
     );
     const manifest = loadStyleManifest(stylesDir, "mi_estilo");
-    assert.equal(manifest.refs[0].category, "forest");
-    assert.equal(manifest.refs[1].category, "nature");
+    assert.equal(manifest.refs[0].id, "bosque");
+    assert.deepEqual(manifest.tags, ["bosque", "fantasia"]);
 
     let listed = listStyles(stylesDir);
     assert.equal(listed[0].cover_url, undefined);
+    assert.deepEqual(listed[0].tags, ["bosque", "fantasia"]);
 
     writeFileSync(join(d, "cover.jpg"), "fake-jpg");
     listed = listStyles(stylesDir);
     assert.equal(listed[0].cover_url, "/styles/mi_estilo/cover.jpg");
   });
 
-  it("refs por vista: view se deriva del namespace y la incoherente se rechaza", () => {
+  it("refs por carpeta: la vista se deriva de la ruta; carpeta desconocida se rechaza", () => {
     const base = {
       style_id: "x",
       name: "x",
       description: "x",
       style_token: "x",
       cover: "cover.jpg",
+      tags: ["x"],
     };
-    // Ref de plató sin view explícita parsea (la vista la da el namespace).
     const m = StyleManifestSchema.parse({
       ...base,
       refs: [
-        { category: "settlement", file: "settlement.jpg" },
-        { category: "stage_street", file: "stage_street.jpg" },
-        { category: "stage_interior", file: "stage_interior.jpg", view: "proscenium" },
+        { id: "aldea", file: "overworld/aldea.jpg", description: "una aldea" },
+        { id: "calle", file: "proscenium/calle.jpg", description: "una calle" },
       ],
     });
-    // fps se deriva de overworld (sin categorías propias — ver styleViews).
+    // fps se deriva de overworld (la lámina es mejora, no habilita).
     assert.deepEqual(styleViews(m), ["overworld", "proscenium", "fps"]);
-    // view explícita que no casa con la categoría → fail-loud.
+    // Archivo fuera de una carpeta de vista → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
-        refs: [{ category: "stage_street", file: "a.jpg", view: "overworld" }],
+        refs: [{ id: "a", file: "a.jpg", description: "suelta en la raíz" }],
       }),
     );
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
-        refs: [{ category: "settlement", file: "a.jpg", view: "proscenium" }],
+        refs: [{ id: "a", file: "otra_carpeta/a.jpg", description: "carpeta inventada" }],
+      }),
+    );
+    // Ids duplicados → fail-loud.
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [
+          { id: "a", file: "overworld/a.jpg", description: "una" },
+          { id: "a", file: "overworld/b.jpg", description: "otra" },
+        ],
+      }),
+    );
+    // Lámina: role solo en fps/, máximo una.
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [{ id: "l", file: "overworld/l.jpg", description: "x", role: "fps_surfaces" }],
+      }),
+    );
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [
+          { id: "l1", file: "fps/l1.jpg", description: "x", role: "fps_surfaces" },
+          { id: "l2", file: "fps/l2.jpg", description: "x", role: "fps_surfaces" },
+        ],
       }),
     );
   });
 
-  it("styleViews: personajes e isometric legacy no cuentan; refs vacías → sin vistas", () => {
+  it("styleViews: personajes y lámina no cuentan; refs vacías → sin vistas", () => {
     const base = {
       style_id: "x",
       name: "x",
       description: "x",
       style_token: "x",
       cover: "cover.jpg",
+      tags: ["x"],
     };
     const soloChars = StyleManifestSchema.parse({
       ...base,
-      refs: [
-        { category: "character_noble", file: "n.jpg" },
-        { category: "settlement", file: "s.jpg", perspective: "isometric" },
-      ],
+      refs: [{ id: "noble", file: "characters/noble.jpg", description: "x" }],
     });
     assert.deepEqual(styleViews(soloChars), []);
+    // La lámina fps por sí sola tampoco habilita la vista fps.
+    const soloLamina = StyleManifestSchema.parse({
+      ...base,
+      refs: [{ id: "fps_surfaces", file: "fps/surfaces.jpg", description: "x", role: "fps_surfaces" }],
+    });
+    assert.deepEqual(styleViews(soloLamina), []);
     const soloStage = StyleManifestSchema.parse({
       ...base,
       refs: [
-        { category: "stage_nature", file: "sn.jpg" },
-        { category: "character_warrior", file: "w.jpg" },
+        { id: "claro", file: "proscenium/claro.jpg", description: "x" },
+        { id: "guerrera", file: "characters/guerrera.jpg", description: "x" },
       ],
     });
     // Un pack SOLO de plató no sirve fps (fps deriva de overworld).
@@ -185,12 +215,13 @@ describe("games loader", () => {
     // Un pack solo cenital sirve overworld Y fps.
     const soloEnv = StyleManifestSchema.parse({
       ...base,
-      refs: [{ category: "forest", file: "f.jpg" }],
+      refs: [{ id: "bosque", file: "overworld/bosque.jpg", description: "x" }],
     });
     assert.deepEqual(styleViews(soloEnv), ["overworld", "fps"]);
   });
 
-  it("schema estricto: categoría de ref desconocida es rechazada", () => {
+  it("schema estricto: pack sin tags o con campos legacy es rechazado", () => {
+    // Sin tags (obligatorios en el pack).
     assert.throws(() =>
       StyleManifestSchema.parse({
         style_id: "x",
@@ -198,7 +229,19 @@ describe("games loader", () => {
         description: "x",
         style_token: "x",
         cover: "cover.jpg",
-        refs: [{ category: "paisaje_inventado", file: "a.jpg" }],
+        refs: [],
+      }),
+    );
+    // Campo legacy `category` (formato viejo) — strict lo rechaza.
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        style_id: "x",
+        name: "x",
+        description: "x",
+        style_token: "x",
+        cover: "cover.jpg",
+        tags: ["x"],
+        refs: [{ category: "settlement", file: "a.jpg" }],
       }),
     );
     assert.throws(() =>

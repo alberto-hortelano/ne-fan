@@ -76,6 +76,8 @@ export interface DevelopWorldResponse {
     style_id: string;
     world_brief: string;
     world_md: string;
+    /** Etiquetas temáticas del mundo (3-5): filtran los estilos ofrecidos. */
+    tags: string[];
   };
 }
 

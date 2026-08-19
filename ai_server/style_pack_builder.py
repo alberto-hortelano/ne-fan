@@ -1,16 +1,19 @@
-"""Generación de imágenes de un style pack vía Meshy image-to-image.
+"""Generación de imágenes de un style pack vía Meshy/fal image-to-image.
 
 Compartido por la CLI `tools/build_style_pack.py` (packs base shipped) y los
 endpoints `/styles/upload` + `/styles/{id}/complete` (packs de usuario).
 
-Dos modos de dirección de arte:
-- Pack con imágenes subidas: las imágenes del usuario van como referencias de
-  ESTILO (2ª..4ª ref) y el prompt exige calcar su estilo.
-- Pack solo-texto (packs base): el estilo sale del `style_token` del
-  style.json; la referencia aporta el ENCUADRE (mapa top-down / personaje).
+Formato de pack (2026-08, refs libres): cada ref del style.json declara
+`{id, file, description, gen_scene?, seed?, role?}` y vive en la carpeta de
+su vista (overworld/ | proscenium/ | fps/ | characters/). El CONTENIDO de la
+imagen a generar es `gen_scene` (prompt EN) o, si falta, la `description` en
+español tal cual; el ENCUADRE lo pone el seed de `_plantilla/` (declarado en
+`seed` o el default de su vista).
 
-Los seeds de encuadre son assets ya validados del repo: el battlemap global
-para entornos y el frame base de y_bot para personajes.
+Dos modos de dirección de arte:
+- Pack con imágenes ya presentes: van como referencias de ESTILO (2ª..4ª
+  ref) y el prompt exige calcar su estilo.
+- Pack solo-texto: el estilo sale del `style_token` del style.json.
 """
 from __future__ import annotations
 
@@ -24,14 +27,7 @@ from PIL import Image
 
 from meshy_client import FalImageToImage, MeshyImageToImage
 from spend_tracker import SPEND
-from style_packs import (
-    CHARACTER_CATEGORIES,
-    ENV_CATEGORIES,
-    FPS_CATEGORIES,
-    LEGACY_ALIASES,
-    REPO_ROOT,
-    STAGE_CATEGORIES,
-)
+from style_packs import REPO_ROOT, ROLE_FPS_SURFACES, ref_folder
 
 ENV_SEED = REPO_ROOT / "nefan-core" / "data" / "styles" / "battlemap-town-style.png"
 CHAR_SEED = (
@@ -39,12 +35,9 @@ CHAR_SEED = (
     / "isometric_30" / "dir_0_frame_000.png"
 )
 # Plantillas clay three.js (renders de los builders greybox de producción):
-# seed de encuadre por categoría. Las de plató son OBLIGATORIAS (fail-loud);
-# las oblicuas sustituyen al battlemap cuando existen (transición suave).
+# seeds de encuadre por VISTA, con un pool nombrado por carpeta y un
+# default.png por vista para refs libres sin seed declarada.
 PLANTILLA_DIR = REPO_ROOT / "nefan-core" / "data" / "styles" / "_plantilla"
-STAGE_SEED_DIR = PLANTILLA_DIR / "proscenio"
-OBLIQUE_SEED_DIR = PLANTILLA_DIR / "oblicua"
-FPS_SEED_DIR = PLANTILLA_DIR / "fps"
 
 #: Modelo del repintado de refs de plató: clay → gpt-image-2 vía fal DIRECTO
 #: (máxima fidelidad de layout del bench labs/escenografia/greybox — el mismo
@@ -56,126 +49,29 @@ STAGE_AI_MODEL = "gpt-image-2"
 FPS_AI_MODEL = "nano-banana-pro"
 
 
-def seed_for(category: str) -> Path:
-    """Seed de encuadre de una categoría. Plató sin plantilla clay = error
-    (la plantilla ES el encuadre; sin ella el modelo inventa la cámara)."""
-    if category in CHARACTER_CATEGORIES:
+def seed_for(ref: dict) -> Path:
+    """Seed de encuadre de una ref. `ref.seed` (ruta relativa a _plantilla/)
+    manda; sin él, el default de su vista. Personajes usan el frame y_bot.
+    Fail-loud si un seed declarado o el default de plató/fps no existen (la
+    plantilla ES el encuadre; sin ella el modelo inventa la cámara)."""
+    declared = str(ref.get("seed") or "")
+    if declared:
+        path = PLANTILLA_DIR / declared
+        if not path.exists():
+            raise FileNotFoundError(f"seed declarado ausente: {path} (ref '{ref.get('id')}')")
+        return path
+    folder = ref_folder(str(ref.get("file", "")))
+    if folder == "characters":
         return CHAR_SEED
-    if category in FPS_CATEGORIES:
-        path = FPS_SEED_DIR / f"{category}.png"
-        if not path.exists():
-            raise FileNotFoundError(
-                f"plantilla de rejilla fps ausente: {path} — regenerarla con "
-                "ai_server/tools/gen_fps_seed.py"
-            )
-        return path
-    if category in STAGE_CATEGORIES:
-        path = STAGE_SEED_DIR / f"{category}.png"
-        if not path.exists():
-            raise FileNotFoundError(
-                f"plantilla clay de plató ausente: {path} — captura las "
-                "plantillas primero (labs/plantillas/capture.sh)"
-            )
-        return path
-    clay = OBLIQUE_SEED_DIR / f"{category}.png"
-    return clay if clay.exists() else ENV_SEED
-
-# Qué debe mostrar la imagen de cada categoría (el estilo lo pone el pack).
-# Cada entorno es una ZONA de mundo abierto: escena completa con varios
-# elementos y una TRANSICIÓN a la zona vecina, nunca un sujeto aislado — la
-# referencia condiciona la composición del repintado, y el material de los
-# caminos debe corresponder a la zona (empedrado SOLO en plazas urbanas).
-CATEGORY_SCENES: dict[str, str] = {
-    "settlement": (
-        "a small village and its surroundings: houses with varied roofs "
-        "around a market square (cobblestone paving ONLY in the square), "
-        "packed-dirt streets leading out, gardens and fences, blending into "
-        "plowed fields and a forest edge at the borders"
-    ),
-    "farmland": (
-        "farmland countryside: plowed fields with crop rows, a farmhouse and "
-        "a barn, hedges and wooden fences, a packed-dirt road, blending into "
-        "open meadow and a forest edge"
-    ),
-    "forest": (
-        "a wild forest with NO buildings: dense tree canopy, a clearing, a "
-        "narrow dirt trail (NO paving), a stream with rocks, blending into "
-        "open meadow at one side"
-    ),
-    "wetland": (
-        "a swamp with NO buildings: murky water channels, reeds and moss, "
-        "twisted trees, plank walkways over the mud, blending into wet "
-        "meadow at one side"
-    ),
-    "desert": (
-        "a desert with NO buildings: sand dunes, rocky outcrops, sparse dry "
-        "shrubs, a small oasis, a sandy trail, blending into dry steppe at "
-        "one side"
-    ),
-    "snow": (
-        "a snowy landscape with NO buildings: snow fields, pine trees, "
-        "rocks, a frozen stream, a trodden-snow trail, blending into alpine "
-        "meadow at one side"
-    ),
-    "fortress": (
-        "a stone fortress set in open landscape: outer walls with towers and "
-        "a gate, an inner courtyard with barracks, and the fields around the "
-        "walls with a packed-dirt road leading to the gate"
-    ),
-    "interior": (
-        "the interior of an inhabited building (a tavern or great hall) "
-        "shown in cutaway WITHIN its surroundings: no roof, furniture and "
-        "floors visible, and the world continuing around the building — "
-        "village street, grass, a neighbouring house, a dirt path reaching "
-        "its door (never a floor plan floating on a void)"
-    ),
-    "underground": (
-        "a torch-lit dungeon: stone corridors, chambers of different sizes, "
-        "stairs, pillars and rubble"
-    ),
-    # Lámina de materiales de la vista fps: 12 swatches (uno por celda de la
-    # rejilla del seed). Redactada en clave medieval — un pack de otra
-    # ambientación la sustituye con `scene` (mismos 12 huecos, sus materiales).
-    "fps_surfaces": (
-        "twelve different flat material swatches, one per grid cell, covering "
-        "the world's most common surfaces: whitewashed plaster wall, rough "
-        "fieldstone masonry, weathered wooden planks, clay roof tiles, packed "
-        "dirt ground, cobblestone paving, short grass, forest floor with leaf "
-        "litter, thatch, dark rock, aged plaster with exposed brick, worn "
-        "metal fittings"
-    ),
-    "character_commoner": "a common villager in simple, worn work clothes",
-    "character_noble": "a richly dressed noble with fine fabrics and jewelry",
-    "character_warrior": "an armed warrior with period-appropriate armor and weapons",
-    # ── Categorías de PLATÓ (vista proscenio, nivel de suelo) ───────────────
-    # Escenas canónicas en clave medieval, destiladas de las seis bases del
-    # bench labs/escenografia. Un pack de otra ambientación las sustituye con
-    # `scene` por ref (acero_neon: interior de nave en vez de taberna).
-    "stage_street": (
-        "a curved main street: arcaded facades and varied house fronts on "
-        "both sides, a cart with barrels, a tower rising above the bend"
-    ),
-    "stage_plaza": (
-        "a market square: church front, a stone fountain, market stalls "
-        "with awnings, houses closing the far side"
-    ),
-    "stage_interior": (
-        "the common room of a tavern: timber beams, a stone hearth with "
-        "fire, wooden tables and benches, a counter, a staircase"
-    ),
-    "stage_nature": (
-        "a forest clearing: a stream crossed by a wooden footbridge, "
-        "mossy rocks, dense tree mass closing the background"
-    ),
-    "stage_harbor": (
-        "a river dock: a wooden treadwheel crane, a moored barge, a toll "
-        "hut, nets and crates along the quay"
-    ),
-    "stage_gate": (
-        "a walled city gate seen from outside: gatehouse with two towers, "
-        "a raised portcullis, the road leading in, fields at the sides"
-    ),
-}
+    default = PLANTILLA_DIR / folder / "default.png"
+    if default.exists():
+        return default
+    if folder == "overworld":
+        return ENV_SEED
+    raise FileNotFoundError(
+        f"plantilla default de la vista '{folder}' ausente: {default} — "
+        "captura las plantillas primero (labs/plantillas/capture.sh)"
+    )
 
 
 def _to_data_uri(path: Path, long_side: int = 1024) -> str:
@@ -189,8 +85,8 @@ def _to_data_uri(path: Path, long_side: int = 1024) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-# Encuadre por tipo de imagen: entornos en la proyección oblicua única del
-# formato 2D; los personajes son un model sheet.
+# Encuadre por VISTA: entornos cenitales en la proyección oblicua única del
+# formato 2D; platós a pie de suelo; lámina de materiales; model sheet.
 ENV_FRAME = (
     "top-down 2D RPG game map artwork with faked elevation: every vertical "
     "object also paints its SOUTH face below its top, ~25% darker, and a "
@@ -234,21 +130,18 @@ STAGE_ACTION = (
 )
 
 
-def build_prompt(
-    category: str, style_token: str, has_style_refs: bool,
-    scene_override: str | None = None,
-) -> str:
-    """Prompt de generación de una categoría. Con refs de estilo del usuario,
-    el estilo se calca de ellas; sin refs, manda el style_token.
-    `scene_override` (campo `scene` del ref en style.json) sustituye el
-    CONTENIDO canónico de la categoría — CATEGORY_SCENES está redactado en
-    clave medieval y un pack de otra ambientación necesita sus propias
-    escenas (mismo encuadre y reglas de zona)."""
-    category = LEGACY_ALIASES.get(category, category)
-    scene = scene_override or CATEGORY_SCENES[category]
-    is_char = category in CHARACTER_CATEGORIES
-    is_stage = category in STAGE_CATEGORIES
-    is_fps = category in FPS_CATEGORIES
+def build_prompt(ref: dict, style_token: str, has_style_refs: bool) -> str:
+    """Prompt de generación de una ref. El CONTENIDO es `gen_scene` (EN) o la
+    `description` (ES) tal cual; el frame lo decide la carpeta de la ref (y
+    el role para la lámina). Con refs de estilo del pack, el estilo se calca
+    de ellas; sin refs, manda el style_token."""
+    scene = str(ref.get("gen_scene") or "").strip() or str(ref.get("description") or "").strip()
+    if not scene:
+        raise ValueError(f"ref '{ref.get('id')}' sin gen_scene ni description — nada que generar")
+    folder = ref_folder(str(ref.get("file", "")))
+    is_char = folder == "characters"
+    is_stage = folder == "proscenium"
+    is_fps = folder == "fps" or str(ref.get("role") or "") == ROLE_FPS_SURFACES
     frame = (
         CHAR_FRAME if is_char
         else STAGE_FRAME if is_stage
@@ -277,29 +170,20 @@ def build_prompt(
     return f"{frame}. {action}: {scene}. {style}."
 
 
-def missing_categories(styles_dir: Path, style_id: str) -> list[str]:
-    """Categorías declaradas en style.json cuyo archivo no existe aún. Las
-    entradas legacy `perspective: "isometric"` se ignoran (era de dos
-    proyecciones)."""
+def missing_refs(styles_dir: Path, style_id: str) -> list[dict]:
+    """Refs declaradas en style.json cuyo archivo no existe aún:
+    [{id, view, description}] — lo que el diálogo de coste muestra y
+    /complete genera."""
     manifest = json.loads((styles_dir / style_id / "style.json").read_text(encoding="utf-8"))
-    out: list[str] = []
+    out: list[dict] = []
     for ref in manifest.get("refs", []):
-        if str(ref.get("perspective") or "topdown") == "isometric":
-            continue
         if not (styles_dir / style_id / str(ref.get("file", ""))).exists():
-            out.append(str(ref.get("category")))
+            out.append({
+                "id": str(ref.get("id", "")),
+                "view": ref_folder(str(ref.get("file", ""))),
+                "description": str(ref.get("description", "")),
+            })
     return out
-
-
-def _view_of(category: str) -> str:
-    """Vista de una categoría (espejo de viewForCategory en TS): el namespace
-    manda — stage_* es proscenium, fps_* es fps, el resto (zonas y
-    personajes) overworld."""
-    if category.startswith("stage_"):
-        return "proscenium"
-    if category.startswith("fps_"):
-        return "fps"
-    return "overworld"
 
 
 async def generate_missing(
@@ -314,73 +198,58 @@ async def generate_missing(
     """Genera las imágenes que faltan de un pack y actualiza la cover.
 
     Las imágenes YA presentes del pack se usan como referencias de estilo
-    (hasta 3). Devuelve {generated: [...], cost_usd, skipped: [...]}.
+    (hasta 3). Devuelve {generated: [...ids], cost_usd, skipped: [...]}.
     Fail-loud: cualquier error de la API aborta (no se escribe media imagen).
 
-    - `view`: limita a las refs de esa vista ("overworld"|"proscenium").
-    - `out_dir` (staging): genera las categorías de `only`
-      INCONDICIONALMENTE (aunque su imagen exista — es la re-tirada del flujo
-      de aprobación) y las escribe ahí, sin tocar pack, cover ni style.json.
-    - Modelo por categoría: las de plató van SIEMPRE por fal gpt-image-2
-      (clay → imagen, camino del bench); el resto por Meshy `ai_model`.
+    - `only`: limita a esos ids de ref.
+    - `view`: limita a las refs de esa vista/carpeta
+      ("overworld"|"proscenium"|"fps"|"characters").
+    - `out_dir` (staging): genera los ids de `only` INCONDICIONALMENTE
+      (aunque su imagen exista — es la re-tirada del flujo de aprobación) y
+      las escribe ahí, sin tocar pack, cover ni style.json.
+    - Modelo por vista: proscenium → fal gpt-image-2 (clay → imagen, camino
+      del bench); fps → fal nano-banana-pro; el resto por Meshy `ai_model`.
     """
     pack_dir = styles_dir / style_id
     manifest_path = pack_dir / "style.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     style_token = str(manifest.get("style_token", ""))
-    entries = [
-        {
-            "category": str(r.get("category", "")),
-            "file": str(r.get("file", "")),
-            "scene": str(r.get("scene") or ""),
-        }
-        for r in manifest.get("refs", [])
-        if str(r.get("perspective") or "topdown") != "isometric"
-    ]
+    entries: list[dict] = [r for r in manifest.get("refs", []) if str(r.get("file", ""))]
 
     if out_dir is not None:
         if not only:
-            raise ValueError("out_dir (staging) requiere `only` — la re-tirada es por categorías explícitas")
-        todo = [e for e in entries if e["category"] in only]
+            raise ValueError("out_dir (staging) requiere `only` — la re-tirada es por refs explícitas")
+        todo = [e for e in entries if str(e.get("id")) in only]
     else:
-        todo = [e for e in entries if e["file"] and not (pack_dir / e["file"]).exists()]
+        todo = [e for e in entries if not (pack_dir / str(e["file"])).exists()]
         if only:
-            todo = [e for e in todo if e["category"] in only]
+            todo = [e for e in todo if str(e.get("id")) in only]
     if view:
-        todo = [e for e in todo if _view_of(e["category"]) == view]
+        todo = [e for e in todo if ref_folder(str(e["file"])) == view]
     if not todo:
         return {"generated": [], "cost_usd": 0.0, "skipped": []}
 
     # Referencias de estilo: las imágenes que YA existen en el pack (subidas
-    # por el usuario o generadas en pasadas anteriores), priorizando su propia
-    # familia (plató↔plató, entorno↔entorno, personaje↔personaje).
-    def style_refs_for(category: str) -> list[Path]:
-        if category in CHARACTER_CATEGORIES:
-            prefer: tuple = CHARACTER_CATEGORIES
-            others: tuple = ENV_CATEGORIES
-        elif category in STAGE_CATEGORIES:
-            # Plató: primero refs de plató aprobadas; después entornos (solo
-            # aportan paleta/técnica — la cámara la fija el clay). Máx 2 para
-            # no diluir el blockout en gpt-image-2/edit.
-            prefer = STAGE_CATEGORIES
-            others = ENV_CATEGORIES
-        else:
-            prefer = ENV_CATEGORIES
-            others = CHARACTER_CATEGORIES
+    # por el usuario o generadas en pasadas anteriores), priorizando su
+    # propia vista (plató↔plató, cenital↔cenital, personaje↔personaje) —
+    # mezclar puntos de vista diluye el encuadre del blockout.
+    def style_refs_for(ref: dict) -> list[Path]:
+        folder = ref_folder(str(ref["file"]))
         ordered: list[Path] = []
 
-        def add(cats: tuple) -> None:
-            for cat in cats:
-                for e in entries:
-                    if e["category"] != cat:
-                        continue
-                    path = pack_dir / e["file"]
-                    if e["file"] and path.exists() and path not in ordered:
-                        ordered.append(path)
+        def add(want_folder: str) -> None:
+            for e in entries:
+                if ref_folder(str(e["file"])) != want_folder:
+                    continue
+                path = pack_dir / str(e["file"])
+                if path.exists() and path not in ordered:
+                    ordered.append(path)
 
-        add(prefer)
-        add(others)
-        return ordered[: 2 if category in STAGE_CATEGORIES else 3]
+        add(folder)
+        for other in ("overworld", "characters", "proscenium", "fps"):
+            if other != folder:
+                add(other)
+        return ordered[: 2 if folder == "proscenium" else 3]
 
     # Clientes por modelo, creados solo si esta tirada los usa (cada uno
     # falla-loud por su clave: MESHY_API_KEY / FAL_KEY).
@@ -391,13 +260,14 @@ async def generate_missing(
     generated: list[str] = []
     cost = 0.0
     for entry in todo:
-        category = entry["category"]
-        is_stage = category in STAGE_CATEGORIES
-        is_fps = category in FPS_CATEGORIES
-        style_paths = style_refs_for(category)
-        seed = seed_for(category)
+        ref_id = str(entry.get("id", ""))
+        folder = ref_folder(str(entry["file"]))
+        is_stage = folder == "proscenium"
+        is_fps = folder == "fps"
+        style_paths = style_refs_for(entry)
+        seed = seed_for(entry)
         refs = [_to_data_uri(seed)] + [_to_data_uri(p) for p in style_paths]
-        prompt = build_prompt(category, style_token, bool(style_paths), entry["scene"] or None)
+        prompt = build_prompt(entry, style_token, bool(style_paths))
         if is_stage or is_fps:
             if fal_api is None:
                 fal_api = FalImageToImage()
@@ -406,42 +276,42 @@ async def generate_missing(
             with Image.open(seed) as seed_img:
                 aspect = seed_img.size
             fal_model = FPS_AI_MODEL if is_fps else STAGE_AI_MODEL
-            log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={fal_model} (fal)")
+            log(f"StylePackBuilder: {style_id}/{ref_id} ← {len(refs)} refs, model={fal_model} (fal)")
             png, _task = await fal_api.run_one(prompt, refs, ai_model=fal_model, aspect=aspect)
             per_image = FalImageToImage.COST_USD.get(fal_model, 0.17)
             cost += per_image
-            SPEND.add(per_image, f"style {style_id}/{category}", "remote-gen")
+            SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
         else:
             if meshy_api is None:
                 meshy_api = MeshyImageToImage()
-            log(f"StylePackBuilder: {style_id}/{category} ← {len(refs)} refs, model={ai_model}")
+            log(f"StylePackBuilder: {style_id}/{ref_id} ← {len(refs)} refs, model={ai_model}")
             png, _task = await meshy_api.run_one(ai_model, prompt, refs)
             per_image = MeshyImageToImage.cost_usd(ai_model)
             cost += per_image
-            SPEND.add(per_image, f"style {style_id}/{category}", "remote-gen")
-        out_path = dest_dir / entry["file"]
+            SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
+        out_path = dest_dir / str(entry["file"])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         img = Image.open(io.BytesIO(png)).convert("RGB")
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=90)
         out_path.write_bytes(buf.getvalue())
-        generated.append(category)
+        generated.append(ref_id)
         log(f"StylePackBuilder: escrito {out_path} ({img.size[0]}x{img.size[1]})")
 
-    # Cover: si falta, copia del primer entorno disponible (gratis). En
-    # staging no se toca (la cover es del pack, no de la tirada).
+    # Cover: si falta, copia de la primera ref cenital disponible (gratis).
+    # En staging no se toca (la cover es del pack, no de la tirada).
     if out_dir is None:
         cover_file = str(manifest.get("cover", "cover.jpg"))
         cover_path = pack_dir / cover_file
         if not cover_path.exists():
-            for cat in ENV_CATEGORIES:
-                for e in entries:
-                    if e["category"] == cat and (pack_dir / e["file"]).exists():
-                        cover_path.write_bytes((pack_dir / e["file"]).read_bytes())
-                        log(f"StylePackBuilder: cover ← copia de {e['file']}")
-                        break
-                else:
+            for e in entries:
+                if ref_folder(str(e["file"])) != "overworld":
                     continue
-                break
+                src = pack_dir / str(e["file"])
+                if src.exists():
+                    cover_path.write_bytes(src.read_bytes())
+                    log(f"StylePackBuilder: cover ← copia de {e['file']}")
+                    break
 
     return {"generated": generated, "cost_usd": round(cost, 2), "skipped": []}
 

@@ -1,111 +1,50 @@
 {
   "style_id": "mi_estilo",
   "name": "Mi estilo",
-  "description": "Una frase que vende el estilo al jugador en la pantalla de título.",
-  "style_token": "hand-painted gouache, warm earthy palette, soft diffuse light, storybook mood",
+  "description": "Descripción corta para el selector del título.",
+  "style_token": "technique + palette + light + mood, in English (no projection, no content)",
   "cover": "cover.jpg",
+  "tags": ["medieval", "fantasia"],
   "refs": [
     {
-      "category": "settlement",
-      "file": "settlement.jpg",
-      "tags": []
+      "id": "settlement",
+      "file": "overworld/settlement.jpg",
+      "description": "una aldea con casas en torno a una plaza de mercado, campos y bosque en los bordes",
+      "gen_scene": "a small village and its surroundings: houses with varied roofs around a market square, packed-dirt streets, blending into plowed fields and a forest edge",
+      "seed": "overworld/settlement.png"
     },
     {
-      "category": "farmland",
-      "file": "farmland.jpg",
-      "tags": []
+      "id": "forest",
+      "file": "overworld/forest.jpg",
+      "description": "un bosque salvaje sin edificios, con un claro y un arroyo",
+      "gen_scene": "a wild forest with NO buildings: dense tree canopy, a clearing, a narrow dirt trail, a stream with rocks",
+      "seed": "overworld/forest.png"
     },
     {
-      "category": "forest",
-      "file": "forest.jpg",
-      "tags": []
+      "id": "catedral",
+      "file": "overworld/catedral.jpg",
+      "description": "EJEMPLO de ref libre: una catedral gótica y su plaza — añade las que el mundo necesite, no hay lista cerrada"
     },
     {
-      "category": "wetland",
-      "file": "wetland.jpg",
-      "tags": []
+      "id": "stage_street",
+      "file": "proscenium/stage_street.jpg",
+      "description": "una calle principal a pie de suelo con fachadas variadas",
+      "gen_scene": "a curved main street: arcaded facades and varied house fronts on both sides, a cart with barrels",
+      "seed": "proscenium/stage_street.png"
     },
     {
-      "category": "desert",
-      "file": "desert.jpg",
-      "tags": []
+      "id": "fps_surfaces",
+      "file": "fps/surfaces.jpg",
+      "role": "fps_surfaces",
+      "description": "lámina de doce muestras planas de los materiales más comunes del mundo",
+      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common wall, floor, roof and ground surfaces",
+      "seed": "fps/fps_surfaces.png"
     },
     {
-      "category": "snow",
-      "file": "snow.jpg",
-      "tags": []
-    },
-    {
-      "category": "fortress",
-      "file": "fortress.jpg",
-      "tags": []
-    },
-    {
-      "category": "interior",
-      "file": "interior.jpg",
-      "tags": []
-    },
-    {
-      "category": "underground",
-      "file": "underground.jpg",
-      "tags": []
-    },
-    {
-      "category": "character_commoner",
-      "file": "character_commoner.jpg",
-      "tags": []
-    },
-    {
-      "category": "character_noble",
-      "file": "character_noble.jpg",
-      "tags": []
-    },
-    {
-      "category": "character_warrior",
-      "file": "character_warrior.jpg",
-      "tags": []
-    },
-    {
-      "category": "stage_interior",
-      "file": "stage_interior.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "stage_street",
-      "file": "stage_street.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "stage_plaza",
-      "file": "stage_plaza.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "stage_nature",
-      "file": "stage_nature.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "stage_harbor",
-      "file": "stage_harbor.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "stage_gate",
-      "file": "stage_gate.jpg",
-      "tags": [],
-      "view": "proscenium"
-    },
-    {
-      "category": "fps_surfaces",
-      "file": "fps_surfaces.jpg",
-      "tags": [],
-      "view": "fps"
+      "id": "commoner",
+      "file": "characters/commoner.jpg",
+      "description": "una persona corriente con ropa de trabajo sencilla",
+      "gen_scene": "a common villager in simple, worn work clothes"
     }
   ]
 }

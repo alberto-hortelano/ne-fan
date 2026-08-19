@@ -13,6 +13,7 @@ import {
   listStyles,
   loadGameMeta,
   loadStyleManifest,
+  styleCompatibleWithGame,
   styleViews,
   loadWorldDoc,
   WORLD_VIEWS,
@@ -124,14 +125,16 @@ export async function handleCreateGame(
     gameId = `${base}_${i}`;
   }
 
-  // El estilo sugerido debe existir; si no, el primero disponible.
+  // El estilo sugerido debe existir; si no, el primer estilo COMPATIBLE con
+  // los tags del mundo (o el primero disponible como último recurso).
   const styles = listStyles(ctx.stylesDir);
   if (styles.length === 0) {
     return fail("no_styles_available: no hay estilos en data/styles");
   }
+  const gameTags = Array.isArray(game.tags) ? game.tags.map((t) => String(t)) : [];
   const styleId = styles.some((st) => st.style_id === game.style_id)
     ? game.style_id
-    : styles[0].style_id;
+    : (styles.find((st) => styleCompatibleWithGame(st.tags, gameTags)) ?? styles[0]).style_id;
 
   const meta = GameMetaSchema.safeParse({
     game_id: gameId,
@@ -139,6 +142,12 @@ export async function handleCreateGame(
     description: game.description,
     style_id: styleId,
     world_brief: game.world_brief,
+    // Etiquetas temáticas del mundo (el prompt de develop_world las exige;
+    // filtran qué estilos ofrece el título). Malformadas ⇒ mundo sin tags
+    // (compatible con todo), mejor que abortar una génesis de 1-3 min.
+    tags: Array.isArray(game.tags)
+      ? game.tags.map((t) => String(t).trim()).filter((t) => t.length > 0)
+      : undefined,
   });
   if (!meta.success) {
     return fail(`develop_world produced invalid game meta: ${meta.error.message.slice(0, 500)}`);
@@ -268,6 +277,16 @@ export async function handleStartSession(
       throw new Error(
         `estilo "${style.style_id}" sin referencias para la vista "${view}"` +
           ` (declara: ${compatibleViews.join("|") || "ninguna"})`,
+      );
+    }
+    // Compatibilidad TEMÁTICA estilo↔juego (tags): warning, no abort — el
+    // matching es heurístico sobre vocabulario libre y el selector del
+    // título ya filtra; un typo en un tag no debe brickear una partida. La
+    // incompatibilidad de vista (estructural) sí aborta, arriba.
+    if (!styleCompatibleWithGame(style.tags, meta.tags)) {
+      console.warn(
+        `Bridge: estilo "${style.style_id}" (tags: ${style.tags.join(",")}) no casa ` +
+          `temáticamente con el juego "${msg.gameId}" (tags: ${(meta.tags ?? []).join(",")})`,
       );
     }
     // Sistema de combate: el que declare game.json (systems.combat) o el

@@ -18,7 +18,12 @@ import type {
 } from "@nefan-core/src/narrative/types.js";
 import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
-import { WORLD_VIEWS, type WorldView } from "@nefan-core/src/games/style-categories.js";
+import {
+  SUGGESTED_THEME_TAGS,
+  WORLD_VIEWS,
+  styleCompatibleWithGame,
+  type WorldView,
+} from "@nefan-core/src/games/style-refs.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
 import {
@@ -61,25 +66,14 @@ const ASSET_STORE_URL = serviceUrl("asset-store");
  *  visible. */
 const AI_SERVER_HTTP = serviceUrl("remote-gen");
 
-const STYLE_CATEGORY_LABELS: Array<{ id: string; label: string }> = [
-  { id: "settlement", label: "Pueblo" },
-  { id: "farmland", label: "Campos" },
-  { id: "forest", label: "Bosque" },
-  { id: "wetland", label: "Pantano" },
-  { id: "desert", label: "Desierto" },
-  { id: "snow", label: "Nieve" },
-  { id: "fortress", label: "Fortaleza" },
-  { id: "interior", label: "Interior" },
-  { id: "underground", label: "Subterráneo" },
-  { id: "character_commoner", label: "Personaje plebeyo" },
-  { id: "character_noble", label: "Personaje noble" },
-  { id: "character_warrior", label: "Personaje guerrero" },
-  { id: "stage_interior", label: "Plató: interior" },
-  { id: "stage_street", label: "Plató: calle" },
-  { id: "stage_plaza", label: "Plató: plaza" },
-  { id: "stage_nature", label: "Plató: naturaleza" },
-  { id: "stage_harbor", label: "Plató: puerto" },
-  { id: "stage_gate", label: "Plató: puerta" },
+/** Vistas de destino de una imagen de estilo en la UI de subida. La vista
+ *  de cada ref es LIBRE (el contenido lo describe el usuario); "characters"
+ *  agrupa los model sheets compartidos entre vistas. */
+const UPLOAD_VIEW_LABELS: Array<{ id: string; label: string }> = [
+  { id: "overworld", label: "Mundo (vista cenital)" },
+  { id: "proscenium", label: "Plató (a pie de suelo)" },
+  { id: "fps", label: "Primera persona" },
+  { id: "characters", label: "Personaje (model sheet)" },
 ];
 
 /** Vida del estado "armado" (¿confirmar gasto?) antes de desarmarse solo —
@@ -554,8 +548,14 @@ export class TitleScreen {
 
     const refreshStyleOptions = (): void => {
       // Solo estilos con referencias para la vista elegida (styles.views,
-      // derivado por el bridge de las refs declaradas de cada pack).
-      const compatible = styles.filter((st) => st.views.includes(selectedView));
+      // derivado por el bridge de las refs declaradas de cada pack) Y
+      // temáticamente compatibles con el mundo (intersección de tags — un
+      // pack medieval no se ofrece para un juego futurista).
+      const compatible = styles.filter(
+        (st) =>
+          st.views.includes(selectedView) &&
+          styleCompatibleWithGame(st.tags, selectedGame.tags),
+      );
       styleSel.innerHTML = compatible
         .map((st) => {
           const def = st.style_id === selectedGame.style_id ? " (del mundo)" : "";
@@ -563,8 +563,8 @@ export class TitleScreen {
         })
         .join("");
       if (compatible.length === 0) {
-        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con esta vista —</option>`;
-        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo tiene referencias para esta vista todavía.</span>`;
+        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con esta vista y este mundo —</option>`;
+        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo compatible con esta vista y los tags del mundo todavía.</span>`;
         continueBtn.disabled = true;
         continueBtn.style.opacity = "0.4";
         return;
@@ -793,23 +793,39 @@ export class TitleScreen {
    *  referencia — PREVIA confirmación explícita del coste. */
   private renderUploadStyle(): void {
     this.content.style.maxWidth = "720px";
+    const rowHtml = (): string => `
+      <div data-upload-row style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid #2a2a30;border-radius:6px">
+        <input data-file type="file" accept="image/*" style="color:#777;font-size:11px;max-width:170px">
+        <input data-desc type="text" placeholder="qué muestra (ej: catedral gótica al atardecer)" style="${INPUT_CSS}">
+        <select data-view style="${SELECT_CSS};width:auto">
+          ${UPLOAD_VIEW_LABELS.map((v) => `<option value="${v.id}">${v.label}</option>`).join("")}
+        </select>
+      </div>`;
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Subir estilo</h1>
       <p style="margin-bottom:16px;color:#888;font-size:12px">
-        Sube una o más imágenes de referencia (cuantas más categorías cubras, más fiel será el estilo).
-        Las que falten se generarán con IA a partir de las tuyas — se te pedirá confirmación con el coste.
+        Sube una o más imágenes de referencia LIBRES — cada una con una descripción de lo que muestra
+        (el motor narrativo la usa para elegir la referencia de cada escena) y la vista a la que sirve.
+        Las refs mínimas que falten se generarán con IA a partir de las tuyas — se te pedirá confirmación con el coste.
       </p>
       <label style="display:block;margin-bottom:12px">
         <div style="font-size:12px;color:#999;margin-bottom:4px">Nombre del estilo</div>
         <input id="ts-style-name" type="text" placeholder="ej: Tinta y pergamino" style="${INPUT_CSS}">
       </label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-        ${STYLE_CATEGORY_LABELS.map((c) => `
-          <label style="font-size:11px;color:#999">
-            ${c.label}
-            <input data-category="${c.id}" type="file" accept="image/*" style="display:block;color:#777;font-size:11px;margin-top:2px">
-          </label>`).join("")}
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:#999;margin-bottom:4px">Etiquetas temáticas (para casarlo con mundos compatibles)</div>
+        <div id="ts-style-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          ${SUGGESTED_THEME_TAGS.map((t) => `
+            <button data-tag="${t}" style="${BTN_SECONDARY_CSS};font-size:11px;padding:2px 8px">${t}</button>`).join("")}
+        </div>
+        <input id="ts-style-tags-free" type="text" placeholder="otras etiquetas, separadas por comas" style="${INPUT_CSS}">
       </div>
+      <div id="ts-upload-rows">${rowHtml()}</div>
+      <button id="ts-add-row" style="${BTN_SECONDARY_CSS};font-size:11px;margin-bottom:14px">+ otra imagen</button>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:#999">
+        <input id="ts-style-lamina" type="checkbox">
+        Una de las imágenes "Primera persona" es la lámina de materiales (rejilla de muestras planas)
+      </label>
       <div id="ts-style-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
@@ -822,8 +838,26 @@ export class TitleScreen {
     const backBtn = this.content.querySelector("#ts-back") as HTMLButtonElement;
     const uploadBtn = this.content.querySelector("#ts-upload") as HTMLButtonElement;
     const completeBtn = this.content.querySelector("#ts-complete") as HTMLButtonElement;
+    const rowsEl = this.content.querySelector("#ts-upload-rows") as HTMLElement;
+    const tagsEl = this.content.querySelector("#ts-style-tags") as HTMLElement;
+    const tagsFreeEl = this.content.querySelector("#ts-style-tags-free") as HTMLInputElement;
+    const laminaEl = this.content.querySelector("#ts-style-lamina") as HTMLInputElement;
+    const selectedTags = new Set<string>();
     let pendingStyleId = "";
 
+    for (const btn of tagsEl.querySelectorAll<HTMLElement>("[data-tag]")) {
+      btn.addEventListener("click", () => {
+        const tag = btn.dataset.tag!;
+        if (selectedTags.has(tag)) selectedTags.delete(tag);
+        else selectedTags.add(tag);
+        btn.style.borderColor = selectedTags.has(tag) ? "#da6" : "#2a2a30";
+        btn.style.background = selectedTags.has(tag) ? "#201c14" : "#181820";
+      });
+    }
+    (this.content.querySelector("#ts-add-row") as HTMLButtonElement).addEventListener(
+      "click",
+      () => rowsEl.insertAdjacentHTML("beforeend", rowHtml()),
+    );
     backBtn.addEventListener("click", () => void this.renderWorldSelect());
 
     uploadBtn.addEventListener("click", async () => {
@@ -832,18 +866,36 @@ export class TitleScreen {
         statusEl.innerHTML = `<span style="color:#a44">Ponle un nombre al estilo.</span>`;
         return;
       }
-      const inputs = [...this.content.querySelectorAll<HTMLInputElement>("input[data-category]")];
-      const images: Array<{ category: string; image_b64: string }> = [];
-      for (const input of inputs) {
-        const file = input.files?.[0];
+      const tags = [
+        ...selectedTags,
+        ...tagsFreeEl.value.split(",").map((t) => t.trim()).filter(Boolean),
+      ];
+      if (tags.length === 0) {
+        statusEl.innerHTML = `<span style="color:#a44">Elige al menos una etiqueta temática.</span>`;
+        return;
+      }
+      const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
+      const images: Array<{ view: string; description: string; image_b64: string; role?: string }> = [];
+      let laminaPending = laminaEl.checked;
+      for (const row of rows) {
+        const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
         if (!file) continue;
+        const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
+        const view = (row.querySelector("[data-view]") as HTMLSelectElement).value;
+        const isLamina = laminaPending && view === "fps";
+        if (!description && !isLamina) {
+          statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
+          return;
+        }
         const b64 = await new Promise<string>((res, rej) => {
           const r = new FileReader();
           r.onload = () => res(String(r.result ?? ""));
           r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
           r.readAsDataURL(file);
         });
-        images.push({ category: input.dataset.category!, image_b64: b64 });
+        // La primera imagen fps con el toggle activo es la lámina.
+        images.push({ view, description, image_b64: b64, ...(isLamina ? { role: "fps_surfaces" } : {}) });
+        if (isLamina) laminaPending = false;
       }
       if (images.length === 0) {
         statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
@@ -855,11 +907,14 @@ export class TitleScreen {
         const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, images }),
+          body: JSON.stringify({ name, tags, images }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
         const data = (await res.json()) as {
-          style_id: string; uploaded: string[]; missing: string[]; estimated_cost_usd: number;
+          style_id: string;
+          uploaded: string[];
+          missing: Array<{ id: string; view: string; description: string }>;
+          estimated_cost_usd: number;
         };
         pendingStyleId = data.style_id;
         if (data.missing.length === 0) {
@@ -867,8 +922,8 @@ export class TitleScreen {
           await this.renderWorldSelect();
           return;
         }
-        statusEl.innerHTML = `<span style="color:#da6">Subidas ${data.uploaded.length}. Faltan ${data.missing.length} categorías `
-          + `(${data.missing.join(", ")}). Generarlas costará ~$${data.estimated_cost_usd.toFixed(2)} en créditos Meshy.</span>`;
+        statusEl.innerHTML = `<span style="color:#da6">Subidas ${data.uploaded.length}. Faltan ${data.missing.length} refs `
+          + `(${data.missing.map((m) => m.id).join(", ")}). Generarlas costará ~$${data.estimated_cost_usd.toFixed(2)} en créditos.</span>`;
         uploadBtn.style.display = "none";
         completeBtn.style.display = "";
         completeBtn.textContent = `Generar ${data.missing.length} imágenes (~$${data.estimated_cost_usd.toFixed(2)})`;
@@ -881,7 +936,7 @@ export class TitleScreen {
     completeBtn.addEventListener("click", async () => {
       completeBtn.disabled = true;
       backBtn.disabled = true;
-      statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las categorías que faltan (varios minutos)...</span>`;
+      statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las refs que faltan (varios minutos)...</span>`;
       try {
         const res = await fetch(`${AI_SERVER_HTTP}/styles/${encodeURIComponent(pendingStyleId)}/complete`, {
           method: "POST",

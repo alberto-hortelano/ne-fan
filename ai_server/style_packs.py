@@ -1,10 +1,14 @@
 """Style packs — imágenes de referencia de estilo por juego.
 
 Un pack vive en `nefan-core/data/styles/{style_id}/` (style.json + imágenes;
-ver GameMetaSchema/StyleManifestSchema en nefan-core/src/games/loader.ts, la
-fuente de verdad del formato). Este módulo resuelve, para una petición de
-imagen, la referencia más apropiada del pack: por `style_tag` explícito del
-scene JSON, con fallback a un orden razonable de categorías.
+ver StyleManifestSchema en nefan-core/src/games/loader.ts, la fuente de
+verdad del formato). Las refs son LIBRES: cada imagen declara un `id`
+estable, un archivo dentro de la carpeta de su vista (overworld/ |
+proscenium/ | fps/ | characters/) y una descripción. Este módulo resuelve la
+referencia de una petición de imagen por su `id` (elegido por el motor
+narrativo); sin elección o con id desconocido cae a la PRIMERA ref de la
+vista en el orden del manifest (fallback determinista) y, si esa imagen aún
+no existe en disco (pack en construcción), a la siguiente de la misma vista.
 
 Degradación esperable (pack sin imágenes aún, estilo inexistente): se avisa y
 se devuelve None — el llamador usa su referencia global de siempre. Un
@@ -21,51 +25,24 @@ from pathlib import Path
 
 from PIL import Image
 
-# Enum de categorías: fuente única Python en style_categories.py (candada
-# contra el JSON generado desde el TS por test_style_categories_sync.py).
-# Re-export aquí porque routers/styles.py y los tests importan de este módulo.
-from style_categories import (
-    CHARACTER_CATEGORIES as CHARACTER_CATEGORIES,
-    ENV_CATEGORIES as ENV_CATEGORIES,
-    FPS_CATEGORIES as FPS_CATEGORIES,
-    LEGACY_ALIASES as LEGACY_ALIASES,
-    STAGE_CATEGORIES as STAGE_CATEGORIES,
-    ZONE_TO_STAGE as ZONE_TO_STAGE,
-)
-
 RUNTIME_CONFIG_PATH = (
     Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "runtime_config.json"
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Fallback por VECINDAD de zona cuando la categoría pedida no tiene imagen:
-# primero lo pedido, luego zonas afines (mismo carácter natural/construido).
-# Cada cadena cubre las 9 — un pack con una sola imagen sigue pintando todo.
-_ENV_FALLBACK = {
-    "settlement": ("farmland", "fortress", "forest", "wetland", "snow", "desert", "interior", "underground"),
-    "farmland": ("settlement", "forest", "wetland", "desert", "snow", "fortress", "interior", "underground"),
-    "forest": ("wetland", "farmland", "snow", "settlement", "desert", "fortress", "interior", "underground"),
-    "wetland": ("forest", "farmland", "settlement", "snow", "desert", "fortress", "interior", "underground"),
-    "desert": ("farmland", "forest", "settlement", "snow", "wetland", "fortress", "interior", "underground"),
-    "snow": ("forest", "farmland", "settlement", "wetland", "desert", "fortress", "interior", "underground"),
-    "fortress": ("settlement", "farmland", "forest", "underground", "interior", "wetland", "snow", "desert"),
-    "interior": ("underground", "settlement", "fortress", "farmland", "forest", "wetland", "snow", "desert"),
-    "underground": ("interior", "fortress", "settlement", "forest", "farmland", "wetland", "snow", "desert"),
-}
-_CHARACTER_FALLBACK_ORDER = CHARACTER_CATEGORIES
+#: Carpetas de vista admitidas en un pack (espejo de STYLE_REF_FOLDERS en
+#: nefan-core/src/games/style-refs.ts; "characters" es pseudo-vista de model
+#: sheets compartidos). La vista de una ref ES la carpeta de su archivo.
+REF_FOLDERS = ("overworld", "proscenium", "fps", "characters")
 
-# Fallback de plató: cada cadena cubre las 6 y NUNCA cruza a las zonas
-# cenitales — una referencia aérea contamina el repintado ground-level (el
-# modelo calca el punto de vista). Agotada la cadena se devuelve None y el
-# plató se repinta solo con el blueprint (rama ya existente del generador).
-_STAGE_FALLBACK = {
-    "stage_interior": ("stage_street", "stage_plaza", "stage_gate", "stage_harbor", "stage_nature"),
-    "stage_street": ("stage_plaza", "stage_gate", "stage_harbor", "stage_nature", "stage_interior"),
-    "stage_plaza": ("stage_street", "stage_harbor", "stage_gate", "stage_nature", "stage_interior"),
-    "stage_nature": ("stage_harbor", "stage_gate", "stage_plaza", "stage_street", "stage_interior"),
-    "stage_harbor": ("stage_plaza", "stage_street", "stage_nature", "stage_gate", "stage_interior"),
-    "stage_gate": ("stage_street", "stage_plaza", "stage_harbor", "stage_nature", "stage_interior"),
-}
+#: Rol especial: la lámina de materiales del atlas fps (resolve_fps_sheet).
+ROLE_FPS_SURFACES = "fps_surfaces"
+
+
+def ref_folder(file: str) -> str:
+    """Carpeta de vista de una ref por su ruta ("" si no cae en ninguna)."""
+    folder = str(file).split("/", 1)[0] if "/" in str(file) else ""
+    return folder if folder in REF_FOLDERS else ""
 
 
 @dataclass(frozen=True)
@@ -73,7 +50,7 @@ class StyleRef:
     """Referencia resuelta de un pack: lista para pasar a Meshy."""
 
     style_id: str
-    category: str
+    ref_id: str
     data_uri: str
     #: sha256[:12] del archivo — entra en las claves de cache de imagen.
     content_hash: str
@@ -113,76 +90,92 @@ class StylePackResolver:
         manifest = self._manifest(style_id)
         return str(manifest.get("style_token", "")) if manifest else ""
 
-    def resolve(self, style_id: str, category: str) -> StyleRef | None:
-        """Devuelve la referencia del pack para `category`, con fallback a
-        categorías vecinas. None si el pack no tiene ninguna imagen utilizable
-        (el llamador degrada al estilo global).
-        """
+    def _refs_for_view(self, manifest: dict, view: str) -> list[dict]:
+        """Refs elegibles de una vista, en orden de manifest (la primera es
+        el fallback). La lámina fps_surfaces queda fuera — no es temática."""
+        out: list[dict] = []
+        for r in manifest.get("refs", []):
+            if str(r.get("role") or "") == ROLE_FPS_SURFACES:
+                continue
+            if ref_folder(str(r.get("file", ""))) == view:
+                out.append(r)
+        return out
+
+    def resolve(self, style_id: str, ref_id: str, view: str) -> StyleRef | None:
+        """Devuelve la referencia `ref_id` del pack para la vista `view`
+        (overworld|proscenium|fps|characters). Sin `ref_id`, o con un id que
+        no existe en esa vista, cae a la primera ref de la vista en orden de
+        manifest; si su imagen aún no existe en disco (pack en construcción)
+        prueba las siguientes DE LA MISMA VISTA — una ref nunca cruza de
+        vista (una cenital contaminaría un plató y viceversa). None si el
+        pack no tiene ninguna imagen utilizable (el llamador degrada al
+        estilo global)."""
+        if view not in REF_FOLDERS:
+            print(f"StylePacks WARNING: vista desconocida '{view}' — usando overworld", flush=True)
+            view = "overworld"
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        # Alias legacy en manifest y en la petición (nature → forest). Con
-        # setdefault, la categoría canónica declarada antes gana al alias.
-        # Las entradas `perspective: "isometric"` de packs de la era de dos
-        # proyecciones se IGNORAN (sus jpg huérfanos en disco son inocuos).
-        refs: dict = {}
-        for r in manifest.get("refs", []):
-            if str(r.get("perspective") or "topdown") == "isometric":
-                continue
-            cat = LEGACY_ALIASES.get(str(r.get("category")), r.get("category"))
-            refs.setdefault(cat, r.get("file"))
-        category = LEGACY_ALIASES.get(category, category)
-        is_stage = category.startswith("stage_")
-        is_fps = category.startswith("fps_")
-        if is_fps:
-            # La lámina de materiales no admite sustituto: una escena cenital
-            # o de plató contaminaría los swatches planos. Existe o None (el
-            # atlas degrada a solo style_token).
-            order: tuple = (category,)
-        elif category in CHARACTER_CATEGORIES:
-            order = (category, *_CHARACTER_FALLBACK_ORDER)
-        elif is_stage:
-            fallback = _STAGE_FALLBACK.get(category)
-            if fallback is None:
-                print(
-                    f"StylePacks WARNING: categoría de plató desconocida '{category}' — usando stage_street",
-                    flush=True,
-                )
-                category, fallback = "stage_street", _STAGE_FALLBACK["stage_street"]
-            order = (category, *fallback)
-        else:
-            fallback = _ENV_FALLBACK.get(category)
-            if fallback is None:
-                print(
-                    f"StylePacks WARNING: categoría desconocida '{category}' — usando settlement",
-                    flush=True,
-                )
-                category, fallback = "settlement", _ENV_FALLBACK["settlement"]
-            order = (category, *fallback)
-        for cat in dict.fromkeys(order):  # dedupe conservando orden
-            file = refs.get(cat)
-            if not file:
-                continue
-            loaded = self._load_image(style_id, str(file))
+        candidates = self._refs_for_view(manifest, view)
+        if not candidates:
+            print(
+                f"StylePacks: '{style_id}' sin refs declaradas para la vista '{view}' — "
+                "se usará la referencia global",
+                flush=True,
+            )
+            return None
+        chosen = next((r for r in candidates if str(r.get("id")) == ref_id), None) if ref_id else None
+        if ref_id and chosen is None:
+            print(
+                f"StylePacks WARNING: ref '{ref_id}' no existe en '{style_id}' ({view}) — "
+                f"fallback a la primera de la vista ('{candidates[0].get('id')}')",
+                flush=True,
+            )
+        order = ([chosen] if chosen else []) + [r for r in candidates if r is not chosen]
+        for r in order:
+            loaded = self._load_image(style_id, str(r.get("file", "")))
             if loaded:
                 data_uri, content_hash = loaded
                 return StyleRef(
                     style_id=style_id,
-                    category=cat,
+                    ref_id=str(r.get("id", "")),
                     data_uri=data_uri,
                     content_hash=content_hash,
                     style_token=str(manifest.get("style_token", "")),
                 )
         print(
-            f"StylePacks: '{style_id}' sin imagen utilizable para '{category}' "
-            f"(pack aún sin generar?) — "
-            + (
-                "el plató irá solo con el blueprint" if is_stage
-                else "el atlas de superficies irá solo con el style_token" if is_fps
-                else "se usará la referencia global"
-            ),
+            f"StylePacks: '{style_id}' sin imagen utilizable para la vista '{view}' "
+            "(pack aún sin generar?) — se usará la referencia global",
             flush=True,
         )
+        return None
+
+    def resolve_fps_sheet(self, style_id: str) -> StyleRef | None:
+        """La lámina de materiales del pack (ref con role fps_surfaces). No
+        admite sustituto: una escena contaminaría los swatches planos. Existe
+        o None (el atlas degrada a solo style_token)."""
+        manifest = self._manifest(style_id)
+        if not manifest:
+            return None
+        for r in manifest.get("refs", []):
+            if str(r.get("role") or "") != ROLE_FPS_SURFACES:
+                continue
+            loaded = self._load_image(style_id, str(r.get("file", "")))
+            if loaded:
+                data_uri, content_hash = loaded
+                return StyleRef(
+                    style_id=style_id,
+                    ref_id=str(r.get("id", "")),
+                    data_uri=data_uri,
+                    content_hash=content_hash,
+                    style_token=str(manifest.get("style_token", "")),
+                )
+            print(
+                f"StylePacks: lámina fps de '{style_id}' declarada pero sin imagen — "
+                "el atlas irá solo con el style_token",
+                flush=True,
+            )
+            return None
         return None
 
     def list_styles(self) -> list[dict]:
@@ -201,6 +194,9 @@ class StylePackResolver:
                     "style_id": str(manifest.get("style_id", child.name)),
                     "name": str(manifest.get("name", child.name)),
                     "description": str(manifest.get("description", "")),
+                    # Etiquetas temáticas: el motor elige un estilo compatible
+                    # con las del mundo que desarrolla (develop_world).
+                    "tags": [str(t) for t in manifest.get("tags", [])],
                 })
         return out
 

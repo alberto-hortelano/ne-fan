@@ -100,7 +100,10 @@ export function readStyleFile(
 ): { status: number; contentType: string; body: Buffer; cacheControl?: string; json?: boolean } {
   const ext = extname(file).toLowerCase();
   const mime = STYLE_FILE_MIME[ext];
-  const safeFile = SAFE_ID.test(file); // sin "/": solo [A-Za-z0-9_.-]
+  // El file admite UNA subcarpeta (formato de packs por vista:
+  // overworld/settlement.jpg); cada segmento debe pasar SAFE_ID.
+  const segments = file.split("/");
+  const safeFile = segments.length <= 2 && segments.every((s) => SAFE_ID.test(s));
   // SAFE_ID admite puntos (".." lo pasa), pero new URL(...) ya normaliza
   // %2e%2e/.. en el pathname antes de llegar aquí — el check de styleId es
   // defensa en profundidad por si el routing cambiara de parser.
