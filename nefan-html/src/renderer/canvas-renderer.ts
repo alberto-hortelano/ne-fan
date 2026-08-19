@@ -2,6 +2,7 @@
  *  Pinta `terrain` (rectángulo coloreado) + objetos por categoría + NPCs/enemies.
  *  Sin paredes, sin exits — el concepto sala se fue. */
 
+import { BASE_UI_THEME, type UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { PLAYER_RADIUS_M } from "@nefan-core/src/scene/terrain-collision.js";
@@ -423,6 +424,20 @@ function rgb01ToCss(c: [number, number, number] | number[] | undefined): string 
 }
 
 export class CanvasRenderer {
+  /** Tema de la partida para el texto que se pinta en el lienzo. Arranca en
+   *  el base; main.ts empuja el del estilo al abrir sesión. */
+  private theme: UiTheme = BASE_UI_THEME;
+
+  setWorldTheme(theme: UiTheme): void {
+    this.theme = theme;
+  }
+
+  /** Fuente de las etiquetas de mundo: la del tema, a tamaño fijo (el texto
+   *  sobre un NPC no escala con el zoom). */
+  private worldFont(): string {
+    return `10px ${this.theme.font}`;
+  }
+
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private scale = 40; // pixels per meter
@@ -521,8 +536,12 @@ export class CanvasRenderer {
   }
 
   private resize(): void {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight - 30; // HUD height
+    // Medir el ELEMENTO, no la ventana menos una constante: el lienzo ocupa
+    // su contenedor y la barra de dev puede envolver a varias líneas. Con la
+    // constante vieja (`innerHeight - 30`) el buffer no casaba con la caja
+    // CSS y la escena salía comprimida en vertical.
+    this.canvas.width = this.canvas.clientWidth || window.innerWidth;
+    this.canvas.height = this.canvas.clientHeight || window.innerHeight;
   }
 
   /** Añade (o reemplaza) un tile/escena del plano. ADITIVO: los tiles previos
@@ -2113,8 +2132,8 @@ export class CanvasRenderer {
     if (e.sprite !== undefined) {
       this.drawSprite(e.sprite, e.forward, cx, cy);
       if (e.label) {
-        ctx.fillStyle = "#d8c79a";
-        ctx.font = "10px monospace";
+        ctx.fillStyle = this.theme.ink_dim;
+        ctx.font = this.worldFont();
         ctx.textAlign = "center";
         ctx.fillText(e.label.slice(0, 30), cx, cy - this.spriteFrameScreenH() * 0.82);
       }
@@ -2134,8 +2153,8 @@ export class CanvasRenderer {
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(fx, fy); ctx.stroke();
     }
     if (e.label) {
-      ctx.fillStyle = "#d8c79a";
-      ctx.font = "10px monospace";
+      ctx.fillStyle = this.theme.ink_dim;
+      ctx.font = this.worldFont();
       ctx.textAlign = "center";
       ctx.fillText(e.label.slice(0, 30), cx, cy - r - 4);
     }
@@ -2149,8 +2168,8 @@ export class CanvasRenderer {
     if (npc.sprite !== undefined) {
       this.drawSprite(npc.sprite, npc.forward, nx, ny);
       if (npc.name) {
-        ctx.fillStyle = "#9be";
-        ctx.font = "10px monospace";
+        ctx.fillStyle = this.theme.accent;
+        ctx.font = this.worldFont();
         ctx.textAlign = "center";
         ctx.fillText(npc.name, nx, ny - this.spriteFrameScreenH() * 0.82);
       }
@@ -2170,8 +2189,8 @@ export class CanvasRenderer {
       ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(fx, fy); ctx.stroke();
     }
     if (npc.name) {
-      ctx.fillStyle = "#9be";
-      ctx.font = "10px monospace";
+      ctx.fillStyle = this.theme.accent;
+      ctx.font = this.worldFont();
       ctx.textAlign = "center";
       ctx.fillText(npc.name, nx, ny - r - 4);
     }

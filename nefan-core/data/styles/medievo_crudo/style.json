@@ -9,6 +9,21 @@
     "historico",
     "rural"
   ],
+  "ui": {
+    "surface": "rgba(28, 20, 13, 0.88)",
+    "raised": "rgba(255, 220, 170, 0.07)",
+    "border": "#5e4526",
+    "ink": "#e8dcc4",
+    "ink_dim": "#a3927a",
+    "accent": "#e0a44a",
+    "accent_ink": "#1c140d",
+    "danger": "#a33526",
+    "fade": "#0b0703",
+    "font": "Georgia, 'Iowan Old Style', 'Times New Roman', serif",
+    "radius_px": 2,
+    "hairline_px": 1,
+    "tracking_em": 0.06
+  },
   "refs": [
     {
       "id": "settlement",

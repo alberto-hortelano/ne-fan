@@ -9,6 +9,21 @@
     "luminoso",
     "medieval"
   ],
+  "ui": {
+    "surface": "rgba(250, 246, 236, 0.90)",
+    "raised": "rgba(60, 80, 60, 0.06)",
+    "border": "#b9c4a6",
+    "ink": "#3a4038",
+    "ink_dim": "#7b8478",
+    "accent": "#8a5a1e",
+    "accent_ink": "#fdfbf4",
+    "danger": "#b4553f",
+    "fade": "#f3ece0",
+    "font": "Georgia, 'Iowan Old Style', 'Times New Roman', serif",
+    "radius_px": 8,
+    "hairline_px": 1,
+    "tracking_em": 0.02
+  },
   "refs": [
     {
       "id": "settlement",

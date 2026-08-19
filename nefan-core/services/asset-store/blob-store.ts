@@ -82,6 +82,23 @@ export function readSpriteSheetFrame(
   return { status: 200, contentType: "image/png", body: readFileSync(path) };
 }
 
+/** Los heroes se nombran por su hash de 16 hex (sprite_skin_meshy.hero_key). */
+const HERO_KEY_RE = /^[0-9a-f]{16}$/;
+
+/** GET /cache/sprite_hero/{key} — hero-shot de identidad del pipeline de
+ *  skins (cache/sprite_sheets/heroes/{key}.png): la imagen que fija la cara
+ *  del personaje antes de repintar sus frames, y que el cliente reusa como
+ *  retrato en el diálogo. Mismo almacén paralelo que los frames: sin
+ *  manifest y sin touch, y por tanto FUERA del prune (que solo recorre
+ *  dirsByType) — si algún día los sprite sheets entran en el manifest,
+ *  heroes y frames necesitarán pin a la vez. */
+export function readSpriteHero(spriteSheetsDir: string, key: string): BlobResult {
+  if (!HERO_KEY_RE.test(key)) return text(400, "Invalid filename");
+  const path = join(spriteSheetsDir, "heroes", `${key}.png`);
+  if (!existsSync(path)) return text(404, "Not found");
+  return { status: 200, contentType: "image/png", body: readFileSync(path) };
+}
+
 const STYLE_FILE_MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",

@@ -9,6 +9,7 @@
  *  sigue siendo el dueño de tiles/colisión/pipeline oblicuo — esta vista solo
  *  PINTA distinto. setVisible() conmuta qué canvas se ve. */
 
+import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
 import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
 import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
@@ -43,6 +44,12 @@ export const FPS_DEBUG_VIEW_LABELS: Record<FpsDebugView, string> = {
 const FPS_DEBUG_VIEW_ORDER: FpsDebugView[] = ["off", "collision", "surfaces"];
 
 export class FpsRenderer implements Renderer2D {
+  /** La vista en primera persona no pinta texto de mundo: los nombres los
+   *  da el prompt contextual de la UI (y no hay ctx 2D sobre el que
+   *  escribir). No-op declarado para que el contrato obligue a
+   *  pronunciarse. */
+  setWorldTheme(_theme: UiTheme): void {}
+
   private el: HTMLCanvasElement;
   private gl: FpsGl | null = null;
   private pending: Array<(gl: FpsGl) => void> = [];

@@ -20,9 +20,9 @@ export class TravelPanel {
     exits: SceneExit[],
     opts?: { highlightEdge?: "north" | "south" | "east" | "west" },
   ): void {
-    this.el.innerHTML = "";
+    this.el.replaceChildren();
     if (!exits || exits.length === 0) {
-      this.el.style.display = "none";
+      this.el.hidden = true;
       return;
     }
     const highlight = opts?.highlightEdge;
@@ -39,16 +39,18 @@ export class TravelPanel {
       : exits;
     for (const exit of ordered) {
       const btn = document.createElement("button");
-      btn.className = "travel-exit" + (highlight && exit.edge === highlight ? " travel-exit--highlight" : "");
+      btn.type = "button";
+      btn.className =
+        "nf-action travel-exit" + (highlight && exit.edge === highlight ? " travel-exit--highlight" : "");
       btn.textContent = `→ ${exit.name} (${exit.link_kind})`;
       if (exit.description) btn.title = exit.description;
       btn.addEventListener("click", () => this.onTravel(exit.place_id));
       this.el.appendChild(btn);
     }
-    this.el.style.display = "block";
+    this.el.hidden = false;
   }
 
   hide(): void {
-    this.el.style.display = "none";
+    this.el.hidden = true;
   }
 }

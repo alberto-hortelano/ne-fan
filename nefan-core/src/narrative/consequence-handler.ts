@@ -2,6 +2,7 @@
  * effects. Canonical implementation — Godot materializes the resulting
  * effects via señales (narrative_spawn/narrative_dialogue/...). */
 import type { NarrativeState } from "./narrative-state.js";
+import { resolveSpeaker } from "./speaker-resolve.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
 import { toTuple } from "./types.js";
 
@@ -14,6 +15,9 @@ export interface DispatchOptions {
   playerForward?: Vec3Like;
   /** Optional entity-id generator for testability. Default: timestamp-based. */
   generateEntityId?: (kind: string) => string;
+  /** Entidad con la que el jugador está interactuando en ESTE turno: cuando
+   *  hay tres "Guardia" en la escena, desambigua cuál habla. */
+  speakerHintId?: string;
 }
 
 export interface DispatchResult {
@@ -46,11 +50,26 @@ export function dispatchConsequences(
     switch (c.type) {
       case "dialogue": {
         if (!c.text) break;
+        // Identidad del hablante para el cliente (retrato del panel): el
+        // modelo emite un nombre, el registro sabe a qué entidad pertenece.
+        const who = resolveSpeaker(
+          state.entities,
+          state.world.active_scene_id,
+          c.speaker || "",
+          opts.speakerHintId,
+        );
         result.effects.push({
           kind: "show_dialogue",
           speaker: c.speaker || "?",
           text: c.text,
           choices: (c.choices as (string | { text: string })[]) ?? [],
+          ...(who
+            ? {
+                speakerId: who.id,
+                speakerSkinPrompt: who.skinPrompt,
+                ...(who.styleRef ? { speakerStyleRef: who.styleRef } : {}),
+              }
+            : {}),
         });
         result.injectedDialogue = true;
         break;

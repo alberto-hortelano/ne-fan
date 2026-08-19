@@ -12,7 +12,10 @@ import {
   listGames,
   listStyles,
   loadGameMeta,
+  BASE_UI_THEME,
   loadStyleManifest,
+  resolveUiTheme,
+  type UiTheme,
   styleCharacterRefs,
   styleCompatibleWithGame,
   styleRefsForView,
@@ -282,6 +285,10 @@ export async function handleStartSession(
   // El juego debe existir y validar ANTES de crear la sesión — arrancar un
   // mundo roto en silencio dejaría al motor narrativo sin identidad de mundo.
   let worldDocHash: string;
+  // Tema de la UI de juego del pack: NO se persiste (el save no lo necesita
+  // y `world` viaja entero al modelo en cada turno) — se recalcula aquí y en
+  // cada resume, así que retocar una paleta se ve al reanudar.
+  let uiTheme: UiTheme;
   let combatId: string;
   let npcBehaviorId: string | undefined;
   let view: string;
@@ -365,6 +372,7 @@ export async function handleStartSession(
       // las de la vista activa + personajes, con sus descripciones.
       style_refs: styleRefCatalog(style, view as WorldView),
     });
+    uiTheme = resolveUiTheme(style.ui);
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);
     ctx.send(ws, {
@@ -405,6 +413,7 @@ export async function handleStartSession(
     gameId: ctx.narrative.game_id,
     isResume: false,
     state: sessionDataForClient(ctx.narrative.toSessionData()),
+    uiTheme,
   });
   // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
   // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
@@ -576,9 +585,11 @@ export async function handleResumeSession(
   // el pack a mano se refleja al reanudar). Manifest ilegible (pack borrado
   // o roto) ⇒ warning y se conserva el catálogo cacheado en el save — las
   // imágenes ya generadas siguen sirviéndose de caché.
+  let uiTheme: UiTheme = BASE_UI_THEME;
   try {
     const style = loadStyleManifest(ctx.stylesDir, ctx.narrative.world.style_id);
     ctx.narrative.setStyleRefs(styleRefCatalog(style, savedView as WorldView));
+    uiTheme = resolveUiTheme(style.ui);
   } catch (err) {
     console.warn(
       `Bridge: style.json ilegible en resume (estilo "${ctx.narrative.world.style_id}") — ` +
@@ -599,6 +610,7 @@ export async function handleResumeSession(
     gameId: ctx.narrative.game_id,
     isResume: true,
     state: sessionDataForClient(ctx.narrative.toSessionData()),
+    uiTheme,
   });
   // Sesión sin NINGUNA escena = el bootstrap de su creación falló (timeout
   // del motor narrativo, MCP caído…). Reanudar ES el reintento: re-encolar

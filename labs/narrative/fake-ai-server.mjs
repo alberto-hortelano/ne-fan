@@ -46,6 +46,8 @@ const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 // skins del cliente (character-sprites.ts).
 const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
 let fakeDevCacheEnabled = false;
+/** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
+let fakeDialogueTurn = 0;
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
 
 const BUILTIN_SCENE = {
@@ -636,6 +638,18 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(readFileSync(file));
   }
+  // Hero-shot de identidad (retrato del diálogo): en el bench no hay Meshy,
+  // así que se sirve el frame frontal del personaje de prueba. El cliente lo
+  // recorta a busto igual que haría con el hero real.
+  if (req.method === "GET" && req.url?.startsWith("/cache/sprite_hero/")) {
+    const key = req.url.slice("/cache/sprite_hero/".length);
+    if (!/^[0-9a-f]{16}$/.test(key)) return send(400, { detail: "fake-ai: hero key inválida" });
+    const file = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/idle/frontal_8/dir_0_frame_000.png`;
+    if (!existsSync(file)) return send(404, { detail: `fake-ai: sin frame para el hero ${key}` });
+    console.error(`[fake-ai] sprite_hero ${key} (frame frontal de ${SKIN_SPRITE_MODEL})`);
+    res.writeHead(200, { "Content-Type": "image/png", ...cors });
+    return res.end(readFileSync(file));
+  }
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
@@ -662,7 +676,30 @@ const server = http.createServer((req, res) => {
           },
         });
       }
-      if (req.method === "POST" && req.url === "/report_player_choice") return send(200, { consequences: [] });
+      if (req.method === "POST" && req.url === "/report_player_choice") {
+        // Responder con una línea de diálogo (no con silencio): es lo que
+        // ejercita el panel, el retrato y las opciones en el E2E sin créditos.
+        let body = {};
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {
+          return send(400, { detail: "fake-ai: body no es JSON" });
+        }
+        const speaker = String(body.speaker || "Aldeano");
+        fakeDialogueTurn += 1;
+        return send(200, {
+          consequences: [
+            {
+              type: "dialogue",
+              speaker,
+              text:
+                `(bench ${fakeDialogueTurn}) Te escucho, forastero. ` +
+                `Dijiste: "${String(body.chosenText || body.freeText || "").slice(0, 60)}".`,
+              choices: ["Seguir preguntando", "Despedirse"],
+            },
+          ],
+        });
+      }
       if (req.method === "POST" && req.url === "/dev/api_cache") {
         try {
           fakeDevCacheEnabled = !!JSON.parse(raw || "{}").enabled;
@@ -698,7 +735,14 @@ const server = http.createServer((req, res) => {
           `[fake-ai] skin_sprite_sheet ${anim}/${angle} ← "${String(body.prompt).slice(0, 40)}" ` +
           `(sirviendo frames de ${SKIN_SPRITE_MODEL})`,
         );
-        return send(200, { ok: true, cached: false, meta, frame_urls });
+        const heroKey = createHash("sha256")
+          .update(`${body.prompt}|${angle}|${body.style_id ?? ""}`)
+          .digest("hex")
+          .slice(0, 16);
+        return send(200, {
+          ok: true, cached: false, meta, frame_urls,
+          hero_key: heroKey, hero_url: `/cache/sprite_hero/${heroKey}`,
+        });
       }
       if (req.method === "POST" && req.url === "/generate_scene_image") {
         let body = {};

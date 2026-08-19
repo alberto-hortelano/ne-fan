@@ -1,0 +1,436 @@
+/* UI DE JUEGO — la capa que el jugador ve mientras juega, en las tres vistas
+   (oblicua, proscenio, fps).
+
+   Estética DIEGÉTICA SOBRIA: panel translúcido (el mundo se ve detrás),
+   filete fino, sin marco ornamental, una tipografía por tema y un acento.
+   El arte generado ya es denso: la interfaz no compite con él.
+
+   Todo el color, la tipografía y la forma salen de custom properties
+   declaradas en #game-ui. Los valores de aquí son el TEMA BASE (sin estilo:
+   fixtures, arranque offline); ui/theme.ts los sobrescribe con el tema del
+   estilo de la partida. REGLA DURA: ni un literal de color o fuente en las
+   reglas de componente — si hace falta uno nuevo, se añade un token.
+
+   La UI de DESARROLLO (barra de dev, menú de imágenes, error-log) vive fuera
+   de este árbol y no se tematiza NUNCA: dev-ui.css. */
+
+#game-ui {
+  /* ── Superficie ── */
+  --nf-surface: rgba(12, 12, 16, 0.88);
+  --nf-raised: rgba(255, 255, 255, 0.06);
+  --nf-border: #4a4a55;
+  /* ── Tinta ── */
+  --nf-ink: #d9d9e0;
+  --nf-ink-dim: #8b8b98;
+  /* ── Acento del estilo ── */
+  --nf-accent: #d8a657;
+  --nf-accent-ink: #141017;
+  --nf-danger: #c04a4a;
+  /* ── Corte entre escenas (no siempre negro: en acuarela es papel) ── */
+  --nf-fade: #08060e;
+  /* ── Tipografía ── */
+  --nf-font: system-ui, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --nf-font-display: var(--nf-font);
+  --nf-tracking: 0.04em;
+  /* ── Forma ── */
+  --nf-radius: 4px;
+  --nf-hairline: 1px;
+  --nf-glow: none;
+
+  /* Derivados (no temables: son estructura) */
+  --nf-fs-xs: 11px;
+  --nf-fs-sm: 12px;
+  --nf-fs-md: 13px;
+  --nf-fs-lg: 15px;
+  --nf-gap: 8px;
+  --nf-pad: 10px 14px;
+  --nf-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+
+  /* Bandas de z DENTRO de la UI de juego. Por encima queda solo lo de dev. */
+  --z-hud: 20;
+  --z-panel: 30;
+  --z-prompt: 40;
+  --z-dialogue: 50;
+  --z-fade: 60;
+  --z-loader: 70;
+
+  position: absolute;
+  inset: 0;
+  /* El hueco entre paneles sigue llegando al lienzo (pointer lock, clicks). */
+  pointer-events: none;
+  font-family: var(--nf-font);
+  color: var(--nf-ink);
+}
+
+/* ── Regiones ────────────────────────────────────────────────────────────
+   Cada panel se cuelga de una región y se apila con sus vecinos: se acabaron
+   los `bottom: 120px` calculados a ojo. */
+.ui-region {
+  position: absolute;
+  display: flex;
+  gap: var(--nf-gap);
+  pointer-events: none;
+}
+.ui-region > * { pointer-events: auto; }
+
+#ui-top-left { top: 10px; left: 12px; flex-direction: column; align-items: flex-start; }
+#ui-top-right { top: 10px; right: 12px; flex-direction: column; align-items: flex-end; }
+#ui-bottom-left { bottom: 12px; left: 12px; flex-direction: column-reverse; align-items: flex-start; max-width: 34vw; }
+#ui-bottom-right { bottom: 12px; right: 12px; flex-direction: column-reverse; align-items: flex-end; }
+#ui-bottom-center {
+  bottom: 12px; left: 50%; transform: translateX(-50%);
+  flex-direction: column; align-items: center; justify-content: flex-end;
+  width: min(760px, 92vw);
+}
+
+/* ── Panel: la forma común de todo ─────────────────────────────────────── */
+.nf-panel {
+  background: var(--nf-surface);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: var(--nf-pad);
+  box-shadow: var(--nf-shadow), var(--nf-glow);
+  font-size: var(--nf-fs-md);
+  line-height: 1.45;
+}
+
+/* ── Botón de acción: SIEMPRE lleva su tecla al lado ────────────────────
+   Teclado y ratón son el mismo camino; el botón no oculta el atajo, lo
+   enseña. */
+.nf-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--nf-raised);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 5px 10px;
+  color: var(--nf-ink);
+  font-family: inherit;
+  font-size: var(--nf-fs-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.nf-action:hover:not(:disabled) { border-color: var(--nf-accent); color: var(--nf-accent); }
+.nf-action:disabled { opacity: 0.45; cursor: default; }
+.nf-action[data-active="true"] {
+  border-color: var(--nf-accent);
+  color: var(--nf-accent);
+}
+.nf-action[data-tone="danger"]:hover { border-color: var(--nf-danger); color: var(--nf-danger); }
+
+.nf-key {
+  flex: 0 0 auto;
+  min-width: 1.6em;
+  padding: 1px 5px;
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: 3px;
+  background: var(--nf-raised);
+  color: var(--nf-ink-dim);
+  font-family: inherit;
+  font-size: var(--nf-fs-xs);
+  text-align: center;
+  letter-spacing: var(--nf-tracking);
+}
+.nf-action:hover .nf-key,
+.nf-action[data-active="true"] .nf-key { color: var(--nf-accent); border-color: var(--nf-accent); }
+
+/* Con el ratón CAPTURADO (pointer lock de fps/oblicua) ningún botón HTML
+   puede recibir un click: la barra se degrada a recordatorio de teclas en
+   vez de ofrecer una afordancia imposible. */
+#game-ui[data-locked="true"] .nf-action { pointer-events: none; opacity: 0.75; }
+#game-ui[data-locked="true"] .nf-action .nf-label { opacity: 0.8; }
+
+/* ── Estado del jugador ─────────────────────────────────────────────────── */
+#player-status { display: flex; align-items: center; gap: 10px; font-size: var(--nf-fs-sm); }
+.nf-vital { display: flex; align-items: center; gap: 6px; }
+.nf-vital-label { color: var(--nf-ink-dim); letter-spacing: var(--nf-tracking); }
+.nf-bar {
+  width: 128px; height: 9px;
+  background: var(--nf-raised);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: calc(var(--nf-radius) / 2);
+  overflow: hidden;
+}
+.nf-bar-fill { height: 100%; background: var(--nf-danger); transition: width 200ms ease-out; }
+#enemy-bars { display: flex; flex-direction: column; gap: 4px; font-size: var(--nf-fs-xs); }
+#enemy-bars .nf-bar { width: 96px; height: 7px; }
+
+/* ── Barra de acciones (ataques + contextuales) ─────────────────────────── */
+#action-bar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+#action-bar:empty { display: none; }
+
+/* ── Prompt contextual y confirmaciones ─────────────────────────────────── */
+#interact-prompt, #tile-confirm-prompt { display: flex; align-items: center; gap: 10px; }
+#interact-prompt:empty, #tile-confirm-prompt:empty { display: none; }
+#tile-confirm-prompt .nf-question { color: var(--nf-ink); }
+#tile-confirm-prompt b { color: var(--nf-accent); }
+
+/* ── Diálogo con retrato ────────────────────────────────────────────────── */
+#dialogue-panel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  width: 100%;
+}
+#dialogue-panel[hidden] { display: none; }
+
+/* El retrato: hueco de tamaño fijo que acepta indistintamente una imagen
+   nítida (hero-shot del pipeline de skins) o un lienzo animado (busto del
+   ciclo idle). Vacío, colapsa y el texto ocupa el panel entero. */
+#dialogue-portrait {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 96px;
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  background: var(--nf-raised);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+#dialogue-portrait:empty { display: none; }
+#dialogue-portrait > img,
+#dialogue-portrait > canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Encuadre de BUSTO: el hero es un plano entero de cuerpo y el sprite
+     también; ambos se recortan a la altura del pecho. */
+  object-position: var(--nf-portrait-focus, 50% 6%);
+}
+#dialogue-body { min-width: 0; }
+#dialogue-speaker {
+  color: var(--nf-accent);
+  font-family: var(--nf-font-display);
+  font-size: var(--nf-fs-lg);
+  letter-spacing: var(--nf-tracking);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+#dialogue-speaker:empty { display: none; }
+#dialogue-text {
+  color: var(--nf-ink);
+  font-size: var(--nf-fs-md);
+  min-height: 2.8em;
+  border-top: var(--nf-hairline) solid var(--nf-border);
+  padding-top: 6px;
+}
+#dialogue-choices { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; align-items: flex-start; }
+#dialogue-choices .nf-action { width: 100%; }
+#dialogue-input {
+  display: none;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--nf-raised);
+  color: var(--nf-ink);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  font-family: inherit;
+  font-size: var(--nf-fs-md);
+}
+
+/* ── Salidas / viaje ────────────────────────────────────────────────────── */
+#travel-panel { display: flex; flex-direction: column; gap: 4px; align-items: stretch; max-width: 240px; }
+#travel-panel[hidden] { display: none; }
+.travel-title {
+  color: var(--nf-ink-dim);
+  font-size: var(--nf-fs-xs);
+  letter-spacing: var(--nf-tracking);
+  margin-bottom: 4px;
+}
+.travel-exit { width: 100%; }
+.travel-exit--highlight { border-color: var(--nf-accent); color: var(--nf-accent); }
+
+/* ── Log de partida ─────────────────────────────────────────────────────── */
+#combat-log {
+  color: var(--nf-ink-dim);
+  font-size: var(--nf-fs-xs);
+  line-height: 1.5;
+  max-height: 110px;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* ── Chip de gráficos ───────────────────────────────────────────────────── */
+#gfx-chip {
+  background: var(--nf-surface);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 5px 12px;
+  color: var(--nf-ink-dim);
+  font-family: inherit;
+  font-size: var(--nf-fs-sm);
+  cursor: pointer;
+}
+#gfx-chip:hover { border-color: var(--nf-accent); color: var(--nf-accent); }
+#gfx-chip[hidden] { display: none; }
+#gfx-panel { width: 340px; font-size: var(--nf-fs-sm); color: var(--nf-ink); }
+#gfx-panel[hidden] { display: none; }
+#gfx-panel .gfx-note { color: var(--nf-ink-dim); font-size: var(--nf-fs-xs); line-height: 1.4; margin-bottom: 10px; }
+#gfx-panel .gfx-row { margin-bottom: 10px; }
+#gfx-panel .gfx-row:last-child { margin-bottom: 0; }
+#gfx-panel .gfx-row-label { color: var(--nf-ink-dim); margin-bottom: 4px; }
+#gfx-panel .gfx-seg { display: flex; gap: 6px; }
+#gfx-panel .gfx-seg button {
+  flex: 1;
+  text-align: left;
+  background: var(--nf-raised);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 6px 8px;
+  color: var(--nf-ink);
+  font-family: inherit;
+  font-size: var(--nf-fs-sm);
+  cursor: pointer;
+}
+#gfx-panel .gfx-seg button:hover:not(:disabled):not(.active) { border-color: var(--nf-ink-dim); }
+#gfx-panel .gfx-seg button.active { border-color: var(--nf-accent); color: var(--nf-accent); cursor: default; }
+#gfx-panel .gfx-seg button.armed { border-color: var(--nf-danger); color: var(--nf-accent); }
+#gfx-panel .gfx-seg button:disabled { opacity: 0.45; cursor: default; }
+#gfx-panel .gfx-seg .gfx-sub { display: block; font-size: 10px; color: var(--nf-ink-dim); margin-top: 2px; }
+
+/* ── Transición entre escenas ───────────────────────────────────────────── */
+#scene-fade {
+  position: absolute;
+  inset: 0;
+  background: var(--nf-fade);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease-out;
+  z-index: var(--z-fade);
+}
+#scene-fade.show { opacity: 1; transition: none; }
+
+/* ── Loader del motor narrativo ─────────────────────────────────────────── */
+#narrative-loader {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  /* Sobre el corte a negro: el progreso debe verse durante la transición. */
+  z-index: var(--z-loader);
+  background: color-mix(in srgb, var(--nf-fade) 82%, transparent);
+  color: var(--nf-accent);
+  font-size: var(--nf-fs-md);
+  text-align: center;
+  padding: 24px;
+  pointer-events: auto;
+}
+#narrative-loader.visible { display: flex; }
+#narrative-loader.error { color: var(--nf-danger); }
+#narrative-loader .spinner {
+  width: 34px; height: 34px;
+  border: 3px solid var(--nf-border);
+  border-top-color: var(--nf-accent);
+  border-radius: 50%;
+  animation: nf-spin 1s linear infinite;
+}
+#narrative-loader.error .spinner { animation: none; border-top-color: currentColor; }
+#narrative-loader .title { font-family: var(--nf-font-display); font-size: var(--nf-fs-lg); letter-spacing: var(--nf-tracking); }
+#narrative-loader .detail { color: var(--nf-ink-dim); max-width: 480px; line-height: 1.45; }
+#narrative-loader .elapsed { color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }
+#narrative-loader .dismiss { display: none; margin-top: 6px; }
+#narrative-loader.error .dismiss { display: inline-flex; }
+@keyframes nf-spin { to { transform: rotate(360deg); } }
+
+/* ── Diario de la sesión (tecla H) ──────────────────────────────────────── */
+#history-browser {
+  position: absolute;
+  inset: 40px;
+  z-index: 80;              /* sobre el loader: se abre a voluntad */
+  display: flex;
+  flex-direction: row;
+  gap: 14px;
+  overflow: hidden;
+  pointer-events: auto;
+}
+#history-browser[hidden] { display: none; }
+#history-browser .hb-col { flex: 0 0 320px; display: flex; flex-direction: column; min-height: 0; }
+#history-browser .hb-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+#history-browser .hb-head h2 {
+  margin: 0;
+  font-family: var(--nf-font-display);
+  font-size: var(--nf-fs-lg);
+  font-weight: normal;
+  letter-spacing: var(--nf-tracking);
+  color: var(--nf-accent);
+  text-transform: uppercase;
+}
+#hb-list {
+  flex: 1;
+  overflow-y: auto;
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  background: var(--nf-raised);
+}
+#history-browser .hb-row {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: var(--nf-hairline) solid var(--nf-border);
+  color: var(--nf-ink);
+  font-family: inherit;
+  font-size: var(--nf-fs-sm);
+  cursor: pointer;
+}
+#history-browser .hb-row:hover { background: var(--nf-raised); color: var(--nf-accent); }
+#history-browser .hb-when { color: var(--nf-ink-dim); font-size: var(--nf-fs-xs); margin-top: 2px; }
+#history-browser .hb-note { padding: 14px; color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }
+#history-browser .hb-note--empty { font-style: italic; }
+#history-browser .hb-note--error { color: var(--nf-danger); }
+#history-browser .hb-summary {
+  padding: 10px 12px;
+  border-bottom: var(--nf-hairline) solid var(--nf-border);
+  background: var(--nf-raised);
+}
+#history-browser .hb-game { font-size: var(--nf-fs-md); color: var(--nf-accent); }
+#hb-detail {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--nf-raised);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 12px;
+  font-size: var(--nf-fs-sm);
+  color: var(--nf-ink-dim);
+  white-space: pre-wrap;
+}
+
+/* ── Mirilla (solo primera persona) ─────────────────────────────────────── */
+#reticle { display: none; }
+#game-ui[data-view="fps"] #reticle {
+  display: block;
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 3px; height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: var(--nf-ink);
+  opacity: 0.55;
+}
+#game-ui[data-view="fps"] #reticle[data-target="true"] { background: var(--nf-accent); opacity: 1; }
+
+/* En proscenio las salidas están PINTADAS en el suelo del plató: el panel
+   duplicaría la información y tapa el decorado. */
+#game-ui[data-view="proscenium"] #travel-panel { display: none; }
+
+/* Capas dentro de la UI de juego. */
+#ui-top-left, #ui-top-right { z-index: var(--z-hud); }
+#ui-bottom-left, #ui-bottom-right { z-index: var(--z-panel); }
+#ui-bottom-center { z-index: var(--z-prompt); }
+#dialogue-panel { z-index: var(--z-dialogue); }
+
+@media (prefers-reduced-motion: reduce) {
+  #narrative-loader .spinner { animation: none; }
+  #scene-fade { transition: none; }
+  .nf-bar-fill { transition: none; }
+}

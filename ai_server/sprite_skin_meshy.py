@@ -294,6 +294,39 @@ def _png_to_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
 
 
+def hero_key(
+    prompt: str,
+    base_model: str,
+    ai_model: str,
+    style_key: str = "",
+    angle: str = "isometric_30",
+) -> str:
+    """Clave del hero-shot de identidad de un personaje (16 hex).
+
+    Función de MÓDULO a propósito: el retrato del diálogo consulta si el hero
+    ya existe, y una consulta de solo lectura no puede exigir MESHY_API_KEY
+    (que el constructor de SpriteSkinMeshy sí exige).
+
+    La composición del payload es INTOCABLE: cambiarla invalida todos los
+    heroes ya pagados en cache/sprite_sheets/heroes/.
+
+    namespace_suffix: un hero rancio de modo dev no debe ocupar el slot real
+    de este prompt. style_key ("{style_id}:{hash}") separa el mismo personaje
+    pintado con estilos de juego distintos; angle separa los sets por vista
+    (el hero de isometric_30 no vale para frontal_8 — la pose base y el
+    fragmento de vista del prompt cambian).
+    """
+    payload = "\n".join(
+        [prompt.strip().lower(), base_model, ai_model, style_key,
+         angle,
+         # v2: hero en pose neutral (el hero en T-pose contaminaba los atlas
+         # de idle) — un hero v1 cacheado no vale para el pipeline nuevo.
+         "hero_v2",
+         DEV_API_CACHE.namespace_suffix()]
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
 class SpriteSkinMeshy:
     """Skinning de sprite sheets contra la API de Meshy.
 
@@ -314,21 +347,7 @@ class SpriteSkinMeshy:
         self._hero_locks: dict[str, asyncio.Lock] = {}
 
     def hero_key(self, prompt: str, base_model: str, style_key: str = "", angle: str = "isometric_30") -> str:
-        # namespace_suffix: un hero rancio de modo dev no debe ocupar el slot
-        # real de este prompt. style_key ("{style_id}:{hash}") separa el mismo
-        # personaje pintado con estilos de juego distintos; angle separa los
-        # sets por vista (el hero de isometric_30 no vale para frontal_8 —
-        # la pose base y el fragmento de vista del prompt cambian).
-        payload = "\n".join(
-            [prompt.strip().lower(), base_model, self.ai_model, style_key,
-             angle,
-             # v2: hero en pose neutral (el hero en T-pose contaminaba los
-             # atlas de idle) — un hero v1 cacheado no vale para el pipeline
-             # nuevo.
-             "hero_v2",
-             DEV_API_CACHE.namespace_suffix()]
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()[:16]
+        return hero_key(prompt, base_model, self.ai_model, style_key, angle)
 
     async def hero_shot(
         self,

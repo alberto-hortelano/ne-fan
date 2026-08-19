@@ -3,6 +3,7 @@
  * Wraps BridgeClient with typed methods around session lifecycle and dialogue
  * events, and surfaces narrative_event broadcasts as a typed callback.
  */
+import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { BridgeClient } from "./bridge-client.js";
 import type {
   SessionMetadata,
@@ -97,18 +98,21 @@ export class NarrativeClient {
     sessionId: string;
     gameId: string;
     state: SessionData;
+    /** Tema de UI del estilo, recalculado del pack por el bridge (no viene
+     *  del save: retocar una paleta se ve al reanudar). */
+    uiTheme?: UiTheme;
   }> {
     const res = await this.bridge.startSession(gameId, appearance, styleId, renderMode, view, characterMode);
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }
-    return { sessionId: res.sessionId, gameId: res.gameId ?? gameId, state: res.state };
+    return { sessionId: res.sessionId, gameId: res.gameId ?? gameId, state: res.state, uiTheme: res.uiTheme };
   }
 
-  async resumeSession(sessionId: string): Promise<{ state: SessionData }> {
+  async resumeSession(sessionId: string): Promise<{ state: SessionData; uiTheme?: UiTheme }> {
     const res = await this.bridge.resumeSession(sessionId);
     if (!res.ok || !res.state) throw new Error(res.error ?? "resume_session failed");
-    return { state: res.state };
+    return { state: res.state, uiTheme: res.uiTheme };
   }
 
   /** Cambia el modo de render de una partida (image⇄vector) por faceta.
@@ -137,6 +141,8 @@ export class NarrativeClient {
     eventId: string;
     choiceIndex: number;
     speaker: string;
+    /** Entidad que dijo la línea (tal cual llegó en el efecto). */
+    speakerId?: string;
     chosenText: string;
     freeText?: string;
   }): void {

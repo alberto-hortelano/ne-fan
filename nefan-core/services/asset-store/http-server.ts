@@ -25,7 +25,7 @@ import {
 } from "../../src/contracts/request-schemas.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { ManifestDb } from "./manifest-db.js";
-import { readBlob, readSpriteSheetFrame, readStyleFile, type BlobResult } from "./blob-store.js";
+import { readBlob, readSpriteHero, readSpriteSheetFrame, readStyleFile, type BlobResult } from "./blob-store.js";
 import { fetchKeepList, prune } from "./prune.js";
 
 export interface AssetStoreServerOptions {
@@ -143,6 +143,14 @@ async function handle(
     const ref = decodeURIComponent(parts[2]);
     const removed = db.unpin(ref);
     sendJson(res, 200, { ok: true, ref, removed } satisfies AssetUnpinResponse);
+    return;
+  }
+
+  // ── GET /cache/sprite_hero/{key} ──
+  // Antes del catch-all de /cache/{kind}/{hash}: tiene tres segmentos y
+  // caería ahí como un "kind" inexistente.
+  if (method === "GET" && parts[0] === "cache" && parts[1] === "sprite_hero" && parts.length === 3) {
+    sendBlob(res, readSpriteHero(opts.spriteSheetsDir, parts[2]));
     return;
   }
 

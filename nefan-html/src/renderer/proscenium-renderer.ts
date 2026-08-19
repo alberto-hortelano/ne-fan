@@ -15,6 +15,7 @@
  *  sprites comparten fórmula con su capa, así que quedan clavados a lo que
  *  tienen al lado mientras lo cercano corre más que lo lejano. */
 
+import { BASE_UI_THEME, type UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import {
   scaleAt,
@@ -100,6 +101,13 @@ export interface ProsceniumRendererOptions {
 }
 
 export class ProsceniumRenderer implements Renderer2D {
+  /** Tema de la partida para el texto y las marcas del lienzo. */
+  private theme: UiTheme = BASE_UI_THEME;
+
+  setWorldTheme(theme: UiTheme): void {
+    this.theme = theme;
+  }
+
   private readonly ctx: CanvasRenderingContext2D;
   private stage: ComposedStage | null = null;
   private stageKey = "";
@@ -737,8 +745,8 @@ export class ProsceniumRenderer implements Renderer2D {
         else ctx.lineTo(sx, sy);
       });
       ctx.closePath();
-      ctx.fillStyle = "rgba(230, 166, 63, 0.10)";
-      ctx.strokeStyle = "rgba(230, 166, 63, 0.45)";
+      ctx.fillStyle = withAlpha(this.theme.accent, 0.1);
+      ctx.strokeStyle = withAlpha(this.theme.accent, 0.45);
       ctx.lineWidth = 1.5;
       ctx.fill();
       ctx.stroke();
@@ -746,8 +754,8 @@ export class ProsceniumRenderer implements Renderer2D {
       const [cvx, cvy] = stageToView(proj, cxs, czs);
       const [sx, sy] = toScreen(cvx, cvy, Math.max(0, czs));
       // Etiqueta en espacio de PANTALLA (tamaño fijo, como los labels de NPC).
-      ctx.fillStyle = "rgba(232, 216, 180, 0.8)";
-      ctx.font = "11px system-ui";
+      ctx.fillStyle = this.theme.ink;
+      ctx.font = `11px ${this.theme.font}`;
       ctx.textAlign = "center";
       ctx.fillText(exit.label, sx, sy + 14);
       ctx.textAlign = "left";
@@ -919,4 +927,19 @@ if (import.meta.hot) {
     }
     console.log(`[hmr] ProsceniumRenderer parcheado (${HOT_REGISTRY.size} instancia/s)`);
   });
+}
+
+/** Color del tema con otra opacidad. Los temas declaran hex o rgb(a): en
+ *  ambos casos hace falta poder pintar la MISMA tinta a media luz (el velo
+ *  de una zona de salida sobre el decorado). */
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.trim();
+  if (hex.startsWith("#")) {
+    const h = hex.slice(1);
+    const full = h.length === 3 ? [...h].map((c) => c + c).join("") : h.slice(0, 6);
+    const n = parseInt(full, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const nums = hex.replace(/^[a-z]+\(|\)$/g, "").split(/[,\s/]+/).filter(Boolean);
+  return `rgba(${nums[0]}, ${nums[1]}, ${nums[2]}, ${alpha})`;
 }

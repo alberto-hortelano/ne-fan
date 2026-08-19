@@ -18,38 +18,33 @@ export class HistoryBrowser {
   private _resumeSessionId: string | null = null;
 
   constructor(private narrative: NarrativeClient) {
+    // El diario es UI de JUEGO: vive dentro de #game-ui para heredar el tema
+    // del estilo (fuera de ese árbol no ve los tokens).
     this.root = document.createElement("div");
     this.root.id = "history-browser";
-    this.root.style.cssText = [
-      "position:fixed","inset:60px","background:rgba(8,8,12,0.96)",
-      "border:1px solid #2a2a30","color:#ccc","font-family:'Courier New',monospace",
-      "display:none","z-index:9000","padding:18px","overflow:hidden",
-      "flex-direction:row","gap:14px",
-    ].join(";");
+    this.root.className = "nf-panel";
+    this.root.hidden = true;
 
     const left = document.createElement("div");
-    left.style.cssText = "flex:0 0 320px;display:flex;flex-direction:column;min-height:0";
+    left.className = "hb-col";
     const header = document.createElement("div");
-    header.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:10px";
-    header.innerHTML = `<h2 style="font-size:18px;color:#da6;margin:0">Historia</h2>
-      <button id="hb-close" style="background:transparent;border:1px solid #555;color:#999;padding:4px 10px;cursor:pointer;font-family:inherit">[H] cerrar</button>`;
+    header.className = "hb-head";
+    header.innerHTML =
+      `<h2>Historia</h2>` +
+      `<button id="hb-close" class="nf-action" type="button">` +
+      `<kbd class="nf-key">H</kbd><span class="nf-label">cerrar</span></button>`;
     this.content = document.createElement("div");
     this.content.id = "hb-list";
-    this.content.style.cssText = "flex:1;overflow-y:auto;border:1px solid #2a2a30;background:#101015";
     left.appendChild(header);
     left.appendChild(this.content);
 
     this.detail = document.createElement("div");
     this.detail.id = "hb-detail";
-    this.detail.style.cssText = [
-      "flex:1","overflow-y:auto","background:#0c0c10","border:1px solid #2a2a30",
-      "padding:12px","font-size:12px","color:#bbb","white-space:pre-wrap",
-    ].join(";");
     this.detail.textContent = "Selecciona un evento para ver detalles…";
 
     this.root.appendChild(left);
     this.root.appendChild(this.detail);
-    document.body.appendChild(this.root);
+    (document.getElementById("game-ui") ?? document.body).appendChild(this.root);
 
     (header.querySelector("#hb-close") as HTMLButtonElement).addEventListener("click", () => this.hide());
 
@@ -75,8 +70,8 @@ export class HistoryBrowser {
 
   async show(): Promise<void> {
     this._visible = true;
-    this.root.style.display = "flex";
-    this.content.innerHTML = `<div style="padding:14px;color:#666">Cargando…</div>`;
+    this.root.hidden = false;
+    this.content.innerHTML = `<div class="hb-note">Cargando…</div>`;
     this.detail.textContent = "Selecciona un evento para ver detalles…";
 
     let state: SessionData | null;
@@ -85,11 +80,11 @@ export class HistoryBrowser {
         const r = await this.narrative.resumeSession(this._resumeSessionId);
         state = r.state;
       } catch (err) {
-        this.content.innerHTML = `<div style="padding:14px;color:#a44">No se pudo cargar la sesión: ${(err as Error).message}</div>`;
+        this.content.innerHTML = `<div class="hb-note hb-note--error">No se pudo cargar la sesión: ${escapeHtml((err as Error).message)}</div>`;
         return;
       }
     } else {
-      this.content.innerHTML = `<div style="padding:14px;color:#666">Sin sesión activa.</div>`;
+      this.content.innerHTML = `<div class="hb-note">Sin sesión activa.</div>`;
       return;
     }
     this.renderTimeline(state);
@@ -97,7 +92,7 @@ export class HistoryBrowser {
 
   hide(): void {
     this._visible = false;
-    this.root.style.display = "none";
+    this.root.hidden = true;
   }
 
   private renderTimeline(state: SessionData): void {
@@ -133,30 +128,25 @@ export class HistoryBrowser {
     entries.sort((a, b) => (a.at > b.at ? 1 : -1));
 
     if (entries.length === 0) {
-      this.content.innerHTML = `<div style="padding:14px;color:#666;font-style:italic">— Aún no hay eventos en esta sesión —</div>`;
+      this.content.innerHTML = `<div class="hb-note hb-note--empty">— Aún no hay eventos en esta sesión —</div>`;
       return;
     }
 
     this.content.innerHTML = `
-      <div style="padding:10px 12px;border-bottom:1px solid #2a2a30;background:#181820">
-        <div style="font-size:13px;color:#bdf">${escapeHtml(state.game_id)}</div>
-        <div style="font-size:11px;color:#666;margin-top:3px">${escapeHtml(state.session_id)}</div>
-        <div style="font-size:11px;color:#666;margin-top:3px">${entries.length} eventos · ${formatDate(state.updated_at)}</div>
+      <div class="hb-summary">
+        <div class="hb-game">${escapeHtml(state.game_id)}</div>
+        <div class="hb-when">${escapeHtml(state.session_id)}</div>
+        <div class="hb-when">${entries.length} eventos · ${formatDate(state.updated_at)}</div>
       </div>
       <div id="hb-entries"></div>
     `;
     const list = this.content.querySelector("#hb-entries") as HTMLElement;
     for (const e of entries) {
       const row = document.createElement("button");
-      row.style.cssText = [
-        "display:block","width:100%","text-align:left","padding:8px 12px",
-        "background:transparent","border:none","border-bottom:1px solid #1a1a22",
-        "color:#ccc","font-family:inherit","font-size:12px","cursor:pointer",
-      ].join(";");
+      row.type = "button";
+      row.className = "hb-row";
       row.innerHTML = `<div>${escapeHtml(e.label)}</div>
-        <div style="color:#555;font-size:10px;margin-top:2px">${formatDate(e.at)}</div>`;
-      row.addEventListener("mouseenter", () => row.style.background = "#181820");
-      row.addEventListener("mouseleave", () => row.style.background = "transparent");
+        <div class="hb-when">${formatDate(e.at)}</div>`;
       row.addEventListener("click", () => this.showDetail(e.payload));
       list.appendChild(row);
     }

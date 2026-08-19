@@ -9,6 +9,21 @@
     "fantasia",
     "medieval"
   ],
+  "ui": {
+    "surface": "rgba(240, 232, 209, 0.92)",
+    "raised": "rgba(23, 20, 15, 0.06)",
+    "border": "#17140f",
+    "ink": "#17140f",
+    "ink_dim": "#5b5344",
+    "accent": "#a8462a",
+    "accent_ink": "#f4eede",
+    "danger": "#8c2118",
+    "fade": "#12100c",
+    "font": "system-ui, 'Segoe UI', Helvetica, Arial, sans-serif",
+    "radius_px": 0,
+    "hairline_px": 2,
+    "tracking_em": 0.02
+  },
   "refs": [
     {
       "id": "settlement",

@@ -19,7 +19,7 @@ from deps import deps
 from dev_api_cache import DEV_API_CACHE
 from request_util import decode_b64_png
 from scene_image_generator import SIDES
-from sprite_skin_meshy import SpriteSkinMeshy
+from sprite_skin_meshy import SpriteSkinMeshy, hero_key
 
 logger = logging.getLogger("ai_server")
 
@@ -459,11 +459,20 @@ async def skin_sprite_sheet_endpoint(request: Request):
         for d in range(int(meta["directions"]))
     ]
 
+    # Hero-shot de identidad: el pipeline ya lo pagó para fijar la cara del
+    # personaje antes de repintar sus frames. Se anuncia aquí para que el
+    # cliente pueda usarlo de retrato en el diálogo; NUNCA se genera desde
+    # este punto (si no está en disco, el cliente cae al busto del sprite).
+    hero_k = hero_key(prompt, model, deps.sprite_skin_gen.ai_model, style_key, angle)
+    hero_exists = (SKINNED_SHEETS_DIR / "heroes" / f"{hero_k}.png").exists()
+
     return {
         "ok": True,
         "hash": key,
         "cached": cached,
         "meta": meta,
         "frame_urls": frame_urls,
+        "hero_key": hero_k,
+        "hero_url": f"/cache/sprite_hero/{hero_k}" if hero_exists else None,
         "generation_time_ms": elapsed_ms,
     }

@@ -35,7 +35,19 @@ export function createInputState(): InputState {
   };
 }
 
-export interface InputProvider {
+/** Intención de juego NO ligada a un dispositivo: la empujan los botones de
+ *  la UI clicable y el driver de bench. Escribe en el MISMO estado que las
+ *  teclas, así que el game loop la consume por el mismo `consumeX` y no hay
+ *  dos caminos que mantener. */
+export interface IntentSink {
+  queueAttack(): void;
+  queueInteract(): void;
+  queueRespawn(): void;
+  queueTileConfirm(): void;
+  queueTileDecline(): void;
+}
+
+export interface InputProvider extends IntentSink {
   /** Estado continuo, leído por el game loop cada frame. */
   readonly state: InputState;
   /** When true, movement and combat inputs are suppressed (dialogue active). */

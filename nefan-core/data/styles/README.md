@@ -36,6 +36,7 @@ Campos de `style.json`:
 | `style_token` | Frase en inglés que complementa a las imágenes en cada prompt. Ver [style_token](#el-style_token). |
 | `cover` | Archivo de portada (raíz del pack). Si falta, el builder copia la primera cenital disponible. |
 | `tags` | **Etiquetas temáticas** (min 1): casan el estilo con juegos compatibles por intersección (`styleCompatibleWithGame`). Vocabulario libre; guía en `SUGGESTED_THEME_TAGS` (style-refs.ts). Un pack medieval no se ofrece para un mundo futurista. |
+| `ui` | OPCIONAL: tema de la **interfaz de juego** (paleta, tipografía, forma). Ver [El tema de UI](#el-tema-de-ui). |
 | `refs[]` | Lista de `{id, file, description, gen_scene?, seed?, role?}`. **El orden importa**: la primera ref de cada vista es el fallback cuando el motor no elige. |
 | `refs[].id` | Id estable de la ref: es lo que emite el motor narrativo al elegirla y **entra en la clave de caché de imagen** — renombrarlo repaga todas las escenas generadas con esta ref; renombrar `file` o `description` no (el hash es del contenido del archivo). |
 | `refs[].file` | Ruta relativa, SIEMPRE dentro de `overworld/`, `proscenium/`, `fps/` o `characters/` — **la carpeta ES la vista** (fail-loud si no). |
@@ -142,6 +143,54 @@ de la página del atlas que pinta esas celdas hero.
 - Referencia shipped: `medievo_crudo` declara tres (`fachada`, `porton`,
   `tienda`). Cada ref declarada suma su generación al coste de "aplicar
   estilo" si falta la imagen; añade al pack solo las que pida el mundo.
+
+## El tema de UI
+
+El pack no viste solo el mundo: también la **interfaz de juego** (diálogo,
+vida, acciones, salidas, avisos). El bloque `ui` de `style.json` lleva la
+dirección de arte del estilo a esos paneles.
+
+```json
+"ui": {
+  "surface": "rgba(28, 20, 13, 0.88)",
+  "border": "#5e4526",
+  "ink": "#e8dcc4",
+  "accent": "#e0a44a",
+  "font": "Georgia, 'Times New Roman', serif",
+  "radius_px": 2
+}
+```
+
+| Campo | Qué viste |
+|---|---|
+| `surface` | Fondo del panel. **Con alfa**: el mundo debe verse detrás. |
+| `raised` | Fondo de los botones dentro de un panel. |
+| `border` | Filete de paneles y botones. |
+| `ink` / `ink_dim` | Texto principal / secundario (teclas, notas). |
+| `accent` / `accent_ink` | Énfasis (nombre del hablante, foco, salidas) y su texto encima. |
+| `danger` | Daño, muerte, avisos. |
+| `fade` | Color del corte entre escenas. No siempre negro: en un mundo de acuarela, papel. |
+| `font` / `font_display` | Pila CSS de familias (cuerpo / titulares). Solo nombres del sistema — sin fuentes remotas. |
+| `radius_px`, `hairline_px`, `tracking_em` | Forma: esquina, grosor del filete, espaciado de titulares. |
+| `glow` | `true` añade un halo del acento (sci-fi). |
+
+Reglas:
+
+- **Todo es opcional**, y el bloque entero también: lo que falte lo pone el
+  tema BASE (`BASE_UI_THEME`). Un pack puede declarar solo `accent`.
+- Estética **diegética sobria**: el tema cambia paleta, tipografía y forma;
+  nunca el layout. El arte generado ya es denso — la interfaz no compite.
+- **Legibilidad obligatoria**: `nefan-core/test/ui-theme.test.ts` mide el
+  contraste WCAG del texto sobre su panel (≥4.5:1) y del acento (≥3:1) en
+  los cinco packs shipped. Un tema bonito que no se lee rompe el test.
+- Un valor inválido (un hex mal escrito, un `url()` en `font`) tumba el
+  manifest entero, igual que una ref rota: el estilo desaparece del selector
+  con un warning.
+- El tema **no se congela en el save**: el bridge lo relee del pack en cada
+  `start_session` y `resume_session`, así que retocar una paleta y reanudar
+  la partida basta para verla.
+
+Fuente de verdad: `nefan-core/src/games/ui-theme.ts`.
 
 ## El `style_token`
 

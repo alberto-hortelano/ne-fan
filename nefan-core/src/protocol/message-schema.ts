@@ -122,6 +122,7 @@ const DialogueChoiceMessageSchema = z.object({
   choiceIndex: z.number(),
   freeText: z.string().optional(),
   speaker: z.string(),
+  speakerId: z.string().optional(),
   chosenText: z.string(),
 });
 

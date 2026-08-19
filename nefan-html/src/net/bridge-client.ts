@@ -344,6 +344,7 @@ export class BridgeClient {
     eventId: string;
     choiceIndex: number;
     speaker: string;
+    speakerId?: string;
     chosenText: string;
     freeText?: string;
   }): void {
