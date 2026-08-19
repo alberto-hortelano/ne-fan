@@ -197,6 +197,25 @@ Campos disponibles:
 - **V3 rolling** es viable con base limpia (Y Bot mejor que Paladin) — drift mínimo en texturas.
 - **V4 atlas pequeño (≤10 frames en 5×2)** mantiene consistencia perfecta dentro del atlas.
 - **V4 atlas grande (29 frames en 6×5)** colapsa: el modelo ignora pose del input y repite la misma. Confirma el sweet spot 3-6×2-3 de Robotic Ape.
+- **V5 packed multi-dirección (2026-08-18, presets `pack_*`)**: varias DIRECCIONES
+  comparten atlas (una fila por dirección + hero como 2ª ref) sin perder pose ni
+  identidad, en gpt-image-2 Y nano-banana-pro — validado 4×2 (walk 2 dirs) y 3×3
+  (quick 3 dirs). Integrado en producción (`plan_dir_batches`, techo
+  `ATLAS_MAX_CELLS=10`): walk/run pasan de 8 a 4 llamadas por anim.
+- **Pose-lock obligatorio (2026-08-18, T-posegate)**: con el hero en "T-pose
+  stance" y un prompt que solo pedía "maintain identity", los atlas de poses
+  SUTILES (idle) salían como hoja de turnaround en T-pose — el personaje
+  giraba en A-pose en el juego. Arreglo en `build_atlas_prompt` (producción,
+  fuente única del bench): "keep each cell's EXACT body pose … the second
+  reference is appearance ONLY, ignore its pose" + hero en pose neutral.
+  Verificado con `pack_idle_1dir(_sq)`. Además, un output ~idéntico al input
+  (modelo que no repinta) se rechaza fail-loud (`atlas_echo_score`) en vez de
+  cachear al NPC en clay azul.
+- **Los grids de aspecto extremo rompen la integridad**: con un 4×1,
+  nano-banana-pro re-maquetó a 4×2 con pose colapsada, y gpt-image-2 (lienzo
+  cuadrado fijo) letterboxea — el resize directo del split aplasta los frames.
+  Mantener grids cuadrado-ish y pasar el output por `fit_atlas_output`
+  (recorte determinista del letterbox por bbox de contenido).
 - **Locomotion (walk/run) requiere Hips XZ lock** o el personaje sale del cell. Ya implementado en
   `godot/scripts/dev/sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
 - **Meshy nano-banana** devuelve siempre 1024×1024 RGB (sin alpha). Para producción con alpha, tirar

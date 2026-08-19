@@ -3,8 +3,8 @@
 Start with: python ai_server/gpu_worker_main.py [--port 8766]
 
 Sirve los pipelines de routers/gpu_generation.py (texturas SD1.5+LCM, modelos
-Meshy/TripoSG, skins img2img, sprites, LaMa placa/pelado) y /diagnostic/* si
-`expose_diagnostic`. El `gpu_lock` de deps NO desaparece con la extracción:
+Meshy/TripoSG, skins img2img, sprites, LaMa placa/pelado). El `gpu_lock` de
+deps NO desaparece con la extracción:
 además de serializar CUDA protege la COHERENCIA del pipe SD compartido
 (Skin/Sprite/ModelGenerator mutan padding/LoRA/device del pipe de
 TextureGenerator y restauran al terminar) — FastAPI async intercala requests.
@@ -45,7 +45,6 @@ class _SilenceHealthcheckFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from asset_cache import AssetCache
-from asset_paths import SPRITE_SHEETS_DIR
 from asset_store_client import AssetStoreClient
 from deps import deps
 from routers.gpu_generation import router as gpu_generation_router
@@ -90,9 +89,8 @@ async def lifespan(app: FastAPI):
         deps.texture_gen = None
         return
 
-    # Los pesos son lazy (SD/TripoSG/ControlNet/LaMa cargan al primer uso);
+    # Los pesos son lazy (SD/TripoSG/LaMa cargan al primer uso);
     # aquí solo se instancian los objetos y clientes.
-    from controlnet_skin import ControlNetSkinGenerator
     from model_generator import ModelGenerator
     from plate_inpainter import PlateInpainter
     from skin_generator import SkinGenerator
@@ -135,10 +133,6 @@ async def lifespan(app: FastAPI):
     deps.skin_gen = SkinGenerator(
         texture_gen_ref=deps.texture_gen,
     )
-    deps.controlnet_skin_gen = ControlNetSkinGenerator(
-        texture_gen_ref=deps.texture_gen,
-        default_strength=0.40,
-    )
     deps.plate_inpainter = PlateInpainter(
         texture_gen_ref=deps.texture_gen,
     )
@@ -171,16 +165,6 @@ async def lifespan(app: FastAPI):
     except ValueError as e:
         deps.fill_client = None
         logger.info(f"FalFillClient disabled: {e} — peel degradará a LaMa local")
-
-    if deps.config["expose_diagnostic"]:
-        from routers.diagnostic import build_diagnostic_router
-        app.include_router(build_diagnostic_router(
-            sprite_sheets_dir=SPRITE_SHEETS_DIR,
-            gpu_lock=deps.gpu_lock,
-            skin_gen=deps.skin_gen,
-            controlnet_skin_gen=deps.controlnet_skin_gen,
-        ))
-        logger.info("Diagnostic router mounted at /diagnostic/* (expose_diagnostic=true)")
 
     logger.info(f"\nGPU Worker ready. HTTP :{load_port('gpu_worker')}")
     yield

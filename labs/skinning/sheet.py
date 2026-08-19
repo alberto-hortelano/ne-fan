@@ -66,6 +66,29 @@ def compose_atlas(
     return atlas, (cols, rows), (fw, fh)
 
 
+def compose_grid_atlas(
+    rows_of_paths: list[list[Path]], frame_size: tuple[int, int] | None = None
+) -> tuple[Image.Image, tuple[int, int], tuple[int, int]]:
+    """Grid SEMÁNTICO explícito: cada fila es una secuencia (p. ej. los
+    keyframes de una dirección) y las filas comparten longitud. A diferencia
+    de `atlas_layout` (cuadrado apaisado), aquí cols/rows los decide el
+    caller — es el formato del bench V5 packed (multi-dirección)."""
+    if not rows_of_paths or not rows_of_paths[0]:
+        raise ValueError("compose_grid_atlas: grid vacío")
+    cols = len(rows_of_paths[0])
+    if any(len(row) != cols for row in rows_of_paths):
+        raise ValueError("compose_grid_atlas: todas las filas deben tener la misma longitud")
+    rows = len(rows_of_paths)
+    if frame_size is None:
+        frame_size = Image.open(rows_of_paths[0][0]).size
+    fw, fh = frame_size
+    atlas = Image.new("RGBA", (cols * fw, rows * fh), (0, 0, 0, 0))
+    for r, row in enumerate(rows_of_paths):
+        for c, p in enumerate(row):
+            atlas.paste(Image.open(p).convert("RGBA"), (c * fw, r * fh))
+    return atlas, (cols, rows), (fw, fh)
+
+
 def split_atlas(atlas: Image.Image, layout: tuple[int, int], n: int,
                 frame_size: tuple[int, int]) -> list[Image.Image]:
     cols, rows = layout
@@ -75,6 +98,45 @@ def split_atlas(atlas: Image.Image, layout: tuple[int, int], n: int,
         atlas = atlas.resize(expected, Image.LANCZOS)
     return [atlas.crop((c * fw, r * fh, (c + 1) * fw, (r + 1) * fh))
             for i in range(n) for r, c in [divmod(i, cols)]]
+
+
+def fit_atlas_output(atlas: Image.Image, expected: tuple[int, int]) -> Image.Image:
+    """Encaja el atlas devuelto por el modelo en el tamaño esperado SIN
+    deformar. Los modelos de lienzo cuadrado (gpt-image-2 devuelve 1024²)
+    letterboxean los grids apaisados: si la relación de aspecto no coincide,
+    se recorta el bbox del contenido (píxeles distintos del fondo de las
+    esquinas — recorte determinista local, no segmentación IA), se expande a
+    la relación esperada y se reescala. Con aspecto coincidente, reescala
+    directa (comportamiento clásico de split_atlas)."""
+    ew, eh = expected
+    aw, ah = atlas.size
+    if abs((aw / ah) - (ew / eh)) < 0.05:
+        return atlas.resize(expected, Image.LANCZOS) if atlas.size != expected else atlas
+    rgb = atlas.convert("RGB")
+    px = rgb.load()
+    corners = [px[0, 0], px[aw - 1, 0], px[0, ah - 1], px[aw - 1, ah - 1]]
+    bg = tuple(sorted(c[i] for c in corners)[len(corners) // 2] for i in range(3))
+    from PIL import ImageChops
+    diff = ImageChops.difference(rgb, Image.new("RGB", rgb.size, bg)).convert("L")
+    bbox = diff.point(lambda v: 255 if v > 24 else 0).getbbox()
+    if bbox is None:
+        return atlas.resize(expected, Image.LANCZOS)
+    # Expandir el bbox del contenido a la relación esperada, centrado y
+    # clampado al lienzo.
+    bx0, by0, bx1, by1 = bbox
+    bw, bh = bx1 - bx0, by1 - by0
+    target_ratio = ew / eh
+    if bw / bh < target_ratio:
+        need = bh * target_ratio
+        cx = (bx0 + bx1) / 2
+        bx0, bx1 = cx - need / 2, cx + need / 2
+    else:
+        need = bw / target_ratio
+        cy = (by0 + by1) / 2
+        by0, by1 = cy - need / 2, cy + need / 2
+    bx0, by0 = max(0, int(round(bx0))), max(0, int(round(by0)))
+    bx1, by1 = min(aw, int(round(bx1))), min(ah, int(round(by1)))
+    return atlas.crop((bx0, by0, bx1, by1)).resize(expected, Image.LANCZOS)
 
 
 def write_gif(frames: list[Image.Image], out_path: Path, fps: float) -> None:

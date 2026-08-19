@@ -13,7 +13,7 @@
  * URLs devueltas (`/cache/...`). Wire snake_case (Pydantic). Errores:
  * `FastApiErrorResponse`.
  */
-import { endpoint, type BinaryResponse } from "./http.js";
+import { endpoint } from "./http.js";
 
 export interface GenerateTextureRequest {
   prompt: string;
@@ -144,17 +144,6 @@ export const GpuWorkerApi = {
   peelSceneLayer: endpoint<PeelSceneLayerRequest, PeelSceneLayerResponse>(
     "POST",
     "/peel_scene_layer",
-  ),
-
-  /** @internal Solo con expose_diagnostic=true; devuelven PNG crudo. */
-  diagnosticSkinTestControlnet: endpoint<Record<string, unknown>, BinaryResponse>(
-    "POST",
-    "/diagnostic/skin_test_controlnet",
-  ),
-  /** @internal */
-  diagnosticSkinTestFrame: endpoint<Record<string, unknown>, BinaryResponse>(
-    "POST",
-    "/diagnostic/skin_test_frame",
   ),
 } as const;
 

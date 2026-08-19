@@ -34,6 +34,10 @@ from typing import Optional
 LAB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAB_DIR.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+# sprite_skin_meshy (fuente única del prompt del hero) usa imports planos
+# internos de ai_server (dev_api_cache, meshy_client): mismo path que en los
+# procesos del server.
+sys.path.insert(0, str(REPO_ROOT / "ai_server"))
 
 from labs.common.env import load_env_file  # noqa: E402
 
@@ -43,9 +47,12 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from ai_server.meshy_client import MeshyImageToImage
+from ai_server.sprite_skin_meshy import build_atlas_prompt, hero_prompt_suffix
 from labs.skinning.sheet import (  # noqa: E402
     atlas_layout,
     compose_atlas,
+    compose_grid_atlas,
+    fit_atlas_output,
     keyframe_indices,
     png_to_data_uri,
     split_atlas,
@@ -56,14 +63,15 @@ SPRITES_ROOT = REPO_ROOT / "nefan-html" / "public" / "sprites"
 RUNS_DIR = LAB_DIR / "runs"
 PRESETS_DIR = LAB_DIR / "presets"
 
-ALL_MESHY_MODELS = ["nano-banana", "nano-banana-2", "nano-banana-pro"]
-ALL_VARIANTS = ["V1", "V2", "V3", "V4"]
+ALL_MESHY_MODELS = ["nano-banana", "nano-banana-2", "nano-banana-pro", "gpt-image-2"]
+ALL_VARIANTS = ["V1", "V2", "V3", "V4", "V5"]
 
 VARIANT_FOLDER = {
     "V1": "V1_single",
     "V2": "V2_anchor",
     "V3": "V3_rolling",
     "V4": "V4_atlas",
+    "V5": "V5_packed",
 }
 
 VARIANT_LABEL = {
@@ -71,7 +79,12 @@ VARIANT_LABEL = {
     "V2": "V2 anchor",
     "V3": "V3 rolling",
     "V4": "V4 atlas",
+    "V5": "V5 packed (multi-dir)",
 }
+
+# Heroes del bench (réplica del hero-shot de producción) cacheados entre runs
+# para no pagar la identidad en cada iteración del preset.
+HEROES_DIR = LAB_DIR / "heroes"
 
 DEFAULT_PROMPT = (
     "campesino arapiento, andrajos marrones, capucha tosca, cara sucia, "
@@ -310,16 +323,114 @@ async def run_v4(client, api, prompt, src_paths, model, out_dir, frame_size):
             latency_s=time.perf_counter() - t0)]
 
 
+def hero_cache_path(prompt: str, model: str, angle: str) -> Path:
+    import hashlib
+    # El sufijo entra en la clave: si producción cambia la pose/encuadre del
+    # hero, el bench regenera en vez de reusar un hero rancio.
+    key = hashlib.sha256(
+        f"{prompt.strip().lower()}|{model}|{angle}|{hero_prompt_suffix(angle)}".encode()
+    ).hexdigest()[:16]
+    return HEROES_DIR / f"{key}.png"
+
+
+async def ensure_hero(client, api, prompt: str, base_model_dir: str, angle: str, model: str) -> Path:
+    """Hero-shot de identidad, réplica del de producción
+    (sprite_skin_meshy.hero_shot): img2img del frame idle frontal del modelo
+    base con el prompt + sufijo de vista. Cacheado en labs/skinning/heroes/."""
+    out = hero_cache_path(prompt, model, angle)
+    if out.exists():
+        return out
+    base_frame = SPRITES_ROOT / base_model_dir / "idle" / angle / "dir_0_frame_000.png"
+    if not base_frame.exists():
+        raise FileNotFoundError(f"hero base frame missing: {base_frame}")
+    hero_prompt = prompt.strip() + hero_prompt_suffix(angle)
+    png_bytes, _ = await api.run_one(model, hero_prompt, [png_to_data_uri(base_frame)], client=client)
+    HEROES_DIR.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(png_bytes)
+    return out
+
+
+async def run_v5(client, api, prompt, base_rel, pack_indices, pack_dirs, model, out_dir,
+                 frame_size, hero_uri, square=False):
+    """V5 packed: UNA llamada con un grid multi-dirección (cols = keyframes,
+    fila = dirección) + hero como 2ª ref — el prompt replica el de producción
+    (_skin_dir_batch) más la cláusula direccional."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows_of_paths = [
+        [src_frame_path(base_rel, d, i) for i in pack_indices] for d in pack_dirs
+    ]
+    missing = [p for row in rows_of_paths for p in row if not p.exists()]
+    if missing:
+        raise FileNotFoundError(f"missing source frames: {missing[0]}")
+    if square and len(pack_dirs) == 1:
+        # Mismo camino que producción para lotes de una dirección: grid
+        # cuadrado-ish (atlas_layout), no una fila 8×1 de aspecto extremo.
+        atlas, layout, _ = compose_atlas(rows_of_paths[0], frame_size)
+    else:
+        atlas, layout, _ = compose_grid_atlas(rows_of_paths, frame_size)
+    atlas_in = out_dir / "grid_input.png"
+    atlas.save(atlas_in)
+    cols, rows = layout
+    # Prompt de PRODUCCIÓN (fuente única) — el bench mide lo que el juego usa.
+    atlas_prompt = build_atlas_prompt(prompt, layout, multi_dir=len(pack_dirs) > 1)
+    t0 = time.perf_counter()
+    n = cols * rows
+    try:
+        refs = [png_to_data_uri(atlas_in)]
+        if hero_uri:
+            refs.append(hero_uri)
+        png_bytes, task_dict = await api.run_one(model, atlas_prompt, refs, client=client)
+        (out_dir / "grid_output.png").write_bytes(png_bytes)
+        atlas_out = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        # gpt-image-2 devuelve lienzo cuadrado: los grids apaisados llegan
+        # letterboxeados y el resize directo los aplasta.
+        atlas_out = fit_atlas_output(atlas_out, (layout[0] * frame_size[0], layout[1] * frame_size[1]))
+        frames = split_atlas(atlas_out, layout, n, frame_size)
+        results: list[JobResult] = []
+        latency = time.perf_counter() - t0
+        cost = api.cost_usd(model)
+        # (dir, frame, celda row-major del atlas): en grid multi-dir la fila es
+        # la dirección; en square (1 dir) los keyframes recorren el grid plano.
+        cells = ([(pack_dirs[0], c, c) for c in range(len(pack_indices))]
+                 if square and len(pack_dirs) == 1 else
+                 [(d, c, r * cols + c) for r, d in enumerate(pack_dirs) for c in range(cols)])
+        for i, (d, c, flat) in enumerate(cells):
+            fr = frames[flat]
+            out_path = out_dir / f"dir_{d}_frame_{c:03d}.png"
+            fr.save(out_path)
+            first = i == 0
+            src = rows_of_paths[0][c] if square else rows_of_paths[pack_dirs.index(d)][c]
+            results.append(JobResult(
+                job=FrameJob("V5", model, d, c, src, out_path,
+                             cost if first else 0.0),
+                ok=True, latency_s=latency if first else 0.0,
+                task_id=(task_dict.get("id", "") or task_dict.get("task_id", "")) if first else ""))
+        return results
+    except Exception as e:
+        return [JobResult(
+            job=FrameJob("V5", model, pack_dirs[0], 0, rows_of_paths[0][0],
+                         out_dir / "grid_output.png", api.cost_usd(model)),
+            ok=False, error=f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=2)}",
+            latency_s=time.perf_counter() - t0)]
+
+
 # ---------------------------------------------------------------------------
 # Cost
 # ---------------------------------------------------------------------------
 
 
-def planned_calls(variants: list[str], models: list[str], frames: int, dirs: int) -> list[tuple[str, str, int]]:
+def planned_calls(variants: list[str], models: list[str], frames: int, dirs: int,
+                  hero_pending_models: list[str] | None = None) -> list[tuple[str, str, int]]:
     out: list[tuple[str, str, int]] = []
     for v in variants:
         for m in models:
-            n_calls = dirs if v == "V4" else frames * dirs
+            if v == "V4":
+                n_calls = dirs
+            elif v == "V5":
+                # Un solo atlas multi-dirección (+1 hero si aún no está cacheado).
+                n_calls = 1 + (1 if m in (hero_pending_models or []) else 0)
+            else:
+                n_calls = frames * dirs
             out.append((v, m, n_calls))
     return out
 
@@ -433,6 +544,33 @@ def render_run_index(run_dir: Path, meta: dict, results_by_key: dict) -> None:
                 parts.append(f"<div><p class='legend'>{m} output</p>"
                              f"<img class='atlas-raw' src='V4_atlas/{m}/grid_output.png'></div>")
         parts.append("</div>")
+
+    if "V5" in meta["variants"]:
+        pack_meta = meta.get("pack") or {}
+        pack_dirs = pack_meta.get("directions", [])
+        parts.append(f"<h2>V5 packed — grid multi-dirección "
+                     f"<small class='legend'>(fila = dirección {pack_dirs})</small></h2>")
+        for m in models_used:
+            v5_dir = run_dir / "V5_packed" / m
+            if not v5_dir.exists():
+                continue
+            parts.append(f"<h3 style='font-weight:500;color:#c5c5cc'>{m}</h3>")
+            parts.append("<div class='row-flex'>")
+            if (v5_dir / "grid_input.png").exists():
+                parts.append(f"<div><p class='legend'>input</p>"
+                             f"<img class='atlas-raw' src='V5_packed/{m}/grid_input.png'></div>")
+            if (v5_dir / "grid_output.png").exists():
+                parts.append(f"<div><p class='legend'>output</p>"
+                             f"<img class='atlas-raw' src='V5_packed/{m}/grid_output.png'></div>")
+            parts.append("</div>")
+            gif_cells = []
+            for d in pack_dirs:
+                if (v5_dir / f"dir_{d}.gif").exists():
+                    gif_cells.append(f"<div><p class='legend'>dir {d}</p>"
+                                     f"<img src='V5_packed/{m}/dir_{d}.gif' "
+                                     f"style='width:192px;height:192px;image-rendering:pixelated'></div>")
+            if gif_cells:
+                parts.append("<div class='row-flex'>" + "".join(gif_cells) + "</div>")
 
     errors = []
     for (v, m), rs in results_by_key.items():
@@ -585,6 +723,10 @@ def merge_config(preset: dict, args: argparse.Namespace) -> dict:
         "anchor_images": preset.get("anchor_images"),
         "concurrency": preset.get("concurrency", 8),
         "budget_usd": preset.get("budget_usd", 5.0),
+        # V5 packed: {"directions": [0, 4], "keyframes": 4} — filas del grid.
+        "pack": preset.get("pack"),
+        # V5: hero-shot de identidad como 2ª ref (réplica de producción).
+        "use_hero": preset.get("use_hero", False),
     }
     overrides = {
         "base_sprites": args.base_sprites,
@@ -658,6 +800,22 @@ async def main_async(args: argparse.Namespace) -> int:
         print(f"ERROR: missing source frames: {missing[:3]}...", file=sys.stderr)
         return 2
 
+    # V5 packed: filas = direcciones del pack, cols = keyframes.
+    pack = config.get("pack") or {}
+    pack_dirs: list[int] = [int(d) for d in pack.get("directions", [])]
+    pack_indices = (keyframe_indices(fc, int(pack["keyframes"]))
+                    if pack.get("keyframes") else indices)
+    if "V5" in config["variants"] and not pack_dirs:
+        print("ERROR: la variante V5 requiere `pack.directions` en el preset", file=sys.stderr)
+        return 2
+    # base_rel = "{modelo}/{anim}/{angle}" — el hero usa idle del mismo ángulo.
+    base_model_dir, _, base_angle = base_rel.split("/")
+    hero_pending = [
+        m for m in config["models"]
+        if "V5" in config["variants"] and config["use_hero"]
+        and not hero_cache_path(config["prompt"], m, base_angle).exists()
+    ]
+
     # Run dir
     timestamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     run_id = f"{timestamp}_{config['preset_name']}"
@@ -675,10 +833,14 @@ async def main_async(args: argparse.Namespace) -> int:
     print(f"  keyframes preview: keyframes_preview.png\n")
 
     # Plan
-    plan = planned_calls(config["variants"], config["models"], len(src_paths), config["directions"])
+    plan = planned_calls(config["variants"], config["models"], len(src_paths),
+                         config["directions"], hero_pending)
     proj = projected_cost(plan)
     print(f"Sampled {len(src_paths)} frames from {base_rel} dir={direction} via {sampling}")
     print(f"  indices: {indices}")
+    if "V5" in config["variants"]:
+        print(f"  V5 pack: dirs={pack_dirs} × kf={pack_indices} "
+              f"({len(pack_indices)}x{len(pack_dirs)} celdas, hero={'sí' if config['use_hero'] else 'no'})")
     print(f"  frame size: {fw}x{fh} px\n")
     print_plan(plan)
     print()
@@ -724,11 +886,12 @@ async def main_async(args: argparse.Namespace) -> int:
     results_by_key: dict[tuple[str, str], list[JobResult]] = {}
     timeouts = httpx.Timeout(connect=15.0, read=180.0, write=180.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeouts) as client:
+        hero_usd = 0.0
         for v in config["variants"]:
             for m in config["models"]:
                 folder = VARIANT_FOLDER[v]
                 out_dir = run_dir / folder / m
-                if v != "V4":
+                if v not in ("V4", "V5"):
                     out_dir = out_dir / f"dir_{direction}"
                 print(f"▶ {v} / {m} → {out_dir.relative_to(run_dir)}")
                 t_v = time.perf_counter()
@@ -740,6 +903,21 @@ async def main_async(args: argparse.Namespace) -> int:
                     rs = await run_v3(client, api, config["prompt"], src_paths, m, out_dir)
                 elif v == "V4":
                     rs = await run_v4(client, api, config["prompt"], src_paths, m, out_dir, (fw, fh))
+                elif v == "V5":
+                    hero_uri = ""
+                    if config["use_hero"]:
+                        hero_was_cached = hero_cache_path(config["prompt"], m, base_angle).exists()
+                        hero_path = await ensure_hero(
+                            client, api, config["prompt"], base_model_dir, base_angle, m)
+                        if not hero_was_cached:
+                            hero_usd += api.cost_usd(m)
+                            print(f"  hero: generado (${api.cost_usd(m):.2f}) → {hero_path.name}")
+                        else:
+                            print(f"  hero: cache → {hero_path.name}")
+                        hero_uri = png_to_data_uri(hero_path)
+                    rs = await run_v5(client, api, config["prompt"], base_rel, pack_indices,
+                                      pack_dirs, m, out_dir, (fw, fh), hero_uri,
+                                      square=bool(pack.get("square")))
                 else:
                     continue
                 results_by_key[(v, m)] = rs
@@ -747,6 +925,20 @@ async def main_async(args: argparse.Namespace) -> int:
                 spend = sum(r.job.cost_usd for r in rs if r.ok)
                 dt = time.perf_counter() - t_v
                 print(f"  done: {ok}/{len(rs)} ok, ${spend:.2f}, {dt:.1f}s")
+
+                if v == "V5":
+                    # Un GIF por dirección; loop.gif = primera dir (thumbnail).
+                    for d in pack_dirs:
+                        d_paths = [r.job.out_frame_path for r in rs
+                                   if r.ok and r.job.direction == d and r.job.out_frame_path.exists()]
+                        if d_paths:
+                            frames = [Image.open(p).convert("RGBA") for p in d_paths]
+                            write_gif(frames, out_dir / f"dir_{d}.gif", config["target_fps"])
+                    first_gif = out_dir / f"dir_{pack_dirs[0]}.gif"
+                    if first_gif.exists():
+                        (out_dir / "loop.gif").write_bytes(first_gif.read_bytes())
+                        print(f"  gifs: dir_{{{','.join(map(str, pack_dirs))}}}.gif")
+                    continue
 
                 ok_paths = [r.job.out_frame_path for r in rs if r.ok and r.job.out_frame_path.exists()]
                 if ok_paths:
@@ -757,7 +949,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     # Persist
     total_calls = sum(1 for rs in results_by_key.values() for r in rs if r.ok)
-    total_usd = sum(r.job.cost_usd for rs in results_by_key.values() for r in rs if r.ok)
+    total_usd = sum(r.job.cost_usd for rs in results_by_key.values() for r in rs if r.ok) + hero_usd
     meta_out = {
         "run_id": run_id, "preset_name": config["preset_name"],
         "description": config.get("description", ""),
@@ -765,6 +957,9 @@ async def main_async(args: argparse.Namespace) -> int:
         "sampling": sampling, "target_fps": config["target_fps"],
         "variants": config["variants"], "models": config["models"],
         "prompt": config["prompt"], "total_usd": round(total_usd, 4), "total_calls": total_calls,
+        "hero_usd": round(hero_usd, 4),
+        "pack": ({"directions": pack_dirs, "indices": pack_indices}
+                 if "V5" in config["variants"] else None),
         "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
     }
     (run_dir / "meta.json").write_text(json.dumps(meta_out, indent=2))

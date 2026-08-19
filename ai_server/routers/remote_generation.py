@@ -340,12 +340,19 @@ def _skin_sheet_key(
     -pro (o retunear ANIM_PROFILES) debe regenerar, no servir el cache viejo.
     """
     import hashlib
-    from sprite_skin_meshy import ANIM_PROFILES, DEFAULT_PROFILE
+    from sprite_skin_meshy import ANIM_PROFILES, ATLAS_MAX_CELLS, DEFAULT_PROFILE
     base_meta = SPRITE_SHEETS_DIR / model / anim / angle / "meta.json"
     base_stamp = str(int(base_meta.stat().st_mtime)) if base_meta.exists() else "0"
     n_kf, fps = ANIM_PROFILES.get(anim, DEFAULT_PROFILE)
     payload = "\n".join(
         [model, anim, angle, prompt.strip().lower(), base_stamp, ai_model, f"kf{n_kf}@{fps}",
+         # El plan de lotes cambia el layout de los atlas: otro techo de
+         # celdas debe regenerar, no servir el cache del layout viejo.
+         f"pack{ATLAS_MAX_CELLS}",
+         # v2 (2026-08-18): pose-lock en los prompts (atlas + hero sin
+         # T-pose) + validación anti-eco. Los sheets v1 tenían idles en
+         # T-pose/turnaround y ecos en clay cacheados — regenerar, no servir.
+         "skinprompt_v2",
          style_key,
          # En modo dev-cache los frames derivan de una respuesta rancia: clave
          # aparte para no contaminar el cache real de este prompt.
@@ -407,7 +414,8 @@ async def skin_sprite_sheet_endpoint(request: Request):
     out_meta_path = out_dir / "meta.json"
 
     start = time.time()
-    if out_meta_path.exists():
+    cached = out_meta_path.exists()
+    if cached:
         # meta.json se escribe el ÚLTIMO (skin_anim es todo-o-nada): su
         # presencia garantiza que todos los frames están en disco.
         with open(out_meta_path) as f:
@@ -445,6 +453,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
     return {
         "ok": True,
         "hash": key,
+        "cached": cached,
         "meta": meta,
         "frame_urls": frame_urls,
         "generation_time_ms": elapsed_ms,
