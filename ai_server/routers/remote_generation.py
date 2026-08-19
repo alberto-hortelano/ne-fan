@@ -54,7 +54,7 @@ class SceneImageRequest(BaseModel):
     # Un id desconocido degrada con aviso a la primera ref de la vista (el
     # server no conoce la sesión — el pre-flight fail-loud vive en el bridge).
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    style_tag: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
+    style_ref: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
     # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
     # canónico del plató o del tile). El render WebGL no es byte-determinista:
     # sin esta clave, cada arranque hashearía píxeles distintos ⇒ miss.
@@ -117,7 +117,7 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
         # vista de la referencia). El id lo eligió el motor narrativo; vacío
         # o desconocido ⇒ primera ref de la vista (orden del manifest).
         view = "proscenium" if body.blueprint_kind == "stage" else "overworld"
-        style_ref = deps.style_packs.resolve(body.style_id, body.style_tag, view)
+        style_ref = deps.style_packs.resolve(body.style_id, body.style_ref, view)
         if style_ref is not None:
             context["style"] = f"{style_ref.style_id}/{style_ref.ref_id}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind

@@ -36,26 +36,9 @@
         "type": "string",
         "description": "2-3 sentence description of the scene, in Spanish."
       },
-      "style_tag": {
+      "style_ref": {
         "type": "string",
-        "enum": [
-          "settlement",
-          "farmland",
-          "forest",
-          "wetland",
-          "desert",
-          "snow",
-          "fortress",
-          "interior",
-          "underground",
-          "stage_interior",
-          "stage_street",
-          "stage_plaza",
-          "stage_nature",
-          "stage_harbor",
-          "stage_gate"
-        ],
-        "description": "Style-reference category for the AI repaint (include it). Overworld: the dominant zone of the map (settlement..underground). Proscenium: the kind of SET (stage_*). See the hard rules in the system prompt."
+        "description": "Id of the style-pack reference image that best matches this scene, chosen from world.style_refs.scene (each entry is {id, description}). Include it in every scene. Unknown or missing id degrades to the first reference of the active view."
       },
       "size": {
         "type": "object",
@@ -241,6 +224,10 @@
             "required": [
               "present"
             ]
+          },
+          "interior": {
+            "type": "boolean",
+            "description": "true = this stage is a roofed INTERIOR (room-scale framing, interior lighting). A stage with fourth_wall.present=true is an interior by definition; declaring interior:false alongside a fourth wall is a contradiction and the scene is rejected."
           },
           "ambience": {
             "type": "object",

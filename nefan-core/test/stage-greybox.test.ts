@@ -33,6 +33,7 @@ function interiorPlan(): StageScenePlan {
       backdrop: { description: "Pared con chimenea encendida" },
       fourth_wall: { present: true, doors: [{ col: 14, w: 5 }] },
     },
+    interior: true,
     volumes: [
       { id: "mesa_grande", label: "mesa grande", type: "prop", rect: [6, 8, 4, 2], shape: "box", h: 2 },
       { id: "barril", label: "barril", type: "prop", at: [18, 5], shape: "cylinder", h: 2 },
@@ -42,6 +43,7 @@ function interiorPlan(): StageScenePlan {
 
 function exteriorPlan(): StageScenePlan {
   const p = interiorPlan();
+  p.interior = false;
   p.stage.fourth_wall = undefined;
   p.size = { cols: 48, rows: 24, meters_per_cell: 0.5 };
   p.stage.exits = [
@@ -144,16 +146,16 @@ describe("buildGreyboxSpec", () => {
     assert.equal(techoDe(choza), 2.4);
   });
 
-  it("v6: style_tag stage_interior activa el modo interior aunque falte fourth_wall", () => {
+  it("stage.interior activa el modo interior aunque falte fourth_wall", () => {
     const plan = interiorPlan();
     plan.stage.fourth_wall = undefined;
-    // Sin ninguna señal: exterior (ojo alto, cielo).
-    const ext = buildGreyboxSpec(plan, "sig");
+    // Sin señal de interior: exterior (ojo alto, cielo).
+    const ext = buildGreyboxSpec({ ...plan, interior: false }, "sig");
     assert.equal(ext.camera.eye_m, GREYBOX_EYE_M);
     assert.ok(ext.sky, "sin señal de interior hay cielo");
-    // Con style_tag: interior (ojo 1.8, sin cielo) — fourth_wall es opcional
-    // en el prompt y no puede ser la única señal.
-    const int = buildGreyboxSpec({ ...plan, style_tag: "stage_interior" }, "sig");
+    // Con interior: ojo 1.8, sin cielo — fourth_wall es opcional en el
+    // prompt y no puede ser la única señal.
+    const int = buildGreyboxSpec({ ...plan, interior: true }, "sig");
     assert.equal(int.camera.eye_m, 1.8);
     assert.ok(!int.sky, "interior sin cielo");
   });
@@ -393,23 +395,43 @@ describe("buildGreyboxSpec", () => {
     assert.ok(Math.abs(w / h - vbAspect) < 0.05, `aspect render ${w / h} vs vb ${vbAspect}`);
   });
 
-  it("v6: fourth_wall + style_tag exterior es contradicción — el plan lanza", async () => {
+  it("señal de interior: explícita, implicada por fourth_wall y legacy por style_tag", async () => {
     const { stagePlanFromScene } = await import("../src/scene/stage/plan.js");
-    const raw = {
+    const base = {
       size: { cols: 24, rows: 16, meters_per_cell: 0.5 },
-      style_tag: "stage_street",
       stage: {
         exits: [
           { id: "s", edge: "south", to_place_id: "x", zone: [10, 14, 4, 2], kind: "opening", label: "Salida" },
         ],
-        fourth_wall: { present: true },
-      },
+      } as Record<string, unknown>,
       entities: [],
     };
-    assert.throws(() => stagePlanFromScene(raw), /stage_interior/);
-    // El mismo plató etiquetado interior pasa y propaga el tag.
-    const ok = stagePlanFromScene({ ...raw, style_tag: "stage_interior" })!;
-    assert.equal(ok.style_tag, "stage_interior");
+    // fourth_wall con interior:false explícito = contradicción — lanza.
+    assert.throws(
+      () =>
+        stagePlanFromScene({
+          ...base,
+          stage: { ...base.stage, fourth_wall: { present: true }, interior: false },
+        }),
+      /interior/,
+    );
+    // fourth_wall sin interior explícito ⇒ interior implicado.
+    const implied = stagePlanFromScene({
+      ...base,
+      stage: { ...base.stage, fourth_wall: { present: true } },
+    })!;
+    assert.equal(implied.interior, true);
+    // interior explícito sin fourth_wall ⇒ interior.
+    const explicit = stagePlanFromScene({
+      ...base,
+      stage: { ...base.stage, interior: true },
+    })!;
+    assert.equal(explicit.interior, true);
+    // Legacy (saves viejos): style_tag stage_interior sigue leyéndose.
+    const legacy = stagePlanFromScene({ ...base, style_tag: "stage_interior" })!;
+    assert.equal(legacy.interior, true);
+    // Sin ninguna señal: exterior.
+    assert.equal(stagePlanFromScene(base)!.interior, false);
   });
 
   it("v6: alturas semánticas — mobiliario sin h sale a escala creíble y uniforme", async () => {

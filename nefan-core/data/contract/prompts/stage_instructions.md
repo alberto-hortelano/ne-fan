@@ -44,7 +44,8 @@ Call narrative_respond with a CLASSIC Format D scene PLUS the "stage" block:
   "scene_id": "<slug>",
   "place_id": "<the place from realize_place — REQUIRED>",
   "scene_description": "<2-3 Spanish sentences>",
-  "style_tag": "stage_interior",         // kind of SET (see hard rules)
+  "style_ref": "stage_interior",         // style-pack reference id (world.style_refs.scene)
+  "stage": { "interior": true, ... },    // roofed stage? see hard rules
   "size": { "cols": 24..80, "rows": 12..40, "meters_per_cell": 0.5 },
   "terrain": [ ... ],                    // rows × cols glyphs, as always
   "terrain_legend": { "_": "tierra", "c": "empedrado" },  // base wash under `ground` (and walkability grid)
@@ -194,15 +195,16 @@ HARD RULES OF THE STAGE:
   "player" entity at a sensible spot.
 - The fourth wall is optional flavour: use it for interiors (the "missing
   wall" the camera looks through); leave it out for open-air stages.
-- "style_tag" is the kind of SET this stage is — one of
-  stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate.
-  It picks the game's style reference for the repaint. Without it the engine
-  infers one (fourth_wall present → stage_interior; otherwise a default).
-- HARD RULE: a roofed stage MUST declare style_tag "stage_interior" (and
-  usually a fourth_wall). Without either signal the engine renders it as an
-  EXTERIOR — open sky, distant hills, high 3.2 m camera eye. Declaring
-  fourth_wall together with an exterior style_tag is a contradiction and the
-  scene is rejected.
+- "style_ref" is the id of the style-pack reference image guiding the
+  repaint of this stage, chosen from world.style_refs.scene ({id,
+  description} entries — ground-level SET references for proscenium worlds).
+  Pick the one whose content best matches the stage; unknown/missing id
+  degrades to the pack's first stage reference.
+- HARD RULE: a roofed stage MUST declare "interior": true inside the stage
+  block (and usually a fourth_wall). Without either signal the engine
+  renders it as an EXTERIOR — open sky, distant hills, high 3.2 m camera
+  eye. Declaring fourth_wall together with "interior": false is a
+  contradiction and the scene is rejected.
 - Backdrop description is what the player SEES at the north edge (Spanish,
   concrete, matches the world). It seeds future AI repainting — describe a
   view, not a wall of text.

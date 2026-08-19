@@ -139,6 +139,11 @@ async function main() {
   // Ids esperados de la última petición stage_review (pre-flight de inventario
   // completo: cada expected debe aparecer found o missing).
   let currentStageExpectedIds: string[] | null = null;
+  // Catálogo de refs de estilo de la sesión (world.style_refs.scene de la
+  // última petición scene): pre-flight de `style_ref` — un id fuera del
+  // catálogo rebota al motor con la lista válida. null = petición sin
+  // catálogo (fixtures, saves viejos) ⇒ no se valida.
+  let currentStyleRefIds: string[] | null = null;
 
   // ── Latido de progreso ──────────────────────────────────────────────────
   // Cada paso observable del motor (recoger la petición, llamar una tool de
@@ -319,8 +324,16 @@ into context:
         }
         currentKind = 'scene';
         const ws = msg.world_state as
-          | { generate_tile?: unknown; stage_request?: unknown }
+          | {
+              generate_tile?: unknown;
+              stage_request?: unknown;
+              world?: { style_refs?: { scene?: Array<{ id?: unknown }> } };
+            }
           | undefined;
+        const refCatalog = ws?.world?.style_refs?.scene;
+        currentStyleRefIds = Array.isArray(refCatalog) && refCatalog.length > 0
+          ? refCatalog.map((r) => String(r?.id ?? '')).filter(Boolean)
+          : null;
         const isTileRequest = Boolean(ws?.generate_tile);
         const isStageRequest = Boolean(ws?.stage_request);
         const sceneVariant = isTileRequest
@@ -392,6 +405,26 @@ into context:
         // prop malformado dejaba el tile sin un solo edificio).
         if (kind === 'scene') {
           const scene = parsed as Record<string, unknown>;
+          // Pre-flight de style_ref: la elección debe existir en el catálogo
+          // del pack (world.style_refs.scene de la petición). Fuera de
+          // catálogo se rebota con los ids válidos — nunca degradar en
+          // silencio una elección del motor.
+          if (
+            currentStyleRefIds !== null &&
+            typeof scene.style_ref === 'string' &&
+            scene.style_ref &&
+            !currentStyleRefIds.includes(scene.style_ref)
+          ) {
+            return {
+              content: [{
+                type: 'text',
+                text: `Invalid style_ref "${scene.style_ref}" — it must be one of the ids in ` +
+                  `world.style_refs.scene (${currentStyleRefIds.join(', ')}). Fix it and call ` +
+                  `narrative_respond again (do NOT drop the rest of the scene).`,
+              }],
+              isError: true,
+            };
+          }
           if (scene.volumes !== undefined) {
             const check = validateVolumes(scene.volumes);
             if (!check.ok) {

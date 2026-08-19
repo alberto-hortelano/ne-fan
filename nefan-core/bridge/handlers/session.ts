@@ -13,10 +13,14 @@ import {
   listStyles,
   loadGameMeta,
   loadStyleManifest,
+  styleCharacterRefs,
   styleCompatibleWithGame,
+  styleRefsForView,
   styleViews,
   loadWorldDoc,
   WORLD_VIEWS,
+  type StyleManifest,
+  type WorldView,
 } from "../../src/games/loader.js";
 import {
   branchForView,
@@ -54,6 +58,25 @@ import type {
   SaveSessionMessage,
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
+
+/** Catálogo de refs de estilo que ve el motor narrativo (`world.style_refs`):
+ *  las refs de la VISTA activa (la primera es el fallback sin elección) y
+ *  las de personaje, cada una con su descripción en español. Se recalcula
+ *  del manifest en start_session Y resume_session — editar un pack a mano se
+ *  refleja al reanudar (el save solo lo cachea). */
+function styleRefCatalog(
+  style: StyleManifest,
+  view: WorldView,
+): { scene: Array<{ id: string; description: string }>; characters: Array<{ id: string; description: string }> } {
+  const entry = (r: { id: string; description: string }) => ({
+    id: r.id,
+    description: r.description,
+  });
+  return {
+    scene: styleRefsForView(style, view).map(entry),
+    characters: styleCharacterRefs(style).map(entry),
+  };
+}
 
 export function handleListGames(
   msg: ListGamesMessage,
@@ -320,6 +343,9 @@ export async function handleStartSession(
       character_mode: characterMode,
       combat_system: combatId,
       view,
+      // Catálogo de refs elegibles por el motor (`style_ref` por escena):
+      // las de la vista activa + personajes, con sus descripciones.
+      style_refs: styleRefCatalog(style, view as WorldView),
     });
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);
@@ -527,6 +553,19 @@ export async function handleResumeSession(
       error: `npc_behavior_unknown: "${npcBehaviorId}" (esperaba ${npcBehaviorRegistry.ids().join("|")})`,
     });
     return;
+  }
+  // Catálogo de refs de estilo: recalculado del style.json vigente (editar
+  // el pack a mano se refleja al reanudar). Manifest ilegible (pack borrado
+  // o roto) ⇒ warning y se conserva el catálogo cacheado en el save — las
+  // imágenes ya generadas siguen sirviéndose de caché.
+  try {
+    const style = loadStyleManifest(ctx.stylesDir, ctx.narrative.world.style_id);
+    ctx.narrative.setStyleRefs(styleRefCatalog(style, savedView as WorldView));
+  } catch (err) {
+    console.warn(
+      `Bridge: style.json ilegible en resume (estilo "${ctx.narrative.world.style_id}") — ` +
+        `catálogo de refs del save conservado: ${(err as Error).message ?? err}`,
+    );
   }
   reseedSimForSession(ctx, combatId, npcBehaviorId);
   // Los NPC del save vuelven a la vida ambiental donde se quedaron (su

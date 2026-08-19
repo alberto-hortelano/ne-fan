@@ -8,7 +8,7 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
-import { stageCategoryForScene, styleRoleForNpc } from "@nefan-core/src/games/style-categories.js";
+import { styleRoleForNpc } from "@nefan-core/src/games/style-categories.js";
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
@@ -267,12 +267,10 @@ const fpsAtlasController = new FpsAtlasController(
       const surfaces = fpsRenderer?.getTileSurfaces(key);
       const entry = tileStore.entries.get(key);
       if (!surfaces || !entry) return null;
-      const scene = entry.scene as { scene_description?: string; style_tag?: string; biome?: string };
+      const scene = entry.scene as { scene_description?: string };
       return {
         layout: surfaces.layout,
         sceneDescription: String(scene.scene_description ?? ""),
-        styleTag: String(scene.style_tag ?? ""),
-        biome: scene.biome,
       };
     },
     apply: (key, images) => fpsRenderer?.applyAtlas(key, images),
@@ -1007,12 +1005,21 @@ function stageImageMeta(
     fourth_wall?: { present?: boolean };
     ambience?: { mood?: string };
   } | undefined;
-  const rawTag = typeof rawFd.style_tag === "string" ? rawFd.style_tag : undefined;
+  // Ref de estilo elegida por el motor (style_ref; style_tag = nombre
+  // legacy en saves viejos, cuyos valores son ids válidos tras la
+  // migración de packs). "" = sin elección — el server usa la primera ref
+  // de plató del manifest.
+  const rawRef =
+    typeof rawFd.style_ref === "string"
+      ? rawFd.style_ref
+      : typeof rawFd.style_tag === "string"
+        ? rawFd.style_tag
+        : "";
   return {
     description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
     backdrop: stageBlock?.backdrop?.description,
     mood: stageBlock?.ambience?.mood,
-    styleTag: stageCategoryForScene(rawTag, Boolean(stageBlock?.fourth_wall?.present)),
+    styleTag: rawRef,
   };
 }
 

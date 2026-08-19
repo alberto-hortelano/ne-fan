@@ -339,7 +339,6 @@ export class StyleApplyController {
             cells: chunk,
             scene_description: plan.sceneDescription,
             style_id: plan.styleId,
-            style_tag: "settlement",
           }),
         });
         if (!res.ok) {
@@ -471,7 +470,6 @@ export class StyleApplyController {
           cells: cells.slice(i, i + MAX_CELLS_PER_REQUEST),
           scene_description: sceneDescription || "materials of this world",
           style_id: styleId,
-          style_tag: "settlement",
           resolve_only: true,
         }),
       });

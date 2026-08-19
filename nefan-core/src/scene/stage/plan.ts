@@ -24,19 +24,20 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     throw new Error("stagePlanFromScene: la escena proscenio necesita size {cols, rows, meters_per_cell}");
   }
   const mpc = size.meters_per_cell;
-  // Señal de interior: style_tag y fourth_wall deben ser coherentes — un
-  // plató "bajo techo" (fourth_wall) etiquetado con un tag exterior es una
+  // Señal de interior: `stage.interior` explícito, con fourth_wall como
+  // implicación y el `style_tag: "stage_interior"` de saves legacy como
+  // fallback de lectura. Declarar interior:false con cuarta pared es una
   // contradicción del motor narrativo, no algo que adivinar.
-  const styleTag = typeof raw.style_tag === "string" ? raw.style_tag : undefined;
-  const EXTERIOR_STAGE_TAGS = new Set([
-    "stage_street", "stage_plaza", "stage_nature", "stage_harbor", "stage_gate",
-  ]);
-  if (stage.stage.fourth_wall?.present === true && styleTag && EXTERIOR_STAGE_TAGS.has(styleTag)) {
+  const legacyTag = typeof raw.style_tag === "string" ? raw.style_tag : undefined;
+  const hasFourthWall = stage.stage.fourth_wall?.present === true;
+  if (hasFourthWall && stage.stage.interior === false) {
     throw new Error(
-      `stagePlanFromScene: fourth_wall.present=true con style_tag exterior "${styleTag}" — ` +
-        "un interior debe etiquetarse stage_interior",
+      "stagePlanFromScene: fourth_wall.present=true con interior:false — " +
+        "una cuarta pared implica un plató interior",
     );
   }
+  const interior =
+    stage.stage.interior ?? (hasFourthWall || legacyTag === "stage_interior");
   let declared: Volume[] = [];
   if (raw.volumes !== undefined) {
     const parsed = parseVolumes(raw.volumes);
@@ -145,6 +146,6 @@ export function stagePlanFromScene(raw: Record<string, unknown>): StageScenePlan
     ...(typeof raw.scene_description === "string" && raw.scene_description
       ? { description: raw.scene_description }
       : {}),
-    ...(styleTag ? { style_tag: styleTag } : {}),
+    interior,
   };
 }

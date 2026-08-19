@@ -37,7 +37,9 @@ export interface GenerateSceneImageRequest {
   has_water?: boolean;
   /** Style pack congelado en la sesión; vacío = referencia global fija. */
   style_id?: string;
-  style_tag?: StyleTag | "";
+  /** Ref del pack elegida por el motor para esta escena (id del manifest);
+   *  vacío/desconocido = primera ref de la vista del blueprint. */
+  style_ref?: StyleTag | "";
   /** Clave de layout ESTABLE del cliente (hash hex ≤64 del GreyboxSpec
    *  canónico). El render WebGL no es byte-determinista: sin ella cada
    *  arranque haría cache-miss (~$0.2/plató). Vacía = se hashea el PNG. */
@@ -71,7 +73,6 @@ export interface GenerateSurfaceAtlasRequest {
   cells: SurfaceCellSpec[];
   scene_description: string;
   style_id?: string;
-  style_tag?: StyleTag | "";
   /** Hash del layout canónico del cliente — logging/debug (la caché es por
    *  celda, no por atlas). */
   layout_key?: string;

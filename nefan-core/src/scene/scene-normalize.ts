@@ -299,10 +299,18 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // escena de plató por este campo y compone las capas con
     // stagePlanFromScene sobre el Format D crudo (__format_d).
     stage: raw.stage !== undefined ? raw.stage : undefined,
-    // Zona de estilo etiquetada por el motor narrativo y bioma del tile: los
-    // combina el cliente (styleCategoryForTile) para elegir la referencia del
-    // style pack por tile. Passthrough sin validar — ai_server sanea el enum.
-    style_tag: typeof raw.style_tag === "string" ? raw.style_tag : undefined,
+    // Ref de estilo ELEGIDA por el motor narrativo para esta escena (id del
+    // catálogo world.style_refs). Shim de lectura de saves legacy: escenas
+    // persistidas antes del formato de refs libres llevan `style_tag`, cuyos
+    // valores son ids válidos tras la migración de packs. Passthrough sin
+    // validar — el pre-flight vive en narrative-mcp; el server degrada un id
+    // desconocido a la primera ref de la vista.
+    style_ref:
+      typeof raw.style_ref === "string"
+        ? raw.style_ref
+        : typeof raw.style_tag === "string"
+          ? raw.style_tag
+          : undefined,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     objects,
     npcs,

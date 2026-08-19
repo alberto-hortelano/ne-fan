@@ -12,7 +12,6 @@ import type {
   GenerateSurfaceAtlasResponse,
   SurfaceCellSpec,
 } from "@nefan-core/src/contracts/remote-gen.js";
-import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 import {
   canonicalSurfaceLayoutJson,
   type SurfaceLayout,
@@ -39,8 +38,6 @@ export interface FpsAtlasDeps {
   getTile(key: string): {
     layout: SurfaceLayout;
     sceneDescription: string;
-    styleTag: string;
-    biome?: string;
   } | null;
   apply(key: string, images: Map<string, AtlasImage>): void;
   clear(key: string): void;
@@ -146,7 +143,6 @@ export class FpsAtlasController {
             cells: cells.slice(i, i + MAX_CELLS_PER_REQUEST),
             scene_description: tile.sceneDescription || "a medieval settlement",
             style_id: this.styleId || undefined,
-            style_tag: styleCategoryForTile(tile.styleTag, tile.biome) || undefined,
             layout_key: layoutKey.slice(0, 64),
             resolve_only: resolveOnly || undefined,
           }),
