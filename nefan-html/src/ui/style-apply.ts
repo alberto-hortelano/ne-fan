@@ -42,8 +42,11 @@ const MAX_CELLS_PER_REQUEST = 64;
 const CELLS_PER_PAGE = 12;
 /** Coste aprox. por página de atlas (nano-banana-pro vía fal). */
 const ATLAS_PAGE_EST_USD = 0.15;
-/** Llamadas de imagen por skin: 1 hero + 8 direcciones × 3 anims auto. */
-const SKIN_IMAGE_CALLS = 1 + 8 * 3;
+/** Llamadas de imagen por skin: 1 hero + lotes de atlas por anim auto.
+ *  Espejo de `plan_dir_batches` (ai_server/sprite_skin_meshy.py, techo
+ *  ATLAS_MAX_CELLS=10): idle (8 kf) = 8 lotes, walk/run (4 kf) = 4 lotes de
+ *  2 direcciones. */
+const SKIN_IMAGE_CALLS = 1 + 8 + 4 + 4;
 const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
 /** Set de sprites por vista — DEBE coincidir con VIEW_ANGLES de main.ts o el
  *  skin pre-generado no es el que pedirá la partida. */

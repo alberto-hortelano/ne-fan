@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from asset_cache import AssetCache
     from asset_store_client import AssetStoreClient
-    from controlnet_skin import ControlNetSkinGenerator
     from llm_client import LLMClient
     from model_generator import ModelGenerator
     from plate_inpainter import PlateInpainter
@@ -36,7 +35,6 @@ class Deps:
     texture_gen: "TextureGenerator | None" = None
     model_gen: "ModelGenerator | None" = None
     skin_gen: "SkinGenerator | None" = None
-    controlnet_skin_gen: "ControlNetSkinGenerator | None" = None
     plate_inpainter: "PlateInpainter | None" = None
     sprite_skin_gen: "SpriteSkinMeshy | None" = None
     sprite_gen: "SpriteGenerator | None" = None

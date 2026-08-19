@@ -284,6 +284,8 @@ Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc
 - **V1 single** y **V2 anchor** dan deriva inaceptable.
 - **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
 - **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
+- **V5 packed (2026-08-18)**: varias DIRECCIONES comparten atlas (fila = dirección + hero de ancla) dentro del techo de 10 celdas — validado en gpt-image-2 y nano-banana-pro, EN PRODUCCIÓN (`plan_dir_batches`): un personaje auto (idle/walk/run) baja de 25 a 17 llamadas. Grids de aspecto extremo (4×1) rompen la integridad; el letterbox de gpt-image-2 se recorta con `fit_atlas_output`.
+- **Pose-lock (T-posegate 2026-08-18)**: el prompt del atlas DEBE fijar la pose de cada celda y degradar el hero a "appearance only" (`build_atlas_prompt`), y el hero se genera en pose neutral, nunca T-pose — si no, los atlas de poses sutiles (idle) salen como turnaround en T-pose. Un output que no repinta el clay se rechaza fail-loud (`atlas_echo_score`), nunca se cachea.
 - **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
 
 ## Stack Python de IA — Endpoints (3 procesos desde F3/F4)

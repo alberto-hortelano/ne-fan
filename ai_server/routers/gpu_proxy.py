@@ -82,8 +82,3 @@ def _make_handler(path: str):
 
 for _ep in _GPU_ENDPOINTS:
     router.add_api_route(_ep, _make_handler(_ep), methods=["POST"])
-
-
-@router.api_route("/diagnostic/{path:path}", methods=["POST"])
-async def proxy_diagnostic(request: Request, path: str) -> Response:
-    return await _forward(request, f"/diagnostic/{path}")

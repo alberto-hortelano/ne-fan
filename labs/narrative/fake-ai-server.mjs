@@ -694,7 +694,7 @@ const server = http.createServer((req, res) => {
           `[fake-ai] skin_sprite_sheet ${anim}/${angle} ← "${String(body.prompt).slice(0, 40)}" ` +
           `(sirviendo frames de ${SKIN_SPRITE_MODEL})`,
         );
-        return send(200, { ok: true, meta, frame_urls });
+        return send(200, { ok: true, cached: false, meta, frame_urls });
       }
       if (req.method === "POST" && req.url === "/generate_scene_image") {
         let body = {};

@@ -1,0 +1,13 @@
+{
+  "name": "pack_walk_2dir",
+  "description": "V5 packed: walk 4 kf x 2 dirs opuestas (grid 4x2, 8 celdas <= optimo 10) con hero",
+  "base_sprites": "y_bot/walk/isometric_30",
+  "keyframes": 4,
+  "directions": 1,
+  "variants": ["V5"],
+  "pack": { "directions": [0, 4], "keyframes": 4 },
+  "use_hero": true,
+  "models": ["gpt-image-2", "nano-banana-pro"],
+  "target_fps": 4,
+  "budget_usd": 1.5
+}
