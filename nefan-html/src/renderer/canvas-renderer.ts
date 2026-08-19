@@ -491,7 +491,11 @@ export class CanvasRenderer {
     if (opts.worldAngle) this.worldAngle = opts.worldAngle;
     if (opts.pixelsPerMeter) this.scale = opts.pixelsPerMeter;
     this.resize();
-    window.addEventListener("resize", () => this.resize());
+    // Observar la CAJA del lienzo, no la ventana: la barra de dev crece al
+    // conectar con el bridge (añade sesión y estilo) y empuja el lienzo sin
+    // que la ventana cambie de tamaño. Con un listener de `resize` el buffer
+    // se quedaba con la medida del arranque y la escena salía estirada.
+    new ResizeObserver(() => this.resize()).observe(this.canvas);
   }
 
   setWorldAngle(angle: string): void {

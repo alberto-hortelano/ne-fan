@@ -56,6 +56,7 @@ export class FpsRenderer implements Renderer2D {
   private surfaces = new Map<string, FpsTileSurfaces>();
   private visible = false;
   private onResize = () => this.syncSize();
+  private resizeObserver: ResizeObserver | null = null;
   private debugView: FpsDebugView = "off";
   private debugLabel: HTMLDivElement;
   private activeKey: string | null = null;
@@ -78,7 +79,10 @@ export class FpsRenderer implements Renderer2D {
       "position:fixed;top:8px;left:8px;z-index:30;display:none;pointer-events:none;" +
       "background:rgba(10,10,16,0.78);color:#fff;font:12px monospace;padding:4px 10px;border-radius:4px;";
     document.body.appendChild(this.debugLabel);
-    window.addEventListener("resize", this.onResize);
+    // Igual que el lienzo 2D: la caja manda, no la ventana (la barra de dev
+    // cambia de alto al conectar y empuja el lienzo).
+    this.resizeObserver = new ResizeObserver(this.onResize);
+    this.resizeObserver.observe(this.el);
     void import("./fps-gl.js")
       .then(({ FpsGl }) => {
         this.gl = new FpsGl(this.el, opts.spriteRenderer);
@@ -226,7 +230,8 @@ export class FpsRenderer implements Renderer2D {
   }
 
   dispose(): void {
-    window.removeEventListener("resize", this.onResize);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.gl?.dispose();
     this.debugLabel.remove();
     this.el.remove();
