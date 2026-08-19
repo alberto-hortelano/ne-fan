@@ -120,6 +120,7 @@ NarrativeReaction = {
       name?: string;  // Nombre propio (NPCs)
       position_hint?: string;  // Pista de dónde aparece, p.ej. 'junto a la fuente'
       role?: "peasant"|"guard"|"villager"|"merchant";  // Rol de comportamiento ambiental (NPCs); desconocido degrada a villager
+      style_ref?: string;  // NPCs: id de la referencia de personaje de world.style_refs.characters que mejor case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol
       texture_hash?: string;  // Reusar textura cacheada por hash
       model_hash?: string;  // Reusar modelo cacheado por hash
       character_type?: string;

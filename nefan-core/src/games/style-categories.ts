@@ -25,3 +25,12 @@ export function styleRoleForNpc(role?: string): "commoner" | "noble" | "warrior"
       return "commoner";
   }
 }
+
+/** Ref de personaje del skin de un NPC: la ELEGIDA por el motor
+ *  (`style_ref`, catálogo world.style_refs.characters) o, sin elección, el
+ *  default derivado del rol (styleRoleForNpc — conserva las claves de caché
+ *  de skins de saves y batches previos: un guardia sin elección sigue
+ *  resolviendo a la ref warrior). FUENTE ÚNICA para partida y batch. */
+export function npcSkinStyleRef(npc: { style_ref?: string; role?: string }): string {
+  return npc.style_ref || styleRoleForNpc(npc.role);
+}

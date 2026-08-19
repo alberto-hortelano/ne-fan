@@ -326,6 +326,10 @@
                 "wall"
               ],
               "description": "decor only: snap to the nearest wall cell (torches, signs, banners)."
+            },
+            "style_ref": {
+              "type": "string",
+              "description": "NPCs only, optional: id of the character reference from world.style_refs.characters that best matches this NPC's look (guides the AI skin). Missing/unknown id falls back to a role-derived default."
             }
           },
           "required": [

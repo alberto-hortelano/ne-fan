@@ -139,11 +139,12 @@ async function main() {
   // Ids esperados de la última petición stage_review (pre-flight de inventario
   // completo: cada expected debe aparecer found o missing).
   let currentStageExpectedIds: string[] | null = null;
-  // Catálogo de refs de estilo de la sesión (world.style_refs.scene de la
-  // última petición scene): pre-flight de `style_ref` — un id fuera del
-  // catálogo rebota al motor con la lista válida. null = petición sin
+  // Catálogo de refs de estilo de la sesión (world.style_refs de la última
+  // petición scene): pre-flight de `style_ref` (escena y NPCs) — un id fuera
+  // del catálogo rebota al motor con la lista válida. null = petición sin
   // catálogo (fixtures, saves viejos) ⇒ no se valida.
   let currentStyleRefIds: string[] | null = null;
+  let currentCharacterRefIds: string[] | null = null;
 
   // ── Latido de progreso ──────────────────────────────────────────────────
   // Cada paso observable del motor (recoger la petición, llamar una tool de
@@ -327,13 +328,20 @@ into context:
           | {
               generate_tile?: unknown;
               stage_request?: unknown;
-              world?: { style_refs?: { scene?: Array<{ id?: unknown }> } };
+              world?: {
+                style_refs?: {
+                  scene?: Array<{ id?: unknown }>;
+                  characters?: Array<{ id?: unknown }>;
+                };
+              };
             }
           | undefined;
-        const refCatalog = ws?.world?.style_refs?.scene;
-        currentStyleRefIds = Array.isArray(refCatalog) && refCatalog.length > 0
-          ? refCatalog.map((r) => String(r?.id ?? '')).filter(Boolean)
-          : null;
+        const catalogIds = (list?: Array<{ id?: unknown }>): string[] | null =>
+          Array.isArray(list) && list.length > 0
+            ? list.map((r) => String(r?.id ?? '')).filter(Boolean)
+            : null;
+        currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
+        currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
         const isTileRequest = Boolean(ws?.generate_tile);
         const isStageRequest = Boolean(ws?.stage_request);
         const sceneVariant = isTileRequest
@@ -424,6 +432,24 @@ into context:
               }],
               isError: true,
             };
+          }
+          // Ídem para las refs de personaje elegidas por NPC.
+          if (currentCharacterRefIds !== null && Array.isArray(scene.entities)) {
+            for (const ent of scene.entities as Array<Record<string, unknown>>) {
+              if (ent?.kind !== 'npc') continue;
+              const ref = ent.style_ref;
+              if (typeof ref === 'string' && ref && !currentCharacterRefIds.includes(ref)) {
+                return {
+                  content: [{
+                    type: 'text',
+                    text: `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
+                      `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
+                      `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                  }],
+                  isError: true,
+                };
+              }
+            }
           }
           if (scene.volumes !== undefined) {
             const check = validateVolumes(scene.volumes);
