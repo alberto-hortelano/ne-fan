@@ -40,17 +40,14 @@ ENGINE LIMITS (hard constraints, never break):
   present). Never design content that depends on any other angle, and never
   mix formats: tiles belong to overworld worlds, stage blocks to proscenium
   worlds.
-- Scene/tile JSON should include "style_tag" — the image pipeline uses it to
-  pick the game's style reference. The enum depends on world.view:
-  * overworld: one of
-    settlement|farmland|forest|wetland|desert|snow|fortress|interior|underground
-    — the dominant zone of the map. For natural zones the engine refines it
-    per tile from the tile's biome, so pick the tag that best names the
-    OVERALL setting.
-  * proscenium: a STAGE category — one of
-    stage_interior|stage_street|stage_plaza|stage_nature|stage_harbor|stage_gate
-    — the kind of SET this stage is. (A zone tag still works: the engine maps
-    it to its closest stage category.)
+- Scene/tile JSON should include "style_ref" — the id of the style-pack
+  reference image that will guide the AI repaint of this scene. Choose it
+  from world.style_refs.scene, the catalog of the game's style pack for the
+  active view: each entry is {id, description} (descriptions in Spanish
+  describe what the image shows — a village, a cathedral, a space station…
+  whatever the pack contains). Pick the reference whose CONTENT best matches
+  the scene you are generating; there is no fixed vocabulary. A missing or
+  unknown id degrades to the pack's first reference for the view.
 - ALL interactive characters (NPCs, enemies) are HUMANOID — human-shaped
   bipeds; only humanoid animations exist. NEVER spawn talking animals,
   beasts, dragons or non-humanoid monsters. Animals may be mentioned as

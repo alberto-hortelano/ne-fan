@@ -12,27 +12,20 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import {
-  STYLE_ENV_CATEGORIES,
-  STYLE_STAGE_CATEGORIES,
-} from "../src/games/style-categories.js";
-
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
 /** Marcadores load-bearing por archivo: identificadores que también existen
  *  en el código (scene-expand, consequence-handler, ground, volumes). */
 const CONTRACT_MARKERS: Record<string, string[]> = {
-  // world_rules enumera el enum COMPLETO de style_tag en prosa: candarlo
-  // contra la fuente única evita que una zona nueva se ofrezca en el tool
-  // pero no en las reglas (o al revés).
+  // world_rules explica la elección de style_ref desde el catálogo
+  // world.style_refs — candar los identificadores evita que el prompt y el
+  // wire diverjan (el enum de categorías murió con las refs libres).
   "world_rules.md": [
-    "style_tag", "HUMANOID", "story_update", "ui_doc_get", "stage_request",
-    ...STYLE_ENV_CATEGORIES,
-    ...STYLE_STAGE_CATEGORIES,
+    "style_ref", "world.style_refs", "HUMANOID", "story_update", "ui_doc_get", "stage_request",
   ],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
-  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain"],
-  "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_tag", "stage_interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
+  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces"],
+  "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_ref", "interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
@@ -43,7 +36,7 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   // unificó las unidades sin tocar los consumidores.
   "image_review.md": ["extras", "keep", "remove", "box_px", "tall", "solid", "celdas"],
   "stage_review.md": ["expected", "missing", "extras", "box_px", "wall_base_px", "metros"],
-  "develop_world.md": ["world_brief", "world_md", "game_id", "style_id"],
+  "develop_world.md": ["world_brief", "world_md", "game_id", "style_id", "tags"],
   "narrative_event.md": ["consequences", "dialogue", "story_update", "spawn_entity", "plugin_event", "choices"],
   "blueprint_review.md": ["ground", "volumes"],
 };
@@ -69,20 +62,22 @@ describe("contrato narrativo — tool schemas compartidos", () => {
     });
   }
 
-  it("generate_scene.json declara style_tag EXACTAMENTE = zonas + categorías de plató", () => {
-    // WORLD_RULES exige style_tag en cada escena. Igualdad exacta contra la
-    // fuente única (games/style-categories.ts): una categoría añadida o
-    // retirada solo en un lado rompe aquí. "nature" es alias legacy — se
-    // tolera en entrada pero NO se ofrece al modelo.
+  it("generate_scene.json ofrece style_ref LIBRE (sin enum) y stage.interior", () => {
+    // Las refs de estilo son libres (ids del pack, catálogo en
+    // world.style_refs): un enum aquí recrearía las categorías fijas. La
+    // señal de interior vive en el bloque stage, no en el tag de estilo.
     const tool = JSON.parse(
       readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8"),
-    ) as { input_schema: { properties: Record<string, { enum?: string[] }> } };
-    const tags = tool.input_schema.properties.style_tag?.enum ?? [];
-    assert.deepEqual(
-      [...tags].sort(),
-      [...STYLE_ENV_CATEGORIES, ...STYLE_STAGE_CATEGORIES].sort(),
-      "el enum del tool debe ser exactamente STYLE_ENV_CATEGORIES ∪ STYLE_STAGE_CATEGORIES",
-    );
+    ) as {
+      input_schema: {
+        properties: Record<string, { enum?: string[]; type?: string; properties?: Record<string, { type?: string }> }>;
+      };
+    };
+    const props = tool.input_schema.properties;
+    assert.equal(props.style_tag, undefined, "style_tag murió — el campo es style_ref");
+    assert.equal(props.style_ref?.type, "string");
+    assert.equal(props.style_ref?.enum, undefined, "style_ref debe ser libre, sin enum");
+    assert.equal(props.stage?.properties?.interior?.type, "boolean");
   });
 });
 

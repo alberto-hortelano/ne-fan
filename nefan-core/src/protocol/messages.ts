@@ -365,6 +365,9 @@ export interface GamesListedMessage {
     /** Vista DEFAULT del mundo, ya resuelta ("overworld" si game.json no la
      *  declara). El selector del título la preselecciona. */
     view: string;
+    /** Etiquetas temáticas del mundo ([] = sin declarar, compatible con
+     *  cualquier estilo). Filtran el selector de estilos. */
+    tags: string[];
     /** Estado del contenido pre-generado por rama (data/games/{id}/world/):
      *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
      *  cambió desde la generación, "missing" = nunca generado. La rama tile
@@ -388,6 +391,9 @@ export interface GamesListedMessage {
     /** Vistas a las que sirve el estilo (derivadas de sus refs declaradas).
      *  El selector del título filtra con esto. */
     views: string[];
+    /** Etiquetas temáticas del estilo: el selector filtra además por
+     *  compatibilidad con las del juego (styleCompatibleWithGame). */
+    tags: string[];
   }>;
 }
 

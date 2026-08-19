@@ -295,6 +295,9 @@ function bootstrapTile() {
     scene_id: "tile_0_0",
     place_id: "taberna_bench_place",
     scene_description: "Claro de la taberna de bench en el plano continuo.",
+    // Ref de estilo elegida "por el motor" (id del catálogo del pack): el
+    // bench ejercita el camino explícito además del fallback.
+    style_ref: "settlement",
     biome: "grass",
     structures: [
       { type: "room", rect: [52, 48, 24, 16], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 11, width: 2 }] },
@@ -348,6 +351,7 @@ function makeTile(gt) {
     tile: { tx, ty },
     scene_id: `tile_${tx}_${ty}`,
     scene_description: `Campo de bench (${tx}, ${ty}).`,
+    style_ref: "forest",
     biome: "grass",
     terrain_features: feats,
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
@@ -733,7 +737,7 @@ const server = http.createServer((req, res) => {
         let missing = 0;
         for (const cell of cells) {
           const hash = createHash("sha256")
-            .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}`)
+            .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}\n${cell.ref ?? ""}`)
             .digest("hex")
             .slice(0, 16);
           const cached = surfaceImages.has(hash);

@@ -4,8 +4,17 @@
   "description": "Fixture de estilo para tests.",
   "style_token": "test style token",
   "cover": "cover.jpg",
+  "tags": ["medieval", "fantasia"],
   "refs": [
-    { "category": "settlement", "file": "settlement.jpg", "tags": [] },
-    { "category": "stage_interior", "file": "stage_interior.jpg", "tags": [], "view": "proscenium" }
+    {
+      "id": "settlement",
+      "file": "overworld/settlement.jpg",
+      "description": "una aldea de pruebas con su plaza"
+    },
+    {
+      "id": "stage_interior",
+      "file": "proscenium/stage_interior.jpg",
+      "description": "la sala común de una taberna de pruebas"
+    }
   ]
 }

@@ -10,17 +10,12 @@
  * `FastApiErrorResponse`; sin FAL_KEY los endpoints que la requieren dan 503.
  */
 import { endpoint } from "./http.js";
-import type {
-  StyleEnvCategory,
-  StyleStageCategory,
-  LegacyStyleTag,
-} from "../games/style-categories.js";
 
-/** Etiqueta de estilo del wire: zonas de mundo abierto + categorías de plató
- *  (escenas proscenio) + alias legacy ("nature"). DERIVADO de la fuente única
- *  games/style-categories.ts — la copia a mano anterior omitía las stage_* y
- *  arrastraba nature como si fuera canónico. */
-export type StyleTag = StyleEnvCategory | StyleStageCategory | LegacyStyleTag;
+/** Etiqueta de estilo del wire: id LIBRE de una ref del style pack (ver
+ *  StyleManifestSchema en games/loader.ts). El server resuelve por id dentro
+ *  de la vista del blueprint y degrada con aviso a la primera ref de la
+ *  vista si no existe — el pre-flight fail-loud vive en el bridge. */
+export type StyleTag = string;
 
 /** Repintado de la escena completa (tile oblicuo o plató proscenio). */
 export interface GenerateSceneImageRequest {
@@ -42,7 +37,9 @@ export interface GenerateSceneImageRequest {
   has_water?: boolean;
   /** Style pack congelado en la sesión; vacío = referencia global fija. */
   style_id?: string;
-  style_tag?: StyleTag | "";
+  /** Ref del pack elegida por el motor para esta escena (id del manifest);
+   *  vacío/desconocido = primera ref de la vista del blueprint. */
+  style_ref?: StyleTag | "";
   /** Clave de layout ESTABLE del cliente (hash hex ≤64 del GreyboxSpec
    *  canónico). El render WebGL no es byte-determinista: sin ella cada
    *  arranque haría cache-miss (~$0.2/plató). Vacía = se hashea el PNG. */
@@ -66,6 +63,9 @@ export interface SurfaceCellSpec {
   mat: string;
   kind: "tile" | "unique";
   desc: string;
+  /** Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+   *  unique; guía como imagen la página que pinta esta celda. */
+  ref?: string;
   base_color: string;
   world_w: number;
   world_h: number;
@@ -76,7 +76,6 @@ export interface GenerateSurfaceAtlasRequest {
   cells: SurfaceCellSpec[];
   scene_description: string;
   style_id?: string;
-  style_tag?: StyleTag | "";
   /** Hash del layout canónico del cliente — logging/debug (la caché es por
    *  celda, no por atlas). */
   layout_key?: string;
@@ -113,7 +112,10 @@ export interface SkinSpriteSheetRequest {
   /** Descripción del personaje a skinnear. */
   prompt: string;
   style_id?: string;
-  style_role?: "commoner" | "noble" | "warrior";
+  /** Id de la ref de personaje del pack (characters/) elegida para este NPC.
+   *  Vacío/desconocido ⇒ primera ref de characters/ del manifest. El nombre
+   *  del campo es legacy (era el rol commoner/noble/warrior). */
+  style_role?: string;
 }
 
 export interface SkinSpriteSheetResponse {
@@ -130,35 +132,50 @@ export interface SkinSpriteSheetResponse {
 // ── Style packs de usuario ──
 
 export interface StyleUploadImage {
-  /** Una de las 9 categorías de entorno o 3 de personaje. */
-  category: string;
+  /** Vista de destino: la carpeta del pack donde vive la imagen. */
+  view: "overworld" | "proscenium" | "fps" | "characters";
+  /** Qué muestra la imagen (español, una frase) — lo que lee el motor
+   *  narrativo para elegirla. Opcional solo para la lámina fps_surfaces. */
+  description: string;
   image_b64: string;
+  /** Id estable de la ref; derivado de la descripción si falta. */
+  id?: string;
+  /** "fps_surfaces" = lámina de materiales (máx 1, vista fps). */
+  role?: "fps_surfaces";
 }
 
 export interface StyleUploadRequest {
   name: string;
   description?: string;
   style_token?: string;
+  /** Etiquetas temáticas del estilo (min 1): casan con las de los juegos. */
+  tags: string[];
   /** 1–12 imágenes. */
   images: StyleUploadImage[];
+}
+
+/** Ref declarada sin imagen aún (se generaría en /complete). */
+export interface StyleMissingRef {
+  id: string;
+  view: string;
+  description: string;
 }
 
 export interface StyleUploadResponse {
   style_id: string;
   uploaded: string[];
-  /** Categorías que faltan (se generarían en /complete). */
-  missing: string[];
+  missing: StyleMissingRef[];
   cost_per_image_usd: number;
   estimated_cost_usd: number;
 }
 
 /** GET /styles/{style_id}/missing — dry-run del completado de un pack (vale
- *  para cualquier pack, shipped incluidos): categorías sin imagen + coste
- *  estimado. NO gasta. Es la mitad "estimación" del flujo upload→complete,
- *  usada por el diálogo de coste de "aplicar estilo a un juego". */
+ *  para cualquier pack, shipped incluidos): refs declaradas sin imagen +
+ *  coste estimado. NO gasta. Es la mitad "estimación" del flujo
+ *  upload→complete, usada por el diálogo de coste de "aplicar estilo". */
 export interface StylesMissingResponse {
   style_id: string;
-  missing: string[];
+  missing: StyleMissingRef[];
   cost_per_image_usd: number;
   estimated_cost_usd: number;
 }

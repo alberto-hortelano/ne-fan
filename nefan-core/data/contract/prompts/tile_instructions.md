@@ -171,6 +171,14 @@ limited to the presets. Types:
                       "n": "weathered plank back of the sign" }
     Each description is its own asset (hash = description): faces sharing a
     description share the image. Undescribed faces keep derived materials.
+- surface_ref (optional, only where surface_desc is present): id of a
+  themed reference image from world.style_refs.fps_faces — the style pack's
+  illustration of how this art style composes that kind of full face; it
+  travels as an image reference when the face's cell is painted. String =
+  applies to every face described by surface_desc; object = per face, using
+  a SUBSET of the faces surface_desc describes (same keys). Custom parts
+  accept `ref` next to `desc`. Only valid when the catalog exists; each
+  distinct ref groups its cells into their own painter page.
 COLLISION comes from these footprints. A ROOFED building is sealed: its
 whole footprint is solid and its doors are decorative paint — the player
 can never walk in. A cutaway building is enterable through its doors, and

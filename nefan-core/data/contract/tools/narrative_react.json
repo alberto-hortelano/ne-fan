@@ -93,6 +93,9 @@
                     "merchant"
                   ]
                 },
+                "style_ref": {
+                  "type": "string"
+                },
                 "texture_hash": {
                   "type": "string"
                 },

@@ -18,7 +18,6 @@
  */
 import { parseTileKey, tileKey, TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { canonicalGreyboxJson } from "@nefan-core/src/scene/blueprint/index.js";
-import { styleCategoryForTile } from "@nefan-core/src/games/style-categories.js";
 // Contrato S4 gpu-worker: anotar el body/respuesta mantiene el contrato
 // pegado a lo que este cliente envía de verdad.
 import type {
@@ -375,13 +374,11 @@ export class SceneImageController {
           // alucinados (bench 002_repaint_fidelity).
           has_water: planHasWater((scene as { ground?: unknown[] }).ground),
           style_id: this.styleId,
-          // Zona de estilo del tile: la etiqueta del motor narrativo afinada
-          // por el bioma real del tile (un tile de pantano al borde de un
-          // bosque usa la ref wetland). El servidor tiene fallback si falta.
-          style_tag: styleCategoryForTile(
-            (scene as { style_tag?: string }).style_tag,
-            (scene as { biome?: string }).biome,
-          ),
+          // Ref de estilo ELEGIDA por el motor narrativo para esta escena
+          // (id del catálogo world.style_refs; scene-normalize ya mapea el
+          // style_tag legacy de saves viejos). Vacía/desconocida ⇒ el server
+          // usa la primera ref de la vista.
+          style_ref: (scene as { style_ref?: string }).style_ref || undefined,
         }),
       });
       if (!res.ok) {

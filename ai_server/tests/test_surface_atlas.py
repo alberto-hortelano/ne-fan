@@ -22,15 +22,17 @@ from surface_atlas_generator import (  # noqa: E402
     GUTTER_PX,
     MAX_CELLS_PER_PAGE,
     PAGE_PX,
+    build_page_refs,
     build_prompt,
     canonical_hints,
     draw_base,
     make_tileable,
     pack_missing,
+    surface_cell_context,
 )
 
 
-def cell(key, kind="tile", desc=None, color="#c9b89a", w=4.0, h=2.5, hints=None):
+def cell(key, kind="tile", desc=None, color="#c9b89a", w=4.0, h=2.5, hints=None, ref=""):
     return {
         "key": key,
         "mat": key,
@@ -40,6 +42,7 @@ def cell(key, kind="tile", desc=None, color="#c9b89a", w=4.0, h=2.5, hints=None)
         "world_w": w,
         "world_h": h,
         "hints": hints,
+        "ref": ref,
     }
 
 
@@ -141,6 +144,94 @@ class TestHints(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertEqual(canonical_hints(None), "")
         self.assertEqual(canonical_hints([]), "")
+
+
+
+class TestCellRefs(unittest.TestCase):
+    """surface_ref: agrupación por ref, presupuesto de refs y clave de caché."""
+
+    def test_pack_agrupa_uniques_por_ref(self):
+        cells = [
+            cell("t1"), cell("t2"),
+            cell("hero_z", kind="unique"),
+            cell("hero_a", kind="unique", ref="fachada"),
+            cell("hero_b", kind="unique", ref="porton"),
+            cell("hero_c", kind="unique", ref="fachada"),
+        ]
+        pages = pack_missing(cells)
+        # Cada página comparte kind Y ref; sin-ref primero, refs alfabéticas.
+        seen_groups = []
+        for page in pages:
+            kinds = {c["kind"] for c in page}
+            refs = {str(c.get("ref") or "") for c in page}
+            self.assertEqual(len(kinds), 1)
+            self.assertEqual(len(refs), 1)
+            if "unique" in kinds:
+                seen_groups.append(next(iter(refs)))
+        self.assertEqual(seen_groups, ["", "fachada", "porton"])
+
+    def test_pack_determinista_con_refs(self):
+        cells = [
+            cell("hero_b", kind="unique", ref="porton"),
+            cell("hero_a", kind="unique", ref="fachada"),
+            cell("hero_z", kind="unique"),
+        ]
+        a = pack_missing([dict(c) for c in cells])
+        b = pack_missing([dict(c) for c in reversed(cells)])
+        self.assertEqual(
+            [[c["key"] for c in p] for p in a],
+            [[c["key"] for c in p] for p in b],
+        )
+
+    def test_build_page_refs_presupuesto(self):
+        anchors = ["a1", "a2", "a3"]
+        # Sin nada opcional: base + 3 anchors.
+        self.assertEqual(build_page_refs("base", "", "", "", anchors), ["base", "a1", "a2", "a3"])
+        # Todo presente: base+cellref+lamina+prev = 4 fijos, 1 anchor cabe.
+        refs = build_page_refs("base", "cr", "sheet", "prev", anchors)
+        self.assertEqual(refs, ["base", "cr", "sheet", "prev", "a1"])
+        self.assertLessEqual(len(refs), 5)
+        # La página previa nunca cae; los anchors se recortan primero.
+        self.assertIn("prev", refs)
+
+    def test_prompt_con_cell_ref_desplaza_posiciones(self):
+        page = pack_missing([cell("hero_a", kind="unique", ref="fachada")])[0]
+        p = build_prompt(page, "una aldea", "token", has_anchors=True,
+                         has_style_sheet=True, has_cell_ref=True)
+        self.assertIn("The SECOND reference image is a themed style-pack", p)
+        self.assertIn("The THIRD reference image is a painted material swatch", p)
+        self.assertIn("after the third one", p)
+        # Sin lámina: anchors tras la segunda (la cell ref).
+        p2 = build_prompt(page, "una aldea", "token", has_anchors=True,
+                          has_style_sheet=False, has_cell_ref=True)
+        self.assertIn("after the second one", p2)
+        self.assertNotIn("THIRD", p2)
+
+    def test_prompt_sin_ref_byte_identico_al_historico(self):
+        # El flag nuevo con default False no puede tocar ni un byte del
+        # prompt histórico (la caché DEV y las reglas candadas dependen).
+        page = pack_missing([cell("hero_a", kind="unique")])[0]
+        old = build_prompt(page, "una aldea", "token", has_anchors=True, has_style_sheet=True)
+        new = build_prompt(page, "una aldea", "token", has_anchors=True,
+                           has_style_sheet=True, has_cell_ref=False)
+        self.assertEqual(old, new)
+
+    def test_cell_context_cellref_condicional(self):
+        historico = surface_cell_context("wall_plaster", "unique", None, "gpt-image-2", "s:t")
+        self.assertNotIn("cellref", historico)
+        self.assertEqual(historico["unique_face_v"], "2")
+        con_ref = surface_cell_context(
+            "wall_plaster", "unique", None, "gpt-image-2", "s:t", cell_ref_hash="abc123"
+        )
+        self.assertEqual(con_ref["cellref"], "abc123")
+        # Quitando la clave nueva, el resto es byte-idéntico al histórico.
+        sin = dict(con_ref)
+        sin.pop("cellref")
+        self.assertEqual(sin, historico)
+        # En tiles la ref NO entra (solo celdas hero la usan).
+        tile = surface_cell_context("wall_plaster", "tile", None, "nano", "s:t", cell_ref_hash="abc123")
+        self.assertNotIn("cellref", tile)
+        self.assertNotIn("unique_face_v", tile)
 
 
 if __name__ == "__main__":

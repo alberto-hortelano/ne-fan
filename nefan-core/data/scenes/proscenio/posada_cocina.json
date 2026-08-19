@@ -1,8 +1,8 @@
 {
   "scene_id": "posada_cocina",
   "place_id": "posada_cocina",
-  "style_tag": "stage_interior",
   "scene_description": "La cocina de la posada: el fogón de leña ocupa la pared del fondo, cuelgan ristras de ajos y una mesa central llena de harina. Hace calor.",
+  "style_ref": "stage_interior",
   "size": {
     "cols": 20,
     "rows": 12,
@@ -126,7 +126,8 @@
           "w": 4
         }
       ]
-    }
+    },
+    "interior": true
   },
   "ambient_event": "Una olla borbotea sobre el fogón y el vapor huele a caldo de gallina."
 }

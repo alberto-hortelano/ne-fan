@@ -50,6 +50,13 @@ const SpawnEntityConsequence = z
       .enum(NPC_ROLES)
       .optional()
       .describe("Rol de comportamiento ambiental (NPCs); desconocido degrada a villager"),
+    style_ref: z
+      .string()
+      .optional()
+      .describe(
+        "NPCs: id de la referencia de personaje de world.style_refs.characters que mejor " +
+          "case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol",
+      ),
     texture_hash: z.string().optional().describe("Reusar textura cacheada por hash"),
     model_hash: z.string().optional().describe("Reusar modelo cacheado por hash"),
     character_type: z.string().optional(),

@@ -13,7 +13,7 @@
 #   ./labs/plantillas/capture.sh tile settlement         # una plantilla oblicua
 #   ./labs/plantillas/capture.sh all                     # las 15 (6 plató + 9 oblicuas)
 #
-# Salida: nefan-core/data/styles/_plantilla/{proscenio|oblicua}/<nombre>.png
+# Salida: nefan-core/data/styles/_plantilla/{proscenium|overworld}/<nombre>.png
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PLANTILLA="$ROOT/nefan-core/data/styles/_plantilla"
@@ -33,11 +33,11 @@ TILE_ZONES=(settlement farmland forest wetland desert snow fortress interior und
 capture_stage() { # capture_stage <categoria>
   local CAT="$1" SCENE="${STAGE_SCENE[$1]:-}"
   [ -n "$SCENE" ] || { echo "categoría de plató desconocida: $CAT" >&2; exit 1; }
-  mkdir -p "$PLANTILLA/proscenio"
+  mkdir -p "$PLANTILLA/proscenium"
   # 1600×1000: el encuadre del bench (gpt-image-2 lo recibe a 1280×800).
   "$LABS/common/capture.sh" "$LABS" \
     "escenografia/greybox/viewer.html?scene=./$SCENE/escena.mjs&pass=clay" \
-    "$PLANTILLA/proscenio/$CAT.png" 1600,1000 15000
+    "$PLANTILLA/proscenium/$CAT.png" 1600,1000 15000
 }
 
 capture_tile() { # capture_tile <zona>
@@ -45,13 +45,13 @@ capture_tile() { # capture_tile <zona>
     echo "vite dev no responde en :3000 — arranca 'npm run dev' en nefan-html" >&2
     exit 1
   fi
-  mkdir -p "$PLANTILLA/oblicua"
+  mkdir -p "$PLANTILLA/overworld"
   # 1024² = el tile recortado a sus 128 celdas × 8 px (sin voladizos).
   google-chrome --headless=new --disable-gpu --use-angle=swiftshader --enable-unsafe-swiftshader \
     --hide-scrollbars --force-device-scale-factor=1 --window-size=1024,1024 \
-    --virtual-time-budget=20000 --screenshot="$PLANTILLA/oblicua/$1.png" \
+    --virtual-time-budget=20000 --screenshot="$PLANTILLA/overworld/$1.png" \
     "http://127.0.0.1:3000/dev/greybox-clay.html?mode=tile&scene=$1" 2>/dev/null
-  echo "captura -> $PLANTILLA/oblicua/$1.png"
+  echo "captura -> $PLANTILLA/overworld/$1.png"
 }
 
 case "${1:-}" in

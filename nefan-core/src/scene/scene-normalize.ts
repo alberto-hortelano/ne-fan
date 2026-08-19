@@ -210,15 +210,18 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
         throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
       }
       const role = (ent as { role?: unknown }).role;
+      const styleRef = (ent as { style_ref?: unknown }).style_ref;
       const description = (ent as { description?: unknown }).description;
       npcs.push({
         id: ent.id,
         name: ent.name,
         position: [x, 0, z],
-        // Rol del mundo (guard/merchant/…): el cliente deriva de él el
-        // style_role del skin (styleRoleForNpc) — debe viajar o el skin en
-        // partida y el del batch de estilo divergen de clave.
+        // Rol del mundo (guard/merchant/…) y ref de personaje elegida por el
+        // motor (style_ref, catálogo world.style_refs.characters): el cliente
+        // deriva de ellos la ref del skin (npcSkinStyleRef) — deben viajar o
+        // el skin en partida y el del batch de estilo divergen de clave.
         ...(typeof role === "string" && role ? { role } : {}),
+        ...(typeof styleRef === "string" && styleRef ? { style_ref: styleRef } : {}),
         ...(typeof description === "string" && description ? { description } : {}),
       });
       continue;
@@ -299,10 +302,18 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // escena de plató por este campo y compone las capas con
     // stagePlanFromScene sobre el Format D crudo (__format_d).
     stage: raw.stage !== undefined ? raw.stage : undefined,
-    // Zona de estilo etiquetada por el motor narrativo y bioma del tile: los
-    // combina el cliente (styleCategoryForTile) para elegir la referencia del
-    // style pack por tile. Passthrough sin validar — ai_server sanea el enum.
-    style_tag: typeof raw.style_tag === "string" ? raw.style_tag : undefined,
+    // Ref de estilo ELEGIDA por el motor narrativo para esta escena (id del
+    // catálogo world.style_refs). Shim de lectura de saves legacy: escenas
+    // persistidas antes del formato de refs libres llevan `style_tag`, cuyos
+    // valores son ids válidos tras la migración de packs. Passthrough sin
+    // validar — el pre-flight vive en narrative-mcp; el server degrada un id
+    // desconocido a la primera ref de la vista.
+    style_ref:
+      typeof raw.style_ref === "string"
+        ? raw.style_ref
+        : typeof raw.style_tag === "string"
+          ? raw.style_tag
+          : undefined,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     objects,
     npcs,

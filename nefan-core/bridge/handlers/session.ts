@@ -13,9 +13,14 @@ import {
   listStyles,
   loadGameMeta,
   loadStyleManifest,
+  styleCharacterRefs,
+  styleCompatibleWithGame,
+  styleRefsForView,
   styleViews,
   loadWorldDoc,
   WORLD_VIEWS,
+  type StyleManifest,
+  type WorldView,
 } from "../../src/games/loader.js";
 import {
   branchForView,
@@ -53,6 +58,43 @@ import type {
   SaveSessionMessage,
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
+
+/** Catálogo de refs de estilo que ve el motor narrativo (`world.style_refs`):
+ *  las refs de la VISTA activa (la primera es el fallback sin elección) y
+ *  las de personaje, cada una con su descripción en español. Se recalcula
+ *  del manifest en start_session Y resume_session — editar un pack a mano se
+ *  refleja al reanudar (el save solo lo cachea). */
+export function styleRefCatalog(
+  style: StyleManifest,
+  view: WorldView,
+): {
+  scene: Array<{ id: string; description: string }>;
+  characters: Array<{ id: string; description: string }>;
+  fps_faces?: Array<{ id: string; description: string }>;
+} {
+  const entry = (r: { id: string; description: string }) => ({
+    id: r.id,
+    description: r.description,
+  });
+  // Las escenas de una sesión fps son TILES de la rama compartida con
+  // overworld, y su `style_ref` de escena lo consume el repintado OBLICUO —
+  // el catálogo scene de fps es el de overworld (la carpeta fps/ del pack
+  // guarda refs de CARA, no de escena).
+  const sceneView: WorldView = view === "fps" ? "overworld" : view;
+  const out: ReturnType<typeof styleRefCatalog> = {
+    scene: styleRefsForView(style, sceneView).map(entry),
+    characters: styleCharacterRefs(style).map(entry),
+  };
+  // Refs temáticas de CARA (fps/, sin la lámina): el motor las elige por
+  // cara de volumen (`surface_ref`) para el atlas de superficies. En ambos
+  // mundos de rama tile (el snapshot es compartido); omitido cuando el pack
+  // no declara ninguna (el pre-flight trata ausencia como "sin catálogo").
+  if (view === "overworld" || view === "fps") {
+    const faces = styleRefsForView(style, "fps").map(entry);
+    if (faces.length > 0) out.fps_faces = faces;
+  }
+  return out;
+}
 
 export function handleListGames(
   msg: ListGamesMessage,
@@ -124,14 +166,16 @@ export async function handleCreateGame(
     gameId = `${base}_${i}`;
   }
 
-  // El estilo sugerido debe existir; si no, el primero disponible.
+  // El estilo sugerido debe existir; si no, el primer estilo COMPATIBLE con
+  // los tags del mundo (o el primero disponible como último recurso).
   const styles = listStyles(ctx.stylesDir);
   if (styles.length === 0) {
     return fail("no_styles_available: no hay estilos en data/styles");
   }
+  const gameTags = Array.isArray(game.tags) ? game.tags.map((t) => String(t)) : [];
   const styleId = styles.some((st) => st.style_id === game.style_id)
     ? game.style_id
-    : styles[0].style_id;
+    : (styles.find((st) => styleCompatibleWithGame(st.tags, gameTags)) ?? styles[0]).style_id;
 
   const meta = GameMetaSchema.safeParse({
     game_id: gameId,
@@ -139,6 +183,12 @@ export async function handleCreateGame(
     description: game.description,
     style_id: styleId,
     world_brief: game.world_brief,
+    // Etiquetas temáticas del mundo (el prompt de develop_world las exige;
+    // filtran qué estilos ofrece el título). Malformadas ⇒ mundo sin tags
+    // (compatible con todo), mejor que abortar una génesis de 1-3 min.
+    tags: Array.isArray(game.tags)
+      ? game.tags.map((t) => String(t).trim()).filter((t) => t.length > 0)
+      : undefined,
   });
   if (!meta.success) {
     return fail(`develop_world produced invalid game meta: ${meta.error.message.slice(0, 500)}`);
@@ -270,6 +320,16 @@ export async function handleStartSession(
           ` (declara: ${compatibleViews.join("|") || "ninguna"})`,
       );
     }
+    // Compatibilidad TEMÁTICA estilo↔juego (tags): warning, no abort — el
+    // matching es heurístico sobre vocabulario libre y el selector del
+    // título ya filtra; un typo en un tag no debe brickear una partida. La
+    // incompatibilidad de vista (estructural) sí aborta, arriba.
+    if (!styleCompatibleWithGame(style.tags, meta.tags)) {
+      console.warn(
+        `Bridge: estilo "${style.style_id}" (tags: ${style.tags.join(",")}) no casa ` +
+          `temáticamente con el juego "${msg.gameId}" (tags: ${(meta.tags ?? []).join(",")})`,
+      );
+    }
     // Sistema de combate: el que declare game.json (systems.combat) o el
     // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
     // fuera del registro aborta (fail-loud), no degrada en silencio.
@@ -301,6 +361,9 @@ export async function handleStartSession(
       character_mode: characterMode,
       combat_system: combatId,
       view,
+      // Catálogo de refs elegibles por el motor (`style_ref` por escena):
+      // las de la vista activa + personajes, con sus descripciones.
+      style_refs: styleRefCatalog(style, view as WorldView),
     });
   } catch (err) {
     console.error("Bridge: game load failed on start_session:", err);
@@ -508,6 +571,19 @@ export async function handleResumeSession(
       error: `npc_behavior_unknown: "${npcBehaviorId}" (esperaba ${npcBehaviorRegistry.ids().join("|")})`,
     });
     return;
+  }
+  // Catálogo de refs de estilo: recalculado del style.json vigente (editar
+  // el pack a mano se refleja al reanudar). Manifest ilegible (pack borrado
+  // o roto) ⇒ warning y se conserva el catálogo cacheado en el save — las
+  // imágenes ya generadas siguen sirviéndose de caché.
+  try {
+    const style = loadStyleManifest(ctx.stylesDir, ctx.narrative.world.style_id);
+    ctx.narrative.setStyleRefs(styleRefCatalog(style, savedView as WorldView));
+  } catch (err) {
+    console.warn(
+      `Bridge: style.json ilegible en resume (estilo "${ctx.narrative.world.style_id}") — ` +
+        `catálogo de refs del save conservado: ${(err as Error).message ?? err}`,
+    );
   }
   reseedSimForSession(ctx, combatId, npcBehaviorId);
   // Los NPC del save vuelven a la vida ambiental donde se quedaron (su

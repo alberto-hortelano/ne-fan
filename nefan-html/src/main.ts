@@ -8,7 +8,7 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
-import { stageCategoryForScene, styleRoleForNpc } from "@nefan-core/src/games/style-categories.js";
+import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
@@ -267,12 +267,10 @@ const fpsAtlasController = new FpsAtlasController(
       const surfaces = fpsRenderer?.getTileSurfaces(key);
       const entry = tileStore.entries.get(key);
       if (!surfaces || !entry) return null;
-      const scene = entry.scene as { scene_description?: string; style_tag?: string; biome?: string };
+      const scene = entry.scene as { scene_description?: string };
       return {
         layout: surfaces.layout,
         sceneDescription: String(scene.scene_description ?? ""),
-        styleTag: String(scene.style_tag ?? ""),
-        biome: scene.biome,
       };
     },
     apply: (key, images) => fpsRenderer?.applyAtlas(key, images),
@@ -994,10 +992,10 @@ function composeTilePlan(
 let hotComposeStage = composeStageScene;
 let hotStagePlanFromScene = stagePlanFromScene;
 
-/** Metadatos del repintado de un plató, desde el Format D crudo. La categoría
- *  de ref de estilo es de PLATÓ (stage_*): el tag del motor se respeta si ya
- *  es de plató, una zona cenital legacy se mapea (ZONE_TO_STAGE) y sin tag
- *  decide la cuarta pared; "" = default del server. */
+/** Metadatos del repintado de un plató, desde el Format D crudo. La ref de
+ *  estilo es la elegida por el motor (`style_ref`; `style_tag` legacy en
+ *  saves viejos); "" = sin elección — el server usa la primera ref de plató
+ *  del manifest. */
 function stageImageMeta(
   rawFd: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -1007,12 +1005,21 @@ function stageImageMeta(
     fourth_wall?: { present?: boolean };
     ambience?: { mood?: string };
   } | undefined;
-  const rawTag = typeof rawFd.style_tag === "string" ? rawFd.style_tag : undefined;
+  // Ref de estilo elegida por el motor (style_ref; style_tag = nombre
+  // legacy en saves viejos, cuyos valores son ids válidos tras la
+  // migración de packs). "" = sin elección — el server usa la primera ref
+  // de plató del manifest.
+  const rawRef =
+    typeof rawFd.style_ref === "string"
+      ? rawFd.style_ref
+      : typeof rawFd.style_tag === "string"
+        ? rawFd.style_tag
+        : "";
   return {
     description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
     backdrop: stageBlock?.backdrop?.description,
     mood: stageBlock?.ambience?.mood,
-    styleTag: stageCategoryForScene(rawTag, Boolean(stageBlock?.fourth_wall?.present)),
+    styleTag: rawRef,
   };
 }
 
@@ -1330,7 +1337,9 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       continue;
     }
     const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
-    const npcStyleRole = styleRoleForNpc(npc.role as string | undefined);
+    // Ref de personaje: la elegida por el motor (style_ref) o el default
+    // por rol (conserva las claves de caché de skins previas).
+    const npcStyleRole = npcSkinStyleRef(npc as { style_ref?: string; role?: string });
     const entity: Entity = {
       id: npcId,
       pos: {
@@ -2465,9 +2474,10 @@ function materializeSpawn(effect: {
     // El caso central del skin IA: la descripción del motor narrativo es el
     // prompt con el que se repinta la base y_bot frame a frame.
     const npcPrompt = effect.description || (effect.name ?? effect.entityId);
-    const spawnStyleRole = styleRoleForNpc(
-      typeof effect.data.role === "string" ? effect.data.role : undefined,
-    );
+    const spawnStyleRole = npcSkinStyleRef({
+      style_ref: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
+      role: typeof effect.data.role === "string" ? effect.data.role : undefined,
+    });
     npcEntities.push({
       id: effect.entityId,
       pos,

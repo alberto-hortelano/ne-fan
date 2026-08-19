@@ -9,96 +9,129 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from style_pack_builder import (  # noqa: E402
-    CATEGORY_SCENES,
-    _view_of,
+    PLANTILLA_DIR,
     build_prompt,
-    missing_categories,
+    missing_refs,
     seed_for,
 )
-from style_packs import CHARACTER_CATEGORIES, ENV_CATEGORIES, STAGE_CATEGORIES  # noqa: E402
+
+
+def _ref(id: str, file: str, description: str = "algo", **extra) -> dict:
+    return {"id": id, "file": file, "description": description, **extra}
 
 
 class BuilderTest(unittest.TestCase):
-    def test_todas_las_categorias_tienen_escena(self):
-        for cat in (*ENV_CATEGORIES, *CHARACTER_CATEGORIES, *STAGE_CATEGORIES):
-            self.assertIn(cat, CATEGORY_SCENES)
-
     def test_build_prompt_texto_vs_refs(self):
-        solo_texto = build_prompt("forest", "acuarela luminosa", has_style_refs=False)
+        ref = _ref("bosque", "overworld/bosque.jpg", "un bosque",
+                   gen_scene="a wild forest with NO buildings")
+        solo_texto = build_prompt(ref, "acuarela luminosa", has_style_refs=False)
         self.assertIn("Art style: acuarela luminosa", solo_texto)
         self.assertIn("top-down", solo_texto)
         # Oblicua CON CARAS: los volúmenes pintan cara sur y cara este.
         self.assertIn("SOUTH face", solo_texto)
         self.assertIn("EAST side face", solo_texto)
-        con_refs = build_prompt("forest", "", has_style_refs=True)
+        self.assertIn("a wild forest", solo_texto)
+        con_refs = build_prompt(ref, "", has_style_refs=True)
         self.assertIn("EXACT art style", con_refs)
-        # Alias legacy: "nature" sigue generando (como forest).
-        self.assertEqual(con_refs, build_prompt("nature", "", has_style_refs=True))
         # Personajes: model sheet (mismo personaje en 3 vistas), no mapa.
-        char = build_prompt("character_noble", "x", has_style_refs=False)
+        char = build_prompt(
+            _ref("noble", "characters/noble.jpg", "una noble"), "x", has_style_refs=False,
+        )
         self.assertIn("model sheet", char)
         self.assertIn("front view", char)
         self.assertNotIn("top-down", char)
 
-    def test_prompt_cabe_en_el_limite(self):
-        # Todos los prompts caben de sobra en el límite i2i (2000).
-        for cat in CATEGORY_SCENES:
-            self.assertLess(len(build_prompt(cat, "token largo " * 10, True)), 2000)
-
-    def test_escenas_de_zona_con_transiciones(self):
-        # Las zonas salvajes piden senda de tierra (nunca empedrado) y el
-        # empedrado queda confinado a la plaza urbana.
-        self.assertIn("cobblestone paving ONLY", CATEGORY_SCENES["settlement"])
-        for cat in ("forest", "wetland", "desert", "snow"):
-            self.assertIn("NO buildings", CATEGORY_SCENES[cat])
-            self.assertIn("blending into", CATEGORY_SCENES[cat])
+    def test_gen_scene_manda_y_description_es_fallback(self):
+        con_gen = build_prompt(
+            _ref("x", "overworld/x.jpg", "una catedral", gen_scene="a gothic cathedral"),
+            "t", False,
+        )
+        self.assertIn("a gothic cathedral", con_gen)
+        self.assertNotIn("una catedral", con_gen)
+        sin_gen = build_prompt(_ref("x", "overworld/x.jpg", "una catedral"), "t", False)
+        self.assertIn("una catedral", sin_gen)
+        with self.assertRaises(ValueError):
+            build_prompt({"id": "x", "file": "overworld/x.jpg"}, "t", False)
 
     def test_prompt_de_plato_es_eye_level(self):
-        for cat in STAGE_CATEGORIES:
-            p = build_prompt(cat, "token", has_style_refs=False)
-            self.assertIn("eye-level ground view", p)
-            self.assertIn("blockout", p)
-            self.assertNotIn("top-down", p)
-            # Sin vocabulario teatral (el modelo pinta cortinas si se insinúa).
-            self.assertIn("no curtains", p)
+        p = build_prompt(
+            _ref("calle", "proscenium/calle.jpg", "una calle"), "token", has_style_refs=False,
+        )
+        self.assertIn("eye-level ground view", p)
+        self.assertIn("blockout", p)
+        self.assertNotIn("top-down", p)
+        # Sin vocabulario teatral (el modelo pinta cortinas si se insinúa).
+        self.assertIn("no curtains", p)
 
-    def test_view_of_por_namespace(self):
-        self.assertEqual(_view_of("stage_street"), "proscenium")
-        self.assertEqual(_view_of("settlement"), "overworld")
-        self.assertEqual(_view_of("character_noble"), "overworld")
+    def test_ref_tematica_fps_es_cara_no_rejilla(self):
+        p = build_prompt(
+            _ref("fachada", "fps/fachada.jpg", "fachada de casa",
+                 gen_scene="a house facade with door and windows"),
+            "token", has_style_refs=False,
+        )
+        self.assertIn("ONE architectural face", p)
+        self.assertIn("framing guide", p)
+        self.assertNotIn("TEXTURE ATLAS SHEET", p)
 
-    def test_seed_de_plato_sin_plantilla_es_error(self):
-        # Fail-loud: sin la plantilla clay no hay encuadre que enseñar.
-        categorias_sin_plantilla = [
-            c for c in STAGE_CATEGORIES
-            if not (Path(__file__).resolve().parents[2]
-                    / "nefan-core" / "data" / "styles" / "_plantilla" / "proscenio"
-                    / f"{c}.png").exists()
-        ]
-        for cat in categorias_sin_plantilla:
-            with self.assertRaises(FileNotFoundError):
-                seed_for(cat)
+    def test_seed_de_ref_tematica_fps(self):
+        # Una ref de cara SIN seed declarado usa face_default.png (plano clay
+        # a 90°), NUNCA la rejilla de swatches default.png de la lámina.
+        self.assertEqual(
+            seed_for(_ref("fachada", "fps/fachada.jpg", "fachada")),
+            PLANTILLA_DIR / "fps" / "face_default.png",
+        )
+        # La lámina (role) conserva su default de carpeta.
+        lamina = _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces")
+        self.assertEqual(seed_for(lamina), PLANTILLA_DIR / "fps" / "default.png")
 
-    def test_missing_categories(self):
+    def test_prompt_de_lamina_es_atlas(self):
+        p = build_prompt(
+            _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces"),
+            "token", has_style_refs=False,
+        )
+        self.assertIn("TEXTURE ATLAS SHEET", p)
+        self.assertIn("grid layout EXACTLY", p)
+
+    def test_seed_declarado_manda_y_ausente_es_error(self):
+        # Los seeds de los packs migrados existen en _plantilla.
+        ref = _ref("settlement", "overworld/settlement.jpg",
+                   seed="overworld/settlement.png")
+        self.assertEqual(seed_for(ref), PLANTILLA_DIR / "overworld" / "settlement.png")
+        with self.assertRaises(FileNotFoundError):
+            seed_for(_ref("x", "overworld/x.jpg", seed="overworld/no_existe.png"))
+
+    def test_seed_default_por_vista(self):
+        # Ref libre sin seed: default.png de su carpeta (creados en la
+        # migración); characters usa el frame y_bot.
+        self.assertEqual(
+            seed_for(_ref("catedral", "overworld/catedral.jpg")),
+            PLANTILLA_DIR / "overworld" / "default.png",
+        )
+        self.assertEqual(
+            seed_for(_ref("calle", "proscenium/calle.jpg")),
+            PLANTILLA_DIR / "proscenium" / "default.png",
+        )
+        self.assertTrue(str(seed_for(_ref("p", "characters/p.jpg"))).endswith(
+            "dir_0_frame_000.png"))
+
+    def test_missing_refs(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "mi_estilo"
-            d.mkdir()
+            (d / "overworld").mkdir(parents=True)
             (d / "style.json").write_text(json.dumps({
                 "style_id": "mi_estilo",
                 "style_token": "x",
                 "cover": "cover.jpg",
+                "tags": ["x"],
                 "refs": [
-                    {"category": "forest", "file": "forest.jpg"},
-                    # Entrada legacy iso: NO cuenta como pendiente.
-                    {"category": "forest", "file": "forest_iso.jpg",
-                     "perspective": "isometric"},
-                    {"category": "settlement", "file": "settlement.jpg"},
+                    _ref("bosque", "overworld/bosque.jpg", "un bosque"),
+                    _ref("catedral", "overworld/catedral.jpg", "una catedral"),
                 ],
             }), encoding="utf-8")
-            (d / "forest.jpg").write_bytes(b"fake")
+            (d / "overworld" / "bosque.jpg").write_bytes(b"fake")
             self.assertEqual(
-                missing_categories(Path(tmp), "mi_estilo"),
-                ["settlement"],
+                missing_refs(Path(tmp), "mi_estilo"),
+                [{"id": "catedral", "view": "overworld", "description": "una catedral"}],
             )
 
 

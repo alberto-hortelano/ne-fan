@@ -66,6 +66,34 @@ const surfaceDesc = z.union([surfaceDescStr, surfaceDescFaces]);
 export type SurfaceDescFaces = z.infer<typeof surfaceDescFaces>;
 export type SurfaceDesc = z.infer<typeof surfaceDesc>;
 
+/** Ref temática `fps/` del style pack (id de `world.style_refs.fps_faces`)
+ *  que acompaña como REFERENCIA DE IMAGEN el pintado de la(s) celda(s) hero
+ *  de la cara — enseña cómo compone el estilo una cara completa (fachada,
+ *  portón…). Requiere `surface_desc` (la ref acompaña a una celda, no la
+ *  crea). String = aplica a TODAS las caras descritas; objeto = por cara,
+ *  subconjunto de las caras descritas en `surface_desc`. */
+const surfaceRefId = z.string().min(1).max(64);
+const surfaceRefFaces = z
+  .object({
+    side: surfaceRefId.optional(),
+    n: surfaceRefId.optional(),
+    s: surfaceRefId.optional(),
+    e: surfaceRefId.optional(),
+    w: surfaceRefId.optional(),
+    roof: surfaceRefId.optional(),
+    door: surfaceRefId.optional(),
+    caps: surfaceRefId.optional(),
+    top: surfaceRefId.optional(),
+  })
+  .strict()
+  .refine((o) => Object.values(o).some((v) => v !== undefined), {
+    message: "surface_ref objeto necesita al menos una cara",
+  });
+const surfaceRef = z.union([surfaceRefId, surfaceRefFaces]);
+
+export type SurfaceRefFaces = z.infer<typeof surfaceRefFaces>;
+export type SurfaceRef = z.infer<typeof surfaceRef>;
+
 export const RoofKindSchema = z.enum(["gable", "hip", "shed", "flat", "none"]);
 export const RoofMaterialSchema = z.enum(["slate", "tile", "thatch", "wood"]);
 export const WallMaterialSchema = z.enum(["timber", "stone", "wood", "plaster"]);
@@ -106,6 +134,7 @@ export const BuildingSchema = z
      *  y rotar el edificio jugable perjudica la navegación). */
     angle: angle.optional(),
     surface_desc: surfaceDesc.optional(),
+    surface_ref: surfaceRef.optional(),
   })
   .strict();
 
@@ -120,6 +149,7 @@ export const WallSchema = z
     h: z.number().positive().max(24).optional(),
     crenellated: z.boolean().optional(),
     surface_desc: surfaceDesc.optional(),
+    surface_ref: surfaceRef.optional(),
   })
   .strict();
 
@@ -188,6 +218,7 @@ export const PropSchema = z
     /** Solo con `rect` (un `at` es un punto: no hay nada que rotar). */
     angle: angle.optional(),
     surface_desc: surfaceDesc.optional(),
+    surface_ref: surfaceRef.optional(),
   })
   .strict();
 
@@ -210,6 +241,7 @@ export const PrismSchema = z
     tall: z.boolean().optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     surface_desc: surfaceDesc.optional(),
+    surface_ref: surfaceRef.optional(),
   })
   .strict();
 
@@ -240,9 +272,18 @@ export const CustomPartSchema = z
     scale: z.tuple([z.number().min(0.1).max(4), z.number().min(0.1).max(4), z.number().min(0.1).max(4)]).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     desc: z.string().min(1).max(200).optional(),
+    /** Ref temática fps/ que acompaña el pintado de la celda de esta pieza
+     *  (id de world.style_refs.fps_faces). Requiere `desc`. */
+    ref: surfaceRefId.optional(),
   })
   .strict()
   .superRefine((p, ctx) => {
+    if (p.ref !== undefined && p.desc === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "`ref` requiere `desc` (la ref acompaña a la celda de la pieza, no la crea)",
+      });
+    }
     const need = (field: "size" | "r" | "h" | "rBottom", ok: boolean): void => {
       if (!ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${p.shape} requiere \`${field}\`` });
     };
@@ -330,6 +371,28 @@ export function parseVolumes(raw: unknown): ParseVolumesResult {
     }
     if (v.type === "prop" && v.at !== undefined && v.angle !== undefined) {
       return { ok: false, error: `volumes: prop "${v.id}" solo admite \`angle\` con \`rect\`` };
+    }
+    // surface_ref acompaña a celdas creadas por surface_desc — sin desc no
+    // hay celda que referenciar, y una clave de ref sin cara descrita sería
+    // una elección del motor caída en silencio (fail-loud, como el resto).
+    if ("surface_ref" in v && v.surface_ref !== undefined) {
+      const sd = "surface_desc" in v ? v.surface_desc : undefined;
+      if (sd === undefined) {
+        return { ok: false, error: `volumes: "${v.id}" declara \`surface_ref\` sin \`surface_desc\`` };
+      }
+      if (typeof v.surface_ref !== "string") {
+        const described = new Set(typeof sd === "string" ? ["side"] : Object.keys(sd));
+        for (const face of Object.keys(v.surface_ref)) {
+          if (!described.has(face)) {
+            return {
+              ok: false,
+              error:
+                `volumes: "${v.id}" surface_ref.${face} sin cara "${face}" descrita en ` +
+                `surface_desc (caras descritas: ${[...described].join(", ")})`,
+            };
+          }
+        }
+      }
     }
   }
   // Tope de escala de árbol: clamp (no rechazo) — todos los consumidores

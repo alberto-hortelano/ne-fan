@@ -36,26 +36,9 @@
         "type": "string",
         "description": "2-3 sentence description of the scene, in Spanish."
       },
-      "style_tag": {
+      "style_ref": {
         "type": "string",
-        "enum": [
-          "settlement",
-          "farmland",
-          "forest",
-          "wetland",
-          "desert",
-          "snow",
-          "fortress",
-          "interior",
-          "underground",
-          "stage_interior",
-          "stage_street",
-          "stage_plaza",
-          "stage_nature",
-          "stage_harbor",
-          "stage_gate"
-        ],
-        "description": "Style-reference category for the AI repaint (include it). Overworld: the dominant zone of the map (settlement..underground). Proscenium: the kind of SET (stage_*). See the hard rules in the system prompt."
+        "description": "Id of the style-pack reference image that best matches this scene, chosen from world.style_refs.scene (each entry is {id, description}). Include it in every scene. Unknown or missing id degrades to the first reference of the active view."
       },
       "size": {
         "type": "object",
@@ -123,7 +106,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles AND proscenium stages. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop, `prism` for a free polygon outline + height, or `custom` for a FREE 3D composition: any object built from solid pieces — box/cylinder/cone/sphere/gable with local pos/rot/scale and colors, optional per-piece `desc` — the SURFACE of that piece's faces seen square-on, painted literally into its texture cell (the object's other pieces are separate geometry)) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings, rect-props and customs accept `angle` (degrees, CCW from above): the rotated footprint drives collision and manifest. building/wall/prop/prism accept optional `surface_desc` for the first-person view — painted once as a unique texture that joins the reusable surface library. The description is the flat SURFACE of the faces it covers (seen square-on), painted literally. Either a string (<=200 chars: one texture for the BODY's side faces; roof/doors keep their derived material) or an object with a DIFFERENT description per face/role (keys n|s|e|w|side|roof|door|caps|top). Each description is its own asset; without one, surfaces derive from material/color.",
+        "description": "Tiles AND proscenium stages. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop, `prism` for a free polygon outline + height, or `custom` for a FREE 3D composition: any object built from solid pieces — box/cylinder/cone/sphere/gable with local pos/rot/scale and colors, optional per-piece `desc` — the SURFACE of that piece's faces seen square-on, painted literally into its texture cell (the object's other pieces are separate geometry)) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings, rect-props and customs accept `angle` (degrees, CCW from above): the rotated footprint drives collision and manifest. building/wall/prop/prism accept optional `surface_desc` for the first-person view — painted once as a unique texture that joins the reusable surface library. The description is the flat SURFACE of the faces it covers (seen square-on), painted literally. Either a string (<=200 chars: one texture for the BODY's side faces; roof/doors keep their derived material) or an object with a DIFFERENT description per face/role (keys n|s|e|w|side|roof|door|caps|top). Each description is its own asset; without one, surfaces derive from material/color. Volumes with surface_desc also accept surface_ref (optional): id of a themed reference image from world.style_refs.fps_faces guiding how the style paints that face (string = all described faces; object = per face).",
         "items": {
           "type": "object"
         }
@@ -242,6 +225,10 @@
               "present"
             ]
           },
+          "interior": {
+            "type": "boolean",
+            "description": "true = this stage is a roofed INTERIOR (room-scale framing, interior lighting). A stage with fourth_wall.present=true is an interior by definition; declaring interior:false alongside a fourth wall is a contradiction and the scene is rejected."
+          },
           "ambience": {
             "type": "object",
             "description": "Optional atmosphere: time_of_day (amanecer|dia|atardecer|noche — drives the clay's sun/sky/fog preset) and mood (free text, feeds the repaint prompt)."
@@ -339,6 +326,10 @@
                 "wall"
               ],
               "description": "decor only: snap to the nearest wall cell (torches, signs, banners)."
+            },
+            "style_ref": {
+              "type": "string",
+              "description": "NPCs only, optional: id of the character reference from world.style_refs.characters that best matches this NPC's look (guides the AI skin). Missing/unknown id falls back to a role-derived default."
             }
           },
           "required": [

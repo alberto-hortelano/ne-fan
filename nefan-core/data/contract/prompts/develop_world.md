@@ -12,9 +12,17 @@ Call narrative_respond ONCE with this JSON:
   "title": "<display title>",
   "description": "<1-2 frases para la tarjeta del título>",
   "style_id": "<the style_id from context.available_styles that best fits>",
+  "tags": ["<3-5 etiquetas temáticas en minúsculas, sin acentos>"],
   "world_brief": "<resumen de ~1.100-1.300 caracteres: identidad, pueblos, magia, facciones, tono>",
   "world_md": "<el documento COMPLETO en markdown>"
 }
+
+`tags` describe the world's THEME and filter which visual style packs the
+title screen offers for it (each style declares its own tags; match by
+intersection). Choose 3-5 lowercase single words; prefer the shared
+vocabulary when it fits (medieval, historico, fantasia, futurista, espacial,
+moderno, oscuro, luminoso, rural, urbano, marino, cuento) and pick a
+style_id whose tags overlap them.
 
 world_md MUST have exactly these 10 sections (## per section), 9k-12k chars:
 1. Identidad — nombre, tono, temas, género.

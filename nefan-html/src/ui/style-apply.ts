@@ -19,7 +19,7 @@ import type {
   StylesMissingResponse,
   SurfaceCellSpec,
 } from "@nefan-core/src/contracts/remote-gen.js";
-import { styleRoleForNpc } from "@nefan-core/src/games/style-categories.js";
+import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import {
   STYLE_APPLICATION_SCHEMA_VERSION,
   styleApplicationPinRef,
@@ -184,7 +184,7 @@ export class StyleApplyController {
         for (const page of layout.pages) {
           for (const c of page.cells) {
             // Identidad del asset = lo que entra en la clave del server.
-            const identity = JSON.stringify([c.en, c.mat, c.kind, c.hints ?? []]);
+            const identity = JSON.stringify([c.en, c.mat, c.kind, c.hints ?? [], c.ref ?? ""]);
             if (seen.has(identity)) continue;
             seen.add(identity);
             cells.push({
@@ -192,6 +192,7 @@ export class StyleApplyController {
               mat: c.mat,
               kind: c.kind,
               desc: c.en,
+              ...(c.ref !== undefined ? { ref: c.ref } : {}),
               base_color: c.baseColor,
               world_w: c.worldW,
               world_h: c.worldH,
@@ -224,14 +225,16 @@ export class StyleApplyController {
     const skins: Array<{ prompt: string; role?: string }> = [];
     for (const [, scene] of scenes) {
       const world = formatDToWorld(scene as Record<string, unknown>) as {
-        npcs?: Array<{ id: string; name?: string; description?: string; role?: string }>;
+        npcs?: Array<{ id: string; name?: string; description?: string; role?: string; style_ref?: string }>;
         objects?: Array<{ id: string; description?: string; combat?: unknown }>;
       };
       for (const npc of world.npcs ?? []) {
         const prompt = npc.description ?? npc.name ?? npc.id;
         if (!prompt || skinSeen.has(prompt)) continue;
         skinSeen.add(prompt);
-        skins.push({ prompt, role: styleRoleForNpc(npc.role) });
+        // Misma regla que la partida (npcSkinStyleRef) o la clave de caché
+        // del skin diverge (doble pago).
+        skins.push({ prompt, role: npcSkinStyleRef(npc) });
       }
       // Enemigos (objects con bloque combat): mismo prompt que main.ts, sin
       // rol (el cliente en partida tampoco lo envía — paridad de clave).
@@ -339,7 +342,6 @@ export class StyleApplyController {
             cells: chunk,
             scene_description: plan.sceneDescription,
             style_id: plan.styleId,
-            style_tag: "settlement",
           }),
         });
         if (!res.ok) {
@@ -471,7 +473,6 @@ export class StyleApplyController {
           cells: cells.slice(i, i + MAX_CELLS_PER_REQUEST),
           scene_description: sceneDescription || "materials of this world",
           style_id: styleId,
-          style_tag: "settlement",
           resolve_only: true,
         }),
       });

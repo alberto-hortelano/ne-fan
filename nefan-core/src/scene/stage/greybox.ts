@@ -189,9 +189,10 @@ export interface StageScenePlan {
   /** scene_description del Format D — fallback del detector de hora del día
    *  cuando el stage no declara `ambience`. */
   description?: string;
-  /** style_tag de la escena (stage_interior, stage_street…) — segunda señal
-   *  de interior además de fourth_wall (que es opcional en el prompt). */
-  style_tag?: string;
+  /** Plató interior bajo techo: resuelto por stagePlanFromScene desde
+   *  `stage.interior` (con fourth_wall como implicación y el style_tag
+   *  legacy de saves viejos como fallback de lectura). */
+  interior: boolean;
 }
 
 /** Hora del día del plató: la declarada en `stage.ambience`, o inferida del
@@ -317,11 +318,10 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
   const widthM = cols * mpc;
   const depthM = rows * mpc;
   const rect = { minX: -widthM / 2, minZ: -depthM / 2, maxX: widthM / 2, maxZ: depthM / 2 };
-  // Interior por CUALQUIERA de las dos señales: `fourth_wall` es opcional en
-  // el prompt — un interior que solo declare style_tag no debe salir con
-  // cielo, colinas y ojo de exterior (3,2 m).
-  const interiorLike =
-    plan.stage.fourth_wall?.present === true || plan.style_tag === "stage_interior";
+  // Interior resuelto por stagePlanFromScene (`stage.interior` con
+  // fourth_wall como implicación): un interior no debe salir con cielo,
+  // colinas y ojo de exterior (3,2 m).
+  const interiorLike = plan.interior;
   const eyeM = interiorLike ? GREYBOX_EYE_INTERIOR_M : GREYBOX_EYE_M;
   const horizonY = GROUND_Y - eyeM * PX_PER_M;
 

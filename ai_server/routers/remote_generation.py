@@ -20,8 +20,6 @@ from dev_api_cache import DEV_API_CACHE
 from request_util import decode_b64_png
 from scene_image_generator import SIDES
 from sprite_skin_meshy import SpriteSkinMeshy
-from style_categories import STYLE_TAG_PATTERN
-from style_packs import ZONE_TO_STAGE
 
 logger = logging.getLogger("ai_server")
 
@@ -50,15 +48,13 @@ class SceneImageRequest(BaseModel):
     # agua (mencionarla en planos secos ceba ríos alucinados — bench
     # 002_repaint_fidelity). Default True = comportamiento clásico.
     has_water: bool = True
-    # Estilo del juego: id del pack (congelado en la sesión) y categoría de
-    # referencia que el motor narrativo etiquetó para esta escena. Ausentes ⇒
-    # referencia global fija de siempre.
+    # Estilo del juego: id del pack (congelado en la sesión) y ref del pack
+    # que el motor narrativo eligió para esta escena (id LIBRE del manifest;
+    # ver StyleManifestSchema). Ausentes ⇒ referencia global fija de siempre.
+    # Un id desconocido degrada con aviso a la primera ref de la vista (el
+    # server no conoce la sesión — el pre-flight fail-loud vive en el bridge).
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    # Zonas de estilo + categorías de plató + alias legacy ("nature"). Patrón
-    # derivado de style_categories.py (fuente única, candada contra el TS).
-    # Las stage_* solo tienen sentido con blueprint_kind="stage"; una zona en
-    # petición stage se mapea a plató (ZONE_TO_STAGE) al resolver.
-    style_tag: str = Field(default="", pattern=STYLE_TAG_PATTERN)
+    style_ref: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
     # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
     # canónico del plató o del tile). El render WebGL no es byte-determinista:
     # sin esta clave, cada arranque hashearía píxeles distintos ⇒ miss.
@@ -116,16 +112,14 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # estilo, para no fragmentar el cache preexistente.
     style_ref = None
     if body.style_id and deps.style_packs is not None:
-        if body.blueprint_kind == "stage":
-            # Plató: SIEMPRE una categoría stage_* — una zona legacy se mapea
-            # (ZONE_TO_STAGE) y sin tag se aplica stage_street. Nunca se
-            # resuelve una ref cenital para el repintado ground-level.
-            tag = ZONE_TO_STAGE.get(body.style_tag, body.style_tag) or "stage_street"
-        else:
-            tag = body.style_tag or "settlement"
-        style_ref = deps.style_packs.resolve(body.style_id, tag)
+        # La vista de la ref sale del tipo de blueprint: un plató NUNCA
+        # resuelve una ref cenital ni viceversa (el modelo calca el punto de
+        # vista de la referencia). El id lo eligió el motor narrativo; vacío
+        # o desconocido ⇒ primera ref de la vista (orden del manifest).
+        view = "proscenium" if body.blueprint_kind == "stage" else "overworld"
+        style_ref = deps.style_packs.resolve(body.style_id, body.style_ref, view)
         if style_ref is not None:
-            context["style"] = f"{style_ref.style_id}/{style_ref.category}:{style_ref.content_hash}"
+            context["style"] = f"{style_ref.style_id}/{style_ref.ref_id}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
     # no debe servir una imagen cacheada bajo la instrucción antigua. "boxes"
     # se omite (como sides vacío) para no invalidar la caché preexistente.
@@ -193,6 +187,12 @@ class SurfaceCellSpec(BaseModel):
     mat: str = Field(min_length=1, max_length=48)
     kind: str = Field(pattern="^(tile|unique)$")
     desc: str = Field(min_length=1, max_length=300)
+    # Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+    # unique: guía como imagen la página que pinta esta celda. Vacía o no
+    # resuelta ⇒ celda sin ref. (Pydantic ignora campos extra: un cliente
+    # nuevo contra un server viejo degrada en silencio a sin-ref — aceptable,
+    # monorepo con deploy conjunto.)
+    ref: str = Field(default="", max_length=64, pattern="^[A-Za-z0-9_.-]*$")
     base_color: str = Field(pattern="^#[0-9a-fA-F]{6}$")
     world_w: float = 1.0
     world_h: float = 1.0
@@ -203,7 +203,6 @@ class SurfaceAtlasRequest(BaseModel):
     cells: list[SurfaceCellSpec] = Field(min_length=1, max_length=64)
     scene_description: str = Field(min_length=1, max_length=600)
     style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    style_tag: str = Field(default="", pattern=STYLE_TAG_PATTERN)
     # Hash del layout canónico del cliente — solo logging/debug: la caché es
     # POR CELDA (independiente de la escena y del layout).
     layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
@@ -221,46 +220,46 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     celda pintada se registra con su descripción como prompt."""
     import asyncio
 
-    from surface_atlas_generator import canonical_hints
+    from surface_atlas_generator import surface_cell_context
 
-    # Estilo: token del pack para el prompt + fragmentación de la librería por
-    # estilo (la misma "wall_plaster" en dos estilos son dos assets).
+    # Estilo: token del pack para el prompt + fragmentación de la librería
+    # por estilo (la misma "wall_plaster" en dos estilos son dos assets), la
+    # lámina fps_surfaces y las refs temáticas de CARA elegidas por el motor
+    # (surface_ref por celda unique).
     style_token = ""
     style_key = ""
-    style_sheet = None  # lámina fps_surfaces del pack (2ª ref de cada página)
+    style_sheet = None  # lámina fps_surfaces del pack
     if body.style_id and deps.style_packs is not None:
-        tag = body.style_tag or "settlement"
-        style_ref = deps.style_packs.resolve(body.style_id, tag)
-        if style_ref is not None:
-            style_token = style_ref.style_token
-            style_key = f"{style_ref.style_id}:{style_ref.style_token}"
+        style_token = deps.style_packs.style_token(body.style_id)
+        style_key = f"{body.style_id}:{style_token}" if style_token else body.style_id
+        style_sheet = deps.style_packs.resolve_fps_sheet(body.style_id)
+
+    # Resolver cada ref de cara distinta UNA vez. Una ref que no resuelve
+    # (id desconocido, imagen ausente, sin pack) deja sus celdas SIN ref en
+    # TODO (contexto, packer, prompt) — warning, nunca otra imagen ni romper
+    # la página (el fail-loud contra el catálogo vive en narrative-mcp).
+    ref_ids = sorted({c.ref for c in body.cells if c.ref and c.kind != "tile"})
+    cell_refs: dict = {}
+    for rid in ref_ids:
+        r = (
+            deps.style_packs.resolve_fps_face(body.style_id, rid)
+            if body.style_id and deps.style_packs is not None
+            else None
+        )
+        if r is not None:
+            cell_refs[rid] = r
         else:
-            style_key = body.style_id
-        style_sheet = deps.style_packs.resolve(body.style_id, "fps_surfaces")
+            print(f"SurfaceAtlas WARNING: ref fps '{rid}' no resuelta — celdas sin ref", flush=True)
 
     def cell_context(cell: SurfaceCellSpec, ai_model: str) -> dict:
-        ctx = {
-            "mat": cell.mat,
-            "kind": cell.kind,
-            "style": style_key,
-            "model": ai_model,
-            "hints": canonical_hints(cell.hints),
-            "pipeline": "surface1",
-            "library": "1",
-        }
-        # Clave CONDICIONAL: sin lámina el contexto es byte-idéntico al
-        # histórico (la librería pintada sigue valiendo); añadir la lámina a
-        # un estilo invalida SOLO las celdas de ese estilo (repintado con la
-        # nueva dirección de arte), y cambiar la lámina vuelve a invalidar.
-        if style_sheet is not None:
-            ctx["fpsref"] = style_sheet.content_hash
-        # Versión del contrato de las celdas ÚNICAS (UNIQUE_RULE del pintor:
-        # una celda hero es UNA CARA, nunca el objeto entero). Solo en
-        # uniques: invalida los heroes ya pintados como objeto (ruedas
-        # dibujadas sobre el carro, 2026-08-16) sin repagar ni una tile.
-        if cell.kind != "tile":
-            ctx["unique_face_v"] = "2"
-        return DEV_API_CACHE.namespace_context(ctx)
+        ref = cell_refs.get(cell.ref) if cell.ref else None
+        return DEV_API_CACHE.namespace_context(
+            surface_cell_context(
+                cell.mat, cell.kind, cell.hints, ai_model, style_key,
+                style_sheet_hash=style_sheet.content_hash if style_sheet is not None else "",
+                cell_ref_hash=ref.content_hash if ref is not None else "",
+            )
+        )
 
     gen = deps.surface_atlas_gen
     resolved: dict[str, dict] = {}
@@ -289,13 +288,22 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         flush=True,
     )
     try:
+        # Las refs no resueltas se limpian de las celdas (el packer agrupa
+        # por `ref`: una ref muerta no debe fragmentar páginas).
+        missing_dicts = []
+        for c in missing:
+            d = c.model_dump()
+            if d.get("ref") and d["ref"] not in cell_refs:
+                d["ref"] = ""
+            missing_dicts.append(d)
         result = await asyncio.to_thread(
             gen.generate,
-            [c.model_dump() for c in missing],
+            missing_dicts,
             body.scene_description,
             style_token,
             reused_pngs,
             style_sheet.data_uri if style_sheet is not None else "",
+            {rid: r.data_uri for rid, r in cell_refs.items()},
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"surface atlas generation failed: {e}") from e
@@ -380,19 +388,20 @@ async def skin_sprite_sheet_endpoint(request: Request):
     anim = str(body.get("anim", "idle")).strip()
     angle = str(body.get("angle", "isometric_30")).strip()
     prompt = str(body.get("prompt", "")).strip()
-    # Estilo del juego (opcional): pack + rol del personaje para elegir la
-    # referencia (commoner/noble/warrior). Sin pack o sin imagen ⇒ sin ref.
+    # Estilo del juego (opcional): pack + ref de personaje elegida por el
+    # motor para este NPC ("style_role" es el nombre legacy del campo en el
+    # wire; hoy transporta el id de la ref de characters/ — commoner/noble/
+    # warrior en los packs migrados). Vacío o desconocido ⇒ primera ref de
+    # characters/ del manifest. Sin pack o sin imagen ⇒ sin ref.
     style_id = str(body.get("style_id", "")).strip()
-    style_role = str(body.get("style_role", "commoner")).strip() or "commoner"
+    style_role = str(body.get("style_role", "")).strip()
 
     if not (model and prompt):
         raise HTTPException(status_code=400, detail="missing model or prompt")
-    if style_role not in ("commoner", "noble", "warrior"):
-        raise HTTPException(status_code=400, detail=f"invalid style_role: {style_role}")
 
     style_ref = None
     if style_id and deps.style_packs is not None:
-        style_ref = deps.style_packs.resolve(style_id, f"character_{style_role}")
+        style_ref = deps.style_packs.resolve(style_id, style_role, "characters")
     style_key = f"{style_ref.style_id}:{style_ref.content_hash}" if style_ref else ""
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle

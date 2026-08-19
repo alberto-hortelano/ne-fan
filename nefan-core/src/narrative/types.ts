@@ -64,6 +64,21 @@ export interface NarrativeWorldState {
    *  CONGELADO al crear la sesión desde game.json.systems.combat. Campo
    *  aditivo: saves previos ("") = "standard". */
   combat_system: string;
+  /** Catálogo de refs del style pack que el motor puede elegir por escena
+   *  (`style_ref`): las de la vista activa (`scene`) y las de personaje
+   *  (`characters`), cada una `{id, description}`. NO es fuente de verdad:
+   *  el bridge lo RECALCULA del style.json en start_session Y resume_session
+   *  (editar el pack a mano se refleja al reanudar). Campo aditivo: saves
+   *  previos = listas vacías (sin catálogo, el server usa su fallback). */
+  style_refs: {
+    scene: Array<{ id: string; description: string }>;
+    characters: Array<{ id: string; description: string }>;
+    /** Refs temáticas de CARA (carpeta fps/ del pack, sin la lámina): el
+     *  motor las elige por cara de volumen (`surface_ref`) para guiar las
+     *  celdas hero del atlas de superficies. Solo mundos de rama tile;
+     *  ausente cuando el pack no declara ninguna. */
+    fps_faces?: Array<{ id: string; description: string }>;
+  };
 }
 
 /** Un elemento jugable del ANÁLISIS de la imagen IA de un tile: lo que la

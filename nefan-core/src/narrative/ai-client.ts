@@ -163,7 +163,7 @@ export class AiClient {
    *  un jugador contra la plantilla de 10 secciones. Tarda como un bootstrap
    *  (~1-3 min): timeout largo. */
   async developWorld(draftText: string): Promise<
-    | { ok: true; game: { game_id: string; title: string; description: string; style_id: string; world_brief: string; world_md: string } }
+    | { ok: true; game: { game_id: string; title: string; description: string; style_id: string; world_brief: string; world_md: string; tags: string[] } }
     | { ok: false; error: string }
   > {
     try {

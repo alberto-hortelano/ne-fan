@@ -139,6 +139,13 @@ async function main() {
   // Ids esperados de la última petición stage_review (pre-flight de inventario
   // completo: cada expected debe aparecer found o missing).
   let currentStageExpectedIds: string[] | null = null;
+  // Catálogo de refs de estilo de la sesión (world.style_refs de la última
+  // petición scene): pre-flight de `style_ref` (escena y NPCs) — un id fuera
+  // del catálogo rebota al motor con la lista válida. null = petición sin
+  // catálogo (fixtures, saves viejos) ⇒ no se valida.
+  let currentStyleRefIds: string[] | null = null;
+  let currentCharacterRefIds: string[] | null = null;
+  let currentFpsFaceRefIds: string[] | null = null;
 
   // ── Latido de progreso ──────────────────────────────────────────────────
   // Cada paso observable del motor (recoger la petición, llamar una tool de
@@ -319,8 +326,25 @@ into context:
         }
         currentKind = 'scene';
         const ws = msg.world_state as
-          | { generate_tile?: unknown; stage_request?: unknown }
+          | {
+              generate_tile?: unknown;
+              stage_request?: unknown;
+              world?: {
+                style_refs?: {
+                  scene?: Array<{ id?: unknown }>;
+                  characters?: Array<{ id?: unknown }>;
+                  fps_faces?: Array<{ id?: unknown }>;
+                };
+              };
+            }
           | undefined;
+        const catalogIds = (list?: Array<{ id?: unknown }>): string[] | null =>
+          Array.isArray(list) && list.length > 0
+            ? list.map((r) => String(r?.id ?? '')).filter(Boolean)
+            : null;
+        currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
+        currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
+        currentFpsFaceRefIds = catalogIds(ws?.world?.style_refs?.fps_faces);
         const isTileRequest = Boolean(ws?.generate_tile);
         const isStageRequest = Boolean(ws?.stage_request);
         const sceneVariant = isTileRequest
@@ -392,6 +416,96 @@ into context:
         // prop malformado dejaba el tile sin un solo edificio).
         if (kind === 'scene') {
           const scene = parsed as Record<string, unknown>;
+          // Pre-flight de style_ref: la elección debe existir en el catálogo
+          // del pack (world.style_refs.scene de la petición). Fuera de
+          // catálogo se rebota con los ids válidos — nunca degradar en
+          // silencio una elección del motor.
+          if (
+            currentStyleRefIds !== null &&
+            typeof scene.style_ref === 'string' &&
+            scene.style_ref &&
+            !currentStyleRefIds.includes(scene.style_ref)
+          ) {
+            return {
+              content: [{
+                type: 'text',
+                text: `Invalid style_ref "${scene.style_ref}" — it must be one of the ids in ` +
+                  `world.style_refs.scene (${currentStyleRefIds.join(', ')}). Fix it and call ` +
+                  `narrative_respond again (do NOT drop the rest of the scene).`,
+              }],
+              isError: true,
+            };
+          }
+          // Ídem para las refs de personaje elegidas por NPC.
+          if (currentCharacterRefIds !== null && Array.isArray(scene.entities)) {
+            for (const ent of scene.entities as Array<Record<string, unknown>>) {
+              if (ent?.kind !== 'npc') continue;
+              const ref = ent.style_ref;
+              if (typeof ref === 'string' && ref && !currentCharacterRefIds.includes(ref)) {
+                return {
+                  content: [{
+                    type: 'text',
+                    text: `Invalid style_ref "${ref}" on npc "${String(ent.id ?? '?')}" — it must be one ` +
+                      `of the ids in world.style_refs.characters (${currentCharacterRefIds.join(', ')}). ` +
+                      `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                  }],
+                  isError: true,
+                };
+              }
+            }
+          }
+          // surface_ref de volúmenes (refs de CARA del atlas fps): cada id
+          // debe existir en world.style_refs.fps_faces; declarar refs sin
+          // catálogo también rebota — nunca degradar en silencio la
+          // elección del motor (el server además degrada con warning por
+          // robustez ante clientes viejos).
+          if (Array.isArray(scene.volumes)) {
+            const declared: Array<{ vol: string; ref: string }> = [];
+            for (const rawVol of scene.volumes as Array<Record<string, unknown>>) {
+              if (!rawVol || typeof rawVol !== 'object') continue;
+              const volId = String(rawVol.id ?? '?');
+              const sr = rawVol.surface_ref;
+              if (typeof sr === 'string' && sr) declared.push({ vol: volId, ref: sr });
+              else if (sr && typeof sr === 'object') {
+                for (const v of Object.values(sr as Record<string, unknown>)) {
+                  if (typeof v === 'string' && v) declared.push({ vol: volId, ref: v });
+                }
+              }
+              const parts = rawVol.parts;
+              if (Array.isArray(parts)) {
+                for (const part of parts as Array<Record<string, unknown>>) {
+                  if (part && typeof part.ref === 'string' && part.ref) {
+                    declared.push({ vol: volId, ref: part.ref });
+                  }
+                }
+              }
+            }
+            if (declared.length > 0 && currentFpsFaceRefIds === null) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
+                    `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
+                    `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
+                }],
+                isError: true,
+              };
+            }
+            const bad = currentFpsFaceRefIds === null
+              ? undefined
+              : declared.find((d) => !currentFpsFaceRefIds!.includes(d.ref));
+            if (bad) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
+                    `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
+                    `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                }],
+                isError: true,
+              };
+            }
+          }
           if (scene.volumes !== undefined) {
             const check = validateVolumes(scene.volumes);
             if (!check.ok) {
@@ -450,6 +564,13 @@ into context:
           const sections = (worldMd.match(/^## /gm) ?? []).length;
           const errs: string[] = [];
           if (missing.length) errs.push(`missing string fields: ${missing.join(', ')}`);
+          // tags temáticos: la plantilla exige 3-5 (filtran los estilos
+          // ofrecidos para el mundo en el título).
+          const tags = (parsed as { tags?: unknown }).tags;
+          if (!Array.isArray(tags) || tags.length === 0
+            || !tags.every((t) => typeof t === 'string' && t.length > 0)) {
+            errs.push('missing tags (non-empty array of lowercase theme strings, e.g. ["medieval","oscuro"])');
+          }
           if (sections < 10) errs.push(`world_md has ${sections} "## " sections, needs 10`);
           if (worldMd && worldMd.length < 6000) {
             errs.push(`world_md too short (${worldMd.length} chars — the template asks for 9k-12k)`);

@@ -145,6 +145,11 @@ export const StageBlockSchema = z
       })
       .strict()
       .optional(),
+    /** true = plató INTERIOR bajo techo (encuadre de sala, ojo bajo, luz de
+     *  interior). Sustituye a la señal legacy `style_tag: "stage_interior"`;
+     *  fourth_wall.present=true implica interior — declararlo false con
+     *  cuarta pared es contradicción (fail-loud en stagePlanFromScene). */
+    interior: z.boolean().optional(),
     /** Tarimas/niveles elevados. v1: NADIE los consume (ni compositor ni
      *  greybox) — el suelo jugable es PLANO; la elevación decorativa va en
      *  `surroundings` (y_base/hill). */

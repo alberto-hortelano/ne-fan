@@ -1,8 +1,8 @@
 {
   "scene_id": "posada_salon",
   "place_id": "posada_salon",
-  "style_tag": "stage_interior",
   "scene_description": "El salón de la posada del Roble: vigas bajas, mesas de madera gastada y el fuego crepitando en la chimenea del fondo. Huele a guiso y a cerveza derramada.",
+  "style_ref": "stage_interior",
   "size": {
     "cols": 24,
     "rows": 16,
@@ -143,7 +143,8 @@
           "w": 5
         }
       ]
-    }
+    },
+    "interior": true
   },
   "ambient_event": "El fuego de la chimenea chisporrotea y alguien ríe en una mesa del rincón."
 }

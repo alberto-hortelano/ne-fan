@@ -19,7 +19,6 @@ import { CONTRACTS } from "../src/contract/model-io/schemas.js";
 import { renderContract } from "../src/contract/model-io/render.js";
 import { toJsonSchema } from "../src/contract/model-io/json-schema.js";
 import { injectRegion } from "../src/contract/model-io/regions.js";
-import { renderStyleCategoriesArtifact } from "../src/contract/style-categories-artifact.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const promptsDir = join(here, "..", "data", "contract", "prompts");
@@ -67,18 +66,6 @@ for (const c of CONTRACTS) {
       changed++;
     }
   }
-}
-
-// 3. Enum de categorías de estilo — artefacto puente para el lado Python
-// (ai_server/tests/test_style_categories_sync.py lo compara con
-// ai_server/style_categories.py).
-const styleCatsPath = join(here, "..", "data", "contract", "style_categories.json");
-const styleCatsNext = renderStyleCategoriesArtifact();
-const styleCatsPrev = existsSync(styleCatsPath) ? readFileSync(styleCatsPath, "utf-8") : "";
-if (styleCatsNext !== styleCatsPrev) {
-  writeFileSync(styleCatsPath, styleCatsNext, "utf-8");
-  console.log("artefacto: regenerado style_categories.json");
-  changed++;
 }
 
 console.log(changed === 0 ? "gen-contract: sin cambios (sincronizado)" : `gen-contract: ${changed} artefacto(s) actualizados`);

@@ -222,9 +222,10 @@ async function handle(
     return;
   }
 
-  // ── GET /styles/{style_id}/{file} (movido desde world-state en F2) ──
-  if (method === "GET" && parts[0] === "styles" && parts.length === 3) {
-    const r = readStyleFile(opts.stylesDir, parts[1], parts[2]);
+  // ── GET /styles/{style_id}/{file} (movido desde world-state en F2). El
+  //    file admite una subcarpeta de vista (overworld/settlement.jpg) ──
+  if (method === "GET" && parts[0] === "styles" && (parts.length === 3 || parts.length === 4)) {
+    const r = readStyleFile(opts.stylesDir, parts[1], parts.slice(2).join("/"));
     res.writeHead(r.status, {
       "Content-Type": r.contentType,
       "Content-Length": r.body.byteLength,
