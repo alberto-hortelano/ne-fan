@@ -283,6 +283,7 @@ export class FpsAtlasController {
         mat: c.mat,
         kind: c.kind,
         desc: c.en,
+        ...(c.ref !== undefined ? { ref: c.ref } : {}),
         base_color: c.baseColor,
         world_w: c.worldW,
         world_h: c.worldH,

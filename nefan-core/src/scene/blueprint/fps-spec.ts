@@ -34,7 +34,7 @@ import {
   runScatter,
   type ScatterCount,
 } from "./scatter.js";
-import type { SurfaceDescFaces, Volume } from "./volumes.js";
+import type { SurfaceDescFaces, SurfaceRefFaces, Volume } from "./volumes.js";
 import { buildTileGreyboxSpec, type TileGreyboxPlan, type TileGreyboxSpec } from "./greybox.js";
 
 /** Separación extra por prim entre rasgos planos del suelo (metros). El
@@ -129,29 +129,47 @@ function primRole(p: GreyboxPrimitive, vol: Volume): PrimRole {
   return "other";
 }
 
-/** Reparte el surface_desc del volumen en heroCells por prim. */
-function assignHeroCells(p: SurfacePrim, role: PrimRole, volId: string, sd: string | SurfaceDescFaces): void {
+/** Reparte el surface_desc (y su surface_ref opcional) del volumen en
+ *  heroCells por prim. `sr` string = ref para TODAS las celdas creadas;
+ *  objeto = ref por cara (subconjunto de las descritas, validado en
+ *  parseVolumes). */
+function assignHeroCells(
+  p: SurfacePrim,
+  role: PrimRole,
+  volId: string,
+  sd: string | SurfaceDescFaces,
+  sr?: string | SurfaceRefFaces,
+): void {
   const faces: SurfaceDescFaces = typeof sd === "string" ? { side: sd } : sd;
+  const refs: SurfaceRefFaces =
+    sr === undefined ? {} : typeof sr === "string"
+      ? Object.fromEntries(Object.keys(faces).map((f) => [f, sr]))
+      : sr;
+  const cell = (face: keyof SurfaceDescFaces, key: string, desc: string) => ({
+    key,
+    desc,
+    ...(refs[face] ? { ref: refs[face] } : {}),
+  });
   const cells: NonNullable<SurfacePrim["heroCells"]> = {};
   if (role === "body") {
-    if (faces.side) cells.side = { key: `hero_${volId}_side`, desc: faces.side };
+    if (faces.side) cells.side = cell("side", `hero_${volId}_side`, faces.side);
     for (const f of ["n", "s", "e", "w"] as const) {
-      if (faces[f]) cells[f] = { key: `hero_${volId}_${f}`, desc: faces[f] };
+      if (faces[f]) cells[f] = cell(f, `hero_${volId}_${f}`, faces[f]);
     }
     // caps/top del cuerpo: hastiales de un gable no aplican aquí; el top de
     // un prop/prism sí.
-    if (faces.top) cells.top = { key: `hero_${volId}_top`, desc: faces.top };
-    if (faces.caps) cells.caps = { key: `hero_${volId}_caps`, desc: faces.caps };
+    if (faces.top) cells.top = cell("top", `hero_${volId}_top`, faces.top);
+    if (faces.caps) cells.caps = cell("caps", `hero_${volId}_caps`, faces.caps);
   } else if (role === "roof") {
     if (faces.roof) {
-      cells.side = { key: `hero_${volId}_roof`, desc: faces.roof };
-      if (p.shape === "box") cells.top = { key: `hero_${volId}_roof`, desc: faces.roof };
+      cells.side = cell("roof", `hero_${volId}_roof`, faces.roof);
+      if (p.shape === "box") cells.top = cell("roof", `hero_${volId}_roof`, faces.roof);
     }
     if (faces.caps && p.shape === "gable") {
-      cells.caps = { key: `hero_${volId}_caps`, desc: faces.caps };
+      cells.caps = cell("caps", `hero_${volId}_caps`, faces.caps);
     }
   } else if (role === "door") {
-    if (faces.door) cells.side = { key: `hero_${volId}_door`, desc: faces.door };
+    if (faces.door) cells.side = cell("door", `hero_${volId}_door`, faces.door);
   }
   if (Object.keys(cells).length > 0) p.heroCells = cells;
 }
@@ -186,7 +204,13 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
         const part = vol.parts[i];
         const q: SurfacePrim = { ...p };
         if (part?.desc) {
-          q.heroCells = { side: { key: `hero_${p.volId}_p${i}`, desc: part.desc } };
+          q.heroCells = {
+            side: {
+              key: `hero_${p.volId}_p${i}`,
+              desc: part.desc,
+              ...(part.ref ? { ref: part.ref } : {}),
+            },
+          };
         } else {
           q.mat = false;
         }
@@ -195,7 +219,8 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
       const sd = "surface_desc" in vol ? vol.surface_desc : undefined;
       if (sd === undefined) return p as SurfacePrim;
       const q: SurfacePrim = { ...p };
-      assignHeroCells(q, primRole(p, vol), p.volId!, sd);
+      const sr = "surface_ref" in vol ? vol.surface_ref : undefined;
+      assignHeroCells(q, primRole(p, vol), p.volId!, sd, sr);
       return q;
     }),
     volumes,

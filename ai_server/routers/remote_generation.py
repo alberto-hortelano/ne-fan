@@ -187,6 +187,12 @@ class SurfaceCellSpec(BaseModel):
     mat: str = Field(min_length=1, max_length=48)
     kind: str = Field(pattern="^(tile|unique)$")
     desc: str = Field(min_length=1, max_length=300)
+    # Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+    # unique: guía como imagen la página que pinta esta celda. Vacía o no
+    # resuelta ⇒ celda sin ref. (Pydantic ignora campos extra: un cliente
+    # nuevo contra un server viejo degrada en silencio a sin-ref — aceptable,
+    # monorepo con deploy conjunto.)
+    ref: str = Field(default="", max_length=64, pattern="^[A-Za-z0-9_.-]*$")
     base_color: str = Field(pattern="^#[0-9a-fA-F]{6}$")
     world_w: float = 1.0
     world_h: float = 1.0
@@ -214,44 +220,46 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     celda pintada se registra con su descripción como prompt."""
     import asyncio
 
-    from surface_atlas_generator import canonical_hints
+    from surface_atlas_generator import surface_cell_context
 
-    # Estilo: token del pack para el prompt + fragmentación de la librería por
-    # estilo (la misma "wall_plaster" en dos estilos son dos assets).
+    # Estilo: token del pack para el prompt + fragmentación de la librería
+    # por estilo (la misma "wall_plaster" en dos estilos son dos assets), la
+    # lámina fps_surfaces y las refs temáticas de CARA elegidas por el motor
+    # (surface_ref por celda unique).
     style_token = ""
     style_key = ""
-    style_sheet = None  # lámina fps_surfaces del pack (2ª ref de cada página)
+    style_sheet = None  # lámina fps_surfaces del pack
     if body.style_id and deps.style_packs is not None:
-        # El atlas no usa refs temáticas: solo el token del pack (mismo
-        # style_key que siempre — la librería de superficies se conserva) y
-        # la lámina fps_surfaces como 2ª referencia de cada página.
         style_token = deps.style_packs.style_token(body.style_id)
         style_key = f"{body.style_id}:{style_token}" if style_token else body.style_id
         style_sheet = deps.style_packs.resolve_fps_sheet(body.style_id)
 
+    # Resolver cada ref de cara distinta UNA vez. Una ref que no resuelve
+    # (id desconocido, imagen ausente, sin pack) deja sus celdas SIN ref en
+    # TODO (contexto, packer, prompt) — warning, nunca otra imagen ni romper
+    # la página (el fail-loud contra el catálogo vive en narrative-mcp).
+    ref_ids = sorted({c.ref for c in body.cells if c.ref and c.kind != "tile"})
+    cell_refs: dict = {}
+    for rid in ref_ids:
+        r = (
+            deps.style_packs.resolve_fps_face(body.style_id, rid)
+            if body.style_id and deps.style_packs is not None
+            else None
+        )
+        if r is not None:
+            cell_refs[rid] = r
+        else:
+            print(f"SurfaceAtlas WARNING: ref fps '{rid}' no resuelta — celdas sin ref", flush=True)
+
     def cell_context(cell: SurfaceCellSpec, ai_model: str) -> dict:
-        ctx = {
-            "mat": cell.mat,
-            "kind": cell.kind,
-            "style": style_key,
-            "model": ai_model,
-            "hints": canonical_hints(cell.hints),
-            "pipeline": "surface1",
-            "library": "1",
-        }
-        # Clave CONDICIONAL: sin lámina el contexto es byte-idéntico al
-        # histórico (la librería pintada sigue valiendo); añadir la lámina a
-        # un estilo invalida SOLO las celdas de ese estilo (repintado con la
-        # nueva dirección de arte), y cambiar la lámina vuelve a invalidar.
-        if style_sheet is not None:
-            ctx["fpsref"] = style_sheet.content_hash
-        # Versión del contrato de las celdas ÚNICAS (UNIQUE_RULE del pintor:
-        # una celda hero es UNA CARA, nunca el objeto entero). Solo en
-        # uniques: invalida los heroes ya pintados como objeto (ruedas
-        # dibujadas sobre el carro, 2026-08-16) sin repagar ni una tile.
-        if cell.kind != "tile":
-            ctx["unique_face_v"] = "2"
-        return DEV_API_CACHE.namespace_context(ctx)
+        ref = cell_refs.get(cell.ref) if cell.ref else None
+        return DEV_API_CACHE.namespace_context(
+            surface_cell_context(
+                cell.mat, cell.kind, cell.hints, ai_model, style_key,
+                style_sheet_hash=style_sheet.content_hash if style_sheet is not None else "",
+                cell_ref_hash=ref.content_hash if ref is not None else "",
+            )
+        )
 
     gen = deps.surface_atlas_gen
     resolved: dict[str, dict] = {}
@@ -280,13 +288,22 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         flush=True,
     )
     try:
+        # Las refs no resueltas se limpian de las celdas (el packer agrupa
+        # por `ref`: una ref muerta no debe fragmentar páginas).
+        missing_dicts = []
+        for c in missing:
+            d = c.model_dump()
+            if d.get("ref") and d["ref"] not in cell_refs:
+                d["ref"] = ""
+            missing_dicts.append(d)
         result = await asyncio.to_thread(
             gen.generate,
-            [c.model_dump() for c in missing],
+            missing_dicts,
             body.scene_description,
             style_token,
             reused_pngs,
             style_sheet.data_uri if style_sheet is not None else "",
+            {rid: r.data_uri for rid, r in cell_refs.items()},
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"surface atlas generation failed: {e}") from e

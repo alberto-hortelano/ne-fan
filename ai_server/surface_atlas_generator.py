@@ -94,6 +94,29 @@ ANCHOR_RULE_AFTER_SHEET = (
     "of detail exactly. Do NOT copy their content into the cells. "
 )
 
+# Ref temática de CARA del style pack (surface_ref del motor): 2ª referencia
+# de las páginas cuyo grupo de celdas la comparte. Enseña cómo compone el
+# estilo una cara completa (fachada, portón…); desplaza la lámina a 3ª.
+CELL_REF_RULE = (
+    "The SECOND reference image is a themed style-pack illustration showing "
+    "how this art style composes ONE full face of this kind (e.g. a house "
+    "facade with its door and windows): follow its composition language, "
+    "materials, proportions and level of detail in every cell, but paint "
+    "exactly what each cell's own description asks — do NOT copy the "
+    "reference verbatim and do NOT copy its framing or background. "
+)
+STYLE_SHEET_RULE_THIRD = (
+    "The THIRD reference image is a painted material swatch sheet that "
+    "defines the TARGET ART STYLE: match its palette, material rendering and "
+    "brushwork exactly in every cell. Do NOT copy its layout — each cell "
+    "paints only the material its own description asks for. "
+)
+ANCHOR_RULE_AFTER_THIRD = (
+    "The reference images after the third one are ALREADY-PAINTED textures "
+    "from this same material library: match their palette, style and level "
+    "of detail exactly. Do NOT copy their content into the cells. "
+)
+
 
 def _hex_rgb(color: str) -> tuple[int, int, int]:
     return tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))  # type: ignore[return-value]
@@ -143,11 +166,26 @@ def pack_missing(cells: list[dict]) -> list[list[dict]]:
             x += w + GUTTER_PX
 
     tiles = sorted((c for c in cells if c["kind"] == "tile"), key=lambda c: c["key"])
-    uniques = sorted((c for c in cells if c["kind"] != "tile"), key=lambda c: c["key"])
+    # Uniques: subgrupos por ref temática (surface_ref) — sin-ref primero
+    # ("" ordena antes), luego cada ref en orden alfabético. Cada subgrupo
+    # empieza página propia: la ref viaja como imagen de referencia de SU
+    # página y no puede mezclarse con celdas de otra ref. Coste: cada ref
+    # distinta ⇒ ≥1 página gpt-image-2 (~$0.17) — es el precio de la
+    # elección por cara.
+    uniques = sorted(
+        (c for c in cells if c["kind"] != "tile"),
+        key=lambda c: (str(c.get("ref") or ""), c["key"]),
+    )
     if tiles:
         pack_group(tiles)
-    if uniques:
-        pack_group(uniques)
+    i = 0
+    while i < len(uniques):
+        ref = str(uniques[i].get("ref") or "")
+        j = i
+        while j < len(uniques) and str(uniques[j].get("ref") or "") == ref:
+            j += 1
+        pack_group(uniques[i:j])
+        i = j
     return pages
 
 
@@ -175,7 +213,7 @@ def draw_base(page: list[dict]) -> Image.Image:
 
 def build_prompt(
     page: list[dict], scene_description: str, style_token: str, has_anchors: bool,
-    has_style_sheet: bool = False,
+    has_style_sheet: bool = False, has_cell_ref: bool = False,
 ) -> str:
     rows: dict[int, list[dict]] = {}
     for c in page:
@@ -196,16 +234,27 @@ def build_prompt(
         "smaller panels and NEVER paint anything over the grey gutter. "
     )
     style = f"Art direction: {style_token}. " if style_token else ""
-    anchor_rule = ""
-    if has_anchors:
-        anchor_rule = ANCHOR_RULE_AFTER_SHEET if has_style_sheet else ANCHOR_RULE
+    # Posición de cada referencia EN PROSA — debe casar exactamente con el
+    # orden de build_page_refs: [base, cell_ref?, lámina?, previa?, anchors].
+    # Sin cell_ref (y sin lámina) el prompt queda byte-idéntico al histórico.
+    if has_cell_ref:
+        sheet_rule = STYLE_SHEET_RULE_THIRD if has_style_sheet else ""
+        anchor_rule = (
+            (ANCHOR_RULE_AFTER_THIRD if has_style_sheet else ANCHOR_RULE_AFTER_SHEET)
+            if has_anchors else ""
+        )
+        ref_rules = CELL_REF_RULE + sheet_rule + anchor_rule
+    else:
+        anchor_rule = ""
+        if has_anchors:
+            anchor_rule = ANCHOR_RULE_AFTER_SHEET if has_style_sheet else ANCHOR_RULE
+        ref_rules = (STYLE_SHEET_RULE if has_style_sheet else "") + anchor_rule
     return (
         RULES
         + count_rule
         + (TILE_RULE if has_tiles else "")
         + (UNIQUE_RULE if has_uniques else "")
-        + (STYLE_SHEET_RULE if has_style_sheet else "")
-        + anchor_rule
+        + ref_rules
         + f"All materials come from the same location ({scene_description}) "
         + "and must share ONE consistent palette. "
         + style
@@ -259,6 +308,65 @@ def crop_cells(gen_img: Image.Image, page: list[dict]) -> dict[str, bytes]:
     return out
 
 
+def build_page_refs(
+    base_uri: str,
+    cell_ref_uri: str,
+    sheet_uri: str,
+    prev_uri: str,
+    anchor_uris: list[str],
+) -> list[str]:
+    """Referencias de UNA página, en el orden del contrato del prompt:
+    [base clay, ref de cara?, lámina?, página previa?, anchors...] recortando
+    SOLO los anchors al techo de 5 de fal (base+cellref+lámina+previa = ≤4,
+    la página previa nunca cae)."""
+    refs = [base_uri]
+    if cell_ref_uri:
+        refs.append(cell_ref_uri)
+    if sheet_uri:
+        refs.append(sheet_uri)
+    if prev_uri:
+        refs.append(prev_uri)
+    refs.extend(anchor_uris[: max(0, 5 - len(refs))])
+    return refs
+
+
+def surface_cell_context(
+    mat: str,
+    kind: str,
+    hints: list | None,
+    ai_model: str,
+    style_key: str,
+    style_sheet_hash: str = "",
+    cell_ref_hash: str = "",
+) -> dict:
+    """Contexto de la clave de caché de UNA celda de la librería (función
+    pura — el endpoint la namespacea con DEV_API_CACHE después). Claves
+    CONDICIONALES (el hasher omite valores vacíos): sin lámina y sin ref el
+    dict es byte-idéntico al histórico y la librería pintada sigue valiendo;
+    `fpsref`/`cellref` invalidan SOLO las celdas afectadas, y usan el hash
+    del CONTENIDO (renombrar la ref sin cambiar la imagen no repaga)."""
+    ctx = {
+        "mat": mat,
+        "kind": kind,
+        "style": style_key,
+        "model": ai_model,
+        "hints": canonical_hints(hints),
+        "pipeline": "surface1",
+        "library": "1",
+    }
+    if style_sheet_hash:
+        ctx["fpsref"] = style_sheet_hash
+    # Versión del contrato de las celdas ÚNICAS (UNIQUE_RULE del pintor:
+    # una celda hero es UNA CARA, nunca el objeto entero). Solo en uniques:
+    # invalida los heroes ya pintados como objeto (2026-08-16) sin repagar
+    # ni una tile. La ref de cara solo aplica a uniques.
+    if kind != "tile":
+        ctx["unique_face_v"] = "2"
+        if cell_ref_hash:
+            ctx["cellref"] = cell_ref_hash
+    return ctx
+
+
 def _png_data_uri(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -300,12 +408,19 @@ class SurfaceAtlasGenerator:
         style_token: str,
         anchors: list[bytes],
         style_sheet_uri: str = "",
+        cell_ref_uris: dict[str, str] | None = None,
     ) -> dict:
         """→ {"cells": {key: png_bytes}, "pages": [png_bytes], "pages_painted", "cost_usd"}
 
-        `style_sheet_uri`: lámina fps_surfaces del style pack (data URI). Va
-        SIEMPRE como 2ª referencia de cada página — su posición es parte del
-        contrato del prompt (STYLE_SHEET_RULE)."""
+        Referencias por página, en este ORDEN (contrato del prompt,
+        build_page_refs; techo 5 de fal — solo los anchors se recortan):
+        base clay · ref de cara (2ª, si el grupo la tiene) · lámina
+        fps_surfaces (2ª sin ref de cara — posición histórica; 3ª con ella) ·
+        página previa · anchors.
+
+        `cell_ref_uris`: data URI por id de ref temática fps/ (surface_ref);
+        pack_missing agrupa las celdas por ref, así cada página tiene una
+        sola (la de su primera celda)."""
         t0 = time.time()
         pages = pack_missing([dict(c) for c in missing_cells])
         painted: dict[str, bytes] = {}
@@ -316,16 +431,18 @@ class SurfaceAtlasGenerator:
         for page in pages:
             base = draw_base(page)
             ai_model = self._model if any(c["kind"] == "tile" for c in page) else self._hero_model
-            refs = [_png_data_uri(base)]
-            if style_sheet_uri:
-                refs.append(style_sheet_uri)
-            if prev_page_uri:
-                refs.append(prev_page_uri)
-            refs.extend(anchor_uris[: max(0, 5 - len(refs))])  # fal admite ≤5 refs
-            has_anchors = len(refs) > (2 if style_sheet_uri else 1)
+            page_ref = str(page[0].get("ref") or "")
+            cell_ref_uri = (cell_ref_uris or {}).get(page_ref, "")
+            refs = build_page_refs(
+                _png_data_uri(base), cell_ref_uri, style_sheet_uri,
+                prev_page_uri or "", anchor_uris,
+            )
+            leading = 1 + (1 if cell_ref_uri else 0) + (1 if style_sheet_uri else 0)
+            has_anchors = len(refs) > leading
             prompt = build_prompt(
                 page, scene_description, style_token, has_anchors,
                 has_style_sheet=bool(style_sheet_uri),
+                has_cell_ref=bool(cell_ref_uri),
             )
             png = self._run_page(prompt, refs, ai_model)
             gen = Image.open(io.BytesIO(png)).convert("RGB")

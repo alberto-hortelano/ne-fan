@@ -39,7 +39,7 @@ export interface SurfacePrim extends GreyboxPrimitive {
   /** Celdas hero por cara/rol con clave y descripción PROPIAS (imágenes
    *  distintas por cara — el hash del asset es la descripción). Tiene
    *  prioridad sobre `hero`/`desc` (la vía legacy de una celda por grupo). */
-  heroCells?: Partial<Record<HeroFace, { key: string; desc: string }>>;
+  heroCells?: Partial<Record<HeroFace, { key: string; desc: string; ref?: string }>>;
   /** Sub-rects [x0,y0,x1,y1,"#hex"] en coords 0..1 de la celda: anclan la
    *  estructura interna (arco de chimenea, baldas…) y evitan que el modelo
    *  fragmente celdas anchas. */
@@ -173,6 +173,10 @@ export interface SurfaceCell {
   kind: "tile" | "unique";
   baseColor: string;
   en: string;
+  /** Ref temática fps/ del pack elegida por el motor para esta celda hero
+   *  (surface_ref). OMITIDA cuando ausente — así el JSON canónico (y los
+   *  layoutKeys) del contenido sin refs queda byte-idéntico al histórico. */
+  ref?: string;
   heroOf?: string;
   hints?: [number, number, number, number, string][];
   worldW: number;
@@ -266,6 +270,7 @@ export function surfaceCells(
       info: MatInfo,
       heroDesc: string | undefined,
       [worldW, worldH]: [number, number],
+      heroRef?: string,
     ): void => {
       if (!cells.has(key)) {
         cells.set(key, {
@@ -274,6 +279,7 @@ export function surfaceCells(
           kind: heroDesc !== undefined || !info.tile ? "unique" : "tile",
           baseColor: prim.color,
           en: heroDesc || info.en,
+          ...(heroDesc !== undefined && heroRef ? { ref: heroRef } : {}),
           heroOf: heroDesc !== undefined ? volKey : undefined,
           hints: heroDesc !== undefined ? prim.hints : undefined,
           worldW,
@@ -295,7 +301,7 @@ export function surfaceCells(
       // Hero de grupo: side/caps/top con celda única (bottom nunca es hero).
       const hc = group === "bottom" ? undefined : heroCells?.[group];
       const key = hc ? hc.key : mat;
-      addCell(key, mat, info, hc ? hc.desc : undefined, worldFaceSize(prim, group));
+      addCell(key, mat, info, hc ? hc.desc : undefined, worldFaceSize(prim, group), hc?.ref);
       entry.groups[group] = key;
     }
     // Caras laterales individuales de un box (n/s/e/w): celda propia por cara
@@ -307,7 +313,7 @@ export function surfaceCells(
         for (const face of ["n", "s", "e", "w"] as const) {
           const hc = heroCells[face];
           if (!hc) continue;
-          addCell(hc.key, sideMat, info, hc.desc, worldBoxFaceSize(prim, face));
+          addCell(hc.key, sideMat, info, hc.desc, worldBoxFaceSize(prim, face), hc.ref);
           (entry.faces ??= {})[String(BOX_FACE_SLOT[face])] = hc.key;
         }
       }

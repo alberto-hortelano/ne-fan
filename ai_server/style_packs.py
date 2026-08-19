@@ -150,6 +150,41 @@ class StylePackResolver:
         )
         return None
 
+    def resolve_fps_face(self, style_id: str, ref_id: str) -> StyleRef | None:
+        """Ref temática fps/ (cara completa: fachada, portón…) por id EXACTO,
+        SIN fallback: una celda con ref desconocida se pinta SIN ref, con
+        warning — nunca con otra imagen (el fail-loud contra el catálogo vive
+        en el pre-flight de narrative-mcp). La lámina fps_surfaces queda
+        fuera (_refs_for_view la excluye por role)."""
+        if not ref_id:
+            return None
+        manifest = self._manifest(style_id)
+        if not manifest:
+            return None
+        for r in self._refs_for_view(manifest, "fps"):
+            if str(r.get("id")) != ref_id:
+                continue
+            loaded = self._load_image(style_id, str(r.get("file", "")))
+            if loaded:
+                data_uri, content_hash = loaded
+                return StyleRef(
+                    style_id=style_id,
+                    ref_id=ref_id,
+                    data_uri=data_uri,
+                    content_hash=content_hash,
+                    style_token=str(manifest.get("style_token", "")),
+                )
+            print(
+                f"StylePacks WARNING: ref fps '{ref_id}' de '{style_id}' declarada sin imagen",
+                flush=True,
+            )
+            return None
+        print(
+            f"StylePacks WARNING: ref fps '{ref_id}' no existe en '{style_id}' — celda sin ref",
+            flush=True,
+        )
+        return None
+
     def resolve_fps_sheet(self, style_id: str) -> StyleRef | None:
         """La lámina de materiales del pack (ref con role fps_surfaces). No
         admite sustituto: una escena contaminaría los swatches planos. Existe

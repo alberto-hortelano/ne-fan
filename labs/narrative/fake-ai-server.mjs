@@ -737,7 +737,7 @@ const server = http.createServer((req, res) => {
         let missing = 0;
         for (const cell of cells) {
           const hash = createHash("sha256")
-            .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}`)
+            .update(`${cell.desc}\n${body.style_id ?? ""}\n${cell.mat}\n${cell.ref ?? ""}`)
             .digest("hex")
             .slice(0, 16);
           const cached = surfaceImages.has(hash);

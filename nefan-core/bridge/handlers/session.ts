@@ -64,18 +64,36 @@ import type {
  *  las de personaje, cada una con su descripción en español. Se recalcula
  *  del manifest en start_session Y resume_session — editar un pack a mano se
  *  refleja al reanudar (el save solo lo cachea). */
-function styleRefCatalog(
+export function styleRefCatalog(
   style: StyleManifest,
   view: WorldView,
-): { scene: Array<{ id: string; description: string }>; characters: Array<{ id: string; description: string }> } {
+): {
+  scene: Array<{ id: string; description: string }>;
+  characters: Array<{ id: string; description: string }>;
+  fps_faces?: Array<{ id: string; description: string }>;
+} {
   const entry = (r: { id: string; description: string }) => ({
     id: r.id,
     description: r.description,
   });
-  return {
-    scene: styleRefsForView(style, view).map(entry),
+  // Las escenas de una sesión fps son TILES de la rama compartida con
+  // overworld, y su `style_ref` de escena lo consume el repintado OBLICUO —
+  // el catálogo scene de fps es el de overworld (la carpeta fps/ del pack
+  // guarda refs de CARA, no de escena).
+  const sceneView: WorldView = view === "fps" ? "overworld" : view;
+  const out: ReturnType<typeof styleRefCatalog> = {
+    scene: styleRefsForView(style, sceneView).map(entry),
     characters: styleCharacterRefs(style).map(entry),
   };
+  // Refs temáticas de CARA (fps/, sin la lámina): el motor las elige por
+  // cara de volumen (`surface_ref`) para el atlas de superficies. En ambos
+  // mundos de rama tile (el snapshot es compartido); omitido cuando el pack
+  // no declara ninguna (el pre-flight trata ausencia como "sin catálogo").
+  if (view === "overworld" || view === "fps") {
+    const faces = styleRefsForView(style, "fps").map(entry);
+    if (faces.length > 0) out.fps_faces = faces;
+  }
+  return out;
 }
 
 export function handleListGames(

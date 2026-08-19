@@ -63,6 +63,23 @@ class BuilderTest(unittest.TestCase):
         # Sin vocabulario teatral (el modelo pinta cortinas si se insinúa).
         self.assertIn("no curtains", p)
 
+    def test_ref_tematica_fps_es_cara_no_rejilla(self):
+        p = build_prompt(
+            _ref("fachada", "fps/fachada.jpg", "fachada de casa",
+                 gen_scene="a house facade with door and windows"),
+            "token", has_style_refs=False,
+        )
+        self.assertIn("ONE architectural face", p)
+        self.assertIn("framing guide", p)
+        self.assertNotIn("TEXTURE ATLAS SHEET", p)
+
+    def test_seed_de_ref_tematica_fps_es_obligatorio(self):
+        with self.assertRaises(FileNotFoundError):
+            seed_for(_ref("fachada", "fps/fachada.jpg", "fachada"))
+        # La lámina (role) conserva su default de carpeta.
+        lamina = _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces")
+        self.assertEqual(seed_for(lamina), PLANTILLA_DIR / "fps" / "default.png")
+
     def test_prompt_de_lamina_es_atlas(self):
         p = build_prompt(
             _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces"),

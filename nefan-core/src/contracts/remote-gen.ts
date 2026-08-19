@@ -63,6 +63,9 @@ export interface SurfaceCellSpec {
   mat: string;
   kind: "tile" | "unique";
   desc: string;
+  /** Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+   *  unique; guía como imagen la página que pinta esta celda. */
+  ref?: string;
   base_color: string;
   world_w: number;
   world_h: number;

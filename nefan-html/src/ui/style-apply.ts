@@ -184,7 +184,7 @@ export class StyleApplyController {
         for (const page of layout.pages) {
           for (const c of page.cells) {
             // Identidad del asset = lo que entra en la clave del server.
-            const identity = JSON.stringify([c.en, c.mat, c.kind, c.hints ?? []]);
+            const identity = JSON.stringify([c.en, c.mat, c.kind, c.hints ?? [], c.ref ?? ""]);
             if (seen.has(identity)) continue;
             seen.add(identity);
             cells.push({
@@ -192,6 +192,7 @@ export class StyleApplyController {
               mat: c.mat,
               kind: c.kind,
               desc: c.en,
+              ...(c.ref !== undefined ? { ref: c.ref } : {}),
               base_color: c.baseColor,
               world_w: c.worldW,
               world_h: c.worldH,

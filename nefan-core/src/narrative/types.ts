@@ -73,6 +73,11 @@ export interface NarrativeWorldState {
   style_refs: {
     scene: Array<{ id: string; description: string }>;
     characters: Array<{ id: string; description: string }>;
+    /** Refs temáticas de CARA (carpeta fps/ del pack, sin la lámina): el
+     *  motor las elige por cara de volumen (`surface_ref`) para guiar las
+     *  celdas hero del atlas de superficies. Solo mundos de rama tile;
+     *  ausente cuando el pack no declara ninguna. */
+    fps_faces?: Array<{ id: string; description: string }>;
   };
 }
 

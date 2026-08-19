@@ -97,6 +97,29 @@ class StylePacksTest(unittest.TestCase):
         # pack sin refs temáticas fps devuelve None para esa vista.
         self.assertIsNone(self.resolver.resolve("mi_estilo", "", "fps"))
 
+    def test_resolve_fps_face(self):
+        # Ref temática fps/ (cara completa) por id EXACTO, sin fallback.
+        d = self.styles_dir / "mi_estilo"
+        import json as _json
+        manifest = _json.loads((d / "style.json").read_text())
+        manifest["refs"].append({
+            "id": "fachada", "file": "fps/fachada.jpg",
+            "description": "fachada de casa con puerta",
+        })
+        (d / "style.json").write_text(_json.dumps(manifest), encoding="utf-8")
+        _write_jpg(d / "fps/fachada.jpg", (140, 110, 90))
+        r = StylePackResolver(styles_dir=self.styles_dir)
+        ref = r.resolve_fps_face("mi_estilo", "fachada")
+        self.assertIsNotNone(ref)
+        self.assertEqual(ref.ref_id, "fachada")
+        # Id desconocido ⇒ None (SIN fallback a otra imagen temática).
+        self.assertIsNone(r.resolve_fps_face("mi_estilo", "no_existe"))
+        # La lámina queda fuera del namespace de refs temáticas.
+        self.assertIsNone(r.resolve_fps_face("mi_estilo", "fps_surfaces"))
+        # Vacío / pack inexistente ⇒ None.
+        self.assertIsNone(r.resolve_fps_face("mi_estilo", ""))
+        self.assertIsNone(r.resolve_fps_face("no_pack", "fachada"))
+
     def test_resolve_fps_sheet(self):
         sheet = self.resolver.resolve_fps_sheet("mi_estilo")
         self.assertIsNotNone(sheet)

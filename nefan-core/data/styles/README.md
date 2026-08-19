@@ -118,6 +118,30 @@ como 2ª referencia de cada página y manda en paleta/materiales/factura.
   superficies SOLO cuando existe — añadirla o regenerarla repinta la librería
   de ese estilo; los estilos sin lámina conservan la suya.
 
+## Refs temáticas `fps/` (caras completas)
+
+Además de la lámina, la carpeta `fps/` admite refs **temáticas de CARA**:
+ilustraciones de una cara completa a 90° (una fachada con su puerta y
+ventanas, un portón claveteado, un cartel) que enseñan cómo compone el
+estilo ese tipo de cara. Entran en el catálogo `world.style_refs.fps_faces`
+(mundos de rama tile) y el **motor narrativo las elige por cara de volumen**
+(`surface_ref` junto a `surface_desc`); la imagen viaja como 2ª referencia
+de la página del atlas que pinta esas celdas hero.
+
+- Declararlas a mano: `{ "id": "fachada_casa", "file": "fps/fachada_casa.jpg",
+  "description": "fachada de casa con puerta y dos ventanas", "gen_scene?":
+  …, "seed": "…" }` — **`seed` es obligatorio si se van a generar** con el
+  builder (el `default.png` de `fps/` es la rejilla de la lámina, un
+  encuadre nefasto para una cara; el builder falla pidiéndolo).
+- No habilitan la vista fps (eso sigue derivando de `overworld/`) ni tienen
+  fallback: una ref desconocida deja la celda SIN ref (warning), nunca otra
+  imagen.
+- Coste: cada ref distinta agrupa sus celdas en páginas PROPIAS del atlas
+  (~$0.17/página gpt-image-2 extra). Su hash entra en la clave de las celdas
+  que la usan (condicional): añadirla o regenerarla repinta solo esas.
+- Los packs shipped no declaran ninguna de fábrica (engordarían el coste de
+  "aplicar estilo"); añádelas al pack según lo pida el mundo.
+
 ## El `style_token`
 
 Frase corta en inglés que acompaña a las imágenes en cada prompt. Debe

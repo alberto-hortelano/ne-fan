@@ -243,3 +243,89 @@ describe("buildFpsTileSpec", () => {
     );
   });
 });
+
+describe("surface_ref: refs de cara del atlas fps", () => {
+  const baseVol = {
+    id: "casa",
+    label: "casa",
+    type: "building",
+    rect: [60, 60, 12, 10],
+    doors: [{ edge: "s", at: 4 }],
+  };
+
+  it("string → ref en TODAS las celdas de surface_desc; omitida sin ref (layout estable)", () => {
+    const conRef = parseVolumes([
+      { ...baseVol, surface_desc: { side: "hull plating", roof: "solar roof" }, surface_ref: "fachada" },
+    ]);
+    assert.ok(conRef.ok, !conRef.ok ? conRef.error : "");
+    const { primsM } = buildFpsTileSpec({ volumes: conRef.volumes, biome: "dirt" }, "k");
+    const cells = buildLayout(primsM).pages.flatMap((p) => p.cells);
+    const heroes = cells.filter((c) => c.heroOf === "vol_casa");
+    assert.ok(heroes.length >= 2, "celdas side y roof");
+    for (const h of heroes) assert.equal(h.ref, "fachada", h.key);
+    // Con ref, el JSON canónico la incluye; sin ref, NI LA MENCIONA (los
+    // layoutKeys del contenido existente quedan byte-idénticos).
+    const sinRef = parseVolumes([{ ...baseVol, surface_desc: { side: "hull plating", roof: "solar roof" } }]);
+    assert.ok(sinRef.ok);
+    const jsonCon = canonicalSurfaceLayoutJson(buildLayout(primsM));
+    const jsonSin = canonicalSurfaceLayoutJson(
+      buildLayout(buildFpsTileSpec({ volumes: sinRef.volumes, biome: "dirt" }, "k").primsM),
+    );
+    assert.ok(jsonCon.includes('"ref"'));
+    assert.ok(!jsonSin.includes('"ref"'));
+    assert.notEqual(jsonCon, jsonSin);
+  });
+
+  it("objeto → ref por cara (subconjunto de las descritas); custom parts con ref", () => {
+    const parsed = parseVolumes([
+      {
+        ...baseVol,
+        surface_desc: { side: "hull plating", roof: "solar roof", door: "airlock" },
+        surface_ref: { roof: "techo_solar" },
+      },
+      {
+        id: "carreta",
+        label: "carreta",
+        type: "custom",
+        at: [20, 20],
+        parts: [
+          { shape: "box", size: [4, 2, 6], desc: "wooden cart body", ref: "carro" },
+          { shape: "cylinder", rBottom: 1, h: 0.4 },
+        ],
+      },
+    ]);
+    assert.ok(parsed.ok, !parsed.ok ? parsed.error : "");
+    const { primsM } = buildFpsTileSpec({ volumes: parsed.volumes, biome: "dirt" }, "k");
+    const cells = buildLayout(primsM).pages.flatMap((p) => p.cells);
+    const roof = cells.find((c) => c.key === "hero_vol_casa_roof");
+    const side = cells.find((c) => c.key === "hero_vol_casa_side");
+    const door = cells.find((c) => c.key === "hero_vol_casa_door");
+    assert.equal(roof?.ref, "techo_solar");
+    assert.equal(side?.ref, undefined, "cara sin clave de ref queda sin ref");
+    assert.equal(door?.ref, undefined);
+    const pieza = cells.find((c) => c.key === "hero_vol_carreta_p0");
+    assert.equal(pieza?.ref, "carro");
+  });
+
+  it("parseVolumes: surface_ref sin surface_desc y clave sin cara descrita se rechazan", () => {
+    const sinDesc = parseVolumes([{ ...baseVol, surface_ref: "fachada" }]);
+    assert.ok(!sinDesc.ok && /surface_ref/.test(sinDesc.error));
+    const caraNoDescrita = parseVolumes([
+      { ...baseVol, surface_desc: { side: "hull" }, surface_ref: { roof: "techo" } },
+    ]);
+    assert.ok(!caraNoDescrita.ok && /roof/.test(caraNoDescrita.error));
+    // Con surface_desc string, el conjunto descrito es {side}.
+    const stringSide = parseVolumes([
+      { ...baseVol, surface_desc: "hull plating", surface_ref: { side: "fachada" } },
+    ]);
+    assert.ok(stringSide.ok, !stringSide.ok ? stringSide.error : "");
+    // Custom part: ref sin desc rechazada por el schema.
+    const partSinDesc = parseVolumes([
+      {
+        id: "x", label: "x", type: "custom", at: [10, 10],
+        parts: [{ shape: "sphere", r: 1, ref: "carro" }],
+      },
+    ]);
+    assert.ok(!partSinDesc.ok && /ref/.test(partSinDesc.error));
+  });
+});

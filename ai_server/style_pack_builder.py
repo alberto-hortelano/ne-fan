@@ -63,6 +63,15 @@ def seed_for(ref: dict) -> Path:
     folder = ref_folder(str(ref.get("file", "")))
     if folder == "characters":
         return CHAR_SEED
+    # Ref temática de CARA (fps/ sin role): el default.png de fps/ es la
+    # rejilla de swatches de la lámina — un seed nefasto para una fachada.
+    # Fail-loud pidiendo seed declarado (run_one exige ≥1 referencia).
+    if folder == "fps" and str(ref.get("role") or "") != ROLE_FPS_SURFACES:
+        raise FileNotFoundError(
+            f"ref temática fps '{ref.get('id')}' sin `seed` declarado — las refs de "
+            "cara necesitan su propio encuadre (declara `seed` relativo a _plantilla/, "
+            "o captura _plantilla/fps/face_default.png como default futuro)"
+        )
     default = PLANTILLA_DIR / folder / "default.png"
     if default.exists():
         return default
@@ -111,6 +120,17 @@ FPS_FRAME = (
     "stays plain grey. Flat even lighting, albedo only: no cast shadows, no "
     "perspective. No text, no numbers, no borders, no watermark"
 )
+# Ref temática de CARA (carpeta fps/ sin role): ilustración de UNA cara
+# completa a 90° — guía las celdas hero del atlas (surface_ref del motor).
+# Nunca el FPS_FRAME de rejilla: eso es solo la lámina (role fps_surfaces).
+FACE_FRAME = (
+    "a single flat game texture of ONE architectural face seen straight-on "
+    "at exactly 90 degrees: the surface parallel to the image plane, filling "
+    "the frame edge to edge, full bleed — no sky, no ground line, no "
+    "horizon, no surroundings, no perspective, flat even lighting, albedo "
+    "only, no text, no borders, no watermark, no characters"
+)
+
 # Plató: nivel de suelo, cámara al sur mirando al norte (convención del
 # proscenio). Sin vocabulario teatral — el modelo pinta cortinas/marcos si se
 # le insinúa un escenario (lección de la versión SVG del compositor).
@@ -141,11 +161,16 @@ def build_prompt(ref: dict, style_token: str, has_style_refs: bool) -> str:
     folder = ref_folder(str(ref.get("file", "")))
     is_char = folder == "characters"
     is_stage = folder == "proscenium"
-    is_fps = folder == "fps" or str(ref.get("role") or "") == ROLE_FPS_SURFACES
+    # La LÁMINA (role fps_surfaces) lleva el frame de rejilla; una ref
+    # temática en fps/ (cara completa) lleva el FACE_FRAME — con el de
+    # rejilla se generaría como lámina de swatches.
+    is_lamina = str(ref.get("role") or "") == ROLE_FPS_SURFACES
+    is_face = folder == "fps" and not is_lamina
     frame = (
         CHAR_FRAME if is_char
         else STAGE_FRAME if is_stage
-        else FPS_FRAME if is_fps
+        else FPS_FRAME if is_lamina
+        else FACE_FRAME if is_face
         else ENV_FRAME
     )
     if has_style_refs:
@@ -160,11 +185,13 @@ def build_prompt(ref: dict, style_token: str, has_style_refs: bool) -> str:
         action = "Using the FIRST reference image only as body-proportion guide, draw"
     elif is_stage:
         action = STAGE_ACTION
-    elif is_fps:
+    elif is_lamina:
         action = (
             "Repaint the first reference image keeping its grid layout EXACTLY "
             "(same cells, same gutter): fill each grey cell with"
         )
+    elif is_face:
+        action = "Using the FIRST reference image only as framing guide, paint"
     else:
         action = "Fully REPAINT the first reference image, replacing ALL its content, as"
     return f"{frame}. {action}: {scene}. {style}."

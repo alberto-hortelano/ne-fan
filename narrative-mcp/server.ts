@@ -145,6 +145,7 @@ async function main() {
   // catálogo (fixtures, saves viejos) ⇒ no se valida.
   let currentStyleRefIds: string[] | null = null;
   let currentCharacterRefIds: string[] | null = null;
+  let currentFpsFaceRefIds: string[] | null = null;
 
   // ── Latido de progreso ──────────────────────────────────────────────────
   // Cada paso observable del motor (recoger la petición, llamar una tool de
@@ -332,6 +333,7 @@ into context:
                 style_refs?: {
                   scene?: Array<{ id?: unknown }>;
                   characters?: Array<{ id?: unknown }>;
+                  fps_faces?: Array<{ id?: unknown }>;
                 };
               };
             }
@@ -342,6 +344,7 @@ into context:
             : null;
         currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
         currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
+        currentFpsFaceRefIds = catalogIds(ws?.world?.style_refs?.fps_faces);
         const isTileRequest = Boolean(ws?.generate_tile);
         const isStageRequest = Boolean(ws?.stage_request);
         const sceneVariant = isTileRequest
@@ -449,6 +452,58 @@ into context:
                   isError: true,
                 };
               }
+            }
+          }
+          // surface_ref de volúmenes (refs de CARA del atlas fps): cada id
+          // debe existir en world.style_refs.fps_faces; declarar refs sin
+          // catálogo también rebota — nunca degradar en silencio la
+          // elección del motor (el server además degrada con warning por
+          // robustez ante clientes viejos).
+          if (Array.isArray(scene.volumes)) {
+            const declared: Array<{ vol: string; ref: string }> = [];
+            for (const rawVol of scene.volumes as Array<Record<string, unknown>>) {
+              if (!rawVol || typeof rawVol !== 'object') continue;
+              const volId = String(rawVol.id ?? '?');
+              const sr = rawVol.surface_ref;
+              if (typeof sr === 'string' && sr) declared.push({ vol: volId, ref: sr });
+              else if (sr && typeof sr === 'object') {
+                for (const v of Object.values(sr as Record<string, unknown>)) {
+                  if (typeof v === 'string' && v) declared.push({ vol: volId, ref: v });
+                }
+              }
+              const parts = rawVol.parts;
+              if (Array.isArray(parts)) {
+                for (const part of parts as Array<Record<string, unknown>>) {
+                  if (part && typeof part.ref === 'string' && part.ref) {
+                    declared.push({ vol: volId, ref: part.ref });
+                  }
+                }
+              }
+            }
+            if (declared.length > 0 && currentFpsFaceRefIds === null) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Invalid surface_ref on volume "${declared[0].vol}" — this style pack declares ` +
+                    `no fps face references (world.style_refs.fps_faces is absent): remove every ` +
+                    `surface_ref and call narrative_respond again (do NOT drop the rest of the scene).`,
+                }],
+                isError: true,
+              };
+            }
+            const bad = currentFpsFaceRefIds === null
+              ? undefined
+              : declared.find((d) => !currentFpsFaceRefIds!.includes(d.ref));
+            if (bad) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Invalid surface_ref "${bad.ref}" on volume "${bad.vol}" — it must be one of ` +
+                    `the ids in world.style_refs.fps_faces (${currentFpsFaceRefIds!.join(', ')}). ` +
+                    `Fix it and call narrative_respond again (do NOT drop the rest of the scene).`,
+                }],
+                isError: true,
+              };
             }
           }
           if (scene.volumes !== undefined) {

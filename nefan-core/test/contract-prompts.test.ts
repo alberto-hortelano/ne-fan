@@ -24,7 +24,7 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
     "style_ref", "world.style_refs", "HUMANOID", "story_update", "ui_doc_get", "stage_request",
   ],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
-  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain"],
+  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_ref", "interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
