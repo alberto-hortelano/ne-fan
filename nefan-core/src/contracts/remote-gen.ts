@@ -124,8 +124,16 @@ export interface SkinSpriteSheetResponse {
   /** meta.json del sheet SKINNEADO (dims, frames, anclas). */
   meta: Record<string, unknown>;
   /** URLs por dirección → frames, servidas por asset-store
-   *  (/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png). */
-  frame_urls: Record<string, string[]>;
+   *  (/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png). Índice = dirección:
+   *  el wire manda un array de arrays, no un objeto (estaba mal tipado). */
+  frame_urls: string[][];
+  /** Clave del hero-shot de identidad de este personaje. */
+  hero_key?: string;
+  /** URL del hero-shot si está en disco (relativa al asset-store): el
+   *  pipeline ya lo pagó y el cliente lo reusa como retrato del diálogo.
+   *  `null` = no hay (sheet de un cache anterior al hero) ⇒ el cliente cae
+   *  al busto del sprite. Consultarlo NUNCA dispara una generación. */
+  hero_url?: string | null;
   generation_time_ms: number;
 }
 

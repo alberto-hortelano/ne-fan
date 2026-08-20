@@ -7,6 +7,7 @@
  *  (SceneImageController, Auto-img, frontier) son oblicua-only y se apagan
  *  en proscenio desde applySessionView. */
 
+import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import type { Entity } from "./canvas-renderer.js";
 
@@ -25,6 +26,12 @@ export interface AttackAreaParams {
 }
 
 export interface Renderer2D {
+  /** Tema de la partida para lo que el renderer pinta DENTRO del lienzo
+   *  (nombres de NPC, etiquetas de salida): ahí no llega el CSS, y el
+   *  nombre de un personaje debe leerse igual sobre su cabeza que en el
+   *  panel de diálogo. Obligatorio para que cada vista se pronuncie: la fps
+   *  no pinta texto de mundo y lo declara con un no-op. */
+  setWorldTheme(theme: UiTheme): void;
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void;
   drawAttackArea(
     player: { pos: Vec3; forward: Vec3 },

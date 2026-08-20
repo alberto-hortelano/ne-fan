@@ -1,4 +1,5 @@
 /** Protocol messages between frontend (Godot/HTML) and nefan-core logic. */
+import type { UiTheme } from "../games/ui-theme.js";
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
 import type { Edge } from "../world-map/types.js";
@@ -108,6 +109,10 @@ export interface DialogueChoiceMessage {
   choiceIndex: number;
   freeText?: string;
   speaker: string;
+  /** Id de la entidad que dijo la línea a la que se responde (lo devuelve el
+   *  cliente tal cual lo recibió en el efecto): mantiene la conversación
+   *  anclada al mismo NPC cuando hay homónimos. */
+  speakerId?: string;
   chosenText: string;
 }
 
@@ -319,6 +324,13 @@ export interface SessionStartedMessage {
   isResume?: boolean;
   state?: SessionData;
   scene?: Record<string, unknown>;
+  /** Tema de la UI de juego del estilo de la sesión, RECALCULADO del
+   *  style.json vigente en start Y en resume (misma política que
+   *  world.style_refs: retocar la paleta de un pack se ve al reanudar).
+   *  NO se persiste en el save ni entra en `world`: `serializeForLlm` manda
+   *  `world` entero al modelo en cada turno, y una paleta ahí sería coste y
+   *  ruido puros. Ausente = tema base. */
+  uiTheme?: UiTheme;
   error?: string;
 }
 
@@ -394,6 +406,9 @@ export interface GamesListedMessage {
     /** Etiquetas temáticas del estilo: el selector filtra además por
      *  compatibilidad con las del juego (styleCompatibleWithGame). */
     tags: string[];
+    /** Tema de la UI de juego del estilo, ya resuelto sobre el base: el
+     *  selector tiñe con él la tarjeta del estilo. */
+    ui_theme: UiTheme;
   }>;
 }
 

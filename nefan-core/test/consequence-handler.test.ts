@@ -36,6 +36,36 @@ describe("dispatchConsequences", () => {
     }
   });
 
+  it("el efecto de diálogo lleva la identidad del hablante (retrato del panel)", () => {
+    const s = makeState();
+    s.recordEntitySpawned(
+      "npc_marta", "npc", s.world.active_scene_id, { x: 0, y: 0, z: 0 },
+      { name: "Marta", description: "una herrera fornida", style_ref: "warrior" },
+      "scene_init",
+    );
+    const cs: Consequence[] = [{ type: "dialogue", speaker: "Marta", text: "Hola" }];
+    const r = dispatchConsequences(s, "evt_1", cs);
+    assert.equal(r.effects[0].kind, "show_dialogue");
+    if (r.effects[0].kind === "show_dialogue") {
+      assert.equal(r.effects[0].speakerId, "npc_marta");
+      // El MISMO prompt con el que se genera su sprite: retrato y personaje
+      // en el mundo tienen que ser el mismo individuo.
+      assert.equal(r.effects[0].speakerSkinPrompt, "una herrera fornida");
+      assert.equal(r.effects[0].speakerStyleRef, "warrior");
+    }
+  });
+
+  it("un hablante sin NPC detrás (narrador) no inventa identidad", () => {
+    const s = makeState();
+    const cs: Consequence[] = [{ type: "dialogue", speaker: "Voz en la niebla", text: "…" }];
+    const r = dispatchConsequences(s, "evt_1", cs);
+    assert.equal(r.effects[0].kind, "show_dialogue");
+    if (r.effects[0].kind === "show_dialogue") {
+      assert.equal(r.effects[0].speakerId, undefined);
+      assert.equal(r.effects[0].speakerSkinPrompt, undefined);
+    }
+  });
+
   it("story_update appends to story_so_far", () => {
     const s = makeState();
     const cs: Consequence[] = [{ type: "story_update", delta: "Algo cambia" }];

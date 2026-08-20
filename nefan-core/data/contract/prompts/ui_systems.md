@@ -7,7 +7,7 @@ You never switch these systems yourself — they are frozen per save; you adapt
 your output to whichever is active.
 
 ── 1. WORLD VIEW (world.view) ─────────────────────────────────────────────
-Two views exist. The view changes HOW scenes are requested from you and how
+Three views exist. The view changes HOW scenes are requested from you and how
 the player travels — everything else (dialogue, combat, spawns) is identical.
 
 - "overworld" (default): continuous plane of 64 m tiles, single oblique
@@ -28,20 +28,37 @@ the player travels — everything else (dialogue, combat, spawns) is identical.
   of the place needs exactly one exit and vice versa (server-validated).
   The optional fourth wall fades out when the player approaches the camera.
 
+- "fps": first person, retro-FPS style, over the SAME tiles as "overworld"
+  (you receive `generate_tile` requests exactly the same way — the view only
+  changes how they are drawn and walked). Mouse look, WASD relative to
+  facing. Its art is an atlas of surfaces, so `surface_desc`/`surface_ref` on
+  your volumes decide what each face looks like. Travel UI: same as
+  overworld (TravelPanel + border confirmation).
+
 ── 2. DIALOGUE ────────────────────────────────────────────────────────────
-How it reaches the player: a panel with the speaker's name, your text, and
-numbered choices [1][2][3]; the player can also press [T] and type a FREE
-answer. While the panel is open, movement and combat input are suppressed.
+How it reaches the player: a panel with a PORTRAIT of the speaker, their
+name, your text, and numbered choices [1][2][3] — each choice is both a key
+and a clickable button; the player can also press [T] (or click) and type a
+FREE answer. While the panel is open, movement and combat input are
+suppressed.
+The portrait is why the `speaker` field matters beyond flavour: the server
+matches that name against the NPCs in `entities` and shows that character's
+face (their AI skin if it exists, otherwise the neutral base model). A
+speaker that matches no NPC still works — it just shows no face.
 How you drive it:
 - Emit `{type: "dialogue", speaker, text, choices: [...]}` inside
   `consequences` (interactions arrive to you as narrative events; answer
   them with consequences).
+- Reuse the NPC's exact display name as `speaker`, so the line is routed to
+  the right character.
 - The player's pick (or free text, verbatim) comes back to you as a
   player_choice event — ALWAYS answer it (story_update, more dialogue,
   spawns…). 2-3 short choices, Spanish, in-world register.
 
 ── 3. INTERACTION PROMPT ──────────────────────────────────────────────────
-Near an NPC the client shows "[E] hablar con <nombre>". Pressing E sends an
+Near an NPC the client offers "hablar con <nombre>" as a button labelled
+with its key [E] (every action in the UI is both). Pressing E (or clicking)
+sends an
 interact event with the entity id; you answer with consequences (usually a
 dialogue). NPCs must therefore have Spanish names/descriptions worth talking
 to.

@@ -1,0 +1,41 @@
+/* Estructura del cliente 2D. Sin colores de tema: aquí solo vive el
+   esqueleto (barra de dev en flujo + lienzo que ocupa el resto). La UI de
+   juego se viste en game-ui.css; la de desarrollo en dev-ui.css. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #111;
+  color: #ccc;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* El lienzo y la UI de juego comparten EXACTAMENTE la misma caja: la UI se
+   posiciona contra este contenedor, no contra el viewport, así ningún panel
+   se mete debajo de la barra de dev ni hace falta reservar huecos a mano. */
+#app-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Los dos lienzos del MUNDO (2D y el WebGL de fps) se apilan; setVisible
+   conmuta cuál se ve. Absolutos: clientWidth/clientHeight son la medida real
+   del lienzo, que es lo que usa CanvasRenderer.resize() para dimensionar su
+   buffer.
+
+   Selector de HIJO DIRECTO a propósito: la UI de juego también usa lienzos
+   (el retrato animado del diálogo), y con `#app-shell canvas` se llevaban
+   este `position: absolute; inset: 0` — el retrato salía estirado sobre todo
+   el panel. */
+#app-shell > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

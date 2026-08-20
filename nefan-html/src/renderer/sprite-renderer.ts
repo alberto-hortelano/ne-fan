@@ -36,6 +36,10 @@ export function spritePitchCos(angle: string): number {
 
 /** A frame that hasn't decoded yet. Distinct from `null`, which would mean
  *  "no such frame exists" — load failures throw rather than return null. */
+/** Los skins (y por tanto los heroes) se generan SIEMPRE sobre y_bot: es la
+ *  base img2img canónica del pipeline. */
+const BASE_HERO_MODEL = "y_bot";
+
 export const SPRITE_PENDING = Symbol("sprite-pending");
 export type SpriteImageResult = HTMLImageElement | typeof SPRITE_PENDING;
 export interface SpriteSheetMeta {
@@ -73,6 +77,11 @@ export class SpriteRenderer {
   private styleId = "";
 
   private cache = new Map<string, SpriteSheet>();
+  /** Hero-shots conocidos por modelo skinneado. El pipeline de skins los
+   *  genera y paga para fijar la identidad del personaje antes de repintar
+   *  sus frames; aquí solo se anota dónde quedaron, para que el retrato del
+   *  diálogo los reuse sin generar nada. */
+  private heroes = new Map<string, string>();
   private inflight = new Map<string, Promise<SpriteSheet>>();
   private skinInflight = new Map<string, Promise<SpriteSheet>>();
 
@@ -92,6 +101,9 @@ export class SpriteRenderer {
     this.styleId = styleId;
     this.cache.clear();
     this.skinInflight.clear();
+    // El hero es POR estilo (entra en su clave): el del pack anterior no
+    // vale para este.
+    this.heroes.clear();
   }
 
   /** Fetch meta.json and start loading every frame image. Subsequent calls for
@@ -156,11 +168,23 @@ export class SpriteRenderer {
           err.status = res.status;
           throw err;
         }
-        const data = (await res.json()) as { ok?: boolean; meta?: SpriteSheetMeta; frame_urls?: string[][]; error?: string };
+        const data = (await res.json()) as {
+          ok?: boolean;
+          meta?: SpriteSheetMeta;
+          frame_urls?: string[][];
+          hero_url?: string | null;
+          error?: string;
+        };
         if (!data.ok || !data.meta || !data.frame_urls) {
           throw new Error(`ai_server /skin_sprite_sheet bad response: ${data.error ?? "missing meta/frame_urls"}`);
         }
         const meta = data.meta;
+        if (data.hero_url) {
+          this.heroes.set(
+            skinnedModel,
+            data.hero_url.startsWith("http") ? data.hero_url : `${this.assetsUrl}${data.hero_url}`,
+          );
+        }
         const frames: HTMLImageElement[][] = data.frame_urls.map((dir) => dir.map((url) => {
           const img = new Image();
           img.crossOrigin = "anonymous";
@@ -181,6 +205,14 @@ export class SpriteRenderer {
     })();
     this.skinInflight.set(cacheKey, promise);
     return promise;
+  }
+
+  /** URL del hero-shot de un personaje, si el pipeline de skins ya lo pagó
+   *  en esta sesión. `null` = todavía no se ha pedido su skin (o la
+   *  generación de personajes está apagada): el retrato usa el busto del
+   *  sprite. NUNCA dispara una generación. */
+  heroUrl(skinPrompt: string): string | null {
+    return this.heroes.get(this.skinKey(BASE_HERO_MODEL, skinPrompt)) ?? null;
   }
 
   /** Synthetic model id for the skinned variant of `model` — public so

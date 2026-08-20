@@ -37,6 +37,23 @@ import {
   type WorldView,
 } from "./style-refs.js";
 
+/** Tema de UI del pack: módulo puro también (el cliente lo importa). */
+import {
+  BASE_UI_THEME,
+  UiThemeSchema,
+  resolveUiTheme,
+  type UiTheme,
+  type UiThemeInput,
+} from "./ui-theme.js";
+
+export {
+  BASE_UI_THEME,
+  UiThemeSchema,
+  resolveUiTheme,
+  type UiTheme,
+  type UiThemeInput,
+};
+
 export {
   SAFE_ID,
   STYLE_REF_FOLDERS,
@@ -134,6 +151,9 @@ export const StyleManifestSchema = z
     /** El ORDEN importa: la primera ref de cada vista es el fallback cuando
      *  el motor no elige (o su elección no existe). */
     refs: z.array(StyleRefSchema).default([]),
+    /** Tema de la INTERFAZ DE JUEGO (paleta, tipografía, forma). Opcional y
+     *  parcial: lo no declarado cae al BASE_UI_THEME. Ver games/ui-theme.ts. */
+    ui: UiThemeSchema.optional(),
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -244,6 +264,9 @@ export interface StyleListing {
   /** Etiquetas temáticas del estilo — el título filtra además por
    *  compatibilidad con las del juego (styleCompatibleWithGame). */
   tags: string[];
+  /** Tema de UI RESUELTO (lo declarado en el pack fundido sobre el base): el
+   *  título tiñe con él la tarjeta del estilo. */
+  ui_theme: UiTheme;
 }
 
 /** Carga y valida `game.json` + presencia de `world.md`. Fail-loud: se usa al
@@ -363,6 +386,7 @@ export function listStyles(stylesDir: string): StyleListing[] {
         cover_url: hasCover ? `/styles/${manifest.style_id}/${manifest.cover}` : undefined,
         views: styleViews(manifest),
         tags: manifest.tags,
+        ui_theme: resolveUiTheme(manifest.ui),
       });
     } catch (err) {
       console.warn(

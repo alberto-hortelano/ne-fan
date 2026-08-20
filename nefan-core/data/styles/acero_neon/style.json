@@ -9,6 +9,22 @@
     "espacial",
     "sci-fi"
   ],
+  "ui": {
+    "surface": "rgba(10, 14, 18, 0.88)",
+    "raised": "rgba(79, 216, 239, 0.08)",
+    "border": "#2f4650",
+    "ink": "#cfe3e8",
+    "ink_dim": "#7d97a3",
+    "accent": "#4fd8ef",
+    "accent_ink": "#04161c",
+    "danger": "#ff5c5c",
+    "fade": "#030608",
+    "font": "system-ui, 'Segoe UI', Helvetica, Arial, sans-serif",
+    "radius_px": 2,
+    "hairline_px": 1,
+    "tracking_em": 0.08,
+    "glow": true
+  },
   "refs": [
     {
       "id": "settlement",

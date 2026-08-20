@@ -70,6 +70,9 @@ import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { errors } from "./ui/error-log.js";
+import { ActionBar } from "./ui/action-bar.js";
+import { PortraitView } from "./ui/portrait.js";
+import { applyUiTheme, currentUiTheme, onUiThemeChange, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import {
   createGameClient,
   type GameClient,
@@ -102,6 +105,9 @@ const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * TOPDOWN_SPEED_SCALE;
 let playerModel: string | null = null;
 let playerSkinPrompt = "";
 let playerAlive = true;
+/** Última entidad con la que el jugador pulsó E: identifica al hablante
+ *  cuando la línea llega sin nombre reconocible. */
+let lastInteractedId: string | null = null;
 const playerAnim: CharacterAnimState = newAnimState();
 
 /** Resolve the player's visual base and queue its AI skin.
@@ -192,6 +198,8 @@ const GEN_URLS = {
 };
 const spriteRenderer = new SpriteRenderer("/sprites", REMOTE_GEN_URL, ASSET_STORE_URL);
 const characterSprites = new CharacterSpriteManager(spriteRenderer, OBLIQUE_ANGLE);
+/** Retrato del hablante del diálogo: hero-shot ya pagado o busto animado. */
+const portrait = new PortraitView(spriteRenderer, "/sprites");
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
  *  `entity.sprite` a partir de ese momento (antes, círculos). */
 let baseSheetsLoaded = false;
@@ -442,10 +450,20 @@ let sessionWorldView: ClientView = "";
  *  transiciones por zona de salida. */
 let activeStage: ComposedStage | null = null;
 
+const gameUiEl = document.getElementById("game-ui") as HTMLElement;
+
+// Con el ratón capturado ningún botón HTML puede recibir un click: la UI se
+// degrada a recordatorio de teclas (una regla de CSS) en vez de ofrecer una
+// afordancia imposible.
+document.addEventListener("pointerlockchange", () => {
+  gameUiEl.dataset.locked = document.pointerLockElement !== null ? "true" : "false";
+});
+
 function applySessionView(view: string): void {
   const next = toClientView(view);
   const changed = next !== sessionView;
   sessionView = next;
+  gameUiEl.dataset.view = next === "" ? "oblique" : next;
   devPanel.setSession({ view: next });
   // Set de sprites de la vista: proscenio y fps usan el y_bot casi frontal
   // (frontal_8 — a nivel de ojos, pitch −8°); la oblicua el picado clásico.
@@ -482,6 +500,7 @@ function applySessionView(view: string): void {
       if (Number.isFinite(follow))
         prosceniumRenderer.followOverride = Math.min(1, Math.max(0, follow));
     }
+    prosceniumRenderer.setWorldTheme(currentUiTheme());
     activeRenderer = prosceniumRenderer;
     // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
     // pipeline (StageImageController: clay local + repintado bajo demanda).
@@ -518,6 +537,7 @@ function applySessionView(view: string): void {
         }
       });
     }
+    fpsRenderer.setWorldTheme(currentUiTheme());
     activeRenderer = fpsRenderer;
     fpsRenderer.setVisible(true);
     // El Auto-img por tiles pinta la vista cenital; el fps tiene su propio
@@ -553,19 +573,58 @@ function applySessionView(view: string): void {
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
 // se cargan bajo demanda desde setPlayerAppearance / requestSkin.
+const playerStatusEl = document.getElementById("player-status") as HTMLElement;
+playerStatusEl.innerHTML =
+  `<div class="nf-vital"><span class="nf-vital-label">Vida</span>` +
+  `<div class="nf-bar"><div class="nf-bar-fill" id="player-hp" style="width:100%"></div></div>` +
+  `<span id="player-hp-text">100</span></div>`;
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
-const attackSelectorEl = document.querySelector(".attack-selector") as HTMLElement;
+/** Ataques del sistema de combate de la sesión, clicables y con su tecla. */
+const attackBar = new ActionBar(document.getElementById("action-bar") as HTMLElement);
+/** Acción contextual (hablar, reaparecer) y confirmación Y/N: mismos botones,
+ *  distinta región. */
+const promptBar = new ActionBar(document.getElementById("interact-prompt") as HTMLElement);
+const confirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
+const confirmTextEl = document.getElementById("tile-confirm-text") as HTMLElement;
+const confirmBar = new ActionBar(document.getElementById("tile-confirm-actions") as HTMLElement);
+
+/** Pregunta de sí/no del juego (explorar una zona nueva, cruzar a otro
+ *  plató): mismo panel y mismas teclas Y/N para ambas, ahora también
+ *  clicables. `null` la retira. */
+function setConfirmPrompt(
+  q: { text: string; yes: string; no: string; onYes: () => void; onNo: () => void } | null,
+): void {
+  confirmPromptEl.hidden = q === null;
+  if (!q) {
+    confirmBar.set([]);
+    return;
+  }
+  confirmTextEl.textContent = q.text;
+  confirmBar.set([
+    { id: "confirm-yes", label: q.yes, key: "Y", invoke: q.onYes },
+    { id: "confirm-no", label: q.no, key: "N", invoke: q.onNo },
+  ]);
+}
 const sceneSelector = document.getElementById("room-selector") as HTMLSelectElement;
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
 const dialoguePanel = new DialoguePanel();
 const travelPanel = new TravelPanel();
-const interactPromptEl = document.getElementById("interact-prompt") as HTMLElement;
 const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
+// Tema base: la partida lo sustituye por el del estilo al abrir sesión.
+applyUiTheme(BASE_UI_THEME);
+// El texto que se pinta DENTRO del lienzo (nombres de NPC, etiquetas de
+// salida) no lo alcanza el CSS: se empuja a los renderers vivos en cada
+// cambio de tema, y a los que se creen después desde applySessionView.
+onUiThemeChange((t) => {
+  renderer.setWorldTheme(t);
+  prosceniumRenderer?.setWorldTheme(t);
+  fpsRenderer?.setWorldTheme(t);
+});
 
 // Proveedor de input (plugin): default teclado+ratón; ?input=scripted instala
 // el driver programático de bench. Un id desconocido no arranca — fail-loud.
@@ -577,11 +636,7 @@ try {
   errors.push("input", `proveedor de input inválido (?input=${requestedInputId})`, err);
   throw err;
 }
-input.onAttackTypeChanged = (type) => {
-  attackSelectorEl.querySelectorAll("span").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.type === type);
-  });
-};
+input.onAttackTypeChanged = () => renderAttackBar();
 
 // Teclas de desarrollo (G/X/B/N/R): fijas, independientes del provider.
 const devInput = new DevToolsInput({
@@ -605,6 +660,19 @@ const nefanHook: Record<string, unknown> = {
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
+  /** UI de juego: acciones ofrecidas y tema activo (bench/E2E). */
+  ui: {
+    actions: () => ({
+      attack: attackBar.snapshot(),
+      prompt: promptBar.snapshot(),
+      confirm: confirmBar.snapshot(),
+      choices: [...document.querySelectorAll<HTMLButtonElement>("#dialogue-choices .nf-action")]
+        .map((b) => b.querySelector(".nf-label")?.textContent ?? ""),
+    }),
+    theme: () => currentUiTheme(),
+    setTheme: (t: UiTheme) => applyUiTheme(t),
+    view: () => (document.getElementById("game-ui") as HTMLElement).dataset.view,
+  },
   /** Trazas de los pipelines de imagen/colisión (dev/debug-log.ts): apagadas
    *  por defecto; también `?debug=1` en la URL. */
   debug(on: boolean) { setDebugLog(on); },
@@ -635,21 +703,26 @@ let attackCatalog: readonly AttackSpec[] = [];
 /** Id efectivo del sistema de combate de la sesión ("" = sin sesión). */
 let sessionCombatSystemId = "";
 
+/** Selector de ataque: un botón por ataque del catálogo de la sesión, con su
+ *  tecla. El provider sigue siendo el dueño de la selección — el click es un
+ *  origen más de intención, igual que la tecla. */
+function renderAttackBar(): void {
+  attackBar.set(
+    attackCatalog.map((spec, i) => ({
+      id: `attack:${spec.id}`,
+      label: spec.label,
+      key: String(i + 1),
+      active: input.state.selectedAttack === spec.id,
+      invoke: () => input.selectAttack(spec.id),
+    })),
+  );
+}
+
 function applySessionCombatSystem(id: string): void {
   sessionCombatSystemId = id;
   attackCatalog = combatRegistry.create(id || undefined, config).attacks;
-  attackSelectorEl.innerHTML = "";
-  attackCatalog.forEach((spec, i) => {
-    const span = document.createElement("span");
-    span.dataset.type = spec.id;
-    span.textContent = `${i + 1}:${spec.label}`;
-    if (i === 0) span.classList.add("active");
-    // El provider es el dueño de la selección; el click es un origen más de
-    // intención y el toggle visual lo hace onAttackTypeChanged.
-    span.addEventListener("click", () => input.selectAttack(spec.id));
-    attackSelectorEl.appendChild(span);
-  });
   input.setAttackBindings(attackCatalog.map((a) => a.id));
+  renderAttackBar();
   if (id) log(`Combate: ${id} (${attackCatalog.length} ataque${attackCatalog.length === 1 ? "" : "s"})`);
 }
 applySessionCombatSystem(""); // arranque sin sesión: catálogo estándar
@@ -1420,9 +1493,9 @@ function rebuildEnemyBars(): void {
   enemyBarsContainer.innerHTML = "";
   for (const ee of enemyEntities) {
     const bar = document.createElement("div");
-    bar.className = "hp-bar";
-    bar.innerHTML = `<span style="color:${ee.color}">${ee.id}</span>
-      <div class="hp-fill"><div class="hp-fill-inner" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
+    bar.className = "nf-vital";
+    bar.innerHTML = `<span class="nf-vital-label" style="color:${ee.color}">${ee.id}</span>
+      <div class="nf-bar"><div class="nf-bar-fill" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
       <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
     enemyBarsContainer.appendChild(bar);
   }
@@ -1464,13 +1537,17 @@ const stageTransitions = new StageTransitions({
   // compiten por él).
   setProposal: (exit) => {
     input.tileProposalActive = exit !== null;
-    if (exit) {
-      tileConfirmPromptEl.innerHTML =
-        `🎬 ${exit.label} — <b>[Y]</b> cruzar · <b>[N]</b> quedarse`;
-      tileConfirmPromptEl.style.display = "block";
-    } else {
-      tileConfirmPromptEl.style.display = "none";
-    }
+    setConfirmPrompt(
+      exit
+        ? {
+            text: exit.label,
+            yes: "cruzar",
+            no: "quedarse",
+            onYes: () => input.queueTileConfirm(),
+            onNo: () => input.queueTileDecline(),
+          }
+        : null,
+    );
   },
   log: (msg) => log(msg),
 });
@@ -1904,9 +1981,13 @@ function gameLoop(now: number): void {
       }
       input.tileProposalActive = proposal !== null;
       if (proposal) {
-        tileConfirmPromptEl.innerHTML =
-          `¿Explorar hacia el ${EDGE_ES[proposal.edge]}? Se generará una zona nueva — <b>[Y]</b> sí · <b>[N]</b> no`;
-        tileConfirmPromptEl.style.display = "block";
+        setConfirmPrompt({
+          text: `¿Explorar hacia el ${EDGE_ES[proposal.edge]}? Se generará una zona nueva.`,
+          yes: "sí, explorar",
+          no: "no",
+          onYes: () => input.queueTileConfirm(),
+          onNo: () => input.queueTileDecline(),
+        });
         if (input.consumeTileConfirm()) {
           frontier.confirmProposal(performance.now(), requestTile);
           log(`Generando la zona al ${EDGE_ES[proposal.edge]} (${proposal.key})...`);
@@ -1914,14 +1995,14 @@ function gameLoop(now: number): void {
           frontier.declineProposal();
         }
       } else {
-        tileConfirmPromptEl.style.display = "none";
+        setConfirmPrompt(null);
       }
     } else if (!stageTransitions.proposalActive) {
       // Sin frontera activa Y sin propuesta de cruce de plató: prompt fuera.
       // (La propuesta del proscenio comparte elemento y teclas — este reset
       // por-frame se la comía.)
       input.tileProposalActive = false;
-      tileConfirmPromptEl.style.display = "none";
+      setConfirmPrompt(null);
     }
 
     // Activación por posición: al pisar otro tile, refrescar la "escena
@@ -1944,20 +2025,33 @@ function gameLoop(now: number): void {
   }
   if (npcInRange && nearestDist > INTERACT_RANGE) npcInRange = null;
 
-  if (npcInRange && !dialoguePanel.isVisible) {
-    interactPromptEl.textContent = `[E] hablar con ${npcInRange.name ?? npcInRange.id}`;
-    interactPromptEl.style.display = "block";
-  } else {
-    interactPromptEl.style.display = "none";
-  }
+  // Acciones contextuales: lo que el jugador puede hacer AQUÍ, como botones
+  // con su tecla. El click empuja la misma intención que la tecla, así que
+  // aguas abajo son indistinguibles.
+  promptBar.set([
+    ...(npcInRange && !dialoguePanel.isVisible
+      ? [{
+          id: "interact",
+          label: `hablar con ${npcInRange.name ?? npcInRange.id}`,
+          key: "E",
+          invoke: () => input.queueInteract(),
+        }]
+      : []),
+    ...(!playerAlive
+      ? [{ id: "respawn", label: "reaparecer", key: "R", invoke: () => input.queueRespawn() }]
+      : []),
+  ]);
 
   const interactPressed = input.consumeInteract();
   if (interactPressed && npcInRange && !dialoguePanel.isVisible && now >= interactPendingUntil) {
     interactPendingUntil = now + 30000;
     const name = (npcInRange.name ?? npcInRange.id) as string;
+    lastInteractedId = npcInRange.id;
     narrativeClient.interactEntity(npcInRange.id, name);
     log(`Hablando con ${name}...`);
   }
+
+  if (dialoguePanel.isVisible) portrait.tick(now);
 
   // Attack
   const attackRequested = dialoguePanel.isVisible ? false : input.consumeAttack();
@@ -2291,6 +2385,7 @@ dialoguePanel.onChoice = (idx, text) => {
     eventId: `client_${Date.now()}`,  // bridge generates the canonical id
     choiceIndex: idx,
     speaker: cur.speaker,
+    speakerId: cur.speakerId,
     chosenText: text,
   });
 };
@@ -2303,6 +2398,7 @@ dialoguePanel.onFreeText = (freeText) => {
     eventId: `client_${Date.now()}`,
     choiceIndex: -1,
     speaker: cur.speaker,
+    speakerId: cur.speakerId,
     chosenText: freeText,
     freeText,
   });
@@ -2519,14 +2615,32 @@ narrativeClient.onNarrativeEvent((event) => {
   interactPendingUntil = 0;
   for (const effect of event.effects) {
     switch (effect.kind) {
-      case "show_dialogue":
-        dialoguePanel.show(effect.speaker, effect.text, effect.choices.map((c) =>
-          typeof c === "string" ? c : c.text,
-        ));
+      case "show_dialogue": {
+        // Identidad del hablante para el retrato: la entidad que el bridge
+        // resolvió, la que tiene ese nombre en pantalla, o —si el diálogo
+        // llegó sin interacción previa— la última con la que se habló.
+        const npc =
+          (effect.speakerId ? npcEntities.find((n) => n.id === effect.speakerId) : undefined) ??
+          npcEntities.find((n) => (n.name ?? "") === effect.speaker) ??
+          (lastInteractedId ? npcEntities.find((n) => n.id === lastInteractedId) : undefined);
+        const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
+        dialoguePanel.show(
+          effect.speaker,
+          effect.text,
+          effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
+          { id: effect.speakerId ?? npc?.id },
+        );
+        portrait.request({
+          heroUrl: skinPrompt ? spriteRenderer.heroUrl(skinPrompt) : null,
+          skinModel: skinPrompt ? spriteRenderer.skinKey(BASE_MODEL, skinPrompt) : undefined,
+          baseModel: BASE_MODEL,
+        });
+        dialoguePanel.setPortrait(portrait.element);
         // Suprime movimiento/ataque del InputProvider mientras el panel está
         // abierto (las teclas 1-3/T las gestiona el propio panel).
         input.dialogueActive = true;
         break;
+      }
       case "story_delta":
         log(`📖 ${effect.delta.slice(0, 80)}`);
         break;
@@ -2628,6 +2742,7 @@ async function runTitleFlow(): Promise<void> {
       );
       activeSessionId = res.sessionId;
       applySessionStyle(res.state.world?.style_id ?? "");
+      applyUiTheme(res.uiTheme);
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
@@ -2640,6 +2755,7 @@ async function runTitleFlow(): Promise<void> {
       const res = await narrativeClient.resumeSession(action.sessionId);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
+      applyUiTheme(res.uiTheme);
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");

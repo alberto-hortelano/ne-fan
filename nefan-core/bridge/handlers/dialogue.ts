@@ -19,6 +19,9 @@ async function reportAndDispatch(
   chosenText: string,
   freeText: string,
   logLabel: string,
+  /** Entidad con la que se está hablando: desambigua al hablante cuando el
+   *  motor devuelve un nombre repetido (tres "Guardia" en la misma plaza). */
+  speakerHintId?: string,
 ): Promise<void> {
   const jobSession = ctx.narrative.session_id;
   const llmCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
@@ -58,6 +61,7 @@ async function reportAndDispatch(
   const dispatched = dispatchConsequences(ctx.narrative, eventId, consequences, {
     playerPosition: { x: playerPos[0], y: playerPos[1], z: playerPos[2] },
     playerForward: { x: 0, y: 0, z: -1 },
+    speakerHintId,
   });
   const pluginFx = runPluginTick(ctx, eventId, dispatched.pluginEvents);
   await ctx.narrative.save();
@@ -83,7 +87,15 @@ export async function handleDialogueChoice(
     msg.choiceIndex,
     msg.freeText ?? "",
   );
-  await reportAndDispatch(ctx, eventId, msg.speaker, msg.chosenText, msg.freeText ?? "", "dialogue_choice");
+  await reportAndDispatch(
+    ctx,
+    eventId,
+    msg.speaker,
+    msg.chosenText,
+    msg.freeText ?? "",
+    "dialogue_choice",
+    msg.speakerId,
+  );
 }
 
 export async function handleInteractEntity(
@@ -118,5 +130,6 @@ export async function handleInteractEntity(
     chosenText,
     approachLine,
     `interact_entity ${msg.entityName}`,
+    msg.entityId,
   );
 }

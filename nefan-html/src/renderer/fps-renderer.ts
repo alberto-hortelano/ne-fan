@@ -9,6 +9,7 @@
  *  sigue siendo el dueño de tiles/colisión/pipeline oblicuo — esta vista solo
  *  PINTA distinto. setVisible() conmuta qué canvas se ve. */
 
+import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
 import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
 import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
@@ -43,12 +44,19 @@ export const FPS_DEBUG_VIEW_LABELS: Record<FpsDebugView, string> = {
 const FPS_DEBUG_VIEW_ORDER: FpsDebugView[] = ["off", "collision", "surfaces"];
 
 export class FpsRenderer implements Renderer2D {
+  /** La vista en primera persona no pinta texto de mundo: los nombres los
+   *  da el prompt contextual de la UI (y no hay ctx 2D sobre el que
+   *  escribir). No-op declarado para que el contrato obligue a
+   *  pronunciarse. */
+  setWorldTheme(_theme: UiTheme): void {}
+
   private el: HTMLCanvasElement;
   private gl: FpsGl | null = null;
   private pending: Array<(gl: FpsGl) => void> = [];
   private surfaces = new Map<string, FpsTileSurfaces>();
   private visible = false;
   private onResize = () => this.syncSize();
+  private resizeObserver: ResizeObserver | null = null;
   private debugView: FpsDebugView = "off";
   private debugLabel: HTMLDivElement;
   private activeKey: string | null = null;
@@ -71,7 +79,10 @@ export class FpsRenderer implements Renderer2D {
       "position:fixed;top:8px;left:8px;z-index:30;display:none;pointer-events:none;" +
       "background:rgba(10,10,16,0.78);color:#fff;font:12px monospace;padding:4px 10px;border-radius:4px;";
     document.body.appendChild(this.debugLabel);
-    window.addEventListener("resize", this.onResize);
+    // Igual que el lienzo 2D: la caja manda, no la ventana (la barra de dev
+    // cambia de alto al conectar y empuja el lienzo).
+    this.resizeObserver = new ResizeObserver(this.onResize);
+    this.resizeObserver.observe(this.el);
     void import("./fps-gl.js")
       .then(({ FpsGl }) => {
         this.gl = new FpsGl(this.el, opts.spriteRenderer);
@@ -219,7 +230,8 @@ export class FpsRenderer implements Renderer2D {
   }
 
   dispose(): void {
-    window.removeEventListener("resize", this.onResize);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.gl?.dispose();
     this.debugLabel.remove();
     this.el.remove();

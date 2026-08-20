@@ -389,7 +389,20 @@ export function toTuple(v: Vec3Like): [number, number, number] {
  * in consequence-handler.ts) so the browser bundle can import the type without
  * pulling in Node-only modules. */
 export type ConsequenceEffect =
-  | { kind: "show_dialogue"; speaker: string; text: string; choices: (string | { text: string })[] }
+  | {
+      kind: "show_dialogue";
+      speaker: string;
+      text: string;
+      choices: (string | { text: string })[];
+      /** Entidad que habla, casada por NOMBRE contra el registro
+       *  (resolveSpeaker). Ausente = narrador o nombre sin NPC detrás. */
+      speakerId?: string;
+      /** Su prompt de skin — el cliente pinta con él el retrato del panel,
+       *  incluso si el hablante no está en pantalla. */
+      speakerSkinPrompt?: string;
+      /** Ref de personaje del style pack elegida para ese NPC. */
+      speakerStyleRef?: string;
+    }
   | { kind: "story_delta"; delta: string }
   | {
       kind: "spawn_entity";

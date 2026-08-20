@@ -4,7 +4,20 @@
   "description": "Descripción corta para el selector del título.",
   "style_token": "technique + palette + light + mood, in English (no projection, no content)",
   "cover": "cover.jpg",
-  "tags": ["medieval", "fantasia"],
+  "tags": [
+    "medieval",
+    "fantasia"
+  ],
+  "ui": {
+    "surface": "rgba(12, 12, 16, 0.88)",
+    "border": "#4a4a55",
+    "ink": "#d9d9e0",
+    "ink_dim": "#8b8b98",
+    "accent": "#d8a657",
+    "accent_ink": "#141017",
+    "font": "system-ui, 'Segoe UI', Helvetica, Arial, sans-serif",
+    "radius_px": 4
+  },
   "refs": [
     {
       "id": "settlement",

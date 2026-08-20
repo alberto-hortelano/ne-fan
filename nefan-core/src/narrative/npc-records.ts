@@ -158,12 +158,16 @@ export function registerSceneNpcs(
   }
 }
 
-/** Campos de comportamiento ambiental que un NPC de escena puede declarar
- *  (Format D o legacy) y que deben fluir a EntityRecord.data para el
- *  NpcBehaviorSystem: `role` (peasant/guard/…) y `behavior` (overrides). */
+/** Campos de un NPC de escena (Format D o legacy) que deben fluir a
+ *  EntityRecord.data: `role` (peasant/guard/…) y `behavior` (overrides) para
+ *  el NpcBehaviorSystem, más `description` y `style_ref` — la identidad
+ *  visual con la que se generan su sprite y su retrato. Sin ellos, un
+ *  hablante fuera de pantalla no tendría cara. */
 function npcBehaviorExtras(e: Record<string, unknown>): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
   if (typeof e.role === "string" && e.role) extra.role = e.role;
+  if (typeof e.description === "string" && e.description) extra.description = e.description;
+  if (typeof e.style_ref === "string" && e.style_ref) extra.style_ref = e.style_ref;
   if (e.behavior && typeof e.behavior === "object" && !Array.isArray(e.behavior)) {
     extra.behavior = e.behavior;
   }

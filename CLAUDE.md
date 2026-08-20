@@ -2,7 +2,7 @@
 
 RPG de **mundo abierto generativo** con motor Godot 4.6+ y cliente 2D HTML. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. La escena viaja en UN formato compartido: el motor produce Format D, el bridge lo normaliza a world scene (`formatDToWorld`) y ambos clientes (2D y 3D) pintan esa misma forma. Los JSON de `data/rooms/` son fixtures de test en formato world scene (menú F12).
 
-**Juegos = mundos.** Un juego es `nefan-core/data/games/{id}/`: `game.json` (título, descripción, `style_id` por defecto, `world_brief` ~1.2k chars) + `world.md` (documento completo del mundo en 10 secciones: identidad, geografía, historia, pueblos, facciones, magia, vida cotidiana, semillas de conflicto, el jugador, registro) + `plugins/`. NO hay historia predefinida ni beats scripted: la historia la improvisa el motor narrativo dentro del mundo. Juegos base: `alta_fantasia` (Miravanda), `cuentos_oscuros` (Valdesombra), `toledo_1200` (histórico). Un **estilo** es `data/styles/{id}/`: `style.json` (`style_token`, cover, `tags` temáticos, refs) + imágenes de referencia LIBRES en carpetas por vista (`overworld/`, `proscenium/`, `fps/` con la lámina `role: fps_surfaces`, `characters/`; ver `data/styles/README.md`). Cada ref declara `{id, file, description}` — sin categorías: el contenido depende del mundo (una catedral, una estación espacial…). El MOTOR NARRATIVO elige la ref de cada escena (`style_ref`, catálogo `world.style_refs` en su contexto; pre-flight fail-loud en narrative-mcp) y la de cada NPC (`style_ref` en la entity, `npcSkinStyleRef`); sin elección, el server usa la primera ref de la vista (orden del manifest). `game.json` declara `tags` que casan con los del estilo por intersección (`styleCompatibleWithGame`): el selector del título filtra por vista Y por tema (un pack medieval no se ofrece para un mundo futurista); `start_session` avisa sin abortar. El `id` de una ref entra en la clave de caché de imagen (renombrarlo repaga; renombrar `file`/`description` no). El estilo se elige en el título y queda CONGELADO en el save. El jugador puede crear su mundo (borrador → kind MCP `develop_world` → `data/games/user_*`, con `tags` obligatorios) y subir su estilo (imágenes con vista+descripción+tags → `/styles/upload` → confirmación de coste → `/styles/{id}/complete` genera las refs declaradas que falten; CLI: `python ai_server/tools/build_style_pack.py`; migración de packs de la era de categorías: `nefan-core/scripts/migrate-style-packs.ts`). Schemas en `nefan-core/src/games/loader.ts` + `src/games/style-refs.ts` (fuente de verdad).
+**Juegos = mundos.** Un juego es `nefan-core/data/games/{id}/`: `game.json` (título, descripción, `style_id` por defecto, `world_brief` ~1.2k chars) + `world.md` (documento completo del mundo en 10 secciones: identidad, geografía, historia, pueblos, facciones, magia, vida cotidiana, semillas de conflicto, el jugador, registro) + `plugins/`. NO hay historia predefinida ni beats scripted: la historia la improvisa el motor narrativo dentro del mundo. Juegos base: `alta_fantasia` (Miravanda), `cuentos_oscuros` (Valdesombra), `toledo_1200` (histórico). Un **estilo** es `data/styles/{id}/`: `style.json` (`style_token`, cover, `tags` temáticos, refs, **`ui`** = tema de la interfaz de juego) + imágenes de referencia LIBRES en carpetas por vista (`overworld/`, `proscenium/`, `fps/` con la lámina `role: fps_surfaces`, `characters/`; ver `data/styles/README.md`). Cada ref declara `{id, file, description}` — sin categorías: el contenido depende del mundo (una catedral, una estación espacial…). El MOTOR NARRATIVO elige la ref de cada escena (`style_ref`, catálogo `world.style_refs` en su contexto; pre-flight fail-loud en narrative-mcp) y la de cada NPC (`style_ref` en la entity, `npcSkinStyleRef`); sin elección, el server usa la primera ref de la vista (orden del manifest). `game.json` declara `tags` que casan con los del estilo por intersección (`styleCompatibleWithGame`): el selector del título filtra por vista Y por tema (un pack medieval no se ofrece para un mundo futurista); `start_session` avisa sin abortar. El `id` de una ref entra en la clave de caché de imagen (renombrarlo repaga; renombrar `file`/`description` no). El estilo se elige en el título y queda CONGELADO en el save. El jugador puede crear su mundo (borrador → kind MCP `develop_world` → `data/games/user_*`, con `tags` obligatorios) y subir su estilo (imágenes con vista+descripción+tags → `/styles/upload` → confirmación de coste → `/styles/{id}/complete` genera las refs declaradas que falten; CLI: `python ai_server/tools/build_style_pack.py`; migración de packs de la era de categorías: `nefan-core/scripts/migrate-style-packs.ts`). Schemas en `nefan-core/src/games/loader.ts` + `src/games/style-refs.ts` (fuente de verdad).
 
 ## Arrancar el juego
 
@@ -569,6 +569,46 @@ Distintos de los plugins declarativos: **módulos TS de hot loop** con varias im
 
 Tercera vista del cliente 2D sobre los MISMOS tiles del overworld (bootstrap y escenas = rama tile; bench de origen en `labs/fps/`). Mouse look con yaw CONTINUO (pointer lock sobre `#fps-canvas`, click lo captura; sin pitch) más ←/→ (±45° por pulsación), WASD relativo al facing, colisión y sim idénticos a la oblicua (`CollisionSystem` intacto). `FpsRenderer` (canvas WebGL propio `#fps-canvas`, three con import dinámico — NUNCA el singleton offscreen del greybox) monta cada tile desde `buildFpsTileSpec` (`src/scene/blueprint/fps-spec.ts`: cierra cutaways, escala celdas→metros, reparte `surface_desc` por rol/cara, y aplica dos post-procesos fps-only que NO tocan el builder compartido: `fps-detail.ts` — copas esféricas por `species`, rocas facetadas `rock_stone`, ventanas `window_glass` y chimeneas de building, tejado cónico de torre, arco escalonado de gate — y `scatter.ts` — scatter declarativo `scatter_generators`+`scatter_zones` del plan: generadores como JSON puro con rangos/vars/lerp (port del run 003 de labs/authoring), zonas con densidad elem/m², exclusión automática de huellas/agua/caminos, prims clay `cat: decor` a coste 0, tope 240 instancias reportado); NPCs = billboards y_bot `frontal_8` (dir = `yaw_npc − yaw(npc→cám)`, como pickDirection). El arte es un **atlas de superficies**: `surfaces.ts` (`src/scene/greybox/`) clasifica las caras en celdas de material + celdas hero; `FpsAtlasController` pide `/generate_surface_atlas` (remote-gen) que resuelve POR CELDA contra la **librería de superficies** (asset-store kind `surface`, hash por descripción+estilo — reutilizable entre escenas, pinta solo lo que falta con nano-banana-pro/gpt-image-2) y aplica las texturas; sin render_mode imagen todo queda en clay gratis. Los volúmenes `building|wall|prop|prism` admiten `surface_desc` opcional: string = celda hero para las caras del CUERPO (tejado/puerta conservan su material), u objeto por cara/rol `{n|s|e|w|side|roof|door|caps|top}` = celda propia por cara con su descripción (imagen distinta por cara; `SurfaceAssign.faces` asigna por slot de BoxGeometry y el renderer crea material por slot). `available_assets` muestra al motor la librería reutilizable (texture/model/sprite/surface, round-robin, sin ruido de inpaint) — el reuso es opcional, nunca forzado. E2E sin créditos: fake-ai-server sirve `/generate_surface_atlas` con dameros (bootstrap con cartel per-face + casa hero + scatter).
 - **Candidatos futuros** (mismo patrón): PlayerController (prerequisito para touch/gamepad), EnemyAI (`systems.enemy_ai`), transporte narrativo. CollisionSystem y el pipeline de imagen ya son inyectables vía `*Deps`; formalizar registro sólo si aparece una 2ª implementación.
+
+## Interfaz de juego (cliente 2D, las tres vistas)
+
+La UI in-game vive en una sola capa DOM sobre el lienzo (`#game-ui` en
+`nefan-html/index.html`), común a las tres vistas: el renderer cambia, la
+interfaz no. Cada panel se cuelga de una región (`#ui-top-left`,
+`#ui-bottom-center`…) que las apila — nada de `bottom: 120px` a ojo.
+`#game-ui[data-view]` (oblique|proscenium|fps) y `[data-locked]` (pointer
+lock) son los interruptores: lo que cambia por vista lo decide el CSS, no
+main.ts.
+
+- **Estética diegética sobria**: panel translúcido, filete de 1 px, sin
+  marco ornamental, una tipografía y un acento. Todo el color sale de
+  custom properties (`--nf-*`) declaradas en `#game-ui`; `game-ui.css` no
+  contiene ni un literal de color.
+- **Tema por estilo**: cada style pack declara `ui` en su `style.json`
+  (schema puro en `src/games/ui-theme.ts`, tema base `BASE_UI_THEME`). El
+  bridge lo RECALCULA del pack en `start_session` y en `resume_session` y lo
+  manda en `session_started.uiTheme` — **no se persiste en el save ni entra
+  en `world`** (`serializeForLlm` manda `world` entero al modelo cada turno).
+  Retocar una paleta y reanudar basta para verla. Sin estilo (fixtures,
+  offline) rige el tema base. `test/ui-theme.test.ts` mide el contraste WCAG
+  de los cinco temas shipped: un tema ilegible rompe el test.
+- **Toda acción es tecla Y botón** (`ui/action-bar.ts`): hablar, atacar,
+  elegir ataque, confirmar Y/N, viajar, reaparecer y las opciones de
+  diálogo. El click entra por el MISMO camino que la tecla — el
+  `IntentSink` del `InputProvider` (`queueAttack/queueInteract/…`), sin
+  lógica duplicada en main.ts. Con el ratón capturado los botones se
+  degradan a recordatorio de teclas (ningún botón HTML recibiría el click).
+- **Diálogo con retrato** (`ui/portrait.ts`): el panel muestra al personaje
+  con el que se habla. Por orden: el **hero-shot que el pipeline de skins ya
+  pagó** (1024², servido por el asset-store en `/cache/sprite_hero/{key}`,
+  fuera del manifest y del prune), o el **busto animado del ciclo idle** del
+  sprite — la skin si existe, y si no y_bot. Coste extra 0. El hablante se
+  casa por NOMBRE contra las entidades en el bridge
+  (`src/narrative/speaker-resolve.ts`) y viaja en el efecto `show_dialogue`
+  como `speakerId`/`speakerSkinPrompt`: el contrato del modelo NO cambia.
+- La UI de **desarrollo** (barra `#dev-status`, menú de imágenes,
+  `#error-log`) vive FUERA de `#game-ui` y no se tematiza nunca: el tema de
+  un pack subido por un jugador no puede tocar el panel del gasto.
 
 ## Sistema de combate
 

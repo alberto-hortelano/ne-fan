@@ -114,6 +114,11 @@ export class KeyboardInputProvider implements InputProvider {
     // nuestro código sobre los canvas del juego, así que basta con que haya
     // alguno activo.
     this.onMouseDown = (e) => {
+      // Un click sobre la UI de juego (botones de acción, opciones de
+      // diálogo) NO es un ataque: el listener vive en window y llegaría
+      // igual. Con pointer lock activo la UI ya es inclicable, pero la
+      // guarda evita toda una familia de bugs al soltarlo.
+      if ((e.target as Element | null)?.closest?.("#game-ui")) return;
       if (e.button === 0 && document.pointerLockElement !== null && !this.dialogueActive) {
         this.state.attackRequested = true;
       }
@@ -155,6 +160,28 @@ export class KeyboardInputProvider implements InputProvider {
   selectAttack(typeId: string): void {
     this.state.selectedAttack = typeId;
     this.onAttackTypeChanged?.(typeId);
+  }
+
+  // --- IntentSink: la UI clicable levanta los MISMOS flags que las teclas ---
+
+  queueAttack(): void {
+    if (!this.dialogueActive) this.state.attackRequested = true;
+  }
+
+  queueInteract(): void {
+    this.state.interact = true;
+  }
+
+  queueRespawn(): void {
+    this.respawnRequested = true;
+  }
+
+  queueTileConfirm(): void {
+    if (this.tileProposalActive) this.tileConfirmRequested = true;
+  }
+
+  queueTileDecline(): void {
+    if (this.tileProposalActive) this.tileDeclineRequested = true;
   }
 
   consumeZoomDelta(): number {

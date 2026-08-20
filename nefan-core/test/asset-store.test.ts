@@ -157,6 +157,21 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
     assert.equal((await getRaw("/cache/sprite_sheet/h1/dir_0_frame_001.png")).status, 200);
   });
 
+  it("sprite_hero: el retrato reusa el hero ya pagado; key inválida → 400", async () => {
+    // La ruta tiene tres segmentos: si se registrara DESPUÉS del catch-all
+    // /cache/{kind}/{hash}, caería ahí como un kind inexistente (400 "Invalid
+    // map type") en vez de servir la imagen.
+    const bad = await getRaw("/cache/sprite_hero/no-es-un-hash");
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.toString(), "Invalid filename");
+    assert.equal((await getRaw("/cache/sprite_hero/0123456789abcdef")).status, 404);
+    mkdirSync(join(root, "sprite_sheets", "heroes"), { recursive: true });
+    writeFileSync(join(root, "sprite_sheets", "heroes", "0123456789abcdef.png"), Buffer.alloc(4, 7));
+    const ok = await getRaw("/cache/sprite_hero/0123456789abcdef");
+    assert.equal(ok.status, 200);
+    assert.equal(ok.contentType, "image/png");
+  });
+
   it("styles: traversal inofensivo, id inválido → 400, manifest real con Cache-Control", async () => {
     // %2e%2e lo normaliza new URL() en el server: nunca llega a /styles y
     // jamás sirve el fichero de un nivel arriba.
