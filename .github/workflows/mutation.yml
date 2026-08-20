@@ -1,0 +1,30 @@
+name: Mutation testing
+
+# No corre en cada PR: es de minutos, no de segundos. La cobertura ya va en CI
+# y dice que el test PASÓ POR la línea; esto dice si se habría ENTERADO de que
+# cambia, y esa pregunta se puede contestar una vez al día.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nefan-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: nefan-core/package-lock.json
+      - run: npm ci
+      - run: npm run mutate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: informe-mutacion
+          path: nefan-core/reports/mutation/

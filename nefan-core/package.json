@@ -25,6 +25,7 @@
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts",
+    "test:mutate": "node --import tsx --test test/scene-normalize.test.ts test/plugins-dsl.test.ts test/tile-greybox.test.ts test/stage-greybox.test.ts test/blueprint-collision.test.ts test/combat-resolver.test.ts",
     "lint": "eslint src bridge services test scripts",
     "format": "prettier --write src bridge services test scripts",
     "dev": "tsx bridge/ws-server.ts",
@@ -37,10 +38,12 @@
     "precoverage": "mkdir -p coverage",
     "coverage": "node --enable-source-maps --import tsx --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
     "crap": "tsx scripts/crap-score.ts",
+    "mutate": "stryker run",
     "verify": "npm run build && npm run lint && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/node": "^24.13.3",
     "@types/ws": "^8.18.1",
     "eslint": "^10.6.0",

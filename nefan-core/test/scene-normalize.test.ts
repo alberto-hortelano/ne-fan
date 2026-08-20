@@ -144,6 +144,53 @@ describe("formatDToWorld", () => {
     assert.throws(() => formatDToWorld(d), /missing cell/);
   });
 
+  // --- Huecos que destapó el mutation testing (npm run mutate) ---
+  // Los tres de abajo son mutantes que SOBREVIVÍAN: el código pasaba por esas
+  // líneas (97% de cobertura) pero ningún assert se habría enterado de que
+  // cambiaban.
+
+  it("acepta cada forma del catálogo y descarta la inventada", () => {
+    for (const shape of ["box", "cylinder", "sphere", "cone"]) {
+      const d = makeFormatD();
+      (d.entities as Record<string, unknown>[])[0].shape = shape;
+      const obj = (formatDToWorld(d) as { objects: Record<string, unknown>[] }).objects[0];
+      assert.equal(obj.shape, shape, `la forma "${shape}" debería conservarse`);
+    }
+    const d = makeFormatD();
+    (d.entities as Record<string, unknown>[])[0].shape = "dodecaedro";
+    const obj = (formatDToWorld(d) as { objects: Record<string, unknown>[] }).objects[0];
+    assert.equal(obj.shape, undefined, "una forma fuera del catálogo NO se propaga al renderer");
+  });
+
+  it("el bioma del tile solo viaja si es una cadena", () => {
+    // Un tile NO lleva size/terrain: su base es `biome` + primitivas.
+    const tile = (biome: unknown): Record<string, unknown> => ({
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      biome,
+      scene_description: "campo",
+      terrain_features: [],
+      entities: [],
+      ambient_event: "",
+    });
+    const bueno = formatDToWorld(tile("grass")) as { terrain?: { color?: number[] } };
+    assert.ok(bueno.terrain, "un biome válido produce terreno");
+
+    // Un biome no-cadena se descarta: la expansión se queda sin base y falla
+    // fuerte en vez de pintar un tile mudo.
+    assert.throws(() => formatDToWorld(tile(42)), /biome/i);
+  });
+
+  it("conserva el texture_hash declarado y no inventa uno cuando falta", () => {
+    const objs = (formatDToWorld(makeFormatD()) as { objects: Record<string, unknown>[] }).objects;
+    assert.equal(objs[0].texture_hash, "abc");
+
+    const sinHash = makeFormatD();
+    delete (sinHash.entities as Record<string, unknown>[])[0].texture_hash;
+    const obj = (formatDToWorld(sinHash) as { objects: Record<string, unknown>[] }).objects[0];
+    assert.equal(obj.texture_hash, undefined);
+  });
+
   it("throws on an invalid kind", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[])[0] = { id: "x", kind: "dragon", name: "X", cell: [0, 0], footprint: [1, 1] };
