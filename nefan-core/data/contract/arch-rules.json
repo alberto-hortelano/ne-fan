@@ -1,0 +1,319 @@
+{
+  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio.",
+  "scan": {
+    "roots": [
+      {
+        "dir": "nefan-core/src",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
+        "dir": "nefan-core/bridge",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
+        "dir": "nefan-core/services",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
+        "dir": "nefan-html/src",
+        "ext": [
+          ".ts",
+          ".css"
+        ]
+      },
+      {
+        "dir": "godot/scripts",
+        "ext": [
+          ".gd"
+        ]
+      },
+      {
+        "dir": "ai_server",
+        "ext": [
+          ".py"
+        ]
+      }
+    ],
+    "ignore": [
+      "node_modules",
+      "dist",
+      ".venv",
+      "__pycache__",
+      ".godot"
+    ]
+  },
+  "rules": [
+    {
+      "id": "html-no-importa-core-con-node",
+      "desc": "El cliente 2D no puede importar los módulos del core que usan node:fs/path/crypto",
+      "why": "La frontera browser-safe la sostiene hoy solo una separación deliberada de ficheros (games/style-application-schema vs style-application). Un import nuevo mete node:fs en el bundle de Vite y rompe el cliente en tiempo de carga.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "games/loader(\\.js)?$",
+          "games/style-application(\\.js)?$",
+          "games/vocabulary(\\.js)?$",
+          "games/world-snapshot(\\.js)?$",
+          "narrative/asset-index(\\.js)?$",
+          "narrative/session-storage(\\.js)?$",
+          "plugins/loader(\\.js)?$",
+          "contracts/common(\\.js)?$"
+        ]
+      }
+    },
+    {
+      "id": "core-sin-three",
+      "desc": "nefan-core no importa three.js",
+      "why": "Lógica en nefan-core, los clientes solo pintan. El core debe poder correr en Node sin WebGL.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "^three($|/)"
+        ]
+      }
+    },
+    {
+      "id": "core-sin-dom",
+      "desc": "nefan-core no toca el DOM (document/window)",
+      "why": "Lógica en nefan-core, los clientes solo pintan. Un acceso al DOM ata el core al navegador y rompe el bridge y los tests.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts"
+      ],
+      "text": {
+        "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*\\b(?:document|window)\\."
+      }
+    },
+    {
+      "id": "core-src-no-importa-bridge-ni-cliente",
+      "desc": "src/ no importa de bridge/, services/ ni del cliente 2D",
+      "why": "La dirección de dependencia es src ← bridge y src ← services. Invertirla convierte la lógica compartida en lógica de servidor.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "(^|/)bridge/",
+          "(^|/)services/",
+          "nefan-html"
+        ]
+      }
+    },
+    {
+      "id": "core-puro-sin-node",
+      "desc": "Los módulos de lógica pura del core no importan node:*",
+      "why": "Son los que consume el cliente 2D en el navegador Y los que se mutan en el hardener. Un node:fs aquí rompe el bundle y saca al módulo del alcance de mutation testing.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/combat/**/*.ts",
+        "nefan-core/src/scene/**/*.ts",
+        "nefan-core/src/simulation/**/*.ts",
+        "nefan-core/src/store/**/*.ts",
+        "nefan-core/src/world-map/**/*.ts",
+        "nefan-core/src/protocol/**/*.ts",
+        "nefan-core/src/contracts/**/*.ts",
+        "nefan-core/src/contract/**/*.ts",
+        "nefan-core/src/systems/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "^node:"
+        ]
+      }
+    },
+    {
+      "id": "core-puro-sin-process-ni-fetch",
+      "desc": "Los módulos de lógica pura del core no leen process.* ni llaman a fetch()",
+      "why": "Pureza real: entrada -> salida. La configuración entra por parámetro y la red vive en bridge/ (undici, ws).",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/combat/**/*.ts",
+        "nefan-core/src/scene/**/*.ts",
+        "nefan-core/src/simulation/**/*.ts",
+        "nefan-core/src/store/**/*.ts",
+        "nefan-core/src/world-map/**/*.ts",
+        "nefan-core/src/protocol/**/*.ts",
+        "nefan-core/src/contracts/**/*.ts",
+        "nefan-core/src/contract/**/*.ts",
+        "nefan-core/src/systems/**/*.ts"
+      ],
+      "text": {
+        "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*(?:(?<![\\w-])process\\.|\\bfetch\\s*\\()"
+      }
+    },
+    {
+      "id": "html-sin-node-ni-rutas-crudas",
+      "desc": "El cliente 2D no importa node:* ni alcanza el core por ruta relativa",
+      "why": "El único punto de acoplamiento con el árbol del core es el alias @nefan-core (vite.config.ts + tsconfig paths). Una ruta relativa se salta el alias y rompe el build.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "^node:",
+          "^\\.\\..*nefan-core"
+        ]
+      }
+    },
+    {
+      "id": "three-solo-en-los-tres-renderers",
+      "desc": "three.js solo se importa en los módulos de render que lo poseen",
+      "why": "three entra por import dinámico para no engordar el bundle base; un import suelto en otro fichero lo mete en el arranque.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "^three($|/)"
+        ]
+      },
+      "exceptions": [
+        {
+          "path": "nefan-html/src/scene/stage-greybox-render.ts",
+          "reason": "dueño del renderer singleton offscreen del clay"
+        },
+        {
+          "path": "nefan-html/src/scene/tile-greybox-render.ts",
+          "reason": "consumidor del singleton, recibe el renderer por parámetro"
+        },
+        {
+          "path": "nefan-html/src/renderer/fps-gl.ts",
+          "reason": "renderer y canvas propios de la vista fps"
+        },
+        {
+          "path": "nefan-html/src/dev/greybox-clay.ts",
+          "reason": "página de dev (dev/greybox-clay.html) fuera del bundle del juego; usa import dinámico para el modo cine"
+        }
+      ]
+    },
+    {
+      "id": "fps-no-usa-el-singleton-offscreen",
+      "desc": "La vista fps no toca el renderer singleton del greybox",
+      "why": "El fps tiene canvas WebGL propio; usar el singleton offscreen del clay le robaría el contexto a los thumbnails y al repintado.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/renderer/fps-*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "stage-greybox-render"
+        ]
+      }
+    },
+    {
+      "id": "godot-no-convierte-celdas-a-metros",
+      "desc": "Ningún .gd interpreta Format D crudo (terrain_legend / meters_per_cell)",
+      "why": "El bridge normaliza con formatDToWorld y Godot pinta world scene en metros. Si Godot porta la conversión hay dos formatos que mantener y divergirán.",
+      "severity": "error",
+      "files": [
+        "godot/scripts/**/*.gd"
+      ],
+      "text": {
+        "pattern": "\\b(?:terrain_legend|meters_per_cell)\\b"
+      }
+    },
+    {
+      "id": "core-sin-catch-silencioso",
+      "desc": "nefan-core no tiene catch vacío ni .catch(() => {})",
+      "why": "Fail-loud uniforme: un error tragado en la lógica compartida se manifiesta como comportamiento raro en los dos clientes, sin traza.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts"
+      ],
+      "text": {
+        "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*(?://[^\\n]*\\s*|/\\*[\\s\\S]*?\\*/\\s*)*\\}|\\.catch\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
+      }
+    },
+    {
+      "id": "python-sin-error-con-200",
+      "desc": "Los endpoints no devuelven {\"error\": ...} con 200 OK",
+      "why": "FastAPI debe fallar con HTTPException para que el cliente distinga error de respuesta vacía. Hoy hay 70 HTTPException y ningún return de error.",
+      "severity": "error",
+      "files": [
+        "ai_server/**/*.py"
+      ],
+      "text": {
+        "pattern": "return\\s*\\{\\s*[\"']error[\"']"
+      },
+      "exceptions": [
+        {
+          "path": "ai_server/llm_client.py",
+          "reason": "no es un handler HTTP: es el cliente WS del bridge y su dict de estado sí lleva campo error, con log"
+        }
+      ]
+    },
+    {
+      "id": "html-sin-catch-silencioso",
+      "desc": "El cliente 2D no traga errores en silencio",
+      "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max.",
+      "severity": "warn",
+      "max": 13,
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "text": {
+        "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*(?://[^\\n]*\\s*|/\\*[\\s\\S]*?\\*/\\s*)*\\}|\\.catch\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
+      }
+    },
+    {
+      "id": "godot-autoload-fail-loud",
+      "desc": "Los lookups de autoload usan NodeAccess.must_get_node, no get_node_or_null desnudo",
+      "why": "Un autoload ausente es un invariante roto, no una degradación esperable: debe dar push_error, no null silencioso.",
+      "severity": "warn",
+      "max": 11,
+      "files": [
+        "godot/scripts/**/*.gd"
+      ],
+      "text": {
+        "pattern": "get_node_or_null\\(\"/root/"
+      }
+    },
+    {
+      "id": "game-ui-css-sin-literales-de-color",
+      "desc": "Ningún literal de color en las reglas de componente de game-ui.css",
+      "why": "Todo el color sale de los tokens --nf-* para que el tema de cada style pack funcione. El bloque que DECLARA los tokens sí lleva literales, por definición.",
+      "severity": "warn",
+      "max": 1,
+      "files": [
+        "nefan-html/src/ui/game-ui.css"
+      ],
+      "text": {
+        "pattern": "^(?!\\s*--nf-)[^\\n]*:[^\\n]*(?:#[0-9a-fA-F]{3,8}\\b|\\brgba?\\()"
+      }
+    },
+    {
+      "id": "solo-el-bridge-normaliza-la-escena",
+      "desc": "El cliente 2D no llama a formatDToWorld por su cuenta",
+      "why": "El bridge normaliza en el wire; que el cliente vuelva a normalizar significa que acepta Format D crudo donde Godot aborta fail-loud. La asimetría se arregla o se documenta, no crece.",
+      "severity": "warn",
+      "max": 2,
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "text": {
+        "pattern": "formatDToWorld\\s*\\("
+      }
+    }
+  ]
+}
