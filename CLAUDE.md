@@ -194,7 +194,7 @@ usuario, fija los requisitos, decide y delega) y tres roles especializados viven
 
 | Rol | Qué hace | Qué NO hace |
 |-----|----------|-------------|
-| `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / clientes / ai_server), contratos y formatos afectados, compatibilidad de saves y cachés, mejoras estructurales. Produce `plan.md` | No escribe código de producción |
+| `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / clientes / ai_server), contratos y formatos afectados, qué hay que borrar (claves de caché incluidas), mejoras estructurales. Produce `plan.md` | No escribe código de producción |
 | `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y los supervivientes de mutación del módulo que tocó, muertos. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
 | `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` de lo que sea mecánico | **No arregla nada** — reporta |
 
@@ -225,7 +225,8 @@ Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.
 - **MCP bridge sobre API directa** — usuario tiene Claude Max, no necesita API key.
 - **En desarrollo, subir iluminacion ambient** para ver bien objetos y geometria.
-- **Tests obsoletos se borran** junto al cambio que los deja sin sentido (mencionándolo en el resumen); lo que no se elimina es cobertura de comportamiento vivo por conveniencia. El material de sesión (runs de labs, capturas) sí requiere confirmación antes de borrarse.
+- **Pre-producción: cero compatibilidad hacia atrás.** El juego no está en producción, así que NADA se conserva por ser antiguo: ni saves, ni campos de contrato, ni ramas de código que solo sirven a un formato ya retirado, ni los tests que los defienden. Un formato que se sustituye **se borra el mismo día**, entero y en todos los procesos (`grep` del campo a cero, no "documentado como legacy"). Cuando el juego esté en producción y haga falta, la respuesta será **versionar los contratos**, no acumular ramas de compatibilidad. Corolario práctico: si al retirar algo aparece la pregunta "¿y los saves viejos?", la respuesta hoy es que no importan.
+- **Tests obsoletos se borran** junto al cambio que los deja sin sentido (mencionándolo en el resumen). Un test cuyo sujeto es un formato retirado se va con él. Lo único que no se hace es dejar un test de comportamiento VIVO alimentado con datos de un formato muerto: o se pasa la fixture al formato vivo, o se borra el test declarando qué cobertura se pierde. El material de sesión (runs de labs, capturas) sí requiere confirmación antes de borrarse.
 - **Logica en nefan-core, Godot solo visual** — prepararse para cambio de motor. Datos compartidos (escenas, config) en nefan-core, no en godot/.
 - **AnimationTree con StateMachine (Souls-Like pattern)** — no usar AnimationPlayer directo. `travel()` para transiciones, `start()` para interrupciones.
 - **Sin root motion** — todo el movimiento via velocity del CharacterBody3D. Animaciones puramente visuales. Lockear Hips XZ solo en walk/run.
