@@ -37,6 +37,14 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 Si vas a añadir una regla a este fichero, pregúntate antes si puede ser una de
 esas. La prosa se olvida a mitad de contexto; un test que falla, no.
 
+**El backlog sale de ahí, no de un documento**: `npm run deuda` (en `nefan-core`)
+deriva la cola de trabajo de esas mismas herramientas — violaciones congeladas,
+funciones sobre el objetivo de CRAP, mutantes supervivientes — y avisa cuando una
+medida está obsoleta. Un item desaparece de la cola cuando se arregla, no cuando
+alguien se acuerda de tacharlo. Lo que ninguna herramienta mide (trocear un
+fichero, una funcionalidad nueva) va a **issues de GitHub**, que se cierran desde
+la PR.
+
 ## Arrancar el juego
 
 ```bash

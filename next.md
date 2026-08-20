@@ -1,5 +1,12 @@
 # Auditoría del repo — pendientes y siguiente objetivo
 
+> **Documento histórico — no es el backlog.** El trabajo pendiente vive ahora en
+> `npm run deuda` (cola derivada de las herramientas) y en las issues de GitHub.
+> Se conserva por el rastro y porque hay docstrings que citan su numeración
+> (`analyze_weapon` cita «next.md §2.1»), congelada por eso.
+> **Verifica contra el código antes de actuar sobre nada de aquí**: §3.4 pide trocear `ws-server.ts` (~850 líneas) y `ai_server/main.py` (~870);
+> hoy son 216 líneas con 9 handlers y 167 con 11 routers, troceados hace meses.
+
 Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las secciones ya implementadas se han retirado de este documento y quedan resumidas con su commit. **Se conserva la numeración original** porque hay docstrings en el código que la citan (p. ej. `analyze_weapon` en `ai_server/main.py` cita "next.md §2.1").
 
 ---
