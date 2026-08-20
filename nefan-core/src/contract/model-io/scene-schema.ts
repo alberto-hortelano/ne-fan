@@ -11,6 +11,12 @@
  *  JUGABILIDAD (flood-fill, alcanzabilidad, costuras de tile, exits de plató)
  *  la sigue validando scene-validate.ts; aquí no se duplica.
  *
+ *  Format D tiene DOS variantes y este schema es su candado: `tile` (mundo
+ *  continuo) o `stage` (proscenio). La tercera —la escena "suelta", con
+ *  `size`/`terrain` a elección del motor y sin sitio en el plano— se retiró
+ *  (issue #172): una escena sin ninguna de las dos es un error de contrato,
+ *  no una escena pequeña.
+ *
  *  `.passthrough()` a propósito en scene y entity: campos legacy/retirados
  *  (room_id, style_tag, exits, ambient_event…) NO deben
  *  provocar rechazo (tolerancia: fixtures offline y saves viejos siguen
@@ -87,6 +93,21 @@ export const FormatDSceneSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
       }
     } else {
+      // CANDADO de la variante retirada: Format D tiene DOS formas y ninguna
+      // más. Sin `tile` (mundo continuo) y sin `stage` (proscenio) la escena
+      // era la "suelta" — size/terrain a elección del motor, sin sitio en el
+      // mundo y sin salidas declaradas. El error va en la RAÍZ y nombra las
+      // dos alternativas: el pre-flight de narrative-mcp se lo devuelve al
+      // modelo para que re-responda con la que toca.
+      if (s.stage === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [],
+          message:
+            "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) " +
+            "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe",
+        });
+      }
       // Escena/plató: el grid es la base y es OBLIGATORIO. size y terrain van
       // juntos y las filas deben cuadrar EXACTAMENTE (antes el saneador Python
       // rellenaba/truncaba en silencio — la causa de mapas deformados).
