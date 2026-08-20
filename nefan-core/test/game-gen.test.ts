@@ -31,7 +31,6 @@ function tileScene(withPlayer: boolean): Record<string, unknown> {
   return {
     biome: "grass",
     scene_description: "campo pre-generado",
-    terrain_features: [],
     entities: withPlayer
       ? [{ id: "player", kind: "player", cell: [64, 64], footprint: [1, 1], glyph: "@" }]
       : [],

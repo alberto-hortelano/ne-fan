@@ -4,23 +4,10 @@ import assert from "node:assert/strict";
 import { computeTileEdges, matchCrossings } from "../src/scene/tile-edges.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { TILE_CELLS } from "../src/scene/tile.js";
+import { forestTile } from "./fixtures/tiles.js";
 
-function forestTileWithPath(): Record<string, unknown> {
-  return expandScenePrimitives({
-    tile: { tx: 0, ty: 0 },
-    scene_id: "tile_0_0",
-    biome: "forest_floor",
-    terrain_features: [
-      {
-        type: "path",
-        points: [[0, 41], [64, 46], [128, 52]],
-        width: 2,
-        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
-      },
-    ],
-    entities: [],
-  });
-}
+const forestTileWithPath = (): Record<string, unknown> =>
+  expandScenePrimitives(forestTile({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0" }));
 
 describe("computeTileEdges", () => {
   it("detecta los cruces del camino en los bordes oeste y este con su at", () => {
@@ -37,16 +24,16 @@ describe("computeTileEdges", () => {
     assert.equal(edges.north.biome, "forest_floor");
   });
 
-  it("clasifica runs por char (río→river, s→road) y separa runs distintos", () => {
-    // Tile con un río vertical que cruza norte→sur y una carretera al este.
+  it("clasifica runs por char (w→river, s→road) y separa runs distintos", () => {
+    // Río vertical norte→sur declarado en `ground` (agua → "w") y una
+    // carretera empedrada al este estampada como parche ASCII (char "s", que
+    // ningún kind de `ground` rasteriza).
     const expanded = expandScenePrimitives({
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",
       biome: "grass",
-      terrain_features: [
-        { type: "river", points: [[30, 0], [30, 128]], width: 3, at_edges: [{ edge: "north", at: 30 }, { edge: "south", at: 30 }] },
-        { type: "road", points: [[128, 90], [100, 90]], width: 2, at_edges: [{ edge: "east", at: 90 }] },
-      ],
+      ground: [{ id: "rio", kind: "water", rect: [28.5, 0, 3, 128] }],
+      terrain_patches: [{ at: [126, 89], rows: ["ss", "ss"] }],
       entities: [],
     });
     const edges = computeTileEdges(expanded);
@@ -79,10 +66,10 @@ describe("computeTileEdges", () => {
     );
   });
 
-  // Retirado terrain_features del contrato: `ground` es ahora la vía de
-  // costuras. Un tile que declara su camino/agua SOLO en `ground` debe seguir
-  // exponiendo los cruces en el grid (rasterizeGroundToGrid en scene-expand).
-  it("deriva cruces de `ground` (path→camino, water→río, deck→puente) sin terrain_features", () => {
+  // `ground` es la ÚNICA vía de costuras: un tile que declara ahí su
+  // camino/agua/puente debe exponer los tres cruces en el grid
+  // (rasterizeGroundToGrid en scene-expand).
+  it("deriva cruces de `ground`: path→camino, water→río, deck→puente", () => {
     const expanded = expandScenePrimitives({
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",

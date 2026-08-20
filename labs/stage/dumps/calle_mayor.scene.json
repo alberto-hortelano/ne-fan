@@ -259,7 +259,6 @@
   "ambient_event": "Una golondrina cruza la calle rasando los tejados y el cartel de la posada chirría con la brisa del atardecer.",
   "room_id": "calle_mayor",
   "room_description": "La calle Mayor del caserío al caer la tarde: tierra apisonada entre fachadas encaladas de entramado, con la puerta de la posada del Roble bajo su cartel colgante. Al oeste la calle se abre hacia la plaza del pozo.",
-  "terrain_features": [],
   "exits": [
     {
       "place_id": "plaza_del_pozo",

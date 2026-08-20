@@ -11,6 +11,7 @@ import {
   worldToTile,
 } from "../src/scene/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { forestTile } from "./fixtures/tiles.js";
 
 describe("geometría de tile", () => {
   it("tile (0,0) está centrado en el origen; vecinos contiguos", () => {
@@ -47,27 +48,12 @@ describe("geometría de tile", () => {
   });
 });
 
-/** Tile de bosque con un camino que entra por el oeste (fila 41) y sale por el
- *  este (fila 52) — el caso canónico de simplificación del plan. */
-function makeForestTile(): Record<string, unknown> {
-  return {
-    tile: { tx: 1, ty: 0 },
-    scene_id: "tile_1_0",
+const makeForestTile = (): Record<string, unknown> =>
+  forestTile({
     scene_description: "Bosque espeso con una senda.",
-    biome: "forest_floor",
-    terrain_features: [
-      {
-        type: "path",
-        points: [[0, 41], [64, 46], [128, 52]],
-        width: 2,
-        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
-      },
-    ],
     vegetation_zones: [{ type: "pino", area: "rest", density: 0.1 }],
-    entities: [],
     ambient_event: "",
-  };
-}
+  });
 
 describe("expansión de tiles (Format D v3)", () => {
   it("rellena el bioma 128×128 y rasteriza el camino tocando ambos bordes", () => {

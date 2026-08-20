@@ -325,7 +325,6 @@
  "ambient_event": "El pregonero repite por tercera vez el aviso del concejo mientras el asador humea y alguien murmura que el clérigo don Esteban lleva dos semanas sin aparecer por su escribanía.",
  "room_id": "zocodover_atardecer",
  "room_description": "Zocodover al caer la tarde: la plaza del mercado se va vaciando entre pregones, humo de asador y el tintineo de la mesa del cambista. Sobre los tejados, los muros del Alcázar guardan la última luz. Junto al rollo de justicia, corre el rumor de un clérigo traductor desaparecido.",
- "terrain_features": [],
  "exits": [
   {
    "place_id": "barrio_catedral",

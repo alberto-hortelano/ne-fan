@@ -34,11 +34,6 @@ interface RawZone {
   density?: number;
 }
 
-interface RawFeature {
-  points?: unknown;
-  width?: number;
-}
-
 interface RawEntity {
   id?: string;
   kind?: string;
@@ -76,8 +71,6 @@ export interface DeriveInput {
    *  su volumen para que el blueprint las pinte proyectadas (sin esto, el
    *  cliente caería a cajas sin proyectar sobre el plan). */
   entities?: RawEntity[];
-  /** Caminos/ríos del esquema — el scatter de vegetación no los pisa. */
-  terrain_features?: RawFeature[];
   /** Metros por celda de la escena. Solo lo pasa el caller PROSCENIO: activa
    *  el respeto del `h` declarado por entity (un barril de 0,9 m deja de
    *  medir 1,5). El tile no lo pasa — su derive no cambia. */
@@ -213,30 +206,6 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
     blockers.push(rect);
   }
 
-  // Bandas de caminos/ríos: el scatter las esquiva con margen.
-  const bands: { points: [number, number][]; half: number }[] = [];
-  for (const f of Array.isArray(raw.terrain_features) ? raw.terrain_features : []) {
-    if (!Array.isArray(f?.points)) continue;
-    const pts = f.points.filter(
-      (p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number"),
-    );
-    if (pts.length >= 2) bands.push({ points: pts, half: ((f.width ?? 2) / 2) + 4 });
-  }
-  const nearBand = (u: number, v: number): boolean =>
-    bands.some(({ points, half }) => {
-      for (let i = 0; i < points.length - 1; i++) {
-        const [au, av] = points[i];
-        const [bu, bv] = points[i + 1];
-        const dU = bu - au;
-        const dV = bv - av;
-        const t = Math.max(0, Math.min(1, ((u - au) * dU + (v - av) * dV) / (dU * dU + dV * dV || 1)));
-        const dx = u - (au + t * dU);
-        const dy = v - (av + t * dV);
-        if (dx * dx + dy * dy <= half * half) return true;
-      }
-      return false;
-    });
-
   const zones = Array.isArray(raw.vegetation_zones) ? raw.vegetation_zones : [];
   const placed: [number, number][] = declared
     .filter((v) => v.type === "tree")
@@ -260,7 +229,6 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
       const u = uniform(rng, area[0] + 2, area[0] + area[2] - 2);
       const v = uniform(rng, area[1] + 2, area[1] + area[3] - 2);
       if (blockers.some((r) => u > r[0] - 3 && u < r[0] + r[2] + 3 && v > r[1] - 3 && v < r[1] + r[3] + 3)) continue;
-      if (nearBand(u, v)) continue;
       if (placed.some(([pu, pv]) => (pu - u) * (pu - u) + (pv - v) * (pv - v) < minSep * minSep)) continue;
       placed.push([u, v]);
       const s = Math.round(uniform(rng, isBush ? 0.7 : 0.75, isBush ? 1.1 : 1.2) * 100) / 100;

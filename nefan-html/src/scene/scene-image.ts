@@ -99,7 +99,6 @@ export interface BlueprintReview {
   issues: string[];
   fixes?: {
     terrain?: string[];
-    terrain_features?: Record<string, unknown>[];
     entity_moves?: { id: string; cell: [number, number] }[];
     /** Array COMPLETO de rasgos de suelo corregido. */
     ground?: Record<string, unknown>[];

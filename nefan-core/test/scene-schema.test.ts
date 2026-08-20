@@ -103,10 +103,7 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
     assert.equal(accepts(tileOk), true);
   });
 
-  it("tolera campos legacy/retirados por passthrough (no rechaza)", () => {
-    assert.equal(
-      accepts({ ...base, terrain_features: [], room_id: "s", ambient_event: "viento", style_tag: "x", exits: [] }),
-      true,
-    );
+  it("tolera campos legacy por passthrough (no rechaza)", () => {
+    assert.equal(accepts({ ...base, room_id: "s", ambient_event: "viento", style_tag: "x", exits: [] }), true);
   });
 });

@@ -39,25 +39,14 @@ export interface SceneData {
      *  Los resuelve formatDToWorld; aquí solo se pintan en el overlay B. */
     solid_chars?: string[];
   };
-  /** Formas vectoriales de terreno (Format D): polylines con grosor (río con
-   *  meandros, camino curvo) o polígonos rellenos (`closed`). Puntos en
-   *  coordenadas de celda, width en celdas. El orden del array es el orden de
-   *  pintado. Visual-only (la colisión no las lee). */
-  terrain_features?: {
-    type: string;
-    points: [number, number][];
-    width?: number;
-    closed?: boolean;
-    color?: string;
-  }[];
   /** Plan del tile: rasgos de suelo declarativos y volúmenes tipados.
    *  Validados río arriba (ai_server / bridge). */
   ground?: unknown[];
   volumes?: unknown[];
   /** Plan COMPUESTO del tile (spec greybox 3D + metadatos analíticos) —
    *  inyectado por addTile (main.ts) con el builder de nefan-core. Su render
-   *  three.js sustituye al pintado grid+features+cajas en el schematic y en
-   *  la capa viva; la colisión base es declarativa (world/collision.ts). */
+   *  three.js sustituye al pintado grid+cajas en el schematic y en la capa
+   *  viva; la colisión base es declarativa (world/collision.ts). */
   __composed?: ComposedTilePlan;
   objects: {
     id: string;
@@ -114,7 +103,7 @@ interface RendererTile {
   plateImage: HTMLImageElement | null;
   /** CLAY del plan (render three.js del spec, SIN los tramos de occluder):
    *  cuando existe, ES el dibujo del tile — el schematic y la capa viva lo
-   *  pintan en vez de grid+features+cajas. Su view_box define el canvas del
+   *  pintan en vez de grid+cajas. Su view_box define el canvas del
    *  tile en vista (voladizo incluido); la imagen IA enmascarada cubre el
    *  MISMO canvas. */
   planImage: HTMLCanvasElement | null;
@@ -303,22 +292,6 @@ const TERRAIN_CHAR_COLOR: Record<string, string> = {
   a: "#b9a878", // sand
   o: "#6a4f30", // wood / planks
   W: "#4a4038", // wall / muro (sólido)
-};
-
-/** Color por `type` de terrain_feature (vocabulario en inglés de las
- *  instrucciones). Los nombres en español o libres caen a terrainColorFromName. */
-const FEATURE_TYPE_COLOR: Record<string, string> = {
-  river: TERRAIN_CHAR_COLOR.w,
-  water: TERRAIN_CHAR_COLOR.w,
-  path: TERRAIN_CHAR_COLOR._,
-  road: TERRAIN_CHAR_COLOR._,
-  bridge: TERRAIN_CHAR_COLOR.b,
-  stone: TERRAIN_CHAR_COLOR.s,
-  paved: TERRAIN_CHAR_COLOR.s,
-  dirt: TERRAIN_CHAR_COLOR.d,
-  sand: TERRAIN_CHAR_COLOR.a,
-  wood: TERRAIN_CHAR_COLOR.o,
-  grass: TERRAIN_CHAR_COLOR.g,
 };
 
 /** Hash determinista (col,row) → [0,1). Ruido reproducible para variar el color
@@ -987,8 +960,8 @@ export class CanvasRenderer {
     }
   }
 
-  /** Pinta el terreno completo (color base + grid por celdas + features
-   *  vectoriales + capa SVG) en el ctx/transform ACTUAL. Compartido por
+  /** Pinta el terreno completo (color base + grid por celdas) en el
+   *  ctx/transform ACTUAL. Compartido por
    *  captureSchematic (blueprint de img2img) y buildTerrainLayer (capa
    *  visible en vivo) — un solo origen de verdad de cómo se ve el suelo. */
   private paintTerrainInto(tile: RendererTile): void {
@@ -1000,25 +973,22 @@ export class CanvasRenderer {
 
     // Clay del plan: ES el dibujo del tile — cubre su canvas de vista
     // (voladizo de alturas incluido) con su propio suelo, agua y volúmenes.
-    // Grid y features quedan detrás sin aportar (se saltan). Hasta que el
+    // El grid queda detrás sin aportar (se salta). Hasta que el
     // módulo GL renderiza (async) se pinta el fallback.
     if (tile.planImage) {
       ctx.drawImage(tile.planImage, vx0, vy0, vw, vh);
       return;
     }
     // Fallback: color base sobre el canvas de vista y el pintado legacy de
-    // grid/features/cajas (vista == mundo en el suelo).
+    // grid/cajas (vista == mundo en el suelo).
     const terrainColor =
       rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR;
     ctx.fillStyle = terrainColor;
     ctx.fillRect(vx0, vy0, vw, vh);
 
-    // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D.
+    // Zonas de suelo (muro/río/camino/puente/piedra…) del grid Format D. Los
+    // rasgos de `ground` ya están rasterizados ahí por scene-expand.
     this.paintTerrainGrid(tile);
-
-    // Formas vectoriales (río con meandros, camino curvo, plaza poligonal)
-    // encima del grid: las features refinan lo que el grid solo aproxima.
-    this.paintTerrainFeatures(tile);
   }
 
   /** Hornea la capa de terreno de UN tile a resolución fija TILE_PPM, con
@@ -1117,74 +1087,6 @@ export class CanvasRenderer {
         }
         // +1px para evitar costuras entre celdas por el redondeo.
         ctx.fillRect(Math.floor(px0), Math.floor(py0), Math.ceil(px1 - px0) + 1, Math.ceil(py1 - py0) + 1);
-      }
-    }
-  }
-
-  /** Pinta las terrain_features vectoriales en el ctx/transform ACTUAL (llamado
-   *  desde captureSchematic tras paintTerrainGrid). Polylines con grosor y
-   *  extremos redondeados, suavizadas por punto medio (quadraticCurveTo, sin
-   *  dependencias); `closed` → polígono relleno. Feature malformada o sin color
-   *  resoluble → errors.push y se omite (nunca tumba la captura). */
-  private paintTerrainFeatures(tile: RendererTile): void {
-    const feats = tile.scene.terrain_features;
-    if (!Array.isArray(feats) || feats.length === 0) return;
-    const mpc = tile.scene.terrain_grid?.meters_per_cell ?? 2;
-    const ctx = this.ctx;
-    const originX = tile.rect.minX;
-    const originZ = tile.rect.minZ;
-    for (const f of feats) {
-      if (!f || !Array.isArray(f.points) || f.points.length < 2) {
-        errors.push("scene", `terrain_feature "${f?.type}" con points malformados; omitida`);
-        continue;
-      }
-      const color =
-        (typeof f.color === "string" && f.color) ||
-        FEATURE_TYPE_COLOR[f.type] ||
-        terrainColorFromName(f.type);
-      if (!color) {
-        errors.push("scene", `terrain_feature tipo "${f.type}" sin color resoluble; omitida`);
-        continue;
-      }
-      // Celda → mundo → pantalla.
-      const pts: [number, number][] = [];
-      let bad = false;
-      for (const p of f.points) {
-        const [c, r] = p;
-        if (typeof c !== "number" || typeof r !== "number" || !Number.isFinite(c) || !Number.isFinite(r)) {
-          bad = true;
-          break;
-        }
-        pts.push(this.toScreen(originX + c * mpc, originZ + r * mpc));
-      }
-      if (bad) {
-        errors.push("scene", `terrain_feature "${f.type}" con puntos no numéricos; omitida`);
-        continue;
-      }
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      if (pts.length === 2) {
-        ctx.lineTo(pts[1][0], pts[1][1]);
-      } else {
-        // Suavizado: cada vértice interior es punto de control de una curva
-        // cuadrática hacia el punto medio del siguiente segmento.
-        for (let i = 1; i < pts.length - 1; i++) {
-          const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-          const my = (pts[i][1] + pts[i + 1][1]) / 2;
-          ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
-        }
-        ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-      }
-      if (f.closed) {
-        ctx.closePath();
-        ctx.fillStyle = color;
-        ctx.fill();
-      } else {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = Math.max(2, (f.width ?? 1) * mpc * this.scale);
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.stroke();
       }
     }
   }

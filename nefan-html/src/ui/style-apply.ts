@@ -163,7 +163,6 @@ export class StyleApplyController {
             structures: scene.structures as never,
             vegetation_zones: scene.vegetation_zones as never,
             entities: scene.entities as never,
-            terrain_features: scene.terrain_features as never,
           },
           declared,
         );
