@@ -28,8 +28,8 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
                            proxya /cache|/assets para Godot
   data/
     combat_config.json     Config compartida (symlink desde godot/data/)
-    rooms/                 Fixtures de test en formato world scene (dev/, stress/, robledo_village.json del dump)
-    scenes/                Escenas Format D de ejemplo/fixture (robledo_village, zorder_test) — fuente del dump
+    rooms/                 Fixtures de test en formato world scene (dev/, stress/, robledo_tile.json del dump)
+    scenes/                Escenas Format D de ejemplo/fixture (robledo_tile, zorder_test) — fuente del dump
     games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
     plugins/               Plugins shipped comunes a TODOS los juegos (economy); un plugins/ local con mismo name lo pisa
     styles/{id}/           Estilo: style.json + imágenes de referencia por categoría

@@ -19,7 +19,7 @@ export default async function (ctx) {
   await ctx.nefan("closeTitle");
   await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
 
-  await ctx.nefan("loadFixture", "robledo_village");
+  await ctx.nefan("loadFixture", "robledo_tile");
   const estado = await ctx.waitFor("la fixture carga", () => {
     const s = window.__nefan.status();
     return s.scene ? s : null;

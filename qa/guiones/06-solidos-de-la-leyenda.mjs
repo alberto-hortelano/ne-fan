@@ -7,19 +7,24 @@
  *  posibilidad de declarar `{name, solid:false}` para un vado son contrato,
  *  no detalle: un fallo aquí encierra al jugador o le deja andar sobre el río.
  *
- *  Se comprueba ANDANDO, no leyendo el JSON: el río de `robledo_village` solo
- *  se cruza por su puente. Segunda mitad: la MISMA fixture servida con el agua
+ *  Se comprueba ANDANDO, no leyendo el JSON: el río de `robledo_tile` solo se
+ *  cruza por su puente. Segunda mitad: la MISMA fixture servida con el agua
  *  declarada `solid:false` — el jugador debe poder vadearla por donde antes
  *  rebotaba. La sustitución se hace en la respuesta HTTP de la fixture (dato,
  *  no código): es exactamente lo que vería el jugador si el motor declarase
  *  ese vado, que el contrato de leyenda admite.
+ *
+ *  La fila por la que se cruza es el CENTRO del puente, no su primera fila:
+ *  con la escala del tile (0,5 m/celda) el jugador mide 1,6 celdas de ancho,
+ *  así que caminar por el borde del tablero le mete medio cuerpo en el agua
+ *  de la fila de al lado. En la fixture vieja (2 m/celda) cualquier fila valía.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FIXTURE = "robledo_village";
+const FIXTURE = "robledo_tile";
 const FIXTURE_EN_DISCO = join(
   dirname(fileURLToPath(import.meta.url)),
   "..", "..", "nefan-core", "data", "scenes", `${FIXTURE}.json`,
@@ -71,8 +76,10 @@ export default async function (ctx) {
 
   const leyenda = await ctx.page.evaluate(() => {
     const g = window.__nefan.scene.terrain_grid;
-    // Fila del puente: la que cruza TODA la anchura del río con chars no
-    // sólidos. Fila de control: una de agua maciza, lejos del puente.
+    // Filas del puente: las que cruzan TODA la anchura del río con chars no
+    // sólidos. Se camina por la de en MEDIO (el jugador tiene anchura: por el
+    // borde del tablero rozaría el agua de la fila contigua). Fila de control:
+    // la primera de agua maciza a partir de 6 filas más al sur del puente.
     let min = Infinity;
     let max = -Infinity;
     for (const row of g.grid) {
@@ -84,12 +91,14 @@ export default async function (ctx) {
       }
     }
     const solidos = new Set(g.solid_chars ?? []);
-    const filaCruzable = g.grid.findIndex((row) => {
-      for (let c = min; c <= max; c++) if (solidos.has(row[c])) return false;
-      return true;
+    const filasCruzables = [];
+    g.grid.forEach((row, i) => {
+      for (let c = min; c <= max; c++) if (solidos.has(row[c])) return;
+      filasCruzables.push(i);
     });
+    const filaCruzable = filasCruzables.length ? filasCruzables[Math.floor(filasCruzables.length / 2)] : -1;
     const filaBloqueada = g.grid.findIndex(
-      (row, i) => Math.abs(i - filaCruzable) >= 6 && [...row.slice(min, max + 1)].some((ch) => solidos.has(ch)),
+      (row, i) => i >= filaCruzable + 6 && [...row.slice(min, max + 1)].some((ch) => solidos.has(ch)),
     );
     return {
       legend: g.legend,

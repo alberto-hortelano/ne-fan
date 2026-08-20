@@ -5,7 +5,7 @@
  * del bridge llegan normalizadas por el wire, y las fixtures de disco se
  * generan aquí y se COMMITEAN — el arranque offline no depende de node.
  *
- * Uso: `npx tsx scripts/dump-scene.ts [scene_id]` (default: robledo_village),
+ * Uso: `npx tsx scripts/dump-scene.ts [scene_id]` (default: robledo_tile),
  * o `npm run dump-scene`.
  */
 import { writeFileSync, readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ import { formatDToWorld } from "../src/scene/scene-normalize.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(here, "..", "data");
 
-const sceneId = process.argv[2] ?? "robledo_village";
+const sceneId = process.argv[2] ?? "robledo_tile";
 const src = join(dataDir, "scenes", `${sceneId}.json`);
 const raw = JSON.parse(readFileSync(src, "utf-8")) as Record<string, unknown>;
 
