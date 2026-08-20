@@ -1,0 +1,12 @@
+{
+  "$comment": "Umbrales de calidad de nefan-core. MEDIDOS antes de fijarlos (npm run coverage && npm run crap), no elegidos a ojo: un umbral inventado se ignora o se desactiva a la semana; uno puesto sobre la línea base real se puede ir apretando. Se comprueban con `npm run crap -- --check`.",
+  "crap": {
+    "max": 210,
+    "objetivo": 30,
+    "nota": "max = tope de no-empeorar, justo por encima del peor actual (validateScene, 205.6). objetivo = a dónde queremos llegar; hoy lo superan 21 funciones. Bajar el max cada vez que se limpie una."
+  },
+  "cobertura_lineas": {
+    "min": 88,
+    "nota": "medida hoy en 90.5% de líneas sobre src/, bridge/ y services/. El mínimo va 2 puntos por debajo para que un test movido no dé rojo por ruido. Es un suelo, no una meta: la cobertura dice que el test PASÓ POR la línea, no que se enteraría de un cambio — eso lo mide el mutation testing."
+  }
+}

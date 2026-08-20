@@ -56,6 +56,9 @@ godot/recordings/
 # QA: capturas de cada corrida (regenerables)
 qa/capturas/
 
+# Cobertura (regenerable con `npm run coverage`)
+nefan-core/coverage/
+
 # Personal scratch space
 todo.md
 sandbox/

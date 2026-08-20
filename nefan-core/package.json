@@ -33,7 +33,11 @@
     "gen:contract": "tsx scripts/gen-contract.ts",
     "prebuild": "tsx scripts/dump-config.ts",
     "predev": "tsx scripts/dump-config.ts",
-    "pretest": "tsx scripts/dump-config.ts"
+    "pretest": "tsx scripts/dump-config.ts",
+    "precoverage": "mkdir -p coverage",
+    "coverage": "node --enable-source-maps --import tsx --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
+    "crap": "tsx scripts/crap-score.ts",
+    "verify": "npm run build && npm run lint && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
