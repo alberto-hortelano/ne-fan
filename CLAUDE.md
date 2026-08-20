@@ -33,6 +33,7 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 | `stryker.config.json` (`npm run mutate`) | si los tests se enterarían de un cambio, no solo si pasan por la línea |
 | `qa/run.mjs` | que el juego real hace lo que se dice, desde el arranque |
 | `test/contract-model-io.test.ts` | que los prompts y tools del modelo no divergen del zod |
+| `.claude/hooks/ci-verde.sh` (hook `Stop`) | que nadie da una tarea por terminada con el CI de su PR pendiente o en rojo. Verde en local NO es verde: el runner tiene otro sistema de ficheros y ninguna caché |
 
 Si vas a añadir una regla a este fichero, pregúntate antes si puede ser una de
 esas. La prosa se olvida a mitad de contexto; un test que falla, no.

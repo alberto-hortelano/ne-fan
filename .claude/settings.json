@@ -1,0 +1,17 @@
+{
+  "$comment": "Ajustes de equipo de ne-fan. Preferencias personales van en .claude/settings.local.json, que no se commitea.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/ci-verde.sh\"",
+            "timeout": 30,
+            "statusMessage": "Comprobando que el CI está verde…"
+          }
+        ]
+      }
+    ]
+  }
+}

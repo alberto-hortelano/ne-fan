@@ -29,10 +29,14 @@ Thumbs.db
 # Local config
 .mcp.json
 .env
-# .claude/: config local ignorada, salvo el equipo de agentes y las skills (se versionan)
+# .claude/: config local ignorada, salvo lo que es de EQUIPO (se versiona):
+# los roles de agente, las skills, los hooks y los settings que los cablean.
+# settings.local.json sigue fuera: ahí van las preferencias de cada uno.
 .claude/*
 !.claude/agents/
 !.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
 
 # Obsolete / archived projects
 NEFan/
