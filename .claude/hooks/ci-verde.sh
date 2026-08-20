@@ -48,7 +48,7 @@ echo "$sha $veces" >> "$estado"
 if [ -n "$rojos" ]; then
   motivo="El CI de la PR de \`$rama\` está EN ROJO: $rojos. No des la tarea por terminada. Lee el log con \`gh run view --job <id> --log-failed\`, REPRODUCE el fallo en local, arréglalo, sube y vuelve a esperar. Verde en local no es verde."
 else
-  motivo="El CI de la PR de \`$rama\` sigue corriendo ($corriendo checks sin terminar). Espera a que acabe antes de dar nada por hecho: \`gh pr checks --watch\`. Verde en local no es verde."
+  motivo="El CI de la PR de \`$rama\` sigue corriendo ($corriendo checks sin terminar). Espera a que acabe antes de dar nada por hecho: \`gh run watch \$(gh run list -b $rama -L1 --json databaseId --jq .[0].databaseId)\` (el \`gh\` de esta máquina es 2.4 y no tiene \`gh pr checks --watch\`). Verde en local no es verde."
 fi
 
 jq -cn --arg r "$motivo" '{decision:"block", reason:$r}'
