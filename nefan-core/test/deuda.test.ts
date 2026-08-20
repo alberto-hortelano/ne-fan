@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "../scripts/arch-collect.js";
-import { bloqueFronteras, enColaDeCrap, unaLinea } from "../scripts/deuda.js";
+import { bloqueFronteras, cabeceraDe, enColaDeCrap, unaLinea } from "../scripts/deuda.js";
 
 describe("cola de deuda · fronteras", () => {
   const reports = reportByRule(archConfig, checkArchitecture(archConfig, loadArchFiles()));
@@ -75,6 +75,40 @@ describe("cola de deuda · complejidad × cobertura", () => {
 
   it("el umbral es estricto: justo en el objetivo no entra", () => {
     assert.deepEqual(enColaDeCrap([fila("justa", 30, 0.5)], 30), []);
+  });
+});
+
+describe("cola de deuda · el titular no puede aparentar completitud", () => {
+  const bloque = (titulo: string, n: number, aviso?: string) => ({
+    titulo,
+    fuente: "x",
+    aviso,
+    items: Array.from({ length: n }, () => ({ donde: "a.ts:1", que: "q", peso: 1 })),
+  });
+
+  it("con las tres fuentes medidas, da el total a secas", () => {
+    const out = cabeceraDe([bloque("Fronteras", 3), bloque("Complejidad", 2), bloque("Mutación", 1)]);
+    assert.match(out, /Deuda medida — 6 items/);
+  });
+
+  it("si falta una medida lo dice EN EL TITULAR, no solo dentro del bloque", () => {
+    // El caso del clon limpio: `coverage/` y `reports/` no se versionan, así
+    // que quien corra esto recién clonado vería un total pequeño y lo tomaría
+    // por la deuda entera.
+    const out = cabeceraDe([
+      bloque("Fronteras", 27),
+      bloque("Complejidad", 0, "sin medir — corre `npm run coverage`"),
+      bloque("Mutación", 0, "sin medir — corre `npm run mutate`"),
+    ]);
+    assert.match(out, /PARCIAL/);
+    assert.match(out, /1 de 3 fuentes/);
+    assert.match(out, /complejidad, mutación/);
+  });
+
+  it("un aviso que NO es de falta de medida no marca la cola como parcial", () => {
+    // "posiblemente obsoleta" es otra cosa: hay datos, solo que envejecidos.
+    const out = cabeceraDe([bloque("Fronteras", 3, "posiblemente obsoleta — cambiados después: x.ts")]);
+    assert.match(out, /Deuda medida — 3 items/);
   });
 });
 

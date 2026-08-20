@@ -237,6 +237,25 @@ export function bloqueMutacion(cambio: ReturnType<typeof ultimoCambio>): Bloque 
   };
 }
 
+/** Titular de la cola. Las fuentes sin medir se anuncian AQUÍ, no solo dentro
+ *  de su bloque: `coverage/` y `reports/` no se versionan, así que en un clon
+ *  limpio dos de las tres fuentes están vacías y el total sale engañosamente
+ *  pequeño. Quien lo lea de pasada se llevaría "27 items" como si fuera la
+ *  deuda entera — un número solo significa algo si se dice sobre cuánto. */
+export function cabeceraDe(bloques: readonly Bloque[]): string {
+  const total = bloques.reduce((n, b) => n + b.items.length, 0);
+  const sinMedir = bloques.filter((b) => b.aviso?.startsWith("sin medir"));
+  if (sinMedir.length === 0) {
+    return `Deuda medida — ${total} items. Derivada del código, no de un documento.`;
+  }
+  const nombres = sinMedir.map((b) => b.titulo.split(" ")[0].toLowerCase()).join(", ");
+  return (
+    `Deuda PARCIAL — ${total} items de ${bloques.length - sinMedir.length} de ${bloques.length} fuentes. ` +
+    `Sin medir: ${nombres}. ` +
+    `Para la cola completa: npm run coverage && npm run mutate && npm run deuda`
+  );
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   const TOP = Number(argv[argv.indexOf("--top") + 1]) || 12;
@@ -249,9 +268,9 @@ function main(): void {
   }
 
   const md = argv.includes("--md");
-  const total = bloques.reduce((n, b) => n + b.items.length, 0);
-  if (md) console.log(`## Deuda medida (${total} items)\n`);
-  else console.log(`\nDeuda medida — ${total} items. Derivada del código, no de un documento.\n`);
+  const cabecera = cabeceraDe(bloques);
+  if (md) console.log(`## ${cabecera}\n`);
+  else console.log(`\n${cabecera}\n`);
 
   for (const b of bloques) {
     const cabecera = `${b.titulo} · ${b.items.length}`;
