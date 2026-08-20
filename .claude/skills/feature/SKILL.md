@@ -5,9 +5,19 @@ description: Ejecuta el ciclo completo de equipo sobre una tarea — requisitos 
 
 # /feature — ciclo de equipo
 
-Tú eres el **coordinador**: hablas con el usuario, decides el alcance y delegas. Los tres roles (`arquitecto`, `ingeniero`, `qa`) viven en `.claude/agents/`. Arrancan con contexto limpio y **no se ven entre sí**: todo lo que necesitan viaja por `docs/agents/<tarea>/`. Si no lo escribes ahí, no existe para ellos.
+Tú eres el **coordinador**: hablas con el usuario, decides el alcance y delegas. Los tres roles (`arquitecto`, `ingeniero`, `qa`) viven en `.claude/agents/`. Arrancan con contexto limpio y **no se ven entre sí**: todo lo que necesitan viaja por ficheros. Si no lo escribes ahí, no existe para ellos.
 
 `<tarea>` = `AAAA-MM-DD-slug-corto` (fecha de hoy, slug en kebab-case del objetivo).
+
+**Dónde vive cada documento** (y por qué no todos en el mismo sitio):
+
+| Fichero | Dónde | Por qué |
+|---|---|---|
+| `requisitos.md` | `docs/agents/<tarea>/` — se commitea | qué se pidió, con la cita literal. Envejece bien: es historia |
+| `qa.md` | `docs/agents/<tarea>/` — se commitea | qué se verificó y con qué evidencia |
+| `plan.md`, `implementacion.md` | scratchpad de la sesión — efímeros | son andamio. Commiteados, a los tres meses son documentación falsa que alguien se cree |
+
+Pasa siempre la **ruta absoluta** de cada uno al lanzar un rol: ellos no adivinan dónde está.
 
 ## 1 · Requisitos (lo haces tú, sin delegar)
 
@@ -27,11 +37,20 @@ Lánzalo con el objetivo en una frase y la ruta `docs/agents/<tarea>/`. Devuelve
 
 **Punto de control humano**: presenta al usuario el resumen del plan (recomendación, ficheros, mejoras estructurales propuestas, riesgos) y espera su visto bueno o sus correcciones. Las correcciones se anotan en `requisitos.md` antes de seguir.
 
+Mantén el plan corto (tiene un tope de 150 líneas). Un plan largo se adorna y luego no sobrevive al código; la parte que de verdad hace falta por adelantado es *dónde encaja y qué contratos toca*, no el diseño línea a línea.
+
 ## 3 · Ingeniero
 
 Lánzalo con la ruta y la instrucción de seguir `plan.md`. Devuelve código, tests e `implementacion.md` con la verificación ejecutada.
 
 Si el informe trae desviaciones del plan que afectan al diseño, vuelve al arquitecto (o decide tú si es menor) antes de pasar a QA.
+
+## 3.5 · Limpieza y endurecido
+
+Antes de llamar a QA, dos pasos baratos que evitan una vuelta entera:
+
+- **Cleaner**: invoca la skill `/simplify` sobre el diff. El código recién escrito casi siempre tiene una abstracción de más o una duplicación que se ve mejor en frío.
+- **Hardener**: si el cambio toca módulos puros, `cd nefan-core && npm run mutate`. Un mutante que sobrevive en código nuevo es un test que no comprueba lo que dice comprobar. Los supervivientes vuelven al ingeniero, no a QA.
 
 ## 4 · QA
 
@@ -43,7 +62,9 @@ Lánzalo con la ruta. Devuelve `qa.md` con veredicto.
 
 ## 5 · Cierre
 
-Resume al usuario en la conversación: qué se hizo, qué demuestra que funciona, qué quedó fuera y el backlog de mejoras estructurales que propuso el arquitecto. Enlaza los cuatro documentos. No commitees ni abras PR salvo que se pida.
+Resume al usuario en la conversación: qué se hizo, qué demuestra que funciona, qué quedó fuera y el backlog de mejoras estructurales que propuso el arquitecto. No commitees ni abras PR salvo que se pida.
+
+Si el cambio ha movido la arquitectura de sitio, vale la pena una **segunda pasada del arquitecto** sobre el código ya escrito (su prompt la contempla): qué ha quedado torcido, qué frontera nueva merece entrar en `arch-rules.json`. Se juzga mejor sobre el código que existe que sobre el que se imaginó.
 
 ## Cuándo NO usar esto
 
