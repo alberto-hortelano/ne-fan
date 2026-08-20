@@ -59,6 +59,10 @@ qa/capturas/
 # Cobertura (regenerable con `npm run coverage`)
 nefan-core/coverage/
 
+# Mutation testing (regenerable con `npm run mutate`)
+nefan-core/reports/
+nefan-core/.stryker-tmp/
+
 # Personal scratch space
 todo.md
 sandbox/
