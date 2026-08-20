@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "../scripts/arch-collect.js";
-import { bloqueCrap, bloqueFronteras, unaLinea } from "../scripts/deuda.js";
+import { bloqueFronteras, enColaDeCrap, unaLinea } from "../scripts/deuda.js";
 
 describe("cola de deuda · fronteras", () => {
   const reports = reportByRule(archConfig, checkArchitecture(archConfig, loadArchFiles()));
@@ -34,22 +34,47 @@ describe("cola de deuda · fronteras", () => {
 });
 
 describe("cola de deuda · complejidad × cobertura", () => {
-  const items = bloqueCrap({ posteriores: () => [] }).items;
-
-  it("una función con nombre y 0% de cobertura entra aunque su CRAP sea bajo", () => {
-    // El corte por CRAP solo mide "complejo Y mal cubierto": una función simple
-    // por la que no pasa NINGÚN test se le escapaba por debajo. Fue el caso de
-    // `handleTileAnalysis` (CRAP exactamente 30,0 con el umbral en > 30).
-    const ceros = items.filter((i) => i.que.includes("cobertura 0%"));
-    for (const i of ceros) assert.ok(i.peso >= 0, `item mal formado: ${i.que}`);
-    assert.ok(ceros.length > 0, "si ya no queda ninguna a 0%, retira este test");
+  // Datos sintéticos, NO el lcov real: `npm test` corre antes que
+  // `npm run coverage` y `coverage/` no se versiona, así que contra datos
+  // reales estos tests pasarían en verde sobre una lista vacía. Pasó: la
+  // primera versión de este fichero rompió el CI por eso, y el test de las
+  // anónimas pasaba en vacío, que es peor que fallar.
+  const fila = (name: string, crap: number, coverage: number) => ({
+    name,
+    startLine: 1,
+    endLine: 9,
+    complexity: 5,
+    file: "src/x.ts",
+    coverage,
+    crap,
   });
 
-  it("no lista arrows anónimas: no son un sitio donde alguien pueda actuar", () => {
-    const anonimasSinCubrir = items.filter(
-      (i) => i.que.startsWith("(anónima)") && i.que.includes("cobertura 0%"),
+  it("una función con nombre y 0% de cobertura entra aunque su CRAP sea bajo", () => {
+    // El caso exacto de `handleTileAnalysis`: CRAP 30,0 con el umbral en > 30.
+    const cola = enColaDeCrap([fila("handleTileAnalysis", 30, 0)], 30);
+    assert.deepEqual(
+      cola.map((f) => f.name),
+      ["handleTileAnalysis"],
     );
-    assert.deepEqual(anonimasSinCubrir, []);
+  });
+
+  it("no lista arrows anónimas sin cubrir: no son un sitio donde alguien pueda actuar", () => {
+    const cola = enColaDeCrap([fila("(anónima)", 12, 0)], 30);
+    assert.deepEqual(cola, []);
+  });
+
+  it("una anónima SÍ entra si es su complejidad la que se dispara", () => {
+    // El filtro es solo para la regla de cobertura cero: por CRAP entra igual.
+    const cola = enColaDeCrap([fila("(anónima)", 66, 0.11)], 30);
+    assert.equal(cola.length, 1);
+  });
+
+  it("lo bien cubierto y poco complejo no entra", () => {
+    assert.deepEqual(enColaDeCrap([fila("trivial", 5, 1)], 30), []);
+  });
+
+  it("el umbral es estricto: justo en el objetivo no entra", () => {
+    assert.deepEqual(enColaDeCrap([fila("justa", 30, 0.5)], 30), []);
   });
 });
 

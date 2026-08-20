@@ -137,6 +137,28 @@ export function bloqueFronteras(): Bloque {
   };
 }
 
+/** Qué entra en el bloque de complejidad × cobertura.
+ *
+ *  Pura y exportada A PROPÓSITO: si el test tuviera que llamarla a través del
+ *  lcov real, en CI no comprobaría nada — `npm test` corre ANTES que
+ *  `npm run coverage` y `coverage/` no se versiona, así que la lista llega
+ *  vacía y un `deepEqual([], [])` pasa en verde. Con datos sintéticos la regla
+ *  se prueba igual en cualquier máquina. */
+export function enColaDeCrap(filas: readonly CrapRow[], objetivo: number): CrapRow[] {
+  // Cobertura cero entra SIEMPRE, caiga donde caiga su CRAP. Lo destapó el
+  // primer uso real: `handleTileAnalysis` tenía 0% de cobertura y un CRAP de
+  // exactamente 30,0 — un pelo por debajo del `>` — así que la cola lo dejaba
+  // fuera justo en el caso más grave que puede haber, una función por la que
+  // ningún test pasa. El CRAP mide "complejo Y mal cubierto"; una función
+  // simple sin cubrir en absoluto es otra cosa, y se escapaba por el hueco.
+  //
+  // …pero solo las CON NOMBRE. Una arrow anónima a 0% es una rama no tomada de
+  // su función padre, y como item de cola no es accionable ("arregla la flecha
+  // de la línea 173"): esa señal ya la lleva la cobertura del padre.
+  const sinCubrir = (f: CrapRow): boolean => f.coverage === 0 && !f.name.startsWith("(");
+  return filas.filter((f) => f.crap > objetivo || sinCubrir(f));
+}
+
 export function bloqueCrap(cambio: ReturnType<typeof ultimoCambio>): Bloque {
   if (!existsSync(LCOV)) {
     return {
@@ -148,17 +170,7 @@ export function bloqueCrap(cambio: ReturnType<typeof ultimoCambio>): Bloque {
   }
   const { objetivo } = readThresholds().crap;
   const { filas } = crapRows();
-  // Cobertura cero entra SIEMPRE, caiga donde caiga su CRAP. Lo destapó el
-  // primer uso real: `handleTileAnalysis` tenía 0% de cobertura y un CRAP de
-  // exactamente 30,0 — un pelo por debajo del `>` — así que la cola lo dejaba
-  // fuera justo en el caso más grave que puede haber, una función por la que
-  // ningún test pasa. El CRAP mide "complejo Y mal cubierto"; una función
-  // simple sin cubrir en absoluto es otra cosa, y se escapaba por el hueco.
-  // …pero solo las CON NOMBRE. Una arrow anónima a 0% es una rama no tomada de
-  // su función padre, y como item de cola no es accionable ("arregla la flecha
-  // de la línea 173"): esa señal ya la lleva la cobertura del padre.
-  const sinCubrir = (f: CrapRow): boolean => f.coverage === 0 && !f.name.startsWith("(");
-  const sobre = filas.filter((f: CrapRow) => f.crap > objetivo || sinCubrir(f));
+  const sobre = enColaDeCrap(filas, objetivo);
   return {
     titulo: `Complejidad × cobertura (CRAP > ${objetivo}, o cobertura 0)`,
     fuente: "coverage/lcov.info + quality-thresholds.json",
