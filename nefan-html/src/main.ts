@@ -880,7 +880,7 @@ function populateSceneSelector(): void {
   // Scene fixtures (cargados localmente, sin bridge).
   const scenes: { key: string; label: string }[] = [];
   for (const path of Object.keys(sceneModules)) {
-    // path like "@nefan-core/data/scenes/tavern_clearing.json"
+    // path like "@nefan-core/data/scenes/robledo_tile.json"
     const match = path.match(/scenes\/(.+)\.json$/);
     if (!match) continue;
     scenes.push({ key: path, label: match[1] });

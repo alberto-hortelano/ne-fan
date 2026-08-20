@@ -4,8 +4,10 @@
  *  mapa que entrega el motor narrativo se puede JUGAR. La regla de oro es la
  *  inversa del bug de la taberna original (sin muros se salía por todas
  *  partes): con muros sólidos hay que garantizar que se puede salir por
- *  ALGUNA parte — puerta alcanzable y borde de mapa alcanzable con flood-fill
- *  desde el spawn del jugador.
+ *  ALGUNA parte, y qué significa "salir" depende de la variante — un TILE se
+ *  abandona por sus costuras con los vecinos, un PLATÓ por las salidas que
+ *  declara. No hay tercera: una escena sin `tile` ni `stage` se rechaza aquí
+ *  igual que en el gate estructural (issue #172).
  *
  *  Se ejecuta en el pre-flight de `narrative_respond` (vía
  *  `POST /scene/validate` del state API): si falla, el motor recibe los
@@ -126,6 +128,23 @@ export function validateScene(
       if (parsedStage.ok) stage = parsedStage.stage;
       else errors.push(parsedStage.error);
     }
+  }
+
+  // Format D tiene DOS variantes y ninguna más: tile (mundo continuo) o
+  // stage (proscenio). La "suelta" —grid propio, sin sitio en el plano ni
+  // salidas declaradas— se retiró (issue #172); aquí se corta antes de
+  // gastar el flood-fill, con el mismo mensaje que el gate estructural.
+  if (!isTile && rawScene.stage === undefined) {
+    return {
+      ok: false,
+      errors: [
+        ...errors,
+        "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) " +
+          "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe",
+      ],
+      warnings,
+      stats: emptyStats(),
+    };
   }
 
   let cols: number;
@@ -521,9 +540,10 @@ export function validateScene(
         }
       }
       stats.border_reachable = allCrossingsReachable;
-    } else if (stage) {
-      // Proscenio: no se sale por el borde sino por las salidas declaradas —
-      // cada zona de exit debe ser alcanzable desde el spawn del jugador.
+    } else {
+      // Proscenio (la única variante no-tile): no se sale por el borde sino
+      // por las salidas declaradas — cada zona de exit debe ser alcanzable
+      // desde el spawn del jugador.
       let allExitsReachable = exitTargets.length > 0;
       for (const target of exitTargets) {
         const hit = target.cells.some(([c, r]) => reachable[r * cols + c] === 1);
@@ -533,21 +553,6 @@ export function validateScene(
         }
       }
       stats.border_reachable = allExitsReachable;
-    } else {
-      // ¿Se puede salir del mapa? (alguna celda del borde alcanzable)
-      let borderReachable = false;
-      for (let c = 0; c < cols && !borderReachable; c++) {
-        if (reachable[c] || reachable[(rows - 1) * cols + c]) borderReachable = true;
-      }
-      for (let r = 0; r < rows && !borderReachable; r++) {
-        if (reachable[r * cols] || reachable[r * cols + cols - 1]) borderReachable = true;
-      }
-      stats.border_reachable = borderReachable;
-      if (!borderReachable) {
-        errors.push(
-          "ninguna celda del borde del mapa es alcanzable desde el player: no se puede salir de la zona (mundo abierto = siempre hay continuación)",
-        );
-      }
     }
 
     // Puertas alcanzables (la celda del hueco es walkable, así que basta con

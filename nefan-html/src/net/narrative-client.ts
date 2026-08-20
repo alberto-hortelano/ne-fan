@@ -155,12 +155,6 @@ export class NarrativeClient {
     this.bridge.sendPlayerEnteredPlace(placeId);
   }
 
-  /** El jugador cruzó un borde sin destino conocido: el motor narrativo crea
-   *  mundo en esa dirección. La escena nueva llega igual que en enterPlace. */
-  crossFrontier(edge: "north" | "south" | "east" | "west"): void {
-    this.bridge.sendPlayerCrossedFrontier(edge);
-  }
-
   /** Pide el tile (tx,ty) del plano continuo. Si ya existe, el bridge lo
    *  re-difunde al instante sin LLM; si no, lo genera (encolado). */
   requestTile(tx: number, ty: number, reason: "prefetch" | "blocking", edge?: "north" | "south" | "east" | "west"): void {

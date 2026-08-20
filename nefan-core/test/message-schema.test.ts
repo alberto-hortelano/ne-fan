@@ -40,7 +40,6 @@ test("un frame válido de cada tipo pasa la validación", () => {
       chosenText: "Hola",
     },
     { type: "player_entered_place", placeId: "plaza" },
-    { type: "player_crossed_frontier", edge: "north" },
     { type: "request_tile", tx: 0, ty: 1, reason: "blocking", edge: "east" },
     {
       type: "add_combatants",

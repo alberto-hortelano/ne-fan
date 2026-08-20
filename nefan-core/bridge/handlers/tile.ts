@@ -12,7 +12,7 @@ import {
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
-import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile, type TileCoord } from "../../src/scene/tile.js";
+import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
@@ -388,17 +388,4 @@ export function activeTileOf(ctx: BridgeContext): TileCoord | null {
   const active = ctx.narrative.scenes_loaded[ctx.narrative.world.active_scene_id];
   if (active?.tile) return active.tile;
   return null;
-}
-
-/** El viejo player_crossed_frontier (tanda 2) delega en el pipeline de tiles:
- *  el vecino del tile activo en esa dirección, como blocking. */
-export async function handleFrontierAsTile(
-  edge: Edge,
-  ctx: BridgeContext,
-): Promise<boolean> {
-  const active = activeTileOf(ctx);
-  if (!active) return false;
-  const n = neighborTile(active.tx, active.ty, edge);
-  await handleRequestTile({ type: "request_tile", tx: n.tx, ty: n.ty, reason: "blocking", edge }, ctx);
-  return true;
 }

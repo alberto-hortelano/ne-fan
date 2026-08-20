@@ -345,13 +345,25 @@ into context:
         currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
         currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
         currentFpsFaceRefIds = catalogIds(ws?.world?.style_refs?.fps_faces);
+        // Format D tiene DOS variantes y la petición dice cuál: `generate_tile`
+        // (mundo continuo) o `stage_request` (proscenio). Sin ninguna de las
+        // dos la petición está mal formada — antes caía en la escena "suelta",
+        // retirada en el issue #172.
         const isTileRequest = Boolean(ws?.generate_tile);
-        const isStageRequest = Boolean(ws?.stage_request);
+        if (!isTileRequest && !ws?.stage_request) {
+          return {
+            content: [{
+              type: 'text',
+              text: 'Malformed scene request: world_state carries neither `generate_tile` ' +
+                '(continuous world tile) nor `stage_request` (proscenium stage). Format D has ' +
+                'exactly those two variants; the free-standing scene was retired.',
+            }],
+            isError: true,
+          };
+        }
         const sceneVariant = isTileRequest
           ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
-          : isStageRequest
-            ? STAGE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
-            : SCENE_INSTRUCTIONS;
+          : STAGE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS;
         return {
           content: [{
             type: 'text',

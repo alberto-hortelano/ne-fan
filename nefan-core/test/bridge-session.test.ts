@@ -18,6 +18,7 @@ import type {
 import { listGames as listGamesFs } from "../src/games/loader.js";
 import {
   combatConfig,
+  fakeBootstrapTile,
   makeCtx,
   makeSocket,
   waitFor,
@@ -67,7 +68,7 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(sceneEvent.eventId, "scene_init");
     assert.equal(sceneEvent.effects[0].kind, "spawn_entity");
     // La escena quedó registrada y persistida.
-    assert.ok(narrative.scenes_loaded["scene_test"]);
+    assert.ok(narrative.scenes_loaded["tile_0_0"]);
   });
 
   it("start_session adjunta world_document al bootstrap y world.description en el contexto", async () => {
@@ -467,7 +468,7 @@ describe("bridge ciclo de sesión", () => {
         generateScene: async () =>
           failScene
             ? { ok: false as const, error: "HTTP 504: timeout tras 900s" }
-            : { ok: true as const, scene: { room_id: "scene_test", room_description: "una escena" } },
+            : { ok: true as const, scene: fakeBootstrapTile() },
       },
     });
     const { socket, sent } = makeSocket();

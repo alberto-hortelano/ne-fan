@@ -146,27 +146,6 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.ok(!narrative.hasTile(1, 0));
   });
 
-  it("player_crossed_frontier delega en el pipeline de tiles cuando el activo es un tile", async () => {
-    const { ctx, narrative, aiCalls } = makeCtx({
-      ai: {
-        generateScene: async (llmCtx) => {
-          assert.ok(llmCtx.generate_tile, "usa generate_tile, no frontier_request");
-          assert.equal(llmCtx.frontier_request, undefined);
-          assert.equal(llmCtx.generate_tile!.entry?.edge, "west", "entra por el opuesto al cruzado");
-          return {
-            ok: true,
-            scene: tileScene([caminoFila41(0)]),
-          };
-        },
-      },
-    });
-    seedTile00(narrative);
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
-    await waitFor(() => narrative.hasTile(1, 0));
-    assert.equal(aiCalls.scene.length, 1);
-  });
-
   it("blocking repetido mientras genera → generating re-difundido, una sola llamada", async () => {
     let release: (() => void) | null = null;
     const { ctx, broadcasts, narrative, aiCalls } = makeCtx({

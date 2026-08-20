@@ -264,6 +264,13 @@ describe("state HTTP API", () => {
         { type: "room", rect: [2, 1, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
       ],
       entities: [{ id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" }],
+      // Escena con grid propio ⇒ PLATÓ (la variante suelta se retiró): la
+      // salida al sur es la que enlaza con el exterior "millhaven".
+      stage: {
+        exits: [
+          { id: "salida_sur", edge: "south", to_place_id: "millhaven", zone: [6, 11, 3, 1], kind: "opening", label: "Salida al camino" },
+        ],
+      },
     };
 
     // Place inexistente → error que instruye a crear el place.

@@ -1,8 +1,8 @@
 /** El suelo del mundo sale de `ground`, y llega hasta la colisión.
  *
- *  Contexto (agosto 2026): se retiró `terrain_features`, el campo vectorial
- *  que el motor emitía y que el renderer 2D pintaba encima del grid. La única
- *  vía viva del suelo declarativo es ahora `ground` (paths, water, areas,
+ *  Contexto (agosto 2026): se retiró el campo vectorial que el motor emitía y
+ *  que el renderer 2D pintaba encima del grid. La única vía viva del suelo
+ *  declarativo es ahora `ground` (paths, water, areas,
  *  decks) → `scene-expand` lo rasteriza al grid de terreno → `formatDToWorld`
  *  lo emite como `terrain_grid` → el cliente pinta ESE grid y deriva de él la
  *  colisión. Si esa cadena se rompe, el jugador ve un tile de hierba lisa: sin
