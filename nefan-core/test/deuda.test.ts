@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "../scripts/arch-collect.js";
-import { bloqueFronteras, unaLinea } from "../scripts/deuda.js";
+import { bloqueCrap, bloqueFronteras, unaLinea } from "../scripts/deuda.js";
 
 describe("cola de deuda · fronteras", () => {
   const reports = reportByRule(archConfig, checkArchitecture(archConfig, loadArchFiles()));
@@ -30,6 +30,26 @@ describe("cola de deuda · fronteras", () => {
     for (const item of bloqueFronteras().items) {
       assert.match(item.donde, /^[\w./-]+:\d+$/, `ubicación inservible: ${item.donde}`);
     }
+  });
+});
+
+describe("cola de deuda · complejidad × cobertura", () => {
+  const items = bloqueCrap({ posteriores: () => [] }).items;
+
+  it("una función con nombre y 0% de cobertura entra aunque su CRAP sea bajo", () => {
+    // El corte por CRAP solo mide "complejo Y mal cubierto": una función simple
+    // por la que no pasa NINGÚN test se le escapaba por debajo. Fue el caso de
+    // `handleTileAnalysis` (CRAP exactamente 30,0 con el umbral en > 30).
+    const ceros = items.filter((i) => i.que.includes("cobertura 0%"));
+    for (const i of ceros) assert.ok(i.peso >= 0, `item mal formado: ${i.que}`);
+    assert.ok(ceros.length > 0, "si ya no queda ninguna a 0%, retira este test");
+  });
+
+  it("no lista arrows anónimas: no son un sitio donde alguien pueda actuar", () => {
+    const anonimasSinCubrir = items.filter(
+      (i) => i.que.startsWith("(anónima)") && i.que.includes("cobertura 0%"),
+    );
+    assert.deepEqual(anonimasSinCubrir, []);
   });
 });
 
