@@ -139,23 +139,43 @@ export function crap(complexity: number, coverage: number): number {
   return complexity ** 2 * (1 - coverage) ** 3 + complexity;
 }
 
-function main(): void {
-  const argv = process.argv.slice(2);
-  const CHECK = argv.includes("--check");
-  const TOP = Number(argv[argv.indexOf("--top") + 1]) || 25;
+export interface CrapRow extends FuncInfo {
+  file: string;
+  coverage: number;
+  crap: number;
+}
 
+export interface Thresholds {
+  crap: { max: number; objetivo: number };
+  cobertura_lineas: { min: number };
+}
+
+export function readThresholds(): Thresholds {
+  return JSON.parse(readFileSync(THRESHOLDS, "utf-8")) as Thresholds;
+}
+
+/** Fila por función medida, ordenada de peor a mejor CRAP, más la cobertura
+ *  global de líneas sobre los mismos árboles. Lo comparten la tabla (`--check`)
+ *  y la cola de deuda (`scripts/deuda.ts`): una sola definición de qué se mide.
+ *  Falta el lcov → error duro, no una tabla vacía que parece "cero deuda". */
+export function crapRows(): { filas: CrapRow[]; cobGlobal: number } {
   if (!existsSync(LCOV)) {
-    console.error(`No hay ${LCOV}.\nGenera la cobertura primero:  npm run coverage`);
-    process.exit(2);
+    throw new Error(`No hay ${LCOV}.\nGenera la cobertura primero:  npm run coverage`);
   }
   const porFichero = lineHitsFromLcov(readFileSync(LCOV, "utf-8"));
 
-  const filas: (FuncInfo & { file: string; coverage: number; crap: number })[] = [];
+  const filas: CrapRow[] = [];
+  let lineasTotales = 0;
+  let lineasCubiertas = 0;
   for (const [file, hits] of porFichero) {
     // El lcov recoge todo lo que se cargó, incluidos los .js de dist/ (los
     // carga narrative-mcp por su `exports`) y ficheros de otros paquetes. La
     // deuda se mide sobre el FUENTE de este paquete y nada más.
     if (!MEDIDOS.some((d) => file.startsWith(d))) continue;
+    for (const h of hits.values()) {
+      lineasTotales++;
+      if (h > 0) lineasCubiertas++;
+    }
     const abs = join(coreRoot, file);
     if (!existsSync(abs)) continue;
     for (const fn of functionsOf(readFileSync(abs, "utf-8"), file)) {
@@ -173,6 +193,22 @@ function main(): void {
     }
   }
   filas.sort((a, b) => b.crap - a.crap);
+  return { filas, cobGlobal: lineasTotales === 0 ? 0 : (lineasCubiertas / lineasTotales) * 100 };
+}
+
+function main(): void {
+  const argv = process.argv.slice(2);
+  const CHECK = argv.includes("--check");
+  const TOP = Number(argv[argv.indexOf("--top") + 1]) || 25;
+
+  let medida: { filas: CrapRow[]; cobGlobal: number };
+  try {
+    medida = crapRows();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(2);
+  }
+  const { filas, cobGlobal } = medida;
 
   console.log(`\nCRAP = complejidad² · (1−cobertura)³ + complejidad\n`);
   console.log(`${"CRAP".padStart(7)}  ${"cx".padStart(3)}  ${"cob".padStart(5)}  función`);
@@ -184,26 +220,12 @@ function main(): void {
     );
   }
   console.log("─".repeat(78));
-  // Cobertura global de líneas, sobre los mismos árboles medidos.
-  let lineasTotales = 0;
-  let lineasCubiertas = 0;
-  for (const [file, hits] of porFichero) {
-    if (!MEDIDOS.some((d) => file.startsWith(d))) continue;
-    for (const h of hits.values()) {
-      lineasTotales++;
-      if (h > 0) lineasCubiertas++;
-    }
-  }
-  const cobGlobal = lineasTotales === 0 ? 0 : (lineasCubiertas / lineasTotales) * 100;
   console.log(
     `${filas.length} funciones medidas · cobertura de líneas ${cobGlobal.toFixed(1)}% · ` +
       `complejidad máxima ${Math.max(...filas.map((r) => r.complexity))}`,
   );
 
-  const umbral = JSON.parse(readFileSync(THRESHOLDS, "utf-8")) as {
-    crap: { max: number; objetivo: number };
-    cobertura_lineas: { min: number };
-  };
+  const umbral = readThresholds();
   const peores = filas.filter((r) => r.crap > umbral.crap.max);
   const sobreObjetivo = filas.filter((r) => r.crap > umbral.crap.objetivo);
   console.log(

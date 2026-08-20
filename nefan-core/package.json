@@ -38,6 +38,7 @@
     "precoverage": "mkdir -p coverage",
     "coverage": "node --enable-source-maps --import tsx --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
     "crap": "tsx scripts/crap-score.ts",
+    "deuda": "tsx scripts/deuda.ts",
     "mutate": "stryker run",
     "verify": "npm run build && npm run lint && npm test"
   },

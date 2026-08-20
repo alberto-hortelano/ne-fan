@@ -1,5 +1,11 @@
 # Auditoría de código — agosto 2026
 
+> **Documento histórico — no es el backlog.** El trabajo pendiente vive ahora en
+> `npm run deuda` (cola derivada de las herramientas) y en las issues de GitHub.
+> Se conserva porque cada item resuelto lleva al lado cómo se resolvió, que es
+> justo lo que no cuenta el `git log`.
+> **Verifica contra el código antes de actuar sobre nada de aquí**: 39 de sus 40 items están ya tachados; lo poco abierto se ha volcado a issues.
+
 Auditoría crítica del repo (código escrito por modelos de IA de varias
 generaciones). Este documento acompaña a la PR de **bugs claros** (rama
 `audit/bugfixes`) y recoge lo que queda para **discutir** y trocear en PRs

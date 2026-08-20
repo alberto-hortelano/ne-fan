@@ -1,9 +1,9 @@
 /** Guardia de fronteras arquitectónicas.
  *
- *  Las reglas viven en `data/contract/arch-rules.json` y el motor que las
- *  aplica en `src/contract/arch/check.ts`. Este fichero es el borde: hace el
- *  I/O (recorrer el repo) y el parseo de imports con la API de TypeScript, y
- *  falla con `ruta:línea → regla` cuando algo cruza una frontera.
+ *  Las reglas viven en `data/contract/arch-rules.json`, el motor que las
+ *  aplica en `src/contract/arch/check.ts` y el I/O (recorrer el repo, parsear
+ *  imports) en `scripts/arch-collect.ts`. Este fichero es el guardia: falla
+ *  con `ruta:línea → regla` cuando algo cruza una frontera.
  *
  *  Si falla: repara el import o el patrón. Si de verdad es legítimo, añade una
  *  excepción CON MOTIVO en el JSON — una excepción sin motivo no valida.
@@ -12,68 +12,18 @@
  *  si CRECE, y avisa (sin fallar) cuando alguien la baja y toca reapretar. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import ts from "typescript";
 
 import {
   ArchConfigSchema,
   checkArchitecture,
   formatFailure,
   globToRegExp,
-  lineOf,
   reportByRule,
-  type ImportRef,
   type SourceFile,
 } from "../src/contract/arch/check.js";
+import { archConfig as config, loadArchFiles } from "../scripts/arch-collect.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = join(here, "..", "..");
-
-const config = ArchConfigSchema.parse(
-  JSON.parse(readFileSync(join(here, "..", "data", "contract", "arch-rules.json"), "utf-8")),
-);
-
-/** Recorre un directorio y devuelve las rutas con alguna de las extensiones. */
-function walk(dir: string, ext: readonly string[], ignore: readonly string[]): string[] {
-  const out: string[] = [];
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    throw new Error(`arch-rules.json apunta a un directorio inexistente: ${dir}`);
-  }
-  for (const name of entries) {
-    if (ignore.includes(name)) continue;
-    const full = join(dir, name);
-    if (statSync(full).isDirectory()) out.push(...walk(full, ext, ignore));
-    else if (ext.some((e) => name.endsWith(e))) out.push(full);
-  }
-  return out;
-}
-
-/** Imports de un fichero TS, con su línea. `preProcessFile` entiende de
- *  verdad la sintaxis: no confunde un "three" escrito en un comentario con un
- *  import — que es justo el falso positivo que tendría una regex. */
-function importsOf(text: string): ImportRef[] {
-  const pre = ts.preProcessFile(text, true, true);
-  return pre.importedFiles.map((ref) => ({ spec: ref.fileName, line: lineOf(text, ref.pos) }));
-}
-
-function loadFiles(): SourceFile[] {
-  const out: SourceFile[] = [];
-  for (const root of config.scan.roots) {
-    for (const abs of walk(join(repoRoot, root.dir), root.ext, config.scan.ignore)) {
-      const text = readFileSync(abs, "utf-8");
-      const path = relative(repoRoot, abs).split(sep).join("/");
-      out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(text) : undefined });
-    }
-  }
-  return out;
-}
-
-const files = loadFiles();
+const files = loadArchFiles();
 const violations = checkArchitecture(config, files);
 const reports = reportByRule(config, violations);
 
@@ -191,9 +141,7 @@ describe("motor de reglas", () => {
     assert.throws(() =>
       ArchConfigSchema.parse({
         scan: { roots: [{ dir: "x", ext: [".ts"] }] },
-        rules: [
-          { id: "r", desc: "d", why: "w", severity: "warn", files: ["x/**"], text: { pattern: "a" } },
-        ],
+        rules: [{ id: "r", desc: "d", why: "w", severity: "warn", files: ["x/**"], text: { pattern: "a" } }],
       }),
     );
   });
@@ -202,7 +150,15 @@ describe("motor de reglas", () => {
     const cfg = ArchConfigSchema.parse({
       scan: { roots: [{ dir: "x", ext: [".ts"] }] },
       rules: [
-        { id: "r", desc: "d", why: "w", severity: "warn", max: 1, files: ["x/**/*.ts"], text: { pattern: "mal" } },
+        {
+          id: "r",
+          desc: "d",
+          why: "w",
+          severity: "warn",
+          max: 1,
+          files: ["x/**/*.ts"],
+          text: { pattern: "mal" },
+        },
       ],
     });
     const dos = checkArchitecture(cfg, [{ path: "x/a.ts", text: "mal\nmal\n" }]);
