@@ -1641,6 +1641,59 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       playerPos.x = x;
       playerPos.z = z;
     },
+    // --- API del runner de QA (qa/run.mjs) ---
+    // El guion espera por ESTADO, nunca por sleep: el movimiento va por delta
+    // de rAF y el typewriter por setInterval, así que ningún tiempo de pared
+    // es determinista.
+    /** ¿Juego jugable y quieto? Título cerrado, escena cargada y sin repintado
+     *  en curso. El detalle de por qué NO, en status(). */
+    ready: () =>
+      !titleScreen.isVisible && sceneData !== null && !stageImageController.running,
+    status: () => ({
+      title: titleScreen.isVisible,
+      scene: sceneData !== null,
+      painting: stageImageController.running,
+      view: sessionView,
+      npcs: npcEntities.length,
+    }),
+    /** Estado del diálogo, o `{visible:false}`. Es el análogo del comando
+     *  `dialogue_state` que el RemoteControl de Godot ya ofrecía en :9876. */
+    dialogue: () =>
+      dialoguePanel.isVisible
+        ? { visible: true, ...dialoguePanel.current() }
+        : { visible: false },
+    /** Elige una opción por índice (0-based). Salta el typewriter primero,
+     *  igual que hace cualquier tecla de acción del jugador. */
+    chooseDialogue: (index: number) => {
+      dialoguePanel.finishTypewriter();
+      dialoguePanel.chooseByIndex(index);
+    },
+    advanceDialogue: () => {
+      dialoguePanel.finishTypewriter();
+      dialoguePanel.advance();
+    },
+    /** Cierra el título por el MISMO camino que el jugador (botón #ts-close),
+     *  no ocultando el overlay a mano. */
+    closeTitle: () => {
+      const btn = document.getElementById("ts-close");
+      if (!btn) throw new Error("no hay #ts-close: el título no está montado");
+      (btn as HTMLButtonElement).click();
+    },
+    /** Carga una fixture del selector Room por nombre parcial, conduciendo el
+     *  <select> real. Fail-loud si no existe: un guion que "no encuentra" la
+     *  escena y sigue en verde no vale nada. */
+    loadFixture: (name: string) => {
+      const option = [...sceneSelector.options].find((o) => o.value.includes(name));
+      if (!option) {
+        throw new Error(
+          `fixture "${name}" no está en el selector; hay: ${[...sceneSelector.options]
+            .map((o) => o.label)
+            .join(", ")}`,
+        );
+      }
+      sceneSelector.value = option.value;
+      sceneSelector.dispatchEvent(new Event("change"));
+    },
     // Driver programático del provider "scripted" (?input=scripted) — API
     // limpia para el bench en vez de sintetizar KeyboardEvents.
     inputDriver: input instanceof ScriptedInputProvider ? input : undefined,
