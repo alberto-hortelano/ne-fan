@@ -28,8 +28,11 @@ Thumbs.db
 
 # Local config
 .mcp.json
-.claude/
 .env
+# .claude/: config local ignorada, salvo el equipo de agentes y las skills (se versionan)
+.claude/*
+!.claude/agents/
+!.claude/skills/
 
 # Obsolete / archived projects
 NEFan/

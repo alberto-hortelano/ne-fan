@@ -687,6 +687,32 @@ Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []
 
 Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.auto_disconnect(self, autoload.signal, callback)` para que la subscripción muera con el nodo. Autoload→autoload se documenta en línea (`# OK: autoload, vida == app`).
 
+## Equipo de agentes (roles y coordinación)
+
+El trabajo sustancial se hace en equipo: la **sesión principal coordina** (habla con el
+usuario, fija los requisitos, decide y delega) y tres roles especializados viven en
+`.claude/agents/`:
+
+| Rol | Qué hace | Qué NO hace |
+|-----|----------|-------------|
+| `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / clientes / ai_server), contratos y formatos afectados, compatibilidad de saves y cachés, mejoras estructurales. Produce `plan.md` | No escribe código de producción |
+| `ingeniero` | Diseña los tests desde los criterios de verificación, implementa, y **ejecuta** tsc + tests + lint + el escenario real. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
+| `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde `./start.sh`, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` | **No arregla nada** — reporta |
+
+Los subagentes arrancan con **contexto limpio y no se ven entre sí**: todo el handoff viaja
+por `docs/agents/<AAAA-MM-DD-slug>/` (ver su README). Lo que no esté escrito ahí, para ellos
+no existe — empezando por la cita literal de la petición del usuario en `requisitos.md`.
+
+**Cuándo se dispara** (regla del coordinador, sin esperar a que lo pidan): cualquier tarea que
+toque más de un fichero de lógica, cambie un contrato o un formato, o sea observable por el
+jugador → ciclo completo `requisitos → arquitecto → [visto bueno del usuario] → ingeniero →
+qa`. Un typo, un color o una pregunta se hacen directamente: el ciclo cuesta cuatro contextos
+y no debe salir más caro que el trabajo. `/feature <descripción>` fuerza el ciclo entero;
+`/final-check` es la verificación de objetivo en solitario, sin equipo.
+
+Los hallazgos de QA vuelven al **mismo** ingeniero con `SendMessage` (conserva su contexto).
+Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al usuario.
+
 ## Decisiones de diseno importantes
 
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador.
