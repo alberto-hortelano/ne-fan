@@ -1,18 +1,20 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation testing del núcleo puro. La cobertura dice que el test PASÓ POR la línea; la mutación dice si se habría ENTERADO de que cambia. Solo módulos deterministas y sin I/O (el checker de fronteras garantiza que siguen siéndolo). No corre en cada PR: son ~12 min. thresholds.break=60 es la línea base MEDIDA (62.20%), no un número elegido a ojo: sube conforme se maten supervivientes.",
+  "_comment": "Mutation testing del núcleo puro. La cobertura dice que el test PASÓ POR la línea; la mutación dice si se habría ENTERADO de que cambia. Solo módulos deterministas y sin I/O (el checker de fronteras garantiza que siguen siéndolo). No corre en cada PR: son ~16 min. thresholds.break es la línea base MEDIDA redondeada hacia abajo, no un número elegido a ojo: sube conforme se maten supervivientes. OJO con `incremental`: con testRunner \"command\" Stryker no hashea ficheros de test, así que la caché NO se invalida al editar un test — medido: vaciar dos ficheros de test y volver a correr devuelve el score viejo en 3 s. Por eso `npm run mutate` pasa --force (corre todos los mutantes y reconstruye la caché) y la caché la explota `npm run mutate:quick`, que SOLO vale si no has tocado test/.",
   "packageManager": "npm",
   "testRunner": "command",
   "commandRunner": {
     "command": "npm run test:mutate"
   },
   "coverageAnalysis": "off",
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json",
   "concurrency": 10,
   "timeoutMS": 120000,
   "mutate": [
     "src/scene/scene-normalize.ts",
     "src/plugins/dsl/**/*.ts",
-    "src/combat/resolver.ts"
+    "src/combat/combat-resolver.ts"
   ],
   "reporters": [
     "clear-text",
@@ -27,8 +29,8 @@
   },
   "thresholds": {
     "high": 80,
-    "low": 60,
-    "break": 60
+    "low": 72,
+    "break": 72
   },
   "tempDirName": ".stryker-tmp"
 }

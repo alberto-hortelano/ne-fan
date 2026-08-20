@@ -93,7 +93,7 @@ export interface ReviewSceneBlueprintRequest {
 export interface ReviewSceneBlueprintResponse {
   approved: boolean;
   issues: string[];
-  /** Overrides parciales { terrain?, terrain_features?, entity_moves? }. */
+  /** Overrides parciales { terrain?, ground?, volumes?, entity_moves? }. */
   fixes?: Record<string, unknown>;
 }
 

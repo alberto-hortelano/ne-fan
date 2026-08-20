@@ -17,14 +17,19 @@ import {
   } from "./helpers.js";
 
 describe("bridge request_tile (plano continuo)", () => {
-  /** Tile mínimo válido: bioma + camino que continúa los cruces pedidos. */
-  const tileScene = (features: Record<string, unknown>[] = []) => ({
+  /** Tile mínimo válido: bioma + los rasgos de `ground` que continúan los
+   *  cruces pedidos (el suelo declarativo, única vía). */
+  const tileScene = (ground: Record<string, unknown>[] = []) => ({
     biome: "grass",
     scene_description: "campo de bench",
-    terrain_features: features,
+    ground,
     entities: [],
     ambient_event: "",
   });
+
+  /** Camino oeste↔este a la altura de la fila 41, el `at` de las costuras. */
+  const caminoFila41 = (fromCol: number) =>
+    ({ id: "camino", kind: "path", points: [[fromCol, 41], [128, 41]], w: 2 });
 
   function seedTile00(narrative: NarrativeState): void {
     narrative.startNewSession("plugtest");
@@ -32,9 +37,7 @@ describe("bridge request_tile (plano continuo)", () => {
     const t = {
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",
-      ...tileScene([
-        { type: "path", points: [[64, 41], [128, 41]], width: 2, at_edges: [{ edge: "east", at: 41 }] },
-      ]),
+      ...tileScene([caminoFila41(64)]),
     };
     narrative.recordSceneLoaded("tile_0_0", expandScenePrimitives(t));
   }
@@ -79,9 +82,7 @@ describe("bridge request_tile (plano continuo)", () => {
           // Continuarlo: camino de oeste a este.
           return {
             ok: true,
-            scene: tileScene([
-              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
-            ]),
+            scene: tileScene([caminoFila41(0)]),
           };
         },
       },
@@ -154,9 +155,7 @@ describe("bridge request_tile (plano continuo)", () => {
           assert.equal(llmCtx.generate_tile!.entry?.edge, "west", "entra por el opuesto al cruzado");
           return {
             ok: true,
-            scene: tileScene([
-              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
-            ]),
+            scene: tileScene([caminoFila41(0)]),
           };
         },
       },
@@ -176,9 +175,7 @@ describe("bridge request_tile (plano continuo)", () => {
           await new Promise<void>((r) => { release = r; });
           return {
             ok: true,
-            scene: tileScene([
-              { type: "path", points: [[0, 41], [128, 41]], width: 2, at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 41 }] },
-            ]),
+            scene: tileScene([caminoFila41(0)]),
           };
         },
       },

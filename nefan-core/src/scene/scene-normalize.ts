@@ -40,46 +40,6 @@ type FormatDEntity = {
 /** Formas válidas que el cliente entiende. `shape` inválido se ignora (cae a box). */
 const VALID_SHAPES = new Set(["box", "cylinder", "sphere", "cone"]);
 
-/** Feature vectorial de terreno (Format D `terrain_features`): polyline con
- *  grosor (río, camino) o polígono relleno (`closed`). Puntos en coordenadas
- *  de celda (col,row — floats permitidos), width en celdas. Visual-only: la
- *  colisión no la lee. */
-type TerrainFeature = {
-  type: string;
-  points: [number, number][];
-  width?: number;
-  closed?: boolean;
-  color?: string;
-};
-
-/** Valida y normaliza `terrain_features`. Tolerante (mismo criterio que
- *  `shape`): una feature malformada se descarta, no tumba la escena — el LLM
- *  puede equivocarse en un campo opcional sin invalidar todo el mapa. */
-function normalizeTerrainFeatures(raw: unknown): TerrainFeature[] {
-  if (!Array.isArray(raw)) return [];
-  const out: TerrainFeature[] = [];
-  for (const f of raw as Record<string, unknown>[]) {
-    if (!f || typeof f !== "object") continue;
-    if (typeof f.type !== "string" || !f.type) continue;
-    const pts = f.points;
-    if (!Array.isArray(pts) || pts.length < 2) continue;
-    const points: [number, number][] = [];
-    for (const p of pts) {
-      if (!Array.isArray(p) || p.length < 2) break;
-      const [x, y] = p as number[];
-      if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) break;
-      points.push([x, y]);
-    }
-    if (points.length !== pts.length) continue;
-    const width = typeof f.width === "number" && Number.isFinite(f.width) && f.width > 0 ? f.width : 1;
-    const feature: TerrainFeature = { type: f.type, points, width };
-    if (f.closed === true) feature.closed = true;
-    if (typeof f.color === "string" && /^#[0-9a-fA-F]{6}$/.test(f.color)) feature.color = f.color;
-    out.push(feature);
-  }
-  return out;
-}
-
 const VALID_KINDS = new Set(["player", "npc", "building", "prop", "tree", "item", "decor"]);
 
 /** Altura por defecto (METROS) cuando la entity no declara `h`. Alineada con
@@ -280,9 +240,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       // Los consume `createTerrainCollider`; el schematic los ignora.
       solid_chars: solidChars,
     },
-    // Formas vectoriales de terreno (ríos con meandros, caminos curvos…).
-    // El orden del array es el orden de pintado (río antes que puente).
-    terrain_features: normalizeTerrainFeatures(raw.terrain_features),
     // Plan del tile (rasgos de suelo declarativos + volúmenes tipados).
     // Validado por ai_server (y por parseGround/parseVolumes en el bridge al
     // persistir retoques); aquí passthrough — el cliente construye el greybox

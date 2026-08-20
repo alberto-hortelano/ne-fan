@@ -911,8 +911,8 @@ const reviewDeps: ReviewDeps = {
 };
 
 /** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
- *  actual y aplica los fixes parciales que devuelva (terrain /
- *  terrain_features / entity_moves / ground / volumes) sobre el Format D,
+ *  actual y aplica los fixes parciales que devuelva (terrain / entity_moves /
+ *  ground / volumes) sobre el Format D,
  *  recargando la escena. El jugador conserva su posición (dev pre-generación). */
 async function reviewBlueprintAndApply(): Promise<void> {
   const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
@@ -1033,7 +1033,6 @@ function composeTilePlan(
       structures: raw.structures as never,
       vegetation_zones: raw.vegetation_zones as never,
       entities: raw.entities as never,
-      terrain_features: raw.terrain_features as never,
     },
     declared,
   );

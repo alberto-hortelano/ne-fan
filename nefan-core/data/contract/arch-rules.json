@@ -38,6 +38,33 @@
         "ext": [
           ".py"
         ]
+      },
+      {
+        "dir": "narrative-mcp",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
+        "dir": "nefan-core/test",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
+        "dir": "nefan-core/data",
+        "ext": [
+          ".json",
+          ".md"
+        ]
+      },
+      {
+        "dir": "labs",
+        "ext": [
+          ".ts",
+          ".mjs",
+          ".json"
+        ]
       }
     ],
     "ignore": [
@@ -314,6 +341,36 @@
       "text": {
         "pattern": "formatDToWorld\\s*\\("
       }
+    },
+    {
+      "id": "campos-retirados-no-vuelven",
+      "desc": "Un campo de contrato retirado no reaparece en ningún proceso",
+      "why": "Pre-producción: el legacy se borra entero el mismo día, no se documenta. El listón es grep a cero. terrain_features volvió a colarse durante meses porque el saneador de ai_server lo inyectaba vacío en cada escena: la deuda se re-creaba sola y cada medida de mutación volvía a contarla. Al retirar un campo, se añade aquí y deja de depender de que alguien se acuerde. Los roots incluyen fixtures (nefan-core/data), tests, narrative-mcp y labs a propósito: ahí es justo donde un campo retirado reaparece por copy-paste de un dump viejo.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts",
+        "nefan-core/test/**/*.ts",
+        "nefan-core/data/**/*.json",
+        "nefan-core/data/**/*.md",
+        "nefan-html/src/**/*.ts",
+        "godot/scripts/**/*.gd",
+        "ai_server/**/*.py",
+        "narrative-mcp/**/*.ts",
+        "labs/**/*.ts",
+        "labs/**/*.mjs",
+        "labs/**/*.json"
+      ],
+      "text": {
+        "pattern": "\\bterrain_features\\b"
+      },
+      "exceptions": [
+        {
+          "path": "nefan-core/data/contract/arch-rules.json",
+          "reason": "es este mismo fichero: el patrón vive aquí por definición"
+        }
+      ]
     }
   ]
 }

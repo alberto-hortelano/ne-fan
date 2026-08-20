@@ -195,7 +195,6 @@ export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error
 }
 
 /** Pre-flight de blueprint_review — delega en BlueprintReviewSchema (zod SoT).
- *  `terrain_features` ya NO es un fix válido (campo retirado; usar `ground`);
  *  `.strict()` rechaza claves de fix desconocidas. */
 export function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; error: string } {
   return validateContract(BlueprintReviewSchema, data);

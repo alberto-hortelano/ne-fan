@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
+import { forestTile, CAMINO_OESTE_ESTE } from "./fixtures/tiles.js";
 
 /** Escena jugable: room con puerta sur, player fuera junto al camino. */
 function makeScene(): Record<string, unknown> {
@@ -149,23 +150,8 @@ describe("validateScene", () => {
   });
 });
 
-/** Tile de bosque con un camino oeste(41)→este(52) — el caso canónico. */
-function makeTile(features?: Record<string, unknown>[]): Record<string, unknown> {
-  return {
-    tile: { tx: 1, ty: 0 },
-    scene_id: "tile_1_0",
-    biome: "forest_floor",
-    terrain_features: features ?? [
-      {
-        type: "path",
-        points: [[0, 41], [64, 46], [128, 52]],
-        width: 2,
-        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
-      },
-    ],
-    entities: [],
-  };
-}
+const makeTile = (ground?: Record<string, unknown>[]): Record<string, unknown> =>
+  ground ? forestTile({ ground }) : forestTile();
 
 const pathCrossing = (edge: "north" | "south" | "east" | "west", at: number) =>
   ({ edge, type: "path" as const, at, width: 2 });
@@ -197,13 +183,9 @@ describe("validateScene — tiles", () => {
     // El río vertical (pintado después) corta el camino por el medio: el
     // cruce este existe en el borde pero no se llega desde el oeste.
     const tile = makeTile([
-      {
-        type: "path",
-        points: [[0, 41], [64, 46], [128, 52]],
-        width: 2,
-        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
-      },
-      { type: "river", points: [[60, 0], [60, 128]], width: 4, at_edges: [{ edge: "north", at: 60 }, { edge: "south", at: 60 }] },
+      CAMINO_OESTE_ESTE,
+      // El agua se rasteriza DESPUÉS del camino: corta la senda por la mitad.
+      { id: "rio", kind: "water", rect: [58, 0, 4, 128] },
     ]);
     const ctx: TileValidationContext = {
       required_crossings: [pathCrossing("west", 41), pathCrossing("east", 52)],
@@ -220,14 +202,9 @@ describe("validateScene — tiles", () => {
     // rechazado. Debe aceptarse: el camino da el arranque, el río solo se
     // valida como costura.
     const tile = makeTile([
-      {
-        type: "path",
-        points: [[0, 41], [64, 46], [128, 52]],
-        width: 2,
-        at_edges: [{ edge: "west", at: 41 }, { edge: "east", at: 52 }],
-      },
+      CAMINO_OESTE_ESTE,
       // Río corto que entra por el norte SIN cruzar el camino (acaba en fila 18).
-      { type: "river", points: [[30, 0], [30, 18]], width: 4, at_edges: [{ edge: "north", at: 30 }] },
+      { id: "rio", kind: "water", rect: [28, 0, 4, 18] },
     ]);
     const ctx: TileValidationContext = {
       required_crossings: [
@@ -246,7 +223,7 @@ describe("validateScene — tiles", () => {
     // La entrada casa con un río: el único startCell caía en agua y el flood
     // no corría, aprobando el tile sin verificar nada. Ahora se avisa.
     const tile = makeTile([
-      { type: "river", points: [[0, 40], [128, 40]], width: 4, at_edges: [{ edge: "west", at: 40 }, { edge: "east", at: 40 }] },
+      { id: "rio", kind: "water", rect: [0, 38, 128, 4] },
     ]);
     const ctx: TileValidationContext = {
       required_crossings: [

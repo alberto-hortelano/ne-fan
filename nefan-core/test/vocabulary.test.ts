@@ -154,7 +154,6 @@ describe("world_vocabulary en turnos de tile", () => {
               },
               biome: "grass",
               scene_description: "campo",
-              terrain_features: [],
               entities: llmCtx.bootstrap_world_map
                 ? [{ id: "player", kind: "player", cell: [64, 64], footprint: [1, 1], glyph: "@" }]
                 : [],
@@ -174,7 +173,6 @@ describe("world_vocabulary en turnos de tile", () => {
           scene_id: "tile_0_0",
           biome: "grass",
           scene_description: "origen",
-          terrain_features: [],
           entities: [],
         }),
       );

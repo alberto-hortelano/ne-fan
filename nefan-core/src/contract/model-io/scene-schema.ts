@@ -12,7 +12,7 @@
  *  la sigue validando scene-validate.ts; aquí no se duplica.
  *
  *  `.passthrough()` a propósito en scene y entity: campos legacy/retirados
- *  (terrain_features, room_id, style_tag, exits, ambient_event…) NO deben
+ *  (room_id, style_tag, exits, ambient_event…) NO deben
  *  provocar rechazo (tolerancia: fixtures offline y saves viejos siguen
  *  pasando). El gate cubre lo que el modelo DEBE emitir bien, no lo que sobra. */
 

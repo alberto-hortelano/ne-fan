@@ -24,8 +24,9 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
    - `npm run crap -- --check`: la deuda del módulo que tocas no puede crecer.
    - `npm run mutate` sobre tu módulo si es de los puros: **un mutante que sobrevive en el
      código que acabas de escribir es un test que no lo comprueba**. Mátalos.
-   - Los umbrales viven en `data/contract/quality-thresholds.json` y `arch-rules.json`. Si uno
-     te estorba, dilo en el informe; NO lo subas por tu cuenta.
+   - Los umbrales viven en `nefan-core/data/contract/quality-thresholds.json` y
+     `nefan-core/data/contract/arch-rules.json`. Si uno te estorba, dilo en el informe;
+     NO lo subas por tu cuenta salvo que los requisitos te autoricen explícitamente.
    - `npm run deuda` lista lo que esas herramientas tienen pendiente. Úsalo para comprobar que
      lo que tocaste sale de la cola — y **no metas de paso** lo que no pedía el plan.
 3. **Escribe los tests desde los criterios de verificación del plan**, no desde tu

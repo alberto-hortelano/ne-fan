@@ -40,5 +40,4 @@ Respond via narrative_respond with EXACTLY this JSON:
   without another round-trip. Fixes replace whole fields: if you fix one terrain
   row you must return ALL rows; same for ground and volumes.
 - Do NOT return a full scene; only the four fix fields above are applied. Any
-  other key (e.g. the retired `terrain_features`) is REJECTED — correct the
-  ground with `ground` features instead.
+  other key is REJECTED — correct the ground with `ground` features instead.

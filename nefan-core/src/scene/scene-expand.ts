@@ -26,7 +26,6 @@ import { SeededRng, fnv1a } from "../rng.js";
 import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains } from "./blueprint/ground-collision.js";
-import type { Edge } from "../world-map/types.js";
 
 type Rect = [number, number, number, number]; // [col, row, w, h]
 
@@ -82,34 +81,10 @@ export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
   return hasStructures || hasVegetation || hasWallDecor;
 }
 
-/** Char al que rasteriza cada tipo de feature en un tile. Tipos fuera de la
- *  tabla quedan visual-only (como todas las features en escenas legacy). */
-const FEATURE_RASTER_CHAR: Record<string, string> = {
-  river: "w",
-  water: "w",
-  bridge: "b",
-  path: "_",
-  dirt: "_",
-  road: "s",
-  stone: "s",
-  paved: "s",
-};
-
-/** Punto de celda EXACTO del borde `edge` en la coordenada `at` (para el snap
- *  de endpoints de features declarados con at_edges). */
-function edgePoint(edge: Edge, at: number): [number, number] {
-  switch (edge) {
-    case "west": return [0, at + 0.5];
-    case "east": return [TILE_CELLS, at + 0.5];
-    case "north": return [at + 0.5, 0];
-    case "south": return [at + 0.5, TILE_CELLS];
-  }
-}
-
-/** Pinta una polyline gruesa sobre el grid mutable: celda pintada si la
- *  distancia de su centro al segmento ≤ width/2. Orden del array = orden de
- *  pintado (río antes que puente, igual que el render visual). */
-function rasterizeFeature(grid: string[][], points: [number, number][], width: number, char: string): void {
+/** Pinta un camino grueso ("_") sobre el grid mutable: celda pintada si la
+ *  distancia de su centro al segmento ≤ width/2. Único rasterizador por
+ *  polilínea; agua y decks se pintan por área con `shapeContains`. */
+function rasterizePath(grid: string[][], points: [number, number][], width: number): void {
   const radius = Math.max(width, 1) / 2;
   for (let i = 0; i < points.length - 1; i++) {
     const [x0, y0] = points[i];
@@ -129,7 +104,7 @@ function rasterizeFeature(grid: string[][], points: [number, number][], width: n
         const qx = x0 + t * dx;
         const qy = y0 + t * dy;
         const d2 = (px - qx) * (px - qx) + (py - qy) * (py - qy);
-        if (d2 <= radius * radius) grid[r][c] = char;
+        if (d2 <= radius * radius) grid[r][c] = "_";
       }
     }
   }
@@ -137,8 +112,8 @@ function rasterizeFeature(grid: string[][], points: [number, number][], width: n
 
 /** Auto-snap: un endpoint a ≤2 celdas de un borde se pega a él (conserva la
  *  otra coordenada), evitando caminos que "casi" llegan a la costura. Mutación
- *  in-place de los extremos. Compartido por terrain_features (legacy) y por la
- *  rasterización de `ground` paths (la vía de costuras actual). */
+ *  in-place de los extremos. Lo usa la rasterización de los paths de `ground`,
+ *  la vía de costuras. */
 function snapPathEndpointsToEdges(pts: [number, number][]): void {
   for (const idx of [0, pts.length - 1]) {
     const [x, y] = pts[idx];
@@ -151,12 +126,12 @@ function snapPathEndpointsToEdges(pts: [number, number][]): void {
 
 /** Rasteriza los rasgos `ground` de un tile al grid de terreno para que las
  *  COSTURAS entre tiles funcionen: computeTileEdges lee los cruces del grid, y
- *  `ground` (no `terrain_features`, ya retirado del contrato) es hoy la vía
- *  declarativa del suelo. path→"_" (camino, auto-snap al borde), water→"w"
- *  (río, bloquea), deck→"b" (puente transitable, perfora el agua). `area` no
- *  se rasteriza: no forma cruces y su render sale del greybox. Los rasgos
- *  inválidos los rechaza parseGround aguas arriba (pre-flight / scene-validate);
- *  aquí, si no parsean, se omiten sin tocar el grid. */
+ *  `ground` es la ÚNICA vía declarativa del suelo. path→"_" (camino, auto-snap
+ *  al borde), water→"w" (río, bloquea), deck→"b" (puente transitable, perfora
+ *  el agua). `area` no se rasteriza: no forma cruces y su render sale del
+ *  greybox. Los rasgos inválidos los rechaza parseGround aguas arriba
+ *  (pre-flight / scene-validate); aquí, si no parsean, se omiten sin tocar
+ *  el grid. */
 function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
   const parsed = parseGround(rawGround);
   if (!parsed.ok) return;
@@ -167,7 +142,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
     const pts = f.points.map((p) => [p[0], p[1]] as [number, number]);
     if (pts.length < 2) continue;
     snapPathEndpointsToEdges(pts);
-    rasterizeFeature(grid, pts, f.w && f.w > 0 ? f.w : 1, "_");
+    rasterizePath(grid, pts, f.w ?? 1);
   }
   for (const f of parsed.features) {
     if (f.kind !== "water") continue;
@@ -184,9 +159,9 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
 }
 
 /** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
- *  terrain_patches + snap de endpoints a at_edges + rasterización de features
- *  al grid. Devuelve una copia con `size`/`terrain` sintetizados lista para la
- *  expansión compartida (structures/vegetación/decor). Fail-loud en primitivas
+ *  terrain_patches + rasterización de los rasgos `ground` al grid. Devuelve
+ *  una copia con `size`/`terrain` sintetizados lista para la expansión
+ *  compartida (structures/vegetación/decor). Fail-loud en primitivas
  *  imposibles — mismo contrato que el resto del expander. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
   const t = raw.tile as { tx?: unknown; ty?: unknown };
@@ -222,53 +197,7 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
     }
   }
 
-  // Features: snap de endpoints a los bordes declarados + rasterización.
-  const feats = Array.isArray(raw.terrain_features) ? (raw.terrain_features as Record<string, unknown>[]) : [];
-  const preparedFeats: Record<string, unknown>[] = [];
-  for (let fi = 0; fi < feats.length; fi++) {
-    const f = { ...feats[fi] };
-    const pts = (Array.isArray(f.points) ? (f.points as [number, number][]) : []).map((p) => [p[0], p[1]] as [number, number]);
-    if (pts.length < 2) {
-      throw new Error(`terrain_features[${fi}] necesita ≥2 points`);
-    }
-    const atEdges = Array.isArray(f.at_edges) ? (f.at_edges as { edge: Edge; at: number }[]) : [];
-    for (const ae of atEdges) {
-      if (!["north", "south", "east", "west"].includes(ae.edge) || !Number.isInteger(ae.at) || ae.at < 0 || ae.at >= TILE_CELLS) {
-        throw new Error(`terrain_features[${fi}].at_edges: { edge, at 0..${TILE_CELLS - 1} } inválido: ${JSON.stringify(ae)}`);
-      }
-      // El endpoint más cercano a ese borde se fuerza EXACTAMENTE a la celda
-      // declarada — la costura con el vecino depende de esto.
-      const target = edgePoint(ae.edge, ae.at);
-      const distToEdge = (p: [number, number]): number => {
-        switch (ae.edge) {
-          case "west": return p[0];
-          case "east": return TILE_CELLS - p[0];
-          case "north": return p[1];
-          case "south": return TILE_CELLS - p[1];
-        }
-      };
-      const endIdx = distToEdge(pts[0]) <= distToEdge(pts[pts.length - 1]) ? 0 : pts.length - 1;
-      pts[endIdx] = target;
-    }
-    // Auto-snap: un endpoint a ≤2 celdas de un borde se pega a él (conserva la
-    // otra coordenada) — evita caminos que "casi" llegan a la costura.
-    for (const idx of [0, pts.length - 1]) {
-      const [x, y] = pts[idx];
-      if (x > 0 && x <= 2) pts[idx] = [0, y];
-      else if (x < TILE_CELLS && x >= TILE_CELLS - 2) pts[idx] = [TILE_CELLS, y];
-      if (y > 0 && y <= 2) pts[idx] = [pts[idx][0], 0];
-      else if (y < TILE_CELLS && y >= TILE_CELLS - 2) pts[idx] = [pts[idx][0], TILE_CELLS];
-    }
-    f.points = pts;
-    preparedFeats.push(f);
-    const rasterChar = typeof f.type === "string" ? FEATURE_RASTER_CHAR[f.type] : undefined;
-    if (rasterChar) {
-      const width = typeof f.width === "number" && f.width > 0 ? f.width : 1;
-      rasterizeFeature(grid, pts, width, rasterChar);
-    }
-  }
-
-  // Ground declarativo → grid (vía de costuras actual; ver rasterizeGroundToGrid).
+  // Ground declarativo → grid (única vía de costuras; ver rasterizeGroundToGrid).
   rasterizeGroundToGrid(raw.ground, grid);
 
   // Leyenda: el char del bioma hereda su nombre de catálogo si la leyenda no
@@ -281,7 +210,6 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
     size: { cols: TILE_CELLS, rows: TILE_CELLS, meters_per_cell: TILE_MPC },
     terrain: grid.map((row) => row.join("")),
     terrain_legend: legend,
-    terrain_features: preparedFeats,
   };
 }
 

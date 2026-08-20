@@ -42,7 +42,6 @@ async function main(): Promise<void> {
       structures: data.structures,
       vegetation_zones: data.vegetation_zones,
       entities: data.entities,
-      terrain_features: data.terrain_features,
     },
     declared,
   );

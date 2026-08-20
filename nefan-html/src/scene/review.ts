@@ -18,7 +18,6 @@ export function applyReviewFixes(
 ): Record<string, unknown> {
   const fixed: Record<string, unknown> = { ...fd };
   if (fixes.terrain) fixed.terrain = fixes.terrain;
-  if (fixes.terrain_features) fixed.terrain_features = fixes.terrain_features;
   if (fixes.ground) fixed.ground = fixes.ground;
   if (fixes.volumes) fixed.volumes = fixes.volumes;
   if (fixes.entity_moves?.length) {

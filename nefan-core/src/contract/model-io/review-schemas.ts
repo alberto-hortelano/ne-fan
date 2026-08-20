@@ -110,8 +110,8 @@ const EntityMoveSchema = z.object({
   cell: z.tuple([z.number(), z.number()]),
 });
 
-/** `terrain_features` RETIRADO de los fixes (campo obsoleto): el suelo se
- *  corrige con `ground`. `.strict()` rechaza claves de fix desconocidas. */
+/** El suelo se corrige con `ground`. `.strict()` rechaza claves de fix
+ *  desconocidas. */
 const BlueprintFixesSchema = z
   .object({
     terrain: z.array(z.string()).optional(),

@@ -138,3 +138,32 @@ class TestSceneValidateBenign(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEntityStyleRefSurvives(unittest.TestCase):
+    """`entities[].style_ref` es un campo DECLARADO en generate_scene.json: de
+    él sale la clave de caché del skin del NPC. La lista blanca de
+    `validate_scene_response` lo tiraba, así que la elección del motor no
+    llegaba nunca al cliente y todo NPC caía al rol por defecto ("commoner"),
+    generando —y pagando— el skin equivocado."""
+
+    def _npc(self, **extra):
+        s = base_scene()
+        s["entities"].append(
+            {"id": "guardia", "kind": "npc", "name": "Guardia", "cell": [2, 1],
+             "footprint": [1, 1], "glyph": "n", **extra}
+        )
+        return validate_scene_response(s)["entities"][-1]
+
+    def test_style_ref_elegido_por_el_motor_sobrevive(self):
+        self.assertEqual(self._npc(style_ref="characters_capitana")["style_ref"], "characters_capitana")
+
+    def test_sin_style_ref_no_se_inventa_la_clave(self):
+        self.assertNotIn("style_ref", self._npc())
+
+    def test_style_ref_que_no_es_cadena_util_no_viaja(self):
+        # Espejo de formatDToWorld: un no-string o "" no es una elección. Si
+        # viajara, el servidor de skins recibiría una ref inexistente.
+        for basura in (42, "", None, {"id": "x"}):
+            with self.subTest(valor=basura):
+                self.assertNotIn("style_ref", self._npc(style_ref=basura))

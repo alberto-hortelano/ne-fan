@@ -662,60 +662,6 @@ def validate_scene_response(data: dict) -> dict:
         legend.setdefault(ch, name)
     data["terrain_legend"] = legend
 
-    # ── Terrain features (vectoriales, opcionales) ───────────────────────
-    # Tolerante como el resto de campos del LLM: una feature malformada se
-    # descarta sin invalidar la escena. Puntos [col,row] numéricos (floats ok),
-    # width > 0, color #rrggbb opcional.
-    raw_features = data.get("terrain_features")
-    clean_features: list = []
-    if isinstance(raw_features, list):
-        import re as _re
-
-        for feat in raw_features[:24]:
-            if not isinstance(feat, dict):
-                continue
-            ftype = feat.get("type")
-            pts = feat.get("points")
-            if not isinstance(ftype, str) or not ftype or not isinstance(pts, list) or len(pts) < 2:
-                continue
-            clean_pts = []
-            for p in pts:
-                if (
-                    isinstance(p, list)
-                    and len(p) >= 2
-                    and all(isinstance(v, (int, float)) for v in p[:2])
-                ):
-                    clean_pts.append([float(p[0]), float(p[1])])
-                else:
-                    clean_pts = []
-                    break
-            if len(clean_pts) < 2:
-                continue
-            clean_feat: dict = {"type": ftype, "points": clean_pts}
-            width = feat.get("width")
-            if isinstance(width, (int, float)) and width > 0:
-                clean_feat["width"] = float(width)
-            if feat.get("closed") is True and len(clean_pts) >= 3:
-                clean_feat["closed"] = True
-            color = feat.get("color")
-            if isinstance(color, str) and _re.fullmatch(r"#[0-9a-fA-F]{6}", color):
-                clean_feat["color"] = color
-            # Costuras de tiles: celdas de borde exactas por las que la
-            # feature entra/sale (las consume el expander de nefan-core).
-            at_edges = feat.get("at_edges")
-            if isinstance(at_edges, list):
-                clean_edges = [
-                    {"edge": ae["edge"], "at": ae["at"]}
-                    for ae in at_edges
-                    if isinstance(ae, dict)
-                    and ae.get("edge") in ("north", "south", "east", "west")
-                    and isinstance(ae.get("at"), int)
-                ]
-                if clean_edges:
-                    clean_feat["at_edges"] = clean_edges
-            clean_features.append(clean_feat)
-    data["terrain_features"] = clean_features
-
     # ── Map plan (ground + volumes) ──────────────────────────────────────
     # Espejo de parseGround/parseVolumes en nefan-core: mismo criterio en
     # ambos lados o un plan aceptado aquí lo rechazaría el bridge al
@@ -836,6 +782,12 @@ def validate_scene_response(data: dict) -> dict:
             and 0 < ent["h"] <= 20
         ):
             clean_ent["h"] = float(ent["h"])
+        # Ref de estilo del NPC ELEGIDA por el motor: `entities[].style_ref` la
+        # declara generate_scene.json y de ella sale la clave de caché del skin
+        # (npcSkinStyleRef, src/games/style-categories.ts). Sin whitelist aquí
+        # se perdía en silencio y TODO NPC caía al rol por defecto.
+        if isinstance(ent.get("style_ref"), str) and ent["style_ref"]:
+            clean_ent["style_ref"] = ent["style_ref"]
         if isinstance(ent.get("texture_hash"), str):
             clean_ent["texture_hash"] = ent["texture_hash"]
         if isinstance(ent.get("model_hash"), str):
@@ -1172,7 +1124,6 @@ def validate_blueprint_review(data: dict | None) -> dict:
 
     `fixes` son overrides PARCIALES pero de campo completo: si viene terrain son
     TODAS las filas; ground/volumes reemplazan la lista entera.
-    (`terrain_features` retirado: el suelo se corrige con `ground`.)
     """
     if not isinstance(data, dict):
         raise ValueError(f"blueprint_review payload must be an object, got {type(data).__name__}")
@@ -1193,8 +1144,7 @@ def validate_blueprint_review(data: dict | None) -> dict:
     if raw_fixes is not None:
         if not isinstance(raw_fixes, dict):
             raise ValueError("blueprint_review `fixes` must be an object")
-        # `terrain_features` RETIRADO (campo obsoleto; el suelo se corrige con
-        # `ground`) — espejo de BlueprintFixesSchema en nefan-core.
+        # Espejo de BlueprintFixesSchema en nefan-core.
         allowed = {"terrain", "entity_moves", "ground", "volumes"}
         unknown = set(raw_fixes.keys()) - allowed
         if unknown:

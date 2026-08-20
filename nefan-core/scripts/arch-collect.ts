@@ -8,7 +8,7 @@
  *  y la cola habría tenido que duplicarlo — dos recorridos que se desincronizan
  *  es exactamente la deuda que el checker existe para evitar.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -40,7 +40,15 @@ function walk(dir: string, ext: readonly string[], ignore: readonly string[]): s
   for (const name of entries) {
     if (ignore.includes(name)) continue;
     const full = join(dir, name);
-    if (statSync(full).isDirectory()) out.push(...walk(full, ext, ignore));
+    // lstat, no stat: los enlaces simbólicos NO se siguen. Dos motivos reales
+    // en este repo — `labs/fps/sprites` apunta a un directorio generado que no
+    // existe en CI (stat reventaría con ENOENT), y
+    // `narrative-mcp/node_modules/@nefan/core` re-escanearía nefan-core entero
+    // bajo una segunda ruta, duplicando cada violación. Lo que un enlace
+    // alcanza, o ya se escanea en su sitio real o está fuera del repo.
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) out.push(...walk(full, ext, ignore));
     else if (ext.some((e) => name.endsWith(e))) out.push(full);
   }
   return out;

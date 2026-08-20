@@ -30,7 +30,6 @@ function seedTile00(narrative: NarrativeState): void {
       scene_id: "tile_0_0",
       biome: "grass",
       scene_description: "campo de bench",
-      terrain_features: [],
       entities: [],
       ambient_event: "",
     }),

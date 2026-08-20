@@ -60,9 +60,6 @@ const BUILTIN_SCENE = {
   structures: [
     { type: "room", rect: [4, 2, 20, 10], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 9, width: 2 }] },
   ],
-  terrain_features: [
-    { type: "path", points: [[14, 12], [14, 16]], width: 1.5 },
-  ],
   vegetation_zones: [
     { type: "pino", area: [0, 12, 28, 4], density: 0.08 },
   ],
@@ -99,9 +96,6 @@ function openFieldScene(placeId, name, crossedEdge) {
     size: { cols: 28, rows: 16, meters_per_cell: 0.5 },
     terrain: Array.from({ length: 16 }, () => "g".repeat(28)),
     terrain_legend: {},
-    terrain_features: [
-      { type: "path", points: [[pc, pr], [14, 8]], width: 1.2 },
-    ],
     vegetation_zones: [
       { type: "abeto", area: [0, 0, 28, 3], density: 0.1 },
     ],
@@ -304,9 +298,6 @@ function bootstrapTile() {
     structures: [
       { type: "room", rect: [52, 48, 24, 16], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 11, width: 2 }] },
     ],
-    terrain_features: [
-      { type: "path", points: [[64, 64], [64, 90], [128, 100]], width: 2, at_edges: [{ edge: "east", at: 100 }] },
-    ],
     vegetation_zones: [{ type: "pino", area: [4, 4, 40, 30], density: 0.08 }],
     entities: [
       { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n" },
@@ -329,25 +320,30 @@ function bootstrapTile() {
  *  un camino oeste↔este por la fila 64. Determinista y memoizado. */
 function makeTile(gt) {
   const { tx, ty, neighbors } = gt ?? {};
-  const feats = [];
+  const ground = [];
   for (const [edge, n] of Object.entries(neighbors ?? {})) {
     for (const c of n.crossings ?? []) {
-      const type = c.type === "river" || c.type === "bridge" ? "river" : "path";
-      feats.push({
-        type,
-        points: [edgePoint(edge, c.at), [64, 64], edgePoint(OPP[edge], c.at)],
-        width: Math.max(2, c.width ?? 2),
-        at_edges: [{ edge, at: c.at }, { edge: OPP[edge], at: c.at }],
-      });
+      const w = Math.max(2, c.width ?? 2);
+      const i = ground.length;
+      if (c.type === "river" || c.type === "bridge") {
+        // El agua de `ground` es una FORMA, no una polilínea: banda recta que
+        // cruza el tile entero a la altura del cruce (misma costura).
+        const vertical = edge === "north" || edge === "south";
+        ground.push({
+          id: `rio_${i}`, kind: "water", label: "río",
+          rect: vertical ? [c.at - w / 2, 0, w, 128] : [0, c.at - w / 2, 128, w],
+        });
+      } else {
+        ground.push({
+          id: `camino_${i}`, kind: "path", label: "camino",
+          points: [edgePoint(edge, c.at), [64, 64], edgePoint(OPP[edge], c.at)],
+          w,
+        });
+      }
     }
   }
-  if (feats.length === 0) {
-    feats.push({
-      type: "path",
-      points: [[0, 64], [128, 64]],
-      width: 2,
-      at_edges: [{ edge: "west", at: 64 }, { edge: "east", at: 64 }],
-    });
+  if (ground.length === 0) {
+    ground.push({ id: "camino_oe", kind: "path", label: "camino", points: [[0, 64], [128, 64]], w: 2 });
   }
   return {
     tile: { tx, ty },
@@ -355,7 +351,7 @@ function makeTile(gt) {
     scene_description: `Campo de bench (${tx}, ${ty}).`,
     style_ref: "forest",
     biome: "grass",
-    terrain_features: feats,
+    ground,
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
     entities: [
       { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1], glyph: "o" },
