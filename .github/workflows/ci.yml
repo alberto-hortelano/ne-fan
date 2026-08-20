@@ -32,6 +32,11 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      # Cobertura + CRAP: los umbrales de data/contract/quality-thresholds.json
+      # están medidos sobre la línea base real, así que esto no es decorativo —
+      # falla si la deuda crece.
+      - run: npm run coverage
+      - run: npm run crap -- --check
 
   narrative-mcp:
     runs-on: ubuntu-latest
