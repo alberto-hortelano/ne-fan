@@ -26,6 +26,8 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
      código que acabas de escribir es un test que no lo comprueba**. Mátalos.
    - Los umbrales viven en `data/contract/quality-thresholds.json` y `arch-rules.json`. Si uno
      te estorba, dilo en el informe; NO lo subas por tu cuenta.
+   - `npm run deuda` lista lo que esas herramientas tienen pendiente. Úsalo para comprobar que
+     lo que tocaste sale de la cola — y **no metas de paso** lo que no pedía el plan.
 3. **Escribe los tests desde los criterios de verificación del plan**, no desde tu
    implementación: un test escrito mirando el código que ya funciona solo prueba que el código
    es el que es. Cubre el caso inválido, que es donde vive el fail-loud.

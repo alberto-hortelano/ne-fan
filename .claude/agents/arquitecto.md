@@ -35,7 +35,7 @@ Secciones obligatorias:
 3. **Opciones** — 2 o 3 alternativas reales con su coste y su riesgo, y **una recomendación explícita**. Sin empates; si recomiendas la aburrida, dilo y por qué.
 4. **Diseño elegido** — ficheros a crear/modificar (rutas concretas), tipos y contratos afectados, flujo de datos extremo a extremo (quién emite, quién normaliza, quién pinta).
 5. **Compatibilidad** — saves existentes, schema versionado, fixtures de `data/rooms/` y `data/scenes/`, caché del asset-store (¿cambia alguna clave de hash?), packs de estilo, resume de sesión. Di explícitamente "nada que migrar" si es el caso.
-6. **Mejoras estructurales** — deuda que este cambio destapa, separada en *necesario ahora* (sin ello el cambio queda torcido) y *backlog* (anotar, no hacer). Es una sección de primera clase: el usuario espera propuesta de arquitectura, no solo encaje.
+6. **Mejoras estructurales** — deuda que este cambio destapa, separada en *necesario ahora* (sin ello el cambio queda torcido) y *backlog* (anotar, no hacer). Es una sección de primera clase: el usuario espera propuesta de arquitectura, no solo encaje. Mira la deuda YA medida de la zona antes de inventarte una: `cd nefan-core && npm run deuda` (si dice PARCIAL, corre antes `npm run coverage`). Lo que anotes como backlog va a una **issue de GitHub**, no a un documento — los backlogs en prosa envejecen sin avisar.
 7. **Criterios de verificación** — cómo se demuestra cada criterio de aceptación: qué test unitario, qué escenario en el flujo real, qué preset de `./start.sh`, qué comando. El ingeniero y QA trabajan de aquí.
 8. **Riesgos** — qué puede salir mal y la señal temprana de que está saliendo mal.
 
