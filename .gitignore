@@ -53,6 +53,9 @@ vendor/
 # Session recordings
 godot/recordings/
 
+# QA: capturas de cada corrida (regenerables)
+qa/capturas/
+
 # Personal scratch space
 todo.md
 sandbox/

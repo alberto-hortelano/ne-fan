@@ -1,0 +1,13 @@
+{
+  "name": "@nefan/qa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runner de guiones de QA: conduce el juego real y da verde o rojo determinista",
+  "type": "module",
+  "scripts": {
+    "qa": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

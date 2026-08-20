@@ -271,6 +271,13 @@ export class TitleScreen {
     this.onVisibilityChange?.(false);
   }
 
+  /** ¿El overlay tapa el juego? Lo consulta el bench de QA: el título es el
+   *  primer estado del sistema y ninguna comprobación vale mientras cubre la
+   *  pantalla (regla del workaround — ocultarlo para fotografiar es trampa). */
+  get isVisible(): boolean {
+    return this.root.style.display !== "none";
+  }
+
   private async renderHome(): Promise<void> {
     this.modeArmed.clear();
     this.content.style.maxWidth = "720px";

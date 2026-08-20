@@ -940,9 +940,71 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# ─── Modo no interactivo ───────────────────────────────────────
+
+# `./start.sh --preset N` arranca el preset N (el número que muestra el menú)
+# sin TUI y sin teclas. Existe para que un runner pueda levantar el stack:
+# el bench de QA (qa/run.mjs) necesita el preset 5 sin que haya nadie
+# pulsando Enter. Mismo camino que la TUI — aplica la misma máscara, corre el
+# mismo preflight y llama al mismo run_selection: si divergieran, el bench
+# probaría un arranque que ningún jugador usa.
+usage() {
+    echo "Uso: ./start.sh [--preset N] [--list]"
+    echo "  sin argumentos   menú interactivo"
+    echo "  --preset N       arranca el preset N (1-based, como en el menú) sin TUI"
+    echo "  --list           lista los presets y sale"
+}
+
+list_presets() {
+    local i
+    for i in "${!PRESET_NAMES[@]}"; do
+        printf "  %2d · %-24s %s\n" "$((i + 1))" "${PRESET_NAMES[$i]}" "${PRESET_DESCS[$i]}"
+    done
+}
+
+run_preset_noninteractive() {
+    local n="$1"
+    if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+        echo "❌ --preset espera un número (1..${#PRESET_NAMES[@]}); recibí: $n" >&2
+        exit 2
+    fi
+    local idx=$((n - 1))
+    if (( idx < 0 || idx >= ${#PRESET_NAMES[@]} )); then
+        echo "❌ preset $n fuera de rango. Disponibles:" >&2
+        list_presets >&2
+        exit 2
+    fi
+    if (( idx == ${#PRESET_NAMES[@]} - 1 )); then
+        echo "❌ 'Custom' no tiene selección propia: elige un preset concreto." >&2
+        exit 2
+    fi
+    # Sin apply_exclusivity: las máscaras de PRESET_PROFILES ya son coherentes
+    # por construcción (esa función resuelve conflictos del toggle de la TUI).
+    apply_preset "$idx"
+    echo "▶ Preset $n · ${PRESET_NAMES[$idx]} (no interactivo)"
+    preflight_services && run_selection
+}
+
 # ─── Entry point ───────────────────────────────────────────────
 
+NONINTERACTIVE_PRESET=""
+while (( $# )); do
+    case "$1" in
+        --preset) NONINTERACTIVE_PRESET="${2:-}"; shift 2 ;;
+        --preset=*) NONINTERACTIVE_PRESET="${1#*=}"; shift ;;
+        --list) list_presets; exit 0 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "❌ opción desconocida: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
 preflight_tools
+
+if [[ -n "$NONINTERACTIVE_PRESET" ]]; then
+    run_preset_noninteractive "$NONINTERACTIVE_PRESET"
+    exit 0
+fi
+
 run_tui
 case "$TUI_RESULT" in
     launch) preflight_services && run_selection ;;
