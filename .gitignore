@@ -87,3 +87,8 @@ nefan-core/data/games/user_*/
 nefan-core/data/styles/user_*/
 .playwright-mcp/
 nefan-core/data/styles/_staging/
+
+# Equipo de agentes: el andamio del ciclo NO entra al repo (ver docs/agents/README.md).
+# Solo perduran requisitos.md (qué se pidió) y qa.md (qué se verificó).
+docs/agents/*/plan.md
+docs/agents/*/implementacion.md

@@ -196,13 +196,14 @@ usuario, fija los requisitos, decide y delega) y tres roles especializados viven
 |-----|----------|-------------|
 | `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / clientes / ai_server), contratos y formatos afectados, compatibilidad de saves y cachés, mejoras estructurales. Produce `plan.md` | No escribe código de producción |
 | `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y los supervivientes de mutación del módulo que tocó, muertos. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
-| `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` | **No arregla nada** — reporta |
+| `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` de lo que sea mecánico | **No arregla nada** — reporta |
 
 Los subagentes arrancan con **contexto limpio y no se ven entre sí**: todo el handoff viaja
 por ficheros (ver `docs/agents/README.md`). Lo que no esté escrito ahí, para ellos no existe —
-empezando por la cita literal de la petición del usuario en `requisitos.md`. Se commitean solo
-`requisitos.md` y `qa.md` (qué se pidió y qué se verificó); el plan y el informe de
-implementación son efímeros: envejecen mal y a los tres meses son documentación falsa.
+empezando por la cita literal de la petición del usuario en `requisitos.md`. Los cuatro
+documentos viven en `docs/agents/<tarea>/`, pero solo se commitean `requisitos.md` y `qa.md`
+(qué se pidió y qué se verificó): `.gitignore` deja fuera el plan y el informe de
+implementación, que envejecen mal y a los tres meses son documentación falsa.
 
 **Cuándo se dispara** (regla del coordinador, sin esperar a que lo pidan): cualquier tarea que
 toque más de un fichero de lógica, cambie un contrato o un formato, o sea observable por el

@@ -9,15 +9,16 @@ Tú eres el **coordinador**: hablas con el usuario, decides el alcance y delegas
 
 `<tarea>` = `AAAA-MM-DD-slug-corto` (fecha de hoy, slug en kebab-case del objetivo).
 
-**Dónde vive cada documento** (y por qué no todos en el mismo sitio):
+**Los cuatro documentos viven en `docs/agents/<tarea>/`** — una sola carpeta, una sola ruta
+que pasar. Dos se commitean y dos no, y de eso se encarga `.gitignore`, no tu memoria:
 
-| Fichero | Dónde | Por qué |
+| Fichero | Lo escribe | ¿Se commitea? |
 |---|---|---|
-| `requisitos.md` | `docs/agents/<tarea>/` — se commitea | qué se pidió, con la cita literal. Envejece bien: es historia |
-| `qa.md` | `docs/agents/<tarea>/` — se commitea | qué se verificó y con qué evidencia |
-| `plan.md`, `implementacion.md` | scratchpad de la sesión — efímeros | son andamio. Commiteados, a los tres meses son documentación falsa que alguien se cree |
+| `requisitos.md` | coordinador | **sí** — qué se pidió, con la cita literal. Envejece bien: es historia |
+| `qa.md` | `qa` | **sí** — qué se verificó y con qué evidencia |
+| `plan.md`, `implementacion.md` | `arquitecto`, `ingeniero` | **no** (ignorados por `.gitignore`) — son andamio: commiteados, a los tres meses son documentación falsa que alguien se cree |
 
-Pasa siempre la **ruta absoluta** de cada uno al lanzar un rol: ellos no adivinan dónde está.
+Pasa siempre la **ruta absoluta** de la carpeta al lanzar un rol: ellos no adivinan dónde está.
 
 ## 1 · Requisitos (lo haces tú, sin delegar)
 
@@ -64,7 +65,7 @@ Lánzalo con la ruta. Devuelve `qa.md` con veredicto.
 
 Resume al usuario en la conversación: qué se hizo, qué demuestra que funciona, qué quedó fuera y el backlog de mejoras estructurales que propuso el arquitecto. No commitees ni abras PR salvo que se pida.
 
-Si el cambio ha movido la arquitectura de sitio, vale la pena una **segunda pasada del arquitecto** sobre el código ya escrito (su prompt la contempla): qué ha quedado torcido, qué frontera nueva merece entrar en `arch-rules.json`. Se juzga mejor sobre el código que existe que sobre el que se imaginó.
+Si el cambio ha movido la arquitectura de sitio, vale la pena una **segunda pasada del arquitecto** sobre el código ya escrito (su prompt la contempla): qué ha quedado torcido, qué frontera nueva merece entrar en `nefan-core/data/contract/arch-rules.json`. Se juzga mejor sobre el código que existe que sobre el que se imaginó.
 
 ## Cuándo NO usar esto
 

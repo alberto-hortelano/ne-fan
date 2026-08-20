@@ -11,11 +11,15 @@ viaja por ficheros. El ciclo se lanza con `/feature`.
 | `requisitos.md` | Coordinador (sesión principal) | La petición literal del usuario citada, criterios de aceptación, fuera de alcance, preguntas abiertas |
 | `qa.md` | `qa` | Criterio → veredicto con evidencia, hallazgos priorizados, workarounds, veredicto final |
 
-`plan.md` e `implementacion.md` siguen existiendo —son el handoff entre el arquitecto y el
-ingeniero— pero viven en el **scratchpad de la sesión** y no se commitean. Son andamio: qué se
-pensaba hacer y cómo se hizo. Guardados en el repo, dejan de coincidir con el código en cuanto
-alguien lo toca, y entonces son peor que nada, porque alguien se los cree. Lo que perdura es
-**qué se pidió** y **qué se verificó**; lo demás lo cuenta el código y su historia de git.
+`plan.md` e `implementacion.md` viven en **esta misma carpeta** —son el handoff entre el
+arquitecto y el ingeniero, y una sola ruta por tarea es una cosa menos que puede salir mal—
+pero **`.gitignore` no los deja entrar al repo**. Son andamio: qué se pensaba hacer y cómo se
+hizo. Guardados, dejan de coincidir con el código en cuanto alguien lo toca, y entonces son
+peor que nada, porque alguien se los cree. Lo que perdura es **qué se pidió** y **qué se
+verificó**; lo demás lo cuenta el código y su historia de git.
+
+Que sea el `.gitignore` y no esta frase quien lo impida es deliberado: un `git add` distraído
+no puede saltarse un candado, pero se salta un párrafo sin enterarse.
 
 Para lo mecánico, el rastro de verdad no es prosa: es el guion en `qa/guiones/` que cualquiera
 puede volver a correr.

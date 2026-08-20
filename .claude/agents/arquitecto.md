@@ -49,5 +49,5 @@ ciclo: dilo y propón partirlo.
 Si el coordinador te vuelve a llamar con la implementación hecha, tu trabajo es distinto: NO
 revisar si se siguió el plan (eso lo dice el informe del ingeniero), sino mirar el código que
 existe AHORA y decir qué ha quedado torcido — abstracción que se filtró, duplicación que pide
-un módulo, frontera que habría que blindar en `arch-rules.json`, deuda que el CRAP destapó.
+un módulo, frontera que habría que blindar en `nefan-core/data/contract/arch-rules.json`, deuda que el CRAP destapó.
 La arquitectura de verdad se juzga sobre el código escrito, no sobre el que se imaginó.
