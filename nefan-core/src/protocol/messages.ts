@@ -171,37 +171,6 @@ export interface RequestTileMessage {
   edge?: Edge;
 }
 
-/** Análisis de la imagen IA de un tile (mundo derivado de la imagen): el
- *  cliente lo envía tras clasificar los segmentos por visión. Solo
- *  persistencia — el bridge lo guarda en el SceneRecord del tile y lo resume
- *  al motor narrativo; no dispara LLM. `rect` en coords MUNDO globales. */
-export interface TileAnalysisMessage {
-  type: "tile_analysis";
-  tx: number;
-  ty: number;
-  elements: Array<{
-    label: string;
-    solid: boolean;
-    tall: boolean;
-    rect: { minX: number; maxX: number; minZ: number; maxZ: number };
-  }>;
-}
-
-/** El retoque de visión (blueprint_review) corrigió el plan de un tile
- *  (arte del suelo y/o volúmenes): persistirlo en el SceneRecord (el bridge
- *  es el único escritor del save). También se envía SIN cambios tras un
- *  review aprobado, para estampar `map_plan_reviewed` y que el resume no
- *  re-revise. Solo persistencia. */
-export interface MapPlanUpdateMessage {
-  type: "map_plan_update";
-  tx: number;
-  ty: number;
-  /** Rasgos de suelo declarativos corregidos (array COMPLETO), si cambió. */
-  ground?: unknown[];
-  /** Array COMPLETO de volúmenes corregido, si cambió. */
-  volumes?: unknown[];
-}
-
 /** Alta ADITIVA de combatientes en el sim (enemigos de un tile nuevo). No
  *  resetea nada: los combatientes de otros tiles siguen vivos. */
 export interface AddCombatantsMessage {
@@ -256,8 +225,6 @@ export type ClientMessage =
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | RequestTileMessage
-  | TileAnalysisMessage
-  | MapPlanUpdateMessage
   | AddCombatantsMessage
   | InteractEntityMessage;
 
@@ -376,11 +343,10 @@ export interface GamesListedMessage {
     tags: string[];
     /** Estado del contenido pre-generado por rama (data/games/{id}/world/):
      *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
-     *  cambió desde la generación, "missing" = nunca generado. La rama tile
-     *  sirve a overworld Y fps; stage al proscenio. */
+     *  cambió desde la generación, "missing" = nunca generado. Solo queda la
+     *  rama tile, que sirve a overworld Y fps. */
     generation: {
       tile: "ready" | "stale" | "missing";
-      stage: "ready" | "stale" | "missing";
     };
     /** Estilos aplicados al juego (batch de assets estilizados por vista):
      *  "ready" = vigente, "stale" = el mundo se regeneró/editó después. */

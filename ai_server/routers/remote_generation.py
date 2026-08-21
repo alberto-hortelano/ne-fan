@@ -37,13 +37,13 @@ class SceneImageRequest(BaseModel):
     already-painted art from an adjacent tile (not schematic). The model is
     instructed to reproduce those strips and continue them seamlessly.
 
-    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes),
-    "tile" (clay greybox 3D del tile oblicuo: instrucción de repintado del
-    blockout) or "stage" (clay greybox del plató proscenio)."""
+    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes)
+    or "tile" (clay greybox 3D del tile oblicuo: instrucción de repintado del
+    blockout)."""
     image_b64: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|tile|stage)$")
+    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|tile)$")
     # False = el plano NO tiene agua: la instrucción omite las cláusulas de
     # agua (mencionarla en planos secos ceba ríos alucinados — bench
     # 002_repaint_fidelity). Default True = comportamiento clásico.
@@ -93,11 +93,7 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     context = {
         "layout": layout,
         "kind": "full",
-        "model": (
-            deps.scene_image_gen._stage_model
-            if body.blueprint_kind == "stage"
-            else deps.scene_image_gen._model
-        ),
+        "model": deps.scene_image_gen._model,
         "sides": "+".join(sorted(body.context_sides)),
         # Transformación server-side del esquema antes del modelo (prestretch
         # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
@@ -112,12 +108,9 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # estilo, para no fragmentar el cache preexistente.
     style_ref = None
     if body.style_id and deps.style_packs is not None:
-        # La vista de la ref sale del tipo de blueprint: un plató NUNCA
-        # resuelve una ref cenital ni viceversa (el modelo calca el punto de
-        # vista de la referencia). El id lo eligió el motor narrativo; vacío
-        # o desconocido ⇒ primera ref de la vista (orden del manifest).
-        view = "proscenium" if body.blueprint_kind == "stage" else "overworld"
-        style_ref = deps.style_packs.resolve(body.style_id, body.style_ref, view)
+        # El id lo eligió el motor narrativo; vacío o desconocido ⇒ primera
+        # ref de la vista (orden del manifest).
+        style_ref = deps.style_packs.resolve(body.style_id, body.style_ref, "overworld")
         if style_ref is not None:
             context["style"] = f"{style_ref.style_id}/{style_ref.ref_id}:{style_ref.content_hash}"
     # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
@@ -125,13 +118,8 @@ async def generate_scene_image_endpoint(body: SceneImageRequest):
     # se omite (como sides vacío) para no invalidar la caché preexistente.
     if body.blueprint_kind != "boxes":
         context["blueprint"] = body.blueprint_kind
-    # stage_greybox2: encuadre v3 (ventana anclada al horizonte, clay a aspect
-    # nativo sin anamórfico, backdrop en el prompt) — invalida el greybox1.
     # tile_greybox1: la base pasa de SVG rasterizado a render 3D greybox.
-    # stage_greybox3: luz convencional (cono frontal, cláusula anti-contraluz).
-    if body.blueprint_kind == "stage":
-        context["pipeline"] = "stage_greybox3"
-    elif body.blueprint_kind == "tile":
+    if body.blueprint_kind == "tile":
         context["pipeline"] = "tile_greybox1"
     # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
     # namespacear la clave para no contaminar el cache real de este layout.

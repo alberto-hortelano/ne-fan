@@ -177,33 +177,6 @@ const RequestTileMessageSchema = z.object({
   edge: EdgeSchema.optional(),
 });
 
-const TileAnalysisMessageSchema = z.object({
-  type: z.literal("tile_analysis"),
-  tx: z.number(),
-  ty: z.number(),
-  elements: z.array(
-    z.object({
-      label: z.string(),
-      solid: z.boolean(),
-      tall: z.boolean(),
-      rect: z.object({
-        minX: z.number(),
-        maxX: z.number(),
-        minZ: z.number(),
-        maxZ: z.number(),
-      }),
-    }),
-  ),
-});
-
-const MapPlanUpdateMessageSchema = z.object({
-  type: z.literal("map_plan_update"),
-  tx: z.number(),
-  ty: z.number(),
-  ground: z.array(z.unknown()).optional(),
-  volumes: z.array(z.unknown()).optional(),
-});
-
 const AddCombatantsMessageSchema = z.object({
   type: z.literal("add_combatants"),
   enemies: z.array(EnemySpawnSchema),
@@ -237,8 +210,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SaveSessionMessageSchema,
   PlayerEnteredPlaceMessageSchema,
   RequestTileMessageSchema,
-  TileAnalysisMessageSchema,
-  MapPlanUpdateMessageSchema,
   AddCombatantsMessageSchema,
   InteractEntityMessageSchema,
 ]);

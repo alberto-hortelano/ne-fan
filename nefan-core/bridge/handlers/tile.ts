@@ -16,8 +16,7 @@ import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoo
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
-import type { MapPlanUpdateMessage, RequestTileMessage, TileAnalysisMessage } from "../../src/protocol/messages.js";
-import { parseGround, parseVolumes, type GroundFeature, type Volume } from "../../src/scene/blueprint/index.js";
+import type { RequestTileMessage } from "../../src/protocol/messages.js";
 
 const EDGE_ES: Record<Edge, string> = {
   north: "norte",
@@ -190,7 +189,7 @@ export async function generateTileScene(
       required.push({ edge, ...(c as { type: "path" | "road" | "river" | "bridge"; at: number; width: number }) });
     }
   }
-  const check = validateScene(res.scene, undefined, {
+  const check = validateScene(res.scene, {
     required_crossings: required,
     entry: tileCtx.entry as { edge: Edge; at?: number } | undefined,
   });
@@ -271,80 +270,6 @@ export async function runTileGeneration(
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
     fail(`Error: ${(err as Error).message ?? err}`);
   }
-}
-
-/** Análisis de imagen de un tile (mundo derivado de la imagen), enviado por
- *  el cliente tras clasificar los segmentos por visión. Solo persistencia:
- *  se guarda en el SceneRecord y el LLM lo recibe resumido (scene_analysis
- *  del tile activo + image_elements de vecinos en generate_tile). */
-export async function handleTileAnalysis(
-  msg: TileAnalysisMessage,
-  ctx: BridgeContext,
-): Promise<void> {
-  const { tx, ty } = msg;
-  if (!Number.isInteger(tx) || !Number.isInteger(ty) || !Array.isArray(msg.elements)) {
-    console.error(`tile_analysis inválido: (${tx}, ${ty})`);
-    return;
-  }
-  const ok = ctx.narrative.setTileAnalysis(tx, ty, {
-    analyzed_at: new Date().toISOString(),
-    elements: msg.elements,
-  });
-  if (!ok) {
-    // Tile no registrado en el bridge (p. ej. fixture local del cliente):
-    // no hay dónde persistirlo — se avisa y se sigue.
-    console.warn(`tile_analysis para tile (${tx}, ${ty}) no registrado — ignorado`);
-    return;
-  }
-  await ctx.narrative.save();
-  ctx.simCollision.invalidate(tileKey(tx, ty));
-  console.log(`tile_analysis (${tx}, ${ty}): ${msg.elements.length} elementos persistidos`);
-}
-
-/** El retoque de visión corrigió (o aprobó) el plan de un tile (arte del
- *  suelo y/o volúmenes): persistirlo en el SceneRecord — el bridge es el
- *  único escritor del save, y el resume debe reproducir el plan corregido
- *  (mismo plan ⇒ mismo blueprint compuesto ⇒ mismo hash de imagen). Solo
- *  persistencia; el cliente ya lo aplicó en local. */
-export async function handleMapPlanUpdate(
-  msg: MapPlanUpdateMessage,
-  ctx: BridgeContext,
-): Promise<void> {
-  const { tx, ty } = msg;
-  if (!Number.isInteger(tx) || !Number.isInteger(ty)) {
-    console.error(`map_plan_update inválido: (${tx}, ${ty})`);
-    return;
-  }
-  let ground: GroundFeature[] | undefined;
-  if (msg.ground !== undefined) {
-    const res = parseGround(msg.ground);
-    if (!res.ok) {
-      // Fail-loud: un plan que el validador del ai_server aceptó no debería
-      // fallar aquí — sería una divergencia entre validadores espejo.
-      console.error(`map_plan_update (${tx}, ${ty}): ground rechazado: ${res.error}`);
-      return;
-    }
-    ground = res.features;
-  }
-  let volumes: Volume[] | undefined;
-  if (msg.volumes !== undefined) {
-    const res = parseVolumes(msg.volumes);
-    if (!res.ok) {
-      console.error(`map_plan_update (${tx}, ${ty}): volumes rechazados: ${res.error}`);
-      return;
-    }
-    volumes = res.volumes;
-  }
-  if (!ctx.narrative.setTileMapPlan(tx, ty, { ground, volumes })) {
-    console.warn(`map_plan_update para tile (${tx}, ${ty}) no registrado — ignorado`);
-    return;
-  }
-  await ctx.narrative.save();
-  ctx.simCollision.invalidate(tileKey(tx, ty));
-  console.log(
-    `map_plan_update (${tx}, ${ty}): plan revisado persistido` +
-      ` (ground=${ground ? `${ground.length} rasgos` : "sin cambios"}, volumes=${volumes ? volumes.length : "sin cambios"})`,
-  );
 }
 
 export async function handleRequestTile(

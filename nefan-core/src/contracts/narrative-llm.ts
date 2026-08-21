@@ -19,8 +19,6 @@ import type {
   LlmContext,
   Consequence,
   FormatDScene,
-  StageReviewItem,
-  PaintedFloor,
 } from "./common.js";
 import { endpoint } from "./http.js";
 
@@ -139,31 +137,6 @@ export interface AnalyzeSceneImageResponse {
   discarded: number;
 }
 
-export interface ReviewStageImageRequest {
-  image_b64: string;
-  /** context.expected_elements: StageExpectedElement[] del MANIFEST del
-   *  greybox (cajas proyectadas exactas). Obligatorio: cada elemento con id y
-   *  label no vacíos, sin duplicados (422 si no). */
-  context: {
-    expected_elements: Array<{
-      id: string;
-      label: string;
-      box_px?: [number, number, number, number];
-      tall?: boolean;
-      solid?: boolean;
-    }>;
-    [key: string]: unknown;
-  };
-}
-
-export interface ReviewStageImageResponse {
-  items: StageReviewItem[];
-  /** ids de expected_elements que la visión NO encontró pintados. */
-  missing: string[];
-  /** Línea/trapecio de suelo pintado — telemetría de calibración. */
-  floor?: PaintedFloor;
-}
-
 // ── Estado de backends ──
 
 export interface BackendState {
@@ -206,10 +179,6 @@ export const NarrativeLlmApi = {
   analyzeSceneImage: endpoint<AnalyzeSceneImageRequest, AnalyzeSceneImageResponse>(
     "POST",
     "/analyze_scene_image",
-  ),
-  reviewStageImage: endpoint<ReviewStageImageRequest, ReviewStageImageResponse>(
-    "POST",
-    "/review_stage_image",
   ),
   backendStatus: endpoint<void, BackendStatusResponse>("GET", "/backend_status"),
   // /review_scene_image (muerto, sin clientes) ELIMINADO en F4 junto con

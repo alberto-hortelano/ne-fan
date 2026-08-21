@@ -17,21 +17,19 @@ import { endpoint } from "./http.js";
  *  vista si no existe — el pre-flight fail-loud vive en el bridge. */
 export type StyleTag = string;
 
-/** Repintado de la escena completa (tile oblicuo o plató proscenio). */
+/** Repintado de la escena completa (tile oblicuo). */
 export interface GenerateSceneImageRequest {
-  /** PNG base64 del plano base: schematic Canvas (boxes/svg) o render
-   *  greybox three.js (stage). */
+  /** PNG base64 del plano base: schematic Canvas (boxes) o clay del tile. */
   image_b64: string;
   prompt: string;
   /** Bordes cuya franja exterior es arte REAL ya pintado del tile vecino
    *  (continuidad de costuras). Valores: north|south|east|west. */
   context_sides?: string[];
   /** "boxes" (schematic legacy) | "tile" (clay greybox del tile oblicuo,
-   *  pipeline tile_greybox1) | "stage" (plató greybox → gpt-image-2 vía fal
-   *  directo, ~210 s). Default "boxes". El valor "svg" murió con los
-   *  compositores SVG (agosto 2026) — el Pydantic (remote_generation.py) ya
-   *  solo acepta estos tres. */
-  blueprint_kind?: "boxes" | "tile" | "stage";
+   *  pipeline tile_greybox1). Default "boxes". El valor "svg" murió con los
+   *  compositores SVG y "stage" con el plató proscenio (agosto 2026) — el
+   *  Pydantic (remote_generation.py) ya solo acepta estos dos. */
+  blueprint_kind?: "boxes" | "tile";
   /** false = el plano NO tiene agua (omite las cláusulas de agua: mencionarla
    *  en planos secos ceba ríos alucinados). Default true. */
   has_water?: boolean;
@@ -285,7 +283,6 @@ export interface DevStatus {
   spend: DevSpendStatus;
   config: {
     scene_model: string;
-    stage_scene_model: string;
     sprite_skin_model: string;
     /** Tasa fija USD→EUR (config.ts → runtime_config.json). */
     usd_eur_rate: number;

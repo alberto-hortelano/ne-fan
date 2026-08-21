@@ -347,13 +347,6 @@ describe("formatDToWorld — la cola de la world scene", () => {
     assert.equal(formatDToWorld(basura).scatter_generators, undefined);
   });
 
-  it("el bloque stage viaja verbatim (el cliente detecta el plató por él)", () => {
-    const conStage = makeFormatD();
-    const stage = { exits: [{ id: "puerta", edge: "north", to_place_id: "cocina", zone: [6, 1, 3, 1], kind: "door" }] };
-    conStage.stage = stage;
-    assert.deepEqual(formatDToWorld(conStage).stage, stage, "viaja verbatim, sin validar ni recortar");
-  });
-
   it("style_ref: la elección del motor, el shim style_tag de saves viejos, o nada", () => {
     const elegido = makeFormatD();
     elegido.style_ref = "overworld_aldea";
@@ -392,7 +385,7 @@ describe("formatDToWorld — la cola de la world scene", () => {
     // La línea base de los cuatro tests de arriba: sin declaración, la clave
     // no existe. Un default inventado aquí viajaría a los dos clientes.
     const w = formatDToWorld(makeFormatD());
-    for (const campo of ["scatter_generators", "stage", "style_ref", "biome"]) {
+    for (const campo of ["scatter_generators", "style_ref", "biome"]) {
       assert.equal(w[campo], undefined, `"${campo}" no declarado no debería emitirse`);
     }
   });

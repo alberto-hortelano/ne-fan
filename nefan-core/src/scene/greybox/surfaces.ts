@@ -110,16 +110,21 @@ const TIMBER_COLORS = new Set(["#6b543a", "#5c4832", "#765633"]);
 const PLASTER_COLORS = new Set(["#c9b89a", "#cfc0a2"]);
 
 /** Rasgos del `ground` (caminos/plazas) → clase de material, mapeados por su
- *  color de GROUND_MATERIAL_COLORS (ground-prims.ts) + los dos contrastados
- *  de groundColorFor (greybox/common.ts). Sin esto los caminos quedaban en
- *  clay gris plano sobre el suelo texturizado (hallazgo de la prueba real
- *  con motor 2026-08-14). */
+ *  color de GROUND_MATERIAL_COLORS (ground-prims.ts). Sin esto los caminos
+ *  quedaban en clay gris plano sobre el suelo texturizado (hallazgo de la
+ *  prueba real con motor 2026-08-14).
+ *
+ *  Los dos "contrastados" (#a4937c, #8d6f4e) los producía `groundColorFor`,
+ *  que murió con el plató proscenio: ninguna prim del tile puede tener hoy
+ *  esos colores. Se dejan porque esta tabla entra en la identidad de caché de
+ *  las CELDAS del atlas fps y una clave inalcanzable no cuesta nada, mientras
+ *  que tocarla sin necesidad arriesga arte ya pagado. */
 const GROUND_COLOR_TO_MAT: Record<string, string> = {
   "#a29b8b": "path_cobble", // cobble
-  "#a4937c": "path_cobble", // stone/empedrado contrastado (groundColorFor)
+  "#a4937c": "path_cobble", // stone/empedrado contrastado (histórico, ver cabecera)
   "#8b8678": "stone_floor", // stone
   "#8f7757": "ground_dirt", // dirt
-  "#8d6f4e": "ground_dirt", // dirt contrastado (groundColorFor)
+  "#8d6f4e": "ground_dirt", // dirt contrastado (histórico, ver cabecera)
   "#c2b184": "ground_dirt", // sand (sin celda propia: arena ≈ tierra clara)
   "#9a917f": "path_cobble", // gravel
   "#547233": "ground_grass", // grass (PALETTE.grassBase)

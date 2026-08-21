@@ -227,20 +227,6 @@
       ]
     },
     {
-      "id": "blueprint-no-importa-stage",
-      "desc": "El plan del tile (scene/blueprint) no importa nada del plató (scene/stage)",
-      "why": "El tile es la ÚNICA variante viva de Format D y la vista fps se construye sobre él; el plató se retira. Mientras un módulo de blueprint importe de stage, borrar el plató arrastra a la fps con él — que es exactamente lo que pasaba: fps-ambience.ts sacaba la hora del día y la huella de los volúmenes del builder del proscenio, y ese único arco mantenía vivas sus 1.467 líneas. La dirección correcta ya era la contraria (stage/greybox.ts delega en blueprint/footprint.ts y blueprint/collision.ts); esto la fija. El patrón es `(^|/)stage/` y no `scene/stage/` a propósito: dentro del paquete los imports son RELATIVOS (`../stage/greybox.js`), y una regla anclada a `scene/stage/` no habría visto jamás el arco que esta regla existe para cortar.",
-      "severity": "error",
-      "files": [
-        "nefan-core/src/scene/blueprint/**/*.ts"
-      ],
-      "imports": {
-        "forbid": [
-          "(^|/)stage/"
-        ]
-      }
-    },
-    {
       "id": "godot-no-convierte-celdas-a-metros",
       "desc": "Ningún .gd interpreta Format D crudo (terrain_legend / meters_per_cell)",
       "why": "El bridge normaliza con formatDToWorld y Godot pinta world scene en metros. Si Godot porta la conversión hay dos formatos que mantener y divergirán.",
@@ -339,7 +325,7 @@
     {
       "id": "campos-retirados-no-vuelven",
       "desc": "Un campo de contrato retirado no reaparece en ningún proceso",
-      "why": "Pre-producción: el legacy se borra entero el mismo día, no se documenta. El listón es grep a cero. terrain_features volvió a colarse durante meses porque el saneador de ai_server lo inyectaba vacío en cada escena: la deuda se re-creaba sola y cada medida de mutación volvía a contarla. Al retirar un campo, se añade aquí y deja de depender de que alguien se acuerde. Los roots incluyen fixtures (nefan-core/data), tests, narrative-mcp y labs a propósito: ahí es justo donde un campo retirado reaparece por copy-paste de un dump viejo. Los cuatro términos de la escena SUELTA (issue #172) entran aquí el mismo día que se retira la variante: frontier_request y player_crossed_frontier eran su camino de expansión de mundo, robledo_village y tavern_clearing sus fixtures. qa/**/*.mjs entra en los roots porque los guiones de QA cargan fixtures por nombre.",
+      "why": "Pre-producción: el legacy se borra entero el mismo día, no se documenta. El listón es grep a cero. terrain_features volvió a colarse durante meses porque el saneador de ai_server lo inyectaba vacío en cada escena: la deuda se re-creaba sola y cada medida de mutación volvía a contarla. Al retirar un campo, se añade aquí y deja de depender de que alguien se acuerde. Los roots incluyen fixtures (nefan-core/data), tests, narrative-mcp y labs a propósito: ahí es justo donde un campo retirado reaparece por copy-paste de un dump viejo. Los cuatro términos de la escena SUELTA (issue #172) entran aquí el mismo día que se retira la variante: frontier_request y player_crossed_frontier eran su camino de expansión de mundo, robledo_village y tavern_clearing sus fixtures. qa/**/*.mjs entra en los roots porque los guiones de QA cargan fixtures por nombre. El plató proscenio entra aquí el día que se retira, y con él muere `blueprint-no-importa-stage`: aquella regla prohibía a src/scene/blueprint/** importar de src/scene/stage/**, porque ese único arco (fps-ambience.ts sacaba la hora del día y la huella de los volúmenes del builder del proscenio) mantenía vivas sus 1.467 líneas y habría arrastrado a la fps al borrarlas. Ya no tiene sujeto —el directorio no existe— y una regla que no puede saltar contra nada real es prosa disfrazada de candado; lo que sí puede volver por copy-paste de un dump viejo son sus CAMPOS, y de eso se ocupa este patrón. `stage_request` era la petición de plató en el world_state del motor y `stage_review` su kind de visión; medidos a cero en todos los procesos el día de la retirada.",
       "severity": "error",
       "files": [
         "nefan-core/src/**/*.ts",
@@ -358,12 +344,16 @@
         "qa/**/*.mjs"
       ],
       "text": {
-        "pattern": "\\b(terrain_features|frontier_request|player_crossed_frontier|robledo_village|tavern_clearing)\\b"
+        "pattern": "\\b(terrain_features|frontier_request|player_crossed_frontier|robledo_village|tavern_clearing|stage_request|stage_review)\\b"
       },
       "exceptions": [
         {
           "path": "nefan-core/data/contract/arch-rules.json",
           "reason": "es este mismo fichero: el patrón vive aquí por definición"
+        },
+        {
+          "path": "nefan-core/test/architecture.test.ts",
+          "reason": "es el arnés de esta regla: para probarla EN NEGATIVO hay que escribir el campo retirado como literal en las fixtures sintéticas. Mismo caso que arch-rules.json — un candado que solo se ha visto verde no es un candado, y la alternativa (concatenar el término en runtime para esquivar el grep) sería exactamente el truco que la regla existe para impedir."
         }
       ]
     }

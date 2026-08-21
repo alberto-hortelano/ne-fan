@@ -17,7 +17,6 @@ import { z } from "zod";
 import {
   SceneClassifySchema,
   ImageReviewSchema,
-  StageReviewSchema,
 } from "./review-schemas.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 
@@ -227,13 +226,6 @@ export const CONTRACTS: ContractSpec[] = [
     name: "ImageReview",
     schema: ImageReviewSchema,
     promptFile: "image_review.md",
-    toolFile: null,
-  },
-  {
-    kind: "stage_review",
-    name: "StageReview",
-    schema: StageReviewSchema,
-    promptFile: "stage_review.md",
     toolFile: null,
   },
   // blueprint_review NO entra: su schema referencia ground/volumes completos y

@@ -4,8 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateStageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
-import { stagePlanFromScene, ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
+import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
+import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
 import type { VisionRequestMsg } from './protocol.js';
@@ -16,13 +16,12 @@ import type { VisionRequestMsg } from './protocol.js';
 // abajo es una guardia de deriva a nivel de tipos: si el contrato añade o quita
 // un kind de visión, `tsc -b` rompe hasta que este conjunto lo refleje — así
 // ningún kind de visión puede volver a caer al fallthrough de escena
-// (room_response), como le pasaba a image_review/stage_review.
+// (room_response), como le pasaba a image_review.
 const VISION_KINDS = [
   'weapon_orient',
   'weapon_verify',
   'scene_classify',
   'image_review',
-  'stage_review',
 ] as const;
 type VisionKind = (typeof VISION_KINDS)[number];
 const _visionKindsCoverContract: VisionRequestMsg['kind'] = null as unknown as VisionKind;
@@ -70,7 +69,6 @@ const WORLD_RULES = loadPrompt('world_rules.md');
 
 const TILE_INSTRUCTIONS = loadPrompt('tile_instructions.md');
 
-const STAGE_INSTRUCTIONS = loadPrompt('stage_instructions.md');
 
 const SCENE_INSTRUCTIONS = loadPrompt('scene_instructions.md');
 
@@ -86,7 +84,6 @@ const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
 
 const BLUEPRINT_REVIEW_INSTRUCTIONS = loadPrompt('blueprint_review.md');
 const IMAGE_REVIEW_INSTRUCTIONS = loadPrompt('image_review.md');
-const STAGE_REVIEW_INSTRUCTIONS = loadPrompt('stage_review.md');
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
  *  que el motor acaba de llamar. Genérico para rutas nuevas. */
@@ -132,13 +129,10 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'stage_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'scene';
+  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'scene';
   // Índices de región de la última petición scene_classify (para el pre-flight
   // de completitud de la respuesta).
   let currentClassifyIndices: number[] | null = null;
-  // Ids esperados de la última petición stage_review (pre-flight de inventario
-  // completo: cada expected debe aparecer found o missing).
-  let currentStageExpectedIds: string[] | null = null;
   // Catálogo de refs de estilo de la sesión (world.style_refs de la última
   // petición scene): pre-flight de `style_ref` (escena y NPCs) — un id fuera
   // del catálogo rebota al motor con la lista válida. null = petición sin
@@ -180,11 +174,6 @@ Request kinds you may receive:
 - "image_review"    → LOOK at the final repainted tile and flag objects the
                       image model INVENTED (not in the declared plan): return
                       { extras: [{label, action, box_px, tall, solid, ...}] }.
-- "stage_review"    → LOOK at the final repainted proscenium STAGE (side-view
-                      perspective) and return a COMPLETE inventory: every
-                      expected element found (with its REAL painted box) or
-                      missing, plus every invented extra. Return
-                      { expected: [{id, status, box_px?}], extras: [...] }.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
@@ -223,13 +212,6 @@ into context:
           currentClassifyIndices = msg.kind === 'scene_classify' && Array.isArray(regions)
             ? regions.map((r) => r.index).filter((i): i is number => Number.isInteger(i))
             : null;
-          // stage_review: recordar los ids esperados para exigir un
-          // inventario COMPLETO en narrative_respond.
-          const expectedEls = (msg.context as { expected_elements?: { id?: string }[] } | undefined)
-            ?.expected_elements;
-          currentStageExpectedIds = msg.kind === 'stage_review' && Array.isArray(expectedEls)
-            ? expectedEls.map((e) => e.id).filter((i): i is string => typeof i === 'string')
-            : null;
           // Build content blocks: text header + image blocks + footer
           const header = JSON.stringify({
             kind: msg.kind,
@@ -255,7 +237,6 @@ into context:
             msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS :
             msg.kind === 'scene_classify' ? SCENE_CLASSIFY_INSTRUCTIONS :
             msg.kind === 'image_review' ? IMAGE_REVIEW_INSTRUCTIONS :
-            msg.kind === 'stage_review' ? STAGE_REVIEW_INSTRUCTIONS :
             WEAPON_ORIENT_INSTRUCTIONS;
           content.push({
             type: 'text',
@@ -312,9 +293,8 @@ into context:
         }
 
         // room_request — siempre open-world ('scene'; el formato legacy 'room'
-        // se retiró). Una petición con generate_tile usa las instrucciones de
-        // TILE (plano continuo) delante de la referencia estándar; una con
-        // stage_request (mundos proscenio) usa las de STAGE (plató discreto).
+        // se retiró). La petición SIEMPRE lleva generate_tile: las
+        // instrucciones de TILE van delante de la referencia estándar.
         if (msg.format !== undefined && msg.format !== 'scene') {
           return {
             content: [{
@@ -328,7 +308,6 @@ into context:
         const ws = msg.world_state as
           | {
               generate_tile?: unknown;
-              stage_request?: unknown;
               world?: {
                 style_refs?: {
                   scene?: Array<{ id?: unknown }>;
@@ -345,25 +324,22 @@ into context:
         currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
         currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
         currentFpsFaceRefIds = catalogIds(ws?.world?.style_refs?.fps_faces);
-        // Format D tiene DOS variantes y la petición dice cuál: `generate_tile`
-        // (mundo continuo) o `stage_request` (proscenio). Sin ninguna de las
-        // dos la petición está mal formada — antes caía en la escena "suelta",
-        // retirada en el issue #172.
-        const isTileRequest = Boolean(ws?.generate_tile);
-        if (!isTileRequest && !ws?.stage_request) {
+        // Format D tiene UNA variante y la petición debe declararla:
+        // `generate_tile` (mundo continuo). Sin ella la petición está mal
+        // formada — antes caía en la escena "suelta" (issue #172) o en el
+        // plató proscenio, retirados los dos.
+        if (!ws?.generate_tile) {
           return {
             content: [{
               type: 'text',
-              text: 'Malformed scene request: world_state carries neither `generate_tile` ' +
-                '(continuous world tile) nor `stage_request` (proscenium stage). Format D has ' +
-                'exactly those two variants; the free-standing scene was retired.',
+              text: 'Malformed scene request: world_state carries no `generate_tile` ' +
+                '(continuous world tile). Format D has exactly that one variant; the ' +
+                'free-standing scene and the proscenium stage were retired.',
             }],
             isError: true,
           };
         }
-        const sceneVariant = isTileRequest
-          ? TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS
-          : STAGE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS;
+        const sceneVariant = TILE_INSTRUCTIONS + '\n\n' + SCENE_INSTRUCTIONS;
         return {
           content: [{
             type: 'text',
@@ -387,7 +363,6 @@ into context:
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
     '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
     '  image_review   → { extras: [{ label, action, box_px, tall, solid, h?, depth_cells? }] }\n' +
-    '  stage_review   → { expected: [{ id, status: "found"|"missing", box_px? }], extras: [...], floor: { wall_base_px, front_px?, left_wall_px?, right_wall_px?, left_front_px?, right_front_px? } } (every expected id; the 4 lateral floor-edge x either all present or none)\n' +
     '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
     '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
     {
@@ -536,22 +511,6 @@ into context:
               };
             }
           }
-          // Platos: las reglas de composicion (surroundings center-outside,
-          // ground en rango, fourth_wall vs style_tag...) viven en
-          // stagePlanFromScene — sin esta llamada solo fallaban en el
-          // CLIENTE ("escena degradada a oblicua") y el motor nunca veia el
-          // error. Aqui rebotan con la pending viva para re-responder.
-          if (scene.stage !== undefined) {
-            try {
-              stagePlanFromScene(scene);
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              return {
-                content: [{ type: 'text', text: `Invalid stage scene — fix it and call narrative_respond again (do NOT drop the rest of the scene): ${msg}` }],
-                isError: true,
-              };
-            }
-          }
           // Gate ESTRUCTURAL del top-level (entities, size, terrain grid,
           // legend, tile/biome): antes NO se validaba en el camino del modelo
           // — ai_server lo degradaba en silencio (filas de terrain rellenadas,
@@ -619,15 +578,6 @@ into context:
           if (!check.ok) {
             return {
               content: [{ type: 'text', text: `Invalid image review — fix the shape and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
-          }
-        }
-        if (kind === 'stage_review') {
-          const check = validateStageReview(parsed, currentStageExpectedIds);
-          if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid stage review — fix the shape and call narrative_respond again: ${check.error}` }],
               isError: true,
             };
           }
@@ -703,11 +653,10 @@ into context:
         currentRequestId = null;
         currentKind = 'scene';
         currentClassifyIndices = null;
-        currentStageExpectedIds = null;
 
         // Todos los kinds de VisionRequestMsg vuelven como vision_response
         // (payload en `result`), como manda el contrato del wire. image_review
-        // y stage_review llegaron como vision_request: responderlos con un
+        // llegó como vision_request: responderlo con un
         // room_response (el fallthrough de escena) violaba el contrato y hacía
         // que una respuesta TARDÍA cayera en la rama _timed_out_scenes/else del
         // ai_server pensada solo para escenas.
@@ -789,7 +738,7 @@ into context:
     `Read the UI SYSTEMS reference of the game client plus the ACTIVE ` +
     `configuration of this session (ui_state: view, render_mode, ` +
     `combat_system, plugins). It explains every UI system the player ` +
-    `touches — world views (overworld tiles vs proscenium stages), dialogue ` +
+    `touches — the world view over the continuous tile plane, dialogue ` +
     `panel, travel/exits, dynamic spawns, combat HUD, story/ambient, ` +
     `graphics mode, plugins, map triggers — what options each has, how it ` +
     `works and how YOU drive it. Call it when unsure how a consequence or ` +

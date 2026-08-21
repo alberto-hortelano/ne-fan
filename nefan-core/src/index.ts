@@ -60,7 +60,6 @@ export type { PluginViewSources, ManifestResolver } from "./plugins/views.js";
 // rechazaría (un espejo a mano siempre acaba más laxo que el zod).
 export { parseVolumes } from "./scene/blueprint/volumes.js";
 export { parseGround } from "./scene/blueprint/ground.js";
-export { stagePlanFromScene } from "./scene/stage/plan.js";
 
 // Contratos entrada/salida del modelo (SoT zod → prompt + tool JSON +
 // pre-flight): el pre-flight de narrative-mcp valida con estos schemas para
@@ -84,6 +83,5 @@ export {
 export {
   SceneClassifySchema,
   ImageReviewSchema,
-  StageReviewSchema,
   BlueprintReviewSchema,
 } from "./contract/model-io/review-schemas.js";

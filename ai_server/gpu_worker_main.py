@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
         texture_gen_ref=deps.texture_gen,
     )
 
-    # peel/plate escriben en cache/scenes con subtype "plate". Compartir el
+    # La placa de fondo escribe en cache/scenes con subtype "plate". Compartir el
     # dir con narrative-llm/remote-gen es seguro: escritura atómica
     # (tmp+replace) y registro por POST /assets — cero estado en memoria.
     deps.scene_cache = AssetCache(
@@ -154,17 +154,6 @@ async def lifespan(app: FastAPI):
         asset_type="scene",
         manifest=deps.asset_manifest,
     )
-
-    # Pelado por capas del proscenio: FLUX Fill remoto si hay FAL_KEY; sin
-    # ella /peel_scene_layer degrada a LaMa local (gratis, menos guiado).
-    # Llamada fal DIRECTA a propósito (no vía remote-gen): el fallback
-    # flux→lama re-deriva la clave de caché en local, ver gpu-worker.ts.
-    try:
-        from fal_client import FalFillClient
-        deps.fill_client = FalFillClient()
-    except ValueError as e:
-        deps.fill_client = None
-        logger.info(f"FalFillClient disabled: {e} — peel degradará a LaMa local")
 
     logger.info(f"\nGPU Worker ready. HTTP :{load_port('gpu_worker')}")
     yield
@@ -174,7 +163,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NE-Fan GPU Worker", lifespan=lifespan)
 
-# El cliente 2D (vite :3000) le habla DIRECTO desde el navegador (peel, plate,
+# El cliente (vite :3000) le habla DIRECTO desde el navegador (placa,
 # sprites). Sin CORS, todo fetch muere en el preflight como "error de red".
 app.add_middleware(
     CORSMiddleware,

@@ -50,7 +50,6 @@ import {
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
-import { runBootstrapStage } from "./bootstrap-stage.js";
 import type {
   CreateGameMessage,
   DeleteSessionMessage,
@@ -61,6 +60,15 @@ import type {
   SaveSessionMessage,
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
+
+/** El plató proscenio se retiró entero (nefan-core, contrato, motor y los dos
+ *  clientes). `WORLD_VIEWS` sigue nombrándolo mientras sea el vocabulario de
+ *  las carpetas de los style packs, así que el rechazo es explícito: una
+ *  sesión que pida esa vista falla diciéndolo en vez de servir tiles como si
+ *  nada. Muere con `world.view`. */
+const RETIRED_PROSCENIUM =
+  'la vista "proscenio" (plató) se retiró: el mundo es continuo y sus escenas son tiles. ' +
+  "Empieza una partida nueva en mundo abierto o primera persona.";
 
 /** Catálogo de refs de estilo que ve el motor narrativo (`world.style_refs`):
  *  las refs de la VISTA activa (la primera es el fallback sin elección) y
@@ -311,12 +319,15 @@ export async function handleStartSession(
       throw new Error(`modo de personajes desconocido "${characterMode}" (esperaba image|vector)`);
     }
     // Vista del mundo: la elegida en el título (msg.view), con game.json como
-    // default del mundo. Queda CONGELADA en el save (como el estilo). Con
-    // renderMode "image", el proscenio repinta y pela cada plató por capas
-    // (entrega 2 — StageImageController en el cliente).
+    // default del mundo. Queda CONGELADA en el save (como el estilo).
     view = msg.view || meta.view || "overworld";
     if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
       throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
+    }
+    // El plató proscenio se retiró entero (motor, contrato y clientes): una
+    // partida que lo pida falla diciéndolo, nunca degrada a tiles en silencio.
+    if (view === "proscenium") {
+      throw new Error(RETIRED_PROSCENIUM);
     }
     // El estilo debe servir a la vista elegida: sus refs declaradas derivan
     // las vistas compatibles (styleViews). Incompatible = aborta, no degrada.
@@ -439,22 +450,6 @@ export async function handleStartSession(
   // broadcast it as a narrative_event so all subscribed clients render the
   // same world. Emit lifecycle hints so the client can show a loader.
   const sessionGameId = msg.gameId;
-  if (view === "proscenium") {
-    // Mundos proscenio: la primera escena es un PLATÓ discreto (stage plan),
-    // no el tile (0,0) del plano continuo.
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "generating",
-      kind: "scene",
-      message: "Generando el escenario inicial...",
-    });
-    ctx.sceneGen.enqueue({
-      key: "bootstrap",
-      blocking: true,
-      run: () => runBootstrapStage(ctx, sessionGameId),
-    });
-    return;
-  }
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "generating",
@@ -540,6 +535,17 @@ export async function handleResumeSession(
       requestId: msg.requestId,
       ok: false,
       error: `view_unknown: "${savedView}" (esperaba ${WORLD_VIEWS.join("|")})`,
+    });
+    return;
+  }
+  // Save congelado en el plató: no hay a dónde degradar (sus escenas no son
+  // tiles). Se rechaza nombrando la vista retirada, como en el cliente.
+  if (savedView === "proscenium") {
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `view_retired: ${RETIRED_PROSCENIUM}`,
     });
     return;
   }
@@ -631,12 +637,11 @@ export async function handleResumeSession(
     console.log(
       `Bridge: resume de sesión sin escenas (${ctx.narrative.session_id}) — reintentando bootstrap`,
     );
-    const isStageWorld = savedView === "proscenium";
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
-      kind: isStageWorld ? "scene" : "tile",
-      ...(isStageWorld ? {} : { tile: { tx: 0, ty: 0 } }),
+      kind: "tile",
+      tile: { tx: 0, ty: 0 },
       message: "Reintentando la generación del mundo inicial...",
     });
     const resumeGameId = ctx.narrative.game_id;
@@ -646,8 +651,7 @@ export async function handleResumeSession(
       // finally corre un microtask después del broadcast de error).
       key: "bootstrap_retry",
       blocking: true,
-      run: () =>
-        isStageWorld ? runBootstrapStage(ctx, resumeGameId) : runBootstrapTile(ctx, resumeGameId),
+      run: () => runBootstrapTile(ctx, resumeGameId),
     });
   }
 }

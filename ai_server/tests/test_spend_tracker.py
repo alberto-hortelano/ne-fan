@@ -68,7 +68,6 @@ class DevStatusEndpointTest(unittest.TestCase):
         old_config = deps.config
         deps.config = {
             "scene_model": "nano-banana-pro",
-            "stage_scene_model": "gpt-image-2",
             "sprite_skin_model": "gpt-image-2",
             "usd_eur_rate": 0.86,
         }
@@ -98,7 +97,7 @@ class DevStatusEndpointTest(unittest.TestCase):
         try:
             self.assertEqual(TestClient(app).get("/dev/status").status_code, 503)
             # Snapshot viejo sin usd_eur_rate: error explícito, no KeyError.
-            deps.config = {"scene_model": "x", "stage_scene_model": "y", "sprite_skin_model": "z"}
+            deps.config = {"scene_model": "x", "sprite_skin_model": "z"}
             res = TestClient(app).get("/dev/status")
             self.assertEqual(res.status_code, 500)
             self.assertIn("usd_eur_rate", res.json()["detail"])

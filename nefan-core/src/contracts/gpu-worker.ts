@@ -136,15 +136,6 @@ export const GpuWorkerApi = {
     "POST",
     "/inpaint_scene_plate",
   ),
-  /** El camino LaMa es local (GPU); el camino flux llama a fal DIRECTO desde
-   *  el gpu-worker (decisión F3: el fallback flux→lama re-deriva la clave de
-   *  caché en local — meterle un hop a remote-gen lo complicaría; deuda de
-   *  frontera documentada en docs/microservices/decisions.md). El contrato
-   *  externo no cambia según el backend. */
-  peelSceneLayer: endpoint<PeelSceneLayerRequest, PeelSceneLayerResponse>(
-    "POST",
-    "/peel_scene_layer",
-  ),
 } as const;
 
 export type GpuWorkerApi = typeof GpuWorkerApi;

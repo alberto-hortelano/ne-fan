@@ -29,7 +29,6 @@
     "texture_resolution": 512,
     "texture_steps": 4,
     "scene_model": "nano-banana-pro",
-    "stage_scene_model": "gpt-image-2",
     "sprite_skin_model": "gpt-image-2",
     "surface_model": "nano-banana-pro",
     "surface_hero_model": "gpt-image-2",

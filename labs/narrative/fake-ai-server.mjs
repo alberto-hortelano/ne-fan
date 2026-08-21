@@ -7,11 +7,10 @@
 //   POST /report_player_choice  → { consequences: [] }
 //
 // /generate_scene LEE el body y responde como lo haría el motor narrativo.
-// Format D tiene DOS variantes y el fake solo sirve esas dos:
+// Format D tiene UNA variante y el fake solo sirve esa:
 //   - generate_tile        → tile del plano continuo (bootstrap o normal)
-//   - stage_request        → plató proscenio (fixtures de data/scenes/proscenio)
 //   - cualquier otra cosa  → 422, igual que el gate del contrato: la escena
-//     "suelta" (size+terrain libres, sin tile ni stage) se retiró.
+//     "suelta" y el plató proscenio se retiraron.
 //
 // Env:
 //   PORT          puerto HTTP (default 18765)
@@ -388,32 +387,6 @@ async function statePost(path, body) {
   return res.json();
 }
 
-// --- Mundos proscenio (view = "proscenium") ---
-// Fixtures reales de la posada (nefan-core/data/scenes/proscenio/) servidas
-// por place: el bootstrap siembra el world map vía State API como haría el
-// motor con las map tools, y los realize devuelven el plató del place.
-const STAGE_DIR = new URL("../../nefan-core/data/scenes/proscenio/", import.meta.url);
-const stageByPlace = new Map();
-for (const f of readdirSync(fileURLToPath(STAGE_DIR))) {
-  if (!f.endsWith(".json")) continue;
-  const scene = JSON.parse(readFileSync(fileURLToPath(new URL(f, STAGE_DIR)), "utf8"));
-  if (scene.stage && scene.place_id) stageByPlace.set(scene.place_id, scene);
-}
-
-async function handleStageRequest(body) {
-  if (body.stage_request?.bootstrap) {
-    await statePost("/map/place", { id: "posada_salon", kind: "interior", parent_id: "world", name: "Salón de la posada" });
-    await statePost("/map/place", { id: "posada_cocina", kind: "interior", parent_id: "world", name: "Cocina de la posada" });
-    await statePost("/map/place", { id: "calle_mayor", kind: "site", parent_id: "world", name: "Calle Mayor" });
-    await statePost("/map/link", { from: "posada_salon", to: "posada_cocina", kind: "door", edge: "north", bidirectional: true });
-    await statePost("/map/link", { from: "posada_salon", to: "calle_mayor", kind: "door", edge: "south", bidirectional: true });
-    return stageByPlace.get("posada_salon");
-  }
-  const id = body.realize_place?.id;
-  if (id && stageByPlace.has(id)) return stageByPlace.get(id);
-  throw new Error(`fake-ai: sin fixture proscenio para el place "${id ?? "?"}"`);
-}
-
 // --- Imágenes de escena (mock del pipeline Meshy, sin créditos) ---
 // /generate_scene_image devuelve el PROPIO esquema como "imagen": el cliente
 // la instala 1:1 y cualquier desalineación del recorte/bandas se ve a ojo.
@@ -538,7 +511,6 @@ const server = http.createServer((req, res) => {
       spend: { total_usd: 0, call_count: 0, calls: [] },
       config: {
         scene_model: "fake-scene-model",
-        stage_scene_model: "fake-stage-model",
         sprite_skin_model: "fake-skin-model",
         usd_eur_rate: 0.86,
       },
@@ -569,19 +541,6 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/fake/plate") {
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(FAKE_PLATE);
-  }
-  // Máscara de segmentación falsa del plató: SVG 1024² negro con un rect
-  // BLANCO en la caja pedida (el navegador lo decodifica como imagen; el
-  // cliente convierte luminancia→alpha). Sin PIL ni píxeles en node.
-  if (req.method === "GET" && req.url?.startsWith("/fake/stage_mask")) {
-    const q = new URL(req.url, "http://x").searchParams;
-    const [x, y, w, h] = ["x", "y", "w", "h"].map((k) => Number(q.get(k) ?? 0));
-    if (!(w > 0) || !(h > 0)) return send(400, { detail: "fake-ai: stage_mask necesita x,y,w,h" });
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">` +
-      `<rect width="1024" height="1024" fill="#000"/>` +
-      `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/></svg>`;
-    res.writeHead(200, { "Content-Type": "image/svg+xml", ...cors });
-    return res.end(svg);
   }
   if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
     const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
@@ -854,102 +813,6 @@ const server = http.createServer((req, res) => {
       // flujo entero (máscara → endpoint → instalación) y a ojo: al fundirse
       // un cutout por proximidad se ve el verde plano de la placa, no una
       // copia del objeto.
-      // Pelado del proscenio (mock sin píxeles): devuelve la MISMA imagen —
-      // el pipeline del cliente (recortes por máscara, instalación por capa)
-      // se ejercita entero; el relleno real solo cambia los píxeles del hueco.
-      if (req.method === "POST" && req.url === "/peel_scene_layer") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const b64 = String(body.image_b64 ?? "");
-        if (!b64 || !body.mask_b64 || !body.prompt) {
-          return send(422, { detail: "fake-ai: image_b64, mask_b64 y prompt requeridos" });
-        }
-        const png = Buffer.from(b64, "base64");
-        const hash = createHash("sha256")
-          .update(png).update(String(body.mask_b64)).update(String(body.prompt))
-          .digest("hex").slice(0, 16);
-        sceneImages.set(hash, png);
-        console.error(`[fake-ai] peel_scene_layer ${hash} (${png.length}b, prompt: ${String(body.prompt).slice(0, 60)}…)`);
-        return send(200, { hash, cached: false, peeled_url: `/cache/scene/${hash}`, backend: "fake" });
-      }
-      // Inventario del plató falso (mock de visión + SAM): responde con la
-      // forma del ENDPOINT real {items, missing, floor} usando las pistas
-      // expected_elements del request — con los 3 casos críticos del E2E:
-      // (a) el PRIMER expected aparece RECOLOCADO (+200 px a la derecha de su
-      // caja declarada, contact_px coherente), (b) el ÚLTIMO expected es
-      // missing (no pintado), (c) un extra inventado keep/solid. Las máscaras
-      // son rects blancos servidos por /fake/stage_mask.
-      if (req.method === "POST" && req.url === "/review_stage_image") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const dims = pngDims(body.image_b64);
-        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
-        const expected = body.context?.expected_elements ?? [];
-        if (!Array.isArray(expected) || expected.length === 0) {
-          return send(422, { detail: "fake-ai: context.expected_elements requerido" });
-        }
-        const S = 1024; // espacio cuadrado del cliente (prestretch)
-        const contactOf = (bx, by, bw, bh) => {
-          const pts = [];
-          for (let px = bx; px <= bx + bw; px += 8) pts.push([Math.round(px), Math.round(by + bh)]);
-          return pts;
-        };
-        const itemOf = (id, label, source, box, extraFields = {}) => ({
-          id,
-          label,
-          source,
-          action: "keep",
-          sprite_url: "/fake/sprite/0",
-          mask_url: `/fake/stage_mask?x=${box[0]}&y=${box[1]}&w=${box[2]}&h=${box[3]}`,
-          image_bbox: box,
-          img_w: S,
-          img_h: S,
-          contact_px: contactOf(...box),
-          tall: true,
-          solid: true,
-          ...extraFields,
-        });
-        const items = [];
-        const missing = [];
-        for (let i = 0; i < expected.length; i++) {
-          const e = expected[i];
-          if (i === expected.length - 1 && expected.length > 1) {
-            missing.push(e.id); // el último declarado no se pintó
-            continue;
-          }
-          let [bx, by, bw, bh] = e.box_px.map(Math.round);
-          if (i === 0) bx = Math.min(S - bw, bx + 200); // RECOLOCADO
-          items.push(itemOf(e.id, e.label, "expected", [bx, by, bw, bh]));
-        }
-        // Extra inventado en zona libre (centro-bajo del cuadro).
-        items.push(itemOf("extra_0", "barril inventado", "extra", [460, 700, 90, 120], {
-          h: 1.2,
-          depth_cells: 2,
-        }));
-        // Trapecio lateral del suelo "pintado": converge hacia el fondo y va
-        // ligeramente descentrado para ejercitar la calibración completa
-        // (ppm/focal/centro) del cliente. sD = 524/1104 ≈ 0.475.
-        const floor = {
-          wall_base_px: Math.round(S * 0.55),
-          left_wall_px: 270,
-          right_wall_px: 794,
-          left_front_px: -30,
-          right_front_px: 1074,
-        };
-        console.error(
-          `[fake-ai] review_stage_image: ${items.length} items ` +
-          `(${missing.length} missing, 1 extra, recolocado=${items[0]?.id})`,
-        );
-        return send(200, { items, missing, floor });
-      }
       if (req.method === "POST" && req.url === "/inpaint_scene_plate") {
         let body = {};
         try {
@@ -982,23 +845,15 @@ const server = http.createServer((req, res) => {
             return send(500, { detail: err.message });
           }
         }
-        if (body.stage_request) {
-          try {
-            return send(200, await handleStageRequest(body));
-          } catch (err) {
-            console.error(`[fake-ai] stage falló:`, err.message);
-            return send(500, { detail: err.message });
-          }
-        }
-        // Sin generate_tile ni stage_request no hay escena que servir: la
-        // variante "suelta" (size/terrain libres) se retiró del contrato, así
-        // que el fake responde lo mismo que el gate del motor real.
+        // Sin generate_tile no hay escena que servir: la variante "suelta" y
+        // el plató proscenio se retiraron del contrato, así que el fake
+        // responde lo mismo que el gate del motor real.
         const pedido = body.realize_place?.id ? ` (realize_place "${body.realize_place.id}")` : "";
-        console.error(`[fake-ai] /generate_scene sin generate_tile ni stage_request${pedido} → 422`);
+        console.error(`[fake-ai] /generate_scene sin generate_tile${pedido} → 422`);
         return send(422, {
           detail:
-            "fake-ai: una escena es un tile (generate_tile) o un plató (stage_request); " +
-            `la variante suelta se retiró del contrato${pedido}`,
+            "fake-ai: una escena es un tile (generate_tile); la variante suelta y el " +
+            `plató proscenio se retiraron del contrato${pedido}`,
         });
       }
       send(404, { detail: `fake-ai-server: ruta desconocida ${req.method} ${req.url}` });

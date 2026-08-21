@@ -25,7 +25,6 @@ from narrative_schemas import (
     validate_scene_classify_response,
     validate_narrative_reaction,
     validate_blueprint_review,
-    validate_stage_review,
 )
 
 
@@ -754,68 +753,6 @@ class LLMClient:
         with self._pending_lock:
             self._pending.pop(request_id, None)
         print(f"LLM: scene_classify MCP timeout ({timeout}s)")
-        return None
-
-    def review_stage_image(self, image_b64: str, context: dict | None = None) -> dict | None:
-        """Inventario por visión del PLATÓ repintado (proscenio, kind MCP
-        stage_review): cada elemento declarado found/missing con su caja REAL
-        pintada + extras inventados. Devuelve {"expected": [...], "extras":
-        [...]} validado, o None sin listener MCP (el caller degrada a placa
-        sola con colisión declarada). Solo MCP, como image_review."""
-        if not (self._ws_connected and self._ws):
-            print("LLM: stage_review sin MCP bridge — se omite")
-            return None
-        ctx = context or {}
-        expected_ids = [
-            e["id"] for e in ctx.get("expected_elements", [])
-            if isinstance(e, dict) and isinstance(e.get("id"), str)
-        ]
-        request_id = str(uuid.uuid4())
-        with self._pending_lock:
-            self._pending[request_id] = None
-        try:
-            self._ws.send(json.dumps({  # type: ignore
-                "type": "vision_request",
-                "request_id": request_id,
-                "kind": "stage_review",
-                "images": [
-                    {"view": "repainted_stage", "media_type": "image/png", "data_b64": image_b64},
-                ],
-                "context": ctx,
-            }))
-        except Exception as e:
-            print(f"LLM: stage_review MCP send failed ({e})")
-            with self._pending_lock:
-                self._pending.pop(request_id, None)
-            return None
-        print(f"LLM: stage_review sent via MCP (id={request_id[:8]}, {len(expected_ids)} expected)")
-
-        timeout = max(self.timeout, 180.0)
-        start = time.time()
-        while time.time() - start < timeout:
-            with self._pending_lock:
-                result = self._pending.get(request_id)
-                if result is not None:
-                    del self._pending[request_id]
-                    if isinstance(result, dict) and result.get("error") == "no_mcp_listener":
-                        print("LLM: stage_review — no hay listener MCP")
-                        return None
-                    try:
-                        validated = validate_stage_review(
-                            result if isinstance(result, dict) else None, expected_ids
-                        )
-                    except ValueError as err:
-                        print(f"LLM: stage_review inválido: {err}")
-                        return None
-                    found = sum(1 for e in validated["expected"] if e["status"] == "found")
-                    print(f"LLM: stage_review recibido ({time.time() - start:.1f}s, "
-                          f"{found}/{len(validated['expected'])} found, "
-                          f"{len(validated['extras'])} extras)")
-                    return validated
-            time.sleep(0.1)
-        with self._pending_lock:
-            self._pending.pop(request_id, None)
-        print(f"LLM: stage_review MCP timeout ({timeout}s)")
         return None
 
     def _classify_scene_via_api(

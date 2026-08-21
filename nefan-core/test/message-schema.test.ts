@@ -54,15 +54,6 @@ test("un frame válido de cada tipo pasa la validación", () => {
       ],
     },
     { type: "interact_entity", entityId: "npc1", entityName: "Tabernero" },
-    { type: "map_plan_update", tx: 0, ty: 0, ground: [], volumes: [] },
-    {
-      type: "tile_analysis",
-      tx: 0,
-      ty: 0,
-      elements: [
-        { label: "casa", solid: true, tall: true, rect: { minX: 0, maxX: 4, minZ: 0, maxZ: 4 } },
-      ],
-    },
   ];
   for (const msg of valid) {
     const res = validateContract(ClientMessageSchema, msg);

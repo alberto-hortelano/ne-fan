@@ -14,7 +14,6 @@ import { TILE_CELLS } from "../tile.js";
 import { volumeFootprint } from "./footprint.js";
 import { fnv1a, seededRng, uniform } from "../../rng.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
-import { defaultPropHeightM, PROP_H_MAX_M, PROP_H_MIN_M } from "./prop-heights.js";
 
 interface RawDoor {
   side?: string;
@@ -41,8 +40,6 @@ interface RawEntity {
   footprint?: unknown;
   name?: string;
   shape?: string;
-  /** Altura declarada en METROS (Format D). */
-  h?: unknown;
   /** true = generada por el scatter de scene-expand (no derivar volumen). */
   scattered?: boolean;
 }
@@ -71,10 +68,6 @@ export interface DeriveInput {
    *  su volumen para que el blueprint las pinte proyectadas (sin esto, el
    *  cliente caería a cajas sin proyectar sobre el plan). */
   entities?: RawEntity[];
-  /** Metros por celda de la escena. Solo lo pasa el caller PROSCENIO: activa
-   *  el respeto del `h` declarado por entity (un barril de 0,9 m deja de
-   *  medir 1,5). El tile no lo pasa — su derive no cambia. */
-  meters_per_cell?: number;
 }
 
 const SIDE_TO_EDGE: Record<string, "n" | "s" | "e" | "w"> = {
@@ -161,46 +154,17 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
     if (blockers.some((b) => overlaps(b, rect))) continue; // el LLM/structures ya lo cubren
     const label = typeof ent.name === "string" && ent.name ? ent.name : kind;
     const id = `derived_ent_${ent.id ?? `${c}_${r}`}`;
-    // Con mpc (proscenio), el `h` declarado en metros manda sobre los
-    // defaults — la escala relativa de la escena es la que declaró el motor.
-    const mpc = typeof raw.meters_per_cell === "number" && raw.meters_per_cell > 0
-      ? raw.meters_per_cell
-      : undefined;
-    const entH = mpc !== undefined && typeof ent.h === "number" && Number.isFinite(ent.h) && ent.h > 0
-      ? ent.h
-      : undefined;
     if (kind === "tree") {
-      // volumeHeightM(tree) = 4.83·s ⇒ s = h/4.83.
-      const s = entH !== undefined
-        ? Math.min(TREE_MAX_S, Math.max(0.5, entH / 4.83))
-        : Math.min(TREE_MAX_S, Math.max(0.5, Math.max(w, d) / 4));
+      const s = Math.min(TREE_MAX_S, Math.max(0.5, Math.max(w, d) / 4));
       out.push({ id, label, type: "tree", at: [round1(c + w / 2), round1(r + d / 2)], s: round1(s) });
     } else if (kind === "building") {
-      // volumeHeightM(building gable) = wallHM·1.5 ⇒ wall_h = h/(1.5·mpc).
-      const wallH = entH !== undefined && mpc !== undefined
-        ? round1(Math.min(24, Math.max(2, entH / (1.5 * mpc))))
-        : undefined;
-      out.push({
-        id, label, type: "building", rect, roof: { kind: "gable" },
-        ...(wallH !== undefined ? { wall_h: wallH } : {}),
-      });
+      out.push({ id, label, type: "building", rect, roof: { kind: "gable" } });
     } else {
       const shape = ent.shape === "cylinder" || ent.shape === "sphere" ? "cylinder" : "box";
-      let hCells = entH !== undefined && mpc !== undefined
-        ? round1(Math.min(16, Math.max(0.4, entH / mpc)))
-        : undefined;
-      // Proscenio (con mpc) sin `h` declarado: altura SEMÁNTICA por label —
-      // sin ella dos mesas de la misma escena salían a alturas dispares según
-      // el kind. El camino tile (sin mpc) conserva sus defaults en celdas.
-      if (hCells === undefined && mpc !== undefined) {
-        const semantic = defaultPropHeightM(label) ?? (kind === "decor" ? 0.5 : 1.0);
-        const hM = Math.min(PROP_H_MAX_M, Math.max(PROP_H_MIN_M, semantic));
-        hCells = round1(hM / mpc);
-      }
       out.push(
         kind === "decor"
-          ? { id, label, type: "prop", rect, shape, h: hCells ?? 1, passable: true }
-          : { id, label, type: "prop", rect, shape, h: hCells ?? 3 },
+          ? { id, label, type: "prop", rect, shape, h: 1, passable: true }
+          : { id, label, type: "prop", rect, shape, h: 3 },
       );
     }
     blockers.push(rect);

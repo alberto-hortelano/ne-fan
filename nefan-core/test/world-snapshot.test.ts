@@ -76,7 +76,7 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
 }
 
 describe("world-snapshot (módulo puro)", () => {
-  it("escribe, carga y borra un snapshot válido; branchForView mapea vistas a ramas", () => {
+  it("escribe, carga y borra un snapshot válido; branchForView solo da la rama tile", () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
     try {
       const snap = makeSnapshot(GAME, worldDocHash);
@@ -86,15 +86,14 @@ describe("world-snapshot (módulo puro)", () => {
       assert.equal(loaded.entry_scene_id, "tile_0_0");
       assert.equal(Object.keys(loaded.scenes).length, 2);
       assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", worldDocHash), "ready");
-      assert.equal(worldSnapshotStatus(gamesDir, GAME, "stage", worldDocHash), "missing");
       assert.equal(deleteWorldSnapshot(gamesDir, GAME, "tile"), true);
       assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", worldDocHash), "missing");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
+    // El plató proscenio se retiró: solo queda la rama del plano continuo.
     assert.equal(branchForView("overworld"), "tile");
     assert.equal(branchForView("fps"), "tile");
-    assert.equal(branchForView("proscenium"), "stage");
   });
 
   it("world.md editado ⇒ stale (null + status stale); malformado ⇒ throw", () => {

@@ -26,11 +26,11 @@
       },
       "scene_id": {
         "type": "string",
-        "description": "Unique slug identifying this map (e.g. 'tile_0_0' for a world tile, 'posada_salon' for a stage)."
+        "description": "Unique slug identifying this map (e.g. 'tile_0_0' for a world tile)."
       },
       "place_id": {
         "type": "string",
-        "description": "The world-map place id this scene realizes; the engine binds the scene to that place. Optional on tiles/scenes; REQUIRED for proscenium stages."
+        "description": "The world-map place id this scene realizes; the engine binds the scene to that place. Optional."
       },
       "scene_description": {
         "type": "string",
@@ -98,7 +98,7 @@
       },
       "ground": {
         "type": "array",
-        "description": "Tiles AND proscenium stages. Ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision), hill {rect|polygon|ellipse, h: METRES, -6..6 non-zero} (smooth declared relief: positive knoll, negative hollow; presentation-only — collision stays flat, it flattens under buildings/paths/areas/water and dies at tile seams; first-person view only today). Area-like kinds take EXACTLY ONE shape. Anything BUILT with height goes in \"volumes\". See MAP PLAN in the tile instructions."
+        "description": "Ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision), hill {rect|polygon|ellipse, h: METRES, -6..6 non-zero} (smooth declared relief: positive knoll, negative hollow; presentation-only — collision stays flat, it flattens under buildings/paths/areas/water and dies at tile seams; first-person view only today). Area-like kinds take EXACTLY ONE shape. Anything BUILT with height goes in \"volumes\". See MAP PLAN in the tile instructions."
       },
       "vegetation_zones": {
         "type": "array",
@@ -106,7 +106,7 @@
       },
       "volumes": {
         "type": "array",
-        "description": "Tiles AND proscenium stages. Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop, `prism` for a free polygon outline + height, or `custom` for a FREE 3D composition: any object built from solid pieces — box/cylinder/cone/sphere/gable with local pos/rot/scale and colors, optional per-piece `desc` — the SURFACE of that piece's faces seen square-on, painted literally into its texture cell (the object's other pieces are separate geometry)) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings, rect-props and customs accept `angle` (degrees, CCW from above): the rotated footprint drives collision and manifest. building/wall/prop/prism accept optional `surface_desc` for the first-person view — painted once as a unique texture that joins the reusable surface library. The description is the flat SURFACE of the faces it covers (seen square-on), painted literally. Either a string (<=200 chars: one texture for the BODY's side faces; roof/doors keep their derived material) or an object with a DIFFERENT description per face/role (keys n|s|e|w|side|roof|door|caps|top). Each description is its own asset; without one, surfaces derive from material/color. Volumes with surface_desc also accept surface_ref (optional): id of a themed reference image from world.style_refs.fps_faces guiding how the style paints that face (string = all described faces; object = per face).",
+        "description": "Everything with HEIGHT as typed objects (building/wall/tower/gate/tree/bush/rock/fountain/prop, `prism` for a free polygon outline + height, or `custom` for a FREE 3D composition: any object built from solid pieces — box/cylinder/cone/sphere/gable with local pos/rot/scale and colors, optional per-piece `desc` — the SURFACE of that piece's faces seen square-on, painted literally into its texture cell (the object's other pieces are separate geometry)) with footprint in cells + height; the engine projects them (single oblique projection) and derives collision from the footprints. See the MAP PLAN section of the system prompt. Buildings, rect-props and customs accept `angle` (degrees, CCW from above): the rotated footprint drives collision and manifest. building/wall/prop/prism accept optional `surface_desc` for the first-person view — painted once as a unique texture that joins the reusable surface library. The description is the flat SURFACE of the faces it covers (seen square-on), painted literally. Either a string (<=200 chars: one texture for the BODY's side faces; roof/doors keep their derived material) or an object with a DIFFERENT description per face/role (keys n|s|e|w|side|roof|door|caps|top). Each description is its own asset; without one, surfaces derive from material/color. Volumes with surface_desc also accept surface_ref (optional): id of a themed reference image from world.style_refs.fps_faces guiding how the style paints that face (string = all described faces; object = per face).",
         "items": {
           "type": "object"
         }
@@ -118,136 +118,6 @@
       "scatter_zones": {
         "type": "array",
         "description": "OPTIONAL, requires scatter_generators — zones to populate: [{kind, shape: {type:\"rect\",x0,z0,x1,z1}|{type:\"ellipse\",cx,cz,rx,rz}|{type:\"poly\",pts}, density (elements/m², 0..1.5; total capped at 240 instances/tile), seed?}] (cells; max 12). The engine samples deterministic positions avoiding buildings, water, decks and paths automatically."
-      },
-      "stage": {
-        "type": "object",
-        "description": "Proscenium worlds only (stage_request present), REQUIRED there. Declares the stage: bounded playable depth, physical exits and optional fourth wall. Camera convention: the camera sits at the SOUTH edge — north (-z) is the painted backdrop, south (+z) the apron (exit toward camera), east/west the wings. Never present on tiles.",
-        "properties": {
-          "focal_m": {
-            "type": "number",
-            "description": "Optional CAMERA DISTANCE in meters behind the south edge. ~6-8 intimate room, 10-14 street/plaza, 16+ wide establishing shot; prefer the LOW end. Clamped so the frame covers the stage width."
-          },
-          "exits": {
-            "type": "array",
-            "description": "1-8 physical exits, EXACTLY one per world-map link of this place (walking into the zone transitions the scene). zone = [col,row,w,h] in scene cells, must be walkable and reachable.",
-            "minItems": 1,
-            "maxItems": 8,
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "edge": {
-                  "type": "string",
-                  "enum": [
-                    "north",
-                    "south",
-                    "east",
-                    "west"
-                  ]
-                },
-                "to_place_id": {
-                  "type": "string",
-                  "description": "Destination place; a map_link between this place and it MUST exist."
-                },
-                "zone": {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  },
-                  "minItems": 4,
-                  "maxItems": 4
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "door",
-                    "opening",
-                    "stairs"
-                  ]
-                },
-                "label": {
-                  "type": "string",
-                  "description": "Visible label in Spanish, e.g. 'Puerta a la cocina'."
-                }
-              },
-              "required": [
-                "id",
-                "edge",
-                "to_place_id",
-                "zone",
-                "kind",
-                "label"
-              ]
-            }
-          },
-          "backdrop": {
-            "type": "object",
-            "description": "Optional description of the painted backdrop seen at the north edge (in Spanish).",
-            "properties": {
-              "description": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "description"
-            ]
-          },
-          "fourth_wall": {
-            "type": "object",
-            "description": "Optional front wall on the camera side; it fades out when the player approaches. doors = gaps [start col + width in cells].",
-            "properties": {
-              "present": {
-                "type": "boolean"
-              },
-              "doors": {
-                "type": "array",
-                "maxItems": 4,
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "col": {
-                      "type": "number"
-                    },
-                    "w": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "col",
-                    "w"
-                  ]
-                }
-              }
-            },
-            "required": [
-              "present"
-            ]
-          },
-          "interior": {
-            "type": "boolean",
-            "description": "true = this stage is a roofed INTERIOR (room-scale framing, interior lighting). A stage with fourth_wall.present=true is an interior by definition; declaring interior:false alongside a fourth wall is a contradiction and the scene is rejected."
-          },
-          "ambience": {
-            "type": "object",
-            "description": "Optional atmosphere: time_of_day (amanecer|dia|atardecer|noche — drives the clay's sun/sky/fog preset) and mood (free text, feeds the repaint prompt)."
-          },
-          "wall_h_m": {
-            "type": "number",
-            "description": "INTERIORS only: wall/ceiling height in meters at the scale of the room (hut 2.4, tavern 3.5, noble hall 5+). Range [2.2, 8]."
-          },
-          "surroundings": {
-            "type": "array",
-            "description": "EXTERIOR sets: scenery beyond the playable bounds (no collision). Items {kind: house|tower|wall|tree|hill, pos:[x,z] in METERS from the stage center (beyond the backdrop is negative z), plus per-kind size fields, y_base for elevation, angle in degrees}. Declaring them replaces the generic background hills.",
-            "items": {
-              "type": "object"
-            }
-          }
-        },
-        "required": [
-          "exits"
-        ]
       },
       "entities": {
         "type": "array",
