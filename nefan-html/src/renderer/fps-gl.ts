@@ -107,31 +107,47 @@ const VEIL_MAX_ALPHA = 0.94;
 
 /** Muro de niebla: un BANCO, no un telón. Denso a ras de suelo (tapa el corte
  *  del terreno en la frontera), aún denso a la altura del ojo, y disuelto por
- *  encima de ~6,6 m de los 12 del plano — así se ve el cielo por arriba y el
- *  banco tiene borde superior difuso en vez de una línea. Difuminado en los
- *  extremos y modulación de densidad de dos frecuencias para que no lea como
- *  una carta plana. El color lo inyecta el uniforme: es la MISMA niebla que
- *  ya cierra el horizonte, acercada. */
+ *  arriba. El color lo inyecta el uniforme: es la MISMA niebla que ya cierra
+ *  el horizonte, acercada.
+ *
+ *  Lo que lo hacía leer como muro —o como tolvanera— era el borde de arriba:
+ *  la niebla es del color del horizonte y por encima de él tiene AZUL detrás,
+ *  así que aunque el alfa se difuminara, el color cantaba. La cura no es más
+ *  transparencia, es FUNDIRSE: cada fragmento calcula la elevación de su
+ *  propia dirección de vista y toma el color exacto que la cúpula del cielo
+ *  pinta ahí (el mismo `mix(bottom, top, y*2.2)` de skyDome). Arriba el muro
+ *  es literalmente el cielo que tiene detrás y deja de tener contorno; abajo,
+ *  donde lo que tapa es terreno, sigue siendo niebla. El grano de dos
+ *  frecuencias se apaga con la fusión: donde el muro es cielo, nada vibra. */
 const VEIL_FRAGMENT = `
 varying vec2 vUv;
+varying vec3 vWorld;
 uniform vec3 uColor;
+uniform vec3 uSkyBottom;
+uniform vec3 uSkyTop;
 uniform float uOpacity;
 void main() {
-  float alto = 1.0 - smoothstep(0.05, 0.55, vUv.y);
+  vec3 dir = normalize(vWorld - cameraPosition);
+  vec3 cielo = mix(uSkyBottom, uSkyTop, clamp(dir.y * 2.2, 0.0, 1.0));
+  float fusion = smoothstep(-0.02, 0.32, dir.y);
+  float alto = 1.0 - smoothstep(0.04, 0.62, vUv.y);
   float lados = smoothstep(0.0, 0.09, vUv.x) * smoothstep(0.0, 0.09, 1.0 - vUv.x);
   float n = sin(vUv.x * 13.0) * sin(vUv.y * 5.0 + 0.7)
           + 0.5 * sin(vUv.x * 29.0 + 2.1) * sin(vUv.y * 11.0);
-  float densidad = clamp(0.90 + 0.10 * n, 0.0, 1.0);
-  float a = uOpacity * alto * lados * densidad;
+  float grano = 0.07 * n * (1.0 - fusion);
+  float a = clamp(uOpacity * alto * lados * (1.0 + grano), 0.0, 1.0);
   if (a <= 0.004) discard;
-  gl_FragColor = vec4(uColor, a);
+  gl_FragColor = vec4(mix(uColor, cielo, fusion), a);
 }`;
 
 const VEIL_VERTEX = `
 varying vec2 vUv;
+varying vec3 vWorld;
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mundo = modelMatrix * vec4(position, 1.0);
+  vWorld = mundo.xyz;
+  gl_Position = projectionMatrix * viewMatrix * mundo;
 }`;
 
 /** Telegraph: la calidad por vértice (0..1) es la MISMA que resuelve el daño
@@ -915,7 +931,12 @@ export class FpsGl {
       const geo = new THREE.PlaneGeometry(TILE_SIZE_M + VEIL_OVERSHOOT_M, VEIL_H_M);
       geo.translate(0, VEIL_H_M / 2, 0);
       const mat = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(SKY_BOTTOM) }, uOpacity: { value: 0 } },
+        uniforms: {
+          uColor: { value: new THREE.Color(SKY_BOTTOM) },
+          uSkyBottom: { value: new THREE.Color(SKY_BOTTOM) },
+          uSkyTop: { value: new THREE.Color(SKY_TOP) },
+          uOpacity: { value: 0 },
+        },
         vertexShader: VEIL_VERTEX,
         fragmentShader: VEIL_FRAGMENT,
         transparent: true,
@@ -966,11 +987,17 @@ export class FpsGl {
     }
     // El color es el de la niebla VIGENTE (applyAmbienceAt la fija desde la
     // ambience del tile que pisa el jugador): cruzar a un tile nocturno
-    // cambia la pared igual que cambia el horizonte.
+    // cambia la pared igual que cambia el horizonte. Y el cielo con el que se
+    // funde por arriba se lee de la MISMA cúpula que se está pintando: de
+    // noche el muro se disuelve en un cielo nocturno, no en el azul de una
+    // constante.
     const fog = this.scene.fog;
     (v.mat.uniforms.uColor.value as THREE.Color).set(
       fog instanceof THREE.Fog ? fog.color : new THREE.Color(SKY_BOTTOM),
     );
+    const skyMat = this.sky.material as THREE.ShaderMaterial;
+    (v.mat.uniforms.uSkyBottom.value as THREE.Color).copy(skyMat.uniforms.bottom.value as THREE.Color);
+    (v.mat.uniforms.uSkyTop.value as THREE.Color).copy(skyMat.uniforms.top.value as THREE.Color);
     v.mat.uniforms.uOpacity.value = v.opacity * VEIL_MAX_ALPHA;
   }
 

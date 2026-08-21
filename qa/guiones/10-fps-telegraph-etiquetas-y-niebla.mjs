@@ -419,6 +419,13 @@ export default async function (ctx) {
   );
   ctx.log(`muro asentado en opacidad ${asentado.opacity}`);
   await ctx.shot("muro-de-niebla");
+  // Y la que solo se puede tomar desde que hay mirada vertical: el muro
+  // mirado desde abajo. Ahí es donde tenía que fundirse con el cielo en vez
+  // de cortar contra el azul — y donde se vería el canto del plano si lo
+  // hubiera.
+  await mirarA(ctx, 35);
+  await ctx.shot("muro-de-niebla-mirando-arriba");
+  await mirarA(ctx, 0);
 
   // Aceptar la exploración: cuando el vecino llega, el muro se DISIPA — no
   // hay destello, la disipación es el aviso.
