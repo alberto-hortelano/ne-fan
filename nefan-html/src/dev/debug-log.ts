@@ -1,6 +1,6 @@
 /** Trazas de desarrollo de los pipelines de imagen/colisión — GATEADAS.
  *
- * Los pipelines (scene-image, collision) emiten decenas de
+ * Los pipelines (colisión, atlas fps) emiten decenas de
  * `console.log` por tile; en una partida normal son ruido puro. Este
  * módulo los apaga por defecto y los enciende opt-in:
  *   - URL: `?debug=1`

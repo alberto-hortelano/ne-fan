@@ -334,7 +334,7 @@ export class TitleScreen {
       // Los badges de modo son SELECTORES: cambian el modo del save ANTES de
       // cargar (set_render_mode sobre partida inactiva — el bridge escribe el
       // state.json en disco). Así un save con Imagen IA se puede reanudar en
-      // maqueta sin que el auto-pipeline gaste créditos nada más entrar. En
+      // maqueta sin que el atlas de superficies gaste créditos al entrar. En
       // partida, el mismo campo lo cambia el chip de gráficos (🎨/🧱).
       for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-mode-facet]")) {
         btn.addEventListener("click", () => void this.onModeBadge(btn, sessions));

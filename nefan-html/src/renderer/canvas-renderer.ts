@@ -329,7 +329,11 @@ export const DEBUG_VIEW_LABELS: Record<DebugView, string> = {
   plate: "placa de fondo (inpaint)",
 };
 
-const DEBUG_VIEW_CYCLE: DebugView[] = ["off", "collision", "blueprint", "image", "segments", "plate"];
+/** Ciclo de la tecla B. Las fases del pipeline de imagen ("image",
+ *  "segments", "plate") salieron del ciclo con el pipeline que las producía:
+ *  ofrecer una vista que nunca puede tener contenido es una tecla que no hace
+ *  nada. El tipo y las etiquetas siguen para el fallback de `baseLayerFor`. */
+const DEBUG_VIEW_CYCLE: DebugView[] = ["off", "collision", "blueprint"];
 
 export interface CanvasRendererOptions {
   spriteRenderer?: SpriteRenderer;
@@ -1259,19 +1263,9 @@ export class CanvasRenderer {
 
     if (this.debugView === "segments") this.drawSegmentsOverlay();
     if (this.debugView === "collision") this.drawCollisionDebug(objects);
-    if (this.debugView !== "off") {
-      // Aviso cuando ningún tile visible tiene la fase pedida (se está viendo
-      // el fallback): dice qué tecla la genera.
-      let note = "";
-      if (this.debugView === "image" && !visible.some((t) => t.sceneImage)) {
-        note = "sin imagen IA a la vista — G (o Auto-img) la genera";
-      } else if (this.debugView === "plate" && !visible.some((t) => t.plateImage)) {
-        note = "sin placa a la vista — X (análisis del tile) la genera";
-      } else if (this.debugView === "segments" && this.occluders.length === 0) {
-        note = "sin segmentos — X (análisis del tile) los genera";
-      }
-      this.drawDebugViewLabel(note);
-    }
+    // Las tres fases con aviso ("sin imagen IA a la vista — G la genera" y
+    // compañía) salieron del ciclo de B con el pipeline que las producía.
+    if (this.debugView !== "off") this.drawDebugViewLabel("");
 
     // Velo de carga direccional — lo último, por encima de todo.
     if (this.edgeLoading) this.drawEdgeLoading();
@@ -1355,24 +1349,18 @@ export class CanvasRenderer {
       }
     }
 
-    // Colisión BASE del plan (agua∖decks del ground + huellas de volumes): celdas azules.
-    // Activa desde que llega el tile, antes de imagen y análisis.
+    // Colisión BASE del plan (agua∖decks del ground + huellas de volumes):
+    // celdas azules. Activa desde que llega el tile. Era la segunda de tres
+    // fuentes; la derivada de la imagen se fue con su pipeline.
     ctx.fillStyle = "rgba(80,140,255,0.35)";
     for (const tile of this.tiles.values()) {
       this.fillGridCells(tile, tile.svgGrid);
     }
 
-    // Colisión DERIVADA de la imagen (segmentos sólidos clasificados por
-    // visión): celdas violetas. Es la colisión que manda en tiles analizados.
-    ctx.fillStyle = "rgba(160,80,255,0.35)";
-    for (const tile of this.tiles.values()) {
-      this.fillGridCells(tile, tile.imageGrid);
-    }
-
     // Authored collision footprints (same set + rule as main.ts collidesAt):
     // filled translucent red + bright outline so they read over the painting.
-    // En tiles con SVG aplicado o ANALIZADOS, la colisión derivada manda y
-    // estos AABBs ya no bloquean — se omiten para mostrar la colisión real.
+    // En tiles con el PLAN aplicado, su colisión manda y estos AABBs ya no
+    // bloquean — se omiten para mostrar la colisión real.
     for (const o of objects) {
       if (o.category !== "building" && o.category !== "prop") continue;
       if (!o.sizeXZ) continue;
@@ -1430,19 +1418,16 @@ export class CanvasRenderer {
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,40,40,1)";
     ctx.fillRect(12, 52, 14, 10);
-    ctx.fillText("colision del esquema (solo tiles sin svg/analisis)", 32, 61);
+    ctx.fillText("colision del esquema (solo tiles sin plan aplicado)", 32, 61);
     ctx.fillStyle = "rgba(80,140,255,1)";
     ctx.fillRect(12, 70, 14, 10);
     ctx.fillText("colision base del plan (agua+huellas)", 32, 79);
-    ctx.fillStyle = "rgba(160,80,255,1)";
-    ctx.fillRect(12, 88, 14, 10);
-    ctx.fillText("colision derivada de la imagen (solid)", 32, 97);
     ctx.fillStyle = "rgba(60,255,255,1)";
-    ctx.fillRect(12, 106, 14, 10);
-    ctx.fillText("recorte tall — linea solida = z-index", 32, 115);
+    ctx.fillRect(12, 88, 14, 10);
+    ctx.fillText("recorte tall — linea solida = z-index", 32, 97);
     ctx.fillStyle = "rgba(255,140,0,1)";
-    ctx.fillRect(12, 124, 14, 10);
-    ctx.fillText("terreno solido del esquema (muro/agua)", 32, 133);
+    ctx.fillRect(12, 106, 14, 10);
+    ctx.fillText("terreno solido del esquema (muro/agua)", 32, 115);
     ctx.restore();
   }
 
@@ -1527,11 +1512,11 @@ export class CanvasRenderer {
   }
 
   /** ¿El tile que contiene (x,z) tiene los AABBs del esquema desactivados
-   *  (análisis de imagen aplicado o colisión base del plan instalada)? */
+   *  (colisión base del plan instalada)? Espejo de world/collision.ts. */
   private schemaAabbsDisabledAt(x: number, z: number): boolean {
     for (const t of this.tiles.values()) {
       if (
-        (t.imageAnalyzed || t.svgApplied) &&
+        t.svgApplied &&
         x >= t.rect.minX && x < t.rect.maxX && z >= t.rect.minZ && z < t.rect.maxZ
       ) {
         return true;

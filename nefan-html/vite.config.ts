@@ -19,8 +19,8 @@ export default defineConfig({
     // recargando A MANO (F5) cuando el jugador/dev lo decida.
     hmr: false,
     fs: {
-      // La página dev greybox-clay importa fixtures de nefan-core/data y
-      // dumps de labs/stage (harness de calidad del plató) vía glob.
+      // El selector de escenas importa las fixtures de nefan-core/data por
+      // glob (fuera de la raíz del cliente).
       allow: [resolve(__dirname, "..")],
     },
   },

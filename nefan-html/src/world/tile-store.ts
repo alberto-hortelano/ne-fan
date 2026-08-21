@@ -29,16 +29,11 @@ export interface TileClientState {
   /** WorldScene normalizado (formatDToWorld), posiciones GLOBALES. */
   scene: Record<string, unknown>;
   collider: TerrainCollider | null;
-  /** Colisión DERIVADA de la imagen IA (segmentos sólidos clasificados por
-   *  visión). Con `imageAnalyzed`, la imagen manda: los AABBs de objetos del
-   *  esquema en este tile dejan de bloquear. */
-  imageCollider: TerrainCollider | null;
-  imageAnalyzed: boolean;
-  /** Colisión base derivada del map_svg (capas #water+#solid, perforadas por
-   *  #deck). Disponible en cuanto llega el tile — antes de imagen y análisis.
-   *  Se UNE al resto de colliders. Con `svgApplied`, los AABBs del esquema
-   *  dejan de bloquear (el SVG ya dibuja esos edificios con muros y puertas);
-   *  si la derivación falla, el flag queda a false y los AABBs siguen. */
+  /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
+   *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
+   *  collider de terreno. Con `svgApplied`, los AABBs del esquema dejan de
+   *  bloquear (el plan ya dibuja esos edificios con sus muros y puertas); si
+   *  la derivación falla, el flag queda a false y los AABBs siguen. */
   svgCollider: TerrainCollider | null;
   svgApplied: boolean;
 }
@@ -65,9 +60,8 @@ export class TileStore {
     const grid = this.get(t.tx, t.ty);
     if (grid) return grid;
     // Escenas SIN grid (fixtures legacy del selector): localizar por rect —
-    // sin esto, el gate de AABBs del esquema no ve `imageAnalyzed`/
-    // `svgApplied` y las cajas declaradas bloquean aunque la colisión
-    // derivada las haya sustituido.
+    // sin esto, el gate de AABBs del esquema no ve `svgApplied` y las cajas
+    // declaradas bloquean aunque la colisión del plan las haya sustituido.
     for (const e of this.entries.values()) {
       if (e.tx === undefined && x >= e.rect.minX && x < e.rect.maxX && z >= e.rect.minZ && z < e.rect.maxZ) {
         return e;
@@ -84,18 +78,7 @@ export class TileStore {
     }
   }
 
-  /** Marca un tile como analizado (mundo derivado de imagen) e instala su
-   *  collider derivado (null = sin celdas sólidas, pero analizado igualmente:
-   *  los AABBs del esquema dejan de aplicar). Fail-loud si la clave no existe:
-   *  el análisis siempre corre sobre un tile registrado. */
-  markAnalyzed(key: string, collider: TerrainCollider | null): void {
-    const entry = this.entries.get(key);
-    if (!entry) throw new Error(`TileStore.markAnalyzed: tile ${key} no registrado`);
-    entry.imageCollider = collider;
-    entry.imageAnalyzed = true;
-  }
-
-  /** Instala la colisión base derivada del map_svg del tile (null = svg sin
+  /** Instala la colisión base derivada del plan del tile (null = plan sin
    *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
    *  Fail-loud si la clave no existe: se deriva justo tras registrar el tile. */
   setSvgCollider(key: string, collider: TerrainCollider | null): void {

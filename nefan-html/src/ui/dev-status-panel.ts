@@ -6,18 +6,13 @@
  *  desarrollo — datos ricos por tooltip, línea compacta a la vista. */
 
 import type { DevStatus } from "@nefan-core/src/contracts/remote-gen.js";
-import type { PipelineStatus } from "../scene/auto-pipeline.js";
 import { errors } from "./error-log.js";
 
 const POLL_MS = 5000;
 
-/** Fase de la oblicua que gasta créditos (auto-pipeline.ts). */
-const TILE_PAID_PHASE = "imagen";
-
 export interface GenerationEvent {
-  /** tile = oblicua; fps_atlas = superficies de la vista fps; client = caché
-   *  cliente. */
-  kind: "tile" | "fps_atlas" | "client";
+  /** fps_atlas = superficies de la vista fps; client = caché cliente. */
+  kind: "fps_atlas" | "client";
   cached: boolean;
 }
 
@@ -50,6 +45,9 @@ export class DevStatusPanel {
 
   private readonly session: Required<SessionInfo> = { view: "", renderMode: "", styleId: "" };
 
+  /** Último estado pintado de `setPainting` (evita repintar cada frame). */
+  private painting = false;
+
   constructor(
     private readonly remoteUrl: string,
     private readonly log: (msg: string) => void,
@@ -76,25 +74,14 @@ export class DevStatusPanel {
 
   // ── Estado de generación ──
 
-  setTilePipeline(s: PipelineStatus): void {
-    if (s.paused) {
-      this.setGen(`pausado: ai_server no responde · cola ${s.queued}`, "paused");
-    } else if (s.current && s.current.phase === TILE_PAID_PHASE) {
-      // Fase de PAGO: 1 imagen en vuelo + la cola detrás.
-      this.setGen(
-        `GENERANDO imagen del tile ${s.current.key} · quedan ${s.queued + 1}`,
-        "working",
-      );
-    } else if (s.current) {
-      this.setGen(
-        `tile ${s.current.key}: ${s.current.phase}` + (s.queued > 0 ? ` · cola ${s.queued}` : ""),
-        "",
-      );
-    } else if (s.enabled) {
-      this.setGen("img: al día", "");
-    } else {
-      this.renderIdle();
-    }
+  /** Pintura en vuelo del ÚNICO pipeline de imagen que queda (atlas de
+   *  superficies de la fps): aviso destacado mientras puede estar gastando.
+   *  Se llama por frame — solo repinta en el cambio de estado. */
+  setPainting(busy: boolean): void {
+    if (busy === this.painting) return;
+    this.painting = busy;
+    if (busy) this.setGen("GENERANDO atlas de superficies del tile activo…", "working");
+    else this.renderIdle();
   }
 
   recordGeneration(e: GenerationEvent): void {

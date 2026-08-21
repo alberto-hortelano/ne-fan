@@ -266,10 +266,10 @@ _plantilla/
   style.json.example       manifest de partida en el formato de refs libres
 ```
 
-Regenerarlas es GRATIS (render local, sin API):
-`./labs/plantillas/capture.sh all` (requiere `npm run dev` en nefan-html
-para las oblicuas; las de plató usan el viewer del bench). Los PNG se
-commitean y JAMÁS se hashean (el render WebGL no es byte-determinista).
+Los PNG se commitean y JAMÁS se hashean (el render WebGL no es
+byte-determinista). El capturador que regeneraba las semillas de
+`overworld/` y `proscenium/` (`labs/plantillas/capture.sh`) se retiró con el
+pipeline de imagen de esas dos vistas; las de `fps/` no salían de él.
 
 ## Migración desde el formato de categorías
 

@@ -85,7 +85,7 @@ def seed_for(ref: dict) -> Path:
         return ENV_SEED
     raise FileNotFoundError(
         f"plantilla default de la vista '{folder}' ausente: {default} — "
-        "captura las plantillas primero (labs/plantillas/capture.sh)"
+        "declara `seed` en la ref o restaura la plantilla en _plantilla/"
     )
 
 

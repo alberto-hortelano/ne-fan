@@ -161,27 +161,6 @@ export class NarrativeClient {
     this.bridge.sendRequestTile(tx, ty, reason, edge);
   }
 
-  /** Reporta el análisis de imagen de un tile (el mapa real derivado) para
-   *  que el motor narrativo se ajuste a lo pintado. */
-  reportTileAnalysis(
-    tx: number,
-    ty: number,
-    elements: Array<{
-      label: string;
-      solid: boolean;
-      tall: boolean;
-      rect: { minX: number; maxX: number; minZ: number; maxZ: number };
-    }>,
-  ): void {
-    this.bridge.sendTileAnalysis(tx, ty, elements);
-  }
-
-  /** Persiste el plan de un tile tras el retoque de visión (corregido o
-   *  aprobado sin cambios — estampa map_plan_reviewed en el save). */
-  reportMapPlan(tx: number, ty: number, plan: { ground?: unknown[]; volumes?: unknown[] }): void {
-    this.bridge.sendMapPlanUpdate(tx, ty, plan);
-  }
-
   /** Tell the narrative engine the player approached an NPC. The reply arrives
    *  via onNarrativeEvent, usually as a show_dialogue effect. */
   interactEntity(entityId: string, entityName: string): void {
