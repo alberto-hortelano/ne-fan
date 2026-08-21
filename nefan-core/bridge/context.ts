@@ -229,7 +229,12 @@ export function broadcastScene(
   sceneId: string,
   scene: Record<string, unknown>,
   elapsedMs?: number,
-  meta?: { edge?: import("../src/world-map/types.js").Edge },
+  meta?: {
+    edge?: import("../src/world-map/types.js").Edge;
+    /** Punto de aparición que se PIDE al cliente en el `ready` (viaje a un
+     *  place anclado): el cliente es dueño de su posición. */
+    spawn?: { x: number; z: number };
+  },
 ): void {
   enrichSceneWithExits(ctx, scene);
   // Contrato de render único: los clientes reciben la world scene normalizada
@@ -274,6 +279,7 @@ export function broadcastScene(
     kind: isTile ? "tile" : "scene",
     tile: isTile ? { tx: rawTile.tx!, ty: rawTile.ty! } : undefined,
     edge: meta?.edge,
+    spawn: meta?.spawn,
     elapsedMs,
   });
   // La escena difundida puede traer NPCs nuevos (registrados por

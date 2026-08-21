@@ -248,11 +248,33 @@ function bootstrapTile() {
   };
 }
 
+/** Volúmenes del lugar anclado a un tile (generate_tile.place): una casa
+ *  grande con puerta al sur y dos anexos, para que se VEA que el tile ES ese
+ *  lugar y no campo abierto. */
+function placeVolumes(place) {
+  return [
+    {
+      id: `${place.id}_principal`,
+      label: place.name,
+      type: "building",
+      rect: [50, 50, 28, 18],
+      wall_h: 5,
+      roof: { kind: "gable", material: "slate" },
+      walls: { material: "stone" },
+      doors: [{ edge: "s", at: 13, w: 4 }],
+    },
+    { id: `${place.id}_anexo`, label: "anexo", type: "building", rect: [82, 56, 12, 10], doors: [{ edge: "w", at: 4, w: 3 }] },
+    { id: `${place.id}_pozo`, label: "pozo", type: "prop", at: [52, 82], shape: "cylinder", h: 1.2, color: "#7b7268" },
+  ];
+}
+
 /** Tile normal: continúa cada crossing de los vecinos hasta el borde opuesto
  *  (el camino atraviesa el tile y siembra crecimiento futuro). Sin crossings,
- *  un camino oeste↔este por la fila 64. Determinista y memoizado. */
+ *  un camino oeste↔este por la fila 64. Si el tile lleva un `place` anclado
+ *  (viaje desde el panel «Salidas»), se construye ESE lugar.
+ *  Determinista y memoizado. */
 function makeTile(gt) {
-  const { tx, ty, neighbors } = gt ?? {};
+  const { tx, ty, neighbors, place } = gt ?? {};
   const ground = [];
   for (const [edge, n] of Object.entries(neighbors ?? {})) {
     for (const c of n.crossings ?? []) {
@@ -278,18 +300,31 @@ function makeTile(gt) {
   if (ground.length === 0) {
     ground.push({ id: "camino_oe", kind: "path", label: "camino", points: [[0, 64], [128, 64]], w: 2 });
   }
+  if (place) {
+    // Plaza de tierra ante la puerta, para que el lugar se lea desde arriba.
+    ground.push({ id: "plaza_place", kind: "area", label: "plaza", ellipse: { center: [64, 76], rx: 16, ry: 9 }, material: "dirt" });
+  }
   return {
     tile: { tx, ty },
     scene_id: `tile_${tx}_${ty}`,
-    scene_description: `Campo de bench (${tx}, ${ty}).`,
-    style_ref: "forest",
+    scene_description: place
+      ? `${place.name}: ${place.description || "el lugar al que llegó el jugador"} (bench ${tx}, ${ty}).`
+      : `Campo de bench (${tx}, ${ty}).`,
+    style_ref: place ? "settlement" : "forest",
     biome: "grass",
     ground,
+    ...(place ? { volumes: placeVolumes(place) } : {}),
+    // El motor acota DÓNDE vive el lugar dentro del tile: el bridge afina el
+    // anclaje con esto y el jugador aparece dentro, no en el centro geométrico.
+    ...(place ? { place_anchors: [{ place_id: place.id, rect: [48, 68, 32, 20] }] } : {}),
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
     entities: [
       { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1], glyph: "o" },
+      ...(place
+        ? [{ id: `${place.id}_vecino`, kind: "npc", name: `Vecino de ${place.name}`, cell: [72, 84], footprint: [1, 1], glyph: "n" }]
+        : []),
     ],
-    ambient_event: "El viento peina la hierba.",
+    ambient_event: place ? `Llegas a ${place.name}.` : "El viento peina la hierba.",
   };
 }
 
@@ -310,13 +345,30 @@ async function handleGenerateTile(gt) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
   }
   if (gt?.bootstrap) {
-    // Como el motor real: crear el place del arranque en el world map.
+    // Como el motor real: sembrar el world map con las map tools. Dos places
+    // y un link — el segundo NO se realiza aquí: es el destino del panel
+    // «Salidas», que se ancla a un tile libre al viajar.
     await statePost("/map/place", {
       id: "taberna_bench_place",
       kind: "settlement",
       parent_id: "world",
       name: "Taberna del bench",
     }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
+    await statePost("/map/place", {
+      id: "molino_bench_place",
+      kind: "settlement",
+      parent_id: "world",
+      name: "Molino del bench",
+      description: "Un molino de agua río abajo, con su presa y cuatro casas alrededor.",
+    }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
+    await statePost("/map/link", {
+      from: "taberna_bench_place",
+      to: "molino_bench_place",
+      kind: "road",
+      edge: "east",
+      travel_hours: 2,
+      description: "El camino del este, siguiendo el río.",
+    }).catch((err) => console.error("[fake-ai] bootstrap link:", err.message));
     return bootstrapTile();
   }
   const key = `tile_${gt.tx}_${gt.ty}`;

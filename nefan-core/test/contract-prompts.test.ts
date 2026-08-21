@@ -24,7 +24,10 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
     "style_ref", "world.style_refs", "HUMANOID", "story_update", "ui_doc_get", "stage_request",
   ],
   "ui_systems.md": ["overworld", "proscenium", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
-  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces"],
+  // generate_tile.place / nearby_places: los rellena buildGenerateTileCtx al
+  // anclar un place del world map a un tile (viaje desde «Salidas»). Si el
+  // prompt deja de nombrarlos, el motor recibe el campo sin saber qué es.
+  "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces", "generate_tile.place", "nearby_places"],
   "stage_instructions.md": ["stage", "exits", "to_place_id", "zone", "fourth_wall", "place_id", "edge", "style_ref", "interior", "ambience", "volumes", "wall_h", "angle", "surroundings", "PLANO PRIMERO", "ground", "water", "deck"],
   "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],

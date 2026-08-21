@@ -363,6 +363,16 @@ export interface LlmContext {
     }>>;
     /** Borde del TILE NUEVO por el que entra el jugador (opuesto al cruzado). */
     entry?: { edge: "north" | "south" | "east" | "west"; at?: number };
+    /** El place del world map ANCLADO a este tile: lo que hay que construir
+     *  aquí. Aparece cuando el jugador viaja por el panel «Salidas» a un
+     *  lugar que aún no existía y el bridge lo ancló al plano. */
+    place?: {
+      id: string;
+      name: string;
+      kind: string;
+      description: string;
+      attrs: Record<string, unknown>;
+    };
     nearby_places: Array<{ id: string; name: string; kind: string; tile?: [number, number] }>;
     /** true solo en el primer tile de una sesión nueva (lleva player + place). */
     bootstrap?: boolean;

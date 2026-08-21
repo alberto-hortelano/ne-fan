@@ -350,6 +350,11 @@ export interface NarrativeStatusMessage {
   tile?: { tx: number; ty: number };
   /** Borde del tile ACTUAL del jugador hacia el que se genera/completó. */
   edge?: Edge;
+  /** Dónde debe APARECER el jugador cuando la escena queda lista (viaje a un
+   *  place anclado del plano continuo), en metros mundo. El cliente es dueño
+   *  de su posición —la reporta en `sim_input`—, así que el bridge la PIDE en
+   *  el `ready` en vez de escribirla. Ausente = el jugador no se mueve. */
+  spawn?: { x: number; z: number };
 }
 
 export interface GamesListedMessage {
