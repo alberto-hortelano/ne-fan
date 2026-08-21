@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation testing del núcleo puro. La cobertura dice que el test PASÓ POR la línea; la mutación dice si se habría ENTERADO de que cambia. Solo módulos deterministas y sin I/O (el checker de fronteras garantiza que siguen siéndolo). No corre en cada PR: son ~16 min. thresholds.break es la línea base MEDIDA redondeada hacia abajo, no un número elegido a ojo: sube conforme se maten supervivientes. OJO con `incremental`: con testRunner \"command\" Stryker no hashea ficheros de test, así que la caché NO se invalida al editar un test — medido: vaciar dos ficheros de test y volver a correr devuelve el score viejo en 3 s. Por eso `npm run mutate` pasa --force (corre todos los mutantes y reconstruye la caché) y la caché la explota `npm run mutate:quick`, que SOLO vale si no has tocado test/.",
+  "_comment": "Mutation testing del núcleo puro. La cobertura dice que el test PASÓ POR la línea; la mutación dice si se habría ENTERADO de que cambia. Solo módulos deterministas y sin I/O (el checker de fronteras garantiza que siguen siéndolo). No corre en cada PR: son ~10 min. OJO con `timeoutMS`: aqui se ejecuta codigo ROTO A PROPOSITO, y un mutante que rompe una condicion de bucle no termina — sigue asignando memoria hasta que Stryker lo corta, sin medir nada. Ese techo es cuanta RAM puede quemar un mutante inutil: con los 120000 de antes, mutar scene-validate.ts (flood-fill 128x128) dio procesos de 4,24 GB, un pico de 21,8 GB y un OOM que se llevo el editor. Bajarlo NO cambia lo que se mide, verificado fichero a fichero: paths 60.64, predicates 78.30, values 68.52 y combat-resolver 68.29 salen igual con 120 s y con 10 s, y el total detectado es el mismo (paths 252+13 = 251+14 = 265; values 397+10 = 384+23 = 407) — algunos mutantes solo cambian de casilla, de `killed` a `timeout`, que ambas cuentan como detectado. El tope de heap va por NODE_OPTIONS en test:mutate y no por argv porque `node --test` abre un proceso hijo por fichero y los hijos NO heredan las flags del padre. Lo sujeta test/mutation-config.test.ts. RAIZ SIN ATACAR (issue #176): con testRunner \"command\" Stryker no ve los tests individuales, asi que coverageAnalysis tiene que ir en `off` y CADA mutante corre la bateria entera — mutar combat-resolver ejecuta los tests de scene-normalize, que jamas podrian matarlo. Eso es lo que cuesta los ~10 min, y no se arregla con diales: se arregla cambiando de runner. thresholds.break es la línea base MEDIDA redondeada hacia abajo, no un número elegido a ojo: sube conforme se maten supervivientes. OJO con `incremental`: con testRunner \"command\" Stryker no hashea ficheros de test, así que la caché NO se invalida al editar un test — medido: vaciar dos ficheros de test y volver a correr devuelve el score viejo en 3 s. Por eso `npm run mutate` pasa --force (corre todos los mutantes y reconstruye la caché) y la caché la explota `npm run mutate:quick`, que SOLO vale si no has tocado test/.",
   "packageManager": "npm",
   "testRunner": "command",
   "commandRunner": {
@@ -10,7 +10,7 @@
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
   "concurrency": 10,
-  "timeoutMS": 120000,
+  "timeoutMS": 10000,
   "mutate": [
     "src/scene/scene-normalize.ts",
     "src/plugins/dsl/**/*.ts",
