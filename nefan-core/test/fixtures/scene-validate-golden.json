@@ -1,0 +1,838 @@
+{
+  "$comment": "Caracterización de validateScene: la salida COMPLETA (ok, errors en orden, warnings, stats) de cada caso de test/fixtures/scene-validate-corpus.ts. NO es un snapshot que se regenera para poner el test verde: los mensajes de error viajan al motor narrativo en el pre-flight de narrative_respond, así que su TEXTO y su ORDEN son contrato. Si este fichero cambia, ha cambiado lo que el juego le dice al motor.",
+  "casos": {
+    "sin-tile": {
+      "ok": false,
+      "errors": [
+        "una escena necesita `tile` {tx,ty}: es la única variante de Format D (mundo continuo, pídela con generate_tile)"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 0,
+        "rows": 0,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-con-coords-no-enteras": {
+      "ok": false,
+      "errors": [
+        "tile.tx/ty deben ser enteros, got {\"tx\":1.5,\"ty\":0}"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 0,
+        "rows": 0,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "structure-fuera-del-grid": {
+      "ok": false,
+      "errors": [
+        "structures[0]: rect [124,70,10,7] se sale del grid 128x128"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "vegetation-zone-invalida": {
+      "ok": false,
+      "errors": [
+        "vegetation_zones[0]: density=2 debe estar en (0, 1]"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "char-de-terreno-sin-declarar": {
+      "ok": false,
+      "errors": [
+        "chars de terreno sin declarar en terrain_legend: \"X\""
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16357,
+        "reachable_cells": 16357,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "dos-chars-sin-declarar": {
+      "ok": false,
+      "errors": [
+        "chars de terreno sin declarar en terrain_legend: \"Y\", \"Z\""
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16340,
+        "reachable_cells": 16340,
+        "border_reachable": true,
+        "doors_total": 6,
+        "doors_reachable": 6,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "chars-reservados-todos-legales": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16382,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "scatter-sin-generadores": {
+      "ok": false,
+      "errors": [
+        "scatter inválido: scatter_generators: debe ser un objeto {nombre: generador}"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 15603,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 3,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 1,
+        "vegetation_zones": 1,
+        "distinct_building_heights": 2
+      }
+    },
+    "scatter-con-kind-desconocido": {
+      "ok": false,
+      "errors": [
+        "scatter inválido: scatter_zones[0]: kind 'fantasma' sin generador en scatter_generators"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 15603,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 3,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 1,
+        "vegetation_zones": 1,
+        "distinct_building_heights": 2
+      }
+    },
+    "bootstrap-jugable": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16357,
+        "reachable_cells": 16357,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "player-sobre-muro": {
+      "ok": false,
+      "errors": [
+        "el spawn del player [10, 70] no es transitable (celda \"W\" u ocupada por un footprint)"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16357,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "player-bajo-la-huella-de-un-prop": {
+      "ok": false,
+      "errors": [
+        "el spawn del player [15, 80] no es transitable (celda \"g\" u ocupada por un footprint)"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16353,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "huellas-que-bloquean-el-paso": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16341,
+        "reachable_cells": 16341,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "player-fuera-del-grid": {
+      "ok": false,
+      "errors": [
+        "el player está fuera del grid: [200, 200]"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16357,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "player-en-un-tile-normal": {
+      "ok": false,
+      "errors": [
+        "los tiles no llevan entity kind \"player\" (el jugador entra andando desde el tile vecino); solo el tile inicial de bootstrap la incluye"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "bootstrap-sin-player": {
+      "ok": false,
+      "errors": [
+        "falta la entity kind \"player\" (spawn del jugador)"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "costuras-continuadas": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 16384,
+        "border_reachable": true,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "cruce-requerido-sin-continuacion": {
+      "ok": false,
+      "errors": [
+        "el vecino north tiene un river que muere en vuestra costura en la celda 30: tu tile debe continuarlo con celdas transitables compatibles en el borde north, celdas 28..32"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "rio-continuado-por-rio": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16312,
+        "reachable_cells": 16312,
+        "border_reachable": true,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 2,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "entrada-que-casa-con-un-rio": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "la entrada del tile no cae en terreno transitable: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 15872,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-sin-terreno-transitable": {
+      "ok": false,
+      "errors": [
+        "el vecino west tiene un river que muere en vuestra costura en la celda 40: tu tile debe continuarlo con celdas transitables compatibles en el borde west, celdas 38..42",
+        "tile sin terreno transitable: el jugador no podría moverse dentro (injugable)"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "entrada-sin-cruces-requeridos": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 16384,
+        "border_reachable": true,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-aislado-sin-cruces-ni-entrada": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-con-place-id": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 16384,
+        "border_reachable": true,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "cruce-continuado-pero-inalcanzable": {
+      "ok": false,
+      "errors": [
+        "el cruce path del borde east (celda 52) no es alcanzable desde la entrada del tile"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 15872,
+        "reachable_cells": 7424,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 2,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "npc-inalcanzable": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "el NPC \"barkeep\" en [41, 91] no es alcanzable desde el player"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16349,
+        "reachable_cells": 16348,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "puertas-cutaway-en-volumes": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16384,
+        "reachable_cells": 16384,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 1,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 1
+      }
+    },
+    "puertas-en-los-cuatro-lados": {
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16352,
+        "reachable_cells": 16352,
+        "border_reachable": true,
+        "doors_total": 20,
+        "doors_reachable": 20,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 1,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 1
+      }
+    },
+    "puerta-parcialmente-bloqueada": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "1 celda(s) de puerta no alcanzables desde el player"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16356,
+        "reachable_cells": 16356,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 2,
+        "npcs_total": 1,
+        "npcs_reachable": 1,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "ninguna-puerta-alcanzable": {
+      "ok": false,
+      "errors": [
+        "ninguna puerta de las structures es alcanzable desde el player"
+      ],
+      "warnings": [
+        "el NPC \"barkeep\" en [14, 73] no es alcanzable desde el player"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16341,
+        "reachable_cells": 9,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "mapa-casi-todo-agua": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "solo el 20% del mapa es transitable — ¿demasiado muro/agua?"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 3200,
+        "reachable_cells": 3200,
+        "border_reachable": true,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 3,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "telemetria-del-plan": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 15603,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 3,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 1,
+        "vegetation_zones": 1,
+        "distinct_building_heights": 2
+      }
+    },
+    "cuatro-pasadas-fallando-a-la-vez": {
+      "ok": false,
+      "errors": [
+        "chars de terreno sin declarar en terrain_legend: \"X\"",
+        "scatter inválido: scatter_zones[0]: kind 'fantasma' sin generador en scatter_generators",
+        "el spawn del player [10, 70] no es transitable (celda \"W\" u ocupada por un footprint)",
+        "el vecino north tiene un river que muere en vuestra costura en la celda 30: tu tile debe continuarlo con celdas transitables compatibles en el borde north, celdas 28..32"
+      ],
+      "warnings": [
+        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+      ],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16357,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 1,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    }
+  }
+}
