@@ -10,6 +10,7 @@
  *  PINTA distinto. setVisible() conmuta qué canvas se ve. */
 
 import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
 import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
 import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
 import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
@@ -67,6 +68,7 @@ export class FpsRenderer implements Renderer2D {
    *  al cargar three se pintaría un ataque ya terminado. */
   private telegraph: AttackTelegraph | null = null;
   private veilEdge: Edge | null = null;
+  private lookPitch = 0;
 
   constructor(
     private host: HTMLCanvasElement,
@@ -98,6 +100,7 @@ export class FpsRenderer implements Renderer2D {
         // Estado por-frame que no pasa por la cola: se aplica el ÚLTIMO valor.
         this.gl.setAttackTelegraph(this.telegraph);
         this.gl.setVeil(this.veilEdge);
+        this.gl.setLookPitch(this.lookPitch);
       })
       .catch((err: unknown) => {
         errors.push("render", "la vista fps no pudo cargar three.js", err);
@@ -247,10 +250,24 @@ export class FpsRenderer implements Renderer2D {
     this.gl?.setVeil(edge); // por frame: mismo motivo que el telegraph
   }
 
+  /** Inclinación de la MIRADA en radianes (positivo = arriba). El yaw sigue
+   *  saliendo de `player.forward`, que es el marco del movimiento: separar
+   *  los dos es lo que impide que mirar al suelo te empuje contra él. */
+  setLookPitch(rad: number): void {
+    this.lookPitch = rad;
+    this.gl?.setLookPitch(rad); // por frame: mismo motivo que el telegraph
+  }
+
   /** Punto de mundo → píxeles CSS del canvas (null si cae detrás del ojo).
    *  Lo consumen las etiquetas de nombre, que viven en DOM. */
   projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
     return this.gl?.projectToScreen(x, y, z) ?? null;
+  }
+
+  /** Ojo y dirección REAL de la cámara — lo que la puntería tiene que usar
+   *  desde que la vista dejó de ser de yaw puro. null hasta que three carga. */
+  cameraRay(): { origin: Vec3; dir: Vec3 } | null {
+    return this.gl?.cameraRay() ?? null;
   }
 
   /** Altura visual del suelo (relieve) en un punto de mundo — 0 hasta que
@@ -276,6 +293,7 @@ export class FpsRenderer implements Renderer2D {
       surfaces: [...this.surfaces.keys()],
       telegraph: null,
       veil: null,
+      pitchDeg: 0,
       ...(this.gl?.debugState() ?? {}),
     };
   }

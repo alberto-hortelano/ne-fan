@@ -1,26 +1,90 @@
-/** Los tres huecos de la primera persona, jugados.
+/** Los cuatro huecos de la primera persona, jugados.
  *
  *  La vista fps es la única que va a sobrevivir, y hasta esta tanda le
- *  faltaban tres cosas que la oblicua sí daba y que no son adorno:
+ *  faltaban cuatro cosas que la oblicua sí daba y que no son adorno:
  *
- *   1. **Telegraph del ataque**: la distancia y la precisión DECIDEN el daño
+ *   1. **Mirar arriba y abajo**: la cámara era de yaw PURO. Con el ojo a
+ *      1,6 m y 70° de FOV vertical, el suelo no entraba en cuadro hasta los
+ *      2,29 m… y todo el cuerpo a cuerpo ocurre entre 0,9 y 2,5 m. Donde
+ *      peleas estaba por debajo del encuadre.
+ *   2. **Telegraph del ataque**: la distancia y la precisión DECIDEN el daño
  *      (`calidad = factor_distancia × factor_precision × …`), así que sin
  *      verlo el combate es a ciegas. Va en el mundo, no en el HUD.
- *   2. **Nombre del NPC**: sin él no sabes con quién vas a hablar antes de
+ *   3. **Nombre del NPC**: sin él no sabes con quién vas a hablar antes de
  *      pulsar E; y la mirilla no decía nunca que hubiera algo delante.
- *   3. **Frontera del mundo**: el velo direccional de la oblicua era una
+ *   4. **Frontera del mundo**: el velo direccional de la oblicua era una
  *      banda de HUD. En 1ª persona el mundo se acaba AHÍ, así que es un muro
  *      de niebla, y su disipación —no un destello— es el aviso de que el
  *      vecino ya existe.
  *
  *  El guion assertea ESTADO (`__nefan.fps()`, nodos del DOM), nunca píxeles:
  *  el muro de niebla no se puede comprobar leyendo el canvas WebGL, y la
- *  crítica visual (que lea como niebla y no como una carta) es del usuario.
- *  Las capturas quedan en qa/capturas/ para eso.
+ *  crítica visual (que lea como niebla y no como una carta, que se funda con
+ *  el cielo) es del usuario. Las capturas quedan en qa/capturas/ para eso.
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+
+/** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
+const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
+
+/** Mueve el RATÓN hasta que la mirada llega al ángulo pedido (positivo =
+ *  arriba). Camino del jugador —movementY bajo pointer lock—, no un setter:
+ *  si el cableado del ratón al pitch se rompe, esto se queda colgado. */
+function mirarA(ctx, grados) {
+  return ctx.waitFor(
+    `la mirada llega a ${grados}°`,
+    ({ g, gpp }) => {
+      const f = window.__nefan.fps();
+      if (!f) return null;
+      const falta = g - f.pitchDeg;
+      if (Math.abs(falta) <= 1.5) return { pitchDeg: f.pitchDeg };
+      // El ratón hacia abajo (dy>0) baja la mirada: signo invertido. Se
+      // avanza a tramos para no pasarse cuando falta poco.
+      window.__nefan.inputDriver.queueLook(0, -Math.max(-30, Math.min(30, falta)) / gpp);
+      return null;
+    },
+    10_000,
+    { g: grados, gpp: GRADOS_POR_PX },
+  );
+}
+
+/** Traza del telegraph durante un ataque, muestreada cada 16 ms (un poll de
+ *  150 ms podría no ver nunca un wind-up de 0,5 s). Incluye dónde cae en
+ *  PANTALLA el punto óptimo del golpe: es lo que distingue "el telegraph
+ *  existe" de "el jugador lo ve". */
+function trazaDeAtaque(ctx) {
+  return ctx.page.evaluate(
+    () =>
+      new Promise((res) => {
+        const muestras = [];
+        const t0 = performance.now();
+        // setTimeout y no rAF: en headless la pestaña no está "visible" y el
+        // rAF de la página está pausado (el juego corre con ?raf=timer).
+        const tick = () => {
+          const f = window.__nefan.fps();
+          const t = f?.telegraph ?? null;
+          muestras.push(
+            t && {
+              mode: t.mode,
+              opacity: t.opacity,
+              optimalDistance: t.optimalDistance,
+              screen: t.screen,
+              alto: f.viewport.h,
+            },
+          );
+          if (performance.now() - t0 > 2500) return res(muestras);
+          setTimeout(tick, 16);
+        };
+        tick();
+      }),
+  );
+}
+
+/** ¿El punto óptimo del golpe está DENTRO del cuadro y no pegado al borde de
+ *  abajo? El 15 % inferior es la franja que se come la barra de acciones. */
+const enCuadro = (m) => Boolean(m.screen) && m.screen.y < m.alto * 0.85 && m.screen.y > 0;
 
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: "alta_fantasia", view: "fps", charMode: "vector" });
@@ -38,34 +102,105 @@ export default async function (ctx) {
   ctx.log(`fps lista · tiles ${JSON.stringify(inicial.tiles)} · activo ${inicial.activeTile}`);
   ctx.expect("la partida arranca en primera persona", (await ctx.nefan("status")).view === "fps");
   ctx.expect(
-    "y arranca limpia: sin telegraph y sin velo",
-    inicial.telegraph === null && inicial.veil === null,
-    JSON.stringify({ telegraph: inicial.telegraph, veil: inicial.veil }),
+    "y arranca limpia: sin telegraph, sin velo y mirando al frente",
+    inicial.telegraph === null && inicial.veil === null && inicial.pitchDeg === 0,
+    JSON.stringify({ telegraph: inicial.telegraph, veil: inicial.veil, pitchDeg: inicial.pitchDeg }),
   );
 
-  // ── 1. Telegraph del ataque ─────────────────────────────────────────────
-  // Ataque lento a propósito (wind-up 0.7 s): el rápido dura 0.15 s y lo que
+  // ── 1. La mirada deja de ser de yaw puro ────────────────────────────────
+  const abajo = await mirarA(ctx, -35);
+  ctx.log(`mirada abajo: ${abajo.pitchDeg}°`);
+  ctx.expect("el ratón hacia abajo baja la mirada", abajo.pitchDeg <= -30, `${abajo.pitchDeg}°`);
+  ctx.expect(
+    "y la cámara aplica lo mismo que el input acumuló (no hay dos verdades)",
+    Math.abs(Math.round((await ctx.nefan("state")).pitchDeg) - abajo.pitchDeg) <= 1,
+    JSON.stringify({ input: (await ctx.nefan("state")).pitchDeg, camara: abajo.pitchDeg }),
+  );
+  const arriba = await mirarA(ctx, 30);
+  ctx.expect("y hacia arriba la sube", arriba.pitchDeg >= 25, `${arriba.pitchDeg}°`);
+
+  // Los topes: pasar de la vertical marea y rompe el marco de la cámara.
+  await ctx.nefan("inputDriver.queueLook", 0, -20_000);
+  const tope = await ctx.waitFor(
+    "por mucho que empujes el ratón, la mirada se para antes de la vertical",
+    () => {
+      const f = window.__nefan.fps();
+      // >40 = el empujón ya se consumió (veníamos de 30). Si NO hubiera
+      // clamp el valor sería absurdo y lo caza el expect de abajo.
+      return f && f.pitchDeg > 40 ? f : null;
+    },
+    5_000,
+  );
+  ctx.expect("tope arriba: se queda en 85°, no da la vuelta", tope.pitchDeg === 85, `${tope.pitchDeg}°`);
+  await ctx.nefan("inputDriver.queueLook", 0, 40_000);
+  const topeAbajo = await ctx.waitFor(
+    "y el de abajo",
+    () => {
+      const f = window.__nefan.fps();
+      return f && f.pitchDeg < 0 ? f : null;
+    },
+    5_000,
+  );
+  ctx.expect("tope abajo: −85°", topeAbajo.pitchDeg === -85, `${topeAbajo.pitchDeg}°`);
+
+  // El WASD sigue siendo horizontal: mirar al suelo no puede empujarte contra
+  // el suelo. Se camina con la mirada en el tope de abajo y se comprueba que
+  // el desplazamiento sigue al YAW, no a la dirección de cámara.
+  const rumbo = await ctx.page.evaluate(() => {
+    const p = window.__nefan.state().pos;
+    for (let i = 0; i < 16; i++) {
+      const yaw = (i * Math.PI) / 8;
+      const fx = Math.sin(yaw);
+      const fz = Math.cos(yaw);
+      let libre = true;
+      for (let d = 0.5; d <= 3.5; d += 0.5) {
+        if (window.__nefan.probeCollide(p.x + fx * d, p.z + fz * d)) { libre = false; break; }
+      }
+      if (libre) return yaw;
+    }
+    return null;
+  });
+  ctx.expect("hay un rumbo despejado por el que caminar", rumbo !== null, String(rumbo));
+  if (rumbo !== null) {
+    await ctx.nefan("setYaw", rumbo);
+    const estado = await ctx.nefan("state");
+    ctx.expect(
+      "el marco del movimiento es horizontal aunque la mirada esté en el suelo",
+      estado.forward.y === 0,
+      JSON.stringify(estado.forward),
+    );
+    const desde = { ...estado.pos };
+    const llegada = await ctx.holdUntil(
+      "up",
+      "el jugador camina mirando al suelo",
+      (p0) => {
+        const p = window.__nefan.state().pos;
+        return Math.hypot(p.x - p0.x, p.z - p0.z) > 1.5 ? { ...p } : null;
+      },
+      15_000,
+      desde,
+    );
+    const dx = llegada.x - desde.x;
+    const dz = llegada.z - desde.z;
+    const dist = Math.hypot(dx, dz);
+    const alineado = (dx * estado.forward.x + dz * estado.forward.z) / dist;
+    ctx.log(`caminó ${dist.toFixed(2)} m con la mirada a ${topeAbajo.pitchDeg}° · alineación con el yaw ${alineado.toFixed(3)}`);
+    ctx.expect(
+      "y avanza hacia donde apunta el YAW, no hacia donde mira la cámara",
+      alineado > 0.95,
+      String(alineado),
+    );
+  }
+  await mirarA(ctx, 0);
+
+  // ── 2. Telegraph del ataque ─────────────────────────────────────────────
+  // Ataque lento a propósito (wind-up 1,4 s): el rápido dura 0,5 s y lo que
   // se mide es que EXISTE durante el wind-up, no lo corto que es.
   const catalogo = (await ctx.nefan("state")).attackCatalog;
   const lento = catalogo.includes("heavy") ? "heavy" : catalogo[catalogo.length - 1];
   await ctx.nefan("inputDriver.selectAttack", lento);
   await ctx.nefan("inputDriver.queueAttack");
-  const traza = await ctx.page.evaluate(
-    () =>
-      new Promise((res) => {
-        const muestras = [];
-        const t0 = performance.now();
-        // setTimeout y no rAF: en headless la pestaña no está "visible" y el
-        // rAF de la página está pausado (el juego corre con ?raf=timer).
-        const tick = () => {
-          const t = window.__nefan.fps()?.telegraph ?? null;
-          muestras.push(t && { mode: t.mode, opacity: t.opacity, optimalDistance: t.optimalDistance });
-          if (performance.now() - t0 > 2500) return res(muestras);
-          setTimeout(tick, 16);
-        };
-        tick();
-      }),
-  );
+  const traza = await trazaDeAtaque(ctx);
   const conTelegraph = traza.filter(Boolean);
   const windup = conTelegraph.filter((m) => m.mode === "windup");
   ctx.log(`telegraph: ${conTelegraph.length}/${traza.length} muestras · modos ${[...new Set(conTelegraph.map((m) => m.mode))].join("+")}`);
@@ -85,8 +220,29 @@ export default async function (ctx) {
     (await ctx.nefan("fps")).telegraph === null,
     JSON.stringify((await ctx.nefan("fps")).telegraph),
   );
+  // El diagnóstico que destapó la mirada vertical: mirando al frente, el punto
+  // óptimo del golpe cae en el borde de abajo (y lo poco que asoma, tras la
+  // barra de acciones). No es un defecto del telegraph: es dónde mira la
+  // cámara.
+  ctx.log(`punto óptimo al frente: y=${windup[0]?.screen?.y} de ${windup[0]?.alto}`);
+  ctx.expect(
+    "mirando al frente, el golpe cae pegado al borde inferior del cuadro",
+    windup.length > 0 && !windup.some(enCuadro),
+    JSON.stringify(windup[0]?.screen ?? null),
+  );
 
-  // ── 2. Nombre del NPC y mirilla ─────────────────────────────────────────
+  await mirarA(ctx, -30);
+  await ctx.nefan("inputDriver.queueAttack");
+  const trazaAbajo = (await trazaDeAtaque(ctx)).filter(Boolean).filter((m) => m.mode === "windup");
+  ctx.log(`punto óptimo mirando abajo: y=${trazaAbajo[0]?.screen?.y} de ${trazaAbajo[0]?.alto}`);
+  ctx.expect(
+    "bajando la mirada, el telegraph entra en el cuadro: el combate deja de ser a ciegas",
+    trazaAbajo.length > 0 && trazaAbajo.every(enCuadro),
+    JSON.stringify(trazaAbajo[0]?.screen ?? null),
+  );
+  await mirarA(ctx, 0);
+
+  // ── 3. Nombre del NPC y mirilla ─────────────────────────────────────────
   const npcs = await ctx.nefan("npcs");
   ctx.expect("el tile trae algún NPC con el que hablar", npcs.length > 0, `${npcs.length}`);
   if (npcs.length > 0) {
@@ -134,6 +290,35 @@ export default async function (ctx) {
     ctx.expect("la mirilla se enciende sobre el NPC al que apuntas", Boolean(apuntando));
     await ctx.shot("nombre-y-mirilla");
 
+    // Apuntar es apuntar de VERDAD: la puntería usa la dirección real de la
+    // cámara, no la proyección horizontal. Con la mirada clavada en el suelo
+    // el nombre seguía resaltado y la mirilla dada, mirases donde mirases.
+    await mirarA(ctx, -60);
+    const aCiegas = await ctx.waitFor(
+      "con la mirada en el suelo la mirilla se apaga, aunque el NPC siga delante",
+      (id) => {
+        const n = window.__nefan.npcs().find((x) => x.id === id);
+        if (!n) return null;
+        const p = window.__nefan.state().pos;
+        const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z);
+        // A un metro, mirar al suelo SÍ es mirarle las piernas: el caso solo
+        // tiene sentido con el NPC a distancia de conversación.
+        if (d < 2.5) return null;
+        window.__nefan.setYaw(Math.atan2(n.pos.x - p.x, n.pos.z - p.z));
+        const mirilla = document.getElementById("reticle")?.dataset.target;
+        return mirilla === "false" ? { d: Math.round(d * 10) / 10, mirilla } : null;
+      },
+      15_000,
+      npc.id,
+    );
+    ctx.expect("mirar al suelo no es apuntar al NPC", Boolean(aCiegas), JSON.stringify(aCiegas));
+    // Los personajes son cartas planas del sheet frontal_8. Si giraran hacia
+    // la cámara en los TRES ejes, con pitch se tumbarían y se vería el truco:
+    // esta captura es la prueba visual de que solo giran en Y.
+    await mirarA(ctx, -25);
+    await ctx.shot("npc-mirado-desde-arriba");
+    await mirarA(ctx, 0);
+
     // Darle la espalda: ni etiqueta (queda detrás del ojo) ni mirilla.
     const apagado = await ctx.waitFor(
       "al girarse, la etiqueta y la mirilla se apagan",
@@ -152,7 +337,7 @@ export default async function (ctx) {
     ctx.expect("de espaldas no queda ninguna etiqueta pegada a la pantalla", Boolean(apagado));
   }
 
-  // ── 3. El muro de niebla de la frontera ─────────────────────────────────
+  // ── 4. El muro de niebla de la frontera ─────────────────────────────────
   // Sin coordenadas mágicas: se busca un borde SIN vecino y un carril libre
   // por el que caminar hasta él (probeCollide, igual que el guion 02).
   const ruta = await ctx.page.evaluate(() => {
@@ -277,8 +462,10 @@ export default async function (ctx) {
 
   // ── Captura del telegraph ───────────────────────────────────────────────
   // Aquí y no arriba: el jugador está en campo abierto y el parche de suelo
-  // se ve entero. La comprobación del telegraph ya se hizo con la traza; esto
-  // es material para la crítica visual.
+  // se ve entero. Con la mirada baja, que es como se mira a lo que estás a
+  // punto de golpear. La comprobación ya se hizo con las dos trazas; esto es
+  // material para la crítica visual.
+  await mirarA(ctx, -30);
   await ctx.nefan("inputDriver.queueAttack");
   await ctx
     .waitFor(
@@ -286,7 +473,7 @@ export default async function (ctx) {
       () => (window.__nefan.fps()?.telegraph?.mode === "windup" ? true : null),
       3_000,
     )
-    .then(() => ctx.shot("telegraph-del-ataque"))
+    .then(() => ctx.shot("telegraph-mirando-abajo"))
     .catch((err) => ctx.log(`sin captura del telegraph: ${err.message}`));
 
   // ── El mundo se vacía de verdad ─────────────────────────────────────────
@@ -315,5 +502,10 @@ export default async function (ctx) {
       JSON.stringify({ antes: antesDelReset, despues: vaciado.tiles }),
     );
     ctx.expect("y sin velo colgando del mundo anterior", vaciado.veil === null, JSON.stringify(vaciado.veil));
+    ctx.expect(
+      "y con la mirada al frente otra vez (mundo nuevo, ojos al frente)",
+      vaciado.pitchDeg === 0,
+      `${vaciado.pitchDeg}°`,
+    );
   }
 }

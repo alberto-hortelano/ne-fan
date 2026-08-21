@@ -9,6 +9,7 @@ import {
   DEFAULT_ATTACK_IDS,
   type InputProvider,
   type InputState,
+  type LookDelta,
 } from "./input-provider.js";
 
 /** Teclas continuas manipulables desde el driver. */
@@ -26,6 +27,7 @@ export class ScriptedInputProvider implements InputProvider {
   private attackIds: readonly string[] = DEFAULT_ATTACK_IDS;
   private zoomAccum = 0;
   private lookAccum = 0;
+  private lookAccumY = 0;
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
@@ -62,9 +64,11 @@ export class ScriptedInputProvider implements InputProvider {
     this.zoomAccum += steps;
   }
 
-  /** Equivalente a mover el ratón deltaX píxeles bajo pointer lock. */
-  queueLook(deltaX: number): void {
+  /** Equivalente a mover el ratón bajo pointer lock. `deltaY` va en píxeles
+   *  de navegador: positivo = ratón hacia abajo = mirar abajo. */
+  queueLook(deltaX: number, deltaY = 0): void {
     this.lookAccum += deltaX;
+    this.lookAccumY += deltaY;
   }
 
   queueTileConfirm(): void {
@@ -101,9 +105,10 @@ export class ScriptedInputProvider implements InputProvider {
     return z;
   }
 
-  consumeLookDelta(): number {
-    const d = this.lookAccum;
+  consumeLookDelta(): LookDelta {
+    const d = { dx: this.lookAccum, dy: this.lookAccumY };
     this.lookAccum = 0;
+    this.lookAccumY = 0;
     return d;
   }
 

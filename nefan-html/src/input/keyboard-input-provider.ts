@@ -2,8 +2,8 @@
  *
  *  WASD mueve (relativo al facing), las flechas orientan, Shift esprinta,
  *  E interactúa, LMB ataca (con pointer lock), el ratón acumula lookDelta
- *  bajo pointer lock (la vista fps lo convierte en yaw), rueda/+/- hacen
- *  zoom, 1..N
+ *  bajo pointer lock (la vista fps lo convierte en yaw y pitch), rueda/+/-
+ *  hacen zoom, 1..N
  *  seleccionan ataque del catálogo de la sesión, Y/N responden a la propuesta
  *  de tile y R pide respawn. Las teclas de DESARROLLO no están aquí — ver
  *  dev-tools-input.ts. */
@@ -14,6 +14,7 @@ import {
   type InputDeps,
   type InputProvider,
   type InputState,
+  type LookDelta,
 } from "./input-provider.js";
 
 export class KeyboardInputProvider implements InputProvider {
@@ -30,6 +31,7 @@ export class KeyboardInputProvider implements InputProvider {
 
   private zoomAccum = 0;
   private lookAccum = 0;
+  private lookAccumY = 0;
   private tileConfirmRequested = false;
   private tileDeclineRequested = false;
   private respawnRequested = false;
@@ -124,11 +126,12 @@ export class KeyboardInputProvider implements InputProvider {
       }
     };
 
-    // Delta de mirada: solo bajo pointer lock (movementX fuera de lock es
-    // movimiento de cursor normal, no intención de girar).
+    // Delta de mirada: solo bajo pointer lock (el movimiento del ratón fuera
+    // de lock es cursor normal, no intención de mirar).
     this.onMouseMove = (e) => {
       if (document.pointerLockElement !== null) {
         this.lookAccum += e.movementX;
+        this.lookAccumY += e.movementY;
       }
     };
 
@@ -190,9 +193,10 @@ export class KeyboardInputProvider implements InputProvider {
     return z;
   }
 
-  consumeLookDelta(): number {
-    const d = this.lookAccum;
+  consumeLookDelta(): LookDelta {
+    const d = { dx: this.lookAccum, dy: this.lookAccumY };
     this.lookAccum = 0;
+    this.lookAccumY = 0;
     return d;
   }
 

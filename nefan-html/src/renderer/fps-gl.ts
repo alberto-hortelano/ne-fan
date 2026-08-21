@@ -30,6 +30,7 @@ import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 /** Lado del tile en metros (64). */
 const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { AttackTelegraph, PlayerView } from "./renderer2d.js";
@@ -62,9 +63,13 @@ export interface FpsDebugCollision {
   size: number;
 }
 
-/** Altura del overlay de colisión: por encima del stack de suelo (deck top
- *  ~0.105 m + stagger de fps-spec). */
-const DEBUG_COLLISION_Y = 0.2;
+/** Altura a la que va cualquier calco sobre el suelo, en metros. El suelo NO
+ *  acaba en y=0: el greybox apila los rasgos planos (área→camino→agua→deck,
+ *  Y_DECK 0.18 celdas = 0.09 m) y fps-spec les añade 2 mm por prim para que
+ *  no z-fighteen — medido sobre las fixtures del golden, la cara alta del
+ *  stack queda en 0,13 m. A ras, un calco queda ENTERRADO bajo el camino y la
+ *  plaza; a 0,2 m flota justo por encima y sigue leyendo como suelo. */
+const GROUND_OVERLAY_Y = 0.2;
 
 // ── Telegraph del ataque ──────────────────────────────────────────────────
 /** Resolución de la rejilla del telegraph (avance × lateral). Topología fija:
@@ -72,23 +77,12 @@ const DEBUG_COLLISION_Y = 0.2;
  *  params del ataque. */
 const TELEGRAPH_U_STEPS = 20;
 const TELEGRAPH_S_STEPS = 10;
-/** Altura del parche sobre el terreno, en metros. NO son 2 mm, y por dos
- *  medidas concretas:
- *
- *  1. El suelo no acaba en y=0: el greybox apila los rasgos planos hasta
- *     Y_DECK 0.18 (+ el stagger de fps-spec). Un decal a ras queda ENTERRADO
- *     bajo el camino y la plaza — medido: no se veía ni un píxel.
- *  2. La cámara fps es de yaw PURO (sin pitch) con el ojo a 1,6 m y 70° de
- *     FOV vertical: el suelo solo entra en cuadro a partir de 1.6/tan(35°) =
- *     2,29 m. Todos los ataques cuerpo a cuerpo tienen su distancia óptima
- *     entre 0,9 y 2,5 m, así que a ras el telegraph cae DEBAJO del encuadre
- *     (y lo poco que asoma, tras la barra de acciones). A 45 cm el mismo
- *     parche entra en el tercio inferior y las piernas del enemigo quedan
- *     DENTRO del plano, que es como se juzga "¿le llego?".
- *
- *  Es un plano de marca flotante, no una sombra: no miente sobre la huella
- *  (va drapeado sobre el relieve, encima de la misma región XZ). */
-const TELEGRAPH_Y_M = 0.45;
+/** Altura del parche sobre el terreno: la de cualquier calco de suelo. Estuvo
+ *  a 45 cm mientras la cámara era de yaw puro —el combate cuerpo a cuerpo
+ *  (0,9–2,5 m) caía por debajo del encuadre y había que levantarlo para que
+ *  asomara—. Con mirada vertical el jugador baja los ojos y lo ve entero, así
+ *  que vuelve al suelo, que es donde informa sin mentir. */
+const TELEGRAPH_Y_M = GROUND_OVERLAY_Y;
 /** El overlay de la vista cenital se mira de frente; en primera persona el
  *  mismo parche se ve en rasante y la alfa efectiva por píxel se desploma.
  *  Ganancia propia de esta vista sobre la opacidad que manda el juego. */
@@ -428,6 +422,11 @@ export class FpsGl {
   >();
   private texByImage = new WeakMap<HTMLImageElement, THREE.Texture>();
   private renderYaw = 0;
+  /** Inclinación de la mirada en radianes (positivo = arriba). A diferencia
+   *  del yaw NO se interpola: el tween del yaw existe para suavizar los
+   *  saltos de 45° de ←/→, y un ratón con retardo en el eje vertical se
+   *  siente roto. Los pasos de ↑/↓ son de 15°, que no necesitan filtro. */
+  private lookPitch = 0;
   private lastNow = 0;
   private activeKey: string | null = null;
   private debugView: FpsDebugView = "off";
@@ -446,6 +445,8 @@ export class FpsGl {
   } | null = null;
   /** Ataque en curso que el telegraph pinta, o null (apagado). */
   private telegraph: AttackTelegraph | null = null;
+  /** Punto óptimo del golpe proyectado a píxeles del lienzo (solo debugState). */
+  private telegraphScreen: { x: number; y: number; depthM: number } | null = null;
   /** Muro de niebla de la frontera. `opacity` es el tween 0..1 (la alfa real
    *  del material es ésta por VEIL_MAX_ALPHA y el perfil del shader). */
   private veil: {
@@ -459,6 +460,8 @@ export class FpsGl {
   /** Vectores de trabajo de projectToScreen (una etiqueta por NPC y frame). */
   private projNdc = new THREE.Vector3();
   private projView = new THREE.Vector3();
+  /** Vector de trabajo de cameraRay (uno por frame). */
+  private camDir = new THREE.Vector3();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -779,6 +782,23 @@ export class FpsGl {
     this.disposeVeil();
   }
 
+  /** Inclinación de la MIRADA en radianes (positivo = arriba). El clamp vive
+   *  en main.ts, que es quien acumula el ratón: aquí llega ya acotada. */
+  setLookPitch(rad: number): void {
+    this.lookPitch = rad;
+  }
+
+  /** Ojo y dirección REAL de la cámara del último frame pintado. La puntería
+   *  la necesita entera —con pitch— para que apuntar sea apuntar: con la
+   *  proyección horizontal, mirando al suelo seguirías "apuntando" al NPC que
+   *  tienes delante. */
+  cameraRay(): { origin: Vec3; dir: Vec3 } {
+    this.cam.updateMatrixWorld();
+    const o = this.cam.position;
+    const d = this.camDir.set(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    return { origin: { x: o.x, y: o.y, z: o.z }, dir: { x: d.x, y: d.y, z: d.z } };
+  }
+
   /** Punto de MUNDO → píxeles CSS del canvas, o null si cae detrás del ojo.
    *  Es lo que permite colgar las etiquetas de nombre en DOM sobre la cabeza
    *  del NPC sin re-implementar el tema del pack en un atlas de fuente. */
@@ -861,6 +881,13 @@ export class FpsGl {
       }
     }
     pos.needsUpdate = true;
+    // Dónde cae en PANTALLA el punto óptimo del golpe. No lo usa el render:
+    // lo publica debugState para que se pueda afirmar sin leer píxeles que el
+    // telegraph está EN CUADRO (con yaw puro caía por debajo del encuadre, y
+    // ese era justo el problema que la mirada vertical resuelve).
+    const ox = player.pos.x + fx * params.optimal_distance;
+    const oz = player.pos.z + fz * params.optimal_distance;
+    this.telegraphScreen = this.projectToScreen(ox, this.reliefWorldAt(ox, oz) + TELEGRAPH_Y_M, oz);
     t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
     t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
     if (mode === "impact") {
@@ -1041,7 +1068,7 @@ export class FpsGl {
     const inst = new THREE.InstancedMesh(geo, mat, c.cells.length);
     const m = new THREE.Matrix4();
     c.cells.forEach(([x, z], i) => {
-      m.makeTranslation(x + c.size / 2, DEBUG_COLLISION_Y, z + c.size / 2);
+      m.makeTranslation(x + c.size / 2, GROUND_OVERLAY_Y, z + c.size / 2);
       inst.setMatrixAt(i, m);
     });
     inst.instanceMatrix.needsUpdate = true;
@@ -1233,7 +1260,10 @@ export class FpsGl {
     this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + EYE_M, player.pos.z);
     // rotation.y = π + yaw: la cámara de three mira −z con rotación 0 y
     // yawOf tiene 0 = +z (R_y(π+yaw)·(0,0,−1) = (sin yaw, 0, cos yaw)).
-    this.cam.rotation.set(0, Math.PI + this.renderYaw, 0, "YXZ");
+    // rotation.x = pitch en orden YXZ: el giro vertical se aplica en el marco
+    // ya girado, así que mirar arriba es mirar arriba mires a donde mires
+    // (con XYZ el eje se inclinaría con el yaw y la vista rolaría).
+    this.cam.rotation.set(this.lookPitch, Math.PI + this.renderYaw, 0, "YXZ");
     this.sky.position.copy(this.cam.position);
 
     const seen = new Set<string>();
@@ -1271,14 +1301,24 @@ export class FpsGl {
       activeTile: this.activeKey,
       textured: [...this.tiles.entries()].filter(([, t2]) => t2.textured).map(([k]) => k),
       renderYawDeg: Math.round((this.renderYaw * 180) / Math.PI),
+      /** Lo que la CÁMARA tiene aplicado (no lo que el input pidió): se lee
+       *  de su rotación, así que un cable roto entre main.ts y el frame se ve
+       *  aquí. Cero hasta el primer render. */
+      pitchDeg: Math.round((this.cam.rotation.x * 180) / Math.PI),
       billboards: [...this.billboards.entries()].filter(([, s]) => s.mesh.visible).length,
       debugView: this.debugView,
+      viewport: { w: this.canvas.clientWidth || this.canvas.width, h: this.canvas.clientHeight || this.canvas.height },
       telegraph: t
         ? {
             mode: t.mode,
             opacity: Math.round(t.opacity * 1000) / 1000,
             optimalDistance: t.params.optimal_distance,
             areaRadius: t.params.area_radius,
+            /** Píxeles del lienzo del punto óptimo, o null si queda detrás
+             *  del ojo. Comparado con `viewport` dice si está en cuadro. */
+            screen: this.telegraphScreen
+              ? { x: Math.round(this.telegraphScreen.x), y: Math.round(this.telegraphScreen.y) }
+              : null,
           }
         : null,
       veil: v ? { edge: v.edge, opacity: Math.round(v.opacity * 1000) / 1000 } : null,

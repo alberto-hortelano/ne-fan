@@ -21,6 +21,13 @@ export interface InputState {
   interact: boolean;
 }
 
+/** Movimiento de ratón acumulado bajo pointer lock, en píxeles. `dy` es el
+ *  del navegador: positivo = ratón hacia ABAJO. */
+export interface LookDelta {
+  dx: number;
+  dy: number;
+}
+
 /** Catálogo por defecto (sistema de combate estándar) hasta que la sesión
  *  instale el suyo vía setAttackBindings. */
 export const DEFAULT_ATTACK_IDS = ["quick", "heavy", "medium", "defensive", "precise"];
@@ -64,9 +71,10 @@ export interface InputProvider extends IntentSink {
   onAttackTypeChanged?: (typeId: string) => void;
   /** Intención de zoom acumulada con signo (+ acerca) — se resetea al leer. */
   consumeZoomDelta(): number;
-  /** Delta horizontal de ratón acumulado en píxeles (movementX bajo pointer
-   *  lock) — se resetea al leer. Solo la vista fps lo convierte en yaw. */
-  consumeLookDelta(): number;
+  /** Delta de ratón acumulado en píxeles bajo pointer lock — se resetea al
+   *  leer. Solo la vista fps lo convierte en mirada: `dx` en yaw y `dy` en
+   *  pitch (mirar arriba y abajo). */
+  consumeLookDelta(): LookDelta;
   consumeAttack(): boolean;
   consumeInteract(): boolean;
   /** Aceptar/rechazar la propuesta de generar el tile vecino. */
