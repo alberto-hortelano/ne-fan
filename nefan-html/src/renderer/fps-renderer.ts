@@ -14,6 +14,7 @@ import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/bluepr
 import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
 import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
+import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
@@ -65,6 +66,7 @@ export class FpsRenderer implements Renderer2D {
    *  la cola `pending` ejecuta closures — si capturasen el valor del momento,
    *  al cargar three se pintaría un ataque ya terminado. */
   private telegraph: AttackTelegraph | null = null;
+  private veilEdge: Edge | null = null;
 
   constructor(
     private host: HTMLCanvasElement,
@@ -95,6 +97,7 @@ export class FpsRenderer implements Renderer2D {
         this.pending = [];
         // Estado por-frame que no pasa por la cola: se aplica el ÚLTIMO valor.
         this.gl.setAttackTelegraph(this.telegraph);
+        this.gl.setVeil(this.veilEdge);
       })
       .catch((err: unknown) => {
         errors.push("render", "la vista fps no pudo cargar three.js", err);
@@ -237,6 +240,13 @@ export class FpsRenderer implements Renderer2D {
     this.gl?.setAttackTelegraph(t);
   }
 
+  /** Muro de niebla sobre la frontera del tile activo, o null para que se
+   *  disipe. El velo lo sigue DECIDIENDO el FrontierManager. */
+  setFrontierVeil(edge: Edge | null): void {
+    this.veilEdge = edge;
+    this.gl?.setVeil(edge); // por frame: mismo motivo que el telegraph
+  }
+
   /** Punto de mundo → píxeles CSS del canvas (null si cae detrás del ojo).
    *  Lo consumen las etiquetas de nombre, que viven en DOM. */
   projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
@@ -265,6 +275,7 @@ export class FpsRenderer implements Renderer2D {
       visible: this.visible,
       surfaces: [...this.surfaces.keys()],
       telegraph: null,
+      veil: null,
       ...(this.gl?.debugState() ?? {}),
     };
   }

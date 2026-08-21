@@ -2142,6 +2142,10 @@ function gameLoop(now: number): void {
         requestTile,
       );
       renderer.setEdgeLoading(veil?.edge ?? null, veil?.text ?? "");
+      // Primera persona: el velo es un MURO DE NIEBLA sobre la frontera, no
+      // una banda de HUD. Ahí el mundo se acaba de verdad, y verlo disiparse
+      // al llegar el vecino cuenta "el mundo continúa" sin escribirlo.
+      fpsRenderer?.setFrontierVeil(veil?.edge ?? null);
       for (const key of timedOut) {
         errors.push("narrative", `El tile ${key} no llegó a tiempo (timeout); se reintentará al acercarse.`);
       }
@@ -2164,6 +2168,7 @@ function gameLoop(now: number): void {
         setConfirmPrompt(null);
       }
     } else if (!stageTransitions.proposalActive) {
+      fpsRenderer?.setFrontierVeil(null);
       // Sin frontera activa Y sin propuesta de cruce de plató: prompt fuera.
       // (La propuesta del proscenio comparte elemento y teclas — este reset
       // por-frame se la comía.)
@@ -2861,7 +2866,9 @@ narrativeClient.onNarrativeEvent((event) => {
             void addTile(scene).then(() => {
               const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
               if (edge) {
-                renderer.setEdgeFlash(edge);
+                // Sin destello de llegada: el feedback ES que el muro de
+                // niebla de esa frontera se disipa y descubre el terreno
+                // nuevo. Un flash encima solo tapaba lo que hay que mirar.
                 const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
                 log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
               } else {

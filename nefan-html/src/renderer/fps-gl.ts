@@ -30,6 +30,7 @@ import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 /** Lado del tile en metros (64). */
 const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
+import type { Edge } from "@nefan-core/src/world-map/types.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { AttackTelegraph, PlayerView } from "./renderer2d.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
@@ -92,6 +93,52 @@ const TELEGRAPH_Y_M = 0.45;
  *  mismo parche se ve en rasante y la alfa efectiva por píxel se desploma.
  *  Ganancia propia de esta vista sobre la opacidad que manda el juego. */
 const TELEGRAPH_GAIN = 2.2;
+
+// ── Muro de niebla de la frontera ─────────────────────────────────────────
+/** Alto del muro en metros: a 0,25 m del ojo tapa 88° de vertical; a 8 m
+ *  (VEIL_M del FrontierManager) sigue por encima del borde superior del FOV. */
+const VEIL_H_M = 12;
+/** Sobreancho respecto al lado del tile: el difuminado lateral cae FUERA del
+ *  tile, así que la frontera queda cubierta de esquina a esquina. */
+const VEIL_OVERSHOOT_M = 12;
+/** Metros hacia dentro del tile: el borde duro del suelo queda detrás. */
+const VEIL_INSET_M = 0.25;
+/** Aparición y disipación. La disipación ES el feedback de que el vecino
+ *  llegó: lenta a propósito, para que se vea descubrir el terreno nuevo. */
+const VEIL_FADE_IN_S = 0.4;
+const VEIL_FADE_OUT_S = 0.9;
+/** Alfa máxima al pie del muro. No 1.0: un negro/gris absoluto lee como
+ *  telón; con 0,94 la niebla conserva algo de aire. */
+const VEIL_MAX_ALPHA = 0.94;
+
+/** Muro de niebla: un BANCO, no un telón. Denso a ras de suelo (tapa el corte
+ *  del terreno en la frontera), aún denso a la altura del ojo, y disuelto por
+ *  encima de ~6,6 m de los 12 del plano — así se ve el cielo por arriba y el
+ *  banco tiene borde superior difuso en vez de una línea. Difuminado en los
+ *  extremos y modulación de densidad de dos frecuencias para que no lea como
+ *  una carta plana. El color lo inyecta el uniforme: es la MISMA niebla que
+ *  ya cierra el horizonte, acercada. */
+const VEIL_FRAGMENT = `
+varying vec2 vUv;
+uniform vec3 uColor;
+uniform float uOpacity;
+void main() {
+  float alto = 1.0 - smoothstep(0.05, 0.55, vUv.y);
+  float lados = smoothstep(0.0, 0.09, vUv.x) * smoothstep(0.0, 0.09, 1.0 - vUv.x);
+  float n = sin(vUv.x * 13.0) * sin(vUv.y * 5.0 + 0.7)
+          + 0.5 * sin(vUv.x * 29.0 + 2.1) * sin(vUv.y * 11.0);
+  float densidad = clamp(0.90 + 0.10 * n, 0.0, 1.0);
+  float a = uOpacity * alto * lados * densidad;
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(uColor, a);
+}`;
+
+const VEIL_VERTEX = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
 
 /** Telegraph: la calidad por vértice (0..1) es la MISMA que resuelve el daño
  *  (`combat-resolver`), así que el color no adorna — informa. Rojo en el borde
@@ -399,6 +446,16 @@ export class FpsGl {
   } | null = null;
   /** Ataque en curso que el telegraph pinta, o null (apagado). */
   private telegraph: AttackTelegraph | null = null;
+  /** Muro de niebla de la frontera. `opacity` es el tween 0..1 (la alfa real
+   *  del material es ésta por VEIL_MAX_ALPHA y el perfil del shader). */
+  private veil: {
+    mesh: THREE.Mesh;
+    mat: THREE.ShaderMaterial;
+    edge: Edge;
+    tileKey: string | null;
+    opacity: number;
+    target: number;
+  } | null = null;
   /** Vectores de trabajo de projectToScreen (una etiqueta por NPC y frame). */
   private projNdc = new THREE.Vector3();
   private projView = new THREE.Vector3();
@@ -717,8 +774,9 @@ export class FpsGl {
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
     this.activeKey = null;
     this.ambienceKey = null;
-    // El overlay de colisión es del tile activo: muere con él.
+    // El overlay de colisión y el velo son del tile activo: mueren con él.
     this.clearCollisionDebug();
+    this.disposeVeil();
   }
 
   /** Punto de MUNDO → píxeles CSS del canvas, o null si cae detrás del ojo.
@@ -814,6 +872,87 @@ export class FpsGl {
         : "#787878";
       (t.mat.uniforms.uImpactColor.value as THREE.Color).set(c);
     }
+  }
+
+  /** Velo direccional de la frontera: muro de niebla sobre el borde del tile
+   *  activo, o null para que se disipe. Quién DECIDE el velo sigue siendo el
+   *  FrontierManager; esto solo lo pinta. */
+  setVeil(edge: Edge | null): void {
+    if (!edge) {
+      if (this.veil) this.veil.target = 0;
+      return;
+    }
+    const entry = this.activeKey ? this.tiles.get(this.activeKey) : null;
+    if (!entry) return; // sin tile activo no hay frontera que pintar
+    if (!this.veil) {
+      const geo = new THREE.PlaneGeometry(TILE_SIZE_M + VEIL_OVERSHOOT_M, VEIL_H_M);
+      geo.translate(0, VEIL_H_M / 2, 0);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: new THREE.Color(SKY_BOTTOM) }, uOpacity: { value: 0 } },
+        vertexShader: VEIL_VERTEX,
+        fragmentShader: VEIL_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.veil = { mesh, mat, edge, tileKey: this.activeKey, opacity: 0, target: 1 };
+      this.placeVeil(entry.rect, edge);
+      return;
+    }
+    if (this.veil.edge !== edge || this.veil.tileKey !== this.activeKey) {
+      // Recolocar sin reiniciar la alfa: al andar por una esquina el borde
+      // más cercano cambia, y un parpadeo ahí delata la costura.
+      this.veil.edge = edge;
+      this.veil.tileKey = this.activeKey;
+      this.placeVeil(entry.rect, edge);
+    }
+    this.veil.target = 1;
+  }
+
+  private placeVeil(rect: { minX: number; minZ: number }, edge: Edge): void {
+    if (!this.veil) return;
+    const cx = rect.minX + TILE_SIZE_M / 2;
+    const cz = rect.minZ + TILE_SIZE_M / 2;
+    const m = this.veil.mesh;
+    if (edge === "north") m.position.set(cx, 0, rect.minZ + VEIL_INSET_M);
+    else if (edge === "south") m.position.set(cx, 0, rect.minZ + TILE_SIZE_M - VEIL_INSET_M);
+    else if (edge === "west") m.position.set(rect.minX + VEIL_INSET_M, 0, cz);
+    else m.position.set(rect.minX + TILE_SIZE_M - VEIL_INSET_M, 0, cz);
+    // El plano nace en XY mirando a +z: los bordes que corren en Z giran 90°.
+    // DoubleSide hace irrelevante de qué lado se mire.
+    m.rotation.y = edge === "east" || edge === "west" ? Math.PI / 2 : 0;
+  }
+
+  private updateVeil(dt: number): void {
+    const v = this.veil;
+    if (!v) return;
+    const rate = dt / (v.target > v.opacity ? VEIL_FADE_IN_S : VEIL_FADE_OUT_S);
+    const d = v.target - v.opacity;
+    v.opacity = Math.abs(d) <= rate ? v.target : v.opacity + Math.sign(d) * rate;
+    if (v.target === 0 && v.opacity <= 0.001) {
+      this.disposeVeil();
+      return;
+    }
+    // El color es el de la niebla VIGENTE (applyAmbienceAt la fija desde la
+    // ambience del tile que pisa el jugador): cruzar a un tile nocturno
+    // cambia la pared igual que cambia el horizonte.
+    const fog = this.scene.fog;
+    (v.mat.uniforms.uColor.value as THREE.Color).set(
+      fog instanceof THREE.Fog ? fog.color : new THREE.Color(SKY_BOTTOM),
+    );
+    v.mat.uniforms.uOpacity.value = v.opacity * VEIL_MAX_ALPHA;
+  }
+
+  private disposeVeil(): void {
+    if (!this.veil) return;
+    this.scene.remove(this.veil.mesh);
+    this.veil.mesh.geometry.dispose();
+    this.veil.mat.dispose();
+    this.veil = null;
   }
 
   setActive(key: string | null): void {
@@ -1120,11 +1259,13 @@ export class FpsGl {
     }
 
     this.updateTelegraph();
+    this.updateVeil(dt);
     this.renderer.render(this.scene, this.cam);
   }
 
   debugState(): Record<string, unknown> {
     const t = this.telegraph;
+    const v = this.veil;
     return {
       tiles: [...this.tiles.keys()],
       activeTile: this.activeKey,
@@ -1140,6 +1281,7 @@ export class FpsGl {
             areaRadius: t.params.area_radius,
           }
         : null,
+      veil: v ? { edge: v.edge, opacity: Math.round(v.opacity * 1000) / 1000 } : null,
     };
   }
 
@@ -1152,6 +1294,7 @@ export class FpsGl {
       this.telegraphMesh.mat.dispose();
       this.telegraphMesh = null;
     }
+    this.disposeVeil();
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
     for (const slot of this.billboards.values()) {
       this.scene.remove(slot.mesh);
