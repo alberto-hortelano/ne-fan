@@ -25,16 +25,14 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { abrirSelectorDeMundos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
 
 /** Pre-genera el mundo desde el título, por el camino del jugador (el botón
  *  de regenerar pide confirmación en dos clicks, como las acciones de pago). */
 async function regenerarMundo(ctx) {
-  await ctx.waitFor("el título ofrece 'Nueva partida'", () => Boolean(document.getElementById("ts-new")));
-  await ctx.page.click("#ts-new");
-  await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
+  await abrirSelectorDeMundos(ctx);
   await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
   await ctx.page.click(`#ts-view [data-view="overworld"]`);
 
