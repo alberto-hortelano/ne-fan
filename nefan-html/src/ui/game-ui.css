@@ -405,6 +405,38 @@
   white-space: pre-wrap;
 }
 
+/* ── Etiquetas de mundo (solo primera persona) ──────────────────────────
+   El nombre del NPC se lee sobre su cabeza EXACTAMENTE igual que en el panel
+   de diálogo: mismos tokens, misma tipografía. La posición la escribe
+   world-labels.ts con un transform en píxeles del lienzo. */
+#world-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+#game-ui[data-view="fps"] #world-labels { display: block; }
+#world-labels .world-label {
+  position: absolute;
+  top: 0; left: 0;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: var(--nf-radius);
+  background: var(--nf-surface);
+  border: var(--nf-hairline) solid var(--nf-border);
+  color: var(--nf-ink-dim);
+  font-family: var(--nf-font);
+  font-size: var(--nf-fs-sm);
+  letter-spacing: var(--nf-tracking);
+  /* Sin transición: la etiqueta persigue un punto del mundo cada frame y
+     cualquier interpolación la deja arrastrándose por detrás de la cabeza. */
+}
+#world-labels .world-label[data-focus="true"] {
+  color: var(--nf-accent);
+  border-color: var(--nf-accent);
+  box-shadow: var(--nf-glow);
+}
+
 /* ── Mirilla (solo primera persona) ─────────────────────────────────────── */
 #reticle { display: none; }
 #game-ui[data-view="fps"] #reticle {

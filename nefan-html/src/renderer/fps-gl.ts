@@ -31,7 +31,7 @@ import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
 import type { Entity } from "./canvas-renderer.js";
-import type { PlayerView } from "./renderer2d.js";
+import type { AttackTelegraph, PlayerView } from "./renderer2d.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
 const EYE_M = 1.6;
@@ -64,6 +64,58 @@ export interface FpsDebugCollision {
 /** Altura del overlay de colisión: por encima del stack de suelo (deck top
  *  ~0.105 m + stagger de fps-spec). */
 const DEBUG_COLLISION_Y = 0.2;
+
+// ── Telegraph del ataque ──────────────────────────────────────────────────
+/** Resolución de la rejilla del telegraph (avance × lateral). Topología fija:
+ *  las posiciones se re-drapean cada frame y la calidad solo al cambiar los
+ *  params del ataque. */
+const TELEGRAPH_U_STEPS = 20;
+const TELEGRAPH_S_STEPS = 10;
+/** Altura del parche sobre el terreno, en metros. NO son 2 mm, y por dos
+ *  medidas concretas:
+ *
+ *  1. El suelo no acaba en y=0: el greybox apila los rasgos planos hasta
+ *     Y_DECK 0.18 (+ el stagger de fps-spec). Un decal a ras queda ENTERRADO
+ *     bajo el camino y la plaza — medido: no se veía ni un píxel.
+ *  2. La cámara fps es de yaw PURO (sin pitch) con el ojo a 1,6 m y 70° de
+ *     FOV vertical: el suelo solo entra en cuadro a partir de 1.6/tan(35°) =
+ *     2,29 m. Todos los ataques cuerpo a cuerpo tienen su distancia óptima
+ *     entre 0,9 y 2,5 m, así que a ras el telegraph cae DEBAJO del encuadre
+ *     (y lo poco que asoma, tras la barra de acciones). A 45 cm el mismo
+ *     parche entra en el tercio inferior y las piernas del enemigo quedan
+ *     DENTRO del plano, que es como se juzga "¿le llego?".
+ *
+ *  Es un plano de marca flotante, no una sombra: no miente sobre la huella
+ *  (va drapeado sobre el relieve, encima de la misma región XZ). */
+const TELEGRAPH_Y_M = 0.45;
+/** El overlay de la vista cenital se mira de frente; en primera persona el
+ *  mismo parche se ve en rasante y la alfa efectiva por píxel se desploma.
+ *  Ganancia propia de esta vista sobre la opacidad que manda el juego. */
+const TELEGRAPH_GAIN = 2.2;
+
+/** Telegraph: la calidad por vértice (0..1) es la MISMA que resuelve el daño
+ *  (`combat-resolver`), así que el color no adorna — informa. Rojo en el borde
+ *  del área, verde en el punto óptimo; en impacto, tinte plano de resultado. */
+const TELEGRAPH_FRAGMENT = `
+varying float vQ;
+uniform float uOpacity;
+uniform float uImpact;
+uniform vec3 uImpactColor;
+void main() {
+  vec3 windup = mix(vec3(1.0, 0.18, 0.10), vec3(0.20, 1.0, 0.28), vQ);
+  vec3 c = mix(windup, uImpactColor, uImpact);
+  float a = mix(vQ, step(0.001, vQ), uImpact) * uOpacity;
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(c, a);
+}`;
+
+const TELEGRAPH_VERTEX = `
+attribute float aQuality;
+varying float vQ;
+void main() {
+  vQ = aQuality;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
 
 /** Tinte determinista por celda de atlas (modo surfaces). */
 function tintColor(key: string): number {
@@ -257,6 +309,49 @@ function skyDome(): THREE.Mesh {
   return m;
 }
 
+/** Rejilla del telegraph en el espacio (avance, lateral) del ataque: la
+ *  topología no depende de los params, solo el contenido de los atributos. */
+function buildTelegraphGeometry(): THREE.BufferGeometry {
+  const nu = TELEGRAPH_U_STEPS + 1;
+  const ns = TELEGRAPH_S_STEPS + 1;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(nu * ns * 3), 3));
+  geo.setAttribute("aQuality", new THREE.BufferAttribute(new Float32Array(nu * ns), 1));
+  const idx: number[] = [];
+  for (let iu = 0; iu < TELEGRAPH_U_STEPS; iu++) {
+    for (let is = 0; is < TELEGRAPH_S_STEPS; is++) {
+      const a = iu * ns + is;
+      idx.push(a, a + 1, a + ns, a + 1, a + ns + 1, a + ns);
+    }
+  }
+  geo.setIndex(idx);
+  return geo;
+}
+
+/** Calidad por vértice = la MISMA fórmula que resuelve el daño
+ *  (`combat-resolver`: factor_distancia × factor_precision, con el cono
+ *  frontal de isInFront). Se calcula sobre (avance u, lateral s), así que no
+ *  depende de dónde esté el jugador: solo de los params del ataque. */
+function fillTelegraphQuality(geo: THREE.BufferGeometry, params: AttackTelegraph["params"]): void {
+  const q = geo.attributes.aQuality as THREE.BufferAttribute;
+  const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
+  const uMax = params.optimal_distance + params.distance_tolerance;
+  let vi = 0;
+  for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
+    const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
+    for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
+      const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+      const d = Math.hypot(u, s);
+      // isInFront: dot(forward, dir) > 0.5 ⇒ dentro de ±60° del frente.
+      const front = d > 1e-6 && u / d > 0.5 ? 1 : 0;
+      const dist = Math.max(0, 1 - Math.abs(d - params.optimal_distance) / params.distance_tolerance);
+      const prec = Math.max(0, 1 - Math.abs(s) / params.area_radius);
+      q.setX(vi++, dist * prec * front);
+    }
+  }
+  q.needsUpdate = true;
+}
+
 /** Yaw de un vector XZ (0 = +z, crece hacia +x). */
 const yawOf = (x: number, z: number) => Math.atan2(x, z);
 
@@ -293,6 +388,20 @@ export class FpsGl {
   private forwardArrows = new Map<string, THREE.ArrowHelper>();
   /** map/color originales de los materiales tintados por el modo surfaces. */
   private tintSaved = new Map<THREE.MeshStandardMaterial, { map: THREE.Texture | null; color: number }>();
+  /** Telegraph del ataque: parche de suelo con la calidad real del golpe. La
+   *  malla se construye una vez y se reusa (un jugador ataca cada segundo);
+   *  `paramsKey` evita recalcular la calidad por vértice cada frame. */
+  private telegraphMesh: {
+    mesh: THREE.Mesh;
+    mat: THREE.ShaderMaterial;
+    geo: THREE.BufferGeometry;
+    paramsKey: string;
+  } | null = null;
+  /** Ataque en curso que el telegraph pinta, o null (apagado). */
+  private telegraph: AttackTelegraph | null = null;
+  /** Vectores de trabajo de projectToScreen (una etiqueta por NPC y frame). */
+  private projNdc = new THREE.Vector3();
+  private projView = new THREE.Vector3();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -560,6 +669,12 @@ export class FpsGl {
     }
   }
 
+  /** Altura visual del suelo en coords de MUNDO — la piden las etiquetas de
+   *  nombre, que cuelgan sobre la cabeza y no del plano y=0. */
+  groundYAt(x: number, z: number): number {
+    return this.reliefWorldAt(x, z);
+  }
+
   /** Altura visual del terreno (relieve) en coords de MUNDO — 0 sin relieve.
    *  La colisión y el sim siguen en el plano: esto es presentación pura. */
   private reliefWorldAt(x: number, z: number): number {
@@ -593,6 +708,112 @@ export class FpsGl {
       }
     });
     this.tiles.delete(key);
+  }
+
+  /** Vacía el mundo 3D (resetWorld del cliente: arranque de sesión, resume,
+   *  fixtures). Sin esto los grupos de los tiles viejos se quedaban en la
+   *  escena three y reaparecían como fantasmas al reanudar. */
+  clearTiles(): void {
+    for (const key of [...this.tiles.keys()]) this.removeTile(key);
+    this.activeKey = null;
+    this.ambienceKey = null;
+    // El overlay de colisión es del tile activo: muere con él.
+    this.clearCollisionDebug();
+  }
+
+  /** Punto de MUNDO → píxeles CSS del canvas, o null si cae detrás del ojo.
+   *  Es lo que permite colgar las etiquetas de nombre en DOM sobre la cabeza
+   *  del NPC sin re-implementar el tema del pack en un atlas de fuente. */
+  projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
+    this.cam.updateMatrixWorld();
+    const view = this.projView.set(x, y, z).applyMatrix4(this.cam.matrixWorldInverse);
+    // La cámara mira −z en su espacio: todo lo que tenga z ≥ −near está en el
+    // ojo o detrás, y project() lo proyectaría espejado al otro lado.
+    if (view.z > -this.cam.near) return null;
+    const ndc = this.projNdc.set(x, y, z).project(this.cam);
+    const w = this.canvas.clientWidth || this.canvas.width;
+    const h = this.canvas.clientHeight || this.canvas.height;
+    return { x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h, depthM: -view.z };
+  }
+
+  /** Telegraph del ataque en curso, o null para apagarlo. Se fija ANTES de
+   *  render(): en WebGL no hay lienzo sobre el que pintar tras emitir el
+   *  frame, así que el patrón "dibuja después" de las vistas 2D no vale. */
+  setAttackTelegraph(t: AttackTelegraph | null): void {
+    this.telegraph = t;
+    if (!t) {
+      if (this.telegraphMesh) this.telegraphMesh.mesh.visible = false;
+      return;
+    }
+    const key = `${t.params.optimal_distance}|${t.params.distance_tolerance}|${t.params.area_radius}`;
+    if (!this.telegraphMesh) {
+      const geo = buildTelegraphGeometry();
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uOpacity: { value: 0 },
+          uImpact: { value: 0 },
+          uImpactColor: { value: new THREE.Color("#808080") },
+        },
+        vertexShader: TELEGRAPH_VERTEX,
+        fragmentShader: TELEGRAPH_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      // Es un parche de suelo alrededor del jugador: siempre en cámara, y su
+      // caja envolvente cambia cada frame — el culling solo daría parpadeos.
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 2;
+      this.scene.add(mesh);
+      this.telegraphMesh = { mesh, mat, geo, paramsKey: "" };
+    }
+    if (this.telegraphMesh.paramsKey !== key) {
+      fillTelegraphQuality(this.telegraphMesh.geo, t.params);
+      this.telegraphMesh.paramsKey = key;
+    }
+    this.telegraphMesh.mesh.visible = true;
+  }
+
+  /** Re-drapea el parche del telegraph sobre el relieve delante del jugador.
+   *  Se hace por frame porque el jugador se mueve y gira durante el wind-up. */
+  private updateTelegraph(): void {
+    const t = this.telegraphMesh;
+    const st = this.telegraph;
+    if (!t || !st) return;
+    const { player, params, mode, opacity, impactQuality } = st;
+    const fLen = Math.hypot(player.forward.x, player.forward.z) || 1;
+    const fx = player.forward.x / fLen;
+    const fz = player.forward.z / fLen;
+    // Right = forward girado 90° (mismo marco que el strafe de main.ts).
+    const rx = -fz;
+    const rz = fx;
+    const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
+    const uMax = params.optimal_distance + params.distance_tolerance;
+    const pos = t.geo.attributes.position as THREE.BufferAttribute;
+    let vi = 0;
+    for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
+      const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
+      for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
+        const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+        const wx = player.pos.x + fx * u + rx * s;
+        const wz = player.pos.z + fz * u + rz * s;
+        pos.setXYZ(vi++, wx, this.reliefWorldAt(wx, wz) + TELEGRAPH_Y_M, wz);
+      }
+    }
+    pos.needsUpdate = true;
+    t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
+    t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
+    if (mode === "impact") {
+      // Mismos tramos de calidad que el destello de la vista oblicua.
+      const c =
+        impactQuality > 0.7 ? "#50ff50"
+        : impactQuality > 0.3 ? "#ffff3c"
+        : impactQuality > 0 ? "#ff503c"
+        : "#787878";
+      (t.mat.uniforms.uImpactColor.value as THREE.Color).set(c);
+    }
   }
 
   setActive(key: string | null): void {
@@ -898,22 +1119,39 @@ export class FpsGl {
       }
     }
 
+    this.updateTelegraph();
     this.renderer.render(this.scene, this.cam);
   }
 
   debugState(): Record<string, unknown> {
+    const t = this.telegraph;
     return {
       tiles: [...this.tiles.keys()],
       activeTile: this.activeKey,
-      textured: [...this.tiles.entries()].filter(([, t]) => t.textured).map(([k]) => k),
+      textured: [...this.tiles.entries()].filter(([, t2]) => t2.textured).map(([k]) => k),
       renderYawDeg: Math.round((this.renderYaw * 180) / Math.PI),
       billboards: [...this.billboards.entries()].filter(([, s]) => s.mesh.visible).length,
       debugView: this.debugView,
+      telegraph: t
+        ? {
+            mode: t.mode,
+            opacity: Math.round(t.opacity * 1000) / 1000,
+            optimalDistance: t.params.optimal_distance,
+            areaRadius: t.params.area_radius,
+          }
+        : null,
     };
   }
 
   dispose(): void {
     this.setDebugView("off", null);
+    this.telegraph = null;
+    if (this.telegraphMesh) {
+      this.scene.remove(this.telegraphMesh.mesh);
+      this.telegraphMesh.geo.dispose();
+      this.telegraphMesh.mat.dispose();
+      this.telegraphMesh = null;
+    }
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
     for (const slot of this.billboards.values()) {
       this.scene.remove(slot.mesh);

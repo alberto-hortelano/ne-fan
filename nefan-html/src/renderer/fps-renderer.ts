@@ -17,7 +17,7 @@ import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/s
 import { errors } from "../ui/error-log.js";
 import type { Entity } from "./canvas-renderer.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
-import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
+import type { AttackAreaParams, AttackTelegraph, PlayerView, Renderer2D } from "./renderer2d.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
 export interface FpsTilePlan {
@@ -61,6 +61,10 @@ export class FpsRenderer implements Renderer2D {
   private debugLabel: HTMLDivElement;
   private activeKey: string | null = null;
   private collisionCells: ((tileKey: string) => FpsDebugCollision | null) | null = null;
+  /** Último telegraph/velo pedidos: el módulo GL llega por import dinámico y
+   *  la cola `pending` ejecuta closures — si capturasen el valor del momento,
+   *  al cargar three se pintaría un ataque ya terminado. */
+  private telegraph: AttackTelegraph | null = null;
 
   constructor(
     private host: HTMLCanvasElement,
@@ -89,6 +93,8 @@ export class FpsRenderer implements Renderer2D {
         this.syncSize();
         for (const fn of this.pending) fn(this.gl);
         this.pending = [];
+        // Estado por-frame que no pasa por la cola: se aplica el ÚLTIMO valor.
+        this.gl.setAttackTelegraph(this.telegraph);
       })
       .catch((err: unknown) => {
         errors.push("render", "la vista fps no pudo cargar three.js", err);
@@ -187,6 +193,15 @@ export class FpsRenderer implements Renderer2D {
     this.withGl((gl) => gl.removeTile(key));
   }
 
+  /** Vacía el mundo 3D. La llama resetWorld() del cliente (arranque de
+   *  sesión, resume, fixture): sin esto los tiles de la partida anterior se
+   *  quedaban instalados en la escena three y reaparecían de fantasmas. */
+  clearTiles(): void {
+    this.surfaces.clear();
+    this.activeKey = null;
+    this.withGl((gl) => gl.clearTiles());
+  }
+
   /** Superficies del tile (para el controller del atlas). */
   getTileSurfaces(key: string): FpsTileSurfaces | null {
     return this.surfaces.get(key) ?? null;
@@ -211,13 +226,37 @@ export class FpsRenderer implements Renderer2D {
     this.gl?.render(player, enemies, objects, npcs);
   }
 
+  /** Telegraph del ataque, EN EL MUNDO y antes de render(): la distancia y la
+   *  precisión deciden el daño, así que pintarlo en DOM mentiría con la
+   *  perspectiva. Sustituye a drawAttackArea para esta vista. */
+  setAttackTelegraph(t: AttackTelegraph | null): void {
+    this.telegraph = t;
+    // Directo, NO por la cola `pending`: esto se llama en cada frame y una
+    // cola sin drenar (three aún cargando) crecería sin tope. El estado
+    // vigente se re-aplica de una vez cuando el módulo GL llega.
+    this.gl?.setAttackTelegraph(t);
+  }
+
+  /** Punto de mundo → píxeles CSS del canvas (null si cae detrás del ojo).
+   *  Lo consumen las etiquetas de nombre, que viven en DOM. */
+  projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
+    return this.gl?.projectToScreen(x, y, z) ?? null;
+  }
+
+  /** Altura visual del suelo (relieve) en un punto de mundo — 0 hasta que
+   *  three carga. La usan las etiquetas para colgar sobre la cabeza. */
+  groundYAt(x: number, z: number): number {
+    return this.gl?.groundYAt(x, z) ?? 0;
+  }
+
   drawAttackArea(
     _player: Parameters<Renderer2D["drawAttackArea"]>[0],
     _params: AttackAreaParams,
     _mode: "windup" | "impact",
   ): void {
-    // v1: sin telegraph en mundo (TODO: RingGeometry en el suelo delante de
-    // la cámara). El feedback de combate vive en el HUD y los sprites.
+    // No-op declarado: el telegraph de esta vista es geometría de mundo y se
+    // fija con setAttackTelegraph ANTES de render(). Un overlay dibujado
+    // después del frame no existe en WebGL.
   }
 
   debugState(): Record<string, unknown> {
@@ -225,6 +264,7 @@ export class FpsRenderer implements Renderer2D {
       ready: this.gl !== null,
       visible: this.visible,
       surfaces: [...this.surfaces.keys()],
+      telegraph: null,
       ...(this.gl?.debugState() ?? {}),
     };
   }

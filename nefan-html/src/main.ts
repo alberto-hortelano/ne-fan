@@ -19,6 +19,7 @@ import {
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import {
   composeStageScene,
   stagePlanFromScene,
@@ -71,6 +72,7 @@ import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { errors } from "./ui/error-log.js";
 import { ActionBar } from "./ui/action-bar.js";
+import { WorldLabels, type WorldLabel } from "./ui/world-labels.js";
 import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, onUiThemeChange, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import {
@@ -587,6 +589,10 @@ const attackBar = new ActionBar(document.getElementById("action-bar") as HTMLEle
 /** Acción contextual (hablar, reaparecer) y confirmación Y/N: mismos botones,
  *  distinta región. */
 const promptBar = new ActionBar(document.getElementById("interact-prompt") as HTMLElement);
+/** Nombres sobre la cabeza (primera persona): DOM temado, no texto en WebGL. */
+const worldLabels = new WorldLabels(document.getElementById("world-labels") as HTMLElement);
+/** Mirilla: se enciende cuando la cámara enfila algo con nombre. */
+const reticleEl = document.getElementById("reticle") as HTMLElement;
 const confirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 const confirmTextEl = document.getElementById("tile-confirm-text") as HTMLElement;
 const confirmBar = new ActionBar(document.getElementById("tile-confirm-actions") as HTMLElement);
@@ -967,6 +973,10 @@ async function loadSceneFile(globKey: string): Promise<void> {
 function resetWorld(): void {
   tileStore.clear();
   renderer.clearTiles();
+  // La escena three tiene sus propios grupos por tile: sin esto, los tiles de
+  // la partida anterior seguían instalados y reaparecían de fantasmas al
+  // reanudar (nadie llamaba nunca a removeTile).
+  fpsRenderer?.clearTiles();
   autoPipeline.resetQueue();
   enemyEntities = [];
   objectEntities = [];
@@ -1227,7 +1237,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     fpsRenderer?.installTile(key, planInfo, rect);
     // Si ESTE ya es el tile activo, setActiveClientTile no volverá a correr
     // (solo se dispara al cambiar de tile): lanzar el atlas aquí.
-    if (key === activeTileKey) void fpsAtlasController.onActiveTile(key).catch(() => {});
+    if (key === activeTileKey) {
+      void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
+        errors.push("scene", `el atlas fps de ${key} no arrancó al instalar el tile`, err),
+      );
+    }
   }
   // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
   // preserva la imagen y su análisis visual — conservar también la colisión
@@ -1482,7 +1496,9 @@ function setActiveClientTile(key: string): void {
     fpsRenderer?.setActiveTile(key);
     // Reinstala el atlas de caché o, con generación auto, lo pinta (el
     // controller degrada a clay con error visible si algo falla).
-    void fpsAtlasController.onActiveTile(key).catch(() => {});
+    void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
+      errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
+    );
   }
   currentExits = (entry.scene.exits ?? []) as SceneExit[];
   travelPanel.setExits(currentExits);
@@ -1860,6 +1876,99 @@ let lastTime = performance.now();
 // tope de 30 s por si no llega nada.
 let interactPendingUntil = 0;
 
+// --- Etiquetas de mundo y mirilla (primera persona) ---
+// En 1ª persona no hay ctx 2D sobre el que escribir el nombre del NPC: las
+// etiquetas viven en DOM (world-labels.ts) y se proyectan con la cámara del
+// frame recién pintado. La decisión de QUÉ se mira es lógica pura del core
+// (pickAimTarget): en 1ª persona "lo que tienes delante" no es lo más cercano.
+
+/** Alcance al que se muestra el nombre de un personaje. */
+const LABEL_RANGE_M = 18;
+/** Alcance de la puntería: cerca, para que encender la mirilla signifique
+ *  algo ("puedo tratar con esto"), no "hay algo por ahí". */
+const AIM_RANGE_M = 12;
+/** Semiángulo del cono de puntería (≈9°: el ancho de un NPC a 6 m). Cerca
+ *  manda el cuerpo (radiusM), no el cono. */
+const AIM_CONE_RAD = (9 * Math.PI) / 180;
+/** Media anchura de un personaje en metros: se apunta a su cuerpo. */
+const BODY_RADIUS_M = 0.6;
+/** La descripción de un objeto es prosa del motor, no un nombre: se recorta. */
+const LABEL_MAX_CHARS = 42;
+/** Altura del nombre sobre los pies de un personaje (el frame y_bot mide
+ *  2.4 m y los pies caen al 15 % desde abajo). */
+const NPC_LABEL_Y_M = 2.15;
+
+function recorta(text: string): string {
+  const t = text.trim();
+  return t.length > LABEL_MAX_CHARS ? `${t.slice(0, LABEL_MAX_CHARS - 1)}…` : t;
+}
+
+/** Sincroniza etiquetas y mirilla con el frame recién pintado. Fuera de la
+ *  vista fps (o con el diálogo abierto, que es dueño de la pantalla) se
+ *  retiran: una etiqueta huérfana pegada al lienzo es peor que ninguna. */
+function updateWorldLabels(): void {
+  const fps = fpsRenderer;
+  if (!fps || activeRenderer !== fps || dialoguePanel.isVisible) {
+    worldLabels.clear();
+    reticleEl.dataset.target = "false";
+    return;
+  }
+  const personajes = npcEntities.filter((n) => n.alive !== false);
+  // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
+  // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
+  // Los edificios declarados en la escena quedan fuera: los pinta el greybox
+  // por volúmenes y su centro no es un punto al que se pueda apuntar.
+  const objetos = objectEntities.filter(
+    (o) => Boolean(o.label?.trim()) && !(o.sceneDeclared && o.category === "building"),
+  );
+
+  const aim = pickAimTarget(
+    playerPos,
+    playerForward,
+    [
+      ...personajes.map((e) => ({ id: e.id, pos: e.pos, radiusM: BODY_RADIUS_M })),
+      // El bulto real del objeto, no su `radius` de dibujo (que en el 2D vale
+      // 8 m para un edificio y convertiría media escena en objetivo).
+      ...objetos.map((e) => ({
+        id: e.id,
+        pos: e.pos,
+        radiusM: Math.min(2, Math.max(e.sizeXZ?.x ?? 0, e.sizeXZ?.z ?? 0) / 2 || BODY_RADIUS_M),
+      })),
+    ],
+    { maxDistanceM: AIM_RANGE_M, coneRad: AIM_CONE_RAD },
+  );
+  reticleEl.dataset.target = aim ? "true" : "false";
+
+  const labels: WorldLabel[] = [];
+  for (const n of personajes) {
+    if (Math.hypot(n.pos.x - playerPos.x, n.pos.z - playerPos.z) > LABEL_RANGE_M) continue;
+    const text = recorta(n.name ?? n.label ?? n.id);
+    if (!text) continue;
+    labels.push({
+      id: n.id,
+      text,
+      pos: { x: n.pos.x, y: fps.groundYAt(n.pos.x, n.pos.z) + NPC_LABEL_Y_M, z: n.pos.z },
+      focus: aim?.id === n.id,
+    });
+  }
+  // Los objetos se nombran solo cuando los MIRAS: una aldea entera etiquetada
+  // es ruido, no información.
+  const mirado = aim ? objetos.find((o) => o.id === aim.id) : undefined;
+  if (mirado) {
+    labels.push({
+      id: mirado.id,
+      text: recorta(mirado.label),
+      pos: {
+        x: mirado.pos.x,
+        y: fps.groundYAt(mirado.pos.x, mirado.pos.z) + (mirado.sizeY ?? 1) + 0.3,
+        z: mirado.pos.z,
+      },
+      focus: true,
+    });
+  }
+  worldLabels.sync(labels, (x, y, z) => fps.projectToScreen(x, y, z));
+}
+
 // Chrome congela requestAnimationFrame en pestañas ocultas (document.hidden),
 // lo que pausa la simulación entera — un problema real para testing
 // automatizado y para partidas desatendidas con el bridge. Fallback: cuando la
@@ -1910,7 +2019,12 @@ function gameLoop(now: number): void {
     if (sessionView === "proscenium") {
       generateActiveStage();
     } else if (sessionView === "fps") {
-      if (activeTileKey) void fpsAtlasController.runFor(activeTileKey).catch(() => {});
+      if (activeTileKey) {
+        const k = activeTileKey;
+        void fpsAtlasController.runFor(k).catch((err: unknown) =>
+          errors.push("scene", `el atlas fps de ${k} no arrancó (tecla G)`, err),
+        );
+      }
     } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
   }
   // X analiza la imagen del tile activo (mundo derivado de la imagen):
@@ -2261,6 +2375,25 @@ function gameLoop(now: number): void {
   // congelado en negro para siempre). Se registra (dedup por mensaje) y el
   // siguiente frame lo reintenta — los fallos transitorios (sheet a medio
   // cargar, imagen invalidada) se autocorrigen.
+  const attackOpacity = attackVisual?.active
+    ? (attackVisual.mode === "impact" ? (attackVisual.fadeTimer / 0.3) * 0.5 : 0.3)
+    : 0;
+  // Telegraph del ataque en PRIMERA PERSONA: es geometría de mundo (la
+  // distancia y la precisión deciden el daño), así que se fija ANTES de
+  // render(). En WebGL no queda lienzo sobre el que garabatear una vez
+  // emitido el frame — el patrón "dibuja después" de las vistas 2D no vale.
+  fpsRenderer?.setAttackTelegraph(
+    attackVisual?.active
+      ? {
+          player: { pos: playerPos, forward: playerForward },
+          params: attackVisual.params,
+          mode: attackVisual.mode,
+          opacity: attackOpacity,
+          impactQuality: attackVisual.impactQuality,
+        }
+      : null,
+  );
+
   try {
     activeRenderer.render(
       {
@@ -2282,19 +2415,21 @@ function gameLoop(now: number): void {
     }
   }
 
-  // Draw attack area overlay
-  if (attackVisual?.active) {
-    const opacity = attackVisual.mode === "impact"
-      ? attackVisual.fadeTimer / 0.3 * 0.5
-      : 0.3;
+  // Área de ataque de las vistas de LIENZO: se garabatea encima del frame ya
+  // pintado. La fps la fijó arriba, dentro del mundo.
+  if (attackVisual?.active && activeRenderer !== fpsRenderer) {
     activeRenderer.drawAttackArea(
       { pos: playerPos, forward: playerForward },
       attackVisual.params,
       attackVisual.mode,
-      opacity,
+      attackOpacity,
       attackVisual.impactQuality,
     );
   }
+
+  // Etiquetas de mundo y mirilla: DESPUÉS de render(), con las matrices de
+  // cámara de este mismo frame.
+  updateWorldLabels();
 
   scheduleNextFrame();
 }
@@ -2346,7 +2481,10 @@ function listFakeItems(): FakeItem[] {
         kind: "fps_atlas",
         id: t.key,
         label: `Atlas fps ${t.key} (clay — celdas ya en la librería salen gratis)`,
-        thumb: renderer.getTilePlanFullImage(t.key),
+        // Sin miniatura: la que había era el plano OBLICUO del tile, que no
+        // se parece a lo que la vista fps va a pintar. Una miniatura fps de
+        // verdad (captura del canvas WebGL) es otro trabajo.
+        thumb: null,
         inFlight: fpsAtlasController.running,
       });
     }

@@ -25,6 +25,19 @@ export interface AttackAreaParams {
   area_radius: number;
 }
 
+/** Telegraph del ataque para las vistas que lo pintan EN EL MUNDO (fps).
+ *  Es el mismo dato que consume drawAttackArea, pero se FIJA antes de
+ *  render() en vez de dibujarse después: en WebGL no hay lienzo sobre el que
+ *  garabatear una vez emitido el frame. */
+export interface AttackTelegraph {
+  player: { pos: Vec3; forward: Vec3 };
+  params: AttackAreaParams;
+  mode: "windup" | "impact";
+  opacity: number;
+  /** Calidad del golpe (0..1) — solo tiñe el destello de impacto. */
+  impactQuality: number;
+}
+
 export interface Renderer2D {
   /** Tema de la partida para lo que el renderer pinta DENTRO del lienzo
    *  (nombres de NPC, etiquetas de salida): ahí no llega el CSS, y el
