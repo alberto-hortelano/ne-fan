@@ -224,7 +224,7 @@ function clearGatePassage(
 
 /** Radio (celdas) del disco de colisión de un volumen SÓLIDO UNIFORME
  *  (tower/fountain/rock/prop-punto) — FUENTE ÚNICA compartida por
- *  `volumeCollisionGrid` (markDisc) y la huella del manifest del stage
+ *  `volumeCollisionGrid` (markDisc) y la huella del manifest
  *  (`volumeFootprintCells`), para que la huella COLISIONABLE del manifest
  *  coincida SIEMPRE con la colisión (antes los defaults divergían: tower r??3
  *  vs r??6, etc.). `null` = no es un disco sólido uniforme (building/wall/gate,
