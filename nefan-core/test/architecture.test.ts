@@ -16,6 +16,8 @@ import assert from "node:assert/strict";
 import {
   ArchConfigSchema,
   checkArchitecture,
+  deadExceptions,
+  formatDeadExceptions,
   formatFailure,
   globToRegExp,
   reportByRule,
@@ -30,6 +32,14 @@ const reports = reportByRule(config, violations);
 describe("fronteras arquitectónicas", () => {
   it("el escaneo encuentra el árbol del repo", () => {
     assert.ok(files.length > 200, `solo ${files.length} ficheros escaneados — ¿mal la raíz del repo?`);
+  });
+
+  // Una exención sobrevive al fichero que eximía y nadie se entera: la regla
+  // vuelve a estar abierta en esa ruta el día que alguien la recree. Por eso
+  // cada borrado tiene que limpiar la suya en la MISMA PR.
+  it("[error] excepciones-vivas: ninguna exención apunta a un fichero que ya no existe", () => {
+    const dead = deadExceptions(config, files);
+    assert.equal(dead.length, 0, `\n${formatDeadExceptions(dead)}\n`);
   });
 
   for (const report of reports) {
@@ -134,6 +144,42 @@ describe("motor de reglas", () => {
           },
         ],
       }),
+    );
+  });
+
+  it("una excepción a una ruta inexistente se denuncia; un glob no", () => {
+    const cfg = ArchConfigSchema.parse({
+      scan: { roots: [{ dir: "x", ext: [".ts"] }] },
+      rules: [
+        {
+          id: "r",
+          desc: "d",
+          why: "w",
+          severity: "error",
+          files: ["x/**/*.ts"],
+          imports: { forbid: ["^three$"] },
+          exceptions: [
+            { path: "x/vivo.ts", reason: "existe" },
+            { path: "x/borrado.ts", reason: "murió con la vista oblicua" },
+            { path: "x/dev/*.ts", reason: "patrón: puede no casar hoy" },
+          ],
+        },
+      ],
+    });
+    const dead = deadExceptions(cfg, [{ path: "x/vivo.ts", text: "" }]);
+    assert.deepEqual(
+      dead.map((d) => d.path),
+      ["x/borrado.ts"],
+    );
+    // El motivo viaja al mensaje: es lo que dice qué había ahí.
+    assert.match(formatDeadExceptions(dead), /murió con la vista oblicua/);
+    // Y con el fichero presente, cero ruido.
+    assert.deepEqual(
+      deadExceptions(cfg, [
+        { path: "x/vivo.ts", text: "" },
+        { path: "x/borrado.ts", text: "" },
+      ]),
+      [],
     );
   });
 
