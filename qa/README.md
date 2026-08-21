@@ -52,7 +52,6 @@ Reglas que hacen que un guion valga algo:
 | `01-arranque-y-fixture` | El flujo real desde el título (el estado donde más regresiones se cuelan) y que el game loop corre de verdad en headless |
 | `02-colision-desde-huella` | La colisión sale de la huella declarada, nunca de los píxeles |
 | `03-hud-de-ataques` | El HUD se genera desde el catálogo del sistema de combate de la sesión |
-| `04-proscenio-viaje` | Pisar una zona de salida propone el viaje, y confirmarlo lleva al plató vecino dentro de sus límites |
 | `05-terreno-desde-ground` | El suelo declarativo (`ground`) se rasteriza al grid y de ahí sale la colisión — incluido un tile generado EN VIVO al explorar, no el snapshot de pre-generación |
 | `06-solidos-de-la-leyenda` | `solid_chars` y `{name, solid:false}`: el jugador cruza el río por el puente y rebota contra el agua; declarar el agua vadeable le abre el paso |
 | `07-npc-clave-del-skin` | `role`/`style_ref`/`description` sobreviven a `formatDToWorld`, y partida y batch de estilo derivan la MISMA clave de caché (si divergen, el skin se paga dos veces) |

@@ -1,7 +1,7 @@
 /** Trazas de desarrollo de los pipelines de imagen/colisión — GATEADAS.
  *
- * Los pipelines (stage-image, scene-image, collision) emiten decenas de
- * `console.log` por plató/tile; en una partida normal son ruido puro. Este
+ * Los pipelines (scene-image, collision) emiten decenas de
+ * `console.log` por tile; en una partida normal son ruido puro. Este
  * módulo los apaga por defecto y los enciende opt-in:
  *   - URL: `?debug=1`
  *   - persistente: `localStorage.nefan_debug = "1"`

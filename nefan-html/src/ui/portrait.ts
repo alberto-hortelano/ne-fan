@@ -127,7 +127,7 @@ export class PortraitView {
     const cached = this.bustSheets.get(model);
     if (cached) return cached;
 
-    // Si la vista activa ya usa frontal_8 (proscenio, fps), el sheet completo
+    // Si la vista activa ya usa frontal_8 (fps), el sheet completo
     // está cargado: reusarlo en vez de pedir nada. `hasCached` antes de
     // `getCached` NO es redundante: getCached arranca una carga lazy cuando
     // falla, y para una skin eso significa pedir a /sprites unos frames que

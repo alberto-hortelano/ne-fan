@@ -7,7 +7,6 @@
 
 import type { DevStatus } from "@nefan-core/src/contracts/remote-gen.js";
 import type { PipelineStatus } from "../scene/auto-pipeline.js";
-import type { StageImageStatus } from "../scene/stage-image.js";
 import { errors } from "./error-log.js";
 
 const POLL_MS = 5000;
@@ -16,9 +15,9 @@ const POLL_MS = 5000;
 const TILE_PAID_PHASE = "imagen";
 
 export interface GenerationEvent {
-  /** repaint/peel = proscenio; tile = oblicua; fps_atlas = superficies de la
-   *  vista fps; client = caché cliente. */
-  kind: "repaint" | "peel" | "tile" | "fps_atlas" | "client";
+  /** tile = oblicua; fps_atlas = superficies de la vista fps; client = caché
+   *  cliente. */
+  kind: "tile" | "fps_atlas" | "client";
   cached: boolean;
 }
 
@@ -49,9 +48,6 @@ export class DevStatusPanel {
   private offline = false;
   private firstPoll = true;
 
-  /** Último estado del pipeline por tiles, para restaurarlo cuando el
-   *  proscenio suelta el slot (nunca corren a la vez). */
-  private lastTile: PipelineStatus | null = null;
   private readonly session: Required<SessionInfo> = { view: "", renderMode: "", styleId: "" };
 
   constructor(
@@ -78,10 +74,9 @@ export class DevStatusPanel {
     setInterval(() => void this.poll(), POLL_MS);
   }
 
-  // ── Estado de generación (slot único: oblicua y proscenio nunca a la vez) ──
+  // ── Estado de generación ──
 
   setTilePipeline(s: PipelineStatus): void {
-    this.lastTile = s;
     if (s.paused) {
       this.setGen(`pausado: ai_server no responde · cola ${s.queued}`, "paused");
     } else if (s.current && s.current.phase === TILE_PAID_PHASE) {
@@ -99,36 +94,6 @@ export class DevStatusPanel {
       this.setGen("img: al día", "");
     } else {
       this.renderIdle();
-    }
-  }
-
-  setStage(s: StageImageStatus | null): void {
-    if (s === null) {
-      // El proscenio suelta el slot: restaurar lo que dijera la oblicua.
-      if (this.lastTile) this.setTilePipeline(this.lastTile);
-      else this.renderIdle();
-      return;
-    }
-    switch (s.phase) {
-      case "greybox":
-        this.setGen(`plató ${s.key}: greybox (local, gratis)`, "");
-        break;
-      case "repaint":
-        // Aviso emitido ANTES del POST de pago: el repintado es 1 imagen.
-        this.setGen(`GENERANDO 1 imagen (plató ${s.key})`, "working");
-        break;
-      case "review":
-        this.setGen(`plató ${s.key}: inventario por visión (${s.total ?? 0} declarados)`, "working");
-        break;
-      case "segment":
-        this.setGen(`plató ${s.key}: segmentando ${s.label ?? ""}`, "working");
-        break;
-      case "peel":
-        this.setGen(
-          `plató ${s.key}: pelando ${s.label ?? ""} ${s.step ?? 0}/${s.total ?? 0} (LaMa, gratis)`,
-          "working",
-        );
-        break;
     }
   }
 
