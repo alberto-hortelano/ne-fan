@@ -78,7 +78,7 @@ def repaint(tile: str, model: str, client) -> Image.Image:
     base = Image.open(hyb / "base.png").convert("RGB")
     side = max(base.size)
     prestretched = base.resize((side, side), Image.LANCZOS)
-    desc = json.loads((common.FIXTURES[tile] / "plan.json").read_text())["scene_description"]
+    desc = json.loads(common.PLANS[tile].read_text())["scene_description"]
     spec = MODELS[model]
     payload = {
         "prompt": PROMPT.format(desc=desc, token=STYLE_TOKENS[tile]),

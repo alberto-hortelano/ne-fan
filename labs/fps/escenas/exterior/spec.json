@@ -1,5 +1,5 @@
 {
- "source": "labs/render/fixtures/medieval/plan.json",
+ "source": "nefan-core/test/fixtures/fps-plans/medieval.json",
  "scene_description": "La plazuela de las Cuatro Calles, entre la catedral y Zocodover: un pozo de brocal gastado, el puesto del cambista, la taberna de la Serrana y el horno del barrio. Al este, un tramo de adarve con su torre y su arco abre la calle real hacia Zocodover; al suroeste, una tapia guarda el huerto de los canónigos.",
  "units": "cells",
  "meters_per_cell": 0.5,
