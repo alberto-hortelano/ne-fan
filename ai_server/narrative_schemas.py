@@ -426,69 +426,6 @@ def validate_volumes(raw, *, field: str = "volumes"):
     return clean
 
 
-STAGE_EDGES = ("north", "south", "east", "west")
-STAGE_EXIT_KINDS = ("door", "opening", "stairs")
-MAX_STAGE_EXITS = 8
-
-
-def validate_stage(raw) -> dict:
-    """Espejo estructural de StageBlockSchema/parseStage (nefan-core, zod SoT)
-    para el camino API directa. Fail-loud: un plató con exits rotas softlockea
-    (la ÚNICA forma de viajar es pisar una zona de salida) — ValueError con la
-    causa, nunca descartar en silencio. Lo cosmético (surroundings, ambience,
-    platforms) queda al zod del bridge; aquí lo esencial de jugabilidad."""
-    if not isinstance(raw, dict):
-        raise ValueError(f"stage must be an object, got {type(raw).__name__}")
-    exits = raw.get("exits")
-    if not isinstance(exits, list) or not 1 <= len(exits) <= MAX_STAGE_EXITS:
-        raise ValueError(
-            f"stage.exits must be a list of 1..{MAX_STAGE_EXITS} exits"
-        )
-    seen: set = set()
-    for i, e in enumerate(exits):
-        ctx = f"stage.exits[{i}]"
-        if not isinstance(e, dict):
-            raise ValueError(f"{ctx} must be an object")
-        eid = e.get("id")
-        if not isinstance(eid, str) or not eid or len(eid) > 64:
-            raise ValueError(f"{ctx}.id must be a non-empty string (≤64)")
-        if eid in seen:
-            raise ValueError(f'stage.exits: id duplicado "{eid}"')
-        seen.add(eid)
-        if e.get("edge") not in STAGE_EDGES:
-            raise ValueError(
-                f"{ctx}.edge must be one of north|south|east|west, got {e.get('edge')!r}"
-            )
-        to = e.get("to_place_id")
-        if not isinstance(to, str) or not to:
-            raise ValueError(f"{ctx}.to_place_id must be a non-empty string")
-        zone = e.get("zone")
-        if not (
-            isinstance(zone, list) and len(zone) == 4
-            and all(_num(n) for n in zone)
-            and zone[2] > 0 and zone[3] > 0
-        ):
-            raise ValueError(f"{ctx}.zone must be [col, row, w, d] con w,d > 0")
-        if e.get("kind") not in STAGE_EXIT_KINDS:
-            raise ValueError(
-                f"{ctx}.kind must be door|opening|stairs, got {e.get('kind')!r}"
-            )
-        lbl = e.get("label")
-        if not isinstance(lbl, str) or not lbl:
-            raise ValueError(f"{ctx}.label must be a non-empty string (en español)")
-    fw = raw.get("fourth_wall")
-    if fw is not None and not (isinstance(fw, dict) and isinstance(fw.get("present"), bool)):
-        raise ValueError("stage.fourth_wall must be an object with boolean `present`")
-    bd = raw.get("backdrop")
-    if bd is not None and not (
-        isinstance(bd, dict)
-        and isinstance(bd.get("description"), str)
-        and bd["description"]
-    ):
-        raise ValueError("stage.backdrop must be an object with non-empty `description`")
-    return raw
-
-
 def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
@@ -588,63 +525,18 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
-    # ── Candado de la variante retirada (espejo de FormatDSceneSchema) ───
-    # Format D tiene DOS formas: tile (mundo continuo) o stage (proscenio). La
-    # "suelta" —size/terrain a elección del motor, sin sitio en el plano ni
-    # salidas declaradas— se retiró (issue #172). El mensaje nombra las dos
-    # alternativas para que el modelo pueda re-responder.
-    if not is_tile and data.get("stage") is None:
-        raise ValueError(
-            "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) "
-            "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe"
-        )
-
-    # ── Stage (mundos proscenio): espejo estructural fail-loud (exits de
-    # jugabilidad) — antes era passthrough y cualquier dict colaba; el zod
-    # completo lo re-aplica el bridge. Un tile jamás lleva stage.
-    raw_stage = data.get("stage")
-    if raw_stage is not None:
-        if is_tile:
-            print("validate_scene_response: stage descartado (un tile no lleva stage)", flush=True)
-            data.pop("stage", None)
-        else:
-            validate_stage(raw_stage)
-
-    # ── Size + terrain grid (solo escenas legacy; los tiles no llevan) ────
+    # ── Candado de las variantes retiradas (espejo de FormatDSceneSchema) ─
+    # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"
+    # (size/terrain a elección del motor, sin sitio en el plano) se retiró con
+    # el issue #172 y el `stage` proscenio con la vista que lo pintaba. El
+    # mensaje nombra la alternativa para que el modelo pueda re-responder.
     if not is_tile:
-        # Fail-loud (espejo de FormatDSceneSchema): size + terrain OBLIGATORIOS
-        # y el grid debe cuadrar EXACTAMENTE con size. Antes se clampaba el
-        # tamaño y se rellenaba/truncaba cada fila con "g" en silencio — la
-        # causa raíz de mapas deformados que el modelo nunca podía corregir.
-        size = data.get("size")
-        if not isinstance(size, dict) or not all(
-            isinstance(size.get(k), (int, float))
-            and not isinstance(size.get(k), bool)
-            and size.get(k)
-            for k in ("cols", "rows", "meters_per_cell")
-        ):
-            raise ValueError("una escena (no tile) necesita `size` {cols, rows, meters_per_cell}")
-        cols = int(size["cols"])
-        rows = int(size["rows"])
-        mpc = float(size["meters_per_cell"])
-        if cols < 1 or rows < 1 or mpc <= 0:
-            raise ValueError(f"`size` fuera de rango: cols={cols}, rows={rows}, meters_per_cell={mpc}")
-        data["size"] = {"cols": cols, "rows": rows, "meters_per_cell": mpc}
-
-        raw_terrain = data.get("terrain")
-        if not isinstance(raw_terrain, list) or len(raw_terrain) != rows:
-            got = len(raw_terrain) if isinstance(raw_terrain, list) else type(raw_terrain).__name__
-            raise ValueError(f"`terrain` debe ser una lista de {rows} filas (size.rows); got {got}")
-        for i, row in enumerate(raw_terrain):
-            if not isinstance(row, str) or len(row) != cols:
-                got = len(row) if isinstance(row, str) else type(row).__name__
-                raise ValueError(
-                    f"terrain[{i}] debe tener EXACTAMENTE {cols} caracteres (size.cols); got {got}"
-                )
-        normalized = list(raw_terrain)
-        data["terrain"] = normalized
-    else:
-        normalized = []
+        raise ValueError(
+            "una escena necesita `tile` {tx,ty}: es la única variante de Format D "
+            "(mundo continuo, pídela con generate_tile)"
+        )
+    if data.pop("stage", None) is not None:
+        print("validate_scene_response: stage descartado (el plató proscenio se retiró)", flush=True)
 
     # ── Terrain legend ───────────────────────────────────────────────────
     # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
@@ -661,13 +553,8 @@ def validate_scene_response(data: dict) -> dict:
                 if isinstance(val.get("solid"), bool):
                     entry["solid"] = val["solid"]
                 legend[ch] = entry
-    # Ensure every char used in terrain has an entry (default = grass for unknown).
-    # (solo legacy: los tiles no traen grid que escanear)
-    if not is_tile:
-        used_chars = set("".join(normalized))
-        for ch in used_chars:
-            if ch not in legend and ch not in RESERVED_TERRAIN:
-                legend[ch] = "grass"
+    # El tile no trae grid que escanear: su leyenda es la declarada más las
+    # reservadas (el engine sintetiza el terreno desde bioma + primitivas).
     # Merge reserved (the legend takes precedence if LLM redefined a char).
     for ch, name in RESERVED_TERRAIN.items():
         legend.setdefault(ch, name)
@@ -1275,87 +1162,3 @@ def validate_image_review(data: dict | None) -> dict:
             entry["depth_cells"] = float(depth)
         out.append(entry)
     return {"extras": out}
-
-
-def validate_stage_review(data: dict | None, expected_ids: list[str] | None = None) -> dict:
-    """Validate a Claude response to a stage_review request (inventario
-    COMPLETO del plató pintado del proscenio). Espejo de
-    narrative-mcp/validators.ts:validateStageReview. Raises ValueError."""
-    if not isinstance(data, dict):
-        raise ValueError(f"stage_review payload must be an object, got {type(data).__name__}")
-    expected = data.get("expected")
-    if not isinstance(expected, list):
-        raise ValueError("stage_review payload missing `expected` list — every declared element must appear")
-    seen: set[str] = set()
-    expected_out = []
-    for i, e in enumerate(expected):
-        if not isinstance(e, dict):
-            raise ValueError(f"stage_review expected[{i}] must be an object")
-        eid = e.get("id")
-        if not isinstance(eid, str) or not eid:
-            raise ValueError(f"stage_review expected[{i}].id must be a non-empty string")
-        if eid in seen:
-            raise ValueError(f'stage_review expected id "{eid}" appears twice')
-        seen.add(eid)
-        status = e.get("status")
-        if status not in ("found", "missing"):
-            raise ValueError(f'stage_review expected[{i}].status must be "found" or "missing"')
-        entry: dict = {"id": eid, "status": status}
-        if status == "found":
-            box = e.get("box_px")
-            if (
-                not isinstance(box, list) or len(box) != 4
-                or not all(isinstance(v, (int, float)) for v in box)
-                or box[2] <= 0 or box[3] <= 0
-            ):
-                raise ValueError(
-                    f'stage_review expected[{i}] ("{eid}") is found pero box_px no es [x, y, w, h] con w,h > 0'
-                )
-            entry["box_px"] = [float(v) for v in box]
-        expected_out.append(entry)
-    if expected_ids is not None:
-        missing = [i for i in expected_ids if i not in seen]
-        if missing:
-            raise ValueError(f"stage_review inventario incompleto — sin cuenta de: {', '.join(missing)}")
-        unknown = [i for i in seen if i not in expected_ids]
-        if unknown:
-            raise ValueError(f"stage_review ids desconocidos (no están en expected_elements): {', '.join(unknown)}")
-    floor = data.get("floor")
-    if not isinstance(floor, dict):
-        raise ValueError("stage_review payload missing `floor` object (wall_base_px)")
-    wall_base = floor.get("wall_base_px")
-    if not isinstance(wall_base, (int, float)) or wall_base <= 0:
-        raise ValueError("stage_review floor.wall_base_px must be a positive number")
-    floor_out: dict = {"wall_base_px": float(wall_base)}
-    front = floor.get("front_px")
-    if front is not None:
-        if not isinstance(front, (int, float)) or front <= wall_base:
-            raise ValueError("stage_review floor.front_px must be below wall_base_px in the image")
-        floor_out["front_px"] = float(front)
-    # Trapecio lateral del suelo pintado (los 4 juntos o ninguno). Pueden
-    # salir del encuadre (rectas extrapoladas): solo se exige coherencia.
-    trap_keys = ("left_wall_px", "right_wall_px", "left_front_px", "right_front_px")
-    present = [k for k in trap_keys if floor.get(k) is not None]
-    if present:
-        if len(present) != len(trap_keys):
-            raise ValueError(
-                f"stage_review floor trapezoid needs all four of {', '.join(trap_keys)} "
-                f"(got only {', '.join(present)})"
-            )
-        for k in trap_keys:
-            if not isinstance(floor.get(k), (int, float)):
-                raise ValueError(f"stage_review floor.{k} must be a number (x pixel)")
-        lw, rw = float(floor["left_wall_px"]), float(floor["right_wall_px"])
-        lf, rf = float(floor["left_front_px"]), float(floor["right_front_px"])
-        if lw >= rw:
-            raise ValueError("stage_review floor.left_wall_px must be < right_wall_px")
-        if lf >= rf:
-            raise ValueError("stage_review floor.left_front_px must be < right_front_px")
-        if rw - lw >= rf - lf:
-            raise ValueError(
-                "stage_review painted floor must converge toward the back: "
-                "(right_wall_px - left_wall_px) < (right_front_px - left_front_px)"
-            )
-        floor_out.update({"left_wall_px": lw, "right_wall_px": rw, "left_front_px": lf, "right_front_px": rf})
-    extras = validate_image_review({"extras": data.get("extras", [])})["extras"]
-    return {"expected": expected_out, "extras": extras, "floor": floor_out}

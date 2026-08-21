@@ -105,8 +105,6 @@ export { PluginManifestSchema } from "../plugins/types.js";
 // narrative_respond en narrative-mcp).
 export type { SceneValidationResult, TileValidationContext } from "../scene/scene-validate.js";
 
-// Wire del review del plató (narrative-llm /review_stage_image ⇄ cliente 2D).
-export type { StageExpectedElement, StageReviewItem, PaintedFloor } from "../scene/stage/segments.js";
 
 // Juegos y estilos (gateway list_games; remote-gen /styles/*).
 export type { GameMeta, StyleManifest, GameListing, StyleListing } from "../games/loader.js";

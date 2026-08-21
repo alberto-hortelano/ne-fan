@@ -13,11 +13,10 @@
  *  que bloquear y el caller se ahorra el lookup por frame. */
 
 /** Radio físico del jugador en METROS — FUENTE ÚNICA de esta regla de juego.
- *  La comparten la colisión del cliente (`world/collision.ts`) y el inflado de
- *  las zonas de salida de plató en core (`stage/segments.ts`) — antes eran
- *  copias a mano del literal 0.4 (con comentario "espejo de PLAYER_RADIUS").
- *  El tercer consumidor, el tamaño de dibujo del cuerpo en el renderer
- *  oblicuo, se fue con él.
+ *  La usa la colisión del cliente (`world/collision.ts`) — antes era una copia
+ *  a mano del literal 0.4 (con comentario "espejo de PLAYER_RADIUS"). Sus otros
+ *  dos consumidores se fueron con sus vistas: el inflado de las zonas de salida
+ *  del plató y el tamaño de dibujo del cuerpo en el renderer oblicuo.
  *  Cambiarlo aquí los mueve a todos a la vez. Los NPCs usan su propio radio
  *  (`NPC_RADIUS` en npc-behavior); el servidor NO colisiona al jugador (el
  *  cliente es autoritativo de su movimiento). */

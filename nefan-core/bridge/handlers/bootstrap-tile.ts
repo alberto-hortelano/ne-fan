@@ -76,7 +76,7 @@ export async function generateBootstrapTileScene(
   }
   if (placeRes.kind === "place") res.scene.place_id = placeRes.placeId;
   else delete res.scene.place_id;
-  const check = validateScene(res.scene, undefined, { required_crossings: [], bootstrap: true });
+  const check = validateScene(res.scene, { required_crossings: [], bootstrap: true });
   if (!check.ok) {
     throw new Error(`El tile inicial no es jugable: ${check.errors.join(" · ")}`);
   }

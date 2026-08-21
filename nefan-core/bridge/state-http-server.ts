@@ -18,7 +18,7 @@ import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { SceneRecord } from "../src/narrative/types.js";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
-import { oppositeEdge, resolveExitEdge } from "../src/world-map/edges.js";
+import { oppositeEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { ErrorResponse, PluginInspectResult } from "../src/contracts/common.js";
@@ -234,8 +234,8 @@ async function handle(
 
   // ── Escenas ──
   // Validación de jugabilidad (pre-flight de narrative_respond y tool
-  // scene_validate). No muta nada; el contexto de world map alimenta la regla
-  // de contexto exterior (place existente + link saliente).
+  // scene_validate). No muta nada; el único contexto que necesita son las
+  // costuras de los tiles vecinos, que construye este servidor.
   if (method === "POST" && path === "/scene/validate") {
     const parsed = parseBody(SceneValidateRequestSchema, await readJson(req));
     if (!parsed.ok) return parsed.result;
@@ -257,26 +257,7 @@ async function handle(
       const hasAnyTile = Object.values(narrative.scenes_loaded).some((r) => r.tile);
       tileCtx = { required_crossings: required, bootstrap: !hasAnyTile };
     }
-    const result = validateScene(
-      scene,
-      (placeId) => {
-        const place = wm.get(placeId);
-        if (!place) return { exists: false, outgoing_links: 0 };
-        // links con destino + edge efectivo desde este place: los necesita la
-        // regla proscenio (cada link ⇔ una salida física declarada en stage).
-        const links = wm.getOutgoingLinks(placeId).map((l) => ({
-          to: l.from === placeId ? l.to : l.from,
-          edge: resolveExitEdge(wm, placeId, l) ?? undefined,
-        }));
-        return {
-          exists: true,
-          kind: place.kind,
-          outgoing_links: links.length,
-          links,
-        };
-      },
-      tileCtx,
-    );
+    const result = validateScene(scene, tileCtx);
     return ok(result satisfies ResponseOf<typeof WorldStateApi.validateScene>);
   }
 

@@ -18,16 +18,6 @@ the player travels — everything else (dialogue, combat, spawns) is identical.
   client PROPOSES the neighbour tile and the player confirms with Y (that
   confirmation triggers a generate_tile request to you).
 
-- "proscenium": chain of discrete STAGES (film sets), one per world-map
-  place; camera fixed at the SOUTH edge. You receive `stage_request`
-  requests (STAGE instructions get prepended automatically) and MUST include
-  the `stage` block (exits, backdrop, fourth_wall). Travel UI: exit ZONES
-  painted on the stage with Spanish labels; stepping into one cuts to black,
-  loads the linked place's stage (cached scenes reload instantly — no LLM
-  call) and spawns the player beside the return door. Every world-map link
-  of the place needs exactly one exit and vice versa (server-validated).
-  The optional fourth wall fades out when the player approaches the camera.
-
 - "fps": first person, retro-FPS style, over the SAME tiles as "overworld"
   (you receive `generate_tile` requests exactly the same way — the view only
   changes how they are drawn and walked). Mouse look, WASD relative to
@@ -97,8 +87,7 @@ follows the active system automatically.
   vision passes (blueprint_review / image_review) may ask you to fix plans —
   answer with the COMPLETE corrected documents (typed arrays, never SVG).
 - "vector": the player sees the engine's untextured 3D render of your plans
-  directly; no image calls. Both views (overworld and proscenium) support
-  both modes.
+  directly; no image calls. Both views support both modes.
 - The mode is NOT frozen: the player can switch it (per facet: scenes /
   characters) at any time from the client's dev menu. Already-painted images
   are kept when switching to "vector" — only NEW generation stops.
@@ -114,5 +103,5 @@ systems with plugin_register.
 `map_add_trigger` attaches consequences to a place that fire when the player
 enters / first visits / leaves it (evaluated by the bridge on movement).
 This is your tool for ambushes, arrivals and door-step beats — it needs the
-place to be reachable in the world (proscenium: every stage IS its place;
-overworld: the place must be realized as a scene the player can walk into).
+place to be reachable in the world (the place must be anchored to a tile the
+player can walk into).

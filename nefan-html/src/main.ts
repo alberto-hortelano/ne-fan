@@ -65,9 +65,7 @@ import { CONFIG } from "@nefan-core/src/config.js";
 
 // Glob import all open-world scene JSONs (lazy) — Vite feature.
 // El concepto sala se ha retirado del cliente HTML: estas fixtures son tiles
-// del plano continuo. Solo el nivel RAÍZ: el subdirectorio `proscenio/`
-// guarda platós, que el cliente ya no sabe pintar — siguen en el repo como
-// fixtures de las suites de nefan-core, que mueren con el bloque `stage`.
+// del plano continuo, la única variante de Format D que queda.
 const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
   (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
     .glob("@nefan-core/data/scenes/*.json");

@@ -10,8 +10,8 @@
  *
  *  Puro: entra texto, sale una hora. */
 
-/** Hora del día de una escena. Quien la declare (el plató la trae en
- *  `stage.ambience`) resuelve por su cuenta; aquí solo vive la inferencia. */
+/** Hora del día de una escena. El tile no la declara —no hay campo en Format
+ *  D—, así que se INFIERE del texto; aquí solo vive esa inferencia. */
 export type TimeOfDay = "amanecer" | "dia" | "atardecer" | "noche";
 
 /** Hora inferida de un TEXTO (descripciones del motor) — compartida con la

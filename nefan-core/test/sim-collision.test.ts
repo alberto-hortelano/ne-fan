@@ -53,22 +53,6 @@ describe("createSimCollisionProvider", () => {
     assert.ok(!provider.blocksCircle(open.x, open.z, 0.5));
   });
 
-  it("bloquea sobre los rects sólidos del análisis, tras invalidate", () => {
-    const state = makeState();
-    const provider = createSimCollisionProvider(state);
-    // Punto abierto, cacheado sin análisis.
-    assert.ok(!provider.blocksCircle(1, 1, 0.5));
-    state.setTileAnalysis(0, 0, {
-      analyzed_at: "2026-01-01T00:00:00.000Z",
-      elements: [{ label: "roca", solid: true, tall: false,
-        rect: { minX: 0, maxX: 2, minZ: 0, maxZ: 2 } }],
-    });
-    // Caché vigente: sigue sin bloquear hasta invalidar.
-    assert.ok(!provider.blocksCircle(1, 1, 0.5), "sin invalidate usa la caché");
-    provider.invalidate("tile_0_0");
-    assert.ok(provider.blocksCircle(1, 1, 0.5), "tras invalidate ve el análisis");
-  });
-
   it("tile inexistente o escena legacy → sin colisión (degradación, no throw)", () => {
     const provider = createSimCollisionProvider(makeState());
     // Punto en el tile (5,5), que no existe.

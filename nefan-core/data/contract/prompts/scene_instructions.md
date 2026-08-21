@@ -12,7 +12,7 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
     ...   // EXACTLY rows strings total
   ],
   "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
-  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see the MAP PLAN reference: tile instructions in tile worlds; the stage instructions document them inline for proscenium
+  "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see the MAP PLAN reference in the tile instructions
   "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — same MAP PLAN reference as ground
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
@@ -31,11 +31,9 @@ TWO VARIANTS, AND ONLY TWO. The request tells you which one you are answering:
   `tile:{tx,ty}` + `biome` and NO `size`/`terrain`: the engine synthesises the
   128×128 @0.5 m grid from the biome and your `ground`/`volumes`. Its rules are
   in the tile instructions, which win over anything here.
-- `stage_request` in world_state → a PROSCENIUM stage: its own `size`+`terrain`
-  grid plus the `stage` block (exits, backdrop, fourth wall). Its scale and
-  size budgets live in the stage instructions, which win over anything here.
-A scene with neither is rejected by the gate before it reaches the game: there
-is no such thing as a free-standing map with a size of your choosing.
+It is the ONLY variant. A scene without it is rejected by the gate before it
+reaches the game: there is no such thing as a free-standing map with a size of
+your choosing.
 
 RESERVED TERRAIN CHARS (you can use without declaring in legend)
 - g grass (default)   _ path/dirt road    s stone/paved
@@ -57,8 +55,7 @@ ENTERABLE ROOMS & BUILDINGS: don't hand-draw a W border. Declare the shell as a
 `volumes` building with `cutaway:true` (walls, door gaps and interior visible
 from the camera come out deterministically), and write only the BASE terrain
 (grass, paths) in the grid. The volumes schema (rect, walls, roof, doors,
-cutaway) is in the MAP PLAN reference: the tile instructions (tile worlds) or
-the stage instructions' volumes examples (proscenium).
+cutaway) is in the MAP PLAN reference of the tile instructions.
 
 VEGETATION: don't hand-place 20 trees. Declare `vegetation_zones` (tile worlds:
 the engine plants real tree/bush masses per zone, deterministically) or tree
@@ -139,8 +136,8 @@ VALIDATION before responding:
 - [ ] no footprint runs off the grid
 - [ ] every glyph differs from every terrain char
 - [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
-      every enterable building's door AND the way out — a tile's seams with its
-      neighbours, a stage's declared exits
+      every enterable building's door AND the way out — the tile's seams with
+      its neighbours
 narrative_respond re-checks playability server-side with a flood-fill: if it
 rejects, FIX the listed issues (or call the map tools it names) and respond
 again — the request stays pending. You can also dry-run with scene_validate.
@@ -156,10 +153,9 @@ you call narrative_respond. Two flags can appear in world_state:
   regions, 3-5 settlements/landmarks, and the sites of the starting
   settlement; call map_link for the roads/paths/rivers between them. Then
   generate the Format D scene for ONE starting place.
-- realize_place: { id, kind, name, description, sites, links }  → lazy realize
-  of a place, and it always travels WITH `stage_request`: only a proscenium
-  world realizes a place as its own scene. In the continuous world a place
-  lives inside a tile, so it arrives as `generate_tile` instead.
+- realize_place: { id, kind, name, description, sites, links }  → context of
+  the place the player is travelling to. A place lives INSIDE a tile, so it
+  always arrives alongside `generate_tile`, never as a scene of its own.
 
 On BOOTSTRAP, add a top-level "place_id" to the scene JSON naming the map
 place the player starts in (e.g. "place_id": "robledo"). You are the only one

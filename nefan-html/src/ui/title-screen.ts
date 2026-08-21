@@ -579,10 +579,10 @@ export class TitleScreen {
     const genProgressEl = this.content.querySelector("#ts-gen-progress") as HTMLElement;
     /** Confirmación en dos clicks para regenerar (patrón armed del dev-menu). */
     let regenArmedUntil = 0;
-    const branchFor = (view: WorldView): "tile" | "stage" =>
-      view === "proscenium" ? "stage" : "tile";
+    // Solo queda la rama del plano continuo: el plató proscenio, que tenía la
+    // suya, se retiró entero (motor, contrato y clientes).
     const contentStatus = (): "ready" | "stale" | "missing" =>
-      selectedGame.generation?.[branchFor(selectedView)] ?? "missing";
+      selectedGame.generation?.tile ?? "missing";
     const appliedStatus = (): "ready" | "stale" | null => {
       const hit = (selectedGame.styles_applied ?? []).find(
         (a) => a.view === selectedView && a.style_id === styleSel.value,

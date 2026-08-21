@@ -1,9 +1,11 @@
-/** Vocabulario COMPARTIDO de los builders greybox 3D (proscenio y tile
- *  oblicuo) — lógica pura, sin three.js. Cada vista tiene su builder y su
- *  versión propia; lo que comparten es el lenguaje de primitivas/luces, el
- *  JSON canónico que gobierna las claves de caché y el mapeo terreno→color. */
-
-import { PALETTE } from "../blueprint/palette.js";
+/** Vocabulario COMPARTIDO de los builders greybox 3D — lógica pura, sin
+ *  three.js: el lenguaje de primitivas y luces, y el JSON canónico que
+ *  gobierna las claves de caché.
+ *
+ *  Aquí vivía además `groundColorFor` (leyenda de terreno → color de suelo),
+ *  cuyo único consumidor era el builder del PLATÓ: murió con él. El suelo del
+ *  tile se colorea desde `GROUND_MATERIAL_COLORS` (blueprint/ground-prims.ts),
+ *  que es otra tabla y sigue viva. */
 
 export interface GreyboxPrimitive {
   shape: "box" | "gable" | "cylinder" | "cone" | "polygon" | "sphere";
@@ -46,26 +48,6 @@ export interface GreyboxLight {
   /** Solo "point": alcance en metros (0/ausente = infinito) y decaimiento. */
   distance?: number;
   decay?: number;
-}
-
-/** Color de suelo por tipo de terreno de la leyenda (matching por
- *  subcadena, la leyenda es texto libre del motor narrativo). null = tipo
- *  desconocido o muro (los muros son volúmenes, no suelo). */
-export function groundColorFor(type: string): string | null {
-  const t = type.toLowerCase();
-  if (t.includes("muro") || t.includes("wall")) return null;
-  if (t.includes("water") || t.includes("agua")) return PALETTE.water;
-  if (t.includes("bridge") || t.includes("puente")) return PALETTE.woodTop;
-  if (t.includes("wood") || t.includes("madera")) return PALETTE.woodTop;
-  // Tierra y empedrado con contraste REAL (pareja del bench 07_zocodover):
-  // con la pareja antigua (#8f7757/#8b8678) las bandas del plan eran
-  // indistinguibles en el clay y la pista de materiales no llegaba al repintado.
-  if (t.includes("stone") || t.includes("piedra") || t.includes("empedrado")) return "#a4937c";
-  if (t.includes("path") || t.includes("camino") || t.includes("tierra") || t.includes("dirt")) return "#8d6f4e";
-  if (t.includes("sand") || t.includes("arena")) return "#c2b184";
-  if (t.includes("snow") || t.includes("nieve")) return "#dfe5ea";
-  if (t.includes("grass") || t.includes("hierba") || t.includes("prado")) return PALETTE.grassBase;
-  return null;
 }
 
 /** JSON canónico de un spec greybox: claves ordenadas + números redondeados a

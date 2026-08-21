@@ -19,39 +19,49 @@ SCENES = os.path.join(REPO, "nefan-core", "data", "scenes")
 
 
 def base_scene():
-    """Escena NO-tile ⇒ PLATÓ: desde la retirada de la variante suelta, una
-    escena con grid propio necesita su bloque `stage` (ver TestSceneSueltaRetirada)."""
+    """Format D tiene UNA variante: el tile del mundo continuo. La "suelta"
+    (grid propio) murió con el issue #172 y el plató con su vista."""
     return {
-        "scene_id": "s",
+        "scene_id": "tile_0_0",
         "scene_description": "una escena de prueba",
-        "place_id": "sala",
+        "tile": {"tx": 0, "ty": 0},
+        "biome": "grass",
+        "entities": [
+            {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1], "glyph": "@"}
+        ],
+    }
+
+
+def suelta_scene():
+    """La variante RETIRADA, perfectamente formada: grid propio, sin tile."""
+    return {
+        "scene_id": "aldea_suelta",
+        "scene_description": "Una aldea sin sitio en el mundo.",
         "size": {"cols": 4, "rows": 2, "meters_per_cell": 2},
         "terrain": ["gggg", "gggg"],
         "entities": [
             {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1], "glyph": "@"}
         ],
-        "stage": {
-            "exits": [
-                {"id": "puerta", "edge": "north", "to_place_id": "cocina",
-                 "zone": [1, 0, 2, 1], "kind": "door", "label": "Puerta a la cocina"}
-            ]
-        },
     }
 
 
-def suelta_scene():
-    """La variante RETIRADA, perfectamente formada: grid propio, sin tile ni stage."""
-    s = base_scene()
-    s.pop("stage")
-    s.pop("place_id")
-    s["scene_id"] = "aldea_suelta"
+def plato_scene():
+    """El PLATÓ proscenio: la suelta más su bloque `stage`. Pasaba hasta hoy."""
+    s = suelta_scene()
+    s["scene_id"] = "posada_salon"
+    s["place_id"] = "sala"
+    s["stage"] = {
+        "exits": [
+            {"id": "puerta", "edge": "north", "to_place_id": "cocina",
+             "zone": [1, 0, 2, 1], "kind": "door", "label": "Puerta a la cocina"}
+        ]
+    }
     return s
 
 
 class TestSceneValidateAcceptsReal(unittest.TestCase):
     def test_real_scenes_do_not_raise(self):
-        files = [os.path.join(SCENES, "robledo_tile.json"), os.path.join(SCENES, "zorder_test.json")]
-        files += sorted(glob.glob(os.path.join(SCENES, "proscenio", "*.json")))
+        files = sorted(glob.glob(os.path.join(SCENES, "*.json")))
         for f in files:
             with self.subTest(scene=os.path.basename(f)):
                 with open(f) as fh:
@@ -60,81 +70,41 @@ class TestSceneValidateAcceptsReal(unittest.TestCase):
 
     def test_base_scene_ok(self):
         out = validate_scene_response(base_scene())
-        self.assertEqual(out["terrain"], ["gggg", "gggg"])
+        # El tile NO trae grid: lo sintetiza el engine desde bioma+primitivas.
+        self.assertNotIn("terrain", out)
         self.assertEqual(len(out["entities"]), 1)
 
 
-class TestSceneSueltaRetirada(unittest.TestCase):
-    """CANDADO (issue #172, espejo de FormatDSceneSchema): Format D tiene DOS
-    formas —tile (mundo continuo) y stage (proscenio)— y ninguna más. La
-    "suelta" (grid propio, sin sitio en el plano ni salidas declaradas) se
-    retiró: el saneador la rechaza con un mensaje que nombra las dos vivas,
-    porque ese texto es lo que vuelve al modelo como 422 para re-responder."""
+class TestVariantesRetiradas(unittest.TestCase):
+    """CANDADO (espejo de FormatDSceneSchema): Format D tiene UNA forma —el
+    tile del mundo continuo—. La "suelta" (grid propio, sin sitio en el plano)
+    se retiró con el issue #172 y el PLATÓ proscenio con la vista que lo
+    pintaba. El saneador las rechaza con un mensaje que nombra la viva, porque
+    ese texto es lo que vuelve al modelo como 422 para re-responder."""
 
     def test_escena_suelta_impecable_lanza(self):
         with self.assertRaises(ValueError) as cm:
             validate_scene_response(suelta_scene())
         msg = str(cm.exception)
         self.assertIn("tile", msg)
-        self.assertIn("stage", msg)
         self.assertIn("generate_tile", msg)
 
-    def test_las_dos_variantes_vivas_siguen_pasando(self):
-        validate_scene_response(base_scene())  # plató: no raise
-        tile = suelta_scene()
-        tile.pop("size")
-        tile.pop("terrain")
-        tile["tile"] = {"tx": 0, "ty": 0}
-        tile["biome"] = "grass"
-        validate_scene_response(tile)  # tile: no raise
+    def test_plato_impecable_lanza(self):
+        with self.assertRaises(ValueError) as cm:
+            validate_scene_response(plato_scene())
+        self.assertIn("tile", str(cm.exception))
 
+    def test_la_variante_viva_sigue_pasando(self):
+        validate_scene_response(base_scene())  # tile: no raise
 
-class TestSceneStageHook(unittest.TestCase):
-    """El bloque stage de una escena proscenio pasa por validate_stage
-    (fail-loud); un tile lo descarta con traza (jamás lleva stage)."""
-
-    def test_bad_stage_raises(self):
+    def test_un_tile_con_stage_lo_descarta_con_traza(self):
         s = base_scene()
-        s["stage"] = {"exits": []}  # sin exits → softlock
-        with self.assertRaisesRegex(ValueError, "stage.exits"):
-            validate_scene_response(s)
-
-    def test_tile_drops_stage(self):
-        s = base_scene()
-        s.pop("size")
-        s.pop("terrain")
-        s["tile"] = {"tx": 0, "ty": 0}
-        s["biome"] = "farmland"
-        s["stage"] = {"exits": []}  # ni se valida: se descarta con traza
+        s["stage"] = {"exits": []}
         out = validate_scene_response(s)
         self.assertNotIn("stage", out)
 
 
 class TestSceneValidateFailLoud(unittest.TestCase):
-    def test_terrain_row_wrong_width_raises(self):
-        s = base_scene()
-        s["terrain"] = ["gggg", "ggg"]  # 2ª fila corta (antes: padding silencioso)
-        with self.assertRaises(ValueError):
-            validate_scene_response(s)
-
-    def test_terrain_wrong_row_count_raises(self):
-        s = base_scene()
-        s["terrain"] = ["gggg"]  # falta una fila (antes: relleno)
-        with self.assertRaises(ValueError):
-            validate_scene_response(s)
-
-    def test_terrain_not_list_raises(self):
-        s = base_scene()
-        s["terrain"] = {"type": "grass"}  # esquema viejo (antes: → hierba)
-        with self.assertRaises(ValueError):
-            validate_scene_response(s)
-
-    def test_missing_size_raises(self):
-        s = base_scene()
-        del s["size"]
-        with self.assertRaises(ValueError):
-            validate_scene_response(s)
-
     def test_tile_without_biome_raises(self):
         with self.assertRaises(ValueError):
             validate_scene_response({"scene_id": "t", "scene_description": "d", "tile": {"tx": 0, "ty": 0}, "entities": []})
@@ -174,9 +144,9 @@ class TestSceneValidateBenign(unittest.TestCase):
 
     def test_cell_out_of_bounds_clamped(self):
         s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [99, 99], "footprint": [1, 1], "glyph": "x"}]
+        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [999, 999], "footprint": [1, 1], "glyph": "x"}]
         out = validate_scene_response(s)
-        self.assertLess(out["entities"][0]["cell"][0], 4)  # clampado a cols
+        self.assertLess(out["entities"][0]["cell"][0], 128)  # clampado al grid del tile
 
 
 if __name__ == "__main__":

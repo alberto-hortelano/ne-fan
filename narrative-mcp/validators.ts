@@ -14,12 +14,11 @@ import {
   FormatDSceneSchema,
   SceneClassifySchema,
   ImageReviewSchema,
-  StageReviewSchema,
   BlueprintReviewSchema,
 } from '@nefan/core';
 
 /** Gate ESTRUCTURAL de una escena Format D (entities, size, terrain, legend,
- *  tile/biome + sub-partes ground/volumes/stage). Delega en el zod SoT. Antes
+ *  tile/biome + sub-partes ground/volumes). Delega en el zod SoT. Antes
  *  el top-level de la escena no se validaba en ninguna parte que volviera al
  *  modelo: ai_server lo DEGRADABA en silencio (terrain mal → padding, entities
  *  malformadas → clamp). La jugabilidad la valida aparte /scene/validate. */
@@ -228,29 +227,3 @@ export function validateImageReview(data: unknown): { ok: true } | { ok: false; 
   return validateContract(ImageReviewSchema, data);
 }
 
-/** Pre-flight de stage_review — forma vía zod + completitud/unicidad de los
- *  ids esperados (expected_elements del listen, runtime). */
-export function validateStageReview(
-  data: unknown,
-  expectedIds: string[] | null,
-): { ok: true } | { ok: false; error: string } {
-  const shape = validateContract(StageReviewSchema, data);
-  if (!shape.ok) return shape;
-  const expected = (data as { expected: { id: string }[] }).expected;
-  const seen = new Set<string>();
-  for (const e of expected) {
-    if (seen.has(e.id)) return { ok: false, error: `expected: id "${e.id}" aparece dos veces` };
-    seen.add(e.id);
-  }
-  if (expectedIds) {
-    const missing = expectedIds.filter((id) => !seen.has(id));
-    if (missing.length > 0) {
-      return { ok: false, error: `inventario incompleto — sin contabilizar: ${missing.join(', ')}` };
-    }
-    const unknown = [...seen].filter((id) => !expectedIds.includes(id));
-    if (unknown.length > 0) {
-      return { ok: false, error: `ids desconocidos (no están en expected_elements): ${unknown.join(', ')}` };
-    }
-  }
-  return { ok: true };
-}

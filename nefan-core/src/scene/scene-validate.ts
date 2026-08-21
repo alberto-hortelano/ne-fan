@@ -4,10 +4,10 @@
  *  mapa que entrega el motor narrativo se puede JUGAR. La regla de oro es la
  *  inversa del bug de la taberna original (sin muros se salía por todas
  *  partes): con muros sólidos hay que garantizar que se puede salir por
- *  ALGUNA parte, y qué significa "salir" depende de la variante — un TILE se
- *  abandona por sus costuras con los vecinos, un PLATÓ por las salidas que
- *  declara. No hay tercera: una escena sin `tile` ni `stage` se rechaza aquí
- *  igual que en el gate estructural (issue #172).
+ *  ALGUNA parte, y salir de un TILE es cruzar sus costuras con los vecinos.
+ *  Format D tiene UNA sola variante: el tile. La "suelta" se retiró con el
+ *  issue #172 y el PLATÓ proscenio con la vista que lo pintaba, así que una
+ *  escena sin `tile` se rechaza aquí igual que en el gate estructural.
  *
  *  Se ejecuta en el pre-flight de `narrative_respond` (vía
  *  `POST /scene/validate` del state API): si falla, el motor recibe los
@@ -15,12 +15,10 @@
  *  warnings = sospechoso pero jugable. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
-import { MAX_GROUND_FEATURES, parseGround } from "./blueprint/ground.js";
-import { shapeContains } from "./blueprint/ground-collision.js";
+import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
 import { parseScatter } from "./blueprint/scatter.js";
 import { MAX_VOLUMES } from "./blueprint/volumes.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
-import { parseStage, type StageBlock } from "./stage/schema.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing } from "./tile-edges.js";
 import { TILE_CELLS } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
@@ -50,17 +48,6 @@ export interface SceneValidationResult {
     vegetation_zones: number;
     distinct_building_heights: number;
   };
-}
-
-/** Info del world map que necesita la regla de contexto exterior. La aporta el
- *  state API (que tiene el WorldMapManager); el validador queda puro. */
-export interface PlaceContext {
-  exists: boolean;
-  kind?: string;
-  outgoing_links: number;
-  /** Links salientes con destino (y edge si lo declara). Lo necesitan las
-   *  escenas proscenio: cada link debe tener su salida física y viceversa. */
-  links?: Array<{ to: string; edge?: Edge }>;
 }
 
 /** Contexto de validación de un TILE: qué cruces de los vecinos existentes
@@ -108,93 +95,42 @@ const emptyStats = (cols = 0, rows = 0): SceneValidationResult["stats"] => ({
 
 export function validateScene(
   rawScene: Record<string, unknown>,
-  placeContext?: (placeId: string) => PlaceContext | null,
   tileContext?: TileValidationContext,
 ): SceneValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const isTile = rawScene.tile !== undefined;
 
-  // ── Bloque stage (escena proscenio): parse temprano — sus reglas de zonas
-  // y salidas se aplican más abajo, tras construir la máscara walkable ──────
-  let stage: StageBlock | null = null;
-  if (rawScene.stage !== undefined) {
-    if (isTile) {
-      errors.push(
-        "una escena con bloque `stage` (proscenio) no puede ser un tile: los platós son escenas discretas por place",
-      );
-    } else {
-      const parsedStage = parseStage(rawScene.stage);
-      if (parsedStage.ok) stage = parsedStage.stage;
-      else errors.push(parsedStage.error);
-    }
-  }
-
-  // Format D tiene DOS variantes y ninguna más: tile (mundo continuo) o
-  // stage (proscenio). La "suelta" —grid propio, sin sitio en el plano ni
-  // salidas declaradas— se retiró (issue #172); aquí se corta antes de
-  // gastar el flood-fill, con el mismo mensaje que el gate estructural.
-  if (!isTile && rawScene.stage === undefined) {
+  // Format D tiene UNA variante: el tile del mundo continuo. La "suelta"
+  // (grid propio sin sitio en el plano) se retiró con el issue #172 y el
+  // plató proscenio con su vista; aquí se corta antes de gastar el
+  // flood-fill, con el mismo mensaje que el gate estructural.
+  if (rawScene.tile === undefined) {
     return {
       ok: false,
       errors: [
         ...errors,
-        "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) " +
-          "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe",
+        "una escena necesita `tile` {tx,ty}: es la única variante de Format D " +
+          "(mundo continuo, pídela con generate_tile)",
       ],
       warnings,
       stats: emptyStats(),
     };
   }
 
-  let cols: number;
-  let rows: number;
-  if (isTile) {
-    // Tile (Format D v3): la forma la garantiza el expander (bioma + 128×128
-    // sintetizados); aquí solo las coords. size/terrain completos los rechaza
-    // el propio expander con mensaje accionable.
-    const t = rawScene.tile as { tx?: unknown; ty?: unknown };
-    if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
-      return {
-        ok: false,
-        errors: [`tile.tx/ty deben ser enteros, got ${JSON.stringify(rawScene.tile)}`],
-        warnings,
-        stats: emptyStats(),
-      };
-    }
-    cols = TILE_CELLS;
-    rows = TILE_CELLS;
-  } else {
-    // ── Forma Format D — sobre la escena CRUDA, antes de expandir (el expander
-    // normaliza filas con padding y taparía un rows/cols mal contado) ────────
-    const size = rawScene.size as { cols?: number; rows?: number; meters_per_cell?: number } | undefined;
-    const rawTerrain = rawScene.terrain;
-    if (
-      typeof size?.cols !== "number" || typeof size?.rows !== "number" ||
-      !Number.isInteger(size.cols) || !Number.isInteger(size.rows) || size.cols < 3 || size.rows < 3 ||
-      !Array.isArray(rawTerrain)
-    ) {
-      return {
-        ok: false,
-        errors: ["la escena no es Format D: falta size.cols/rows enteros (≥3) o terrain[]"],
-        warnings,
-        stats: emptyStats(),
-      };
-    }
-    cols = size.cols;
-    rows = size.rows;
-    if (rawTerrain.length !== rows) {
-      errors.push(`terrain tiene ${rawTerrain.length} filas, size.rows dice ${rows}`);
-    }
-    for (let r = 0; r < Math.min(rows, rawTerrain.length); r++) {
-      const row = rawTerrain[r];
-      if (typeof row !== "string") {
-        errors.push(`terrain[${r}] no es string`);
-      } else if (row.length !== cols) {
-        errors.push(`terrain[${r}] tiene ${row.length} chars, size.cols dice ${cols}`);
-      }
-    }
+  // Tile (Format D v3): la forma la garantiza el expander (bioma + 128×128
+  // sintetizados); aquí solo las coords. size/terrain completos los rechaza
+  // el propio expander con mensaje accionable.
+  const t = rawScene.tile as { tx?: unknown; ty?: unknown };
+  if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
+    return {
+      ok: false,
+      errors: [`tile.tx/ty deben ser enteros, got ${JSON.stringify(rawScene.tile)}`],
+      warnings,
+      stats: emptyStats(),
+    };
   }
+  const cols = TILE_CELLS;
+  const rows = TILE_CELLS;
 
   // ── Expansión de primitivas (sus fail-loud se vuelven errores legibles) ───
   let scene = rawScene;
@@ -257,32 +193,6 @@ export function validateScene(
       }
     }
   }
-  // ── Agua declarada del `ground` (v8, platós): water∖deck resta walkable —
-  // el flood-fill ve el río ANTES de runtime (una salida al otro lado sin
-  // deck es error del motor aquí, no una sorpresa jugable). Solo escenas
-  // no-tile: la validación del tile conserva su contrato actual. ────────────
-  if (rawScene.tile === undefined && rawScene.ground !== undefined) {
-    const parsedGround = parseGround(rawScene.ground);
-    if (!parsedGround.ok) {
-      errors.push(`ground inválido: ${parsedGround.error}`);
-    } else {
-      const waters = parsedGround.features.filter((f) => f.kind === "water");
-      const decks = parsedGround.features.filter((f) => f.kind === "deck");
-      for (let r = 0; waters.length > 0 && r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          if (!walkable[r * cols + c]) continue;
-          const u = c + 0.5;
-          const v = r + 0.5;
-          if (
-            waters.some((w) => shapeContains(w, u, v)) &&
-            !decks.some((d) => shapeContains(d, u, v))
-          ) {
-            walkable[r * cols + c] = false;
-          }
-        }
-      }
-    }
-  }
   // ── Scatter declarativo (vista fps): validación fail-loud con ruta exacta
   // (parseScatter) — el motor recibe el error preciso al responder, no un
   // bloque silenciosamente ignorado en runtime. ────────────────────────────
@@ -299,39 +209,10 @@ export function validateScene(
   stats.walkable_cells = walkableCells;
   stats.npcs_total = npcs.length;
 
-  // ── Salidas del plató: zona dentro del grid y con celdas transitables ─────
-  const exitTargets: Array<{ id: string; label: string; cells: [number, number][] }> = [];
-  if (stage) {
-    for (const exit of stage.exits) {
-      const [zc, zr, zw, zh] = exit.zone;
-      const c0 = Math.floor(zc);
-      const r0 = Math.floor(zr);
-      const c1 = Math.ceil(zc + zw);
-      const r1 = Math.ceil(zr + zh);
-      if (c0 < 0 || r0 < 0 || c1 > cols || r1 > rows) {
-        errors.push(`stage.exits "${exit.id}": zone [${exit.zone.join(", ")}] se sale del grid ${cols}×${rows}`);
-        continue;
-      }
-      const cells: [number, number][] = [];
-      for (let r = r0; r < r1; r++) {
-        for (let c = c0; c < c1; c++) {
-          if (walkable[r * cols + c]) cells.push([c, r]);
-        }
-      }
-      if (cells.length === 0) {
-        errors.push(
-          `stage.exits "${exit.id}" (${exit.label}): ninguna celda de su zone es transitable — la salida no se puede pisar`,
-        );
-        continue;
-      }
-      exitTargets.push({ id: exit.id, label: exit.label, cells });
-    }
-  }
-
   // ── Spawn del jugador ─────────────────────────────────────────────────────
   // Tiles normales NO llevan player: el jugador entra andando desde el vecino.
   // Solo el tile de bootstrap (primera escena de la sesión) lo incluye.
-  if (isTile && !tileContext?.bootstrap) {
+  if (!tileContext?.bootstrap) {
     if (player) {
       errors.push(
         "los tiles no llevan entity kind \"player\" (el jugador entra andando desde el tile vecino); solo el tile inicial de bootstrap la incluye",
@@ -339,13 +220,7 @@ export function validateScene(
       player = null;
     }
   } else if (!player) {
-    // Escenas proscenio de realize: el jugador entra por una salida (el
-    // spawn lo resuelve el cliente con spawnPointForEntry) — sin player, el
-    // flood-fill se siembra desde las zonas de salida. El bootstrap SÍ exige
-    // player: lo comprueba el bridge (bootstrap-stage), que sabe que lo es.
-    if (!stage) {
-      errors.push('falta la entity kind "player" (spawn del jugador)');
-    }
+    errors.push('falta la entity kind "player" (spawn del jugador)');
   } else if (player[0] < 0 || player[1] < 0 || player[0] >= cols || player[1] >= rows) {
     errors.push(`el player está fuera del grid: [${player[0]}, ${player[1]}]`);
     player = null;
@@ -360,65 +235,57 @@ export function validateScene(
   // Los puntos de arranque del flood-fill de un tile son sus cruces reales.
   const startCells: [number, number][] = [];
   const requiredReachCells: Array<{ cell: [number, number]; label: string }> = [];
-  if (isTile) {
-    const actualEdges = computeTileEdges(scene);
-    const required = tileContext?.required_crossings ?? [];
-    const byEdge = new Map<Edge, Array<{ edge: Edge } & EdgeCrossing>>();
-    for (const req of required) {
-      const list = byEdge.get(req.edge) ?? [];
-      list.push(req);
-      byEdge.set(req.edge, list);
-    }
-    for (const [edge, reqs] of byEdge) {
-      const actual = actualEdges[edge].crossings;
-      const { missing } = matchCrossings(reqs, actual);
-      for (const m of missing) {
-        errors.push(
-          `el vecino ${edge} tiene un ${m.type} que muere en vuestra costura en la celda ${m.at}: ` +
-            `tu tile debe continuarlo con celdas transitables compatibles en el borde ${edge}, celdas ${m.at - 2}..${m.at + 2}`,
-        );
-      }
-      // Las continuaciones reales de los cruces requeridos son OBJETIVOS de
-      // alcanzabilidad (no arranques: sembrar el flood con todos los cruces
-      // los haría trivialmente alcanzables entre sí). SOLO cruces TRANSITABLES:
-      // un río continúa en una celda de agua (sólida), a la que no se llega
-      // andando — exigirle alcanzabilidad rechazaba tiles correctos. Su
-      // continuidad ya la valida el chequeo de costura de arriba; se casa por
-      // tipo compatible, no por proximidad ciega.
-      for (const req of reqs) {
-        const match = actual.find(
-          (a) => COMPATIBLE[req.type].has(a.type) && Math.abs(a.at - req.at) <= 2,
-        );
-        if (match && cellWalkable(edgeCell(edge, match.at))) {
-          requiredReachCells.push({
-            cell: edgeCell(edge, match.at),
-            label: `cruce ${match.type} del borde ${edge} (celda ${match.at})`,
-          });
-        }
-      }
-    }
-    // Arranque del flood: la entrada explícita (borde por el que viene el
-    // jugador) o, en su defecto, la primera continuación de cruce. Debe ser
-    // TRANSITABLE: si la entrada casa con un río (agua), sembrar ahí dejaba
-    // walkableStarts vacío y se saltaba toda la validación en silencio.
-    if (tileContext?.entry) {
-      const { edge, at } = tileContext.entry;
-      const near = actualEdges[edge].crossings.find(
-        (a) => (at === undefined || Math.abs(a.at - at) <= 2) && cellWalkable(edgeCell(edge, a.at)),
+  const actualEdges = computeTileEdges(scene);
+  const required = tileContext?.required_crossings ?? [];
+  const byEdge = new Map<Edge, Array<{ edge: Edge } & EdgeCrossing>>();
+  for (const req of required) {
+    const list = byEdge.get(req.edge) ?? [];
+    list.push(req);
+    byEdge.set(req.edge, list);
+  }
+  for (const [edge, reqs] of byEdge) {
+    const actual = actualEdges[edge].crossings;
+    const { missing } = matchCrossings(reqs, actual);
+    for (const m of missing) {
+      errors.push(
+        `el vecino ${edge} tiene un ${m.type} que muere en vuestra costura en la celda ${m.at}: ` +
+          `tu tile debe continuarlo con celdas transitables compatibles en el borde ${edge}, celdas ${m.at - 2}..${m.at + 2}`,
       );
-      if (near) startCells.push(edgeCell(edge, near.at));
     }
-    if (startCells.length === 0 && requiredReachCells.length > 0) {
-      startCells.push(requiredReachCells[0].cell);
+    // Las continuaciones reales de los cruces requeridos son OBJETIVOS de
+    // alcanzabilidad (no arranques: sembrar el flood con todos los cruces
+    // los haría trivialmente alcanzables entre sí). SOLO cruces TRANSITABLES:
+    // un río continúa en una celda de agua (sólida), a la que no se llega
+    // andando — exigirle alcanzabilidad rechazaba tiles correctos. Su
+    // continuidad ya la valida el chequeo de costura de arriba; se casa por
+    // tipo compatible, no por proximidad ciega.
+    for (const req of reqs) {
+      const match = actual.find(
+        (a) => COMPATIBLE[req.type].has(a.type) && Math.abs(a.at - req.at) <= 2,
+      );
+      if (match && cellWalkable(edgeCell(edge, match.at))) {
+        requiredReachCells.push({
+          cell: edgeCell(edge, match.at),
+          label: `cruce ${match.type} del borde ${edge} (celda ${match.at})`,
+        });
+      }
     }
+  }
+  // Arranque del flood: la entrada explícita (borde por el que viene el
+  // jugador) o, en su defecto, la primera continuación de cruce. Debe ser
+  // TRANSITABLE: si la entrada casa con un río (agua), sembrar ahí dejaba
+  // walkableStarts vacío y se saltaba toda la validación en silencio.
+  if (tileContext?.entry) {
+    const { edge, at } = tileContext.entry;
+    const near = actualEdges[edge].crossings.find(
+      (a) => (at === undefined || Math.abs(a.at - at) <= 2) && cellWalkable(edgeCell(edge, a.at)),
+    );
+    if (near) startCells.push(edgeCell(edge, near.at));
+  }
+  if (startCells.length === 0 && requiredReachCells.length > 0) {
+    startCells.push(requiredReachCells[0].cell);
   }
   if (player) startCells.unshift(player);
-  // Plató sin player (realize): arrancar el flood desde UNA salida — el
-  // jugador entrará por alguna y todas deben quedar conectadas entre sí
-  // (sembrar todas las haría trivialmente alcanzables).
-  if (stage && !player && startCells.length === 0 && exitTargets.length > 0) {
-    startCells.push(exitTargets[0].cells[0]);
-  }
 
   // ── Flood-fill de alcanzabilidad desde el jugador ─────────────────────────
   // Puertas: celdas de hueco de las structures (si las hay).
@@ -486,14 +353,14 @@ export function validateScene(
   // transitable es injugable: el jugador entraría en agua/roca y no podría
   // moverse. Antes se aprobaba en silencio (el flood no arrancaba). Fail-loud.
   const tileHasNeighborLink = requiredReachCells.length > 0 || Boolean(tileContext?.entry);
-  if (isTile && tileHasNeighborLink && walkableCells === 0) {
+  if (tileHasNeighborLink && walkableCells === 0) {
     errors.push("tile sin terreno transitable: el jugador no podría moverse dentro (injugable)");
   }
-  if (isTile && startCells.length === 0 && !tileHasNeighborLink) {
+  if (startCells.length === 0 && !tileHasNeighborLink) {
     // Tile aislado sin cruces requeridos ni entrada (p.ej. prefetch diagonal):
     // no hay punto de entrada que validar — se acepta con aviso.
     warnings.push("tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada");
-  } else if (isTile && tileHasNeighborLink && walkableStarts.length === 0 && walkableCells > 0) {
+  } else if (tileHasNeighborLink && walkableStarts.length === 0 && walkableCells > 0) {
     // Hay terreno transitable pero ningún arranque declarado cae en él (p.ej.
     // la entrada casa con un río). ANTES el flood no corría y pasaba en
     // silencio; ahora al menos se avisa de que la alcanzabilidad no se verificó.
@@ -528,32 +395,17 @@ export function validateScene(
     }
     stats.reachable_cells = queue.length;
 
-    if (isTile) {
-      // La regla "se puede salir" de un tile es que sus cruces (las costuras
-      // con los vecinos) estén conectados entre sí y con la entrada.
-      let allCrossingsReachable = true;
-      for (const target of requiredReachCells) {
-        const [c, r] = target.cell;
-        if (!(c >= 0 && r >= 0 && c < cols && r < rows && reachable[r * cols + c])) {
-          allCrossingsReachable = false;
-          errors.push(`el ${target.label} no es alcanzable desde la entrada del tile`);
-        }
+    // La regla "se puede salir" de un tile es que sus cruces (las costuras
+    // con los vecinos) estén conectados entre sí y con la entrada.
+    let allCrossingsReachable = true;
+    for (const target of requiredReachCells) {
+      const [c, r] = target.cell;
+      if (!(c >= 0 && r >= 0 && c < cols && r < rows && reachable[r * cols + c])) {
+        allCrossingsReachable = false;
+        errors.push(`el ${target.label} no es alcanzable desde la entrada del tile`);
       }
-      stats.border_reachable = allCrossingsReachable;
-    } else {
-      // Proscenio (la única variante no-tile): no se sale por el borde sino
-      // por las salidas declaradas — cada zona de exit debe ser alcanzable
-      // desde el spawn del jugador.
-      let allExitsReachable = exitTargets.length > 0;
-      for (const target of exitTargets) {
-        const hit = target.cells.some(([c, r]) => reachable[r * cols + c] === 1);
-        if (!hit) {
-          allExitsReachable = false;
-          errors.push(`la salida "${target.id}" (${target.label}) no es alcanzable desde el player`);
-        }
-      }
-      stats.border_reachable = allExitsReachable;
     }
+    stats.border_reachable = allCrossingsReachable;
 
     // Puertas alcanzables (la celda del hueco es walkable, así que basta con
     // que el flood la toque).
@@ -586,60 +438,6 @@ export function validateScene(
     const walkableRatio = walkableCells / (cols * rows);
     if (walkableRatio < 0.2) {
       warnings.push(`solo el ${Math.round(walkableRatio * 100)}% del mapa es transitable — ¿demasiado muro/agua?`);
-    }
-  }
-
-  // ── Contexto exterior en el world map (solo escenas legacy: la salida de
-  // un tile es el propio plano continuo, no necesita links) ─────────────────
-  const placeId = typeof scene.place_id === "string" ? scene.place_id : null;
-  if (stage && !placeId) {
-    errors.push("una escena proscenio necesita place_id: el plató ES un place del world map");
-  }
-  if (placeId && placeContext && !isTile) {
-    const info = placeContext(placeId);
-    if (!info || !info.exists) {
-      errors.push(
-        `place_id "${placeId}" no existe en el world map — llama a map_upsert_place (y map_link a su exterior) antes de re-responder`,
-      );
-    } else if (info.outgoing_links === 0) {
-      errors.push(
-        `el place "${placeId}" no tiene ningún link saliente en el world map: al salir de la escena no hay a dónde ir — llama a map_link para conectarlo (door/path a su exterior o vecino) antes de re-responder`,
-      );
-    } else if (stage && info.links) {
-      // Proscenio: la salida física es la ÚNICA forma de viajar — cada link
-      // del world map necesita su exit y cada exit su link.
-      const linkTargets = new Set(info.links.map((l) => l.to));
-      for (const exit of stage.exits) {
-        if (!linkTargets.has(exit.to_place_id)) {
-          errors.push(
-            `stage.exits "${exit.id}" apunta a "${exit.to_place_id}" pero el place "${placeId}" no tiene link hacia él en el world map — llama a map_link antes de re-responder`,
-          );
-        }
-      }
-      const exitTargetIds = new Set(stage.exits.map((e) => e.to_place_id));
-      for (const link of info.links) {
-        if (!exitTargetIds.has(link.to)) {
-          errors.push(
-            `el link ${placeId} → ${link.to} del world map no tiene salida física en stage.exits — declara un exit hacia "${link.to}" (en proscenio solo se viaja pisando salidas)`,
-          );
-        }
-      }
-    }
-    // Links sin `edge` (warning, ambas vistas): salir andando por un borde de
-    // la escena viaja el link DE ESE BORDE — un link sin edge nunca se
-    // dispara así (playtest 2026-08-13: la posada se realizó con su link
-    // door sin edge y el validador pasó mudo; el motor lo corrigió por
-    // iniciativa propia con un re-link).
-    if (info?.exists && info.links) {
-      for (const link of info.links) {
-        if (!link.edge) {
-          warnings.push(
-            `el link ${placeId} → ${link.to} no declara edge en el world map: salir andando ` +
-              `por un borde no seguirá ese link — si los places son espacialmente adyacentes, ` +
-              `re-crea el map_link con su edge`,
-          );
-        }
-      }
     }
   }
 

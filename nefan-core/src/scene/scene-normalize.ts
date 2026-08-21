@@ -255,10 +255,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
         ? raw.scatter_generators
         : undefined,
     scatter_zones: Array.isArray(raw.scatter_zones) ? raw.scatter_zones : undefined,
-    // Bloque stage (mundos proscenio): passthrough — el cliente detecta la
-    // escena de plató por este campo y compone las capas con
-    // stagePlanFromScene sobre el Format D crudo (__format_d).
-    stage: raw.stage !== undefined ? raw.stage : undefined,
     // Ref de estilo ELEGIDA por el motor narrativo para esta escena (id del
     // catálogo world.style_refs). Shim de lectura de saves legacy: escenas
     // persistidas antes del formato de refs libres llevan `style_tag`, cuyos

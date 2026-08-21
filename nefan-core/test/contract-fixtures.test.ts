@@ -15,12 +15,10 @@ import {
   validateNarrativeReaction,
   validateBlueprintReview,
   validateSceneClassify,
-  validateStageReview,
   validateImageReview,
   validateVolumes,
 } from "../../narrative-mcp/validators.js";
 import { parseGround } from "../src/scene/blueprint/ground.js";
-import { parseStage } from "../src/scene/stage/schema.js";
 
 const FIXTURES_DIR = fileURLToPath(new URL("../data/contract/fixtures", import.meta.url));
 
@@ -29,7 +27,6 @@ interface Fixture {
   expect: "accept" | "reject";
   payload: unknown;
   expected_indices?: number[];
-  expected_ids?: string[];
   /** Para sanitizadores que normalizan: output exacto esperado tras aceptar. */
   expected_output?: string;
 }
@@ -54,11 +51,7 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   reaction: (fx) => validateNarrativeReaction(fx.payload),
   blueprint_review: (fx) => validateBlueprintReview(fx.payload),
   scene_classify: (fx) => validateSceneClassify(fx.payload, fx.expected_indices ?? null),
-  stage_review: (fx) => validateStageReview(fx.payload, fx.expected_ids ?? null),
   image_review: (fx) => validateImageReview(fx.payload),
-  // El bloque `stage` de una escena proscenio lo valida el zod de producción
-  // (parseStage) — el espejo Python (validate_stage) corre el MISMO set.
-  stage: (fx) => parseStage((fx.payload as { stage: unknown }).stage),
   // El plan de suelo declarativo lo valida el zod de producción (parseGround)
   // — el espejo Python (validate_ground) corre el MISMO set de fixtures.
   ground_plan: (fx) => parseGround((fx.payload as { ground: unknown }).ground),

@@ -1,5 +1,0 @@
-{
-  "description": "Un plató sin exits softlockea: la única forma de viajar es pisar una zona de salida",
-  "expect": "reject",
-  "payload": { "stage": { "exits": [] } }
-}

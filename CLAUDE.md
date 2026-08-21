@@ -13,7 +13,7 @@ Lo demás vive en `docs/arquitectura/` y se lee **cuando toca**:
 | Documento | Léelo cuando… |
 |-----------|---------------|
 | [`mapa.md`](docs/arquitectura/mapa.md) | no sepas en qué carpeta o proceso encaja un cambio |
-| [`vistas.md`](docs/arquitectura/vistas.md) | toques renderer, cámara, colisión o pipeline de imagen del cliente 2D (oblicua, proscenio, fps) |
+| [`vistas.md`](docs/arquitectura/vistas.md) | toques renderer, cámara, colisión o pipeline de imagen del cliente (fps; **sus secciones de oblicua y proscenio están obsoletas**: las dos vistas se retiraron y el documento se reescribe en la pasada de docs) |
 | [`narrativa.md`](docs/arquitectura/narrativa.md) | toques la generación de escenas, el diálogo o las consequences del motor |
 | [`ia-servicios.md`](docs/arquitectura/ia-servicios.md) | vayas a tocar algo que GASTA CRÉDITOS, o los tres procesos Python |
 | [`plugins.md`](docs/arquitectura/plugins.md) | añadas un sistema de juego (manifest declarativo) o una implementación intercambiable de hot loop |
@@ -132,7 +132,7 @@ El juego arranca sin ai_server ni bridge — texturas no se generan y el combate
 
 Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
-**1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **dos variantes y solo dos**: un **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m) o un **plató** proscenio (rejilla propia `size{cols,rows,meters_per_cell}` + `terrain[]` + `terrain_legend`, más el bloque `stage` con sus salidas). Ambas llevan `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `h?`, `texture_hash?`). Una escena sin `tile` y sin `stage` —la "suelta", con tamaño a elección del motor— se retiró: la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
+**1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **una sola variante**: el **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m), más sus `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `h?`, `texture_hash?`). Las otras dos se retiraron y no vuelven: la "suelta" (tamaño a elección del motor, sin sitio en el plano) y el **plató proscenio** (`size`+`terrain` propios + bloque `stage` con sus salidas), que murió con la vista que lo pintaba. Una escena sin `tile` la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`; `stage_request`/`stage_review` tienen candado de reaparición en `arch-rules.json`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
 
 **2. World scene** — el contrato de render que consumen AMBOS clientes: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
@@ -235,7 +235,7 @@ Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al
 - **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
 - **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
 - **Proyección oblicua 2D única** (suelo cenital sin proyectar + cizalla en la altura: cara sur iluminada, cara este en sombra) — sustituyó a la doble perspectiva topdown/isometric. Colisión desde huellas, nunca desde píxeles pintados.
-- **El motor narrativo NUNCA emite SVG ni dibuja: solo planes declarativos** (`ground`+`volumes`, bloque `stage`) que los builders greybox de nefan-core convierten en escenas 3D deterministas renderizadas con three.js en el cliente (clay = arte del modo vector Y plano base del repintado). Los compositores SVG (oblicua y proscenio) se eliminaron en agosto de 2026; los benches labs/render (E2a) y labs/escenografia/greybox son la evidencia.
+- **El motor narrativo NUNCA emite SVG ni dibuja: solo planes declarativos** (`ground`+`volumes`) que los builders greybox de nefan-core convierten en escenas 3D deterministas renderizadas con three.js en el cliente (clay = arte del modo vector Y plano base del repintado). Los compositores SVG (oblicua y proscenio) se eliminaron en agosto de 2026; los benches labs/render (E2a) y labs/escenografia/greybox son la evidencia.
 
 ## Hardware
 

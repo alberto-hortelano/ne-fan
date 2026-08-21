@@ -153,7 +153,7 @@ describe("state HTTP API", () => {
     assert.equal(uiState.combat_system, "standard");
     assert.ok(Array.isArray(uiState.plugins));
     const doc = String(body.ui_doc);
-    assert.ok(doc.includes("proscenium") && doc.includes("dialogue"), "doc canónico servido");
+    assert.ok(doc.includes("overworld") && doc.includes("dialogue"), "doc canónico servido");
   });
 
   it("GET /story devuelve la crónica completa de la sesión activa", async () => {
@@ -253,43 +253,33 @@ describe("state HTTP API", () => {
     assert.equal(place.name, "Millhaven");
   });
 
-  it("POST /scene/validate valida jugabilidad y la regla de link exterior", async () => {
-    const scene = {
-      scene_id: "val_e2e",
-      place_id: "millhaven_inn",
-      size: { cols: 16, rows: 12, meters_per_cell: 0.5 },
-      terrain: Array.from({ length: 12 }, () => "g".repeat(16)),
-      terrain_legend: {},
+  it("POST /scene/validate valida la jugabilidad del tile con el contexto de costuras", async () => {
+    // El servidor construye el TileValidationContext desde los vecinos ya
+    // registrados: el motor no puede olvidarse de pasarlo.
+    const tile = {
+      scene_id: "tile_0_0",
+      scene_description: "Un claro con una posada.",
+      tile: { tx: 0, ty: 0 },
+      biome: "forest_floor",
+      ground: [{ id: "camino", kind: "path", points: [[0, 41], [128, 52]], w: 2 }],
       structures: [
-        { type: "room", rect: [2, 1, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
+        { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
       ],
-      entities: [{ id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" }],
-      // Escena con grid propio ⇒ PLATÓ (la variante suelta se retiró): la
-      // salida al sur es la que enlaza con el exterior "millhaven".
-      stage: {
-        exits: [
-          { id: "salida_sur", edge: "south", to_place_id: "millhaven", zone: [6, 11, 3, 1], kind: "opening", label: "Salida al camino" },
-        ],
-      },
+      entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" }],
     };
+    // Sin ningún tile registrado ⇒ bootstrap: el player es obligatorio y el
+    // tile es jugable.
+    const ok = await post("/scene/validate", { scene: tile });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.ok, true, JSON.stringify(ok.body.errors));
+    assert.equal((ok.body.stats as { doors_total: number }).doors_total, 3);
 
-    // Place inexistente → error que instruye a crear el place.
-    const missing = await post("/scene/validate", { scene });
-    assert.equal(missing.status, 200);
-    assert.equal(missing.body.ok, false);
-    assert.ok((missing.body.errors as string[]).some((e) => e.includes("map_upsert_place")));
-
-    // Con place pero sin link saliente → error que instruye a enlazar.
-    await post("/map/place", { id: "millhaven_inn", kind: "interior", parent_id: "millhaven", name: "Posada" });
-    const unlinked = await post("/scene/validate", { scene });
-    assert.equal(unlinked.body.ok, false);
-    assert.ok((unlinked.body.errors as string[]).some((e) => e.includes("map_link")));
-
-    // Con link → jugable.
-    await post("/map/link", { from: "millhaven_inn", to: "millhaven", kind: "door" });
-    const linked = await post("/scene/validate", { scene });
-    assert.equal(linked.body.ok, true, JSON.stringify(linked.body.errors));
-    assert.equal((linked.body.stats as { border_reachable: boolean }).border_reachable, true);
+    // Una escena sin `tile` ya no es Format D: la suelta y el plató murieron.
+    const suelta = await post("/scene/validate", {
+      scene: { scene_id: "x", scene_description: "d", size: { cols: 4, rows: 3, meters_per_cell: 2 }, terrain: ["gggg", "gggg", "gggg"], entities: [] },
+    });
+    assert.equal(suelta.body.ok, false);
+    assert.ok((suelta.body.errors as string[]).some((e) => e.includes("`tile`")), JSON.stringify(suelta.body.errors));
   });
 
   it("POST /scene/validate sin scene → 400", async () => {

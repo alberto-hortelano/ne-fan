@@ -234,23 +234,23 @@ describe("generate_game", () => {
     assert.equal(bundle.ctx.sceneGen.current, null);
   });
 
-  it("games_listed expone el estado de generación por rama", async () => {
+  it("games_listed expone el estado de generación de la rama tile", async () => {
     const gamesDir = tmpGamesDir();
     try {
       const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
       motorFake(bundle);
       const before = makeSocket();
       await routeMessage({ type: "list_games", requestId: "l0" }, before.socket, bundle.ctx);
-      const listedBefore = before.sent[0] as { games: Array<{ game_id: string; generation: { tile: string; stage: string } }> };
+      const listedBefore = before.sent[0] as { games: Array<{ game_id: string; generation: { tile: string } }> };
       const gBefore = listedBefore.games.find((g) => g.game_id === GAME)!;
-      assert.deepEqual(gBefore.generation, { tile: "missing", stage: "missing" });
+      assert.deepEqual(gBefore.generation, { tile: "missing" });
 
       await runGenerate(bundle);
       const after = makeSocket();
       await routeMessage({ type: "list_games", requestId: "l1" }, after.socket, bundle.ctx);
       const listedAfter = after.sent[0] as typeof listedBefore;
       const gAfter = listedAfter.games.find((g) => g.game_id === GAME)!;
-      assert.deepEqual(gAfter.generation, { tile: "ready", stage: "missing" });
+      assert.deepEqual(gAfter.generation, { tile: "ready" });
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

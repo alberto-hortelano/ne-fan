@@ -44,59 +44,52 @@ describe("fronteras arquitectónicas", () => {
 
   // Probado en NEGATIVO contra la config real: sobre el árbol de hoy la regla
   // está verde, y una regla verde no demuestra nada por sí sola. El motor
-  // acepta `SourceFile[]` fabricados, así que se le enseña el import que la
+  // acepta `SourceFile[]` fabricados, así que se le enseña el texto que la
   // regla existe para cortar y se comprueba que salta con su línea.
-  it("[error] blueprint-no-importa-stage: salta con el import relativo al plató", () => {
+  //
+  // Este es el candado que HEREDA a `blueprint-no-importa-stage`: aquella
+  // regla prohibía a blueprint/** importar de stage/**, y se quedó sin sujeto
+  // cuando el directorio del plató dejó de existir. Lo que sí puede volver es
+  // el CAMPO, por copy-paste de un dump viejo — y eso es lo que se prueba.
+  it("[error] campos-retirados-no-vuelven: los campos del plató saltan donde reaparezcan", () => {
     const deLaRegla = (files: SourceFile[]) =>
-      checkArchitecture(config, files).filter((v) => v.ruleId === "blueprint-no-importa-stage");
+      checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
 
-    // Esto es LITERALMENTE lo que había en fps-ambience.ts hasta hoy.
-    const culpables = deLaRegla([
-      {
-        path: "nefan-core/src/scene/blueprint/fps-ambience.ts",
-        text: "",
-        imports: [{ spec: "../stage/greybox.js", line: 12 }],
-      },
-      {
-        path: "nefan-core/src/scene/blueprint/sub/hondo.ts",
-        text: "",
-        imports: [{ spec: "../../stage/schema.js", line: 3 }],
-      },
-      {
-        path: "nefan-core/src/scene/blueprint/con-alias.ts",
-        text: "",
-        imports: [{ spec: "@nefan-core/src/scene/stage/index.js", line: 7 }],
-      },
-    ]);
-    assert.deepEqual(
-      culpables.map((v) => `${v.path}:${v.line}`),
-      [
-        "nefan-core/src/scene/blueprint/con-alias.ts:7",
-        "nefan-core/src/scene/blueprint/fps-ambience.ts:12",
-        "nefan-core/src/scene/blueprint/sub/hondo.ts:3",
-      ],
-      "las tres formas de escribir la ruta del plató tienen que saltar igual",
-    );
-
-    // Y los vecinos legítimos, callados: la casa nueva de los helpers, el
-    // resto de blueprint, y la dirección BUENA (el plató importando del tile),
-    // que es justo la que este movimiento consolida.
+    // Literalmente lo que había hasta esta PR, en los tres procesos.
     assert.deepEqual(
       deLaRegla([
         {
-          path: "nefan-core/src/scene/blueprint/fps-ambience.ts",
-          text: "",
-          imports: [
-            { spec: "./footprint.js", line: 1 },
-            { spec: "./time-of-day.js", line: 2 },
-            { spec: "../greybox/common.js", line: 3 },
-            { spec: "../tile.js", line: 4 },
-          ],
+          path: "nefan-core/src/narrative/types.ts",
+          text: "interface LlmContext {\n  stage_request?: { bootstrap?: boolean };\n}\n",
+          imports: [],
         },
         {
-          path: "nefan-core/src/scene/stage/greybox.ts",
-          text: "",
-          imports: [{ spec: "../blueprint/footprint.js", line: 1 }],
+          path: "narrative-mcp/server.ts",
+          text: "const k = 'stage_review';\n",
+          imports: [],
+        },
+        {
+          path: "labs/narrative/fake-ai-server.mjs",
+          text: "// linea\n// otra\nif (body.stage_request) return plato();\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "labs/narrative/fake-ai-server.mjs:3",
+        "narrative-mcp/server.ts:1",
+        "nefan-core/src/narrative/types.ts:2",
+      ],
+      "el campo retirado tiene que saltar en cualquiera de los procesos escaneados",
+    );
+
+    // Y los vecinos inocentes, callados: un identificador que solo CONTIENE la
+    // palabra no es el campo (el patrón va con \b a los dos lados).
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/scene/tile.ts",
+          text: "const stage_requests_total = 0;\nconst reviewed = 'blueprint_review';\n",
+          imports: [],
         },
       ]),
       [],

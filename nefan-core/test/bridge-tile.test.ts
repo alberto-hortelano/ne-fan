@@ -99,36 +99,6 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.equal(narrative.getTile(1, 0)!.edges!.west.crossings[0]?.at, 41);
   });
 
-  it("map_plan_update persiste el plan revisado; uno inválido se rechaza sin tocar el record", async () => {
-    const { ctx, narrative } = makeCtx();
-    seedTile00(narrative);
-    const { socket } = makeSocket();
-    const ground = [{ id: "lago", kind: "water", rect: [20, 20, 10, 10] }];
-    const volumes = [{ id: "roble", label: "roble", type: "tree", at: [10, 10] }];
-    await routeMessage({ type: "map_plan_update", tx: 0, ty: 0, ground, volumes }, socket, ctx);
-    const rec = narrative.getTile(0, 0)!;
-    assert.deepEqual(rec.scene_data.ground, ground);
-    assert.deepEqual(rec.scene_data.volumes, volumes);
-    assert.equal(rec.scene_data.map_plan_reviewed, true);
-    // Un rasgo sin forma se rechaza entero y el persistido no cambia.
-    await routeMessage(
-      { type: "map_plan_update", tx: 0, ty: 0, ground: [{ id: "lago", kind: "water" }] },
-      socket,
-      ctx,
-    );
-    assert.deepEqual(narrative.getTile(0, 0)!.scene_data.ground, ground);
-    // Volumes inválidos (id duplicado) también se rechazan enteros.
-    await routeMessage(
-      { type: "map_plan_update", tx: 0, ty: 0, volumes: [...volumes, ...volumes] },
-      socket,
-      ctx,
-    );
-    assert.deepEqual(narrative.getTile(0, 0)!.scene_data.volumes, volumes);
-    // Tile no registrado: se ignora con warn, sin lanzar.
-    await routeMessage({ type: "map_plan_update", tx: 5, ty: 5, ground }, socket, ctx);
-    assert.ok(!narrative.hasTile(5, 5));
-  });
-
   it("un tile que no continúa los cruces del vecino se rechaza (red server-side)", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) }, // sin camino

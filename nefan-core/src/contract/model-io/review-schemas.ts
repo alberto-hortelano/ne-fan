@@ -1,5 +1,5 @@
 /** Fuente única (zod) de los kinds de VISIÓN/REVIEW del modelo:
- *  scene_classify, image_review, stage_review, blueprint_review. Reemplazan a
+ *  scene_classify, image_review, blueprint_review. Reemplazan a
  *  los validadores a mano de narrative-mcp/validators.ts (que el pre-flight
  *  usaba como gate). Las comprobaciones que dependen del CONTEXTO de la
  *  petición (índices/ids esperados) siguen en el wrapper de validators.ts; el
@@ -29,8 +29,10 @@ export const SceneClassifySchema = z.object({
   segments: z.array(SegmentSchema).describe("Una entrada por CADA índice del overlay, exactamente una vez"),
 });
 
-// ── extras (compartido por image_review y stage_review, con unidad de `h`
-//    distinta por vista: tile en celdas, plató en metros) ─────────────────────
+// ── extras de image_review: objetos que el modelo de imagen INVENTÓ sobre el
+//    tile repintado. `h` va en CELDAS del tile (el parámetro sobrevive al
+//    plató, que las medía en metros, porque la unidad es contrato del prompt
+//    y se lee en el `describe`). ────────────────────────────────────────────
 
 function extrasArray(hUnit: string) {
   const keep = z.object({
@@ -52,54 +54,6 @@ function extrasArray(hUnit: string) {
 
 export const ImageReviewSchema = z.object({
   extras: extrasArray("celdas (un personaje ≈ 3.6)"),
-});
-
-// ── stage_review ──────────────────────────────────────────────────────────
-
-const StageExpectedSchema = z
-  .object({
-    id: z.string().min(1),
-    status: z.enum(["found", "missing"]),
-    box_px: BoxPx.optional().describe("Caja REAL pintada; obligatoria si status=found"),
-  })
-  .superRefine((e, ctx) => {
-    if (e.status === "found" && e.box_px === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["box_px"], message: `expected "${e.id}" es found pero le falta box_px` });
-    }
-  });
-
-const StageFloorSchema = z
-  .object({
-    wall_base_px: z.number().finite().positive().describe("y donde el suelo transitable toca la pared del fondo"),
-    front_px: z.number().finite().optional().describe("y del borde delantero del suelo (opcional; debe ser > wall_base_px)"),
-    left_wall_px: z.number().finite().optional(),
-    right_wall_px: z.number().finite().optional(),
-    left_front_px: z.number().finite().optional(),
-    right_front_px: z.number().finite().optional(),
-  })
-  .superRefine((f, ctx) => {
-    if (f.front_px !== undefined && f.front_px <= f.wall_base_px) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["front_px"], message: "front_px debe ser mayor que wall_base_px (el frente está MÁS ABAJO en la imagen)" });
-    }
-    const keys = ["left_wall_px", "right_wall_px", "left_front_px", "right_front_px"] as const;
-    const present = keys.filter((k) => f[k] !== undefined);
-    if (present.length > 0 && present.length < keys.length) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["left_wall_px"], message: `el trapecio del suelo necesita los 4 (${keys.join(", ")}) o ninguno` });
-    }
-    if (present.length === keys.length) {
-      const lw = f.left_wall_px!, rw = f.right_wall_px!, lf = f.left_front_px!, rf = f.right_front_px!;
-      if (lw >= rw) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["left_wall_px"], message: "left_wall_px debe ser < right_wall_px" });
-      if (lf >= rf) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["left_front_px"], message: "left_front_px debe ser < right_front_px" });
-      if (rw - lw >= rf - lf) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["right_wall_px"], message: "el suelo debe converger hacia el fondo: (right_wall-left_wall) < (right_front-left_front)" });
-      }
-    }
-  });
-
-export const StageReviewSchema = z.object({
-  expected: z.array(StageExpectedSchema).describe("TODOS los ids de expected_elements, una vez cada uno"),
-  extras: extrasArray("metros").optional().describe("Objetos inventados no declarados; [] u omitido si ninguno"),
-  floor: StageFloorSchema.describe("Geometría del suelo pintado — calibra la perspectiva"),
 });
 
 // ── blueprint_review (referencia ground/volumes → NO entra en codegen de
@@ -135,5 +89,4 @@ export const BlueprintReviewSchema = z
 
 export type SceneClassify = z.infer<typeof SceneClassifySchema>;
 export type ImageReview = z.infer<typeof ImageReviewSchema>;
-export type StageReview = z.infer<typeof StageReviewSchema>;
 export type BlueprintReview = z.infer<typeof BlueprintReviewSchema>;

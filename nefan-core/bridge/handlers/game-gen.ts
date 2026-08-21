@@ -1,8 +1,8 @@
 /** Pre-generación del mundo de un juego (generate_game) en una sesión
  *  EFÍMERA, persistida como snapshot en data/games/{id}/world/{branch}.json —
- *  start_session lo replayea sin motor. Qué se pre-genera depende de la rama:
- *  en TILE, el bootstrap y su anillo 3×3 (los places se realizan al viajar a
- *  ellos); en STAGE, el plató inicial y los places clave, que ahí SON escenas.
+ *  start_session lo replayea sin motor. Se pre-genera el bootstrap y su
+ *  anillo 3×3; los places se realizan al VIAJAR a ellos, anclándolos a un
+ *  tile libre.
  *
  *  El job corre en la cola compartida (el motor narrativo atiende una
  *  petición a la vez) con la misma política anti-takeover que start_session:
@@ -37,16 +37,8 @@ import {
   type ClientSocket,
 } from "../context.js";
 import { generateBootstrapTileScene } from "./bootstrap-tile.js";
-import { generateBootstrapStageScene } from "./bootstrap-stage.js";
 import { generateTileScene } from "./tile.js";
-import { realizePlaceScene } from "./scene.js";
 import type { GenerateGameMessage } from "../../src/protocol/messages.js";
-import type { Place } from "../../src/world-map/types.js";
-
-/** Tope de places pre-realizados por job — acota la duración (cada realize es
- *  una llamada LLM de minutos). Lo que quede fuera se REPORTA en el status
- *  final, nunca se omite en silencio. */
-const MAX_PREREALIZED_PLACES = 8;
 
 /** Anillo 3×3 alrededor del tile (0,0), en orden de lectura. */
 const RING: Array<[number, number]> = [
@@ -70,6 +62,11 @@ export async function handleGenerateGame(
     const view = msg.view || meta.view || "overworld";
     if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
       throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
+    }
+    if (view === "proscenium") {
+      throw new Error(
+        'la vista "proscenio" (plató) se retiró: no hay mundo de platós que pre-generar',
+      );
     }
     branch = branchForView(view);
   } catch (err) {
@@ -106,7 +103,6 @@ export async function handleGenerateGame(
 /** Vistas cuyo contenido cuelga de una rama de snapshot. */
 const VIEWS_BY_BRANCH: Record<WorldBranch, string[]> = {
   tile: ["overworld", "fps"],
-  stage: ["proscenium"],
 };
 
 /** Un snapshot NUEVO invalida las aplicaciones de estilo de su rama: sus
@@ -140,21 +136,6 @@ async function invalidateStyleApplications(
   }
 }
 
-/** Places clave aún sin escena: todo lo realizable por el jugador (se excluye
- *  la jerarquía alta world/region, que nunca se realiza). */
-function pickKeyPlaces(ctx: BridgeContext): { picked: Place[]; skipped: Place[] } {
-  const candidates = Object.values(ctx.narrative.worldMap.map.places).filter(
-    (p) =>
-      p.kind !== "world" &&
-      p.kind !== "region" &&
-      !(p.realized_scene_id && ctx.narrative.scenes_loaded[p.realized_scene_id]),
-  );
-  return {
-    picked: candidates.slice(0, MAX_PREREALIZED_PLACES),
-    skipped: candidates.slice(MAX_PREREALIZED_PLACES),
-  };
-}
-
 /** Corre DENTRO de la cola. Cada sub-paso (tile vecino, place) captura su
  *  error y se reporta en el resumen final: un vecino fallido no tira la
  *  génesis entera — el snapshot se escribe con lo que sí se generó. */
@@ -176,12 +157,7 @@ export async function runGameGeneration(
   try {
     const meta = loadGameMeta(ctx.gamesDir, gameId);
     const style = loadStyleManifest(ctx.stylesDir, meta.style_id);
-    const view =
-      branch === "stage"
-        ? "proscenium"
-        : meta.view && branchForView(meta.view) === "tile"
-          ? meta.view
-          : "overworld";
+    const view = meta.view && branchForView(meta.view) === "tile" ? meta.view : "overworld";
     status("generating", `Generando el mundo de ${meta.title}: mapa y escena inicial...`);
 
     // Sesión EFÍMERA: las map tools del motor (State API) escriben en
@@ -208,46 +184,25 @@ export async function runGameGeneration(
     ctx.activePlugins = activatePluginsForNewSession(ctx.narrative, manifests);
     await ctx.aiClient.notifySessionStart(ephemeralSession, gameId, false);
 
-    const { sceneId: entrySceneId } =
-      branch === "stage"
-        ? await generateBootstrapStageScene(ctx, gameId, { generateVocabulary: true })
-        : await generateBootstrapTileScene(ctx, gameId, { generateVocabulary: true });
+    const { sceneId: entrySceneId } = await generateBootstrapTileScene(ctx, gameId, {
+      generateVocabulary: true,
+    });
 
+    // La pre-generación es el anillo 3×3 y nada más. Los places se realizan al
+    // VIAJAR a ellos, anclándolos a un tile; pre-realizarlos producía escenas
+    // sueltas, que ya no existen.
     const failures: string[] = [];
-    const skipped: Array<{ id: string; name: string }> = [];
-    if (branch === "tile") {
-      // Mundo de plano continuo: la pre-generación es el anillo 3×3 y nada
-      // más. Los places se realizan al VIAJAR a ellos, anclándolos a un tile;
-      // pre-realizarlos aquí producía escenas sueltas, que ya no existen.
-      for (let i = 0; i < RING.length; i++) {
-        const [tx, ty] = RING[i];
-        status("progress", `Generando el anillo de tiles (${i + 1}/${RING.length})...`);
-        try {
-          await generateTileScene(ctx, tx, ty);
-        } catch (err) {
-          const msg = (err as Error).message ?? String(err);
-          // Un takeover de sesión aborta el job entero, no solo el tile.
-          if (msg.includes("la sesión activa cambió")) throw err;
-          console.warn(`Bridge: gamegen tile (${tx},${ty}) falló:`, err);
-          failures.push(`tile (${tx},${ty}): ${msg}`);
-        }
-      }
-    } else {
-      // Proscenio: cada place ES un plató discreto, así que pre-realizar los
-      // principales ahorra la espera del motor en la primera visita.
-      const keyPlaces = pickKeyPlaces(ctx);
-      skipped.push(...keyPlaces.skipped);
-      for (let i = 0; i < keyPlaces.picked.length; i++) {
-        const place = keyPlaces.picked[i];
-        status("progress", `Generando ${place.name} (${i + 1}/${keyPlaces.picked.length})...`);
-        try {
-          await realizePlaceScene(ctx, place.id, { activate: false });
-        } catch (err) {
-          const msg = (err as Error).message ?? String(err);
-          if (msg.includes("la sesión activa cambió")) throw err;
-          console.warn(`Bridge: gamegen place "${place.id}" falló:`, err);
-          failures.push(`${place.name}: ${msg}`);
-        }
+    for (let i = 0; i < RING.length; i++) {
+      const [tx, ty] = RING[i];
+      status("progress", `Generando el anillo de tiles (${i + 1}/${RING.length})...`);
+      try {
+        await generateTileScene(ctx, tx, ty);
+      } catch (err) {
+        const msg = (err as Error).message ?? String(err);
+        // Un takeover de sesión aborta el job entero, no solo el tile.
+        if (msg.includes("la sesión activa cambió")) throw err;
+        console.warn(`Bridge: gamegen tile (${tx},${ty}) falló:`, err);
+        failures.push(`tile (${tx},${ty}): ${msg}`);
       }
     }
 
@@ -255,12 +210,6 @@ export async function runGameGeneration(
     await invalidateStyleApplications(ctx, gameId, branch);
     const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
     const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas (rama ${branch}).`];
-    if (skipped.length) {
-      parts.push(
-        `Places sin pre-generar (tope ${MAX_PREREALIZED_PLACES}): ` +
-          skipped.map((p) => p.name).join(", ") + " — se generarán al visitarlos.",
-      );
-    }
     if (failures.length) {
       parts.push(`Fallos parciales (se generarán en partida): ${failures.join(" · ")}`);
     }

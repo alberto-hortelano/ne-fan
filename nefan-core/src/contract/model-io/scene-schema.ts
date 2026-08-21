@@ -6,16 +6,16 @@
  *  así que un error de forma del modelo nunca volvía al modelo. Este schema lo
  *  valida en el pre-flight MCP y devuelve el error preciso para re-responder.
  *
- *  Alcance: FORMA estructural (entities, size, terrain, legend, tile, biome) +
- *  las sub-partes tipadas (ground/volumes/stage reutilizan su propio zod). La
- *  JUGABILIDAD (flood-fill, alcanzabilidad, costuras de tile, exits de plató)
- *  la sigue validando scene-validate.ts; aquí no se duplica.
+ *  Alcance: FORMA estructural (entities, tile, biome) + las sub-partes
+ *  tipadas (ground/volumes reutilizan su propio zod). La JUGABILIDAD
+ *  (flood-fill, alcanzabilidad, costuras de tile) la sigue validando
+ *  scene-validate.ts; aquí no se duplica.
  *
- *  Format D tiene DOS variantes y este schema es su candado: `tile` (mundo
- *  continuo) o `stage` (proscenio). La tercera —la escena "suelta", con
- *  `size`/`terrain` a elección del motor y sin sitio en el plano— se retiró
- *  (issue #172): una escena sin ninguna de las dos es un error de contrato,
- *  no una escena pequeña.
+ *  Format D tiene UNA variante y este schema es su candado: el `tile` del
+ *  mundo continuo. La "suelta" (`size`/`terrain` a elección del motor, sin
+ *  sitio en el plano) se retiró con el issue #172, y el `stage` proscenio con
+ *  la vista que lo pintaba: una escena sin `tile` es un error de contrato, no
+ *  una escena pequeña.
  *
  *  `.passthrough()` a propósito en scene y entity: campos legacy/retirados
  *  (room_id, style_tag, exits, ambient_event…) NO deben
@@ -25,7 +25,6 @@
 import { z } from "zod";
 import { GroundSchema } from "../../scene/blueprint/ground.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
-import { StageBlockSchema } from "../../scene/stage/schema.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -74,59 +73,35 @@ export const FormatDSceneSchema = z
     terrain_legend: TerrainLegendSchema.optional(),
     ground: GroundSchema.optional(),
     volumes: VolumesSchema.optional(),
-    stage: StageBlockSchema.optional(),
     entities: z.array(EntitySchema),
   })
   .passthrough()
   .superRefine((s, ctx) => {
-    const isTile = s.tile !== undefined;
-    if (isTile) {
-      // Un tile NO lleva size/terrain (la base es biome + primitivas; el
-      // engine sintetiza el grid). Es exactamente lo que prepareTileBase exige.
-      if (s.size !== undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["size"], message: "un tile no lleva `size` (la base es `biome` + primitivas)" });
-      }
-      if (Array.isArray(s.terrain) && s.terrain.length > 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: "un tile no lleva grid `terrain` completo (usa `biome` + `ground`/`volumes`)" });
-      }
-      if (s.biome === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
-      }
-    } else {
-      // CANDADO de la variante retirada: Format D tiene DOS formas y ninguna
-      // más. Sin `tile` (mundo continuo) y sin `stage` (proscenio) la escena
-      // era la "suelta" — size/terrain a elección del motor, sin sitio en el
-      // mundo y sin salidas declaradas. El error va en la RAÍZ y nombra las
-      // dos alternativas: el pre-flight de narrative-mcp se lo devuelve al
-      // modelo para que re-responda con la que toca.
-      if (s.stage === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [],
-          message:
-            "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) " +
-            "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe",
-        });
-      }
-      // Escena/plató: el grid es la base y es OBLIGATORIO. size y terrain van
-      // juntos y las filas deben cuadrar EXACTAMENTE (antes el saneador Python
-      // rellenaba/truncaba en silencio — la causa de mapas deformados).
-      if (s.size === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["size"], message: "una escena (no tile) necesita `size` {cols, rows, meters_per_cell}" });
-      }
-      if (s.terrain === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: "una escena (no tile) necesita el grid `terrain`" });
-      }
-      if (s.size && Array.isArray(s.terrain)) {
-        if (s.terrain.length !== s.size.rows) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: `terrain tiene ${s.terrain.length} filas pero size.rows=${s.size.rows}` });
-        }
-        s.terrain.forEach((row, i) => {
-          if (row.length !== s.size!.cols) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain", i], message: `terrain[${i}] tiene ${row.length} chars pero size.cols=${s.size!.cols}` });
-          }
-        });
-      }
+    // CANDADO de las variantes retiradas: Format D tiene UNA forma y ninguna
+    // más. Sin `tile` la escena era la "suelta" (size/terrain a elección del
+    // motor, sin sitio en el mundo) o el `stage` proscenio. El error va en la
+    // RAÍZ: el pre-flight de narrative-mcp se lo devuelve al modelo para que
+    // re-responda con la que toca.
+    if (s.tile === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message:
+          "una escena necesita `tile` {tx,ty}: es la única variante de Format D " +
+          "(mundo continuo, pídela con generate_tile)",
+      });
+      return;
+    }
+    // Un tile NO lleva size/terrain (la base es biome + primitivas; el engine
+    // sintetiza el grid). Es exactamente lo que prepareTileBase exige.
+    if (s.size !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["size"], message: "un tile no lleva `size` (la base es `biome` + primitivas)" });
+    }
+    if (Array.isArray(s.terrain) && s.terrain.length > 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: "un tile no lleva grid `terrain` completo (usa `biome` + `ground`/`volumes`)" });
+    }
+    if (s.biome === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
     }
   });
 

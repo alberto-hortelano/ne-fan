@@ -94,10 +94,6 @@ export interface NefanConfig {
     /** Meshy image-to-image model for scene generation (best top-down:
      *  nano-banana-pro). Also valid: nano-banana, nano-banana-2, gpt-image-2. */
     scene_model: string;
-    /** Modelo del repintado del PLATÓ proscenio (greybox clay → imagen), vía
-     *  fal directo. gpt-image-2 = mayor fidelidad de layout del bench
-     *  labs/escenografia/greybox. */
-    stage_scene_model: string;
     /** Meshy image-to-image model for character sprite skinning (hero-shot +
      *  atlas de keyframes por anim×dir — pipeline validado en labs/skinning;
      *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
@@ -201,10 +197,6 @@ export const CONFIG: NefanConfig = {
     // 9 cr Meshy / $0.15 fal). gpt-image-2 se queda para las skins de
     // personaje (calidad de model sheet, sin requisito de layout).
     scene_model: "nano-banana-pro",
-    // Plató proscenio: la base es un render 3D clay (greybox) y ahí gana
-    // gpt-image-2 (bench labs/escenografia/greybox run 001: máxima fidelidad
-    // de layout conservando luz y hora). Vía fal directo, sin Meshy.
-    stage_scene_model: "gpt-image-2",
     sprite_skin_model: "gpt-image-2",
     // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
     // para las celdas tileables (cohesión pintada a mano) y gpt-image-2 para

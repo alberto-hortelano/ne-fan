@@ -80,13 +80,21 @@ class GpuWorkerAppTest(unittest.TestCase):
         self.assertIn("plate_inpainter", r.json()["detail"])
 
     def test_bad_base64_is_400(self):
-        # peel decodifica ANTES de mirar backends: el 400 gana al 503.
-        r = self.client.post(
-            "/peel_scene_layer",
-            json={"image_b64": "no es base64!!", "mask_b64": "aGk=", "prompt": "x"},
-        )
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("invalid base64", r.json()["detail"])
+        # Re-anclado: el único ejercicio de `decode_b64_png` colgaba de
+        # /peel_scene_layer (pelado del plató), que decodificaba ANTES de mirar
+        # backends. Ese endpoint murió con el proscenio, pero el decodificador
+        # lo comparten cinco routers y su fail-loud sigue siendo contrato: un
+        # base64 roto es 400, nunca una imagen vacía en silencio.
+        from fastapi import HTTPException
+
+        from request_util import decode_b64_png
+
+        self.assertEqual(decode_b64_png("aGk="), b"hi")
+        self.assertEqual(decode_b64_png("data:image/png;base64,aGk="), b"hi")
+        with self.assertRaises(HTTPException) as cm:
+            decode_b64_png("no es base64!!")
+        self.assertEqual(cm.exception.status_code, 400)
+        self.assertIn("invalid base64", cm.exception.detail)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,6 @@ from narrative_schemas import (  # noqa: E402
     validate_volumes,
     validate_narrative_reaction,
     validate_scene_classify_response,
-    validate_stage,
-    validate_stage_review,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "nefan-core" / "data" / "contract" / "fixtures"
@@ -58,25 +56,9 @@ def accepts_classify(payload, expected_indices) -> bool:
     return validate_scene_classify_response(payload, expected_indices) is not None
 
 
-def accepts_stage_review(payload, expected_ids) -> bool:
-    try:
-        validate_stage_review(payload, expected_ids)
-        return True
-    except ValueError:
-        return False
-
-
 def accepts_image_review(payload) -> bool:
     try:
         validate_image_review(payload)
-        return True
-    except ValueError:
-        return False
-
-
-def accepts_stage(payload) -> bool:
-    try:
-        validate_stage(payload["stage"])
         return True
     except ValueError:
         return False
@@ -108,18 +90,8 @@ class TestContractFixtures(unittest.TestCase):
             lambda fx: accepts_classify(fx["payload"], fx.get("expected_indices")),
         )
 
-    def test_stage_review(self):
-        self._run(
-            "stage_review",
-            lambda fx: accepts_stage_review(fx["payload"], fx.get("expected_ids")),
-        )
-
     def test_image_review(self):
         self._run("image_review", lambda fx: accepts_image_review(fx["payload"]))
-
-    def test_stage(self):
-        """Bloque stage de proscenio: espejo de parseStage (nefan-core, zod)."""
-        self._run("stage", lambda fx: accepts_stage(fx["payload"]))
 
     def test_ground_plan(self):
         """Plan de suelo declarativo: espejo de parseGround (nefan-core, zod)."""

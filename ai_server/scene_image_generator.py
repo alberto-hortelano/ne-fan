@@ -74,13 +74,8 @@ class SceneImageGenerator:
         self,
         style_image_path: str,
         model: str = "nano-banana-pro",
-        stage_model: str = "gpt-image-2",
     ):
         self._model = model
-        #: Modelo del repintado del PLATÓ (greybox clay → imagen), vía fal
-        #: DIRECTO (sin Meshy): gpt-image-2 dio la mayor fidelidad de layout
-        #: del bench labs/escenografia/greybox sobre bases clay.
-        self._stage_model = stage_model
         self._meshy = MeshyImageToImage()  # reads MESHY_API_KEY
         self._style_path = Path(style_image_path)
         if not self._style_path.exists():
@@ -89,7 +84,7 @@ class SceneImageGenerator:
         style = Image.open(self._style_path).convert("RGB")
         self._style_uri = _to_data_uri(style, "JPEG", long_side=1024)
         print(
-            f"SceneImageGen: Meshy '{model}' / stage fal '{stage_model}', "
+            f"SceneImageGen: Meshy '{model}', "
             f"style={self._style_path.name}",
             flush=True,
         )
@@ -127,35 +122,6 @@ class SceneImageGenerator:
             SPEND.add(MeshyImageToImage.cost_usd(self._model), prompt[:60], "remote-gen")
         return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
 
-    def _run_stage(
-        self, prompt: str, refs: list[str], aspect: tuple[int, int] | None = None
-    ) -> tuple[bytes, dict]:
-        """Repintado del plató: fal DIRECTO con el modelo de plató (gpt-image-2
-        high tarda 200-300 s; el resultado queda cacheado por layout_key).
-        Canal DEV_API_CACHE propio para no contaminar el de Meshy."""
-        from dev_api_cache import DEV_API_CACHE
-        from meshy_client import FalImageToImage
-        from spend_tracker import SPEND
-
-        task_holder: list[dict] = []
-
-        def _call() -> list[bytes]:
-            fal = FalImageToImage()  # lee FAL_KEY; sin ella, error visible
-            png, task = asyncio.run(
-                fal.run_one(prompt, refs, ai_model=self._stage_model, aspect=aspect)
-            )
-            task_holder.append(task)
-            return [png]
-
-        blobs, cached = DEV_API_CACHE.through_sync("fal_i2i_stage", _call, note=prompt)
-        if not cached:
-            SPEND.add(
-                FalImageToImage.COST_USD.get(self._stage_model, 0.17),
-                prompt[:60],
-                "remote-gen",
-            )
-        return blobs[0], (task_holder[0] if task_holder else {"dev_api_cache": True})
-
     def generate_full(
         self,
         schematic_png_bytes: bytes,
@@ -179,20 +145,14 @@ class SceneImageGenerator:
         # obliga al modelo a un estiramiento anamórfico que desalinea las
         # huellas (~45 puntos de fidelidad con gpt2; con nano-banana-pro el
         # prestretch dio el mejor caso del bench: 100% edificios, 0 inventos).
-        # EXCEPCIÓN stage (greybox v3): el clay llega a su aspect NATIVO
-        # (spec.render_px) y gpt-image-2 vía fal SÍ respeta `aspect` — el
-        # modelo pinta sin deformación y el cliente normaliza a su cuadrado al
-        # recibir (fetchToSquare). Estirarlo aquí reintroduciría el anamórfico
-        # ×2 que arruinaba la composición (dos casetas en un campo).
-        if blueprint_kind != "stage":
-            side = max(sch.size)
-            if sch.size != (side, side):
-                sch = sch.resize((side, side), Image.LANCZOS)
+        side = max(sch.size)
+        if sch.size != (side, side):
+            sch = sch.resize((side, side), Image.LANCZOS)
         if blueprint_kind == "tile":
             # Tile oblicuo: la base es un RENDER 3D GREYBOX (clay cenital con
             # cizalla oblicua y sol fijo desde el sur — bench labs/render E2a,
             # fidelidad 100/100). La geometría y la LUZ ya son correctas y hay
-            # que conservarlas EXACTAS (preámbulo KEEP del stage), con el
+            # que conservarlas EXACTAS (preámbulo KEEP), con el
             # lenguaje de proyección heredado del pipeline SVG anterior; el
             # REPINTADO total hay que exigirlo o el modelo devuelve el clay
             # casi tal cual. Specs negativas contra las invenciones observadas.
@@ -250,57 +210,6 @@ class SceneImageGenerator:
                 + _VOID_RULES
                 + _STYLE_RULES
             )
-        elif blueprint_kind == "stage":
-            # Vista proscenio: la base es un RENDER 3D GREYBOX (clay iluminado
-            # con cámara a nivel de ojo, bench labs/escenografia/greybox) — la
-            # composición, la perspectiva y la LUZ ya son correctas y hay que
-            # conservarlas EXACTAS (preámbulo KEEP del bench). PROHIBIDO
-            # cualquier vocabulario teatral (stage/wings/backdrop/plató): el
-            # modelo lo convierte en cortinas y marcos de escenario — la
-            # imagen debe ser una escena normal que llena TODO el encuadre.
-            # OJO: sin pack de estilo NO se pasa la referencia global (es un
-            # battlemap CENITAL y arrastra al modelo a pintar desde arriba).
-            stage_has_style_ref = style_ref_uri is not None
-            style_clause = (
-                "in the painterly, richly textured style of the SECOND "
-                "reference image"
-                if stage_has_style_ref
-                else "in a rich, painterly, hand-drawn illustration style"
-            )
-            instruction = (
-                "Fully repaint this exact scene as a finished illustration "
-                f"{style_clause}. The FIRST reference image is an untextured 3D "
-                "blockout render (flat clay surfaces with correct perspective "
-                "and lighting) — it is NOT final art, but its GEOMETRY is the "
-                "truth: keep the composition, the camera angle, the "
-                "perspective, the horizon height, the position and silhouette "
-                "of every volume, and the lighting direction EXACTLY as in the "
-                "reference. Ground-level view, NOT a top-down map. Replace the "
-                "flat placeholder surfaces with fully detailed, textured "
-                "materials: floor with wear, grain and colour variation; walls "
-                "and props with material detail, highlights and soft contact "
-                "shadows; a background with atmosphere and depth. The finished "
-                "image must NOT look flat, vector-like or 3D-render-like "
-                "anywhere. "
-                "The scene must FILL the entire frame edge to edge, as a normal "
-                "painting of a real place: NO borders, NO black side bands, NO "
-                "curtains, NO vignettes, NO letterboxing, NO picture frame — the "
-                "world simply continues past the edges of the image. "
-                "Keep every element in the SAME position, size, shape and height. "
-                "Do NOT move, remove, merge or duplicate objects. Do NOT invent "
-                "new objects, buildings, doors or windows that are not in the plan. "
-                f"Render the scene as: {prompt.strip()}. "
-                "Give the background and sky depth and atmosphere consistent "
-                "with the scene description (time of day, weather, mood). "
-                "CONVENTIONAL LIGHTING ONLY: keep the light direction of the "
-                "blockout — the scene is lit from the camera side; NEVER "
-                "backlight the set, no sun glow or bright sky burning behind "
-                "the buildings, no silhouettes (characters are composited "
-                "later and must sit in the same light). "
-                + (f"Overall art direction: {style_token.strip()}. " if style_token else "")
-                + (_STYLE_ROLE_RULES if stage_has_style_ref else "")
-                + _STYLE_RULES
-            )
         else:
             instruction = (
                 "Top-down 2D RPG game map, flat overhead view. Use the FIRST reference "
@@ -327,22 +236,12 @@ class SceneImageGenerator:
                 "edges of your output, and paint everything else so it continues "
                 "them with no visible seam (same palette, same ground texture)."
             )
-        # Stage sin pack: solo el blueprint (la ref global es un battlemap
-        # cenital y contamina la vista lateral). El clay del stage viaja a
-        # resolución completa (1280 — con el default 768 el modelo perdía el
-        # detalle fino del blockout). El resto, como siempre.
-        clay_long_side = 1280 if blueprint_kind == "stage" else 768
-        refs = (
-            [_to_data_uri(sch, "PNG", long_side=clay_long_side)]
-            if blueprint_kind == "stage" and style_ref_uri is None
-            else [
-                _to_data_uri(sch, "PNG", long_side=clay_long_side),
-                style_ref_uri or self._style_uri,
-            ]
-        )
+        refs = [
+            _to_data_uri(sch, "PNG", long_side=768),
+            style_ref_uri or self._style_uri,
+        ]
         start = time.perf_counter()
-        run = self._run_stage if blueprint_kind == "stage" else self._run
-        png, res = run(instruction, refs, aspect=sch.size)
+        png, res = self._run(instruction, refs, aspect=sch.size)
         dt = time.perf_counter() - start
         w, h = Image.open(io.BytesIO(png)).size
         print(

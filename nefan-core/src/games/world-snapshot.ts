@@ -4,9 +4,9 @@
  *
  *  El contenido es 100% independiente del ESTILO visual: su clave de
  *  invalidación es `world_doc_hash` (editar world.md lo deja stale) más la
- *  RAMA de vista — "tile" (plano continuo, sirve a overworld Y fps) o
- *  "stage" (platós proscenio). Los assets de imagen por estilo se registran
- *  aparte (`world/styles/`), nunca aquí.
+ *  RAMA de contenido, hoy solo "tile" (el plano continuo, que sirve a
+ *  overworld Y fps: la rama "stage" murió con el plató proscenio). Los
+ *  assets de imagen por estilo se registran aparte (`world/styles/`).
  *
  *  Lo escriben el bootstrap vivo (pasivamente, al terminar) y el job
  *  `generate_game` (anillo 3×3 + places clave); lo consume `start_session`
@@ -22,11 +22,11 @@ import { SAFE_ID, loadWorldDoc } from "./loader.js";
 import type { WorldMap } from "../world-map/types.js";
 
 /** Ramas de contenido: la vista fps comparte los tiles del overworld. */
-export const WORLD_BRANCHES = ["tile", "stage"] as const;
+export const WORLD_BRANCHES = ["tile"] as const;
 export type WorldBranch = (typeof WORLD_BRANCHES)[number];
 
-export function branchForView(view: string): WorldBranch {
-  return view === "proscenium" ? "stage" : "tile";
+export function branchForView(_view: string): WorldBranch {
+  return "tile";
 }
 
 export const WORLD_SNAPSHOT_SCHEMA_VERSION = 1;
@@ -146,18 +146,15 @@ export function deleteWorldSnapshot(
 export function gameGenerationStatus(
   gamesDir: string,
   gameId: string,
-): { tile: "ready" | "stale" | "missing"; stage: "ready" | "stale" | "missing" } {
+): { tile: "ready" | "stale" | "missing" } {
   try {
     const hash = createHash("sha256")
       .update(loadWorldDoc(gamesDir, gameId), "utf-8")
       .digest("hex");
-    return {
-      tile: worldSnapshotStatus(gamesDir, gameId, "tile", hash),
-      stage: worldSnapshotStatus(gamesDir, gameId, "stage", hash),
-    };
+    return { tile: worldSnapshotStatus(gamesDir, gameId, "tile", hash) };
   } catch (err) {
     console.warn(`gameGenerationStatus("${gameId}"): ${(err as Error).message}`);
-    return { tile: "stale", stage: "stale" };
+    return { tile: "stale" };
   }
 }
 
