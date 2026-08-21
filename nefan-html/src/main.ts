@@ -28,9 +28,9 @@ import {
 } from "@nefan-core/src/scene/stage/index.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
-import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan, type Entity } from "./renderer/canvas-renderer.js";
+import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan } from "./renderer/canvas-renderer.js";
 import { rendererRegistry } from "./renderer/registry.js";
-import type { Renderer2D } from "./renderer/renderer2d.js";
+import type { Entity, Renderer2D } from "./renderer/renderer2d.js";
 import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
@@ -491,7 +491,6 @@ function applySessionView(view: string): void {
       prosceniumRenderer = rendererRegistry.create("proscenium", {
         canvas,
         spriteRenderer,
-        oblique: renderer,
       }) as ProsceniumRenderer;
       // Palanca dev del clamp de escala por profundidad (?minscale=0.4).
       const minScale = parseFloat(new URLSearchParams(location.search).get("minscale") ?? "");
@@ -514,7 +513,6 @@ function applySessionView(view: string): void {
       fpsRenderer = rendererRegistry.create("fps", {
         canvas,
         spriteRenderer,
-        oblique: renderer,
       }) as FpsRenderer;
       // Overlay B "colisión": muestreo del CollisionSystem (fuente única de
       // verdad, incluye imagen/plan/AABBs) por celda de 0.5 m del tile.

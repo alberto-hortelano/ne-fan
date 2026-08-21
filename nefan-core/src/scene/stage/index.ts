@@ -29,8 +29,6 @@ export {
   buildGreyboxSpec,
   expectedElementsFromGreybox,
   canonicalGreyboxJson,
-  volumeHeightM,
-  volumeFootprintCells,
   STAGE_GREYBOX_VERSION,
   GREYBOX_EYE_M,
   type GreyboxSpec,

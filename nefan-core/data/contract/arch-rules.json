@@ -253,6 +253,20 @@
       }
     },
     {
+      "id": "blueprint-no-importa-stage",
+      "desc": "El plan del tile (scene/blueprint) no importa nada del plató (scene/stage)",
+      "why": "El tile es la ÚNICA variante viva de Format D y la vista fps se construye sobre él; el plató se retira. Mientras un módulo de blueprint importe de stage, borrar el plató arrastra a la fps con él — que es exactamente lo que pasaba: fps-ambience.ts sacaba la hora del día y la huella de los volúmenes del builder del proscenio, y ese único arco mantenía vivas sus 1.467 líneas. La dirección correcta ya era la contraria (stage/greybox.ts delega en blueprint/footprint.ts y blueprint/collision.ts); esto la fija. El patrón es `(^|/)stage/` y no `scene/stage/` a propósito: dentro del paquete los imports son RELATIVOS (`../stage/greybox.js`), y una regla anclada a `scene/stage/` no habría visto jamás el arco que esta regla existe para cortar.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/scene/blueprint/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "(^|/)stage/"
+        ]
+      }
+    },
+    {
       "id": "godot-no-convierte-celdas-a-metros",
       "desc": "Ningún .gd interpreta Format D crudo (terrain_legend / meters_per_cell)",
       "why": "El bridge normaliza con formatDToWorld y Godot pinta world scene en metros. Si Godot porta la conversión hay dos formatos que mantener y divergirán.",

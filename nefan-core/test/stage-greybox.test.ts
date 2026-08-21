@@ -5,14 +5,13 @@ import {
   buildGreyboxSpec,
   canonicalGreyboxJson,
   expectedElementsFromGreybox,
-  volumeHeightM,
-  volumeFootprintCells,
   GREYBOX_EYE_M,
   STAGE_GREYBOX_VERSION,
   type GreyboxSpec,
   type StageScenePlan,
 } from "../src/scene/stage/greybox.js";
 import { volumeSolidDiscRadiusCells } from "../src/scene/blueprint/collision.js";
+import { volumeFootprintCells, volumeHeightM } from "../src/scene/blueprint/volume-metrics.js";
 import { composeStageScene } from "../src/scene/stage/scene.js";
 import { stageToViewAt, stageToView } from "../src/scene/stage/projection.js";
 import { STAGE_RENDER_SIZE } from "../src/scene/stage/segments.js";

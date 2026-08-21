@@ -42,9 +42,8 @@ import {
 } from "@nefan-core/src/scene/stage/index.js";
 import type { StageProjParams } from "@nefan-core/src/scene/stage/index.js";
 import { spritePitchCos, type SpriteRenderer } from "./sprite-renderer.js";
-import type { Entity } from "./canvas-renderer.js";
 import type { StageImages, StageCutout } from "../scene/stage-image.js";
-import type { AttackAreaParams, PlayerView, Renderer2D } from "./renderer2d.js";
+import type { AttackAreaParams, Entity, PlayerView, Renderer2D } from "./renderer2d.js";
 import { errors } from "../ui/error-log.js";
 
 /** Encuadre ortho 2.4 del renderer Godot (metros de plano de imagen por

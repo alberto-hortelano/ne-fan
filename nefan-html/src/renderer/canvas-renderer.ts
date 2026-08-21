@@ -17,6 +17,7 @@ import { spritePitchCos, type SpriteRenderer } from "./sprite-renderer.js";
 import type { AssetCache } from "./asset-cache.js";
 import { errors } from "../ui/error-log.js";
 import { VIEW_PROJECTION, type ViewProjection, type ViewRect } from "./projection.js";
+import type { Entity } from "./renderer2d.js";
 
 export interface SceneData {
   /** Acepta `scene_id` o el legado `room_id` por compatibilidad de saves antiguos. */
@@ -159,54 +160,6 @@ const MAX_BAKED_LAYERS = 24;
  *  (items 0.5, decor 0.5, props 1) se pinta plana antes que las entidades —
  *  clutter de suelo donde la oclusión imperfecta es imperceptible. */
 const PRISM_OCCLUDER_MIN_H = 1.2;
-
-export interface Entity {
-  id: string;
-  pos: Vec3;
-  forward?: Vec3;
-  radius: number;
-  color: string;
-  label: string;
-  hp?: number;
-  maxHp?: number;
-  alive: boolean;
-  attacking?: boolean;
-  /** Tipo de ataque en curso (del sim) — selecciona la anim del sprite. */
-  attackType?: string;
-  /** Descripción narrativa usada como prompt del skin IA del sprite. */
-  skinPrompt?: string;
-  /** Rol de estilo del skin ("commoner"|"noble"|"warrior", styleRoleForNpc):
-   *  decide qué ref character_* del pack guía el hero-shot. */
-  styleRole?: string;
-  /** Anim pedida por la vida ambiental (state_update.npcs[].anim). */
-  requestedAnim?: string;
-  /** true mientras el NPC huye (state_update.npcs[].run) → anim run. */
-  npcRun?: boolean;
-  /** Tile del que procede el NPC (clave del scene data que lo declaró) —
-   *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
-  tileKey?: string;
-  /** true = estático declarado en el scene data (no un spawn dinámico). En
-   *  proscenio con imagen instalada, los declarados SIN capa del compositor
-   *  no pintan caja esquemática (el repintado ya vistió su zona). */
-  sceneDeclared?: boolean;
-  name?: string;
-  /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
-  category?: string;
-  /** Footprint in metres on the XZ plane, taken from the scene JSON `scale`.
-   *  Falls back to a square based on `radius` when not set. */
-  sizeXZ?: { x: number; z: number };
-  /** Altura en metros (scale[1] de la world scene) — extrusión del prisma en
-   *  el schematic y umbral de entrada al depth-sort (edificios/árboles). */
-  sizeY?: number;
-  /** Pista de forma para el schematic: box (rect) | cylinder/sphere (círculo) |
-   *  cone (triángulo). Ausente → rectángulo (o rombo si category==="item"). */
-  shape?: string;
-  /** Optional Mixamo character reference: when set and SpriteRenderer has the
-   *  matching sheet cached, the entity is drawn as a sprite instead of a circle. */
-  sprite?: { model: string; anim: string; angle: string; animStartedAt?: number };
-  /** AI-generated sprite hash (objects/buildings) served from /cache/sprite/{hash}. */
-  spriteHash?: string;
-}
 
 const DEFAULT_TERRAIN_COLOR = "#1d2a18";
 /** Open field painted across the whole viewport so the world feels continuous

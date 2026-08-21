@@ -17,9 +17,8 @@ import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
-import type { Entity } from "./canvas-renderer.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
-import type { AttackAreaParams, AttackTelegraph, PlayerView, Renderer2D } from "./renderer2d.js";
+import type { AttackAreaParams, AttackTelegraph, Entity, PlayerView, Renderer2D } from "./renderer2d.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
 export interface FpsTilePlan {
