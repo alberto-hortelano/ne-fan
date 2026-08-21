@@ -301,7 +301,7 @@
       "desc": "El cliente 2D no traga errores en silencio",
       "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max.",
       "severity": "warn",
-      "max": 13,
+      "max": 10,
       "files": [
         "nefan-html/src/**/*.ts"
       ],

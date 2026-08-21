@@ -834,11 +834,6 @@ export class CanvasRenderer {
     this.edgeLoading = edge ? { edge, text } : null;
   }
 
-  /** Flash breve (1.2 s) desde un borde: "el mundo continúa hacia ahí". */
-  setEdgeFlash(edge: EdgeSide): void {
-    this.edgeFlash = { edge, until: performance.now() + 1200 };
-  }
-
   /** Render the static schematic (terrain plate + object/building rectangles,
    *  NO characters, NO labels) for a world rectangle into an offscreen canvas
    *  and return it as a PNG data URL. This is the img2img conditioning image:
@@ -1327,46 +1322,12 @@ export class CanvasRenderer {
 
     // Velo de carga direccional — lo último, por encima de todo.
     if (this.edgeLoading) this.drawEdgeLoading();
-    if (this.edgeFlash) this.drawEdgeFlash();
   }
 
 
   /** Banda con gradiente oscuro en el lado del viewport por el que se cruzó,
    *  con el texto de estado y puntos animados. Espacio de PANTALLA (cubre el
    *  lado del viewport, no de la escena). */
-  /** Flash direccional activo (borde + timestamp de fin), o null. */
-  private edgeFlash: { edge: EdgeSide; until: number } | null = null;
-
-  private drawEdgeFlash(): void {
-    const now = performance.now();
-    if (!this.edgeFlash || now >= this.edgeFlash.until) {
-      this.edgeFlash = null;
-      return;
-    }
-    const { edge, until } = this.edgeFlash;
-    const alpha = 0.55 * ((until - now) / 1200);
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const band = Math.round((edge === "east" || edge === "west" ? w : h) * 0.18);
-    let grad: CanvasGradient;
-    switch (edge) {
-      case "north": grad = ctx.createLinearGradient(0, 0, 0, band); break;
-      case "south": grad = ctx.createLinearGradient(0, h, 0, h - band); break;
-      case "west": grad = ctx.createLinearGradient(0, 0, band, 0); break;
-      case "east": grad = ctx.createLinearGradient(w, 0, w - band, 0); break;
-    }
-    grad.addColorStop(0, `rgba(214, 205, 160, ${alpha.toFixed(3)})`);
-    grad.addColorStop(1, "rgba(214, 205, 160, 0)");
-    ctx.fillStyle = grad;
-    switch (edge) {
-      case "north": ctx.fillRect(0, 0, w, band); break;
-      case "south": ctx.fillRect(0, h - band, w, band); break;
-      case "west": ctx.fillRect(0, 0, band, h); break;
-      case "east": ctx.fillRect(w - band, 0, band, h); break;
-    }
-  }
-
   private drawEdgeLoading(): void {
     const { edge, text } = this.edgeLoading!;
     const ctx = this.ctx;

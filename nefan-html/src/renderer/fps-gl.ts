@@ -30,8 +30,10 @@ import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 /** Lado del tile en metros (64). */
 const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
+import type { Edge } from "@nefan-core/src/world-map/types.js";
 import type { Entity } from "./canvas-renderer.js";
-import type { PlayerView } from "./renderer2d.js";
+import type { AttackTelegraph, PlayerView } from "./renderer2d.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
 const EYE_M = 1.6;
@@ -61,9 +63,116 @@ export interface FpsDebugCollision {
   size: number;
 }
 
-/** Altura del overlay de colisión: por encima del stack de suelo (deck top
- *  ~0.105 m + stagger de fps-spec). */
-const DEBUG_COLLISION_Y = 0.2;
+/** Altura a la que va cualquier calco sobre el suelo, en metros. El suelo NO
+ *  acaba en y=0: el greybox apila los rasgos planos (área→camino→agua→deck,
+ *  Y_DECK 0.18 celdas = 0.09 m) y fps-spec les añade 2 mm por prim para que
+ *  no z-fighteen — medido sobre las fixtures del golden, la cara alta del
+ *  stack queda en 0,13 m. A ras, un calco queda ENTERRADO bajo el camino y la
+ *  plaza; a 0,2 m flota justo por encima y sigue leyendo como suelo. */
+const GROUND_OVERLAY_Y = 0.2;
+
+// ── Telegraph del ataque ──────────────────────────────────────────────────
+/** Resolución de la rejilla del telegraph (avance × lateral). Topología fija:
+ *  las posiciones se re-drapean cada frame y la calidad solo al cambiar los
+ *  params del ataque. */
+const TELEGRAPH_U_STEPS = 20;
+const TELEGRAPH_S_STEPS = 10;
+/** Altura del parche sobre el terreno: la de cualquier calco de suelo. Estuvo
+ *  a 45 cm mientras la cámara era de yaw puro —el combate cuerpo a cuerpo
+ *  (0,9–2,5 m) caía por debajo del encuadre y había que levantarlo para que
+ *  asomara—. Con mirada vertical el jugador baja los ojos y lo ve entero, así
+ *  que vuelve al suelo, que es donde informa sin mentir. */
+const TELEGRAPH_Y_M = GROUND_OVERLAY_Y;
+/** El overlay de la vista cenital se mira de frente; en primera persona el
+ *  mismo parche se ve en rasante y la alfa efectiva por píxel se desploma.
+ *  Ganancia propia de esta vista sobre la opacidad que manda el juego. */
+const TELEGRAPH_GAIN = 2.2;
+
+// ── Muro de niebla de la frontera ─────────────────────────────────────────
+/** Alto del muro en metros: a 0,25 m del ojo tapa 88° de vertical; a 8 m
+ *  (VEIL_M del FrontierManager) sigue por encima del borde superior del FOV. */
+const VEIL_H_M = 12;
+/** Sobreancho respecto al lado del tile: el difuminado lateral cae FUERA del
+ *  tile, así que la frontera queda cubierta de esquina a esquina. */
+const VEIL_OVERSHOOT_M = 12;
+/** Metros hacia dentro del tile: el borde duro del suelo queda detrás. */
+const VEIL_INSET_M = 0.25;
+/** Aparición y disipación. La disipación ES el feedback de que el vecino
+ *  llegó: lenta a propósito, para que se vea descubrir el terreno nuevo. */
+const VEIL_FADE_IN_S = 0.4;
+const VEIL_FADE_OUT_S = 0.9;
+/** Alfa máxima al pie del muro. No 1.0: un negro/gris absoluto lee como
+ *  telón; con 0,94 la niebla conserva algo de aire. */
+const VEIL_MAX_ALPHA = 0.94;
+
+/** Muro de niebla: un BANCO, no un telón. Denso a ras de suelo (tapa el corte
+ *  del terreno en la frontera), aún denso a la altura del ojo, y disuelto por
+ *  arriba. El color lo inyecta el uniforme: es la MISMA niebla que ya cierra
+ *  el horizonte, acercada.
+ *
+ *  Lo que lo hacía leer como muro —o como tolvanera— era el borde de arriba:
+ *  la niebla es del color del horizonte y por encima de él tiene AZUL detrás,
+ *  así que aunque el alfa se difuminara, el color cantaba. La cura no es más
+ *  transparencia, es FUNDIRSE: cada fragmento calcula la elevación de su
+ *  propia dirección de vista y toma el color exacto que la cúpula del cielo
+ *  pinta ahí (el mismo `mix(bottom, top, y*2.2)` de skyDome). Arriba el muro
+ *  es literalmente el cielo que tiene detrás y deja de tener contorno; abajo,
+ *  donde lo que tapa es terreno, sigue siendo niebla. El grano de dos
+ *  frecuencias se apaga con la fusión: donde el muro es cielo, nada vibra. */
+const VEIL_FRAGMENT = `
+varying vec2 vUv;
+varying vec3 vWorld;
+uniform vec3 uColor;
+uniform vec3 uSkyBottom;
+uniform vec3 uSkyTop;
+uniform float uOpacity;
+void main() {
+  vec3 dir = normalize(vWorld - cameraPosition);
+  vec3 cielo = mix(uSkyBottom, uSkyTop, clamp(dir.y * 2.2, 0.0, 1.0));
+  float fusion = smoothstep(-0.02, 0.32, dir.y);
+  float alto = 1.0 - smoothstep(0.04, 0.62, vUv.y);
+  float lados = smoothstep(0.0, 0.09, vUv.x) * smoothstep(0.0, 0.09, 1.0 - vUv.x);
+  float n = sin(vUv.x * 13.0) * sin(vUv.y * 5.0 + 0.7)
+          + 0.5 * sin(vUv.x * 29.0 + 2.1) * sin(vUv.y * 11.0);
+  float grano = 0.07 * n * (1.0 - fusion);
+  float a = clamp(uOpacity * alto * lados * (1.0 + grano), 0.0, 1.0);
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(mix(uColor, cielo, fusion), a);
+}`;
+
+const VEIL_VERTEX = `
+varying vec2 vUv;
+varying vec3 vWorld;
+void main() {
+  vUv = uv;
+  vec4 mundo = modelMatrix * vec4(position, 1.0);
+  vWorld = mundo.xyz;
+  gl_Position = projectionMatrix * viewMatrix * mundo;
+}`;
+
+/** Telegraph: la calidad por vértice (0..1) es la MISMA que resuelve el daño
+ *  (`combat-resolver`), así que el color no adorna — informa. Rojo en el borde
+ *  del área, verde en el punto óptimo; en impacto, tinte plano de resultado. */
+const TELEGRAPH_FRAGMENT = `
+varying float vQ;
+uniform float uOpacity;
+uniform float uImpact;
+uniform vec3 uImpactColor;
+void main() {
+  vec3 windup = mix(vec3(1.0, 0.18, 0.10), vec3(0.20, 1.0, 0.28), vQ);
+  vec3 c = mix(windup, uImpactColor, uImpact);
+  float a = mix(vQ, step(0.001, vQ), uImpact) * uOpacity;
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(c, a);
+}`;
+
+const TELEGRAPH_VERTEX = `
+attribute float aQuality;
+varying float vQ;
+void main() {
+  vQ = aQuality;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
 
 /** Tinte determinista por celda de atlas (modo surfaces). */
 function tintColor(key: string): number {
@@ -257,6 +366,49 @@ function skyDome(): THREE.Mesh {
   return m;
 }
 
+/** Rejilla del telegraph en el espacio (avance, lateral) del ataque: la
+ *  topología no depende de los params, solo el contenido de los atributos. */
+function buildTelegraphGeometry(): THREE.BufferGeometry {
+  const nu = TELEGRAPH_U_STEPS + 1;
+  const ns = TELEGRAPH_S_STEPS + 1;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(nu * ns * 3), 3));
+  geo.setAttribute("aQuality", new THREE.BufferAttribute(new Float32Array(nu * ns), 1));
+  const idx: number[] = [];
+  for (let iu = 0; iu < TELEGRAPH_U_STEPS; iu++) {
+    for (let is = 0; is < TELEGRAPH_S_STEPS; is++) {
+      const a = iu * ns + is;
+      idx.push(a, a + 1, a + ns, a + 1, a + ns + 1, a + ns);
+    }
+  }
+  geo.setIndex(idx);
+  return geo;
+}
+
+/** Calidad por vértice = la MISMA fórmula que resuelve el daño
+ *  (`combat-resolver`: factor_distancia × factor_precision, con el cono
+ *  frontal de isInFront). Se calcula sobre (avance u, lateral s), así que no
+ *  depende de dónde esté el jugador: solo de los params del ataque. */
+function fillTelegraphQuality(geo: THREE.BufferGeometry, params: AttackTelegraph["params"]): void {
+  const q = geo.attributes.aQuality as THREE.BufferAttribute;
+  const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
+  const uMax = params.optimal_distance + params.distance_tolerance;
+  let vi = 0;
+  for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
+    const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
+    for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
+      const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+      const d = Math.hypot(u, s);
+      // isInFront: dot(forward, dir) > 0.5 ⇒ dentro de ±60° del frente.
+      const front = d > 1e-6 && u / d > 0.5 ? 1 : 0;
+      const dist = Math.max(0, 1 - Math.abs(d - params.optimal_distance) / params.distance_tolerance);
+      const prec = Math.max(0, 1 - Math.abs(s) / params.area_radius);
+      q.setX(vi++, dist * prec * front);
+    }
+  }
+  q.needsUpdate = true;
+}
+
 /** Yaw de un vector XZ (0 = +z, crece hacia +x). */
 const yawOf = (x: number, z: number) => Math.atan2(x, z);
 
@@ -286,6 +438,11 @@ export class FpsGl {
   >();
   private texByImage = new WeakMap<HTMLImageElement, THREE.Texture>();
   private renderYaw = 0;
+  /** Inclinación de la mirada en radianes (positivo = arriba). A diferencia
+   *  del yaw NO se interpola: el tween del yaw existe para suavizar los
+   *  saltos de 45° de ←/→, y un ratón con retardo en el eje vertical se
+   *  siente roto. Los pasos de ↑/↓ son de 15°, que no necesitan filtro. */
+  private lookPitch = 0;
   private lastNow = 0;
   private activeKey: string | null = null;
   private debugView: FpsDebugView = "off";
@@ -293,6 +450,34 @@ export class FpsGl {
   private forwardArrows = new Map<string, THREE.ArrowHelper>();
   /** map/color originales de los materiales tintados por el modo surfaces. */
   private tintSaved = new Map<THREE.MeshStandardMaterial, { map: THREE.Texture | null; color: number }>();
+  /** Telegraph del ataque: parche de suelo con la calidad real del golpe. La
+   *  malla se construye una vez y se reusa (un jugador ataca cada segundo);
+   *  `paramsKey` evita recalcular la calidad por vértice cada frame. */
+  private telegraphMesh: {
+    mesh: THREE.Mesh;
+    mat: THREE.ShaderMaterial;
+    geo: THREE.BufferGeometry;
+    paramsKey: string;
+  } | null = null;
+  /** Ataque en curso que el telegraph pinta, o null (apagado). */
+  private telegraph: AttackTelegraph | null = null;
+  /** Punto óptimo del golpe proyectado a píxeles del lienzo (solo debugState). */
+  private telegraphScreen: { x: number; y: number; depthM: number } | null = null;
+  /** Muro de niebla de la frontera. `opacity` es el tween 0..1 (la alfa real
+   *  del material es ésta por VEIL_MAX_ALPHA y el perfil del shader). */
+  private veil: {
+    mesh: THREE.Mesh;
+    mat: THREE.ShaderMaterial;
+    edge: Edge;
+    tileKey: string | null;
+    opacity: number;
+    target: number;
+  } | null = null;
+  /** Vectores de trabajo de projectToScreen (una etiqueta por NPC y frame). */
+  private projNdc = new THREE.Vector3();
+  private projView = new THREE.Vector3();
+  /** Vector de trabajo de cameraRay (uno por frame). */
+  private camDir = new THREE.Vector3();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -560,6 +745,12 @@ export class FpsGl {
     }
   }
 
+  /** Altura visual del suelo en coords de MUNDO — la piden las etiquetas de
+   *  nombre, que cuelgan sobre la cabeza y no del plano y=0. */
+  groundYAt(x: number, z: number): number {
+    return this.reliefWorldAt(x, z);
+  }
+
   /** Altura visual del terreno (relieve) en coords de MUNDO — 0 sin relieve.
    *  La colisión y el sim siguen en el plano: esto es presentación pura. */
   private reliefWorldAt(x: number, z: number): number {
@@ -593,6 +784,229 @@ export class FpsGl {
       }
     });
     this.tiles.delete(key);
+  }
+
+  /** Vacía el mundo 3D (resetWorld del cliente: arranque de sesión, resume,
+   *  fixtures). Sin esto los grupos de los tiles viejos se quedaban en la
+   *  escena three y reaparecían como fantasmas al reanudar. */
+  clearTiles(): void {
+    for (const key of [...this.tiles.keys()]) this.removeTile(key);
+    this.activeKey = null;
+    this.ambienceKey = null;
+    // El overlay de colisión y el velo son del tile activo: mueren con él.
+    this.clearCollisionDebug();
+    this.disposeVeil();
+  }
+
+  /** Inclinación de la MIRADA en radianes (positivo = arriba). El clamp vive
+   *  en main.ts, que es quien acumula el ratón: aquí llega ya acotada. */
+  setLookPitch(rad: number): void {
+    this.lookPitch = rad;
+  }
+
+  /** Ojo y dirección REAL de la cámara del último frame pintado. La puntería
+   *  la necesita entera —con pitch— para que apuntar sea apuntar: con la
+   *  proyección horizontal, mirando al suelo seguirías "apuntando" al NPC que
+   *  tienes delante. */
+  cameraRay(): { origin: Vec3; dir: Vec3 } {
+    this.cam.updateMatrixWorld();
+    const o = this.cam.position;
+    const d = this.camDir.set(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    return { origin: { x: o.x, y: o.y, z: o.z }, dir: { x: d.x, y: d.y, z: d.z } };
+  }
+
+  /** Punto de MUNDO → píxeles CSS del canvas, o null si cae detrás del ojo.
+   *  Es lo que permite colgar las etiquetas de nombre en DOM sobre la cabeza
+   *  del NPC sin re-implementar el tema del pack en un atlas de fuente. */
+  projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
+    this.cam.updateMatrixWorld();
+    const view = this.projView.set(x, y, z).applyMatrix4(this.cam.matrixWorldInverse);
+    // La cámara mira −z en su espacio: todo lo que tenga z ≥ −near está en el
+    // ojo o detrás, y project() lo proyectaría espejado al otro lado.
+    if (view.z > -this.cam.near) return null;
+    const ndc = this.projNdc.set(x, y, z).project(this.cam);
+    const w = this.canvas.clientWidth || this.canvas.width;
+    const h = this.canvas.clientHeight || this.canvas.height;
+    return { x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h, depthM: -view.z };
+  }
+
+  /** Telegraph del ataque en curso, o null para apagarlo. Se fija ANTES de
+   *  render(): en WebGL no hay lienzo sobre el que pintar tras emitir el
+   *  frame, así que el patrón "dibuja después" de las vistas 2D no vale. */
+  setAttackTelegraph(t: AttackTelegraph | null): void {
+    this.telegraph = t;
+    if (!t) {
+      if (this.telegraphMesh) this.telegraphMesh.mesh.visible = false;
+      return;
+    }
+    const key = `${t.params.optimal_distance}|${t.params.distance_tolerance}|${t.params.area_radius}`;
+    if (!this.telegraphMesh) {
+      const geo = buildTelegraphGeometry();
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uOpacity: { value: 0 },
+          uImpact: { value: 0 },
+          uImpactColor: { value: new THREE.Color("#808080") },
+        },
+        vertexShader: TELEGRAPH_VERTEX,
+        fragmentShader: TELEGRAPH_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      // Es un parche de suelo alrededor del jugador: siempre en cámara, y su
+      // caja envolvente cambia cada frame — el culling solo daría parpadeos.
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 2;
+      this.scene.add(mesh);
+      this.telegraphMesh = { mesh, mat, geo, paramsKey: "" };
+    }
+    if (this.telegraphMesh.paramsKey !== key) {
+      fillTelegraphQuality(this.telegraphMesh.geo, t.params);
+      this.telegraphMesh.paramsKey = key;
+    }
+    this.telegraphMesh.mesh.visible = true;
+  }
+
+  /** Re-drapea el parche del telegraph sobre el relieve delante del jugador.
+   *  Se hace por frame porque el jugador se mueve y gira durante el wind-up. */
+  private updateTelegraph(): void {
+    const t = this.telegraphMesh;
+    const st = this.telegraph;
+    if (!t || !st) return;
+    const { player, params, mode, opacity, impactQuality } = st;
+    const fLen = Math.hypot(player.forward.x, player.forward.z) || 1;
+    const fx = player.forward.x / fLen;
+    const fz = player.forward.z / fLen;
+    // Right = forward girado 90° (mismo marco que el strafe de main.ts).
+    const rx = -fz;
+    const rz = fx;
+    const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
+    const uMax = params.optimal_distance + params.distance_tolerance;
+    const pos = t.geo.attributes.position as THREE.BufferAttribute;
+    let vi = 0;
+    for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
+      const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
+      for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
+        const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+        const wx = player.pos.x + fx * u + rx * s;
+        const wz = player.pos.z + fz * u + rz * s;
+        pos.setXYZ(vi++, wx, this.reliefWorldAt(wx, wz) + TELEGRAPH_Y_M, wz);
+      }
+    }
+    pos.needsUpdate = true;
+    // Dónde cae en PANTALLA el punto óptimo del golpe. No lo usa el render:
+    // lo publica debugState para que se pueda afirmar sin leer píxeles que el
+    // telegraph está EN CUADRO (con yaw puro caía por debajo del encuadre, y
+    // ese era justo el problema que la mirada vertical resuelve).
+    const ox = player.pos.x + fx * params.optimal_distance;
+    const oz = player.pos.z + fz * params.optimal_distance;
+    this.telegraphScreen = this.projectToScreen(ox, this.reliefWorldAt(ox, oz) + TELEGRAPH_Y_M, oz);
+    t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
+    t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
+    if (mode === "impact") {
+      // Mismos tramos de calidad que el destello de la vista oblicua.
+      const c =
+        impactQuality > 0.7 ? "#50ff50"
+        : impactQuality > 0.3 ? "#ffff3c"
+        : impactQuality > 0 ? "#ff503c"
+        : "#787878";
+      (t.mat.uniforms.uImpactColor.value as THREE.Color).set(c);
+    }
+  }
+
+  /** Velo direccional de la frontera: muro de niebla sobre el borde del tile
+   *  activo, o null para que se disipe. Quién DECIDE el velo sigue siendo el
+   *  FrontierManager; esto solo lo pinta. */
+  setVeil(edge: Edge | null): void {
+    if (!edge) {
+      if (this.veil) this.veil.target = 0;
+      return;
+    }
+    const entry = this.activeKey ? this.tiles.get(this.activeKey) : null;
+    if (!entry) return; // sin tile activo no hay frontera que pintar
+    if (!this.veil) {
+      const geo = new THREE.PlaneGeometry(TILE_SIZE_M + VEIL_OVERSHOOT_M, VEIL_H_M);
+      geo.translate(0, VEIL_H_M / 2, 0);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new THREE.Color(SKY_BOTTOM) },
+          uSkyBottom: { value: new THREE.Color(SKY_BOTTOM) },
+          uSkyTop: { value: new THREE.Color(SKY_TOP) },
+          uOpacity: { value: 0 },
+        },
+        vertexShader: VEIL_VERTEX,
+        fragmentShader: VEIL_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.veil = { mesh, mat, edge, tileKey: this.activeKey, opacity: 0, target: 1 };
+      this.placeVeil(entry.rect, edge);
+      return;
+    }
+    if (this.veil.edge !== edge || this.veil.tileKey !== this.activeKey) {
+      // Recolocar sin reiniciar la alfa: al andar por una esquina el borde
+      // más cercano cambia, y un parpadeo ahí delata la costura.
+      this.veil.edge = edge;
+      this.veil.tileKey = this.activeKey;
+      this.placeVeil(entry.rect, edge);
+    }
+    this.veil.target = 1;
+  }
+
+  private placeVeil(rect: { minX: number; minZ: number }, edge: Edge): void {
+    if (!this.veil) return;
+    const cx = rect.minX + TILE_SIZE_M / 2;
+    const cz = rect.minZ + TILE_SIZE_M / 2;
+    const m = this.veil.mesh;
+    if (edge === "north") m.position.set(cx, 0, rect.minZ + VEIL_INSET_M);
+    else if (edge === "south") m.position.set(cx, 0, rect.minZ + TILE_SIZE_M - VEIL_INSET_M);
+    else if (edge === "west") m.position.set(rect.minX + VEIL_INSET_M, 0, cz);
+    else m.position.set(rect.minX + TILE_SIZE_M - VEIL_INSET_M, 0, cz);
+    // El plano nace en XY mirando a +z: los bordes que corren en Z giran 90°.
+    // DoubleSide hace irrelevante de qué lado se mire.
+    m.rotation.y = edge === "east" || edge === "west" ? Math.PI / 2 : 0;
+  }
+
+  private updateVeil(dt: number): void {
+    const v = this.veil;
+    if (!v) return;
+    const rate = dt / (v.target > v.opacity ? VEIL_FADE_IN_S : VEIL_FADE_OUT_S);
+    const d = v.target - v.opacity;
+    v.opacity = Math.abs(d) <= rate ? v.target : v.opacity + Math.sign(d) * rate;
+    if (v.target === 0 && v.opacity <= 0.001) {
+      this.disposeVeil();
+      return;
+    }
+    // El color es el de la niebla VIGENTE (applyAmbienceAt la fija desde la
+    // ambience del tile que pisa el jugador): cruzar a un tile nocturno
+    // cambia la pared igual que cambia el horizonte. Y el cielo con el que se
+    // funde por arriba se lee de la MISMA cúpula que se está pintando: de
+    // noche el muro se disuelve en un cielo nocturno, no en el azul de una
+    // constante.
+    const fog = this.scene.fog;
+    (v.mat.uniforms.uColor.value as THREE.Color).set(
+      fog instanceof THREE.Fog ? fog.color : new THREE.Color(SKY_BOTTOM),
+    );
+    const skyMat = this.sky.material as THREE.ShaderMaterial;
+    (v.mat.uniforms.uSkyBottom.value as THREE.Color).copy(skyMat.uniforms.bottom.value as THREE.Color);
+    (v.mat.uniforms.uSkyTop.value as THREE.Color).copy(skyMat.uniforms.top.value as THREE.Color);
+    v.mat.uniforms.uOpacity.value = v.opacity * VEIL_MAX_ALPHA;
+  }
+
+  private disposeVeil(): void {
+    if (!this.veil) return;
+    this.scene.remove(this.veil.mesh);
+    this.veil.mesh.geometry.dispose();
+    this.veil.mat.dispose();
+    this.veil = null;
   }
 
   setActive(key: string | null): void {
@@ -681,7 +1095,7 @@ export class FpsGl {
     const inst = new THREE.InstancedMesh(geo, mat, c.cells.length);
     const m = new THREE.Matrix4();
     c.cells.forEach(([x, z], i) => {
-      m.makeTranslation(x + c.size / 2, DEBUG_COLLISION_Y, z + c.size / 2);
+      m.makeTranslation(x + c.size / 2, GROUND_OVERLAY_Y, z + c.size / 2);
       inst.setMatrixAt(i, m);
     });
     inst.instanceMatrix.needsUpdate = true;
@@ -873,7 +1287,10 @@ export class FpsGl {
     this.cam.position.set(player.pos.x, this.reliefWorldAt(player.pos.x, player.pos.z) + EYE_M, player.pos.z);
     // rotation.y = π + yaw: la cámara de three mira −z con rotación 0 y
     // yawOf tiene 0 = +z (R_y(π+yaw)·(0,0,−1) = (sin yaw, 0, cos yaw)).
-    this.cam.rotation.set(0, Math.PI + this.renderYaw, 0, "YXZ");
+    // rotation.x = pitch en orden YXZ: el giro vertical se aplica en el marco
+    // ya girado, así que mirar arriba es mirar arriba mires a donde mires
+    // (con XYZ el eje se inclinaría con el yaw y la vista rolaría).
+    this.cam.rotation.set(this.lookPitch, Math.PI + this.renderYaw, 0, "YXZ");
     this.sky.position.copy(this.cam.position);
 
     const seen = new Set<string>();
@@ -898,22 +1315,53 @@ export class FpsGl {
       }
     }
 
+    this.updateTelegraph();
+    this.updateVeil(dt);
     this.renderer.render(this.scene, this.cam);
   }
 
   debugState(): Record<string, unknown> {
+    const t = this.telegraph;
+    const v = this.veil;
     return {
       tiles: [...this.tiles.keys()],
       activeTile: this.activeKey,
-      textured: [...this.tiles.entries()].filter(([, t]) => t.textured).map(([k]) => k),
+      textured: [...this.tiles.entries()].filter(([, t2]) => t2.textured).map(([k]) => k),
       renderYawDeg: Math.round((this.renderYaw * 180) / Math.PI),
+      /** Lo que la CÁMARA tiene aplicado (no lo que el input pidió): se lee
+       *  de su rotación, así que un cable roto entre main.ts y el frame se ve
+       *  aquí. Cero hasta el primer render. */
+      pitchDeg: Math.round((this.cam.rotation.x * 180) / Math.PI),
       billboards: [...this.billboards.entries()].filter(([, s]) => s.mesh.visible).length,
       debugView: this.debugView,
+      viewport: { w: this.canvas.clientWidth || this.canvas.width, h: this.canvas.clientHeight || this.canvas.height },
+      telegraph: t
+        ? {
+            mode: t.mode,
+            opacity: Math.round(t.opacity * 1000) / 1000,
+            optimalDistance: t.params.optimal_distance,
+            areaRadius: t.params.area_radius,
+            /** Píxeles del lienzo del punto óptimo, o null si queda detrás
+             *  del ojo. Comparado con `viewport` dice si está en cuadro. */
+            screen: this.telegraphScreen
+              ? { x: Math.round(this.telegraphScreen.x), y: Math.round(this.telegraphScreen.y) }
+              : null,
+          }
+        : null,
+      veil: v ? { edge: v.edge, opacity: Math.round(v.opacity * 1000) / 1000 } : null,
     };
   }
 
   dispose(): void {
     this.setDebugView("off", null);
+    this.telegraph = null;
+    if (this.telegraphMesh) {
+      this.scene.remove(this.telegraphMesh.mesh);
+      this.telegraphMesh.geo.dispose();
+      this.telegraphMesh.mat.dispose();
+      this.telegraphMesh = null;
+    }
+    this.disposeVeil();
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
     for (const slot of this.billboards.values()) {
       this.scene.remove(slot.mesh);
