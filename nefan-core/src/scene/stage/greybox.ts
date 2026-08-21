@@ -20,7 +20,8 @@ import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "
 import type { Volume } from "../blueprint/volumes.js";
 import type { GroundFeature } from "../blueprint/ground.js";
 import { groundFeaturePrims } from "../blueprint/ground-prims.js";
-import { rotatedRectCorners, volumeFootprintCells, volumeHeightM } from "../blueprint/footprint.js";
+import { rotatedRectCorners } from "../blueprint/footprint.js";
+import { volumeFootprintCells, volumeHeightM } from "../blueprint/volume-metrics.js";
 import { PRACTICAL_LIGHT_RE, timeOfDayFromText, type TimeOfDay } from "../blueprint/time-of-day.js";
 import { classifyVolume, customVolumePrims } from "../greybox/volume-prims.js";
 import {

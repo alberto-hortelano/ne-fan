@@ -9,7 +9,7 @@
  *  EXACTAMENTE las históricas (cero regresión, hashes y capturas intactos). */
 
 import { seededRng, uniform } from "../../rng.js";
-import { volumeFootprintCells, volumeHeightM } from "./footprint.js";
+import { volumeFootprintCells, volumeHeightM } from "./volume-metrics.js";
 import { PRACTICAL_LIGHT_RE, timeOfDayFromText, type TimeOfDay } from "./time-of-day.js";
 import { TILE_MPC } from "../tile.js";
 import type { GreyboxLight } from "../greybox/common.js";

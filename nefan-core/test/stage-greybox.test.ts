@@ -11,7 +11,7 @@ import {
   type StageScenePlan,
 } from "../src/scene/stage/greybox.js";
 import { volumeSolidDiscRadiusCells } from "../src/scene/blueprint/collision.js";
-import { volumeFootprintCells, volumeHeightM } from "../src/scene/blueprint/footprint.js";
+import { volumeFootprintCells, volumeHeightM } from "../src/scene/blueprint/volume-metrics.js";
 import { composeStageScene } from "../src/scene/stage/scene.js";
 import { stageToViewAt, stageToView } from "../src/scene/stage/projection.js";
 import { STAGE_RENDER_SIZE } from "../src/scene/stage/segments.js";

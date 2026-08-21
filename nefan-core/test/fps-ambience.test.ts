@@ -11,7 +11,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildFpsAmbience } from "../src/scene/blueprint/fps-ambience.js";
-import { volumeHeightM } from "../src/scene/blueprint/footprint.js";
+import { volumeHeightM } from "../src/scene/blueprint/volume-metrics.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 import type { Volume } from "../src/scene/blueprint/volumes.js";
 

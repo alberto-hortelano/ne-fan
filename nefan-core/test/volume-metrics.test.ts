@@ -4,8 +4,8 @@
  *  Por qué existe este fichero. `volumeFootprintCells` y `volumeHeightM`
  *  vivían dentro del builder del PLATÓ y su única cobertura directa era
  *  `stage-greybox.test.ts`, que muere con el proscenio. Al bajarlas a
- *  `blueprint/footprint.ts` —donde la dependencia ya apuntaba— su invariante
- *  baja con ellas, y deja de depender de una suite condenada.
+ *  `blueprint/volume-metrics.ts` su invariante baja con ellas, y deja de
+ *  depender de una suite condenada.
  *
  *  El invariante caro es el PRIMERO: la huella que publica el manifest tiene
  *  que contener lo que de verdad bloquea el paso. Cuando divergen no se rompe
@@ -16,10 +16,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  rotatedRectCorners,
   volumeFootprintCells,
   volumeHeightM,
-} from "../src/scene/blueprint/footprint.js";
+} from "../src/scene/blueprint/volume-metrics.js";
+import { rotatedRectCorners } from "../src/scene/blueprint/footprint.js";
 import {
   volumeCollisionGrid,
   volumeSolidDiscRadiusCells,
