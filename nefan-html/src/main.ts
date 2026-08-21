@@ -27,15 +27,11 @@ import type { Entity, Renderer2D } from "./renderer/renderer2d.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
-import { SceneImageController } from "./scene/scene-image.js";
-import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
   applyPlanCollision,
-  applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
-import { AutoImagePipeline } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
   BASE_ANIMS,
@@ -175,7 +171,6 @@ let worldAngle: string = OBLIQUE_ANGLE;
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
 // en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
 // así que `?ai=` cubre las cuatro.
-const AI_SERVER_URL = serviceUrl("narrative-llm");
 // Blobs cacheados (F2): proceso propio del asset-store.
 const ASSET_STORE_URL = serviceUrl("asset-store");
 // Pipelines GPU locales (F3): proceso propio del gpu-worker.
@@ -183,13 +178,6 @@ const GPU_WORKER_URL = serviceUrl("gpu-worker");
 // Meshy/fal (F4): proceso propio de remote-gen (repintados, sheets
 // skinneados, toggle dev de las APIs de pago).
 const REMOTE_GEN_URL = serviceUrl("remote-gen");
-// Reparto por servicio de los pipelines de imagen (SceneImageController).
-const GEN_URLS = {
-  narrative: AI_SERVER_URL,
-  gpu: GPU_WORKER_URL,
-  remote: REMOTE_GEN_URL,
-  assets: ASSET_STORE_URL,
-};
 const spriteRenderer = new SpriteRenderer("/sprites", REMOTE_GEN_URL, ASSET_STORE_URL);
 const characterSprites = new CharacterSpriteManager(spriteRenderer, OBLIQUE_ANGLE);
 /** Retrato del hablante del diálogo: hero-shot ya pagado o busto animado. */
@@ -227,12 +215,6 @@ let devMenu: DevMenu | null = null;
  *  que devMenu. */
 let graphicsChip: GraphicsModeChip | null = null;
 
-// Generación IA del fondo de escena (img2img desde el blueprint del tile).
-// Manual con G en dev; el pipeline Auto-img la conduce por fases. Puramente
-// visual: no toca colisiones ni SceneData.
-const sceneImageController = new SceneImageController(renderer, GEN_URLS, (e) =>
-  devPanel.recordGeneration(e),
-);
 /** true cuando los modos de render del SAVE ya están aplicados (respuesta de
  *  start/resume) — gate del gasto automático del atlas fps (ver abajo). */
 let sessionModesApplied = false;
@@ -268,7 +250,6 @@ const fpsAtlasController = new FpsAtlasController(
 /** Propaga el estilo visual de la sesión (world.style_id, congelado en el
  *  save) a los generadores de imagen: escena y skins de personaje. */
 function applySessionStyle(styleId: string): void {
-  sceneImageController.setStyle(styleId);
   fpsAtlasController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
   devPanel.setSession({ styleId });
@@ -284,8 +265,8 @@ const sessionProjection = VIEW_PROJECTION;
 /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
  *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
  *  el save y lo difunde con render_mode_changed). Valores:
- *  - "image": generación IA activa (Auto-img de tiles, atlas de superficies
- *    de la fps, skins de personaje) — créditos.
+ *  - "image": generación IA activa (atlas de superficies de la fps, skins de
+ *    personaje) — créditos.
  *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
  *    base y_bot. Lo ya pintado se conserva.
  *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
@@ -293,9 +274,9 @@ const sessionProjection = VIEW_PROJECTION;
 let scenesMode: "image" | "vector" | "" = "";
 let charactersMode: "image" | "vector" | "" = "";
 
-/** ¿Debe generarse imagen NUEVA de escenario? (auto-pipeline de la oblicua y
- *  atlas de la fps; la generación MANUAL —tecla G, item del menú dev— no pasa
- *  por aquí: es siempre permitida). */
+/** ¿Debe generarse imagen NUEVA de escenario? (atlas de superficies de la
+ *  fps; la generación MANUAL —tecla G, item del menú dev— no pasa por aquí:
+ *  es siempre permitida). */
 function scenesGenerationOn(): boolean {
   if (scenesMode) return scenesMode === "image";
   return localStorage.getItem(AUTOIMG_KEY) === "1";
@@ -332,9 +313,6 @@ function applyRenderModes(renderMode: string, characterMode = ""): void {
       "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
     );
   }
-  // El Auto-img por tiles es oblicua-only (la fps trae su propio pipeline:
-  // el atlas de superficies).
-  autoPipeline.setEnabled(scenesGenerationOn() && sessionView === "");
   const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
     ? "skins IA" : "personajes en base y_bot";
   if (scenesMode === "vector") {
@@ -472,9 +450,6 @@ function applySessionView(view: string): void {
     fpsRenderer.setWorldTheme(currentUiTheme());
     activeRenderer = fpsRenderer;
     fpsRenderer.setVisible(true);
-    // El Auto-img por tiles pinta la vista cenital; el fps tiene su propio
-    // pipeline (atlas de superficies).
-    autoPipeline.setEnabled(false);
     if (changed) {
       // Tiles que llegaron ANTES de conocer la vista (bootstrap/resume
       // difunden escenas antes de la respuesta de sesión): instalarlos ya.
@@ -570,10 +545,9 @@ try {
 }
 input.onAttackTypeChanged = () => renderAttackBar();
 
-// Teclas de desarrollo (G/X/B/N/R): fijas, independientes del provider.
+// Teclas de desarrollo (G/B): fijas, independientes del provider.
 const devInput = new DevToolsInput({
   isDialogueActive: () => input.dialogueActive,
-  isTileProposalActive: () => input.tileProposalActive,
 });
 
 // Hook de bench (labs/narrative / pruebas de navegador): estado vivo legible
@@ -587,7 +561,6 @@ const nefanHook: Record<string, unknown> = {
   get dialogueVisible() { return dialoguePanel.isVisible; },
   get exits() { return currentExits; },
   get tiles() { return [...tileStore.entries.keys()]; },
-  get tileImages() { return renderer.tileKeys.filter((k) => renderer.tileHasImage(k)); },
   get occluders() { return renderer.debugOccluders(); },
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
@@ -683,35 +656,14 @@ const EDGE_ES: Record<FrontierEdge, string> = {
 /** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
 let activeTileKey: string | null = null;
 
-// --- Auto-img: pipeline automático de imagen IA por tile ---
-// Persistido en localStorage (patrón ZOOM_KEY). Es el estado del toggle de
-// escenarios SIN sesión (fixtures); con sesión manda world.render_mode. El
-// toggle visible es el chip de gráficos (GraphicsModeChip) y el progreso
-// vive en #dev-status.
+// --- Generación de imagen SIN sesión (fixtures) ---
+// Persistido en localStorage (patrón ZOOM_KEY): es el estado del toggle de
+// escenarios cuando no hay partida; con sesión manda world.render_mode. El
+// toggle visible es el chip de gráficos (GraphicsModeChip).
 const AUTOIMG_KEY = "nefan.autoimg";
 /** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
 const AICHAR_KEY = "nefan.aichar";
 
-const autoPipeline = new AutoImagePipeline({
-  hasImage: (k) => renderer.tileHasImage(k),
-  listGridTileKeys: () =>
-    [...tileStore.entries.values()].filter((t) => t.tx !== undefined).map((t) => t.key),
-  isControllerBusy: () => sceneImageController.isBusy(),
-  review: (k) => reviewTileBlueprint(k, reviewDeps),
-  generate: (k) => sceneImageController.generateForTile(k),
-  analyze: (k) => sceneImageController.analyzeSceneForTile(k),
-  onAnalyzed: (k, a) => applyTileAnalysis(k, a, derivedCollisionDeps),
-  onStatus: (s) => devPanel.setTilePipeline(s),
-  onDisabled: () => {
-    // Backend caído (503): apagar el pipeline auto SIN tocar el modo del
-    // save (fallo ≠ intención del usuario); el chip refleja el estado.
-    localStorage.setItem(AUTOIMG_KEY, "0");
-    devMenu?.refresh();
-    graphicsChip?.refresh();
-  },
-  healthUrl: `${AI_SERVER_URL}/health`,
-});
-autoPipeline.setEnabled(localStorage.getItem(AUTOIMG_KEY) === "1");
 // Arranque sin sesión: los skins IA parten del toggle local (OFF por
 // defecto) — el manager nace con allowed=true y sin esto una fixture con
 // NPCs descritos encolaría skins de pago nada más cargar.
@@ -830,60 +782,6 @@ function populateSceneSelector(): void {
   }
 }
 
-/** Deps de la fase "revisión" (scene/review.ts): re-registro vía addTile y
- *  persistencia al bridge solo con sesión activa. */
-const reviewDeps: ReviewDeps = {
-  tileStore,
-  controller: sceneImageController,
-  addTile: (raw) => addTile(raw),
-  reportMapPlan: (tx, ty, plan) => {
-    if (activeSessionId) narrativeClient.reportMapPlan(tx, ty, plan);
-  },
-  log: (msg) => log(msg),
-};
-
-/** R: pide a Claude (vía ai_server + MCP) una revisión VISUAL del blueprint
- *  actual y aplica los fixes parciales que devuelva (terrain / entity_moves /
- *  ground / volumes) sobre el Format D,
- *  recargando la escena. El jugador conserva su posición (dev pre-generación). */
-async function reviewBlueprintAndApply(): Promise<void> {
-  const fd = (sceneData as Record<string, unknown> | null)?.__format_d as
-    | Record<string, unknown>
-    | undefined;
-  if (!fd) {
-    errors.push("scene", "review (R): la escena actual no es Format D — nada que revisar");
-    return;
-  }
-  const entry = activeTileKey ? tileStore.entries.get(activeTileKey) : null;
-  if (!entry) {
-    errors.push("scene", "review (R): no hay tile activo");
-    return;
-  }
-  // Tiles con plan (ground/volumes): mismo camino que la fase automática
-  // (re-registro por addTile + persistencia al bridge), sin recargar el mundo.
-  if ((Array.isArray(fd.ground) || Array.isArray(fd.volumes)) && activeTileKey) {
-    await reviewTileBlueprint(activeTileKey, reviewDeps);
-    return;
-  }
-  log("blueprint → revisión por visión (Claude)…");
-  const review = await sceneImageController.reviewBlueprint(fd, entry.rect);
-  for (const issue of review.issues) log(`review: ${issue}`);
-  if (review.approved && !review.fixes) {
-    log("review: blueprint aprobado — listo para G");
-    return;
-  }
-  if (!review.fixes) {
-    log("review: rechazado sin fixes — corrige a mano o regenera la escena");
-    return;
-  }
-  const fixed = applyReviewFixes(fd, review.fixes);
-  const saved = { x: playerPos.x, z: playerPos.z };
-  await loadSceneData(fixed);
-  playerPos.x = saved.x;
-  playerPos.z = saved.z;
-  log(`review: fixes aplicados y re-renderizados (${review.issues.length} issue(s)) — R de nuevo o G`);
-}
-
 async function loadSceneFile(globKey: string): Promise<void> {
   const loader = sceneModules[globKey];
   if (!loader) {
@@ -903,7 +801,6 @@ function resetWorld(): void {
   // la partida anterior seguían instalados y reaparecían de fantasmas al
   // reanudar (nadie llamaba nunca a removeTile).
   fpsRenderer?.clearTiles();
-  autoPipeline.resetQueue();
   // Mundo nuevo, mirada al frente: reanudar con los ojos clavados en el suelo
   // porque así acabó la partida anterior es desconcertante.
   playerPitch = 0;
@@ -1052,11 +949,8 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     rect,
     scene: data as Record<string, unknown>,
     collider,
-    // El análisis de imagen (colisión derivada) se instala después vía
-    // applyTileAnalysis; se restaura abajo si la escena no cambió. La base
-    // del map_svg se deriva async justo debajo.
-    imageCollider: null,
-    imageAnalyzed: false,
+    // La colisión base del plan se deriva justo debajo (o se restaura si la
+    // escena no cambió).
     svgCollider: null,
     svgApplied: false,
   });
@@ -1077,12 +971,6 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
       );
     }
   }
-  // Re-registro con la MISMA escena (resume, re-broadcast): el renderer
-  // preserva la imagen y su análisis visual — conservar también la colisión
-  // derivada. Con escena distinta la imagen se invalida y se re-analiza.
-  if (prevEntry?.imageAnalyzed && !sceneChanged) {
-    tileStore.markAnalyzed(key, prevEntry.imageCollider);
-  }
   // Colisión base del plan: restaurar si la escena no cambió; derivar
   // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
   // huellas de volumes — espacio de mundo.
@@ -1092,11 +980,6 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } else if (plan) {
     applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
   }
-  // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
-  // una generación en vuelo — se marca dirty y se regenera con el esquema
-  // nuevo). Cubre bootstrap, frontier, re-broadcast y resume.
-  if (isGridTile) autoPipeline.notifyTile(key, { invalidated: sceneChanged });
-
   // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
   // spawn explícito). En el resto de tiles el jugador entra andando.
   const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
@@ -1323,16 +1206,11 @@ const collision = new CollisionSystem({
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
-/** Deps de los instaladores de colisión derivada (svg/análisis): espejo
- *  visual en el renderer + reporte al bridge solo con sesión activa (los
- *  fixtures locales no tienen dónde persistir). */
+/** Deps del instalador de colisión derivada del plan: espejo visual en el
+ *  renderer (overlay B). */
 const derivedCollisionDeps: DerivedCollisionDeps = {
   tileStore,
   setTileSvgGrid: (key, grid) => renderer.setTileSvgGrid(key, grid),
-  setTileAnalysisGrid: (key, grid) => renderer.setTileAnalysis(key, grid),
-  reportAnalysis: (tx, ty, elements) => {
-    if (activeSessionId) narrativeClient.reportTileAnalysis(tx, ty, elements);
-  },
 };
 
 // --- Combat log ---
@@ -1373,7 +1251,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
     // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
-    // estado (setTilePipeline/recordGeneration) sin tocar píxeles.
+    // estado (setPainting/recordGeneration) sin tocar píxeles.
     devPanel,
     probeCollide: (x: number, z: number) => collidesAt(x, z),
     view: () => sessionView,
@@ -1794,7 +1672,10 @@ function gameLoop(now: number): void {
     return;
   }
 
-
+  // Aviso de pintura en vuelo del panel dev: al morir el pipeline de la
+  // oblicua, el único que puede gastar mientras se juega es el atlas de
+  // superficies de la fps. El panel solo repinta en el cambio de estado.
+  devPanel.setPainting(fpsAtlasController.running);
 
   // Zoom: aplica la intención de rueda/teclas al objetivo (pasos multiplicativos,
   // clampados por el renderer) y persigue el objetivo con suavizado exponencial
@@ -1813,9 +1694,9 @@ function gameLoop(now: number): void {
   // R: respawn (solo surte efecto con el player muerto).
   if (input.consumeRespawn()) handleRespawnRequest();
 
-  // Generación IA del escenario (dev): G regenera la imagen del tile ACTIVO
-  // desde su esquema. Async fire-and-forget — el controlador ya loguea fallos
-  // a ErrorLog; el .catch evita unhandled rejection.
+  // Generación IA del escenario (dev): G pide el atlas de superficies del
+  // tile ACTIVO. Async fire-and-forget — el controlador ya loguea fallos a
+  // ErrorLog; el .catch evita unhandled rejection.
   if (devInput.consumeGenerateScene()) {
     // Manual = siempre permitida, también con la generación auto en OFF
     // (misma semántica que el botón por-item del menú dev).
@@ -1826,22 +1707,17 @@ function gameLoop(now: number): void {
           errors.push("scene", `el atlas fps de ${k} no arrancó (tecla G)`, err),
         );
       }
-    } else if (activeTileKey) void sceneImageController.generateForTile(activeTileKey).catch(() => {});
-  }
-  // X analiza la imagen del tile activo (mundo derivado de la imagen):
-  // auto-segmentación + clasificación por visión → occluders (tall) y
-  // colisión derivada (solid). Requiere imagen previa (G/auto).
-  if (devInput.consumeSegmentScene()) {
-    if (activeTileKey) {
-      const k = activeTileKey;
-      void sceneImageController.analyzeSceneForTile(k)
-        .then((a) => applyTileAnalysis(k, a, derivedCollisionDeps))
-        .catch(() => {});
+    } else {
+      // La oblicua ya no tiene pipeline de imagen: su arte es el clay local.
+      // Fail-loud antes que una tecla que no hace nada.
+      errors.push(
+        "scene",
+        "G: la vista oblicua ya no genera imagen IA de escenario — el repintado por tile se retiró y su arte es el clay 3D local. El atlas de superficies vive en la vista de primera persona.",
+      );
     }
   }
-  // B cicla la vista de debug: off → colisiones → fases del pipeline de
-  // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
-  // para comparar in situ el plan declarado con lo que pintó el modelo.
+  // B cicla la vista de debug: off → colisiones → blueprint compuesto — para
+  // comparar in situ el plan declarado con lo que pinta el clay.
   if (devInput.consumeToggleCollisionDebug()) {
     if (sessionView === "fps" && fpsRenderer) {
       // Ciclo propio fps: colisión (celdas sólidas + forward de NPCs) y
@@ -1853,16 +1729,6 @@ function gameLoop(now: number): void {
       const mode = renderer.cycleDebugView();
       log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
     }
-  }
-  // N (descubrimiento) quedó integrada en el análisis completo de X.
-  if (devInput.consumeDiscoverObjects()) {
-    errors.push("scene", "N está integrada en X (análisis completo del tile) — usa X");
-  }
-  // R = Revisión por visión del blueprint (Claude vía MCP) ANTES de gastar
-  // créditos con G. Aplica los fixes que devuelva y re-renderiza. Opt-in:
-  // requiere terminal de Claude Code escuchando; si no, el error va al log.
-  if (devInput.consumeReviewBlueprint()) {
-    void reviewBlueprintAndApply().catch(() => {});
   }
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
@@ -2245,9 +2111,10 @@ sharedBridge.on("render_mode_changed", (msg) => {
   );
 });
 
-/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies (fps) o
- *  sin imagen IA (oblicua) y skins de personaje aún sobre la base y_bot. La
- *  identidad del item es la clave del tile o el prompt. */
+/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies (solo
+ *  en fps: la oblicua ya no tiene pipeline de imagen) y skins de personaje aún
+ *  sobre la base y_bot. La identidad del item es la clave del tile o el
+ *  prompt. */
 function listFakeItems(): FakeItem[] {
   const items: FakeItem[] = [];
   if (sessionView === "fps") {
@@ -2265,17 +2132,6 @@ function listFakeItems(): FakeItem[] {
         // verdad (captura del canvas WebGL) es otro trabajo.
         thumb: null,
         inFlight: fpsAtlasController.running,
-      });
-    }
-  } else {
-    for (const t of tileStore.entries.values()) {
-      if (t.tx === undefined || renderer.tileHasImage(t.key)) continue;
-      items.push({
-        kind: "tile",
-        id: t.key,
-        label: `Tile ${t.key} (clay 3D)`,
-        thumb: renderer.getTilePlanFullImage(t.key),
-        inFlight: false,
       });
     }
   }
@@ -2308,10 +2164,6 @@ function listFakeItems(): FakeItem[] {
 /** Generación selectiva de UN item fake (siempre permitida, con el toggle
  *  global en OFF incluido — es la vía de gasto controlado del menú dev). */
 async function generateFakeItem(item: FakeItem): Promise<void> {
-  if (item.kind === "tile") {
-    await sceneImageController.generateForTile(item.id);
-    return;
-  }
   if (item.kind === "fps_atlas") {
     await fpsAtlasController.runFor(item.id);
     return;

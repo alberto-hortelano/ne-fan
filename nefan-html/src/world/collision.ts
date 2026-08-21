@@ -1,30 +1,26 @@
 /** Colisión del mundo del cliente 2D — extraída de main.ts.
  *
- *  Tres fuentes de solidez por tile, en UNIÓN (todas bloquean):
+ *  Dos fuentes de solidez por tile, en UNIÓN (las dos bloquean):
  *  1. `collider`      — terrain_grid del esquema (muros W, agua w, features);
  *  2. `svgCollider`   — PLAN declarado: agua∖decks del `ground` + huellas de
  *                       los `volumes`, derivados por la función de core
  *                       compartida `planCollisionGrid` (el MISMO cálculo que el
  *                       bridge en sim-collision → jugador y NPCs no divergen).
- *                       Activa desde que llega el tile;
- *  3. `imageCollider` — derivada del análisis de la imagen IA (segmentos
- *                       `solid` clasificados por visión).
- *  Los AABBs de objetos del esquema solo aplican mientras el tile no tiene
- *  SVG aplicado ni análisis: en cuanto hay mapa real (plano o imagen), los
- *  muros con puertas y huecos sustituyen a la caja ciega.
+ *                       Activa desde que llega el tile.
+ *  Los AABBs de objetos del esquema solo aplican mientras el tile no tiene el
+ *  plan aplicado: en cuanto hay mapa real, los muros con puertas y huecos
+ *  sustituyen a la caja ciega.
  *
  *  Semántica "salir sí, entrar no" en todas las fuentes: un obstáculo que YA
  *  solapa la posición actual no bloquea (permite des-penetrar tras un spawn
  *  solapado); solo bloquean los obstáculos NUEVOS del destino. */
 
 import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
-import { parseTileKey } from "@nefan-core/src/scene/tile.js";
 import {
   planCollisionGrid,
   type GroundFeature,
   type Volume,
 } from "@nefan-core/src/scene/blueprint/index.js";
-import type { TileAnalysis } from "../scene/scene-image.js";
 import { errors } from "../ui/error-log.js";
 import { dlog } from "../dev/debug-log.js";
 import type { TileStore } from "./tile-store.js";
@@ -71,7 +67,7 @@ export class CollisionSystem {
   }
 
   /** ¿El destino (x,z) está bloqueado para el jugador? Unión de frontera,
-   *  colliders de terreno/svg/imagen de los tiles tocados (≤4, coordenadas
+   *  colliders de terreno/plan de los tiles tocados (≤4, coordenadas
    *  globales) y AABBs del esquema donde aún aplican. */
   collidesAt(x: number, z: number): boolean {
     if (this.frontierBlocksMove(x, z)) return true;
@@ -90,11 +86,11 @@ export class CollisionSystem {
     for (const obj of this.deps.getObstacles()) {
       if (!obj.sizeXZ) continue;
       if (obj.category !== "building" && obj.category !== "prop") continue;
-      // La imagen (o el SVG) manda: en un tile analizado o con colisión SVG
-      // aplicada, los AABBs del esquema dejan de aplicar — la colisión sale
-      // de los muros/troncos reales, con sus puertas y huecos.
+      // El PLAN manda: en un tile con colisión del plan aplicada, los AABBs
+      // del esquema dejan de aplicar — la colisión sale de los muros/troncos
+      // reales, con sus puertas y huecos.
       const owner = tileStore.getAt(obj.pos.x, obj.pos.z);
-      if (owner?.imageAnalyzed || owner?.svgApplied) continue;
+      if (owner?.svgApplied) continue;
       const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
       const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
       if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
@@ -106,17 +102,16 @@ export class CollisionSystem {
     return false;
   }
 
-  /** Unión de los tres colliders de un tile sobre el mismo movimiento. */
+  /** Unión de los dos colliders de un tile sobre el mismo movimiento. */
   private tileBlocks(
-    tile: { collider: TerrainCollider | null; svgCollider: TerrainCollider | null; imageCollider: TerrainCollider | null },
+    tile: { collider: TerrainCollider | null; svgCollider: TerrainCollider | null },
     from: { x: number; z: number },
     x: number,
     z: number,
   ): boolean {
     return Boolean(
       tile.collider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS) ||
-      tile.svgCollider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS) ||
-      tile.imageCollider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS),
+      tile.svgCollider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS),
     );
   }
 }
@@ -125,13 +120,8 @@ export class CollisionSystem {
 
 export interface DerivedCollisionDeps {
   tileStore: TileStore;
-  /** Espejo visual del overlay B (celdas azules del svg). */
+  /** Espejo visual del overlay B (celdas azules del plan). */
   setTileSvgGrid(key: string, grid: TerrainGridData | null): void;
-  /** Espejo visual del overlay B (celdas violetas del análisis). */
-  setTileAnalysisGrid(key: string, grid: TerrainGridData | null): void;
-  /** Reporta el análisis al bridge (persistencia + contexto LLM); el caller
-   *  decide cuándo hay dónde persistir (sesión activa, tiles de grid). */
-  reportAnalysis(tx: number, ty: number, elements: TileAnalysis["elements"]): void;
 }
 
 /** Colisión base del plan declarado: agua∖decks del `ground` + huellas de los
@@ -159,30 +149,4 @@ export function applyPlanCollision(
   } catch (err) {
     errors.push("scene", `plan de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
   }
-}
-
-/** Mundo derivado de la imagen: materializa el análisis de un tile. El grid
- *  de segmentos sólidos pasa a ser el collider derivado del tile (la imagen
- *  manda: los AABBs del esquema en ese tile dejan de bloquear). Grid null =
- *  analizado sin sólidos (tile abierto). */
-export function applyTileAnalysis(
-  key: string,
-  analysis: TileAnalysis,
-  deps: DerivedCollisionDeps,
-): void {
-  let collider: TerrainCollider | null;
-  try {
-    collider = analysis.grid ? createTerrainCollider(analysis.grid) : null;
-  } catch (err) {
-    errors.push("scene", `grid derivado inconsistente en ${key}; colisión de imagen desactivada`, err);
-    return;
-  }
-  deps.tileStore.markAnalyzed(key, collider);
-  deps.setTileAnalysisGrid(key, analysis.grid);
-  dlog(
-    `[collision] ${key}: análisis aplicado — ` +
-    `${collider?.solidCellCount ?? 0} celdas sólidas, ${analysis.occluders.length} occluders`,
-  );
-  const tc = parseTileKey(key);
-  if (tc) deps.reportAnalysis(tc.tx, tc.ty, analysis.elements);
 }

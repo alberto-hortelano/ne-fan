@@ -231,10 +231,6 @@
         {
           "path": "nefan-html/src/renderer/fps-gl.ts",
           "reason": "renderer y canvas propios de la vista fps"
-        },
-        {
-          "path": "nefan-html/src/dev/greybox-clay.ts",
-          "reason": "página de dev (dev/greybox-clay.html) fuera del bundle del juego; usa import dinámico para el modo cine"
         }
       ]
     },
@@ -315,7 +311,7 @@
       "desc": "El cliente 2D no traga errores en silencio",
       "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max.",
       "severity": "warn",
-      "max": 10,
+      "max": 6,
       "files": [
         "nefan-html/src/**/*.ts"
       ],

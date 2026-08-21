@@ -239,25 +239,6 @@ export class BridgeClient {
     this.send({ type: "request_tile", tx, ty, reason, edge });
   }
 
-  /** Análisis de imagen del tile (mundo derivado): fire-and-forget, el bridge
-   *  lo persiste en el save y lo resume al motor narrativo. */
-  sendTileAnalysis(
-    tx: number,
-    ty: number,
-    elements: Array<{
-      label: string;
-      solid: boolean;
-      tall: boolean;
-      rect: { minX: number; maxX: number; minZ: number; maxZ: number };
-    }>,
-  ): void {
-    this.send({ type: "tile_analysis", tx, ty, elements });
-  }
-
-  sendMapPlanUpdate(tx: number, ty: number, plan: { ground?: unknown[]; volumes?: unknown[] }): void {
-    this.send({ type: "map_plan_update", tx, ty, ground: plan.ground, volumes: plan.volumes });
-  }
-
   /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile
    *  nuevo) — no resetea nada, ids ya presentes se ignoran. */
   sendAddCombatants(enemies: {

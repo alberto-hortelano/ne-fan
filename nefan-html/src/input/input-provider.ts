@@ -2,8 +2,8 @@
  *
  *  Implementaciones registradas en ./registry.ts (default: teclado+ratón;
  *  "scripted" para bench/E2E). Solo cubre GAMEPLAY: las teclas de desarrollo
- *  (G/X/B/N-descubrir/R-review) viven en DevToolsInput, fijo e independiente
- *  del esquema de control — un gamepad no las necesita. */
+ *  (G/B) viven en DevToolsInput, fijo e independiente del esquema de control
+ *  — un gamepad no las necesita. */
 
 export interface InputState {
   up: boolean;

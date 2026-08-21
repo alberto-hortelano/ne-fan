@@ -29,17 +29,3 @@ function envFromQuery(search: string = location.search): Record<string, string |
 export function serviceUrl(name: ServiceName): string {
   return resolveServiceUrl(name, envFromQuery());
 }
-
-/** URLs por servicio que consumen los pipelines de imagen del cliente
- *  (SceneImageController, atlas fps). Un solo objeto en vez de N parámetros
- *  posicionales: el reparto por servicio creció en F3/F4. */
-export interface GenServiceUrls {
-  /** narrative-llm: reviews y análisis con visión. */
-  narrative: string;
-  /** gpu-worker: peel_scene_layer, inpaint_scene_plate. */
-  gpu: string;
-  /** remote-gen: repintado Meshy/fal, sheets skinneados. */
-  remote: string;
-  /** asset-store (:8767): blobs /cache/*. */
-  assets: string;
-}
