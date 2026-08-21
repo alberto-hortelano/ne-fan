@@ -588,6 +588,17 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
+    # ── Candado de la variante retirada (espejo de FormatDSceneSchema) ───
+    # Format D tiene DOS formas: tile (mundo continuo) o stage (proscenio). La
+    # "suelta" —size/terrain a elección del motor, sin sitio en el plano ni
+    # salidas declaradas— se retiró (issue #172). El mensaje nombra las dos
+    # alternativas para que el modelo pueda re-responder.
+    if not is_tile and data.get("stage") is None:
+        raise ValueError(
+            "una escena necesita `tile` {tx,ty} (mundo continuo, pídelo con generate_tile) "
+            "o `stage` (plató proscenio): la escena suelta (solo `size`+`terrain`) ya no existe"
+        )
+
     # ── Stage (mundos proscenio): espejo estructural fail-loud (exits de
     # jugabilidad) — antes era passthrough y cualquier dict colaba; el zod
     # completo lo re-aplica el bridge. Un tile jamás lleva stage.

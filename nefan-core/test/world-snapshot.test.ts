@@ -215,12 +215,11 @@ describe("world-snapshot en start_session", () => {
         first.broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
       );
       assert.equal(first.aiCalls.scene.length, 1);
-      // El snapshot pasivo quedó en data/games/{id}/world/ (rama tile: el
-      // fake devuelve una escena legacy sin tile — sigue siendo replayable).
+      // El snapshot pasivo quedó en data/games/{id}/world/ (rama tile).
       const snap = JSON.parse(
         readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
       ) as WorldSnapshot;
-      assert.equal(snap.entry_scene_id, "scene_test");
+      assert.equal(snap.entry_scene_id, "tile_0_0");
       assert.equal(Object.keys(snap.scenes).length, 1);
 
       const second = makeCtx({ gamesDir });
@@ -231,7 +230,7 @@ describe("world-snapshot en start_session", () => {
         second.ctx,
       );
       assert.equal(second.aiCalls.scene.length, 0, "segundo arranque = replay del snapshot");
-      assert.ok(second.narrative.scenes_loaded["scene_test"]);
+      assert.ok(second.narrative.scenes_loaded["tile_0_0"]);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

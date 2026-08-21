@@ -9,6 +9,7 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
+import { resolveBootstrapPlaceId } from "../../src/world-map/bootstrap-place.js";
 import {
   broadcastScene,
   sessionChangedError,
@@ -50,21 +51,34 @@ export async function generateBootstrapTileScene(
   if (!res.ok || !res.scene) {
     throw new Error(`No se pudo generar la escena. ${res.error ?? "Revisa el motor narrativo."}`);
   }
-  // El bridge fija la verdad geométrica del tile de arranque. Las escenas
-  // legacy (sin biome) siguen pasando por la ruta antigua de Format D v2.
-  const isTileScene = res.scene.tile !== undefined || res.scene.biome !== undefined;
-  let sceneId: string;
-  if (isTileScene) {
-    res.scene.tile = { tx: 0, ty: 0 };
-    sceneId = tileKey(0, 0);
-    res.scene.scene_id = sceneId;
-    res.scene.room_id = sceneId;
-    const check = validateScene(res.scene, undefined, { required_crossings: [], bootstrap: true });
-    if (!check.ok) {
-      throw new Error(`El tile inicial no es jugable: ${check.errors.join(" · ")}`);
-    }
-  } else {
-    sceneId = String(res.scene.room_id ?? `scene_${Date.now()}`);
+  // El bridge fija la verdad geométrica del tile de arranque. Se pidió con
+  // `generate_tile`, así que lo que vuelva TIENE que ser un tile: una escena
+  // sin `tile` ni `biome` era la variante suelta, que ya no existe (issue
+  // #172) — fail-loud con el mensaje que el motor puede corregir.
+  if (res.scene.tile === undefined && res.scene.biome === undefined) {
+    throw new Error(
+      "El motor narrativo respondió al bootstrap sin `tile` ni `biome`: en un mundo de plano " +
+        "continuo la escena inicial es un TILE (la escena suelta se retiró del contrato)",
+    );
+  }
+  res.scene.tile = { tx: 0, ty: 0 };
+  const sceneId = tileKey(0, 0);
+  res.scene.scene_id = sceneId;
+  res.scene.room_id = sceneId;
+  // A qué LUGAR pertenece el tile de arranque. Es el único tile en el que el
+  // bridge no puede decidirlo solo (el mapa lo acaba de sembrar el motor en
+  // esta misma llamada), así que se cruza lo que declaró con el mapa real: si
+  // no cuadra, error que el motor puede corregir — nunca un panel «Salidas»
+  // vacío, que es la única vía de viaje del cliente 2D (issue #172).
+  const placeRes = resolveBootstrapPlaceId(ctx.narrative.worldMap, res.scene);
+  if (placeRes.kind === "error") {
+    throw new Error(`El tile inicial no queda atado a ningún lugar del mapa: ${placeRes.error}`);
+  }
+  if (placeRes.kind === "place") res.scene.place_id = placeRes.placeId;
+  else delete res.scene.place_id;
+  const check = validateScene(res.scene, undefined, { required_crossings: [], bootstrap: true });
+  if (!check.ok) {
+    throw new Error(`El tile inicial no es jugable: ${check.errors.join(" · ")}`);
   }
   // Expandir primitivas ANTES de persistir y de snapshotear: lo guardado,
   // snapshoteado y difundido es Format D plano.

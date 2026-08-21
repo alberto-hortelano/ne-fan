@@ -20,14 +20,49 @@ export async function backendEsFalso(ctx) {
   });
 }
 
+/** El home del título se termina de armar ASÍNCRONAMENTE: `renderHome` pinta
+ *  el botón «Nueva partida» de una tacada en el `innerHTML` y solo le cuelga
+ *  el handler DESPUÉS de `await listSessions()`. Entre las dos cosas hay una
+ *  ventana —151 ms medidos contra el bridge del preset 5— en la que el botón
+ *  existe, se deja pulsar y el click NO HACE NADA.
+ *
+ *  Esperar a que el botón exista es, por tanto, esperar a la señal
+ *  equivocada: el guion pulsa dentro de la ventana y luego se queda colgado
+ *  esperando una pantalla que nadie va a pintar. La señal buena es el status,
+ *  que `renderHome` fija justo antes de enganchar el handler y sin ningún
+ *  `await` por medio: si el texto ya se ve desde fuera, el handler está
+ *  puesto.
+ *
+ *  Valen las dos salidas —bridge vivo y bridge caído— a propósito: con el
+ *  bridge caído el guion debe seguir y fallar por su propia afirmación, no
+ *  por un timeout opaco aquí. */
+export async function esperarTituloListo(ctx, maxMs = 30_000) {
+  return ctx.waitFor(
+    "el home del título termina de cargar los saves (el botón ya escucha)",
+    () => {
+      if (!document.getElementById("ts-new")) return null;
+      const t = document.getElementById("ts-status")?.textContent ?? "";
+      return /^Bridge OK/.test(t) || /No se puede contactar al bridge/.test(t) ? t : null;
+    },
+    maxMs,
+  );
+}
+
+/** Abre el selector de mundos desde el home. ÚNICO sitio donde se pulsa
+ *  «Nueva partida»: la espera de arriba va incluida para que ningún guion
+ *  vuelva a pulsar un botón que todavía no escucha. */
+export async function abrirSelectorDeMundos(ctx) {
+  await esperarTituloListo(ctx);
+  await ctx.page.click("#ts-new");
+  await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
+}
+
 /** Abre partida nueva: mundo → vista → modo de personajes → estilo →
  *  Continuar → Comenzar. Devuelve `{ gameId, styleId }` para que el guion
  *  compare contra lo que el juego usa después (p. ej. el `style_id` que viaja
  *  en la petición de skin). */
 export async function nuevaPartida(ctx, { gameId = "alta_fantasia", view = "overworld", charMode = "image" } = {}) {
-  await ctx.waitFor("el título ofrece 'Nueva partida'", () => Boolean(document.getElementById("ts-new")));
-  await ctx.page.click("#ts-new");
-  await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
+  await abrirSelectorDeMundos(ctx);
 
   const mundos = await ctx.page.$$eval("[data-game-id]", (els) => els.map((e) => e.dataset.gameId));
   if (!mundos.includes(gameId)) {

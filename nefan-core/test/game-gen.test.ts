@@ -1,5 +1,8 @@
-/** generate_game: pre-generación del mundo (bootstrap + anillo 3×3 + places
- *  clave) en sesión efímera, snapshot persistido y replay en start_session.
+/** generate_game: pre-generación del mundo en sesión efímera, snapshot
+ *  persistido y replay en start_session. En la rama TILE la pre-generación es
+ *  el bootstrap + el anillo 3×3 y nada más: los places se realizan al viajar
+ *  a ellos (antes se pre-realizaban como escenas SUELTAS, la variante
+ *  retirada en el issue #172).
  *  El fake de generateScene actúa como el motor: siembra el world map por el
  *  mismo camino que las map tools (escribe en ctx.narrative.worldMap). */
 import { describe, it } from "node:test";
@@ -62,7 +65,11 @@ function motorFake(bundle: ReturnType<typeof makeCtx>, opts: { failTile?: [numbe
           description: "Sitio sembrado por el fake",
           parent_id: "aldea",
         });
-        return { ok: true, scene: { tile: { tx: 0, ty: 0 }, ...tileScene(true) } };
+        // `place_id` es obligatorio en el bootstrap: es lo que ata la escena
+        // inicial al mapa que el motor acaba de sembrar. Sin él el bridge lo
+        // rechaza en vez de dejar al jugador con el panel «Salidas» vacío
+        // (issue #172). Un motor que no lo declare no pre-genera nada.
+        return { ok: true, scene: { tile: { tx: 0, ty: 0 }, place_id: "aldea", ...tileScene(true) } };
       }
       if (llmCtx.generate_tile) {
         const { tx, ty } = llmCtx.generate_tile;
@@ -72,13 +79,11 @@ function motorFake(bundle: ReturnType<typeof makeCtx>, opts: { failTile?: [numbe
         return { ok: true, scene: { tile: { tx, ty }, ...tileScene(false) } };
       }
       if (llmCtx.realize_place) {
-        return {
-          ok: true,
-          scene: {
-            room_id: `realized_${llmCtx.realize_place.id}`,
-            room_description: `Escena de ${llmCtx.realize_place.name}`,
-          },
-        };
+        // En un mundo de plano continuo NADIE debe pedir realize_place
+        // durante la génesis: la escena que salía de aquí era una suelta.
+        throw new Error(
+          `realize_place("${llmCtx.realize_place.id}") en la rama tile: los places se realizan al viajar`,
+        );
       }
       throw new Error("petición inesperada al fake del motor");
     },
@@ -112,7 +117,7 @@ async function runGenerate(bundle: ReturnType<typeof makeCtx>) {
 }
 
 describe("generate_game", () => {
-  it("genera bootstrap + anillo + places, escribe el snapshot, borra el save efímero y el siguiente start_session replayea", async () => {
+  it("genera bootstrap + anillo (sin pre-realizar places), escribe el snapshot, borra el save efímero y el siguiente start_session replayea", async () => {
     const gamesDir = tmpGamesDir();
     try {
       const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
@@ -122,15 +127,16 @@ describe("generate_game", () => {
       assert.equal(resp.queued, "queued");
       assert.equal(final.phase, "ready");
 
-      // 1 bootstrap + 8 vecinos + 2 places = 11 llamadas al motor.
-      assert.equal(bundle.aiCalls.scene.length, 11);
+      // 1 bootstrap + 8 vecinos = 9 llamadas al motor. Los places NO se
+      // pre-realizan en la rama tile (el fake lanza si alguien lo intenta).
+      assert.equal(bundle.aiCalls.scene.length, 9);
       const snap = JSON.parse(
         readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
       ) as WorldSnapshot;
       assert.equal(snap.entry_scene_id, "tile_0_0");
-      assert.equal(Object.keys(snap.scenes).length, 11);
+      assert.equal(Object.keys(snap.scenes).length, 9);
       assert.ok(snap.scenes["tile_1_1"], "vecino del anillo en el snapshot");
-      assert.ok(snap.scenes["realized_aldea"], "place clave pre-realizado");
+      assert.equal(snap.scenes["realized_aldea"], undefined, "ningún place pre-realizado");
       assert.ok(
         (snap.world_map as { places: Record<string, unknown> }).places["aldea"],
         "world map sembrado en el snapshot",
@@ -144,14 +150,16 @@ describe("generate_game", () => {
       const { socket } = makeSocket();
       await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, play.ctx);
       assert.equal(play.aiCalls.scene.length, 0);
-      assert.equal(Object.keys(play.narrative.scenes_loaded).length, 11);
+      assert.equal(Object.keys(play.narrative.scenes_loaded).length, 9);
       assert.equal(play.narrative.world.active_scene_id, "tile_0_0");
       assert.ok(play.narrative.hasTile(1, 0), "el anillo se sirve por request_tile sin LLM");
-      assert.equal(
-        play.narrative.worldMap.get("aldea")?.realized_scene_id,
-        "realized_aldea",
-        "place pre-realizado enganchado en el world map",
-      );
+      // El world map sembrado por el motor SÍ viaja en el snapshot. El lugar
+      // de PARTIDA queda realizado —es el tile de arranque, y ese vínculo es
+      // lo que da salidas al panel del jugador—; los demás no, y se realizan
+      // al viajar a ellos.
+      assert.ok(play.narrative.worldMap.get("aldea"), "place del world map replayado");
+      assert.equal(play.narrative.worldMap.get("aldea")?.realized_scene_id, "tile_0_0");
+      assert.equal(play.narrative.worldMap.get("molino")?.realized_scene_id, undefined);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
@@ -169,7 +177,7 @@ describe("generate_game", () => {
       const snap = JSON.parse(
         readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
       ) as WorldSnapshot;
-      assert.equal(Object.keys(snap.scenes).length, 10, "todo menos el vecino fallido");
+      assert.equal(Object.keys(snap.scenes).length, 8, "todo menos el vecino fallido");
       assert.equal(snap.scenes["tile_1_0"], undefined);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });

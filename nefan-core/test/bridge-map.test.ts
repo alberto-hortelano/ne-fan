@@ -14,6 +14,7 @@ import {
   makeSocket,
   waitFor,
   } from "./helpers.js";
+import type { NarrativeState } from "../src/narrative/narrative-state.js";
 
 describe("bridge player_entered_place + map triggers", () => {
   it("lugar desconocido → narrative_status: error", async () => {
@@ -94,184 +95,222 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.equal(bosqueScene?.exits?.[0]?.edge, "north");
   });
 
-  it("lugar sin escena → lazy realize vía generateScene y trigger tras la escena", async () => {
-    const { ctx, broadcasts, narrative } = makeCtx({
-      ai: {
-        generateScene: async () => ({
-          ok: true,
-          scene: { room_id: "scene_forge", room_description: "la forja" },
-        }),
-      },
-    });
-    narrative.startNewSession("plugtest");
-    narrative.worldMap.upsertPlace({
-      id: "forge",
-      kind: "site",
-      parent_id: "world",
-      name: "La Forja",
-    });
-
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forge" }, socket, ctx);
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
-    );
-    // La escena generada queda ligada al place y registrada.
-    assert.equal(narrative.worldMap.get("forge")?.realized_scene_id, "scene_forge");
-    assert.ok(narrative.scenes_loaded["scene_forge"]);
-    const phases = broadcasts
-      .filter((m): m is NarrativeStatusMessage => m.type === "narrative_status")
-      .map((m) => m.phase);
-    assert.deepEqual(phases, ["generating", "ready"]);
-  });
 });
 
-describe("bridge player_crossed_frontier", () => {
-  /** Sesión con un place activo "aldea" realizado, listo para cruzar fronteras. */
-  function seedAldea(narrative: NarrativeState): void {
-    narrative.startNewSession("plugtest");
-    narrative.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
-    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
-  }
-
-  it("camino feliz: el motor crea place+link, el bridge estampa el edge y difunde la escena", async () => {
-    let nref: NarrativeState | null = null;
-    const { ctx, broadcasts, narrative } = makeCtx({
-      ai: {
-        generateScene: async (llmCtx) => {
-          assert.equal((llmCtx.frontier_request as { edge: string }).edge, "east");
-          // El fake imita al motor: crea el place y el link SIN edge (probamos
-          // que el bridge lo estampa con la geometría real del cruce).
-          nref!.worldMap.upsertPlace({ id: "bosque_este", kind: "landmark", parent_id: "world", name: "Bosque" });
-          nref!.worldMap.addLink({ from: "aldea", to: "bosque_este", kind: "path" });
-          return { ok: true, scene: { room_id: "scene_bosque", place_id: "bosque_este", room_description: "el bosque" } };
-        },
-      },
-    });
-    nref = narrative;
-    seedAldea(narrative);
-
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
-    );
-
-    assert.equal(narrative.worldMap.get("bosque_este")?.realized_scene_id, "scene_bosque");
-    assert.equal(narrative.worldMap.serialize().active_place_id, "bosque_este");
-    // Edge estampado por el bridge sobre el link que dejó el motor.
-    const link = narrative.worldMap.getOutgoingLinks("aldea")[0];
-    assert.equal(link.edge, "east");
-    // La escena difundida lleva el exit de vuelta con el edge opuesto.
-    const sceneEvent = broadcasts.find(
-      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
-    );
-    const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
-    assert.equal(scene?.exits?.[0]?.place_id, "aldea");
-    assert.equal(scene?.exits?.[0]?.edge, "west");
-    assert.equal(ctx.sceneGen.current, null, "cola drenada");
+describe("bridge viaje a un place sin realizar (plano continuo)", () => {
+  /** Tile mínimo válido que devuelve el motor falso (sin cruces que continuar
+   *  ni player: no es el bootstrap). */
+  const tileScene = () => ({
+    biome: "grass",
+    scene_description: "la forja al borde del camino",
+    ground: [],
+    entities: [],
   });
 
-  it("el motor no crea el place → error accionable con map_upsert_place", async () => {
+  /** Mundo de tiles con el jugador en el tile (0,0) = place "claro", y un
+   *  link hacia "forja" que sale por el ESTE. */
+  function seedTravelWorld(narrative: NarrativeState): void {
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "claro", kind: "landmark", parent_id: "world", name: "El Claro" });
+    narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "La Forja" });
+    narrative.worldMap.addLink({ from: "claro", to: "forja", kind: "path", edge: "east" });
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({
+        tile: { tx: 0, ty: 0 },
+        scene_id: "tile_0_0",
+        place_id: "claro",
+        ...tileScene(),
+      }),
+    );
+  }
+
+  it("el destino se ancla a un tile libre y se genera como TILE, con el place en el contexto", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+    });
+    seedTravelWorld(narrative);
+    // El anillo de pre-generación ya ocupa el vecino este: el rayo sigue.
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", ...tileScene() }),
+      [],
+      { activate: false },
+    );
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    // Se pidió un TILE (nunca una escena suelta), en el primer hueco del rayo
+    // hacia el este, y el motor sabe QUÉ lugar construye ahí.
+    const gen = aiCalls.scene.at(-1) as { generate_tile?: Record<string, unknown> };
+    assert.ok(gen.generate_tile, "la petición es generate_tile");
+    assert.equal(gen.generate_tile.tx, 2);
+    assert.equal(gen.generate_tile.ty, 0);
+    assert.deepEqual(gen.generate_tile.place, {
+      id: "forja",
+      name: "La Forja",
+      kind: "site",
+      description: "",
+      attrs: {},
+    });
+    // …y el place vecino ya anclado viaja como referencia del vecindario.
+    assert.deepEqual(gen.generate_tile.nearby_places, [
+      { id: "claro", name: "El Claro", kind: "landmark", tile: [0, 0] },
+    ]);
+
+    // El place queda anclado y con su escena realizada = ese tile.
+    assert.deepEqual(narrative.worldMap.get("forja")?.anchor, { tx: 2, ty: 0 });
+    assert.equal(narrative.worldMap.get("forja")?.realized_scene_id, "tile_2_0");
+    assert.ok(narrative.hasTile(2, 0));
+
+    // Feedback al jugador: "Viajando a…" mientras genera, y el ready PIDE el
+    // spawn en el centro del tile (2,0) → x = 128, z = 0.
+    const generating = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "generating",
+    );
+    assert.equal(generating?.kind, "tile");
+    assert.match(generating?.message ?? "", /Viajando a La Forja/);
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.deepEqual(ready?.spawn, { x: 128, z: 0 });
+    assert.deepEqual(ready?.tile, { tx: 2, ty: 0 });
+
+    // Las exits difundidas con el tile son las del DESTINO, no las del origen.
+    const sceneEvent = broadcasts.findLast(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string }[] };
+    assert.deepEqual(scene.exits?.map((e) => e.place_id), ["claro"]);
+  });
+
+  it("si el motor acota el lugar con `place_anchors`, el spawn cae DENTRO del rect", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: {
         generateScene: async () => ({
           ok: true,
-          scene: { room_id: "scene_x", place_id: "no_existe", room_description: "x" },
+          // El motor decide que la forja ocupa las celdas 20..29 × 30..39 del
+          // tile: el anclaje se afina y el jugador debe aparecer ahí, no en
+          // el centro del tile.
+          scene: { ...tileScene(), place_anchors: [{ place_id: "forja", rect: [20, 30, 10, 10] }] },
         }),
       },
     });
-    seedAldea(narrative);
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_crossed_frontier", edge: "north" }, socket, ctx);
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
-    );
-    const err = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
-    );
-    assert.ok(err?.message?.includes("map_upsert_place"), err?.message);
-    assert.equal(ctx.sceneGen.current, null);
-  });
-
-  it("el motor no linkea el place nuevo → error accionable con map_link", async () => {
-    let nref: NarrativeState | null = null;
-    const { ctx, broadcasts, narrative } = makeCtx({
-      ai: {
-        generateScene: async () => {
-          nref!.worldMap.upsertPlace({ id: "paramo", kind: "landmark", parent_id: "world", name: "Páramo" });
-          return { ok: true, scene: { room_id: "scene_p", place_id: "paramo", room_description: "x" } };
-        },
-      },
-    });
-    nref = narrative;
-    seedAldea(narrative);
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_crossed_frontier", edge: "south" }, socket, ctx);
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
-    );
-    const err = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
-    );
-    assert.ok(err?.message?.includes("map_link"), err?.message);
-  });
-
-  it("cola: la misma frontera repetida durante la generación se dedupea", async () => {
-    let release: (() => void) | null = null;
-    let nref: NarrativeState | null = null;
-    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
-      ai: {
-        generateScene: async () => {
-          await new Promise<void>((r) => { release = r; });
-          nref!.worldMap.upsertPlace({ id: "colina", kind: "landmark", parent_id: "world", name: "Colina" });
-          nref!.worldMap.addLink({ from: "aldea", to: "colina", kind: "path" });
-          return { ok: true, scene: { room_id: "scene_c", place_id: "colina", room_description: "x" } };
-        },
-      },
-    });
-    nref = narrative;
-    seedAldea(narrative);
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
-    await waitFor(() => release !== null);
-    // Misma frontera repetida mientras genera → dedupe + re-broadcast generating.
-    const before = broadcasts.length;
-    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
-    assert.equal(aiCalls.scene.length, 1, "una sola llamada al motor");
-    assert.equal(
-      (broadcasts[before] as NarrativeStatusMessage)?.phase,
-      "generating",
-      "re-broadcast de generating para mantener el loader",
-    );
-    release!();
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
-    );
-    assert.equal(ctx.sceneGen.current, null);
-  });
-
-  it("lazy realize en vuelo → la frontera se dropea (y viceversa el guard cubre entered_place)", async () => {
-    let release: (() => void) | null = null;
-    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
-      ai: {
-        generateScene: async () => {
-          await new Promise<void>((r) => { release = r; });
-          return { ok: true, scene: { room_id: "scene_f", room_description: "x" } };
-        },
-      },
-    });
-    seedAldea(narrative);
-    narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "Forja" });
+    seedTravelWorld(narrative);
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
-    await waitFor(() => release !== null);
-    await routeMessage({ type: "player_crossed_frontier", edge: "east" }, socket, ctx);
-    assert.equal(aiCalls.scene.length, 1, "la frontera no dispara una segunda generación");
-    release!();
-    await waitFor(() =>
-      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    assert.deepEqual(narrative.worldMap.get("forja")?.anchor, { tx: 1, ty: 0, rect: [20, 30, 10, 10] });
+    // Tile (1,0): minX 32, minZ −32. Centro del rect = celda (25, 35) →
+    // x = 32 + 25·0.5 = 44.5, z = −32 + 35·0.5 = −14.5.
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
     );
+    assert.deepEqual(ready?.spawn, { x: 44.5, z: -14.5 });
+  });
+
+  it("los triggers del destino los dispara la POSICIÓN, no el viaje", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+    });
+    seedTravelWorld(narrative);
+    narrative.worldMap.addTrigger("forja", {
+      id: "yunque",
+      when: { type: "player_entered" },
+      consequences: [{ type: "story_update", delta: "Suena el yunque." }],
+    });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+    assert.ok(!narrative.story_so_far.includes("Suena el yunque."), "aún no ha llegado");
+
+    // El cliente aplica el spawn y su siguiente sim_input lo delata.
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: ready!.spawn!.x, y: 0, z: ready!.spawn!.z },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+        },
+      },
+      socket,
+      ctx,
+    );
+    await waitFor(() => narrative.story_so_far.includes("Suena el yunque."));
+    assert.equal(narrative.worldMap.serialize().active_place_id, "forja");
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+  });
+
+  it("volver a un place YA anclado re-difunde su tile y pide el spawn otra vez", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    seedTravelWorld(narrative);
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", place_id: "forja", ...tileScene() }),
+      [],
+      { activate: false },
+    );
+    narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0 };
+    narrative.worldMap.addTrigger("forja", {
+      id: "yunque",
+      when: { type: "player_entered" },
+      consequences: [{ type: "story_update", delta: "Suena el yunque." }],
+    });
+    broadcasts.length = 0;
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    assert.equal(aiCalls.scene.length, 0, "sin LLM: la escena ya existía");
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.deepEqual(ready?.spawn, { x: 64, z: 0 }, "centro del tile (1,0)");
+    assert.ok(narrative.story_so_far.includes("Suena el yunque."), "trigger de llegada");
+
+    // …y el sim_input que llega después NO los repite.
+    const antes = narrative.story_so_far.split("Suena el yunque.").length;
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 64, y: 0, z: 0 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+        },
+      },
+      socket,
+      ctx,
+    );
+    assert.equal(narrative.story_so_far.split("Suena el yunque.").length, antes, "sin re-disparo");
+  });
+
+  it("sin tile bajo el jugador el viaje es fail-loud, no un destino inventado", async () => {
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "La Forja" });
+    // Escena activa que NO es un tile: el rayo no tiene de dónde partir.
+    narrative.recordSceneLoaded("plato", { scene_id: "plato", stage: {} });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.match(err?.message ?? "", /No se pudo viajar a La Forja/);
+    assert.equal(err?.kind, "scene", "el loader del cliente lo muestra");
+    assert.equal(aiCalls.scene.length, 0, "no se gastó una llamada al motor");
+    assert.equal(narrative.worldMap.get("forja")?.anchor, undefined);
   });
 });
 
@@ -330,3 +369,130 @@ describe("bridge activación por posición (tiles + anchors)", () => {
   });
 });
 
+
+/** El panel «Salidas» del cliente 2D se dibuja desde `scene.exits`, que el
+ *  bridge adjunta con las salidas del place de la escena. Si la escena no
+ *  queda atada a ningún place, `enrichSceneWithExits` cae al
+ *  `active_place_id`, que en un mapa recién sembrado es la raíz "world" — sin
+ *  links, o sea panel VACÍO y sin un solo error. Como el panel es la única
+ *  vía viva de viaje a un lugar, ahí desaparece el juego entero en silencio.
+ *
+ *  De ahí estas dos reglas, que son la misma vista desde los dos lados: el
+ *  bridge etiqueta el place ÉL (nunca se lo pide al prompt) y, donde no puede
+ *  saberlo —solo el bootstrap—, grita en vez de callarse. */
+describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => {
+  const tileScene = (over: Record<string, unknown> = {}) => ({
+    biome: "grass",
+    scene_description: "el claro del arranque",
+    ground: [],
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+    ],
+    ...over,
+  });
+
+  /** Lo que hace el motor de verdad en el bootstrap: sembrar el world map con
+   *  las map tools DURANTE la llamada, antes de responder la escena. Por eso
+   *  el bridge no puede saber de antemano cuál es el lugar de partida. */
+  function seedMapLikeEngine(narrative: NarrativeState): void {
+    narrative.worldMap.upsertPlace({ id: "robledo", kind: "settlement", parent_id: "world", name: "Robledo" });
+    narrative.worldMap.upsertPlace({ id: "molino", kind: "landmark", parent_id: "world", name: "El Molino" });
+    narrative.worldMap.addLink({ from: "robledo", to: "molino", kind: "road", edge: "east" });
+  }
+
+  /** start_session contra un motor que siembra el mapa y responde `scene`. */
+  function bootstrapWith(scene: Record<string, unknown>) {
+    // El holder existe porque el fake tiene que alcanzar una sesión que
+    // todavía no existe cuando se construye: igual que el motor de verdad,
+    // siembra el mapa DENTRO de la llamada, no antes.
+    const sesion: { narrative?: NarrativeState } = {};
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          seedMapLikeEngine(sesion.narrative!);
+          return { ok: true as const, scene };
+        },
+      },
+    });
+    sesion.narrative = h.narrative;
+    return h;
+  }
+
+  const exitsOf = (broadcasts: { type: string }[]) => {
+    const ev = (broadcasts as NarrativeEventMessage[]).findLast(
+      (m) => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const scene = ev?.effects?.[0]?.data?.scene as { exits?: { place_id: string }[] } | undefined;
+    return scene?.exits?.map((e) => e.place_id);
+  };
+
+  it("el bootstrap SIN place_id, habiendo mapa, es error — no un panel vacío", async () => {
+    const { ctx, broadcasts } = bootstrapWith(tileScene());
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    // El motivo llega al motor y le dice qué añadir.
+    assert.match(err?.message ?? "", /place_id/);
+    assert.match(err?.message ?? "", /panel de \s*salidas sale VACÍO|salidas/);
+    // Y lo que NO pasa: difundir una escena muda con el panel apagado.
+    assert.equal(exitsOf(broadcasts), undefined, "ninguna escena difundida");
+  });
+
+  it("el bootstrap CON place_id queda atado y el panel ofrece el destino", async () => {
+    const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    assert.equal(narrative.worldMap.serialize().active_place_id, "robledo");
+    assert.deepEqual(exitsOf(broadcasts), ["molino"], "el panel ofrece el molino");
+  });
+
+  it("el bootstrap sin place_id pero con place_anchors se ata igual (el bridge lo deduce)", async () => {
+    // Es el caso que QA provocó a mano quitándole el place_id al motor de
+    // bench: con el anchor declarado, el bridge no necesita la prosa.
+    const { ctx, broadcasts, narrative } = bootstrapWith(
+      tileScene({ place_anchors: [{ place_id: "robledo", rect: [52, 48, 24, 16] }] }),
+    );
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.place_id, "robledo");
+    assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+  });
+
+  it("un tile de exploración NO hereda el place_id que invente el motor", async () => {
+    // Campo abierto: ningún place está anclado en (1,0). Si el place_id del
+    // modelo pasara, `recordSceneLoaded` activaría ese place y el panel
+    // pasaría a pintar las salidas de un sitio donde el jugador no está.
+    const { ctx, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => ({
+          ok: true as const,
+          // Sin entity `player`: solo el tile de bootstrap la lleva.
+          scene: tileScene({ place_id: "molino", scene_description: "campo abierto", entities: [] }),
+        }),
+      },
+    });
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", place_id: "robledo", ...tileScene() }),
+    );
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => narrative.hasTile(1, 0));
+
+    const persisted = narrative.scenes_loaded["tile_1_0"].scene_data;
+    assert.equal(persisted.place_id, undefined, "el place_id inventado se descarta");
+    assert.equal(narrative.worldMap.get("molino")?.realized_scene_id, undefined, "el molino sigue sin realizar");
+    assert.equal(narrative.worldMap.serialize().active_place_id, "robledo", "el jugador sigue en su lugar");
+  });
+});

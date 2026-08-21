@@ -169,11 +169,6 @@ const PlayerEnteredPlaceMessageSchema = z.object({
   placeId: z.string(),
 });
 
-const PlayerCrossedFrontierMessageSchema = z.object({
-  type: z.literal("player_crossed_frontier"),
-  edge: EdgeSchema,
-});
-
 const RequestTileMessageSchema = z.object({
   type: z.literal("request_tile"),
   tx: z.number(),
@@ -241,7 +236,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   RecordStyleApplicationMessageSchema,
   SaveSessionMessageSchema,
   PlayerEnteredPlaceMessageSchema,
-  PlayerCrossedFrontierMessageSchema,
   RequestTileMessageSchema,
   TileAnalysisMessageSchema,
   MapPlanUpdateMessageSchema,

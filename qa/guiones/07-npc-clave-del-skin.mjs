@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { backendEsFalso, nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
-const FIXTURE = "robledo_village";
+const FIXTURE = "robledo_tile";
 const FIXTURE_EN_DISCO = join(
   dirname(fileURLToPath(import.meta.url)),
   "..", "..", "nefan-core", "data", "scenes", `${FIXTURE}.json`,

@@ -12,7 +12,7 @@ import {
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
-import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, neighborTile, worldToTile, type TileCoord } from "../../src/scene/tile.js";
+import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
@@ -97,14 +97,29 @@ export function buildGenerateTileCtx(
     };
   }
 
-  // Places cuya escena realizada es un tile del vecindario (radio 2).
+  // Places del vecindario (radio 2), situados por su `anchor` o por una
+  // escena realizada que sea un tile. El place anclado a ESTE tile no es
+  // "cercano": es lo que hay que construir aquí, y viaja aparte en `place`.
   const nearby: NonNullable<LlmContext["generate_tile"]>["nearby_places"] = [];
-  for (const place of Object.values(ctx.narrative.worldMap.map.places)) {
-    if (!place.realized_scene_id) continue;
-    const rec = ctx.narrative.scenes_loaded[place.realized_scene_id];
-    if (!rec?.tile) continue;
-    if (Math.abs(rec.tile.tx - tx) <= 2 && Math.abs(rec.tile.ty - ty) <= 2) {
-      nearby.push({ id: place.id, name: place.name, kind: place.kind, tile: [rec.tile.tx, rec.tile.ty] });
+  let place: NonNullable<LlmContext["generate_tile"]>["place"];
+  for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
+    const realizedTile = p.realized_scene_id
+      ? ctx.narrative.scenes_loaded[p.realized_scene_id]?.tile
+      : undefined;
+    const coord: TileCoord | undefined = p.anchor ?? realizedTile;
+    if (!coord) continue;
+    if (coord.tx === tx && coord.ty === ty) {
+      place ??= {
+        id: p.id,
+        name: p.name,
+        kind: p.kind,
+        description: p.description,
+        attrs: p.attrs,
+      };
+      continue;
+    }
+    if (Math.abs(coord.tx - tx) <= 2 && Math.abs(coord.ty - ty) <= 2) {
+      nearby.push({ id: p.id, name: p.name, kind: p.kind, tile: [coord.tx, coord.ty] });
     }
   }
 
@@ -114,6 +129,7 @@ export function buildGenerateTileCtx(
     neighbors,
     // El jugador entra al tile nuevo por el borde OPUESTO al que cruza.
     entry: approachEdge ? { edge: oppositeEdge(approachEdge) } : undefined,
+    ...(place ? { place } : {}),
     nearby_places: nearby,
   };
 }
@@ -121,12 +137,16 @@ export function buildGenerateTileCtx(
 /** Núcleo de generación de un tile, compartido por la sesión en vivo y por
  *  generate_game: LLM con contexto de costuras, validación server-side,
  *  expansión y registro SIN activar (la escena activa la decide la posición
- *  del jugador). "exists" si el tile ya estaba; LANZA en cualquier fallo. */
+ *  del jugador). "exists" si el tile ya estaba; LANZA en cualquier fallo.
+ *  `opts.placeId` marca el tile como la escena realizada de ese place (viaje
+ *  a un lugar anclado): recordSceneLoaded lo engancha y las exits difundidas
+ *  pasan a ser las suyas. */
 export async function generateTileScene(
   ctx: BridgeContext,
   tx: number,
   ty: number,
   approachEdge?: Edge,
+  opts: { placeId?: string } = {},
 ): Promise<{ sceneId: string; scene: Record<string, unknown> } | "exists"> {
   const key = tileKey(tx, ty);
   // El tile pudo generarse mientras esperaba en la cola.
@@ -149,6 +169,18 @@ export async function generateTileScene(
   res.scene.tile = { tx, ty };
   res.scene.scene_id = key;
   res.scene.room_id = key;
+  // De qué LUGAR es este tile lo decide el BRIDGE, no el modelo: el place que
+  // se está realizando al viajar (`opts.placeId`) o el que ya tiene su anchor
+  // en estas coordenadas (`tileCtx.place`, el mismo que viajó al motor en el
+  // contexto). Determinista y sin pedirle nada al prompt.
+  //
+  // El `else` no sobra: si el bridge sabe que aquí no hay ningún lugar, un
+  // place_id inventado por el motor secuestraría el binding —
+  // `recordSceneLoaded` lo activaría como place— y el panel «Salidas» pasaría
+  // a pintar las salidas de OTRO sitio. Campo abierto es campo abierto.
+  const tilePlaceId = opts.placeId ?? tileCtx.place?.id;
+  if (tilePlaceId) res.scene.place_id = tilePlaceId;
+  else delete res.scene.place_id;
 
   // Red de seguridad server-side (el pre-flight MCP ya validó, pero el
   // fake-ai del bench y la ruta API directa no pasan por él).
@@ -175,12 +207,22 @@ export async function generateTileScene(
 }
 
 /** Genera el tile (tx,ty) — corre DENTRO de la cola (un job a la vez). Captura
- *  sus propios errores y los difunde como narrative_status. */
+ *  sus propios errores y los difunde como narrative_status.
+ *  `opts` sirve al viaje a un place anclado: `placeId` engancha el tile al
+ *  lugar, `message` narra "Viajando a X..." en vez de "Explorando..." y
+ *  `spawnAt` PIDE al cliente que aparezca ahí cuando el tile esté listo. Es
+ *  una función porque se resuelve AL DIFUNDIR: el motor pudo declarar
+ *  `place_anchors` con rect y afinar el anclaje durante la generación. */
 export async function runTileGeneration(
   ctx: BridgeContext,
   tx: number,
   ty: number,
   approachEdge?: Edge,
+  opts: {
+    placeId?: string;
+    message?: string;
+    spawnAt?: () => { x: number; z: number } | undefined;
+  } = {},
 ): Promise<void> {
   const key = tileKey(tx, ty);
   const start = Date.now();
@@ -195,21 +237,36 @@ export async function runTileGeneration(
       elapsedMs: Date.now() - start,
     });
   try {
-    // El tile pudo generarse mientras esperaba en la cola.
-    if (ctx.narrative.hasTile(tx, ty)) return;
+    // El tile pudo generarse mientras esperaba en la cola. Con spawn pedido
+    // (viaje) hay que difundirlo igual: si no, el jugador no se movería.
+    const already = ctx.narrative.getTile(tx, ty);
+    if (already) {
+      if (opts.spawnAt) {
+        broadcastScene(ctx, key, already.scene_data, Date.now() - start, {
+          edge: approachEdge,
+          spawn: opts.spawnAt(),
+        });
+      }
+      return;
+    }
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
       kind: "tile",
       tile: { tx, ty },
       edge: approachEdge,
-      message: approachEdge
-        ? `Explorando hacia el ${EDGE_ES[approachEdge]}...`
-        : `Generando el tile (${tx}, ${ty})...`,
+      message:
+        opts.message ??
+        (approachEdge
+          ? `Explorando hacia el ${EDGE_ES[approachEdge]}...`
+          : `Generando el tile (${tx}, ${ty})...`),
     });
-    const res = await generateTileScene(ctx, tx, ty, approachEdge);
+    const res = await generateTileScene(ctx, tx, ty, approachEdge, { placeId: opts.placeId });
     if (res === "exists") return;
-    broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, { edge: approachEdge });
+    broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, {
+      edge: approachEdge,
+      spawn: opts.spawnAt?.(),
+    });
   } catch (err) {
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
     fail(`Error: ${(err as Error).message ?? err}`);
@@ -388,17 +445,4 @@ export function activeTileOf(ctx: BridgeContext): TileCoord | null {
   const active = ctx.narrative.scenes_loaded[ctx.narrative.world.active_scene_id];
   if (active?.tile) return active.tile;
   return null;
-}
-
-/** El viejo player_crossed_frontier (tanda 2) delega en el pipeline de tiles:
- *  el vecino del tile activo en esa dirección, como blocking. */
-export async function handleFrontierAsTile(
-  edge: Edge,
-  ctx: BridgeContext,
-): Promise<boolean> {
-  const active = activeTileOf(ctx);
-  if (!active) return false;
-  const n = neighborTile(active.tx, active.ty, edge);
-  await handleRequestTile({ type: "request_tile", tx: n.tx, ty: n.ty, reason: "blocking", edge }, ctx);
-  return true;
 }

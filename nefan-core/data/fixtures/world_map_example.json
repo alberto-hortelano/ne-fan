@@ -46,7 +46,7 @@
 			"approx_position": [35, 38],
 			"approx_radius": 6,
 			"attrs": { "population": 300, "faction": "neutral", "danger": "low" },
-			"realized_scene_id": "robledo_village",
+			"realized_scene_id": "robledo_tile",
 			"triggers": [
 				{
 					"id": "primer_arribo_robledo",

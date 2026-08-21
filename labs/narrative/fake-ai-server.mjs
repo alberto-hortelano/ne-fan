@@ -6,20 +6,16 @@
 //   POST /generate_scene        → escena según el request (ver abajo)
 //   POST /report_player_choice  → { consequences: [] }
 //
-// /generate_scene LEE el body y responde como lo haría el motor narrativo:
-//   - sin flags            → escena inicial built-in (taberna con patio)
-//   - realize_place        → escena memoizada para ese place (campo abierto)
-//   - frontier_request     → imita al motor: hace los mismos POST HTTP a la
-//     State API que hace narrative-mcp (map_upsert_place + map_link con edge)
-//     y responde la escena del place nuevo con el player junto al borde
-//     opuesto. Idempotente: newId = `${from}_${edge}` y escena memoizada.
+// /generate_scene LEE el body y responde como lo haría el motor narrativo.
+// Format D tiene DOS variantes y el fake solo sirve esas dos:
+//   - generate_tile        → tile del plano continuo (bootstrap o normal)
+//   - stage_request        → plató proscenio (fixtures de data/scenes/proscenio)
+//   - cualquier otra cosa  → 422, igual que el gate del contrato: la escena
+//     "suelta" (size+terrain libres, sin tile ni stage) se retiró.
 //
 // Env:
 //   PORT          puerto HTTP (default 18765)
-//   SCENE_FILE    escena inicial custom (JSON)
 //   STATE_API     State API del bridge (default http://127.0.0.1:9878)
-//   FRONTIER_MODE "no_place" | "no_link" — omite pasos para reproducir los
-//                 errores fail-loud del handler de frontera en E2E.
 
 import http from "node:http";
 import zlib from "node:zlib";
@@ -29,10 +25,6 @@ import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 18765);
 const STATE_API = process.env.STATE_API ?? "http://127.0.0.1:9878";
-const FRONTIER_MODE = process.env.FRONTIER_MODE ?? "";
-// Retardo artificial en fronteras (ms) — simula los minutos del motor real
-// para poder observar el velo/freeze en E2E. 0 = instantáneo.
-const FRONTIER_DELAY_MS = Number(process.env.FRONTIER_DELAY_MS ?? 0);
 // Retardo artificial de TODO /generate_scene (ms), ANTES de responder nada
 // (ni cabeceras): reproduce las esperas de minutos del motor real. Regresión
 // del headersTimeout de undici (300 s) en el fetch del bridge.
@@ -49,65 +41,6 @@ let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
-
-const BUILTIN_SCENE = {
-  scene_id: "taberna_bench",
-  place_id: "taberna_bench_place",
-  scene_description: "Una taberna de bench con patio y camino al sur.",
-  size: { cols: 28, rows: 16, meters_per_cell: 0.5 },
-  terrain: Array.from({ length: 16 }, () => "g".repeat(28)),
-  terrain_legend: {},
-  structures: [
-    { type: "room", rect: [4, 2, 20, 10], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 9, width: 2 }] },
-  ],
-  vegetation_zones: [
-    { type: "pino", area: [0, 12, 28, 4], density: 0.08 },
-  ],
-  entities: [
-    { id: "mostrador", kind: "prop", name: "mostrador de roble", cell: [6, 3], footprint: [6, 1], glyph: "=" },
-    { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [9, 4], footprint: [1, 1], glyph: "n" },
-    { id: "antorcha_1", kind: "decor", name: "antorcha de pared", cell: [8, 3], footprint: [1, 1], glyph: "i", attach: "wall" },
-    { id: "player", kind: "player", name: "Tú", cell: [13, 13], footprint: [1, 1], glyph: "@" },
-  ],
-  ambient_event: "El fuego crepita dentro.",
-};
-
-const initialScene = process.env.SCENE_FILE
-  ? JSON.parse(readFileSync(process.env.SCENE_FILE, "utf8"))
-  : BUILTIN_SCENE;
-
-/** Celda de entrada del player en un grid 28x16 según el borde OPUESTO al
- *  cruzado (cruzó east ⇒ entra por el west del mapa nuevo). */
-const ENTRY_CELL = {
-  east: [2, 8],   // cruzó east → entra por el oeste
-  west: [25, 8],
-  south: [13, 2], // cruzó south → entra por el norte
-  north: [13, 13],
-};
-
-/** Escena de campo abierto para places realizados/frontera: transitable de
- *  borde a borde, con un camino que vuelve hacia el lado de entrada. */
-function openFieldScene(placeId, name, crossedEdge) {
-  const [pc, pr] = crossedEdge ? ENTRY_CELL[crossedEdge] : [13, 8];
-  return {
-    scene_id: `scene_${placeId}`,
-    place_id: placeId,
-    scene_description: `${name} — campo abierto de bench.`,
-    size: { cols: 28, rows: 16, meters_per_cell: 0.5 },
-    terrain: Array.from({ length: 16 }, () => "g".repeat(28)),
-    terrain_legend: {},
-    vegetation_zones: [
-      { type: "abeto", area: [0, 0, 28, 3], density: 0.1 },
-    ],
-    entities: [
-      { id: "player", kind: "player", name: "Tú", cell: [pc, pr], footprint: [1, 1], glyph: "@" },
-    ],
-    ambient_event: "El viento peina la hierba.",
-  };
-}
-
-/** Escenas ya servidas (idempotencia en retries y re-entradas). */
-const sceneByPlace = new Map();
 
 // ── Tiles del plano continuo ─────────────────────────────────────────────
 // TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
@@ -315,11 +248,33 @@ function bootstrapTile() {
   };
 }
 
+/** Volúmenes del lugar anclado a un tile (generate_tile.place): una casa
+ *  grande con puerta al sur y dos anexos, para que se VEA que el tile ES ese
+ *  lugar y no campo abierto. */
+function placeVolumes(place) {
+  return [
+    {
+      id: `${place.id}_principal`,
+      label: place.name,
+      type: "building",
+      rect: [50, 50, 28, 18],
+      wall_h: 5,
+      roof: { kind: "gable", material: "slate" },
+      walls: { material: "stone" },
+      doors: [{ edge: "s", at: 13, w: 4 }],
+    },
+    { id: `${place.id}_anexo`, label: "anexo", type: "building", rect: [82, 56, 12, 10], doors: [{ edge: "w", at: 4, w: 3 }] },
+    { id: `${place.id}_pozo`, label: "pozo", type: "prop", at: [52, 82], shape: "cylinder", h: 1.2, color: "#7b7268" },
+  ];
+}
+
 /** Tile normal: continúa cada crossing de los vecinos hasta el borde opuesto
  *  (el camino atraviesa el tile y siembra crecimiento futuro). Sin crossings,
- *  un camino oeste↔este por la fila 64. Determinista y memoizado. */
+ *  un camino oeste↔este por la fila 64. Si el tile lleva un `place` anclado
+ *  (viaje desde el panel «Salidas»), se construye ESE lugar.
+ *  Determinista y memoizado. */
 function makeTile(gt) {
-  const { tx, ty, neighbors } = gt ?? {};
+  const { tx, ty, neighbors, place } = gt ?? {};
   const ground = [];
   for (const [edge, n] of Object.entries(neighbors ?? {})) {
     for (const c of n.crossings ?? []) {
@@ -345,18 +300,31 @@ function makeTile(gt) {
   if (ground.length === 0) {
     ground.push({ id: "camino_oe", kind: "path", label: "camino", points: [[0, 64], [128, 64]], w: 2 });
   }
+  if (place) {
+    // Plaza de tierra ante la puerta, para que el lugar se lea desde arriba.
+    ground.push({ id: "plaza_place", kind: "area", label: "plaza", ellipse: { center: [64, 76], rx: 16, ry: 9 }, material: "dirt" });
+  }
   return {
     tile: { tx, ty },
     scene_id: `tile_${tx}_${ty}`,
-    scene_description: `Campo de bench (${tx}, ${ty}).`,
-    style_ref: "forest",
+    scene_description: place
+      ? `${place.name}: ${place.description || "el lugar al que llegó el jugador"} (bench ${tx}, ${ty}).`
+      : `Campo de bench (${tx}, ${ty}).`,
+    style_ref: place ? "settlement" : "forest",
     biome: "grass",
     ground,
+    ...(place ? { volumes: placeVolumes(place) } : {}),
+    // El motor acota DÓNDE vive el lugar dentro del tile: el bridge afina el
+    // anclaje con esto y el jugador aparece dentro, no en el centro geométrico.
+    ...(place ? { place_anchors: [{ place_id: place.id, rect: [48, 68, 32, 20] }] } : {}),
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
     entities: [
       { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1], glyph: "o" },
+      ...(place
+        ? [{ id: `${place.id}_vecino`, kind: "npc", name: `Vecino de ${place.name}`, cell: [72, 84], footprint: [1, 1], glyph: "n" }]
+        : []),
     ],
-    ambient_event: "El viento peina la hierba.",
+    ambient_event: place ? `Llegas a ${place.name}.` : "El viento peina la hierba.",
   };
 }
 
@@ -377,13 +345,30 @@ async function handleGenerateTile(gt) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
   }
   if (gt?.bootstrap) {
-    // Como el motor real: crear el place del arranque en el world map.
+    // Como el motor real: sembrar el world map con las map tools. Dos places
+    // y un link — el segundo NO se realiza aquí: es el destino del panel
+    // «Salidas», que se ancla a un tile libre al viajar.
     await statePost("/map/place", {
       id: "taberna_bench_place",
       kind: "settlement",
       parent_id: "world",
       name: "Taberna del bench",
     }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
+    await statePost("/map/place", {
+      id: "molino_bench_place",
+      kind: "settlement",
+      parent_id: "world",
+      name: "Molino del bench",
+      description: "Un molino de agua río abajo, con su presa y cuatro casas alrededor.",
+    }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
+    await statePost("/map/link", {
+      from: "taberna_bench_place",
+      to: "molino_bench_place",
+      kind: "road",
+      edge: "east",
+      travel_hours: 2,
+      description: "El camino del este, siguiendo el río.",
+    }).catch((err) => console.error("[fake-ai] bootstrap link:", err.message));
     return bootstrapTile();
   }
   const key = `tile_${gt.tx}_${gt.ty}`;
@@ -427,32 +412,6 @@ async function handleStageRequest(body) {
   const id = body.realize_place?.id;
   if (id && stageByPlace.has(id)) return stageByPlace.get(id);
   throw new Error(`fake-ai: sin fixture proscenio para el place "${id ?? "?"}"`);
-}
-
-/** Imita el contrato FRONTIER del motor: crea place + link (con edge) vía la
- *  State API y devuelve la escena del place nuevo. */
-async function handleFrontier(frontier) {
-  if (FRONTIER_DELAY_MS > 0) await new Promise((r) => setTimeout(r, FRONTIER_DELAY_MS));
-  const { from_place_id: from, edge } = frontier;
-  const newId = `${from}_${edge}`;
-  const name = `Más allá (${edge})`;
-
-  if (FRONTIER_MODE !== "no_place") {
-    // Parent del place nuevo = parent del place de origen (hermanos).
-    let parentId = "world";
-    const res = await fetch(`${STATE_API}/map/place/${encodeURIComponent(from)}`);
-    if (res.ok) {
-      const info = await res.json();
-      parentId = info.place?.parent_id ?? "world";
-    }
-    await statePost("/map/place", { id: newId, kind: "landmark", parent_id: parentId, name });
-    if (FRONTIER_MODE !== "no_link") {
-      await statePost("/map/link", { from, to: newId, kind: "path", edge });
-    }
-  }
-
-  if (!sceneByPlace.has(newId)) sceneByPlace.set(newId, openFieldScene(newId, name, edge));
-  return sceneByPlace.get(newId);
 }
 
 // --- Imágenes de escena (mock del pipeline Meshy, sin créditos) ---
@@ -1023,14 +982,6 @@ const server = http.createServer((req, res) => {
             return send(500, { detail: err.message });
           }
         }
-        if (body.frontier_request) {
-          try {
-            return send(200, await handleFrontier(body.frontier_request));
-          } catch (err) {
-            console.error(`[fake-ai] frontera falló:`, err.message);
-            return send(500, { detail: err.message });
-          }
-        }
         if (body.stage_request) {
           try {
             return send(200, await handleStageRequest(body));
@@ -1039,14 +990,16 @@ const server = http.createServer((req, res) => {
             return send(500, { detail: err.message });
           }
         }
-        if (body.realize_place?.id) {
-          const id = body.realize_place.id;
-          if (!sceneByPlace.has(id)) {
-            sceneByPlace.set(id, openFieldScene(id, body.realize_place.name ?? id, null));
-          }
-          return send(200, sceneByPlace.get(id));
-        }
-        return send(200, initialScene);
+        // Sin generate_tile ni stage_request no hay escena que servir: la
+        // variante "suelta" (size/terrain libres) se retiró del contrato, así
+        // que el fake responde lo mismo que el gate del motor real.
+        const pedido = body.realize_place?.id ? ` (realize_place "${body.realize_place.id}")` : "";
+        console.error(`[fake-ai] /generate_scene sin generate_tile ni stage_request${pedido} → 422`);
+        return send(422, {
+          detail:
+            "fake-ai: una escena es un tile (generate_tile) o un plató (stage_request); " +
+            `la variante suelta se retiró del contrato${pedido}`,
+        });
       }
       send(404, { detail: `fake-ai-server: ruta desconocida ${req.method} ${req.url}` });
     })();
@@ -1054,8 +1007,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.error(
-    `[fake-ai] escuchando en http://127.0.0.1:${PORT} (state API: ${STATE_API}` +
-    `${FRONTIER_MODE ? `, FRONTIER_MODE=${FRONTIER_MODE}` : ""})`,
-  );
+  console.error(`[fake-ai] escuchando en http://127.0.0.1:${PORT} (state API: ${STATE_API})`);
 });

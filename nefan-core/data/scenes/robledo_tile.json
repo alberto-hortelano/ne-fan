@@ -1,0 +1,357 @@
+{
+  "scene_id": "robledo_tile",
+  "scene_description": "Robledo ocupa la orilla oeste del río Negro. El camino real cruza el puente de tablones, pasa junto a la casa del concejo y desemboca en la plaza empedrada del pozo. Al este del río gira la rueda del molino.",
+  "tile": {
+    "tx": 0,
+    "ty": 0
+  },
+  "biome": "grass",
+  "terrain_legend": {
+    "w": "agua del río Negro",
+    "b": "puente de tablones",
+    "_": "camino de tierra"
+  },
+  "terrain_patches": [
+    {
+      "at": [84, 0],
+      "rows": [
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww"
+      ]
+    },
+    {
+      "at": [84, 60],
+      "rows": [
+        "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb"
+      ]
+    },
+    {
+      "at": [84, 68],
+      "rows": [
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
+        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww"
+      ]
+    }
+  ],
+  "ground": [
+    {
+      "id": "camino_real",
+      "kind": "path",
+      "label": "camino real",
+      "points": [[0, 63.5], [128, 63.5]],
+      "w": 4,
+      "material": "dirt"
+    },
+    {
+      "id": "camino_plaza",
+      "kind": "path",
+      "label": "calle de la plaza",
+      "points": [[62, 63.5], [62, 88]],
+      "w": 3,
+      "material": "dirt"
+    },
+    {
+      "id": "camino_herreria",
+      "kind": "path",
+      "label": "callejón de la herrería",
+      "points": [[62, 80], [26, 86]],
+      "w": 2,
+      "material": "dirt"
+    },
+    {
+      "id": "plaza",
+      "kind": "area",
+      "label": "plaza empedrada",
+      "ellipse": {
+        "center": [62, 80],
+        "rx": 11,
+        "ry": 7
+      },
+      "material": "cobble"
+    },
+    {
+      "id": "era",
+      "kind": "area",
+      "label": "era de trilla",
+      "ellipse": {
+        "center": [104, 86],
+        "rx": 9,
+        "ry": 6
+      },
+      "material": "dirt"
+    }
+  ],
+  "entities": [
+    {
+      "id": "casa_concejo",
+      "kind": "building",
+      "name": "Casa del Concejo",
+      "cell": [40, 40],
+      "footprint": [14, 10],
+      "glyph": "C",
+      "h": 5.5
+    },
+    {
+      "id": "capilla",
+      "kind": "building",
+      "name": "Capilla de San Beda",
+      "cell": [14, 16],
+      "footprint": [10, 8],
+      "glyph": "K",
+      "h": 7
+    },
+    {
+      "id": "herreria",
+      "kind": "building",
+      "name": "Herrería de Boris",
+      "cell": [16, 88],
+      "footprint": [9, 7],
+      "glyph": "H"
+    },
+    {
+      "id": "posada",
+      "kind": "building",
+      "name": "Posada del Olmo",
+      "cell": [56, 92],
+      "footprint": [12, 9],
+      "glyph": "P",
+      "h": 4
+    },
+    {
+      "id": "molino",
+      "kind": "building",
+      "name": "Molino del Vado",
+      "cell": [98, 44],
+      "footprint": [10, 8],
+      "glyph": "M",
+      "h": 6
+    },
+    {
+      "id": "establo",
+      "kind": "building",
+      "name": "Establo comunal",
+      "cell": [100, 92],
+      "footprint": [10, 7],
+      "glyph": "E"
+    },
+    {
+      "id": "atalaya",
+      "kind": "building",
+      "name": "Atalaya vieja",
+      "cell": [8, 112],
+      "footprint": [5, 5],
+      "glyph": "T",
+      "h": 9
+    },
+    {
+      "id": "pozo",
+      "kind": "prop",
+      "name": "pozo de la plaza",
+      "cell": [62, 80],
+      "footprint": [1, 1],
+      "glyph": "o",
+      "shape": "cylinder"
+    },
+    {
+      "id": "puesto_pan",
+      "kind": "prop",
+      "name": "puesto de pan",
+      "cell": [55, 76],
+      "footprint": [2, 1],
+      "glyph": "="
+    },
+    {
+      "id": "puesto_fruta",
+      "kind": "prop",
+      "name": "puesto de fruta",
+      "cell": [68, 76],
+      "footprint": [2, 1],
+      "glyph": "="
+    },
+    {
+      "id": "yunque",
+      "kind": "prop",
+      "name": "yunque de la herrería",
+      "cell": [27, 90],
+      "footprint": [1, 1],
+      "glyph": "y"
+    },
+    {
+      "id": "carro",
+      "kind": "prop",
+      "name": "carro de mano",
+      "cell": [72, 88],
+      "footprint": [2, 1],
+      "glyph": "c"
+    },
+    {
+      "id": "rueda_molino",
+      "kind": "prop",
+      "name": "rueda hidráulica",
+      "cell": [96, 48],
+      "footprint": [1, 2],
+      "glyph": "r",
+      "shape": "cylinder"
+    },
+    {
+      "id": "fardo_heno",
+      "kind": "prop",
+      "name": "fardo de heno",
+      "cell": [104, 84],
+      "footprint": [1, 1],
+      "glyph": "f",
+      "shape": "sphere"
+    },
+    {
+      "id": "cartel_puente",
+      "kind": "decor",
+      "name": "cartel: Robledo",
+      "cell": [78, 68],
+      "footprint": [1, 1],
+      "glyph": "i"
+    },
+    {
+      "id": "farol_plaza",
+      "kind": "item",
+      "name": "farol de la plaza",
+      "cell": [58, 82],
+      "footprint": [1, 1],
+      "glyph": "l"
+    },
+    {
+      "id": "roble_n1",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [6, 6],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "roble_n2",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [30, 8],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "pino_ne",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [118, 12],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "roble_o",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [8, 44],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "pino_e",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [116, 72],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "roble_s1",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [34, 114],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "roble_s2",
+      "kind": "tree",
+      "name": "roble",
+      "cell": [76, 116],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "pino_se",
+      "kind": "tree",
+      "name": "pino",
+      "cell": [116, 110],
+      "footprint": [2, 2],
+      "glyph": "T"
+    },
+    {
+      "id": "alcaldesa_mirla",
+      "kind": "npc",
+      "name": "Alcaldesa Mirla",
+      "cell": [56, 84],
+      "footprint": [1, 1],
+      "glyph": "n",
+      "role": "mayor",
+      "description": "alcaldesa de cabello cano con una vara de mando"
+    },
+    {
+      "id": "boris_herrero",
+      "kind": "npc",
+      "name": "Boris el Herrero",
+      "cell": [28, 92],
+      "footprint": [1, 1],
+      "glyph": "n",
+      "role": "smith",
+      "description": "herrero fornido con mandil de cuero quemado"
+    },
+    {
+      "id": "greta_posadera",
+      "kind": "npc",
+      "name": "Greta la Posadera",
+      "cell": [62, 102],
+      "footprint": [1, 1],
+      "glyph": "n",
+      "role": "innkeeper",
+      "description": "posadera menuda con delantal de lino"
+    },
+    {
+      "id": "roric_guardia",
+      "kind": "npc",
+      "name": "Guardia Roric",
+      "cell": [72, 58],
+      "footprint": [1, 1],
+      "glyph": "n",
+      "role": "guard",
+      "description": "guardia con lanza y capa parda"
+    },
+    {
+      "id": "halmar_molinero",
+      "kind": "npc",
+      "name": "Halmar el Molinero",
+      "cell": [104, 52],
+      "footprint": [1, 1],
+      "glyph": "n",
+      "role": "miller",
+      "description": "molinero blanco de harina hasta las cejas"
+    },
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Tú",
+      "cell": [60, 84],
+      "footprint": [1, 1],
+      "glyph": "@"
+    }
+  ],
+  "ambient_event": "El agua golpea las tablas del puente y huele a pan recién hecho."
+}

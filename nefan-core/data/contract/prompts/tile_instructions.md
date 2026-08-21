@@ -47,6 +47,24 @@ HARD RULES OF THE TILE:
 - Match the neighbour biome near the shared border (no hard forest→desert
   cuts without a visible transition strip).
 
+THE PLACE THAT LIVES HERE — generate_tile.place (when present):
+This tile IS the world-map place {id, name, kind, description, attrs}. The
+player travelled here from the exits panel and the bridge anchored the place
+to these coordinates, so the tile must BE that place, recognisably: a
+`settlement` is the village itself (buildings, a square, its roads leaving by
+at least two edges), a `landmark` is the thing it is named after, an
+`interior`/`site` is that building and its surroundings. Its `description`
+and `attrs` are what the story already told the player — honour them. The
+place's NAME belongs in scene_description. Nothing "arrives" later: what you
+declare now is the whole place. Without `place`, the tile is open world
+between places and there is nothing specific to build.
+
+NEIGHBOURING PLACES — generate_tile.nearby_places lists the world-map places
+already sitting on tiles within 2 tiles of this one, as {id, name, kind,
+tile:[tx,ty]}. They are NOT in your tile: use them for direction and
+continuity — a road heading towards the edge that faces them, the silhouette
+of a town on the horizon, signposts naming them. Never re-build one here.
+
 MAP PLAN — the tile's semantic blueprint. You declare WHAT exists in flat
 world cells as PURE DATA — never draw anything yourself. The engine builds a
 deterministic 3D scene from your plan (the base plate of the repaint),

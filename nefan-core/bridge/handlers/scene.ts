@@ -12,21 +12,14 @@ import {
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
-import { oppositeEdge, resolveExitEdge } from "../../src/world-map/edges.js";
-import { handleFrontierAsTile } from "./tile.js";
+import { resolveExitEdge } from "../../src/world-map/edges.js";
+import { resolveTravelAnchor } from "../../src/world-map/place-anchor.js";
+import { resolvePlaceTarget } from "../../src/world-map/place-target.js";
+import { tileKey, type TileCoord } from "../../src/scene/tile.js";
+import { activeTileOf, runTileGeneration } from "./tile.js";
 import { stagePlaceContext } from "./bootstrap-stage.js";
 import type { Edge } from "../../src/world-map/types.js";
-import type {
-  PlayerCrossedFrontierMessage,
-  PlayerEnteredPlaceMessage,
-} from "../../src/protocol/messages.js";
-
-const EDGE_ES: Record<Edge, string> = {
-  north: "norte",
-  south: "sur",
-  east: "este",
-  west: "oeste",
-};
+import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
 
 export async function handlePlayerEnteredPlace(
   msg: PlayerEnteredPlaceMessage,
@@ -54,23 +47,36 @@ export async function handlePlayerEnteredPlace(
     // scene's NPCs into entities so the narrative engine sees them.
     ctx.narrative.recordSceneLoaded(cachedSceneId, cachedScene);
     await ctx.narrative.save();
-    broadcastScene(ctx, cachedSceneId, cachedScene);
+    // Place anclado al plano continuo: viajar es APARECER en él, no solo
+    // re-difundir su tile. El spawn se PIDE al cliente (dueño de la posición).
+    const spawn = resolvePlaceTarget(ctx.narrative, placeId) ?? undefined;
+    broadcastScene(ctx, cachedSceneId, cachedScene, undefined, { spawn });
+    // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
+    // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
+    // volvería a disparar.
+    if (spawn) ctx.posTracking.placeId = placeId;
     await fireMapTriggers(ctx, prevPlaceId, placeId);
     return;
   }
 
-  // Lazy realize: ask the narrative engine for this place's low-level scene.
+  // Sin escena todavía. En proscenio cada place ES un plató discreto y se
+  // pide al motor; en el plano continuo el lugar se ANCLA a un tile libre y
+  // se genera como tile (la escena "suelta" se retiró, issue #172).
+  const isStageWorld = ctx.narrative.world.view === "proscenium";
   const status = ctx.sceneGen.enqueue({
     key: `place_${placeId}`,
     blocking: true,
-    run: () => runPlaceRealize(ctx, placeId, prevPlaceId),
+    run: () =>
+      isStageWorld
+        ? runPlaceRealize(ctx, placeId, prevPlaceId)
+        : runPlaceTravel(ctx, placeId, prevPlaceId),
   });
   if (status !== "queued") {
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "generating",
       kind: "scene",
-      message: `Generando ${place.name}...`,
+      message: isStageWorld ? `Generando ${place.name}...` : `Viajando a ${place.name}...`,
     });
   }
 }
@@ -145,6 +151,73 @@ export async function realizePlaceScene(
   return { sceneId, scene: res.scene };
 }
 
+/** Tile libre donde ANCLAR el place destino: rayo desde el tile del jugador
+ *  hacia el borde por el que sale el link. Ocupado = tile ya generado o tile
+ *  reclamado por el anchor de otro place. LANZA si no hay sitio. */
+function pickTravelAnchor(ctx: BridgeContext, placeId: string, fromPlaceId: string): TileCoord {
+  const origin = activeTileOf(ctx);
+  if (!origin) {
+    throw new Error("el jugador no está en ningún tile del plano continuo");
+  }
+  const link = ctx.narrative.worldMap
+    .getOutgoingLinks(fromPlaceId)
+    .find((l) => (l.from === fromPlaceId ? l.to : l.from) === placeId);
+  const edge = link ? resolveExitEdge(ctx.narrative.worldMap, fromPlaceId, link) : null;
+
+  const occupied = new Set<string>();
+  for (const rec of Object.values(ctx.narrative.scenes_loaded)) {
+    if (rec.tile) occupied.add(tileKey(rec.tile.tx, rec.tile.ty));
+  }
+  for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
+    if (p.anchor) occupied.add(tileKey(p.anchor.tx, p.anchor.ty));
+  }
+  return resolveTravelAnchor({ origin, edge, occupied });
+}
+
+/** Viaje a un place del plano continuo que todavía no existe: se ancla a un
+ *  tile libre y ese tile se genera como cualquier otro, con el place en el
+ *  contexto del motor. Corre dentro de la cola.
+ *  Los map triggers NO se disparan aquí: los dispara `activateByPosition`
+ *  cuando el cliente reporta la posición nueva (el jugador ENTRA andando en
+ *  su propio anchor). */
+async function runPlaceTravel(
+  ctx: BridgeContext,
+  placeId: string,
+  prevPlaceId: string,
+): Promise<void> {
+  const place = ctx.narrative.worldMap.get(placeId);
+  if (!place) return;
+  const start = Date.now();
+  try {
+    // Pudo realizarse mientras esperaba en la cola.
+    if (place.realized_scene_id && ctx.narrative.scenes_loaded[place.realized_scene_id]) return;
+    const anchor = place.anchor ?? pickTravelAnchor(ctx, placeId, prevPlaceId);
+    // El anchor se fija ANTES de generar: buildGenerateTileCtx lo lee para
+    // decirle al motor QUÉ lugar está construyendo en ese tile.
+    place.anchor = anchor;
+    ctx.narrative.markDirty();
+    if (!resolvePlaceTarget(ctx.narrative, placeId)) {
+      throw new Error(`el anclaje de ${place.name} no da punto de aparición`);
+    }
+    await runTileGeneration(ctx, anchor.tx, anchor.ty, undefined, {
+      placeId,
+      message: `Viajando a ${place.name}...`,
+      // Al difundir, no ahora: si el motor declaró `place_anchors` con rect,
+      // el jugador aparece dentro del lugar y no en el centro del tile.
+      spawnAt: () => resolvePlaceTarget(ctx.narrative, placeId) ?? undefined,
+    });
+  } catch (err) {
+    console.warn(`Bridge: viaje a "${placeId}" falló:`, err);
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "scene",
+      message: `No se pudo viajar a ${place.name}: ${(err as Error).message ?? err}`,
+      elapsedMs: Date.now() - start,
+    });
+  }
+}
+
 /** Generación de la escena de un place — corre dentro de la cola. */
 async function runPlaceRealize(
   ctx: BridgeContext,
@@ -187,107 +260,3 @@ async function runPlaceRealize(
   }
 }
 
-/** El jugador cruzó un borde SIN destino conocido. Con el plano de tiles la
- *  frontera ES el tile vecino: delega en el pipeline de tiles. La ruta legacy
- *  (place+link de la tanda 2) queda solo para sesiones cuya escena activa no
- *  es un tile. */
-export async function handlePlayerCrossedFrontier(
-  msg: PlayerCrossedFrontierMessage,
-  ctx: BridgeContext,
-): Promise<void> {
-  if (await handleFrontierAsTile(msg.edge, ctx)) return;
-
-  const fromPlaceId = ctx.narrative.worldMap.serialize().active_place_id;
-  const fromPlace = ctx.narrative.worldMap.get(fromPlaceId);
-  if (!fromPlace) {
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "error",
-      kind: "scene",
-      message: `Frontera sin place activo válido: "${fromPlaceId}"`,
-    });
-    return;
-  }
-  const status = ctx.sceneGen.enqueue({
-    key: `frontier_${fromPlaceId}_${msg.edge}`,
-    blocking: true,
-    run: () => runLegacyFrontier(ctx, fromPlaceId, msg.edge),
-  });
-  if (status !== "queued") {
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "generating",
-      kind: "scene",
-      message: `Explorando hacia el ${EDGE_ES[msg.edge]}...`,
-    });
-  }
-}
-
-/** Frontera legacy (tanda 2): el motor crea place + link y el bridge estampa
- *  el edge con la geometría real del cruce. */
-async function runLegacyFrontier(
-  ctx: BridgeContext,
-  fromPlaceId: string,
-  edge: Edge,
-): Promise<void> {
-  const start = Date.now();
-  const fail = (message: string): void =>
-    ctx.broadcastNarrative({ type: "narrative_status", phase: "error", kind: "scene", message, elapsedMs: Date.now() - start });
-  try {
-    const fromPlace = ctx.narrative.worldMap.get(fromPlaceId);
-    if (!fromPlace) return fail(`Frontera sin place activo válido: "${fromPlaceId}"`);
-
-    const jobSession = ctx.narrative.session_id;
-    const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
-    genCtx.frontier_request = {
-      from_place_id: fromPlaceId,
-      from_place_name: fromPlace.name,
-      edge,
-    };
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "generating",
-      kind: "scene",
-      message: `Explorando hacia el ${EDGE_ES[edge]}...`,
-    });
-
-    const res = await ctx.aiClient.generateScene(genCtx);
-    // Defensa en profundidad: takeover colado ⇒ descartar sin escribir.
-    const changed = sessionChangedError(ctx, jobSession);
-    if (changed) return fail(changed);
-    if (!res.ok || !res.scene) {
-      return fail(`No se pudo expandir el mundo. ${res.error ?? "Revisa el motor narrativo."}`);
-    }
-    const newPlaceId = typeof res.scene.place_id === "string" ? res.scene.place_id : null;
-    if (!newPlaceId) {
-      return fail("El motor respondió una escena de frontera sin place_id.");
-    }
-    if (!ctx.narrative.worldMap.get(newPlaceId)) {
-      return fail(`El motor no creó el place "${newPlaceId}" en el mapa (map_upsert_place).`);
-    }
-    const link = ctx.narrative.worldMap
-      .getOutgoingLinks(fromPlaceId)
-      .find((l) => (l.from === fromPlaceId ? l.to : l.from) === newPlaceId);
-    if (!link) {
-      return fail(`El motor no linkó "${newPlaceId}" con "${fromPlaceId}" (map_link).`);
-    }
-    // El edge es relativo a link.from (puede ser cualquiera de los dos).
-    const expected = link.from === fromPlaceId ? edge : oppositeEdge(edge);
-    if (link.edge !== expected) {
-      if (link.edge) {
-        console.warn(`Bridge: frontier link edge "${link.edge}" != cruzado "${expected}" — corregido`);
-      }
-      link.edge = expected;
-    }
-
-    const sceneId = String(res.scene.room_id ?? res.scene.scene_id ?? `scene_${Date.now()}`);
-    res.scene = expandScenePrimitives(res.scene);
-    ctx.narrative.recordSceneLoaded(sceneId, res.scene);
-    await ctx.narrative.save();
-    broadcastScene(ctx, sceneId, res.scene, Date.now() - start);
-    await fireMapTriggers(ctx, fromPlaceId, newPlaceId);
-  } catch (err) {
-    console.warn("Bridge: frontier expansion failed:", err);
-    fail(`Error: ${(err as Error).message ?? err}`);
-  }
-}

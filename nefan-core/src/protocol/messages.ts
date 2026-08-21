@@ -157,16 +157,6 @@ export interface PlayerEnteredPlaceMessage {
   placeId: string;
 }
 
-/** El jugador salió por un borde de la escena que NO tiene destino conocido en
- *  el world map. El bridge pide al motor narrativo extender el mundo en esa
- *  dirección: crear place + link (con edge) + escena on-the-fly.
- *  @deprecated con el plano de tiles delega en request_tile (se mantiene por
- *  compat con clientes de la tanda 2). */
-export interface PlayerCrossedFrontierMessage {
-  type: "player_crossed_frontier";
-  edge: Edge;
-}
-
 /** Petición de un tile del plano continuo. `prefetch` = el jugador se acerca
  *  al borde (generar en segundo plano, sin activar); `blocking` = está pegado
  *  al borde esperando. Si el tile ya existe, el bridge lo re-difunde al
@@ -265,7 +255,6 @@ export type ClientMessage =
   | RecordStyleApplicationMessage
   | SaveSessionMessage
   | PlayerEnteredPlaceMessage
-  | PlayerCrossedFrontierMessage
   | RequestTileMessage
   | TileAnalysisMessage
   | MapPlanUpdateMessage
@@ -361,6 +350,11 @@ export interface NarrativeStatusMessage {
   tile?: { tx: number; ty: number };
   /** Borde del tile ACTUAL del jugador hacia el que se genera/completó. */
   edge?: Edge;
+  /** Dónde debe APARECER el jugador cuando la escena queda lista (viaje a un
+   *  place anclado del plano continuo), en metros mundo. El cliente es dueño
+   *  de su posición —la reporta en `sim_input`—, así que el bridge la PIDE en
+   *  el `ready` en vez de escribirla. Ausente = el jugador no se mueve. */
+  spawn?: { x: number; z: number };
 }
 
 export interface GamesListedMessage {

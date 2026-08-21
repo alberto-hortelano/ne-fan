@@ -1,6 +1,8 @@
-/** Pre-generación del mundo de un juego (generate_game): bootstrap + anillo
- *  3×3 + places clave en una sesión EFÍMERA, persistidos como snapshot en
- *  data/games/{id}/world/{branch}.json — start_session lo replayea sin motor.
+/** Pre-generación del mundo de un juego (generate_game) en una sesión
+ *  EFÍMERA, persistida como snapshot en data/games/{id}/world/{branch}.json —
+ *  start_session lo replayea sin motor. Qué se pre-genera depende de la rama:
+ *  en TILE, el bootstrap y su anillo 3×3 (los places se realizan al viajar a
+ *  ellos); en STAGE, el plató inicial y los places clave, que ahí SON escenas.
  *
  *  El job corre en la cola compartida (el motor narrativo atiende una
  *  petición a la vez) con la misma política anti-takeover que start_session:
@@ -212,7 +214,11 @@ export async function runGameGeneration(
         : await generateBootstrapTileScene(ctx, gameId, { generateVocabulary: true });
 
     const failures: string[] = [];
+    const skipped: Array<{ id: string; name: string }> = [];
     if (branch === "tile") {
+      // Mundo de plano continuo: la pre-generación es el anillo 3×3 y nada
+      // más. Los places se realizan al VIAJAR a ellos, anclándolos a un tile;
+      // pre-realizarlos aquí producía escenas sueltas, que ya no existen.
       for (let i = 0; i < RING.length; i++) {
         const [tx, ty] = RING[i];
         status("progress", `Generando el anillo de tiles (${i + 1}/${RING.length})...`);
@@ -226,19 +232,22 @@ export async function runGameGeneration(
           failures.push(`tile (${tx},${ty}): ${msg}`);
         }
       }
-    }
-
-    const { picked, skipped } = pickKeyPlaces(ctx);
-    for (let i = 0; i < picked.length; i++) {
-      const place = picked[i];
-      status("progress", `Generando ${place.name} (${i + 1}/${picked.length})...`);
-      try {
-        await realizePlaceScene(ctx, place.id, { activate: false });
-      } catch (err) {
-        const msg = (err as Error).message ?? String(err);
-        if (msg.includes("la sesión activa cambió")) throw err;
-        console.warn(`Bridge: gamegen place "${place.id}" falló:`, err);
-        failures.push(`${place.name}: ${msg}`);
+    } else {
+      // Proscenio: cada place ES un plató discreto, así que pre-realizar los
+      // principales ahorra la espera del motor en la primera visita.
+      const keyPlaces = pickKeyPlaces(ctx);
+      skipped.push(...keyPlaces.skipped);
+      for (let i = 0; i < keyPlaces.picked.length; i++) {
+        const place = keyPlaces.picked[i];
+        status("progress", `Generando ${place.name} (${i + 1}/${keyPlaces.picked.length})...`);
+        try {
+          await realizePlaceScene(ctx, place.id, { activate: false });
+        } catch (err) {
+          const msg = (err as Error).message ?? String(err);
+          if (msg.includes("la sesión activa cambió")) throw err;
+          console.warn(`Bridge: gamegen place "${place.id}" falló:`, err);
+          failures.push(`${place.name}: ${msg}`);
+        }
       }
     }
 

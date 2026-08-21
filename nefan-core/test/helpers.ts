@@ -62,6 +62,25 @@ export interface FakeAi {
   developWorld?: NarrativeAiClient["developWorld"];
 }
 
+/** Escena que devuelve el motor FALSO: un TILE (0,0) mínimo con spawn del
+ *  jugador. Format D solo tiene dos formas —tile y plató— desde la retirada
+ *  de la escena suelta (issue #172), y el bootstrap del plano continuo hace
+ *  fail-loud si le llega otra cosa. `over` sustituye campos (p. ej. una
+ *  descripción distinta para distinguir dos respuestas en un test). */
+export function fakeBootstrapTile(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    tile: { tx: 0, ty: 0 },
+    scene_id: "tile_0_0",
+    room_id: "tile_0_0",
+    biome: "grass",
+    scene_description: "una escena",
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+    ],
+    ...over,
+  };
+}
+
 /** BridgeContext completo con fakes: sim determinista (seed 12345), storage
  *  en memoria, AiClient falso (respuestas mínimas, overrides vía opts.ai) y
  *  broadcast capturado en `broadcasts`. */
@@ -87,7 +106,7 @@ export function makeCtx(
     async generateScene(ctx) {
       aiCalls.scene.push(ctx);
       if (opts.ai?.generateScene) return opts.ai.generateScene(ctx);
-      return { ok: true, scene: { room_id: "scene_test", room_description: "una escena" } };
+      return { ok: true, scene: fakeBootstrapTile() };
     },
     async reportPlayerChoice(payload) {
       aiCalls.choice.push(payload);

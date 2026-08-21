@@ -4,7 +4,12 @@ import assert from "node:assert/strict";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 import { forestTile, CAMINO_OESTE_ESTE } from "./fixtures/tiles.js";
 
-/** Escena jugable: room con puerta sur, player fuera junto al camino. */
+/** Escena jugable con grid propio: room con puerta sur, player fuera junto al
+ *  camino y una salida al sur. Desde la retirada de la escena suelta (issue
+ *  #172) una escena no-tile es un PLATÓ, así que lleva su bloque `stage`: lo
+ *  que estos tests comprueban —muros, puertas, chars sin declarar, spawn del
+ *  jugador, alcanzabilidad, regla de link exterior— es común a las dos
+ *  variantes y se sigue midiendo aquí sobre la que tiene grid. */
 function makeScene(): Record<string, unknown> {
   return {
     scene_id: "taberna_val",
@@ -19,6 +24,11 @@ function makeScene(): Record<string, unknown> {
       { id: "barkeep", kind: "npc", name: "Tabernero", cell: [5, 4], footprint: [1, 1], glyph: "n" },
       { id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" },
     ],
+    stage: {
+      exits: [
+        { id: "camino_sur", edge: "south", to_place_id: "camino", zone: [6, 11, 3, 1], kind: "opening", label: "Camino al sur" },
+      ],
+    },
   };
 }
 
@@ -36,14 +46,16 @@ describe("validateScene", () => {
     assert.equal(r.stats.npcs_reachable, 1);
   });
 
-  it("rejects a sealed room with the player inside (no reachable edge)", () => {
+  it("rejects a sealed room with the player inside (no puede llegar a la salida)", () => {
     const s = makeScene();
     (s.structures as Record<string, unknown>[])[0].doors = [];
     (s.entities as Record<string, unknown>[])[1].cell = [5, 4]; // player dentro
     (s.entities as Record<string, unknown>[])[0].cell = [6, 4];
     const r = validateScene(s, linkedPlace);
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes("borde del mapa")), r.errors.join(" | "));
+    // Encerrado sigue siendo error; lo que cambia es POR QUÉ se sale de la
+    // escena: un plató se abandona por sus salidas declaradas, no por el borde.
+    assert.ok(r.errors.some((e) => e.includes("no es alcanzable desde el player")), r.errors.join(" | "));
   });
 
   it("rejects a player spawned on a wall or on a prop footprint", () => {
@@ -89,13 +101,6 @@ describe("validateScene", () => {
     assert.ok(r.errors.some((e) => e.includes("se sale del grid")), r.errors.join(" | "));
   });
 
-  it("requires a missing player entity", () => {
-    const s = makeScene();
-    s.entities = (s.entities as Record<string, unknown>[]).filter((e) => e.kind !== "player");
-    const r = validateScene(s, linkedPlace);
-    assert.ok(r.errors.some((e) => e.includes('kind "player"')), r.errors.join(" | "));
-  });
-
   it("doors_total cuenta también las puertas de buildings cutaway en volumes", () => {
     // Regresión (playtest 2026-08-13): una posada declarada como volumes
     // cutaway CON doors reportaba doors_total: 0 (solo se contaban las
@@ -115,23 +120,22 @@ describe("validateScene", () => {
   });
 
   it("warning cuando un link del place no declara edge (salir por el borde no viaja)", () => {
+    // El link va al mismo place que la salida declarada (si no, salta el
+    // cross-check exits⇔links del plató, que es otro test).
     const withEdgeless = () => ({
-      exists: true, kind: "interior", outgoing_links: 2,
-      links: [
-        { to: "calle_mayor" },
-        { to: "patio", edge: "north" as const },
-      ],
+      exists: true, kind: "interior", outgoing_links: 1,
+      links: [{ to: "camino" }],
     });
     const r = validateScene(makeScene(), withEdgeless);
-    assert.equal(r.ok, true, "es warning, no error");
+    assert.equal(r.ok, true, `es warning, no error: ${r.errors.join(" | ")}`);
     const w = r.warnings.filter((x) => x.includes("no declara edge"));
     assert.equal(w.length, 1, "solo el link sin edge avisa");
-    assert.ok(w[0].includes("calle_mayor"), w[0]);
+    assert.ok(w[0].includes("camino"), w[0]);
 
-    // Con todos los edges declarados, silencio.
+    // Con el edge declarado, silencio.
     const allEdges = () => ({
       exists: true, kind: "interior", outgoing_links: 1,
-      links: [{ to: "patio", edge: "north" as const }],
+      links: [{ to: "camino", edge: "south" as const }],
     });
     const r2 = validateScene(makeScene(), allEdges);
     assert.equal(r2.warnings.some((x) => x.includes("no declara edge")), false);
@@ -429,11 +433,17 @@ describe("validateScene — realize de plató sin player", () => {
     assert.ok(r.errors.some((e) => e.includes("no es alcanzable")), r.errors.join(" | "));
   });
 
-  it("una escena legacy (sin stage) sigue exigiendo player", () => {
+  it("una escena sin `tile` y sin `stage` se rechaza nombrando las dos variantes vivas", () => {
+    // La variante suelta (grid propio, sin sitio en el plano ni salidas) se
+    // retiró: el validador de jugabilidad la corta con el mismo mensaje que
+    // el gate estructural, antes de gastar el flood-fill.
     const s = makeScene();
-    (s.entities as Record<string, unknown>[]) = (s.entities as Record<string, unknown>[]).filter((e) => e.kind !== "player");
+    delete s.stage;
     const r = validateScene(s, linkedPlace);
-    assert.ok(r.errors.some((e) => e.includes('falta la entity kind "player"')), r.errors.join(" | "));
+    assert.equal(r.ok, false);
+    const msg = r.errors.join(" | ");
+    assert.match(msg, /`tile`/, msg);
+    assert.match(msg, /`stage`/, msg);
   });
 
   // ── Utilización de presupuestos: telemetría objetiva de vuelta al motor ────

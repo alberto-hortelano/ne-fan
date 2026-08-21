@@ -11,7 +11,7 @@ import type {
   NarrativeStatusMessage,
   SessionStartedMessage,
 } from "../src/protocol/messages.js";
-import { makeCtx, makeSocket, waitFor } from "./helpers.js";
+import { fakeBootstrapTile, makeCtx, makeSocket, waitFor } from "./helpers.js";
 
 type SceneResult = Awaited<ReturnType<import("../bridge/context.js").NarrativeAiClient["generateScene"]>>;
 
@@ -52,7 +52,9 @@ describe("guardas anti-takeover de sesión", () => {
     assert.notEqual(sessionB, sessionA);
 
     // La escena tardía del bootstrap A llega: se DESCARTA sin escribir en B…
-    resolvers[0]!({ ok: true, scene: { room_id: "scene_a", room_description: "vieja" } });
+    // (los dos bootstraps son el tile (0,0), así que lo que distingue a una
+    // respuesta de la otra es su descripción, no el id.)
+    resolvers[0]!({ ok: true, scene: fakeBootstrapTile({ scene_description: "vieja" }) });
     await waitFor(() =>
       broadcasts.some(
         (m): m is NarrativeStatusMessage =>
@@ -61,17 +63,21 @@ describe("guardas anti-takeover de sesión", () => {
           /descartado sin escribir/.test(m.message ?? ""),
       ),
     );
-    assert.equal(narrative.scenes_loaded["scene_a"], undefined);
+    assert.equal(Object.keys(narrative.scenes_loaded).length, 0, "nada de A escrito en B");
 
     // …y el bootstrap de B (encolado detrás, serialización intacta) corre y
     // SÍ escribe en B.
     await waitFor(() => aiCalls.scene.length === 2);
-    resolvers[1]!({ ok: true, scene: { room_id: "scene_b", room_description: "nueva" } });
+    resolvers[1]!({ ok: true, scene: fakeBootstrapTile({ scene_description: "nueva" }) });
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
     );
     assert.equal(narrative.session_id, sessionB);
-    assert.ok(narrative.scenes_loaded["scene_b"]);
+    assert.equal(
+      (narrative.scenes_loaded["tile_0_0"]?.scene_data as { scene_description?: string })?.scene_description,
+      "nueva",
+      "la escena registrada es la del bootstrap de B",
+    );
   });
 
   it("resume de la MISMA sesión durante su bootstrap NO re-encola la generación", async () => {
@@ -105,7 +111,7 @@ describe("guardas anti-takeover de sesión", () => {
     assert.equal(resumed.sessionId, sessionId);
     // Sin segundo generateScene: el bootstrap en vuelo sigue siendo el suyo.
     assert.equal(aiCalls.scene.length, 1);
-    resolvers[0]!({ ok: true, scene: { room_id: "scene_test", room_description: "una escena" } });
+    resolvers[0]!({ ok: true, scene: fakeBootstrapTile() });
   });
 
   it("capa 2: el job de bootstrap DESCARTA la escena si la sesión cambió durante el await", async () => {
@@ -129,7 +135,7 @@ describe("guardas anti-takeover de sesión", () => {
     // la vía normal): la defensa en profundidad del job debe descartar.
     narrative.startNewSession("plugtest");
     const newSession = narrative.session_id;
-    resolveScene({ ok: true, scene: { room_id: "scene_test", room_description: "una escena" } });
+    resolveScene({ ok: true, scene: fakeBootstrapTile() });
 
     await waitFor(() =>
       broadcasts.some(

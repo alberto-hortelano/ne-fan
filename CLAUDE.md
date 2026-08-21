@@ -92,7 +92,7 @@ cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_village`). Para combate y narrativa usar los presets 1–2 (o 6 sin servicios de imagen); para tests headless, el 3.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_tile`). Para combate y narrativa usar los presets 1–2 (o 6 sin servicios de imagen); para tests headless, el 3.
 
 ## Controles in-game
 
@@ -132,16 +132,16 @@ El juego arranca sin ai_server ni bridge — texturas no se generan y el combate
 
 Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
-**1. Format D** — lo que produce el motor narrativo (`generate_scene`): rejilla 2D (`size{cols,rows,meters_per_cell}` + `terrain[]` strings + `terrain_legend`) con `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `texture_hash?`), y en tiles v3 `tile{tx,ty}` + `biome` + `ground`/`volumes` (declarativos — nada de SVG). Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
+**1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **dos variantes y solo dos**: un **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m) o un **plató** proscenio (rejilla propia `size{cols,rows,meters_per_cell}` + `terrain[]` + `terrain_legend`, más el bloque `stage` con sus salidas). Ambas llevan `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `h?`, `texture_hash?`). Una escena sin `tile` y sin `stage` —la "suelta", con tamaño a elección del motor— se retiró: la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
 
 **2. World scene** — el contrato de render que consumen AMBOS clientes: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
 ```json
 {
-  "scene_id": "robledo_village",
+  "scene_id": "robledo_tile",
   "scene_description": "El pueblo de Robledo...",
-  "dimensions": { "width": 120, "depth": 80, "height": 3 },
-  "world_rect": { "minX": -60, "minZ": -40, "maxX": 60, "maxZ": 40 },
+  "dimensions": { "width": 64, "depth": 64, "height": 3 },
+  "world_rect": { "minX": -32, "minZ": -32, "maxX": 32, "maxZ": 32 },
   "terrain": { "color": [0.18, 0.22, 0.14] },
   "terrain_grid": { "grid": ["..."], "legend": {}, "solid_chars": ["W", "w"] },
   "objects": [
@@ -149,14 +149,14 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
       "category": "building", "texture_hash": "b8c2...opcional", "description": "Taberna" }
   ],
   "npcs": [ { "id": "barkeep", "name": "Tabernero", "position": [0, 0, -2] } ],
-  "__player_start": { "x": -57, "z": -1 },
+  "__player_start": { "x": -1.75, "z": 10.25 },
   "ambient_event": "..."
 }
 ```
 
 Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del objeto). En Godot la construye `scene_builder.gd` (suelo centrado en `world_rect`, default de sol direccional); en HTML el renderer 2D. Godot NUNCA porta la conversión celdas→metros — si le llega un Format D sin normalizar hace push_error (fail-loud).
 
-**Fixtures de test** (`nefan-core/data/rooms/{dev,stress}/*.json`): world scenes escritas a mano — admiten además `lighting{ambient,lights[]}` (si falta, default), `mesh` (alias de `shape`, catálogo box/sphere/capsule/cylinder/cone/plane/torus), `color:[r,g,b]` por objeto (placeholder pre-textura), `terrain.texture_prompt`/`tiling`, y `combat{health,weapon_id,personality}` en objects para spawnear combatientes. `data/rooms/robledo_village.json` se genera con `npm run dump-scene` desde la escena Format D compartida con el 2D (se commitea; es el arranque offline del 3D).
+**Fixtures de test** (`nefan-core/data/rooms/{dev,stress}/*.json`): world scenes escritas a mano — admiten además `lighting{ambient,lights[]}` (si falta, default), `mesh` (alias de `shape`, catálogo box/sphere/capsule/cylinder/cone/plane/torus), `color:[r,g,b]` por objeto (placeholder pre-textura), `terrain.texture_prompt`/`tiling`, y `combat{health,weapon_id,personality}` en objects para spawnear combatientes. `data/rooms/robledo_tile.json` se genera con `npm run dump-scene` desde la escena Format D compartida con el 2D (se commitea; es el arranque offline del 3D).
 
 **Reuse de assets**: cualquier `texture_prompt`/`model_prompt` admite un hermano `texture_hash`/`model_hash`. Si Claude lo proporciona (copiándolo de `available_assets`), Godot carga del cache local sin regenerar.
 

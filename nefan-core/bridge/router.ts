@@ -25,7 +25,7 @@ import {
   handleRecordStyleApplication,
 } from "./handlers/style-apply.js";
 import { handleDialogueChoice, handleInteractEntity } from "./handlers/dialogue.js";
-import { handlePlayerCrossedFrontier, handlePlayerEnteredPlace } from "./handlers/scene.js";
+import { handlePlayerEnteredPlace } from "./handlers/scene.js";
 import { handleMapPlanUpdate, handleRequestTile, handleTileAnalysis } from "./handlers/tile.js";
 
 export async function routeMessage(
@@ -87,9 +87,6 @@ export async function routeMessage(
       break;
     case "player_entered_place":
       await handlePlayerEnteredPlace(msg, ctx);
-      break;
-    case "player_crossed_frontier":
-      await handlePlayerCrossedFrontier(msg, ctx);
       break;
     case "request_tile":
       await handleRequestTile(msg, ctx);

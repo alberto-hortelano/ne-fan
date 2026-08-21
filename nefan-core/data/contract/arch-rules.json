@@ -65,6 +65,12 @@
           ".mjs",
           ".json"
         ]
+      },
+      {
+        "dir": "qa",
+        "ext": [
+          ".mjs"
+        ]
       }
     ],
     "ignore": [
@@ -345,7 +351,7 @@
     {
       "id": "campos-retirados-no-vuelven",
       "desc": "Un campo de contrato retirado no reaparece en ningún proceso",
-      "why": "Pre-producción: el legacy se borra entero el mismo día, no se documenta. El listón es grep a cero. terrain_features volvió a colarse durante meses porque el saneador de ai_server lo inyectaba vacío en cada escena: la deuda se re-creaba sola y cada medida de mutación volvía a contarla. Al retirar un campo, se añade aquí y deja de depender de que alguien se acuerde. Los roots incluyen fixtures (nefan-core/data), tests, narrative-mcp y labs a propósito: ahí es justo donde un campo retirado reaparece por copy-paste de un dump viejo.",
+      "why": "Pre-producción: el legacy se borra entero el mismo día, no se documenta. El listón es grep a cero. terrain_features volvió a colarse durante meses porque el saneador de ai_server lo inyectaba vacío en cada escena: la deuda se re-creaba sola y cada medida de mutación volvía a contarla. Al retirar un campo, se añade aquí y deja de depender de que alguien se acuerde. Los roots incluyen fixtures (nefan-core/data), tests, narrative-mcp y labs a propósito: ahí es justo donde un campo retirado reaparece por copy-paste de un dump viejo. Los cuatro términos de la escena SUELTA (issue #172) entran aquí el mismo día que se retira la variante: frontier_request y player_crossed_frontier eran su camino de expansión de mundo, robledo_village y tavern_clearing sus fixtures. qa/**/*.mjs entra en los roots porque los guiones de QA cargan fixtures por nombre.",
       "severity": "error",
       "files": [
         "nefan-core/src/**/*.ts",
@@ -360,10 +366,11 @@
         "narrative-mcp/**/*.ts",
         "labs/**/*.ts",
         "labs/**/*.mjs",
-        "labs/**/*.json"
+        "labs/**/*.json",
+        "qa/**/*.mjs"
       ],
       "text": {
-        "pattern": "\\bterrain_features\\b"
+        "pattern": "\\b(terrain_features|frontier_request|player_crossed_frontier|robledo_village|tavern_clearing)\\b"
       },
       "exceptions": [
         {

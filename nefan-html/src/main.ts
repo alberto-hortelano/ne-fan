@@ -880,7 +880,7 @@ function populateSceneSelector(): void {
   // Scene fixtures (cargados localmente, sin bridge).
   const scenes: { key: string; label: string }[] = [];
   for (const path of Object.keys(sceneModules)) {
-    // path like "@nefan-core/data/scenes/tavern_clearing.json"
+    // path like "@nefan-core/data/scenes/robledo_tile.json"
     const match = path.match(/scenes\/(.+)\.json$/);
     if (!match) continue;
     scenes.push({ key: path, label: match[1] });
@@ -2530,6 +2530,15 @@ narrativeClient.onNarrativeStatus((status) => {
     return;
   }
 
+  // ── Spawn PEDIDO por el bridge ────────────────────────────────────────
+  // Viajar por el panel «Salidas» a un lugar que no existía lo ancla a un
+  // tile del plano: el bridge no escribe la posición (es del cliente), la
+  // PIDE en el ready. El scene_init del tile ya llegó justo antes.
+  if (status.phase === "ready" && status.spawn) {
+    playerPos.x = status.spawn.x;
+    playerPos.z = status.spawn.z;
+  }
+
   // ── Tiles del plano continuo ──────────────────────────────────────────
   // El feedback de un tile es DIRECCIONAL (velo/flash del FrontierManager),
   // no el overlay central — salvo el bootstrap (mundo aún vacío).
@@ -2550,7 +2559,10 @@ narrativeClient.onNarrativeStatus((status) => {
         const detail = status.message ?? "Algo falló generando el tile.";
         errors.push("narrative", detail);
         if (t) frontier.onTileError(t.tx, t.ty);
-        if (!tileStore.hasGridTiles) {
+        // Con overlay abierto (bootstrap del mundo o viaje desde «Salidas»)
+        // el error va AL overlay: si no, el jugador se queda mirando un
+        // "Viajando..." que ya no va a terminar nunca.
+        if (!tileStore.hasGridTiles || loaderEl?.classList.contains("visible")) {
           setLoaderState("error", "Error al generar el mundo", detail);
         } else {
           log(`⚠ ${detail.slice(0, 100)}`);

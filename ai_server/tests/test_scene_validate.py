@@ -19,20 +19,38 @@ SCENES = os.path.join(REPO, "nefan-core", "data", "scenes")
 
 
 def base_scene():
+    """Escena NO-tile ⇒ PLATÓ: desde la retirada de la variante suelta, una
+    escena con grid propio necesita su bloque `stage` (ver TestSceneSueltaRetirada)."""
     return {
         "scene_id": "s",
         "scene_description": "una escena de prueba",
+        "place_id": "sala",
         "size": {"cols": 4, "rows": 2, "meters_per_cell": 2},
         "terrain": ["gggg", "gggg"],
         "entities": [
             {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1], "glyph": "@"}
         ],
+        "stage": {
+            "exits": [
+                {"id": "puerta", "edge": "north", "to_place_id": "cocina",
+                 "zone": [1, 0, 2, 1], "kind": "door", "label": "Puerta a la cocina"}
+            ]
+        },
     }
+
+
+def suelta_scene():
+    """La variante RETIRADA, perfectamente formada: grid propio, sin tile ni stage."""
+    s = base_scene()
+    s.pop("stage")
+    s.pop("place_id")
+    s["scene_id"] = "aldea_suelta"
+    return s
 
 
 class TestSceneValidateAcceptsReal(unittest.TestCase):
     def test_real_scenes_do_not_raise(self):
-        files = [os.path.join(SCENES, "robledo_village.json"), os.path.join(SCENES, "zorder_test.json")]
+        files = [os.path.join(SCENES, "robledo_tile.json"), os.path.join(SCENES, "zorder_test.json")]
         files += sorted(glob.glob(os.path.join(SCENES, "proscenio", "*.json")))
         for f in files:
             with self.subTest(scene=os.path.basename(f)):
@@ -44,6 +62,31 @@ class TestSceneValidateAcceptsReal(unittest.TestCase):
         out = validate_scene_response(base_scene())
         self.assertEqual(out["terrain"], ["gggg", "gggg"])
         self.assertEqual(len(out["entities"]), 1)
+
+
+class TestSceneSueltaRetirada(unittest.TestCase):
+    """CANDADO (issue #172, espejo de FormatDSceneSchema): Format D tiene DOS
+    formas —tile (mundo continuo) y stage (proscenio)— y ninguna más. La
+    "suelta" (grid propio, sin sitio en el plano ni salidas declaradas) se
+    retiró: el saneador la rechaza con un mensaje que nombra las dos vivas,
+    porque ese texto es lo que vuelve al modelo como 422 para re-responder."""
+
+    def test_escena_suelta_impecable_lanza(self):
+        with self.assertRaises(ValueError) as cm:
+            validate_scene_response(suelta_scene())
+        msg = str(cm.exception)
+        self.assertIn("tile", msg)
+        self.assertIn("stage", msg)
+        self.assertIn("generate_tile", msg)
+
+    def test_las_dos_variantes_vivas_siguen_pasando(self):
+        validate_scene_response(base_scene())  # plató: no raise
+        tile = suelta_scene()
+        tile.pop("size")
+        tile.pop("terrain")
+        tile["tile"] = {"tx": 0, "ty": 0}
+        tile["biome"] = "grass"
+        validate_scene_response(tile)  # tile: no raise
 
 
 class TestSceneStageHook(unittest.TestCase):

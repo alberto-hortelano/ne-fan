@@ -119,14 +119,13 @@ Dos ciclos (sin cambios respecto a hoy):
 Checklist contra el inventario del monolito (2026-08-04). ✅ = tipado en
 contracts; 🆕 = endpoint nuevo planificado; ☠ = deprecado.
 
-**S1 game-gateway (WS :9877)** — ✅ los 19 `ClientMessage` (input, load_room,
+**S1 game-gateway (WS :9877)** — ✅ los `ClientMessage` de juego (input, load_room,
 respawn, ping, list_sessions, start_session, resume_session, delete_session,
 dialogue_choice, create_game, list_games, save_session, player_entered_place,
-player_crossed_frontier*, request_tile, tile_analysis, map_plan_update,
-add_combatants, interact_entity) y los 10 `ServerMessage` (state_update, pong,
-sessions_listed, session_started, narrative_event, narrative_status,
-games_listed, game_created, session_deleted, session_saved).
-(*deprecated en el propio protocolo, delega en request_tile.)
+request_tile, tile_analysis, map_plan_update, add_combatants, interact_entity)
+y los 10 `ServerMessage` (state_update, pong, sessions_listed, session_started,
+narrative_event, narrative_status, games_listed, game_created, session_deleted,
+session_saved).
 
 **S2 world-state (HTTP :9878)** — ✅ /health, /map, /map/place/{id},
 POST /map/place, POST /map/link, POST /map/trigger, /entities, /entity/{id},
