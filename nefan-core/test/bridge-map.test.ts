@@ -369,3 +369,130 @@ describe("bridge activación por posición (tiles + anchors)", () => {
   });
 });
 
+
+/** El panel «Salidas» del cliente 2D se dibuja desde `scene.exits`, que el
+ *  bridge adjunta con las salidas del place de la escena. Si la escena no
+ *  queda atada a ningún place, `enrichSceneWithExits` cae al
+ *  `active_place_id`, que en un mapa recién sembrado es la raíz "world" — sin
+ *  links, o sea panel VACÍO y sin un solo error. Como el panel es la única
+ *  vía viva de viaje a un lugar, ahí desaparece el juego entero en silencio.
+ *
+ *  De ahí estas dos reglas, que son la misma vista desde los dos lados: el
+ *  bridge etiqueta el place ÉL (nunca se lo pide al prompt) y, donde no puede
+ *  saberlo —solo el bootstrap—, grita en vez de callarse. */
+describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => {
+  const tileScene = (over: Record<string, unknown> = {}) => ({
+    biome: "grass",
+    scene_description: "el claro del arranque",
+    ground: [],
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+    ],
+    ...over,
+  });
+
+  /** Lo que hace el motor de verdad en el bootstrap: sembrar el world map con
+   *  las map tools DURANTE la llamada, antes de responder la escena. Por eso
+   *  el bridge no puede saber de antemano cuál es el lugar de partida. */
+  function seedMapLikeEngine(narrative: NarrativeState): void {
+    narrative.worldMap.upsertPlace({ id: "robledo", kind: "settlement", parent_id: "world", name: "Robledo" });
+    narrative.worldMap.upsertPlace({ id: "molino", kind: "landmark", parent_id: "world", name: "El Molino" });
+    narrative.worldMap.addLink({ from: "robledo", to: "molino", kind: "road", edge: "east" });
+  }
+
+  /** start_session contra un motor que siembra el mapa y responde `scene`. */
+  function bootstrapWith(scene: Record<string, unknown>) {
+    // El holder existe porque el fake tiene que alcanzar una sesión que
+    // todavía no existe cuando se construye: igual que el motor de verdad,
+    // siembra el mapa DENTRO de la llamada, no antes.
+    const sesion: { narrative?: NarrativeState } = {};
+    const h = makeCtx({
+      ai: {
+        generateScene: async () => {
+          seedMapLikeEngine(sesion.narrative!);
+          return { ok: true as const, scene };
+        },
+      },
+    });
+    sesion.narrative = h.narrative;
+    return h;
+  }
+
+  const exitsOf = (broadcasts: { type: string }[]) => {
+    const ev = (broadcasts as NarrativeEventMessage[]).findLast(
+      (m) => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    const scene = ev?.effects?.[0]?.data?.scene as { exits?: { place_id: string }[] } | undefined;
+    return scene?.exits?.map((e) => e.place_id);
+  };
+
+  it("el bootstrap SIN place_id, habiendo mapa, es error — no un panel vacío", async () => {
+    const { ctx, broadcasts } = bootstrapWith(tileScene());
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    // El motivo llega al motor y le dice qué añadir.
+    assert.match(err?.message ?? "", /place_id/);
+    assert.match(err?.message ?? "", /panel de \s*salidas sale VACÍO|salidas/);
+    // Y lo que NO pasa: difundir una escena muda con el panel apagado.
+    assert.equal(exitsOf(broadcasts), undefined, "ninguna escena difundida");
+  });
+
+  it("el bootstrap CON place_id queda atado y el panel ofrece el destino", async () => {
+    const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    assert.equal(narrative.worldMap.serialize().active_place_id, "robledo");
+    assert.deepEqual(exitsOf(broadcasts), ["molino"], "el panel ofrece el molino");
+  });
+
+  it("el bootstrap sin place_id pero con place_anchors se ata igual (el bridge lo deduce)", async () => {
+    // Es el caso que QA provocó a mano quitándole el place_id al motor de
+    // bench: con el anchor declarado, el bridge no necesita la prosa.
+    const { ctx, broadcasts, narrative } = bootstrapWith(
+      tileScene({ place_anchors: [{ place_id: "robledo", rect: [52, 48, 24, 16] }] }),
+    );
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.place_id, "robledo");
+    assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+  });
+
+  it("un tile de exploración NO hereda el place_id que invente el motor", async () => {
+    // Campo abierto: ningún place está anclado en (1,0). Si el place_id del
+    // modelo pasara, `recordSceneLoaded` activaría ese place y el panel
+    // pasaría a pintar las salidas de un sitio donde el jugador no está.
+    const { ctx, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => ({
+          ok: true as const,
+          // Sin entity `player`: solo el tile de bootstrap la lleva.
+          scene: tileScene({ place_id: "molino", scene_description: "campo abierto", entities: [] }),
+        }),
+      },
+    });
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", place_id: "robledo", ...tileScene() }),
+    );
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => narrative.hasTile(1, 0));
+
+    const persisted = narrative.scenes_loaded["tile_1_0"].scene_data;
+    assert.equal(persisted.place_id, undefined, "el place_id inventado se descarta");
+    assert.equal(narrative.worldMap.get("molino")?.realized_scene_id, undefined, "el molino sigue sin realizar");
+    assert.equal(narrative.worldMap.serialize().active_place_id, "robledo", "el jugador sigue en su lugar");
+  });
+});

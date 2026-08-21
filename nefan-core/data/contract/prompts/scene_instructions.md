@@ -161,10 +161,17 @@ you call narrative_respond. Two flags can appear in world_state:
   world realizes a place as its own scene. In the continuous world a place
   lives inside a tile, so it arrives as `generate_tile` instead.
 
-In BOTH cases, add a top-level "place_id" to the scene JSON naming the map
-place this scene realizes (e.g. "place_id": "robledo"). The engine binds the
-scene to that place. Use the map_* tools for everything map-related — do not
-invent a different map representation in the scene JSON.
+On BOOTSTRAP, add a top-level "place_id" to the scene JSON naming the map
+place the player starts in (e.g. "place_id": "robledo"). You are the only one
+who knows it — you just laid the map down in this same turn — and it is what
+ties the first scene to it: without it the travel panel has no place to show
+exits for, so the server REJECTS the response and asks you to add it.
+
+On realize_place you do NOT need it: the server knows which place it asked
+you to realize and tags the scene itself. Same for a tile that is a place —
+`generate_tile.place` tells you which one, and the server tags it. Use the
+map_* tools for everything map-related — do not invent a different map
+representation in the scene JSON.
 
 Two world_state fields carry the world's canonical VOCABULARY (reusable
 descriptions; styled image assets are cached by description+style, so a

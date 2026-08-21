@@ -169,8 +169,18 @@ export async function generateTileScene(
   res.scene.tile = { tx, ty };
   res.scene.scene_id = key;
   res.scene.room_id = key;
-  // Viaje a un place anclado: este tile ES su escena realizada.
-  if (opts.placeId) res.scene.place_id = opts.placeId;
+  // De qué LUGAR es este tile lo decide el BRIDGE, no el modelo: el place que
+  // se está realizando al viajar (`opts.placeId`) o el que ya tiene su anchor
+  // en estas coordenadas (`tileCtx.place`, el mismo que viajó al motor en el
+  // contexto). Determinista y sin pedirle nada al prompt.
+  //
+  // El `else` no sobra: si el bridge sabe que aquí no hay ningún lugar, un
+  // place_id inventado por el motor secuestraría el binding —
+  // `recordSceneLoaded` lo activaría como place— y el panel «Salidas» pasaría
+  // a pintar las salidas de OTRO sitio. Campo abierto es campo abierto.
+  const tilePlaceId = opts.placeId ?? tileCtx.place?.id;
+  if (tilePlaceId) res.scene.place_id = tilePlaceId;
+  else delete res.scene.place_id;
 
   // Red de seguridad server-side (el pre-flight MCP ya validó, pero el
   // fake-ai del bench y la ruta API directa no pasan por él).

@@ -65,7 +65,11 @@ function motorFake(bundle: ReturnType<typeof makeCtx>, opts: { failTile?: [numbe
           description: "Sitio sembrado por el fake",
           parent_id: "aldea",
         });
-        return { ok: true, scene: { tile: { tx: 0, ty: 0 }, ...tileScene(true) } };
+        // `place_id` es obligatorio en el bootstrap: es lo que ata la escena
+        // inicial al mapa que el motor acaba de sembrar. Sin él el bridge lo
+        // rechaza en vez de dejar al jugador con el panel «Salidas» vacío
+        // (issue #172). Un motor que no lo declare no pre-genera nada.
+        return { ok: true, scene: { tile: { tx: 0, ty: 0 }, place_id: "aldea", ...tileScene(true) } };
       }
       if (llmCtx.generate_tile) {
         const { tx, ty } = llmCtx.generate_tile;
@@ -149,10 +153,13 @@ describe("generate_game", () => {
       assert.equal(Object.keys(play.narrative.scenes_loaded).length, 9);
       assert.equal(play.narrative.world.active_scene_id, "tile_0_0");
       assert.ok(play.narrative.hasTile(1, 0), "el anillo se sirve por request_tile sin LLM");
-      // El world map sembrado por el motor SÍ viaja en el snapshot, con sus
-      // places sin realizar: se realizarán al viajar a ellos.
+      // El world map sembrado por el motor SÍ viaja en el snapshot. El lugar
+      // de PARTIDA queda realizado —es el tile de arranque, y ese vínculo es
+      // lo que da salidas al panel del jugador—; los demás no, y se realizan
+      // al viajar a ellos.
       assert.ok(play.narrative.worldMap.get("aldea"), "place del world map replayado");
-      assert.equal(play.narrative.worldMap.get("aldea")?.realized_scene_id, undefined);
+      assert.equal(play.narrative.worldMap.get("aldea")?.realized_scene_id, "tile_0_0");
+      assert.equal(play.narrative.worldMap.get("molino")?.realized_scene_id, undefined);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

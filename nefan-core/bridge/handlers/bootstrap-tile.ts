@@ -9,6 +9,7 @@ import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
+import { resolveBootstrapPlaceId } from "../../src/world-map/bootstrap-place.js";
 import {
   broadcastScene,
   sessionChangedError,
@@ -64,6 +65,17 @@ export async function generateBootstrapTileScene(
   const sceneId = tileKey(0, 0);
   res.scene.scene_id = sceneId;
   res.scene.room_id = sceneId;
+  // A qué LUGAR pertenece el tile de arranque. Es el único tile en el que el
+  // bridge no puede decidirlo solo (el mapa lo acaba de sembrar el motor en
+  // esta misma llamada), así que se cruza lo que declaró con el mapa real: si
+  // no cuadra, error que el motor puede corregir — nunca un panel «Salidas»
+  // vacío, que es la única vía de viaje del cliente 2D (issue #172).
+  const placeRes = resolveBootstrapPlaceId(ctx.narrative.worldMap, res.scene);
+  if (placeRes.kind === "error") {
+    throw new Error(`El tile inicial no queda atado a ningún lugar del mapa: ${placeRes.error}`);
+  }
+  if (placeRes.kind === "place") res.scene.place_id = placeRes.placeId;
+  else delete res.scene.place_id;
   const check = validateScene(res.scene, undefined, { required_crossings: [], bootstrap: true });
   if (!check.ok) {
     throw new Error(`El tile inicial no es jugable: ${check.errors.join(" · ")}`);
