@@ -32,8 +32,7 @@ const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
-import type { Entity } from "./canvas-renderer.js";
-import type { AttackTelegraph, PlayerView } from "./renderer2d.js";
+import type { AttackTelegraph, Entity, PlayerView } from "./renderer2d.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
 const EYE_M = 1.6;
