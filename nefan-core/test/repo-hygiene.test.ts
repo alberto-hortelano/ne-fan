@@ -24,8 +24,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readlinkSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { archConfig } from "../scripts/arch-collect.js";
@@ -73,6 +73,41 @@ function tracked(): TrackedEntry[] {
     });
 }
 
+/** Destino de un symlink, en ruta relativa al repo; `null` si apunta fuera. */
+function linkTarget(linkPath: string): string | null {
+  const abs = resolve(REPO, linkPath);
+  const dest = resolve(dirname(abs), readlinkSync(abs));
+  const rel = relative(REPO, dest);
+  return rel.startsWith("..") ? null : rel;
+}
+
+/** Enlaces que cuelgan A PROPÓSITO: su destino está gitignoreado, así que en
+ *  un clon limpio no existe y eso es lo esperado. Caso real: `labs/fps/sprites`
+ *  apunta al banco de sprites generado del cliente (`.gitignore:48`), que el
+ *  visor del lab sirve desde la máquina de cada uno. Un enlace así no es una
+ *  fixture rota; distinguirlos con `git check-ignore` evita tanto el falso
+ *  positivo como una lista de excepciones a mano que se pudriría. */
+function ignoredTargets(links: readonly string[]): Set<string> {
+  const candidatos = links.map(linkTarget).filter((t): t is string => t !== null);
+  if (candidatos.length === 0) return new Set();
+  let res: string;
+  try {
+    res = execFileSync("git", ["check-ignore", "--stdin"], {
+      cwd: REPO,
+      encoding: "utf8",
+      input: candidatos.join("\n"),
+      stdio: ["pipe", "pipe", "ignore"],
+    }).trim();
+  } catch (err) {
+    // `check-ignore` sale con 1 cuando NINGUNA ruta está ignorada: eso no es
+    // un error. Cualquier otro código sí lo es y se propaga.
+    const status = (err as { status?: number }).status;
+    if (status !== 1) throw err;
+    return new Set();
+  }
+  return new Set(res ? res.split("\n") : []);
+}
+
 function retiredRule(): { pattern: RegExp; terms: string[] } {
   const rule = archConfig.rules.find((r) => r.id === "campos-retirados-no-vuelven");
   const source = rule?.text?.pattern;
@@ -87,7 +122,13 @@ const entries = tracked();
 
 describe("higiene del árbol versionado", () => {
   it("ningún symlink trackeado apunta a un fichero que ya no existe", () => {
-    const roto = danglingLinks(entries, (p) => existsSync(resolve(REPO, p)));
+    const links = entries.filter((e) => e.mode === "120000").map((e) => e.path);
+    const porDiseno = ignoredTargets(links);
+    const roto = danglingLinks(entries, (p) => {
+      if (existsSync(resolve(REPO, p))) return true;
+      const destino = linkTarget(p);
+      return destino !== null && porDiseno.has(destino);
+    });
     assert.deepEqual(
       roto,
       [],
@@ -124,6 +165,31 @@ describe("higiene del árbol — los guardias en negativo", () => {
     assert.deepEqual(danglingLinks(fabricados, (p) => vivos.has(p)), [
       "nefan-html/public/scenes/rota.json",
     ]);
+  });
+
+  it("un enlace a un destino gitignoreado NO se caza: cuelga por diseño", () => {
+    // En el árbol real hay al menos uno (`labs/fps/sprites` → banco de sprites
+    // generado). Si el conjunto de "por diseño" se vaciara, el guardia estaría
+    // pasando por suerte y no por criterio.
+    const links = entries.filter((e) => e.mode === "120000").map((e) => e.path);
+    const porDiseno = ignoredTargets(links);
+    assert.ok(
+      porDiseno.size > 0,
+      "ningún enlace apunta ya a un destino ignorado: revisar si este filtro sigue haciendo falta",
+    );
+    // Y el filtro es lo ÚNICO que los salva: sin él, un enlace cuyo destino no
+    // se versiona saldría marcado como roto en cualquier clon limpio.
+    const conDestinoIgnorado = links.filter((p) => {
+      const d = linkTarget(p);
+      return d !== null && porDiseno.has(d);
+    });
+    assert.deepEqual(
+      danglingLinks(
+        conDestinoIgnorado.map((path) => ({ mode: "120000", path })),
+        () => false,
+      ),
+      conDestinoIgnorado,
+    );
   });
 
   it("el patrón real caza CADA término retirado cuando está en la ruta", () => {
