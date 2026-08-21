@@ -5,7 +5,7 @@
  *  G = pedir el atlas de superficies del tile activo · B = ciclar la vista de
  *  debug (off → colisiones → blueprint). Las teclas X (segmentar la imagen),
  *  N (descubrir props) y R (revisar el blueprint por visión) se fueron con el
- *  pipeline de imagen de la oblicua: sus tres endpoints ya no tienen cliente. */
+ *  pipeline de imagen del repintado por tile, que ya no existe. */
 
 export interface DevToolsDeps {
   /** El diálogo suprime también las teclas dev (mismo guard que el provider). */

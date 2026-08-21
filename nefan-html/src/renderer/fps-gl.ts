@@ -1,9 +1,10 @@
 /** Internals WebGL de la vista FPS (import DINÁMICO desde FpsRenderer — three
- *  no entra en el bundle salvo que la vista se active). Port del bench
- *  labs/fps/lib.mjs con las convenciones del juego:
+ *  no entra en el bundle base). Port del bench labs/fps/lib.mjs con las
+ *  convenciones del juego:
  *
- *  - Renderer y canvas PROPIOS: el singleton offscreen de
- *    stage-greybox-render sigue libre para clay/thumbnails.
+ *  - Renderer y canvas PROPIOS, y desde que se retiraron la oblicua y el
+ *    plató son también los ÚNICOS: este fichero es el único importador de
+ *    three del cliente y el único contexto WebGL de la pestaña.
  *  - Un THREE.Group por tile (prims en metros, offset = world_rect del tile);
  *    materiales por grupo de caras indexados por celda del atlas — el clay es
  *    el color del prim y applyAtlas() los texturiza sin reconstruir geometría.
@@ -32,7 +33,7 @@ const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
-import type { AttackTelegraph, Entity, PlayerView } from "./renderer2d.js";
+import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
 const EYE_M = 1.6;
@@ -53,7 +54,7 @@ export interface AtlasImage {
   kind: "tile" | "unique";
 }
 
-/** Modos de la tecla B en fps (espejo del ciclo de las otras vistas). */
+/** Modos de la tecla B: off → colisión → celdas de atlas. */
 export type FpsDebugView = "off" | "collision" | "surfaces";
 
 /** Celdas sólidas del tile activo, en METROS de mundo (esquina mínima). */
@@ -906,7 +907,8 @@ export class FpsGl {
     t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
     t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
     if (mode === "impact") {
-      // Mismos tramos de calidad que el destello de la vista oblicua.
+      // Tramos de calidad del destello (heredados del 2D: verde/amarillo/
+      // rojo según lo centrado que fuese el golpe).
       const c =
         impactQuality > 0.7 ? "#50ff50"
         : impactQuality > 0.3 ? "#ffff3c"

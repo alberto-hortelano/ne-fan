@@ -207,9 +207,9 @@
       }
     },
     {
-      "id": "three-solo-en-los-tres-renderers",
-      "desc": "three.js solo se importa en los módulos de render que lo poseen",
-      "why": "three entra por import dinámico para no engordar el bundle base; un import suelto en otro fichero lo mete en el arranque.",
+      "id": "three-solo-en-fps-gl",
+      "desc": "three.js solo se importa en fps-gl.ts, el único módulo que lo posee",
+      "why": "three entra por import dinámico para no engordar el bundle base; un import suelto en otro fichero lo mete en el arranque. Y hay una razón más fuerte desde que el cliente tiene UNA vista: cada importador de three tiende a abrir su propio WebGLRenderer, y un segundo contexto WebGL en la pestaña compite por la GPU con el mundo que el jugador está mirando. Esta regla absorbe a `fps-no-usa-el-singleton-offscreen`, que prohibía a la fps tocar el renderer singleton offscreen del clay (el del repintado y los thumbnails): ese singleton murió con la vista oblicua y la regla se quedó sin sujeto, pero su porqué —el contexto WebGL es un recurso único y con dueño— es exactamente el de aquí.",
       "severity": "error",
       "files": [
         "nefan-html/src/**/*.ts"
@@ -221,32 +221,10 @@
       },
       "exceptions": [
         {
-          "path": "nefan-html/src/scene/stage-greybox-render.ts",
-          "reason": "dueño del renderer singleton offscreen del clay"
-        },
-        {
-          "path": "nefan-html/src/scene/tile-greybox-render.ts",
-          "reason": "consumidor del singleton, recibe el renderer por parámetro"
-        },
-        {
           "path": "nefan-html/src/renderer/fps-gl.ts",
-          "reason": "renderer y canvas propios de la vista fps"
+          "reason": "renderer y canvas del mundo — el único contexto WebGL del cliente"
         }
       ]
-    },
-    {
-      "id": "fps-no-usa-el-singleton-offscreen",
-      "desc": "La vista fps no toca el renderer singleton del greybox",
-      "why": "El fps tiene canvas WebGL propio; usar el singleton offscreen del clay le robaría el contexto a los thumbnails y al repintado.",
-      "severity": "error",
-      "files": [
-        "nefan-html/src/renderer/fps-*.ts"
-      ],
-      "imports": {
-        "forbid": [
-          "stage-greybox-render"
-        ]
-      }
     },
     {
       "id": "blueprint-no-importa-stage",
@@ -311,7 +289,7 @@
       "desc": "El cliente 2D no traga errores en silencio",
       "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max.",
       "severity": "warn",
-      "max": 6,
+      "max": 5,
       "files": [
         "nefan-html/src/**/*.ts"
       ],

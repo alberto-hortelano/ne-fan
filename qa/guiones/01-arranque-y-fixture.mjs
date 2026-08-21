@@ -25,8 +25,32 @@ export default async function (ctx) {
     return s.scene ? s : null;
   });
   ctx.expect("hay escena cargada tras elegir la fixture", estado.scene === true);
-  ctx.expect("la vista es la oblicua por defecto", estado.view === "oblique" || estado.view === "", estado.view);
   ctx.expect("__nefan.ready() en verde", (await ctx.nefan("ready")) === true);
+
+  // El tile no basta con QUE LLEGUE: tiene que quedar ACTIVO y con sus
+  // superficies compuestas. El layout de superficies es lo que el atlas pide
+  // al renderer, así que un tile activo sin él se queda en clay gris para
+  // siempre y NADIE lo nota (no hay error: simplemente no se pide nada).
+  // Es el riesgo del orden install/activar, y por eso se afirma aquí.
+  const mundo = await ctx.waitFor(
+    "el mundo 3D instala el tile de la fixture",
+    () => {
+      const f = window.__nefan.fps();
+      return f && f.ready && f.activeTile ? f : null;
+    },
+    20_000,
+  );
+  ctx.log(`fps: activo=${mundo.activeTile} · instalados=${JSON.stringify(mundo.tiles)}`);
+  ctx.expect(
+    "el tile activo tiene superficies instaladas (si no, clay gris sin pedir atlas jamás)",
+    mundo.surfaces.includes(mundo.activeTile),
+    `activo=${mundo.activeTile} superficies=${JSON.stringify(mundo.surfaces)}`,
+  );
+  ctx.expect(
+    "y su geometría está montada en la escena three",
+    mundo.tiles.includes(mundo.activeTile),
+    JSON.stringify(mundo.tiles),
+  );
   await ctx.shot("fixture");
 
   // El game loop corre de verdad en headless (?raf=timer): si el rAF estuviera

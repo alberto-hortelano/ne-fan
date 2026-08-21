@@ -20,7 +20,6 @@ import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.j
 import { CONFIG } from "@nefan-core/src/config.js";
 import {
   SUGGESTED_THEME_TAGS,
-  WORLD_VIEWS,
   styleCompatibleWithGame,
   type WorldView,
 } from "@nefan-core/src/games/style-refs.js";
@@ -32,17 +31,6 @@ import {
   RENDER_MODE_ICONS,
   RENDER_MODE_LABELS,
 } from "./mode-labels.js";
-
-/** Vistas que el cliente sabe pintar HOY. `WORLD_VIEWS` sigue enumerando
- *  "proscenium" porque el enum vive en el contrato de los style packs, pero el
- *  proscenio ya no tiene renderer: preseleccionarlo desde un `game.json`
- *  arrancaría una partida en una vista muerta. */
-const OFFERED_VIEWS: readonly WorldView[] = WORLD_VIEWS.filter((v) => v !== "proscenium");
-
-/** Normaliza una vista de fuente externa (game.json, botón) al enum. */
-function normalizeView(v: string | undefined, fallback: WorldView = "overworld"): WorldView {
-  return (OFFERED_VIEWS as readonly string[]).includes(v ?? "") ? (v as WorldView) : fallback;
-}
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }
@@ -422,19 +410,6 @@ export class TitleScreen {
       <div id="ts-columns" style="display:grid;grid-template-columns:minmax(340px,1.15fr) minmax(330px,1fr);gap:20px;align-items:start;margin-bottom:14px">
         <div id="ts-worlds" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 220px);min-height:120px;padding-right:4px"></div>
         <div style="min-width:0;display:flex;flex-direction:column;gap:12px">
-          <div>
-            <div style="font-size:12px;color:#999;margin-bottom:4px">Vista <span style="color:#666">(fija para toda la partida)</span></div>
-            <div id="ts-view" style="display:flex;gap:6px">
-              <button data-view="overworld" style="${OPT}">
-                <div style="font-size:13px">Mundo abierto</div>
-                <div style="font-size:10px;color:#888">Plano continuo de tiles visto desde arriba</div>
-              </button>
-              <button data-view="fps" style="${OPT}">
-                <div style="font-size:13px">Primera persona</div>
-                <div style="font-size:10px;color:#888">El mundo a pie, estilo retro-FPS: el ratón mira, WASD mueve</div>
-              </button>
-            </div>
-          </div>
           <label style="display:block">
             <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>
             <select id="ts-style" style="${SELECT_CSS}"></select>
@@ -488,7 +463,6 @@ export class TitleScreen {
     const worldsEl = this.content.querySelector("#ts-worlds") as HTMLElement;
     const styleSel = this.content.querySelector("#ts-style") as HTMLSelectElement;
     const styleDesc = this.content.querySelector("#ts-style-desc") as HTMLElement;
-    const viewEl = this.content.querySelector("#ts-view") as HTMLElement;
     const renderModeEl = this.content.querySelector("#ts-rendermode") as HTMLElement;
     const charModeEl = this.content.querySelector("#ts-charmode") as HTMLElement;
     const continueBtn = this.content.querySelector("#ts-continue") as HTMLButtonElement;
@@ -500,8 +474,12 @@ export class TitleScreen {
     const skinBackendOn = CONFIG.graphics.ai_skin;
     let charModeTouched = false;
     let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";
-    // La vista es del jugador, no del mundo: game.json solo la preselecciona.
-    let selectedView: WorldView = normalizeView(selectedGame.view);
+    // Ya no se elige: el cliente tiene UNA vista. `game.json` puede seguir
+    // declarando la suya (el campo muere con el contrato), pero ofrecer un
+    // botón que lleva al mismo sitio es mentir — y peor: el batch de estilo
+    // pre-genera los skins al ÁNGULO de la vista elegida, así que elegir una
+    // vista muerta pagaba arte que la partida no volvería a encontrar.
+    const selectedView: WorldView = "fps";
     const refreshRenderMode = (): void => {
       for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
         const active = btn.dataset.rendermode === selectedRenderMode;
@@ -536,22 +514,6 @@ export class TitleScreen {
       });
     }
     refreshCharMode();
-    const refreshView = (): void => {
-      for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
-        const active = btn.dataset.view === selectedView;
-        btn.style.borderColor = active ? "#da6" : "#2a2a30";
-        btn.style.background = active ? "#201c14" : "#181820";
-      }
-    };
-    for (const btn of viewEl.querySelectorAll<HTMLElement>("[data-view]")) {
-      btn.addEventListener("click", () => {
-        selectedView = normalizeView(btn.dataset.view);
-        refreshView();
-        refreshStyleOptions();
-        refreshGenPanel();
-      });
-    }
-
     worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
     const refreshStyleOptions = (): void => {
@@ -599,11 +561,7 @@ export class TitleScreen {
         if (!game) return;
         selectedGame = game;
         this.lastSelectedGameId = game.game_id;
-        // Cambiar de mundo resetea la vista a la default del juego (mismo
-        // criterio que el estilo, que vuelve al del mundo).
-        selectedView = normalizeView(game.view);
         refreshSelection();
-        refreshView();
         refreshStyleOptions();
         refreshGenPanel();
       });
@@ -647,7 +605,7 @@ export class TitleScreen {
             ? `<span style="color:#da6">⟳ obsoleto (regenera el mundo/estilo)</span>`
             : `<span style="color:#a66">— sin aplicar</span>`;
       genStateEl.innerHTML =
-        `Mundo (vista <span style="color:#bdf">${escapeHtml(VIEW_LABELS[selectedView] ?? selectedView)}</span>): ${CONTENT_LABEL[cs]}` +
+        `Mundo: ${CONTENT_LABEL[cs]}` +
         ` &nbsp;·&nbsp; Estilo <span style="color:#bdf">${escapeHtml(styleById.get(styleSel.value)?.name ?? "(ninguno)")}</span>: ${styleLabel}`;
       genWorldBtn.textContent = cs === "ready" ? "↻ Regenerar mundo" : "⚙ Generar mundo";
       genWorldBtn.disabled = false;
@@ -693,7 +651,6 @@ export class TitleScreen {
     });
 
     refreshSelection();
-    refreshView();
     refreshStyleOptions();
     refreshGenPanel();
 

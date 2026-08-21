@@ -41,6 +41,12 @@ export interface TileClientState {
 export class TileStore {
   readonly entries = new Map<string, TileClientState>();
   private grid = new Map<string, TileClientState>();
+  /** Huella del scene data con el que se registró cada clave. Es lo único que
+   *  distingue "el tile vuelve a llegar igual" (resume, re-broadcast) de "el
+   *  tile CAMBIÓ" — y de eso depende si la colisión derivada se restaura o se
+   *  recalcula. Vivía en el renderer oblicuo, que era quien re-pintaba; con
+   *  una sola vista, el dueño del dato es el modelo de mundo. */
+  private fingerprints = new Map<string, string>();
 
   /** ¿Hay algún tile del grid? (las reglas de frontera solo aplican entonces). */
   get hasGridTiles(): boolean {
@@ -70,12 +76,19 @@ export class TileStore {
     return undefined;
   }
 
-  /** ADITIVO: re-añadir la misma clave sustituye (re-render tras resume). */
-  add(tile: TileClientState): void {
+  /** ADITIVO: re-añadir la misma clave sustituye (re-render tras resume).
+   *  Devuelve `sceneChanged`: la clave ya estaba Y su escena es distinta. Un
+   *  tile nuevo NO cuenta como cambio (no hay nada que restaurar). */
+  add(tile: TileClientState): { sceneChanged: boolean } {
+    const fingerprint = JSON.stringify(tile.scene);
+    const sceneChanged =
+      this.entries.has(tile.key) && this.fingerprints.get(tile.key) !== fingerprint;
     this.entries.set(tile.key, tile);
+    this.fingerprints.set(tile.key, fingerprint);
     if (Number.isInteger(tile.tx) && Number.isInteger(tile.ty)) {
       this.grid.set(tileKey(tile.tx!, tile.ty!), tile);
     }
+    return { sceneChanged };
   }
 
   /** Instala la colisión base derivada del plan del tile (null = plan sin
@@ -92,6 +105,7 @@ export class TileStore {
   clear(): void {
     this.entries.clear();
     this.grid.clear();
+    this.fingerprints.clear();
   }
 
   /** Coords de los tiles del grid que toca el AABB (x±r, z±r) — ≤4. */

@@ -69,11 +69,8 @@ export interface InputProvider extends IntentSink {
    *  estado; la UI se refresca vía onAttackTypeChanged. */
   selectAttack(typeId: string): void;
   onAttackTypeChanged?: (typeId: string) => void;
-  /** Intención de zoom acumulada con signo (+ acerca) — se resetea al leer. */
-  consumeZoomDelta(): number;
   /** Delta de ratón acumulado en píxeles bajo pointer lock — se resetea al
-   *  leer. Solo la vista fps lo convierte en mirada: `dx` en yaw y `dy` en
-   *  pitch (mirar arriba y abajo). */
+   *  leer. Es la MIRADA: `dx` en yaw y `dy` en pitch (arriba y abajo). */
   consumeLookDelta(): LookDelta;
   consumeAttack(): boolean;
   consumeInteract(): boolean;
@@ -86,6 +83,7 @@ export interface InputProvider extends IntentSink {
   dispose(): void;
 }
 
-export interface InputDeps {
-  canvas: HTMLCanvasElement;
-}
+/** El proveedor no recibe nada: sus listeners viven en `window` (teclas,
+ *  ratón bajo pointer lock). Recibía el lienzo por la rueda del zoom, que se
+ *  fue con la vista oblicua — en primera persona no hay nada que acercar. */
+export type InputDeps = Record<string, never>;

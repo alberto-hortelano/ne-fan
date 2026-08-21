@@ -34,7 +34,6 @@ const GAME_ID = "alta_fantasia";
 async function regenerarMundo(ctx) {
   await abrirSelectorDeMundos(ctx);
   await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
-  await ctx.page.click(`#ts-view [data-view="overworld"]`);
 
   await ctx.page.click("#ts-gen-world");
   const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
@@ -109,7 +108,7 @@ export default async function (ctx) {
   await homeListo(ctx);
   await regenerarMundo(ctx);
   await homeListo(ctx);
-  await nuevaPartida(ctx, { gameId: GAME_ID, view: "overworld", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
   await comenzar(ctx);
 
   // ── Punto de partida ────────────────────────────────────────────────────

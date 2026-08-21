@@ -87,20 +87,26 @@ function trazaDeAtaque(ctx) {
 const enCuadro = (m) => Boolean(m.screen) && m.screen.y < m.alto * 0.85 && m.screen.y > 0;
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", view: "fps", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
   await comenzar(ctx);
 
   // three entra por import dinámico: hasta que llega no hay nada que mirar.
+  // (`visible` ya no existe en debugState: con una sola vista no hay lienzo
+  // que conmutar — el del mundo está siempre puesto.)
   const inicial = await ctx.waitFor(
     "la vista fps termina de cargar three y pinta el tile",
     () => {
       const f = window.__nefan.fps();
-      return f && f.ready && f.visible && f.tiles.length > 0 ? f : null;
+      return f && f.ready && f.tiles.length > 0 ? f : null;
     },
     60_000,
   );
   ctx.log(`fps lista · tiles ${JSON.stringify(inicial.tiles)} · activo ${inicial.activeTile}`);
-  ctx.expect("la partida arranca en primera persona", (await ctx.nefan("status")).view === "fps");
+  ctx.expect(
+    "la partida arranca en primera persona (el mundo 3D está montado)",
+    (await ctx.nefan("fps")).ready === true,
+    JSON.stringify(await ctx.nefan("fps")),
+  );
   ctx.expect(
     "y arranca limpia: sin telegraph, sin velo y mirando al frente",
     inicial.telegraph === null && inicial.veil === null && inicial.pitchDeg === 0,

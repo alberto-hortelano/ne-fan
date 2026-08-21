@@ -94,6 +94,15 @@ export class FpsAtlasController {
     this.pendingTiles.add(key);
     try {
       if (await this.reinstallIfCached(key)) return;
+      // Sin estilo NO se resuelve nada. El estilo llega con la respuesta de
+      // start/resume, y la escena del bootstrap puede difundirse ANTES: una
+      // resolución contra style_id "" no es la partida de nadie —ni acierta
+      // en la librería ni deja arte reutilizable— y la re-emisión correcta
+      // la garantiza applySessionReady() del cliente.
+      if (!this.styleId) {
+        this.deps.log(`Atlas fps de ${key}: en espera del estilo de la sesión`);
+        return;
+      }
       if (this.inFlight) return;
       if (await this.reinstallFromStorage(key)) return;
       await this.runFor(key, { resolveOnly: !this.deps.generationOn() });
@@ -118,6 +127,17 @@ export class FpsAtlasController {
   async runFor(key: string, { resolveOnly = false } = {}): Promise<void> {
     const tile = this.deps.getTile(key);
     if (!tile) return;
+    // Generación manual sin estilo: fail-loud. Pintar un atlas contra
+    // `style_id` vacío gasta créditos en arte que ninguna partida volverá a
+    // encontrar (la clave de caché del server lleva el estilo dentro).
+    if (!this.styleId) {
+      errors.push(
+        "scene",
+        `atlas fps de ${key}: no hay estilo de sesión (una fixture no lo tiene). ` +
+          "Empieza una partida para que el arte que se pague sea reutilizable.",
+      );
+      return;
+    }
     const token = ++this.token;
     this.inFlight = true;
     try {

@@ -1,20 +1,16 @@
-/** Contrato mínimo de un renderer de vista del cliente 2D — la superficie
- *  POR FRAME que consume el gameLoop. La instalación de escena difiere por
- *  vista (addTile acumulativo en la oblicua, installTile en la fps) y queda
- *  fuera del contrato: main.ts la cablea por vista.
- *  Los métodos exclusivos de la ruta oblicua (tiles, occluders,
- *  captureSchematic…) viven en el CanvasRenderer concreto.
+/** Datos POR FRAME del mundo que el gameLoop entrega al renderer.
  *
- *  Aquí vive TAMBIÉN `Entity`, el dato por frame que el contrato recibe:
- *  estaba en canvas-renderer.ts y hacía que el contrato dependiera de una
- *  implementación concreta —la oblicua— de la que la fps no usa nada. */
+ *  Vivían en canvas-renderer.ts, pasaron por `renderer2d.ts` (el contrato de
+ *  las tres vistas) y aquí se quedan solos: con una sola vista, una interfaz
+ *  `Renderer2D` con una única implementación mentía sobre qué era
+ *  intercambiable — los datos, en cambio, siguen siendo el idioma entre el
+ *  bucle del juego y quien pinta. */
 
-import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 
-/** Un cuerpo del mundo tal y como lo recibe un renderer: jugador, NPC,
+/** Un cuerpo del mundo tal y como lo recibe el renderer: jugador, NPC,
  *  enemigo u objeto de escena. Lo produce main.ts (desde el sim y el scene
- *  data) y lo consumen las tres vistas — no es de ninguna. */
+ *  data). */
 export interface Entity {
   id: string;
   pos: Vec3;
@@ -75,9 +71,8 @@ export interface AttackAreaParams {
   area_radius: number;
 }
 
-/** Telegraph del ataque para las vistas que lo pintan EN EL MUNDO (fps).
- *  Es el mismo dato que consume drawAttackArea, pero se FIJA antes de
- *  render() en vez de dibujarse después: en WebGL no hay lienzo sobre el que
+/** Telegraph del ataque, pintado EN EL MUNDO: se FIJA antes de render() en
+ *  vez de dibujarse después, porque en WebGL no hay lienzo sobre el que
  *  garabatear una vez emitido el frame. */
 export interface AttackTelegraph {
   player: { pos: Vec3; forward: Vec3 };
@@ -86,21 +81,4 @@ export interface AttackTelegraph {
   opacity: number;
   /** Calidad del golpe (0..1) — solo tiñe el destello de impacto. */
   impactQuality: number;
-}
-
-export interface Renderer2D {
-  /** Tema de la partida para lo que el renderer pinta DENTRO del lienzo
-   *  (nombres de NPC, etiquetas de salida): ahí no llega el CSS, y el
-   *  nombre de un personaje debe leerse igual sobre su cabeza que en el
-   *  panel de diálogo. Obligatorio para que cada vista se pronuncie: la fps
-   *  no pinta texto de mundo y lo declara con un no-op. */
-  setWorldTheme(theme: UiTheme): void;
-  render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void;
-  drawAttackArea(
-    player: { pos: Vec3; forward: Vec3 },
-    params: AttackAreaParams,
-    mode: "windup" | "impact",
-    opacity?: number,
-    impactQuality?: number,
-  ): void;
 }

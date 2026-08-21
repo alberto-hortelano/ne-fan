@@ -23,10 +23,9 @@ body {
   min-height: 0;
 }
 
-/* Los dos lienzos del MUNDO (2D y el WebGL de fps) se apilan; setVisible
-   conmuta cuál se ve. Absolutos: clientWidth/clientHeight son la medida real
-   del lienzo, que es lo que usa CanvasRenderer.resize() para dimensionar su
-   buffer.
+/* El lienzo del MUNDO (el WebGL de la vista en primera persona, insertado por
+   FpsRenderer). Absoluto: clientWidth/clientHeight son la medida real del
+   lienzo, que es lo que usa el renderer para dimensionar su buffer.
 
    Selector de HIJO DIRECTO a propósito: la UI de juego también usa lienzos
    (el retrato animado del diálogo), y con `#app-shell canvas` se llevaban

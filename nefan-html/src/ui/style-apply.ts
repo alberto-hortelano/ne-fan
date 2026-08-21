@@ -48,8 +48,10 @@ const ATLAS_PAGE_EST_USD = 0.15;
  *  2 direcciones. */
 const SKIN_IMAGE_CALLS = 1 + 8 + 4 + 4;
 const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
-/** Set de sprites por vista — DEBE coincidir con VIEW_ANGLES de main.ts o el
- *  skin pre-generado no es el que pedirá la partida. */
+/** Set de sprites por vista — DEBE coincidir con el `worldAngle` de main.ts
+ *  ("frontal_8") o el skin pre-generado no es el que pedirá la partida. La
+ *  tabla sobrevive a las dos vistas retiradas porque el vocabulario `view`
+ *  sigue vivo en el contrato del bridge; el título ya solo pide "fps". */
 const ANGLE_BY_VIEW: Record<string, string> = {
   overworld: "isometric_30",
   proscenium: "frontal_8",

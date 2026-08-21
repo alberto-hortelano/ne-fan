@@ -25,7 +25,6 @@ export class ScriptedInputProvider implements InputProvider {
   onAttackTypeChanged?: (typeId: string) => void;
 
   private attackIds: readonly string[] = DEFAULT_ATTACK_IDS;
-  private zoomAccum = 0;
   private lookAccum = 0;
   private lookAccumY = 0;
   private tileConfirmRequested = false;
@@ -58,10 +57,6 @@ export class ScriptedInputProvider implements InputProvider {
 
   queueRespawn(): void {
     this.respawnRequested = true;
-  }
-
-  queueZoom(steps: number): void {
-    this.zoomAccum += steps;
   }
 
   /** Equivalente a mover el ratón bajo pointer lock. `deltaY` va en píxeles
@@ -97,12 +92,6 @@ export class ScriptedInputProvider implements InputProvider {
     }
     this.state.selectedAttack = typeId;
     this.onAttackTypeChanged?.(typeId);
-  }
-
-  consumeZoomDelta(): number {
-    const z = this.zoomAccum;
-    this.zoomAccum = 0;
-    return z;
   }
 
   consumeLookDelta(): LookDelta {
