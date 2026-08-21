@@ -33,9 +33,15 @@ import {
   RENDER_MODE_LABELS,
 } from "./mode-labels.js";
 
+/** Vistas que el cliente sabe pintar HOY. `WORLD_VIEWS` sigue enumerando
+ *  "proscenium" porque el enum vive en el contrato de los style packs, pero el
+ *  proscenio ya no tiene renderer: preseleccionarlo desde un `game.json`
+ *  arrancaría una partida en una vista muerta. */
+const OFFERED_VIEWS: readonly WorldView[] = WORLD_VIEWS.filter((v) => v !== "proscenium");
+
 /** Normaliza una vista de fuente externa (game.json, botón) al enum. */
 function normalizeView(v: string | undefined, fallback: WorldView = "overworld"): WorldView {
-  return (WORLD_VIEWS as readonly string[]).includes(v ?? "") ? (v as WorldView) : fallback;
+  return (OFFERED_VIEWS as readonly string[]).includes(v ?? "") ? (v as WorldView) : fallback;
 }
 
 export type TitleAction =
@@ -71,7 +77,6 @@ const AI_SERVER_HTTP = serviceUrl("remote-gen");
  *  agrupa los model sheets compartidos entre vistas. */
 const UPLOAD_VIEW_LABELS: Array<{ id: string; label: string }> = [
   { id: "overworld", label: "Mundo (vista cenital)" },
-  { id: "proscenium", label: "Plató (a pie de suelo)" },
   { id: "fps", label: "Primera persona" },
   { id: "characters", label: "Personaje (model sheet)" },
 ];
@@ -423,10 +428,6 @@ export class TitleScreen {
               <button data-view="overworld" style="${OPT}">
                 <div style="font-size:13px">Mundo abierto</div>
                 <div style="font-size:10px;color:#888">Plano continuo de tiles visto desde arriba</div>
-              </button>
-              <button data-view="proscenium" style="${OPT}">
-                <div style="font-size:13px">Proscenio</div>
-                <div style="font-size:10px;color:#888">Escenas discretas tipo plató de cine, a pie de calle</div>
               </button>
               <button data-view="fps" style="${OPT}">
                 <div style="font-size:13px">Primera persona</div>
@@ -1125,8 +1126,9 @@ function generationChipsHtml(g: GameInfo): string {
   };
   const gen = g.generation ?? { tile: "missing", stage: "missing" };
   const chips = [
+    // La rama `stage` no se pinta: no hay vista que la juegue. El campo sigue
+    // en el contrato del bridge y muere con `WORLD_BRANCHES`.
     chip("Mundo abierto/1ª persona", gen.tile),
-    chip("Proscenio", gen.stage),
     ...(g.styles_applied ?? []).map((a) =>
       chip(`🎨 ${a.style_id} (${VIEW_LABELS[a.view] ?? a.view})`, a.status),
     ),

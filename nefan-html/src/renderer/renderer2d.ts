@@ -1,11 +1,11 @@
 /** Contrato mínimo de un renderer de vista del cliente 2D — la superficie
  *  POR FRAME que consume el gameLoop. La instalación de escena difiere por
- *  vista (addTile acumulativo en la oblicua, installStage de escena única en
- *  el proscenio) y queda fuera del contrato: main.ts la cablea por vista.
+ *  vista (addTile acumulativo en la oblicua, installTile en la fps) y queda
+ *  fuera del contrato: main.ts la cablea por vista.
  *  Los métodos exclusivos de la ruta oblicua/imagen (tiles, occluders,
  *  captureSchematic…) viven en el CanvasRenderer concreto — sus subsistemas
- *  (SceneImageController, Auto-img, frontier) son oblicua-only y se apagan
- *  en proscenio desde applySessionView.
+ *  (SceneImageController, Auto-img) son oblicua-only y se apagan en fps
+ *  desde applySessionView.
  *
  *  Aquí vive TAMBIÉN `Entity`, el dato por frame que el contrato recibe:
  *  estaba en canvas-renderer.ts y hacía que el contrato dependiera de una
@@ -42,9 +42,7 @@ export interface Entity {
   /** Tile del que procede el NPC (clave del scene data que lo declaró) —
    *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
   tileKey?: string;
-  /** true = estático declarado en el scene data (no un spawn dinámico). En
-   *  proscenio con imagen instalada, los declarados SIN capa del compositor
-   *  no pintan caja esquemática (el repintado ya vistió su zona). */
+  /** true = estático declarado en el scene data (no un spawn dinámico). */
   sceneDeclared?: boolean;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */

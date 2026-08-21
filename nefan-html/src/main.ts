@@ -12,7 +12,6 @@ import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import {
   buildTileGreyboxSpec,
   deriveVolumesFromSchema,
-  groundCollisionGrid,
   parseGround,
   parseVolumes,
   type GroundFeature,
@@ -20,32 +19,22 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
-import {
-  composeStageScene,
-  stagePlanFromScene,
-  type ComposedStage,
-  type StageScenePlan,
-} from "@nefan-core/src/scene/stage/index.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan } from "./renderer/canvas-renderer.js";
 import { rendererRegistry } from "./renderer/registry.js";
 import type { Entity, Renderer2D } from "./renderer/renderer2d.js";
-import { ProsceniumRenderer, STAGE_DEBUG_VIEW_LABELS } from "./renderer/proscenium-renderer.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { VIEW_PROJECTION } from "./renderer/projection.js";
 import { SceneImageController } from "./scene/scene-image.js";
-import { StageImageController } from "./scene/stage-image.js";
 import { applyReviewFixes, reviewTileBlueprint, type ReviewDeps } from "./scene/review.js";
 import {
   CollisionSystem,
   applyPlanCollision,
-  applyStageDerivedCollision,
   applyTileAnalysis,
   type DerivedCollisionDeps,
 } from "./world/collision.js";
-import { StageTransitions } from "./world/stage-transitions.js";
 import { AutoImagePipeline } from "./scene/auto-pipeline.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
@@ -88,9 +77,12 @@ import { CONFIG } from "@nefan-core/src/config.js";
 // Glob import all open-world scene JSONs (lazy) — Vite feature.
 // El concepto sala se ha retirado del cliente HTML: estos fixtures definen
 // escenarios exteriores con elementos planos por categoría.
+// Solo el nivel RAÍZ: el subdirectorio `proscenio/` guarda platós, y el
+// cliente ya no sabe pintar un plató. Siguen en el repo como fixtures de las
+// suites de plató de nefan-core, que mueren con el bloque `stage`.
 const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
   (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
-    .glob("@nefan-core/data/scenes/**/*.json");
+    .glob("@nefan-core/data/scenes/*.json");
 
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
 // La vista cenital 2D necesita un ritmo más arcade que el walk_speed realista
@@ -174,10 +166,10 @@ const config = loadConfig(combatConfigJson);
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 /** Set de sprites por VISTA: los sheets del y_bot van renderizados desde un
  *  ángulo de cámara fijo y los personajes quedan fijos a ese ángulo — la
- *  oblicua usa el clásico picado 30°; el proscenio (cámara horizontal, ojo
- *  1,8-3,2 m) usa el set casi frontal −8° para que no parezcan torcidos. */
+ *  oblicua usa el clásico picado 30°; la fps (cámara a la altura de los ojos)
+ *  usa el set casi frontal −8° para que no parezcan torcidos. */
 const OBLIQUE_ANGLE = "isometric_30";
-const PROSCENIUM_ANGLE = "frontal_8";
+const FPS_ANGLE = "frontal_8";
 /** Ángulo del set de la vista ACTIVA (lo conmuta applySessionView). */
 let worldAngle: string = OBLIQUE_ANGLE;
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
@@ -191,7 +183,7 @@ const GPU_WORKER_URL = serviceUrl("gpu-worker");
 // Meshy/fal (F4): proceso propio de remote-gen (repintados, sheets
 // skinneados, toggle dev de las APIs de pago).
 const REMOTE_GEN_URL = serviceUrl("remote-gen");
-// Reparto por servicio de los pipelines de imagen (Scene/StageImageController).
+// Reparto por servicio de los pipelines de imagen (SceneImageController).
 const GEN_URLS = {
   narrative: AI_SERVER_URL,
   gpu: GPU_WORKER_URL,
@@ -241,32 +233,9 @@ let graphicsChip: GraphicsModeChip | null = null;
 const sceneImageController = new SceneImageController(renderer, GEN_URLS, (e) =>
   devPanel.recordGeneration(e),
 );
-// Pipeline de imagen del proscenio (entrega 2): repintado + segmentación por
-// visión/SAM de lo PINTADO. Instala en el ProsceniumRenderer de la vista y,
-// si el renderer acepta, la COLISIÓN derivada de lo pintado sustituye a la
-// declarada (closure: se resuelve al llegar las imágenes, no al construir).
-// Agua∖decks del `ground` DECLARADO por plató instalado: la colisión derivada
-// de la imagen la une (el repintado puede recolocar volúmenes; el agua
-// declarada gobierna la jugabilidad).
-const stageDeclaredWater = new Map<string, TerrainGridData | null>();
 /** true cuando los modos de render del SAVE ya están aplicados (respuesta de
  *  start/resume) — gate del gasto automático del atlas fps (ver abajo). */
 let sessionModesApplied = false;
-const stageImageController = new StageImageController(GEN_URLS, {
-  install: (key, images) => {
-    const accepted = prosceniumRenderer?.installImages(key, images) ?? false;
-    if (accepted) {
-      applyStageDerivedCollision(
-        key, images.collision, derivedCollisionDeps, stageDeclaredWater.get(key) ?? null,
-      );
-    }
-  },
-  log: (msg) => log(msg),
-  // Progreso del repintado/pelado en el panel de dev (mismo slot que el
-  // Auto-img de la oblicua — nunca corren a la vez).
-  status: (s) => devPanel.setStage(s),
-  onGeneration: (e) => devPanel.recordGeneration(e),
-});
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
 // lo que falta y las escenas siguientes reutilizan por descripción+estilo.
@@ -300,7 +269,6 @@ const fpsAtlasController = new FpsAtlasController(
  *  save) a los generadores de imagen: escena y skins de personaje. */
 function applySessionStyle(styleId: string): void {
   sceneImageController.setStyle(styleId);
-  stageImageController.setStyle(styleId);
   fpsAtlasController.setStyle(styleId);
   spriteRenderer.setStyle(styleId);
   devPanel.setSession({ styleId });
@@ -316,8 +284,8 @@ const sessionProjection = VIEW_PROJECTION;
 /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
  *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
  *  el save y lo difunde con render_mode_changed). Valores:
- *  - "image": generación IA activa (Auto-img de tiles / repintado de platós,
- *    skins de personaje) — créditos.
+ *  - "image": generación IA activa (Auto-img de tiles, atlas de superficies
+ *    de la fps, skins de personaje) — créditos.
  *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
  *    base y_bot. Lo ya pintado se conserva.
  *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
@@ -325,9 +293,9 @@ const sessionProjection = VIEW_PROJECTION;
 let scenesMode: "image" | "vector" | "" = "";
 let charactersMode: "image" | "vector" | "" = "";
 
-/** ¿Debe generarse imagen NUEVA de escenario? (auto-pipeline y runFor del
- *  plató; la generación MANUAL —tecla G, item del menú dev— no pasa por
- *  aquí: es siempre permitida). */
+/** ¿Debe generarse imagen NUEVA de escenario? (auto-pipeline de la oblicua y
+ *  atlas de la fps; la generación MANUAL —tecla G, item del menú dev— no pasa
+ *  por aquí: es siempre permitida). */
 function scenesGenerationOn(): boolean {
   if (scenesMode) return scenesMode === "image";
   return localStorage.getItem(AUTOIMG_KEY) === "1";
@@ -364,10 +332,8 @@ function applyRenderModes(renderMode: string, characterMode = ""): void {
       "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
     );
   }
-  // El Auto-img por tiles es oblicua-only: en proscenio queda apagado sea
-  // cual sea el modo (el plató tiene su propio pipeline gateado por
-  // scenesGenerationOn en la instalación).
-  // El Auto-img por tiles es oblicua-only (proscenio y fps traen su pipeline).
+  // El Auto-img por tiles es oblicua-only (la fps trae su propio pipeline:
+  // el atlas de superficies).
   autoPipeline.setEnabled(scenesGenerationOn() && sessionView === "");
   const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
     ? "skins IA" : "personajes en base y_bot";
@@ -416,41 +382,30 @@ async function requestModeChange(
   );
 }
 
-/** Repinta + pela el plató ACTIVO (manual: tecla G o item del menú dev —
- *  reintento tras un fallo o generación selectiva con el auto en OFF). */
-function generateActiveStage(): void {
-  if (!activeStage || !activeTileKey || !sceneData) return;
-  const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
-  try {
-    const plan = hotStagePlanFromScene(rawFd);
-    if (plan) {
-      void stageImageController.runFor(
-        activeStage, activeTileKey, stageImageMeta(rawFd, sceneData), plan,
-      );
-    }
-  } catch (err) {
-    errors.push("scene", "el plan del plató activo no parsea", err);
-  }
-}
 /** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
  *  contrato por-frame (Renderer2D, registrado en rendererRegistry); el
  *  CanvasRenderer oblicuo sigue siendo el dueño de tiles/pipeline de imagen
- *  (subsistemas oblicua-only, apagados en proscenio). La vista la fija la
- *  sesión (world.view congelado en el save) o una fixture con bloque stage. */
+ *  (subsistemas oblicua-only, apagados en fps). La vista la fija la sesión
+ *  (world.view congelado en el save). */
 let activeRenderer: Renderer2D = renderer;
-let prosceniumRenderer: ProsceniumRenderer | null = null;
 let fpsRenderer: FpsRenderer | null = null;
 /** Vista del cliente ("" = oblicua). */
-type ClientView = "" | "proscenium" | "fps";
-const toClientView = (v: unknown): ClientView =>
-  v === "proscenium" || v === "fps" ? v : "";
+type ClientView = "" | "fps";
+/** Vista congelada en el save → vista del cliente. El proscenio ya no existe
+ *  en el cliente: una partida que lo lleve congelado NO se abre en oblicua
+ *  "por si acaso" —eso sería un mundo sin plató, sin salidas pintadas y sin
+ *  forma de viajar—, se rechaza diciendo por qué. Pre-producción: los saves
+ *  no se migran (CLAUDE.md). */
+const toClientView = (v: unknown): ClientView => {
+  if (v === "proscenium") {
+    throw new Error(
+      'esta partida se guardó en la vista "proscenio", que ya no existe en el cliente. ' +
+        "Empieza una partida nueva (mundo abierto o primera persona).",
+    );
+  }
+  return v === "fps" ? "fps" : "";
+};
 let sessionView: ClientView = "";
-/** Vista que dicta la SESIÓN del bridge (las fixtures locales pueden
- *  activarla temporalmente sin sesión). */
-let sessionWorldView: ClientView = "";
-/** Plató compuesto vivo (vista proscenio): clamp de movimiento (colisión) y
- *  transiciones por zona de salida. */
-let activeStage: ComposedStage | null = null;
 
 const gameUiEl = document.getElementById("game-ui") as HTMLElement;
 
@@ -467,14 +422,13 @@ function applySessionView(view: string): void {
   sessionView = next;
   gameUiEl.dataset.view = next === "" ? "oblique" : next;
   devPanel.setSession({ view: next });
-  // Set de sprites de la vista: proscenio y fps usan el y_bot casi frontal
-  // (frontal_8 — a nivel de ojos, pitch −8°); la oblicua el picado clásico.
+  // Set de sprites de la vista: la fps usa el y_bot casi frontal (frontal_8 —
+  // a nivel de ojos, pitch −8°); la oblicua el picado clásico.
   // El cambio invalida los skins listos (son por ángulo) y precarga el set
   // nuevo; mientras llega, las entidades cargan lazy por getCached.
   const VIEW_ANGLES: Record<ClientView, string> = {
     "": OBLIQUE_ANGLE,
-    proscenium: PROSCENIUM_ANGLE,
-    fps: PROSCENIUM_ANGLE,
+    fps: FPS_ANGLE,
   };
   const nextAngle = VIEW_ANGLES[next];
   if (nextAngle !== worldAngle) {
@@ -486,29 +440,7 @@ function applySessionView(view: string): void {
       );
     }
   }
-  if (next === "proscenium") {
-    if (!prosceniumRenderer) {
-      prosceniumRenderer = rendererRegistry.create("proscenium", {
-        canvas,
-        spriteRenderer,
-      }) as ProsceniumRenderer;
-      // Palanca dev del clamp de escala por profundidad (?minscale=0.4).
-      const minScale = parseFloat(new URLSearchParams(location.search).get("minscale") ?? "");
-      if (Number.isFinite(minScale)) prosceniumRenderer.minScaleOverride = minScale;
-      // Palanca dev del gain de seguimiento de cámara (?follow=0.35; 0 = fija).
-      const follow = parseFloat(new URLSearchParams(location.search).get("follow") ?? "");
-      // Clamp [0,1]: un gain negativo invierte el pan (mareo) y >1 satura clamps.
-      if (Number.isFinite(follow))
-        prosceniumRenderer.followOverride = Math.min(1, Math.max(0, follow));
-    }
-    prosceniumRenderer.setWorldTheme(currentUiTheme());
-    activeRenderer = prosceniumRenderer;
-    // El Auto-img por tiles es oblicua-only; el proscenio tiene su propio
-    // pipeline (StageImageController: clay local + repintado bajo demanda).
-    autoPipeline.setEnabled(false);
-    fpsRenderer?.setVisible(false);
-    if (changed) log("Vista: proscenio (plató de cine, cámara al sur)");
-  } else if (next === "fps") {
+  if (next === "fps") {
     if (!fpsRenderer) {
       fpsRenderer = rendererRegistry.create("fps", {
         canvas,
@@ -561,8 +493,6 @@ function applySessionView(view: string): void {
     }
   } else {
     activeRenderer = renderer;
-    activeStage = null;
-    prosceniumRenderer?.clearStage();
     fpsRenderer?.setVisible(false);
   }
   // El forward depende de la vista (fps = yaw libre; resto = snap a 8 ejes):
@@ -595,9 +525,8 @@ const confirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLEl
 const confirmTextEl = document.getElementById("tile-confirm-text") as HTMLElement;
 const confirmBar = new ActionBar(document.getElementById("tile-confirm-actions") as HTMLElement);
 
-/** Pregunta de sí/no del juego (explorar una zona nueva, cruzar a otro
- *  plató): mismo panel y mismas teclas Y/N para ambas, ahora también
- *  clicables. `null` la retira. */
+/** Pregunta de sí/no del juego (explorar una zona nueva): panel propio con
+ *  las teclas Y/N, ahora también clicables. `null` la retira. */
 function setConfirmPrompt(
   q: { text: string; yes: string; no: string; onYes: () => void; onNo: () => void } | null,
 ): void {
@@ -626,7 +555,6 @@ applyUiTheme(BASE_UI_THEME);
 // cambio de tema, y a los que se creen después desde applySessionView.
 onUiThemeChange((t) => {
   renderer.setWorldTheme(t);
-  prosceniumRenderer?.setWorldTheme(t);
   fpsRenderer?.setWorldTheme(t);
 });
 
@@ -1070,42 +998,6 @@ function composeTilePlan(
   };
 }
 
-/** Geometría del plató con indirección MUTABLE: el accept de HMR de abajo
- *  la reasigna al editar nefan-core/stage — sin recargar la página. */
-let hotComposeStage = composeStageScene;
-let hotStagePlanFromScene = stagePlanFromScene;
-
-/** Metadatos del repintado de un plató, desde el Format D crudo. La ref de
- *  estilo es la elegida por el motor (`style_ref`; `style_tag` legacy en
- *  saves viejos); "" = sin elección — el server usa la primera ref de plató
- *  del manifest. */
-function stageImageMeta(
-  rawFd: Record<string, unknown>,
-  data: Record<string, unknown>,
-): { description: string; backdrop?: string; mood?: string; styleTag: string } {
-  const stageBlock = rawFd.stage as {
-    backdrop?: { description?: string };
-    fourth_wall?: { present?: boolean };
-    ambience?: { mood?: string };
-  } | undefined;
-  // Ref de estilo elegida por el motor (style_ref; style_tag = nombre
-  // legacy en saves viejos, cuyos valores son ids válidos tras la
-  // migración de packs). "" = sin elección — el server usa la primera ref
-  // de plató del manifest.
-  const rawRef =
-    typeof rawFd.style_ref === "string"
-      ? rawFd.style_ref
-      : typeof rawFd.style_tag === "string"
-        ? rawFd.style_tag
-        : "";
-  return {
-    description: String(data.scene_description ?? rawFd.scene_description ?? "Un plató del mundo."),
-    backdrop: stageBlock?.backdrop?.description,
-    mood: stageBlock?.ambience?.mood,
-    styleTag: rawRef,
-  };
-}
-
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
@@ -1152,64 +1044,6 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     (data as Record<string, unknown>).__composed = planInfo.composed;
   }
 
-  // ── Escena proscenio (bloque `stage`): componer el plató e instalarlo en
-  // su renderer. Fail-loud: un stage malformado degrada a escena oblicua con
-  // error visible, nunca en silencio. Una fixture con stage activa la vista
-  // aunque no haya sesión; una fixture sin stage la devuelve a la de la
-  // sesión (o a la oblicua). ─────────────────────────────────────────────
-  const isStageScene = (data as Record<string, unknown>).stage !== undefined && !isGridTile;
-  let stageComposed: ComposedStage | null = null;
-  let stagePlanCaptured: StageScenePlan | null = null;
-  let stageVolumes: Volume[] = [];
-  if (isStageScene) {
-    try {
-      const stagePlan = hotStagePlanFromScene(
-        (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
-      );
-      if (stagePlan) {
-        stageComposed = hotComposeStage(stagePlan, key);
-        stagePlanCaptured = stagePlan;
-        stageVolumes = stagePlan.volumes;
-      }
-    } catch (err) {
-      errors.push("scene", `stage de ${key} no compone — escena degradada a oblicua`, err);
-    }
-  }
-  if (stageComposed) {
-    applySessionView("proscenium");
-    activeStage = stageComposed;
-    (data as Record<string, unknown>).__stage = stageComposed;
-    // Fixture sin sesión de bridge: el player no pasó por session_start y no
-    // tiene apariencia — resolver la base y_bot para que las demos del plató
-    // muestren un sprite que escala con la profundidad (no un círculo).
-    if (CONFIG.graphics.character_sprites && playerModel === null) {
-      void setPlayerAppearance("", "");
-    }
-    // TRAS instalarse el plató (installStage resetea los bitmaps): reinstalar
-    // de la caché cliente si ya se pintó (volver a una escena no pierde la
-    // imagen); si no, instalar el CLAY three.js local (el arte del modo
-    // vector, y el placeholder instantáneo del modo imagen) y, con gráficos
-    // "imagen IA", lanzar greybox → repintar → pelar. La clave de caché es el
-    // hash del GreyboxSpec del plan.
-    const stageForImages = stageComposed;
-    const stagePlanForImages = stagePlanCaptured;
-    const rawFd = (data.__format_d as Record<string, unknown> | undefined) ?? rawData;
-    prosceniumRenderer!.installStage(stageComposed, key);
-    void (async () => {
-      if (!stagePlanForImages) return;
-      const reinstalled = await stageImageController.reinstallIfCached(stagePlanForImages, key);
-      if (reinstalled) return;
-      await stageImageController.installClay(key, stagePlanForImages);
-      if (scenesGenerationOn()) {
-        void stageImageController.runFor(
-          stageForImages, key, stageImageMeta(rawFd, data), stagePlanForImages,
-        );
-      }
-    })().catch((err: unknown) => errors.push("render", `el plató ${key} no se pudo instalar`, err));
-  } else if (!isGridTile && sessionView === "proscenium" && sessionWorldView !== "proscenium") {
-    applySessionView("");
-  }
-
   const prevEntry = tileStore.entries.get(key);
   tileStore.add({
     key,
@@ -1226,11 +1060,10 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     svgCollider: null,
     svgApplied: false,
   });
-  // Las escenas de plató no entran al CanvasRenderer oblicuo: las pinta el
-  // ProsceniumRenderer desde sus capas compuestas.
-  const { sceneChanged } = stageComposed
-    ? { sceneChanged: true }
-    : renderer.addTile(key, data as unknown as Parameters<typeof renderer.setScene>[0]);
+  const { sceneChanged } = renderer.addTile(
+    key,
+    data as unknown as Parameters<typeof renderer.setScene>[0],
+  );
   // Vista fps: instalar también el tile en el renderer 3D. El CanvasRenderer
   // oblicuo sigue poblado (colisión, resume y restauración no cambian) — el
   // fps solo PINTA distinto.
@@ -1258,29 +1091,6 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
     applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
-  } else if (stageComposed && stagePlanCaptured && (stageVolumes.length > 0 || stagePlanCaptured.ground?.length)) {
-    // Plató: huellas de sus volúmenes + agua∖decks del ground declarado —
-    // colisión declarada, nunca de píxeles. dims de la ESCENA (cols/rows/mpc
-    // propios: el grid del tile desalineaba platós con mpc ≠ 0.5).
-    const stageDims = {
-      cols: stagePlanCaptured.size.cols,
-      rows: stagePlanCaptured.size.rows,
-      mpc: stagePlanCaptured.size.meters_per_cell,
-    };
-    applyPlanCollision(
-      key,
-      { ground: stagePlanCaptured.ground, volumes: stageVolumes },
-      rect,
-      derivedCollisionDeps,
-      stageDims,
-    );
-    // Guardar el agua declarada para el modo imagen (ver stageImageController).
-    stageDeclaredWater.set(
-      key,
-      stagePlanCaptured.ground?.length
-        ? groundCollisionGrid(stagePlanCaptured.ground, rect, stageDims)
-        : null,
-    );
   }
   // Auto-img: encolar el tile si le falta imagen (o si su escena cambió con
   // una generación en vuelo — se marca dirty y se regenera con el esquema
@@ -1301,18 +1111,6 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } else if (firstTile && playerStart) {
     playerPos.x = playerStart.x;
     playerPos.z = playerStart.z;
-  }
-
-  // Plató: si había una transición en vuelo, el spawn de entrada (junto a la
-  // puerta de vuelta) PISA el __player_start del scene data; en cualquier
-  // caso la salida bajo el jugador queda armada (no re-dispara al aparecer).
-  if (stageComposed) {
-    const entry = stageTransitions.resolveEntrySpawn(stageComposed);
-    if (entry) {
-      playerPos.x = entry.x;
-      playerPos.z = entry.z;
-    }
-    stageTransitions.armAt(stageComposed, playerPos.x, playerPos.z);
   }
 
   // Purga entidades previas de esta clave (re-render de un tile ya visto) y
@@ -1522,67 +1320,8 @@ const collision = new CollisionSystem({
   tileStore,
   getPlayerPos: () => playerPos,
   getObstacles: () => objectEntities,
-  // Clamp de la vista proscenio: los bounds del plató son la cuarta fuente de
-  // solidez (semántica salir-sí-entrar-no: un origen ya fuera no se encierra).
-  viewConstraint: (fromX, fromZ, toX, toZ) => {
-    if (!activeStage) return false;
-    const b = activeStage.bounds;
-    const inside = (x: number, z: number): boolean =>
-      x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
-    return !inside(toX, toZ) && inside(fromX, fromZ);
-  },
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
-
-// --- Transiciones de plató (vista proscenio) ---
-const sceneFadeEl = document.getElementById("scene-fade") as HTMLElement;
-const stageTransitions = new StageTransitions({
-  getPlayerPos: () => playerPos,
-  getCurrentPlaceId: () => {
-    const fd = sceneData?.__format_d as Record<string, unknown> | undefined;
-    const placeId = fd?.place_id ?? sceneData?.place_id;
-    return typeof placeId === "string" ? placeId : null;
-  },
-  enterPlace: (placeId) => {
-    if (activeSessionId) narrativeClient.enterPlace(placeId);
-    else void enterLocalStagePlace(placeId);
-  },
-  setFade: (on) => sceneFadeEl.classList.toggle("show", on),
-  // Prompt de cruce: mismo elemento y teclas Y/N que la propuesta de tile
-  // del overworld (en proscenio el pipeline de frontera está inactivo — no
-  // compiten por él).
-  setProposal: (exit) => {
-    input.tileProposalActive = exit !== null;
-    setConfirmPrompt(
-      exit
-        ? {
-            text: exit.label,
-            yes: "cruzar",
-            no: "quedarse",
-            onYes: () => input.queueTileConfirm(),
-            onNo: () => input.queueTileDecline(),
-          }
-        : null,
-    );
-  },
-  log: (msg) => log(msg),
-});
-
-/** Fallback SIN sesión (fixtures del selector): resuelve el place destino a
- *  la fixture proscenio cuyo `place_id` coincide y la carga en local — el
- *  paseo por la posada funciona sin bridge narrativo. */
-async function enterLocalStagePlace(placeId: string): Promise<void> {
-  for (const [path, loader] of Object.entries(sceneModules)) {
-    if (!path.includes("/proscenio/")) continue;
-    const mod = await loader();
-    if ((mod.default as Record<string, unknown>).place_id === placeId) {
-      await loadSceneData(mod.default);
-      return;
-    }
-  }
-  errors.push("scene", `ninguna fixture local realiza el place "${placeId}"`);
-  stageTransitions.onError();
-}
 
 /** Deps de los instaladores de colisión derivada (svg/análisis): espejo
  *  visual en el renderer + reporte al bridge solo con sesión activa (los
@@ -1634,18 +1373,11 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
     // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
-    // estado (setStage/setTilePipeline/recordGeneration) sin tocar píxeles.
+    // estado (setTilePipeline/recordGeneration) sin tocar píxeles.
     devPanel,
     probeCollide: (x: number, z: number) => collidesAt(x, z),
-    // Vista proscenio: estado vivo para el bench (bounds, salidas, cámara).
     view: () => sessionView,
     fps: () => fpsRenderer?.debugState() ?? null,
-    stage: () => activeStage,
-    stageImages: () => prosceniumRenderer?.hasImages() ?? false,
-    stagePainting: () => stageImageController.running,
-    stageCam: () => prosceniumRenderer?.debugCamera() ?? null,
-    stageCutouts: () => prosceniumRenderer?.debugCutouts() ?? null,
-    stageProposal: () => stageTransitions.proposalActive,
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
@@ -1664,14 +1396,17 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     // El guion espera por ESTADO, nunca por sleep: el movimiento va por delta
     // de rAF y el typewriter por setInterval, así que ningún tiempo de pared
     // es determinista.
-    /** ¿Juego jugable y quieto? Título cerrado, escena cargada y sin repintado
-     *  en curso. El detalle de por qué NO, en status(). */
+    /** ¿Juego jugable y quieto? Título cerrado, escena cargada y sin pintura
+     *  en curso — hoy la del atlas de superficies de la fps, que es el único
+     *  pipeline de imagen que puede estar en vuelo mientras se juega (el del
+     *  plató, que ocupaba este sitio, ya no existe). El detalle de por qué NO,
+     *  en status(). */
     ready: () =>
-      !titleScreen.isVisible && sceneData !== null && !stageImageController.running,
+      !titleScreen.isVisible && sceneData !== null && !fpsAtlasController.running,
     status: () => ({
       title: titleScreen.isVisible,
       scene: sceneData !== null,
-      painting: stageImageController.running,
+      painting: fpsAtlasController.running,
       view: sessionView,
       npcs: npcEntities.length,
     }),
@@ -1749,7 +1484,7 @@ function setPlayerPitch(rad: number): void {
   playerPitch = Math.min(PITCH_LIMIT_RAD, Math.max(-PITCH_LIMIT_RAD, rad));
 }
 
-/** En oblicua/proscenio el giro NO es libre: las flechas fijan un yaw
+/** En la oblicua el giro NO es libre: las flechas fijan un yaw
  *  objetivo, pero el forward efectivo (facing del sprite Y marco del WASD
  *  relativo) se snapea al eje de ANIMACIÓN más cercano de los 8 — sprite y
  *  desplazamiento coinciden siempre. En fps el yaw es CONTINUO (mouse look):
@@ -1825,7 +1560,7 @@ function applyTurnKeys(): void {
 }
 
 // Pointer lock en el canvas 2D: oculta el cursor y habilita atacar con LMB.
-// En oblicua/proscenio el ratón NO orienta al personaje (solo en fps, cuyo
+// Fuera de la fps el ratón NO orienta al personaje (solo en fps, cuyo
 // lock vive en el canvas WebGL propio — ver applySessionView).
 canvas.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
@@ -2084,9 +1819,7 @@ function gameLoop(now: number): void {
   if (devInput.consumeGenerateScene()) {
     // Manual = siempre permitida, también con la generación auto en OFF
     // (misma semántica que el botón por-item del menú dev).
-    if (sessionView === "proscenium") {
-      generateActiveStage();
-    } else if (sessionView === "fps") {
+    if (sessionView === "fps") {
       if (activeTileKey) {
         const k = activeTileKey;
         void fpsAtlasController.runFor(k).catch((err: unknown) =>
@@ -2108,14 +1841,9 @@ function gameLoop(now: number): void {
   }
   // B cicla la vista de debug: off → colisiones → fases del pipeline de
   // imagen (blueprint compuesto, imagen IA, segmentación, placa inpainted) —
-  // para comparar in situ el plan declarado con lo que pintó el modelo. En
-  // proscenio, ciclo propio: overlay (colisión reproyectada + recortes con
-  // su z) y recortes opacos (segmentación, como en la oblicua).
+  // para comparar in situ el plan declarado con lo que pintó el modelo.
   if (devInput.consumeToggleCollisionDebug()) {
-    if (sessionView === "proscenium" && prosceniumRenderer) {
-      const mode = prosceniumRenderer.cycleDebugView();
-      log(`B · overlay plató: ${STAGE_DEBUG_VIEW_LABELS[mode]}`);
-    } else if (sessionView === "fps" && fpsRenderer) {
+    if (sessionView === "fps" && fpsRenderer) {
       // Ciclo propio fps: colisión (celdas sólidas + forward de NPCs) y
       // celdas de atlas (tinte por celda) — el ciclo del oblicuo pintaría en
       // el canvas #game, oculto en esta vista.
@@ -2138,17 +1866,13 @@ function gameLoop(now: number): void {
   }
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
-  // generación de mundo: la frontera bloquea solo direccionalmente. La única
-  // excepción es la transición de plató (vista proscenio): fundido a negro
-  // mientras llega la escena destino — el corte de puerta clásico.
+  // generación de mundo: la frontera bloquea solo direccionalmente.
   if (dialoguePanel.isVisible) {
-    // El diálogo suspende la propuesta de tile (sus teclas Y/N quedan mudas)
-    // y la de cruce de plató (sin armar: al cerrar, el tick re-propone).
+    // El diálogo suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     input.tileProposalActive = false;
     tileConfirmPromptEl.style.display = "none";
-    stageTransitions.cancelProposal();
   }
-  if (!dialoguePanel.isVisible && !stageTransitions.isTransitioning) {
+  if (!dialoguePanel.isVisible) {
     applyTurnKeys();
 
     let inputFwd = 0, inputRight = 0;
@@ -2184,16 +1908,6 @@ function gameLoop(now: number): void {
       const stuck = collidesAt(playerPos.x, playerPos.z);
       if (stuck || !collidesAt(playerPos.x + dx, playerPos.z)) playerPos.x += dx;
       if (stuck || !collidesAt(playerPos.x, playerPos.z + dz)) playerPos.z += dz;
-    }
-
-    // Vista proscenio: pisar una zona de salida PROPONE el cruce (Y/N, como
-    // la generación de tiles); confirmar corta a negro y pide la escena.
-    if (sessionView === "proscenium" && activeStage) {
-      stageTransitions.tick(activeStage);
-      if (stageTransitions.proposalActive) {
-        if (input.consumeTileConfirm()) stageTransitions.confirmProposal();
-        else if (input.consumeTileDecline()) stageTransitions.declineProposal();
-      }
     }
 
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
@@ -2235,11 +1949,9 @@ function gameLoop(now: number): void {
       } else {
         setConfirmPrompt(null);
       }
-    } else if (!stageTransitions.proposalActive) {
+    } else {
+      // Sin frontera activa no hay nada que proponer: prompt fuera.
       fpsRenderer?.setFrontierVeil(null);
-      // Sin frontera activa Y sin propuesta de cruce de plató: prompt fuera.
-      // (La propuesta del proscenio comparte elemento y teclas — este reset
-      // por-frame se la comía.)
       input.tileProposalActive = false;
       setConfirmPrompt(null);
     }
@@ -2533,22 +2245,12 @@ sharedBridge.on("render_mode_changed", (msg) => {
   );
 });
 
-/** Imágenes actualmente FAKE: plató activo en clay (proscenio), tiles del
- *  grid sin imagen IA (oblicua) y skins de personaje aún sobre la base
- *  y_bot. La identidad del item es la clave del tile/plató o el prompt. */
+/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies (fps) o
+ *  sin imagen IA (oblicua) y skins de personaje aún sobre la base y_bot. La
+ *  identidad del item es la clave del tile o el prompt. */
 function listFakeItems(): FakeItem[] {
   const items: FakeItem[] = [];
-  if (sessionView === "proscenium") {
-    if (prosceniumRenderer && activeStage && activeTileKey && !prosceniumRenderer.hasImages()) {
-      items.push({
-        kind: "stage",
-        id: activeTileKey,
-        label: `Plató ${activeTileKey} (clay 3D)`,
-        thumb: prosceniumRenderer.getInstalledPlate(),
-        inFlight: stageImageController.running,
-      });
-    }
-  } else if (sessionView === "fps") {
+  if (sessionView === "fps") {
     const textured = new Set(
       ((fpsRenderer?.debugState() as { textured?: string[] })?.textured) ?? [],
     );
@@ -2606,10 +2308,6 @@ function listFakeItems(): FakeItem[] {
 /** Generación selectiva de UN item fake (siempre permitida, con el toggle
  *  global en OFF incluido — es la vía de gasto controlado del menú dev). */
 async function generateFakeItem(item: FakeItem): Promise<void> {
-  if (item.kind === "stage") {
-    generateActiveStage();
-    return;
-  }
   if (item.kind === "tile") {
     await sceneImageController.generateForTile(item.id);
     return;
@@ -2802,9 +2500,6 @@ narrativeClient.onNarrativeStatus((status) => {
       case "error": {
         const detail = status.message ?? "Algo falló en el motor narrativo.";
         errors.push("narrative", detail);
-        // Una transición de plató en vuelo retira su velo y devuelve el
-        // control (el jugador se queda en la escena de origen).
-        stageTransitions.onError();
         setLoaderState("error", "Error al generar la escena", detail);
         break;
       }
@@ -3027,8 +2722,7 @@ async function runTitleFlow(): Promise<void> {
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      sessionWorldView = toClientView(res.state.world?.view);
-      applySessionView(sessionWorldView);
+      applySessionView(res.state.world?.view ?? "");
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
@@ -3040,8 +2734,7 @@ async function runTitleFlow(): Promise<void> {
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
       sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      sessionWorldView = toClientView(res.state.world?.view);
-      applySessionView(sessionWorldView);
+      applySessionView(res.state.world?.view ?? "");
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
@@ -3091,40 +2784,3 @@ async function runTitleFlow(): Promise<void> {
 }
 
 scheduleNextFrame();
-
-// ── HMR (dev): un cambio en la geometría del plató (nefan-core/src/scene/
-// stage) NO recarga la página — se recompone y reinstala el plató activo en
-// caliente. La partida (sesión, cámara, imágenes cacheadas) sobrevive a la
-// iteración. Los módulos renderer/pipeline/transiciones se auto-parchean por
-// prototipo (ver sus pies de fichero); main solo cubre su import directo.
-if (import.meta.hot) {
-  import.meta.hot.accept("@nefan-core/src/scene/stage/index.js", (mod) => {
-    const m = mod as {
-      composeStageScene?: typeof composeStageScene;
-      stagePlanFromScene?: typeof stagePlanFromScene;
-    } | undefined;
-    if (!m?.composeStageScene || !m?.stagePlanFromScene) return;
-    hotComposeStage = m.composeStageScene;
-    hotStagePlanFromScene = m.stagePlanFromScene;
-    if (sessionView === "proscenium" && sceneData && activeTileKey && prosceniumRenderer) {
-      const key = activeTileKey;
-      const rawFd = (sceneData.__format_d as Record<string, unknown> | undefined) ?? sceneData;
-      try {
-        const plan = hotStagePlanFromScene(rawFd);
-        if (plan) {
-          const composed = hotComposeStage(plan, key);
-          activeStage = composed;
-          (sceneData as Record<string, unknown>).__stage = composed;
-          prosceniumRenderer.installStage(composed, key);
-          void (async () => {
-            const reinstalled = await stageImageController.reinstallIfCached(plan, key);
-            if (!reinstalled) await stageImageController.installClay(key, plan);
-          })().catch((err: unknown) => errors.push("scene", "reinstalación HMR del plató falló", err));
-          console.log("[hmr] plató recompuesto en caliente");
-        }
-      } catch (err) {
-        errors.push("scene", "recomposición HMR del plató falló", err);
-      }
-    }
-  });
-}

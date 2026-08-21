@@ -1,4 +1,4 @@
-/** Atlas de superficies de la vista fps — patrón StageImageController.
+/** Atlas de superficies de la vista fps: el pipeline de imagen de la vista.
  *
  *  Al activarse un tile en la vista fps: layout determinista de superficies →
  *  caché cliente por (layoutKey = hash del layout canónico + estilo + versión)
@@ -78,7 +78,7 @@ export class FpsAtlasController {
   }
 
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
-   *  modo vector — mismo criterio que el proscenio con su caché): memoria →
+   *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
    *  ($0). Pintar celdas nuevas solo con la generación activa. Con un run en
    *  vuelo no relanza (los disparadores del arranque se solapan). */

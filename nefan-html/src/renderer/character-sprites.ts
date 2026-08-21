@@ -112,7 +112,7 @@ export class CharacterSpriteManager {
   }
 
   /** Cambia el SET de sprites (ángulo de cámara del sheet) — cada vista tiene
-   *  el suyo (oblicua isometric_30, proscenio frontal_8). Invalida los skins
+   *  el suyo (oblicua isometric_30, fps frontal_8). Invalida los skins
    *  listos: son por (prompt, anim, ángulo), y el caller debe relanzar
    *  preloadBase() para el set nuevo. Idempotente si el ángulo no cambia. */
   setAngle(angle: string): void {

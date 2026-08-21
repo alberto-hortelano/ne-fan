@@ -1,5 +1,5 @@
 /* UI DE JUEGO — la capa que el jugador ve mientras juega, en las tres vistas
-   (oblicua, proscenio, fps).
+   (oblicua, fps).
 
    Estética DIEGÉTICA SOBRIA: panel translúcido (el mundo se ve detrás),
    filete fino, sin marco ornamental, una tipografía por tema y un acento.
@@ -51,7 +51,6 @@
   --z-panel: 30;
   --z-prompt: 40;
   --z-dialogue: 50;
-  --z-fade: 60;
   --z-loader: 70;
 
   position: absolute;
@@ -291,18 +290,6 @@
 #gfx-panel .gfx-seg button:disabled { opacity: 0.45; cursor: default; }
 #gfx-panel .gfx-seg .gfx-sub { display: block; font-size: 10px; color: var(--nf-ink-dim); margin-top: 2px; }
 
-/* ── Transición entre escenas ───────────────────────────────────────────── */
-#scene-fade {
-  position: absolute;
-  inset: 0;
-  background: var(--nf-fade);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 300ms ease-out;
-  z-index: var(--z-fade);
-}
-#scene-fade.show { opacity: 1; transition: none; }
-
 /* ── Loader del motor narrativo ─────────────────────────────────────────── */
 #narrative-loader {
   position: absolute;
@@ -451,10 +438,6 @@
 }
 #game-ui[data-view="fps"] #reticle[data-target="true"] { background: var(--nf-accent); opacity: 1; }
 
-/* En proscenio las salidas están PINTADAS en el suelo del plató: el panel
-   duplicaría la información y tapa el decorado. */
-#game-ui[data-view="proscenium"] #travel-panel { display: none; }
-
 /* Capas dentro de la UI de juego. */
 #ui-top-left, #ui-top-right { z-index: var(--z-hud); }
 #ui-bottom-left, #ui-bottom-right { z-index: var(--z-panel); }
@@ -463,6 +446,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   #narrative-loader .spinner { animation: none; }
-  #scene-fade { transition: none; }
   .nf-bar-fill { transition: none; }
 }

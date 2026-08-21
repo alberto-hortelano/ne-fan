@@ -31,7 +31,7 @@ export function serviceUrl(name: ServiceName): string {
 }
 
 /** URLs por servicio que consumen los pipelines de imagen del cliente
- *  (Scene/StageImageController). Un solo objeto en vez de N parámetros
+ *  (SceneImageController, atlas fps). Un solo objeto en vez de N parámetros
  *  posicionales: el reparto por servicio creció en F3/F4. */
 export interface GenServiceUrls {
   /** narrative-llm: reviews y análisis con visión. */

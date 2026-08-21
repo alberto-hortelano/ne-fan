@@ -1,6 +1,6 @@
 /** Menú dev de imágenes IA (#dev-menu, botón "Imágenes…" de #dev-status).
- *  Lista de las imágenes actualmente FAKE — platós en clay, tiles sin imagen
- *  IA, skins pendientes sobre la base y_bot — con generación por item
+ *  Lista de las imágenes actualmente FAKE — tiles sin imagen IA o sin atlas
+ *  de superficies, skins pendientes sobre la base y_bot — con generación por item
  *  (permitida aunque el modo global de gráficos esté en maqueta/y_bot). Los
  *  toggles globales por faceta viven en el chip de gráficos del HUD
  *  (graphics-mode.ts), UI de cliente. Todo por ratón: cero atajos de teclado.
@@ -9,8 +9,8 @@
 import { errors } from "./error-log.js";
 
 export interface FakeItem {
-  kind: "stage" | "tile" | "skin" | "fps_atlas";
-  /** Clave del tile/plató o prompt del skin — identidad estable del item. */
+  kind: "tile" | "skin" | "fps_atlas";
+  /** Clave del tile o prompt del skin — identidad estable del item. */
   id: string;
   label: string;
   thumb: CanvasImageSource | null;

@@ -64,10 +64,10 @@ export class TileStore {
     const t = worldToTile(x, z);
     const grid = this.get(t.tx, t.ty);
     if (grid) return grid;
-    // Escenas SIN grid (fixtures legacy, platós del proscenio): localizar por
-    // rect — sin esto, el gate de AABBs del esquema no ve `imageAnalyzed`/
-    // `svgApplied` del plató y las cajas declaradas bloquean aunque la
-    // colisión derivada de lo pintado las haya sustituido.
+    // Escenas SIN grid (fixtures legacy del selector): localizar por rect —
+    // sin esto, el gate de AABBs del esquema no ve `imageAnalyzed`/
+    // `svgApplied` y las cajas declaradas bloquean aunque la colisión
+    // derivada las haya sustituido.
     for (const e of this.entries.values()) {
       if (e.tx === undefined && x >= e.rect.minX && x < e.rect.maxX && z >= e.rect.minZ && z < e.rect.maxZ) {
         return e;
@@ -103,17 +103,6 @@ export class TileStore {
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);
     entry.svgCollider = collider;
     entry.svgApplied = true;
-  }
-
-  /** Retira el collider del terreno declarado de un tile (vista proscenio en
-   *  modo imagen: la geometría del terrain NO se pinta — los muros W
-   *  perimetrales serían muros invisibles sobre suelo pintado; el clamp de
-   *  bounds ya para al jugador en la base pintada de la pared). Fail-loud si
-   *  la clave no existe. */
-  clearTerrainCollider(key: string): void {
-    const entry = this.entries.get(key);
-    if (!entry) throw new Error(`TileStore.clearTerrainCollider: tile ${key} no registrado`);
-    entry.collider = null;
   }
 
   /** Solo para resetWorld (arranque/resume/fixtures). */
