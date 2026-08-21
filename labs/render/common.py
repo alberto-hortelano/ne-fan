@@ -40,6 +40,15 @@ FIXTURES = {
     "scifi": LAB / "fixtures/scifi",
 }
 
+# El plan del tile medieval se mudó a nefan-core/test/fixtures/fps-plans/: es
+# la entrada del golden del atlas fps (test/fps-atlas-golden.test.ts) y este
+# lab se archiva. El resto de la fixture (blueprint, occluders, PNGs) sigue
+# aquí porque solo lo usa este bench.
+PLANS = {
+    "medieval": REPO / "nefan-core/test/fixtures/fps-plans/medieval.json",
+    "scifi": LAB / "fixtures/scifi/plan.json",
+}
+
 
 def load_key(name: str) -> str:
     return _fal.load_key(name)

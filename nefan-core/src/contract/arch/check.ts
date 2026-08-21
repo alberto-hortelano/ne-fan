@@ -172,6 +172,50 @@ export function checkArchitecture(config: ArchConfig, files: readonly SourceFile
   return out;
 }
 
+/** Una exención que ya no tiene sujeto: su `path` es literal y no casa con
+ *  ningún fichero escaneado. */
+export interface DeadException {
+  ruleId: string;
+  path: string;
+  reason: string;
+}
+
+/** `*` o `?`: un `path` con metacaracteres es un PATRÓN (puede cubrir
+ *  ficheros que aún no existen), no la promesa de un fichero concreto. */
+const EXCEPTION_META = /[*?]/;
+
+/** Excepciones sin sujeto.
+ *
+ *  `checkArchitecture` filtra con `matchesAny(f.path, exceptions)`: una
+ *  excepción que apunta a un fichero borrado no se queja: se queda ahí
+ *  pudriéndose y le regala barra libre al siguiente que cree esa ruta —
+ *  heredando un `reason` que ya no dice la verdad. Así que toda `path`
+ *  literal debe casar con ≥1 fichero escaneado. Los `path` con
+ *  metacaracteres se saltan: son patrones y pueden legítimamente no casar
+ *  con nada hoy. */
+export function deadExceptions(config: ArchConfig, files: readonly SourceFile[]): DeadException[] {
+  const scanned = new Set(files.map((f) => f.path));
+  const out: DeadException[] = [];
+  for (const rule of config.rules) {
+    for (const exc of rule.exceptions) {
+      if (EXCEPTION_META.test(exc.path) || scanned.has(exc.path)) continue;
+      out.push({ ruleId: rule.id, path: exc.path, reason: exc.reason });
+    }
+  }
+  return out;
+}
+
+/** Texto del fallo de `deadExceptions`, escrito para quien borró el fichero
+ *  y no sabe por qué se le ha puesto rojo el checker. */
+export function formatDeadExceptions(dead: readonly DeadException[]): string {
+  return [
+    "Excepciones de arch-rules.json sin sujeto: el fichero exento ya no existe.",
+    "Bórralas del JSON — si no, la exención revive sola el día que alguien",
+    "vuelva a crear esa ruta, con un motivo que ya no es cierto.",
+    ...dead.map((d) => `  [${d.ruleId}] ${d.path} — "${d.reason}"`),
+  ].join("\n");
+}
+
 export interface RuleReport {
   rule: ArchRule;
   violations: Violation[];

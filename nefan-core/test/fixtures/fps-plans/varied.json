@@ -1,0 +1,227 @@
+{
+  "_comment": "Plan de tile AUTORADO para el golden del atlas fps (test/fps-atlas-golden.test.ts). No sale de ninguna sesión: existe para recorrer de una pasada los ejes que deciden la IDENTIDAD DE CACHÉ de una celda — surface_desc por cara y por pieza, surface_ref, materiales de ground (agua, deck, camino, área), los tipos de volumen que classify() distingue y el scatter (que NO debe emitir celdas). Si tocas este fichero, el golden rota: eso es un repago de arte, no un detalle de test.",
+  "tile_key": "tile_0_0",
+  "biome": "grass",
+  "scene_description": "El vado de los Alisos: un brazo de río cruzado por una pasarela de tablones, la posada del vado con su corral, un torreón de vigilancia sobre la muralla y el arco por el que entra la calzada.",
+  "ground": [
+    {
+      "id": "rio",
+      "label": "río",
+      "kind": "water",
+      "polygon": [[0, 78], [128, 70], [128, 92], [0, 100]]
+    },
+    {
+      "id": "pasarela",
+      "label": "pasarela",
+      "kind": "deck",
+      "rect": [56, 68, 10, 36],
+      "material": "wood"
+    },
+    {
+      "id": "embarcadero",
+      "label": "embarcadero",
+      "kind": "deck",
+      "rect": [90, 74, 12, 8],
+      "material": "stone"
+    },
+    {
+      "id": "calzada",
+      "label": "calzada",
+      "kind": "path",
+      "points": [[61, 0], [61, 40], [100, 40], [100, 68]],
+      "w": 6,
+      "material": "cobble"
+    },
+    {
+      "id": "senda_corral",
+      "label": "senda",
+      "kind": "path",
+      "points": [[30, 30], [56, 44]],
+      "w": 3,
+      "material": "dirt"
+    },
+    {
+      "id": "plaza_vado",
+      "label": "plaza",
+      "kind": "area",
+      "rect": [46, 44, 24, 18],
+      "material": "stone"
+    },
+    {
+      "id": "prado",
+      "label": "prado",
+      "kind": "area",
+      "ellipse": { "center": [24, 56], "rx": 18, "ry": 12 },
+      "material": "grass"
+    },
+    {
+      "id": "loma",
+      "label": "loma",
+      "kind": "hill",
+      "ellipse": { "center": [22, 20], "rx": 20, "ry": 14 },
+      "h": 3
+    }
+  ],
+  "volumes": [
+    {
+      "id": "posada_vado",
+      "label": "posada",
+      "type": "building",
+      "rect": [40, 20, 18, 14],
+      "wall_h": 6,
+      "walls": { "material": "plaster", "color": "#c9b89a" },
+      "roof": { "kind": "gable", "axis": "x", "material": "slate" },
+      "doors": [{ "edge": "s", "at": 8, "w": 4 }],
+      "cutaway": true,
+      "surface_desc": {
+        "side": "whitewashed inn facade with a painted horseshoe sign",
+        "roof": "grey slate shingles in overlapping rows",
+        "door": "wide studded oak inn door"
+      },
+      "surface_ref": { "roof": "tejado_pizarra" }
+    },
+    {
+      "id": "granero_corral",
+      "label": "granero",
+      "type": "building",
+      "rect": [20, 34, 14, 10],
+      "wall_h": 5,
+      "walls": { "material": "timber", "color": "#6b543a" },
+      "roof": { "kind": "shed", "material": "thatch" },
+      "doors": [{ "edge": "e", "at": 4 }]
+    },
+    {
+      "id": "muralla_norte",
+      "label": "muralla",
+      "type": "wall",
+      "points": [[70, 8], [110, 8], [110, 30]],
+      "width": 4,
+      "h": 9,
+      "crenellated": true,
+      "surface_desc": "fortress ashlar with weathered arrow scars",
+      "surface_ref": "muralla_vieja"
+    },
+    {
+      "id": "torreon",
+      "label": "torreón",
+      "type": "tower",
+      "at": [110, 8],
+      "r": 5,
+      "h": 14,
+      "crenellated": true
+    },
+    {
+      "id": "arco_calzada",
+      "label": "arco",
+      "type": "gate",
+      "at": [88, 8],
+      "w": 8,
+      "h": 11,
+      "orient": "x"
+    },
+    {
+      "id": "muelle_ruina",
+      "label": "ruina",
+      "type": "prism",
+      "points": [[96, 60], [106, 58], [110, 66], [98, 68]],
+      "h": 4,
+      "color": "#b3a68e",
+      "surface_desc": "collapsed rubble wall of a ruined quay"
+    },
+    {
+      "id": "mesa_corral",
+      "label": "mesa",
+      "type": "prop",
+      "rect": [36, 46, 4, 2],
+      "shape": "box",
+      "h": 1.6,
+      "color": "#6b543a"
+    },
+    {
+      "id": "barril_posada",
+      "label": "barril",
+      "type": "prop",
+      "at": [44, 36],
+      "shape": "cylinder",
+      "h": 2
+    },
+    {
+      "id": "cartel_vado",
+      "label": "cartel",
+      "type": "prop",
+      "rect": [58, 46, 6, 1],
+      "shape": "box",
+      "h": 5,
+      "surface_desc": {
+        "s": "hanging sign reading EL VADO",
+        "n": "blank weathered back of a wooden sign"
+      },
+      "surface_ref": { "s": "rotulo_pintado" }
+    },
+    {
+      "id": "pozo_plaza",
+      "label": "pozo",
+      "type": "fountain",
+      "at": [52, 52],
+      "r": 3
+    },
+    {
+      "id": "carreta_vado",
+      "label": "carreta",
+      "type": "custom",
+      "at": [66, 50],
+      "angle": 30,
+      "parts": [
+        {
+          "shape": "box",
+          "size": [6, 2, 3],
+          "pos": [0, 1.2, 0],
+          "color": "#6b543a",
+          "desc": "planked cart bed with iron banding",
+          "ref": "carro_madera"
+        },
+        { "shape": "cylinder", "rBottom": 1.2, "rTop": 1.2, "h": 0.4, "pos": [-2, 0, 1.6], "rotZ": 1.5708 },
+        { "shape": "cylinder", "rBottom": 1.2, "rTop": 1.2, "h": 0.4, "pos": [-2, 0, -1.6], "rotZ": 1.5708 }
+      ]
+    },
+    { "id": "alamo_1", "label": "álamo", "type": "tree", "at": [16, 70], "s": 1.4 },
+    { "id": "alamo_2", "label": "álamo", "type": "tree", "at": [30, 66], "s": 1.1 },
+    { "id": "zarza_1", "label": "zarza", "type": "bush", "at": [38, 64], "s": 1.2 },
+    { "id": "penasco", "label": "peñasco", "type": "rock", "at": [104, 50], "s": 2.4 }
+  ],
+  "scatter_generators": {
+    "junco": {
+      "vars": { "h": [1.2, 2.6], "n": { "int": [3, 6] } },
+      "materials": { "tallo": { "color": "#6f7a3a", "hslJitter": [0.05, 0.15, 0.08] } },
+      "parts": [
+        {
+          "shape": "cylinder",
+          "mat": "tallo",
+          "rTop": 0.04,
+          "rBottom": 0.1,
+          "h": { "var": "h" },
+          "repeat": { "count": { "var": "n" } },
+          "pos": [[-0.6, 0.6], 0, [-0.6, 0.6]],
+          "rotZ": [-0.2, 0.2]
+        }
+      ]
+    },
+    "matorral": {
+      "vars": { "s": [0.7, 1.6] },
+      "materials": { "hoja": { "color": "#4a5a30", "hslJitter": [0.06, 0.2, 0.08] } },
+      "parts": [
+        {
+          "shape": "sphere",
+          "mat": "hoja",
+          "r": { "op": "*", "a": { "var": "s" }, "b": [0.6, 1.2] },
+          "scale": [1, [0.55, 0.8], 1],
+          "pos": [0, 0, 0]
+        }
+      ]
+    }
+  },
+  "scatter_zones": [
+    { "kind": "junco", "shape": { "type": "rect", "x0": 0, "z0": 64, "x1": 128, "z1": 76 }, "density": 0.08 },
+    { "kind": "matorral", "shape": { "type": "ellipse", "cx": 24, "cz": 56, "rx": 22, "rz": 14 }, "density": 0.05 }
+  ]
+}

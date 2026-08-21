@@ -64,7 +64,7 @@ def main() -> None:
     sprites_dir = RUN / "sprites" / tile / args.route
     missing: list[str] = []
     occluders = json.loads((common.FIXTURES[tile] / "occluders/occluders.json").read_text())
-    plan = json.loads((common.FIXTURES[tile] / "plan.json").read_text())
+    plan = json.loads(common.PLANS[tile].read_text())
     vol_by_id = {v["id"]: v for v in plan["volumes"]}
 
     #: (baseline, sprite_id, bbox_units, pad_units) — muros por tramo.

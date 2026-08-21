@@ -1,4 +1,4 @@
-// Escena exterior del bench FPS: el tile medieval de labs/render/fixtures,
+// Escena exterior del bench FPS: el tile medieval de nefan-core/test/fixtures/fps-plans,
 // construido con el builder REAL del juego (buildTileGreyboxSpec, ver
 // dump_spec.ts) y escalado de celdas a metros (×0.5). Corre en navegador
 // (fetch) y en node (fs) — dump_layout.mjs la importa igual que el viewer.

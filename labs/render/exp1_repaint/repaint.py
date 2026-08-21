@@ -136,7 +136,7 @@ def build_prompt(tile: str, has_water: bool) -> str:
 
 
 def tile_has_water(tile: str) -> bool:
-    plan = json.loads((common.FIXTURES[tile] / "plan.json").read_text())
+    plan = json.loads(common.PLANS[tile].read_text())
     ground = plan.get("map_ground") or ""
     import re
 

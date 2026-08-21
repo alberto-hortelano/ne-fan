@@ -20,10 +20,14 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** Plan de tile de una sesión real (era `labs/render/fixtures/medieval/`).
+ *  Vive aquí porque `labs/render` se archiva y este plan es la entrada del
+ *  golden del atlas (`fps-atlas-golden.test.ts`). */
 const medievalPlan = () =>
-  JSON.parse(
-    readFileSync(join(HERE, "..", "..", "labs", "render", "fixtures", "medieval", "plan.json"), "utf-8"),
-  ) as { volumes: unknown; biome?: string };
+  JSON.parse(readFileSync(join(HERE, "fixtures", "fps-plans", "medieval.json"), "utf-8")) as {
+    volumes: unknown;
+    biome?: string;
+  };
 
 function medievalPrims(): { primsM: SurfacePrim[]; volumes: ReturnType<typeof parseVolumes> } {
   const plan = medievalPlan();
