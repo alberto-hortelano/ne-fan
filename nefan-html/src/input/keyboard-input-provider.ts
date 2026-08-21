@@ -2,8 +2,7 @@
  *
  *  WASD mueve (relativo al facing), las flechas orientan, Shift esprinta,
  *  E interactúa, LMB ataca (con pointer lock), el ratón acumula lookDelta
- *  bajo pointer lock (la vista fps lo convierte en yaw y pitch), rueda/+/-
- *  hacen zoom, 1..N
+ *  bajo pointer lock (yaw y pitch de la mirada), 1..N
  *  seleccionan ataque del catálogo de la sesión, Y/N responden a la propuesta
  *  de tile y R pide respawn. Las teclas de DESARROLLO no están aquí — ver
  *  dev-tools-input.ts. */
@@ -11,7 +10,6 @@
 import {
   createInputState,
   DEFAULT_ATTACK_IDS,
-  type InputDeps,
   type InputProvider,
   type InputState,
   type LookDelta,
@@ -29,7 +27,6 @@ export class KeyboardInputProvider implements InputProvider {
     DEFAULT_ATTACK_IDS.map((id, i) => [String(i + 1), id]),
   );
 
-  private zoomAccum = 0;
   private lookAccum = 0;
   private lookAccumY = 0;
   private tileConfirmRequested = false;
@@ -40,12 +37,8 @@ export class KeyboardInputProvider implements InputProvider {
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onMouseDown: (e: MouseEvent) => void;
   private readonly onMouseMove: (e: MouseEvent) => void;
-  private readonly onWheel: (e: WheelEvent) => void;
-  private readonly canvas: HTMLCanvasElement;
 
-  constructor(deps: InputDeps) {
-    this.canvas = deps.canvas;
-
+  constructor() {
     this.onKeyDown = (e) => {
       // Dialogue mode suppresses combat/movement keys
       // (dialogue-panel.ts handles its own keys with stopPropagation)
@@ -71,9 +64,6 @@ export class KeyboardInputProvider implements InputProvider {
         case "arrowright": this.state.turnRight = true; e.preventDefault(); break;
         case "shift": this.state.sprint = true; break;
         case "e": this.state.interact = true; break;
-        // Zoom por teclado: + / = acercan, - aleja (un paso por pulsación).
-        case "+": case "=": this.zoomAccum += 1; break;
-        case "-": this.zoomAccum -= 1; break;
         // N = rechazar la propuesta de tile (sin propuesta, N es de
         // DevToolsInput: descubrir props).
         case "n":
@@ -111,10 +101,9 @@ export class KeyboardInputProvider implements InputProvider {
     };
 
     // Click to attack (only when pointer is locked). En window y no en el
-    // canvas: en vista fps el lock vive en #fps-canvas (el #game 2D queda
-    // oculto) y el provider no conoce ese elemento; el lock solo lo pide
-    // nuestro código sobre los canvas del juego, así que basta con que haya
-    // alguno activo.
+    // canvas: el lock vive en el lienzo WebGL del mundo, que el provider no
+    // conoce; el lock solo lo pide nuestro código, así que basta con que
+    // haya alguno activo.
     this.onMouseDown = (e) => {
       // Un click sobre la UI de juego (botones de acción, opciones de
       // diálogo) NO es un ataque: el listener vive en window y llegaría
@@ -135,19 +124,10 @@ export class KeyboardInputProvider implements InputProvider {
       }
     };
 
-    // Zoom con la rueda del ratón. passive:false + preventDefault para no
-    // hacer scroll de la página. deltaY<0 (rueda arriba) = acercar.
-    // Funciona siempre (también en diálogo): es control de vista.
-    this.onWheel = (e) => {
-      e.preventDefault();
-      this.zoomAccum += e.deltaY < 0 ? 1 : -1;
-    };
-
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("mousedown", this.onMouseDown);
     window.addEventListener("mousemove", this.onMouseMove);
-    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
   setAttackBindings(attackIds: readonly string[]): void {
@@ -185,12 +165,6 @@ export class KeyboardInputProvider implements InputProvider {
 
   queueTileDecline(): void {
     if (this.tileProposalActive) this.tileDeclineRequested = true;
-  }
-
-  consumeZoomDelta(): number {
-    const z = this.zoomAccum;
-    this.zoomAccum = 0;
-    return z;
   }
 
   consumeLookDelta(): LookDelta {
@@ -245,6 +219,5 @@ export class KeyboardInputProvider implements InputProvider {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("mousedown", this.onMouseDown);
     window.removeEventListener("mousemove", this.onMouseMove);
-    this.canvas.removeEventListener("wheel", this.onWheel);
   }
 }

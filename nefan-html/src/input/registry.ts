@@ -14,7 +14,7 @@ export const inputRegistry = createSystemRegistry<InputProvider, InputDeps>(
   "input",
   "keyboard",
   {
-    keyboard: (deps) => new KeyboardInputProvider(deps),
+    keyboard: () => new KeyboardInputProvider(),
     scripted: () => new ScriptedInputProvider(),
   },
 );

@@ -1,15 +1,15 @@
 /** Vista FPS (primera persona, estilo retro-FPS) — fachada SIN three.js.
  *
- *  Implementa el contrato por-frame Renderer2D; los internals WebGL (fps-gl)
- *  se cargan con import DINÁMICO al construirla (three fuera del bundle
- *  principal, patrón de los greybox). Hasta que el módulo GL llega, las
- *  instalaciones se encolan y render() no pinta (1-2 frames negros).
+ *  Es el ÚNICO renderer del cliente: los internals WebGL (fps-gl) se cargan
+ *  con import DINÁMICO al construirla (three fuera del bundle principal, y
+ *  con él el único contexto WebGL de la pestaña). Hasta que el módulo GL
+ *  llega, las instalaciones se encolan y render() no pinta (1-2 frames
+ *  negros).
  *
- *  El canvas es PROPIO (#fps-canvas, hermano de #game): el CanvasRenderer 2D
- *  sigue siendo el dueño de tiles/colisión/pipeline oblicuo — esta vista solo
- *  PINTA distinto. setVisible() conmuta qué canvas se ve. */
+ *  El canvas es PROPIO y se crea aquí: la fachada recibe el CONTENEDOR
+ *  (#app-shell) y mete dentro su `<canvas id="fps-canvas">`. Antes se
+ *  insertaba como hermano del lienzo 2D, que ya no existe. */
 
-import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
 import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
@@ -18,7 +18,7 @@ import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/s
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
-import type { AttackAreaParams, AttackTelegraph, Entity, PlayerView, Renderer2D } from "./renderer2d.js";
+import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
 export interface FpsTilePlan {
@@ -44,18 +44,11 @@ export const FPS_DEBUG_VIEW_LABELS: Record<FpsDebugView, string> = {
 };
 const FPS_DEBUG_VIEW_ORDER: FpsDebugView[] = ["off", "collision", "surfaces"];
 
-export class FpsRenderer implements Renderer2D {
-  /** La vista en primera persona no pinta texto de mundo: los nombres los
-   *  da el prompt contextual de la UI (y no hay ctx 2D sobre el que
-   *  escribir). No-op declarado para que el contrato obligue a
-   *  pronunciarse. */
-  setWorldTheme(_theme: UiTheme): void {}
-
+export class FpsRenderer {
   private el: HTMLCanvasElement;
   private gl: FpsGl | null = null;
   private pending: Array<(gl: FpsGl) => void> = [];
   private surfaces = new Map<string, FpsTileSurfaces>();
-  private visible = false;
   private onResize = () => this.syncSize();
   private resizeObserver: ResizeObserver | null = null;
   private debugView: FpsDebugView = "off";
@@ -69,17 +62,15 @@ export class FpsRenderer implements Renderer2D {
   private veilEdge: Edge | null = null;
   private lookPitch = 0;
 
-  constructor(
-    private host: HTMLCanvasElement,
-    opts: { spriteRenderer?: SpriteRenderer } = {},
-  ) {
+  constructor(host: HTMLElement, opts: { spriteRenderer?: SpriteRenderer } = {}) {
     this.el = document.createElement("canvas");
     this.el.id = "fps-canvas";
-    this.el.style.display = "none";
-    // Hermano del canvas 2D: hereda el CSS de `canvas { flex: 1 }`.
-    host.parentElement?.insertBefore(this.el, host.nextSibling);
-    // Píldora de la tecla B: el canvas es WebGL (sin ctx 2D para pintarla
-    // como en las otras vistas) → div fijo, mismo look que las píldoras.
+    // Hijo DIRECTO del contenedor del mundo: así lo alcanza la regla
+    // `#app-shell > canvas` de base.css (que no debe llevarse los lienzos de
+    // la UI, como el retrato del diálogo).
+    host.appendChild(this.el);
+    // Píldora de la tecla B: el canvas es WebGL (no hay ctx 2D sobre el que
+    // pintarla) → div fijo, con el mismo look que las píldoras de dev.
     this.debugLabel = document.createElement("div");
     this.debugLabel.id = "fps-debug-label";
     this.debugLabel.style.cssText =
@@ -106,8 +97,8 @@ export class FpsRenderer implements Renderer2D {
       });
   }
 
-  /** Canvas WebGL propio de la vista fps (el #game 2D queda oculto): es el
-   *  elemento visible al que main.ts engancha el click → pointer lock. */
+  /** Canvas WebGL del mundo: el elemento al que main.ts engancha el click →
+   *  pointer lock. */
   get element(): HTMLCanvasElement {
     return this.el;
   }
@@ -118,18 +109,9 @@ export class FpsRenderer implements Renderer2D {
   }
 
   private syncSize(): void {
-    if (!this.visible) return;
     const w = this.el.clientWidth || window.innerWidth;
     const h = this.el.clientHeight || window.innerHeight;
     this.gl?.resize(w, h);
-  }
-
-  setVisible(on: boolean): void {
-    this.visible = on;
-    this.el.style.display = on ? "" : "none";
-    this.host.style.display = on ? "none" : "";
-    this.debugLabel.style.display = on && this.debugView !== "off" ? "" : "none";
-    if (on) this.syncSize();
   }
 
   /** Celdas sólidas por tile para el overlay B (main inyecta el muestreo del
@@ -149,7 +131,7 @@ export class FpsRenderer implements Renderer2D {
   private syncDebugView(): void {
     const mode = this.debugView;
     this.debugLabel.textContent = `B · fps: ${FPS_DEBUG_VIEW_LABELS[mode]}`;
-    this.debugLabel.style.display = this.visible && mode !== "off" ? "" : "none";
+    this.debugLabel.style.display = mode !== "off" ? "" : "none";
     this.withGl((gl) => {
       const cells =
         mode === "collision" && this.activeKey && this.collisionCells
@@ -275,20 +257,9 @@ export class FpsRenderer implements Renderer2D {
     return this.gl?.groundYAt(x, z) ?? 0;
   }
 
-  drawAttackArea(
-    _player: Parameters<Renderer2D["drawAttackArea"]>[0],
-    _params: AttackAreaParams,
-    _mode: "windup" | "impact",
-  ): void {
-    // No-op declarado: el telegraph de esta vista es geometría de mundo y se
-    // fija con setAttackTelegraph ANTES de render(). Un overlay dibujado
-    // después del frame no existe en WebGL.
-  }
-
   debugState(): Record<string, unknown> {
     return {
       ready: this.gl !== null,
-      visible: this.visible,
       surfaces: [...this.surfaces.keys()],
       telegraph: null,
       veil: null,

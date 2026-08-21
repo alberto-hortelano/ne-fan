@@ -1,4 +1,4 @@
-/* UI DE JUEGO — la capa que el jugador ve mientras juega, en las tres vistas
+/* UI DE JUEGO — la capa que el jugador ve mientras juega, sobre el mundo
    (oblicua, fps).
 
    Estética DIEGÉTICA SOBRIA: panel translúcido (el mundo se ve detrás),
@@ -162,6 +162,13 @@
 /* ── Prompt contextual y confirmaciones ─────────────────────────────────── */
 #interact-prompt, #tile-confirm-prompt { display: flex; align-items: center; gap: 10px; }
 #interact-prompt:empty, #tile-confirm-prompt:empty { display: none; }
+/* `hidden` lo pone setConfirmPrompt(null) y sin esto NO oculta nada: el
+   `display:flex` de la regla de arriba gana al `display:none` del atributo
+   (selector de id vs. hoja del navegador). Se veía como una píldora vacía de
+   40×22 flotando sobre la barra de ataques — el panel no está `:empty`,
+   lleva dentro su <span> del texto. Mismo cierre que #dialogue-panel y
+   #travel-panel más abajo. */
+#tile-confirm-prompt[hidden] { display: none; }
 #tile-confirm-prompt .nf-question { color: var(--nf-ink); }
 #tile-confirm-prompt b { color: var(--nf-accent); }
 
@@ -400,9 +407,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  display: none;
 }
-#game-ui[data-view="fps"] #world-labels { display: block; }
 #world-labels .world-label {
   position: absolute;
   top: 0; left: 0;
@@ -424,10 +429,8 @@
   box-shadow: var(--nf-glow);
 }
 
-/* ── Mirilla (solo primera persona) ─────────────────────────────────────── */
-#reticle { display: none; }
-#game-ui[data-view="fps"] #reticle {
-  display: block;
+/* ── Mirilla ────────────────────────────────────────────────────────────── */
+#reticle {
   position: absolute;
   top: 50%; left: 50%;
   width: 3px; height: 3px;
@@ -436,7 +439,7 @@
   background: var(--nf-ink);
   opacity: 0.55;
 }
-#game-ui[data-view="fps"] #reticle[data-target="true"] { background: var(--nf-accent); opacity: 1; }
+#reticle[data-target="true"] { background: var(--nf-accent); opacity: 1; }
 
 /* Capas dentro de la UI de juego. */
 #ui-top-left, #ui-top-right { z-index: var(--z-hud); }

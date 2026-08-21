@@ -123,7 +123,7 @@
 }
 
 /* Píldora de la tecla B en fps: el canvas es WebGL (sin ctx 2D para pintarla
-   como en las otras vistas) → div fijo. Es dev, no juego. */
+   con un ctx 2D) → div fijo. Es dev, no juego. */
 #fps-debug-label {
   position: fixed;
   top: 42px;

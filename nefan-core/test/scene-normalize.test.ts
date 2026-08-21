@@ -324,10 +324,10 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 
   it("emite un color de terreno usable como fallback sin textura", () => {
-    // Consumidor: nefan-html/src/renderer/canvas-renderer.ts
-    // (`rgb01ToCss(tile.scene.terrain?.color) ?? DEFAULT_TERRAIN_COLOR`) y el
-    // suelo por defecto de godot/scripts/room/scene_builder.gd. Lo que importa
-    // es que exista y sea un RGB 0..1 verdoso (suelo de campo), no el valor.
+    // Consumidor: el suelo por defecto de godot/scripts/room/scene_builder.gd
+    // (el del cliente HTML se fue con el renderer oblicuo; su vista 3D pinta
+    // el suelo desde el `ground` declarado). Lo que importa es que exista y
+    // sea un RGB 0..1 verdoso (suelo de campo), no el valor.
     const color = (formatDToWorld(makeFormatD()).terrain as { color?: number[] } | undefined)?.color;
     assert.ok(Array.isArray(color), "terrain.color debe existir");
     assert.equal(color!.length, 3, "RGB de tres componentes");
@@ -486,10 +486,11 @@ describe("formatDToWorld — fail-loud con índice, id y campo", () => {
   });
 });
 
-/** Altura y forma: lo que el 3D construye tal cual y el 2D extruye como prisma
- *  (`prismQuads` de src/scene/view-prism.ts, vía `drawSceneBox` del
- *  canvas-renderer). Un `h` degenerado (0, ∞) produciría una caja invisible o
- *  de 20 m en vez de caer al default por kind. */
+/** Altura y forma: el `scale.y` que los dos clientes 3D construyen tal cual
+ *  (fps-gl en el navegador, scene_builder.gd en Godot). Un `h` degenerado
+ *  (0, ∞) produciría una caja invisible o de 20 m en vez de caer al default
+ *  por kind. (Hasta la retirada de la vista oblicua lo extruía además el 2D
+ *  como prisma, con `prismQuads`; ese camino ya no existe.) */
 describe("formatDToWorld — altura y forma degeneradas", () => {
   const conProp = (h: unknown): Record<string, unknown> => {
     const d = makeFormatD();

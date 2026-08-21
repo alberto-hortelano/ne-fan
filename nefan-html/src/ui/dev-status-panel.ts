@@ -17,7 +17,6 @@ export interface GenerationEvent {
 }
 
 export interface SessionInfo {
-  view?: string;
   renderMode?: string;
   styleId?: string;
 }
@@ -43,7 +42,7 @@ export class DevStatusPanel {
   private offline = false;
   private firstPoll = true;
 
-  private readonly session: Required<SessionInfo> = { view: "", renderMode: "", styleId: "" };
+  private readonly session: Required<SessionInfo> = { renderMode: "", styleId: "" };
 
   /** Último estado pintado de `setPainting` (evita repintar cada frame). */
   private painting = false;
@@ -92,11 +91,12 @@ export class DevStatusPanel {
   }
 
   setSession(info: SessionInfo): void {
-    if (info.view !== undefined) this.session.view = info.view;
     if (info.renderMode !== undefined) this.session.renderMode = info.renderMode;
     if (info.styleId !== undefined) this.session.styleId = info.styleId;
+    // Sin chip de vista: el cliente tiene una sola. El que había se quedó
+    // anunciando "vista oblicua" en cuanto nadie volvió a fijarlo — un HUD
+    // que miente es peor que un HUD con un dato menos.
     const parts = [
-      `vista ${this.session.view || "oblicua"}`,
       this.session.renderMode ? `gráficos ${this.session.renderMode}` : "",
       this.session.styleId ? `estilo ${this.session.styleId}` : "",
     ].filter(Boolean);

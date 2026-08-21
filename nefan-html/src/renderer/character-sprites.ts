@@ -111,20 +111,6 @@ export class CharacterSpriteManager {
     );
   }
 
-  /** Cambia el SET de sprites (ángulo de cámara del sheet) — cada vista tiene
-   *  el suyo (oblicua isometric_30, fps frontal_8). Invalida los skins
-   *  listos: son por (prompt, anim, ángulo), y el caller debe relanzar
-   *  preloadBase() para el set nuevo. Idempotente si el ángulo no cambia. */
-  setAngle(angle: string): void {
-    if (angle === this.angle) return;
-    this.angle = angle;
-    this.readySkins.clear();
-    // Re-encolables sobre el ángulo nuevo (modelFor los pide lazy); los skins
-    // marcados failed siguen failed — el backend caído no mejora por cambiar
-    // de vista.
-    for (const state of this.skins.values()) state.queued.clear();
-  }
-
   get activeAngle(): string {
     return this.angle;
   }

@@ -103,6 +103,57 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Es EL criterio de la operación "solo la vista 3D": un único importador de
+  // three en el cliente ⇒ un único contexto WebGL en la pestaña. Probado en
+  // negativo contra la config real, porque la regla verde de hoy no distingue
+  // "nadie más importa three" de "la excepción se comió la regla".
+  it("[error] three-solo-en-fps-gl: cualquier otro importador de three salta", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "three-solo-en-fps-gl");
+
+    // Los tres sitios que importaban three hasta esta PR (el clay del plató,
+    // el del tile) más un fichero nuevo cualquiera.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/stage-greybox-render.ts",
+          text: "",
+          imports: [{ spec: "three", line: 4 }],
+        },
+        {
+          path: "nefan-html/src/scene/tile-greybox-render.ts",
+          text: "",
+          imports: [{ spec: "three/addons/loaders/GLTFLoader.js", line: 9 }],
+        },
+        {
+          path: "nefan-html/src/ui/portrait.ts",
+          text: "",
+          imports: [{ spec: "three", line: 2 }],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/scene/stage-greybox-render.ts:4",
+        "nefan-html/src/scene/tile-greybox-render.ts:9",
+        "nefan-html/src/ui/portrait.ts:2",
+      ],
+    );
+
+    // Y el dueño, callado — con el subpath de addons incluido.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/renderer/fps-gl.ts",
+          text: "",
+          imports: [
+            { spec: "three", line: 17 },
+            { spec: "three/examples/jsm/controls/OrbitControls.js", line: 18 },
+          ],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

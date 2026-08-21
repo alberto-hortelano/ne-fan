@@ -15,7 +15,7 @@
  *  solapa la posición actual no bloquea (permite des-penetrar tras un spawn
  *  solapado); solo bloquean los obstáculos NUEVOS del destino. */
 
-import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
 import {
   planCollisionGrid,
   type GroundFeature,
@@ -118,22 +118,20 @@ export class CollisionSystem {
 
 // ── Instaladores del mundo derivado (colisión que llega en runtime) ────────
 
-export interface DerivedCollisionDeps {
-  tileStore: TileStore;
-  /** Espejo visual del overlay B (celdas azules del plan). */
-  setTileSvgGrid(key: string, grid: TerrainGridData | null): void;
-}
-
 /** Colisión base del plan declarado: agua∖decks del `ground` + huellas de los
  *  volúmenes — instalada como collider base del tile, activa desde que llega
- *  el tile, antes de imagen y análisis. Analítica pura (sin rasterizar nada).
- *  Si la derivación falla, los AABBs del esquema siguen aplicando
- *  (svgApplied queda a false). */
+ *  el tile. Analítica pura (sin rasterizar nada). Si la derivación falla, los
+ *  AABBs del esquema siguen aplicando (svgApplied queda a false).
+ *
+ *  Ya no lleva deps: el espejo visual del grid (celdas azules del overlay B)
+ *  era del renderer oblicuo. En primera persona el overlay de colisión
+ *  MUESTREA el CollisionSystem celda a celda, así que no hay una segunda
+ *  copia del grid que mantener sincronizada. */
 export function applyPlanCollision(
   key: string,
   plan: { ground?: GroundFeature[]; volumes?: Volume[] },
   rect: { minX: number; minZ: number; maxX: number; maxZ: number },
-  deps: DerivedCollisionDeps,
+  tileStore: TileStore,
 ): void {
   try {
     // Agua∖decks del suelo declarado + huellas de los volúmenes, unidos por la
@@ -141,8 +139,7 @@ export function applyPlanCollision(
     // colisionan igual sobre el mismo plan.
     const grid = planCollisionGrid(plan.ground, plan.volumes, rect);
     const collider = grid ? createTerrainCollider(grid) : null;
-    deps.tileStore.setSvgCollider(key, collider);
-    deps.setTileSvgGrid(key, grid);
+    tileStore.setSvgCollider(key, collider);
     dlog(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );

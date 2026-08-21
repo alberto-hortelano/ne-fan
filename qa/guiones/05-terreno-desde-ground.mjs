@@ -17,7 +17,7 @@
 import { nuevaPartida, comenzar, celdaAMundo } from "../lib/sesion.mjs";
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", view: "overworld", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
   await comenzar(ctx);
 
   const plano = await ctx.page.evaluate(() => {

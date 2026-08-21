@@ -57,7 +57,7 @@ export default async function (ctx) {
   });
 
   // ── 1. Vía B: el batch de estilo, desde el título ────────────────────────
-  const { styleId } = await nuevaPartida(ctx, { gameId: "alta_fantasia", view: "overworld", charMode: "image" });
+  const { styleId } = await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image" });
   await ctx.page.click("#ts-apply-style");
   await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });
   const plan = await ctx.page.$eval("#ts-style-plan", (e) => e.innerText);

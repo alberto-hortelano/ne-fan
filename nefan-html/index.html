@@ -80,15 +80,13 @@
   </div>
 
   <!-- El lienzo y la UI de juego comparten caja: los paneles se posicionan
-       contra el mundo visible, no contra el viewport. -->
+       contra el mundo visible, no contra el viewport. El lienzo del mundo
+       (<canvas id="fps-canvas">) lo crea e inserta aquí FpsRenderer: es suyo,
+       y desde que no hay más vistas, el único de la página. -->
   <div id="app-shell">
-    <canvas id="game"></canvas>
-    <!-- #fps-canvas lo inserta FpsRenderer aquí, como hermano de #game. -->
-
-    <!-- UI DE JUEGO: única capa temable. data-view la fija applySessionView y
-         data-locked el estado del pointer lock; el CSS decide con ellos qué
-         se muestra y si los botones son clicables. -->
-    <div id="game-ui" data-view="oblique" data-locked="false">
+    <!-- UI DE JUEGO: única capa temable. data-locked lleva el estado del
+         pointer lock; el CSS decide con él si los botones son clicables. -->
+    <div id="game-ui" data-locked="false">
       <div class="ui-region" id="ui-top-left">
         <div id="player-status" class="nf-panel"></div>
         <div id="enemy-bars"></div>

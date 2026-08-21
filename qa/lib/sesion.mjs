@@ -57,11 +57,14 @@ export async function abrirSelectorDeMundos(ctx) {
   await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
 }
 
-/** Abre partida nueva: mundo → vista → modo de personajes → estilo →
- *  Continuar → Comenzar. Devuelve `{ gameId, styleId }` para que el guion
- *  compare contra lo que el juego usa después (p. ej. el `style_id` que viaja
- *  en la petición de skin). */
-export async function nuevaPartida(ctx, { gameId = "alta_fantasia", view = "overworld", charMode = "image" } = {}) {
+/** Abre partida nueva: mundo → modo de personajes → estilo → Continuar →
+ *  Comenzar. Devuelve `{ gameId, styleId }` para que el guion compare contra
+ *  lo que el juego usa después (p. ej. el `style_id` que viaja en la petición
+ *  de skin).
+ *
+ *  Ya no hay paso de VISTA: el cliente tiene una sola (primera persona) y el
+ *  título dejó de ofrecer el selector. */
+export async function nuevaPartida(ctx, { gameId = "alta_fantasia", charMode = "image" } = {}) {
   await abrirSelectorDeMundos(ctx);
 
   const mundos = await ctx.page.$$eval("[data-game-id]", (els) => els.map((e) => e.dataset.gameId));
@@ -69,7 +72,6 @@ export async function nuevaPartida(ctx, { gameId = "alta_fantasia", view = "over
     throw new Error(`el título no ofrece el mundo "${gameId}"; hay: ${mundos.join(", ")}`);
   }
   await ctx.page.click(`[data-game-id="${gameId}"]`);
-  await ctx.page.click(`#ts-view [data-view="${view}"]`);
   await ctx.page.click(`#ts-charmode [data-charmode="${charMode}"]`);
   const styleId = await ctx.page.$eval("#ts-style", (s) => s.value);
   return { gameId, styleId };

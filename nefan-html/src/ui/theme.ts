@@ -34,7 +34,6 @@ const CSS_VAR: Record<keyof UiTheme, string> = {
 };
 
 let current: UiTheme = BASE_UI_THEME;
-const listeners = new Set<(t: UiTheme) => void>();
 
 function root(): HTMLElement | null {
   return document.getElementById("game-ui");
@@ -60,17 +59,12 @@ export function applyUiTheme(theme: UiTheme | undefined | null): void {
       el.style.setProperty(cssVar, String(value));
     }
   }
-  for (const fn of listeners) fn(t);
 }
 
-/** Tema vigente — lo consumen los renderers para el texto que pintan DENTRO
- *  del canvas (nombres de NPC, etiquetas de salida): ahí no llega el CSS. */
+/** Tema vigente. Ya no lo consume ningún renderer —el mundo no lleva texto
+ *  pintado en el lienzo desde que la vista es 3D— pero sí el hook de bench,
+ *  que compara lo aplicado con lo que declara el style pack. */
 export function currentUiTheme(): UiTheme {
   return current;
 }
 
-/** Suscripción al cambio de tema (renderers creados perezosamente). */
-export function onUiThemeChange(fn: (t: UiTheme) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}

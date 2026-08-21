@@ -1,5 +1,7 @@
-/** Never Ending Fantasy — 2D top-down HTML client.
- *  Dual mode: connects to nefan-core bridge (WebSocket) or falls back to local simulation. */
+/** Never Ending Fantasy — cliente HTML.
+ *
+ *  UNA vista: primera persona (FpsRenderer → three.js). Conecta al bridge de
+ *  nefan-core por WebSocket o cae a simulación local. */
 
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { setDebugLog } from "./dev/debug-log.js";
@@ -10,7 +12,6 @@ import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import {
-  buildTileGreyboxSpec,
   deriveVolumesFromSchema,
   parseGround,
   parseVolumes,
@@ -21,17 +22,10 @@ import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/sce
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
-import { CanvasRenderer, DEBUG_VIEW_LABELS, type ComposedTilePlan } from "./renderer/canvas-renderer.js";
-import { rendererRegistry } from "./renderer/registry.js";
-import type { Entity, Renderer2D } from "./renderer/renderer2d.js";
-import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
+import type { Entity } from "./renderer/types.js";
+import { FPS_DEBUG_VIEW_LABELS, FpsRenderer, type FpsTilePlan } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
-import { VIEW_PROJECTION } from "./renderer/projection.js";
-import {
-  CollisionSystem,
-  applyPlanCollision,
-  type DerivedCollisionDeps,
-} from "./world/collision.js";
+import { CollisionSystem, applyPlanCollision } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
   BASE_ANIMS,
@@ -40,7 +34,6 @@ import {
   newAnimState,
   type CharacterAnimState,
 } from "./renderer/character-sprites.js";
-import { AssetCache } from "./renderer/asset-cache.js";
 import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
 import { serviceUrl } from "./net/service-urls.js";
@@ -59,7 +52,7 @@ import { errors } from "./ui/error-log.js";
 import { ActionBar } from "./ui/action-bar.js";
 import { WorldLabels, type WorldLabel } from "./ui/world-labels.js";
 import { PortraitView } from "./ui/portrait.js";
-import { applyUiTheme, currentUiTheme, onUiThemeChange, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
+import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import {
   createGameClient,
   type GameClient,
@@ -71,11 +64,10 @@ import combatConfigJson from "@nefan-core/data/combat_config.json";
 import { CONFIG } from "@nefan-core/src/config.js";
 
 // Glob import all open-world scene JSONs (lazy) — Vite feature.
-// El concepto sala se ha retirado del cliente HTML: estos fixtures definen
-// escenarios exteriores con elementos planos por categoría.
-// Solo el nivel RAÍZ: el subdirectorio `proscenio/` guarda platós, y el
-// cliente ya no sabe pintar un plató. Siguen en el repo como fixtures de las
-// suites de plató de nefan-core, que mueren con el bloque `stage`.
+// El concepto sala se ha retirado del cliente HTML: estas fixtures son tiles
+// del plano continuo. Solo el nivel RAÍZ: el subdirectorio `proscenio/`
+// guarda platós, que el cliente ya no sabe pintar — siguen en el repo como
+// fixtures de las suites de nefan-core, que mueren con el bloque `stage`.
 const sceneModules: Record<string, () => Promise<{ default: Record<string, unknown> }>> =
   (import.meta as unknown as { glob: (pattern: string) => Record<string, () => Promise<{ default: Record<string, unknown> }>> })
     .glob("@nefan-core/data/scenes/*.json");
@@ -159,27 +151,24 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
 const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
-const canvas = document.getElementById("game") as HTMLCanvasElement;
-/** Set de sprites por VISTA: los sheets del y_bot van renderizados desde un
- *  ángulo de cámara fijo y los personajes quedan fijos a ese ángulo — la
- *  oblicua usa el clásico picado 30°; la fps (cámara a la altura de los ojos)
- *  usa el set casi frontal −8° para que no parezcan torcidos. */
-const OBLIQUE_ANGLE = "isometric_30";
-const FPS_ANGLE = "frontal_8";
-/** Ángulo del set de la vista ACTIVA (lo conmuta applySessionView). */
-let worldAngle: string = OBLIQUE_ANGLE;
+/** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
+ *  juego se posiciona contra ella, no contra el viewport). */
+const appShell = document.getElementById("app-shell") as HTMLElement;
+/** Set de sprites del mundo: los sheets del y_bot van renderizados desde un
+ *  ángulo de cámara fijo. La cámara está a la altura de los ojos, así que el
+ *  set es el casi frontal −8° (con el picado 30° de la oblicua los
+ *  personajes se veían torcidos). */
+const worldAngle = "frontal_8";
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
 // en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
 // así que `?ai=` cubre las cuatro.
 // Blobs cacheados (F2): proceso propio del asset-store.
 const ASSET_STORE_URL = serviceUrl("asset-store");
-// Pipelines GPU locales (F3): proceso propio del gpu-worker.
-const GPU_WORKER_URL = serviceUrl("gpu-worker");
 // Meshy/fal (F4): proceso propio de remote-gen (repintados, sheets
 // skinneados, toggle dev de las APIs de pago).
 const REMOTE_GEN_URL = serviceUrl("remote-gen");
 const spriteRenderer = new SpriteRenderer("/sprites", REMOTE_GEN_URL, ASSET_STORE_URL);
-const characterSprites = new CharacterSpriteManager(spriteRenderer, OBLIQUE_ANGLE);
+const characterSprites = new CharacterSpriteManager(spriteRenderer, worldAngle);
 /** Retrato del hablante del diálogo: hero-shot ya pagado o busto animado. */
 const portrait = new PortraitView(spriteRenderer, "/sprites");
 /** true cuando el set base y_bot está cargado: el gameLoop solo puebla
@@ -196,12 +185,11 @@ const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
 baseSheetsReady.catch((err) =>
   errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
 );
-const assetCache = new AssetCache(GPU_WORKER_URL, ASSET_STORE_URL);
-const renderer = new CanvasRenderer(canvas, {
-  spriteRenderer,
-  assetCache,
-  worldAngle: OBLIQUE_ANGLE,
-});
+/** El renderer del mundo, construido EAGER: es el único que hay, así que no
+ *  espera a saber la vista de la sesión. three.js entra por import dinámico
+ *  dentro de la fachada (y con él el único contexto WebGL de la pestaña);
+ *  hasta que llega, las instalaciones se encolan. */
+const fpsRenderer = new FpsRenderer(appShell, { spriteRenderer });
 // Panel de dev (segunda fila del HUD, #dev-status): estado de la generación
 // de imágenes IA, contadores de caché, gasto estimado en € (poll a
 // GET /dev/status de remote-gen) y config activa. Siempre visible.
@@ -225,7 +213,7 @@ const fpsAtlasController = new FpsAtlasController(
   { remote: REMOTE_GEN_URL, assets: ASSET_STORE_URL, state: serviceUrl("world-state") },
   {
     getTile: (key) => {
-      const surfaces = fpsRenderer?.getTileSurfaces(key);
+      const surfaces = fpsRenderer.getTileSurfaces(key);
       const entry = tileStore.entries.get(key);
       if (!surfaces || !entry) return null;
       const scene = entry.scene as { scene_description?: string };
@@ -234,8 +222,8 @@ const fpsAtlasController = new FpsAtlasController(
         sceneDescription: String(scene.scene_description ?? ""),
       };
     },
-    apply: (key, images) => fpsRenderer?.applyAtlas(key, images),
-    clear: (key) => fpsRenderer?.clearAtlas(key),
+    apply: (key, images) => fpsRenderer.applyAtlas(key, images),
+    clear: (key) => fpsRenderer.clearAtlas(key),
     // Gate por sesión: entre el broadcast de la escena y la respuesta de
     // start/resume, scenesMode aún es el default del cliente ("image") — sin
     // el gate, reanudar una partida VECTOR pintaba atlas de pago en esa
@@ -255,12 +243,6 @@ function applySessionStyle(styleId: string): void {
   devPanel.setSession({ styleId });
   if (styleId) log(`Estilo visual: ${styleId}`);
 }
-
-/** Proyección de vista única del mundo 2D (formato oblicuo). Saves con el
- *  antiguo `world.perspective` lo conservan en el JSON pero nadie lo lee.
- *  También snapea el giro del jugador a los 8 ejes de animación (ver
- *  refreshPlayerForward). */
-const sessionProjection = VIEW_PROJECTION;
 
 /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
  *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
@@ -360,30 +342,37 @@ async function requestModeChange(
   );
 }
 
-/** Vista activa del cliente ("" = oblicua). El renderer activo cubre el
- *  contrato por-frame (Renderer2D, registrado en rendererRegistry); el
- *  CanvasRenderer oblicuo sigue siendo el dueño de tiles/pipeline de imagen
- *  (subsistemas oblicua-only, apagados en fps). La vista la fija la sesión
- *  (world.view congelado en el save). */
-let activeRenderer: Renderer2D = renderer;
-let fpsRenderer: FpsRenderer | null = null;
-/** Vista del cliente ("" = oblicua). */
-type ClientView = "" | "fps";
-/** Vista congelada en el save → vista del cliente. El proscenio ya no existe
- *  en el cliente: una partida que lo lleve congelado NO se abre en oblicua
- *  "por si acaso" —eso sería un mundo sin plató, sin salidas pintadas y sin
- *  forma de viajar—, se rechaza diciendo por qué. Pre-producción: los saves
- *  no se migran (CLAUDE.md). */
-const toClientView = (v: unknown): ClientView => {
-  if (v === "proscenium") {
+/** Vista congelada en un save que ya no existe: el cliente tiene UNA vista
+ *  (primera persona) y `world.view` solo sirve ya para RECHAZAR. Un plató no
+ *  se abre "por si acaso" —sería un mundo sin escenario, sin salidas pintadas
+ *  y sin forma de viajar—: se dice por qué. Pre-producción, los saves no se
+ *  migran (CLAUDE.md). */
+function assertPlayableView(view: unknown): void {
+  if (view === "proscenium") {
     throw new Error(
       'esta partida se guardó en la vista "proscenio", que ya no existe en el cliente. ' +
-        "Empieza una partida nueva (mundo abierto o primera persona).",
+        "Empieza una partida nueva.",
     );
   }
-  return v === "fps" ? "fps" : "";
-};
-let sessionView: ClientView = "";
+}
+
+/** La sesión ya tiene estilo y modos de render aplicados.
+ *
+ *  Es la PRECONDICIÓN del gasto del atlas de superficies, y hay que nombrarla:
+ *  entre el broadcast de la escena y la respuesta de start/resume, `style_id`
+ *  es "" y `scenesMode` el default del cliente. Antes lo ordenaba por
+ *  accidente el gate de vista (applySessionView corría DESPUÉS de
+ *  applySessionStyle); sin él, un tile de bootstrap dispararía el atlas contra
+ *  un estilo vacío. El controller se planta solo sin estilo — esto es la
+ *  re-emisión que lo despierta. */
+function applySessionReady(): void {
+  sessionModesApplied = true;
+  const key = activeTileKey;
+  if (!key) return;
+  void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
+    errors.push("scene", `el atlas fps de ${key} no arrancó al abrir la sesión`, err),
+  );
+}
 
 const gameUiEl = document.getElementById("game-ui") as HTMLElement;
 
@@ -393,87 +382,6 @@ const gameUiEl = document.getElementById("game-ui") as HTMLElement;
 document.addEventListener("pointerlockchange", () => {
   gameUiEl.dataset.locked = document.pointerLockElement !== null ? "true" : "false";
 });
-
-function applySessionView(view: string): void {
-  const next = toClientView(view);
-  const changed = next !== sessionView;
-  sessionView = next;
-  gameUiEl.dataset.view = next === "" ? "oblique" : next;
-  devPanel.setSession({ view: next });
-  // Set de sprites de la vista: la fps usa el y_bot casi frontal (frontal_8 —
-  // a nivel de ojos, pitch −8°); la oblicua el picado clásico.
-  // El cambio invalida los skins listos (son por ángulo) y precarga el set
-  // nuevo; mientras llega, las entidades cargan lazy por getCached.
-  const VIEW_ANGLES: Record<ClientView, string> = {
-    "": OBLIQUE_ANGLE,
-    fps: FPS_ANGLE,
-  };
-  const nextAngle = VIEW_ANGLES[next];
-  if (nextAngle !== worldAngle) {
-    worldAngle = nextAngle;
-    characterSprites.setAngle(nextAngle);
-    if (CONFIG.graphics.character_sprites) {
-      characterSprites.preloadBase().catch((err) =>
-        errors.push("sprite", `set base ${BASE_MODEL} (${nextAngle}) incompleto`, err),
-      );
-    }
-  }
-  if (next === "fps") {
-    if (!fpsRenderer) {
-      fpsRenderer = rendererRegistry.create("fps", {
-        canvas,
-        spriteRenderer,
-      }) as FpsRenderer;
-      // Overlay B "colisión": muestreo del CollisionSystem (fuente única de
-      // verdad, incluye imagen/plan/AABBs) por celda de 0.5 m del tile.
-      fpsRenderer.setCollisionCellsProvider((tileKey) => {
-        const entry = tileStore.entries.get(tileKey);
-        if (!entry) return null;
-        const size = 0.5; // TILE_MPC
-        const cells: [number, number][] = [];
-        for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += size) {
-          for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += size) {
-            if (collidesAt(x + size / 2, z + size / 2)) cells.push([x, z]);
-          }
-        }
-        return { cells, size };
-      });
-      // El canvas 2D (#game) queda oculto en fps, así que su listener de
-      // click → pointer lock no puede disparar: el lock se pide sobre el
-      // canvas WebGL propio de la vista, que es el que recibe los clicks.
-      fpsRenderer.element.addEventListener("click", () => {
-        if (!dialoguePanel.isVisible) {
-          fpsRenderer?.element.requestPointerLock();
-        }
-      });
-    }
-    fpsRenderer.setWorldTheme(currentUiTheme());
-    activeRenderer = fpsRenderer;
-    fpsRenderer.setVisible(true);
-    if (changed) {
-      // Tiles que llegaron ANTES de conocer la vista (bootstrap/resume
-      // difunden escenas antes de la respuesta de sesión): instalarlos ya.
-      for (const [k, entry] of tileStore.entries) {
-        const plan = (entry.scene as { __plan?: TilePlanInfo }).__plan;
-        if (plan) fpsRenderer.installTile(k, plan, entry.rect);
-      }
-      if (activeTileKey) {
-        fpsRenderer.setActiveTile(activeTileKey);
-        // El tile activo pudo instalarse ANTES de conocer la vista (la escena
-        // llega antes que la respuesta de sesión): disparar aquí el atlas —
-        // setActiveClientTile no volverá a ejecutarse si el tile no cambia.
-        void fpsAtlasController.onActiveTile(activeTileKey).catch(() => {});
-      }
-      log("Vista: primera persona (click captura el ratón para mirar arriba y abajo, ←/→ giran 45°, ↑/↓ inclinan 15°, WASD para moverte)");
-    }
-  } else {
-    activeRenderer = renderer;
-    fpsRenderer?.setVisible(false);
-  }
-  // El forward depende de la vista (fps = yaw libre; resto = snap a 8 ejes):
-  // resincronizar al cambiar de modo.
-  if (changed) refreshPlayerForward();
-}
 
 // El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
 // CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
@@ -523,22 +431,17 @@ const dialoguePanel = new DialoguePanel();
 const travelPanel = new TravelPanel();
 const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
-// Tema base: la partida lo sustituye por el del estilo al abrir sesión.
+// Tema base: la partida lo sustituye por el del estilo al abrir sesión. Ya
+// no se empuja a ningún renderer: el único que queda no pinta texto dentro
+// del lienzo (los nombres son DOM temado, world-labels.ts) — el CSS llega.
 applyUiTheme(BASE_UI_THEME);
-// El texto que se pinta DENTRO del lienzo (nombres de NPC, etiquetas de
-// salida) no lo alcanza el CSS: se empuja a los renderers vivos en cada
-// cambio de tema, y a los que se creen después desde applySessionView.
-onUiThemeChange((t) => {
-  renderer.setWorldTheme(t);
-  fpsRenderer?.setWorldTheme(t);
-});
 
 // Proveedor de input (plugin): default teclado+ratón; ?input=scripted instala
 // el driver programático de bench. Un id desconocido no arranca — fail-loud.
 const requestedInputId = new URLSearchParams(location.search).get("input") ?? undefined;
 let input: InputProvider;
 try {
-  input = inputRegistry.create(requestedInputId, { canvas });
+  input = inputRegistry.create(requestedInputId, {});
 } catch (err) {
   errors.push("input", `proveedor de input inválido (?input=${requestedInputId})`, err);
   throw err;
@@ -561,7 +464,6 @@ const nefanHook: Record<string, unknown> = {
   get dialogueVisible() { return dialoguePanel.isVisible; },
   get exits() { return currentExits; },
   get tiles() { return [...tileStore.entries.keys()]; },
-  get occluders() { return renderer.debugOccluders(); },
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
@@ -576,29 +478,12 @@ const nefanHook: Record<string, unknown> = {
     }),
     theme: () => currentUiTheme(),
     setTheme: (t: UiTheme) => applyUiTheme(t),
-    view: () => (document.getElementById("game-ui") as HTMLElement).dataset.view,
   },
   /** Trazas de los pipelines de imagen/colisión (dev/debug-log.ts): apagadas
    *  por defecto; también `?debug=1` en la URL. */
   debug(on: boolean) { setDebugLog(on); },
 };
 (window as unknown as { __nefan?: unknown }).__nefan = nefanHook;
-
-// --- Zoom (px por metro) ---
-// El objetivo (zoomTarget) salta por pasos multiplicativos con la rueda/teclas;
-// currentZoom lo persigue con suavizado frame-independent (mismo patrón que la
-// cámara) y se aplica al renderer cada frame. Se persiste en localStorage.
-const ZOOM_STEP = 1.12;   // factor por paso de rueda/tecla
-const ZOOM_RATE = 12;     // velocidad de convergencia del suavizado
-const ZOOM_KEY = "nefan.zoom";
-function loadSavedZoom(): number {
-  const raw = localStorage.getItem(ZOOM_KEY);
-  const v = raw ? parseFloat(raw) : NaN;
-  return Number.isFinite(v) ? v : 40;
-}
-let zoomTarget = renderer.clampScale(loadSavedZoom());
-let currentZoom = zoomTarget;
-renderer.setScale(currentZoom);
 
 // --- Sistema de combate de la sesión (catálogo → HUD + teclas) ---
 // Espejo de applyRenderModes: el id viene congelado en el save
@@ -657,9 +542,9 @@ const EDGE_ES: Record<FrontierEdge, string> = {
 let activeTileKey: string | null = null;
 
 // --- Generación de imagen SIN sesión (fixtures) ---
-// Persistido en localStorage (patrón ZOOM_KEY): es el estado del toggle de
-// escenarios cuando no hay partida; con sesión manda world.render_mode. El
-// toggle visible es el chip de gráficos (GraphicsModeChip).
+// Persistido en localStorage: es el estado del toggle de escenarios cuando no
+// hay partida; con sesión manda world.render_mode. El toggle visible es el
+// chip de gráficos (GraphicsModeChip).
 const AUTOIMG_KEY = "nefan.autoimg";
 /** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
 const AICHAR_KEY = "nefan.aichar";
@@ -796,11 +681,10 @@ async function loadSceneFile(globKey: string): Promise<void> {
 /** Vacía el mundo del cliente (arranque de sesión, resume, fixtures). */
 function resetWorld(): void {
   tileStore.clear();
-  renderer.clearTiles();
   // La escena three tiene sus propios grupos por tile: sin esto, los tiles de
   // la partida anterior seguían instalados y reaparecían de fantasmas al
   // reanudar (nadie llamaba nunca a removeTile).
-  fpsRenderer?.clearTiles();
+  fpsRenderer.clearTiles();
   // Mundo nuevo, mirada al frente: reanudar con los ojos clavados en el suelo
   // porque así acabó la partida anterior es desconcertante.
   playerPitch = 0;
@@ -820,30 +704,17 @@ async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
   await addTile(rawData);
 }
 
-/** Plan compuesto de un tile: campos del plan + blueprint proyectado. */
-interface TilePlanInfo {
-  ground: GroundFeature[];
-  volumes: Volume[];
-  /** Bioma del Format D crudo (la vista fps lo usa para el suelo/atlas). */
-  biome?: string;
-  /** Scatter declarativo (crudo — solo lo consume la vista fps). */
-  scatter_generators?: unknown;
-  scatter_zones?: unknown;
-  /** Descripción de la escena — la ambientación fps infiere la hora de ella. */
-  scene_description?: string;
-  composed: ComposedTilePlan;
-}
-
-/** Compone el blueprint del tile. Los volúmenes declarados por el LLM se
- *  completan con los derivados del esquema (vegetation_zones → árboles,
- *  structures → edificios cutaway). Devuelve null en escenas legacy sin plan
- *  ni primitivas derivables. */
+/** Compone el PLAN del tile: `ground` + `volumes` declarados por el motor,
+ *  completados con los derivados del esquema (vegetation_zones → árboles,
+ *  structures → edificios). De aquí salen las dos cosas que el juego usa: la
+ *  geometría 3D (FpsRenderer.installTile) y la colisión (applyPlanCollision).
+ *  Devuelve null en escenas legacy sin plan ni primitivas derivables. */
 function composeTilePlan(
   raw: Record<string, unknown>,
   data: Record<string, unknown>,
   key: string,
   isGridTile: boolean,
-): TilePlanInfo | null {
+): FpsTilePlan | null {
   if (!isGridTile) return null;
   let ground: GroundFeature[] = [];
   if (Array.isArray(data.ground)) {
@@ -874,24 +745,16 @@ function composeTilePlan(
   );
   const volumes = [...declared, ...derived];
   if (ground.length === 0 && volumes.length === 0) return null;
-  const biome = typeof raw.biome === "string" ? raw.biome : undefined;
-  const spec = buildTileGreyboxSpec({ ground, volumes, biome }, key);
   return {
     ground,
     volumes,
-    biome,
+    biome: typeof raw.biome === "string" ? raw.biome : undefined,
     scatter_generators: data.scatter_generators ?? raw.scatter_generators,
     scatter_zones: data.scatter_zones ?? raw.scatter_zones,
     scene_description:
       typeof raw.scene_description === "string" ? raw.scene_description
       : typeof data.scene_description === "string" ? data.scene_description
       : undefined,
-    composed: {
-      spec,
-      view_box: spec.camera.view_box,
-      elements: spec.elements,
-      occluders: spec.occluders,
-    },
   };
 }
 
@@ -923,13 +786,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   } catch (err) {
     errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
   }
-  // Plan del tile → blueprint COMPUESTO con la perspectiva de la sesión.
-  // Los volumes del LLM se completan con los derivados del esquema
-  // (vegetación, estructuras); el compositor es determinista (mismo plan ⇒
-  // mismos bytes ⇒ hit de la caché de imagen en resume).
-  // El plan lee campos del Format D crudo (structures/vegetation_zones/biome)
-  // que la world scene no emite. Con el bridge normalizando en el wire,
-  // rawData ya ES la world scene — el crudo viaja en __format_d.
+  // Plan del tile: los volumes del LLM completados con los derivados del
+  // esquema (vegetación, estructuras). El plan lee campos del Format D crudo
+  // (structures/vegetation_zones/biome) que la world scene no emite. Con el
+  // bridge normalizando en el wire, rawData ya ES la world scene — el crudo
+  // viaja en __format_d.
   const planInfo = composeTilePlan(
     (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
     data as Record<string, unknown>,
@@ -938,11 +799,10 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   );
   if (planInfo) {
     (data as Record<string, unknown>).__plan = planInfo;
-    (data as Record<string, unknown>).__composed = planInfo.composed;
   }
 
   const prevEntry = tileStore.entries.get(key);
-  tileStore.add({
+  const { sceneChanged } = tileStore.add({
     key,
     tx: isGridTile ? tile!.tx : undefined,
     ty: isGridTile ? tile!.ty : undefined,
@@ -954,15 +814,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     svgCollider: null,
     svgApplied: false,
   });
-  const { sceneChanged } = renderer.addTile(
-    key,
-    data as unknown as Parameters<typeof renderer.setScene>[0],
-  );
-  // Vista fps: instalar también el tile en el renderer 3D. El CanvasRenderer
-  // oblicuo sigue poblado (colisión, resume y restauración no cambian) — el
-  // fps solo PINTA distinto.
-  if (sessionView === "fps" && isGridTile && planInfo) {
-    fpsRenderer?.installTile(key, planInfo, rect);
+  // Mundo 3D: spec fps del tile + layout de superficies (la clave del atlas).
+  // ANTES de activarlo abajo: el atlas de superficies pide el layout al
+  // renderer, y un tile sin instalar se quedaría en clay sin pedir nada.
+  if (isGridTile && planInfo) {
+    fpsRenderer.installTile(key, planInfo, rect);
     // Si ESTE ya es el tile activo, setActiveClientTile no volverá a correr
     // (solo se dispara al cambiar de tile): lanzar el atlas aquí.
     if (key === activeTileKey) {
@@ -974,11 +830,11 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   // Colisión base del plan: restaurar si la escena no cambió; derivar
   // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
   // huellas de volumes — espacio de mundo.
-  const plan = (data as { __plan?: TilePlanInfo }).__plan;
+  const plan = (data as { __plan?: FpsTilePlan }).__plan;
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
-    applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, derivedCollisionDeps);
+    applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, tileStore);
   }
   // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
   // spawn explícito). En el resto de tiles el jugador entra andando.
@@ -1173,15 +1029,12 @@ function setActiveClientTile(key: string): void {
   if (!entry) return;
   activeTileKey = key;
   sceneData = entry.scene;
-  renderer.setActiveTile(key);
-  if (sessionView === "fps") {
-    fpsRenderer?.setActiveTile(key);
-    // Reinstala el atlas de caché o, con generación auto, lo pinta (el
-    // controller degrada a clay con error visible si algo falla).
-    void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
-      errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
-    );
-  }
+  fpsRenderer.setActiveTile(key);
+  // Reinstala el atlas de caché o, con generación auto, lo pinta (el
+  // controller degrada a clay con error visible si algo falla).
+  void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
+    errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
+  );
   currentExits = (entry.scene.exits ?? []) as SceneExit[];
   travelPanel.setExits(currentExits);
 }
@@ -1205,13 +1058,6 @@ const collision = new CollisionSystem({
   getObstacles: () => objectEntities,
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
-
-/** Deps del instalador de colisión derivada del plan: espejo visual en el
- *  renderer (overlay B). */
-const derivedCollisionDeps: DerivedCollisionDeps = {
-  tileStore,
-  setTileSvgGrid: (key, grid) => renderer.setTileSvgGrid(key, grid),
-};
 
 // --- Combat log ---
 function log(msg: string): void {
@@ -1248,14 +1094,12 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
         e: collidesAt(playerPos.x + 0.5, playerPos.z),
       },
     }),
-    occluders: () => renderer.debugOccluders(),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
     // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
     // estado (setPainting/recordGeneration) sin tocar píxeles.
     devPanel,
     probeCollide: (x: number, z: number) => collidesAt(x, z),
-    view: () => sessionView,
-    fps: () => fpsRenderer?.debugState() ?? null,
+    fps: () => fpsRenderer.debugState(),
     get scene() { return sceneData; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
@@ -1285,7 +1129,6 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       title: titleScreen.isVisible,
       scene: sceneData !== null,
       painting: fpsAtlasController.running,
-      view: sessionView,
       npcs: npcEntities.length,
     }),
     /** Estado del diálogo, o `{visible:false}`. Es el análogo del comando
@@ -1362,88 +1205,74 @@ function setPlayerPitch(rad: number): void {
   playerPitch = Math.min(PITCH_LIMIT_RAD, Math.max(-PITCH_LIMIT_RAD, rad));
 }
 
-/** En la oblicua el giro NO es libre: las flechas fijan un yaw
- *  objetivo, pero el forward efectivo (facing del sprite Y marco del WASD
- *  relativo) se snapea al eje de ANIMACIÓN más cercano de los 8 — sprite y
- *  desplazamiento coinciden siempre. En fps el yaw es CONTINUO (mouse look):
- *  el forward sale del yaw sin snap — el jugador no se dibuja como sprite y
- *  los sprites 8-dir de los NPCs ya cuantizan solos desde yaw continuo.
+/** El yaw es CONTINUO (mouse look): el forward sale de él sin snap — el
+ *  jugador no se dibuja como sprite, y los sprites 8-dir de los NPCs ya
+ *  cuantizan solos desde un yaw continuo. (La oblicua snapeaba a los 8 ejes
+ *  de animación para que el sprite del jugador y su desplazamiento
+ *  coincidieran; sin sprite de jugador esa restricción se fue con ella.)
  *
- *  El forward es SIEMPRE horizontal (`y: 0`), también en fps: es el marco del
- *  WASD, y mirar al suelo no puede hacerte caminar hacia el suelo. La mirada
- *  vertical vive aparte, en `playerPitch`. */
+ *  El forward es SIEMPRE horizontal (`y: 0`): es el marco del WASD, y mirar
+ *  al suelo no puede hacerte caminar hacia el suelo. La mirada vertical vive
+ *  aparte, en `playerPitch`. */
 function refreshPlayerForward(): void {
-  if (sessionView === "fps") {
-    playerForward = { x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) };
-    return;
-  }
-  const [fx, fz] = sessionProjection.snapForwardToAxis(Math.sin(playerYaw), Math.cos(playerYaw));
-  playerForward = { x: fx, y: 0, z: fz };
+  playerForward = { x: Math.sin(playerYaw), y: 0, z: Math.cos(playerYaw) };
 }
 
-/** Flechas = direcciones de PANTALLA (↑ mira hacia arriba del canvas, se
- *  combinan en diagonales). Se pasan a dirección de MUNDO con la proyección
- *  de la sesión (viewToWorld es lineal, vale para vectores): en topdown
- *  coinciden; en isométrica ↑ apunta al noroeste del mundo, etc. */
 let prevTurnLeft = false;
 let prevTurnRight = false;
 let prevTurnUp = false;
 let prevTurnDown = false;
 
+/** Mouse look con yaw CONTINUO (ratón a la derecha = girar a la derecha,
+ *  mismo signo que turnRight) y pitch CONTINUO (ratón abajo = mirar abajo,
+ *  sin invertir), más los pasos de ←/→ (45° de yaw) y ↑/↓ (15° de pitch) por
+ *  pulsación — flanco de subida, mantener no repite. */
 function applyTurnKeys(): void {
-  // El delta de ratón se consume SIEMPRE (acumulador del provider): fuera de
-  // fps se descarta para que no se aplique de golpe al entrar en la vista.
   const look = input.consumeLookDelta();
-  // Vista fps: mouse look con yaw CONTINUO (ratón a la derecha = girar a la
-  // derecha, mismo signo que turnRight) y pitch CONTINUO (ratón abajo = mirar
-  // abajo, sin invertir), más los pasos de ←/→ (45° de yaw) y ↑/↓ (15° de
-  // pitch) por pulsación — flanco de subida, mantener no repite.
-  if (sessionView === "fps") {
-    if (look.dx !== 0) {
-      playerYaw -= look.dx * MOUSE_SENS_RAD_PER_PX;
-      refreshPlayerForward();
-    }
-    // El pitch NO pasa por refreshPlayerForward: el forward es el marco del
-    // WASD y sigue siendo horizontal por diseño.
-    if (look.dy !== 0) setPlayerPitch(playerPitch - look.dy * MOUSE_SENS_RAD_PER_PX);
-    if (input.state.turnLeft && !prevTurnLeft) {
-      playerYaw += Math.PI / 4;
-      refreshPlayerForward();
-    }
-    if (input.state.turnRight && !prevTurnRight) {
-      playerYaw -= Math.PI / 4;
-      refreshPlayerForward();
-    }
-    if (input.state.turnUp && !prevTurnUp) setPlayerPitch(playerPitch + PITCH_STEP_RAD);
-    if (input.state.turnDown && !prevTurnDown) setPlayerPitch(playerPitch - PITCH_STEP_RAD);
-    prevTurnLeft = input.state.turnLeft;
-    prevTurnRight = input.state.turnRight;
-    prevTurnUp = input.state.turnUp;
-    prevTurnDown = input.state.turnDown;
-    return;
+  if (look.dx !== 0) {
+    playerYaw -= look.dx * MOUSE_SENS_RAD_PER_PX;
+    refreshPlayerForward();
   }
+  // El pitch NO pasa por refreshPlayerForward: el forward es el marco del
+  // WASD y sigue siendo horizontal por diseño.
+  if (look.dy !== 0) setPlayerPitch(playerPitch - look.dy * MOUSE_SENS_RAD_PER_PX);
+  if (input.state.turnLeft && !prevTurnLeft) {
+    playerYaw += Math.PI / 4;
+    refreshPlayerForward();
+  }
+  if (input.state.turnRight && !prevTurnRight) {
+    playerYaw -= Math.PI / 4;
+    refreshPlayerForward();
+  }
+  if (input.state.turnUp && !prevTurnUp) setPlayerPitch(playerPitch + PITCH_STEP_RAD);
+  if (input.state.turnDown && !prevTurnDown) setPlayerPitch(playerPitch - PITCH_STEP_RAD);
   prevTurnLeft = input.state.turnLeft;
   prevTurnRight = input.state.turnRight;
   prevTurnUp = input.state.turnUp;
   prevTurnDown = input.state.turnDown;
-  let vx = 0, vy = 0;
-  if (input.state.turnUp) vy -= 1;
-  if (input.state.turnDown) vy += 1;
-  if (input.state.turnLeft) vx -= 1;
-  if (input.state.turnRight) vx += 1;
-  if (vx === 0 && vy === 0) return;
-  const [wx, wz] = sessionProjection.viewToWorld(vx, vy);
-  playerYaw = Math.atan2(wx, wz);
-  refreshPlayerForward();
 }
 
-// Pointer lock en el canvas 2D: oculta el cursor y habilita atacar con LMB.
-// Fuera de la fps el ratón NO orienta al personaje (solo en fps, cuyo
-// lock vive en el canvas WebGL propio — ver applySessionView).
-canvas.addEventListener("click", () => {
+// Pointer lock sobre el lienzo del mundo: oculta el cursor, habilita el mouse
+// look y atacar con LMB.
+fpsRenderer.element.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
-    canvas.requestPointerLock();
+    fpsRenderer.element.requestPointerLock();
   }
+});
+
+// Overlay B "colisión": muestreo del CollisionSystem (fuente única de verdad)
+// por celda de 0,5 m del tile — el renderer NO tiene colisión propia.
+fpsRenderer.setCollisionCellsProvider((tileKey) => {
+  const entry = tileStore.entries.get(tileKey);
+  if (!entry) return null;
+  const size = 0.5; // TILE_MPC
+  const cells: [number, number][] = [];
+  for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += size) {
+    for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += size) {
+      if (collidesAt(x + size / 2, z + size / 2)) cells.push([x, z]);
+    }
+  }
+  return { cells, size };
 });
 
 // --- Utility ---
@@ -1565,12 +1394,12 @@ function recorta(text: string): string {
   return t.length > LABEL_MAX_CHARS ? `${t.slice(0, LABEL_MAX_CHARS - 1)}…` : t;
 }
 
-/** Sincroniza etiquetas y mirilla con el frame recién pintado. Fuera de la
- *  vista fps (o con el diálogo abierto, que es dueño de la pantalla) se
- *  retiran: una etiqueta huérfana pegada al lienzo es peor que ninguna. */
+/** Sincroniza etiquetas y mirilla con el frame recién pintado. Con el diálogo
+ *  abierto (dueño de la pantalla) se retiran: una etiqueta huérfana pegada al
+ *  lienzo es peor que ninguna. */
 function updateWorldLabels(): void {
   const fps = fpsRenderer;
-  if (!fps || activeRenderer !== fps || dialoguePanel.isVisible) {
+  if (dialoguePanel.isVisible) {
     worldLabels.clear();
     reticleEl.dataset.target = "false";
     return;
@@ -1672,24 +1501,10 @@ function gameLoop(now: number): void {
     return;
   }
 
-  // Aviso de pintura en vuelo del panel dev: al morir el pipeline de la
-  // oblicua, el único que puede gastar mientras se juega es el atlas de
-  // superficies de la fps. El panel solo repinta en el cambio de estado.
+  // Aviso de pintura en vuelo del panel dev: el único pipeline que puede
+  // gastar mientras se juega es el atlas de superficies. El panel solo
+  // repinta en el cambio de estado.
   devPanel.setPainting(fpsAtlasController.running);
-
-  // Zoom: aplica la intención de rueda/teclas al objetivo (pasos multiplicativos,
-  // clampados por el renderer) y persigue el objetivo con suavizado exponencial
-  // frame-independent. Centrado en el jugador automáticamente (el offset de la
-  // cámara se recomputa desde scale alrededor del player cada frame).
-  const zd = input.consumeZoomDelta();
-  if (zd !== 0) {
-    zoomTarget = renderer.clampScale(zoomTarget * Math.pow(ZOOM_STEP, zd));
-    localStorage.setItem(ZOOM_KEY, String(Math.round(zoomTarget)));
-  }
-  if (Math.abs(currentZoom - zoomTarget) > 0.01) {
-    currentZoom += (zoomTarget - currentZoom) * (1 - Math.exp(-ZOOM_RATE * delta));
-    renderer.setScale(currentZoom);
-  }
 
   // R: respawn (solo surte efecto con el player muerto).
   if (input.consumeRespawn()) handleRespawnRequest();
@@ -1700,35 +1515,18 @@ function gameLoop(now: number): void {
   if (devInput.consumeGenerateScene()) {
     // Manual = siempre permitida, también con la generación auto en OFF
     // (misma semántica que el botón por-item del menú dev).
-    if (sessionView === "fps") {
-      if (activeTileKey) {
-        const k = activeTileKey;
-        void fpsAtlasController.runFor(k).catch((err: unknown) =>
-          errors.push("scene", `el atlas fps de ${k} no arrancó (tecla G)`, err),
-        );
-      }
-    } else {
-      // La oblicua ya no tiene pipeline de imagen: su arte es el clay local.
-      // Fail-loud antes que una tecla que no hace nada.
-      errors.push(
-        "scene",
-        "G: la vista oblicua ya no genera imagen IA de escenario — el repintado por tile se retiró y su arte es el clay 3D local. El atlas de superficies vive en la vista de primera persona.",
+    if (activeTileKey) {
+      const k = activeTileKey;
+      void fpsAtlasController.runFor(k).catch((err: unknown) =>
+        errors.push("scene", `el atlas fps de ${k} no arrancó (tecla G)`, err),
       );
     }
   }
-  // B cicla la vista de debug: off → colisiones → blueprint compuesto — para
-  // comparar in situ el plan declarado con lo que pinta el clay.
+  // B cicla la vista de debug: off → colisión (celdas sólidas + forward de
+  // NPCs) → celdas de atlas (tinte por celda).
   if (devInput.consumeToggleCollisionDebug()) {
-    if (sessionView === "fps" && fpsRenderer) {
-      // Ciclo propio fps: colisión (celdas sólidas + forward de NPCs) y
-      // celdas de atlas (tinte por celda) — el ciclo del oblicuo pintaría en
-      // el canvas #game, oculto en esta vista.
-      const mode = fpsRenderer.cycleDebugView();
-      log(`B · fps: ${FPS_DEBUG_VIEW_LABELS[mode]}`);
-    } else {
-      const mode = renderer.cycleDebugView();
-      log(`B · vista: ${DEBUG_VIEW_LABELS[mode]}`);
-    }
+    const mode = fpsRenderer.cycleDebugView();
+    log(`B · fps: ${FPS_DEBUG_VIEW_LABELS[mode]}`);
   }
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
@@ -1789,11 +1587,10 @@ function gameLoop(now: number): void {
         tileStore,
         requestTile,
       );
-      renderer.setEdgeLoading(veil?.edge ?? null, veil?.text ?? "");
-      // Primera persona: el velo es un MURO DE NIEBLA sobre la frontera, no
-      // una banda de HUD. Ahí el mundo se acaba de verdad, y verlo disiparse
-      // al llegar el vecino cuenta "el mundo continúa" sin escribirlo.
-      fpsRenderer?.setFrontierVeil(veil?.edge ?? null);
+      // El velo es un MURO DE NIEBLA sobre la frontera, no una banda de HUD.
+      // Ahí el mundo se acaba de verdad, y verlo disiparse al llegar el
+      // vecino cuenta "el mundo continúa" sin escribirlo.
+      fpsRenderer.setFrontierVeil(veil?.edge ?? null);
       for (const key of timedOut) {
         errors.push("narrative", `El tile ${key} no llegó a tiempo (timeout); se reintentará al acercarse.`);
       }
@@ -1817,7 +1614,7 @@ function gameLoop(now: number): void {
       }
     } else {
       // Sin frontera activa no hay nada que proponer: prompt fuera.
-      fpsRenderer?.setFrontierVeil(null);
+      fpsRenderer.setFrontierVeil(null);
       input.tileProposalActive = false;
       setConfirmPrompt(null);
     }
@@ -2035,9 +1832,9 @@ function gameLoop(now: number): void {
   // emitido el frame — el patrón "dibuja después" de las vistas 2D no vale.
   // Mirada vertical: como el telegraph y el velo, estado de la vista que se
   // fija ANTES de render(). No viaja en PlayerView porque `forward` es el
-  // marco del movimiento (horizontal) y las otras vistas no tienen pitch.
-  fpsRenderer?.setLookPitch(playerPitch);
-  fpsRenderer?.setAttackTelegraph(
+  // marco del MOVIMIENTO y es horizontal por diseño.
+  fpsRenderer.setLookPitch(playerPitch);
+  fpsRenderer.setAttackTelegraph(
     attackVisual?.active
       ? {
           player: { pos: playerPos, forward: playerForward },
@@ -2050,7 +1847,7 @@ function gameLoop(now: number): void {
   );
 
   try {
-    activeRenderer.render(
+    fpsRenderer.render(
       {
         pos: playerPos,
         forward: playerForward,
@@ -2068,18 +1865,6 @@ function gameLoop(now: number): void {
       lastRenderError = msg;
       errors.push("render", `excepción en render (el loop sigue): ${msg}`, err);
     }
-  }
-
-  // Área de ataque de las vistas de LIENZO: se garabatea encima del frame ya
-  // pintado. La fps la fijó arriba, dentro del mundo.
-  if (attackVisual?.active && activeRenderer !== fpsRenderer) {
-    activeRenderer.drawAttackArea(
-      { pos: playerPos, forward: playerForward },
-      attackVisual.params,
-      attackVisual.mode,
-      attackOpacity,
-      attackVisual.impactQuality,
-    );
   }
 
   // Etiquetas de mundo y mirilla: DESPUÉS de render(), con las matrices de
@@ -2111,29 +1896,24 @@ sharedBridge.on("render_mode_changed", (msg) => {
   );
 });
 
-/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies (solo
- *  en fps: la oblicua ya no tiene pipeline de imagen) y skins de personaje aún
- *  sobre la base y_bot. La identidad del item es la clave del tile o el
- *  prompt. */
+/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies y skins
+ *  de personaje aún sobre la base y_bot. La identidad del item es la clave del
+ *  tile o el prompt. */
 function listFakeItems(): FakeItem[] {
   const items: FakeItem[] = [];
-  if (sessionView === "fps") {
-    const textured = new Set(
-      ((fpsRenderer?.debugState() as { textured?: string[] })?.textured) ?? [],
-    );
-    for (const t of tileStore.entries.values()) {
-      if (t.tx === undefined || textured.has(t.key) || !fpsRenderer?.getTileSurfaces(t.key)) continue;
-      items.push({
-        kind: "fps_atlas",
-        id: t.key,
-        label: `Atlas fps ${t.key} (clay — celdas ya en la librería salen gratis)`,
-        // Sin miniatura: la que había era el plano OBLICUO del tile, que no
-        // se parece a lo que la vista fps va a pintar. Una miniatura fps de
-        // verdad (captura del canvas WebGL) es otro trabajo.
-        thumb: null,
-        inFlight: fpsAtlasController.running,
-      });
-    }
+  const textured = new Set(
+    (fpsRenderer.debugState() as { textured?: string[] }).textured ?? [],
+  );
+  for (const t of tileStore.entries.values()) {
+    if (t.tx === undefined || textured.has(t.key) || !fpsRenderer.getTileSurfaces(t.key)) continue;
+    items.push({
+      kind: "fps_atlas",
+      id: t.key,
+      label: `Atlas fps ${t.key} (clay — celdas ya en la librería salen gratis)`,
+      // Sin miniatura: una del canvas WebGL es otro trabajo.
+      thumb: null,
+      inFlight: fpsAtlasController.running,
+    });
   }
   const prompts = new Set<string>();
   if (playerSkinPrompt) prompts.add(playerSkinPrompt);
@@ -2572,21 +2352,20 @@ async function runTitleFlow(): Promise<void> {
       applySessionStyle(res.state.world?.style_id ?? "");
       applyUiTheme(res.uiTheme);
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
-      sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      applySessionView(res.state.world?.view ?? "");
+      applySessionReady();
       historyBrowser.setSession(res.sessionId);
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
+      assertPlayableView(res.state.world?.view);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
       applyUiTheme(res.uiTheme);
       applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
-      sessionModesApplied = true;
       applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      applySessionView(res.state.world?.view ?? "");
+      applySessionReady();
       historyBrowser.setSession(res.state.session_id);
       log(`Reanudada: ${res.state.session_id}`);
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
