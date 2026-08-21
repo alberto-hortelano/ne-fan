@@ -20,9 +20,9 @@ import { PALETTE, BIOME_COLORS, wallColors, roofColors, darken, lighten } from "
 import type { Volume } from "../blueprint/volumes.js";
 import type { GroundFeature } from "../blueprint/ground.js";
 import { groundFeaturePrims } from "../blueprint/ground-prims.js";
-import { volumeFootprint, rotatedRectCorners } from "../blueprint/footprint.js";
-import { classifyVolume, customPartTop, customVolumePrims } from "../greybox/volume-prims.js";
-import { volumeSolidDiscRadiusCells } from "../blueprint/collision.js";
+import { rotatedRectCorners, volumeFootprintCells, volumeHeightM } from "../blueprint/footprint.js";
+import { PRACTICAL_LIGHT_RE, timeOfDayFromText, type TimeOfDay } from "../blueprint/time-of-day.js";
+import { classifyVolume, customVolumePrims } from "../greybox/volume-prims.js";
 import {
   canonicalGreyboxJson,
   groundColorFor,
@@ -198,19 +198,6 @@ export interface StageScenePlan {
 /** Hora del día del plató: la declarada en `stage.ambience`, o inferida del
  *  texto (backdrop + descripción + mood) — "luz de atardecer" en el backdrop
  *  debe atardecer aunque el motor no rellene el campo. Default "dia". */
-export type TimeOfDay = "amanecer" | "dia" | "atardecer" | "noche";
-
-/** Hora inferida de un TEXTO (descripciones del motor) — compartida con la
- *  vista fps, que no tiene campo declarado y escucha la narración. */
-export function timeOfDayFromText(text: string): TimeOfDay {
-  const t = text.toLowerCase();
-  // Raíces verbales incluidas: "atardece sobre el camino" atardece de verdad.
-  if (/amanec|alba\b|aurora|primera luz/.test(t)) return "amanecer";
-  if (/atardec|ocaso|poniente|ca(e|ía) la tarde|crep[uú]sculo|sol bajo/.test(t)) return "atardecer";
-  if (/\bnoche\b|anochec|nocturn|luna|estrellas|medianoche/.test(t)) return "noche";
-  return "dia";
-}
-
 export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
   const declared = plan.stage.ambience?.time_of_day;
   if (declared) return declared;
@@ -223,91 +210,8 @@ export function resolveTimeOfDay(plan: StageScenePlan): TimeOfDay {
   );
 }
 
-/** Labels que encienden una luz práctica cálida sobre el volumen. */
 /** Labels de edificio que ganan soportal (columnas + alero en la fachada). */
 const PORCH_LABEL_RE = /soportal|p[oó]rtico|porche|arcada|logia/i;
-
-export const PRACTICAL_LIGHT_RE =
-  /chimenea|hogar|fog[oó]n|farol|vela|antorcha|candil|brasero|l[aá]mpara|lumbre|hoguera|fuego/i;
-
-/** Huella en celdas [c0, r0, w, h] de un volumen según su tipo — ÚNICO origen
- *  compartido por el manifest del greybox y la colisión declarada (si
- *  divergieran, colisión y render dejarían de casar). null = sin huella
- *  razonable (prop sin at ni rect). */
-export function volumeFootprintCells(v: Volume): [number, number, number, number] | null {
-  switch (v.type) {
-    case "building": {
-      if (v.angle) {
-        const { cells } = volumeFootprint(v);
-        return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
-      }
-      return v.rect;
-    }
-    case "wall": {
-      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-      for (const [c, r] of v.points) {
-        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
-        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
-      }
-      const half = (v.width ?? 3) / 2;
-      return [minC - half, minR - half, maxC - minC + 2 * half, maxR - minR + 2 * half];
-    }
-    case "tower": {
-      // Radio de la MISMA fuente que la colisión (antes r??3 aquí vs r??6 en
-      // volumeCollisionGrid → la huella del manifest no casaba con el bloqueo).
-      const r = volumeSolidDiscRadiusCells(v)!;
-      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-    }
-    case "gate": {
-      const w = v.w ?? 8;
-      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
-    }
-    case "tree": {
-      const s = v.s ?? 1;
-      return [v.at[0] - 1.6 * s, v.at[1] - 1.6 * s, 3.2 * s, 3.2 * s];
-    }
-    case "bush": {
-      const s = v.s ?? 1;
-      return [v.at[0] - s, v.at[1] - s, 2 * s, 2 * s];
-    }
-    case "rock": {
-      const r = volumeSolidDiscRadiusCells(v)!; // 2.1·s, igual que la colisión
-      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-    }
-    case "fountain": {
-      const r = volumeSolidDiscRadiusCells(v)!; // r??5, igual que la colisión
-      return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-    }
-    case "prop": {
-      if (v.rect) {
-        if (v.angle) {
-          const { cells } = volumeFootprint(v);
-          return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
-        }
-        return v.rect;
-      }
-      if (v.at) {
-        const r = volumeSolidDiscRadiusCells(v)!; // 1.3, igual que la colisión
-        return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
-      }
-      return null;
-    }
-    case "prism": {
-      // AABB del contorno poligonal (misma huella que footprint.ts y colisión).
-      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-      for (const [c, r] of v.points) {
-        minC = Math.min(minC, c); minR = Math.min(minR, r);
-        maxC = Math.max(maxC, c); maxR = Math.max(maxR, r);
-      }
-      return [minC, minR, maxC - minC, maxR - minR];
-    }
-    case "custom": {
-      // Composición libre: la MISMA huella que footprint.ts (AABB de piezas).
-      const { cells } = volumeFootprint(v);
-      return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
-    }
-  }
-}
 
 export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): GreyboxSpec {
   const { cols, rows } = plan.size;
@@ -995,40 +899,6 @@ export function buildGreyboxSpec(plan: StageScenePlan, seedKey: string): Greybox
     primitives,
     manifest,
   };
-}
-
-/** Altura total (m) de un volumen — espejo de las alturas que pinta el
- *  compositor SVG (buildVolumeLayer). */
-export function volumeHeightM(v: Volume, mpc: number): number {
-  switch (v.type) {
-    case "building": {
-      const wallHM = (v.wall_h ?? 5) * mpc;
-      const roofKind = v.roof?.kind ?? "gable";
-      return roofKind === "flat" || roofKind === "none"
-        ? wallHM + 0.3
-        : wallHM + Math.max(1, wallHM * 0.5);
-    }
-    case "wall":
-      return (v.h ?? 5) * mpc + (v.crenellated ? 0.4 : 0);
-    case "tower":
-      return (v.h ?? 12) * mpc + 0.5;
-    case "gate":
-      return (v.h ?? 8) * mpc;
-    case "tree":
-      return (1.6 + 1.7 * 1.9) * (v.s ?? 1); // tronco + copa (≈ SVG)
-    case "bush":
-      return 1.3 * (v.s ?? 1);
-    case "rock":
-      return 1.1 * (v.s ?? 1);
-    case "fountain":
-      return 1.4;
-    case "prop":
-      return (v.h ?? 2) * mpc;
-    case "prism":
-      return v.h * mpc;
-    case "custom":
-      return Math.max(...v.parts.map(customPartTop)) * mpc;
-  }
 }
 
 /** Primitivas 3D de un volumen (espejo del billboard del compositor, pero con

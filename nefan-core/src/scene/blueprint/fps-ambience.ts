@@ -2,14 +2,15 @@
  *  compartido ni la caché cenital).
  *
  *  El motor narrativo NO declara campos de luz: la hora del día se INFIERE de
- *  su `scene_description` (el mismo inferidor del proscenio — "cae la tarde
+ *  su `scene_description` (`blueprint/time-of-day.ts` — "cae la tarde
  *  sobre el lindero" atardece de verdad) y los volúmenes cuyo label nombra
  *  fuego o lámpara (farol, vela, chimenea, lamparilla…) emiten un punto
  *  cálido al caer la luz. De DÍA no se toca nada: luces, cielo y niebla son
  *  EXACTAMENTE las históricas (cero regresión, hashes y capturas intactos). */
 
 import { seededRng, uniform } from "../../rng.js";
-import { PRACTICAL_LIGHT_RE, timeOfDayFromText, volumeFootprintCells, volumeHeightM, type TimeOfDay } from "../stage/greybox.js";
+import { volumeFootprintCells, volumeHeightM } from "./footprint.js";
+import { PRACTICAL_LIGHT_RE, timeOfDayFromText, type TimeOfDay } from "./time-of-day.js";
 import { TILE_MPC } from "../tile.js";
 import type { GreyboxLight } from "../greybox/common.js";
 import type { Volume } from "./volumes.js";

@@ -42,6 +42,67 @@ describe("fronteras arquitectónicas", () => {
     assert.equal(dead.length, 0, `\n${formatDeadExceptions(dead)}\n`);
   });
 
+  // Probado en NEGATIVO contra la config real: sobre el árbol de hoy la regla
+  // está verde, y una regla verde no demuestra nada por sí sola. El motor
+  // acepta `SourceFile[]` fabricados, así que se le enseña el import que la
+  // regla existe para cortar y se comprueba que salta con su línea.
+  it("[error] blueprint-no-importa-stage: salta con el import relativo al plató", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "blueprint-no-importa-stage");
+
+    // Esto es LITERALMENTE lo que había en fps-ambience.ts hasta hoy.
+    const culpables = deLaRegla([
+      {
+        path: "nefan-core/src/scene/blueprint/fps-ambience.ts",
+        text: "",
+        imports: [{ spec: "../stage/greybox.js", line: 12 }],
+      },
+      {
+        path: "nefan-core/src/scene/blueprint/sub/hondo.ts",
+        text: "",
+        imports: [{ spec: "../../stage/schema.js", line: 3 }],
+      },
+      {
+        path: "nefan-core/src/scene/blueprint/con-alias.ts",
+        text: "",
+        imports: [{ spec: "@nefan-core/src/scene/stage/index.js", line: 7 }],
+      },
+    ]);
+    assert.deepEqual(
+      culpables.map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/src/scene/blueprint/con-alias.ts:7",
+        "nefan-core/src/scene/blueprint/fps-ambience.ts:12",
+        "nefan-core/src/scene/blueprint/sub/hondo.ts:3",
+      ],
+      "las tres formas de escribir la ruta del plató tienen que saltar igual",
+    );
+
+    // Y los vecinos legítimos, callados: la casa nueva de los helpers, el
+    // resto de blueprint, y la dirección BUENA (el plató importando del tile),
+    // que es justo la que este movimiento consolida.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/scene/blueprint/fps-ambience.ts",
+          text: "",
+          imports: [
+            { spec: "./footprint.js", line: 1 },
+            { spec: "./time-of-day.js", line: 2 },
+            { spec: "../greybox/common.js", line: 3 },
+            { spec: "../tile.js", line: 4 },
+          ],
+        },
+        {
+          path: "nefan-core/src/scene/stage/greybox.ts",
+          text: "",
+          imports: [{ spec: "../blueprint/footprint.js", line: 1 }],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {
