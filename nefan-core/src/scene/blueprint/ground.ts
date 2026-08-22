@@ -113,7 +113,7 @@ export const GroundFeatureSchema = z
   // Área/agua/deck necesitan EXACTAMENTE una forma (rect|polygon|ellipse). El
   // schema por sí solo las deja opcionales; sin esta regla un rasgo sin forma
   // se colaba (la comprobaba solo el validador a mano de narrative-mcp). Ahora
-  // es autoritativa: scene y blueprint_review la heredan.
+  // es autoritativa: la escena Format D la hereda.
   .superRefine((f, ctx) => {
     if (f.kind === "path") return;
     const shapes = [f.rect, f.polygon, f.ellipse].filter((s) => s !== undefined).length;

@@ -68,8 +68,6 @@ const OPP = { west: "east", east: "west", north: "south", south: "north" };
 // PUEBLO de las demos del blueprint lab (taberna cutaway amueblada, plaza
 // empedrada con fuente, casa de entramado, muralla sur con torres y puerta,
 // mercado) — el bench de calidad visual, comparable 1:1 con referencia.html.
-// BUG PLANTADO: el estanque no tiene deck — la revisión falsa lo añade
-// (ejercita blueprint_review completo con fixes.ground).
 const BOOTSTRAP_GROUND = [
   // camino N-S que cruza el pueblo y sale por la puerta sur de la muralla
   { id: "camino_ns", kind: "path", label: "camino principal", points: [[64, 30], [64, 128]], w: 5, material: "cobble" },

@@ -455,9 +455,9 @@ def validate_scene_response(data: dict) -> dict:
     # style_ref: id de la ref de estilo del pack elegida para el repintado
     # IA (id LIBRE del manifest — el catálogo lo conoce narrative-mcp, que
     # hace el pre-flight fail-loud; aquí solo se exige forma de slug). Un
-    # valor malformado se descarta con aviso (mejor sin ref que un 422 en
-    # /generate_scene_image cuando el cliente lo reenvíe). `style_tag` es el
-    # nombre legacy en escenas persistidas — misma regla en lectura.
+    # valor malformado se descarta con aviso (mejor sin ref que un 422 aguas
+    # abajo cuando el cliente lo reenvíe). `style_tag` es el nombre legacy en
+    # escenas persistidas — misma regla en lectura.
     for field in ("style_ref", "style_tag"):
         if data.get(field) and not re.fullmatch(r"[A-Za-z0-9_.-]+", str(data[field])):
             print(f"validate_scene: {field} malformado '{data[field]}' — descartado", flush=True)
