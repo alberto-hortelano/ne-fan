@@ -65,7 +65,15 @@ Reglas que hacen que un guion valga algo:
 | `09-viaje-de-vuelta` | La vuelta desde un place ya visitado reusa lo generado en vez de volver a pagarlo |
 | `10-fps-telegraph-etiquetas-y-niebla` | Los cuatro huecos de la primera persona: mirada vertical, telegraph del ataque, nombre del NPC bajo la mirilla y muro de niebla en la frontera. El telegraph se afirma sobre el RECUENTO que lleva el renderer (`fps().telegraphEpisode`), no muestreando una ventana de reloj: el episodio lo consume el `delta` topado del game loop y una ventana de pared convierte el guion en una moneda al aire |
 | `11-un-solo-contexto-webgl` | La pestaña abre UN contexto WebGL y solo uno (criterio central de "solo la vista 3D"): se cuenta envolviendo `getContext` antes de cargar la app, no leyendo imports |
+| `12-una-sola-vista-sin-eleccion` | La otra cara de ese criterio, la que el jugador toca: que en NINGUNA de las cinco pantallas de una partida nueva —ni en el panel «Salidas», ni en el selector de fixtures, ni en el HUD, ni en una tecla— se le ofrezca o se le nombre una vista que ya no existe. **Hoy va en rojo por un solo aserto**: el `<title>` de la pestaña sigue diciendo "— 2D" (`nefan-html/index.html:6`) |
 
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
 título en `qa/lib/sesion.mjs` — `qa/lib/` no lo recorre el runner, solo `qa/guiones/`.
 `07` dispara generación de skins: se niega a correr si `?ai=` no apunta al fake-ai-server.
+
+Un guion **no puede nombrar** los identificadores ingleses de las dos vistas retiradas ni
+ningún otro campo de contrato muerto: `qa/**/*.mjs` es root de la regla
+`campos-retirados-no-vuelven` (`nefan-core/data/contract/arch-rules.json`) y escribirlos pone
+`npm run verify` en rojo — pasó al sembrar el `12`. De que no vuelvan al CÓDIGO se ocupa ese
+candado; un guion cubre lo que el candado no puede ver, que es la PANTALLA. Cuando haga falta
+mirar nombres internos, se afirma con **lista blanca** (lo que debe haber), no con lista negra.
