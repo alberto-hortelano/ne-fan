@@ -50,41 +50,59 @@ function mirarA(ctx, grados) {
   );
 }
 
-/** Traza del telegraph durante un ataque, muestreada cada 16 ms (un poll de
- *  150 ms podría no ver nunca un wind-up de 0,5 s). Incluye dónde cae en
- *  PANTALLA el punto óptimo del golpe: es lo que distingue "el telegraph
- *  existe" de "el jugador lo ve". */
-function trazaDeAtaque(ctx) {
-  return ctx.page.evaluate(
-    () =>
-      new Promise((res) => {
-        const muestras = [];
-        const t0 = performance.now();
-        // setTimeout y no rAF: en headless la pestaña no está "visible" y el
-        // rAF de la página está pausado (el juego corre con ?raf=timer).
-        const tick = () => {
-          const f = window.__nefan.fps();
-          const t = f?.telegraph ?? null;
-          muestras.push(
-            t && {
-              mode: t.mode,
-              opacity: t.opacity,
-              optimalDistance: t.optimalDistance,
-              screen: t.screen,
-              alto: f.viewport.h,
-            },
-          );
-          if (performance.now() - t0 > 2500) return res(muestras);
-          setTimeout(tick, 16);
-        };
-        tick();
-      }),
+/** Ataca y espera a que el episodio de telegraph TERMINE, leyendo el recuento
+ *  que lleva el propio renderer (`fps().telegraphEpisode`).
+ *
+ *  Esto muestreaba una ventana fija de 2,5 s de reloj de PARED contando
+ *  frames, y era un candado que se ponía rojo al azar. La cuenta: el wind-up
+ *  de "heavy" (1,4 s) más el destello de impacto (0,3 s) gastan 1,7 s de
+ *  tiempo de SIM, y el game loop topa su delta en 0,1 s por frame
+ *  (`Math.min((now - lastTime) / 1000, 0.1)` en main.ts). En cuanto un frame
+ *  tarda más de 100 ms de pared —una CPU compartida basta— el sim va más
+ *  lento que el reloj y esos 1,7 s se estiran: con 1,47× de margen, la
+ *  ventana se cerraba con el telegraph todavía encendido y el destello sin
+ *  aparecer en la traza. Ningún observador externo puede arreglar eso
+ *  muestreando más fino, porque el problema no es la resolución sino que la
+ *  ventana la mide un reloj distinto del que consume el episodio.
+ *
+ *  El renderer cuenta los frames que PINTA, así que ni un modo de décimas de
+ *  segundo se pierde ni hace falta ventana: se espera al flanco de apagado
+ *  (`ended`) del episodio NUEVO (`episode > previo`, para no leer el del
+ *  ataque anterior). Los `maxMs` de `waitFor` son cortafuegos, no condición
+ *  de parada. */
+async function ataqueYEpisodio(ctx) {
+  const previo = (await ctx.nefan("fps")).telegraphEpisode?.episode ?? 0;
+  await ctx.nefan("inputDriver.queueAttack");
+  return ctx.waitFor(
+    "el telegraph del ataque completa su episodio y se apaga solo",
+    (prev) => {
+      const f = window.__nefan.fps();
+      const ep = f?.telegraphEpisode;
+      return ep && ep.episode > prev && ep.ended ? { ...ep, alto: f.viewport.h } : null;
+    },
+    30_000,
+    previo,
   );
 }
 
-/** ¿El punto óptimo del golpe está DENTRO del cuadro y no pegado al borde de
- *  abajo? El 15 % inferior es la franja que se come la barra de acciones. */
-const enCuadro = (m) => Boolean(m.screen) && m.screen.y < m.alto * 0.85 && m.screen.y > 0;
+/** ¿El punto óptimo del golpe estuvo DENTRO del cuadro durante TODO el
+ *  wind-up? El 15 % inferior es la franja que se come la barra de acciones.
+ *  Se decide sobre el rango de y que recogió el episodio, no sobre una
+ *  muestra suelta: "todos los frames dentro" y "ninguno dentro" son
+ *  afirmaciones distintas y el guion necesita las dos. */
+const todosEnCuadro = (ep) =>
+  ep.windupFrames > 0 &&
+  ep.unprojectedFrames === 0 &&
+  ep.screenYMin > 0 &&
+  ep.screenYMax < ep.alto * 0.85;
+
+/** …y ninguno: o el punto no era proyectable en ningún frame, o el rango
+ *  entero cae fuera del cuadro útil. */
+const ningunoEnCuadro = (ep) =>
+  ep.windupFrames > 0 &&
+  (ep.unprojectedFrames === ep.windupFrames ||
+    ep.screenYMin >= ep.alto * 0.85 ||
+    ep.screenYMax <= 0);
 
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
@@ -205,21 +223,25 @@ export default async function (ctx) {
   const catalogo = (await ctx.nefan("state")).attackCatalog;
   const lento = catalogo.includes("heavy") ? "heavy" : catalogo[catalogo.length - 1];
   await ctx.nefan("inputDriver.selectAttack", lento);
-  await ctx.nefan("inputDriver.queueAttack");
-  const traza = await trazaDeAtaque(ctx);
-  const conTelegraph = traza.filter(Boolean);
-  const windup = conTelegraph.filter((m) => m.mode === "windup");
-  ctx.log(`telegraph: ${conTelegraph.length}/${traza.length} muestras · modos ${[...new Set(conTelegraph.map((m) => m.mode))].join("+")}`);
-  ctx.expect(`el telegraph aparece durante el wind-up de "${lento}"`, windup.length > 0, `${windup.length} muestras`);
+  const alFrente = await ataqueYEpisodio(ctx);
+  ctx.log(
+    `telegraph: episodio ${alFrente.episode} · ${alFrente.windupFrames} frames de wind-up + ` +
+      `${alFrente.impactFrames} de impacto · y ∈ [${alFrente.screenYMin}, ${alFrente.screenYMax}] de ${alFrente.alto}`,
+  );
+  ctx.expect(
+    `el telegraph aparece durante el wind-up de "${lento}"`,
+    alFrente.windupFrames > 0,
+    `${alFrente.windupFrames} frames`,
+  );
   ctx.expect(
     "y lleva la distancia óptima real del ataque (no una constante decorativa)",
-    windup.length > 0 && windup[0].optimalDistance > 0,
-    JSON.stringify(windup[0] ?? null),
+    alFrente.optimalDistance > 0,
+    String(alFrente.optimalDistance),
   );
   ctx.expect(
     "el impacto lo tiñe y luego se apaga solo",
-    conTelegraph.some((m) => m.mode === "impact") && traza[traza.length - 1] === null,
-    `último: ${JSON.stringify(traza[traza.length - 1])}`,
+    alFrente.impactFrames > 0 && alFrente.ended === true,
+    JSON.stringify({ impactFrames: alFrente.impactFrames, ended: alFrente.ended }),
   );
   ctx.expect(
     "y no queda encendido para siempre",
@@ -230,21 +252,19 @@ export default async function (ctx) {
   // óptimo del golpe cae en el borde de abajo (y lo poco que asoma, tras la
   // barra de acciones). No es un defecto del telegraph: es dónde mira la
   // cámara.
-  ctx.log(`punto óptimo al frente: y=${windup[0]?.screen?.y} de ${windup[0]?.alto}`);
   ctx.expect(
     "mirando al frente, el golpe cae pegado al borde inferior del cuadro",
-    windup.length > 0 && !windup.some(enCuadro),
-    JSON.stringify(windup[0]?.screen ?? null),
+    ningunoEnCuadro(alFrente),
+    JSON.stringify({ yMin: alFrente.screenYMin, yMax: alFrente.screenYMax, alto: alFrente.alto }),
   );
 
   await mirarA(ctx, -30);
-  await ctx.nefan("inputDriver.queueAttack");
-  const trazaAbajo = (await trazaDeAtaque(ctx)).filter(Boolean).filter((m) => m.mode === "windup");
-  ctx.log(`punto óptimo mirando abajo: y=${trazaAbajo[0]?.screen?.y} de ${trazaAbajo[0]?.alto}`);
+  const abajoEp = await ataqueYEpisodio(ctx);
+  ctx.log(`punto óptimo mirando abajo: y ∈ [${abajoEp.screenYMin}, ${abajoEp.screenYMax}] de ${abajoEp.alto}`);
   ctx.expect(
     "bajando la mirada, el telegraph entra en el cuadro: el combate deja de ser a ciegas",
-    trazaAbajo.length > 0 && trazaAbajo.every(enCuadro),
-    JSON.stringify(trazaAbajo[0]?.screen ?? null),
+    todosEnCuadro(abajoEp),
+    JSON.stringify({ yMin: abajoEp.screenYMin, yMax: abajoEp.screenYMax, alto: abajoEp.alto }),
   );
   await mirarA(ctx, 0);
 
@@ -443,15 +463,23 @@ export default async function (ctx) {
         const t0 = performance.now();
         let llegada = 0;
         let maxOpacidad = 0;
+        // Opacidades intermedias vistas DESPUÉS de que llegue el vecino: son
+        // la prueba de que el muro se desvanece en vez de desaparecer de un
+        // frame al siguiente. Se cuentan en vez de cronometrar la disipación
+        // porque el fundido lo consume el delta del game loop (topado a
+        // 0,1 s), no el reloj de pared: medir su duración en milisegundos de
+        // pared vuelve a atar el criterio a lo ocupada que esté la máquina.
+        let intermedias = 0;
         const tick = () => {
           const v = window.__nefan.fps()?.veil ?? null;
           const tiles = window.__nefan.tiles.length;
           if (v) maxOpacidad = Math.max(maxOpacidad, v.opacity);
           if (!llegada && tiles > previos) llegada = performance.now();
+          if (llegada && v && v.opacity > 0.02 && v.opacity < maxOpacidad - 0.02) intermedias++;
           if (llegada && v === null) {
-            return res({ ok: true, maxOpacidad, ms: performance.now() - llegada, tiles });
+            return res({ ok: true, maxOpacidad, intermedias, ms: performance.now() - llegada, tiles });
           }
-          if (performance.now() - t0 > 60_000) return res({ ok: false, maxOpacidad, tiles, veil: v });
+          if (performance.now() - t0 > 60_000) return res({ ok: false, maxOpacidad, intermedias, tiles, veil: v });
           setTimeout(tick, 16);
         };
         tick();
@@ -462,9 +490,9 @@ export default async function (ctx) {
   ctx.expect("el vecino llega y el mundo crece", disipacion.tiles > tilesAntes, `${tilesAntes} → ${disipacion.tiles}`);
   ctx.expect("el muro de niebla desaparece al llegar el vecino", disipacion.ok === true, JSON.stringify(disipacion));
   ctx.expect(
-    "y se DISIPA (no se corta de golpe): tarda entre 0,4 s y 2,5 s",
-    disipacion.ok && disipacion.ms > 400 && disipacion.ms < 2500,
-    `${Math.round(disipacion.ms)} ms`,
+    "y se DISIPA: el muro pasa por opacidades intermedias, no se corta de golpe",
+    disipacion.ok && disipacion.intermedias > 0,
+    `${disipacion.intermedias} muestras entre 0 y ${disipacion.maxOpacidad} (${Math.round(disipacion.ms)} ms de pared)`,
   );
   ctx.expect(
     "no queda velo tras la disipación",
