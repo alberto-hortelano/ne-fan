@@ -7,8 +7,8 @@ import {
   type TileGreyboxPlan,
 } from "../src/scene/blueprint/greybox.js";
 import { canonicalGreyboxJson } from "../src/scene/greybox/common.js";
-import { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "../src/scene/blueprint/projection.js";
-import { volumeFootprint } from "../src/scene/blueprint/footprint.js";
+import { volumePartsForTile } from "../src/scene/greybox/volume-prims.js";
+import type { GateVolume } from "../src/scene/blueprint/volumes.js";
 
 function makePlan(): TileGreyboxPlan {
   return {
@@ -44,92 +44,42 @@ describe("buildTileGreyboxSpec", () => {
     assert.notEqual(a, b);
   });
 
-  it("cámara: view_box del compositor y cizalla oblicua exacta", () => {
-    const spec = buildTileGreyboxSpec(makePlan(), "cam");
-    assert.equal(spec.camera.kind, "ortho_shear");
-    assert.deepEqual(spec.camera.view_box, PROJECTION.viewBox);
-    assert.equal(spec.camera.kx, OBLIQUE_KX);
-    assert.equal(spec.camera.ky, OBLIQUE_KY);
-  });
-
-  it("equivalencia de proyección: la cizalla del spec reproduce PROJECTION.pt a 1e-6", () => {
-    const spec = buildTileGreyboxSpec(makePlan(), "equiv");
-    // La cámara del cliente es ortográfica cenital (x→x de vista, z→y de
-    // vista) con la matriz de cizalla x' = x + kx·y, z' = z − ky·y.
-    const shear = (u: number, v: number, h: number): [number, number] => [
-      u + spec.camera.kx * h,
-      v - spec.camera.ky * h,
-    ];
-    for (const [u, v, h] of [
-      [0, 0, 0], [64, 64, 0], [128, 128, 0], [30, 40, 8], [100, 20, 24], [5, 120, 32],
-    ] as const) {
-      const [ex, ey] = PROJECTION.pt(u, v, h);
-      const [sx, sy] = shear(u, v, h);
-      assert.ok(Math.abs(ex - sx) < 1e-6 && Math.abs(ey - sy) < 1e-6, `pt(${u},${v},${h})`);
-    }
-  });
-
-  it("elements: mismo contrato de siempre — huella de volumeFootprint, bbox que la contiene", () => {
+  it("cada prim de un volumen lleva su volId (la fps reparte heroes por ahí)", () => {
+    // fps-spec.ts indexa los volúmenes por `vol_<id>` para colgar de cada prim
+    // su celda hero y el anclaje al relieve: una prim con el volId equivocado
+    // pierde la superficie que el motor narrativo pidió para ella.
     const plan = makePlan();
-    const spec = buildTileGreyboxSpec(plan, "els");
-    assert.equal(spec.elements.length, plan.volumes.length);
+    const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
     for (const v of plan.volumes) {
-      const el = spec.elements.find((e) => e.id === v.id)!;
-      assert.ok(el, v.id);
-      const fp = volumeFootprint(v);
-      assert.deepEqual(
-        el.footprint_cells.map((n) => Math.round(n * 100) / 100),
-        fp.cells.map((n) => Math.round(n * 100) / 100),
-      );
-      // El bbox proyectado contiene la huella del suelo (h=0 ⇒ identidad).
-      // La huella DECLARADA de wall padea media anchura más allá de los
-      // extremos (y un muro tallado por un gate ni siquiera cubre el vano):
-      // ahí basta el solape, no la contención.
-      const [bx, by, bw, bh] = el.bbox;
-      if (v.type !== "wall") {
-        assert.ok(bx <= fp.cells[0] + 0.01 && bx + bw >= fp.cells[2] - 0.01, `${v.id} bbox u`);
-      }
-      // Árbol: su huella declarada padea 1.2·s alrededor del tronco y la copa
-      // proyectada (elevada, cizallada al noroeste) puede quedar una fracción
-      // de celda por encima — media celda de tolerancia.
-      const vTol = v.type === "tree" ? 0.6 : 0.01;
-      assert.ok(by + bh >= fp.cells[3] - vTol, `${v.id} bbox v`);
-      assert.equal(el.baseline_y, Math.round(fp.depthPoint[1] * 100) / 100);
+      const prims = volumePartsForTile(v, gates).flatMap((p) => p.prims);
+      assert.ok(prims.length > 0, `${v.id} sin prims`);
+      for (const p of prims) assert.equal(p.volId, `vol_${v.id}`, `${v.id}: ${p.shape}`);
     }
   });
 
-  it("occluders: cutaway en back_n/back_w/front (sin floor), muros troceados, copa aérea", () => {
-    const spec = buildTileGreyboxSpec(makePlan(), "occ");
-    const ids = spec.occluders.map((o) => o.id);
-    assert.ok(ids.includes("taberna:back_n") && ids.includes("taberna:back_w") && ids.includes("taberna:front"));
-    assert.ok(!ids.includes("taberna:floor"), "el suelo del cutaway no ocluye");
-    // Muralla de 128 celdas ⇒ varios tramos de ~14 celdas.
-    const wallChunks = spec.occluders.filter((o) => o.vid === "muralla");
-    assert.ok(wallChunks.length >= 8, `muralla en ${wallChunks.length} tramos`);
-    // Árbol: tronco + copa aérea.
-    const canopy = spec.occluders.find((o) => o.id === "roble:canopy");
-    assert.ok(canopy?.overhead, "copa overhead");
-    assert.ok(ids.includes("roble:trunk"));
-    // La roca no es tall: sin occluder.
-    assert.ok(!spec.occluders.some((o) => o.vid === "roca"));
-    // Índices de primitivas válidos y del volumen correcto.
-    for (const o of spec.occluders) {
-      for (const i of o.prims) {
-        assert.ok(spec.primitives[i], `${o.id} prim ${i}`);
-        assert.equal(spec.primitives[i].volId, `vol_${o.vid}`);
+  it("la muralla talla el vano de la puerta (ninguna prim pisa el hueco)", () => {
+    const plan = makePlan();
+    const muralla = plan.volumes.find((v) => v.id === "muralla")!;
+    const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
+    const parts = volumePartsForTile(muralla, gates);
+    // 128 celdas de muro ⇒ se trocea (el troceado es lo que permite saltarse
+    // el vano; un muro de una pieza lo taparía).
+    assert.ok(parts.length >= 8, `muralla en ${parts.length} tramos`);
+    for (const part of parts) {
+      for (const p of part.prims) {
+        const c = Math.abs(Math.cos(p.rotY ?? 0));
+        const s = Math.abs(Math.sin(p.rotY ?? 0));
+        const eu = (c * p.size[0] + s * (p.size[2] ?? p.size[0])) / 2;
+        const [minU, maxU] = [p.pos[0] - eu, p.pos[0] + eu];
+        assert.ok(
+          maxU <= 64 - 4.5 + 0.01 || minU >= 64 + 4.5 - 0.01,
+          `tramo ${part.part} invade el vano [${minU}, ${maxU}]`,
+        );
       }
     }
   });
 
-  it("la muralla talla el vano de la puerta (ningún tramo pisa el hueco)", () => {
-    const spec = buildTileGreyboxSpec(makePlan(), "gate");
-    for (const o of spec.occluders.filter((x) => x.vid === "muralla")) {
-      const [minU, , maxU] = [o.footprint_cells[0], o.footprint_cells[1], o.footprint_cells[2]];
-      assert.ok(maxU <= 64 - 4.5 + 0.01 || minU >= 64 + 4.5 - 0.01, `tramo ${o.id} invade el vano [${minU}, ${maxU}]`);
-    }
-  });
-
-  it("suelo: la base cubre EXACTAMENTE el cuadrado del tile (silueta del compositing)", () => {
+  it("suelo: la base cubre EXACTAMENTE el cuadrado del tile (la prim del relieve fps)", () => {
     const spec = buildTileGreyboxSpec(makePlan(), "base");
     const base = spec.primitives[0];
     assert.equal(base.shape, "box");

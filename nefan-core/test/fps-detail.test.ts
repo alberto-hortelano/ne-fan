@@ -87,7 +87,7 @@ describe("fps-detail", () => {
     }
   });
 
-  it("determinista y sin tocar el spec compartido (layout_key del arte oblicuo)", () => {
+  it("determinista y sin mutar las prims base del builder compartido", () => {
     const raw = [
       { id: "casa", label: "casa", type: "building", rect: [30, 20, 14, 10] },
       { id: "roble", label: "roble", type: "tree", at: [80, 80] },
@@ -97,9 +97,12 @@ describe("fps-detail", () => {
     const a = buildFpsTileSpec({ volumes, biome: "grass" }, "k");
     const b = buildFpsTileSpec({ volumes, biome: "grass" }, "k");
     assert.deepEqual(a.primsM, b.primsM, "mismo seedKey ⇒ mismas prims");
-    // El spec del builder compartido queda idéntico al de la vista oblicua:
-    // el enriquecimiento vive SOLO en primsM.
-    const oblique = buildTileGreyboxSpec({ volumes, biome: "grass" }, "k");
-    assert.equal(canonicalGreyboxJson(a.spec), canonicalGreyboxJson(oblique));
+    // El `spec` que devuelve buildFpsTileSpec es el del builder, INTACTO: el
+    // enriquecimiento (cutaways cerrados, detalle, scatter, celdas → metros)
+    // vive solo en primsM. Si un post-proceso mutase las prims base, el
+    // siguiente partiría de otra geometría y las celdas del atlas —lo que se
+    // paga con IA— dejarían de ser estables.
+    const base = buildTileGreyboxSpec({ volumes, biome: "grass" }, "k");
+    assert.equal(canonicalGreyboxJson(a.spec), canonicalGreyboxJson(base));
   });
 });
