@@ -53,7 +53,7 @@ no reload:
 - NPCs/creatures: appear with an AI-skinned character sprite from their
   Spanish description; hostile ones need the `combat` block (see 5).
 - Props/buildings: appear as schematic boxes until the scene is next
-  regenerated/repainted. In BOTH views their footprint blocks movement.
+  regenerated/repainted. Their footprint blocks movement either way.
 Use spawns to react to choices ("quiero ir a la forja" → spawn the smith),
 never to rebuild whole scenes.
 
