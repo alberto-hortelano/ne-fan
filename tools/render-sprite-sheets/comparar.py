@@ -24,7 +24,12 @@ Qué comprueba y con qué tolerancia:
     un fallo de escala del FBX (Mixamo exporta en cm) y, sobre una locomoción,
     el lock de Hips XZ sin portar — sin él la bbox se desplaza frame a frame;
   * cobertura alfa (píxeles con a>0): ±5 %;
-  * luminancia media de los píxeles con a>0: ±8 %.
+  * luminancia media de los píxeles con a>0: ±8 %;
+  * **píxeles quemados que el original no tenía**: 0. Un canal a 255 es
+    información perdida — no se recupera bajando el brillo después. Es la señal
+    que caza un cambio de respuesta del material (un especular más duro apaga
+    la heráldica de un escudo) donde la MEDIA no ve nada, porque lo que el
+    reflejo quema por un lado lo compensa la sombra que aplasta por otro.
 
 Salida distinta de cero si algo se sale de tolerancia.
 """
@@ -41,12 +46,20 @@ from PIL import Image
 BBOX_TOL_PX = 3
 COVERAGE_TOL = 0.05
 LUMINANCE_TOL = 0.08
+# Píxeles quemados NUEVOS admitidos en un frame que no los tenía. Cero: no hay
+# "un poco" de información destruida.
+BURNT_TOL = 0
 # Precisión de `duration`: Godot la escribía como float32, aquí es float64.
 DURATION_TOL = 1e-6
 
 
-def frame_stats(path: Path) -> tuple[tuple[int, int, int, int], int, float]:
-    """bbox del alfa, número de píxeles con a>0 y su luminancia media."""
+def frame_stats(path: Path):
+    """bbox del alfa, píxeles con a>0, su luminancia media y su máscara de quemados.
+
+    "Quemado" = algún canal RGB saturado a 255 dentro de la silueta. Se devuelve
+    la máscara y no el recuento porque lo que importa es DÓNDE: un píxel que ya
+    estaba quemado en el original no cuenta como pérdida nueva.
+    """
     arr = np.asarray(Image.open(path).convert("RGBA")).astype(float)
     mask = arr[:, :, 3] > 0
     if not mask.any():
@@ -54,7 +67,8 @@ def frame_stats(path: Path) -> tuple[tuple[int, int, int, int], int, float]:
     bbox = Image.fromarray((mask * 255).astype("uint8")).getbbox()
     rgb = arr[:, :, :3][mask]
     lum = 0.2126 * rgb[:, 0] + 0.7152 * rgb[:, 1] + 0.0722 * rgb[:, 2]
-    return bbox, int(mask.sum()), float(lum.mean())
+    burnt = mask & (arr[:, :, :3] >= 255).any(axis=2)
+    return bbox, int(mask.sum()), float(lum.mean()), burnt
 
 
 def compare_meta(new_dir: Path, ref_dir: Path) -> list[str]:
@@ -113,10 +127,15 @@ def main() -> int:
         step = len(shared) / args.muestras
         sample = [shared[int(i * step)] for i in range(args.muestras)]
 
-    print(f"\n  {'frame':24} {'bbox Δ (l,t,r,b)':22} {'cobertura':>18} {'luminancia':>18}")
+    print(
+        f"\n  {'frame':24} {'bbox Δ (l,t,r,b)':22} {'cobertura':>18} "
+        f"{'luminancia':>18} {'quemados':>10}"
+    )
     for name in sample:
-        nb, nc, nl = frame_stats(args.nueva / name)
-        rb, rc, rl = frame_stats(args.referencia / name)
+        nb, nc, nl, n_burnt = frame_stats(args.nueva / name)
+        rb, rc, rl, r_burnt = frame_stats(args.referencia / name)
+        # Quemado nuevo = saturado ahora y NO saturado antes, píxel a píxel.
+        nuevos_quemados = int((n_burnt & ~r_burnt).sum())
         d_bbox = tuple(n - r for n, r in zip(nb, rb))
         d_cov = (nc - rc) / rc
         d_lum = (nl - rl) / rl
@@ -127,10 +146,15 @@ def main() -> int:
             bad.append(f"cobertura {d_cov:+.1%} > ±{COVERAGE_TOL:.0%}")
         if abs(d_lum) > LUMINANCE_TOL:
             bad.append(f"luminancia {d_lum:+.1%} > ±{LUMINANCE_TOL:.0%}")
+        if nuevos_quemados > BURNT_TOL:
+            bad.append(
+                f"{nuevos_quemados} píxeles quemados donde el original no los tenía"
+                f" (tope {BURNT_TOL})"
+            )
         mark = "✘" if bad else "✔"
         print(
             f"  {name:24} {str(d_bbox):22} {nc:6d} ({d_cov:+6.1%}) "
-            f"{nl:8.1f} ({d_lum:+6.1%}) {mark}"
+            f"{nl:8.1f} ({d_lum:+6.1%}) {nuevos_quemados:8d}   {mark}"
         )
         fails += [f"{name}: {b}" for b in bad]
 

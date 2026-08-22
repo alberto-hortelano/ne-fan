@@ -31,7 +31,7 @@ Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las 
 
 **Pendiente**:
 
-1. **Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`). Reproducidos también en la rama base sin los cambios de `legacy/retire-generate-room` — defecto real anterior, investigar aparte.
+1. ~~**Fallos preexistentes de `movement_test.py`**: `run_sprint` (1.2 m recorridos, esperado >5 m) y `attack_animation` (pide `quick`, ejecuta `heavy`)~~ — **CERRADO SIN ARREGLAR** (2026-08-22): murió con su sujeto al retirarse el cliente que probaba. El arnés está en `archivo/godot/tools/`.
 2. **§3.2 / §3.4** — acoplamientos y splits (abajo).
 3. **§7 — plugins declarativos**: **F1–F8 completas** (roadmap original cerrado). Único pendiente derivado: evolución en runtime vía `plugin_register` (reemplazar un plugin vigente con una versión mayor + `migrate`; hoy sólo migra en resume).
 4. ~~**Unificación de sesiones Godot⇄bridge**~~ — **CERRADO** (PRs #43–#47, 2026-07-02): Godot usa la sesión canónica del bridge (`start_session`/`resume_session`/`save_session`/`dialogue_choice`/`interact_entity`, paridad con el HTML). El mirror GD (`narrative_state.gd`) se hidrata del `SessionData` con `bridge_authoritative` (save local bloqueado — un solo escritor de `state.json`, el `FsSessionStorage` del bridge). El bridge snapshotea pos/HP del sim en `save_session` y resiembra el sim en resume; F9 restaura posición, HP y re-materializa entities. Los plugins se ejercitan por fin desde Godot (tick en `dialogue_choice`). `session_start` vestigial eliminado. Restos (actualizado 2026-07-06): el bypass `load_game` y los beats scripted fueron RETIRADOS del todo (rama worlds-0, con confirmación del usuario) — `game_test.py` sacrificado, `AIClient.report_player_choice` borrado (`notify_session_start` sigue vivo); HP de **enemigos** no se persiste (el bridge tampoco lo snapshotea); Godot no tiene panel de viaje (`exits`/`player_entered_place`).
@@ -53,7 +53,7 @@ El roadmap §7 (F1–F8) está **cerrado**. F8 cerró el ciclo con un plugin `co
 
 ### 3.4 Tamaños y splits
 
-- `godot/scripts/main.gd` (~1200 líneas): candidato a extraer `consequence_applier.gd` y/o `scene_loader.gd`.
+- ~~`godot/scripts/main.gd` (~1200 líneas): candidato a extraer `consequence_applier.gd` y/o `scene_loader.gd`~~ — **CERRADO SIN ARREGLAR** (2026-08-22): el fichero se archivó con el cliente (issue #163 cerrada por la misma razón).
 - `ai_server/main.py` (~870 líneas tras esta rama): router-split de FastAPI por dominio; `routers/diagnostic.py` ya marca el patrón.
 - `nefan-core/bridge/ws-server.ts` (~850 líneas): split por dominio (`handlers/scene.ts`, `handlers/dialogue.ts`, `handlers/session.ts`). No urgente.
 

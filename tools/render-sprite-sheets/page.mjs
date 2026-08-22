@@ -23,12 +23,9 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
  *  tamaño ortográfico deja margen sobre la cabeza y bajo los pies de un
  *  humanoide de ~1,8 m. */
 const ANGLE_CAMERA = {
-  top_down: { pitchDeg: -90.0, distance: 4.0, ortho: 2.4 },
-  isometric_30: { pitchDeg: -30.0, distance: 4.0, ortho: 2.4 },
-  isometric_45: { pitchDeg: -45.0, distance: 4.0, ortho: 2.4 },
-  frontal: { pitchDeg: 0.0, distance: 4.0, ortho: 2.4 },
-  // Vista de personaje del cliente FPS: el ojo va a 1,8-3,2 m y ve a los
-  // personajes con ~5-11° de depresión. -8° es el compromiso.
+  // El ojo del cliente va a 1,8-3,2 m y ve a los personajes con ~5-11° de
+  // depresión; -8° es el compromiso. Es el ÚNICO ángulo: el cliente lo tiene
+  // fijo (`worldAngle`), así que una hoja en cualquier otro no la pinta nadie.
   frontal_8: { pitchDeg: -8.0, distance: 4.0, ortho: 2.4 },
 };
 
@@ -139,6 +136,55 @@ function lockHipsXZ(clip, animId) {
 
 const _scratchColor = new THREE.Color();
 
+/** Rugosidad por defecto: **mate**. No es un número elegido a ojo, es el default
+ *  de `StandardMaterial3D` — el material que construía el importador que produjo
+ *  las hojas de referencia, que NO mapeaba el exponente de Phong del FBX. Está
+ *  medido: derivando la rugosidad del exponente (`sqrt(2/(s+2))`, que da 0,30
+ *  para el paladín) el lóbulo especular queda tan cerrado que quema los realces
+ *  en 352 de 352 fotogramas; a rugosidad ≥ 0,5 los quemados caen a cero y el
+ *  rango de luminancia se estrecha según sube, hasta casar en 1,0. */
+const DEFAULT_ROUGHNESS = 1.0;
+
+/** `FBXLoader` construye `MeshPhongMaterial`; el importador que hizo las hojas
+ *  de referencia construía un material PBR. No es lo mismo, y la diferencia no
+ *  es de brillo sino de INFORMACIÓN: el especular de Phong es un lóbulo duro que
+ *  quema los realces —en el paladín apaga la heráldica del escudo, que es diseño
+ *  del personaje, y ningún ajuste de exposición posterior la recupera— mientras
+ *  aplasta las sombras a negro. Por eso la media no lo ve: lo que el reflejo
+ *  quema por un lado lo compensa la sombra por el otro.
+ *
+ *  Se convierte a `MeshStandardMaterial` (GGX + Fresnel dieléctrico F0=0.04, que
+ *  es exactamente el `specular = 0.5` por defecto del original). El
+ *  `SpecularColor` del FBX se descarta a propósito: en PBR no es un color, es el
+ *  F0 fijo del dieléctrico.
+ *
+ *  Los materiales se comparten entre mallas, así que se cachea por uuid. */
+function toStandardMaterial(phong, cache, roughnessOverride) {
+  if (phong.isMeshStandardMaterial) return phong;
+  const hit = cache.get(phong.uuid);
+  if (hit) return hit;
+  const std = new THREE.MeshStandardMaterial({
+    name: phong.name,
+    color: phong.color,
+    map: phong.map ?? null,
+    normalMap: phong.normalMap ?? null,
+    normalScale: phong.normalScale?.clone(),
+    emissive: phong.emissive,
+    emissiveMap: phong.emissiveMap ?? null,
+    alphaMap: phong.alphaMap ?? null,
+    aoMap: phong.aoMap ?? null,
+    transparent: phong.transparent,
+    opacity: phong.opacity,
+    alphaTest: phong.alphaTest,
+    side: phong.side,
+    vertexColors: phong.vertexColors,
+    roughness: roughnessOverride ?? DEFAULT_ROUGHNESS,
+    metalness: 0,
+  });
+  cache.set(phong.uuid, std);
+  return std;
+}
+
 /** El FBX guarda los colores planos de material (diffuse, specular, emissive)
  *  en LINEAL, y así los leía el importador de Godot. `FBXLoader` los mete por
  *  la vía sRGB, con lo que el albedo acaba ~3,5× oscuro y hay que compensarlo
@@ -165,7 +211,7 @@ function loadFbx(url) {
 /** Prepara escena, cámara, luz, modelo y animación. Devuelve los datos que el
  *  CLI necesita para decidir cuántos frames pedir y qué escribir en meta.json. */
 window.__spriteSetup = async function spriteSetup(opts) {
-  const { modelUrl, animUrl, animId, angle, width, height, lightIntensity, durationOverride } = opts;
+  const { modelUrl, animUrl, animId, angle, width, height, lightIntensity, durationOverride, roughness } = opts;
   const cfg = ANGLE_CAMERA[angle];
   if (!cfg) {
     throw new Error(`ángulo desconocido "${angle}" (soportados: ${Object.keys(ANGLE_CAMERA)})`);
@@ -201,11 +247,6 @@ window.__spriteSetup = async function spriteSetup(opts) {
   const halfH = halfV * (width / height);
   const camera = new THREE.OrthographicCamera(-halfH, halfH, halfV, -halfV, 0.01, 100);
   camera.position.copy(target).addScaledVector(forward, -cfg.distance);
-  if (Math.abs(Math.cos(pitch)) < 0.001) {
-    // Cenital: `lookAt` con up=+Y degenera. -Z como up deja al modelo de cabeza
-    // hacia arriba en pantalla, igual que hacía Godot.
-    camera.up.set(0, 0, -1);
-  }
   camera.lookAt(target);
   scene.add(camera);
 
@@ -228,14 +269,21 @@ window.__spriteSetup = async function spriteSetup(opts) {
   pivot.add(unitWrap);
 
   const boneNames = [];
+  const stdCache = new Map();
+  const roughnesses = [];
   model.traverse((n) => {
     if (n.isBone) boneNames.push(n.name);
-    if (n.isMesh) n.frustumCulled = false;
+    if (!n.isMesh) return;
+    n.frustumCulled = false;
     const mats = Array.isArray(n.material) ? n.material : n.material ? [n.material] : [];
-    for (const m of mats) {
+    const converted = mats.map((m) => {
       if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
-      for (const key of ["color", "specular", "emissive"]) fbxColorToLinear(m[key]);
-    }
+      for (const key of ["color", "emissive"]) fbxColorToLinear(m[key]);
+      const std = toStandardMaterial(m, stdCache, roughness);
+      roughnesses.push(Number(std.roughness.toFixed(3)));
+      return std;
+    });
+    if (converted.length > 0) n.material = Array.isArray(n.material) ? converted : converted[0];
   });
   if (boneNames.length === 0) throw new Error(`el modelo ${modelUrl} no trae huesos`);
   const bonePrefix = detectBonePrefix(boneNames);
@@ -276,6 +324,7 @@ window.__spriteSetup = async function spriteSetup(opts) {
     unitScale: scale,
     modelHeightMetres: Number(metres.toFixed(4)),
     boneCount: boneNames.length,
+    roughnesses: [...new Set(roughnesses)].sort((x, y) => x - y),
   };
 };
 

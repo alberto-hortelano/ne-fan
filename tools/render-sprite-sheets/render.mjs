@@ -33,14 +33,16 @@ const DEFAULT_ASSETS = join(REPO_ROOT, "assets", "characters");
 const DEFAULT_OUT = join(REPO_ROOT, "nefan-html", "public", "sprites");
 const CHROME_BIN = process.env.NEFAN_CHROME ?? "/usr/bin/google-chrome";
 
-/** Intensidad de la luz direccional. Godot usaba `light_energy = 1.5` sobre su
- *  StandardMaterial3D; three no comparte BRDF (Lambert con 1/π y specular Phong
- *  frente al GGX de Godot), así que el número está CALIBRADO, no copiado: es el
- *  que iguala la luminancia media de los píxeles con a>0 contra las hojas ya
- *  generadas, dentro del ±2,1 % en las 5 muestras de `comparar.py`.
+/** Intensidad de la luz direccional. El renderizador original usaba
+ *  `light_energy = 1.5`; three no comparte unidades (Lambert con 1/π), así que
+ *  el número está CALIBRADO, no copiado: es el que iguala la luminancia media de
+ *  los píxeles con a>0 contra las hojas ya generadas. Medido sobre los 352
+ *  fotogramas de `y_bot/idle` Y los de `paladin/idle`, no sobre una muestra —
+ *  una media puede casar mientras la distribución no, que es justo lo que se nos
+ *  escapó la primera vez.
  *  Si cambia el material, la versión de three o el modelo de color, hay que
- *  recalibrarlo con ese script. */
-const DEFAULT_LIGHT_INTENSITY = 3.5;
+ *  recalibrarlo con `comparar.py --todos`. */
+const DEFAULT_LIGHT_INTENSITY = 4.65;
 
 /** animation_id -> nombre del FBX (sin extensión) en el pack Sword and Shield.
  *  Portado tal cual del renderizador de Godot. */
@@ -65,9 +67,14 @@ const AMBIENT_ANIM_MAP = {
   praying: "praying_kneel",
 };
 
-const DEFAULT_MODELS = ["paladin", "eve", "warrok", "skeletonzombie", "arissa", "drake"];
+// y_bot va PRIMERO y no es opcional: es el modelo base del cliente
+// (`BASE_MODEL`), sobre el que se generan los skins. Un `--all` que lo
+// saltara regeneraría a todos menos al único que el juego necesita.
+const DEFAULT_MODELS = ["y_bot", "paladin", "eve", "warrok", "skeletonzombie", "arissa", "drake"];
 const DEFAULT_ANIMS = Object.keys(ANIM_MAP);
-const SUPPORTED_ANGLES = ["top_down", "isometric_30", "isometric_45", "frontal", "frontal_8"];
+// Un solo ángulo: el cliente lo tiene fijo. El flag sigue existiendo porque el
+// ángulo forma parte de la ruta de salida y del meta.json.
+const SUPPORTED_ANGLES = ["frontal_8"];
 
 function parseArgs(argv) {
   const opts = {
@@ -82,6 +89,7 @@ function parseArgs(argv) {
     out: DEFAULT_OUT,
     assets: DEFAULT_ASSETS,
     light: DEFAULT_LIGHT_INTENSITY,
+    roughness: null,
     dryRun: false,
   };
   const list = (i) => {
@@ -104,6 +112,7 @@ function parseArgs(argv) {
       case "--out": opts.out = resolve(argv[++i]); break;
       case "--assets": opts.assets = resolve(argv[++i]); break;
       case "--light": opts.light = Number(argv[++i]); break;
+      case "--roughness": opts.roughness = Number(argv[++i]); break;
       case "--dry-run": opts.dryRun = true; break;
       case "--help":
       case "-h":
@@ -141,6 +150,8 @@ const HELP = `Renderiza hojas de sprites Mixamo con three.js (sin Godot).
   --out <dir>         Raíz de salida (nefan-html/public/sprites)
   --assets <dir>      Raíz de assets (assets/characters)
   --light <f>         Intensidad de la direccional (${DEFAULT_LIGHT_INTENSITY}, calibrada)
+  --roughness <f>     Fuerza la rugosidad del material (por defecto: mate, 1.0).
+                      Solo para recalibrar con comparar.py
   --dry-run           Lista los trabajos sin renderizar`;
 
 function animFbxRelPath(animId) {
@@ -233,6 +244,7 @@ async function renderJob(page, base, opts, job) {
     width: opts.width,
     height: opts.height,
     lightIntensity: opts.light,
+    roughness: opts.roughness,
     durationOverride,
   });
   if (info.trackDuration > info.duration + 1e-4) {
@@ -249,6 +261,7 @@ async function renderJob(page, base, opts, job) {
   console.log(
     `  escala=${info.unitScale} alto=${info.modelHeightMetres} m · huesos=${info.boneCount}` +
       ` prefijo=${info.bonePrefix}${info.remapped ? ` (remap ${info.remapped} pistas de ${info.clipPrefix})` : ""}` +
+      ` · rugosidad=${info.roughnesses.join("/")}` +
       `${info.hipsKeys ? ` · Hips XZ congelado (${info.hipsKeys} keys)` : ""}`,
   );
   console.log(

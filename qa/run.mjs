@@ -69,9 +69,10 @@ async function waitPort(port, label, timeoutMs = 90_000) {
   throw new Error(`${label} (:${port}) no respondió en ${timeoutMs / 1000}s`);
 }
 
-/** Arranca el preset 5 (fake-ai + bridge + HTML, cero créditos) por el mismo
- *  camino que usaría una persona: `./start.sh --preset 5`. Si el stack ya está
- *  arriba, no toca nada. */
+/** Arranca el preset `e2e-sin-creditos` (fake-ai + bridge + cliente, cero
+ *  créditos) por el mismo camino que usaría una persona:
+ *  `./start.sh --preset e2e-sin-creditos`. Si el stack ya está arriba, no toca
+ *  nada. Por SLUG y no por número: el número se desplaza al morir un preset. */
 const PUERTOS = [
   [18765, "fake-ai-server"],
   [9877, "bridge"],
