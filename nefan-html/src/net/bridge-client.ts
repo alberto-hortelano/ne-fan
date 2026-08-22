@@ -267,7 +267,7 @@ export class BridgeClient {
     return this.request<GameCreatedMessage>({ type: "create_game", draftText }, 400_000);
   }
 
-  /** Pre-generar el mundo de un juego (rama de la vista). La respuesta llega
+  /** Pre-generar el mundo de un juego. La respuesta llega
    *  al ENCOLAR; el progreso y el final viajan por narrative_status kind
    *  "game_gen". */
   generateGame(gameId: string): Promise<GameGeneratedMessage> {

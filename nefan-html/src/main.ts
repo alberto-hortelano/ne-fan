@@ -71,12 +71,17 @@ const sceneModules: Record<string, () => Promise<{ default: Record<string, unkno
     .glob("@nefan-core/data/scenes/*.json");
 
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
-// La vista cenital 2D necesita un ritmo más arcade que el walk_speed realista
-// (1.9 m/s) que comparte el Godot 3D en tercera persona. Multiplicador propio
-// del cliente 2D para no alterar el config compartido (rompería el feel 3D).
-const TOPDOWN_SPEED_SCALE = 2.2;
-const SPEED = (playerCfg.walk_speed ?? 3.0) * TOPDOWN_SPEED_SCALE;
-const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * TOPDOWN_SPEED_SCALE;
+// El cliente web camina más rápido que el walk_speed realista (1.9 m/s) del
+// config compartido, y lo hace con un multiplicador propio para no alterar
+// ese config (rompería el feel del 3D en tercera persona de Godot).
+// OJO al heredarlo: el 2,2 se calibró para la vista CENITAL, donde el
+// jugador se veía entero y el mundo pasaba por debajo. En primera persona
+// nadie lo ha vuelto a mirar — 4,2 m/s de paseo es un trote largo a la
+// altura de los ojos. Es una decisión de feel, no un bug, así que se queda
+// donde estaba hasta que se juegue y se decida.
+const ARCADE_SPEED_SCALE = 2.2;
+const SPEED = (playerCfg.walk_speed ?? 3.0) * ARCADE_SPEED_SCALE;
+const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * ARCADE_SPEED_SCALE;
 
 /** Player visual state. When CONFIG.graphics.character_sprites is false the
  *  player is drawn as a coloured circle and playerModel stays null. When
@@ -154,8 +159,8 @@ const config = loadConfig(combatConfigJson);
 const appShell = document.getElementById("app-shell") as HTMLElement;
 /** Set de sprites del mundo: los sheets del y_bot van renderizados desde un
  *  ángulo de cámara fijo. La cámara está a la altura de los ojos, así que el
- *  set es el casi frontal −8° (con el picado 30° de la oblicua los
- *  personajes se veían torcidos). */
+ *  set es el casi frontal −8°. DEBE coincidir con el SKIN_ANGLE de
+ *  ui/style-apply.ts: el ángulo entra en la clave de caché del skin. */
 const worldAngle = "frontal_8";
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
 // en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
@@ -184,7 +189,7 @@ baseSheetsReady.catch((err) =>
   errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
 );
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
- *  espera a saber la vista de la sesión. three.js entra por import dinámico
+ *  espera a que la sesión decida nada. three.js entra por import dinámico
  *  dentro de la fachada (y con él el único contexto WebGL de la pestaña);
  *  hasta que llega, las instalaciones se encolan. */
 const fpsRenderer = new FpsRenderer(appShell, { spriteRenderer });
@@ -1813,7 +1818,7 @@ function gameLoop(now: number): void {
   // Telegraph del ataque en PRIMERA PERSONA: es geometría de mundo (la
   // distancia y la precisión deciden el daño), así que se fija ANTES de
   // render(). En WebGL no queda lienzo sobre el que garabatear una vez
-  // emitido el frame — el patrón "dibuja después" de las vistas 2D no vale.
+  // emitido el frame — el patrón "dibuja después" de un lienzo 2D no vale.
   // Mirada vertical: como el telegraph y el velo, estado de la vista que se
   // fija ANTES de render(). No viaja en PlayerView porque `forward` es el
   // marco del MOVIMIENTO y es horizontal por diseño.
@@ -2141,8 +2146,9 @@ narrativeClient.onNarrativeStatus((status) => {
  *  consequence). El `position` ya viene resuelto en metros mundo por el bridge
  *  (consequence-handler.ts:resolvePositionHint, relativo al jugador). NPCs van a
  *  npcEntities (interactuables con E); building/object a objectEntities con
- *  `sizeXZ` para que sean sólidos (collidesAt) y dibujables (drawSceneBox), que
- *  es la "geometría base" sobre la que luego se superponen imágenes IA. */
+ *  `sizeXZ` para que sean sólidos (collidesAt) y tengan volumen que instalar
+ *  en el renderer, que es la "geometría base" sobre la que luego se
+ *  superponen imágenes IA. */
 function materializeSpawn(effect: {
   entityId: string;
   entityKind: "npc" | "object" | "building";

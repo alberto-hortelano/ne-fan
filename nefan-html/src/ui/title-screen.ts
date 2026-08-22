@@ -439,7 +439,7 @@ export class TitleScreen {
             </div>
           </div>
           <div id="ts-gen" style="padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
-            <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(el mundo se genera por vista, sin estilo; el estilo se aplica sobre el mundo generado)</span></div>
+            <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(primero el mundo, sin estilo; el estilo se aplica después sobre el mundo generado)</span></div>
             <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">
               <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
@@ -558,7 +558,7 @@ export class TitleScreen {
       refreshGenPanel();
     });
 
-    // ── Panel de generación: mundo por (juego, vista) + estilo aplicado ──
+    // ── Panel de generación: mundo por juego + estilo aplicado encima ──
     const genStateEl = this.content.querySelector("#ts-gen-state") as HTMLElement;
     const genWorldBtn = this.content.querySelector("#ts-gen-world") as HTMLButtonElement;
     const applyStyleBtn = this.content.querySelector("#ts-apply-style") as HTMLButtonElement;
@@ -601,7 +601,7 @@ export class TitleScreen {
       applyStyleBtn.style.opacity = canApply ? "" : "0.45";
       applyStyleBtn.title = canApply
         ? "Pre-genera los assets estilizados del mundo (coste estimado antes de gastar)"
-        : "Genera primero el mundo para esta vista";
+        : "Genera primero el mundo de este juego";
       stylePlanEl.innerHTML = "";
       regenArmedUntil = 0;
       this.renderGameGenProgress(genProgressEl);
@@ -955,7 +955,7 @@ export class TitleScreen {
       try {
         const created = await this.narrative.createGame(draft);
         statusEl.innerHTML = `<span style="color:#4a4">Mundo creado: ${escapeHtml(created.title)}.</span>`;
-        // Encadenar la pre-generación del mundo (vista default del juego):
+        // Encadenar la pre-generación del mundo del juego recién creado:
         // corre en el bridge en segundo plano; el selector muestra el
         // progreso (kind "game_gen") y los chips al terminar. El estilo se
         // aplica después desde el panel (necesita confirmar su coste).

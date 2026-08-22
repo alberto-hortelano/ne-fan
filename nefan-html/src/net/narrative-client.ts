@@ -62,7 +62,7 @@ export class NarrativeClient {
     return { gameId: res.gameId, title: res.title ?? res.gameId };
   }
 
-  /** Encola la pre-generación del mundo de un juego para una vista. Resuelve
+  /** Encola la pre-generación del mundo de un juego. Resuelve
    *  al encolar; el progreso llega por onNarrativeStatus (kind "game_gen"). */
   async generateGame(gameId: string): Promise<{ queued: string }> {
     const res = await this.bridge.generateGame(gameId);

@@ -3,9 +3,8 @@
  *
  *  Teclado y click entran por los MISMOS métodos públicos
  *  (chooseByIndex/openFreeText/advance), así que no hay dos caminos que
- *  mantener. Al abrirse suelta el pointer lock: con el ratón capturado (fps,
- *  y oblicua tras un click) el cursor no existe y las opciones serían
- *  inclicables. */
+ *  mantener. Al abrirse suelta el pointer lock: con el ratón capturado el
+ *  cursor no existe y las opciones serían inclicables. */
 
 import { ActionBar, type GameAction } from "./action-bar.js";
 
