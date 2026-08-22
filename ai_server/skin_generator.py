@@ -13,8 +13,8 @@ from PIL import Image
 
 
 # Default base skin (Paladin diffuse UV atlas)
-DEFAULT_BASE_SKIN = Path(__file__).resolve().parent.parent / (
-    "godot/assets/characters/Sword and Shield Pack/Paladin_diffuse.png"
+DEFAULT_BASE_SKIN = (
+    Path(__file__).resolve().parent.parent / "assets/characters/base_skins/Paladin_diffuse.png"
 )
 
 

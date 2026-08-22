@@ -1,0 +1,17 @@
+{
+  "name": "@nefan/render-sprite-sheets",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renderiza hojas de sprites Mixamo con three.js en Chrome headless (sustituye al renderizador de Godot)",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs",
+    "test": "node --test fbx-anim-span.test.mjs"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}
