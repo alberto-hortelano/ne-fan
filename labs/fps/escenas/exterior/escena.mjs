@@ -81,10 +81,5 @@ export async function load() {
     playerStart,
     poses,
     npcs,
-    // Huellas de colisión del builder (celdas → metros) además de las prims.
-    elements: spec.elements.map((e) => ({
-      ...e,
-      footprint_cells: e.footprint_cells.map((v) => v * M),
-    })),
   };
 }
