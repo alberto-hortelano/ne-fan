@@ -18,8 +18,7 @@ los devolvería, así que se movieron enteros en vez de borrarse.
 | `style/` | Referencias de estilo + fidelidad de layout del repintado de blueprints | `python labs/style/gen.py <run>` · `python labs/style/fidelity.py <subcmd>` | cerrado (hallazgos aplicados) |
 | `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,fake-ai-server,replay-server}.mjs` · `check-scene.ts` | activo (tooling de E2E) |
 | `fps/` | Modo 3D primera persona estilo Doom: atlas de superficies IA + sprites y_bot 8-dir | `viewer.html` en :8912 · `python3 labs/fps/gen.py <run>` | activo |
-| `fps/godot/` | Bench Godot 4.6 vs three.js de la vista fps: paridad medida + modo calidad (SDFGI) | `capture_godot.sh` · `compare.py` · veredicto en `fps/COMPARATIVA_GODOT.md` | activo |
-| `authoring/` | Autoría LIBRE del modelo: run 001 three vs Godot (misma descripción, medido); run 002 luz de gameplay + scatter procedural declarativo (zonas+densidad+generador de autor) | `three/capture.sh` · `godot/capture.sh` · veredicto en `authoring/INFORME.md` | activo |
+| `authoring/` | Autoría LIBRE del modelo: run 001 comparativa de motores sobre la misma descripción (medida); run 002 luz de gameplay + scatter procedural declarativo (zonas+densidad+generador de autor) | `three/capture.sh` · veredicto en `authoring/INFORME.md` | activo |
 
 ## Convenciones comunes
 

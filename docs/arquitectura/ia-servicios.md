@@ -10,8 +10,9 @@ Los tres procesos Python, qué modelo hace qué, el bench de skinning y la pre-g
 
 `ai_server/main.py` (narrative-llm :8765), `ai_server/gpu_worker_main.py`
 (:8766) y `ai_server/remote_gen_main.py` (:8768) comparten paquete y `.venv`.
-:8765 proxya los endpoints GPU y `/cache|/assets` para Godot; el HTML resuelve
-cada servicio con `serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
+:8765 proxya los endpoints GPU y `/cache|/assets` para los clientes no
+migrados; el cliente web resuelve cada servicio con `serviceUrl()`. Contratos
+en `nefan-core/src/contracts/`.
 
 | Endpoint | Proceso | Que hace |
 |----------|---------|----------|
@@ -20,8 +21,8 @@ cada servicio con `serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
 | `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
 | `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
 | `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
-| `/notify_session` | :8765 | Godot informa de inicio/reanudación de sesión narrativa |
-| `/report_player_choice` | :8765 | Godot reporta elección de diálogo → Claude devuelve consequences |
+| `/notify_session` | :8765 | El bridge informa de inicio/reanudación de sesión narrativa (`AiClient`) |
+| `/report_player_choice` | :8765 | El bridge reporta la elección de diálogo → Claude devuelve consequences |
 | `/generate_texture` | :8766 | Textura PBR seamless (albedo+normal), ~1s |
 | `/generate_model` | :8766 | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | :8766 | Skin de personaje (PNG, ~10s) |
@@ -47,13 +48,13 @@ VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
 ## labs/skinning — pruebas de IA sobre sprites
 
-Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets generados por el renderer Godot. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `labs/skinning/README.md` para detalles. Hallazgos consolidados:
+Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets que pre-renderiza `tools/render-sprite-sheets/`. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `labs/skinning/README.md` para detalles. Hallazgos consolidados:
 - **V1 single** y **V2 anchor** dan deriva inaceptable.
 - **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
 - **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
 - **V5 packed (2026-08-18)**: varias DIRECCIONES comparten atlas (fila = dirección + hero de ancla) dentro del techo de 10 celdas — validado en gpt-image-2 y nano-banana-pro, EN PRODUCCIÓN (`plan_dir_batches`): un personaje auto (idle/walk/run) baja de 25 a 17 llamadas. Grids de aspecto extremo (4×1) rompen la integridad; el letterbox de gpt-image-2 se recorta con `fit_atlas_output`.
 - **Pose-lock (T-posegate 2026-08-18)**: el prompt del atlas DEBE fijar la pose de cada celda y degradar el hero a "appearance only" (`build_atlas_prompt`), y el hero se genera en pose neutral, nunca T-pose — si no, los atlas de poses sutiles (idle) salen como turnaround en T-pose. Un output que no repinta el clay se rechaza fail-loud (`atlas_echo_score`), nunca se cachea.
-- **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
+- **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `tools/render-sprite-sheets/page.mjs:lockHipsXZ()`.
 
 ## Pre-generación: mundo por juego y estilo por (juego, estilo)
 

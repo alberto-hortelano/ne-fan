@@ -137,32 +137,19 @@ runs/<run>/
 - El detalle procedural clay del suelo (elipses/piedritas del builder) sobre
   textura pintada lee como parches planos — se oculta en modo texturizado.
 
-## Bench Godot — three.js vs Godot 4.6 (comparativa de renderers)
+## Comparativa de renderers (bench cerrado, agosto 2026)
 
-Implementación NUEVA en Godot (`godot/`, proyecto mínimo independiente del
-proyecto `godot/` del juego) que consume LOS MISMOS datos declarativos del
-motor narrativo: `escenas/<n>/escena.json` (volcado lossless de `load()` con
-`dump_escena.mjs`), el `layout.json` congelado del run y sus
-`textures/<cellKey>.png`. Dos modos: **parity** (parámetros three.js clavados:
-ACES 1.1, fog lineal 25→90, cielo gradiente, sol ORTHOGONAL 2048, energías
-calibradas por mediana de luminancia) y **quality** (Forward+: SDFGI + SSAO +
-soft shadows PSSM 4 splits + sombras en las omnis + sol ×2.2 para el rebote).
+Se comparó este renderer contra una implementación alternativa que consumía LOS
+MISMOS datos declarativos del motor narrativo (`escenas/<n>/escena.json`,
+volcado lossless de `load()` con `dump_escena.mjs`; el `layout.json` congelado
+del run y sus `textures/<cellKey>.png`), en dos modos: **parity** (parámetros de
+three.js clavados) y **quality** (todas las prestaciones del renderer rival).
 
-### Uso
-
-```bash
-node dump_escena.mjs interior            # regen escena.json (tras tocar escena.mjs)
-./capture_godot.sh interior out/ parity 016_mix [p0 p1…]   # capturas 1600×1000
-./capture_godot.sh exterior out/ quality 015_ext_nano
-python3 compare.py runs/cmp_001 --scenes interior exterior nueva  # index.html pareado
-python3 compare.py --calibrate a.png b.png   # medianas de luminancia (calibración)
-# Interactivo (WASD + ratón, click captura):
-~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method forward_plus -- --scene interior --mode quality --run 016_mix
-```
-
-Gotchas de captura: SIEMPRE `xvfb-run` (jamás `--headless`: apaga el 3D);
-**Forward+ bajo xvfb SÍ usa la RTX 3060 real** (Vulkan no depende de GLX) —
-primera validación en el repo; gl_compatibility cae a llvmpipe (software).
+**Decidido: se queda three.js**, porque la ventaja de calidad del rival no
+compensaba perder el despliegue en navegador. Las capturas y las métricas del
+run siguen en `runs/cmp_001/`; el banco alternativo y su script de comparación
+se archivaron en `archivo/labs/fps/`. `dump_escena.mjs` sigue vivo: es el
+volcado de la escena, no parte del bench.
 
 ### Escena "nueva" (autoría del motor narrativo)
 
@@ -204,10 +191,13 @@ exterior 015_ext_nano, nueva clay). Ver `runs/cmp_001/index.html` (servir con
   — lee a juego comercial donde three lee a maqueta iluminada. Exterior con
   sol ×2.2 + GI: sombras largas nítidas, esquinas con oclusión, cielo
   saturado. Gratis en autoría: MISMO JSON de entrada.
-- **Bugs que Godot corrige gratis** (three del juego, `fps-gl.ts`):
+- **Bugs que el bench destapó** (three del juego, `fps-gl.ts`):
   `sun.target` jamás posicionado (sombras rotas fuera del tile 0,0) y
   `userData.noShadow` jamás escrito (al activar tile, suelos/techos noShadow
   vuelven a proyectar). El bench three (lib.mjs) no los tiene.
+  **Los dos están corregidos desde entonces** (`holder.add(sun, sun.target)`, y
+  `noShadow` leído y escrito): se deja el apunte porque el bench es lo que los
+  encontró, no porque sigan vivos.
 - **Coste/tooling**: captura Godot ~12 s/pose (Vulkan HW real bajo xvfb);
   three headless ~45–90 s/pose (Chrome swiftshader). Godot necesitó 2
   calibraciones no obvias (winding horario de Godot; equivalencia de

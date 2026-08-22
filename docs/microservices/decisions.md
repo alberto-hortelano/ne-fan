@@ -64,9 +64,9 @@
 1. **F6 sí o no** — separar world-state por red puede no aportar nada en un
    despliegue de una máquina. Decidir tras F5 con latencias medidas.
 2. ~~Prune y referencias vivas~~ — RESUELTA en F2 (decisión tomada 11).
-3. **Godot y los contratos** — no consume TS. ¿Generar JSON Schema desde los
-   .d.ts para validar en GDScript, o dejarlo como cliente best-effort?
-   (Deriva actual conocida: 8/19 mensajes, espejo GD en schema v3 vs v4.)
+3. ~~Clientes que no consumen TS~~ — sin objeto: todo consumidor vivo (cliente
+   web, narrative-mcp, benches) importa los contratos directamente, así que no
+   hace falta generar JSON Schema desde los `.d.ts` para validar fuera de TS.
 4. **Autenticación entre servicios** — hoy todo es loopback sin auth. Al
    abrir puertos nuevos: ¿token compartido (header) o red de confianza?
    Mientras todo escuche en 127.0.0.1, red de confianza.

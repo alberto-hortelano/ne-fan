@@ -1,7 +1,7 @@
 # labs/narrative — banco de pruebas del motor narrativo
 
 Bench reutilizable para testear **el motor narrativo** de Never Ending Fantasy sin gráficos,
-movimiento ni combate real. Emula ser el **juego** (Godot/HTML) frente al bridge WebSocket de
+movimiento ni combate real. Emula ser el **juego** frente al bridge WebSocket de
 `nefan-core`, enviando exactamente los mismos mensajes que enviaría el juego y registrando ambos
 lados de la conversación. Otro Claude Code (en otro terminal) actúa como **motor narrativo**,
 igual que en el juego real.
@@ -130,8 +130,7 @@ Variables: `LOG`, `PORT` (9877), `HOLD_MS` (3000, cuánto se ve cada escena/diá
 > Alcance: la película reproduce lo que se **grabó**. Esta sesión (`session-2026-06-25`) tiene
 > escenas + diálogos + spawns (perfecto para depurar layout/escenas/UI), pero **no** movimiento/combate
 > frame-a-frame porque no se condujo el loop de input. Una sesión con combate sí grabaría los frames
-> `input`→`state_update` y la película sería animada. Para Godot 3D haría falta un adaptador aparte
-> (logic_bridge sólo consume `state_update`, no `narrative_event`).
+> `input`→`state_update` y la película sería animada.
 
 ## Mensajes de bridge soportados (los que envía el juego)
 

@@ -6,31 +6,23 @@ Cómo se conduce el juego sin manos y qué hay que comprobar tras un cambio visu
 > Es la misma documentación, movida. Si algo de aquí es verificable mecánicamente,
 > su sitio es `nefan-core/data/contract/arch-rules.json`, no la prosa.
 
-## Remote Control (testing automatizado)
+## Conducir el juego sin manos
 
-TCP en puerto **9876**. Enviar JSON por linea:
+Tres caminos, según lo que quieras mover:
 
-```bash
-echo '{"cmd":"status"}' | nc -q 1 localhost 9876
-echo '{"cmd":"screenshot","path":"/tmp/screen.png"}' | nc -q 1 localhost 9876
-echo '{"cmd":"key","action":"move_forward","duration":1.0}' | nc -q 1 localhost 9876
-echo '{"cmd":"attack","type":"quick"}' | nc -q 1 localhost 9876
-echo '{"cmd":"mouse","dx":100,"dy":-30}' | nc -q 1 localhost 9876
-echo '{"cmd":"teleport","x":2,"y":1,"z":-3}' | nc -q 1 localhost 9876
-echo '{"cmd":"look_at","yaw":45,"pitch":-0.2}' | nc -q 1 localhost 9876
-echo '{"cmd":"load_room","index":0}' | nc -q 1 localhost 9876
-echo '{"cmd":"camera_detach","x":5,"y":1.2,"z":0,"yaw":90,"pitch":-0.1}' | nc -q 1 localhost 9876
-echo '{"cmd":"camera_attach"}' | nc -q 1 localhost 9876
-echo '{"cmd":"play_anim","name":"kick"}' | nc -q 1 localhost 9876
-echo '{"cmd":"respawn"}' | nc -q 1 localhost 9876
-echo '{"cmd":"save"}' | nc -q 1 localhost 9876
-```
+| Quiero… | Herramienta |
+|---|---|
+| comprobar el juego entero desde el arranque | `node qa/run.mjs` — levanta el preset `e2e-sin-creditos` él solo y corre los guiones de `qa/guiones/` |
+| conducir el cliente a mano desde un guion | `?input=scripted` + `window.__nefan` (el `inputDriver` sustituye al teclado) |
+| emular ser el juego frente al bridge | `node labs/narrative/game-emulator.mjs` — API HTTP de control en `:9899`, sin navegador |
 
-El comando `status` devuelve: player_pos, camera_yaw/pitch, fps, room, combat_hp, combat_state, combat_weapon, anim_state, anim_name, anim_interruptible, ray_hit.
+El contrato de `window.__nefan` y las reglas que hacen que un guion valga algo
+(esperar por ESTADO y nunca por tiempo de pared, probar el guion en negativo)
+están en [`qa/README.md`](../../qa/README.md), que es la referencia — esto no la duplica.
 
 ## Testing visual automatizado
 
-**IMPORTANTE:** Cada vez que se modifique algo visual (animaciones, movimiento, cámara, colisiones), ejecutar los tests automatizados y verificar los screenshots.
+**IMPORTANTE:** Cada vez que se modifique algo visual (animaciones, movimiento, cámara, colisiones), ejecutar los guiones y verificar las capturas de `qa/capturas/`.
 
 ### Comprobación final crítica (definición de hecho)
 
@@ -45,69 +37,27 @@ Caso de referencia (2026-08-09): panel de dev "siempre visible" — renderizaba 
 
 ### Principios de testing visual
 
-1. **Los tests deben simular el input real del jugador.** Usar `{"cmd":"attack","type":"quick"}` (pasa por `sync.attack()`) en vez de `{"cmd":"play_anim","name":"quick"}` (va directo al animator). El camino debe ser idéntico al del click del jugador.
+1. **Los guiones deben simular el input real del jugador.** Conducir por el `inputDriver` (la misma ruta que el teclado) en vez de llamar directamente al método que quieres ver. El camino debe ser idéntico al del jugador.
 
-2. **Los tests deben capturar screenshots durante la acción**, no solo antes y después. Una animación puede verse perfecta al inicio y al final pero separar modelo de cápsula a mitad de ejecución.
+2. **Capturar durante la acción**, no solo antes y después. Una animación puede verse perfecta al inicio y al final y romperse a mitad de ejecución.
 
-3. **La cámara debe estar fija durante los tests** (detached). Si la cámara sigue al player, no se puede ver si el modelo se separa de la cápsula. Usar `camera_detach` para posicionar la cámara en un punto fijo y `camera_attach` para restaurar.
+3. **Verificar SIEMPRE las capturas generadas.** Los guiones dan verde/rojo sobre estado numérico (posición, colisión, qué ofrece el HUD), pero pies deslizando, escalas incoherentes o una luz que no casa solo se ven mirando.
 
-4. **Verificar SIEMPRE los screenshots generados.** Los tests reportan PASS/FAIL para métricas numéricas (desplazamiento, estado de animación) pero la verificación visual de los screenshots es esencial para detectar problemas como pies deslizando, modelo separado de cápsula, orientación incorrecta.
+4. **La escena de prueba debe tener referencia visual.** Una fixture con marcas conocidas en el suelo permite comparar lo que se pinta contra lo que se dice; las fixtures vivas están en `nefan-core/data/scenes/` y las ofrece el selector «Room» del cliente.
 
-5. **La escena de test debe tener referencia visual.** Usar `root_motion_debug` que tiene marcadores de distancia en el suelo (cruz a 2m y 4m). La cápsula verde semi-visible es esencial para comparar posición del body vs modelo.
-
-### Scripts de test
+### Guiones
 
 ```bash
-# Tests de movimiento — ejecutar tras cualquier cambio visual
-python3 godot/tools/movement_test.py
-
-# Tests de animación individual — screenshots multi-ángulo
-python3 godot/tools/anim_debug.py medium --angles side
-
-# Test específico
-python3 godot/tools/movement_test.py capsule_sync attack_root_motion
+node qa/run.mjs                  # todos
+node qa/run.mjs colision hud     # los que casen con esos nombres
+node qa/run.mjs --headed         # con ventana, para mirar qué hace
 ```
 
-### Qué verifica cada test
+## Lecciones aprendidas sobre animaciones Mixamo
 
-| Test | Qué verifica | Screenshots |
-|------|-------------|-------------|
-| `idle_state` | Animación idle al arrancar | — |
-| `walk_forward` | WASD mueve al player (~3.8m en 2s) | — |
-| `run_sprint` | Sprint más rápido que walk (~7.6m en 2s) | — |
-| `attack_animation` | Ataque se reproduce y vuelve a idle | during/after |
-| `attack_root_motion` | Body se desplaza (o no) durante ataque | 8 frames |
-| `capsule_sync` | Modelo y cápsula alineados durante walk | 10 frames |
-| `walk_sequence` | Caminar adelante/izquierda/atrás | 7 frames |
-| `sprint_sequence` | Sprint con screenshots periódicos | 12 frames |
-| `attack_walk` | Ataque interrumpe caminar | 5 frames |
-| `jump_sequence` | Salto mantiene momentum | 6 frames |
+Aplican al renderizador de hojas de sprites (`tools/render-sprite-sheets/`), que es
+quien consume hoy los FBX de Mixamo:
 
-### Modo headless (sin ventana)
-
-**IMPORTANTE:** Siempre arrancar Godot con `xvfb-run` para no bloquear la pantalla del usuario. Nunca usar `DISPLAY=:0`.
-
-```bash
-./start.sh             # → preset 3 "Automated tests" (bridge + Godot headless)
-# O manualmente:
-xvfb-run -a -s "-screen 0 1920x1080x24" ~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
-# Luego ejecutar tests normalmente
-python3 godot/tools/movement_test.py
-```
-
-### Mapeo de animaciones de ataque
-
-Para medir atributos fisicos de animaciones (alcance, arco, velocidad) y actualizar la tabla de equivalencias, seguir la guia en [`godot/tools/ANIMATION_MAPPING.md`](godot/tools/ANIMATION_MAPPING.md). Resumen rapido:
-
-1. Registrar animacion en ANIM_MAP, ONE_SHOT_SET, combat_config.json
-2. `python3 godot/tools/attack_mapping.py mi_anim` — captura + medicion automatica
-3. Verificar screenshots laterales frame a frame (el detector confunde wind-ups con golpes)
-4. Actualizar `nefan-core/data/animation_intrinsics.json` con datos corregidos
-
-### Lecciones aprendidas sobre animaciones Mixamo
-
-- **Hips XZ drift:** Las animaciones Mixamo mueven el bone Hips en XZ (root motion). Si se deja sin tratar, el modelo se desplaza del body. Solución: lockear Hips XZ al primer keyframe en animaciones de locomotion (walk/run). Ataques/idle no se lockean si su drift es ~0.
-- **Animaciones estáticas vs con pasos:** Usar animaciones SIN pasos hacia adelante para ataques (attack(4), slash, slash(5), slash(3)). Las que tienen pasos (attack, attack(2)) causan sliding de pies al lockear el Hips.
-- **AnimationTree > AnimationPlayer directo:** Usar AnimationNodeStateMachine con `travel()` para transiciones suaves y `start()` para interrupciones. El AnimationTree auto-retorna a idle con `SWITCH_MODE_AT_END`.
-- **Sin root motion, sin `top_level`, sin `set_bone_pose_position`.** Todo el movimiento via velocity del CharacterBody3D. Las animaciones son puramente visuales. Patrón del [Souls-Like Controller](https://github.com/catprisbrey/Third-Person-Controller--SoulsLIke-Godot4).
-- **CollisionShape sigue al modelo durante ataques:** El CollisionShape3D se mueve en XZ para seguir la posición del Hips bone durante animaciones no interruptibles. Vuelve a rest cuando la animación termina.
+- **Hips XZ drift:** las locomociones de Mixamo mueven el bone Hips en XZ (root motion horneado). Sin tratarlo, el personaje se sale de la celda del sprite. Solución: congelar Hips en XZ al primer keyframe en walk/run/strafe, preservando Y para que sobreviva el balanceo. Ataques e idle no se congelan: su drift es ~0.
+- **Animaciones estáticas vs con pasos:** usar animaciones SIN pasos hacia adelante para los ataques (attack(4), slash, slash(5), slash(3)). Las que tienen pasos (attack, attack(2)) deslizan los pies al congelar el Hips.
+- **El prefijo de hueso no siempre casa:** el modelo puede traer `mixamorig_` y la animación `mixamorig1_`. Si no se reescribe el prefijo de las pistas, el personaje renderiza en pose de reposo — y eso se ve igual que "la animación no carga".

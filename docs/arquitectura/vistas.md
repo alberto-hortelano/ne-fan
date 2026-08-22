@@ -142,9 +142,13 @@ recortes salen SIEMPRE de segmentar lo que el modelo PINTÓ. El clay es la
 excepción por construcción: es render propio, no pintura IA, y sus siluetas son
 exactas.
 
-## Godot
+## El cliente no interpreta Format D crudo
 
-No participa. Sigue en el repo, aplazado, y su interés es lo que sabe de
-generación procedural. Lo que NUNCA porta es la conversión celdas→metros: el
-bridge normaliza con `formatDToWorld` y Godot pinta world scene en metros o
-hace `push_error` (candado `godot-no-convierte-celdas-a-metros`).
+Lo que el renderer NUNCA porta es la conversión celdas→metros: el bridge
+normaliza con `formatDToWorld` en el wire y el cliente pinta world scene en
+metros. Si el cliente se trajera esa conversión (`terrain_legend`,
+`meters_per_cell`) habría dos caminos hasta la misma escena y la segunda copia
+se enteraría tarde de cada cambio del primero. Candados
+`cliente-no-convierte-celdas-a-metros` (error) y
+`solo-el-bridge-normaliza-la-escena` (warn con tope: la única asimetría
+admitida es la que el cliente necesita para las fixtures locales).

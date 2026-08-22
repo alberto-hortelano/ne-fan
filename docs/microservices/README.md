@@ -15,17 +15,14 @@ las decisiones en [decisions.md](decisions.md).
 | S1 | **game-gateway** | Sesiones en vivo: WS con clientes, routing, `GameSimulation` (hot loop) y `SceneGenQueue` in-process | WS | 9877 (9877) | `contracts/gateway.ts` |
 | S2 | **world-state** | Fuente de verdad del mundo: `NarrativeState` (único escritor de saves), `WorldMapManager`, `NpcDirector`, plugins runtime | HTTP | 9878 (9878, mismo proceso que S1) | `contracts/world-state.ts` |
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
-| S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para Godot**)** | `contracts/gpu-worker.ts` |
+| S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para clientes no migrados**)** | `contracts/gpu-worker.ts` |
 | S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | **8768 (extraído en F4** — `ai_server/remote_gen_main.py`; sin proxy, los clientes HTML resuelven por serviceUrl**)** | `contracts/remote-gen.ts` |
-| S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para Godot**)** | `contracts/asset-store.ts` |
+| S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para clientes no migrados**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
 
 ```mermaid
 flowchart LR
-  subgraph clients [Clientes]
-    HTML[nefan-html 2D]
-    GODOT[Godot 3D]
-  end
+  HTML[nefan-html<br/>cliente web]
   subgraph nodeproc [Proceso Node - co-desplegados hasta F6]
     S1[S1 game-gateway<br/>WS 9877]
     S2[S2 world-state<br/>HTTP 9878]
@@ -39,10 +36,8 @@ flowchart LR
   SAVES[(saves/*/state.json)]
 
   HTML -- ClientMessage/ServerMessage --> S1
-  GODOT -- ClientMessage/ServerMessage --> S1
   HTML -- pipeline de imagen --> S5
   HTML -- peel/plate --> S4
-  GODOT -- texturas/modelos --> S4
   S1 --- S2
   S2 --> SAVES
   S1 -- generate_scene / choices --> S3
@@ -53,7 +48,6 @@ flowchart LR
   S4 -- registro --> S6
   S5 -- registro --> S6
   HTML -- GET blobs --> S6
-  GODOT -- GET blobs --> S6
 ```
 
 Dos ciclos (sin cambios respecto a hoy):
@@ -75,7 +69,7 @@ Dos ciclos (sin cambios respecto a hoy):
 - **narrative-llm + narrative-mcp = un servicio lógico, dos procesos**: el
   ciclo por WS :3737 es acoplamiento de despliegue total (si uno cae, el otro
   no sirve). El único endpoint de visión que queda es `/analyze_weapon`
-  (Godot, orientación de armas): vive aquí porque necesita el canal MCP.
+  (orientación de armas): vive aquí porque necesita el canal MCP.
 - **gpu-worker vs remote-gen**: separar lo que consume GPU local (escala = nº
   de GPUs, serializado por naturaleza) de lo que consume dinero (escala =
   concurrencia HTTP, latencias 30–300 s). El `gpu_lock` de asyncio NO
@@ -97,9 +91,9 @@ Dos ciclos (sin cambios respecto a hoy):
 
 1. **Un solo escritor del save**: world-state (hoy, el bridge). Nadie más toca
    `saves/{id}/state.json`.
-2. **La escena viaja normalizada**: Format D se persiste; por el wire a
-   clientes va SIEMPRE world scene (`formatDToWorld`). Godot hace push_error
-   ante Format D crudo.
+2. **La escena viaja normalizada**: Format D se persiste; por el wire al
+   cliente va SIEMPRE world scene (`formatDToWorld`). El cliente no interpreta
+   Format D crudo (candado `cliente-no-convierte-celdas-a-metros`).
 3. **Colisión desde huellas declaradas o de segmentar lo PINTADO — nunca de
    recortar con siluetas declaradas** (regla del proyecto, ver CLAUDE.md).
 4. **Assets content-addressed**: clave sha256(prompt+context)[:16]; los
@@ -149,7 +143,8 @@ weapon_orient y weapon_verify.
 **S4 gpu-worker (HTTP :8766, EXTRAÍDO en F3)** — ✅ /generate_texture,
 /generate_model, /generate_skin, /generate_sprite, /health (con `model_backend` para el /backend_status de
 S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
-(`@internal`). ai_server proxya todos en :8765 para Godot (gpu_proxy.py).
+(`@internal`). ai_server proxya todos en :8765 para clientes no migrados
+(gpu_proxy.py).
 
 **S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_surface_atlas,
 /skin_sprite_sheet, /styles/upload, GET /styles/{style_id}/missing,
@@ -165,16 +160,15 @@ GET /styles/{style_id}/{file} (desde S2), GET /health.
 ☠ /cache/check/{hash} (ruta muerta desde siempre por el orden del catch-all;
 preservada como 400, ver contrato).
 
-**Fuera de contrato** (deliberado): el remote control TCP :9876 de Godot
-(herramienta de test,
-no servicio) y los benches (`labs/narrative/fake-ai-server.mjs` emula S3-S6 en
-:18765 y es la spec ejecutable para validarlos).
+**Fuera de contrato** (deliberado): los benches y los guiones de QA
+(herramientas de test, no servicios). `labs/narrative/fake-ai-server.mjs` emula
+S3-S6 en :18765 y es la spec ejecutable para validarlos; `qa/run.mjs` conduce
+el cliente real desde fuera.
 
 ## Consumidores por servicio
 
 | Cliente | S1 | S2 | S3 | S4 | S5 | S6 |
 |---------|----|----|----|----|----|----|
 | nefan-html | todo lo autoritativo | covers estilos (→S6 en F2) | review/analyze de imagen | peel, plate, sprites | scene image, sheets, styles | GET blobs |
-| Godot | 8/19 mensajes (deriva conocida) | — | — | texturas, modelos, skins (vía proxy :8765), analyze_weapon | — | GET blobs |
 | gateway (S1) | — | in-process (→contrato en F6) | generate_scene, choices, develop_world, sprites | vía AiClient | — | assetExists |
 | narrative-mcp | — | 18 tools de estado | (es su sidecar) | — | — | — |
