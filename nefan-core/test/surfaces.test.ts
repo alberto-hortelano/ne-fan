@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildFpsTileSpec } from "../src/scene/blueprint/fps-spec.js";
 import { parseVolumes } from "../src/scene/blueprint/volumes.js";
+import { wallColors } from "../src/scene/blueprint/palette.js";
 import {
   MAT_INFO,
   buildLayout,
@@ -42,7 +43,7 @@ describe("surfaces: classify", () => {
     shape: "box",
     size: [4, 2.5, 4],
     pos: [0, 0, 0],
-    color: "#c9b89a",
+    color: wallColors("plaster").lit,
     cat: "building",
     ...over,
   });
@@ -55,12 +56,46 @@ describe("surfaces: classify", () => {
 
   it("puerta pintada, muros por color, suelo grande vs detalle", () => {
     assert.equal(classify(box({ color: "#2a2018" }), "side"), "door_wood");
-    assert.equal(classify(box({ color: "#6b543a" }), "side"), "wall_timber");
+    assert.equal(classify(box({ color: wallColors("timber").lit }), "side"), "wall_timber");
     assert.equal(classify(box({ color: "#b3a68e" }), "side"), "wall_stone");
     const suelo = box({ cat: "terrain", size: [64, 0.05, 64], color: "#8d6f4e" });
     assert.equal(classify(suelo, "top"), "ground_dirt");
     const detalle: SurfacePrim = { shape: "polygon", size: [0.01], pos: [0, 0, 0], points: [[0, 0], [1, 0], [1, 1]], color: "#aaa17e", cat: "terrain" };
     assert.equal(classify(detalle, "caps"), null);
+  });
+
+
+  /** CANDADO: el material que declara el motor tiene que llegar al pintor.
+   *  Va por el CONSTRUCTOR real (`buildFpsTileSpec`), no por colores
+   *  escritos a mano: la versión anterior de este test fijaba los mismos
+   *  literales equivocados que el clasificador, así que ambos coincidían en
+   *  el error y `walls:{material:"plaster"}` se pintaba como mampostería
+   *  durante meses sin que nada fallara. */
+  it("el material declarado de una fachada llega al pintor (vía builder)", () => {
+    const esperado: Record<string, string> = {
+      plaster: "wall_plaster",
+      timber: "wall_timber",
+      wood: "wood_planks",
+      stone: "wall_stone",
+    };
+    for (const [material, clase] of Object.entries(esperado)) {
+      const parsed = parseVolumes([
+        {
+          id: "casa", label: "casa", type: "building",
+          rect: [40, 40, 16, 12], wall_h: 12,
+          roof: { kind: "flat", material: "tile" },
+          walls: { material },
+        },
+      ]);
+      assert.ok(parsed.ok, `volumen con material ${material} parsea`);
+      const { primsM } = buildFpsTileSpec({ volumes: parsed.volumes, biome: "dirt" }, "test_mat");
+      const cuerpo = primsM.find((p) => p.cat === "building" && p.shape === "box" && p.size[1] > 1);
+      assert.ok(cuerpo, `hay cuerpo de edificio para ${material}`);
+      assert.equal(
+        classify(cuerpo, "side"), clase,
+        `walls.material "${material}" debe pintarse como ${clase} (color ${cuerpo.color})`,
+      );
+    }
   });
 
   it("mat por-prim: string, objeto con fallthrough y false→clay", () => {

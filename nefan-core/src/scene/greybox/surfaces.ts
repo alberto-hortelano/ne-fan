@@ -12,6 +12,7 @@
  *  y layout de su README están candados aquí y en los tests. */
 
 import type { GreyboxPrimitive } from "./common.js";
+import { wallColors } from "../blueprint/palette.js";
 
 /** Versión del pipeline de superficies: viaja dentro del layout canónico —
  *  bump ⇒ invalidación de todas las cachés de atlas (cliente y servidor).
@@ -106,8 +107,31 @@ export const MAT_INFO: Record<string, MatInfo> = {
   window_glass: { tile: false, en: "one single medieval window filling its rectangle completely edge to edge: small diamond leaded glass panes in a dark wooden frame, faint warm interior glow, no wall around it" },
 };
 
-const TIMBER_COLORS = new Set(["#6b543a", "#5c4832", "#765633"]);
-const PLASTER_COLORS = new Set(["#c9b89a", "#cfc0a2"]);
+/** Material DECLARADO de una fachada → clase de superficie, indexado por el
+ *  color que la paleta le da a esa cara. La única vía por la que el material
+ *  del motor llega hasta aquí es el color de la primitiva, así que la tabla
+ *  se DERIVA de `wallColors` en vez de copiarse.
+ *
+ *  Cuando eran literales escritos a mano no coincidían con `WALL_MATERIALS`:
+ *  plaster pinta `#c4b89e` y aquí se esperaba `#c9b89a`, timber pinta
+ *  `#94805e` y se esperaba `#6b543a`. Ninguno casaba, así que
+ *  `walls:{material:"plaster"|"timber"|"wood"}` caía al `wall_stone` del
+ *  final: el motor pedía cal encalada y el jugador veía mampostería. */
+export const WALL_SURFACE_BY_MATERIAL: Record<string, string> = {
+  timber: "wall_timber",
+  plaster: "wall_plaster",
+  wood: "wood_planks",
+  stone: "wall_stone",
+};
+
+/** Respaldo por color para prims de edificio que llegan SIN `mat` (la vía
+ *  autoritativa la pone fps-spec desde `walls.material`). Se deriva de la
+ *  misma paleta que colorea la prim en vez de copiarse a mano. */
+const WALL_CLASS_BY_COLOR = new Map<string, string>();
+for (const [material, klass] of Object.entries(WALL_SURFACE_BY_MATERIAL)) {
+  const c = wallColors(material);
+  for (const color of [c.lit, c.top]) if (!WALL_CLASS_BY_COLOR.has(color)) WALL_CLASS_BY_COLOR.set(color, klass);
+}
 
 /** Rasgos del `ground` (caminos/plazas) → clase de material, mapeados por su
  *  color de GROUND_MATERIAL_COLORS (ground-prims.ts). Sin esto los caminos
@@ -150,9 +174,7 @@ export function classify(prim: SurfacePrim, group: SurfaceGroup): string | null 
     if (size[1] <= 0.2) return "wood_floor"; // losa de suelo de un cutaway
     if (color === "#2a2018") return "door_wood"; // puerta pintada en fachada
     if (group === "top") return "roof_tile"; // azotea de shed/flat
-    if (TIMBER_COLORS.has(color)) return "wall_timber";
-    if (PLASTER_COLORS.has(color)) return "wall_plaster";
-    return "wall_stone";
+    return WALL_CLASS_BY_COLOR.get(color) ?? "wall_stone";
   }
   if (cat === "prop") {
     if (shape === "cylinder") return group === "side" ? "barrel_wood" : "wood_planks";

@@ -23,7 +23,7 @@
 
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
-import type { SurfacePrim } from "../greybox/surfaces.js";
+import { WALL_SURFACE_BY_MATERIAL, type SurfacePrim } from "../greybox/surfaces.js";
 import { enrichFpsPrims } from "./fps-detail.js";
 import { applyFpsCutawayInteriors } from "./fps-interior.js";
 import { buildReliefGrid, RELIEF_RIDERS } from "./fps-relief.js";
@@ -216,11 +216,22 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
         }
         return q;
       }
-      const sd = "surface_desc" in vol ? vol.surface_desc : undefined;
-      if (sd === undefined) return p as SurfacePrim;
       const q: SurfacePrim = { ...p };
-      const sr = "surface_ref" in vol ? vol.surface_ref : undefined;
-      assignHeroCells(q, primRole(p, vol), p.volId!, sd, sr);
+      // El MATERIAL declarado de la fachada, dicho explícitamente. Antes solo
+      // viajaba disfrazado de color y el clasificador tenía que adivinarlo
+      // hacia atrás contra una lista de hex escrita a mano; cuando el motor
+      // no daba `walls.color`, no adivinaba nada y pintaba mampostería sobre
+      // un `material:"plaster"`. Solo el CUERPO: el faldón del tejado y las
+      // puertas tienen su propio material.
+      if (vol.type === "building" && primRole(p, vol) === "body") {
+        const klass = WALL_SURFACE_BY_MATERIAL[vol.walls?.material ?? "stone"];
+        if (klass) q.mat = { side: klass };
+      }
+      const sd = "surface_desc" in vol ? vol.surface_desc : undefined;
+      if (sd !== undefined) {
+        const sr = "surface_ref" in vol ? vol.surface_ref : undefined;
+        assignHeroCells(q, primRole(p, vol), p.volId!, sd, sr);
+      }
       return q;
     }),
     volumes,

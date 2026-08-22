@@ -146,7 +146,7 @@ const GOLDEN: Record<string, { layout: string; cells: string; celdas: number }> 
   // adarve, arco, torre, tapias, árboles, props de interior. Vivía en
   // labs/render/fixtures/medieval/plan.json.
   medieval: {
-    layout: "fde255e2e8ebdd0ade135485ebfd4aa527e2d75096ceddb703b1109228429823",
+    layout: "03ef676adb29a36891dd5523fa999f12e293dc02ecd379abd54ef3ae0fe3c7ad",
     cells: "2979a5f148baee60898e50598a9fad22e531e01c9893bc834bd3e1a216a8237d",
     celdas: 15,
   },
@@ -156,7 +156,7 @@ const GOLDEN: Record<string, { layout: string; cells: string; celdas: number }> 
   // volumen, por cara y de pieza) y un bloque de scatter (que NO debe aportar
   // ni una celda: las prims de scatter son `decor` → clay, coste 0).
   varied: {
-    layout: "d140cab0957db1bef8225ec3170613fe055945bbb457a2377816e2cef3215065",
+    layout: "7b38a56414952d09a07911cee9453c5b5d79ca54e61f3ef1ffb5c30e32a46f92",
     cells: "23e82540af3acff1d8cbcbcc71863be07ab3f8d6711c6289c148a135d5b983a4",
     celdas: 26,
   },
