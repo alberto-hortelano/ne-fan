@@ -33,7 +33,8 @@ nefan-core/               TypeScript — logica de juego compartida (Godot + HTM
     games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
     plugins/               Plugins shipped comunes a TODOS los juegos (economy); un plugins/ local con mismo name lo pisa
     styles/{id}/           Estilo: style.json + imágenes de referencia por categoría
-  test/                    ~245 tests (combat, animation, simulation, narrativa, plugins)
+  test/                    85 ficheros de test (combat, simulation, escena, narrativa,
+                           plugins, contrato del modelo, fronteras arquitectónicas)
 
 godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
   scripts/
@@ -84,11 +85,17 @@ godot/                    Proyecto Godot 4.6+ (Forward+, 1920x1080)
     movement_test.py       Tests automatizados de movimiento + screenshots
     anim_debug.py          Captura multi-angulo de animaciones
 
-nefan-html/               Cliente 2D top-down (Canvas)
+nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
   src/
     main.ts                Game loop, importa nefan-core directamente
-    renderer/              Canvas 2D rendering
-    input/                 Keyboard + mouse handler
+    renderer/              fps-gl (three: el único contexto WebGL de la pestaña),
+                           fps-renderer (fachada + import dinámico), sprite-renderer,
+                           character-sprites, types
+    scene/                 fps-atlas: pipeline de imagen del atlas de superficies
+    world/                 Modelo de mundo del cliente: tile-store, frontier
+    ui/                    Capa DOM in-game + pantalla de título (ver ui.md)
+    net/                   bridge-client / narrative-client (WS al bridge)
+    input/                 Providers: keyboard (default) y scripted (bench)
 
 ai_server/                Python FastAPI — 3 procesos: main.py (narrativa :8765),
                           gpu_worker_main.py (:8766), remote_gen_main.py (:8768)
@@ -101,11 +108,11 @@ labs/                     Benches de experimentación (ver labs/README.md)
   serve.sh                 Servidor estático de labs/ entero en :8912 (sin caché)
   skinning/                Skinning AI sobre sprites Mixamo (run.py --preset;
                            generador interactivo FastAPI en :8911)
-  style/                   Referencias de estilo + fidelidad de layout del repintado
-                           (gen.py, fidelity.py, dump_blueprint.ts)
-  stage/                   Segmentación del plató pintado — proscenio (run.py, score.py)
-  render/                  Alternativas de generación del tile 2D (run 001 cerrado)
-  escenografia/            Platós de cine SVG + bench greybox (base del compositor)
+  style/                   Referencias de estilo y fidelidad de layout (gen.py,
+                           fidelity.py)
+  fps/                     Bench de la vista de juego: dump_spec, escenas, capturas,
+                           comparativa contra Godot (decidido: three)
+  authoring/               Generadores declarativos de scatter (run 003 → scatter.ts)
   narrative/               Motor narrativo sin gráficos: game-emulator, fake-ai-server,
                            replay-server, check-scene.ts (tooling de E2E)
 ```

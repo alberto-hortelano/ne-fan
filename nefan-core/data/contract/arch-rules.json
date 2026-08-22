@@ -274,9 +274,9 @@
     {
       "id": "html-sin-catch-silencioso",
       "desc": "El cliente 2D no traga errores en silencio",
-      "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max.",
+      "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max. Baja de 5 a 4 al darle canal al re-disparo del atlas fps (fps-atlas.ts): era el único de los cinco sin una línea que dijera qué se estaba tragando, y se comía la ÚLTIMA oportunidad de texturar un tile. Los cuatro que quedan son degradaciones documentadas en su propio catch (localStorage ausente, frame de sprite fuera de rango, blob podado, busto sin skin): bajar de 4 no es tocar el número, es decidir que esas cuatro merecen entrada en el log del jugador.",
       "severity": "warn",
-      "max": 5,
+      "max": 4,
       "files": [
         "nefan-html/src/**/*.ts"
       ],

@@ -120,9 +120,9 @@ export class PortraitView {
   }
 
   /** Sheet del busto: SOLO la dirección frontal del ciclo idle en el set
-   *  `frontal_8` (mirada a cámara). Se carga aparte del set de la vista
-   *  porque en oblicua el sheet activo mira desde arriba — y son PNG
-   *  locales, así que cuesta lo mismo que nada. */
+   *  `frontal_8` (mirada a cámara), que es el mismo del mundo — con una sola
+   *  cámara no hay dos ángulos que reconciliar. Se carga por su cuenta
+   *  porque son PNG locales y cuesta lo mismo que nada. */
   private async bustSheet(model: string, allowFetch: boolean): Promise<SpriteSheet> {
     const cached = this.bustSheets.get(model);
     if (cached) return cached;

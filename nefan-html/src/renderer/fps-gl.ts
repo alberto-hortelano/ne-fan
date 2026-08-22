@@ -463,6 +463,33 @@ export class FpsGl {
   private telegraph: AttackTelegraph | null = null;
   /** Punto óptimo del golpe proyectado a píxeles del lienzo (solo debugState). */
   private telegraphScreen: { x: number; y: number; depthM: number } | null = null;
+  /** Recuento del episodio de telegraph que se está PINTANDO, frame a frame.
+   *
+   *  No es una traza de conveniencia: es la única forma honesta de afirmar
+   *  nada sobre el telegraph desde fuera. Un modo dura décimas de segundo
+   *  (el destello de impacto, 0,3 s) y el reloj que lo consume es el `delta`
+   *  del game loop, que está TOPADO a 0,1 s — con la CPU ocupada el episodio
+   *  dura más tiempo de pared del que tardó en sim, así que un observador
+   *  externo que muestree una ventana fija se salta el destello o cierra la
+   *  ventana antes de que el telegraph se apague. Contar aquí, donde se
+   *  pinta, no se puede saltar ningún frame.
+   *
+   *  `episode` distingue un ataque del siguiente (sube al encenderse); el
+   *  resto se acumula hasta que el telegraph se apaga solo (`ended`). Las
+   *  posiciones de pantalla van como RANGO: quien lee decide el criterio
+   *  ("está en cuadro") sin que el renderer tenga que conocerlo. */
+  private telegraphEpisode: {
+    episode: number;
+    windupFrames: number;
+    impactFrames: number;
+    /** Frames de wind-up en los que el punto óptimo no era proyectable
+     *  (queda detrás del ojo): ni dentro ni fuera del cuadro, ausente. */
+    unprojectedFrames: number;
+    screenYMin: number | null;
+    screenYMax: number | null;
+    optimalDistance: number;
+    ended: boolean;
+  } | null = null;
   /** Muro de niebla de la frontera. `opacity` es el tween 0..1 (la alfa real
    *  del material es ésta por VEIL_MAX_ALPHA y el perfil del shader). */
   private veil: {
@@ -834,10 +861,26 @@ export class FpsGl {
    *  render(): en WebGL no hay lienzo sobre el que pintar tras emitir el
    *  frame, así que el patrón "dibuja después" de las vistas 2D no vale. */
   setAttackTelegraph(t: AttackTelegraph | null): void {
+    const antes = this.telegraph;
     this.telegraph = t;
     if (!t) {
+      // El apagado es un flanco: main.ts llama con null en cada frame sin
+      // ataque, y solo el primero cierra el episodio.
+      if (antes && this.telegraphEpisode) this.telegraphEpisode.ended = true;
       if (this.telegraphMesh) this.telegraphMesh.mesh.visible = false;
       return;
+    }
+    if (!antes) {
+      this.telegraphEpisode = {
+        episode: (this.telegraphEpisode?.episode ?? 0) + 1,
+        windupFrames: 0,
+        impactFrames: 0,
+        unprojectedFrames: 0,
+        screenYMin: null,
+        screenYMax: null,
+        optimalDistance: t.params.optimal_distance,
+        ended: false,
+      };
     }
     const key = `${t.params.optimal_distance}|${t.params.distance_tolerance}|${t.params.area_radius}`;
     if (!this.telegraphMesh) {
@@ -904,6 +947,7 @@ export class FpsGl {
     const ox = player.pos.x + fx * params.optimal_distance;
     const oz = player.pos.z + fz * params.optimal_distance;
     this.telegraphScreen = this.projectToScreen(ox, this.reliefWorldAt(ox, oz) + TELEGRAPH_Y_M, oz);
+    this.tallyTelegraphFrame(mode);
     t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
     t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
     if (mode === "impact") {
@@ -916,6 +960,26 @@ export class FpsGl {
         : "#787878";
       (t.mat.uniforms.uImpactColor.value as THREE.Color).set(c);
     }
+  }
+
+  /** Anota el frame recién drapeado en el episodio en curso. Se llama desde
+   *  updateTelegraph() —después de proyectar el punto óptimo— porque lo que
+   *  cuenta es lo que se PINTA, no lo que main.ts pidió. */
+  private tallyTelegraphFrame(mode: AttackTelegraph["mode"]): void {
+    const ep = this.telegraphEpisode;
+    if (!ep) return;
+    if (mode === "impact") {
+      ep.impactFrames++;
+      return;
+    }
+    ep.windupFrames++;
+    const y = this.telegraphScreen?.y;
+    if (y === undefined) {
+      ep.unprojectedFrames++;
+      return;
+    }
+    ep.screenYMin = ep.screenYMin === null ? y : Math.min(ep.screenYMin, y);
+    ep.screenYMax = ep.screenYMax === null ? y : Math.max(ep.screenYMax, y);
   }
 
   /** Velo direccional de la frontera: muro de niebla sobre el borde del tile
@@ -1349,6 +1413,11 @@ export class FpsGl {
               : null,
           }
         : null,
+      /** Recuento del último episodio de telegraph (o del que corre). A
+       *  diferencia de `telegraph`, que es una foto y se pierde los modos
+       *  cortos, esto sobrevive al episodio: es lo que hay que mirar para
+       *  afirmar que el destello de impacto ocurrió. */
+      telegraphEpisode: this.telegraphEpisode ? { ...this.telegraphEpisode } : null,
       veil: v ? { edge: v.edge, opacity: Math.round(v.opacity * 1000) / 1000 } : null,
     };
   }

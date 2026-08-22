@@ -3,7 +3,7 @@
 Start with: python ai_server/gpu_worker_main.py [--port 8766]
 
 Sirve los pipelines de routers/gpu_generation.py (texturas SD1.5+LCM, modelos
-Meshy/TripoSG, skins img2img, sprites, LaMa placa/pelado). El `gpu_lock` de
+Meshy/TripoSG, skins img2img, sprites). El `gpu_lock` de
 deps NO desaparece con la extracción:
 además de serializar CUDA protege la COHERENCIA del pipe SD compartido
 (Skin/Sprite/ModelGenerator mutan padding/LoRA/device del pipe de

@@ -384,7 +384,7 @@ SERVICE_HINTS=(
     "Python narrative/LLM server"
     "3D client window"
     "Godot under xvfb (no window)"
-    "2D browser client (vistas oblicua/proscenio/fps)"
+    "Cliente web en primera persona (three.js)"
     "blobs + manifest SQLite + covers de estilos"
     "texturas SD / modelos / LaMa (GPU local, sin créditos)"
     "Meshy/fal + SAM2 + atlas fps + estilos — GASTA créditos si se invoca"

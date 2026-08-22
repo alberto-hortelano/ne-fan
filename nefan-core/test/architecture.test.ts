@@ -276,6 +276,44 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // La deuda congelada es la que más fácil se pudre: `max` se baja en la PR
+  // que arregla un catch, y nadie vuelve a comprobar que el patrón siga
+  // cazando los que quedan. Probado en negativo con las DOS formas que el
+  // repo produce —el bloque vacío y el `.catch(() => {})`— y con el vecino
+  // inocente: un catch que sí hace algo no cuenta como deuda.
+  it("[deuda] html-sin-catch-silencioso: las dos formas de tragarse un error saltan", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "html-sin-catch-silencioso");
+
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/scene/x.ts", text: "try {\n  f();\n} catch {}\n", imports: [] },
+        { path: "nefan-html/src/ui/y.ts", text: "void p.catch(() => {});\n", imports: [] },
+        // Un comentario dentro NO lo salva: documentar lo que se traga sigue
+        // siendo tragárselo sin canal (es la deuda que queda congelada).
+        {
+          path: "nefan-html/src/ui/z.ts",
+          text: "try {\n  f();\n} catch {\n  // degradación esperable\n}\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["nefan-html/src/scene/x.ts:3", "nefan-html/src/ui/y.ts:1", "nefan-html/src/ui/z.ts:3"],
+    );
+
+    // Y el catch con canal, callado: es exactamente lo que la regla pide.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/x.ts",
+          text: 'try {\n  f();\n} catch (err) {\n  errors.push("x", "falló", err);\n}\n',
+          imports: [],
+        },
+        { path: "nefan-html/src/ui/y.ts", text: 'void p.catch((err) => errors.push("y", "falló", err));\n', imports: [] },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

@@ -1,5 +1,5 @@
-"""Generación LOCAL con GPU (S4 gpu-worker): texturas PBR, modelos 3D, skins,
-sprites e inpainting LaMa (placa + pelado de capas).
+"""Generación LOCAL con GPU (S4 gpu-worker): texturas PBR, modelos 3D, skins
+y sprites.
 
 Endpoints movidos TAL CUAL desde routers/generation.py (F3). El estado runtime
 viene de `deps`; el `gpu_lock` serializa el acceso a CUDA y protege la

@@ -1,20 +1,20 @@
-# Interfaz de juego (cliente 2D)
+# Interfaz de juego (cliente web)
 
-La capa DOM común a las tres vistas: regiones, tema por style pack, toda acción como tecla Y botón, retrato del hablante.
+La capa DOM sobre el lienzo del mundo: regiones, tema por style pack, toda acción como tecla Y botón, retrato del hablante.
 
 > Extraído de `CLAUDE.md` para que el prompt base quepa en la zona útil del contexto.
 > Es la misma documentación, movida. Si algo de aquí es verificable mecánicamente,
 > su sitio es `nefan-core/data/contract/arch-rules.json`, no la prosa.
 
-## Interfaz de juego (cliente 2D, las tres vistas)
+## Interfaz de juego
 
 La UI in-game vive en una sola capa DOM sobre el lienzo (`#game-ui` en
-`nefan-html/index.html`), común a las tres vistas: el renderer cambia, la
-interfaz no. Cada panel se cuelga de una región (`#ui-top-left`,
-`#ui-bottom-center`…) que las apila — nada de `bottom: 120px` a ojo.
-`#game-ui[data-view]` (oblique|proscenium|fps) y `[data-locked]` (pointer
-lock) son los interruptores: lo que cambia por vista lo decide el CSS, no
-main.ts.
+`nefan-html/index.html`), separada del mundo. El lienzo es WebGL y no pinta
+texto — los nombres de NPC son DOM temado (`ui/world-labels.ts`). Cada panel se
+cuelga de una región (`#ui-top-left`, `#ui-bottom-center`…) que las apila —
+nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
+`[data-locked]` (pointer lock): lo decide el CSS, no main.ts. Hubo también un
+`[data-view]`, que murió con las otras dos vistas.
 
 - **Estética diegética sobria**: panel translúcido, filete de 1 px, sin
   marco ornamental, una tipografía y un acento. Todo el color sale de
