@@ -25,7 +25,6 @@ const out = {
   npcs: scene.npcs ?? [],
   lights: scene.lights,
   prims: scene.prims,
-  elements: scene.elements ?? [],
 };
 const outPath = join(here, "escenas", sceneName, "escena.json");
 writeFileSync(outPath, JSON.stringify(out, null, 1));

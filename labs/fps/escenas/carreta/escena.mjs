@@ -69,9 +69,5 @@ export async function load() {
     playerStart,
     poses,
     npcs,
-    elements: spec.elements.map((e) => ({
-      ...e,
-      footprint_cells: e.footprint_cells.map((v) => v * M),
-    })),
   };
 }

@@ -20,6 +20,5 @@
   {"shape": "gable", "size": [5, 2, 6], "pos": [0, 3, 0], "color": "#9a4f33", "cat": "building"},
   {"shape": "cylinder", "size": [1, 2.5], "pos": [-5, 0, 0], "color": "#8a8378", "cat": "prop"},
   {"shape": "cone", "size": [1.5, 3, 12], "pos": [5, 0, 0], "color": "#3a5a2a", "cat": "tree"}
- ],
- "elements": []
+ ]
 }

@@ -13,7 +13,12 @@ real, sin repintar por frame.
 
 ```bash
 # Fase GRATIS (sin créditos):
-cd nefan-core && npx tsx ../labs/fps/dump_spec.ts   # regenerar escenas/exterior/spec.json
+# Regenerar los spec.json. El tileId es la SEMILLA del detalle procedural del
+# suelo: cambiarlo reescribe las manchas y las piedras del tile, así que estos
+# tres comandos (y no otros) son los que reproducen los dumps del repo.
+npx tsx labs/fps/dump_spec.ts nefan-core/test/fixtures/fps-plans/medieval.json labs/fps/escenas/exterior fps_exterior
+npx tsx labs/fps/dump_spec.ts labs/fps/escenas/nueva/plan.json   labs/fps/escenas/nueva   fps_nueva
+npx tsx labs/fps/dump_spec.ts labs/fps/escenas/carreta/plan.json labs/fps/escenas/carreta fps_carreta
 ./labs/serve.sh                                     # :8912
 #   → http://localhost:8912/fps/viewer.html?scene=interior           (clay)
 #   → ...viewer.html?scene=exterior&run=runs/003_x                   (texturizado)

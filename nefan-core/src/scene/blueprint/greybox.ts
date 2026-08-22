@@ -1,38 +1,28 @@
-/** Builder greybox 3D del TILE oblicuo — lógica PURA (sin three.js).
+/** Builder greybox 3D del TILE — lógica PURA (sin three.js).
  *
- *  Sustituye al compositor SVG: produce un `TileGreyboxSpec` (primitivas en
- *  CELDAS, luces fijas, cámara ortográfica+cizalla) que el cliente renderiza
- *  con three.js como arte del tile (modo vector) y plano base del repintado
- *  (bench labs/render E2a: fidelidad 100/100 a coste 0). DETERMINISTA: mismo
- *  plan + seedKey ⇒ mismo spec ⇒ mismo `canonicalGreyboxJson` — ese hash es
- *  el `layout_key` de la caché del repintado (el PNG WebGL NO es
- *  byte-determinista y jamás debe serlo).
+ *  Produce un `TileGreyboxSpec`: las primitivas del tile en CELDAS más las
+ *  luces fijas. Es la geometría base ÚNICA del juego — la vista fps la
+ *  post-procesa (fps-spec.ts: cutaways cerrados, detalle, scatter, celdas →
+ *  metros) y de ahí sale el atlas de superficies, que es lo que se paga con
+ *  IA. DETERMINISTA: mismo plan + seedKey ⇒ las MISMAS primitivas, en el
+ *  mismo orden y con los mismos valores. Ese determinismo no es comodidad:
+ *  el arte ya generado se reencuentra por la identidad de las celdas que
+ *  salen de aquí, y `test/fps-atlas-golden.test.ts` la congela.
  *
- *  La proyección es la OBLICUA de siempre (blueprint/projection.ts):
- *  pt(u,v,h) = [u + h·KX, v − h·KY]. En el cliente es una cámara ortográfica
- *  CENITAL + cizalla en la matriz del grupo raíz (labs/render viewer) — la
- *  equivalencia exacta con pt() la garantizan los tests de core. Sol fijo
- *  desde el sur(-oeste): cara sur iluminada / este en sombra SIEMPRE (el
- *  prompt del repintado lo afirma sin condiciones). */
+ *  Sol fijo desde el sur(-oeste): cara sur iluminada / este en sombra
+ *  SIEMPRE. */
 
 import { seededRng, uniform } from "../../rng.js";
 import { TILE_CELLS } from "../tile.js";
 import { BIOME_COLORS, darken, lighten } from "./palette.js";
-import { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
-import { volumeFootprint } from "./footprint.js";
 import { ellipsePoints, groundFeaturePrims } from "./ground-prims.js";
 import type { GroundFeature } from "./ground.js";
 import type { GateVolume, Volume } from "./volumes.js";
 import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
-import { classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
+import { volumePartsForTile } from "../greybox/volume-prims.js";
 
-/** Versión del builder: viaja dentro del spec (y por tanto dentro del hash
- *  de caché `layout_key`). Bump ⇒ regeneración de todos los tiles pintados. */
+/** Versión del builder: viaja dentro del spec. */
 export const TILE_GREYBOX_VERSION = 1;
-
-/** Píxeles por celda del render base (canvas 1120×1280 con el viewBox
- *  140×160). Los occluders se renderizan a la MISMA densidad. */
-export const TILE_GREYBOX_PX_PER_CELL = 8;
 
 export interface TileGreyboxPlan {
   ground?: GroundFeature[];
@@ -40,60 +30,13 @@ export interface TileGreyboxPlan {
   biome?: string;
 }
 
-/** Cámara del tile: ortográfica cenital + cizalla oblicua (el cliente monta
- *  la matriz del grupo raíz con kx/ky — espejo exacto de PROJECTION.pt). */
-export interface TileGreyboxCamera {
-  kind: "ortho_shear";
-  view_box: { minX: number; minY: number; width: number; height: number };
-  kx: number;
-  ky: number;
-  px_per_cell: number;
-}
-
-export interface ComposedElement {
-  id: string;
-  label: string;
-  solid: boolean;
-  tall: boolean;
-  /** [x, y, w, h] en unidades del view_box (escala a px de imagen con
-   *  imgW / view_box.width). */
-  bbox: [number, number, number, number];
-  /** Y (unidades del view_box) de la línea de contacto con el suelo del
-   *  punto más profundo — baseline del depth-sort. */
-  baseline_y: number;
-  /** Huella en celdas de mundo [minU, minV, maxU, maxV]. */
-  footprint_cells: [number, number, number, number];
-}
-
-/** Un tramo de volumen alto recortable: el cliente lo renderiza aparte (solo
- *  sus primitivas, fondo transparente) y lo usa como occluder de depth-sort. */
-export interface TileOccluderSpec {
-  /** Único dentro del tile (id del volumen + sufijo de tramo). */
-  id: string;
-  /** Volumen padre (correlaciona con `elements`). */
-  vid: string;
-  label: string;
-  /** Índices en `primitives` de las piezas de ESTE tramo. */
-  prims: number[];
-  /** [x, y, w, h] proyectado, en unidades del view_box (margen 1 incluido). */
-  bbox: [number, number, number, number];
-  baseline_y: number;
-  /** Huella del tramo en celdas de mundo [minU, minV, maxU, maxV]. */
-  footprint_cells: [number, number, number, number];
-  /** true = tramo aéreo (copa): se pinta encima de las entidades, con
-   *  CANOPY_OPACITY. */
-  overhead?: boolean;
-}
-
 export interface TileGreyboxSpec {
   tile_greybox_version: number;
-  camera: TileGreyboxCamera;
   lights: GreyboxLight[];
-  /** Unidades = CELDAS del tile; pos = [u, hBase, v] (y = base). Los índices
-   *  de `occluders.prims` apuntan aquí — el orden es parte del contrato. */
+  /** Unidades = CELDAS del tile; pos = [u, hBase, v] (y = base). El ORDEN de
+   *  emisión es parte del contrato: lo hereda `primsM` y con él la identidad
+   *  de las celdas del atlas. */
   primitives: GreyboxPrimitive[];
-  elements: ComposedElement[];
-  occluders: TileOccluderSpec[];
 }
 
 /** Flores por bioma: tonos que leen como vegetación sin gritar. */
@@ -167,105 +110,6 @@ function groundDetailPrims(base: string, biome: string, seedKey: string): Greybo
   return out;
 }
 
-/** AABB de mundo (celdas + rango de altura) de una primitiva. Con `scale`
- *  (piezas de volúmenes custom) los extents se escalan alrededor de pos —
- *  las prims cenitales históricas no lo llevan, así que sus specs (y por
- *  tanto los layout_key del arte pagado) no cambian. */
-function primWorldAabb(p: GreyboxPrimitive): { minU: number; minV: number; maxU: number; maxV: number; h0: number; h1: number } {
-  const a = primWorldAabbUnscaled(p);
-  if (!p.scale) return a;
-  const [sx, sy, sz] = p.scale;
-  return {
-    minU: p.pos[0] + (a.minU - p.pos[0]) * sx,
-    maxU: p.pos[0] + (a.maxU - p.pos[0]) * sx,
-    minV: p.pos[2] + (a.minV - p.pos[2]) * sz,
-    maxV: p.pos[2] + (a.maxV - p.pos[2]) * sz,
-    h0: p.pos[1] + (a.h0 - p.pos[1]) * sy,
-    h1: p.pos[1] + (a.h1 - p.pos[1]) * sy,
-  };
-}
-
-function primWorldAabbUnscaled(p: GreyboxPrimitive): { minU: number; minV: number; maxU: number; maxV: number; h0: number; h1: number } {
-  let eu: number;
-  let ev: number;
-  switch (p.shape) {
-    case "box":
-    case "gable": {
-      const [w, , d] = p.size;
-      const c = Math.abs(Math.cos(p.rotY ?? 0));
-      const s = Math.abs(Math.sin(p.rotY ?? 0));
-      eu = (c * w + s * d) / 2;
-      ev = (s * w + c * d) / 2;
-      break;
-    }
-    case "cylinder": {
-      const r = Math.max(p.size[0], p.size[2] ?? p.size[0]);
-      // Tumbado (rotX/rotZ, piezas custom): la altura entra en planta.
-      const e = p.rotX || p.rotZ ? Math.max(r, p.size[1] / 2) : r;
-      eu = e;
-      ev = e;
-      break;
-    }
-    case "cone": {
-      const e = p.rotX || p.rotZ ? Math.max(p.size[0], p.size[1] / 2) : p.size[0];
-      eu = e;
-      ev = e;
-      break;
-    }
-    case "polygon": {
-      let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-      for (const [u, v] of p.points ?? []) {
-        minU = Math.min(minU, u); maxU = Math.max(maxU, u);
-        minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-      }
-      return { minU, minV, maxU, maxV, h0: p.pos[1], h1: p.pos[1] + p.size[0] };
-    }
-    case "sphere": {
-      // size = [r, segmentos?] — la altura NO está en size[1] (el return
-      // genérico la leería mal): alto real = 2r desde la base.
-      const r = p.size[0];
-      return {
-        minU: p.pos[0] - r,
-        minV: p.pos[2] - r,
-        maxU: p.pos[0] + r,
-        maxV: p.pos[2] + r,
-        h0: p.pos[1],
-        h1: p.pos[1] + 2 * r,
-      };
-    }
-  }
-  return {
-    minU: p.pos[0] - eu,
-    minV: p.pos[2] - ev,
-    maxU: p.pos[0] + eu,
-    maxV: p.pos[2] + ev,
-    h0: p.pos[1],
-    h1: p.pos[1] + p.size[1],
-  };
-}
-
-/** bbox PROYECTADO (unidades del view_box) de un conjunto de primitivas —
- *  esquinas del AABB de mundo pasadas por PROJECTION.pt. */
-function projectedBbox(prims: GreyboxPrimitive[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of prims) {
-    const a = primWorldAabb(p);
-    for (const u of [a.minU, a.maxU]) {
-      for (const v of [a.minV, a.maxV]) {
-        for (const h of [a.h0, a.h1]) {
-          const [x, y] = PROJECTION.pt(u, v, h);
-          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-        }
-      }
-    }
-  }
-  if (!Number.isFinite(minX)) return null;
-  return { minX, minY, maxX, maxY };
-}
-
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
 /** Construye el spec greybox del tile. `seedKey` (tileKey) siembra el detalle
  *  procedural — estable por tile entre sesiones. */
 export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): TileGreyboxSpec {
@@ -273,8 +117,8 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
   const base = BIOME_COLORS[biome] ?? BIOME_COLORS.grass;
   const primitives: GreyboxPrimitive[] = [];
 
-  // ── Suelo: base del bioma (EXACTAMENTE el cuadrado del tile — su alpha es
-  // la silueta del compositing) + detalle procedural sembrado. ─────────────
+  // ── Suelo: base del bioma (EXACTAMENTE el cuadrado del tile: es la prim
+  // que el relieve fps engancha) + detalle procedural sembrado. ────────────
   primitives.push({
     shape: "box",
     size: [TILE_CELLS, 0.1, TILE_CELLS],
@@ -285,9 +129,8 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
   });
   primitives.push(...groundDetailPrims(base, biome, seedKey));
 
-  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks) — helper
-  // compartido con el plató; aquí transform identidad y celdas (byte-idéntico
-  // al emisor local que sustituye). ─────────────────────────────────────────
+  // ── Rasgos declarativos del suelo (áreas/caminos < agua < decks): transform
+  // identidad y unidades en celdas. ─────────────────────────────────────────
   primitives.push(
     ...groundFeaturePrims(plan.ground ?? [], {
       toXZ: (u, v) => [u, v],
@@ -300,79 +143,20 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
     }),
   );
 
-  // ── Volúmenes por tramos + occluders/elements analíticos. ────────────────
+  // ── Volúmenes, tramo a tramo y en el orden declarado. ────────────────────
   const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
-  const occluders: TileOccluderSpec[] = [];
-  const bboxByVid = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
   for (const v of plan.volumes) {
-    const tall = classifyVolume(v).tall;
     for (const part of volumePartsForTile(v, gates)) {
-      const idx0 = primitives.length;
       primitives.push(...part.prims);
-      const bb = projectedBbox(part.prims);
-      if (!bb) continue;
-      const acc = bboxByVid.get(v.id);
-      bboxByVid.set(
-        v.id,
-        acc
-          ? {
-              minX: Math.min(acc.minX, bb.minX),
-              minY: Math.min(acc.minY, bb.minY),
-              maxX: Math.max(acc.maxX, bb.maxX),
-              maxY: Math.max(acc.maxY, bb.maxY),
-            }
-          : { ...bb },
-      );
-      if (tall && part.occludes) {
-        const p = 1; // margen: antialias no se corta en el borde
-        occluders.push({
-          id: `${v.id}:${part.part}`,
-          vid: v.id,
-          label: v.label,
-          prims: part.prims.map((_, i) => idx0 + i),
-          bbox: [round2(bb.minX - p), round2(bb.minY - p), round2(bb.maxX - bb.minX + 2 * p), round2(bb.maxY - bb.minY + 2 * p)],
-          baseline_y: round2(PROJECTION.pt(part.depthPt[0], part.depthPt[1])[1]),
-          footprint_cells: [round2(part.footprint[0]), round2(part.footprint[1]), round2(part.footprint[2]), round2(part.footprint[3])],
-          ...(part.overhead ? { overhead: true } : {}),
-        });
-      }
     }
   }
 
-  const elements: ComposedElement[] = [];
-  for (const v of plan.volumes) {
-    const fp = volumeFootprint(v);
-    const b = bboxByVid.get(v.id) ?? { minX: fp.cells[0], minY: fp.cells[1], maxX: fp.cells[2], maxY: fp.cells[3] };
-    const [, dy] = PROJECTION.pt(fp.depthPoint[0], fp.depthPoint[1]);
-    elements.push({
-      id: v.id,
-      label: v.label,
-      ...classifyVolume(v),
-      bbox: [round2(b.minX), round2(b.minY), round2(b.maxX - b.minX), round2(b.maxY - b.minY)],
-      baseline_y: round2(dy),
-      footprint_cells: [round2(fp.cells[0]), round2(fp.cells[1]), round2(fp.cells[2]), round2(fp.cells[3])],
-    });
-  }
-
   // ── Luces FIJAS: sol desde el sur(-oeste) — cara sur lit / este en sombra
-  // siempre (viewer del bench labs/render). ────────────────────────────────
+  // siempre. La fps las reequilibra a ras de suelo (fps-spec.ts). ──────────
   const lights: GreyboxLight[] = [
     { kind: "ambient", color: "#ffffff", intensity: 0.85 },
     { kind: "sun", color: "#ffffff", intensity: 1.6, pos: [-80, 140, 220], castShadow: true },
   ];
 
-  return {
-    tile_greybox_version: TILE_GREYBOX_VERSION,
-    camera: {
-      kind: "ortho_shear",
-      view_box: { ...PROJECTION.viewBox },
-      kx: OBLIQUE_KX,
-      ky: OBLIQUE_KY,
-      px_per_cell: TILE_GREYBOX_PX_PER_CELL,
-    },
-    lights,
-    primitives,
-    elements,
-    occluders,
-  };
+  return { tile_greybox_version: TILE_GREYBOX_VERSION, lights, primitives };
 }

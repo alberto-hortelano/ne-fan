@@ -1,7 +1,7 @@
 /** Vuelca el spec greybox de un plan declarativo del juego para el bench FPS.
- *  Usa el MISMO builder que el juego (buildTileGreyboxSpec) — la geometría es
- *  exactamente la del modo vector oblicuo, solo que el viewer FPS la recorre a
- *  nivel de suelo (celdas → metros ×0.5).
+ *  Usa el MISMO builder que el juego (buildTileGreyboxSpec): la geometría es
+ *  exactamente la que pinta el cliente, solo que el viewer del bench la
+ *  recorre a nivel de suelo (celdas → metros ×0.5).
  *
  *  Uso: npx tsx labs/fps/dump_spec.ts [plan.json] [outDir] [tileId]
  *  Sin argumentos conserva el comportamiento histórico (tile medieval de
@@ -66,7 +66,4 @@ writeFileSync(
     1,
   ),
 );
-console.log(
-  `spec → ${outPath}: ${spec.primitives.length} prims, ` +
-    `${spec.elements.length} elements, ${spec.occluders.length} occluders`,
-);
+console.log(`spec → ${outPath}: ${spec.primitives.length} prims`);
