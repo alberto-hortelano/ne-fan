@@ -1,6 +1,6 @@
 # Never Ending Fantasy — Guia de desarrollo
 
-RPG de **mundo abierto generativo** en PRIMERA PERSONA: el cliente web (three.js/WebGL) es la vista del juego; el cliente Godot 4.6+ sigue en el repo, aplazado. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. La escena viaja en UN formato compartido: el motor produce Format D, el bridge lo normaliza a world scene (`formatDToWorld`) y ambos clientes (2D y 3D) pintan esa misma forma. Los JSON de `data/rooms/` son fixtures de test en formato world scene (menú F12).
+RPG de **mundo abierto generativo** en PRIMERA PERSONA: el cliente web (three.js/WebGL) es la vista del juego, y la única. El motor narrativo (Claude vía MCP) crea escenas open-world con `generate_scene` y va añadiendo entidades (NPCs, edificios, objetos) dinámicamente a medida que la historia avanza. Si en una conversación el jugador dice "quiero ir a la forja a comprar un arma", el motor narrativo genera una forja, instancia un herrero, etc. Assets IA (texturas PBR, modelos GLB), personajes Mixamo 3D, combate cuerpo a cuerpo real-time. La escena viaja en UN formato: el motor produce Format D y el bridge lo normaliza a world scene (`formatDToWorld`), que es lo que el cliente pinta. Los JSON de `data/scenes/` son fixtures de test que ofrece el selector «Room» del cliente.
 
 **Juegos = mundos.** Un juego es `nefan-core/data/games/{id}/`: `game.json` (título, descripción, `style_id` por defecto, `world_brief` ~1.2k chars) + `world.md` (documento completo del mundo en 10 secciones: identidad, geografía, historia, pueblos, facciones, magia, vida cotidiana, semillas de conflicto, el jugador, registro) + `plugins/`. NO hay historia predefinida ni beats scripted: la historia la improvisa el motor narrativo dentro del mundo. Juegos base: `alta_fantasia` (Miravanda), `cuentos_oscuros` (Valdesombra), `toledo_1200` (histórico). Un **estilo** es `data/styles/{id}/`: `style.json` (`style_token`, cover, `tags` temáticos, refs, **`ui`** = tema de la interfaz de juego) + imágenes de referencia LIBRES en tres carpetas de ROL (`surfaces/` = la lámina de materiales, EXACTAMENTE una; `faces/` = las caras del mundo; `characters/` = model sheets; las tres obligatorias — un pack al que le falte una no carga; ver `data/styles/README.md`). Cada ref declara `{id, file, description}` — sin categorías: el contenido depende del mundo (una catedral, una estación espacial…). El MOTOR NARRATIVO elige la ref de cada escena (`style_ref`, catálogo `world.style_refs` en su contexto; pre-flight fail-loud en narrative-mcp) y la de cada NPC (`style_ref` en la entity, `npcSkinStyleRef`); sin elección, el server usa la primera ref de la carpeta (orden del manifest). `game.json` declara `tags` que casan con los del estilo por intersección (`styleCompatibleWithGame`): el selector del título filtra por tema (un pack medieval no se ofrece para un mundo futurista); `start_session` avisa sin abortar. El `id` de una ref entra en la clave de caché de imagen (renombrarlo repaga; renombrar `file`/`description` no). El estilo se elige en el título y queda CONGELADO en el save. El jugador puede crear su mundo (borrador → kind MCP `develop_world` → `data/games/user_*`, con `tags` obligatorios) y subir su estilo (imágenes con vista+descripción+tags → `/styles/upload` → confirmación de coste → `/styles/{id}/complete` genera las refs declaradas que falten; CLI: `python ai_server/tools/build_style_pack.py`). Schemas en `nefan-core/src/games/loader.ts` + `src/games/style-refs.ts` (fuente de verdad).
 
@@ -18,7 +18,7 @@ Lo demás vive en `docs/arquitectura/` y se lee **cuando toca**:
 | [`ia-servicios.md`](docs/arquitectura/ia-servicios.md) | vayas a tocar algo que GASTA CRÉDITOS, o los tres procesos Python |
 | [`plugins.md`](docs/arquitectura/plugins.md) | añadas un sistema de juego (manifest declarativo) o una implementación intercambiable de hot loop |
 | [`ui.md`](docs/arquitectura/ui.md) | toques la interfaz in-game o el tema de un style pack |
-| [`arranque.md`](docs/arquitectura/arranque.md) | conduzcas el juego sin manos (remote control :9876) o hagas testing visual de Godot |
+| [`arranque.md`](docs/arquitectura/arranque.md) | necesites arrancar el juego sin manos para un bench o una prueba |
 | [`qa/README.md`](qa/README.md) | tengas que verificar algo del cliente 2D: guiones ejecutables, no prosa |
 
 ## Lo que ya NO se comprueba leyendo
@@ -28,7 +28,7 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 
 | Herramienta | Qué sujeta |
 |-------------|-----------|
-| `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y clientes que solo pintan, dirección de dependencias, módulos puros sin `node:*`, three.js solo en sus tres renderers, Godot sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
+| `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y un cliente que solo pinta, dirección de dependencias, módulos puros sin `node:*`, three.js solo en `fps-gl.ts`, el cliente sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
 | `nefan-core/data/contract/quality-thresholds.json` (`npm run crap`) | complejidad × cobertura: tope de no-empeorar y suelo de cobertura |
 | `stryker.config.json` (`npm run mutate`) | si los tests se enterarían de un cambio, no solo si pasan por la línea |
 | `qa/run.mjs` | que el juego real hace lo que se dice, desde el arranque |
@@ -55,28 +55,26 @@ la PR.
 
 Sin argumentos, presenta un menú con presets que respetan dependencias entre servicios y, cuando se necesita el motor narrativo, pausan para que abras Claude Code en otra terminal:
 
-| Preset | Servicios | Cuándo |
-|--------|-----------|--------|
-| 1 · Play | asset-store + gpu-worker + remote-gen + bridge + narrative-mcp + ai_server + pausa Claude Code + Godot + HTML | Sesión narrativa completa — GASTA créditos con Imagen IA |
-| 2 · Story web | como Play sin Godot | Historia/NPCs/mapas/diálogo con el cliente 2D; pre-generación de mundo/estilo desde el título — GASTA créditos con Imagen IA |
-| 3 · Automated tests | bridge + asset-store + Godot headless (xvfb) | `python3 godot/tools/movement_test.py` y similares — sin coste |
-| 4 · Cliente web (dev) | bridge + asset-store + remote-gen + HTML | Iterar UI y renderer sin motor narrativo — solo gasta si activas Imagen IA en el juego |
-| 5 · E2E sin créditos | fake-ai-server (:18765) + bridge (`NEFAN_AI_SERVER`) + HTML | Bench E2E todo mockeado, 0 créditos; imprime la URL con `?ai=` |
-| 6 · Story web sin imágenes | como Story web sin gpu-worker ni remote-gen | Jugar la narrativa en Maqueta 3D / y_bot con los servicios de imagen APAGADOS — imposible gastar en imágenes |
-| 7 · Playtest motor (bench) | bridge + ai_server + asset-store, SIN placeholder de narrative-mcp; pausa ANTES de ai_server | Flujo de `labs/narrative/`: el terminal del motor posee :3737; conducir con `game-emulator.mjs` (:9899) |
-| 8 · Replay web (película) | replay-server (suplanta al bridge :9877; `LOG=runs/…/events.ndjson`) + HTML | Reproducir una sesión grabada: renderer 2D determinista sin motor ni ai_server |
-| 9 · HTML fixtures | solo HTML | Iterar renderer/UI con las fixtures del selector Room, cero backend |
-| 10 · Custom | toggle por servicio | Combinaciones puntuales (Godot solo, ai_server solo…) |
-| s · Status | — | Listar puertos arriba/abajo (incluye State API :9878) |
-| k · Stop | — | Matar todo el stack |
+| Preset | Slug | Servicios | Cuándo |
+|--------|------|-----------|--------|
+| 1 · Play | `play` | asset-store + gpu-worker + remote-gen + bridge + narrative-mcp + ai_server + pausa Claude Code + cliente | Sesión narrativa completa — GASTA créditos con Imagen IA |
+| 2 · Cliente web (dev) | `cliente-web` | bridge + asset-store + remote-gen + cliente | Iterar UI y renderer sin motor narrativo — solo gasta si activas Imagen IA en el juego |
+| 3 · E2E sin créditos | `e2e-sin-creditos` | fake-ai-server (:18765) + bridge (`NEFAN_AI_SERVER`) + cliente | Bench E2E todo mockeado, 0 créditos; imprime la URL con `?ai=`. Es el que levanta `qa/run.mjs` |
+| 4 · Story web sin imágenes | `story-web-sin-imagenes` | como Play sin gpu-worker ni remote-gen | Jugar la narrativa con los servicios de imagen APAGADOS — imposible gastar en imágenes |
+| 5 · Playtest motor (bench) | `playtest-motor` | bridge + ai_server + asset-store, SIN placeholder de narrative-mcp; pausa ANTES de ai_server | Flujo de `labs/narrative/`: el terminal del motor posee :3737; conducir con `game-emulator.mjs` (:9899) |
+| 6 · Replay web (película) | `replay-web` | replay-server (suplanta al bridge :9877; `LOG=runs/…/events.ndjson`) + cliente | Reproducir una sesión grabada: renderer determinista sin motor ni ai_server |
+| 7 · HTML fixtures | `html-fixtures` | solo el cliente | Iterar renderer/UI con las fixtures del selector Room, cero backend |
+| 8 · Custom | `custom` | toggle por servicio | Combinaciones puntuales (ai_server solo, replay solo…) |
+| s · Status | — | — | Listar puertos arriba/abajo (incluye State API :9878) |
+| k · Stop | — | — | Matar todo el stack |
 
 Cosas a tener en cuenta:
-- El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "E2E sin créditos" no exige Godot ni `.venv`).
+- El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "HTML fixtures" no exige el `.venv` ni las deps del bridge).
 - Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
 - Ctrl+C mata limpiamente todo lo que el launcher arrancó (`trap EXIT`).
-- Si detecta saves antiguos en `~/.local/share/godot/.../Never Ending Fantasy/saves/`, ofrece migrarlos a `$PROJECT_DIR/saves/`.
 - `NEFAN_EAGER_BIND=0 ./start.sh` no arranca el placeholder de narrative-mcp: el terminal de Claude Code del motor posee `:3737` (flujo de `labs/narrative/README.md`). `NEFAN_GAMES_DIR` se respeta y llega al bridge (juegos de bench aislados).
 - Antes de arrancar el bridge se refresca `data/runtime_config.json` (`scripts/dump-config.ts`), como hacen los hooks `predev` de nefan-core.
+- `./start.sh --preset <slug>` arranca sin TUI. **Cítalo por slug, no por número**: los números se desplazan cuando muere un preset, y un runner que cite el número acaba levantando otro stack y fallando por timeout sin decir por qué. `./start.sh --list` los enumera.
 
 ```bash
 # Manual (si prefieres arrancar servicios por separado):
@@ -88,15 +86,14 @@ python ai_server/remote_gen_main.py         # Remote-gen :8768 (Meshy/fal, SAM2,
 python ai_server/main.py                    # AI server :8765 (narrativa; opcional)
 cd nefan-core && npx tsx bridge/ws-server.ts  # Bridge TS :9877 (opcional)
 cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
-~/Downloads/Godot_v4.6.1-stable_linux.x86_64 --path godot --rendering-method gl_compatibility
-cd nefan-html && npm run dev                # HTML 2D :3000 (opcional)
+cd nefan-html && npm run dev                # Cliente web :3000
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del menú F12 (el arranque offline carga `robledo_tile`). Para combate y narrativa usar los presets 1–2 (o 6 sin servicios de imagen); para tests headless, el 3.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del selector «Room». Para combate y narrativa usar `play` (o `story-web-sin-imagenes` sin servicios de imagen); para el bench sin coste, `e2e-sin-creditos`.
 
 ## Controles in-game
 
-**Cliente web** (`nefan-html/src/input/keyboard-input-provider.ts`), que es el juego:
+Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`:
 
 | Tecla | Accion |
 |-------|--------|
@@ -114,22 +111,6 @@ El juego arranca sin ai_server ni bridge — texturas no se generan y el combate
 Las teclas de DESARROLLO (G = pedir el atlas de superficies, B = ciclar la vista de
 debug del renderer) viven aparte, en `input/dev-tools-input.ts`.
 
-**Cliente Godot** (aplazado; tercera persona, con salto y save por tecla):
-
-| Tecla | Accion |
-|-------|--------|
-| WASD | Movimiento |
-| Shift | Sprint |
-| Espacio | Salto |
-| Raton | Camara (3a persona) |
-| E | Interactuar con objeto/NPC |
-| 1-5 | Seleccionar tipo ataque (quick/heavy/medium/defensive/precise) |
-| LMB | Ejecutar ataque |
-| H | Toggle History Browser (timeline navegable de la sesión narrativa) |
-| F5 | Guardar partida |
-| F9 | Cargar partida |
-| Esc | Soltar/capturar raton |
-
 ## Sistema de combate
 
 **Formula:** `calidad = factor_distancia * factor_precision * factor_tactico * base_damage * weapon_mod`
@@ -146,15 +127,15 @@ debug del renderer) viven aparte, en `input/dev-tools-input.ts`.
 
 **IA enemigos:** Personalidad JSON (aggression, preferred_attacks[], reaction_time). Enemigos estaticos en v1.
 
-**Datos:** Todo en `godot/data/combat_config.json` — editable sin recompilar.
+**Datos:** Todo en `nefan-core/data/combat_config.json` — editable sin recompilar.
 
-## Formatos de escena (canónicos, compartidos por 2D y 3D)
+## Formatos de escena (canónicos)
 
 Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
 **1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **una sola variante**: el **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m), más sus `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `h?`, `texture_hash?`). Las otras dos se retiraron y no vuelven: la "suelta" (tamaño a elección del motor, sin sitio en el plano) y el **plató proscenio** (`size`+`terrain` propios + bloque `stage` con sus salidas), que murió con la vista que lo pintaba. Una escena sin `tile` la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`; `stage_request`/`stage_review` tienen candado de reaparición en `arch-rules.json`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
 
-**2. World scene** — el contrato de render que consumen AMBOS clientes: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
+**2. World scene** — el contrato de render que consume el cliente: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
 ```json
 {
@@ -174,13 +155,13 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 }
 ```
 
-Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del objeto). En Godot la construye `scene_builder.gd` (suelo centrado en `world_rect`, default de sol direccional); en el cliente web la monta `FpsRenderer`. Godot NUNCA porta la conversión celdas→metros — si le llega un Format D sin normalizar hace push_error (fail-loud).
+Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del objeto). La monta `FpsRenderer` en el cliente. El cliente NUNCA porta la conversión celdas→metros: normalizar es trabajo del bridge, y hay candado (`cliente-no-convierte-celdas-a-metros`).
 
-**Fixtures de test** (`nefan-core/data/rooms/{dev,stress}/*.json`): world scenes escritas a mano — admiten además `lighting{ambient,lights[]}` (si falta, default), `mesh` (alias de `shape`, catálogo box/sphere/capsule/cylinder/cone/plane/torus), `color:[r,g,b]` por objeto (placeholder pre-textura), `terrain.texture_prompt`/`tiling`, y `combat{health,weapon_id,personality}` en objects para spawnear combatientes. `data/rooms/robledo_tile.json` se genera con `npm run dump-scene` desde la escena Format D compartida con el 2D (se commitea; es el arranque offline del 3D).
+**Fixtures de test** (`nefan-core/data/scenes/*.json`): escenas **Format D** commiteadas que ofrece el selector «Room» del cliente, para iterar renderer y UI sin backend (preset `html-fixtures`). Van por el mismo camino que una escena del motor —`formatDToWorld` y a pintar—, así que una fixture que no valdría en partida tampoco vale aquí: `test/scene-fixtures.test.ts` canda que solo haya Format D vivo.
 
-**Reuse de assets**: cualquier `texture_prompt`/`model_prompt` admite un hermano `texture_hash`/`model_hash`. Si Claude lo proporciona (copiándolo de `available_assets`), Godot carga del cache local sin regenerar.
+**Reuse de assets**: cualquier `texture_prompt`/`model_prompt` admite un hermano `texture_hash`/`model_hash`. Si Claude lo proporciona (copiándolo de `available_assets`), se carga del cache local sin regenerar.
 
-**Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (señal `narrative_spawn` en Godot, `materializeSpawn` en HTML). Las entidades se materializan en el mundo en runtime sin recargar la escena.
+**Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (`materializeSpawn` en el cliente). Las entidades se materializan en el mundo en runtime sin recargar la escena.
 
 Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde), decor (gris apagado).
 
@@ -188,11 +169,7 @@ Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), te
 
 ## Convenciones de codigo
 
-- GDScript 4.6+ con tipado estricto (Variant inference = error)
-- Variables que acceden propiedades de Node generico: usar tipo explicito (`var x: float = node.health`, NO `:=`)
-- class_name en scripts de combat, pero usar preload() en vez de class_name para referencias cruzadas
-- Autoloads: GameStore, NarrativeState, AIClient, TextureCache, RemoteControl, LogicBridge, SessionRecorder, SessionPlayer
-- Scripts nuevos que referencian otros: `const FooRef = preload("res://scripts/path/foo.gd")`
+- TypeScript estricto; `Result<T,E>` cuando "vacío" y "error" se confundirían al colapsarse
 - Descripciones de objetos y NPC en espanol
 - Unidades en metros
 
@@ -200,12 +177,9 @@ Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), te
 
 Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []` cuando hubo un error. En `nefan-core` y en los endpoints Python **esto ya lo sujeta el checker de fronteras**; lo que sigue es el canal de cada capa, que ninguna herramienta puede elegir por ti:
 
-- **GDScript**: `push_error(...)` para invariantes rotos (frame mal formado, autoload ausente). `push_warning(...)` para degradación esperable (servicio opcional caído). `print(...)` sólo para trazas informativas que no son errores. Para preconditions duras de un lookup, usar `NodeAccess.must_get_node(root, path, "ctx")` (push_error + retorna null) en vez de `get_node_or_null` desnudo.
 - **TS/HTML**: `errors.push("source", msg, err)` (`nefan-html/src/ui/error-log.ts`) en cualquier `catch` recuperable. Lanzar de nuevo si el caller necesita decidir. Devolver `Result<T,E>` (discriminated union `{ok:true,...} | {ok:false,error}`) cuando "vacío" y "error" son indistinguibles si se colapsan.
 - **TS/bridge**: cualquier `.catch()` sobre una promise que el cliente está esperando debe broadcastear `narrative_status: error` además de loguear — patrón en `nefan-core/bridge/handlers/dialogue.ts` (`dialogue_choice`).
 - **Python/FastAPI**: `raise HTTPException(status_code=..., detail=...)`, **nunca** `return {"error": ...}` con 200 OK. Pydantic `BaseModel` por endpoint para que campos ausentes salgan como 422 estructurado. Modelo de referencia: `/report_player_choice` en `ai_server/main.py`.
-
-Listeners en autoloads compartidos: nodos transitorios usan `SignalLifecycle.auto_disconnect(self, autoload.signal, callback)` para que la subscripción muera con el nodo. Autoload→autoload se documenta en línea (`# OK: autoload, vida == app`).
 
 ## Equipo de agentes (roles y coordinación)
 
@@ -215,7 +189,7 @@ usuario, fija los requisitos, decide y delega) y tres roles especializados viven
 
 | Rol | Qué hace | Qué NO hace |
 |-----|----------|-------------|
-| `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / clientes / ai_server), contratos y formatos afectados, qué hay que borrar (claves de caché incluidas), mejoras estructurales. Produce `plan.md` | No escribe código de producción |
+| `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / cliente / ai_server), contratos y formatos afectados, qué hay que borrar (claves de caché incluidas), mejoras estructurales. Produce `plan.md` | No escribe código de producción |
 | `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y los supervivientes de mutación del módulo que tocó, muertos. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
 | `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` de lo que sea mecánico | **No arregla nada** — reporta |
 
@@ -239,7 +213,7 @@ Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al
 ## Decisiones de diseno importantes
 
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador.
-- **Un solo formato de escena para ambos clientes.** El motor produce Format D; el bridge lo normaliza a world scene con `formatDToWorld` (nefan-core) antes de emitir, y 2D y 3D pintan esa misma forma. Nada exclusivo de un cliente en el schema de escena; Godot no proyecta celdas (fail-loud ante Format D crudo).
+- **Un solo formato de escena.** El motor produce Format D; el bridge lo normaliza a world scene con `formatDToWorld` (nefan-core) antes de emitir, y el cliente pinta esa forma. El cliente no proyecta celdas ni vuelve a normalizar: si lo hiciera habría dos caminos hasta la world scene y divergirían.
 - **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Con bridge conectado, la sesión es la del bridge (plugins incluidos): el mirror GD se hidrata en memoria (`bridge_authoritative`) y su `save()` está bloqueado; pos/HP se snapshotean en `save_session` y el resume restaura posición, HP y entities. Offline, el mirror GD guarda en local. El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
 - **Asset library indexada** — el asset-store (:8767, `cache/manifest.sqlite3` desde F2; `manifest.json` queda congelado como rollback) traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.
@@ -248,15 +222,12 @@ Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al
 - **En desarrollo, subir iluminacion ambient** para ver bien objetos y geometria.
 - **Pre-producción: cero compatibilidad hacia atrás.** El juego no está en producción, así que NADA se conserva por ser antiguo: ni saves, ni campos de contrato, ni ramas de código que solo sirven a un formato ya retirado, ni los tests que los defienden. Un formato que se sustituye **se borra el mismo día**, entero y en todos los procesos (`grep` del campo a cero, no "documentado como legacy"). Cuando el juego esté en producción y haga falta, la respuesta será **versionar los contratos**, no acumular ramas de compatibilidad. Corolario práctico: si al retirar algo aparece la pregunta "¿y los saves viejos?", la respuesta hoy es que no importan.
 - **Tests obsoletos se borran** junto al cambio que los deja sin sentido (mencionándolo en el resumen). Un test cuyo sujeto es un formato retirado se va con él. Lo único que no se hace es dejar un test de comportamiento VIVO alimentado con datos de un formato muerto: o se pasa la fixture al formato vivo, o se borra el test declarando qué cobertura se pierde. El material de sesión (runs de labs, capturas) sí requiere confirmación antes de borrarse.
-- **Logica en nefan-core, Godot solo visual** — prepararse para cambio de motor. Datos compartidos (escenas, config) en nefan-core, no en godot/.
-- **AnimationTree con StateMachine (Souls-Like pattern)** — no usar AnimationPlayer directo. `travel()` para transiciones, `start()` para interrupciones.
-- **Sin root motion** — todo el movimiento via velocity del CharacterBody3D. Animaciones puramente visuales. Lockear Hips XZ solo en walk/run.
-- **Camara independiente** — no es hija del player. Sigue al body con lerp + SpringArm3D. Player excluido del SpringArm collision.
-- **No usar animaciones con pasos para ataques** — causan sliding de pies al lockear Hips. Usar animaciones estáticas (attack(4), slash, slash(5), slash(3)).
-- **Tests automatizados tras cada cambio visual** — `python3 godot/tools/movement_test.py`. Verificar screenshots.
+- **Logica en nefan-core, el cliente solo pinta** — prepararse para cambio de renderer. Datos compartidos (escenas, config) en nefan-core.
+- **Sin root motion en las hojas de sprites** — las locomociones de Mixamo llevan el desplazamiento horneado y el personaje se sale de la celda, así que `tools/render-sprite-sheets` congela Hips en XZ (solo en walk/run/strafe, preservando Y para que sobreviva el balanceo). Corolario: para los ataques hay que elegir animaciones SIN pasos (attack(4), slash, slash(5), slash(3)) — las que los tienen deslizan los pies al congelar Hips.
+- **Tests automatizados tras cada cambio visual** — `node qa/run.mjs`. Verificar las capturas de `qa/capturas/`.
 - **Una sola vista, y es la primera persona de three.js** (agosto 2026). La oblicua y el plató proscenio daban demasiados problemas y se retiraron enteros: código, contrato, protocolo, save, datos y packs. Colisión desde huellas, nunca desde píxeles pintados.
 - **El motor narrativo NUNCA emite SVG ni dibuja: solo planes declarativos** (`ground`+`volumes`) que los builders greybox de nefan-core convierten en escenas 3D deterministas renderizadas con three.js en el cliente (el clay es el arte del modo sin imagen, y es gratis). Los compositores SVG se eliminaron en agosto de 2026 con las dos vistas que los usaban.
 
 ## Hardware
 
-RTX 3060 12GB, Linux (Ubuntu, kernel 6.8), Ryzen 7 5800X. Godot 4.6.1 con `gl_compatibility`.
+RTX 3060 12GB, Linux (Ubuntu, kernel 6.8), Ryzen 7 5800X. Chrome/Chromium con WebGL2.

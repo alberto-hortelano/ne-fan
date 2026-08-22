@@ -1,8 +1,8 @@
 # Cala de Brumaluz — descripción del motor narrativo
 
 *Escenario autorado en voz de motor narrativo, sin formato declarativo: este
-documento ES el contrato. Las dos implementaciones (three.js y Godot) deben
-serle fieles en composición, paleta, hora y atmósfera; la técnica es libre.*
+documento ES el contrato. La implementación debe serle fiel en composición,
+paleta, hora y atmósfera; la técnica es libre.*
 
 ## Ambientación
 

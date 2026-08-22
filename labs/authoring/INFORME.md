@@ -3,8 +3,8 @@
 > **DECISIÓN (2026-08-15)**: nos quedamos con **three.js** como renderer del
 > juego. La ventaja de calidad de Godot no compensa perder el despliegue en
 > navegador; los dos benches (este y `labs/fps/COMPARATIVA_GODOT.md`) quedan
-> como evidencia y `labs/*/godot/` como bancos de referencia, sin plan de
-> integración.
+> como evidencia, sin plan de integración. Los bancos de referencia se
+> archivaron con el cliente en `archivo/labs/`.
 
 **Pregunta**: ¿qué calidad y complejidad de escenario puede crear el modelo
 (actuando de motor narrativo, SIN el formato declarativo del juego) con cada

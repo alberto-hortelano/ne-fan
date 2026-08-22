@@ -4,22 +4,22 @@
 
 An RPG whose world is **sculpted by a narrative engine at play time**: Claude (via MCP) generates the initial open-world scene — terrain, vegetation, buildings, lighting — and keeps adding entities (NPCs, buildings, objects) dynamically as the story unfolds. If the player says *"quiero ir a la forja a comprar un arma"*, the engine generates a forge, spawns a blacksmith, and wires a trade through a declarative plugin. Textures, 3D models, and character skins are generated on demand by local and remote generative models.
 
-The canonical client is **Godot 4.6 (3D)**. A lightweight **HTML/Canvas (2D top-down)** client shares the same TypeScript game logic and is used to iterate on story, dialogue, and maps without booting the full 3D stack.
+The client is **nefan-html**: a first-person WebGL renderer (three.js) in the browser, driven by shared TypeScript game logic.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Godot 4.6 (3D, canonical)          nefan-html (2D, dev/story)   │
-│      │ WebSocket :9877                  │ WebSocket :9877        │
-│  ┌───┴─────────────────────────────────┴─────────────────────┐   │
-│  │                nefan-core (TypeScript)                     │   │
-│  │  GameSimulation tick · combat resolver · enemy AI          │   │
-│  │  NarrativeState (canonical save) · world map · scenarios   │   │
-│  │  Declarative plugins (JSON manifests + interpreter)        │   │
-│  │  bridge/ws-server.ts (:9877) + state HTTP API (:9878)      │   │
-│  └───────────────┬────────────────────────────────────────────┘   │
-└──────────────────┼────────────────────────────────────────────────┘
+│              nefan-html — first-person client (three.js)         │
+│                     │ WebSocket :9877                            │
+│  ┌──────────────────┴─────────────────────────────────────────┐  │
+│  │                nefan-core (TypeScript)                     │  │
+│  │  GameSimulation tick · combat resolver · enemy AI          │  │
+│  │  NarrativeState (canonical save) · world map · scenarios   │  │
+│  │  Declarative plugins (JSON manifests + interpreter)        │  │
+│  │  bridge/ws-server.ts (:9877) + state HTTP API (:9878)      │  │
+│  └───────────────┬────────────────────────────────────────────┘  │
+└──────────────────┼───────────────────────────────────────────────┘
                    │ HTTP
 ┌──────────────────┴────────────────────────────────────────────────┐
 │                    ai_server (FastAPI :8765)                       │
@@ -29,7 +29,7 @@ The canonical client is **Godot 4.6 (3D)**. A lightweight **HTML/Canvas (2D top-
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Game logic lives in `nefan-core`** (TypeScript, zero engine dependencies); Godot is display-only where possible, ready for an engine swap. Combat resolution is authoritative from the bridge; the game still runs without it (local fallback).
+- **Game logic lives in `nefan-core`** (TypeScript, zero rendering dependencies); the client only paints, which keeps the renderer swappable. Combat resolution is authoritative from the bridge; the game still runs without it (local fallback).
 - **NarrativeState is the canonical save** — the whole playthrough (world, player, entities, dialogue history, world map, active plugins) lives in one versioned, multi-slot JSON.
 - **Declarative plugins** — complete game systems (commerce, reputation…) as pure JSON manifests executed by an interpreter: state slice, event reducers with a small DSL, derived views for the LLM, and deterministic fixtures validated before activation. The narrative engine drives them with `plugin_event` consequences and can even register new plugins at runtime.
 - **Asset library indexed by hash** — everything generated is tracked in a manifest (with LRU pruning); the narrative engine reuses cached assets by hash instead of regenerating.
@@ -50,27 +50,30 @@ The canonical client is **Godot 4.6 (3D)**. A lightweight **HTML/Canvas (2D top-
 ./start.sh
 ```
 
-The interactive launcher offers presets that respect service dependencies (bridge → narrative-mcp → ai_server → Godot/HTML) and pauses when a narrative session needs a Claude Code terminal. Highlights:
+The interactive launcher offers presets that respect service dependencies (asset-store → image services → bridge → narrative-mcp → ai_server → client) and pauses when a narrative session needs a Claude Code terminal. Highlights:
 
 | Preset | For |
 |--------|-----|
-| 1 · Play | Full narrative session (Godot 3D) |
-| 2 · Story web | Iterate story/NPCs/dialogue with the 2D client |
-| 3 · Automated tests | Headless Godot (xvfb) + `godot/tools/movement_test.py` |
-| 5 · Godot offline | Quick visual tests, no AI |
+| `play` | Full narrative session — spends credits on AI imagery |
+| `story-web-sin-imagenes` | Same, with the image services off — cannot spend |
+| `e2e-sin-creditos` | Everything mocked, zero credits (what `qa/run.mjs` boots) |
+| `html-fixtures` | Client only, no backend |
 
-Manual startup, controls, remote-control testing (TCP :9876), and all development conventions are documented in [CLAUDE.md](CLAUDE.md) (Spanish — the project's working language).
+`./start.sh --list` prints all eight. Presets are addressed **by slug**, not by number: numbers shift when a preset is retired.
+
+Manual startup, controls, and all development conventions are documented in [CLAUDE.md](CLAUDE.md) (Spanish — the project's working language).
 
 ## Project Structure
 
 ```
 ne-fan/
 ├── nefan-core/        # Game logic + narrative state + plugins + WS bridge (TS)
-├── godot/             # 3D client (Godot 4.6) — display, input, HUD
-├── nefan-html/        # 2D top-down client (Canvas) — dev/story iteration
+├── nefan-html/        # First-person client (three.js/WebGL) — display, input, HUD
 ├── ai_server/         # FastAPI: textures, models, skins, scene gen (:8765)
 ├── narrative-mcp/     # MCP bridge: Claude ↔ ai_server (:3737)
-├── labs/              # Experiment benches (skinning, style, stage, render, escenografia, narrative)
+├── tools/             # Build tooling (Mixamo sprite-sheet renderer)
+├── qa/                # Executable QA scripts that drive the real game
+├── labs/              # Experiment benches (skinning, style, render, fps, narrative)
 └── docs/              # Design documents (Spanish)
 ```
 
@@ -79,8 +82,8 @@ CI runs on every PR: TypeScript typecheck + eslint + ~300 tests (nefan-core), bu
 ## Hardware
 
 - **GPU:** NVIDIA RTX 3060 12GB (~3GB VRAM peak, fp16)
-- **OS:** Linux (Ubuntu, kernel 6.8) · **Godot:** 4.6.1 with `gl_compatibility`
-- **Node.js:** 20+ · **Python:** 3.10+
+- **OS:** Linux (Ubuntu, kernel 6.8) · **Browser:** Chrome/Chromium with WebGL2
+- **Node.js:** 24+ · **Python:** 3.10+
 
 ## Origin
 

@@ -2,8 +2,8 @@
 // dump_escena.mjs <interior|exterior|...> — vuelca a escenas/<n>/escena.json el
 // resultado EXACTO de load() (prims en metros con delantal/escalado aplicados,
 // lights, env, playerStart, poses, npcs): lo que renderiza el viewer three.js,
-// consumible tal cual por el bench Godot (labs/fps/godot). Un solo origen de
-// datos — cero divergencia entre renderers.
+// consumible tal cual por cualquier renderer que se quiera comparar. Un solo
+// origen de datos — cero divergencia.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

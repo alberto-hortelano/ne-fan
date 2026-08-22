@@ -1,6 +1,6 @@
 # CLAUDE.md — AI-Rendered RPG Engine
 
-> **Documento histórico (prototipo UE5, archivado).** Describe la visión original con Unreal Engine 5 + StreamDiffusion, ambos descartados (ver `docs/ai-graphics-conclusions.md`). El motor actual es Godot 4.6 y los endpoints que se citan aquí (`populate_room`, etc.) ya no existen — el canónico es `POST /generate_scene`. Se conserva como referencia de diseño.
+> **Documento histórico (prototipo UE5, archivado).** Describe la visión original con Unreal Engine 5 + StreamDiffusion, ambos descartados (ver `docs/ai-graphics-conclusions.md`). El renderer actual es three.js en el navegador y los endpoints que se citan aquí (`populate_room`, etc.) ya no existen — el canónico es `POST /generate_scene`. Se conserva como referencia de diseño.
 
 ## Visión del proyecto
 

@@ -52,7 +52,8 @@ Ejecutada: servicio Node en `nefan-core/services/asset-store/` (node:sqlite,
 `cache/manifest.sqlite3`; migración one-shot idempotente — 16.907 entradas en
 202 ms, collapse idéntico al Python; `manifest.json` congelado como
 rollback). ai_server usa `AssetStoreClient` (register fail-loud,
-count/bytes/prune best-effort) y proxya `/cache|/assets` para Godot.
+count/bytes/prune best-effort) y proxya `/cache|/assets` para los clientes no
+migrados.
 `/styles/{id}/{file}` movido desde el State API; keep-list
 `GET /sessions/asset_refs` en world-state consumida por el prune. Bench: 100
 registros en 3 ms (antes: rewrite de 5,8 MB por registro bajo lock, sin
@@ -87,7 +88,7 @@ FastAPI async intercala); lo que muere es compartirlo con los endpoints
 narrativos. Escalar sigue siendo un proceso por GPU
 (`NEFAN_URL_GPU_WORKER`; probado con dos workers mock en
 `tests/test_two_gpu_workers.py`). narrative-llm proxya los endpoints en
-:8765 para Godot (`routers/gpu_proxy.py`, indefinido) y agrega el
+:8765 para los clientes no migrados (`routers/gpu_proxy.py`, indefinido) y agrega el
 `model_backend` del `/health` del worker en `/backend_status` (best-effort,
 shape intacto). El peel "flux" llama a fal DIRECTO desde el worker
 (decisión 13); `DevApiCache.enabled` se relee por (mtime, inode) para que el
@@ -99,9 +100,9 @@ toggle sea visible entre procesos. Cliente HTML directo vía
 - ai_server proxya durante la transición; después, AiClient y clientes van
   directo (overrides de F1).
 
-**Hecho cuando**: labs/narrative E2E con fake-ai-server en verde; Godot sigue
-obteniendo texturas/modelos; dos gpu-workers con mocks reparten trabajo (el
-mecanismo queda probado aunque haya 1 GPU).
+**Hecho cuando**: labs/narrative E2E con fake-ai-server en verde; los clientes
+siguen obteniendo texturas/modelos; dos gpu-workers con mocks reparten trabajo
+(el mecanismo queda probado aunque haya 1 GPU).
 
 ## F4 — Extraer remote-gen (:8768) + `/segment` ✅ (2026-08-05)
 

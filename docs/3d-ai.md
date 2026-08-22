@@ -1,6 +1,12 @@
 # Generación 3D con IA: guía completa para assets de RPG en 2025
 
-**La mejor ruta para crear assets 3D de un RPG con IA combina un pipeline text→image→3D local (usando TripoSG o Stable Fast 3D en tu RTX 3060 12 GB) con una API cloud como Meshy AI o Tripo AI para piezas que exijan mayor calidad, todo canalizado a través de Blender hacia Godot 4 como motor de juego.** El ecosistema ha madurado enormemente entre 2024 y 2025: ya existen más de 20 modelos open-source que caben en 12 GB de VRAM y al menos 10 APIs comerciales con precios por debajo de $0.30 por modelo. La clave está en elegir el formato **glTF/GLB** como estándar de intercambio, porque es el único soportado nativamente por todos los motores open-source relevantes.
+> **Encuesta de tecnología externa, 2025.** Compara modelos, APIs y motores del
+> mercado; lo que dice de otros motores sigue valiendo como referencia. Lo que NO
+> describe es este proyecto: aquí el renderer es three.js en el navegador, y los
+> GLB los consume el cliente web. Se conserva por el análisis de formatos, modelos
+> y costes, que es la parte que no envejece.
+
+**La mejor ruta para crear assets 3D de un RPG con IA combina un pipeline text→image→3D local (usando TripoSG o Stable Fast 3D en tu RTX 3060 12 GB) con una API cloud como Meshy AI o Tripo AI para piezas que exijan mayor calidad, todo canalizado a través de Blender hacia el motor de juego.** El ecosistema ha madurado enormemente entre 2024 y 2025: ya existen más de 20 modelos open-source que caben en 12 GB de VRAM y al menos 10 APIs comerciales con precios por debajo de $0.30 por modelo. La clave está en elegir el formato **glTF/GLB** como estándar de intercambio, porque es el único soportado nativamente por todos los motores open-source relevantes.
 
 ---
 
@@ -112,7 +118,7 @@ El workflow óptimo combina generación local y cloud según la importancia del 
 
 4. **Limpieza en Blender**: Importa todos los assets, corrige geometría no-manifold (Mesh → Clean Up), aplica retopología si es necesario (Instant Meshes para auto, manual para héroes), verifica normales, crea LODs con Decimate modifier, y exporta como GLB.
 
-5. **Importación en Godot 4**: Los GLB se importan directamente con materiales PBR intactos. Configura escala (1 unidad = 1 metro), crea collision shapes, y ajusta materiales si es necesario.
+5. **Importación en el motor**: Los GLB se importan directamente con materiales PBR intactos. Configura escala (1 unidad = 1 metro), crea collision shapes, y ajusta materiales si es necesario.
 
 Herramientas de integración útiles: **ComfyUI-3D-Pack** conecta la mayoría de modelos open-source en un workflow visual. **StableGen** (addon de Blender) integra TRELLIS.2 + SDXL directamente dentro de Blender con un botón "Export for Game Engine". Meshy y Tripo tienen **plugins nativos para Godot**.
 

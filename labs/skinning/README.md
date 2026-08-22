@@ -66,9 +66,9 @@ patrón de `ai_server/meshy_client.py:MeshyImageToImage` y enchúfala en `run.py
 ## Workflow
 
 ```bash
-# 1) (Una sola vez por modelo) Renderizar el sprite Mixamo en Godot.
+# 1) (Una sola vez por modelo) Pre-renderizar el sprite Mixamo.
 #    Ejemplo: las 10 anims de combate × 8 direcciones para Y Bot
-python3 tools/render_sprite_sheets.py --models y_bot \
+node tools/render-sprite-sheets/render.mjs --models y_bot \
     --anims idle walk run quick heavy medium defensive precise hit_react death \
     --angle frontal_8
 
@@ -217,7 +217,7 @@ Campos disponibles:
   Mantener grids cuadrado-ish y pasar el output por `fit_atlas_output`
   (recorte determinista del letterbox por bbox de contenido).
 - **Locomotion (walk/run) requiere Hips XZ lock** o el personaje sale del cell. Ya implementado en
-  `godot/scripts/dev/sprite_sheet_renderer.gd:_lock_hips_xz_if_locomotion()`.
+  `tools/render-sprite-sheets/page.mjs:lockHipsXZ()`.
 - **Meshy nano-banana** devuelve siempre 1024×1024 RGB (sin alpha). Para producción con alpha, tirar
   rembg después o renderear sobre fondo verde y aplicar despill.
 
