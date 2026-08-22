@@ -75,7 +75,7 @@ export async function handleGenerateGame(
   // broadcasts o el progreso kind "game_gen" nunca le llegaría (los clientes
   // solo se suscriben en start/resume_session).
   ctx.subscribe(ws);
-  const queued = ctx.sceneGen.enqueue({
+  const { status: queued } = ctx.sceneGen.enqueue({
     key: `gamegen:${msg.gameId}`,
     blocking: false,
     run: () => runGameGeneration(ctx, msg.gameId),

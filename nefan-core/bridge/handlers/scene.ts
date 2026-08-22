@@ -56,19 +56,36 @@ export async function handlePlayerEnteredPlace(
   // Sin escena todavía: el lugar se ANCLA a un tile libre del plano continuo
   // y se genera como tile — es la única variante de Format D que queda (la
   // "suelta" se retiró con el issue #172 y el plató con su vista).
-  const status = ctx.sceneGen.enqueue({
+  const { status, delivery } = ctx.sceneGen.enqueue({
     key: `place_${placeId}`,
     blocking: true,
     run: () => runPlaceTravel(ctx, placeId, prevPlaceId),
   });
-  if (status !== "queued") {
+  // Acuse de recibo del viaje, SIEMPRE y no solo cuando la cola dice
+  // "duplicate": es el paso que el cliente apunta en su ledger para saber que
+  // el bridge lo cogió, y `enqueued` le dice si está esperando a un gemelo.
+  ctx.broadcastNarrative({
+    type: "narrative_status",
+    phase: "generating",
+    kind: "scene",
+    placeId,
+    enqueued: status,
+    message: `Viajando a ${place.name}...`,
+  });
+  // Fail-loud de la ENTREGA. "duplicate" era una promesa que no firmaba
+  // nadie: un `abandonAll` (takeover de sesión, regeneración de mundo) borraba
+  // el job gemelo en silencio y el jugador se quedaba con el velo puesto para
+  // siempre, sin escena y sin error (issue #210). Ahora quien espera se entera.
+  void delivery.then((res) => {
+    if (res.ok) return;
     ctx.broadcastNarrative({
       type: "narrative_status",
-      phase: "generating",
+      phase: "error",
       kind: "scene",
-      message: `Viajando a ${place.name}...`,
+      placeId,
+      message: `No se pudo viajar a ${place.name}: ${res.error}`,
     });
-  }
+  });
 }
 
 /** Tile libre donde ANCLAR el place destino: rayo desde el tile del jugador

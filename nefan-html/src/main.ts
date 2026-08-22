@@ -45,6 +45,7 @@ import { DevToolsInput } from "./input/dev-tools-input.js";
 import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
+import { TravelLedger } from "./ui/travel-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
@@ -418,6 +419,9 @@ const connectionStatus = document.getElementById("connection-status") as HTMLEle
 
 const dialoguePanel = new DialoguePanel();
 const travelPanel = new TravelPanel();
+/** Lo que el juego recuerda del último viaje pedido por «Salidas», paso a
+ *  paso: sin esto, un viaje que no llega y uno lento son el mismo silencio. */
+const travelLedger = new TravelLedger();
 const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
 // Tema base: la partida lo sustituye por el del estilo al abrir sesión. Ya
@@ -455,6 +459,8 @@ const nefanHook: Record<string, unknown> = {
   get tiles() { return [...tileStore.entries.keys()]; },
   get currentTile() { return activeTileKey; },
   get frontier() { return frontier.debugState(); },
+  /** Ledger del último viaje por «Salidas»: qué paso se dio y cuál no. */
+  get viaje() { return travelLedger.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
   /** UI de juego: acciones ofrecidas y tema activo (bench/E2E). */
   ui: {
@@ -1992,6 +1998,7 @@ dialoguePanel.onFreeText = (freeText) => {
 travelPanel.onTravel = (placeId) => {
   if (!activeSessionId) return;
   showLoader("Viajando...", "El motor narrativo está preparando el lugar.");
+  travelLedger.pedido(placeId);
   narrativeClient.enterPlace(placeId);
 };
 
@@ -2063,6 +2070,12 @@ narrativeClient.onNarrativeStatus((status) => {
     return;
   }
 
+  // ── Ledger de viaje ───────────────────────────────────────────────────
+  // Se apunta ANTES de decidir qué pintar: lo que el juego recuerda del viaje
+  // no puede depender de por qué rama del switch de abajo salga el status.
+  if (status.placeId && status.enqueued) travelLedger.encolado(status.placeId, status.enqueued);
+  if (status.phase === "error") travelLedger.fallo(status.placeId, status.message ?? "sin mensaje");
+
   // ── Spawn PEDIDO por el bridge ────────────────────────────────────────
   // Viajar por el panel «Salidas» a un lugar que no existía lo ancla a un
   // tile del plano: el bridge no escribe la posición (es del cliente), la
@@ -2070,6 +2083,7 @@ narrativeClient.onNarrativeStatus((status) => {
   if (status.phase === "ready" && status.spawn) {
     playerPos.x = status.spawn.x;
     playerPos.z = status.spawn.z;
+    travelLedger.spawn(status.spawn);
   }
 
   // ── Tiles del plano continuo ──────────────────────────────────────────
@@ -2247,6 +2261,11 @@ narrativeClient.onNarrativeEvent((event) => {
           | Record<string, unknown>
           | undefined;
         if (scene) {
+          // El tile realizado de un lugar lleva su `place_id` (lo fija el
+          // bridge en el Format D crudo): es lo que ata esta escena al viaje
+          // que el jugador pidió, y no al prefetch que aterrice a la vez.
+          const crudo = scene.__format_d as { place_id?: string } | undefined;
+          travelLedger.escena(String(scene.scene_id ?? effect.entityId), crudo?.place_id);
           const t = scene.tile as { tx: number; ty: number } | undefined;
           if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
             // Tile del plano: ADITIVO (los anteriores no desaparecen).

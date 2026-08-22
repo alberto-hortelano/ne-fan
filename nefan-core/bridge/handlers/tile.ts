@@ -245,7 +245,7 @@ export async function handleRequestTile(
     broadcastScene(ctx, tileKey(tx, ty), existing.scene_data, undefined, { edge: msg.edge });
     return;
   }
-  const status = ctx.sceneGen.enqueue({
+  const { status } = ctx.sceneGen.enqueue({
     key: tileKey(tx, ty),
     blocking: msg.reason === "blocking",
     run: () => runTileGeneration(ctx, tx, ty, msg.edge),

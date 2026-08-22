@@ -312,6 +312,69 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.equal(aiCalls.scene.length, 0, "no se gastó una llamada al motor");
     assert.equal(narrative.worldMap.get("forja")?.anchor, undefined);
   });
+
+  it("acusa el viaje SIEMPRE, diciendo cómo lo encoló", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+    });
+    seedTravelWorld(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    // El acuse va ANTES de que el job corra: es lo que el cliente apunta para
+    // saber que el bridge cogió el viaje, y en qué estado.
+    const acuse = broadcasts.find(
+      (m): m is NarrativeStatusMessage =>
+        m.type === "narrative_status" && m.phase === "generating" && m.kind === "scene",
+    );
+    assert.equal(acuse?.placeId, "forja");
+    assert.equal(acuse?.enqueued, "queued");
+    assert.match(acuse?.message ?? "", /Viajando a La Forja/);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+  });
+
+  it("abandonar la cola con el viaje esperando difunde error a TODOS los que esperan", async () => {
+    // El cuelgue del guion 09 (#210), en su costura: el viaje se queda en la
+    // cola detrás de otro job, un segundo click recibe "duplicate" y se cuelga
+    // del gemelo, y un takeover (start_session / generate_game) vacía la cola.
+    // Sin garantía de entrega, el job se borra en silencio: cero errores, cero
+    // escena y el jugador esperando para siempre — la firma exacta observada
+    // (240 s sin que `currentTile` cambiara y sin una sola excepción).
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    seedTravelWorld(narrative);
+    let soltarBloqueo!: () => void;
+    ctx.sceneGen.enqueue({
+      key: "bloqueo",
+      blocking: true,
+      run: () => new Promise<void>((r) => { soltarBloqueo = r; }),
+    });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    assert.deepEqual(ctx.sceneGen.pending, ["place_forja"], "el viaje espera en la cola");
+
+    ctx.sceneGen.abandonAll();
+    await waitFor(
+      () => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+      1000,
+    ).catch(() => {
+      assert.fail(
+        "nadie difundió error al abandonar el viaje: los dos clientes que lo pidieron esperan para siempre",
+      );
+    });
+
+    const errores = broadcasts.filter(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(errores.length, 2, "un error por caller (el que encoló y el que recibió duplicate)");
+    for (const e of errores) {
+      assert.equal(e.kind, "scene", "el loader del cliente lo muestra");
+      assert.equal(e.placeId, "forja");
+      assert.match(e.message ?? "", /No se pudo viajar a La Forja/);
+    }
+    assert.equal(aiCalls.scene.length, 0, "el job abandonado no llegó a correr");
+    soltarBloqueo();
+  });
 });
 
 describe("bridge activación por posición (tiles + anchors)", () => {

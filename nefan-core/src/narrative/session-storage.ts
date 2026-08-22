@@ -69,12 +69,46 @@ export class FsSessionStorage implements SessionStorage {
     }
   }
 
+  /** Cola de escritura POR SESIÓN (ver `write`). */
+  private colas = new Map<string, Promise<void>>();
+
+  /** Guarda la sesión. Las escrituras de la MISMA sesión se serializan: el
+   *  bridge guarda desde muchos sitios (cada mutación del State API, los map
+   *  triggers, la generación de un tile, save_session) y dos writes solapados
+   *  compartían el fichero temporal — el rename del primero se lo llevaba y el
+   *  segundo moría con ENOENT, tumbando la operación que lo hubiera pedido
+   *  (medido: un viaje del jugador que se quedaba a medias, sin escena).
+   *  Serializar arregla eso y además fija el orden: gana el ÚLTIMO save
+   *  pedido, no el que acabe antes. */
   async write(sessionId: string, data: SessionData): Promise<void> {
+    const anterior = this.colas.get(sessionId);
+    const turno = (async () => {
+      // El fallo del save anterior es de SU caller: aquí solo se espera turno.
+      if (anterior) await anterior;
+      await this.writeAtomic(sessionId, data);
+    })();
+    // En la cola queda la versión ASENTADA (nunca rechaza): un save roto no
+    // puede bloquear a los siguientes ni dejar un rechazo sin dueño — el error
+    // sale entero por el `await turno` de abajo, que es quien lo pidió.
+    const asentado = turno.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.colas.set(sessionId, asentado);
+    try {
+      await turno;
+    } finally {
+      // Último de la cola: fuera de la tabla (no acumular una entrada por save).
+      if (this.colas.get(sessionId) === asentado) this.colas.delete(sessionId);
+    }
+  }
+
+  /** Escritura atómica: un corte a mitad de writeFile dejaba state.json
+   *  truncado y el resume posterior lanzaba (partida irrecuperable). Se escribe
+   *  a un tmp y se renombra (rename es atómico en el mismo FS). */
+  private async writeAtomic(sessionId: string, data: SessionData): Promise<void> {
     const path = this.pathFor(sessionId);
     await fs.mkdir(dirname(path), { recursive: true });
-    // Escritura atómica: un corte a mitad de writeFile dejaba state.json
-    // truncado y el resume posterior lanzaba (partida irrecuperable). Se
-    // escribe a un tmp y se renombra (rename es atómico en el mismo FS).
     const tmp = `${path}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(data, null, "\t"), "utf-8");
     await fs.rename(tmp, path);

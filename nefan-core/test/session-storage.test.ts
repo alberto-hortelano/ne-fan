@@ -37,6 +37,44 @@ describe("FsSessionStorage fail-loud", () => {
     await assert.rejects(() => storage.read("broken"), /Corrupt session file for "broken"/);
   });
 
+  it("dos saves solapados de la MISMA sesión no se pisan (ni ENOENT ni orden al azar)", async () => {
+    // Medido en el guion 09: el bridge guarda desde muchos sitios a la vez
+    // (onMutation del State API, triggers de mapa, generación de tile) y los
+    // writes compartían fichero temporal — el primer rename se lo llevaba y el
+    // segundo moría con ENOENT, abortando lo que estuviera haciendo el bridge
+    // (un viaje del jugador, sin ir más lejos). Fail-loud del disco convertido
+    // en cuelgue del juego.
+    const root = await makeRoot();
+    const storage = new FsSessionStorage(root);
+    const data = (n: number) =>
+      ({
+        session_id: "s1",
+        game_id: "g",
+        updated_at: `2026-01-0${n}T00:00:00Z`,
+        story_so_far: `v${n}`,
+        scenes_loaded: {},
+        entities: [],
+      }) as unknown as Parameters<typeof storage.write>[1];
+
+    const n = 6;
+    const res = await Promise.allSettled(
+      Array.from({ length: n }, (_, i) => storage.write("s1", data(i + 1))),
+    );
+    const rotos = res.filter((r) => r.status === "rejected");
+    assert.deepEqual(
+      rotos.map((r) => String((r as PromiseRejectedResult).reason)),
+      [],
+      "ningún save concurrente puede fallar",
+    );
+    // Y el orden es el de PETICIÓN, no el de quien acabe antes: gana el último.
+    assert.equal((await storage.read("s1"))?.story_so_far, `v${n}`);
+    // Sin restos: el temporal es de usar y tirar.
+    assert.deepEqual(
+      (await fs.readdir(join(root, "s1"))).filter((f) => f.endsWith(".tmp")),
+      [],
+    );
+  });
+
   it("list returns [] when the saves root does not exist yet", async () => {
     const storage = new FsSessionStorage(join(tmpdir(), "nefan-does-not-exist-xyz"));
     assert.deepEqual(await storage.list(), []);

@@ -310,6 +310,15 @@ export interface NarrativeStatusMessage {
   tile?: { tx: number; ty: number };
   /** Borde del tile ACTUAL del jugador hacia el que se genera/completó. */
   edge?: Edge;
+  /** Lugar del world map al que se refiere el status (viaje por «Salidas»):
+   *  el cliente atribuye con él el acuse y el error al viaje que pidió, en vez
+   *  de adivinar por orden de llegada. */
+  placeId?: string;
+  /** Cómo entró ese viaje en la cola de generación del bridge. Observacional:
+   *  "duplicate" = hay un job gemelo en vuelo o en cola y este caller espera
+   *  SU entrega. Va al ledger de viaje del cliente — un cuelgue con
+   *  "duplicate" apunta a la cola; con "queued", al motor. */
+  enqueued?: "queued" | "duplicate" | "promoted";
   /** Dónde debe APARECER el jugador cuando la escena queda lista (viaje a un
    *  place anclado del plano continuo), en metros mundo. El cliente es dueño
    *  de su posición —la reporta en `sim_input`—, así que el bridge la PIDE en

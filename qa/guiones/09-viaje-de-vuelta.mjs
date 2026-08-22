@@ -12,7 +12,10 @@
  *   1. desde el destino, el panel ofrece la vuelta y NO ofrece el lugar donde
  *      el jugador ya está (ofrecerlo significa que el panel está pintando las
  *      salidas de OTRO lugar);
- *   2. clicar la vuelta devuelve al jugador al tile de partida, en suelo libre;
+ *   2. clicar la vuelta devuelve al jugador al tile de partida, en suelo libre,
+ *      y lo hace VIAJANDO (el ledger de `__nefan.viaje` prueba que la escena
+ *      del destino se difundió y que el spawn se aplicó, no que el jugador
+ *      apareciera allí por otra vía);
  *   3. ya de vuelta, el panel vuelve a ofrecer el destino y sigue sin ofrecer
  *      el lugar donde está — el bucle ida/vuelta se puede repetir.
  *
@@ -70,23 +73,67 @@ async function pulsarSalida(ctx, nombre) {
   await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
 }
 
+/** Qué paso del viaje está muerto, leído del ledger que el juego RECUERDA
+ *  (`window.__nefan.viaje`). Sin esto, un viaje que no llega NUNCA y uno que
+ *  tarda dan exactamente el mismo veredicto —«timeout esperando… (último
+ *  valor: null)»—, que es lo que dejó el cuelgue del 12,5 % sin diagnosticar
+ *  durante ocho corridas. */
+function pasoMuerto(l, tileAnterior) {
+  if (!l) return "el cliente no registró el viaje: no llegó ni a pedírselo al bridge";
+  if (l.error) return `el bridge abortó el viaje: ${l.error}`;
+  if (!l.encolado && !l.escenaRecibida)
+    return "el bridge no acusó recibo (ni «Viajando a…» ni escena): la petición murió antes de la cola";
+  if (!l.escenaRecibida)
+    return `el bridge encoló el viaje (${l.encolado}) pero nunca difundió la escena del destino: el job murió en la cola`;
+  if (!l.spawnAplicado)
+    return `la escena ${l.escenaRecibida} llegó, pero nadie pidió el spawn: el jugador se quedó donde estaba`;
+  return `el spawn se aplicó en ${JSON.stringify(l.spawnAplicado)} y aun así el jugador sigue en ${tileAnterior}`;
+}
+
 /** El viaje ha terminado cuando el JUGADOR está en otro tile — no cuando
- *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn). */
+ *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn).
+ *  Se espera por ESTADO contra el ledger: un fallo declarado corta al
+ *  instante, y el tope de 240 s queda como cortafuegos de deadlock, no como
+ *  condición de parada. Al saltar, el fallo NOMBRA el paso muerto. */
 async function esperarLlegada(ctx, tileAnterior, desc) {
-  return ctx.waitFor(
-    desc,
-    (anterior) => {
-      const t = window.__nefan.currentTile;
-      if (!t || t === anterior) return null;
-      return {
-        tile: t,
-        pos: window.__nefan.state().pos,
-        rect: window.__nefan.scene?.world_rect ?? null,
-        exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
-      };
-    },
-    240_000,
-    tileAnterior,
+  const roto = (l) => new Error(`${desc}: ${pasoMuerto(l, tileAnterior)} · ledger=${JSON.stringify(l)}`);
+  const r = await ctx
+    .waitFor(
+      desc,
+      (anterior) => {
+        const t = window.__nefan.currentTile;
+        const v = window.__nefan.viaje;
+        // Viaje declarado roto por el bridge: no hay nada más que esperar.
+        if (v && v.error) return { __roto: v };
+        if (!t || t === anterior) return null;
+        return {
+          tile: t,
+          pos: window.__nefan.state().pos,
+          rect: window.__nefan.scene?.world_rect ?? null,
+          exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
+        };
+      },
+      240_000,
+      tileAnterior,
+    )
+    .catch(async () => {
+      throw roto(await ctx.nefan("viaje"));
+    });
+  if (r.__roto) throw roto(r.__roto);
+  r.ledger = await ctx.nefan("viaje");
+  return r;
+}
+
+/** El viaje se hizo VIAJANDO: el bridge difundió la escena del destino y pidió
+ *  el spawn. Sin esto, llegar al tile andando (o por un spawn de otra cosa)
+ *  contaría como viaje bueno. */
+function comprobarLedger(ctx, llegada, desc) {
+  const l = llegada.ledger;
+  ctx.log(`viaje: ${JSON.stringify(l)}`);
+  ctx.expect(
+    `${desc}: el bridge difundió la escena del destino y pidió el spawn`,
+    Boolean(l && l.escenaRecibida && l.spawnAplicado && !l.error),
+    JSON.stringify(l),
   );
 }
 
@@ -131,6 +178,7 @@ export default async function (ctx) {
     return;
   }
   ctx.log(`en el destino: ${enDestino.tile} · salidas ${JSON.stringify(enDestino.exits.map((e) => e.place_id))}`);
+  comprobarLedger(ctx, enDestino, "la ida");
   await ctx.shot("en-el-destino");
 
   ctx.expect(
@@ -155,6 +203,7 @@ export default async function (ctx) {
     return;
   }
   ctx.log(`de vuelta: ${regreso.tile} · salidas ${JSON.stringify(regreso.exits.map((e) => e.place_id))}`);
+  comprobarLedger(ctx, regreso, "la vuelta");
   await ctx.shot("de-vuelta");
   ctx.expect("la vuelta acaba en el tile de partida", regreso.tile === partida.tile, regreso.tile);
   ctx.expect(
