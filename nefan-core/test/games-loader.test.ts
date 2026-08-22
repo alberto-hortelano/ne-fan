@@ -3,7 +3,7 @@
  *  seguros para filesystem/cache. */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,8 +105,10 @@ describe("games loader", () => {
         cover: "cover.jpg",
         tags: ["bosque", "fantasia"],
         refs: [
-          { id: "bosque", file: "overworld/bosque.jpg", description: "un bosque frondoso" },
-          { id: "catedral", file: "overworld/catedral.jpg", description: "una catedral gótica" },
+          { id: "bosque", file: "faces/bosque.jpg", description: "un muro de zarzas" },
+          { id: "catedral", file: "faces/catedral.jpg", description: "una fachada gótica" },
+          { id: "lamina", file: "surfaces/surfaces.jpg", description: "muestras de material" },
+          { id: "aldeano", file: "characters/aldeano.jpg", description: "un aldeano" },
         ],
       }),
     );
@@ -132,56 +134,103 @@ describe("games loader", () => {
       cover: "cover.jpg",
       tags: ["x"],
     };
-    const m = StyleManifestSchema.parse({
-      ...base,
-      refs: [
-        { id: "aldea", file: "overworld/aldea.jpg", description: "una aldea" },
-        { id: "calle", file: "proscenium/calle.jpg", description: "una calle" },
-      ],
-    });
-    assert.deepEqual(m.refs.map((r) => r.id), ["aldea", "calle"]);
+    /** Las tres carpetas obligatorias con una ref cada una: el mínimo que
+     *  carga. Cada caso de abajo rompe UNA cosa sobre esta base. */
+    const minimo = [
+      { id: "lamina", file: "surfaces/surfaces.jpg", description: "muestras" },
+      { id: "fachada", file: "faces/fachada.jpg", description: "una fachada" },
+      { id: "aldeano", file: "characters/aldeano.jpg", description: "un aldeano" },
+    ];
+    const m = StyleManifestSchema.parse({ ...base, refs: minimo });
+    assert.deepEqual(m.refs.map((r) => r.id), ["lamina", "fachada", "aldeano"]);
     // Archivo fuera de una carpeta del pack → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
-        refs: [{ id: "a", file: "a.jpg", description: "suelta en la raíz" }],
+        refs: [...minimo, { id: "a", file: "a.jpg", description: "suelta en la raíz" }],
       }),
     );
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
-        refs: [{ id: "a", file: "otra_carpeta/a.jpg", description: "carpeta inventada" }],
+        refs: [...minimo, { id: "a", file: "otra_carpeta/a.jpg", description: "carpeta inventada" }],
+      }),
+    );
+    // Las carpetas de las vistas retiradas ya no son carpetas del pack.
+    assert.throws(() =>
+      StyleManifestSchema.parse({
+        ...base,
+        refs: [...minimo, { id: "a", file: "overworld/a.jpg", description: "cenital" }],
       }),
     );
     // Ids duplicados → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
-        refs: [
-          { id: "a", file: "overworld/a.jpg", description: "una" },
-          { id: "a", file: "overworld/b.jpg", description: "otra" },
-        ],
+        refs: [...minimo, { id: "fachada", file: "faces/otra.jpg", description: "otra" }],
       }),
     );
-    // Lámina: role solo en fps/, máximo una.
-    assert.throws(() =>
-      StyleManifestSchema.parse({
-        ...base,
-        refs: [{ id: "l", file: "overworld/l.jpg", description: "x", role: "fps_surfaces" }],
-      }),
-    );
+    // `role` fue el modo viejo de marcar la lámina; ahora lo dice la carpeta
+    // y el schema es estricto: declararlo es un error, no un campo ignorado.
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
         refs: [
-          { id: "l1", file: "fps/l1.jpg", description: "x", role: "fps_surfaces" },
-          { id: "l2", file: "fps/l2.jpg", description: "x", role: "fps_surfaces" },
+          { ...minimo[0], role: "fps_surfaces" },
+          ...minimo.slice(1),
         ],
       }),
     );
   });
 
-  it("styleFaceRefs: solo fps/ temáticas — ni personajes, ni lámina, ni otras carpetas", () => {
+  it("cardinalidad por rol: sin lámina, sin caras o sin personajes el pack NO carga", () => {
+    const base = {
+      style_id: "x",
+      name: "x",
+      description: "x",
+      style_token: "x",
+      cover: "cover.jpg",
+      tags: ["x"],
+    };
+    const lamina = { id: "lamina", file: "surfaces/surfaces.jpg", description: "muestras" };
+    const cara = { id: "fachada", file: "faces/fachada.jpg", description: "una fachada" };
+    const persona = { id: "aldeano", file: "characters/aldeano.jpg", description: "un aldeano" };
+
+    // Sin lámina el atlas degradaba a solo style_token y las superficies
+    // salían grises SIN avisar: por eso es fallo de carga y no un warning.
+    const sinLamina = StyleManifestSchema.safeParse({ ...base, refs: [cara, persona] });
+    assert.equal(sinLamina.success, false);
+    assert.match(
+      sinLamina.error!.issues.map((i) => i.message).join(" | "),
+      /surfaces\/ y debe declarar EXACTAMENTE 1/,
+    );
+
+    // Dos láminas tampoco: la 2ª nunca se usaría y nadie sabría cuál manda.
+    assert.equal(
+      StyleManifestSchema.safeParse({
+        ...base,
+        refs: [lamina, { ...lamina, id: "otra", file: "surfaces/otra.jpg" }, cara, persona],
+      }).success,
+      false,
+    );
+
+    const sinCaras = StyleManifestSchema.safeParse({ ...base, refs: [lamina, persona] });
+    assert.equal(sinCaras.success, false);
+    assert.match(sinCaras.error!.issues[0].message, /faces\//);
+
+    const sinPersonajes = StyleManifestSchema.safeParse({ ...base, refs: [lamina, cara] });
+    assert.equal(sinPersonajes.success, false);
+    assert.match(sinPersonajes.error!.issues[0].message, /characters\//);
+
+    // Un pack en construcción (refs declaradas, imágenes aún sin generar)
+    // sigue cargando: la cardinalidad mira lo DECLARADO, no el disco.
+    assert.equal(
+      StyleManifestSchema.safeParse({ ...base, refs: [lamina, cara, persona] }).success,
+      true,
+    );
+  });
+
+  it("styleFaceRefs: solo faces/ — ni personajes, ni lámina", () => {
     const base = {
       style_id: "x",
       name: "x",
@@ -193,15 +242,15 @@ describe("games loader", () => {
     const pack = StyleManifestSchema.parse({
       ...base,
       refs: [
-        { id: "fachada", file: "fps/fachada.jpg", description: "x" },
+        { id: "fachada", file: "faces/fachada.jpg", description: "x" },
         // La lámina de materiales no es temática: fuera del catálogo.
-        { id: "fps_surfaces", file: "fps/surfaces.jpg", description: "x", role: "fps_surfaces" },
+        { id: "fps_surfaces", file: "surfaces/surfaces.jpg", description: "x" },
         { id: "noble", file: "characters/noble.jpg", description: "x" },
-        { id: "aldea", file: "overworld/aldea.jpg", description: "x" },
       ],
     });
     assert.deepEqual(styleFaceRefs(pack).map((r) => r.id), ["fachada"]);
-    assert.deepEqual(styleFaceRefs(StyleManifestSchema.parse({ ...base, refs: [] })), []);
+    // Un pack SIN caras ya no existe: no carga (ver la cardinalidad por rol),
+    // así que styleFaceRefs no tiene caso vacío que cubrir.
   });
 
   it("schema estricto: pack sin tags o con campos legacy es rechazado", () => {
@@ -274,9 +323,22 @@ describe("games loader", () => {
       styles.map((s) => s.style_id),
       ["acero_neon", "acuarela_luminosa", "anime", "medievo_crudo", "sombra_de_cuento"],
     );
-    // Cada pack shipped declara al menos una ref de cara para el atlas.
+    // Cada pack shipped carga (la cardinalidad por rol ya exige lámina,
+    // caras y personajes) y sus imágenes existen en disco: un manifest que
+    // apunta a un archivo que no está pinta gris sin avisar.
     for (const s of styles) {
-      assert.ok(styleFaceRefs(loadStyleManifest(REAL_STYLES, s.style_id)).length > 0, s.style_id);
+      const manifest = loadStyleManifest(REAL_STYLES, s.style_id);
+      assert.ok(styleFaceRefs(manifest).length > 0, s.style_id);
+      for (const ref of manifest.refs) {
+        assert.ok(
+          existsSync(join(REAL_STYLES, s.style_id, ref.file)),
+          `${s.style_id}: ref "${ref.id}" apunta a ${ref.file}, que no existe`,
+        );
+      }
+      assert.ok(
+        existsSync(join(REAL_STYLES, s.style_id, manifest.cover)),
+        `${s.style_id}: cover ${manifest.cover} ausente`,
+      );
     }
   });
 });

@@ -66,7 +66,7 @@ const surfaceDesc = z.union([surfaceDescStr, surfaceDescFaces]);
 export type SurfaceDescFaces = z.infer<typeof surfaceDescFaces>;
 export type SurfaceDesc = z.infer<typeof surfaceDesc>;
 
-/** Ref temática `fps/` del style pack (id de `world.style_refs.fps_faces`)
+/** Ref de CARA del style pack (carpeta `faces/`, id de `world.style_refs.fps_faces`)
  *  que acompaña como REFERENCIA DE IMAGEN el pintado de la(s) celda(s) hero
  *  de la cara — enseña cómo compone el estilo una cara completa (fachada,
  *  portón…). Requiere `surface_desc` (la ref acompaña a una celda, no la
@@ -272,7 +272,7 @@ export const CustomPartSchema = z
     scale: z.tuple([z.number().min(0.1).max(4), z.number().min(0.1).max(4), z.number().min(0.1).max(4)]).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     desc: z.string().min(1).max(200).optional(),
-    /** Ref temática fps/ que acompaña el pintado de la celda de esta pieza
+    /** Ref de cara (`faces/`) que acompaña el pintado de la celda de esta pieza
      *  (id de world.style_refs.fps_faces). Requiere `desc`. */
     ref: surfaceRefId.optional(),
   })

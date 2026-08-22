@@ -418,7 +418,7 @@ class SurfaceAtlasGenerator:
         fps_surfaces (2ª sin ref de cara — posición histórica; 3ª con ella) ·
         página previa · anchors.
 
-        `cell_ref_uris`: data URI por id de ref temática fps/ (surface_ref);
+        `cell_ref_uris`: data URI por id de ref de cara, faces/ (surface_ref);
         pack_missing agrupa las celdas por ref, así cada página tiene una
         sola (la de su primera celda)."""
         t0 = time.time()

@@ -1,7 +1,7 @@
 """Tests del StylePackResolver (formato de refs libres): resolución por id
-dentro de la vista, fallback primera-de-vista, lámina fps sin sustituto,
-degradación con packs incompletos, recarga por mtime y byte-igualdad del
-contexto de caché con los ids migrados."""
+dentro de la carpeta de ROL, fallback primera-de-carpeta en personajes,
+lámina sin sustituto, caras sin fallback, degradación con packs incompletos,
+recarga por mtime y byte-igualdad del contexto de caché."""
 import io
 import json
 import os
@@ -39,131 +39,139 @@ class StylePacksTest(unittest.TestCase):
             "cover": "cover.jpg",
             "tags": ["medieval"],
             "refs": [
-                # El ORDEN importa: settlement es la primera cenital (fallback).
-                {"id": "settlement", "file": "overworld/settlement.jpg",
-                 "description": "una aldea"},
-                {"id": "forest", "file": "overworld/forest.jpg",
-                 "description": "un bosque"},
-                {"id": "catedral", "file": "overworld/catedral.jpg",
-                 "description": "una catedral gótica"},
-                {"id": "stage_street", "file": "proscenium/stage_street.jpg",
-                 "description": "una calle"},
-                {"id": "fps_surfaces", "file": "fps/surfaces.jpg",
-                 "description": "lámina", "role": "fps_surfaces"},
+                {"id": "fps_surfaces", "file": "surfaces/surfaces.jpg",
+                 "description": "lámina de materiales"},
+                {"id": "fachada", "file": "faces/fachada.jpg",
+                 "description": "fachada de casa con puerta"},
+                {"id": "porton", "file": "faces/porton.jpg",
+                 "description": "un portón de dos hojas"},
+                # El ORDEN importa: noble es el primer personaje (fallback) y
+                # NO tiene archivo, así que el fallback debe saltar al
+                # siguiente personaje que sí existe.
+                {"id": "noble", "file": "characters/noble.jpg",
+                 "description": "un noble"},
                 {"id": "commoner", "file": "characters/commoner.jpg",
                  "description": "una persona corriente"},
             ],
         }
         (d / "style.json").write_text(json.dumps(manifest), encoding="utf-8")
-        # settlement declarado pero SIN archivo (pack incompleto): el fallback
-        # de la vista debe saltar a la siguiente cenital existente.
-        _write_jpg(d / "overworld/forest.jpg", (10, 200, 10))
-        _write_jpg(d / "overworld/catedral.jpg", (120, 120, 140))
-        _write_jpg(d / "proscenium/stage_street.jpg", (90, 80, 70))
-        _write_jpg(d / "fps/surfaces.jpg", (60, 60, 60))
+        _write_jpg(d / "surfaces/surfaces.jpg", (60, 60, 60))
+        _write_jpg(d / "faces/fachada.jpg", (140, 110, 90))
+        _write_jpg(d / "faces/porton.jpg", (90, 70, 50))
         _write_jpg(d / "characters/commoner.jpg", (200, 10, 10))
         self.resolver = StylePackResolver(styles_dir=self.styles_dir)
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_resuelve_por_id(self):
-        ref = self.resolver.resolve("mi_estilo", "catedral", "overworld")
+    # ── characters/: el único rol con fallback ──
+
+    def test_personaje_por_id(self):
+        ref = self.resolver.resolve_character("mi_estilo", "commoner")
         self.assertIsNotNone(ref)
-        self.assertEqual(ref.ref_id, "catedral")
+        self.assertEqual(ref.ref_id, "commoner")
         self.assertTrue(ref.data_uri.startswith("data:image/jpeg;base64,"))
         self.assertEqual(ref.style_token, "token de arte")
 
-    def test_sin_id_cae_a_primera_de_vista_existente(self):
-        # settlement (primera) no tiene archivo ⇒ forest (siguiente cenital).
-        ref = self.resolver.resolve("mi_estilo", "", "overworld")
+    def test_sin_id_cae_al_primer_personaje_existente(self):
+        # noble (primero) no tiene archivo ⇒ commoner.
+        ref = self.resolver.resolve_character("mi_estilo", "")
         self.assertIsNotNone(ref)
-        self.assertEqual(ref.ref_id, "forest")
+        self.assertEqual(ref.ref_id, "commoner")
 
-    def test_id_desconocido_degrada_a_primera_de_vista(self):
-        ref = self.resolver.resolve("mi_estilo", "no_existe", "overworld")
+    def test_id_desconocido_degrada_al_primer_personaje(self):
+        ref = self.resolver.resolve_character("mi_estilo", "no_existe")
         self.assertIsNotNone(ref)
-        self.assertEqual(ref.ref_id, "forest")
+        self.assertEqual(ref.ref_id, "commoner")
 
-    def test_una_ref_nunca_cruza_de_vista(self):
-        # Pedir un id cenital en vista proscenium NO devuelve la cenital:
-        # cae a la primera de plató.
-        ref = self.resolver.resolve("mi_estilo", "catedral", "proscenium")
+    def test_una_ref_nunca_cruza_de_carpeta(self):
+        # Pedir una CARA como personaje no la devuelve: cae al personaje de
+        # fallback. Una fachada no sirve de model sheet.
+        ref = self.resolver.resolve_character("mi_estilo", "fachada")
         self.assertIsNotNone(ref)
-        self.assertEqual(ref.ref_id, "stage_street")
+        self.assertEqual(ref.ref_id, "commoner")
 
-    def test_lamina_fuera_del_catalogo_tematico(self):
-        # La lámina no es candidata de la vista fps (role la excluye): un
-        # pack sin refs temáticas fps devuelve None para esa vista.
-        self.assertIsNone(self.resolver.resolve("mi_estilo", "", "fps"))
+    # ── faces/: por id EXACTO, sin fallback ──
 
-    def test_resolve_fps_face(self):
-        # Ref temática fps/ (cara completa) por id EXACTO, sin fallback.
-        d = self.styles_dir / "mi_estilo"
-        import json as _json
-        manifest = _json.loads((d / "style.json").read_text())
-        manifest["refs"].append({
-            "id": "fachada", "file": "fps/fachada.jpg",
-            "description": "fachada de casa con puerta",
-        })
-        (d / "style.json").write_text(_json.dumps(manifest), encoding="utf-8")
-        _write_jpg(d / "fps/fachada.jpg", (140, 110, 90))
-        r = StylePackResolver(styles_dir=self.styles_dir)
-        ref = r.resolve_fps_face("mi_estilo", "fachada")
+    def test_resolve_face(self):
+        ref = self.resolver.resolve_face("mi_estilo", "fachada")
         self.assertIsNotNone(ref)
         self.assertEqual(ref.ref_id, "fachada")
-        # Id desconocido ⇒ None (SIN fallback a otra imagen temática).
-        self.assertIsNone(r.resolve_fps_face("mi_estilo", "no_existe"))
-        # La lámina queda fuera del namespace de refs temáticas.
-        self.assertIsNone(r.resolve_fps_face("mi_estilo", "fps_surfaces"))
+        # Id desconocido ⇒ None (SIN fallback a otra cara: pintaría la celda
+        # con arte que el motor no pidió).
+        self.assertIsNone(self.resolver.resolve_face("mi_estilo", "no_existe"))
+        # La lámina vive en otra carpeta: no es una cara.
+        self.assertIsNone(self.resolver.resolve_face("mi_estilo", "fps_surfaces"))
+        # Un personaje tampoco.
+        self.assertIsNone(self.resolver.resolve_face("mi_estilo", "commoner"))
         # Vacío / pack inexistente ⇒ None.
-        self.assertIsNone(r.resolve_fps_face("mi_estilo", ""))
-        self.assertIsNone(r.resolve_fps_face("no_pack", "fachada"))
+        self.assertIsNone(self.resolver.resolve_face("mi_estilo", ""))
+        self.assertIsNone(self.resolver.resolve_face("no_pack", "fachada"))
 
-    def test_resolve_fps_sheet(self):
-        sheet = self.resolver.resolve_fps_sheet("mi_estilo")
+    def test_cara_declarada_sin_imagen(self):
+        d = self.styles_dir / "mi_estilo"
+        manifest = json.loads((d / "style.json").read_text())
+        manifest["refs"].append({
+            "id": "tienda", "file": "faces/tienda.jpg", "description": "un comercio",
+        })
+        (d / "style.json").write_text(json.dumps(manifest), encoding="utf-8")
+        r = StylePackResolver(styles_dir=self.styles_dir)
+        self.assertIsNone(r.resolve_face("mi_estilo", "tienda"))
+
+    # ── surfaces/: la lámina, sin sustituto ──
+
+    def test_resolve_sheet(self):
+        sheet = self.resolver.resolve_sheet("mi_estilo")
         self.assertIsNotNone(sheet)
         self.assertEqual(sheet.ref_id, "fps_surfaces")
-        # Lámina declarada pero sin archivo ⇒ None (sin sustituto).
-        (self.styles_dir / "mi_estilo" / "fps" / "surfaces.jpg").unlink()
+        # Lámina declarada pero sin archivo ⇒ None (sin sustituto: una escena
+        # contaminaría los swatches planos).
+        (self.styles_dir / "mi_estilo" / "surfaces" / "surfaces.jpg").unlink()
         resolver2 = StylePackResolver(styles_dir=self.styles_dir)
-        self.assertIsNone(resolver2.resolve_fps_sheet("mi_estilo"))
+        self.assertIsNone(resolver2.resolve_sheet("mi_estilo"))
 
-    def test_personajes_son_vista_characters(self):
-        ref = self.resolver.resolve("mi_estilo", "commoner", "characters")
-        self.assertIsNotNone(ref)
-        self.assertEqual(ref.ref_id, "commoner")
-        # Sin elección ⇒ primera de characters (commoner en los migrados).
-        ref = self.resolver.resolve("mi_estilo", "", "characters")
-        self.assertEqual(ref.ref_id, "commoner")
+    def test_sheet_de_pack_sin_lamina(self):
+        # Un pack así no pasa el StyleManifestSchema; el resolver no valida
+        # el manifest, así que aquí solo se comprueba que no inventa una.
+        d = self.styles_dir / "sin_lamina"
+        d.mkdir()
+        (d / "style.json").write_text(json.dumps({
+            "style_id": "sin_lamina", "name": "s", "description": "s",
+            "style_token": "t", "cover": "cover.jpg", "tags": ["x"],
+            "refs": [{"id": "fachada", "file": "faces/fachada.jpg", "description": "x"}],
+        }), encoding="utf-8")
+        self.assertIsNone(self.resolver.resolve_sheet("sin_lamina"))
+
+    # ── degradación y caché ──
 
     def test_pack_inexistente_o_vacio_devuelve_none(self):
-        self.assertIsNone(self.resolver.resolve("no_existe", "x", "overworld"))
+        self.assertIsNone(self.resolver.resolve_character("no_existe", "x"))
         d = self.styles_dir / "vacio"
         d.mkdir()
         (d / "style.json").write_text(json.dumps({
             "style_id": "vacio", "name": "v", "description": "v",
             "style_token": "t", "cover": "cover.jpg", "tags": ["x"], "refs": [],
         }), encoding="utf-8")
-        self.assertIsNone(self.resolver.resolve("vacio", "", "overworld"))
+        self.assertIsNone(self.resolver.resolve_character("vacio", ""))
 
-    def test_contexto_de_cache_byte_igual_con_ids_migrados(self):
-        # El contexto de caché de escena es "{style_id}/{ref_id}:{hash}". Con
-        # los ids migrados (= categorías antiguas) y el archivo movido sin
-        # recomprimir, la cadena es byte-idéntica a la era de categorías.
-        ref = self.resolver.resolve("mi_estilo", "forest", "overworld")
+    def test_contexto_de_cache_byte_igual(self):
+        # El contexto de caché de imagen es "{style_id}/{ref_id}:{hash}", y el
+        # hash es del CONTENIDO del archivo: mover la ref de carpeta con
+        # `git mv` (sin recomprimir) no cambia ni una letra, que es lo que
+        # hace que el arte ya pagado siga siendo alcanzable.
+        ref = self.resolver.resolve_face("mi_estilo", "fachada")
         context = f"{ref.style_id}/{ref.ref_id}:{ref.content_hash}"
         import hashlib
-        raw = (self.styles_dir / "mi_estilo" / "overworld" / "forest.jpg").read_bytes()
+        raw = (self.styles_dir / "mi_estilo" / "faces" / "fachada.jpg").read_bytes()
         expected_hash = hashlib.sha256(raw).hexdigest()[:12]
-        self.assertEqual(context, f"mi_estilo/forest:{expected_hash}")
+        self.assertEqual(context, f"mi_estilo/fachada:{expected_hash}")
 
     def test_recarga_por_mtime(self):
-        ref1 = self.resolver.resolve("mi_estilo", "forest", "overworld")
-        path = self.styles_dir / "mi_estilo" / "overworld" / "forest.jpg"
+        ref1 = self.resolver.resolve_face("mi_estilo", "fachada")
+        path = self.styles_dir / "mi_estilo" / "faces" / "fachada.jpg"
         _write_jpg(path, (99, 99, 99))
         os.utime(path, (path.stat().st_atime + 5, path.stat().st_mtime + 5))
-        ref2 = self.resolver.resolve("mi_estilo", "forest", "overworld")
+        ref2 = self.resolver.resolve_face("mi_estilo", "fachada")
         self.assertNotEqual(ref1.content_hash, ref2.content_hash)
 
     def test_list_styles_incluye_tags(self):
@@ -173,10 +181,14 @@ class StylePacksTest(unittest.TestCase):
         self.assertEqual(styles[0]["tags"], ["medieval"])
 
     def test_ref_folder(self):
-        self.assertEqual(ref_folder("overworld/x.jpg"), "overworld")
+        self.assertEqual(ref_folder("surfaces/x.jpg"), "surfaces")
+        self.assertEqual(ref_folder("faces/x.jpg"), "faces")
         self.assertEqual(ref_folder("characters/y.jpg"), "characters")
         self.assertEqual(ref_folder("x.jpg"), "")
         self.assertEqual(ref_folder("otra/x.jpg"), "")
+        # Las carpetas de las vistas retiradas ya no clasifican nada.
+        self.assertEqual(ref_folder("overworld/x.jpg"), "")
+        self.assertEqual(ref_folder("proscenium/x.jpg"), "")
 
 
 if __name__ == "__main__":

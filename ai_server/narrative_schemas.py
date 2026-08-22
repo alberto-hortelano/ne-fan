@@ -247,7 +247,7 @@ def _surface_desc_ok(sd, vtype) -> bool:
 
 def _surface_ref_ok(sr, vtype) -> bool:
     """Espejo laxo del union surfaceRef de volumes.ts (string | por cara):
-    id de una ref temática fps/ del pack (world.style_refs.fps_faces)."""
+    id de una ref de cara del pack (world.style_refs.fps_faces)."""
     if vtype not in ("building", "wall", "prop", "prism"):
         return False
     if isinstance(sr, str):
@@ -304,7 +304,7 @@ def validate_volumes(raw, *, field: str = "volumes"):
                 "inválida (string 1..200 u objeto por cara n|s|e|w|side|roof|door|caps|top; "
                 "solo building|wall|prop|prism)",
             )
-        # surface_ref: acompaña a surface_desc (id de ref temática fps/ del
+        # surface_ref: acompaña a surface_desc (id de ref de cara del
         # pack). Espejo laxo: forma + presencia de surface_desc; el rechazo
         # duro (id contra catálogo, clave sin cara descrita) lo hacen el
         # pre-flight MCP y el zod del bridge.

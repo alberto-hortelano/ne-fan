@@ -42,6 +42,12 @@ Thumbs.db
 NEFan/
 archive/
 
+# Archivo local de material generado que sale del REPO pero no de la MÁQUINA
+# (imágenes de estilo, runs de labs, saves de sesiones). Espeja la ruta que
+# cada cosa tenía en el juego: archivo/nefan-core/data/styles/anime/overworld/…
+# Un `mv` de vuelta lo restaura. NADA generado se borra: se archiva.
+/archivo/
+
 # Generated asset caches
 cache/
 godot/cache/

@@ -3,12 +3,14 @@
 Un pack vive en `nefan-core/data/styles/{style_id}/` (style.json + imágenes;
 ver StyleManifestSchema en nefan-core/src/games/loader.ts, la fuente de
 verdad del formato). Las refs son LIBRES: cada imagen declara un `id`
-estable, un archivo dentro de una carpeta del pack (overworld/ |
-proscenium/ | fps/ | characters/) y una descripción. Este módulo resuelve la
-referencia de una petición de imagen por su `id` (elegido por el motor
-narrativo); sin elección o con id desconocido cae a la PRIMERA ref de la
-vista en el orden del manifest (fallback determinista) y, si esa imagen aún
-no existe en disco (pack en construcción), a la siguiente de la misma vista.
+estable, un archivo dentro de una carpeta del pack (surfaces/ | faces/ |
+characters/) y una descripción. La carpeta es el ROL del contenido, no una
+vista de mundo: el juego tiene UNA vista. Este módulo resuelve la referencia
+de una petición de imagen por su `id` (elegido por el motor narrativo); en
+`characters/`, sin elección o con id desconocido, cae a la PRIMERA ref de la
+carpeta en el orden del manifest (fallback determinista) y, si esa imagen aún
+no existe en disco (pack en construcción), a la siguiente de la misma
+carpeta.
 
 Degradación esperable (pack sin imágenes aún, estilo inexistente): se avisa y
 se devuelve None — el llamador usa su referencia global de siempre. Un
@@ -30,17 +32,15 @@ RUNTIME_CONFIG_PATH = (
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: Carpetas de vista admitidas en un pack (espejo de STYLE_REF_FOLDERS en
-#: nefan-core/src/games/style-refs.ts; "characters" es pseudo-vista de model
-#: sheets compartidos). La vista de una ref ES la carpeta de su archivo.
-REF_FOLDERS = ("overworld", "proscenium", "fps", "characters")
-
-#: Rol especial: la lámina de materiales del atlas fps (resolve_fps_sheet).
-ROLE_FPS_SURFACES = "fps_surfaces"
+#: Carpetas admitidas en un pack (espejo de STYLE_REF_FOLDERS en
+#: nefan-core/src/games/style-refs.ts). Cada una es un ROL: surfaces/ la
+#: lámina de materiales, faces/ las caras temáticas, characters/ los model
+#: sheets. El rol de una ref ES la carpeta de su archivo.
+REF_FOLDERS = ("surfaces", "faces", "characters")
 
 
 def ref_folder(file: str) -> str:
-    """Carpeta de vista de una ref por su ruta ("" si no cae en ninguna)."""
+    """Carpeta (rol) de una ref por su ruta ("" si no cae en ninguna)."""
     folder = str(file).split("/", 1)[0] if "/" in str(file) else ""
     return folder if folder in REF_FOLDERS else ""
 
@@ -91,31 +91,22 @@ class StylePackResolver:
         return str(manifest.get("style_token", "")) if manifest else ""
 
     def _refs_for_folder(self, manifest: dict, folder: str) -> list[dict]:
-        """Refs elegibles de una carpeta, en orden de manifest (la primera es
-        el fallback). La lámina fps_surfaces queda fuera — no es temática."""
-        out: list[dict] = []
-        for r in manifest.get("refs", []):
-            if str(r.get("role") or "") == ROLE_FPS_SURFACES:
-                continue
-            if ref_folder(str(r.get("file", ""))) == folder:
-                out.append(r)
-        return out
+        """Refs de una carpeta, en orden de manifest (la primera es el
+        fallback donde lo haya)."""
+        return [
+            r for r in manifest.get("refs", [])
+            if ref_folder(str(r.get("file", ""))) == folder
+        ]
 
-    def resolve(self, style_id: str, ref_id: str, folder: str) -> StyleRef | None:
-        """Devuelve la referencia `ref_id` de la carpeta `folder` del pack
-        (overworld|proscenium|fps|characters). Sin `ref_id`, o con un id que
-        no existe en esa carpeta, cae a la primera ref de la carpeta en orden
-        de manifest; si su imagen aún no existe en disco (pack en
-        construcción) prueba las siguientes DE LA MISMA CARPETA — una ref
-        nunca cruza de carpeta (un personaje no sirve de superficie). None si
-        el pack no tiene ninguna imagen utilizable (el llamador degrada al
-        estilo global)."""
-        if folder not in REF_FOLDERS:
-            print(
-                f"StylePacks WARNING: carpeta desconocida '{folder}' — usando characters",
-                flush=True,
-            )
-            folder = "characters"
+    def resolve_character(self, style_id: str, ref_id: str) -> StyleRef | None:
+        """Devuelve la ref de personaje `ref_id` (carpeta characters/). Sin
+        `ref_id`, o con un id que no existe ahí, cae a la primera del
+        manifest; si su imagen aún no existe en disco (pack en construcción)
+        prueba las siguientes DE LA MISMA CARPETA — una ref nunca cruza de
+        carpeta (un personaje no sirve de superficie). None si el pack no
+        tiene ninguna imagen utilizable (el llamador degrada al estilo
+        global)."""
+        folder = "characters"
         manifest = self._manifest(style_id)
         if not manifest:
             return None
@@ -153,18 +144,17 @@ class StylePackResolver:
         )
         return None
 
-    def resolve_fps_face(self, style_id: str, ref_id: str) -> StyleRef | None:
-        """Ref temática fps/ (cara completa: fachada, portón…) por id EXACTO,
+    def resolve_face(self, style_id: str, ref_id: str) -> StyleRef | None:
+        """Ref temática de CARA (faces/: fachada, portón…) por id EXACTO,
         SIN fallback: una celda con ref desconocida se pinta SIN ref, con
         warning — nunca con otra imagen (el fail-loud contra el catálogo vive
-        en el pre-flight de narrative-mcp). La lámina fps_surfaces queda
-        fuera (_refs_for_folder la excluye por role)."""
+        en el pre-flight de narrative-mcp)."""
         if not ref_id:
             return None
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        for r in self._refs_for_folder(manifest, "fps"):
+        for r in self._refs_for_folder(manifest, "faces"):
             if str(r.get("id")) != ref_id:
                 continue
             loaded = self._load_image(style_id, str(r.get("file", "")))
@@ -178,26 +168,26 @@ class StylePackResolver:
                     style_token=str(manifest.get("style_token", "")),
                 )
             print(
-                f"StylePacks WARNING: ref fps '{ref_id}' de '{style_id}' declarada sin imagen",
+                f"StylePacks WARNING: ref de cara '{ref_id}' de '{style_id}' declarada sin imagen",
                 flush=True,
             )
             return None
         print(
-            f"StylePacks WARNING: ref fps '{ref_id}' no existe en '{style_id}' — celda sin ref",
+            f"StylePacks WARNING: ref de cara '{ref_id}' no existe en '{style_id}' — celda sin ref",
             flush=True,
         )
         return None
 
-    def resolve_fps_sheet(self, style_id: str) -> StyleRef | None:
-        """La lámina de materiales del pack (ref con role fps_surfaces). No
-        admite sustituto: una escena contaminaría los swatches planos. Existe
-        o None (el atlas degrada a solo style_token)."""
+    def resolve_sheet(self, style_id: str) -> StyleRef | None:
+        """La lámina de materiales del pack (la única ref de surfaces/). No
+        admite sustituto: una escena contaminaría los swatches planos. Un pack
+        VÁLIDO siempre la declara (cardinalidad del StyleManifestSchema); si
+        aquí sale None es que el pack está a medio generar y el atlas irá solo
+        con el style_token."""
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        for r in manifest.get("refs", []):
-            if str(r.get("role") or "") != ROLE_FPS_SURFACES:
-                continue
+        for r in self._refs_for_folder(manifest, "surfaces"):
             loaded = self._load_image(style_id, str(r.get("file", "")))
             if loaded:
                 data_uri, content_hash = loaded
@@ -209,7 +199,7 @@ class StylePackResolver:
                     style_token=str(manifest.get("style_token", "")),
                 )
             print(
-                f"StylePacks: lámina fps de '{style_id}' declarada pero sin imagen — "
+                f"StylePacks: lámina de '{style_id}' declarada pero sin imagen — "
                 "el atlas irá solo con el style_token",
                 flush=True,
             )

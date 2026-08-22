@@ -10,7 +10,8 @@
  *  - `plugins/`   — manifests de plugins shipped (mecanismo existente).
  *
  * Un estilo es `data/styles/{style_id}/` con `style.json` (StyleManifestSchema)
- * más las imágenes de referencia por categoría que consume ai_server.
+ * más las imágenes de referencia, en una carpeta por ROL, que consume
+ * ai_server (surfaces/ | faces/ | characters/).
  *
  * El listado DEGRADA POR JUEGO: un game.json malformado se omite con warning
  * (con juegos subidos por el usuario, uno roto no puede tumbar el título);
@@ -26,7 +27,6 @@ import { z } from "zod";
 import {
   SAFE_ID,
   STYLE_REF_FOLDERS,
-  STYLE_REF_ROLE_FPS_SURFACES,
   SUGGESTED_THEME_TAGS,
   folderForRefFile,
   normalizeTag,
@@ -54,7 +54,6 @@ export {
 export {
   SAFE_ID,
   STYLE_REF_FOLDERS,
-  STYLE_REF_ROLE_FPS_SURFACES,
   SUGGESTED_THEME_TAGS,
   folderForRefFile,
   normalizeTag,
@@ -96,7 +95,7 @@ export type GameMeta = z.infer<typeof GameMetaSchema>;
 
 /** Una imagen de referencia del pack. Sin categorías: el contenido es LIBRE
  *  (una catedral, una estación espacial, un cementerio…) y lo describe
- *  `description`; la vista la declara la CARPETA del archivo. */
+ *  `description`; su ROL lo declara la CARPETA del archivo. */
 export const StyleRefSchema = z
   .object({
     /** Id estable de la ref: lo que emite el motor narrativo al elegirla y
@@ -105,7 +104,7 @@ export const StyleRefSchema = z
      *  `description` no. */
     id: SafeId,
     /** Ruta relativa al dir del pack, SIEMPRE dentro de una de sus
-     *  carpetas: overworld/ | proscenium/ | fps/ | characters/. */
+     *  carpetas de ROL: surfaces/ | faces/ | characters/. */
     file: z.string().min(1),
     /** Qué muestra la imagen, en español y en una frase — es lo que lee el
      *  motor narrativo para elegir la referencia de cada escena. */
@@ -116,9 +115,6 @@ export const StyleRefSchema = z
     /** Seed de encuadre de `_plantilla/` (ruta relativa a _plantilla/) para
      *  generarla; sin él, el default de su carpeta. */
     seed: z.string().min(1).optional(),
-    /** Rol especial: "fps_surfaces" = lámina de materiales del atlas
-     *  (máx 1 por pack, solo en fps/). Fuera del catálogo del motor. */
-    role: z.literal(STYLE_REF_ROLE_FPS_SURFACES).optional(),
   })
   .strict();
 export type StyleRef = z.infer<typeof StyleRefSchema>;
@@ -146,7 +142,11 @@ export const StyleManifestSchema = z
   .strict()
   .superRefine((manifest, ctx) => {
     const seen = new Set<string>();
-    let laminas = 0;
+    const porCarpeta: Record<StyleRefFolder, number> = {
+      surfaces: 0,
+      faces: 0,
+      characters: 0,
+    };
     for (const [i, ref] of manifest.refs.entries()) {
       if (seen.has(ref.id)) {
         ctx.addIssue({
@@ -165,35 +165,42 @@ export const StyleManifestSchema = z
             `ref "${ref.id}": file "${ref.file}" debe vivir en una carpeta ` +
             `del pack (${STYLE_REF_FOLDERS.join("/ | ")}/)`,
         });
+        continue;
       }
-      if (ref.role === STYLE_REF_ROLE_FPS_SURFACES) {
-        laminas++;
-        if (folder !== "fps") {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["refs", i, "role"],
-            message: `ref "${ref.id}": role fps_surfaces exige carpeta fps/`,
-          });
-        }
-        if (laminas > 1) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["refs", i, "role"],
-            message: "más de una lámina fps_surfaces en el pack",
-          });
-        }
+      porCarpeta[folder]++;
+    }
+    // Cardinalidad por rol. Es lo que sustituyó a "¿qué vistas sirve este
+    // pack?": con UNA vista no hay nada que filtrar, así que un pack o carga
+    // entero o no carga. La lámina es el caso que obliga: sin ella el atlas
+    // se generaba igual, solo con style_token, y las superficies salían
+    // grises genéricas SIN un solo aviso — degradación callada en el sitio
+    // más caro del juego. Ahora es fallo de carga con motivo.
+    if (porCarpeta.surfaces !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["refs"],
+        message:
+          `el pack declara ${porCarpeta.surfaces} refs en surfaces/ y debe declarar ` +
+          "EXACTAMENTE 1 (la lámina de materiales que guía el atlas de superficies)",
+      });
+    }
+    for (const carpeta of ["faces", "characters"] as const) {
+      if (porCarpeta[carpeta] === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["refs"],
+          message: `el pack no declara ninguna ref en ${carpeta}/ (mínimo 1)`,
+        });
       }
     }
   });
 export type StyleManifest = z.infer<typeof StyleManifestSchema>;
 
-/** Refs temáticas de CARA: las de `fps/` sin la lámina de materiales. El
- *  motor elige una por cara de volumen (`surface_ref`) y guía cómo el estilo
- *  pinta esa celda del atlas. La PRIMERA es el fallback sin elección. */
+/** Refs temáticas de CARA (carpeta `faces/`). El motor elige una por cara de
+ *  volumen (`surface_ref`) y guía cómo el estilo pinta esa celda del atlas.
+ *  La PRIMERA es el fallback sin elección. */
 export function styleFaceRefs(manifest: StyleManifest): StyleRef[] {
-  return manifest.refs.filter(
-    (r) => r.role !== STYLE_REF_ROLE_FPS_SURFACES && folderForRefFile(r.file) === "fps",
-  );
+  return manifest.refs.filter((r) => folderForRefFile(r.file) === "faces");
 }
 
 /** Refs de personaje del pack (carpeta characters/). La PRIMERA es el

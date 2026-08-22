@@ -27,133 +27,26 @@
   },
   "refs": [
     {
-      "id": "settlement",
-      "file": "overworld/settlement.jpg",
-      "description": "un distrito habitacional abierto de una colonia espacial: módulos y estructuras asimétricas sin muralla",
-      "gen_scene": "an OPEN, asymmetric colony habitat district with NO perimeter wall and NO gate: a handful of flat-roofed prefab blocks of different sizes scattered at irregular positions, a paved plaza off-centre (smooth concrete paving ONLY in the plaza), straight metal walkways with glow strips running off the edges of the image, equipment crates and small props between buildings, the district blending directly into arid alien terrain with sparse alien shrubs — the layout must NOT form any closed compound or symmetric template",
-      "seed": "overworld/settlement.png"
-    },
-    {
-      "id": "farmland",
-      "file": "overworld/farmland.jpg",
-      "description": "una zona agrícola hidropónica: hileras de invernaderos alargados y cultivos abiertos",
-      "gen_scene": "a hydroponic agridome zone: rows of long greenhouse modules and open grow trays with crops under lamps, water pipes and storage tanks, a straight paved service road, blending into open arid ground and an edge of alien vegetation",
-      "seed": "overworld/farmland.png"
-    },
-    {
-      "id": "forest",
-      "file": "overworld/forest.jpg",
-      "description": "una zona de flora alienígena densa y bioluminiscente, sin edificios",
-      "gen_scene": "a dense alien flora zone with NO buildings: tall bioluminescent alien plants and fungal growths forming a canopy, a clearing, a narrow dirt trail (NO paving), a stream with rocks, blending into open arid ground at one side",
-      "seed": "overworld/forest.png"
-    },
-    {
-      "id": "wetland",
-      "file": "overworld/wetland.jpg",
-      "description": "una marisma alienígena sin edificios: pozas minerales turbias con un brillo tenue",
-      "gen_scene": "an alien marsh with NO buildings: murky mineral pools, faintly glowing reeds and moss, twisted alien growths, metal plank walkways over the mud, blending into wet flats at one side",
-      "seed": "overworld/wetland.png"
-    },
-    {
-      "id": "desert",
-      "file": "overworld/desert.jpg",
-      "description": "un desierto alienígena árido sin edificios: dunas de polvo y roquedos afilados",
-      "gen_scene": "an arid alien desert with NO buildings: dust dunes, sharp rocky outcrops, sparse dry alien shrubs, a small condensation pool, a sandy trail, blending into cracked flats at one side",
-      "seed": "overworld/desert.png"
-    },
-    {
-      "id": "snow",
-      "file": "overworld/snow.jpg",
-      "description": "una tundra alienígena helada sin edificios: campos de hielo y minerales cristalinos",
-      "gen_scene": "a frozen alien tundra with NO buildings: ice fields, crystalline mineral formations, rocks, a frozen stream, a trodden trail, blending into an open frost plain at one side",
-      "seed": "overworld/snow.png"
-    },
-    {
-      "id": "fortress",
-      "file": "overworld/fortress.jpg",
-      "description": "un complejo de seguridad fortificado en paisaje árido: perímetro recto con torres de vigilancia",
-      "gen_scene": "a fortified security compound set in open arid landscape: straight perimeter walls with watchtowers and floodlights, a gate, an inner courtyard with barracks modules and vehicle pads, and the bare ground around the walls with a straight paved road leading to the gate",
-      "seed": "overworld/fortress.png"
-    },
-    {
-      "id": "interior",
-      "file": "overworld/interior.jpg",
-      "description": "el interior de un módulo habitado de la colonia (cantina o sala común) visto en corte",
-      "gen_scene": "the interior of an inhabited colony module (a cantina or common hall) shown in cutaway WITHIN its surroundings: no roof, furniture, consoles and floors visible, and the world continuing around the module — paved colony street, a neighbouring block, a metal walkway reaching its door (never a floor plan floating on a void)",
-      "seed": "overworld/interior.png"
-    },
-    {
-      "id": "underground",
-      "file": "overworld/underground.jpg",
-      "description": "un nivel de mantenimiento subterráneo: corredores metálicos rectos y cámaras",
-      "gen_scene": "an underground maintenance level: straight metal corridors, chambers of different sizes with machinery, stairs, support pillars, pipes and cable runs along the walls, cool artificial lighting",
-      "seed": "overworld/underground.png"
-    },
-    {
-      "id": "stage_street",
-      "file": "proscenium/stage_street.jpg",
-      "description": "una calle-corredor anular dentro de una estación espacial: suelo de plancha metálica",
-      "gen_scene": "a curved ring-corridor street inside a space station: deck plating underfoot, habitat module fronts with glowing signage on both sides, overhead conduits and pipes, a service cart mid-corridor",
-      "seed": "proscenium/stage_street.png"
-    },
-    {
-      "id": "stage_plaza",
-      "file": "proscenium/stage_plaza.jpg",
-      "description": "la explanada central de una colonia bajo una cúpula transparente, con un holograma",
-      "gen_scene": "the central concourse of a colony under a transparent dome: a holographic kiosk in the middle, stalls built from crates, module facades closing the far side",
-      "seed": "proscenium/stage_plaza.png"
-    },
-    {
-      "id": "stage_interior",
-      "file": "proscenium/stage_interior.jpg",
-      "description": "la cantina de una nave: paneles metálicos con tiras de neón, mesas y bancos atornillados",
-      "gen_scene": "the cantina of a starship: metal wall panels with neon strips, bolted-down tables, a counter with drink dispensers, a wide viewport onto space at the far end",
-      "seed": "proscenium/stage_interior.png"
-    },
-    {
-      "id": "stage_nature",
-      "file": "proscenium/stage_nature.jpg",
-      "description": "una cúpula de hidroponía con flora alienígena bioluminiscente flanqueando un paso",
-      "gen_scene": "a hydroponics dome with alien flora: bioluminescent plants flanking a metal walkway, a water channel crossed by a grated bridge, mist",
-      "seed": "proscenium/stage_nature.png"
-    },
-    {
-      "id": "stage_harbor",
-      "file": "proscenium/stage_harbor.jpg",
-      "description": "una bahía de atraque: el borde de una plataforma de aterrizaje con una lanzadera aparcada y una grúa",
-      "gen_scene": "a docking bay: the edge of a landing pad with a parked shuttle, a crane arm holding a container, stacked crates and fuel hoses along the deck",
-      "seed": "proscenium/stage_harbor.png"
-    },
-    {
-      "id": "stage_gate",
-      "file": "proscenium/stage_gate.jpg",
-      "description": "la esclusa principal del perímetro de la colonia: puertas blindadas reforzadas",
-      "gen_scene": "the main airlock gate of the colony perimeter: reinforced blast doors between two floodlight towers, a paved causeway leading in, arid alien terrain at the sides",
-      "seed": "proscenium/stage_gate.png"
-    },
-    {
       "id": "fps_surfaces",
-      "file": "fps/surfaces.jpg",
+      "file": "surfaces/surfaces.jpg",
       "description": "lámina de doce muestras planas de materiales de la colonia (metal cepillado, paneles, rejilla, hormigón)",
-      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the colony's most common surfaces: brushed steel wall panel, riveted hull plating, concrete wall with embedded conduit, corrugated metal roofing, packed regolith ground, hexagonal alloy floor tiles, hydroponic turf, cable-strewn deck plating, woven composite mesh, dark basalt rock, cracked concrete with exposed glowing circuitry, worn pipes and valve fittings",
-      "seed": "fps/fps_surfaces.png",
-      "role": "fps_surfaces"
+      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the colony's most common surfaces: brushed steel wall panel, riveted hull plating, concrete wall with embedded conduit, corrugated metal roofing, packed regolith ground, hexagonal alloy floor tiles, hydroponic turf, cable-strewn deck plating, woven composite mesh, dark basalt rock, cracked concrete with exposed glowing circuitry, worn pipes and valve fittings"
     },
     {
       "id": "fachada",
-      "file": "fps/fachada.jpg",
+      "file": "faces/fachada.jpg",
       "description": "frente de módulo habitacional: paneles de metal cepillado, puerta estanca y ventanillas iluminadas",
       "gen_scene": "the front face of a sci-fi habitat module: brushed steel and concrete panels with visible seams, a sealed airlock door with warning stripes, two small lit viewport windows, subtle grime and neon accent strips"
     },
     {
       "id": "porton",
-      "file": "fps/porton.jpg",
+      "file": "faces/porton.jpg",
       "description": "portón blindado de carga de doble hoja con franjas de advertencia y balizas",
       "gen_scene": "a heavy sci-fi cargo blast gate, two sliding armored leaves with hazard stripes, riveted frame, status lights and a small personnel hatch"
     },
     {
       "id": "tienda",
-      "file": "fps/tienda.jpg",
+      "file": "faces/tienda.jpg",
       "description": "frente de comercio de la colonia: escaparate con persiana, rótulo de neón sobre el dintel",
       "gen_scene": "the front face of a colony shop: a display window with a half-open metal shutter, a glowing neon sign flat above the lintel, panel wall with conduits and grime"
     },
