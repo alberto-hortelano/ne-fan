@@ -8,7 +8,7 @@
 
 export { buildTileGreyboxSpec, TILE_GREYBOX_VERSION } from "./greybox.js";
 export type { TileGreyboxPlan, TileGreyboxSpec } from "./greybox.js";
-export { classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
+export { volumePrimsForTile } from "../greybox/volume-prims.js";
 export { canonicalGreyboxJson } from "../greybox/common.js";
 export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
 export { volumeCollisionGrid, volumeSolidDiscRadiusCells } from "./collision.js";

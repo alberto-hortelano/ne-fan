@@ -138,11 +138,10 @@ limited to the presets. Types:
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
   passable?:true, angle? (rect only) } — a single block or cylinder;
   passable=true does not block movement.
-- prism { points:[[c,r],…] (3..24), h, solid?=true, tall?=true,
-  color?:"#rrggbb" } — an arbitrary polygon footprint extruded to height h.
-  Sample curves into points (a semicircle ≈ 8–12 points). solid=false =
-  walkable; tall=false = drawn as a low platform.
-- custom { at:[c,r], angle?, parts:[…] (1..24), solid?=true, tall? } — FREE
+- prism { points:[[c,r],…] (3..24), h, solid?=true, color?:"#rrggbb" } — an
+  arbitrary polygon footprint extruded to height h. Sample curves into points
+  (a semicircle ≈ 8–12 points). solid=false = walkable.
+- custom { at:[c,r], angle?, parts:[…] (1..24), solid?=true } — FREE
   3D composition: any object built from solid pieces, with no preset in
   between. Each part: { shape:"box"|"cylinder"|"cone"|"sphere"|"gable",
   dims (box/gable size:[w,h,d], gable ridge runs along d pre-rotY ·
