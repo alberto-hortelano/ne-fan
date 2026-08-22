@@ -1,7 +1,7 @@
 {
   "name": "pack_quick_3dir",
   "description": "V5 packed: quick 3 kf x 3 dirs (grid 3x3, 9 celdas <= optimo 10) con hero",
-  "base_sprites": "y_bot/quick/isometric_30",
+  "base_sprites": "y_bot/quick/frontal_8",
   "keyframes": 3,
   "directions": 1,
   "variants": ["V5"],

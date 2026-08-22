@@ -295,7 +295,7 @@ into context:
               type: 'text',
               text: 'Malformed scene request: world_state carries no `generate_tile` ' +
                 '(continuous world tile). Format D has exactly that one variant; the ' +
-                'free-standing scene and the proscenium stage were retired.',
+                'free-standing scene and the theatre-stage variants were retired.',
             }],
             isError: true,
           };

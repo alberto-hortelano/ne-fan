@@ -22,50 +22,44 @@ def _ref(id: str, file: str, description: str = "algo", **extra) -> dict:
 
 class BuilderTest(unittest.TestCase):
     def test_build_prompt_texto_vs_refs(self):
-        ref = _ref("bosque", "overworld/bosque.jpg", "un bosque",
-                   gen_scene="a wild forest with NO buildings")
+        ref = _ref("fachada", "faces/fachada.jpg", "una fachada",
+                   gen_scene="a timber-framed house front")
         solo_texto = build_prompt(ref, "acuarela luminosa", has_style_refs=False)
         self.assertIn("Art style: acuarela luminosa", solo_texto)
-        self.assertIn("top-down", solo_texto)
-        # Oblicua CON CARAS: los volúmenes pintan cara sur y cara este.
-        self.assertIn("SOUTH face", solo_texto)
-        self.assertIn("EAST side face", solo_texto)
-        self.assertIn("a wild forest", solo_texto)
+        self.assertIn("a timber-framed house front", solo_texto)
         con_refs = build_prompt(ref, "", has_style_refs=True)
         self.assertIn("EXACT art style", con_refs)
-        # Personajes: model sheet (mismo personaje en 3 vistas), no mapa.
+        # Personajes: model sheet (mismo personaje en 3 vistas), no una cara.
         char = build_prompt(
             _ref("noble", "characters/noble.jpg", "una noble"), "x", has_style_refs=False,
         )
         self.assertIn("model sheet", char)
         self.assertIn("front view", char)
-        self.assertNotIn("top-down", char)
+        self.assertNotIn("architectural face", char)
 
     def test_gen_scene_manda_y_description_es_fallback(self):
         con_gen = build_prompt(
-            _ref("x", "overworld/x.jpg", "una catedral", gen_scene="a gothic cathedral"),
+            _ref("x", "faces/x.jpg", "una catedral", gen_scene="a gothic cathedral"),
             "t", False,
         )
         self.assertIn("a gothic cathedral", con_gen)
         self.assertNotIn("una catedral", con_gen)
-        sin_gen = build_prompt(_ref("x", "overworld/x.jpg", "una catedral"), "t", False)
+        sin_gen = build_prompt(_ref("x", "faces/x.jpg", "una catedral"), "t", False)
         self.assertIn("una catedral", sin_gen)
         with self.assertRaises(ValueError):
-            build_prompt({"id": "x", "file": "overworld/x.jpg"}, "t", False)
+            build_prompt({"id": "x", "file": "faces/x.jpg"}, "t", False)
 
-    def test_prompt_de_plato_es_eye_level(self):
-        p = build_prompt(
-            _ref("calle", "proscenium/calle.jpg", "una calle"), "token", has_style_refs=False,
-        )
-        self.assertIn("eye-level ground view", p)
-        self.assertIn("blockout", p)
-        self.assertNotIn("top-down", p)
-        # Sin vocabulario teatral (el modelo pinta cortinas si se insinúa).
-        self.assertIn("no curtains", p)
+    def test_ref_fuera_de_carpeta_es_error(self):
+        # Sin carpeta no hay rol, y sin rol no hay encuadre que aplicar: eso
+        # es fail-loud, no "pinta algo genérico".
+        with self.assertRaises(ValueError):
+            build_prompt(_ref("x", "x.jpg", "algo"), "t", False)
+        with self.assertRaises(ValueError):
+            build_prompt(_ref("x", "carpeta_retirada/x.jpg", "algo"), "t", False)
 
-    def test_ref_tematica_fps_es_cara_no_rejilla(self):
+    def test_ref_de_cara_es_cara_no_rejilla(self):
         p = build_prompt(
-            _ref("fachada", "fps/fachada.jpg", "fachada de casa",
+            _ref("fachada", "faces/fachada.jpg", "fachada de casa",
                  gen_scene="a house facade with door and windows"),
             "token", has_style_refs=False,
         )
@@ -73,65 +67,57 @@ class BuilderTest(unittest.TestCase):
         self.assertIn("framing guide", p)
         self.assertNotIn("TEXTURE ATLAS SHEET", p)
 
-    def test_seed_de_ref_tematica_fps(self):
-        # Una ref de cara SIN seed declarado usa face_default.png (plano clay
-        # a 90°), NUNCA la rejilla de swatches default.png de la lámina.
-        self.assertEqual(
-            seed_for(_ref("fachada", "fps/fachada.jpg", "fachada")),
-            PLANTILLA_DIR / "fps" / "face_default.png",
-        )
-        # La lámina (role) conserva su default de carpeta.
-        lamina = _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces")
-        self.assertEqual(seed_for(lamina), PLANTILLA_DIR / "fps" / "default.png")
-
     def test_prompt_de_lamina_es_atlas(self):
         p = build_prompt(
-            _ref("fps_surfaces", "fps/surfaces.jpg", "lámina", role="fps_surfaces"),
+            _ref("fps_surfaces", "surfaces/surfaces.jpg", "lámina"),
             "token", has_style_refs=False,
         )
         self.assertIn("TEXTURE ATLAS SHEET", p)
         self.assertIn("grid layout EXACTLY", p)
+        self.assertNotIn("architectural face", p)
 
-    def test_seed_declarado_manda_y_ausente_es_error(self):
-        # Los seeds de los packs migrados existen en _plantilla.
-        ref = _ref("settlement", "overworld/settlement.jpg",
-                   seed="overworld/settlement.png")
-        self.assertEqual(seed_for(ref), PLANTILLA_DIR / "overworld" / "settlement.png")
-        with self.assertRaises(FileNotFoundError):
-            seed_for(_ref("x", "overworld/x.jpg", seed="overworld/no_existe.png"))
-
-    def test_seed_default_por_vista(self):
-        # Ref libre sin seed: default.png de su carpeta (creados en la
-        # migración); characters usa el frame y_bot.
+    def test_seed_default_por_carpeta(self):
+        # Cada carpeta tiene SU default y no son intercambiables: la rejilla
+        # de swatches sería un seed nefasto para una fachada.
         self.assertEqual(
-            seed_for(_ref("catedral", "overworld/catedral.jpg")),
-            PLANTILLA_DIR / "overworld" / "default.png",
+            seed_for(_ref("fachada", "faces/fachada.jpg", "fachada")),
+            PLANTILLA_DIR / "faces" / "default.png",
         )
         self.assertEqual(
-            seed_for(_ref("calle", "proscenium/calle.jpg")),
-            PLANTILLA_DIR / "proscenium" / "default.png",
+            seed_for(_ref("fps_surfaces", "surfaces/surfaces.jpg", "lámina")),
+            PLANTILLA_DIR / "surfaces" / "default.png",
         )
         self.assertTrue(str(seed_for(_ref("p", "characters/p.jpg"))).endswith(
             "dir_0_frame_000.png"))
+        # Las plantillas existen de verdad en el repo (si no, el builder
+        # falla en la primera llamada de pago, no aquí).
+        for folder in ("surfaces", "faces"):
+            self.assertTrue((PLANTILLA_DIR / folder / "default.png").exists(), folder)
+
+    def test_seed_declarado_manda_y_ausente_es_error(self):
+        ref = _ref("fps_surfaces", "surfaces/surfaces.jpg", seed="surfaces/default.png")
+        self.assertEqual(seed_for(ref), PLANTILLA_DIR / "surfaces" / "default.png")
+        with self.assertRaises(FileNotFoundError):
+            seed_for(_ref("x", "faces/x.jpg", seed="faces/no_existe.png"))
 
     def test_missing_refs(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "mi_estilo"
-            (d / "overworld").mkdir(parents=True)
+            (d / "faces").mkdir(parents=True)
             (d / "style.json").write_text(json.dumps({
                 "style_id": "mi_estilo",
                 "style_token": "x",
                 "cover": "cover.jpg",
                 "tags": ["x"],
                 "refs": [
-                    _ref("bosque", "overworld/bosque.jpg", "un bosque"),
-                    _ref("catedral", "overworld/catedral.jpg", "una catedral"),
+                    _ref("fachada", "faces/fachada.jpg", "una fachada"),
+                    _ref("catedral", "faces/catedral.jpg", "una catedral"),
                 ],
             }), encoding="utf-8")
-            (d / "overworld" / "bosque.jpg").write_bytes(b"fake")
+            (d / "faces" / "fachada.jpg").write_bytes(b"fake")
             self.assertEqual(
                 missing_refs(Path(tmp), "mi_estilo"),
-                [{"id": "catedral", "folder": "overworld", "description": "una catedral"}],
+                [{"id": "catedral", "folder": "faces", "description": "una catedral"}],
             )
 
 

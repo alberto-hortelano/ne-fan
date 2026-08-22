@@ -74,7 +74,7 @@ ANIM_PROFILES: dict[str, tuple[int, float]] = {
 DEFAULT_PROFILE = (4, 4.0)
 DEFAULT_MODEL = "nano-banana-pro"
 DEFAULT_BASE_MODEL = "y_bot"
-DEFAULT_ANGLE = "isometric_30"
+DEFAULT_ANGLE = "frontal_8"
 
 
 # ---------------------------------------------------------------------------

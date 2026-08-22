@@ -32,7 +32,7 @@ class SurfaceCellSpec(BaseModel):
     mat: str = Field(min_length=1, max_length=48)
     kind: str = Field(pattern="^(tile|unique)$")
     desc: str = Field(min_length=1, max_length=300)
-    # Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+    # Ref de cara del pack (faces/, surface_ref del motor) — solo celdas
     # unique: guía como imagen la página que pinta esta celda. Vacía o no
     # resuelta ⇒ celda sin ref. (Pydantic ignora campos extra: un cliente
     # nuevo contra un server viejo degrada en silencio a sin-ref — aceptable,
@@ -77,7 +77,7 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     if body.style_id and deps.style_packs is not None:
         style_token = deps.style_packs.style_token(body.style_id)
         style_key = f"{body.style_id}:{style_token}" if style_token else body.style_id
-        style_sheet = deps.style_packs.resolve_fps_sheet(body.style_id)
+        style_sheet = deps.style_packs.resolve_sheet(body.style_id)
 
     # Resolver cada ref de cara distinta UNA vez. Una ref que no resuelve
     # (id desconocido, imagen ausente, sin pack) deja sus celdas SIN ref en
@@ -87,14 +87,14 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
     cell_refs: dict = {}
     for rid in ref_ids:
         r = (
-            deps.style_packs.resolve_fps_face(body.style_id, rid)
+            deps.style_packs.resolve_face(body.style_id, rid)
             if body.style_id and deps.style_packs is not None
             else None
         )
         if r is not None:
             cell_refs[rid] = r
         else:
-            print(f"SurfaceAtlas WARNING: ref fps '{rid}' no resuelta — celdas sin ref", flush=True)
+            print(f"SurfaceAtlas WARNING: ref de cara '{rid}' no resuelta — celdas sin ref", flush=True)
 
     def cell_context(cell: SurfaceCellSpec, ai_model: str) -> dict:
         ref = cell_refs.get(cell.ref) if cell.ref else None
@@ -246,7 +246,7 @@ async def skin_sprite_sheet_endpoint(request: Request):
 
     style_ref = None
     if style_id and deps.style_packs is not None:
-        style_ref = deps.style_packs.resolve(style_id, style_role, "characters")
+        style_ref = deps.style_packs.resolve_character(style_id, style_role)
     style_key = f"{style_ref.style_id}:{style_ref.content_hash}" if style_ref else ""
 
     sheet_dir = SPRITE_SHEETS_DIR / model / anim / angle

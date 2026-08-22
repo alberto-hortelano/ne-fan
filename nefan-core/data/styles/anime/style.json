@@ -26,133 +26,26 @@
   },
   "refs": [
     {
-      "id": "settlement",
-      "file": "overworld/settlement.jpg",
-      "description": "una aldea con casas de tejados variados en torno a una plaza de mercado, huertos, campos y bosque en los bordes",
-      "gen_scene": "a small village and its surroundings: houses with varied roofs around a market square (cobblestone paving ONLY in the square), packed-dirt streets leading out, gardens and fences, blending into plowed fields and a forest edge at the borders",
-      "seed": "overworld/settlement.png"
-    },
-    {
-      "id": "farmland",
-      "file": "overworld/farmland.jpg",
-      "description": "campiña de labranza: campos arados, una granja con establo, setos, cercas y un camino de tierra",
-      "gen_scene": "farmland countryside: plowed fields with crop rows, a farmhouse and a barn, hedges and wooden fences, a packed-dirt road, blending into open meadow and a forest edge",
-      "seed": "overworld/farmland.png"
-    },
-    {
-      "id": "forest",
-      "file": "overworld/forest.jpg",
-      "description": "un bosque salvaje sin edificios: arboleda densa, un claro, un sendero estrecho y un arroyo con rocas",
-      "gen_scene": "a wild forest with NO buildings: dense tree canopy, a clearing, a narrow dirt trail (NO paving), a stream with rocks, blending into open meadow at one side",
-      "seed": "overworld/forest.png"
-    },
-    {
-      "id": "wetland",
-      "file": "overworld/wetland.jpg",
-      "description": "un pantano sin edificios: canales de agua turbia, juncos y musgo, árboles retorcidos y pasarelas de tablones",
-      "gen_scene": "a swamp with NO buildings: murky water channels, reeds and moss, twisted trees, plank walkways over the mud, blending into wet meadow at one side",
-      "seed": "overworld/wetland.png"
-    },
-    {
-      "id": "desert",
-      "file": "overworld/desert.jpg",
-      "description": "un desierto sin edificios: dunas, roquedos, matorral seco, un pequeño oasis y una senda arenosa",
-      "gen_scene": "a desert with NO buildings: sand dunes, rocky outcrops, sparse dry shrubs, a small oasis, a sandy trail, blending into dry steppe at one side",
-      "seed": "overworld/desert.png"
-    },
-    {
-      "id": "snow",
-      "file": "overworld/snow.jpg",
-      "description": "un paisaje nevado sin edificios: campos de nieve, pinos, rocas y un arroyo helado",
-      "gen_scene": "a snowy landscape with NO buildings: snow fields, pine trees, rocks, a frozen stream, a trodden-snow trail, blending into alpine meadow at one side",
-      "seed": "overworld/snow.png"
-    },
-    {
-      "id": "fortress",
-      "file": "overworld/fortress.jpg",
-      "description": "una fortaleza de piedra en campo abierto: murallas con torres y puerta, patio interior con barracones y los campos alrededor",
-      "gen_scene": "a stone fortress set in open landscape: outer walls with towers and a gate, an inner courtyard with barracks, and the fields around the walls with a packed-dirt road leading to the gate",
-      "seed": "overworld/fortress.png"
-    },
-    {
-      "id": "interior",
-      "file": "overworld/interior.jpg",
-      "description": "el interior de un edificio habitado (taberna o gran salón) visto en corte, con el mundo continuando alrededor",
-      "gen_scene": "the interior of an inhabited building (a tavern or great hall) shown in cutaway WITHIN its surroundings: no roof, furniture and floors visible, and the world continuing around the building — village street, grass, a neighbouring house, a dirt path reaching its door (never a floor plan floating on a void)",
-      "seed": "overworld/interior.png"
-    },
-    {
-      "id": "underground",
-      "file": "overworld/underground.jpg",
-      "description": "una mazmorra iluminada con antorchas: corredores de piedra, cámaras, escaleras, pilares y escombros",
-      "gen_scene": "a torch-lit dungeon: stone corridors, chambers of different sizes, stairs, pillars and rubble",
-      "seed": "overworld/underground.png"
-    },
-    {
-      "id": "stage_street",
-      "file": "proscenium/stage_street.jpg",
-      "description": "una calle principal a pie de suelo: fachadas variadas a ambos lados, un carro con barriles, una torre asomando al fondo",
-      "gen_scene": "a curved main street: arcaded facades and varied house fronts on both sides, a cart with barrels, a tower rising above the bend",
-      "seed": "proscenium/stage_street.png"
-    },
-    {
-      "id": "stage_plaza",
-      "file": "proscenium/stage_plaza.jpg",
-      "description": "una plaza de mercado a pie de suelo: frente de templo, fuente de piedra, puestos con toldos, casas cerrando el fondo",
-      "gen_scene": "a market square: church front, a stone fountain, market stalls with awnings, houses closing the far side",
-      "seed": "proscenium/stage_plaza.png"
-    },
-    {
-      "id": "stage_interior",
-      "file": "proscenium/stage_interior.jpg",
-      "description": "la sala común de una taberna: vigas de madera, hogar de piedra encendido, mesas y bancos, un mostrador y una escalera",
-      "gen_scene": "the common room of a tavern: timber beams, a stone hearth with fire, wooden tables and benches, a counter, a staircase",
-      "seed": "proscenium/stage_interior.png"
-    },
-    {
-      "id": "stage_nature",
-      "file": "proscenium/stage_nature.jpg",
-      "description": "un claro de bosque a pie de suelo: un arroyo cruzado por una pasarela de madera, rocas con musgo, arboleda cerrando el fondo",
-      "gen_scene": "a forest clearing: a stream crossed by a wooden footbridge, mossy rocks, dense tree mass closing the background",
-      "seed": "proscenium/stage_nature.png"
-    },
-    {
-      "id": "stage_harbor",
-      "file": "proscenium/stage_harbor.jpg",
-      "description": "un muelle fluvial: una grúa de madera de rueda, una barcaza amarrada, una caseta de peaje, redes y cajas",
-      "gen_scene": "a river dock: a wooden treadwheel crane, a moored barge, a toll hut, nets and crates along the quay",
-      "seed": "proscenium/stage_harbor.png"
-    },
-    {
-      "id": "stage_gate",
-      "file": "proscenium/stage_gate.jpg",
-      "description": "la puerta de una ciudad amurallada vista desde fuera: torres gemelas, rastrillo levantado y el camino de entrada entre campos",
-      "gen_scene": "a walled city gate seen from outside: gatehouse with two towers, a raised portcullis, the road leading in, fields at the sides",
-      "seed": "proscenium/stage_gate.png"
-    },
-    {
       "id": "fps_surfaces",
-      "file": "fps/surfaces.png",
+      "file": "surfaces/surfaces.png",
       "description": "lámina de doce muestras planas de los materiales más comunes del mundo (muros, suelos, tejados, madera, piedra)",
-      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common surfaces: whitewashed plaster wall, rough fieldstone masonry, weathered wooden planks, clay roof tiles, packed dirt ground, cobblestone paving, short grass, forest floor with leaf litter, thatch, dark rock, aged plaster with exposed brick, worn metal fittings",
-      "seed": "fps/fps_surfaces.png",
-      "role": "fps_surfaces"
+      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common surfaces: whitewashed plaster wall, rough fieldstone masonry, weathered wooden planks, clay roof tiles, packed dirt ground, cobblestone paving, short grass, forest floor with leaf litter, thatch, dark rock, aged plaster with exposed brick, worn metal fittings"
     },
     {
       "id": "fachada",
-      "file": "fps/fachada.jpg",
+      "file": "faces/fachada.jpg",
       "description": "fachada de casa de entramado de madera: yeso agrietado entre vigas oscuras, puerta de tablones y ventanas con postigos",
       "gen_scene": "the front face of a medieval half-timbered house: cracked plaster between dark oak beams, a plank door with iron hinges, two small windows with wooden shutters, weathered"
     },
     {
       "id": "porton",
-      "file": "fps/porton.jpg",
+      "file": "faces/porton.jpg",
       "description": "portón de madera de doble hoja con herrajes de hierro, enmarcado en piedra",
       "gen_scene": "a large medieval wooden double gate with iron studs, hinges and a small wicket door, framed by rough stone blocks"
     },
     {
       "id": "tienda",
-      "file": "fps/tienda.jpg",
+      "file": "faces/tienda.jpg",
       "description": "frente de tienda medieval: vano de mostrador con postigo abatible y tablón de cartel pintado sobre el dintel",
       "gen_scene": "the front face of a medieval shop: a counter opening with a fold-down wooden shutter, a painted sign board flat above the lintel, timber and plaster wall"
     },

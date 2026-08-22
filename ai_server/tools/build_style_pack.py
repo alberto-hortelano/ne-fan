@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """CLI: genera las imágenes que faltan de un style pack.
 
-Las refs cenitales (overworld/) y de personaje (characters/) van por Meshy
-i2i (`--model`); las de PLATÓ (proscenium/) van SIEMPRE por fal gpt-image-2
-con la plantilla clay como base (bench labs/escenografia/greybox); la
-lámina fps (fps/) va por fal nano-banana-pro y las refs temáticas de CARA
-(fps/ sin role) por fal gpt-image-2.
+Las refs de personaje (characters/) van por Meshy i2i (`--model`); la lámina
+de materiales (surfaces/) va SIEMPRE por fal nano-banana-pro y las refs
+temáticas de CARA (faces/) por fal gpt-image-2.
 
 Uso (desde la raíz del repo, con MESHY_API_KEY / FAL_KEY en .env):
 
     python ai_server/tools/build_style_pack.py medievo_crudo
-    python ai_server/tools/build_style_pack.py medievo_crudo --only settlement,forest
-    python ai_server/tools/build_style_pack.py medievo_crudo --folder fps
+    python ai_server/tools/build_style_pack.py medievo_crudo --only fachada,porton
+    python ai_server/tools/build_style_pack.py medievo_crudo --folder faces
     python ai_server/tools/build_style_pack.py --all --model nano-banana-pro
     python ai_server/tools/build_style_pack.py medievo_crudo --dry-run
     # Staging (flujo de aprobación): re-tirada INCONDICIONAL de refs
     # concretas a un directorio aparte, sin tocar el pack ni su style.json:
     python ai_server/tools/build_style_pack.py medievo_crudo \
-        --only stage_street --out nefan-core/data/styles/_staging/medievo_crudo
+        --only fachada --out /tmp/staging/medievo_crudo
 
 El pack (data/styles/{id}/style.json) debe existir con sus refs declaradas
 (`--only` refiere a sus `id`); sin --out solo se generan los archivos
@@ -52,22 +50,22 @@ def main() -> int:
     _load_dotenv()
     from meshy_client import FalImageToImage, MeshyImageToImage
     from style_pack_builder import (
-        FPS_AI_MODEL,
-        STAGE_AI_MODEL,
+        FACE_AI_MODEL,
+        SHEET_AI_MODEL,
         generate_missing_sync,
         missing_refs,
     )
-    from style_packs import _styles_dir_from_config, ref_folder
+    from style_packs import REF_FOLDERS, _styles_dir_from_config, ref_folder
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("style_ids", nargs="*", help="ids de estilos a completar")
     parser.add_argument("--all", action="store_true", help="todos los packs de data/styles")
     parser.add_argument("--model", default="nano-banana-pro",
                         choices=sorted(MeshyImageToImage.MODEL_CREDITS),
-                        help="modelo Meshy de las refs cenitales/personaje")
+                        help="modelo Meshy de las refs de personaje")
     parser.add_argument("--only", default="", help="ids de ref concretos, separados por comas")
     parser.add_argument("--folder", default="",
-                        choices=["", "overworld", "proscenium", "fps", "characters"],
+                        choices=["", *REF_FOLDERS],
                         help="limitar a las refs de una carpeta del pack")
     parser.add_argument("--out", default="",
                         help="staging: generar `--only` INCONDICIONALMENTE en este "
@@ -93,10 +91,10 @@ def main() -> int:
     def cost_of(folders: list[str]) -> float:
         out = 0.0
         for v in folders:
-            if v == "proscenium":
-                out += FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
-            elif v == "fps":
-                out += FalImageToImage.COST_USD.get(FPS_AI_MODEL, 0.18)
+            if v == "surfaces":
+                out += FalImageToImage.COST_USD.get(SHEET_AI_MODEL, 0.18)
+            elif v == "faces":
+                out += FalImageToImage.COST_USD.get(FACE_AI_MODEL, 0.17)
             else:
                 out += MeshyImageToImage.cost_usd(args.model)
         return out

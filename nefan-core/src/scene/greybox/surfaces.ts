@@ -178,7 +178,7 @@ export interface SurfaceCell {
   kind: "tile" | "unique";
   baseColor: string;
   en: string;
-  /** Ref temática fps/ del pack elegida por el motor para esta celda hero
+  /** Ref de cara (`faces/`) del pack elegida por el motor para esta celda hero
    *  (surface_ref). OMITIDA cuando ausente — así el JSON canónico (y los
    *  layoutKeys) del contenido sin refs queda byte-idéntico al histórico. */
   ref?: string;

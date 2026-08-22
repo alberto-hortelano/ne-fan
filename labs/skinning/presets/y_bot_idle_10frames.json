@@ -1,7 +1,7 @@
 {
   "name": "y_bot_idle_10frames",
   "description": "Idle Y Bot completa (~30f) sampled a 10 frames, V4 atlas en los 3 modelos",
-  "base_sprites": "y_bot/idle/isometric_30",
+  "base_sprites": "y_bot/idle/frontal_8",
   "frames": 10,
   "target_fps": 8,
   "directions": 1,

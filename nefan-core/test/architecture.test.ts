@@ -149,6 +149,54 @@ describe("fronteras arquitectónicas", () => {
       "el eje de vistas tiene que saltar en cualquier proceso escaneado",
     );
 
+    // Y las dos CARPETAS de style pack de las vistas retiradas, que entran a
+    // cero el día que se archivan sus imágenes. El camino por el que vuelven
+    // no es escribir código: es copiar un style.json viejo (o el pack de un
+    // tercero) dentro de data/styles/. En TS el zod las rechaza; ai_server NO
+    // valida el manifest y ahí la ref se caería del catálogo en silencio.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/data/styles/x/style.json",
+          text: '{\n  "file": "overworld/settlement.jpg"\n}\n',
+          imports: [],
+        },
+        {
+          path: "ai_server/style_packs.py",
+          text: 'REF_FOLDERS = ("proscenium", "faces")\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/contract/prompts/x.md",
+          text: "Pick an overworld reference for the scene.\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/style_packs.py:1",
+        "nefan-core/data/contract/prompts/x.md:1",
+        "nefan-core/data/styles/x/style.json:2",
+      ],
+      "las carpetas de las vistas retiradas tienen que saltar en cualquier proceso",
+    );
+
+    // Vecinos inocentes de ESTOS dos: el patrón casa PALABRAS completas, así
+    // que `proscenio` (la palabra española, que aparece en los comentarios que
+    // explican qué murió) y un identificador que solo las contenga se quedan
+    // callados. Es lo que hace que la regla se pueda armar sin llenar el
+    // código de perífrasis para esquivarla.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/scene/x.ts",
+          text: "// El plató proscenio murió con su vista.\nconst overworlds = 0;\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "la prosa española y los identificadores compuestos no son las carpetas",
+    );
+
     // Y los vecinos inocentes, callados: un identificador que solo CONTIENE la
     // palabra no es el campo (el patrón va con \b a los dos lados). `view` a
     // secas NO está en el patrón: `derived_views` y `?view=` de plugins están

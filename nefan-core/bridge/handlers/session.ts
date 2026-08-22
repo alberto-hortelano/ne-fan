@@ -77,7 +77,7 @@ export function styleRefCatalog(style: StyleManifest): {
   const out: ReturnType<typeof styleRefCatalog> = {
     characters: styleCharacterRefs(style).map(entry),
   };
-  // Refs temáticas de CARA (fps/, sin la lámina): el motor las elige por
+  // Refs de CARA (carpeta `faces/` del pack): el motor las elige por
   // cara de volumen (`surface_ref`) para el atlas de superficies. Omitido
   // cuando el pack no declara ninguna (el pre-flight trata la ausencia como
   // "sin catálogo").

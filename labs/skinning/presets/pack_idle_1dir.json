@@ -1,7 +1,7 @@
 {
   "name": "pack_idle_1dir",
   "description": "Verificacion pose-lock: idle 8 kf (el caso que producia T-pose/turnaround) con hero neutral, prompt de produccion",
-  "base_sprites": "y_bot/idle/isometric_30",
+  "base_sprites": "y_bot/idle/frontal_8",
   "keyframes": 8,
   "directions": 1,
   "variants": ["V5"],

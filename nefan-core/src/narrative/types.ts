@@ -76,7 +76,7 @@ export interface NarrativeWorldState {
     /** Refs de personaje (`characters/`): el motor elige una por NPC
      *  (`entities[].style_ref`) y guía su skin IA. */
     characters: Array<{ id: string; description: string }>;
-    /** Refs temáticas de CARA (carpeta fps/ del pack, sin la lámina): el
+    /** Refs de CARA (carpeta `faces/` del pack): el
      *  motor las elige por cara de volumen (`surface_ref`) para guiar las
      *  celdas hero del atlas de superficies. Ausente cuando el pack no
      *  declara ninguna. */

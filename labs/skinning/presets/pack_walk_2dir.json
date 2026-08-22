@@ -1,7 +1,7 @@
 {
   "name": "pack_walk_2dir",
   "description": "V5 packed: walk 4 kf x 2 dirs opuestas (grid 4x2, 8 celdas <= optimo 10) con hero",
-  "base_sprites": "y_bot/walk/isometric_30",
+  "base_sprites": "y_bot/walk/frontal_8",
   "keyframes": 4,
   "directions": 1,
   "variants": ["V5"],

@@ -7,14 +7,19 @@
   "tags": ["medieval", "fantasia"],
   "refs": [
     {
-      "id": "settlement",
-      "file": "overworld/settlement.jpg",
-      "description": "una aldea de pruebas con su plaza"
+      "id": "fps_surfaces",
+      "file": "surfaces/surfaces.jpg",
+      "description": "lámina de materiales de pruebas"
     },
     {
-      "id": "stage_interior",
-      "file": "proscenium/stage_interior.jpg",
-      "description": "la sala común de una taberna de pruebas"
+      "id": "fachada",
+      "file": "faces/fachada.jpg",
+      "description": "la fachada de una casa de pruebas"
+    },
+    {
+      "id": "commoner",
+      "file": "characters/commoner.jpg",
+      "description": "una persona corriente de pruebas"
     }
   ]
 }

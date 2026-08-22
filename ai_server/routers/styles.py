@@ -1,17 +1,17 @@
 """Estilos de usuario: subida de packs de referencia y completado por IA.
 
 Formato de pack de refs LIBRES (2026-08): cada imagen subida declara su
-vista (overworld/proscenium/fps/characters), una descripción en español (lo
-que leerá el motor narrativo para elegirla) y opcionalmente un id y el rol
-`fps_surfaces` (lámina de materiales). El pack declara `tags` temáticos que
-lo casan con juegos compatibles.
+CARPETA (surfaces/faces/characters), que es su rol, y una descripción en
+español (lo que leerá el motor narrativo para elegirla) más un id opcional.
+El pack declara `tags` temáticos que lo casan con juegos compatibles.
 
-Además de lo subido, el manifest declara un STARTER mínimo por vista (solo
-en las vistas donde el usuario no subió nada): esas refs "declaradas sin
+Además de lo subido, el manifest declara un STARTER mínimo por carpeta (solo
+en las carpetas donde el usuario no subió nada): esas refs "declaradas sin
 archivo" son lo que `/styles/{id}/missing` presupuesta y
-`/styles/{id}/complete` genera con confirmación. Proscenium no se
-auto-declara (los platós solo entran si el usuario sube al menos uno — la
-vista no se ofrece sin refs, mismo criterio de coste que siempre).
+`/styles/{id}/complete` genera con confirmación. El starter cubre las TRES
+carpetas porque las tres son obligatorias para que el pack cargue
+(StyleManifestSchema): un pack sin lámina pintaría superficies grises sin
+avisar.
 """
 
 import base64
@@ -25,7 +25,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from deps import deps
-from style_packs import ROLE_FPS_SURFACES, ref_folder
+from style_packs import REF_FOLDERS, ref_folder
 
 router = APIRouter()
 
@@ -33,15 +33,15 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 class StyleUploadImage(BaseModel):
-    """Una imagen del pack: carpeta + descripción libre (+ id y rol
-    opcionales). La CARPETA es el rol del contenido dentro del pack, no una
-    vista de mundo (el juego tiene una sola y no se elige).
+    """Una imagen del pack: carpeta + descripción libre (+ id opcional). La
+    CARPETA es el rol del contenido dentro del pack, no una vista de mundo (el
+    juego tiene una sola y no se elige): surfaces/ es la lámina de materiales,
+    faces/ una cara del mundo, characters/ un model sheet.
     En base64 (JSON, no multipart — evita la dependencia python-multipart)."""
-    folder: str = Field(pattern="^(overworld|proscenium|fps|characters)$")
+    folder: str = Field(pattern="^(" + "|".join(REF_FOLDERS) + ")$")
     description: str = Field(default="", max_length=300)
     image_b64: str = Field(min_length=1)
     id: str = Field(default="", max_length=60)
-    role: str = Field(default="", pattern=f"^({ROLE_FPS_SURFACES})?$")
 
 
 class StyleUploadRequest(BaseModel):
@@ -70,48 +70,11 @@ def _slug(text: str, fallback: str) -> str:
 #: Starter mínimo por carpeta: refs genéricas declaradas SIN archivo cuando
 #: el usuario no subió ninguna imagen de esa carpeta. `gen_scene` en EN
 #: (contenido para el builder); `description` en ES (lo que lee el motor).
+#: Las tres carpetas tienen starter porque las tres son obligatorias.
 STARTER_REFS: dict[str, list[dict]] = {
-    "overworld": [
-        {
-            "id": "asentamiento",
-            "description": "un asentamiento habitado del mundo con sus alrededores",
-            "gen_scene": (
-                "a small inhabited settlement of this world and its "
-                "surroundings, blending into the wild terrain at the edges"
-            ),
-        },
-        {
-            "id": "naturaleza",
-            "description": "terreno natural del mundo sin edificios",
-            "gen_scene": (
-                "wild natural terrain of this world with NO buildings: "
-                "vegetation, rocks, a narrow trail, a stream"
-            ),
-        },
-        {
-            "id": "interior",
-            "description": (
-                "el interior de un edificio habitado visto en corte, con el "
-                "mundo continuando alrededor"
-            ),
-            "gen_scene": (
-                "the interior of an inhabited building shown in cutaway WITHIN "
-                "its surroundings: no roof, furniture and floors visible, the "
-                "world continuing around the building"
-            ),
-        },
-    ],
-    "characters": [
-        {
-            "id": "personaje",
-            "description": "una persona corriente del mundo con ropa de diario",
-            "gen_scene": "an ordinary person of this world in everyday clothes",
-        },
-    ],
-    "fps": [
+    "surfaces": [
         {
             "id": "fps_surfaces",
-            "role": ROLE_FPS_SURFACES,
             "description": (
                 "lámina de doce muestras planas de los materiales más comunes "
                 "del mundo"
@@ -123,14 +86,33 @@ STARTER_REFS: dict[str, list[dict]] = {
             ),
         },
     ],
-    # proscenium: sin starter — declarar platós dispararía el coste de
-    # /complete para todo el mundo; solo entran los subidos.
+    "faces": [
+        {
+            "id": "fachada",
+            "description": (
+                "el frente de un edificio habitado del mundo, visto de cara"
+            ),
+            "gen_scene": (
+                "the front face of an inhabited building of this world seen "
+                "straight-on: its wall material, a door and a window or two"
+            ),
+        },
+    ],
+    "characters": [
+        {
+            "id": "personaje",
+            "description": "una persona corriente del mundo con ropa de diario",
+            "gen_scene": "an ordinary person of this world in everyday clothes",
+        },
+    ],
 }
 
 
 def _starter_file(folder: str, entry: dict) -> str:
-    if entry.get("role") == ROLE_FPS_SURFACES:
-        return "fps/surfaces.jpg"
+    """Archivo de una ref de starter. La lámina conserva el nombre
+    `surfaces.jpg` que ya tienen los packs shipped; el resto va por id."""
+    if folder == "surfaces":
+        return "surfaces/surfaces.jpg"
     return f"{folder}/{entry['id']}.jpg"
 
 
@@ -154,12 +136,12 @@ async def styles_upload(body: StyleUploadRequest):
     tags = [t.strip() for t in body.tags if t.strip()]
     if not tags:
         raise HTTPException(status_code=422, detail="tags vacíos: declara al menos una etiqueta temática")
-    laminas = [img for img in body.images if img.role == ROLE_FPS_SURFACES]
+    laminas = [img for img in body.images if img.folder == "surfaces"]
     if len(laminas) > 1:
-        raise HTTPException(status_code=422, detail="más de una lámina fps_surfaces")
-    for img in laminas:
-        if img.folder != "fps":
-            raise HTTPException(status_code=422, detail="la lámina fps_surfaces debe ir en la carpeta fps/")
+        raise HTTPException(
+            status_code=422,
+            detail="más de una lámina de materiales: surfaces/ admite exactamente una imagen",
+        )
 
     pack_dir = styles_dir / style_id
     pack_dir.mkdir(parents=True)
@@ -174,7 +156,7 @@ async def styles_upload(body: StyleUploadRequest):
             raise HTTPException(status_code=422, detail=f"id duplicado: {ref_id}")
         seen_ids.add(ref_id)
         description = img.description.strip()
-        if not description and img.role != ROLE_FPS_SURFACES:
+        if not description and img.folder != "surfaces":
             raise HTTPException(status_code=422, detail=f"ref {ref_id} sin descripción")
         b64 = img.image_b64
         if "," in b64[:64]:  # tolerar data URIs
@@ -193,31 +175,25 @@ async def styles_upload(body: StyleUploadRequest):
         scale = min(1.0, 1024 / max(w, h))
         if scale < 1.0:
             pil = pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        file = f"{img.folder}/{ref_id}.jpg" if img.role != ROLE_FPS_SURFACES else "fps/surfaces.jpg"
+        file = _starter_file(img.folder, {"id": ref_id})
         (pack_dir / img.folder).mkdir(exist_ok=True)
         pil.save(pack_dir / file, "JPEG", quality=90)
-        entry: dict = {
+        refs.append({
             "id": ref_id,
             "file": file,
-            "description": description or STARTER_REFS["fps"][0]["description"],
-        }
-        if img.role:
-            entry["role"] = img.role
-        refs.append(entry)
+            "description": description or STARTER_REFS["surfaces"][0]["description"],
+        })
         uploaded.append(ref_id)
 
     # Starter: solo en carpetas sin ninguna imagen subida (mínimo viable — el
-    # fallback primera-de-carpeta hace el resto). La lámina fps se declara si
-    # no la subieron (una sola imagen, mejora el atlas).
+    # fallback primera-de-carpeta hace el resto). Las tres carpetas son
+    # obligatorias, así que el starter las cubre todas: un pack al que le
+    # falte una no carga.
     folders_uploaded = {ref_folder(str(r["file"])) for r in refs}
-    has_lamina = any(r.get("role") == ROLE_FPS_SURFACES for r in refs)
     for folder, starters in STARTER_REFS.items():
+        if folder in folders_uploaded:
+            continue
         for entry in starters:
-            if entry.get("role") == ROLE_FPS_SURFACES:
-                if has_lamina:
-                    continue
-            elif folder in folders_uploaded:
-                continue
             if entry["id"] in seen_ids:
                 continue
             refs.append({**entry, "file": _starter_file(folder, entry)})
@@ -257,7 +233,7 @@ async def styles_upload(body: StyleUploadRequest):
 @router.get("/styles/{style_id}/missing")
 async def styles_missing(style_id: str):
     """Dry-run del completado de un pack: refs declaradas sin imagen
-    ([{id, view, description}]) y coste estimado de generarlas. NO gasta
+    ([{id, folder, description}]) y coste estimado de generarlas. NO gasta
     nada — es la mitad "estimación" del flujo upload→complete, reutilizable
     para cualquier pack (también los shipped). Sirve al diálogo de coste de
     "aplicar estilo a un juego"."""

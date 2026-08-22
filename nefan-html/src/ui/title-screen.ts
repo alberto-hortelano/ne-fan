@@ -56,13 +56,13 @@ const ASSET_STORE_URL = serviceUrl("asset-store");
  *  visible. */
 const AI_SERVER_HTTP = serviceUrl("remote-gen");
 
-/** Vistas de destino de una imagen de estilo en la UI de subida. La vista
- *  de cada ref es LIBRE (el contenido lo describe el usuario); "characters"
- *  agrupa los model sheets compartidos entre vistas. */
 /** Carpetas del pack a las que puede ir una imagen subida. NO son vistas (el
- *  juego tiene una sola): son el ROL del contenido dentro del pack. */
+ *  juego tiene una sola): son el ROL del contenido dentro del pack, y por eso
+ *  la carpeta basta para saber qué es cada imagen — no hace falta marcar
+ *  aparte cuál es la lámina. */
 const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
-  { id: "fps", label: "Superficie / cara del mundo" },
+  { id: "faces", label: "Cara del mundo (fachada, portón, muro…)" },
+  { id: "surfaces", label: "Lámina de materiales (rejilla de muestras planas)" },
   { id: "characters", label: "Personaje (model sheet)" },
 ];
 
@@ -766,10 +766,6 @@ export class TitleScreen {
       </div>
       <div id="ts-upload-rows">${rowHtml()}</div>
       <button id="ts-add-row" style="${BTN_SECONDARY_CSS};font-size:11px;margin-bottom:14px">+ otra imagen</button>
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:#999">
-        <input id="ts-style-lamina" type="checkbox">
-        Una de las imágenes "Superficie / cara del mundo" es la lámina de materiales (rejilla de muestras planas)
-      </label>
       <div id="ts-style-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
       <div style="display:flex;gap:12px">
         <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
@@ -785,7 +781,6 @@ export class TitleScreen {
     const rowsEl = this.content.querySelector("#ts-upload-rows") as HTMLElement;
     const tagsEl = this.content.querySelector("#ts-style-tags") as HTMLElement;
     const tagsFreeEl = this.content.querySelector("#ts-style-tags-free") as HTMLInputElement;
-    const laminaEl = this.content.querySelector("#ts-style-lamina") as HTMLInputElement;
     const selectedTags = new Set<string>();
     let pendingStyleId = "";
 
@@ -819,15 +814,15 @@ export class TitleScreen {
         return;
       }
       const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
-      const images: Array<{ folder: string; description: string; image_b64: string; role?: string }> = [];
-      let laminaPending = laminaEl.checked;
+      const images: Array<{ folder: string; description: string; image_b64: string }> = [];
       for (const row of rows) {
         const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
         if (!file) continue;
         const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
         const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
-        const isLamina = laminaPending && folder === "fps";
-        if (!description && !isLamina) {
+        // La lámina es la única que puede ir sin descripción: lo que muestra
+        // no lo elige el motor, lo dicta su rol (muestras planas de material).
+        if (!description && folder !== "surfaces") {
           statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
           return;
         }
@@ -837,9 +832,7 @@ export class TitleScreen {
           r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
           r.readAsDataURL(file);
         });
-        // La primera imagen de superficie con el toggle activo es la lámina.
-        images.push({ folder, description, image_b64: b64, ...(isLamina ? { role: "fps_surfaces" } : {}) });
-        if (isLamina) laminaPending = false;
+        images.push({ folder, description, image_b64: b64 });
       }
       if (images.length === 0) {
         statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;

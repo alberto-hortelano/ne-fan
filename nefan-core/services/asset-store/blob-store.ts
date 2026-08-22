@@ -118,7 +118,7 @@ export function readStyleFile(
   const ext = extname(file).toLowerCase();
   const mime = STYLE_FILE_MIME[ext];
   // El file admite UNA subcarpeta (formato de packs por vista:
-  // overworld/settlement.jpg); cada segmento debe pasar SAFE_ID.
+  // faces/fachada.jpg); cada segmento debe pasar SAFE_ID.
   const segments = file.split("/");
   const safeFile = segments.length <= 2 && segments.every((s) => SAFE_ID.test(s));
   // SAFE_ID admite puntos (".." lo pasa), pero new URL(...) ya normaliza

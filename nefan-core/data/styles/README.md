@@ -1,31 +1,38 @@
 # Estilos — guía de creación
 
 Un **estilo** es el pack de imágenes de referencia que fija la dirección de
-arte de TODA la generación de imagen del cliente 2D: el repintado de cada
-tile/plató del mundo y el skin de cada personaje. El jugador lo elige en la
-pantalla de título (junto al mundo) y queda **congelado en el save**.
+arte de TODA la generación de imagen del juego: el atlas de superficies con
+el que se pinta el mundo en primera persona y el skin de cada personaje. El
+jugador lo elige en la pantalla de título (junto al mundo) y queda
+**congelado en el save**.
 
 Esta carpeta contiene los packs shipped (`acero_neon`, `acuarela_luminosa`,
-`medievo_crudo`, `sombra_de_cuento`), los subidos por jugadores (`user_*`) y
-[`_plantilla/`](_plantilla/): los renders clay three.js que sirven de SEED de
-encuadre por vista.
+`anime`, `medievo_crudo`, `sombra_de_cuento`), los subidos por jugadores
+(`user_*`) y [`_plantilla/`](_plantilla/): los renders clay three.js que
+sirven de SEED de encuadre por carpeta.
 
-## Formato (2026-08: refs LIBRES por vista)
+## Formato: refs LIBRES en tres carpetas de ROL
 
-Las categorías fijas murieron. Un pack declara **imágenes libres**: cada una
-vive en la carpeta de su vista, lleva un `id` estable y una `description` en
-español. El contenido depende del mundo — puede haber una estación espacial,
-una catedral, un cementerio; no hay lista cerrada.
+Las categorías fijas murieron y las vistas también. Un pack declara
+**imágenes libres**: cada una vive en la carpeta de su ROL, lleva un `id`
+estable y una `description` en español. El contenido depende del mundo —
+puede haber una estación espacial, una catedral, un cementerio; no hay lista
+cerrada.
 
 ```
 data/styles/{style_id}/
   style.json               manifest (ver _plantilla/style.json.example)
   cover.jpg                portada para la UI del título (no alimenta a la IA)
-  overworld/*.jpg          refs cenitales (proyección oblicua) — vista overworld (y fps)
-  proscenium/*.jpg         refs a pie de suelo (platós) — vista proscenium
-  fps/surfaces.jpg         la LÁMINA de materiales (role fps_surfaces) — mejora del atlas fps
-  characters/*.jpg         model sheets de personaje (compartidos entre vistas)
+  surfaces/surfaces.jpg    la LÁMINA de materiales — EXACTAMENTE UNA
+  faces/*.jpg              caras completas del mundo (fachada, portón, tienda…)
+  characters/*.jpg         model sheets de personaje
 ```
+
+Las tres carpetas son **obligatorias**: un pack al que le falte una no carga
+y desaparece del selector con el motivo. No es celo burocrático — es el
+único sitio donde la ausencia se notaba tarde y mal: sin lámina el atlas se
+generaba igual, solo con el `style_token`, y las superficies salían grises
+genéricas sin un solo aviso.
 
 Campos de `style.json`:
 
@@ -34,16 +41,15 @@ Campos de `style.json`:
 | `style_id` | Igual al nombre del directorio (filesystem-safe). |
 | `name`, `description` | Lo que ve el jugador en el selector. |
 | `style_token` | Frase en inglés que complementa a las imágenes en cada prompt. Ver [style_token](#el-style_token). |
-| `cover` | Archivo de portada (raíz del pack). Si falta, el builder copia la primera cenital disponible. |
+| `cover` | Archivo de portada (raíz del pack). Si falta, el builder copia la primera cara disponible. |
 | `tags` | **Etiquetas temáticas** (min 1): casan el estilo con juegos compatibles por intersección (`styleCompatibleWithGame`). Vocabulario libre; guía en `SUGGESTED_THEME_TAGS` (style-refs.ts). Un pack medieval no se ofrece para un mundo futurista. |
 | `ui` | OPCIONAL: tema de la **interfaz de juego** (paleta, tipografía, forma). Ver [El tema de UI](#el-tema-de-ui). |
-| `refs[]` | Lista de `{id, file, description, gen_scene?, seed?, role?}`. **El orden importa**: la primera ref de cada vista es el fallback cuando el motor no elige. |
-| `refs[].id` | Id estable de la ref: es lo que emite el motor narrativo al elegirla y **entra en la clave de caché de imagen** — renombrarlo repaga todas las escenas generadas con esta ref; renombrar `file` o `description` no (el hash es del contenido del archivo). |
-| `refs[].file` | Ruta relativa, SIEMPRE dentro de `overworld/`, `proscenium/`, `fps/` o `characters/` — **la carpeta ES la vista** (fail-loud si no). |
-| `refs[].description` | Qué muestra la imagen, en español y en una frase. **Es lo que lee el motor narrativo** para elegir la referencia de cada escena — escribirla pensando en ese lector. |
+| `refs[]` | Lista de `{id, file, description, gen_scene?, seed?}`. **El orden importa**: la primera ref de `characters/` es el fallback cuando el motor no elige. |
+| `refs[].id` | Id estable de la ref: es lo que emite el motor narrativo al elegirla. Renombrarlo no repinta nada por sí solo (la clave de caché lleva el hash del CONTENIDO del archivo), pero sí rompe las elecciones que el motor ya tiene en su historial. |
+| `refs[].file` | Ruta relativa, SIEMPRE dentro de `surfaces/`, `faces/` o `characters/` — **la carpeta ES el rol** (fail-loud si no). |
+| `refs[].description` | Qué muestra la imagen, en español y en una frase. **Es lo que lee el motor narrativo** para elegirla — escribirla pensando en ese lector. |
 | `refs[].gen_scene` | OPCIONAL: prompt EN de CONTENIDO para (re)generar la imagen con el builder. Sin él se usa `description` tal cual. |
-| `refs[].seed` | OPCIONAL: seed de encuadre de `_plantilla/` (ruta relativa). Sin él, el `default.png` de su vista. |
-| `refs[].role` | `"fps_surfaces"` = lámina de materiales del atlas fps (máx 1, solo en `fps/`). Queda FUERA del catálogo del motor. |
+| `refs[].seed` | OPCIONAL: seed de encuadre de `_plantilla/` (ruta relativa). Sin él, el `default.png` de su carpeta. |
 
 Formato técnico: JPEG o PNG; el resolver (`ai_server/style_packs.py`) las
 normaliza a **long-side 1024, JPEG q90** antes de enviarlas.
@@ -51,98 +57,69 @@ normaliza a **long-side 1024, JPEG q90** antes de enviarlas.
 Fuente de verdad del formato: `StyleManifestSchema` en
 `nefan-core/src/games/loader.ts` (+ `src/games/style-refs.ts`, módulo puro).
 
-## Cómo se elige la referencia de cada escena
+## Cómo se elige la referencia
 
-**El motor narrativo elige.** El catálogo del pack (`{id, description}` de la
-vista activa + personajes) viaja en su contexto (`world.style_refs`) y cada
-escena lleva la elección explícita (`style_tag`/`style_ref` = un id del
-catálogo). El server resuelve por id DENTRO de la vista del blueprint (una
-ref cenital nunca pinta un plató ni viceversa):
+**El motor narrativo elige.** El catálogo del pack (`{id, description}` de
+las caras y de los personajes) viaja en su contexto (`world.style_refs`) y
+cada elección es explícita: `surface_ref` por cara de volumen,
+`entities[].style_ref` por NPC. El server resuelve por id DENTRO de la
+carpeta que toca — una cara nunca pinta un personaje ni viceversa:
 
-- Sin elección, o con un id desconocido: **la primera ref de la vista** en el
-  orden del manifest (determinista y editable a mano); si su imagen aún no
-  existe (pack en construcción), la siguiente de la misma vista.
-- Pack sin ninguna imagen utilizable: referencia global del servidor (tiles)
-  o solo blueprint (platós) o solo token (atlas fps).
-- Personajes: el motor elige la ref de `characters/` por NPC; sin elección,
-  la primera (en los packs migrados, `commoner`).
+- **`faces/` no tiene fallback**: un id desconocido deja la celda SIN ref y
+  con warning, nunca con otra imagen. Pintar una fachada con el arte de un
+  portón porque el id no existía es exactamente la clase de silencio que el
+  juego no admite; el fail-loud contra el catálogo vive en el pre-flight de
+  narrative-mcp.
+- **`characters/` sí**: sin elección, o con un id desconocido, la primera del
+  manifest (determinista y editable a mano); si su imagen aún no existe
+  (pack en construcción), la siguiente de la misma carpeta.
+- **`surfaces/` no admite sustituto**: existe o el atlas va solo con el
+  token. Una escena contaminaría los swatches planos.
 
-## Carpetas: qué aporta cada una
+## La lámina de materiales (`surfaces/`)
 
-Las carpetas del pack son el ROL del contenido, **no vistas de mundo** (el
-juego tiene una sola y no se elige):
-
-- `fps/`: la lámina `fps_surfaces` (materiales del atlas) y las refs
-  temáticas de CARA que el motor elige con `surface_ref`.
-- `characters/`: los model sheets que guían los skins de NPC.
-- `overworld/` y `proscenium/` son restos de las dos vistas retiradas: sus
-  imágenes ya no alimentan nada y se borran con ellas.
-
-## La regla de oro: cada referencia cenital es una ZONA, no un sujeto
-
-El mundo es abierto y continuo: el modelo de imagen repinta tiles que casi
-siempre contienen VARIOS elementos y bordes entre zonas. Los modelos de
-imagen copian con fuerza la composición de la referencia:
-
-- **Escena completa, nunca un sujeto aislado.** Una ref que sea "una
-  fortaleza centrada sobre fondo vacío" condiciona a generar objetos sueltos.
-  Cada ref de `overworld/` debe ser un trozo de mundo lleno, con transición
-  visible a lo vecino.
-- **Los materiales se copian de la referencia.** Si la única muestra de
-  "camino" es una plaza empedrada, empedrará también la senda del bosque.
-- **La vista NO es un plano puro** — es la oblicua del compositor: todo
-  volumen pinta su **cara sur** (~25% más oscura que la tapa) y una **cara
-  este más estrecha en sombra**; interiores en cutaway sin techo, integrados
-  en su entorno.
-- **Sin texto, sin UI, sin marcos, sin personajes**, full bleed.
-
-## Refs de PLATÓ (`proscenium/`)
-
-Escenas a NIVEL DE SUELO (cámara al sur mirando al norte, la convención del
-proscenio) que alimentan el repintado del plató (`blueprint_kind: "stage"`,
-gpt-image-2 vía fal). Se generan desde las plantillas clay de
-`_plantilla/proscenium/` (1600×1000 → 1280×800); la plantilla fija cámara y
-composición, el CONTENIDO lo pone `gen_scene`. Iluminación CONVENCIONAL (luz
-desde cámara, nunca contraluz); mismos vetos (sin marcos, sin personajes).
-
-## La lámina fps (`fps/surfaces.jpg`, role `fps_surfaces`)
-
-La vista fps pinta su arte como **atlas de superficies**. Sin lámina, la
-dirección de arte del atlas entra solo por el `style_token`; con ella, viaja
-como 2ª referencia de cada página y manda en paleta/materiales/factura.
+El juego pinta su arte como **atlas de superficies**: cada celda del atlas es
+un material de una cara del mundo. La lámina viaja como 2ª referencia de cada
+página y manda en paleta, materiales y factura; sin ella solo entra el
+`style_token`, y por eso es obligatoria.
 
 - **Qué es**: una rejilla 3×4 de **muestras de material planas a 90°**, NUNCA
-  escenas ni objetos. Seed: `_plantilla/fps/fps_surfaces.png`
-  (`ai_server/tools/gen_fps_seed.py`); modelo nano-banana-pro (fal).
-- **Sin fallback**: existe o el atlas va solo con token.
+  escenas ni objetos. Seed: `_plantilla/surfaces/default.png`
+  (`ai_server/tools/gen_sheet_seed.py`); modelo nano-banana-pro (fal).
+- **Exactamente una por pack**: dos láminas serían una que nunca se usa y
+  nadie sabría cuál manda.
 - **Caché**: su hash entra en la clave de cada celda de la librería de
-  superficies SOLO cuando existe — añadirla o regenerarla repinta la librería
-  de ese estilo; los estilos sin lámina conservan la suya.
+  superficies, así que regenerarla repinta la librería de ese estilo.
 
-## Refs temáticas `fps/` (caras completas)
+## Las caras del mundo (`faces/`)
 
-Además de la lámina, la carpeta `fps/` admite refs **temáticas de CARA**:
-ilustraciones de una cara completa a 90° (una fachada con su puerta y
-ventanas, un portón claveteado, un cartel) que enseñan cómo compone el
-estilo ese tipo de cara. Entran en el catálogo `world.style_refs.fps_faces`
-(mundos de rama tile) y el **motor narrativo las elige por cara de volumen**
-(`surface_ref` junto a `surface_desc`); la imagen viaja como 2ª referencia
-de la página del atlas que pinta esas celdas hero.
+Ilustraciones de una cara completa a 90° (una fachada con su puerta y
+ventanas, un portón claveteado, un cartel) que enseñan cómo compone el estilo
+ese tipo de cara. Entran en el catálogo `world.style_refs.fps_faces` y el
+**motor narrativo las elige por cara de volumen** (`surface_ref` junto a
+`surface_desc`); la imagen viaja como 2ª referencia de la página del atlas
+que pinta esas celdas hero.
 
-- Declararlas a mano: `{ "id": "fachada_casa", "file": "fps/fachada_casa.jpg",
-  "description": "fachada de casa con puerta y dos ventanas", "gen_scene?":
-  … }`. Sin `seed` declarado, el builder usa `_plantilla/fps/face_default.png`
-  (plano clay a 90°) como encuadre — NUNCA el `default.png` de `fps/`, que es
-  la rejilla de la lámina.
-- No habilitan la vista fps (eso sigue derivando de `overworld/`) ni tienen
-  fallback: una ref desconocida deja la celda SIN ref (warning), nunca otra
-  imagen.
+- Declararlas a mano: `{ "id": "fachada_casa", "file":
+  "faces/fachada_casa.jpg", "description": "fachada de casa con puerta y dos
+  ventanas", "gen_scene?": … }`. Sin `seed`, el builder usa
+  `_plantilla/faces/default.png` (plano clay a 90°) como encuadre.
+- **Composición**: la superficie paralela al plano de imagen, a sangre, sin
+  cielo, sin línea de suelo, sin horizonte, sin perspectiva. Luz plana, solo
+  albedo. Sin texto, sin marcos, sin personajes.
 - Coste: cada ref distinta agrupa sus celdas en páginas PROPIAS del atlas
   (~$0.17/página gpt-image-2 extra). Su hash entra en la clave de las celdas
-  que la usan (condicional): añadirla o regenerarla repinta solo esas.
-- Referencia shipped: `medievo_crudo` declara tres (`fachada`, `porton`,
+  que la usan: añadirla o regenerarla repinta solo esas.
+- Referencia shipped: los cinco packs declaran tres (`fachada`, `porton`,
   `tienda`). Cada ref declarada suma su generación al coste de "aplicar
   estilo" si falta la imagen; añade al pack solo las que pida el mundo.
+
+## Los personajes (`characters/`)
+
+Model sheets: el MISMO personaje dibujado tres veces de cuerpo entero
+(frente, tres cuartos y espalda), fondo neutro, sin texto. Guían el skin IA
+de cada NPC. Cara humana VISIBLE cuando el mundo lo admita — un casco cerrado
+deja al NPC sin rostro en el retrato del diálogo.
 
 ## El tema de UI
 
@@ -201,8 +178,8 @@ describir **técnica + paleta + luz + mood**:
 hand-painted watercolor, soft luminous colors, gentle warm light, painterly
 ```
 
-**No incluir la proyección** ("top-down", "overhead") ni contenido
-("village", "forest"): eso lo ponen el blueprint y el prompt de escena.
+**No incluir la proyección** ni contenido ("village", "forest"): eso lo
+ponen el blueprint y el prompt de la celda.
 
 ## Las tres vías de creación
 
@@ -212,70 +189,53 @@ falten (`--only` acepta ids de ref):
 
 ```bash
 python ai_server/tools/build_style_pack.py mi_estilo            # solo ausentes
-python ai_server/tools/build_style_pack.py mi_estilo --only forest,settlement
-python ai_server/tools/build_style_pack.py mi_estilo --view proscenium
+python ai_server/tools/build_style_pack.py mi_estilo --only fachada,porton
+python ai_server/tools/build_style_pack.py mi_estilo --folder faces
 python ai_server/tools/build_style_pack.py mi_estilo --dry-run  # coste sin gastar
 # Flujo de APROBACIÓN (re-tirada incondicional a staging, sin tocar el pack):
 python ai_server/tools/build_style_pack.py mi_estilo \
-    --only stage_street --out nefan-core/data/styles/_staging/mi_estilo
+    --only fachada --out /tmp/staging/mi_estilo
 # aprobar = cp del staging al pack (las refs ya están declaradas)
 ```
 
 Sin imágenes previas, el estilo sale del `style_token`; el ENCUADRE lo pone
-el seed (`refs[].seed` o el `default.png` de su vista; y_bot para
+el seed (`refs[].seed` o el `default.png` de su carpeta; y_bot para
 personajes) y el CONTENIDO lo describe `gen_scene ?? description`. Si el
 pack ya tiene imágenes, se usan como referencias de estilo y el prompt exige
-calcarlas. Requiere `MESHY_API_KEY` (cenitales/personajes) y `FAL_KEY`
-(platós y lámina).
+calcarlas. Requiere `MESHY_API_KEY` (personajes) y `FAL_KEY` (lámina y
+caras).
 
 **2. Subida de jugador (in-game)** — `POST /styles/upload`: cada imagen con
-su vista + descripción libre (+ tags del pack); guarda en `user_{slug}/` sin
-gastar. El manifest declara además un **starter mínimo** en las vistas donde
-no se subió nada (3 cenitales genéricas + 1 personaje + la lámina); esas
-refs "declaradas sin archivo" son lo que `GET /styles/{id}/missing`
-presupuesta y `POST /styles/{id}/complete` (confirm=true) genera calcando
-las subidas. Los platós NO se auto-declaran: solo entran los subidos (sin
-ref de plató, la vista proscenio no se ofrece).
+su carpeta + descripción libre (+ tags del pack); guarda en `user_{slug}/`
+sin gastar. El manifest declara además un **starter mínimo** en las carpetas
+donde no se subió nada (la lámina, una cara y un personaje); esas refs
+"declaradas sin archivo" son lo que `GET /styles/{id}/missing` presupuesta y
+`POST /styles/{id}/complete` (confirm=true) genera calcando las subidas.
 
 **3. A mano** — cualquier imagen propia vale si cumple las reglas de
-composición de su vista. Colocarla en la carpeta correcta, declararla en
+composición de su rol. Colocarla en la carpeta correcta, declararla en
 `refs` con su descripción y listo: el resolver recarga por mtime, sin
 reiniciar ai_server. Para añadir contenido nuevo (una catedral, un puerto)
 basta añadir la ref — no hay lista que respetar.
 
-Coste por imagen generada: cenitales/personajes por Meshy (plan Pro
-$0.02/crédito): `nano-banana` 3 cr ($0.06) · `nano-banana-2` 6 cr ($0.12) ·
+Coste por imagen generada: personajes por Meshy (plan Pro $0.02/crédito):
+`nano-banana` 3 cr ($0.06) · `nano-banana-2` 6 cr ($0.12) ·
 **`nano-banana-pro` 9 cr ($0.18, default)** · `gpt-image-2` 12 cr ($0.24).
-Platós y lámina por fal directo: **gpt-image-2 $0.17** / nano-banana-pro.
+Lámina y caras por fal directo: **gpt-image-2 $0.17** / nano-banana-pro
+$0.18.
 
 ## La plantilla `_plantilla/`
 
 No es un estilo (los listers ignoran directorios `_*`): son los SEEDS de
-encuadre del builder, renders clay three.js de los pipelines de PRODUCCIÓN,
-organizados por vista:
+encuadre del builder, organizados por carpeta de rol:
 
 ```
 _plantilla/
-  overworld/{zona}.png     9 tiles del builder tile-greybox real (1024²)
-  overworld/default.png    seed por defecto de refs cenitales libres
-  proscenium/stage_*.png   6 platós del bench labs/escenografia/greybox
-  proscenium/default.png   seed por defecto de refs de plató libres
-  fps/fps_surfaces.png     rejilla de la lámina de materiales
-  fps/default.png          alias del anterior
-  planes/{zona}.json       los planes declarativos de los tiles oblicuos
+  surfaces/default.png     rejilla 3×4 de la lámina de materiales
+  faces/default.png        plano clay a 90° para una cara
   style.json.example       manifest de partida en el formato de refs libres
 ```
 
-Los PNG se commitean y JAMÁS se hashean (el render WebGL no es
-byte-determinista). El capturador que regeneraba las semillas de
-`overworld/` y `proscenium/` (`labs/plantillas/capture.sh`) se retiró con el
-pipeline de imagen de esas dos vistas; las de `fps/` no salían de él.
-
-## Migración desde el formato de categorías
-
-`nefan-core/scripts/migrate-style-packs.ts` convierte un pack plano de la
-era de categorías (settlement.jpg + `category` en refs) al formato nuevo:
-mueve cada imagen a la carpeta de su vista **conservando su nombre como
-`id`** (la clave de caché `{style_id}/{id}:{content_hash}` queda
-byte-idéntica — el histórico generado se conserva) y pasa `scene` a
-`gen_scene`. Se conserva una release para packs `user_*` de terceros.
+Los PNG se commitean y JAMÁS se hashean (un render WebGL no es
+byte-determinista). La rejilla de `surfaces/` sí es reproducible:
+`python ai_server/tools/gen_sheet_seed.py` la regenera byte a byte.

@@ -18,16 +18,18 @@ describe("style-refs — carpetas del pack", () => {
   // Las carpetas son el ROL del contenido, no vistas de mundo: el juego
   // tiene una sola vista y no se elige.
   it("la carpeta del archivo clasifica la ref", () => {
-    assert.equal(folderForRefFile("overworld/settlement.jpg"), "overworld");
-    assert.equal(folderForRefFile("proscenium/calle.jpg"), "proscenium");
-    assert.equal(folderForRefFile("fps/surfaces.jpg"), "fps");
+    assert.equal(folderForRefFile("surfaces/surfaces.jpg"), "surfaces");
+    assert.equal(folderForRefFile("faces/fachada.jpg"), "faces");
     assert.equal(folderForRefFile("characters/commoner.jpg"), "characters");
   });
 
   it("rutas fuera de una carpeta del pack → null (el schema las rechaza)", () => {
     assert.equal(folderForRefFile("settlement.jpg"), null);
     assert.equal(folderForRefFile("otra_carpeta/x.jpg"), null);
-    assert.equal(folderForRefFile("/overworld/x.jpg"), null);
+    assert.equal(folderForRefFile("/surfaces/x.jpg"), null);
+    // Las carpetas de las dos vistas retiradas caen aquí, en "cualquier otra":
+    // el candado `campos-retirados-no-vuelven` las nombra (y su arnés escribe
+    // los literales, que en este fichero serían una violación de la regla).
   });
 });
 
@@ -70,9 +72,7 @@ describe("styleRefCatalog — catálogo del motor", () => {
       cover: "cover.jpg",
       tags: ["x"],
       refs: [
-        { id: "settlement", file: "overworld/settlement.jpg", description: "una aldea" },
-        { id: "calle", file: "proscenium/calle.jpg", description: "una calle" },
-        { id: "fps_surfaces", file: "fps/surfaces.jpg", description: "lámina", role: "fps_surfaces" },
+        { id: "fps_surfaces", file: "surfaces/surfaces.jpg", description: "lámina" },
         { id: "commoner", file: "characters/commoner.jpg", description: "una persona" },
         ...extraRefs,
       ],
@@ -84,12 +84,14 @@ describe("styleRefCatalog — catálogo del motor", () => {
     assert.ok(!("scene" in cat), "no hay catálogo de escena que ofrecer al motor");
   });
 
-  it("fps_faces: refs temáticas fps/ (sin lámina); omitido si no hay", () => {
-    // Sin refs temáticas: fps_faces ausente (el pre-flight lo lee como
-    // "sin catálogo").
+  it("fps_faces: las refs de faces/ (nunca la lámina de surfaces/)", () => {
+    // Sin refs de cara: fps_faces ausente (el pre-flight lo lee como "sin
+    // catálogo"). Un pack ASÍ no carga hoy —la cardinalidad exige ≥1 cara—,
+    // pero el catálogo se construye sobre el manifest en memoria y no debe
+    // inventarse una entrada vacía.
     assert.equal(styleRefCatalog(manifest()).fps_faces, undefined);
     const conCaras = manifest([
-      { id: "fachada", file: "fps/fachada.jpg", description: "fachada de casa" },
+      { id: "fachada", file: "faces/fachada.jpg", description: "fachada de casa" },
     ]);
     assert.deepEqual(styleRefCatalog(conCaras).fps_faces?.map((r) => r.id), ["fachada"]);
   });

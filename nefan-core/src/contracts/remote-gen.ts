@@ -13,8 +13,9 @@ import { endpoint } from "./http.js";
 
 /** Etiqueta de estilo del wire: id LIBRE de una ref del style pack (ver
  *  StyleManifestSchema en games/loader.ts). El server resuelve por id dentro
- *  de la vista del blueprint y degrada con aviso a la primera ref de la
- *  vista si no existe — el pre-flight fail-loud vive en el bridge. */
+ *  de la CARPETA que pide cada petición y, donde hay fallback (personajes),
+ *  degrada con aviso a la primera de esa carpeta — el pre-flight fail-loud
+ *  vive en el bridge. */
 export type StyleTag = string;
 
 /** Celda del atlas de superficies de la vista fps (espejo del Pydantic
@@ -25,7 +26,7 @@ export interface SurfaceCellSpec {
   mat: string;
   kind: "tile" | "unique";
   desc: string;
-  /** Ref temática fps/ del pack (surface_ref del motor) — solo celdas
+  /** Ref de cara del pack (`faces/`, surface_ref del motor) — solo celdas
    *  unique; guía como imagen la página que pinta esta celda. */
   ref?: string;
   base_color: string;
@@ -102,16 +103,15 @@ export interface SkinSpriteSheetResponse {
 // ── Style packs de usuario ──
 
 export interface StyleUploadImage {
-  /** Vista de destino: la carpeta del pack donde vive la imagen. */
-  view: "overworld" | "proscenium" | "fps" | "characters";
+  /** Carpeta del pack donde vive la imagen, que es su ROL: la lámina de
+   *  materiales, una cara del mundo o un model sheet de personaje. */
+  folder: "surfaces" | "faces" | "characters";
   /** Qué muestra la imagen (español, una frase) — lo que lee el motor
-   *  narrativo para elegirla. Opcional solo para la lámina fps_surfaces. */
+   *  narrativo para elegirla. Opcional solo para la lámina (surfaces/). */
   description: string;
   image_b64: string;
   /** Id estable de la ref; derivado de la descripción si falta. */
   id?: string;
-  /** "fps_surfaces" = lámina de materiales (máx 1, vista fps). */
-  role?: "fps_surfaces";
 }
 
 export interface StyleUploadRequest {

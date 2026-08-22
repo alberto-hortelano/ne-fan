@@ -70,10 +70,10 @@ patrón de `ai_server/meshy_client.py:MeshyImageToImage` y enchúfala en `run.py
 #    Ejemplo: las 10 anims de combate × 8 direcciones para Y Bot
 python3 tools/render_sprite_sheets.py --models y_bot \
     --anims idle walk run quick heavy medium defensive precise hit_react death \
-    --angle isometric_30
+    --angle frontal_8
 
 # 2) (Opcional) Build del base browser para validar visualmente los sprites:
-python3 labs/skinning/build_base_browser.py --model y_bot --angle isometric_30
+python3 labs/skinning/build_base_browser.py --model y_bot --angle frontal_8
 # → labs/skinning/bases/y_bot/index.html  (dropdowns: anim × dirección)
 
 # 3) Ver presets de tests AI disponibles:
@@ -164,7 +164,7 @@ Los presets viven en `presets/*.json` y son JSON simple:
 {
   "name": "y_bot_walk_4kf",
   "description": "Walk Y Bot, 4-keyframe sprite sheet density",
-  "base_sprites": "y_bot/walk/isometric_30",
+  "base_sprites": "y_bot/walk/frontal_8",
   "keyframes": 4,
   "directions": 1,
   "variants": ["V3", "V4"],

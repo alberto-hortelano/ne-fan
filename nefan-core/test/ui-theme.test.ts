@@ -25,7 +25,11 @@ function manifestWith(ui: unknown): Record<string, unknown> {
     style_token: "t",
     cover: "cover.jpg",
     tags: ["medieval"],
-    refs: [{ id: "settlement", file: "overworld/settlement.jpg", description: "una aldea" }],
+    refs: [
+      { id: "fps_surfaces", file: "surfaces/surfaces.jpg", description: "muestras" },
+      { id: "fachada", file: "faces/fachada.jpg", description: "una fachada" },
+      { id: "commoner", file: "characters/commoner.jpg", description: "una persona" },
+    ],
     ui,
   };
 }

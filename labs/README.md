@@ -6,13 +6,16 @@ el repo porque la tecnología de IA avanza rápido y las pruebas se repiten;
 los cerrados conservan sus salidas de referencia y su veredicto en el README
 propio.
 
+Los tres labs de las vistas retiradas (`stage/` la segmentación del plató,
+`render/` las alternativas de repintado del tile cenital y `escenografia/`
+los pares descripción↔plató) se fueron con ellas a `archivo/labs/`, junto a
+`plantillas/`: sus 460 MB de runs no estaban en git y ningún `git checkout`
+los devolvería, así que se movieron enteros en vez de borrarse.
+
 | Lab | Qué mide | Entry point | Estado |
 |-----|----------|-------------|--------|
 | `skinning/` | APIs de skinning IA sobre sprites Mixamo (V1–V4; gana V4 atlas ≤10 frames) | `python3 labs/skinning/run.py --preset <name>` · generador interactivo `./labs/skinning/serve.sh` (:8911) | permanente |
 | `style/` | Referencias de estilo + fidelidad de layout del repintado de blueprints | `python labs/style/gen.py <run>` · `python labs/style/fidelity.py <subcmd>` | cerrado (hallazgos aplicados) |
-| `stage/` | Segmentación del plató pintado (proscenio): SAM2 por cajas, contactos, pelado | `python labs/stage/run.py --image … --stage … --boxes … --name …` | activo |
-| `render/` | Alternativas de generación del tile 2D (repaint, three.js, sprites, vector, híbrido) | CLIs por experimento (`exp1_repaint/repaint.py`…) + `score_all.py` | cerrado (run 001) |
-| `escenografia/` | Pares descripción↔plató de cine + bench greybox (clay 3D → imagen gana al SVG) | `python labs/escenografia/gen_estilos.py` · `greybox/gen.py` | cerrado (base del compositor de proscenio) |
 | `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,fake-ai-server,replay-server}.mjs` · `check-scene.ts` | activo (tooling de E2E) |
 | `fps/` | Modo 3D primera persona estilo Doom: atlas de superficies IA + sprites y_bot 8-dir | `viewer.html` en :8912 · `python3 labs/fps/gen.py <run>` | activo |
 | `fps/godot/` | Bench Godot 4.6 vs three.js de la vista fps: paridad medida + modo calidad (SDFGI) | `capture_godot.sh` · `compare.py` · veredicto en `fps/COMPARATIVA_GODOT.md` | activo |

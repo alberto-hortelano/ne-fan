@@ -20,38 +20,21 @@
   },
   "refs": [
     {
-      "id": "settlement",
-      "file": "overworld/settlement.jpg",
-      "description": "una aldea con casas en torno a una plaza de mercado, campos y bosque en los bordes",
-      "gen_scene": "a small village and its surroundings: houses with varied roofs around a market square, packed-dirt streets, blending into plowed fields and a forest edge",
-      "seed": "overworld/settlement.png"
+      "id": "fps_surfaces",
+      "file": "surfaces/surfaces.jpg",
+      "description": "lámina de doce muestras planas de los materiales más comunes del mundo",
+      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common wall, floor, roof and ground surfaces"
     },
     {
-      "id": "forest",
-      "file": "overworld/forest.jpg",
-      "description": "un bosque salvaje sin edificios, con un claro y un arroyo",
-      "gen_scene": "a wild forest with NO buildings: dense tree canopy, a clearing, a narrow dirt trail, a stream with rocks",
-      "seed": "overworld/forest.png"
+      "id": "fachada",
+      "file": "faces/fachada.jpg",
+      "description": "el frente de una casa del pueblo: entramado de madera y muro encalado",
+      "gen_scene": "the front face of a village house seen straight-on: timber frame over cracked whitewashed plaster, a plank door and two shuttered windows"
     },
     {
       "id": "catedral",
-      "file": "overworld/catedral.jpg",
-      "description": "EJEMPLO de ref libre: una catedral gótica y su plaza — añade las que el mundo necesite, no hay lista cerrada"
-    },
-    {
-      "id": "stage_street",
-      "file": "proscenium/stage_street.jpg",
-      "description": "una calle principal a pie de suelo con fachadas variadas",
-      "gen_scene": "a curved main street: arcaded facades and varied house fronts on both sides, a cart with barrels",
-      "seed": "proscenium/stage_street.png"
-    },
-    {
-      "id": "fps_surfaces",
-      "file": "fps/surfaces.jpg",
-      "role": "fps_surfaces",
-      "description": "lámina de doce muestras planas de los materiales más comunes del mundo",
-      "gen_scene": "twelve different flat material swatches, one per grid cell, covering the world's most common wall, floor, roof and ground surfaces",
-      "seed": "fps/fps_surfaces.png"
+      "file": "faces/catedral.jpg",
+      "description": "EJEMPLO de ref libre: el frente de una catedral gótica — añade las caras que el mundo necesite, no hay lista cerrada"
     },
     {
       "id": "commoner",
