@@ -39,4 +39,4 @@ world_md MUST have exactly these 10 sections (## per section), 9k-12k chars:
 Hard rules (same engine limits as always): ALL interactive beings humanoid
 (bake it into the lore if the draft has beasts/spirits: they take human
 form); no chosen ones, no fixed plot — the world is a stage, the story
-emerges in play; top-down 2D presentation.
+emerges in play; first-person presentation at eye level.
