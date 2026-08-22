@@ -93,8 +93,11 @@ async function ensureStack() {
         `Párralo del todo (Ctrl+C en su terminal, o ./start.sh y tecla k) y vuelve a lanzar.`,
     );
   }
-  console.log("· arrancando ./start.sh --preset 5 (E2E sin créditos)…");
-  const child = spawn("./start.sh", ["--preset", "5"], {
+  // Por SLUG, no por número: los números de preset se renumeran cuando muere
+  // uno, y entonces esto levantaría otro stack y fallaría por timeout sin decir
+  // por qué.
+  console.log("· arrancando ./start.sh --preset e2e-sin-creditos…");
+  const child = spawn("./start.sh", ["--preset", "e2e-sin-creditos"], {
     cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,

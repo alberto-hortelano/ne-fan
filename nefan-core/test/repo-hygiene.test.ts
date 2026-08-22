@@ -73,11 +73,20 @@ function tracked(): TrackedEntry[] {
     });
 }
 
-/** Destino de un symlink, en ruta relativa al repo; `null` si apunta fuera. */
+/** Destino de un symlink, en ruta relativa al repo; `null` si apunta fuera o
+ *  si el enlace ya no está en el árbol de trabajo. Ese último caso —enlace
+ *  trackeado que alguien borró del disco sin llevar la baja al índice— es
+ *  justo un enlace colgado: si `readlink` reventara aquí, el guardia moriría
+ *  con ENOENT en vez de decir cuál es. */
 function linkTarget(linkPath: string): string | null {
   const abs = resolve(REPO, linkPath);
-  const dest = resolve(dirname(abs), readlinkSync(abs));
-  const rel = relative(REPO, dest);
+  let raw: string;
+  try {
+    raw = readlinkSync(abs);
+  } catch {
+    return null;
+  }
+  const rel = relative(REPO, resolve(dirname(abs), raw));
   return rel.startsWith("..") ? null : rel;
 }
 

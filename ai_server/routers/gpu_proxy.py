@@ -1,8 +1,7 @@
 """Proxy transparente de los endpoints GPU → gpu-worker (:8766).
 
 Transitorio de F3 e indefinido para los clientes que NO resuelven URLs por
-servicio: Godot (ai_client.gd, texture_cache.gd y model_loader.gd hardcodean
-:8765) y el AiClient del bridge (base narrative-llm). Copia método, path,
+servicio: el AiClient del bridge (base narrative-llm). Copia método, path,
 query, body, status y content-type TAL CUAL — mismo patrón que asset_proxy.
 
 gpu-worker caído → 502 {detail: "gpu-worker unreachable"} (modo de fallo

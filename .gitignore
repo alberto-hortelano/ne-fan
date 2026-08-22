@@ -50,21 +50,14 @@ archive/
 
 # Generated asset caches
 cache/
-godot/cache/
 nefan-html/public/sprites/
 
-# Saved narrative sessions (Godot↔HTML shared)
+# Saved narrative sessions
 saves/
 
 # Mixamo/character assets (license prohibits redistribution)
 /assets/characters/
-# Enlace de compatibilidad para que el proyecto Godot siga resolviendo
-# res://assets/characters/… mientras vive; muere con godot/.
-godot/assets/characters
 vendor/
-
-# Session recordings
-godot/recordings/
 
 # QA: capturas de cada corrida (regenerables)
 qa/capturas/
@@ -84,11 +77,6 @@ scene_gen_tests/
 # Contenido generado por juego (snapshots de mundo, registros de estilo) —
 # regenerable desde el título, no se versiona
 nefan-core/data/games/*/world/
-
-# Godot 4 editor
-godot/.godot/
-*.import
-export_presets.cfg
 
 # Node.js
 node_modules/

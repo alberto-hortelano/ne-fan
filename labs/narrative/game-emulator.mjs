@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // labs/narrative/game-emulator.mjs
 //
-// Emula ser el JUEGO (Godot/HTML) frente al bridge WebSocket de nefan-core.
+// Emula ser el JUEGO frente al bridge WebSocket de nefan-core.
 // Permite testear el motor narrativo (otro Claude Code que llama
 // narrative_listen/narrative_respond) sin gráficos, movimiento ni combate real:
 // solo enviando los mismos mensajes que enviaría el juego y registrando ambos

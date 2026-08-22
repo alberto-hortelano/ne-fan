@@ -1,7 +1,7 @@
 /** Timeline browser for the active narrative session.
  *
  * Bound to the H key. Pulls a fresh snapshot from the bridge every time it is
- * opened, so the timeline reflects whatever state Godot or HTML wrote last.
+ * opened, so the timeline reflects the last state written.
  */
 import type { NarrativeClient } from "../net/narrative-client.js";
 import type {

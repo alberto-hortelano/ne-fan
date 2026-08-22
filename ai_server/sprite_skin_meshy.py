@@ -81,8 +81,7 @@ def plan_dir_batches(directions: int, n_keyframes: int) -> list[list[int]]:
     rows = max(1, min(ATLAS_MAX_CELLS // n_keyframes, ATLAS_MAX_ROWS_FACTOR * n_keyframes))
     return [list(range(d, min(d + rows, directions))) for d in range(0, directions, rows)]
 
-# Fragmento de vista del hero-shot por ÁNGULO del set base (espejo de
-# ANGLE_CAMERA en godot/scripts/dev/sprite_sheet_renderer.gd). Un ángulo sin
+# Fragmento de vista del hero-shot por ÁNGULO del set base. Un ángulo sin
 # fragmento es un error de contrato, no algo que adivinar.
 HERO_VIEW_FRAGMENTS = {
     "isometric_30": "isometric view",

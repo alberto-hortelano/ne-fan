@@ -149,8 +149,8 @@ export function handleLoadRoom(
   // Send state_update with the (possibly preserved) HP so the client syncs.
   // In-session, this is a scene TRANSITION, not a respawn: emitting the
   // player_respawned event would make the client run its respawn side-effects
-  // (Godot teleports the player to the spawn point and refills HP, clobbering
-  // a resume's restored position). Legacy no-session loads keep the event.
+  // (teleport to the spawn point and refill HP, clobbering a resume's restored
+  // position). Legacy no-session loads keep the event.
   const roomResponse: StateUpdateMessage = {
     type: "state_update",
     events: inSession ? [] : [{ type: "player_respawned", hp: playerHp }],

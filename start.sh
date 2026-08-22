@@ -3,24 +3,21 @@
 # Run without arguments. Use ↑/↓ to navigate, → to fine-tune which services
 # launch, ← to go back, Space to toggle a service, Enter to launch,
 # s = status, k = stop everything, q to quit.
-# Env: GODOT_BIN, NEFAN_LOG_DIR, NEFAN_SAVES_DIR, NEFAN_GAMES_DIR (bench),
+# Env: NEFAN_LOG_DIR, NEFAN_SAVES_DIR, NEFAN_GAMES_DIR (bench),
 #      NEFAN_EAGER_BIND=0 (no arrancar narrative-mcp: el terminal del motor
 #      posee :3737).
 
 set -uo pipefail
 
-GODOT_BIN="${GODOT_BIN:-$HOME/Downloads/Godot_v4.6.1-stable_linux.x86_64}"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="${NEFAN_LOG_DIR:-/tmp}"
 SAVES_DIR_NEW="${NEFAN_SAVES_DIR:-$PROJECT_DIR/saves}"
-SAVES_DIR_OLD="$HOME/.local/share/godot/app_userdata/Never Ending Fantasy/saves"
 
 PORT_BRIDGE=9877
 PORT_STATE=9878    # State API HTTP (mismo proceso que el bridge)
 PORT_HTML=3000
 PORT_AI=8765
 PORT_NARR=3737
-PORT_REMOTE=9876
 PORT_ASSETS=8767
 PORT_GPU=8766
 PORT_RGEN=8768
@@ -31,10 +28,6 @@ PORT_FAKE=18765    # fake-ai-server (labs/narrative) — emula S3–S6, 0 crédi
 # arrancarlo (el terminal de Claude Code del motor será el dueño de :3737 —
 # flujo de labs/narrative/README.md).
 NEFAN_EAGER_BIND="${NEFAN_EAGER_BIND:-1}"
-
-# Patrón de proceso Godot para pkill, derivado del binario configurado (no
-# fijar la versión: 4.7+ debe seguir funcionando con GODOT_BIN).
-GODOT_PROC="$(basename "$GODOT_BIN")"
 
 declare -a STARTED_PIDS=()
 
@@ -77,7 +70,7 @@ wait_for_http_health() {
 # Dos fases: preflight_tools corre ANTES de la TUI (tput hace falta para
 # pintarla); preflight_services corre DESPUÉS de elegir preset y solo
 # comprueba las dependencias de los servicios seleccionados — elegir
-# "E2E sin créditos" no debe exigir Godot ni el .venv de Python.
+# "HTML fixtures" no debe exigir el .venv de Python ni las deps del bridge.
 
 preflight_tools() {
     local missing=()
@@ -94,23 +87,20 @@ preflight_tools() {
 
 preflight_services() {
     local missing=()
-    if (( ACTIVE[3] == 1 || ACTIVE[4] == 1 )); then
-        [[ -x "$GODOT_BIN" ]] || missing+=("Godot binary not executable at $GODOT_BIN — set GODOT_BIN env var to override")
-    fi
-    if (( ACTIVE[2] == 1 || ACTIVE[7] == 1 || ACTIVE[8] == 1 )); then
+    if on ai_server || on gpu-worker || on remote-gen; then
         [[ -d "$PROJECT_DIR/.venv" ]] || missing+=("Python venv missing — python -m venv .venv && source .venv/bin/activate && pip install -r ai_server/requirements.txt")
     fi
     # replay-server también: importa `ws` desde nefan-core/node_modules.
-    if (( ACTIVE[0] == 1 || ACTIVE[6] == 1 || ACTIVE[10] == 1 )); then
+    if on bridge || on asset-store || on replay-server; then
         [[ -d "$PROJECT_DIR/nefan-core/node_modules" ]] || missing+=("nefan-core deps — cd nefan-core && npm install")
     fi
-    if (( ACTIVE[5] == 1 )); then
+    if on html; then
         [[ -d "$PROJECT_DIR/nefan-html/node_modules" ]] || missing+=("nefan-html deps — cd nefan-html && npm install")
     fi
-    if (( ACTIVE[1] == 1 )); then
+    if on narrative-mcp; then
         [[ -d "$PROJECT_DIR/narrative-mcp/node_modules" ]] || missing+=("narrative-mcp deps — cd narrative-mcp && npm install")
     fi
-    if (( ACTIVE[9] == 1 || ACTIVE[10] == 1 )); then
+    if on fake-ai || on replay-server; then
         have_cmd node || missing+=("node — needed by fake-ai-server / replay-server")
     fi
 
@@ -119,35 +109,15 @@ preflight_services() {
         printf '   - %s\n' "${missing[@]}"
         return 1
     fi
-
-    # Migración de saves legacy: solo relevante si va a haber sesión (bridge).
-    if (( ACTIVE[0] == 1 )) && [[ -d "$SAVES_DIR_OLD" ]]; then
-        local has_legacy=0
-        if compgen -G "$SAVES_DIR_OLD/*/state.json" >/dev/null; then
-            has_legacy=1
-        fi
-        local new_empty=1
-        if [[ -d "$SAVES_DIR_NEW" ]] && [[ -n "$(ls -A "$SAVES_DIR_NEW" 2>/dev/null)" ]]; then
-            new_empty=0
-        fi
-        if (( has_legacy == 1 )) && (( new_empty == 1 )); then
-            echo "📦 Legacy saves found at:"
-            echo "   $SAVES_DIR_OLD"
-            read -rp "   Migrate to '$SAVES_DIR_NEW'? [Y/n]: " ans
-            if [[ ! "$ans" =~ ^[Nn] ]]; then
-                bash "$PROJECT_DIR/tools/migrate_saves.sh" || echo "   (migration script returned non-zero)"
-            fi
-        fi
-    fi
 }
 
 # ─── Service starters ──────────────────────────────────────────
 
 start_bridge() {
     port_busy "$PORT_BRIDGE" && kill_port "$PORT_BRIDGE"
-    # Refresca data/runtime_config.json y combat_effective_params.json (hook
-    # predev de nefan-core, que `npx tsx` directo se saltaría): los leen
-    # Python y Godot, y un dump rancio desincroniza los tres procesos.
+    # Refresca data/runtime_config.json (hook predev de nefan-core, que `npx
+    # tsx` directo se saltaría): lo lee ai_server en Python, y un dump rancio
+    # desincroniza los procesos.
     ( cd "$PROJECT_DIR/nefan-core" && npx tsx scripts/dump-config.ts ) \
         >"$LOG_DIR/nefan-bridge.log" 2>&1 || {
         echo "❌ dump-config failed (see $LOG_DIR/nefan-bridge.log)"; return 1; }
@@ -155,7 +125,7 @@ start_bridge() {
     # real (mismo mecanismo que el bench de labs/narrative). NEFAN_GAMES_DIR se
     # respeta del entorno si el usuario lo trae (aislar juegos de bench).
     local extra_env=()
-    if (( ACTIVE[9] == 1 )); then
+    if on fake-ai; then
         extra_env+=("NEFAN_AI_SERVER=http://127.0.0.1:$PORT_FAKE")
     fi
     ( cd "$PROJECT_DIR/nefan-core" && exec env "${extra_env[@]}" npx tsx bridge/ws-server.ts ) \
@@ -262,29 +232,6 @@ start_ai() {
     echo "✅ ai_server :$PORT_AI  (log: $LOG_DIR/nefan-ai.log)"
 }
 
-start_godot() {
-    pkill -f "$GODOT_PROC" 2>/dev/null
-    sleep 1
-    ( exec "$GODOT_BIN" --path "$PROJECT_DIR/godot" --rendering-method gl_compatibility ) \
-        >"$LOG_DIR/nefan-godot.log" 2>&1 &
-    STARTED_PIDS+=($!)
-    wait_for_port "$PORT_REMOTE" 30 "Godot remote control" || return 1
-    echo "✅ Godot (remote :$PORT_REMOTE)  (log: $LOG_DIR/nefan-godot.log)"
-}
-
-start_godot_headless() {
-    pkill -f "$GODOT_PROC" 2>/dev/null
-    sleep 1
-    have_cmd xvfb-run || { echo "❌ xvfb-run not found — sudo apt install xvfb"; return 1; }
-    (
-        exec xvfb-run --auto-servernum -s "-screen 0 1920x1080x24" \
-            "$GODOT_BIN" --path "$PROJECT_DIR/godot" --rendering-method gl_compatibility
-    ) >"$LOG_DIR/nefan-godot.log" 2>&1 &
-    STARTED_PIDS+=($!)
-    wait_for_port "$PORT_REMOTE" 45 "Godot headless" || return 1
-    echo "✅ Godot headless (remote :$PORT_REMOTE)  (log: $LOG_DIR/nefan-godot.log)"
-}
-
 start_html() {
     pkill -f "vite" 2>/dev/null
     sleep 1
@@ -360,16 +307,16 @@ EOF
 # turns on. The TUI reads from these arrays, the launcher runs them in
 # topological order.
 
-# Service slot index → key. OJO: añadir servicios nuevos AL FINAL — las
-# máscaras de PRESET_PROFILES y EXCLUSIVE_PAIRS son posicionales.
-SERVICES=(bridge narrative-mcp ai_server godot godot-headless html asset-store gpu-worker remote-gen fake-ai replay-server)
+# Service slot index → key. Las MÁSCARAS de PRESET_PROFILES siguen siendo
+# posicionales (una tabla se lee bien así), pero los CONSUMIDORES no: preguntan
+# por clave con `on <clave>`. Añadir o quitar un servicio ya no puede desplazar
+# en silencio lo que arranca un preset.
+SERVICES=(bridge narrative-mcp ai_server html asset-store gpu-worker remote-gen fake-ai replay-server)
 # Service slot index → display label
 SERVICE_LABELS=(
     "bridge          :9877"
     "narrative-mcp   :3737"
     "ai_server       :8765"
-    "Godot"
-    "Godot headless (xvfb)"
     "HTML            :3000"
     "asset-store     :8767"
     "gpu-worker      :8766"
@@ -382,9 +329,7 @@ SERVICE_HINTS=(
     "shared TS logic + WebSocket (State API :9878)"
     "MCP bridge to Claude Code (NEFAN_EAGER_BIND=0 = lo posee el terminal del motor)"
     "Python narrative/LLM server"
-    "3D client window"
-    "Godot under xvfb (no window)"
-    "Cliente web en primera persona (three.js)"
+    "Cliente web en primera persona (three.js) — el juego"
     "blobs + manifest SQLite + covers de estilos"
     "texturas SD / modelos / LaMa (GPU local, sin créditos)"
     "Meshy/fal + SAM2 + atlas fps + estilos — GASTA créditos si se invoca"
@@ -392,19 +337,41 @@ SERVICE_HINTS=(
     "reproduce una sesión grabada como película (suplanta al bridge; LOG=runs/…/events.ndjson)"
 )
 
+# Índice del servicio con esa clave, o -1. Es la única función que traduce
+# clave → posición: todo lo demás pregunta por clave.
+svc_idx() {
+    local key=$1 i
+    for i in "${!SERVICES[@]}"; do
+        [[ ${SERVICES[$i]} == "$key" ]] && { echo "$i"; return; }
+    done
+    echo -1
+}
+
+# ¿Está seleccionado el servicio <clave>? Sustituye a los ~18 `ACTIVE[n]` con
+# índice literal que había, donde un desplazamiento arrancaba otro servicio sin
+# que nadie se enterase.
+on() {
+    local i
+    i=$(svc_idx "$1")
+    if (( i < 0 )); then
+        echo "❌ servicio desconocido en on(): $1" >&2
+        return 2
+    fi
+    (( ACTIVE[i] == 1 ))
+}
+
 # Mutually exclusive pairs (space-separated indices in a single string).
 # Toggling one in the TUI deactivates its sibling.
-# godot vs godot-headless; ai_server vs fake-ai; bridge vs replay (mismo :9877)
-EXCLUSIVE_PAIRS=("3 4" "2 9" "0 10")
+# ai_server vs fake-ai; bridge vs replay (mismo :9877)
+EXCLUSIVE_PAIRS=("2 7" "0 8")
 
-# Presets: nombre + descripción + bitmask posicional en el orden de SERVICES
-# (mismo ancho que SERVICES — añadir un servicio obliga a tocar TODAS).
-# Los números 1-5 están citados en docs (CLAUDE.md, godot/tools) — presets
-# nuevos SIEMPRE al final, antes de Custom.
+# Presets: nombre + slug + descripción + bitmask posicional en el orden de
+# SERVICES (mismo ancho que SERVICES — añadir un servicio obliga a tocar TODAS).
+# El SLUG es la referencia estable: los números se renumeran cuando muere un
+# preset (ya ha pasado), y un runner que cite "--preset 5" acaba arrancando
+# otra cosa en silencio. Presets nuevos al final, antes de Custom.
 PRESET_NAMES=(
     "Play"
-    "Story web"
-    "Automated tests"
     "Cliente web (dev)"
     "E2E sin créditos"
     "Story web sin imágenes"
@@ -413,10 +380,18 @@ PRESET_NAMES=(
     "HTML fixtures"
     "Custom"
 )
+PRESET_SLUGS=(
+    "play"
+    "cliente-web"
+    "e2e-sin-creditos"
+    "story-web-sin-imagenes"
+    "playtest-motor"
+    "replay-web"
+    "html-fixtures"
+    "custom"
+)
 PRESET_DESCS=(
-    "Stack completo + Claude Code + Godot — GASTA créditos con Imagen IA (Meshy/fal)"
-    "Historia sin Godot: motor narrativo + cliente web (navegador); pre-generación de mundo/estilo — GASTA créditos con Imagen IA"
-    "bridge + Godot headless + asset-store (movement_test.py y cía) — sin coste"
+    "Stack completo + Claude Code + cliente web: historia, NPCs, mapas y diálogo — GASTA créditos con Imagen IA (Meshy/fal)"
     "bridge + HTML + asset-store + remote-gen (fps/estilos operativos) — solo gasta si activas Imagen IA en el juego"
     "fake-ai-server + bridge + HTML — todo mockeado, 0 créditos (bench E2E)"
     "motor narrativo con los servicios de imagen APAGADOS (sin gpu-worker ni remote-gen): imposible gastar en imágenes — juega en Maqueta 3D / y_bot"
@@ -434,22 +409,20 @@ PRESET_DESCS=(
 # NEFAN_AI_SERVER y el cliente se abre con ?ai= (URL impresa al arrancar).
 # "Story web sin imágenes" quita gpu-worker/remote-gen a propósito: los
 # pipelines de imagen del cliente quedan sin backend (elige Maqueta 3D).
-#                  bridge  narr  ai  god  hl  html  assets  gpu  rgen  fake  replay
+#                  bridge  narr  ai  html  assets  gpu  rgen  fake  replay
 PRESET_PROFILES=(
-    "1 1 1 1 0 1 1 1 1 0 0"   # Play
-    "1 1 1 0 0 1 1 1 1 0 0"   # Story web
-    "1 0 0 0 1 0 1 0 0 0 0"   # Automated tests
-    "1 0 0 0 0 1 1 0 1 0 0"   # Cliente web (dev)
-    "1 0 0 0 0 1 0 0 0 1 0"   # E2E sin créditos
-    "1 1 1 0 0 1 1 0 0 0 0"   # Story web sin imágenes
-    "1 0 1 0 0 0 1 0 0 0 0"   # Playtest motor (bench)
-    "0 0 0 0 0 1 0 0 0 0 1"   # Replay web (película)
-    "0 0 0 0 0 1 0 0 0 0 0"   # HTML fixtures
-    "0 0 0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
+    "1 1 1 1 1 1 1 0 0"   # Play
+    "1 0 0 1 1 0 1 0 0"   # Cliente web (dev)
+    "1 0 0 1 0 0 0 1 0"   # E2E sin créditos
+    "1 1 1 1 1 0 0 0 0"   # Story web sin imágenes
+    "1 0 1 0 1 0 0 0 0"   # Playtest motor (bench)
+    "0 0 0 1 0 0 0 0 1"   # Replay web (película)
+    "0 0 0 1 0 0 0 0 0"   # HTML fixtures
+    "0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
 )
 
 # Live state — applied by TUI, consumed by launcher.
-declare -a ACTIVE=(0 0 0 0 0 0 0 0 0 0 0)
+declare -a ACTIVE=(0 0 0 0 0 0 0 0 0)
 
 apply_preset() {
     local idx=$1
@@ -756,7 +729,7 @@ run_tui() {
     # narrative-mcp (flujo playtest: el terminal del motor posee :3737, y el
     # diálogo de la pausa ofrece [s] saltar con detección de API key).
     TUI_NEEDS_PAUSE=0
-    if (( ACTIVE[1] == 1 || ACTIVE[2] == 1 )); then
+    if on narrative-mcp || on ai_server; then
         TUI_NEEDS_PAUSE=1
     fi
 }
@@ -777,51 +750,40 @@ run_selection() {
     echo ""
 
     # Order: asset-store → gpu-worker → remote-gen → fake-ai → replay →
-    # bridge → narrative-mcp → ai_server → (Claude pause) → godot/headless →
-    # html. El asset-store va PRIMERO: ai_server hace count/prune al arrancar
+    # bridge → narrative-mcp → ai_server → (Claude pause) → html.
+    # El asset-store va PRIMERO: ai_server hace count/prune al arrancar
     # y el gateway puede pedir assetExists temprano; gpu-worker y remote-gen
     # antes que ai_server para que /backend_status y /segment ya los vean al
     # primer uso; el fake antes que el bridge (que arranca apuntándole).
-    (( ACTIVE[6] == 1 ))  && { start_asset_store   || return 1; }
-    (( ACTIVE[7] == 1 ))  && { start_gpu_worker    || return 1; }
-    (( ACTIVE[8] == 1 ))  && { start_remote_gen    || return 1; }
-    (( ACTIVE[9] == 1 ))  && { start_fake_ai       || return 1; }
-    (( ACTIVE[10] == 1 )) && { start_replay        || return 1; }
-    (( ACTIVE[0] == 1 ))  && { start_bridge        || return 1; }
-    (( ACTIVE[1] == 1 ))  && { start_narrative_mcp || return 1; }
+    on asset-store  && { start_asset_store   || return 1; }
+    on gpu-worker   && { start_gpu_worker    || return 1; }
+    on remote-gen   && { start_remote_gen    || return 1; }
+    on fake-ai      && { start_fake_ai       || return 1; }
+    on replay-server && { start_replay       || return 1; }
+    on bridge       && { start_bridge        || return 1; }
+    on narrative-mcp && { start_narrative_mcp || return 1; }
 
     # Pausa de Claude Code SIN placeholder de narrative-mcp (flujo playtest,
     # labs/narrative/README): el terminal del motor debe POSEER :3737 antes
     # de que ai_server intente conectar — pausar ANTES de arrancarlo.
-    if (( TUI_NEEDS_PAUSE == 1 && ACTIVE[1] == 0 )); then
+    if (( TUI_NEEDS_PAUSE == 1 )) && ! on narrative-mcp; then
         pause_for_claude_code
     fi
 
-    (( ACTIVE[2] == 1 )) && { start_ai || return 1; }
+    on ai_server && { start_ai || return 1; }
 
     # Con placeholder, la pausa va tras ai_server (el terminal del motor hace
     # takeover del placeholder al primer narrative_listen).
-    if (( TUI_NEEDS_PAUSE == 1 && ACTIVE[1] == 1 )); then
+    if (( TUI_NEEDS_PAUSE == 1 )) && on narrative-mcp; then
         pause_for_claude_code
     fi
 
-    (( ACTIVE[3] == 1 )) && { start_godot          || return 1; }
-    (( ACTIVE[4] == 1 )) && { start_godot_headless || return 1; }
-    (( ACTIVE[5] == 1 )) && { start_html           || return 1; }
+    on html && { start_html || return 1; }
 
-    # Hint for headless tests
-    if (( ACTIVE[4] == 1 )); then
-        cat <<EOF
-
-  Now you can run for example:
-    python3 godot/tools/movement_test.py
-    python3 godot/tools/anim_debug.py medium --angles side
-EOF
-    fi
     # URL del cliente 2D: con el fake activo hay que abrirlo con ?ai= para que
     # TODOS los servicios del cliente (skins, atlas, estilos) resuelvan al fake.
-    if (( ACTIVE[5] == 1 )); then
-        if (( ACTIVE[9] == 1 )); then
+    if on html; then
+        if on fake-ai; then
             cat <<EOF
 
   🌐 Cliente web (bench sin créditos):
@@ -833,7 +795,7 @@ EOF
             echo "  🌐 Cliente web: http://localhost:$PORT_HTML/"
         fi
     fi
-    if (( ACTIVE[10] == 1 )); then
+    if on replay-server; then
         cat <<EOF
   🎞  Replay: el cliente reproduce la grabación al conectar (Reanudar la
      sesión del listado). Otra grabación: relanza con
@@ -842,7 +804,7 @@ EOF
     fi
     # Bench de playtest (ai_server con el motor en otro terminal, sin
     # placeholder): recordar cómo se conduce.
-    if (( ACTIVE[2] == 1 && ACTIVE[1] == 0 && ACTIVE[0] == 1 )); then
+    if on ai_server && ! on narrative-mcp && on bridge; then
         cat <<EOF
 
   🧪 Bench narrativo (labs/narrative): emula el juego con
@@ -867,7 +829,6 @@ cmd_status() {
         "gpu-worker:$PORT_GPU"
         "remote-gen:$PORT_RGEN"
         "fake-ai:$PORT_FAKE"
-        "Godot remote:$PORT_REMOTE"
         "HTML:$PORT_HTML"
     )
     local pair name port
@@ -903,8 +864,7 @@ cmd_stop() {
             echo "    · :$port"
         fi
     done
-    pkill -f "$GODOT_PROC" 2>/dev/null && echo "    · Godot"
-    pkill -f "vite"        2>/dev/null && echo "    · vite"
+    pkill -f "vite" 2>/dev/null && echo "    · vite"
     echo "✅ stack cleaned"
 }
 
@@ -935,53 +895,69 @@ cleanup() {
         for p in "${ALL_PORTS[@]}"; do
             port_busy "$p" && kill_port "$p"
         done
-        pkill -f "$GODOT_PROC" 2>/dev/null
     fi
 }
 trap cleanup EXIT INT TERM
 
 # ─── Modo no interactivo ───────────────────────────────────────
 
-# `./start.sh --preset N` arranca el preset N (el número que muestra el menú)
-# sin TUI y sin teclas. Existe para que un runner pueda levantar el stack:
-# el bench de QA (qa/run.mjs) necesita el preset 5 sin que haya nadie
-# pulsando Enter. Mismo camino que la TUI — aplica la misma máscara, corre el
-# mismo preflight y llama al mismo run_selection: si divergieran, el bench
-# probaría un arranque que ningún jugador usa.
+# `./start.sh --preset <slug|N>` arranca un preset sin TUI y sin teclas. Existe
+# para que un runner pueda levantar el stack: el bench de QA (qa/run.mjs)
+# necesita "e2e-sin-creditos" sin que haya nadie pulsando Enter. Mismo camino
+# que la TUI — aplica la misma máscara, corre el mismo preflight y llama al
+# mismo run_selection: si divergieran, el bench probaría un arranque que ningún
+# jugador usa.
+#
+# Se acepta el SLUG además del número porque el número se mueve: cuando muere
+# un preset, los de debajo se desplazan ("E2E sin créditos" ya pasó del 5 al 3).
+# Un runner que cite el número acaba levantando otro stack y fallando por
+# timeout, sin decir por qué. El slug no se desplaza.
 usage() {
-    echo "Uso: ./start.sh [--preset N] [--list]"
-    echo "  sin argumentos   menú interactivo"
-    echo "  --preset N       arranca el preset N (1-based, como en el menú) sin TUI"
-    echo "  --list           lista los presets y sale"
+    echo "Uso: ./start.sh [--preset <slug|N>] [--list]"
+    echo "  sin argumentos      menú interactivo"
+    echo "  --preset <slug>     arranca ese preset sin TUI (referencia estable — recomendado)"
+    echo "  --preset N          idem por número (1-based, como en el menú; se renumera)"
+    echo "  --list              lista los presets y sale"
 }
 
 list_presets() {
     local i
     for i in "${!PRESET_NAMES[@]}"; do
-        printf "  %2d · %-24s %s\n" "$((i + 1))" "${PRESET_NAMES[$i]}" "${PRESET_DESCS[$i]}"
+        printf "  %2d · %-24s %-24s %s\n" \
+            "$((i + 1))" "${PRESET_SLUGS[$i]}" "${PRESET_NAMES[$i]}" "${PRESET_DESCS[$i]}"
     done
 }
 
-run_preset_noninteractive() {
-    local n="$1"
-    if ! [[ "$n" =~ ^[0-9]+$ ]]; then
-        echo "❌ --preset espera un número (1..${#PRESET_NAMES[@]}); recibí: $n" >&2
-        exit 2
+# slug o número → índice, o -1.
+preset_idx_of() {
+    local want=$1 i
+    if [[ "$want" =~ ^[0-9]+$ ]]; then
+        i=$((want - 1))
+        (( i >= 0 && i < ${#PRESET_NAMES[@]} )) && { echo "$i"; return; }
+        echo -1; return
     fi
-    local idx=$((n - 1))
-    if (( idx < 0 || idx >= ${#PRESET_NAMES[@]} )); then
-        echo "❌ preset $n fuera de rango. Disponibles:" >&2
+    for i in "${!PRESET_SLUGS[@]}"; do
+        [[ ${PRESET_SLUGS[$i]} == "$want" ]] && { echo "$i"; return; }
+    done
+    echo -1
+}
+
+run_preset_noninteractive() {
+    local want="$1" idx
+    idx=$(preset_idx_of "$want")
+    if (( idx < 0 )); then
+        echo "❌ preset desconocido: '$want'. Disponibles (nº · slug · nombre):" >&2
         list_presets >&2
         exit 2
     fi
-    if (( idx == ${#PRESET_NAMES[@]} - 1 )); then
+    if [[ ${PRESET_SLUGS[$idx]} == "custom" ]]; then
         echo "❌ 'Custom' no tiene selección propia: elige un preset concreto." >&2
         exit 2
     fi
     # Sin apply_exclusivity: las máscaras de PRESET_PROFILES ya son coherentes
     # por construcción (esa función resuelve conflictos del toggle de la TUI).
     apply_preset "$idx"
-    echo "▶ Preset $n · ${PRESET_NAMES[$idx]} (no interactivo)"
+    echo "▶ Preset $((idx + 1)) · ${PRESET_SLUGS[$idx]} · ${PRESET_NAMES[$idx]} (no interactivo)"
     preflight_services && run_selection
 }
 

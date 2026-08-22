@@ -1,5 +1,5 @@
 /** Pure math functions for combat resolution. No state, no side effects.
- *  Canonical implementation — Godot has no combat logic (display only). */
+ *  Canonical implementation — the client has no combat logic (display only). */
 
 import type { Vec3, EffectiveParams } from "../types.js";
 import { distance, sub, cross, dot, normalized } from "../vec3.js";

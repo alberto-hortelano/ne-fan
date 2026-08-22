@@ -203,7 +203,7 @@ export class WsBridge {
         this.requestOrigins.set(msg.request_id, ws);
         // Fail-fast: if no MCP client (Claude Code) has ever called
         // narrative_listen, reject the request immediately so the AI server
-        // can fall back to API or report an error to Godot.
+        // can fall back to API or report an error to the client.
         if (!this.isListenerActive()) {
           this.sendNoListenerError(msg);
           return;

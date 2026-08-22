@@ -1,4 +1,4 @@
-/** Validación runtime del input WS del cliente (Godot/HTML → bridge).
+/** Validación runtime del input WS del cliente (cliente web → bridge).
  *
  *  `messages.ts` (los tipos TS) es el CONTRATO; este módulo es su espejo zod
  *  para validar en el BORDE del transporte antes de enrutar. Sin esto,

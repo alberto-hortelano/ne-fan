@@ -15,8 +15,8 @@ Lee después `CLAUDE.md` (raíz) y el código real de las zonas implicadas. Proh
 
 ## Invariantes de ne-fan que tu plan NO puede romper
 
-- **Lógica en `nefan-core`, Godot y el cliente 2D solo pintan.** Si una regla de juego acaba en `.gd` o en `nefan-html/`, el plan está mal.
-- **Un solo formato de escena**: el motor produce Format D, el bridge normaliza con `formatDToWorld`, ambos clientes pintan world scene. Nada exclusivo de un cliente en el schema.
+- **Lógica en `nefan-core`, el cliente solo pinta.** Si una regla de juego acaba en `nefan-html/`, el plan está mal.
+- **Un solo formato de escena**: el motor produce Format D, el bridge normaliza con `formatDToWorld`, el cliente pinta world scene. La normalización no se duplica en el cliente.
 - **Contratos tipados en `nefan-core/src/contracts/`** — fuente de verdad del wire entre procesos, incluidos los endpoints Python.
 - **El bridge es el único escritor del save** (`saves/{id}/state.json`); el mirror GD es de solo lectura cuando `bridge_authoritative`.
 - **Fail-loud por capa** (push_error / errors.push / narrative_status:error / HTTPException). Nada de catch silencioso ni `return null` de conveniencia.

@@ -56,7 +56,7 @@ export const SERVICES = {
     port: 8766,
     // Extraído en F3: proceso propio (ai_server/gpu_worker_main.py).
     // narrative-llm mantiene un proxy transparente de los endpoints GPU en
-    // :8765 para clientes no migrados (Godot).
+    // :8765 para clientes no migrados.
     currentPort: 8766,
     description:
       "Generación local con GPU: texturas SD1.5, skins, sprites, modelos, inpainting LaMa. 1 proceso = 1 GPU.",
@@ -66,7 +66,7 @@ export const SERVICES = {
     port: 8767,
     // Extraído en F2: proceso propio (services/asset-store/). ai_server
     // mantiene un proxy transparente de /cache|/assets para clientes no
-    // migrados (Godot).
+    // migrados.
     currentPort: 8767,
     description:
       "Almacén content-addressed: blobs de cache/, manifest SQLite, styles binarios.",

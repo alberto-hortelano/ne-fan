@@ -216,7 +216,7 @@ describe("fronteras arquitectónicas", () => {
         // `view` y `branch` a secas tampoco: son palabras vivas en otros
         // contextos (una rama de git, la vista de un plugin).
         {
-          path: "nefan-core/data/rooms/dev/x.json",
+          path: "nefan-core/data/scenes/x.json",
           text: '{\n  "view": "algo",\n  "branch": "otra cosa"\n}\n',
           imports: [],
         },

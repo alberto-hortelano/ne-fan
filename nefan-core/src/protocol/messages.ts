@@ -1,4 +1,4 @@
-/** Protocol messages between frontend (Godot/HTML) and nefan-core logic. */
+/** Protocol messages between the frontend and nefan-core logic. */
 import type { UiTheme } from "../games/ui-theme.js";
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";

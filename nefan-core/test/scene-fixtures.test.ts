@@ -2,8 +2,8 @@
  *  VIVO — el tile del mundo continuo, que es la única variante.
  *
  *  El zod (`FormatDSceneSchema`) canda la salida del MOTOR, pero las fixtures
- *  del repo no pasan por él: las carga el selector del cliente, el dump a
- *  `data/rooms/` para el arranque offline del 3D y los guiones de QA. Sin este
+ *  del repo no pasan por él: las cargan el selector del cliente y los guiones
+ *  de QA. Sin este
  *  test, una escena de una variante retirada (la "suelta" del issue #172, el
  *  plató proscenio) podría quedarse en el árbol para siempre, viva y
  *  renderizándose, mientras el contrato dice que no existe.

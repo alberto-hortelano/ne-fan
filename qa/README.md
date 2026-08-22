@@ -16,7 +16,7 @@ node qa/run.mjs --keep           # deja el stack arriba al terminar
 node qa/run.mjs --url http://…   # contra un stack ya arrancado
 ```
 
-Si no hay nada en `:3000`, el runner levanta el **preset 5** (`./start.sh --preset 5`:
+Si no hay nada en `:3000`, el runner levanta el preset **`e2e-sin-creditos`** (`./start.sh --preset e2e-sin-creditos`:
 fake-ai-server + bridge + cliente) — cero créditos. Las capturas quedan en `qa/capturas/`.
 
 ## Cómo se escribe un guion

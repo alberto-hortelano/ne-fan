@@ -1,6 +1,5 @@
 /** WebSocket client for the nefan-core logic bridge (game-gateway; la URL la
- *  resuelve el caller con serviceUrl("game-gateway")).
- *  Mirrors Godot's logic_bridge.gd WebSocket protocol. */
+ *  resuelve el caller con serviceUrl("game-gateway")). */
 
 import type {
   StateUpdateMessage,

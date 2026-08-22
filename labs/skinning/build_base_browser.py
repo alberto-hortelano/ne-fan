@@ -40,7 +40,7 @@ from labs.skinning.sheet import keyframe_indices  # noqa: E402
 
 
 # Friendly cardinal labels for the 8 directions.
-# Convention from godot/scripts/dev/sprite_sheet_renderer.gd: dir_0 faces the
+# Convention from tools/render-sprite-sheets/page.mjs: dir_0 faces the
 # camera and the rest rotate clockwise in 45° increments around the up axis.
 DIR_LABELS = {
     0: "S — frente",

@@ -1,6 +1,5 @@
 /** State reducers — canonical event handling for the game store.
- *  Pure functions that mutate state in place based on events.
- *  godot/scripts/autoloads/game_store.gd keeps a display-side mirror. */
+ *  Pure functions that mutate state in place based on events. */
 
 import type { GameState, EnemyState } from "../types.js";
 
