@@ -11,7 +11,7 @@
  * Los puertos de SERVICIOS no se declaran aquí: la fuente única es
  * `contracts/service-registry.ts` (SERVICES) y `CONFIG.ports` los DERIVA.
  * Aquí solo viven los puertos que no son servicios del registro (sidecar
- * MCP, remote control de Godot, dev server HTML).
+ * MCP, dev server HTML).
  */
 import { SERVICES } from "./contracts/service-registry.js";
 
@@ -123,8 +123,6 @@ export interface NefanConfig {
     state_api: number;
     /** WebSocket del narrative-mcp (ai_server ↔ motor). */
     narrative_ws: number;
-    /** Remote control TCP de Godot (testing automatizado). */
-    godot_remote: number;
     /** Vite dev server del cliente HTML 2D. */
     html: number;
     /** asset-store (S6): blobs content-addressed + manifest SQLite (F2). */
@@ -195,7 +193,6 @@ export const CONFIG: NefanConfig = {
     bridge: SERVICES["game-gateway"].currentPort,
     state_api: SERVICES["world-state"].currentPort,
     narrative_ws: 3737,
-    godot_remote: 9876,
     html: 3000,
     asset_store: SERVICES["asset-store"].currentPort,
     gpu_worker: SERVICES["gpu-worker"].currentPort,

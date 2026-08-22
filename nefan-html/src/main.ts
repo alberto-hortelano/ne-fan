@@ -73,11 +73,10 @@ const sceneModules: Record<string, () => Promise<{ default: Record<string, unkno
 const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
 // El cliente web camina más rápido que el walk_speed realista (1.9 m/s) del
 // config compartido, y lo hace con un multiplicador propio para no alterar
-// ese config (rompería el feel del 3D en tercera persona de Godot).
-// OJO al heredarlo: el 2,2 se calibró para la vista CENITAL, donde el
-// jugador se veía entero y el mundo pasaba por debajo. En primera persona
-// nadie lo ha vuelto a mirar — 4,2 m/s de paseo es un trote largo a la
-// altura de los ojos. Es una decisión de feel, no un bug, así que se queda
+// ese config. OJO al heredarlo: el 2,2 se calibró para la vista CENITAL,
+// donde el jugador se veía entero y el mundo pasaba por debajo. En primera
+// persona nadie lo ha vuelto a mirar — 4,2 m/s de paseo es un trote largo a
+// la altura de los ojos. Es una decisión de feel, no un bug, así que se queda
 // donde estaba hasta que se juegue y se decida.
 const ARCADE_SPEED_SCALE = 2.2;
 const SPEED = (playerCfg.walk_speed ?? 3.0) * ARCADE_SPEED_SCALE;
@@ -1120,8 +1119,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       painting: fpsAtlasController.running,
       npcs: npcEntities.length,
     }),
-    /** Estado del diálogo, o `{visible:false}`. Es el análogo del comando
-     *  `dialogue_state` que el RemoteControl de Godot ya ofrecía en :9876. */
+    /** Estado del diálogo, o `{visible:false}`. */
     dialogue: () =>
       dialoguePanel.isVisible
         ? { visible: true, ...dialoguePanel.current() }
@@ -2142,8 +2140,7 @@ narrativeClient.onNarrativeStatus((status) => {
 });
 
 /** Materializa un `spawn_entity` del motor narrativo EN LA ESCENA VIVA, sin
- *  recargar (Task 13 — paridad con godot/scripts/main.gd:_apply_spawn_entity_
- *  consequence). El `position` ya viene resuelto en metros mundo por el bridge
+ *  recargar. El `position` ya viene resuelto en metros mundo por el bridge
  *  (consequence-handler.ts:resolvePositionHint, relativo al jugador). NPCs van a
  *  npcEntities (interactuables con E); building/object a objectEntities con
  *  `sizeXZ` para que sean sólidos (collidesAt) y tengan volumen que instalar

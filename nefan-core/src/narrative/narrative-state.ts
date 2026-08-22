@@ -1,9 +1,8 @@
 /** Persistent narrative state for the open-world RPG.
  *
- * Canonical schema of the save — godot/scripts/autoloads/narrative_state.gd is
- * the read-mostly GD mirror (bridge_authoritative). Persistence
- * is delegated to a SessionStorage implementation (filesystem in Node, could
- * be IndexedDB in the browser if a client ever runs the state itself).
+ * Canonical schema of the save. Persistence is delegated to a SessionStorage
+ * implementation (filesystem in Node, could be IndexedDB in the browser if a
+ * client ever runs the state itself).
  */
 import {
   SCHEMA_VERSION,

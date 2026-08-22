@@ -1,6 +1,6 @@
 /** Orchestrates combat: batch resolution of simultaneous attacks.
- *  Canonical implementation — godot/scripts/combat/combat_manager.gd is a
- *  display-only registry fed by the bridge. */
+ *  Canonical implementation — the client is a display-only registry fed by
+ *  the bridge. */
 
 import type { CombatantState, CombatEvent, CombatConfig } from "../types.js";
 import { resolveAttack, applyDefensiveReduction } from "./combat-resolver.js";

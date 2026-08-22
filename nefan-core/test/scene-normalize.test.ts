@@ -206,10 +206,10 @@ describe("formatDToWorld", () => {
     assert.equal(obj.texture_hash, "abc");
     assert.equal(obj.model_hash, "m123");
 
-    // Sin hash la clave NO puede existir con valor vacío: godot/scripts/room/
-    // object_spawner.gd:95 y ai_assets/texture_loader.gd:28 deciden con
-    // `has("texture_hash")`, no por verdad — una clave presente y nula haría
-    // que el objeto pareciera tener asset cacheado y se quedara sin material.
+    // Sin hash la clave NO puede existir con valor vacío: el consumidor decide
+    // por PRESENCIA de la clave, no por verdad — una clave presente y nula
+    // haría que el objeto pareciera tener asset cacheado y se quedara sin
+    // material.
     const sinHash = makeFormatD();
     delete (sinHash.entities as Record<string, unknown>[])[0].texture_hash;
     const desnudo = objectsOf(formatDToWorld(sinHash))[0];
@@ -324,10 +324,10 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 
   it("emite un color de terreno usable como fallback sin textura", () => {
-    // Consumidor: el suelo por defecto de godot/scripts/room/scene_builder.gd
-    // (el del cliente HTML se fue con el renderer oblicuo; su vista 3D pinta
-    // el suelo desde el `ground` declarado). Lo que importa es que exista y
-    // sea un RGB 0..1 verdoso (suelo de campo), no el valor.
+    // Fallback de suelo por defecto (el del cliente se fue con el renderer
+    // oblicuo; su vista 3D pinta el suelo desde el `ground` declarado). Lo que
+    // importa es que exista y sea un RGB 0..1 verdoso (suelo de campo), no el
+    // valor.
     const color = (formatDToWorld(makeFormatD()).terrain as { color?: number[] } | undefined)?.color;
     assert.ok(Array.isArray(color), "terrain.color debe existir");
     assert.equal(color!.length, 3, "RGB de tres componentes");
@@ -475,11 +475,11 @@ describe("formatDToWorld — fail-loud con índice, id y campo", () => {
   });
 });
 
-/** Altura y forma: el `scale.y` que los dos clientes 3D construyen tal cual
- *  (fps-gl en el navegador, scene_builder.gd en Godot). Un `h` degenerado
- *  (0, ∞) produciría una caja invisible o de 20 m en vez de caer al default
- *  por kind. (Hasta la retirada de la vista oblicua lo extruía además el 2D
- *  como prisma, con `prismQuads`; ese camino ya no existe.) */
+/** Altura y forma: el `scale.y` que el cliente 3D (fps-gl en el navegador)
+ *  construye tal cual. Un `h` degenerado (0, ∞) produciría una caja invisible
+ *  o de 20 m en vez de caer al default por kind. (Hasta la retirada de la
+ *  vista oblicua lo extruía además el 2D como prisma, con `prismQuads`; ese
+ *  camino ya no existe.) */
 describe("formatDToWorld — altura y forma degeneradas", () => {
   const conProp = (h: unknown): Record<string, unknown> => {
     const d = makeFormatD();

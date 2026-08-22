@@ -1,6 +1,6 @@
 /** Loads and merges combat configuration data.
- *  Canonical implementation — godot/scripts/combat/combat_data.gd only reads
- *  the effective-params table that `npm run dump-config` precomputes here. */
+ *  Canonical implementation — `npm run dump-config` precomputes the
+ *  effective-params table from here. */
 
 import type { CombatConfig, EffectiveParams, AttackType, Weapon } from "../types.js";
 

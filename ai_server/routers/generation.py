@@ -74,13 +74,13 @@ async def generate_scene(body: GenerateSceneRequest):
 
 @router.get("/backend_status")
 async def backend_status_endpoint():
-    """Report the state of optional backends. Used by Godot's ServiceSettings panel."""
+    """Report the state of optional backends."""
     import asyncio
 
     from routers.gpu_proxy import GPU_WORKER_URL, fetch_gpu_worker_health
 
     # Meshy 3D vive en el gpu-worker desde F3: agregación best-effort de su
-    # /health (timeout 2 s). El shape del panel de Godot no cambia.
+    # /health (timeout 2 s). El shape de la respuesta no cambia.
     worker = await fetch_gpu_worker_health()
     backend = worker.get("model_backend") if worker else None
     if backend == "meshy":

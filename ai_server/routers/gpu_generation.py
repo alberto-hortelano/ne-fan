@@ -157,10 +157,10 @@ async def generate_skin_endpoint(body: SkinRequest):
 async def generate_sprite_endpoint(body: SpriteRequest):
     """Generate an RGBA sprite PNG from a prompt (image with transparent background).
 
-    Accepts an optional ``angle`` (top_down | isometric_30 | isometric_45 |
-    frontal) so 2D-world assets match the projection of pre-rendered Mixamo
-    sprite sheets. ``angle`` and ``style_token`` participate in the cache key,
-    so the same prompt at different angles cache independently.
+    Accepts an optional ``angle`` (top_down | frontal_8) so generated props
+    share projection with the pre-rendered character sprite sheets. ``angle``
+    and ``style_token`` participate in the cache key, so the same prompt at
+    different angles caches independently.
     """
     import asyncio
 

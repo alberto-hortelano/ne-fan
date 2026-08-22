@@ -2,9 +2,8 @@
 
 Used for vegetation (trees, bushes), objects, and anything that needs
 a billboard image instead of a seamless tiling texture. Sprites can be
-generated from a chosen camera angle (top_down, isometric_30, isometric_45,
-frontal) so HTML 2D assets share the same projection as pre-rendered
-Mixamo character sheets.
+generated from a chosen camera angle so the props share projection with the
+pre-rendered Mixamo character sheets.
 """
 
 import io
@@ -18,9 +17,6 @@ from PIL import Image
 # to use the same projection family for the 2D world to look coherent.
 ANGLE_PROMPT_FRAGMENTS = {
     "top_down": "viewed from directly above, top-down orthographic view, no perspective",
-    "isometric_30": "isometric view from 30 degree elevation, classic RPG angle",
-    "isometric_45": "isometric view from 45 degree elevation, three-quarter perspective",
-    "frontal": "side view, frontal elevation, no perspective",
     "frontal_8": "eye-level view with a slight 8 degree downward tilt, near-frontal camera",
 }
 
@@ -55,9 +51,15 @@ class SpriteGenerator:
         self._set_padding_mode(pipe, "zeros")
 
         try:
-            angle_fragment = ANGLE_PROMPT_FRAGMENTS.get(
-                angle, ANGLE_PROMPT_FRAGMENTS["top_down"]
-            )
+            # Sin fallback silencioso: `angle` viaja en la clave de caché, así
+            # que servir el fragmento de otro ángulo guardaría la imagen bajo
+            # una clave que miente.
+            if angle not in ANGLE_PROMPT_FRAGMENTS:
+                raise ValueError(
+                    f"ángulo de sprite desconocido: {angle!r} "
+                    f"(soportados: {', '.join(sorted(ANGLE_PROMPT_FRAGMENTS))})"
+                )
+            angle_fragment = ANGLE_PROMPT_FRAGMENTS[angle]
             style_fragment = f", {style_token}" if style_token else ""
             full_prompt = (
                 f"single object centered on solid white background, "

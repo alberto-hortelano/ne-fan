@@ -56,7 +56,7 @@ export type ReportPlayerChoiceResult =
   | { ok: true; consequences: Consequence[] }
   | { ok: false; error: string };
 
-export type SpriteAngle = "top_down" | "isometric_45" | "isometric_30" | "frontal";
+export type SpriteAngle = "top_down" | "frontal_8";
 
 export class AiClient {
   private baseUrl: string;

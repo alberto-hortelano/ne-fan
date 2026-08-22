@@ -1,9 +1,9 @@
 """Proxy transparente /cache/* y /assets* → asset-store (:8767).
 
-Transitorio de F2 para los clientes NO migrados a resolveServiceUrl —
-principalmente Godot (ai_client.gd / texture_cache.gd van a :8765). Copia
-método, path, query, body, status y content-type TAL CUAL: los cuerpos de
-error en texto plano ("Not found", "Invalid map type") pasan intactos.
+Transitorio de F2 para los clientes NO migrados a resolveServiceUrl (siguen
+yendo a :8765). Copia método, path, query, body, status y content-type TAL
+CUAL: los cuerpos de error en texto plano ("Not found", "Invalid map type")
+pasan intactos.
 
 Store caído → 502 {detail: "asset-store unreachable"} (modo de fallo nuevo e
 inevitable; informativo en vez de un timeout mudo).

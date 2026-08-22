@@ -1,5 +1,4 @@
-/** Shared narrative types — schema mirrors godot/scripts/autoloads/narrative_state.gd.
- *  OJO: el espejo GD sigue en v3 — actualizarlo es un follow-up anotado. */
+/** Shared narrative types. */
 import type { Vec3 } from "../types.js";
 import type { WorldMap } from "../world-map/types.js";
 import type { PluginRecord, PluginLlmView } from "../plugins/types.js";

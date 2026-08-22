@@ -1,5 +1,5 @@
 /** S4 · gpu-worker — HTTP :8766 (extraído en F3: ai_server/gpu_worker_main.py;
- * narrative-llm proxya los endpoints en :8765 para Godot).
+ * narrative-llm proxya los endpoints en :8765 para clientes no migrados).
  *
  * Generación LOCAL con GPU (RTX 3060): texturas PBR SD1.5+LCM, skins img2img,
  * sprites, modelos TripoSG (fallback sin MESHY_API_KEY) e inpainting LaMa.
@@ -77,7 +77,7 @@ export interface GenerateSpriteResponse {
 }
 
 /** `model_backend` alimenta el /backend_status de narrative-llm (agregación
- *  best-effort — el shape del panel de Godot no cambia con la extracción). */
+ *  best-effort — el shape de la respuesta no cambia con la extracción). */
 export interface GpuWorkerHealthResponse {
   status: "ready" | "loading";
   texture_pipeline: "loaded" | "lazy";

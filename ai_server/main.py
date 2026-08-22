@@ -68,7 +68,8 @@ async def lifespan(app: FastAPI):
 
     # F3/F4: los pipelines GPU viven en el gpu-worker (:8766) y los de APIs
     # de pago en remote-gen (:8768). Este proceso solo conserva lo narrativo
-    # y la visión, y proxya los endpoints GPU para Godot (gpu_proxy).
+    # y la visión, y proxya los endpoints GPU para los clientes no migrados
+    # (gpu_proxy).
     #
     # Packs de estilo por juego: /develop_world los LISTA para el motor
     # narrativo (narrative.py). Lector FS sin claves — coexiste con la
@@ -115,7 +116,7 @@ app.add_middleware(
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
 # asset_proxy reenvía /cache|/assets al asset-store (:8767) y gpu_proxy los
-# endpoints GPU al gpu-worker (:8766) para clientes no migrados (Godot).
+# endpoints GPU al gpu-worker (:8766) para clientes no migrados.
 # El repintado, /styles y el toggle /dev/api_cache viven en remote-gen
 # (:8768) — sin proxy: sus únicos clientes (HTML) resuelven por serviceUrl.
 app.include_router(asset_proxy_router)
@@ -132,7 +133,7 @@ async def health():
         "status": "ready" if deps.llm_client else "loading",
         "mode": "narrative",
         # Transitorio F3: el pipeline de texturas vive en el gpu-worker; el
-        # campo se conserva constante para no romper el shape (Godot lo lee).
+        # campo se conserva constante para no romper el shape.
         # NO consultar aquí al gpu-worker — /health se pollea mucho.
         "texture_pipeline": "lazy",
         "cache_total_bytes": cache_total,

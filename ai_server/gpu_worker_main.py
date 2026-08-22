@@ -164,7 +164,7 @@ app.include_router(gpu_generation_router)
 @app.get("/health")
 async def health():
     """Estado del worker. `model_backend` lo consume el /backend_status de
-    narrative-llm (agregación best-effort) — el shape del panel de Godot no
+    narrative-llm (agregación best-effort) — el shape de la respuesta no
     cambia con la extracción."""
     if deps.model_gen and getattr(deps.model_gen, "_meshy", None):
         model_backend = "meshy"

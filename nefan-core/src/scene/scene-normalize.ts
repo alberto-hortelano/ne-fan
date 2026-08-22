@@ -6,7 +6,7 @@
  *  coordinates in metres (`dimensions` + `objects[]`/`npcs[]` with
  *  `position`/`scale`). `formatDToWorld` is the single place that bridges the two
  *  so the logic does not live inside a specific client (CLAUDE.md: "lógica en
- *  nefan-core, Godot/HTML solo visual").
+ *  nefan-core, clientes que solo pintan").
  *
  *  Fail-loud: a malformed Format D entity throws rather than being silently
  *  dropped. A payload that is NOT Format D is returned verbatim (already-resolved

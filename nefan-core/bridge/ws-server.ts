@@ -46,9 +46,9 @@ const STATE_HTTP_PORT = Number(process.env.NEFAN_STATE_HTTP_PORT ?? CONFIG.ports
 const GAMES_DIR = process.env.NEFAN_GAMES_DIR ?? resolve(dataDir, "games");
 const STYLES_DIR = resolve(dataDir, "styles");
 
-// Saves live in a shared filesystem location accessible to every client
-// (HTML cannot read user:// from Godot): <repo>/saves, igual que start.sh
-// ($PROJECT_DIR/saves). Override with NEFAN_SAVES_DIR.
+// Saves live in a shared filesystem location accessible to every client:
+// <repo>/saves, igual que start.sh ($PROJECT_DIR/saves). Override with
+// NEFAN_SAVES_DIR.
 const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(dataDir, "..", "..", "saves");
 /** Destino del ai_server (S3 narrative-llm). NEFAN_AI_SERVER es el alias
  *  histórico y gana (lo usa el bench de labs/narrative documentado);

@@ -28,12 +28,6 @@
         ]
       },
       {
-        "dir": "godot/scripts",
-        "ext": [
-          ".gd"
-        ]
-      },
-      {
         "dir": "ai_server",
         "ext": [
           ".py"
@@ -78,7 +72,6 @@
       "dist",
       ".venv",
       "__pycache__",
-      ".godot",
       "archivo"
     ]
   },
@@ -228,12 +221,12 @@
       ]
     },
     {
-      "id": "godot-no-convierte-celdas-a-metros",
-      "desc": "Ningún .gd interpreta Format D crudo (terrain_legend / meters_per_cell)",
-      "why": "El bridge normaliza con formatDToWorld y Godot pinta world scene en metros. Si Godot porta la conversión hay dos formatos que mantener y divergirán.",
+      "id": "cliente-no-convierte-celdas-a-metros",
+      "desc": "El cliente no interpreta Format D crudo (terrain_legend / meters_per_cell)",
+      "why": "El bridge normaliza con formatDToWorld y el cliente pinta world scene en metros. Si el cliente porta la conversión hay dos formatos que mantener y divergirán, y la segunda copia se entera tarde de cada cambio del primero.",
       "severity": "error",
       "files": [
-        "godot/scripts/**/*.gd"
+        "nefan-html/src/**/*.ts"
       ],
       "text": {
         "pattern": "\\b(?:terrain_legend|meters_per_cell)\\b"
@@ -285,19 +278,6 @@
       }
     },
     {
-      "id": "godot-autoload-fail-loud",
-      "desc": "Los lookups de autoload usan NodeAccess.must_get_node, no get_node_or_null desnudo",
-      "why": "Un autoload ausente es un invariante roto, no una degradación esperable: debe dar push_error, no null silencioso.",
-      "severity": "warn",
-      "max": 11,
-      "files": [
-        "godot/scripts/**/*.gd"
-      ],
-      "text": {
-        "pattern": "get_node_or_null\\(\"/root/"
-      }
-    },
-    {
       "id": "game-ui-css-sin-literales-de-color",
       "desc": "Ningún literal de color en las reglas de componente de game-ui.css",
       "why": "Todo el color sale de los tokens --nf-* para que el tema de cada style pack funcione. El bloque que DECLARA los tokens sí lleva literales, por definición.",
@@ -313,7 +293,7 @@
     {
       "id": "solo-el-bridge-normaliza-la-escena",
       "desc": "El cliente 2D no llama a formatDToWorld por su cuenta",
-      "why": "El bridge normaliza en el wire; que el cliente vuelva a normalizar significa que acepta Format D crudo donde Godot aborta fail-loud. La asimetría se arregla o se documenta, no crece.",
+      "why": "El bridge normaliza en el wire. Que el cliente vuelva a normalizar significa que acepta Format D crudo, que es justo lo que prohíbe cliente-no-convierte-celdas-a-metros: dos caminos hasta la world scene divergen. La asimetría se arregla o se documenta, no crece.",
       "severity": "warn",
       "max": 2,
       "files": [
@@ -336,7 +316,6 @@
         "nefan-core/data/**/*.json",
         "nefan-core/data/**/*.md",
         "nefan-html/src/**/*.ts",
-        "godot/scripts/**/*.gd",
         "ai_server/**/*.py",
         "narrative-mcp/**/*.ts",
         "labs/**/*.ts",

@@ -1,4 +1,4 @@
-"""Narrativa: puente HTTP entre el bridge/Godot y el motor narrativo (MCP).
+"""Narrativa: puente HTTP entre el bridge y el motor narrativo (MCP).
 
 Endpoints movidos TAL CUAL desde main.py (el estado runtime viene de `deps`).
 """
@@ -113,8 +113,9 @@ async def report_player_choice(body: ReportPlayerChoiceRequest):
 
 @router.post("/notify_session")
 async def notify_session(body: NotifySessionRequest):
-    """Godot calls this when the player starts or resumes a narrative session.
-    The session metadata is propagated to Claude on the next bridge request."""
+    """The bridge calls this when the player starts or resumes a narrative
+    session. The session metadata is propagated to Claude on the next bridge
+    request."""
     if deps.llm_client is not None:
         deps.llm_client.set_session(body.session_id, body.game_id, body.is_resume)
     return {

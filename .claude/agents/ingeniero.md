@@ -34,9 +34,8 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
    es el que es. Cubre el caso inválido, que es donde vive el fail-loud.
    - Lógica compartida: `nefan-core/test/*.test.ts`. Es donde va todo lo que no sea pintar.
    - Contratos y schemas: zod real y fixtures de `data/contract/fixtures/`.
-   - Visual 3D: `python3 godot/tools/movement_test.py` con Godot bajo `xvfb-run` (**nunca**
-     `DISPLAY=:0`), y mira las capturas.
-   - Cliente 2D: `node qa/run.mjs` (arranca el stack sin créditos él solo).
+   - Cliente web: `node qa/run.mjs` (arranca el stack sin créditos él solo) y mira las
+     capturas que deja en `qa/capturas/`.
 4. **Ejerce el escenario de verdad** cuando el cambio es observable: arranca el preset que
    toque y compruébalo. Si no puedes (falta un servicio, requiere gasto), dilo explícitamente
    en vez de darlo por bueno. Nunca listes comandos para que los corra el usuario: los corres
@@ -44,8 +43,8 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
 
 ## Reglas de código
 
-- Fail-loud uniforme: `push_error`/`push_warning` en GDScript, `errors.push(...)` en TS de cliente, `narrative_status: error` en el bridge para cualquier `.catch()` que el cliente esté esperando, `HTTPException` (nunca `{"error": ...}` con 200) en FastAPI. Prohibido el catch vacío y el `return []` que oculta un fallo.
-- GDScript 4.6 con tipado estricto; `preload()` en vez de `class_name` para referencias cruzadas; descripciones de objetos y NPCs en español; unidades en metros.
+- Fail-loud uniforme: `errors.push(...)` en TS de cliente, `narrative_status: error` en el bridge para cualquier `.catch()` que el cliente esté esperando, `HTTPException` (nunca `{"error": ...}` con 200) en FastAPI. Prohibido el catch vacío y el `return []` que oculta un fallo.
+- Descripciones de objetos y NPCs en español; unidades en metros.
 - TS: `Result<T,E>` cuando "vacío" y "error" se confundirían al colapsarse.
 - Escribe como el código de alrededor: misma densidad de comentarios, mismos nombres, mismos idiomas.
 - Los tests que un cambio deja sin sentido **se borran** con el cambio y se menciona en el informe. No se borra cobertura viva por conveniencia. Los materiales de sesión (runs de labs, capturas) NO se borran sin permiso.

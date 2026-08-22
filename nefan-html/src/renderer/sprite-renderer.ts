@@ -1,7 +1,7 @@
 /** Loads pre-rendered Mixamo sprite sheets and serves the right frame for a
  * given (animation, facing direction, time) tuple.
  *
- * Sheet layout on disk (produced by tools/render_sprite_sheets.py):
+ * Sheet layout on disk (produced by tools/render-sprite-sheets/render.mjs):
  *   public/sprites/{model}/{anim}/{angle}/dir_{D}_frame_{F:03}.png
  *   public/sprites/{model}/{anim}/{angle}/meta.json
  *
@@ -11,28 +11,6 @@
  * the ErrorLog records the cause. The caller decides whether to surface it.
  */
 import { errors } from "../ui/error-log.js";
-
-/** Picado de cámara (grados) de cada set de sheets pre-renderizado — espejo
- *  de ANGLE_CAMERA en godot/scripts/dev/sprite_sheet_renderer.gd. La vertical
- *  de mundo se proyecta ×cos(pitch) en el frame; los renderers dividen por
- *  ese coseno para recuperar metros de MUNDO al dimensionar el sprite.
- *  (top_down queda fuera a propósito: cos 90° = 0 — ese set no se dibuja como
- *  personaje de mundo.) */
-export const ANGLE_PITCH_DEG: Record<string, number> = {
-  isometric_30: 30,
-  isometric_45: 45,
-  frontal: 0,
-  frontal_8: 8,
-};
-
-/** cos(pitch) del set — fail-loud ante un ángulo fuera de la tabla. */
-export function spritePitchCos(angle: string): number {
-  const deg = ANGLE_PITCH_DEG[angle];
-  if (deg === undefined) {
-    throw new Error(`spritePitchCos: ángulo de sprite desconocido "${angle}"`);
-  }
-  return Math.cos((deg * Math.PI) / 180);
-}
 
 /** A frame that hasn't decoded yet. Distinct from `null`, which would mean
  *  "no such frame exists" — load failures throw rather than return null. */
@@ -297,8 +275,8 @@ export class SpriteRenderer {
   }
 
   /** Map a forward XZ vector to one of `dirCount` discrete facings. Convention
-   * matches sprite_sheet_renderer.gd: dir 0 corresponds to yaw=0, which is the
-   * model's default Mixamo facing (+Z in Godot's left-handed Y-up frame). */
+   * matches the renderer that produces the sheets: dir 0 corresponds to yaw=0,
+   * which is the model's default Mixamo facing (+Z in a Y-up frame). */
   pickDirection(forwardX: number, forwardZ: number, dirCount: number): number {
     if (dirCount <= 0) return 0;
     const yaw = Math.atan2(forwardX, forwardZ);

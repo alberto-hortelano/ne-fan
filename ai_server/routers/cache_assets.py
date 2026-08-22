@@ -2,8 +2,8 @@
 
 El resto del fichero histórico —blobs /cache/*, /assets*, prune, manifest—
 vive ahora en el asset-store (nefan-core/services/asset-store/, :8767);
-routers/asset_proxy.py proxya esas rutas para los clientes no migrados
-(Godot). /dev/api_cache se queda: es estado del ADAPTADOR de APIs de pago
+routers/asset_proxy.py proxya esas rutas para los clientes no migrados.
+/dev/api_cache se queda: es estado del ADAPTADOR de APIs de pago
 (remote-gen, F4), no del almacén de assets.
 """
 

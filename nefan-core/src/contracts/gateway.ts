@@ -1,4 +1,4 @@
-/** S1 · game-gateway — WebSocket :9877 (protocolo con los clientes Godot/HTML).
+/** S1 · game-gateway — WebSocket :9877 (protocolo con el cliente web).
  *
  * El contrato YA existe y es la fuente: `src/protocol/messages.ts`
  * (`ClientMessage`, 19 variantes cliente→gateway; `ServerMessage`, 10
@@ -15,8 +15,7 @@
  *    suscritos, y la suscripción se hace EXCLUSIVAMENTE al procesar
  *    start_session/resume_session.
  *  - La escena viaja SIEMPRE normalizada a world scene (`formatDToWorld`);
- *    lo que se persiste es Format D crudo. Godot hace push_error ante un
- *    Format D sin normalizar.
+ *    lo que se persiste es Format D crudo.
  *
  * El hot loop (mensaje `input` → tick de GameSimulation → `state_update`) es
  * la razón por la que la simulación NO es un microservicio: vive in-process

@@ -1,6 +1,6 @@
 /** Apply narrative consequences to NarrativeState and emit renderer-agnostic
- * effects. Canonical implementation — Godot materializes the resulting
- * effects via señales (narrative_spawn/narrative_dialogue/...). */
+ * effects. Canonical implementation — the client materializes the resulting
+ * effects (narrative_spawn/narrative_dialogue/...). */
 import type { NarrativeState } from "./narrative-state.js";
 import { resolveSpeaker } from "./speaker-resolve.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
