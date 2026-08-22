@@ -19,7 +19,7 @@ import { ellipsePoints, groundFeaturePrims } from "./ground-prims.js";
 import type { GroundFeature } from "./ground.js";
 import type { GateVolume, Volume } from "./volumes.js";
 import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
-import { volumePartsForTile } from "../greybox/volume-prims.js";
+import { volumePrimsForTile } from "../greybox/volume-prims.js";
 
 /** Versión del builder: viaja dentro del spec. */
 export const TILE_GREYBOX_VERSION = 1;
@@ -146,9 +146,7 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
   // ── Volúmenes, tramo a tramo y en el orden declarado. ────────────────────
   const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
   for (const v of plan.volumes) {
-    for (const part of volumePartsForTile(v, gates)) {
-      primitives.push(...part.prims);
-    }
+    primitives.push(...volumePrimsForTile(v, gates));
   }
 
   // ── Luces FIJAS: sol desde el sur(-oeste) — cara sur lit / este en sombra

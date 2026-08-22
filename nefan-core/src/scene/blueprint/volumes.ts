@@ -225,8 +225,8 @@ export const PropSchema = z
 /** Geometría LIBRE: un contorno poligonal arbitrario extruido a una altura.
  *  La escotilla para lo que ningún preset expresa (el arco de un muro de torre
  *  derruida, un ala en L, una plataforma irregular). El greybox lo extruye y la
- *  imagen IA lo repinta; el modelo declara `solid`/`tall` (no se infieren de una
- *  forma cualquiera). Curvas: muestrear en puntos (semicírculo ≈ 8-12). */
+ *  imagen IA lo repinta; el modelo declara `solid` (no se infiere de una forma
+ *  cualquiera). Curvas: muestrear en puntos (semicírculo ≈ 8-12). */
 export const PrismSchema = z
   .object({
     ...base,
@@ -237,8 +237,6 @@ export const PrismSchema = z
     h: z.number().positive().max(24),
     /** Colisiona (default true); false = decorativo atravesable. */
     solid: z.boolean().optional(),
-    /** Se dibuja sobre quien esté detrás (default true); false = plano bajo. */
-    tall: z.boolean().optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     surface_desc: surfaceDesc.optional(),
     surface_ref: surfaceRef.optional(),
@@ -312,8 +310,6 @@ export const CustomSchema = z
     angle: angle.optional(),
     parts: z.array(CustomPartSchema).min(1).max(24),
     solid: z.boolean().optional(),
-    /** Se dibuja sobre quien esté detrás; default: altura máxima > 4 celdas. */
-    tall: z.boolean().optional(),
   })
   .strict();
 

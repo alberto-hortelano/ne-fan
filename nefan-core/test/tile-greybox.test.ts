@@ -7,7 +7,7 @@ import {
   type TileGreyboxPlan,
 } from "../src/scene/blueprint/greybox.js";
 import { canonicalGreyboxJson } from "../src/scene/greybox/common.js";
-import { volumePartsForTile } from "../src/scene/greybox/volume-prims.js";
+import { volumePrimsForTile } from "../src/scene/greybox/volume-prims.js";
 import type { GateVolume } from "../src/scene/blueprint/volumes.js";
 
 function makePlan(): TileGreyboxPlan {
@@ -51,7 +51,7 @@ describe("buildTileGreyboxSpec", () => {
     const plan = makePlan();
     const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
     for (const v of plan.volumes) {
-      const prims = volumePartsForTile(v, gates).flatMap((p) => p.prims);
+      const prims = volumePrimsForTile(v, gates);
       assert.ok(prims.length > 0, `${v.id} sin prims`);
       for (const p of prims) assert.equal(p.volId, `vol_${v.id}`, `${v.id}: ${p.shape}`);
     }
@@ -61,21 +61,21 @@ describe("buildTileGreyboxSpec", () => {
     const plan = makePlan();
     const muralla = plan.volumes.find((v) => v.id === "muralla")!;
     const gates = plan.volumes.filter((v): v is GateVolume => v.type === "gate");
-    const parts = volumePartsForTile(muralla, gates);
+    const prims = volumePrimsForTile(muralla, gates);
     // 128 celdas de muro ⇒ se trocea (el troceado es lo que permite saltarse
-    // el vano; un muro de una pieza lo taparía).
-    assert.ok(parts.length >= 8, `muralla en ${parts.length} tramos`);
-    for (const part of parts) {
-      for (const p of part.prims) {
-        const c = Math.abs(Math.cos(p.rotY ?? 0));
-        const s = Math.abs(Math.sin(p.rotY ?? 0));
-        const eu = (c * p.size[0] + s * (p.size[2] ?? p.size[0])) / 2;
-        const [minU, maxU] = [p.pos[0] - eu, p.pos[0] + eu];
-        assert.ok(
-          maxU <= 64 - 4.5 + 0.01 || minU >= 64 + 4.5 - 0.01,
-          `tramo ${part.part} invade el vano [${minU}, ${maxU}]`,
-        );
-      }
+    // el vano; un muro de una pieza lo taparía). Los tramos son las cajas a
+    // la altura del muro (h:7); las de 1×1 son merlones.
+    const tramos = prims.filter((p) => p.shape === "box" && p.size[1] === 7);
+    assert.ok(tramos.length >= 8, `muralla en ${tramos.length} tramos`);
+    for (const [i, p] of prims.entries()) {
+      const c = Math.abs(Math.cos(p.rotY ?? 0));
+      const s = Math.abs(Math.sin(p.rotY ?? 0));
+      const eu = (c * p.size[0] + s * (p.size[2] ?? p.size[0])) / 2;
+      const [minU, maxU] = [p.pos[0] - eu, p.pos[0] + eu];
+      assert.ok(
+        maxU <= 64 - 4.5 + 0.01 || minU >= 64 + 4.5 - 0.01,
+        `prim ${i} (${p.shape}) invade el vano [${minU}, ${maxU}]`,
+      );
     }
   });
 

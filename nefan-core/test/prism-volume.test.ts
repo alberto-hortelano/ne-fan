@@ -1,13 +1,13 @@
 /** Volumen `prism` — geometría libre (contorno poligonal + altura): schema,
- *  colisión (relleno del polígono), clasificación solid/tall declarada, y
- *  render como primitiva `polygon` en el builder del tile. */
+ *  colisión (relleno del polígono, gobernada por `solid`) y render como
+ *  primitiva `polygon` en el builder del tile. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseVolumes, volumeCollisionGrid } from "../src/scene/blueprint/index.js";
 import { createTerrainCollider } from "../src/scene/terrain-collision.js";
 import { tileWorldRect } from "../src/scene/tile.js";
-import { classifyVolume, volumePartsForTile } from "../src/scene/greybox/volume-prims.js";
+import { volumePrimsForTile } from "../src/scene/greybox/volume-prims.js";
 import type { Volume } from "../src/scene/blueprint/volumes.js";
 
 /** Cuadrado 10..20 en celdas, altura 5 — el prism de referencia. */
@@ -32,6 +32,17 @@ describe("prism — schema", () => {
     const noH = parseVolumes([{ id: "x", label: "x", type: "prism", points: [[1, 1], [2, 1], [2, 2]] }]);
     assert.equal(noH.ok, false);
   });
+
+  // `tall` era del occluder de la vista oblicua: decía si el volumen se
+  // dibujaba encima de quien estuviera detrás. Retirado con ella — la altura
+  // la lleva `h` y nadie interpretaba el campo. El candado es el .strict()
+  // del zod, no un grep: "tall" es palabra corriente en inglés (el propio
+  // prompt dice "a character is ~3.6 cells tall").
+  it("rechaza `tall`, retirado con la vista oblicua", () => {
+    const conTall = parseVolumes([squarePrism({ tall: false })]);
+    assert.equal(conTall.ok, false, "un prism con `tall` tiene que fallar");
+    assert.match(!conTall.ok ? conTall.error : "", /tall/);
+  });
 });
 
 describe("prism — colisión (relleno del polígono)", () => {
@@ -50,28 +61,14 @@ describe("prism — colisión (relleno del polígono)", () => {
   });
 });
 
-describe("prism — classifyVolume (física declarada)", () => {
-  it("default sólido y alto; respeta solid:false y tall:false", () => {
-    assert.deepEqual(classifyVolume(squarePrism()), { solid: true, tall: true });
-    assert.deepEqual(classifyVolume(squarePrism({ solid: false })), { solid: false, tall: true });
-    assert.deepEqual(classifyVolume(squarePrism({ tall: false })), { solid: true, tall: false });
-  });
-});
-
 describe("prism — render del tile (primitiva polygon)", () => {
-  it("emite una parte con un prim `polygon` de esos puntos y altura h", () => {
-    const parts = volumePartsForTile(squarePrism(), []);
-    assert.equal(parts.length, 1);
-    const polys = parts[0].prims.filter((p) => p.shape === "polygon");
+  it("emite un único prim `polygon` con esos puntos y altura h", () => {
+    const prims = volumePrimsForTile(squarePrism(), []);
+    assert.equal(prims.length, 1);
+    const polys = prims.filter((p) => p.shape === "polygon");
     assert.equal(polys.length, 1);
     assert.equal(polys[0].size[0], 5, "grosor de extrusión = h");
     assert.deepEqual(polys[0].points, [[10, 10], [20, 10], [20, 20], [10, 20]]);
-    // huella = AABB del contorno; ocluye por default (tall).
-    assert.deepEqual(parts[0].footprint, [10, 10, 20, 20]);
-    assert.equal(parts[0].occludes, true);
-  });
-
-  it("tall:false no ocluye", () => {
-    assert.equal(volumePartsForTile(squarePrism({ tall: false }), [])[0].occludes, false);
+    assert.equal(polys[0].volId, "vol_p1");
   });
 });

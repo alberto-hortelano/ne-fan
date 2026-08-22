@@ -9,7 +9,7 @@ import { buildFpsTileSpec } from "../src/scene/blueprint/fps-spec.js";
 import { volumeCollisionGrid } from "../src/scene/blueprint/collision.js";
 import { volumeFootprint } from "../src/scene/blueprint/footprint.js";
 import { parseVolumes, type CustomVolume } from "../src/scene/blueprint/volumes.js";
-import { volumePartsForTile, classifyVolume, customPartTop } from "../src/scene/greybox/volume-prims.js";
+import { volumePrimsForTile, customPartTop } from "../src/scene/greybox/volume-prims.js";
 import { buildLayout } from "../src/scene/greybox/surfaces.js";
 import { TILE_CELLS, TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 
@@ -56,14 +56,19 @@ describe("custom: schema", () => {
     ]);
     assert.equal(desconocido.ok, false);
   });
+
+  // Ver prism-volume.test.ts: `tall` se retiró con el occluder de la oblicua.
+  it("rechaza `tall`, retirado con la vista oblicua", () => {
+    const conTall = parseVolumes([{ ...CARRETA, id: "t", tall: true }]);
+    assert.equal(conTall.ok, false, "un custom con `tall` tiene que fallar");
+    assert.match(!conTall.ok ? conTall.error : "", /tall/);
+  });
 });
 
 describe("custom: prims", () => {
   it("una prim POR pieza y EN ORDEN, con volId, rot compuesta y scale", () => {
     const v = carreta();
-    const parts = volumePartsForTile(v, []);
-    assert.equal(parts.length, 1);
-    const prims = parts[0].prims;
+    const prims = volumePrimsForTile(v, []);
     assert.equal(prims.length, 4, "una prim por pieza");
     assert.ok(prims.every((p) => p.volId === "vol_carreta"));
     assert.equal(prims[0].shape, "box");
@@ -84,7 +89,7 @@ describe("custom: prims", () => {
 
   it("pos.y = base del AABB tras rotación: rueda a y:0 apoya tangente (lift=r)", () => {
     const v = carreta();
-    const prims = volumePartsForTile(v, [])[0].prims;
+    const prims = volumePrimsForTile(v, []);
     // Rueda rotX 90° declarada a y:0 → el builder la levanta su radio (0.9)
     // para que el AABB apoye en el suelo (el renderer pivota en el origen).
     assert.ok(Math.abs(prims[1].pos[1] - 0.9) < 1e-3, `rueda: ${prims[1].pos[1]}`);
@@ -106,12 +111,6 @@ describe("custom: prims", () => {
     // solid:false → sin colisión.
     const pasable = { ...v, solid: false };
     assert.equal(volumeCollisionGrid([pasable], tileWorldRect(0, 0)), null);
-    assert.equal(classifyVolume(pasable).solid, false);
-    // tall derivado del AABB real: la carreta topa a ~3.7 celdas (1.8 m) —
-    // el toldo tumbado aporta su diámetro, no su longitud → NO es alta.
-    assert.equal(classifyVolume(v).tall, false);
-    // tall explícito del motor sigue mandando.
-    assert.equal(classifyVolume({ ...v, tall: true }).tall, true);
   });
 
   it("fps: pieza con desc → celda hero propia (hero_<vol>_p<i>); sin desc → clay", () => {
