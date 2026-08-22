@@ -10,7 +10,6 @@ function world(over: Partial<NarrativeWorldState>): NarrativeWorldState {
   return {
     name: "",
     atmosphere: "",
-    view: "proscenium",
     style_token: "",
     active_scene_id: "",
     description: "",

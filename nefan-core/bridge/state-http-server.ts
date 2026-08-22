@@ -516,8 +516,8 @@ async function handle(
 
   // ── Guía de sistemas de UI (tool MCP ui_doc_get) ──
   // Documento canónico (data/contract/prompts/ui_systems.md) + el estado
-  // ACTIVO de la sesión: qué vista/modo/combate están congelados y qué
-  // plugins corren — el motor adapta su salida a lo activo, nunca lo cambia.
+  // ACTIVO de la sesión: qué modo/combate están congelados y qué plugins
+  // corren — el motor adapta su salida a lo activo, nunca lo cambia.
   if (method === "GET" && path === "/ui_doc") {
     if (!narrative.session_id) {
       return notFound("no active session — ui_doc describes a running session's UI");
@@ -525,7 +525,6 @@ async function handle(
     try {
       return ok({
         ui_state: {
-          view: narrative.world.view || "overworld",
           render_mode: narrative.world.render_mode || "image",
           combat_system: narrative.world.combat_system || "standard",
           style_id: narrative.world.style_id,

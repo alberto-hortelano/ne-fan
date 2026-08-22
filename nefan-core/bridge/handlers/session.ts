@@ -18,15 +18,11 @@ import {
   type UiTheme,
   styleCharacterRefs,
   styleCompatibleWithGame,
-  styleRefsForView,
-  styleViews,
+  styleFaceRefs,
   loadWorldDoc,
-  WORLD_VIEWS,
   type StyleManifest,
-  type WorldView,
 } from "../../src/games/loader.js";
 import {
-  branchForView,
   gameGenerationStatus,
   loadWorldSnapshot,
   type WorldSnapshot,
@@ -61,15 +57,6 @@ import type {
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
 
-/** El plató proscenio se retiró entero (nefan-core, contrato, motor y los dos
- *  clientes). `WORLD_VIEWS` sigue nombrándolo mientras sea el vocabulario de
- *  las carpetas de los style packs, así que el rechazo es explícito: una
- *  sesión que pida esa vista falla diciéndolo en vez de servir tiles como si
- *  nada. Muere con `world.view`. */
-const RETIRED_PROSCENIUM =
-  'la vista "proscenio" (plató) se retiró: el mundo es continuo y sus escenas son tiles. ' +
-  "Empieza una partida nueva en mundo abierto o primera persona.";
-
 /** Catálogo de refs de estilo que ve el motor narrativo (`world.style_refs`):
  *  las de personaje (una por NPC) y las temáticas de CARA, cada una con su
  *  descripción en español. Se recalcula del manifest en start_session Y
@@ -79,10 +66,7 @@ const RETIRED_PROSCENIUM =
  *  NO hay catálogo de ESCENA: la `style_ref` de escena elegía la lámina que
  *  guiaba el repintado del tile y murió con él. La primera persona pinta con
  *  style_token + lámina de superficies + refs de cara. */
-export function styleRefCatalog(
-  style: StyleManifest,
-  view: WorldView,
-): {
+export function styleRefCatalog(style: StyleManifest): {
   characters: Array<{ id: string; description: string }>;
   fps_faces?: Array<{ id: string; description: string }>;
 } {
@@ -97,10 +81,8 @@ export function styleRefCatalog(
   // cara de volumen (`surface_ref`) para el atlas de superficies. Omitido
   // cuando el pack no declara ninguna (el pre-flight trata la ausencia como
   // "sin catálogo").
-  if (view === "overworld" || view === "fps") {
-    const faces = styleRefsForView(style, "fps").map(entry);
-    if (faces.length > 0) out.fps_faces = faces;
-  }
+  const faces = styleFaceRefs(style).map(entry);
+  if (faces.length > 0) out.fps_faces = faces;
   return out;
 }
 
@@ -296,7 +278,6 @@ export async function handleStartSession(
   let uiTheme: UiTheme;
   let combatId: string;
   let npcBehaviorId: string | undefined;
-  let view: string;
   try {
     const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
     // Estilo: el elegido por el jugador o el por defecto del juego. Un
@@ -315,30 +296,9 @@ export async function handleStartSession(
     if (characterMode !== "image" && characterMode !== "vector") {
       throw new Error(`modo de personajes desconocido "${characterMode}" (esperaba image|vector)`);
     }
-    // Vista del mundo: la elegida en el título (msg.view), con game.json como
-    // default del mundo. Queda CONGELADA en el save (como el estilo).
-    view = msg.view || meta.view || "overworld";
-    if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
-      throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
-    }
-    // El plató proscenio se retiró entero (motor, contrato y clientes): una
-    // partida que lo pida falla diciéndolo, nunca degrada a tiles en silencio.
-    if (view === "proscenium") {
-      throw new Error(RETIRED_PROSCENIUM);
-    }
-    // El estilo debe servir a la vista elegida: sus refs declaradas derivan
-    // las vistas compatibles (styleViews). Incompatible = aborta, no degrada.
-    const compatibleViews = styleViews(style);
-    if (!(compatibleViews as readonly string[]).includes(view)) {
-      throw new Error(
-        `estilo "${style.style_id}" sin referencias para la vista "${view}"` +
-          ` (declara: ${compatibleViews.join("|") || "ninguna"})`,
-      );
-    }
     // Compatibilidad TEMÁTICA estilo↔juego (tags): warning, no abort — el
     // matching es heurístico sobre vocabulario libre y el selector del
-    // título ya filtra; un typo en un tag no debe brickear una partida. La
-    // incompatibilidad de vista (estructural) sí aborta, arriba.
+    // título ya filtra; un typo en un tag no debe brickear una partida.
     if (!styleCompatibleWithGame(style.tags, meta.tags)) {
       console.warn(
         `Bridge: estilo "${style.style_id}" (tags: ${style.tags.join(",")}) no casa ` +
@@ -375,10 +335,9 @@ export async function handleStartSession(
       render_mode: renderMode,
       character_mode: characterMode,
       combat_system: combatId,
-      view,
-      // Catálogo de refs elegibles por el motor (`style_ref` por escena):
-      // las de la vista activa + personajes, con sus descripciones.
-      style_refs: styleRefCatalog(style, view as WorldView),
+      // Catálogo de refs elegibles por el motor: personajes (`style_ref` por
+      // NPC) y caras (`surface_ref` por volumen), con sus descripciones.
+      style_refs: styleRefCatalog(style),
     });
     uiTheme = resolveUiTheme(style.ui);
   } catch (err) {
@@ -429,14 +388,14 @@ export async function handleStartSession(
   // sirve contenido dudoso ni se deja al jugador sin partida).
   let snapshot: WorldSnapshot | null = null;
   try {
-    snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, branchForView(view), worldDocHash);
+    snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, worldDocHash);
   } catch (err) {
     console.error(`Bridge: world snapshot ilegible para "${msg.gameId}":`, err);
   }
   if (snapshot) {
     console.log(
-      `Bridge: world snapshot HIT para "${msg.gameId}" (${snapshot.branch}, ` +
-        `${Object.keys(snapshot.scenes).length} escenas, generado ${snapshot.generated_at}) ` +
+      `Bridge: world snapshot HIT para "${msg.gameId}" ` +
+        `(${Object.keys(snapshot.scenes).length} escenas, generado ${snapshot.generated_at}) ` +
         `— bootstrap sin motor`,
     );
     await replayWorldSnapshot(ctx, snapshot);
@@ -523,29 +482,6 @@ export async function handleResumeSession(
     });
     return;
   }
-  // Vista congelada en el save (saves previos sin campo → overworld). Un id
-  // fuera del enum aborta el resume — fail-loud, como el combate.
-  const savedView = ctx.narrative.world.view || "overworld";
-  if (!(WORLD_VIEWS as readonly string[]).includes(savedView)) {
-    ctx.send(ws, {
-      type: "session_started",
-      requestId: msg.requestId,
-      ok: false,
-      error: `view_unknown: "${savedView}" (esperaba ${WORLD_VIEWS.join("|")})`,
-    });
-    return;
-  }
-  // Save congelado en el plató: no hay a dónde degradar (sus escenas no son
-  // tiles). Se rechaza nombrando la vista retirada, como en el cliente.
-  if (savedView === "proscenium") {
-    ctx.send(ws, {
-      type: "session_started",
-      requestId: msg.requestId,
-      ok: false,
-      error: `view_retired: ${RETIRED_PROSCENIUM}`,
-    });
-    return;
-  }
   // Sistema de combate congelado en el save (saves previos sin campo →
   // estándar). Un id fuera del registro aborta el resume — fail-loud, igual
   // que un plugin narrativo desaparecido.
@@ -591,7 +527,7 @@ export async function handleResumeSession(
   let uiTheme: UiTheme = BASE_UI_THEME;
   try {
     const style = loadStyleManifest(ctx.stylesDir, ctx.narrative.world.style_id);
-    ctx.narrative.setStyleRefs(styleRefCatalog(style, savedView as WorldView));
+    ctx.narrative.setStyleRefs(styleRefCatalog(style));
     uiTheme = resolveUiTheme(style.ui);
   } catch (err) {
     console.warn(

@@ -1,19 +1,14 @@
 /** Batch "aplicar estilo a un juego" — genera y almacena por adelantado los
- *  assets estilizados de (juego, vista, estilo) sobre el snapshot de mundo
+ *  assets estilizados de (juego, estilo) sobre el snapshot de mundo
  *  pre-generado, con estimación de coste ANTES de gastar (patrón
  *  styles/upload → complete) y registro persistente al terminar.
  *
  *  Corre en el CLIENTE contra remote-gen (:8768) porque reutiliza las claves
  *  de caché naturales del juego: las celdas del atlas se computan con el
- *  MISMO código puro que la vista fps (buildFpsTileSpec + buildLayout) y los
+ *  MISMO código puro que la partida (buildFpsTileSpec + buildLayout) y los
  *  prompts/roles de skin con las MISMAS reglas que main.ts — lo pre-pintado
  *  aquí es cache-hit exacto en partida. Idempotente: re-ejecutar tras un
- *  corte continúa por cache-hits ($0 en lo ya pagado).
- *
- *  Alcance v1 (REPORTADO en notes, nunca omitido en silencio): el repintado
- *  de tiles oblicuos y platós proscenio NO se pre-genera — su plano base es
- *  el clay WebGL del renderer en vivo y su clave depende de los vecinos ya
- *  pintados al explorar. Esos se pintan lazy en partida, como hoy. */
+ *  corte continúa por cache-hits ($0 en lo ya pagado). */
 import type {
   GenerateSurfaceAtlasResponse,
   StylesMissingResponse,
@@ -48,15 +43,12 @@ const ATLAS_PAGE_EST_USD = 0.15;
  *  2 direcciones. */
 const SKIN_IMAGE_CALLS = 1 + 8 + 4 + 4;
 const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
-/** Set de sprites por vista — DEBE coincidir con el `worldAngle` de main.ts
- *  ("frontal_8") o el skin pre-generado no es el que pedirá la partida. La
- *  tabla sobrevive a las dos vistas retiradas porque el vocabulario `view`
- *  sigue vivo en el contrato del bridge; el título ya solo pide "fps". */
-const ANGLE_BY_VIEW: Record<string, string> = {
-  overworld: "isometric_30",
-  proscenium: "frontal_8",
-  fps: "frontal_8",
-};
+/** Ángulo del set de sprites. DEBE ser el mismo literal que el `worldAngle`
+ *  de main.ts o el skin pre-generado no es el que pedirá la partida: el
+ *  ángulo entra en la clave de caché del skin, así que cambiarlo repaga todo
+ *  el arte de personaje ya generado. Era una tabla por vista; con una sola
+ *  vista es la constante que esa tabla ya devolvía. */
+const SKIN_ANGLE = "frontal_8";
 
 export interface StyleApplyBlock {
   id: "pack" | "atlas" | "skins";
@@ -71,7 +63,6 @@ export interface StyleApplyBlock {
 
 export interface StyleApplyPlan {
   gameId: string;
-  view: string;
   styleId: string;
   worldDocHash: string;
   blocks: StyleApplyBlock[];
@@ -114,16 +105,16 @@ export class StyleApplyController {
   ) {}
 
   /** Fase 1 — plan con coste, SIN gastar: snapshot del bridge, celdas de
-   *  atlas exactas (vista fps), roster de skins y pack faltante. Lanza con
+   *  atlas exactas, roster de skins y pack faltante. Lanza con
    *  motivo si el snapshot no está vigente (generar el mundo primero). */
-  async plan(gameId: string, view: string, styleId: string): Promise<StyleApplyPlan> {
-    const snap = await this.narrative.getWorldSnapshot(gameId, view);
+  async plan(gameId: string, styleId: string): Promise<StyleApplyPlan> {
+    const snap = await this.narrative.getWorldSnapshot(gameId);
     if (!snap.ok) throw new Error(snap.error ?? "get_world_snapshot failed");
     if (!snap.snapshot) {
       throw new Error(
         snap.status === "stale"
           ? "el mundo generado quedó obsoleto (world.md cambió) — regenera el mundo primero"
-          : "este juego no tiene el mundo generado para esta vista — genera el mundo primero",
+          : "este juego no tiene el mundo generado — genera el mundo primero",
       );
     }
     const snapshot = snap.snapshot as { world_doc_hash: string; scenes: Record<string, SnapshotScene> };
@@ -135,11 +126,11 @@ export class StyleApplyController {
     if (!missRes.ok) throw new Error(`/styles/${styleId}/missing HTTP ${missRes.status}`);
     const pack = (await missRes.json()) as StylesMissingResponse;
 
-    // ── Celdas del atlas fps: mismas funciones puras que la vista en vivo ──
+    // ── Celdas del atlas: mismas funciones puras que la vista en vivo ──
     let cells: SurfaceCellSpec[] = [];
-    let missingCells = 0;
+    let missingCells: number;
     let sceneDescription = "";
-    if (view === "fps") {
+    {
       const seen = new Set<string>();
       for (const [sceneId, scene] of scenes) {
         if (scene.tile === undefined) continue;
@@ -213,12 +204,6 @@ export class StyleApplyController {
         return k === c.key ? c : { ...c, key: k };
       });
       missingCells = await this.resolveMissing(cells, sceneDescription, styleId);
-    } else {
-      notes.push(
-        view === "overworld"
-          ? "Repintado de tiles oblicuos: se pinta al explorar (su plano base es el render en vivo)."
-          : "Repintado de platós: se pinta al entrar en cada escena (su plano base es el render en vivo).",
-      );
     }
 
     // ── Skins: mismas reglas de prompt/rol que la partida (main.ts) ──
@@ -258,20 +243,15 @@ export class StyleApplyController {
         exact: true,
         selected: pack.missing.length > 0,
       },
-      ...(view === "fps"
-        ? [
-            {
-              id: "atlas" as const,
-              label: `Librería de superficies fps (${cells.length} celdas, ${missingCells} por pintar)`,
-              missing: missingCells,
-              estCostUsd:
-                Math.round(Math.ceil(missingCells / CELLS_PER_PAGE) * ATLAS_PAGE_EST_USD * 100) /
-                100,
-              exact: false,
-              selected: missingCells > 0,
-            },
-          ]
-        : []),
+      {
+        id: "atlas",
+        label: `Librería de superficies (${cells.length} celdas, ${missingCells} por pintar)`,
+        missing: missingCells,
+        estCostUsd:
+          Math.round(Math.ceil(missingCells / CELLS_PER_PAGE) * ATLAS_PAGE_EST_USD * 100) / 100,
+        exact: false,
+        selected: missingCells > 0,
+      },
       {
         id: "skins",
         label: `Skins de personaje (${skins.length} personajes × ${AUTO_SKIN_ANIMS.length} anims)`,
@@ -284,7 +264,6 @@ export class StyleApplyController {
     ];
     return {
       gameId,
-      view,
       styleId,
       worldDocHash: snapshot.world_doc_hash,
       blocks,
@@ -362,7 +341,6 @@ export class StyleApplyController {
     }
 
     if (selected.has("skins")) {
-      const angle = ANGLE_BY_VIEW[plan.view] ?? "isometric_30";
       let done = 0;
       const total = plan.skins.length * AUTO_SKIN_ANIMS.length;
       for (const skin of plan.skins) {
@@ -376,7 +354,7 @@ export class StyleApplyController {
               body: JSON.stringify({
                 model: "y_bot",
                 anim,
-                angle,
+                angle: SKIN_ANGLE,
                 prompt: skin.prompt,
                 style_id: plan.styleId,
                 ...(skin.role ? { style_role: skin.role } : {}),
@@ -410,7 +388,7 @@ export class StyleApplyController {
         // vuelven a ser podables.
         await fetch(
           `${this.urls.assets}/assets/pin/${encodeURIComponent(
-            styleApplicationPinRef(plan.gameId, plan.view, plan.styleId),
+            styleApplicationPinRef(plan.gameId, plan.styleId),
           )}`,
           { method: "DELETE" },
         ).catch(() => undefined);
@@ -418,7 +396,7 @@ export class StyleApplyController {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ref: styleApplicationPinRef(plan.gameId, plan.view, plan.styleId),
+            ref: styleApplicationPinRef(plan.gameId, plan.styleId),
             hashes: [...pinnedHashes],
           }),
         });
@@ -433,7 +411,6 @@ export class StyleApplyController {
     const rec = await this.narrative.recordStyleApplication({
       schema_version: STYLE_APPLICATION_SCHEMA_VERSION,
       game_id: plan.gameId,
-      view: plan.view,
       style_id: plan.styleId,
       world_doc_hash: plan.worldDocHash,
       applied_at: new Date().toISOString(),

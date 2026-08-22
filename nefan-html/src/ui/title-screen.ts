@@ -21,7 +21,6 @@ import { CONFIG } from "@nefan-core/src/config.js";
 import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,
-  type WorldView,
 } from "@nefan-core/src/games/style-refs.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
@@ -46,9 +45,6 @@ export type TitleAction =
       /** Modo de imagen de los PERSONAJES (skins IA vs base y_bot),
        *  independiente de los escenarios. */
       characterMode: "image" | "vector";
-      /** Vista del mundo elegida (game.json solo aporta el default).
-       *  Congelada en la sesión como el estilo. */
-      view: WorldView;
       appearance: { model_id: string; skin_path: string };
     };
 
@@ -63,9 +59,10 @@ const AI_SERVER_HTTP = serviceUrl("remote-gen");
 /** Vistas de destino de una imagen de estilo en la UI de subida. La vista
  *  de cada ref es LIBRE (el contenido lo describe el usuario); "characters"
  *  agrupa los model sheets compartidos entre vistas. */
-const UPLOAD_VIEW_LABELS: Array<{ id: string; label: string }> = [
-  { id: "overworld", label: "Mundo (vista cenital)" },
-  { id: "fps", label: "Primera persona" },
+/** Carpetas del pack a las que puede ir una imagen subida. NO son vistas (el
+ *  juego tiene una sola): son el ROL del contenido dentro del pack. */
+const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
+  { id: "fps", label: "Superficie / cara del mundo" },
   { id: "characters", label: "Personaje (model sheet)" },
 ];
 
@@ -156,10 +153,10 @@ export class TitleScreen {
           }
           #title-screen #ts-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
           #title-screen #ts-worlds { max-height: 38vh !important; }
-          #title-screen #ts-view, #title-screen #ts-rendermode, #title-screen #ts-charmode {
+          #title-screen #ts-rendermode, #title-screen #ts-charmode {
             flex-wrap: wrap !important;
           }
-          #title-screen #ts-view button, #title-screen #ts-rendermode button,
+          #title-screen #ts-rendermode button,
           #title-screen #ts-charmode button { min-width: 46% !important; }
           #title-screen #ts-actions { flex-wrap: wrap !important; gap: 8px !important; }
           #title-screen #ts-actions #ts-create-world { margin-left: 0 !important; }
@@ -474,12 +471,6 @@ export class TitleScreen {
     const skinBackendOn = CONFIG.graphics.ai_skin;
     let charModeTouched = false;
     let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";
-    // Ya no se elige: el cliente tiene UNA vista. `game.json` puede seguir
-    // declarando la suya (el campo muere con el contrato), pero ofrecer un
-    // botón que lleva al mismo sitio es mentir — y peor: el batch de estilo
-    // pre-genera los skins al ÁNGULO de la vista elegida, así que elegir una
-    // vista muerta pagaba arte que la partida no volvería a encontrar.
-    const selectedView: WorldView = "fps";
     const refreshRenderMode = (): void => {
       for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
         const active = btn.dataset.rendermode === selectedRenderMode;
@@ -517,14 +508,10 @@ export class TitleScreen {
     worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
     const refreshStyleOptions = (): void => {
-      // Solo estilos con referencias para la vista elegida (styles.views,
-      // derivado por el bridge de las refs declaradas de cada pack) Y
-      // temáticamente compatibles con el mundo (intersección de tags — un
-      // pack medieval no se ofrece para un juego futurista).
-      const compatible = styles.filter(
-        (st) =>
-          st.views.includes(selectedView) &&
-          styleCompatibleWithGame(st.tags, selectedGame.tags),
+      // Estilos temáticamente compatibles con el mundo (intersección de
+      // tags — un pack medieval no se ofrece para un juego futurista).
+      const compatible = styles.filter((st) =>
+        styleCompatibleWithGame(st.tags, selectedGame.tags),
       );
       styleSel.innerHTML = compatible
         .map((st) => {
@@ -533,8 +520,8 @@ export class TitleScreen {
         })
         .join("");
       if (compatible.length === 0) {
-        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con esta vista y este mundo —</option>`;
-        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo compatible con esta vista y los tags del mundo todavía.</span>`;
+        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con este mundo —</option>`;
+        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo compatible con los tags del mundo todavía.</span>`;
         continueBtn.disabled = true;
         continueBtn.style.opacity = "0.4";
         return;
@@ -579,13 +566,11 @@ export class TitleScreen {
     const genProgressEl = this.content.querySelector("#ts-gen-progress") as HTMLElement;
     /** Confirmación en dos clicks para regenerar (patrón armed del dev-menu). */
     let regenArmedUntil = 0;
-    // Solo queda la rama del plano continuo: el plató proscenio, que tenía la
-    // suya, se retiró entero (motor, contrato y clientes).
     const contentStatus = (): "ready" | "stale" | "missing" =>
-      selectedGame.generation?.tile ?? "missing";
+      selectedGame.generation ?? "missing";
     const appliedStatus = (): "ready" | "stale" | null => {
       const hit = (selectedGame.styles_applied ?? []).find(
-        (a) => a.view === selectedView && a.style_id === styleSel.value,
+        (a) => a.style_id === styleSel.value,
       );
       return hit ? hit.status : null;
     };
@@ -634,7 +619,7 @@ export class TitleScreen {
       genWorldBtn.disabled = true;
       genProgressEl.innerHTML = `<span style="color:#da6">⚙ Encolando la generación…</span>`;
       try {
-        await this.narrative.generateGame(selectedGame.game_id, selectedView);
+        await this.narrative.generateGame(selectedGame.game_id);
         genProgressEl.innerHTML = `<span style="color:#da6">⚙ Generando el mundo (el motor narrativo tarda varios minutos)…</span>`;
       } catch (err) {
         genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
@@ -642,12 +627,7 @@ export class TitleScreen {
       }
     });
     applyStyleBtn.addEventListener("click", () => {
-      void this.renderStylePlan(
-        stylePlanEl,
-        selectedGame.game_id,
-        selectedView,
-        styleSel.value,
-      );
+      void this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value);
     });
 
     refreshSelection();
@@ -658,7 +638,7 @@ export class TitleScreen {
       .addEventListener("click", () => void this.renderHome());
     continueBtn.addEventListener("click", () => {
       if (!styleSel.value) return;
-      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode, selectedView);
+      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode);
     });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => void this.renderCreateWorld());
@@ -672,13 +652,12 @@ export class TitleScreen {
   private async renderStylePlan(
     el: HTMLElement,
     gameId: string,
-    view: WorldView,
     styleId: string,
   ): Promise<void> {
     el.innerHTML = `<div style="font-size:12px;color:#da6;margin-top:6px">Calculando el coste (sin gastar)…</div>`;
     let plan: StyleApplyPlan;
     try {
-      plan = await this.styleApply.plan(gameId, view, styleId);
+      plan = await this.styleApply.plan(gameId, styleId);
     } catch (err) {
       el.innerHTML = `<div style="font-size:12px;color:#a44;margin-top:6px">${escapeHtml((err as Error).message)}</div>`;
       return;
@@ -762,15 +741,15 @@ export class TitleScreen {
       <div data-upload-row style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid #2a2a30;border-radius:6px">
         <input data-file type="file" accept="image/*" style="color:#777;font-size:11px;max-width:170px">
         <input data-desc type="text" placeholder="qué muestra (ej: catedral gótica al atardecer)" style="${INPUT_CSS}">
-        <select data-view style="${SELECT_CSS};width:auto">
-          ${UPLOAD_VIEW_LABELS.map((v) => `<option value="${v.id}">${v.label}</option>`).join("")}
+        <select data-folder style="${SELECT_CSS};width:auto">
+          ${UPLOAD_FOLDER_LABELS.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}
         </select>
       </div>`;
     this.content.innerHTML = `
       <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Subir estilo</h1>
       <p style="margin-bottom:16px;color:#888;font-size:12px">
         Sube una o más imágenes de referencia LIBRES — cada una con una descripción de lo que muestra
-        (el motor narrativo la usa para elegir la referencia de cada escena) y la vista a la que sirve.
+        (el motor narrativo la usa para elegir la referencia de cada NPC y de cada cara) y a qué sirve.
         Las refs mínimas que falten se generarán con IA a partir de las tuyas — se te pedirá confirmación con el coste.
       </p>
       <label style="display:block;margin-bottom:12px">
@@ -789,7 +768,7 @@ export class TitleScreen {
       <button id="ts-add-row" style="${BTN_SECONDARY_CSS};font-size:11px;margin-bottom:14px">+ otra imagen</button>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:#999">
         <input id="ts-style-lamina" type="checkbox">
-        Una de las imágenes "Primera persona" es la lámina de materiales (rejilla de muestras planas)
+        Una de las imágenes "Superficie / cara del mundo" es la lámina de materiales (rejilla de muestras planas)
       </label>
       <div id="ts-style-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
       <div style="display:flex;gap:12px">
@@ -840,14 +819,14 @@ export class TitleScreen {
         return;
       }
       const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
-      const images: Array<{ view: string; description: string; image_b64: string; role?: string }> = [];
+      const images: Array<{ folder: string; description: string; image_b64: string; role?: string }> = [];
       let laminaPending = laminaEl.checked;
       for (const row of rows) {
         const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
         if (!file) continue;
         const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
-        const view = (row.querySelector("[data-view]") as HTMLSelectElement).value;
-        const isLamina = laminaPending && view === "fps";
+        const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
+        const isLamina = laminaPending && folder === "fps";
         if (!description && !isLamina) {
           statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
           return;
@@ -858,8 +837,8 @@ export class TitleScreen {
           r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
           r.readAsDataURL(file);
         });
-        // La primera imagen fps con el toggle activo es la lámina.
-        images.push({ view, description, image_b64: b64, ...(isLamina ? { role: "fps_surfaces" } : {}) });
+        // La primera imagen de superficie con el toggle activo es la lámina.
+        images.push({ folder, description, image_b64: b64, ...(isLamina ? { role: "fps_surfaces" } : {}) });
         if (isLamina) laminaPending = false;
       }
       if (images.length === 0) {
@@ -878,7 +857,7 @@ export class TitleScreen {
         const data = (await res.json()) as {
           style_id: string;
           uploaded: string[];
-          missing: Array<{ id: string; view: string; description: string }>;
+          missing: Array<{ id: string; folder: string; description: string }>;
           estimated_cost_usd: number;
         };
         pendingStyleId = data.style_id;
@@ -1009,7 +988,6 @@ export class TitleScreen {
     styleId: string,
     renderMode: "image" | "vector",
     characterMode: "image" | "vector",
-    view: WorldView,
   ): void {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
@@ -1059,7 +1037,6 @@ export class TitleScreen {
         styleId,
         renderMode,
         characterMode,
-        view,
         appearance: {
           model_id: modelSel ? modelSel.value : "",
           skin_path: skinInput ? skinInput.value.trim() : "",
@@ -1069,8 +1046,8 @@ export class TitleScreen {
   }
 }
 
-/** Chips de estado de generación de la tarjeta: qué ramas de contenido están
- *  generadas y qué estilos aplicados — "los generados" visibles de un vistazo. */
+/** Chips de estado de generación de la tarjeta: si el mundo está generado y
+ *  qué estilos aplicados — "los generados" visibles de un vistazo. */
 function generationChipsHtml(g: GameInfo): string {
   const STATUS_CHIP: Record<string, { icon: string; color: string }> = {
     ready: { icon: "✓", color: "#4a4" },
@@ -1081,14 +1058,9 @@ function generationChipsHtml(g: GameInfo): string {
     const s = STATUS_CHIP[status] ?? STATUS_CHIP.missing;
     return `<span style="${BADGE_CSS};color:${s.color}">${escapeHtml(label)} ${s.icon}</span>`;
   };
-  const gen = g.generation ?? { tile: "missing", stage: "missing" };
   const chips = [
-    // La rama `stage` no se pinta: no hay vista que la juegue. El campo sigue
-    // en el contrato del bridge y muere con `WORLD_BRANCHES`.
-    chip("Mundo abierto/1ª persona", gen.tile),
-    ...(g.styles_applied ?? []).map((a) =>
-      chip(`🎨 ${a.style_id} (${VIEW_LABELS[a.view] ?? a.view})`, a.status),
-    ),
+    chip("Mundo", g.generation ?? "missing"),
+    ...(g.styles_applied ?? []).map((a) => chip(`🎨 ${a.style_id}`, a.status)),
   ];
   return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${chips.join(" ")}</div>`;
 }
@@ -1109,14 +1081,6 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   `;
 }
 
-/** Etiquetas de vista/gráficos congelados en el save — los MISMOS nombres que
- *  los selectores de partida nueva, para que el jugador reconozca qué eligió.
- *  Saves antiguos sin los campos: sin badge (no adivinar). */
-const VIEW_LABELS: Record<string, string> = {
-  overworld: "Mundo abierto",
-  proscenium: "Proscenio",
-  fps: "Primera persona",
-};
 /** Modo EFECTIVO de personajes: sin campo, sigue a los escenarios (legacy). */
 function effectiveCharMode(s: SessionMetadata): string | undefined {
   return s.character_mode || s.render_mode;
@@ -1148,7 +1112,6 @@ function sessionRowHtml(s: SessionMetadata): string {
   const summary = s.summary || "(sin narrativa todavía)";
   const updated = s.updated_at ? formatDate(s.updated_at) : "?";
   const badges = [
-    s.view ? `<span style="${BADGE_CSS}">${escapeHtml(VIEW_LABELS[s.view] ?? s.view)}</span>` : "",
     modeBadgeHtml(s, "scenes"),
     modeBadgeHtml(s, "characters"),
   ]

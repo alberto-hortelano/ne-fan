@@ -4,12 +4,8 @@
  *  para computar celdas/roster, y persistencia del registro de aplicación. */
 import { createHash } from "node:crypto";
 
-import { loadGameMeta, loadWorldDoc, WORLD_VIEWS } from "../../src/games/loader.js";
-import {
-  branchForView,
-  loadWorldSnapshot,
-  worldSnapshotStatus,
-} from "../../src/games/world-snapshot.js";
+import { loadGameMeta, loadWorldDoc } from "../../src/games/loader.js";
+import { loadWorldSnapshot, worldSnapshotStatus } from "../../src/games/world-snapshot.js";
 import { loadWorldVocabulary } from "../../src/games/vocabulary.js";
 import {
   StyleApplicationRecordSchema,
@@ -27,19 +23,16 @@ export function handleGetWorldSnapshot(
   ctx: BridgeContext,
 ): void {
   try {
-    const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
-    const view = msg.view || meta.view || "overworld";
-    if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
-      throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
-    }
-    const branch = branchForView(view);
+    // El juego debe existir (fail-loud: pedir el snapshot de un juego que no
+    // está es un error del llamante, no un snapshot ausente).
+    loadGameMeta(ctx.gamesDir, msg.gameId);
     const worldDocHash = createHash("sha256")
       .update(loadWorldDoc(ctx.gamesDir, msg.gameId), "utf-8")
       .digest("hex");
-    const snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, branch, worldDocHash);
+    const snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, worldDocHash);
     const status = snapshot
       ? "ready"
-      : worldSnapshotStatus(ctx.gamesDir, msg.gameId, branch, worldDocHash);
+      : worldSnapshotStatus(ctx.gamesDir, msg.gameId, worldDocHash);
     const vocabulary = snapshot
       ? loadWorldVocabulary(ctx.gamesDir, msg.gameId, worldDocHash)
       : null;
@@ -80,8 +73,8 @@ export function handleRecordStyleApplication(
     loadGameMeta(ctx.gamesDir, parsed.data.game_id);
     writeStyleApplication(ctx.gamesDir, parsed.data);
     console.log(
-      `Bridge: estilo "${parsed.data.style_id}" aplicado a "${parsed.data.game_id}" ` +
-        `(${parsed.data.view}): ${parsed.data.summary.atlas_cells_painted} celdas, ` +
+      `Bridge: estilo "${parsed.data.style_id}" aplicado a "${parsed.data.game_id}": ` +
+        `${parsed.data.summary.atlas_cells_painted} celdas, ` +
         `${parsed.data.summary.skins_painted} skins, $${parsed.data.summary.cost_usd}`,
     );
     ctx.send(ws, { type: "style_application_recorded", requestId: msg.requestId, ok: true });

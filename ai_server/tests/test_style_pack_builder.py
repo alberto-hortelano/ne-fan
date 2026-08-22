@@ -131,7 +131,7 @@ class BuilderTest(unittest.TestCase):
             (d / "overworld" / "bosque.jpg").write_bytes(b"fake")
             self.assertEqual(
                 missing_refs(Path(tmp), "mi_estilo"),
-                [{"id": "catedral", "view": "overworld", "description": "una catedral"}],
+                [{"id": "catedral", "folder": "overworld", "description": "una catedral"}],
             )
 
 

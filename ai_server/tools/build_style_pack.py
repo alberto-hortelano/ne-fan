@@ -11,7 +11,7 @@ Uso (desde la raíz del repo, con MESHY_API_KEY / FAL_KEY en .env):
 
     python ai_server/tools/build_style_pack.py medievo_crudo
     python ai_server/tools/build_style_pack.py medievo_crudo --only settlement,forest
-    python ai_server/tools/build_style_pack.py medievo_crudo --view proscenium
+    python ai_server/tools/build_style_pack.py medievo_crudo --folder fps
     python ai_server/tools/build_style_pack.py --all --model nano-banana-pro
     python ai_server/tools/build_style_pack.py medievo_crudo --dry-run
     # Staging (flujo de aprobación): re-tirada INCONDICIONAL de refs
@@ -66,9 +66,9 @@ def main() -> int:
                         choices=sorted(MeshyImageToImage.MODEL_CREDITS),
                         help="modelo Meshy de las refs cenitales/personaje")
     parser.add_argument("--only", default="", help="ids de ref concretos, separados por comas")
-    parser.add_argument("--view", default="",
+    parser.add_argument("--folder", default="",
                         choices=["", "overworld", "proscenium", "fps", "characters"],
-                        help="limitar a las refs de una vista")
+                        help="limitar a las refs de una carpeta del pack")
     parser.add_argument("--out", default="",
                         help="staging: generar `--only` INCONDICIONALMENTE en este "
                              "directorio, sin tocar el pack (flujo de aprobación)")
@@ -83,16 +83,16 @@ def main() -> int:
     if not ids:
         parser.error("indica style_ids o --all")
     only = [c.strip() for c in args.only.split(",") if c.strip()] or None
-    view = args.view or None
+    folder_only = args.folder or None
     out_dir = Path(args.out) if args.out else None
     if out_dir is not None and not only:
         parser.error("--out (staging) requiere --only")
     if out_dir is not None and len(ids) > 1:
         parser.error("--out (staging) admite un solo style_id")
 
-    def cost_of(views: list[str]) -> float:
+    def cost_of(folders: list[str]) -> float:
         out = 0.0
-        for v in views:
+        for v in folders:
             if v == "proscenium":
                 out += FalImageToImage.COST_USD.get(STAGE_AI_MODEL, 0.17)
             elif v == "fps":
@@ -104,7 +104,7 @@ def main() -> int:
     total = 0.0
     for style_id in ids:
         manifest = json.loads((styles_dir / style_id / "style.json").read_text(encoding="utf-8"))
-        view_of = {
+        folder_of = {
             str(r.get("id")): ref_folder(str(r.get("file", "")))
             for r in manifest.get("refs", [])
         }
@@ -114,20 +114,20 @@ def main() -> int:
             todo = [m["id"] for m in missing_refs(styles_dir, style_id)]
             if only:
                 todo = [c for c in todo if c in only]
-        unknown = [c for c in todo if c not in view_of]
+        unknown = [c for c in todo if c not in folder_of]
         if unknown:
             print(f"── {style_id}: ids desconocidos {unknown} (no declarados en style.json)")
             return 1
-        if view:
-            todo = [c for c in todo if view_of[c] == view]
-        est = cost_of([view_of[c] for c in todo])
+        if folder_only:
+            todo = [c for c in todo if folder_of[c] == folder_only]
+        est = cost_of([folder_of[c] for c in todo])
         label = "re-tirada" if out_dir is not None else "faltan"
         print(f"\n── {style_id}: {label} {len(todo)} imágenes {todo} (~${est:.2f})")
         if args.dry_run or not todo:
             total += est
             continue
         result = generate_missing_sync(
-            styles_dir, style_id, args.model, only, view=view, out_dir=out_dir,
+            styles_dir, style_id, args.model, only, folder_only=folder_only, out_dir=out_dir,
         )
         total += result["cost_usd"]
         print(f"── {style_id}: generadas {result['generated']} (${result['cost_usd']:.2f})")

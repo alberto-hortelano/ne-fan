@@ -127,7 +127,9 @@ export interface StyleUploadRequest {
 /** Ref declarada sin imagen aún (se generaría en /complete). */
 export interface StyleMissingRef {
   id: string;
-  view: string;
+  /** Carpeta del pack a la que pertenece la ref (rol del contenido, no una
+   *  vista de mundo: el juego tiene una sola y no se elige). */
+  folder: string;
   description: string;
 }
 

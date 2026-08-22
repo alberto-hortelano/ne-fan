@@ -1,11 +1,11 @@
 /** TRANSITORIO (fase 3 del rediseño de estilos lo elimina): el rol de
  *  personaje derivado del rol de mundo del NPC. El formato de packs de refs
  *  libres vive en style-refs.ts; la selección por bioma/categoría murió con
- *  la elección explícita del motor (`style_ref` por escena).
+ *  la elección explícita del motor (`style_ref` por NPC).
  */
-import { SAFE_ID, WORLD_VIEWS, type WorldView } from "./style-refs.js";
+import { SAFE_ID } from "./style-refs.js";
 
-export { SAFE_ID, WORLD_VIEWS, type WorldView };
+export { SAFE_ID };
 
 /** Rol de estilo de personaje para un rol de mundo de NPC (peasant/guard/…):
  *  decide qué referencia de characters/ del pack guía el skin. FUENTE ÚNICA —

@@ -99,7 +99,7 @@ describe("FsSessionStorage fail-loud", () => {
     assert.deepEqual(files.filter((f) => f.endsWith(".tmp")), []);
   });
 
-  it("list expone view y render_mode del world (badges del title screen)", async () => {
+  it("list expone los modos de gráficos del world (badges del title screen)", async () => {
     const root = await makeRoot();
     const storage = new FsSessionStorage(root);
     await fs.mkdir(join(root, "s1"), { recursive: true });
@@ -112,13 +112,13 @@ describe("FsSessionStorage fail-loud", () => {
         story_so_far: "",
         scenes_loaded: {},
         entities: [],
-        world: { view: "proscenium", render_mode: "vector" },
+        world: { render_mode: "vector", character_mode: "image" },
       }),
       "utf-8",
     );
     const [meta] = await storage.list();
-    assert.equal(meta.view, "proscenium");
     assert.equal(meta.render_mode, "vector");
+    assert.equal(meta.character_mode, "image");
     // Save antiguo sin world: sin campos, sin inventar.
     await fs.mkdir(join(root, "viejo"), { recursive: true });
     await fs.writeFile(
@@ -131,7 +131,7 @@ describe("FsSessionStorage fail-loud", () => {
     );
     const metas = await storage.list();
     const old = metas.find((m) => m.session_id === "viejo")!;
-    assert.equal(old.view, undefined);
     assert.equal(old.render_mode, undefined);
+    assert.equal(old.character_mode, undefined);
   });
 });

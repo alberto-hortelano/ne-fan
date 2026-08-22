@@ -95,7 +95,6 @@ describe("POST /vocabulary (State API)", () => {
       render_mode: "vector",
       character_mode: "vector",
       combat_system: "standard",
-      view: "overworld",
     });
     let mutations = 0;
     const server: Server = createStateHttpServer({

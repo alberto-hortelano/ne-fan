@@ -8,25 +8,23 @@ import {
   folderForRefFile,
   normalizeTag,
   styleCompatibleWithGame,
-  viewForRefFile,
 } from "../src/games/style-refs.js";
 import { styleRoleForNpc } from "../src/games/style-categories.js";
 import { styleRefCatalog } from "../bridge/handlers/session.js";
 import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import type { StyleManifest } from "../src/games/loader.js";
 
-describe("style-refs — carpetas por vista", () => {
-  it("la carpeta del archivo ES la vista; characters es pseudo-vista", () => {
+describe("style-refs — carpetas del pack", () => {
+  // Las carpetas son el ROL del contenido, no vistas de mundo: el juego
+  // tiene una sola vista y no se elige.
+  it("la carpeta del archivo clasifica la ref", () => {
     assert.equal(folderForRefFile("overworld/settlement.jpg"), "overworld");
     assert.equal(folderForRefFile("proscenium/calle.jpg"), "proscenium");
     assert.equal(folderForRefFile("fps/surfaces.jpg"), "fps");
     assert.equal(folderForRefFile("characters/commoner.jpg"), "characters");
-    assert.equal(viewForRefFile("overworld/settlement.jpg"), "overworld");
-    // characters no declara vista (se comparte en runtime).
-    assert.equal(viewForRefFile("characters/commoner.jpg"), null);
   });
 
-  it("rutas fuera de una carpeta de vista → null (el schema las rechaza)", () => {
+  it("rutas fuera de una carpeta del pack → null (el schema las rechaza)", () => {
     assert.equal(folderForRefFile("settlement.jpg"), null);
     assert.equal(folderForRefFile("otra_carpeta/x.jpg"), null);
     assert.equal(folderForRefFile("/overworld/x.jpg"), null);
@@ -62,7 +60,7 @@ describe("styleRoleForNpc (transitorio, fase 3 lo elimina)", () => {
   });
 });
 
-describe("styleRefCatalog — catálogo del motor por vista", () => {
+describe("styleRefCatalog — catálogo del motor", () => {
   const manifest = (extraRefs: object[] = []): StyleManifest =>
     ({
       style_id: "x",
@@ -81,7 +79,7 @@ describe("styleRefCatalog — catálogo del motor por vista", () => {
     }) as StyleManifest;
 
   it("el catálogo son los personajes: la ref de ESCENA se retiró", () => {
-    const cat = styleRefCatalog(manifest(), "fps") as Record<string, unknown>;
+    const cat = styleRefCatalog(manifest()) as Record<string, unknown>;
     assert.deepEqual((cat.characters as Array<{ id: string }>).map((r) => r.id), ["commoner"]);
     assert.ok(!("scene" in cat), "no hay catálogo de escena que ofrecer al motor");
   });
@@ -89,11 +87,11 @@ describe("styleRefCatalog — catálogo del motor por vista", () => {
   it("fps_faces: refs temáticas fps/ (sin lámina); omitido si no hay", () => {
     // Sin refs temáticas: fps_faces ausente (el pre-flight lo lee como
     // "sin catálogo").
-    assert.equal(styleRefCatalog(manifest(), "fps").fps_faces, undefined);
+    assert.equal(styleRefCatalog(manifest()).fps_faces, undefined);
     const conCaras = manifest([
       { id: "fachada", file: "fps/fachada.jpg", description: "fachada de casa" },
     ]);
-    assert.deepEqual(styleRefCatalog(conCaras, "fps").fps_faces?.map((r) => r.id), ["fachada"]);
+    assert.deepEqual(styleRefCatalog(conCaras).fps_faces?.map((r) => r.id), ["fachada"]);
   });
 });
 

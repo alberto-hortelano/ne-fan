@@ -11,7 +11,11 @@ import type { Consequence as WireConsequence } from "../contract/model-io/schema
 // v4: plano continuo de tiles — SceneRecord gana tile/edges, las posiciones de
 //     EntityRecord pasan a metros globales, y la escena activa v3 se envuelve
 //     como tile (0,0) al cargar (migración sin mover al jugador).
-export const SCHEMA_VERSION = 4;
+// v5: muere el eje de vistas — `world.view` y `SessionMetadata.view` ya no
+//     existen. SIN migración: pre-producción, los saves no se conservan (el
+//     campo sobrante de un save v4 se queda en el JSON sin que nadie lo lea,
+//     como pasó con `world.perspective`).
+export const SCHEMA_VERSION = 5;
 
 export interface PlayerAppearance {
   model_id: string;
@@ -32,11 +36,6 @@ export interface NarrativePlayerState {
 export interface NarrativeWorldState {
   name: string;
   atmosphere: string;
-  /** Vista del mundo ("overworld" | "proscenium"), CONGELADA al crear la
-   *  sesión (game.json → view). "proscenium" = escenas discretas tipo plató
-   *  enlazadas por el world map (sin plano continuo de tiles). Campo aditivo:
-   *  saves previos ("") = overworld. */
-  view: string;
   /** Token de texto del estilo visual (prompts de imagen). Viene del
    *  style.json del estilo congelado en la sesión. */
   style_token: string;
@@ -211,9 +210,6 @@ export interface SessionMetadata {
   summary: string;
   scene_count: number;
   entity_count: number;
-  /** Vista congelada en el save ("overworld" | "proscenium") — el title
-   *  screen la muestra en la lista de partidas. Ausente en saves antiguos. */
-  view?: string;
   /** Modo de gráficos de ESCENARIOS congelado ("image" | "vector") — si la
    *  partida gasta créditos de imagen o va en maqueta 3D. Ausente en saves
    *  antiguos. */

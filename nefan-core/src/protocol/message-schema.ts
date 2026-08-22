@@ -92,7 +92,6 @@ const StartSessionMessageSchema = z.object({
   styleId: z.string().optional(),
   renderMode: z.string().optional(),
   characterMode: z.string().optional(),
-  view: z.string().optional(),
 });
 
 const ResumeSessionMessageSchema = z.object({
@@ -141,14 +140,12 @@ const GenerateGameMessageSchema = z.object({
   type: z.literal("generate_game"),
   requestId: z.string(),
   gameId: z.string(),
-  view: z.string().optional(),
 });
 
 const GetWorldSnapshotMessageSchema = z.object({
   type: z.literal("get_world_snapshot"),
   requestId: z.string(),
   gameId: z.string(),
-  view: z.string().optional(),
 });
 
 const RecordStyleApplicationMessageSchema = z.object({

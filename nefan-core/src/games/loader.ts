@@ -28,13 +28,10 @@ import {
   STYLE_REF_FOLDERS,
   STYLE_REF_ROLE_FPS_SURFACES,
   SUGGESTED_THEME_TAGS,
-  WORLD_VIEWS,
   folderForRefFile,
   normalizeTag,
   styleCompatibleWithGame,
-  viewForRefFile,
   type StyleRefFolder,
-  type WorldView,
 } from "./style-refs.js";
 
 /** Tema de UI del pack: módulo puro también (el cliente lo importa). */
@@ -59,13 +56,10 @@ export {
   STYLE_REF_FOLDERS,
   STYLE_REF_ROLE_FPS_SURFACES,
   SUGGESTED_THEME_TAGS,
-  WORLD_VIEWS,
   folderForRefFile,
   normalizeTag,
   styleCompatibleWithGame,
-  viewForRefFile,
   type StyleRefFolder,
-  type WorldView,
 };
 
 const SafeId = z.string().regex(SAFE_ID, "id must be filesystem-safe (A-Za-z0-9_.-)");
@@ -85,12 +79,6 @@ export const GameMetaSchema = z
      *  tags (mundos user_* anteriores al campo) es compatible con todo;
      *  develop_world los exige para mundos nuevos. */
     tags: z.array(z.string().min(1)).optional(),
-    /** Vista del mundo. "overworld" (default) = plano continuo de tiles;
-     *  "proscenium" = escenas discretas tipo plató de cine enlazadas por el
-     *  world map (bloque `stage` obligatorio en cada escena); "fps" =
-     *  primera persona sobre los mismos tiles (atlas de superficies).
-     *  Congelada en el save como el estilo. */
-    view: z.enum(WORLD_VIEWS).optional(),
     /** Sistemas de juego intercambiables (registros de src/systems/). Ausente
      *  = defaults (combat: "standard"). La validación semántica del id la
      *  hace el bridge contra el registro — el loader es FS/zod puro. */
@@ -116,8 +104,8 @@ export const StyleRefSchema = z
      *  todas las escenas generadas con esta ref; renombrar `file` o
      *  `description` no. */
     id: SafeId,
-    /** Ruta relativa al dir del pack, SIEMPRE dentro de la carpeta de su
-     *  vista: overworld/ | proscenium/ | fps/ | characters/. */
+    /** Ruta relativa al dir del pack, SIEMPRE dentro de una de sus
+     *  carpetas: overworld/ | proscenium/ | fps/ | characters/. */
     file: z.string().min(1),
     /** Qué muestra la imagen, en español y en una frase — es lo que lee el
      *  motor narrativo para elegir la referencia de cada escena. */
@@ -126,9 +114,9 @@ export const StyleRefSchema = z
      *  (style_pack_builder). Sin él se usa `description` tal cual. */
     gen_scene: z.string().min(1).optional(),
     /** Seed de encuadre de `_plantilla/` (ruta relativa a _plantilla/) para
-     *  generarla; sin él, el default de su vista. */
+     *  generarla; sin él, el default de su carpeta. */
     seed: z.string().min(1).optional(),
-    /** Rol especial: "fps_surfaces" = lámina de materiales del atlas fps
+    /** Rol especial: "fps_surfaces" = lámina de materiales del atlas
      *  (máx 1 por pack, solo en fps/). Fuera del catálogo del motor. */
     role: z.literal(STYLE_REF_ROLE_FPS_SURFACES).optional(),
   })
@@ -148,8 +136,8 @@ export const StyleManifestSchema = z
      *  casan por intersección con las del juego (styleCompatibleWithGame).
      *  Vocabulario libre; SUGGESTED_THEME_TAGS es solo guía. */
     tags: z.array(z.string().min(1)).min(1),
-    /** El ORDEN importa: la primera ref de cada vista es el fallback cuando
-     *  el motor no elige (o su elección no existe). */
+    /** El ORDEN importa: la primera ref de cada carpeta es el fallback
+     *  cuando el motor no elige (o su elección no existe). */
     refs: z.array(StyleRefSchema).default([]),
     /** Tema de la INTERFAZ DE JUEGO (paleta, tipografía, forma). Opcional y
      *  parcial: lo no declarado cae al BASE_UI_THEME. Ver games/ui-theme.ts. */
@@ -175,7 +163,7 @@ export const StyleManifestSchema = z
           path: ["refs", i, "file"],
           message:
             `ref "${ref.id}": file "${ref.file}" debe vivir en una carpeta ` +
-            `de vista (${STYLE_REF_FOLDERS.join("/ | ")}/)`,
+            `del pack (${STYLE_REF_FOLDERS.join("/ | ")}/)`,
         });
       }
       if (ref.role === STYLE_REF_ROLE_FPS_SURFACES) {
@@ -199,36 +187,12 @@ export const StyleManifestSchema = z
   });
 export type StyleManifest = z.infer<typeof StyleManifestSchema>;
 
-/** Vistas a las que sirve un estilo, DERIVADAS de las carpetas de sus refs
- *  declaradas (no de los archivos en disco — un pack "en construcción" ya
- *  aparece en el selector y el runtime degrada a blueprint-solo mientras
- *  falten imágenes). Las refs de `characters/` no cuentan (compartidas entre
- *  vistas) y la lámina fps_surfaces tampoco (mejora el atlas, no habilita la
- *  vista). `refs: []` → sin vistas: el estilo queda invisible en el
- *  selector. */
-export function styleViews(manifest: StyleManifest): WorldView[] {
-  const present = new Set<WorldView>();
-  for (const ref of manifest.refs) {
-    if (ref.role === STYLE_REF_ROLE_FPS_SURFACES) continue;
-    const view = viewForRefFile(ref.file);
-    if (view) present.add(view);
-  }
-  // La vista fps se deriva de overworld: su ref propia (la lámina de
-  // materiales) es una MEJORA opcional del atlas de superficies — sin ella
-  // el atlas degrada a solo style_token, así que ningún pack pierde fps por
-  // no tenerla.
-  if (present.has("overworld")) present.add("fps");
-  return WORLD_VIEWS.filter((v) => present.has(v));
-}
-
-/** Refs elegibles por el motor para una vista: las de la carpeta de la vista
- *  (sin la lámina fps_surfaces). La PRIMERA es el fallback sin elección. */
-export function styleRefsForView(
-  manifest: StyleManifest,
-  view: WorldView,
-): StyleRef[] {
+/** Refs temáticas de CARA: las de `fps/` sin la lámina de materiales. El
+ *  motor elige una por cara de volumen (`surface_ref`) y guía cómo el estilo
+ *  pinta esa celda del atlas. La PRIMERA es el fallback sin elección. */
+export function styleFaceRefs(manifest: StyleManifest): StyleRef[] {
   return manifest.refs.filter(
-    (r) => r.role !== STYLE_REF_ROLE_FPS_SURFACES && viewForRefFile(r.file) === view,
+    (r) => r.role !== STYLE_REF_ROLE_FPS_SURFACES && folderForRefFile(r.file) === "fps",
   );
 }
 
@@ -245,9 +209,6 @@ export interface GameListing {
   description: string;
   style_id: string;
   world_brief: string;
-  /** Vista DEFAULT del mundo (game.json, ya resuelta: ausente = overworld).
-   *  El selector del título la preselecciona; el jugador puede cambiarla. */
-  view: WorldView;
   /** Etiquetas temáticas del mundo ([] = sin declarar, compatible con todo). */
   tags: string[];
 }
@@ -259,8 +220,6 @@ export interface StyleListing {
   /** Ruta servida por el State API del bridge (GET /styles/{id}/{file}),
    *  ausente si el archivo de portada aún no existe en disco. */
   cover_url?: string;
-  /** Vistas a las que sirve el estilo (styleViews). El título filtra con esto. */
-  views: WorldView[];
   /** Etiquetas temáticas del estilo — el título filtra además por
    *  compatibilidad con las del juego (styleCompatibleWithGame). */
   tags: string[];
@@ -352,7 +311,6 @@ export function listGames(gamesDir: string): GameListing[] {
         description: meta.description,
         style_id: meta.style_id,
         world_brief: meta.world_brief,
-        view: meta.view ?? "overworld",
         tags: meta.tags ?? [],
       });
     } catch (err) {
@@ -384,7 +342,6 @@ export function listStyles(stylesDir: string): StyleListing[] {
         name: manifest.name,
         description: manifest.description,
         cover_url: hasCover ? `/styles/${manifest.style_id}/${manifest.cover}` : undefined,
-        views: styleViews(manifest),
         tags: manifest.tags,
         ui_theme: resolveUiTheme(manifest.ui),
       });

@@ -67,16 +67,16 @@ ref cenital nunca pinta un plató ni viceversa):
 - Personajes: el motor elige la ref de `characters/` por NPC; sin elección,
   la primera (en los packs migrados, `commoner`).
 
-## Vistas: qué habilita un pack
+## Carpetas: qué aporta cada una
 
-`styleViews` deriva de las **carpetas de las refs declaradas** (no de los
-archivos en disco — un pack en construcción ya aparece en el selector y el
-runtime degrada mientras faltan imágenes):
+Las carpetas del pack son el ROL del contenido, **no vistas de mundo** (el
+juego tiene una sola y no se elige):
 
-- ≥1 ref en `overworld/` → sirve a `overworld` **y** `fps` (la lámina
-  `fps_surfaces` mejora el atlas, no habilita la vista).
-- ≥1 ref en `proscenium/` → sirve a `proscenium`.
-- `characters/` y la lámina no habilitan vistas.
+- `fps/`: la lámina `fps_surfaces` (materiales del atlas) y las refs
+  temáticas de CARA que el motor elige con `surface_ref`.
+- `characters/`: los model sheets que guían los skins de NPC.
+- `overworld/` y `proscenium/` son restos de las dos vistas retiradas: sus
+  imágenes ya no alimentan nada y se borran con ellas.
 
 ## La regla de oro: cada referencia cenital es una ZONA, no un sujeto
 

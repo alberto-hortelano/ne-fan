@@ -1,5 +1,5 @@
 /** Pre-generación del mundo de un juego (generate_game) en una sesión
- *  EFÍMERA, persistida como snapshot en data/games/{id}/world/{branch}.json —
+ *  EFÍMERA, persistida como snapshot en data/games/{id}/world/tile.json —
  *  start_session lo replayea sin motor. Se pre-genera el bootstrap y su
  *  anillo 3×3; los places se realizan al VIAJAR a ellos, anclándolos a un
  *  tile libre.
@@ -15,9 +15,7 @@ import {
   loadGameMeta,
   loadStyleManifest,
   loadWorldDoc,
-  WORLD_VIEWS,
 } from "../../src/games/loader.js";
-import { branchForView, type WorldBranch } from "../../src/games/world-snapshot.js";
 import {
   deleteStyleApplication,
   listStyleApplications,
@@ -56,19 +54,10 @@ export async function handleGenerateGame(
     console.error(`Bridge: generate_game failed: ${error}`);
     ctx.send(ws, { type: "game_generated", requestId: msg.requestId, ok: false, error });
   };
-  let branch: WorldBranch;
   try {
-    const meta = loadGameMeta(ctx.gamesDir, msg.gameId);
-    const view = msg.view || meta.view || "overworld";
-    if (!(WORLD_VIEWS as readonly string[]).includes(view)) {
-      throw new Error(`vista desconocida "${view}" (esperaba ${WORLD_VIEWS.join("|")})`);
-    }
-    if (view === "proscenium") {
-      throw new Error(
-        'la vista "proscenio" (plató) se retiró: no hay mundo de platós que pre-generar',
-      );
-    }
-    branch = branchForView(view);
+    // Fail-loud del juego antes de encolar: un game.json ilegible no puede
+    // convertirse en un job que falla a mitad de la cola.
+    loadGameMeta(ctx.gamesDir, msg.gameId);
   } catch (err) {
     return fail((err as Error).message ?? String(err));
   }
@@ -87,9 +76,9 @@ export async function handleGenerateGame(
   // solo se suscriben en start/resume_session).
   ctx.subscribe(ws);
   const queued = ctx.sceneGen.enqueue({
-    key: `gamegen:${msg.gameId}:${branch}`,
+    key: `gamegen:${msg.gameId}`,
     blocking: false,
-    run: () => runGameGeneration(ctx, msg.gameId, branch),
+    run: () => runGameGeneration(ctx, msg.gameId),
   });
   ctx.send(ws, {
     type: "game_generated",
@@ -100,12 +89,7 @@ export async function handleGenerateGame(
   });
 }
 
-/** Vistas cuyo contenido cuelga de una rama de snapshot. */
-const VIEWS_BY_BRANCH: Record<WorldBranch, string[]> = {
-  tile: ["overworld", "fps"],
-};
-
-/** Un snapshot NUEVO invalida las aplicaciones de estilo de su rama: sus
+/** Un snapshot NUEVO invalida las aplicaciones de estilo del juego: sus
  *  celdas/skins describen las escenas del snapshot viejo. Se borra el
  *  registro (el chip vuelve a "sin aplicar") y se despinean sus assets en el
  *  asset-store (best-effort REPORTADO — sin el store arriba, los pins viejos
@@ -113,15 +97,13 @@ const VIEWS_BY_BRANCH: Record<WorldBranch, string[]> = {
 async function invalidateStyleApplications(
   ctx: BridgeContext,
   gameId: string,
-  branch: WorldBranch,
 ): Promise<void> {
   const assetStoreUrl = resolveServiceUrl("asset-store", process.env);
   // Hash irrelevante para ENUMERAR (solo cambia el status devuelto).
   const records = listStyleApplications(ctx.gamesDir, gameId, "");
   for (const rec of records) {
-    if (!VIEWS_BY_BRANCH[branch].includes(rec.view)) continue;
-    deleteStyleApplication(ctx.gamesDir, gameId, rec.view, rec.style_id);
-    const ref = styleApplicationPinRef(gameId, rec.view, rec.style_id);
+    deleteStyleApplication(ctx.gamesDir, gameId, rec.style_id);
+    const ref = styleApplicationPinRef(gameId, rec.style_id);
     try {
       const res = await fetch(`${assetStoreUrl}/assets/pin/${encodeURIComponent(ref)}`, {
         method: "DELETE",
@@ -131,7 +113,7 @@ async function invalidateStyleApplications(
       console.warn(`Bridge: unpin de "${ref}" falló (asset-store caído?):`, err);
     }
     console.log(
-      `Bridge: aplicación de estilo "${rec.style_id}" (${rec.view}) invalidada por el snapshot nuevo`,
+      `Bridge: aplicación de estilo "${rec.style_id}" invalidada por el snapshot nuevo`,
     );
   }
 }
@@ -142,7 +124,6 @@ async function invalidateStyleApplications(
 export async function runGameGeneration(
   ctx: BridgeContext,
   gameId: string,
-  branch: WorldBranch,
 ): Promise<void> {
   const start = Date.now();
   const status = (phase: "generating" | "progress" | "ready" | "error", message: string): void =>
@@ -157,7 +138,6 @@ export async function runGameGeneration(
   try {
     const meta = loadGameMeta(ctx.gamesDir, gameId);
     const style = loadStyleManifest(ctx.stylesDir, meta.style_id);
-    const view = meta.view && branchForView(meta.view) === "tile" ? meta.view : "overworld";
     status("generating", `Generando el mundo de ${meta.title}: mapa y escena inicial...`);
 
     // Sesión EFÍMERA: las map tools del motor (State API) escriben en
@@ -176,7 +156,6 @@ export async function runGameGeneration(
       render_mode: "vector",
       character_mode: "vector",
       combat_system: meta.systems?.combat ?? combatRegistry.defaultId,
-      view,
     });
     // Plugins activos como en un start_session real: el motor genera con el
     // mismo contexto que verá en partida (sus slices mueren con el save).
@@ -206,10 +185,10 @@ export async function runGameGeneration(
       }
     }
 
-    writeSessionSnapshot(ctx, gameId, branch, entrySceneId);
-    await invalidateStyleApplications(ctx, gameId, branch);
+    writeSessionSnapshot(ctx, gameId, entrySceneId);
+    await invalidateStyleApplications(ctx, gameId);
     const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
-    const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas (rama ${branch}).`];
+    const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas.`];
     if (failures.length) {
       parts.push(`Fallos parciales (se generarán en partida): ${failures.join(" · ")}`);
     }

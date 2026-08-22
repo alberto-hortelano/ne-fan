@@ -112,13 +112,64 @@ describe("fronteras arquitectónicas", () => {
       "los huérfanos del pipeline oblicuo tienen que saltar igual que los del plató",
     );
 
+    // Y los símbolos del EJE DE VISTAS, que entra a cero en la PR que lo
+    // colapsa. En TS volver a escribirlos no compila, pero la mitad de los
+    // roots no es TS: una fixture .json o un guion de qa pueden resucitar el
+    // eje entero por copy-paste sin que nada se queje.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/data/contract/tools/x.json",
+          text: '{\n  "enum": ["WORLD_VIEWS"]\n}\n',
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-x.mjs",
+          text: "const vistas = WORLD_VIEWS;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: "const a = ANGLE_BY_VIEW[plan.view];\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/games/world-snapshot.ts",
+          text: "export function branchForView() {}\nexport type WorldBranch = string;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/data/contract/tools/x.json:2",
+        "nefan-core/src/games/world-snapshot.ts:1",
+        "nefan-core/src/games/world-snapshot.ts:2",
+        "nefan-html/src/ui/style-apply.ts:1",
+        "qa/guiones/99-x.mjs:1",
+      ],
+      "el eje de vistas tiene que saltar en cualquier proceso escaneado",
+    );
+
     // Y los vecinos inocentes, callados: un identificador que solo CONTIENE la
-    // palabra no es el campo (el patrón va con \b a los dos lados).
+    // palabra no es el campo (el patrón va con \b a los dos lados). `view` a
+    // secas NO está en el patrón: `derived_views` y `?view=` de plugins están
+    // vivos y el gate nacería rojo.
     assert.deepEqual(
       deLaRegla([
         {
           path: "nefan-core/src/scene/tile.ts",
           text: "const stage_requests_total = 0;\nconst image_reviews_total = 0;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/plugins/views.ts",
+          text: "const v = manifest.derived_views;\nfetch(`/plugins/${id}/inspect?view=${name}`);\n",
+          imports: [],
+        },
+        // `view` y `branch` a secas tampoco: son palabras vivas en otros
+        // contextos (una rama de git, la vista de un plugin).
+        {
+          path: "nefan-core/data/rooms/dev/x.json",
+          text: '{\n  "view": "algo",\n  "branch": "otra cosa"\n}\n',
           imports: [],
         },
       ]),

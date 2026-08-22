@@ -3,7 +3,7 @@
  *  valida). Las operaciones de FS viven en style-application.ts (node). */
 import { z } from "zod";
 
-import { SAFE_ID, WORLD_VIEWS } from "./style-categories.js";
+import { SAFE_ID } from "./style-categories.js";
 
 export const STYLE_APPLICATION_SCHEMA_VERSION = 1;
 
@@ -11,7 +11,6 @@ export const StyleApplicationRecordSchema = z
   .object({
     schema_version: z.literal(STYLE_APPLICATION_SCHEMA_VERSION),
     game_id: z.string().regex(SAFE_ID),
-    view: z.enum(WORLD_VIEWS),
     style_id: z.string().regex(SAFE_ID),
     /** Hash del world.md del snapshot sobre el que corrió el batch. */
     world_doc_hash: z.string().min(1),
@@ -28,14 +27,16 @@ export const StyleApplicationRecordSchema = z
         cost_usd: z.number().min(0),
       })
       .strict(),
-    /** Limitaciones/pendientes REPORTADOS (p. ej. "repintados oblicuos:
-     *  se pintan al explorar"). Nunca se omiten en silencio. */
+    /** Limitaciones/pendientes REPORTADOS (p. ej. "el mundo generado no
+     *  declara personajes con skin"). Nunca se omiten en silencio. */
     notes: z.array(z.string()).max(32).default([]),
   })
   .strict();
 export type StyleApplicationRecord = z.infer<typeof StyleApplicationRecordSchema>;
 
-/** Ref de pin en el asset-store para una aplicación (game, view, style). */
-export function styleApplicationPinRef(gameId: string, view: string, styleId: string): string {
-  return `game_style:${gameId}:${view}:${styleId}`;
+/** Ref de pin en el asset-store para una aplicación (game, style). El
+ *  segmento de VISTA murió con el eje: no había dos aplicaciones del mismo
+ *  estilo al mismo juego que distinguir. */
+export function styleApplicationPinRef(gameId: string, styleId: string): string {
+  return `game_style:${gameId}:${styleId}`;
 }

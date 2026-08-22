@@ -4,11 +4,11 @@ Compartido por la CLI `tools/build_style_pack.py` (packs base shipped) y los
 endpoints `/styles/upload` + `/styles/{id}/complete` (packs de usuario).
 
 Formato de pack (2026-08, refs libres): cada ref del style.json declara
-`{id, file, description, gen_scene?, seed?, role?}` y vive en la carpeta de
-su vista (overworld/ | proscenium/ | fps/ | characters/). El CONTENIDO de la
+`{id, file, description, gen_scene?, seed?, role?}` y vive en una carpeta del
+pack (overworld/ | proscenium/ | fps/ | characters/). El CONTENIDO de la
 imagen a generar es `gen_scene` (prompt EN) o, si falta, la `description` en
 español tal cual; el ENCUADRE lo pone el seed de `_plantilla/` (declarado en
-`seed` o el default de su vista).
+`seed` o el default de su carpeta).
 
 Dos modos de dirección de arte:
 - Pack con imágenes ya presentes: van como referencias de ESTILO (2ª..4ª
@@ -84,7 +84,7 @@ def seed_for(ref: dict) -> Path:
     if folder == "overworld":
         return ENV_SEED
     raise FileNotFoundError(
-        f"plantilla default de la vista '{folder}' ausente: {default} — "
+        f"plantilla default de la carpeta '{folder}' ausente: {default} — "
         "declara `seed` en la ref o restaura la plantilla en _plantilla/"
     )
 
@@ -205,7 +205,7 @@ def build_prompt(ref: dict, style_token: str, has_style_refs: bool) -> str:
 
 def missing_refs(styles_dir: Path, style_id: str) -> list[dict]:
     """Refs declaradas en style.json cuyo archivo no existe aún:
-    [{id, view, description}] — lo que el diálogo de coste muestra y
+    [{id, folder, description}] — lo que el diálogo de coste muestra y
     /complete genera."""
     manifest = json.loads((styles_dir / style_id / "style.json").read_text(encoding="utf-8"))
     out: list[dict] = []
@@ -213,7 +213,7 @@ def missing_refs(styles_dir: Path, style_id: str) -> list[dict]:
         if not (styles_dir / style_id / str(ref.get("file", ""))).exists():
             out.append({
                 "id": str(ref.get("id", "")),
-                "view": ref_folder(str(ref.get("file", ""))),
+                "folder": ref_folder(str(ref.get("file", ""))),
                 "description": str(ref.get("description", "")),
             })
     return out
@@ -225,7 +225,7 @@ async def generate_missing(
     ai_model: str = "nano-banana-pro",
     only: list[str] | None = None,
     log=print,
-    view: str | None = None,
+    folder_only: str | None = None,
     out_dir: Path | None = None,
 ) -> dict:
     """Genera las imágenes que faltan de un pack y actualiza la cover.
@@ -235,12 +235,12 @@ async def generate_missing(
     Fail-loud: cualquier error de la API aborta (no se escribe media imagen).
 
     - `only`: limita a esos ids de ref.
-    - `view`: limita a las refs de esa vista/carpeta
+    - `folder_only`: limita a las refs de esa carpeta del pack
       ("overworld"|"proscenium"|"fps"|"characters").
     - `out_dir` (staging): genera los ids de `only` INCONDICIONALMENTE
       (aunque su imagen exista — es la re-tirada del flujo de aprobación) y
       las escribe ahí, sin tocar pack, cover ni style.json.
-    - Modelo por vista: proscenium → fal gpt-image-2 (clay → imagen, camino
+    - Modelo por carpeta: proscenium → fal gpt-image-2 (clay → imagen, camino
       del bench); lámina fps → fal nano-banana-pro; refs de cara fps → fal
       gpt-image-2; el resto por Meshy `ai_model`.
     """
@@ -258,15 +258,15 @@ async def generate_missing(
         todo = [e for e in entries if not (pack_dir / str(e["file"])).exists()]
         if only:
             todo = [e for e in todo if str(e.get("id")) in only]
-    if view:
-        todo = [e for e in todo if ref_folder(str(e["file"])) == view]
+    if folder_only:
+        todo = [e for e in todo if ref_folder(str(e["file"])) == folder_only]
     if not todo:
         return {"generated": [], "cost_usd": 0.0, "skipped": []}
 
     # Referencias de estilo: las imágenes que YA existen en el pack (subidas
     # por el usuario o generadas en pasadas anteriores), priorizando su
-    # propia vista (plató↔plató, cenital↔cenital, personaje↔personaje) —
-    # mezclar puntos de vista diluye el encuadre del blockout.
+    # propia carpeta (cara↔cara, personaje↔personaje) — mezclar puntos de
+    # vista diluye el encuadre del blockout.
     def style_refs_for(ref: dict) -> list[Path]:
         folder = ref_folder(str(ref["file"]))
         ordered: list[Path] = []
@@ -358,6 +358,8 @@ async def generate_missing(
 def generate_missing_sync(
     styles_dir: Path, style_id: str, ai_model: str = "nano-banana-pro",
     only: list[str] | None = None, log=print,
-    view: str | None = None, out_dir: Path | None = None,
+    folder_only: str | None = None, out_dir: Path | None = None,
 ) -> dict:
-    return asyncio.run(generate_missing(styles_dir, style_id, ai_model, only, log, view, out_dir))
+    return asyncio.run(
+        generate_missing(styles_dir, style_id, ai_model, only, log, folder_only, out_dir)
+    )

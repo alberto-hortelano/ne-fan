@@ -33,9 +33,11 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 class StyleUploadImage(BaseModel):
-    """Una imagen del pack: vista + descripción libre (+ id y rol opcionales).
+    """Una imagen del pack: carpeta + descripción libre (+ id y rol
+    opcionales). La CARPETA es el rol del contenido dentro del pack, no una
+    vista de mundo (el juego tiene una sola y no se elige).
     En base64 (JSON, no multipart — evita la dependencia python-multipart)."""
-    view: str = Field(pattern="^(overworld|proscenium|fps|characters)$")
+    folder: str = Field(pattern="^(overworld|proscenium|fps|characters)$")
     description: str = Field(default="", max_length=300)
     image_b64: str = Field(min_length=1)
     id: str = Field(default="", max_length=60)
@@ -65,9 +67,9 @@ def _slug(text: str, fallback: str) -> str:
     return s or fallback
 
 
-#: Starter mínimo por vista: refs genéricas declaradas SIN archivo cuando el
-#: usuario no subió ninguna imagen de esa vista. `gen_scene` en EN (contenido
-#: para el builder); `description` en ES (lo que lee el motor al elegir).
+#: Starter mínimo por carpeta: refs genéricas declaradas SIN archivo cuando
+#: el usuario no subió ninguna imagen de esa carpeta. `gen_scene` en EN
+#: (contenido para el builder); `description` en ES (lo que lee el motor).
 STARTER_REFS: dict[str, list[dict]] = {
     "overworld": [
         {
@@ -126,16 +128,16 @@ STARTER_REFS: dict[str, list[dict]] = {
 }
 
 
-def _starter_file(view: str, entry: dict) -> str:
+def _starter_file(folder: str, entry: dict) -> str:
     if entry.get("role") == ROLE_FPS_SURFACES:
         return "fps/surfaces.jpg"
-    return f"{view}/{entry['id']}.jpg"
+    return f"{folder}/{entry['id']}.jpg"
 
 
 @router.post("/styles/upload")
 async def styles_upload(body: StyleUploadRequest):
-    """Crea data/styles/user_{slug}/ con las imágenes subidas (en la carpeta
-    de su vista) y devuelve qué refs declaradas faltan + coste estimado de
+    """Crea data/styles/user_{slug}/ con las imágenes subidas (cada una en su
+    carpeta) y devuelve qué refs declaradas faltan + coste estimado de
     completarlas. NO genera nada aún: la generación requiere confirmación
     explícita (/styles/{id}/complete)."""
     from style_pack_builder import missing_refs
@@ -156,8 +158,8 @@ async def styles_upload(body: StyleUploadRequest):
     if len(laminas) > 1:
         raise HTTPException(status_code=422, detail="más de una lámina fps_surfaces")
     for img in laminas:
-        if img.view != "fps":
-            raise HTTPException(status_code=422, detail="la lámina fps_surfaces debe ir en la vista fps")
+        if img.folder != "fps":
+            raise HTTPException(status_code=422, detail="la lámina fps_surfaces debe ir en la carpeta fps/")
 
     pack_dir = styles_dir / style_id
     pack_dir.mkdir(parents=True)
@@ -191,8 +193,8 @@ async def styles_upload(body: StyleUploadRequest):
         scale = min(1.0, 1024 / max(w, h))
         if scale < 1.0:
             pil = pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        file = f"{img.view}/{ref_id}.jpg" if img.role != ROLE_FPS_SURFACES else "fps/surfaces.jpg"
-        (pack_dir / img.view).mkdir(exist_ok=True)
+        file = f"{img.folder}/{ref_id}.jpg" if img.role != ROLE_FPS_SURFACES else "fps/surfaces.jpg"
+        (pack_dir / img.folder).mkdir(exist_ok=True)
         pil.save(pack_dir / file, "JPEG", quality=90)
         entry: dict = {
             "id": ref_id,
@@ -204,21 +206,21 @@ async def styles_upload(body: StyleUploadRequest):
         refs.append(entry)
         uploaded.append(ref_id)
 
-    # Starter: solo en vistas sin ninguna imagen subida (mínimo viable — el
-    # fallback primera-de-vista hace el resto). La lámina fps se declara si
+    # Starter: solo en carpetas sin ninguna imagen subida (mínimo viable — el
+    # fallback primera-de-carpeta hace el resto). La lámina fps se declara si
     # no la subieron (una sola imagen, mejora el atlas).
-    views_uploaded = {ref_folder(str(r["file"])) for r in refs}
+    folders_uploaded = {ref_folder(str(r["file"])) for r in refs}
     has_lamina = any(r.get("role") == ROLE_FPS_SURFACES for r in refs)
-    for view, starters in STARTER_REFS.items():
+    for folder, starters in STARTER_REFS.items():
         for entry in starters:
             if entry.get("role") == ROLE_FPS_SURFACES:
                 if has_lamina:
                     continue
-            elif view in views_uploaded:
+            elif folder in folders_uploaded:
                 continue
             if entry["id"] in seen_ids:
                 continue
-            refs.append({**entry, "file": _starter_file(view, entry)})
+            refs.append({**entry, "file": _starter_file(folder, entry)})
             seen_ids.add(entry["id"])
 
     manifest = {

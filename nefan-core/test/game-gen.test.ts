@@ -184,7 +184,7 @@ describe("generate_game", () => {
     }
   });
 
-  it("un snapshot nuevo invalida las aplicaciones de estilo de su rama", async () => {
+  it("un snapshot nuevo invalida las aplicaciones de estilo del juego", async () => {
     const gamesDir = tmpGamesDir();
     try {
       const { STYLE_APPLICATION_SCHEMA_VERSION, writeStyleApplication, loadStyleApplication } =
@@ -192,7 +192,6 @@ describe("generate_game", () => {
       writeStyleApplication(gamesDir, {
         schema_version: STYLE_APPLICATION_SCHEMA_VERSION,
         game_id: GAME,
-        view: "fps",
         style_id: "estilo_test",
         world_doc_hash: "hash_viejo",
         applied_at: "2026-08-18T00:00:00.000Z",
@@ -211,46 +210,45 @@ describe("generate_game", () => {
       motorFake(bundle);
       await runGenerate(bundle);
       assert.equal(
-        loadStyleApplication(gamesDir, GAME, "fps", "estilo_test"),
+        loadStyleApplication(gamesDir, GAME, "estilo_test"),
         null,
-        "el registro de estilo de la rama regenerada se borra",
+        "el registro de estilo del mundo regenerado se borra",
       );
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
   });
 
-  it("vista desconocida ⇒ ok:false sin encolar nada", async () => {
+  it("juego inexistente ⇒ ok:false sin encolar nada", async () => {
     const bundle = makeCtx();
     const { socket, sent } = makeSocket();
     await routeMessage(
-      { type: "generate_game", requestId: "g1", gameId: GAME, view: "isometric" },
+      { type: "generate_game", requestId: "g1", gameId: "no_existe" },
       socket,
       bundle.ctx,
     );
     const resp = sent[0] as GameGeneratedMessage;
     assert.equal(resp.ok, false);
-    assert.match(resp.error ?? "", /vista desconocida/);
     assert.equal(bundle.ctx.sceneGen.current, null);
   });
 
-  it("games_listed expone el estado de generación de la rama tile", async () => {
+  it("games_listed expone el estado del contenido pre-generado", async () => {
     const gamesDir = tmpGamesDir();
     try {
       const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
       motorFake(bundle);
       const before = makeSocket();
       await routeMessage({ type: "list_games", requestId: "l0" }, before.socket, bundle.ctx);
-      const listedBefore = before.sent[0] as { games: Array<{ game_id: string; generation: { tile: string } }> };
+      const listedBefore = before.sent[0] as { games: Array<{ game_id: string; generation: string }> };
       const gBefore = listedBefore.games.find((g) => g.game_id === GAME)!;
-      assert.deepEqual(gBefore.generation, { tile: "missing" });
+      assert.equal(gBefore.generation, "missing");
 
       await runGenerate(bundle);
       const after = makeSocket();
       await routeMessage({ type: "list_games", requestId: "l1" }, after.socket, bundle.ctx);
       const listedAfter = after.sent[0] as typeof listedBefore;
       const gAfter = listedAfter.games.find((g) => g.game_id === GAME)!;
-      assert.deepEqual(gAfter.generation, { tile: "ready" });
+      assert.equal(gAfter.generation, "ready");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

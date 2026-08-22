@@ -50,7 +50,6 @@ export interface LoadSessionOptions {
 const DEFAULT_WORLD: NarrativeWorldState = {
   name: "",
   atmosphere: "",
-  view: "",
   style_token: "",
   active_scene_id: "",
   description: "",
@@ -230,7 +229,6 @@ export class NarrativeState {
     render_mode: string;
     character_mode: string;
     combat_system: string;
-    view: string;
     style_refs?: NarrativeWorldState["style_refs"];
   }): void {
     this.world.name = info.name;
@@ -241,7 +239,6 @@ export class NarrativeState {
     this.world.render_mode = info.render_mode;
     this.world.character_mode = info.character_mode;
     this.world.combat_system = info.combat_system;
-    this.world.view = info.view;
     if (info.style_refs) this.world.style_refs = info.style_refs;
     this.dirty = true;
   }

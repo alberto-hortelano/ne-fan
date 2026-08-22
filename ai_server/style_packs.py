@@ -3,7 +3,7 @@
 Un pack vive en `nefan-core/data/styles/{style_id}/` (style.json + imágenes;
 ver StyleManifestSchema en nefan-core/src/games/loader.ts, la fuente de
 verdad del formato). Las refs son LIBRES: cada imagen declara un `id`
-estable, un archivo dentro de la carpeta de su vista (overworld/ |
+estable, un archivo dentro de una carpeta del pack (overworld/ |
 proscenium/ | fps/ | characters/) y una descripción. Este módulo resuelve la
 referencia de una petición de imagen por su `id` (elegido por el motor
 narrativo); sin elección o con id desconocido cae a la PRIMERA ref de la
@@ -90,36 +90,39 @@ class StylePackResolver:
         manifest = self._manifest(style_id)
         return str(manifest.get("style_token", "")) if manifest else ""
 
-    def _refs_for_view(self, manifest: dict, view: str) -> list[dict]:
-        """Refs elegibles de una vista, en orden de manifest (la primera es
+    def _refs_for_folder(self, manifest: dict, folder: str) -> list[dict]:
+        """Refs elegibles de una carpeta, en orden de manifest (la primera es
         el fallback). La lámina fps_surfaces queda fuera — no es temática."""
         out: list[dict] = []
         for r in manifest.get("refs", []):
             if str(r.get("role") or "") == ROLE_FPS_SURFACES:
                 continue
-            if ref_folder(str(r.get("file", ""))) == view:
+            if ref_folder(str(r.get("file", ""))) == folder:
                 out.append(r)
         return out
 
-    def resolve(self, style_id: str, ref_id: str, view: str) -> StyleRef | None:
-        """Devuelve la referencia `ref_id` del pack para la vista `view`
+    def resolve(self, style_id: str, ref_id: str, folder: str) -> StyleRef | None:
+        """Devuelve la referencia `ref_id` de la carpeta `folder` del pack
         (overworld|proscenium|fps|characters). Sin `ref_id`, o con un id que
-        no existe en esa vista, cae a la primera ref de la vista en orden de
-        manifest; si su imagen aún no existe en disco (pack en construcción)
-        prueba las siguientes DE LA MISMA VISTA — una ref nunca cruza de
-        vista (una cenital contaminaría un plató y viceversa). None si el
-        pack no tiene ninguna imagen utilizable (el llamador degrada al
+        no existe en esa carpeta, cae a la primera ref de la carpeta en orden
+        de manifest; si su imagen aún no existe en disco (pack en
+        construcción) prueba las siguientes DE LA MISMA CARPETA — una ref
+        nunca cruza de carpeta (un personaje no sirve de superficie). None si
+        el pack no tiene ninguna imagen utilizable (el llamador degrada al
         estilo global)."""
-        if view not in REF_FOLDERS:
-            print(f"StylePacks WARNING: vista desconocida '{view}' — usando overworld", flush=True)
-            view = "overworld"
+        if folder not in REF_FOLDERS:
+            print(
+                f"StylePacks WARNING: carpeta desconocida '{folder}' — usando characters",
+                flush=True,
+            )
+            folder = "characters"
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        candidates = self._refs_for_view(manifest, view)
+        candidates = self._refs_for_folder(manifest, folder)
         if not candidates:
             print(
-                f"StylePacks: '{style_id}' sin refs declaradas para la vista '{view}' — "
+                f"StylePacks: '{style_id}' sin refs declaradas en '{folder}/' — "
                 "se usará la referencia global",
                 flush=True,
             )
@@ -127,8 +130,8 @@ class StylePackResolver:
         chosen = next((r for r in candidates if str(r.get("id")) == ref_id), None) if ref_id else None
         if ref_id and chosen is None:
             print(
-                f"StylePacks WARNING: ref '{ref_id}' no existe en '{style_id}' ({view}) — "
-                f"fallback a la primera de la vista ('{candidates[0].get('id')}')",
+                f"StylePacks WARNING: ref '{ref_id}' no existe en '{style_id}' ({folder}/) — "
+                f"fallback a la primera de la carpeta ('{candidates[0].get('id')}')",
                 flush=True,
             )
         order = ([chosen] if chosen else []) + [r for r in candidates if r is not chosen]
@@ -144,7 +147,7 @@ class StylePackResolver:
                     style_token=str(manifest.get("style_token", "")),
                 )
         print(
-            f"StylePacks: '{style_id}' sin imagen utilizable para la vista '{view}' "
+            f"StylePacks: '{style_id}' sin imagen utilizable en '{folder}/' "
             "(pack aún sin generar?) — se usará la referencia global",
             flush=True,
         )
@@ -155,13 +158,13 @@ class StylePackResolver:
         SIN fallback: una celda con ref desconocida se pinta SIN ref, con
         warning — nunca con otra imagen (el fail-loud contra el catálogo vive
         en el pre-flight de narrative-mcp). La lámina fps_surfaces queda
-        fuera (_refs_for_view la excluye por role)."""
+        fuera (_refs_for_folder la excluye por role)."""
         if not ref_id:
             return None
         manifest = self._manifest(style_id)
         if not manifest:
             return None
-        for r in self._refs_for_view(manifest, "fps"):
+        for r in self._refs_for_folder(manifest, "fps"):
             if str(r.get("id")) != ref_id:
                 continue
             loaded = self._load_image(style_id, str(r.get("file", "")))

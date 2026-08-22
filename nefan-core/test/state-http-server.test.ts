@@ -148,7 +148,6 @@ describe("state HTTP API", () => {
     assert.equal(status, 200);
     const uiState = body.ui_state as Record<string, unknown>;
     // Sesión de test sin campos congelados → defaults explícitos.
-    assert.equal(uiState.view, "overworld");
     assert.equal(uiState.render_mode, "image");
     assert.equal(uiState.combat_system, "standard");
     assert.ok(Array.isArray(uiState.plugins));
