@@ -156,7 +156,7 @@ export class DevStatusPanel {
     const key = (name: string, ok: boolean) => `${name}${ok ? "✓" : "✗"}`;
     const channels = Object.keys(st.api_cache.channels).length;
     this.configEl.textContent =
-      `escena ${st.config.scene_model} · ` +
+      `superficies ${st.config.surface_model} · ` +
       `skins ${st.config.sprite_skin_model} · ${key("meshy", st.keys.meshy)} ${key("fal", st.keys.fal)}`;
     this.configEl.title =
       `Modelos activos (config.ts → runtime_config.json) y claves del .env ` +

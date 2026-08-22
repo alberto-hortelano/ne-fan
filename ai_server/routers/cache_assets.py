@@ -49,7 +49,7 @@ async def dev_status():
         raise HTTPException(status_code=503, detail="config aún no cargada (lifespan)")
     missing = [
         k
-        for k in ("scene_model", "sprite_skin_model", "usd_eur_rate")
+        for k in ("surface_model", "sprite_skin_model", "usd_eur_rate")
         if k not in cfg
     ]
     if missing:
@@ -64,7 +64,7 @@ async def dev_status():
         "api_cache": DEV_API_CACHE.status(),
         "spend": SPEND.status(),
         "config": {
-            "scene_model": cfg["scene_model"],
+            "surface_model": cfg["surface_model"],
             "sprite_skin_model": cfg["sprite_skin_model"],
             "usd_eur_rate": cfg["usd_eur_rate"],
         },

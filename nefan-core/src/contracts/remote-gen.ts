@@ -2,9 +2,9 @@
  * sin proxy en :8765 — sus únicos clientes, el HTML, resuelven por
  * serviceUrl).
  *
- * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro,
- * fal SAM2, FLUX Fill): repintado de tiles/platós, sprite sheets skinneados,
- * style packs y segmentación. Sin GPU local, sin estado — escala por
+ * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro):
+ * atlas de superficies de la vista fps, sprite sheets skinneados y style
+ * packs. Sin GPU local, sin estado — escala por
  * concurrencia HTTP (latencias de 30–300 s por llamada remota). Registra sus
  * resultados en asset-store. Wire snake_case (Pydantic). Errores:
  * `FastApiErrorResponse`; sin FAL_KEY los endpoints que la requieren dan 503.
@@ -212,7 +212,8 @@ export interface DevStatus {
   api_cache: DevApiCacheStatus;
   spend: DevSpendStatus;
   config: {
-    scene_model: string;
+    /** Modelo del atlas de superficies de la vista fps (celdas tileables). */
+    surface_model: string;
     sprite_skin_model: string;
     /** Tasa fija USD→EUR (config.ts → runtime_config.json). */
     usd_eur_rate: number;

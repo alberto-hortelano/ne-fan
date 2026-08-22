@@ -60,9 +60,7 @@ function edgePoint(edge, at) {
 const OPP = { west: "east", east: "west", north: "south", south: "north" };
 
 /** Plan del bootstrap: arte plano del suelo (camino que copia la feature,
- *  estanque al oeste y — a propósito — la capa #deck VACÍA: el mock de
- *  /review_scene_blueprint devuelve el fix que añade el embarcadero sobre el
- *  agua, para ejercitar el retoque E2E) + volúmenes tipados (taberna cutaway
+ *  estanque al oeste) + volúmenes tipados (taberna cutaway
  *  con puerta sur, mostrador, pinos). El cliente compone el blueprint con la
  *  perspectiva de la sesión.  */
 // Sin rect de fondo: el compositor pone el bioma con su textura (manchas,
@@ -328,17 +326,6 @@ function makeTile(gt) {
 }
 
 async function handleGenerateTile(gt) {
-  // Visibilidad del "mapa real": lo que el bridge resume de los análisis de
-  // imagen de los vecinos (mundo derivado). El motor real lo usa para
-  // continuar murallas/ríos; aquí solo se loguea.
-  for (const [edge, n] of Object.entries(gt?.neighbors ?? {})) {
-    if (n?.image_elements?.length) {
-      const desc = n.image_elements
-        .map((e) => `${e.label}${e.solid ? "·sólido" : ""}${e.tall ? "·alto" : ""}@${e.at[0]}..${e.at[1]}`)
-        .join(", ");
-      console.error(`[fake-ai] tile(${gt.tx},${gt.ty}) vecino ${edge} image_elements: ${desc}`);
-    }
-  }
   if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
   if (TILE_MODE === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
@@ -386,12 +373,6 @@ async function statePost(path, body) {
   }
   return res.json();
 }
-
-// --- Imágenes de escena (mock del pipeline Meshy, sin créditos) ---
-// /generate_scene_image devuelve el PROPIO esquema como "imagen": el cliente
-// la instala 1:1 y cualquier desalineación del recorte/bandas se ve a ojo.
-// Guardado en memoria por sha256[:16] y servido por /cache/scene/{hash}.
-const sceneImages = new Map();
 
 // ── Atlas de superficies fps: celdas como PNG de damero del color base ──
 // (plumbing E2E sin créditos: identidad por desc+estilo, cached en la 2ª
@@ -444,30 +425,6 @@ function checkerPng(hexColor, size = 64, cells = 8) {
   ]);
 }
 
-// Sprites de recorte falsos: PNGs 1×1 semitransparentes (cian, naranja,
-// magenta, verde) que el cliente estira al bbox del occluder.
-const FAKE_SPRITES = [
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMIuHOnBwAGHQKV3JjdWwAAAABJRU5ErkJggg==",
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGN4tsCmBwAGgQJPjhIj/wAAAABJRU5ErkJggg==",
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGO4E3WnBwAGxwKfkjsaLAAAAABJRU5ErkJggg==",
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPIO5HXAwAFfQIxxipcbgAAAABJRU5ErkJggg==",
-].map((b64) => Buffer.from(b64, "base64"));
-
-/** Placa de fondo falsa: 1×1 verde hierba (el cliente lo estira al tile). */
-const FAKE_PLATE = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMIKTIGAAIXAPrbayeaAAAAAElFTkSuQmCC",
-  "base64",
-);
-
-/** Dimensiones de un PNG (IHDR: width/height big-endian en bytes 16..23). */
-function pngDims(imageB64) {
-  const b64 = String(imageB64 ?? "").replace(/^data:image\/png;base64,/, "");
-  if (!b64) return null;
-  const buf = Buffer.from(b64, "base64");
-  if (buf.length < 24 || buf.readUInt32BE(12) !== 0x49484452 /* "IHDR" */) return null;
-  return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
-}
-
 const server = http.createServer((req, res) => {
   // CORS: el navegador (cliente 2D) llama cross-origin; el bridge server-side
   // lo ignora. ACAO en TODAS las respuestas + preflight OPTIONS.
@@ -517,30 +474,12 @@ const server = http.createServer((req, res) => {
       keys: { meshy: true, fal: true },
     });
   }
-  if (req.method === "GET" && req.url?.startsWith("/cache/scene/")) {
-    const hash = req.url.slice("/cache/scene/".length);
-    const png = sceneImages.get(hash);
-    if (!png) return send(404, { detail: `fake-ai: imagen ${hash} no encontrada` });
-    res.writeHead(200, { "Content-Type": "image/png", ...cors });
-    return res.end(png);
-  }
   if (req.method === "GET" && req.url?.startsWith("/cache/surface/")) {
     const hash = req.url.slice("/cache/surface/".length);
     const png = surfaceImages.get(hash);
     if (!png) return send(404, { detail: `fake-ai: superficie ${hash} no encontrada` });
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
-  }
-  if (req.method === "GET" && req.url?.startsWith("/fake/sprite/")) {
-    const idx = Number(req.url.slice("/fake/sprite/".length));
-    const png = FAKE_SPRITES[idx];
-    if (!png) return send(404, { detail: `fake-ai: sprite ${idx} no existe` });
-    res.writeHead(200, { "Content-Type": "image/png", ...cors });
-    return res.end(png);
-  }
-  if (req.method === "GET" && req.url === "/fake/plate") {
-    res.writeHead(200, { "Content-Type": "image/png", ...cors });
-    return res.end(FAKE_PLATE);
   }
   if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
     const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
@@ -658,26 +597,6 @@ const server = http.createServer((req, res) => {
           hero_key: heroKey, hero_url: `/cache/sprite_hero/${heroKey}`,
         });
       }
-      if (req.method === "POST" && req.url === "/generate_scene_image") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const b64 = String(body.image_b64 ?? "").replace(/^data:image\/png;base64,/, "");
-        if (!b64) return send(422, { detail: "fake-ai: image_b64 requerido" });
-        const png = Buffer.from(b64, "base64");
-        const hash = createHash("sha256").update(png).digest("hex").slice(0, 16);
-        sceneImages.set(hash, png);
-        console.error(
-          `[fake-ai] scene_image ${hash} (${png.length}b` +
-          `${body.context_sides?.length ? `, contexto: ${body.context_sides.join("+")}` : ""})`,
-        );
-        return send(200, { hash, cached: false, scene_url: `/cache/scene/${hash}` });
-      }
-      // Atlas de superficies fps (vista fps): identidad por desc+estilo como
-      // el server real — segunda petición idéntica ⇒ todo cached:true.
       if (req.method === "POST" && req.url === "/generate_surface_atlas") {
         let body = {};
         try {
@@ -738,93 +657,6 @@ const server = http.createServer((req, res) => {
       // Completado fake del pack (batch "aplicar estilo" sin créditos).
       if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(req.url ?? "")) {
         return send(200, { generated: [], cost_usd: 0, message: "fake: pack ya completo" });
-      }
-      // Retoque falso del blueprint: si el ground declara agua sin ningún
-      // deck (el bug plantado en BOOTSTRAP_GROUND), el fix devuelve el array
-      // COMPLETO con el embarcadero sobre el estanque; si no, se aprueba.
-      // Ejercita la fase "revisión" completa: aplicar, perforar el agua y
-      // persistir al bridge (map_plan_update con fixes.ground).
-      if (req.method === "POST" && req.url === "/review_scene_blueprint") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const ground = body.scene?.ground;
-        const hasWater = Array.isArray(ground) && ground.some((f) => f?.kind === "water");
-        const hasDeck = Array.isArray(ground) && ground.some((f) => f?.kind === "deck");
-        if (hasWater && !hasDeck) {
-          console.error("[fake-ai] review: agua sin deck → fix con embarcadero");
-          return send(200, {
-            approved: false,
-            issues: ["el estanque no tiene embarcadero transitable (falta un deck)"],
-            fixes: {
-              ground: [
-                ...ground,
-                { id: "embarcadero", kind: "deck", label: "embarcadero", rect: [36, 87.5, 7, 3], material: "wood" },
-              ],
-            },
-          });
-        }
-        console.error("[fake-ai] review: aprobado");
-        return send(200, { approved: true, issues: [] });
-      }
-      // Análisis falso (mundo derivado de imagen): 3 segmentos fijos con
-      // sprites de color plano (1×1 estirado por el cliente): árbol
-      // (solid+tall), roca (solid), estandarte (tall). Posiciones en fracción
-      // del tamaño de la imagen, lejos del spawn central. Verifica a ojo el
-      // overlay B (celdas violetas, recortes con etiqueta/baseline) y la
-      // colisión derivada sin gastar créditos fal/visión.
-      if (req.method === "POST" && req.url === "/analyze_scene_image") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        const dims = pngDims(body.image_b64);
-        if (!dims) return send(422, { detail: "fake-ai: image_b64 no es un PNG" });
-        const { w, h } = dims;
-        const segments = [
-          { id: "seg_0", label: "árbol", solid: true, tall: true, box: [0.15, 0.60, 0.14, 0.16] },
-          // La roca TOCA el borde derecho (este): al generar el tile vecino,
-          // el bridge debe pasarla como image_elements de la costura.
-          { id: "seg_1", label: "roca", solid: true, tall: false, box: [0.91, 0.40, 0.09, 0.18] },
-          { id: "seg_2", label: "estandarte", solid: false, tall: true, box: [0.64, 0.22, 0.06, 0.12] },
-        ].map((s, i) => ({
-          id: s.id,
-          label: s.label,
-          solid: s.solid,
-          tall: s.tall,
-          sprite_url: `/fake/sprite/${i % FAKE_SPRITES.length}`,
-          image_bbox: [
-            Math.round(s.box[0] * w), Math.round(s.box[1] * h),
-            Math.round(s.box[2] * w), Math.round(s.box[3] * h),
-          ],
-          img_w: w,
-          img_h: h,
-        }));
-        console.error(`[fake-ai] analyze: ${segments.length} segmentos jugables`);
-        return send(200, { segments, discarded: 5 });
-      }
-      // Placa de fondo falsa (inpainting de huecos): un 1×1 verde hierba que
-      // el cliente estira como imagen base del tile. Basta para verificar el
-      // flujo entero (máscara → endpoint → instalación) y a ojo: al fundirse
-      // un cutout por proximidad se ve el verde plano de la placa, no una
-      // copia del objeto.
-      if (req.method === "POST" && req.url === "/inpaint_scene_plate") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
-        if (!pngDims(body.image_b64) || !pngDims(body.mask_b64)) {
-          return send(422, { detail: "fake-ai: image_b64 y mask_b64 deben ser PNG" });
-        }
-        console.error("[fake-ai] inpaint_scene_plate: placa 1×1 verde");
-        return send(200, { hash: "fakeplate", cached: false, plate_url: "/fake/plate" });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
         if (SCENE_DELAY_MS > 0) {

@@ -12,13 +12,11 @@ Este módulo NO debe importar llm_client (el gpu-worker no habla con el MCP).
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
-from plate_inpainter import PLATE_ALGO
-from request_util import decode_b64_png
 
 logger = logging.getLogger("ai_server")
 
@@ -51,15 +49,6 @@ class SpriteRequest(BaseModel):
     seed: int = -1
     angle: str = "top_down"
     style_token: str | None = None
-
-
-class ScenePlateRequest(BaseModel):
-    """Placa de fondo del tile: la imagen de escena + la máscara unión de los
-    segmentos `tall` recortados (blanco = hueco). El inpainting local rellena
-    los huecos continuando solo el suelo, sin añadir nada — la capa base que
-    el fade por proximidad de los cutouts revela detrás de un objeto alto."""
-    image_b64: str = Field(min_length=1)
-    mask_b64: str = Field(min_length=1)
 
 
 @router.post("/generate_texture")
@@ -207,42 +196,5 @@ async def generate_sprite_endpoint(body: SpriteRequest):
         "cached": False,
         "sprite_url": f"/cache/sprite/{key}",
         "angle": body.angle,
-        "generation_time_ms": elapsed_ms,
-    }
-
-
-@router.post("/inpaint_scene_plate")
-async def inpaint_scene_plate_endpoint(body: ScenePlateRequest):
-    """Placa de fondo: inpainting LOCAL (SD 1.5, sin créditos) de los huecos
-    que dejan los objetos altos recortados de la imagen de escena. Devuelve la
-    escena sin los objetos — lo que realmente hay debajo. Cacheado por hash de
-    (imagen, máscara): el resume es determinista y gratis."""
-    import asyncio
-    import hashlib
-
-    if deps.plate_inpainter is None:
-        raise HTTPException(status_code=503, detail="deps.plate_inpainter unavailable")
-
-    image_png = decode_b64_png(body.image_b64)
-    mask_png = decode_b64_png(body.mask_b64)
-    ctx = DEV_API_CACHE.namespace_context({
-        "layout": hashlib.sha256(image_png).hexdigest()[:16],
-        "mask": hashlib.sha256(mask_png).hexdigest()[:16],
-        "algo": PLATE_ALGO,
-    })
-    key = deps.scene_cache.hash_key("plate", ctx)
-    if deps.scene_cache.get_by_hash(key, "plate") is not None:
-        return {"hash": key, "cached": True, "plate_url": f"/cache/plate/{key}"}
-
-    start = time.time()
-    async with deps.gpu_lock:
-        plate = await asyncio.to_thread(deps.plate_inpainter.generate, image_png, mask_png)
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.scene_cache.put("plate", "plate", plate, context=ctx, subtype_override="plate")
-    return {
-        "hash": key,
-        "cached": False,
-        "plate_url": f"/cache/plate/{key}",
         "generation_time_ms": elapsed_ms,
     }
