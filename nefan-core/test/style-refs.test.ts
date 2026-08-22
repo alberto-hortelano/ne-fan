@@ -12,6 +12,7 @@ import {
 } from "../src/games/style-refs.js";
 import { styleRoleForNpc } from "../src/games/style-categories.js";
 import { styleRefCatalog } from "../bridge/handlers/session.js";
+import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import type { StyleManifest } from "../src/games/loader.js";
 
 describe("style-refs — carpetas por vista", () => {
@@ -79,29 +80,62 @@ describe("styleRefCatalog — catálogo del motor por vista", () => {
       ],
     }) as StyleManifest;
 
-  it("vista fps: scene = refs de OVERWORLD (los tiles son la rama compartida)", () => {
-    const cat = styleRefCatalog(manifest(), "fps");
-    assert.deepEqual(cat.scene.map((r) => r.id), ["settlement"]);
-    assert.deepEqual(cat.characters.map((r) => r.id), ["commoner"]);
+  it("el catálogo son los personajes: la ref de ESCENA se retiró", () => {
+    const cat = styleRefCatalog(manifest(), "fps") as Record<string, unknown>;
+    assert.deepEqual((cat.characters as Array<{ id: string }>).map((r) => r.id), ["commoner"]);
+    assert.ok(!("scene" in cat), "no hay catálogo de escena que ofrecer al motor");
   });
 
-  it("fps_faces: refs temáticas fps/ (sin lámina) en overworld y fps; omitido si no hay", () => {
+  it("fps_faces: refs temáticas fps/ (sin lámina); omitido si no hay", () => {
     // Sin refs temáticas: fps_faces ausente (el pre-flight lo lee como
     // "sin catálogo").
-    assert.equal(styleRefCatalog(manifest(), "overworld").fps_faces, undefined);
+    assert.equal(styleRefCatalog(manifest(), "fps").fps_faces, undefined);
     const conCaras = manifest([
       { id: "fachada", file: "fps/fachada.jpg", description: "fachada de casa" },
     ]);
-    for (const view of ["overworld", "fps"] as const) {
-      const cat = styleRefCatalog(conCaras, view);
-      assert.deepEqual(cat.fps_faces?.map((r) => r.id), ["fachada"], view);
-    }
-    // Proscenium no lleva fps_faces (rama stage).
-    assert.equal(styleRefCatalog(conCaras, "proscenium").fps_faces, undefined);
+    assert.deepEqual(styleRefCatalog(conCaras, "fps").fps_faces?.map((r) => r.id), ["fachada"]);
+  });
+});
+
+/** R5 de la retirada: el motor lleva `style_ref: "settlement"` y parecidos en
+ *  su historial y va a seguir emitiéndolos contra un catálogo que ya no
+ *  existe. Con `.passthrough()` en el gate eso habría sido FAIL-SILENT (el
+ *  campo entra, scene-normalize lo tira, nadie se entera). El pre-flight de
+ *  narrative-mcp delega en este zod, así que el rebote llega al motor con el
+ *  motivo y puede re-responder. */
+describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
+  const tile = (extra: Record<string, unknown> = {}) => ({
+    scene_id: "tile_0_0",
+    scene_description: "Un claro",
+    tile: { tx: 0, ty: 0 },
+    biome: "grass",
+    entities: [],
+    ...extra,
   });
 
-  it("proscenium conserva su catálogo de plató", () => {
-    const cat = styleRefCatalog(manifest(), "proscenium");
-    assert.deepEqual(cat.scene.map((r) => r.id), ["calle"]);
+  it("una escena con style_ref se RECHAZA nombrando el campo", () => {
+    const r = FormatDSceneSchema.safeParse(tile({ style_ref: "settlement" }));
+    assert.equal(r.success, false, "un campo retirado no puede colarse por passthrough");
+    const issue = r.error!.issues.find((i) => i.path.join(".") === "style_ref");
+    assert.ok(issue, "el error apunta al campo, para que el motor sepa qué quitar");
+    assert.match(issue!.message, /retirado/);
+  });
+
+  it("sin ella la misma escena pasa, y la style_ref de NPC sigue viva", () => {
+    assert.equal(FormatDSceneSchema.safeParse(tile()).success, true);
+    const conNpc = tile({
+      entities: [
+        {
+          id: "aldeana",
+          kind: "npc",
+          name: "Aldeana",
+          cell: [4, 4],
+          footprint: [1, 1],
+          glyph: "n",
+          style_ref: "commoner",
+        },
+      ],
+    });
+    assert.equal(FormatDSceneSchema.safeParse(conNpc).success, true);
   });
 });

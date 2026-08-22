@@ -71,15 +71,18 @@ const RETIRED_PROSCENIUM =
   "Empieza una partida nueva en mundo abierto o primera persona.";
 
 /** Catálogo de refs de estilo que ve el motor narrativo (`world.style_refs`):
- *  las refs de la VISTA activa (la primera es el fallback sin elección) y
- *  las de personaje, cada una con su descripción en español. Se recalcula
- *  del manifest en start_session Y resume_session — editar un pack a mano se
- *  refleja al reanudar (el save solo lo cachea). */
+ *  las de personaje (una por NPC) y las temáticas de CARA, cada una con su
+ *  descripción en español. Se recalcula del manifest en start_session Y
+ *  resume_session — editar un pack a mano se refleja al reanudar (el save
+ *  solo lo cachea).
+ *
+ *  NO hay catálogo de ESCENA: la `style_ref` de escena elegía la lámina que
+ *  guiaba el repintado del tile y murió con él. La primera persona pinta con
+ *  style_token + lámina de superficies + refs de cara. */
 export function styleRefCatalog(
   style: StyleManifest,
   view: WorldView,
 ): {
-  scene: Array<{ id: string; description: string }>;
   characters: Array<{ id: string; description: string }>;
   fps_faces?: Array<{ id: string; description: string }>;
 } {
@@ -87,19 +90,13 @@ export function styleRefCatalog(
     id: r.id,
     description: r.description,
   });
-  // Las escenas de una sesión fps son TILES de la rama compartida con
-  // overworld, y su `style_ref` de escena lo consume el repintado OBLICUO —
-  // el catálogo scene de fps es el de overworld (la carpeta fps/ del pack
-  // guarda refs de CARA, no de escena).
-  const sceneView: WorldView = view === "fps" ? "overworld" : view;
   const out: ReturnType<typeof styleRefCatalog> = {
-    scene: styleRefsForView(style, sceneView).map(entry),
     characters: styleCharacterRefs(style).map(entry),
   };
   // Refs temáticas de CARA (fps/, sin la lámina): el motor las elige por
-  // cara de volumen (`surface_ref`) para el atlas de superficies. En ambos
-  // mundos de rama tile (el snapshot es compartido); omitido cuando el pack
-  // no declara ninguna (el pre-flight trata ausencia como "sin catálogo").
+  // cara de volumen (`surface_ref`) para el atlas de superficies. Omitido
+  // cuando el pack no declara ninguna (el pre-flight trata la ausencia como
+  // "sin catálogo").
   if (view === "overworld" || view === "fps") {
     const faces = styleRefsForView(style, "fps").map(entry);
     if (faces.length > 0) out.fps_faces = faces;

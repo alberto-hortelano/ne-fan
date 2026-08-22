@@ -255,18 +255,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
         ? raw.scatter_generators
         : undefined,
     scatter_zones: Array.isArray(raw.scatter_zones) ? raw.scatter_zones : undefined,
-    // Ref de estilo ELEGIDA por el motor narrativo para esta escena (id del
-    // catálogo world.style_refs). Shim de lectura de saves legacy: escenas
-    // persistidas antes del formato de refs libres llevan `style_tag`, cuyos
-    // valores son ids válidos tras la migración de packs. Passthrough sin
-    // validar — el pre-flight vive en narrative-mcp; el server degrada un id
-    // desconocido a la primera ref de la vista.
-    style_ref:
-      typeof raw.style_ref === "string"
-        ? raw.style_ref
-        : typeof raw.style_tag === "string"
-          ? raw.style_tag
-          : undefined,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     objects,
     npcs,

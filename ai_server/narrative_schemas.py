@@ -8,7 +8,6 @@ de esos archivos — editar el texto allí, nunca aquí. Fail-loud si faltan.
 
 import json
 import os
-import re
 from pathlib import Path
 
 
@@ -452,16 +451,6 @@ def validate_scene_response(data: dict) -> dict:
     data["scene_id"] = scene_id
     # Keep `room_id` as alias so older clients keep working.
     data["room_id"] = scene_id
-    # style_ref: id de la ref de estilo del pack elegida para el repintado
-    # IA (id LIBRE del manifest — el catálogo lo conoce narrative-mcp, que
-    # hace el pre-flight fail-loud; aquí solo se exige forma de slug). Un
-    # valor malformado se descarta con aviso (mejor sin ref que un 422 aguas
-    # abajo cuando el cliente lo reenvíe). `style_tag` es el nombre legacy en
-    # escenas persistidas — misma regla en lectura.
-    for field in ("style_ref", "style_tag"):
-        if data.get(field) and not re.fullmatch(r"[A-Za-z0-9_.-]+", str(data[field])):
-            print(f"validate_scene: {field} malformado '{data[field]}' — descartado", flush=True)
-            data.pop(field, None)
     data["scene_description"] = (
         data.get("scene_description") or data.get("room_description") or "Un paraje desolado."
     )
@@ -537,6 +526,18 @@ def validate_scene_response(data: dict) -> dict:
         )
     if data.pop("stage", None) is not None:
         print("validate_scene_response: stage descartado (el plató proscenio se retiró)", flush=True)
+    # La `style_ref` de ESCENA elegía la lámina que guiaba el repintado del
+    # tile, y ese repintado murió con la vista oblicua: la primera persona
+    # pinta con style_token + lámina de superficies + refs de CARA. El gate la
+    # RECHAZA aguas arriba (pre-flight MCP); aquí se descarta con traza, como
+    # `stage`. La que sigue viva es la de cada NPC (`entities[].style_ref`).
+    for _retirado in ("style_ref", "style_tag"):
+        if data.pop(_retirado, None) is not None:
+            print(
+                f"validate_scene_response: {_retirado} de escena descartado "
+                "(la ref de escena se retiró con el repintado del tile)",
+                flush=True,
+            )
 
     # ── Terrain legend ───────────────────────────────────────────────────
     # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma

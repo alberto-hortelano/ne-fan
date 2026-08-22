@@ -61,7 +61,7 @@ const DEFAULT_WORLD: NarrativeWorldState = {
   combat_system: "",
   // Tratado como INMUTABLE (siempre se reasigna entero, nunca se muta): el
   // spread de DEFAULT_WORLD puede compartir esta instancia sin riesgo.
-  style_refs: { scene: [], characters: [] },
+  style_refs: { characters: [] },
 };
 
 const DEFAULT_PLAYER: NarrativePlayerState = {
@@ -247,8 +247,8 @@ export class NarrativeState {
   }
 
   /** Reemplaza el catálogo de refs de estilo que ve el motor (`style_ref`
-   *  por escena). El bridge lo recalcula del style.json en start_session y
-   *  resume_session — el save solo lo cachea. */
+   *  por NPC, `surface_ref` por cara). El bridge lo recalcula del style.json
+   *  en start_session y resume_session — el save solo lo cachea. */
   setStyleRefs(refs: NarrativeWorldState["style_refs"]): void {
     this.world.style_refs = refs;
     this.dirty = true;

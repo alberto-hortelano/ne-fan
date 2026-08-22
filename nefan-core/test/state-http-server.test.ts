@@ -153,7 +153,7 @@ describe("state HTTP API", () => {
     assert.equal(uiState.combat_system, "standard");
     assert.ok(Array.isArray(uiState.plugins));
     const doc = String(body.ui_doc);
-    assert.ok(doc.includes("overworld") && doc.includes("dialogue"), "doc canónico servido");
+    assert.ok(doc.includes("UI SYSTEMS REFERENCE") && doc.includes("dialogue"), "doc canónico servido");
   });
 
   it("GET /story devuelve la crónica completa de la sesión activa", async () => {

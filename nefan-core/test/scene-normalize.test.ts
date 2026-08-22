@@ -347,21 +347,17 @@ describe("formatDToWorld — la cola de la world scene", () => {
     assert.equal(formatDToWorld(basura).scatter_generators, undefined);
   });
 
-  it("style_ref: la elección del motor, el shim style_tag de saves viejos, o nada", () => {
-    const elegido = makeFormatD();
-    elegido.style_ref = "overworld_aldea";
-    elegido.style_tag = "ignorado";
-    assert.equal(formatDToWorld(elegido).style_ref, "overworld_aldea", "style_ref manda sobre style_tag");
-
-    const legacy = makeFormatD();
-    legacy.style_tag = "overworld_aldea";
-    assert.equal(formatDToWorld(legacy).style_ref, "overworld_aldea", "shim de lectura de saves legacy");
-
-    // Un style_tag que no es cadena (save corrupto) no se propaga: el server
-    // degradaría a la primera ref de la vista, no a un id inventado.
-    const roto = makeFormatD();
-    roto.style_tag = 42;
-    assert.equal(formatDToWorld(roto).style_ref, undefined);
+  // La `style_ref` de ESCENA se retiró (guiaba el repintado del tile, que
+  // murió con la vista oblicua): normalizar no la propaga, ni ella ni su
+  // alias legacy `style_tag`. La de ENTIDAD (npc) sigue viva y tiene sus
+  // propios casos más abajo.
+  it("la style_ref de escena no llega a la world scene (campo retirado)", () => {
+    const conRef = makeFormatD();
+    conRef.style_ref = "settlement";
+    conRef.style_tag = "settlement";
+    const w = formatDToWorld(conRef) as Record<string, unknown>;
+    assert.ok(!("style_ref" in w), "no se propaga la elección de escena");
+    assert.ok(!("style_tag" in w), "tampoco el alias legacy");
   });
 
   it("el biome viaja solo si es una cadena", () => {

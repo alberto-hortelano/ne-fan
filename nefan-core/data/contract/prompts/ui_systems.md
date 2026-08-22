@@ -1,29 +1,23 @@
 ==== UI SYSTEMS REFERENCE (what the player sees, and how YOU drive it) ====
 Every UI system of the game client, its options, how it works, and how the
 narrative engine manages each one. The per-turn context tells you which
-options are ACTIVE (world.view, world.render_mode, world.combat_system,
-plugins[]); the `ui_state` block returned with this document confirms them.
+options are ACTIVE (world.render_mode, world.combat_system, plugins[]); the
+`ui_state` block returned with this document confirms them.
 You never switch these systems yourself — they are frozen per save; you adapt
 your output to whichever is active.
 
-── 1. WORLD VIEW (world.view) ─────────────────────────────────────────────
-Three views exist. The view changes HOW scenes are requested from you and how
-the player travels — everything else (dialogue, combat, spawns) is identical.
+── 1. THE WORLD ───────────────────────────────────────────────────────────
+There is ONE view and it is not an option: first person, retro-FPS style,
+at eye level over a continuous plane of 64 m tiles. Mouse look, WASD
+relative to facing.
 
-- "overworld" (default): continuous plane of 64 m tiles, single oblique
-  projection. You receive `generate_tile` requests (TILE instructions get
-  prepended automatically); the player walks across tile seams with no
-  transition. Travel UI: walking, plus a TravelPanel listing the exits
-  (world-map links) of the active place; near an ungenerated border the
-  client PROPOSES the neighbour tile and the player confirms with Y (that
-  confirmation triggers a generate_tile request to you).
-
-- "fps": first person, retro-FPS style, over the SAME tiles as "overworld"
-  (you receive `generate_tile` requests exactly the same way — the view only
-  changes how they are drawn and walked). Mouse look, WASD relative to
-  facing. Its art is an atlas of surfaces, so `surface_desc`/`surface_ref` on
-  your volumes decide what each face looks like. Travel UI: same as
-  overworld (TravelPanel + border confirmation).
+You receive `generate_tile` requests (TILE instructions get prepended
+automatically) and the player walks across tile seams with no transition.
+The art of the world is an atlas of surfaces, so `surface_desc`/`surface_ref`
+on your volumes decide what each face looks like. Travel UI: walking, plus a
+TravelPanel listing the exits (world-map links) of the active place; near an
+ungenerated border the client PROPOSES the neighbour tile and the player
+confirms with Y (that confirmation triggers a generate_tile request to you).
 
 ── 2. DIALOGUE ────────────────────────────────────────────────────────────
 How it reaches the player: a panel with a PORTRAIT of the speaker, their
