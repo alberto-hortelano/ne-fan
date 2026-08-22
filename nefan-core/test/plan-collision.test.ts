@@ -93,7 +93,7 @@ describe("planCollisionGrid", () => {
 });
 
 // ── Consistencia bridge↔cliente ────────────────────────────────────────────
-// El cliente 2D (applyPlanCollision) y el bridge (sim-collision) llaman ambos a
+// El cliente (applyPlanCollision) y el bridge (sim-collision) llaman ambos a
 // planCollisionGrid con el mismo rect del tile. Este test comprueba que las
 // decisiones de bloqueo del PROVIDER del bridge coinciden con las de un
 // collider construido como el cliente, sobre los mismos puntos.

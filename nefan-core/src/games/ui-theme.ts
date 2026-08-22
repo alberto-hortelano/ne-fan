@@ -1,6 +1,6 @@
 /** Tema de la INTERFAZ DE JUEGO declarado por un style pack.
  *
- * Módulo PURO (sin node:fs) — el cliente 2D lo importa en el bundle del
+ * Módulo PURO (sin node:fs) — el cliente lo importa en el bundle del
  * navegador, igual que style-refs.ts / style-application-schema.ts;
  * `games/loader.ts` lo enchufa al manifest y lo re-exporta.
  *

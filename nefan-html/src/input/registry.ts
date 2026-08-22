@@ -1,4 +1,4 @@
-/** Registro de proveedores de input del cliente 2D — la familia "input".
+/** Registro de proveedores de input del cliente — la familia "input".
  *
  *  A diferencia del combate (propiedad del mundo, game.json.systems), los
  *  controles son capacidad del CLIENTE: se eligen por query param

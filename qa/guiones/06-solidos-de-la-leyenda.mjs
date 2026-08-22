@@ -2,7 +2,7 @@
  *
  *  `formatDToWorld` resuelve `terrain_legend` a dos cosas que el juego usa de
  *  verdad: el NOMBRE de cada char y la lista `solid_chars` que alimenta el
- *  colisionador del cliente 2D y la colisión server-side de NPCs
+ *  colisionador del cliente y la colisión server-side de NPCs
  *  (`bridge/sim-collision.ts`). Los defaults (muro y agua bloquean) y la
  *  posibilidad de declarar `{name, solid:false}` para un vado son contrato,
  *  no detalle: un fallo aquí encierra al jugador o le deja andar sobre el río.

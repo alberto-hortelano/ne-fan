@@ -273,7 +273,7 @@ export class TitleScreen {
     this.content.style.maxWidth = "720px";
     this.content.innerHTML = `
       <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
-      <p style="margin-bottom:18px;color:#999">Cliente 2D — selecciona una partida o empieza una nueva.</p>
+      <p style="margin-bottom:18px;color:#999">Selecciona una partida o empieza una nueva.</p>
       <div id="ts-status" style="margin-bottom:18px;font-size:12px;color:#666"></div>
       <h2 style="margin-bottom:10px;color:#bbb">Partidas guardadas</h2>
       <div id="ts-sessions" style="margin-bottom:24px"></div>

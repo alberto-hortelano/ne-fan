@@ -17,7 +17,7 @@
  *      el lugar donde está — el bucle ida/vuelta se puede repetir.
  *
  *  Un panel que ofrece "viajar a donde ya estás" no es solo feo: es la vía de
- *  viaje viva del cliente 2D, y mientras muestre las salidas de otro lugar el
+ *  viaje viva del cliente, y mientras muestre las salidas de otro lugar el
  *  destino de verdad no es clicable.
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.

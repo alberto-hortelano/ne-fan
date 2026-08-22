@@ -5,7 +5,7 @@
  *  migración del save v3 (escenas centradas en el origen) estampa la escena
  *  vieja en el tile (0,0) sin mover al jugador ni a los NPC.
  *
- *  Convención de ejes (idéntica al cliente 2D): east = +x, west = −x,
+ *  Convención de ejes (idéntica al cliente): east = +x, west = −x,
  *  south = +z (ty+1), north = −z (ty−1).
  *
  *  El cliente HTML IMPORTA este módulo — no duplicar la geometría. */

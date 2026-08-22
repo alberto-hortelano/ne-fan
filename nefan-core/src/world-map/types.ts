@@ -36,7 +36,7 @@ export const LINK_KINDS = [
 ] as const;
 export type LinkKind = (typeof LINK_KINDS)[number];
 
-/** Lado de una escena por el que se sale/entra. Mismos ejes que el cliente 2D:
+/** Lado de una escena por el que se sale/entra. Mismos ejes que el cliente:
  *  east = +x, west = -x, south = +z, north = -z; en `approx_position` [x, y]
  *  del espacio local del parent, y+ = south. */
 export type Edge = "north" | "south" | "east" | "west";

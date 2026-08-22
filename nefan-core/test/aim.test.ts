@@ -12,7 +12,7 @@ import { pickAimTarget } from "../src/scene/aim.js";
 
 /** El ojo del jugador: 1,6 m sobre el suelo (EYE_M de la vista fps). */
 const OJO = { x: 0, y: 1.6, z: 0 };
-/** Forward hacia −z, el mismo con el que arranca el jugador del cliente 2D. */
+/** Forward hacia −z, el mismo con el que arranca el jugador del cliente. */
 const NORTE = { x: 0, y: 0, z: -1 };
 const OPTS = { maxDistanceM: 12, coneRad: (10 * Math.PI) / 180 };
 

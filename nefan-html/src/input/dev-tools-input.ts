@@ -1,4 +1,4 @@
-/** Teclas de DESARROLLO del cliente 2D — fijas, fuera del InputProvider:
+/** Teclas de DESARROLLO del cliente — fijas, fuera del InputProvider:
  *  son del harness (pipeline de imagen IA, debug de colisión), no del esquema
  *  de control del jugador, así que funcionan igual con cualquier provider.
  *

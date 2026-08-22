@@ -50,7 +50,7 @@ export interface AssetStoreHealthResponse {
 export function createAssetStoreServer(opts: AssetStoreServerOptions): Server {
   const server = createServer((req, res) => {
     // Espejo del CORSMiddleware(allow_origins=["*"]) de los FastAPI del
-    // stack: el cliente 2D corre en localhost:3000 y pide los blobs con
+    // stack: el cliente corre en localhost:3000 y pide los blobs con
     // crossOrigin="anonymous" (necesita acceso a píxeles — sin la cabecera,
     // Chrome bloquea la respuesta y el decode() revienta en EncodingError).
     res.setHeader("Access-Control-Allow-Origin", "*");

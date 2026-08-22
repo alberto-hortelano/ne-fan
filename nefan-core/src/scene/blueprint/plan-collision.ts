@@ -1,5 +1,5 @@
 /** Colisión del PLAN declarado — definición ÚNICA compartida por los dos
- *  clientes de física para que jugador (cliente 2D) y NPCs (bridge, vida
+ *  clientes de física para que jugador (cliente) y NPCs (bridge, vida
  *  ambiental) colisionen EXACTAMENTE igual sobre el mismo plan.
  *
  *  Antes cada lado componía las mismas fuentes por su cuenta: el cliente unía

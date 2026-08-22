@@ -13,7 +13,7 @@
  *  atar el tile a ningún lugar habiendo lugares que visitar, eso no es un
  *  panel de salidas vacío: es un error (issue #172, hallazgo 3 de QA). Sin
  *  `place_id` el panel «Salidas» se apaga SIN UN SOLO AVISO y con él
- *  desaparece la única vía de viaje del cliente 2D.
+ *  desaparece la única vía de viaje del cliente.
  */
 
 import type { WorldMapManager } from "./world-map.js";

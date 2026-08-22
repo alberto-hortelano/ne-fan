@@ -103,7 +103,7 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
 }
 
 describe("CORS (espejo del CORSMiddleware de los FastAPI)", () => {
-  it("toda respuesta lleva Access-Control-Allow-Origin: * (el cliente 2D pide blobs con crossOrigin)", async () => {
+  it("toda respuesta lleva Access-Control-Allow-Origin: * (el cliente pide blobs con crossOrigin)", async () => {
     // Blob (aunque sea miss), JSON y error: la cabecera va SIEMPRE — sin
     // ella Chrome bloquea la imagen y el decode() del plató da EncodingError.
     for (const path of ["/cache/albedo/nadaquever", "/health", "/no-existe"]) {
