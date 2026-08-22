@@ -65,7 +65,28 @@ Reglas que hacen que un guion valga algo:
 | `09-viaje-de-vuelta` | La vuelta desde un place ya visitado reusa lo generado en vez de volver a pagarlo |
 | `10-fps-telegraph-etiquetas-y-niebla` | Los cuatro huecos de la primera persona: mirada vertical, telegraph del ataque, nombre del NPC bajo la mirilla y muro de niebla en la frontera. El telegraph se afirma sobre el RECUENTO que lleva el renderer (`fps().telegraphEpisode`), no muestreando una ventana de reloj: el episodio lo consume el `delta` topado del game loop y una ventana de pared convierte el guion en una moneda al aire |
 | `11-un-solo-contexto-webgl` | La pestaña abre UN contexto WebGL y solo uno (criterio central de "solo la vista 3D"): se cuenta envolviendo `getContext` antes de cargar la app, no leyendo imports |
-| `12-una-sola-vista-sin-eleccion` | La otra cara de ese criterio, la que el jugador toca: que en NINGUNA de las cinco pantallas de una partida nueva —ni en el panel «Salidas», ni en el selector de fixtures, ni en el HUD, ni en una tecla— se le ofrezca o se le nombre una vista que ya no existe. **Hoy va en rojo por un solo aserto**: el `<title>` de la pestaña sigue diciendo "— 2D" (`nefan-html/index.html:6`) |
+| `12-una-sola-vista-sin-eleccion` | La otra cara de ese criterio, la que el jugador toca: que en NINGUNA de las cinco pantallas de una partida nueva —ni en el panel «Salidas», ni en el selector de fixtures, ni en el HUD, ni en una tecla— se le ofrezca o se le nombre una vista que ya no existe. Nació en rojo por el `<title>` de la pestaña ("— 2D"); **verde desde #206**, que lo corrigió |
+| `13-personajes-animados` | Que el juego sigue teniendo gente después de tirar el motor que la renderizaba (retirada de Godot, 2026-08-22): las 10 hojas del set base de `y_bot` servidas y COMPLETAS —el último frame que promete cada `meta.json`, que es el que falta cuando un render se corta—, y en una partida real un NPC que se mueve solo y un jugador que anda. Ojo al 200 mentiroso: el dev server de Vite responde al PNG que no existe con el `index.html` de la SPA, así que el aserto mira el `content-type`, no `r.ok` |
+
+## El otro ejecutable: `qa/presets.mjs`
+
+No todo lo mecánico cabe en un guion de navegador. **¿Arranca cada preset de `./start.sh` lo
+que dice?** no se comprueba con una pestaña: se comprueba arrancándolo y mirando los puertos,
+que es lo que enseña la tecla `s`. Vive fuera de `guiones/` a propósito —el runner arranca UN
+stack y se lo pasa a todos, y esto arranca y para siete—, y no copia ni un dato del launcher:
+`SERVICES`, los puertos de `SERVICE_LABELS`, `PRESET_SLUGS` y `PRESET_PROFILES` se leen de
+`start.sh`, así que una máscara con una columna de más falla antes de arrancar nada.
+
+```bash
+node qa/presets.mjs            # los 7 presets con servicios (~2-3 min)
+node qa/presets.mjs e2e html   # solo los que casen
+node qa/presets.mjs --lista    # qué comprobaría, sin arrancar nada
+```
+
+Lo que caza es el fallo que dejó la retirada del cliente Godot: las máscaras son POSICIONALES
+y quitar un servicio las desplaza todas, con lo que un preset levanta el de al lado **sin
+decir nada**. Probado en negativo: cambiando `on html` por `on asset-store` en `start.sh`, el
+preset `html-fixtures` se pone rojo.
 
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
 título en `qa/lib/sesion.mjs` — `qa/lib/` no lo recorre el runner, solo `qa/guiones/`.

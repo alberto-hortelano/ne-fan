@@ -71,7 +71,10 @@ Sin argumentos, presenta un menú con presets que respetan dependencias entre se
 Cosas a tener en cuenta:
 - El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "HTML fixtures" no exige el `.venv` ni las deps del bridge).
 - Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
-- Ctrl+C mata limpiamente todo lo que el launcher arrancó (`trap EXIT`).
+- Ctrl+C para **solo lo que arrancó este launcher** (`trap EXIT` → el proceso y su
+  descendencia). Un servicio ajeno en un puerto del catálogo —el narrative-mcp que posee
+  otro terminal, el stack de otra persona— no se toca. La tecla `k` sí mata por puerto lo
+  que no arrancó: es lo que se le pide, y por eso enumera qué está matando antes de hacerlo.
 - `NEFAN_EAGER_BIND=0 ./start.sh` no arranca el placeholder de narrative-mcp: el terminal de Claude Code del motor posee `:3737` (flujo de `labs/narrative/README.md`). `NEFAN_GAMES_DIR` se respeta y llega al bridge (juegos de bench aislados).
 - Antes de arrancar el bridge se refresca `data/runtime_config.json` (`scripts/dump-config.ts`), como hacen los hooks `predev` de nefan-core.
 - `./start.sh --preset <slug>` arranca sin TUI. **Cítalo por slug, no por número**: los números se desplazan cuando muere un preset, y un runner que cite el número acaba levantando otro stack y fallando por timeout sin decir por qué. `./start.sh --list` los enumera.

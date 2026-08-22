@@ -30,12 +30,54 @@ PORT_FAKE=18765    # fake-ai-server (labs/narrative) — emula S3–S6, 0 crédi
 NEFAN_EAGER_BIND="${NEFAN_EAGER_BIND:-1}"
 
 declare -a STARTED_PIDS=()
+# Puertos de los servicios que arrancó ESTE launcher. `cleanup` no toca ningún
+# otro: en el catálogo puede haber procesos ajenos (el narrative-mcp que posee
+# el terminal del motor, el stack de otra persona) y matarlos por barrido es un
+# efecto colateral silencioso, no una limpieza.
+declare -a STARTED_PORTS=()
+
+# Registra un proceso arrancado por nosotros junto al puerto que ocupa.
+track_started() {
+    STARTED_PIDS+=("$1")
+    shift
+    STARTED_PORTS+=("$@")
+}
 
 # ─── Utilities ─────────────────────────────────────────────────
 
 have_cmd()  { command -v "$1" >/dev/null 2>&1; }
 port_busy() { fuser "$1/tcp" >/dev/null 2>&1; }
 kill_port() { fuser -k "$1/tcp" 2>/dev/null; sleep 0.5; }
+
+# Quién escucha en un puerto, para poder decirlo antes de matarlo.
+port_owner() {
+    local pids
+    pids=$(fuser "$1/tcp" 2>/dev/null) || return 1
+    # shellcheck disable=SC2086
+    ps -o comm=,args= -p $pids 2>/dev/null | head -1 | cut -c1-60
+}
+
+# Descendientes de un PID, hijos antes que padres (npx deja el proceso real
+# colgando de él: matar solo al padre lo deja huérfano y con el puerto tomado).
+descendants() {
+    local child
+    for child in $(pgrep -P "$1" 2>/dev/null); do
+        descendants "$child"
+        echo "$child"
+    done
+}
+
+# Mata un proceso y su descendencia. TERM primero —los servicios cierran sus
+# puertos y sus ficheros—, KILL solo a lo que sobreviva.
+kill_tree() {
+    local p
+    local -a all
+    mapfile -t all < <(descendants "$1")
+    all+=("$1")
+    for p in "${all[@]}"; do kill -TERM "$p" 2>/dev/null; done
+    sleep 0.5
+    for p in "${all[@]}"; do kill -KILL "$p" 2>/dev/null; done
+}
 
 wait_for_port() {
     local port=$1 timeout=${2:-30} label=${3:-port}
@@ -130,7 +172,7 @@ start_bridge() {
     fi
     ( cd "$PROJECT_DIR/nefan-core" && exec env "${extra_env[@]}" npx tsx bridge/ws-server.ts ) \
         >>"$LOG_DIR/nefan-bridge.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_BRIDGE" "$PORT_STATE"
     wait_for_port "$PORT_BRIDGE" 30 "bridge" || return 1
     echo "✅ bridge :$PORT_BRIDGE (State API :$PORT_STATE)  (log: $LOG_DIR/nefan-bridge.log)"
 }
@@ -139,7 +181,7 @@ start_fake_ai() {
     port_busy "$PORT_FAKE" && kill_port "$PORT_FAKE"
     ( cd "$PROJECT_DIR" && exec node labs/narrative/fake-ai-server.mjs ) \
         >"$LOG_DIR/nefan-fake-ai.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_FAKE"
     wait_for_http_health "http://127.0.0.1:$PORT_FAKE/health" 30 "fake-ai-server" || return 1
     echo "✅ fake-ai-server :$PORT_FAKE  (log: $LOG_DIR/nefan-fake-ai.log)"
 }
@@ -151,7 +193,7 @@ start_replay() {
     port_busy "$PORT_BRIDGE" && kill_port "$PORT_BRIDGE"
     ( cd "$PROJECT_DIR" && exec node labs/narrative/replay-server.mjs ) \
         >"$LOG_DIR/nefan-replay.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_BRIDGE"
     wait_for_port "$PORT_BRIDGE" 15 "replay-server" || return 1
     echo "✅ replay-server :$PORT_BRIDGE (${LOG:-grabación por defecto})  (log: $LOG_DIR/nefan-replay.log)"
 }
@@ -160,7 +202,7 @@ start_asset_store() {
     port_busy "$PORT_ASSETS" && kill_port "$PORT_ASSETS"
     ( cd "$PROJECT_DIR/nefan-core" && exec npx tsx services/asset-store/server.ts ) \
         >"$LOG_DIR/nefan-asset-store.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_ASSETS"
     wait_for_http_health "http://127.0.0.1:$PORT_ASSETS/health" 30 "asset-store" || return 1
     echo "✅ asset-store :$PORT_ASSETS  (log: $LOG_DIR/nefan-asset-store.log)"
 }
@@ -173,7 +215,7 @@ start_gpu_worker() {
         source .venv/bin/activate
         exec python -u ai_server/gpu_worker_main.py
     ) >"$LOG_DIR/nefan-gpu-worker.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_GPU"
     wait_for_http_health "http://127.0.0.1:$PORT_GPU/health" 30 "gpu-worker" || return 1
     echo "✅ gpu-worker :$PORT_GPU  (log: $LOG_DIR/nefan-gpu-worker.log)"
 }
@@ -186,7 +228,7 @@ start_remote_gen() {
         source .venv/bin/activate
         exec python -u ai_server/remote_gen_main.py
     ) >"$LOG_DIR/nefan-remote-gen.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_RGEN"
     wait_for_http_health "http://127.0.0.1:$PORT_RGEN/health" 30 "remote-gen" || return 1
     echo "✅ remote-gen :$PORT_RGEN  (log: $LOG_DIR/nefan-remote-gen.log)"
 }
@@ -213,7 +255,7 @@ start_narrative_mcp() {
     # bridge; the narrative terminal takes over this placeholder when it listens.
     ( cd "$PROJECT_DIR/narrative-mcp" && NARRATIVE_EAGER_BIND=1 exec node dist/server.js ) \
         >"$LOG_DIR/nefan-narrative.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_NARR"
     wait_for_port "$PORT_NARR" 20 "narrative-mcp" || return 1
     echo "✅ narrative-mcp :$PORT_NARR  (log: $LOG_DIR/nefan-narrative.log)"
 }
@@ -226,18 +268,17 @@ start_ai() {
         source .venv/bin/activate
         exec python -u ai_server/main.py
     ) >"$LOG_DIR/nefan-ai.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_AI"
     echo "⏳ ai_server is loading models (takes ~30s on first run)..."
     wait_for_http_health "http://localhost:$PORT_AI/health" 120 "ai_server" || return 1
     echo "✅ ai_server :$PORT_AI  (log: $LOG_DIR/nefan-ai.log)"
 }
 
 start_html() {
-    pkill -f "vite" 2>/dev/null
-    sleep 1
+    port_busy "$PORT_HTML" && kill_port "$PORT_HTML"
     ( cd "$PROJECT_DIR/nefan-html" && exec npx vite --host ) \
         >"$LOG_DIR/nefan-html.log" 2>&1 &
-    STARTED_PIDS+=($!)
+    track_started $! "$PORT_HTML"
     wait_for_port "$PORT_HTML" 30 "HTML client" || return 1
     echo "✅ HTML client http://localhost:$PORT_HTML  (log: $LOG_DIR/nefan-html.log)"
 }
@@ -360,10 +401,12 @@ on() {
     (( ACTIVE[i] == 1 ))
 }
 
-# Mutually exclusive pairs (space-separated indices in a single string).
-# Toggling one in the TUI deactivates its sibling.
-# ai_server vs fake-ai; bridge vs replay (mismo :9877)
-EXCLUSIVE_PAIRS=("2 7" "0 8")
+# Parejas que no pueden estar las dos a la vez: pelean por el mismo puerto.
+# Al encender una en la TUI, se apaga su hermana. Por CLAVE, no por posición:
+# era la última tabla que un servicio nuevo podía desplazar en silencio, y
+# justo la que impide seleccionar dos servicios que se disputan un puerto.
+# ai_server vs fake-ai (:8765 lógico); bridge vs replay-server (:9877)
+EXCLUSIVE_PAIRS=("ai_server fake-ai" "bridge replay-server")
 
 # Presets: nombre + slug + descripción + bitmask posicional en el orden de
 # SERVICES (mismo ancho que SERVICES — añadir un servicio obliga a tocar TODAS).
@@ -440,15 +483,20 @@ apply_preset() {
 }
 
 apply_exclusivity() {
-    # When two slots in an exclusive pair are both 1, keep only `keep_idx`.
+    # De cada pareja en conflicto se conserva el slot recién encendido
+    # (`keep_idx`) y se apaga el otro.
     local keep_idx=$1
-    local pair other
+    local pair ia ib
     for pair in "${EXCLUSIVE_PAIRS[@]}"; do
-        local a="${pair% *}" b="${pair#* }"
-        if [[ $keep_idx == "$a" && ${ACTIVE[$a]} -eq 1 && ${ACTIVE[$b]} -eq 1 ]]; then
-            ACTIVE[$b]=0
-        elif [[ $keep_idx == "$b" && ${ACTIVE[$a]} -eq 1 && ${ACTIVE[$b]} -eq 1 ]]; then
-            ACTIVE[$a]=0
+        ia=$(svc_idx "${pair% *}")
+        ib=$(svc_idx "${pair#* }")
+        if (( ia < 0 || ib < 0 )); then
+            echo "❌ EXCLUSIVE_PAIRS nombra un servicio que no existe: $pair" >&2
+            continue
+        fi
+        (( ACTIVE[ia] == 1 && ACTIVE[ib] == 1 )) || continue
+        if (( keep_idx == ia )); then ACTIVE[ib]=0
+        elif (( keep_idx == ib )); then ACTIVE[ia]=0
         fi
     done
 }
@@ -855,16 +903,23 @@ cmd_status() {
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
 ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU" "$PORT_RGEN" "$PORT_FAKE")
 
+# La tecla `k`: parar un stack entero, incluido el que dejó otra corrida. A
+# diferencia de `cleanup`, aquí SÍ se mata por puerto lo que no arrancamos —
+# es lo que se ha pedido— así que se dice qué se mata antes de hacerlo.
 cmd_stop() {
-    echo "🛑 killing services..."
-    local port
+    echo "🛑 matando lo que ocupe los puertos del catálogo,"
+    echo "   lo hubiera arrancado este launcher o no (p. ej. el narrative-mcp"
+    echo "   que posea otro terminal en :$PORT_NARR):"
+    local port who alguno=0
     for port in "${ALL_PORTS[@]}"; do
         if port_busy "$port"; then
+            who=$(port_owner "$port")
+            echo "    · :$port  ${who:-(desconocido)}"
             kill_port "$port"
-            echo "    · :$port"
+            alguno=1
         fi
     done
-    pkill -f "vite" 2>/dev/null && echo "    · vite"
+    (( alguno == 0 )) && echo "    (ningún puerto ocupado)"
     echo "✅ stack cleaned"
 }
 
@@ -882,20 +937,32 @@ EOF
 
 # ─── Cleanup trap ──────────────────────────────────────────────
 
+# Ctrl+C y salida: para SOLO lo que arrancó este launcher. Antes barría los 9
+# puertos del catálogo con SIGKILL arrancara o no ese servicio, así que un
+# `Ctrl+C` en el preset más tonto se llevaba por delante el narrative-mcp del
+# terminal del motor, o el servicio del preset que alguien acababa de levantar.
+CLEANUP_DONE=0
 cleanup() {
     tui_leave
-    local pid
-    if (( ${#STARTED_PIDS[@]} > 0 )); then
-        echo ""
-        echo "🧹 cleaning up child processes..."
-        for pid in "${STARTED_PIDS[@]}"; do
-            kill "$pid" 2>/dev/null
-        done
-        local p
-        for p in "${ALL_PORTS[@]}"; do
-            port_busy "$p" && kill_port "$p"
-        done
-    fi
+    # El trap está en EXIT, INT y TERM: sin esto, un Ctrl+C lo ejecuta dos veces
+    # (una por INT y otra por el EXIT que viene detrás) y lo cuenta dos veces.
+    (( CLEANUP_DONE == 1 )) && return
+    CLEANUP_DONE=1
+    (( ${#STARTED_PIDS[@]} == 0 )) && return
+    echo ""
+    echo "🧹 parando lo que arrancó este launcher..."
+    local pid p
+    for pid in "${STARTED_PIDS[@]}"; do
+        kill_tree "$pid"
+    done
+    # Un puerto NUESTRO que sobreviva a su proceso se libera, pero diciéndolo:
+    # un puerto ajeno no se toca ni aunque esté en el catálogo.
+    for p in "${STARTED_PORTS[@]}"; do
+        if port_busy "$p"; then
+            echo "    ⚠️  :$p sigue ocupado tras parar su proceso — liberándolo"
+            kill_port "$p"
+        fi
+    done
 }
 trap cleanup EXIT INT TERM
 
