@@ -1,25 +1,14 @@
-/** Plan del tile oblicuo — API pública.
+/** Plan del tile — API pública.
  *
  *  El motor narrativo declara el tile de forma semántica (`ground` plano +
- *  `volumes` tipados) y el builder greybox lo convierte en una escena 3D que
- *  el cliente renderiza con three.js en la oblicua única del formato 2D
- *  (suelo identidad + cizalla KX en la altura). Consumers: el cliente 2D
- *  (render + occluders + expected_elements), la colisión declarativa y el
- *  bridge (validación). */
+ *  `volumes` tipados) y el builder greybox lo convierte en primitivas 3D que
+ *  la vista fps post-procesa y renderiza con three.js. Consumers: el cliente
+ *  (render + atlas de superficies), la colisión declarativa y el bridge
+ *  (validación). */
 
-export {
-  buildTileGreyboxSpec,
-  TILE_GREYBOX_VERSION,
-  TILE_GREYBOX_PX_PER_CELL,
-} from "./greybox.js";
-export type {
-  TileGreyboxPlan,
-  TileGreyboxSpec,
-  TileGreyboxCamera,
-  TileOccluderSpec,
-  ComposedElement,
-} from "./greybox.js";
-export { CANOPY_OPACITY, classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
+export { buildTileGreyboxSpec, TILE_GREYBOX_VERSION } from "./greybox.js";
+export type { TileGreyboxPlan, TileGreyboxSpec } from "./greybox.js";
+export { classifyVolume, volumePartsForTile } from "../greybox/volume-prims.js";
 export { canonicalGreyboxJson } from "../greybox/common.js";
 export type { GreyboxPrimitive, GreyboxLight } from "../greybox/common.js";
 export { volumeCollisionGrid, volumeSolidDiscRadiusCells } from "./collision.js";
@@ -35,8 +24,6 @@ export {
 export type { ScatterZone, ScatterCount, ScatterRunResult, ParseScatterResult } from "./scatter.js";
 export { deriveVolumesFromSchema } from "./derive.js";
 export type { DeriveInput } from "./derive.js";
-export { PROJECTION, OBLIQUE_KX, OBLIQUE_KY } from "./projection.js";
-export type { Projection } from "./projection.js";
 export { parseVolumes, VolumesSchema, VolumeSchema, CustomSchema, CustomPartSchema, MAX_VOLUMES, TREE_MAX_S } from "./volumes.js";
 export type { Volume, CustomVolume, CustomPart } from "./volumes.js";
 export { parseGround, groundHasWater, GroundSchema, GroundFeatureSchema, MAX_GROUND_FEATURES } from "./ground.js";

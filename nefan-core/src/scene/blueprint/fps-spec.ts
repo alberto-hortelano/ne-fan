@@ -1,16 +1,16 @@
 /** Spec del tile para la vista FPS — lógica PURA.
  *
- *  Reutiliza el builder greybox del tile oblicuo (buildTileGreyboxSpec) con
+ *  Reutiliza el builder greybox del tile (buildTileGreyboxSpec) con
  *  adaptaciones que a ras de suelo son obligatorias (bench labs/fps):
  *
  *  1. Los `cutaway` se CIERRAN: un edificio sin techo y con el frente a 0.8 m
- *     se ve como una ruina en primera persona. Se clona el plan (no se muta —
- *     el spec oblicuo del mismo tile no debe cambiar).
+ *     se ve como una ruina en primera persona. Se clona el plan (no se muta:
+ *     el builder compartido debe seguir dando las mismas prims base).
  *  2. Las primitivas se ENRIQUECEN (fps-detail: copas esféricas, ventanas,
  *     chimeneas, tejados de torre, arcos de gate, rocas facetadas) y se
  *     añade el scatter declarativo (scatter.ts) — todo post-proceso fps-only:
- *     el builder compartido no se toca (su spec canónico es el layout_key
- *     del arte pagado de la vista oblicua).
+ *     el builder compartido no se toca (de sus prims sale la identidad de las
+ *     celdas del atlas, que es el arte pagado).
  *  3. Las primitivas y luces se escalan de CELDAS a METROS (×TILE_MPC): el
  *     clasificador de superficies y las UVs del renderer FPS trabajan en
  *     metros (DENSITY_M por repetición).
@@ -40,11 +40,11 @@ import { buildTileGreyboxSpec, type TileGreyboxPlan, type TileGreyboxSpec } from
 /** Separación extra por prim entre rasgos planos del suelo (metros). El
  *  greybox escalona ENTRE capas (área<path<agua<deck) pero dentro de una capa
  *  todas las prims comparten y — coplanares exactas (cajas de segmento +
- *  cilindros de junta de un path). En la oblicua no importa (se rasteriza una
- *  vez a PNG ortográfico); en la perspectiva fps en tiempo real z-fightean.
- *  2 mm por prim es invisible a pie pero supera la precisión del z-buffer
- *  hasta el fog (~1.6 mm a 90 m con near 0.3). No se toca el builder
- *  compartido: su spec canónico es el layout_key del arte pagado. */
+ *  cilindros de junta de un path). En perspectiva fps en tiempo real esas
+ *  coplanares z-fightean. 2 mm por prim es invisible a pie pero supera la
+ *  precisión del z-buffer hasta el fog (~1.6 mm a 90 m con near 0.3). El
+ *  desplazamiento se aplica AQUÍ, no en el builder compartido: de sus prims
+ *  sale la identidad de las celdas del atlas. */
 const GROUND_STAGGER_M = 0.002;
 
 /** Banda de elevación (celdas) de los rasgos ground del greybox: Y_AREA 0.05
@@ -73,7 +73,7 @@ export interface FpsTilePlanInput extends TileGreyboxPlan {
 }
 
 export interface FpsTileSpec {
-  /** Spec del builder (unidades CELDAS — coherente con elements/occluders). */
+  /** Spec del builder, tal cual (primitivas en CELDAS, sin enriquecer). */
   spec: TileGreyboxSpec;
   /** Primitivas en METROS con heroes/detalle/scatter: la entrada de
    *  buildLayout (surfaces.ts) y del renderer FPS. */
@@ -283,7 +283,7 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
       : l,
   );
   // A ras de suelo las sombras necesitan PESO: el ambient 0.85 del clay
-  // cenital lava el contacto ("nada toca el suelo" — crítica externa
+  // compartido lava el contacto ("nada toca el suelo" — crítica externa
   // 2026-08-16). Reequilibrio FPS-ONLY (el spec compartido no cambia).
   lightsM = lightsM.map((l) =>
     l.kind === "ambient" && l.intensity === 0.85 ? { ...l, intensity: 0.6 }
