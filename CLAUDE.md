@@ -92,7 +92,7 @@ cd narrative-mcp && node dist/server.js     # MCP bridge :3737 (opcional)
 cd nefan-html && npm run dev                # Cliente web :3000
 ```
 
-El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado (los ataques animan pero no aplican daño; la lógica vive en nefan-core). Sin bridge es un modo visual/dev: movimiento, animaciones y las fixtures del selector «Room». Para combate y narrativa usar `play` (o `story-web-sin-imagenes` sin servicios de imagen); para el bench sin coste, `e2e-sin-creditos`.
+El juego arranca sin ai_server ni bridge — texturas no se generan y el combate queda deshabilitado ENTERO: la simulación vive en nefan-core detrás del bridge, así que sin él un ataque ni daña ni se anima. Sin bridge el cliente es un VISOR: dice el error de arranque, y con eso dicho pinta las fixtures del selector «Room» con movimiento y locomoción, que es para lo que existe el preset `html-fixtures`. Lo canda `qa/fixtures-sin-bridge.mjs` (mirando si PINTA, no si el puerto está arriba). Para combate y narrativa usar `play` (o `story-web-sin-imagenes` sin servicios de imagen); para el bench sin coste, `e2e-sin-creditos`.
 
 ## Controles in-game
 
