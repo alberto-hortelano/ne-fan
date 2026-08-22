@@ -37,18 +37,13 @@ export interface NefanConfig {
     /** AI GLB models for objects/buildings via /generate_model. */
     ai_models: boolean;
     /** PROHIBIDO — no reintroducir nunca un modo de recorte por siluetas
-     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el SVG
-     *  del compositor como máscara sobre la imagen repintada se probó y NO
-     *  funciona — el modelo de imagen recoloca y reorienta lo declarado, la
-     *  máscara recorta SUELO con forma de objeto y el objeto real queda
-     *  cocido en la placa. Jamás va a funcionar. Los recortes se derivan
-     *  SIEMPRE segmentando lo que el modelo PINTÓ (SAM2 + visión); el plan
-     *  declarado solo sirve de pista (expected_elements / cajas). */
-    /** Revisión por visión del tile REPINTADO (kind MCP image_review): los
-     *  objetos que el img2img inventa ganan colisión/oclusión (keep) o se
-     *  inpaintan (remove). Requiere listener del motor; si no está, el tile
-     *  queda solo con el mundo declarado (error log, no fatal). */
-    image_review: boolean;
+     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el plan
+     *  del motor como máscara sobre la imagen pintada se probó y NO funciona
+     *  — el modelo de imagen recoloca y reorienta lo declarado, la máscara
+     *  recorta SUELO con forma de objeto y el objeto real queda cocido en la
+     *  placa. Jamás va a funcionar. Si algún día vuelve a hacer falta un
+     *  recorte, se deriva SIEMPRE segmentando lo que el modelo PINTÓ; el plan
+     *  declarado solo sirve de pista. */
   };
   narrative: {
     /** Demand a live narrative listener (a second Claude Code session that
@@ -166,7 +161,6 @@ export const CONFIG: NefanConfig = {
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
-    image_review: true,
   },
   narrative: {
     require_llm: true,

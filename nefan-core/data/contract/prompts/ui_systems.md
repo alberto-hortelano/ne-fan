@@ -82,10 +82,11 @@ follows the active system automatically.
 - `schedule_event` plants a future beat the bridge will hand back to you.
 
 ── 7. GRAPHICS MODE (world.render_mode) ───────────────────────────────────
-- "image": the image model repaints your plans (costs credits). Overworld:
-  ground + volumes per tile feed a deterministic 3D render (the base plate);
-  vision passes (blueprint_review / image_review) may ask you to fix plans —
-  answer with the COMPLETE corrected documents (typed arrays, never SVG).
+- "image": the image model paints your plans (costs credits). Overworld:
+  ground + volumes per tile feed a deterministic 3D render, and the image
+  model paints the SURFACES of that render cell by cell (the fps atlas).
+  Your plans are never redrawn by a vision pass — what you declare is what
+  gets built, so declare it complete (typed arrays, never SVG).
 - "vector": the player sees the engine's untextured 3D render of your plans
   directly; no image calls. Both views support both modes.
 - The mode is NOT frozen: the player can switch it (per facet: scenes /

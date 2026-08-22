@@ -18,7 +18,6 @@ import {
   type SessionData,
   type ScheduledEventRecord,
   type SessionMetadata,
-  type TileAnalysisRecord,
   type Vec3Like,
   type NarrativeWorldState,
   toTuple,
@@ -128,37 +127,6 @@ export class NarrativeState {
       if (rec) out[edge] = rec;
     }
     return out;
-  }
-
-  /** Registra el análisis de imagen de un tile (mundo derivado de la imagen):
-   *  lo que la visión clasificó sobre lo realmente pintado. Devuelve false si
-   *  el tile no existe (el cliente analizó un tile que el bridge no registró
-   *  — p. ej. fixture local); el caller decide loguear. */
-  setTileAnalysis(tx: number, ty: number, analysis: TileAnalysisRecord): boolean {
-    const rec = this.getTile(tx, ty);
-    if (!rec) return false;
-    rec.analysis = analysis;
-    this.dirty = true;
-    return true;
-  }
-
-  /** Persiste el plan de un tile (arte del suelo y/o volúmenes) tras el
-   *  retoque de visión — o lo estampa como revisado sin cambios. Los campos
-   *  llegan ya sanitizados por el handler. Devuelve false si el tile no
-   *  existe. */
-  setTileMapPlan(
-    tx: number,
-    ty: number,
-    plan: { ground?: unknown[]; volumes?: unknown[] },
-  ): boolean {
-    const rec = this.getTile(tx, ty);
-    if (!rec) return false;
-    if (plan.ground !== undefined) rec.scene_data.ground = plan.ground;
-    if (plan.volumes !== undefined) rec.scene_data.volumes = plan.volumes;
-    // Marca de revisado: el pipeline del cliente no re-revisa en resume.
-    rec.scene_data.map_plan_reviewed = true;
-    this.dirty = true;
-    return true;
   }
 
   /** Activa el tile (tx,ty) como escena actual (el jugador ha entrado en él

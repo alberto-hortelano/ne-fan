@@ -74,7 +74,6 @@ export function buildLlmContext(
           })),
         }
       : {}),
-    ...activeSceneAnalysis(state),
     ...(state.plugins.length
       ? {
           plugins: buildPluginLlmViews(
@@ -140,24 +139,3 @@ function boundedStory(story: string): string {
   );
 }
 
-/** Resumen compacto del análisis de imagen del tile ACTIVO para el LLM
- *  (máx 20 elementos como strings legibles) — el mapa REAL pintado, que
- *  puede incluir estructuras que no están en el esquema. */
-function activeSceneAnalysis(state: NarrativeState): Pick<LlmContext, "scene_analysis"> {
-  const rec = state.scenes_loaded[state.world.active_scene_id];
-  const analysis = rec?.analysis;
-  if (!analysis || analysis.elements.length === 0) return {};
-  const fmt = (n: number): string => String(Math.round(n));
-  const elements = analysis.elements.slice(0, 20).map((e) => {
-    const traits = [e.solid ? "sólido" : "", e.tall ? "alto" : ""].filter(Boolean).join(", ");
-    return `${e.label}${traits ? ` (${traits})` : ""} ` +
-      `x[${fmt(e.rect.minX)}..${fmt(e.rect.maxX)}] z[${fmt(e.rect.minZ)}..${fmt(e.rect.maxZ)}]`;
-  });
-  return {
-    scene_analysis: {
-      scene_id: state.world.active_scene_id,
-      elements,
-      total: analysis.elements.length,
-    },
-  };
-}

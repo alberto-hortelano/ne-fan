@@ -1,9 +1,0 @@
-{
-  "description": "keep exige tall Y solid: de ahí sale la colisión/oclusión del extra",
-  "expect": "reject",
-  "payload": {
-    "extras": [
-      { "label": "carreta", "action": "keep", "box_px": [220, 340, 90, 60], "tall": false }
-    ]
-  }
-}

@@ -76,42 +76,6 @@ export interface GenerateSpriteResponse {
   generation_time_ms?: number;
 }
 
-/** Placa de fondo del tile: imagen + máscara unión de los segmentos `tall`
- *  (blanco = hueco); LaMa continúa solo el suelo, sin inventar. */
-export interface InpaintScenePlateRequest {
-  image_b64: string;
-  mask_b64: string;
-}
-
-export interface InpaintScenePlateResponse {
-  hash: string;
-  cached: boolean;
-  plate_url: string;
-  generation_time_ms?: number;
-}
-
-/** Pelado de UNA capa del plató (proscenio). La máscara sale SIEMPRE de
- *  segmentar lo pintado (SAM2), jamás de una silueta declarada. */
-export interface PeelSceneLayerRequest {
-  image_b64: string;
-  mask_b64: string;
-  prompt: string;
-  /** "lama" (default del plató, local y determinista) | "flux" (FLUX Fill
-   *  vía fal DIRECTO — FAL_KEY opcional en gpu-worker) | "auto" (flux si hay
-   *  FAL_KEY, si no lama). */
-  backend?: "auto" | "lama" | "flux";
-}
-
-export interface PeelSceneLayerResponse {
-  hash: string;
-  cached: boolean;
-  peeled_url: string;
-  /** Algoritmo REAL usado ("lama_lama-v1" | "fluxfill1") — con backend
-   *  "auto"/"flux" puede degradar a LaMa y la clave de caché lo refleja. */
-  backend: string;
-  generation_time_ms?: number;
-}
-
 /** `model_backend` alimenta el /backend_status de narrative-llm (agregación
  *  best-effort — el shape del panel de Godot no cambia con la extracción). */
 export interface GpuWorkerHealthResponse {
@@ -131,10 +95,6 @@ export const GpuWorkerApi = {
   generateSprite: endpoint<GenerateSpriteRequest, GenerateSpriteResponse>(
     "POST",
     "/generate_sprite",
-  ),
-  inpaintScenePlate: endpoint<InpaintScenePlateRequest, InpaintScenePlateResponse>(
-    "POST",
-    "/inpaint_scene_plate",
   ),
 } as const;
 

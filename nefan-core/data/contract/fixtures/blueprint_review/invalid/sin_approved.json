@@ -1,9 +1,0 @@
-{
-  "description": "falta approved",
-  "expect": "reject",
-  "payload": {
-    "issues": [
-      "algo"
-    ]
-  }
-}

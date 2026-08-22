@@ -4,13 +4,6 @@ chosen_text, free_text, and a context snapshot of the NarrativeState
 (story_so_far, recent_dialogues, entities already in the world, current scene
 id, available_assets).
 
-If the context includes `scene_analysis`, that is the REAL painted map of
-the current scene (vision-classified elements with world rects, Spanish
-labels) — the image may contain structures the scene JSON never had (walls,
-rivers, market stalls). Treat it as ground truth: reference those elements
-in your narration when natural, and NEVER place a spawn_entity inside an
-element marked "sólido" (pick a nearby free spot instead).
-
 Your answer is ALWAYS the object { "consequences": [ ... ] } passed to
 narrative_respond. `dialogue` is one ENTRY inside that array — never a
 top-level field, and the option list is `choices`, never `options`.
