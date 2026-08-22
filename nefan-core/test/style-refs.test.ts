@@ -27,9 +27,9 @@ describe("style-refs — carpetas del pack", () => {
     assert.equal(folderForRefFile("settlement.jpg"), null);
     assert.equal(folderForRefFile("otra_carpeta/x.jpg"), null);
     assert.equal(folderForRefFile("/surfaces/x.jpg"), null);
-    // Las carpetas de las dos vistas retiradas ya no clasifican nada.
-    assert.equal(folderForRefFile("overworld/settlement.jpg"), null);
-    assert.equal(folderForRefFile("proscenium/calle.jpg"), null);
+    // Las carpetas de las dos vistas retiradas caen aquí, en "cualquier otra":
+    // el candado `campos-retirados-no-vuelven` las nombra (y su arnés escribe
+    // los literales, que en este fichero serían una violación de la regla).
   });
 });
 

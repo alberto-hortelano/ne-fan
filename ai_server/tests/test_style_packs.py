@@ -186,9 +186,9 @@ class StylePacksTest(unittest.TestCase):
         self.assertEqual(ref_folder("characters/y.jpg"), "characters")
         self.assertEqual(ref_folder("x.jpg"), "")
         self.assertEqual(ref_folder("otra/x.jpg"), "")
-        # Las carpetas de las vistas retiradas ya no clasifican nada.
-        self.assertEqual(ref_folder("overworld/x.jpg"), "")
-        self.assertEqual(ref_folder("proscenium/x.jpg"), "")
+        # Las carpetas de las vistas retiradas caen en ese "cualquier otra":
+        # sus literales los escribe el arnés de campos-retirados-no-vuelven,
+        # que es el candado que impide que vuelvan a este fichero.
 
 
 if __name__ == "__main__":

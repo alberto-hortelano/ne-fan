@@ -1,7 +1,7 @@
 {
   "name": "y_bot_walk_4kf",
   "description": "Walk Y Bot, 4-keyframe sprite sheet density (Disney 4-pose walk)",
-  "base_sprites": "y_bot/walk/isometric_30",
+  "base_sprites": "y_bot/walk/frontal_8",
   "keyframes": 4,
   "directions": 1,
   "target_fps": 8,

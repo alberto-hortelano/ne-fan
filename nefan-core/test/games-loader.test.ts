@@ -156,13 +156,6 @@ describe("games loader", () => {
         refs: [...minimo, { id: "a", file: "otra_carpeta/a.jpg", description: "carpeta inventada" }],
       }),
     );
-    // Las carpetas de las vistas retiradas ya no son carpetas del pack.
-    assert.throws(() =>
-      StyleManifestSchema.parse({
-        ...base,
-        refs: [...minimo, { id: "a", file: "overworld/a.jpg", description: "cenital" }],
-      }),
-    );
     // Ids duplicados → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({

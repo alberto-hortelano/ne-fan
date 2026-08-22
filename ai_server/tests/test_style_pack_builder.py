@@ -55,7 +55,7 @@ class BuilderTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_prompt(_ref("x", "x.jpg", "algo"), "t", False)
         with self.assertRaises(ValueError):
-            build_prompt(_ref("x", "overworld/x.jpg", "algo"), "t", False)
+            build_prompt(_ref("x", "carpeta_retirada/x.jpg", "algo"), "t", False)
 
     def test_ref_de_cara_es_cara_no_rejilla(self):
         p = build_prompt(

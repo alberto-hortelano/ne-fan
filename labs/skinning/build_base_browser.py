@@ -17,7 +17,7 @@ Showing all 13/44 Mixamo frames in the browser is misleading because it's not
 what ends up in the game.
 
 Usage:
-  python3 labs/skinning/build_base_browser.py --model y_bot --angle isometric_30
+  python3 labs/skinning/build_base_browser.py --model y_bot --angle frontal_8
   python3 labs/skinning/build_base_browser.py --model y_bot --keyframes 4 --target-fps 8
   python3 labs/skinning/build_base_browser.py --model y_bot --anims idle walk
   python3 labs/skinning/build_base_browser.py --model y_bot --full   # original Mixamo density
@@ -775,7 +775,7 @@ def render_index_html(model: str, angle: str, manifest: dict, out_path: Path) ->
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True, help="model id (e.g. y_bot, paladin)")
-    p.add_argument("--angle", default="isometric_30", help="camera angle subdir")
+    p.add_argument("--angle", default="frontal_8", help="camera angle subdir")
     p.add_argument("--anims", nargs="*", default=None,
                    help="restrict to these anim ids (default: all rendered for this model)")
     p.add_argument("--out", type=Path, default=None,

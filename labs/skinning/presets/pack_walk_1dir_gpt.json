@@ -1,7 +1,7 @@
 {
   "name": "pack_walk_1dir_gpt",
   "description": "Baseline V5: walk 4 kf x 1 dir (4 celdas, paridad con produccion) con hero, gpt-image-2 vs nano-banana-pro",
-  "base_sprites": "y_bot/walk/isometric_30",
+  "base_sprites": "y_bot/walk/frontal_8",
   "keyframes": 4,
   "directions": 1,
   "variants": ["V5"],

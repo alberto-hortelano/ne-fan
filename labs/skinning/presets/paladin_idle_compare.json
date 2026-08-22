@@ -1,7 +1,7 @@
 {
   "name": "paladin_idle_compare",
   "description": "Paladin idle baseline — comparativa con Y Bot para ver impacto del modelo base",
-  "base_sprites": "paladin/idle/isometric_30",
+  "base_sprites": "paladin/idle/frontal_8",
   "frames": 10,
   "target_fps": 8,
   "directions": 1,
