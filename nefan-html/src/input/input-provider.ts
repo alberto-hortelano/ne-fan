@@ -1,4 +1,4 @@
-/** Contrato del proveedor de input del cliente 2D (sistema intercambiable).
+/** Contrato del proveedor de input del cliente (sistema intercambiable).
  *
  *  Implementaciones registradas en ./registry.ts (default: teclado+ratón;
  *  "scripted" para bench/E2E). Solo cubre GAMEPLAY: las teclas de desarrollo

@@ -1,6 +1,6 @@
 /** Referencias LIBRES de un style pack y compatibilidad estilo↔juego.
  *
- * Módulo PURO (sin node:fs) para que el cliente 2D pueda importarlo en el
+ * Módulo PURO (sin node:fs) para que el cliente pueda importarlo en el
  * bundle del navegador; `games/loader.ts` re-exporta lo público.
  *
  * Un pack ya no declara categorías de un enum: declara imágenes LIBRES, cada

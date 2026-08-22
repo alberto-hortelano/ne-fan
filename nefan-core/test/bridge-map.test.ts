@@ -370,7 +370,7 @@ describe("bridge activación por posición (tiles + anchors)", () => {
 });
 
 
-/** El panel «Salidas» del cliente 2D se dibuja desde `scene.exits`, que el
+/** El panel «Salidas» del cliente se dibuja desde `scene.exits`, que el
  *  bridge adjunta con las salidas del place de la escena. Si la escena no
  *  queda atada a ningún place, `enrichSceneWithExits` cae al
  *  `active_place_id`, que en un mapa recién sembrado es la raíz "world" — sin

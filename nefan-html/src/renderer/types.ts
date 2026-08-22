@@ -44,11 +44,11 @@ export interface Entity {
   /** Footprint in metres on the XZ plane, taken from the scene JSON `scale`.
    *  Falls back to a square based on `radius` when not set. */
   sizeXZ?: { x: number; z: number };
-  /** Altura en metros (scale[1] de la world scene) — extrusión del prisma en
-   *  el schematic y umbral de entrada al depth-sort (edificios/árboles). */
+  /** Altura en metros (scale[1] de la world scene) — alto del volumen que
+   *  pinta el renderer y ancla del marcador de la entity mirada. */
   sizeY?: number;
-  /** Pista de forma para el schematic: box (rect) | cylinder/sphere (círculo) |
-   *  cone (triángulo). Ausente → rectángulo (o rombo si category==="item"). */
+  /** Pista de forma del volumen: cylinder/capsule | sphere | cone. Ausente o
+   *  desconocida → caja (el switch vive en fps-gl.ts). */
   shape?: string;
   /** Optional Mixamo character reference: when set and SpriteRenderer has the
    *  matching sheet cached, the entity is drawn as a sprite instead of a circle. */

@@ -187,7 +187,7 @@ export interface DevApiCacheToggleRequest {
   enabled: boolean;
 }
 
-// ── Estado agregado del panel de dev del cliente 2D ──
+// ── Estado agregado del panel de dev del cliente ──
 
 /** Una llamada REAL a una API de pago (nunca cache-hits). Coste ESTIMADO por
  *  tabla estática (meshy_client.py), no facturación real. */
@@ -254,7 +254,7 @@ export const RemoteGenApi = {
     "POST",
     "/dev/api_cache",
   ),
-  /** Panel de dev del cliente 2D (routers/cache_assets.py). */
+  /** Panel de dev del cliente (routers/cache_assets.py). */
   devStatus: endpoint<void, DevStatus>("GET", "/dev/status"),
 } as const;
 

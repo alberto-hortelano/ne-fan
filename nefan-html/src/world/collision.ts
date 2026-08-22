@@ -1,4 +1,4 @@
-/** Colisión del mundo del cliente 2D — extraída de main.ts.
+/** Colisión del mundo del cliente — extraída de main.ts.
  *
  *  Dos fuentes de solidez por tile, en UNIÓN (las dos bloquean):
  *  1. `collider`      — terrain_grid del esquema (muros W, agua w, features);

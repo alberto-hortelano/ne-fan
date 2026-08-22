@@ -28,7 +28,7 @@ type FormatDEntity = {
   footprint: [number, number];
   glyph?: string;
   /** Pista de forma para el render (box|cylinder|sphere|cone). Opcional; el
-   *  cliente 2D la usa para dibujar círculos/triángulos en el schematic. */
+   *  cliente la usa como geometría del volumen, en vez de caer a caja. */
   shape?: string;
   /** Altura en METROS (no en celdas — el footprint sí va en celdas). Opcional;
    *  sin ella se aplica el default por kind (KIND_DEFAULT_HEIGHT). */
@@ -225,9 +225,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     world_rect: worldRect,
     tile: tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty) ? { tx: tile.tx, ty: tile.ty } : undefined,
     terrain: { color: [0.18, 0.22, 0.14] },
-    // El grid de terreno crudo (río/camino/puente/piedra…) para que el cliente
-    // lo pinte en el schematic en vez de un color plano. El resto lo ignora.
-    // `terrain: { color }` sigue siendo el fallback cuando esto no está.
+    // El grid de terreno crudo (río/camino/puente/piedra…): el cliente lo
+    // consume para la COLISIÓN de terreno (createTerrainCollider), no para
+    // pintar — el suelo se pinta desde `ground`. `terrain: { color }` sigue
+    // siendo el fallback de color cuando esto no está.
     terrain_grid: {
       grid: terrain as string[],
       legend,
@@ -237,7 +238,7 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       // Esquina NW del grid en coordenadas mundo (plano continuo).
       origin: [worldRect.minX, worldRect.minZ] as [number, number],
       // Chars que bloquean movimiento (muro/agua + leyenda `{name, solid}`).
-      // Los consume `createTerrainCollider`; el schematic los ignora.
+      // Los consume `createTerrainCollider`.
       solid_chars: solidChars,
     },
     // Plan del tile (rasgos de suelo declarativos + volúmenes tipados).

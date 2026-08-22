@@ -114,7 +114,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   const { narrative, npcDirector, onMutation } = opts;
 
   const server = createServer((req, res) => {
-    // CORS: el cliente 2D (localhost:3000) registra asset_refs de escena
+    // CORS: el cliente (localhost:3000) registra asset_refs de escena
     // (/scene/asset_refs) directamente contra el State API — mismo criterio
     // permisivo que el asset-store (362cc74: solo dev local en 127.0.0.1).
     if (req.method === "OPTIONS") {
@@ -169,7 +169,7 @@ async function handle(
   // start/resume lo pisó con la petición en vuelo, TODO lo que el motor lea
   // o escriba iría a la sesión equivocada (reproducido 2026-08-17: places de
   // un mundo inyectados en el world_map de otro save). 409 fail-loud; solo
-  // /health queda fuera. Sin cabecera (cliente 2D, benches) no hay guardia.
+  // /health queda fuera. Sin cabecera (cliente, benches) no hay guardia.
   const claimedSession = req.headers["x-nefan-session"];
   if (
     typeof claimedSession === "string" &&

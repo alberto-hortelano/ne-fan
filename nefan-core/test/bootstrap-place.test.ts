@@ -2,9 +2,9 @@
  *
  *  Si no lo queda, `enrichSceneWithExits` se cae al `active_place_id`, que en
  *  un mapa recién creado es la raíz ("world") — y la raíz no tiene links, así
- *  que el panel «Salidas» del cliente 2D sale VACÍO sin un solo error. Con el
+ *  que el panel «Salidas» del cliente sale VACÍO sin un solo error. Con el
  *  panel apagado no hay viaje a ningún lugar: la única vía viva de viaje del
- *  cliente 2D desaparece en silencio (issue #172, hallazgo 3 de QA).
+ *  cliente desaparece en silencio (issue #172, hallazgo 3 de QA).
  *
  *  Aquí se prueba el resolvedor PURO en los dos sentidos. El camino real por
  *  el bridge (start_session → narrative_status: error) está en

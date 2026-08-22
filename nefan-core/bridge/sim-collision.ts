@@ -37,7 +37,7 @@ export interface SimCollisionProvider {
 }
 
 /** Collider del PLAN de una escena (agua∖decks del ground + huellas de los
- *  volumes), unidos por la MISMA función de core que el cliente 2D
+ *  volumes), unidos por la MISMA función de core que el cliente
  *  (applyPlanCollision) — un solo grid, no dos colliders OR'd, para que
  *  jugador y NPCs colisionen idéntico. Un source con parse inválido degrada a
  *  "sin esa fuente" con warning (nunca tumba el tick). */

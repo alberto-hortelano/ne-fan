@@ -69,7 +69,7 @@ export async function generateBootstrapTileScene(
   // bridge no puede decidirlo solo (el mapa lo acaba de sembrar el motor en
   // esta misma llamada), así que se cruza lo que declaró con el mapa real: si
   // no cuadra, error que el motor puede corregir — nunca un panel «Salidas»
-  // vacío, que es la única vía de viaje del cliente 2D (issue #172).
+  // vacío, que es la única vía de viaje del cliente (issue #172).
   const placeRes = resolveBootstrapPlaceId(ctx.narrative.worldMap, res.scene);
   if (placeRes.kind === "error") {
     throw new Error(`El tile inicial no queda atado a ningún lugar del mapa: ${placeRes.error}`);

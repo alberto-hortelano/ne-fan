@@ -99,7 +99,7 @@ export interface NefanConfig {
     surface_model: string;
     surface_hero_model: string;
     /** Tasa fija USD→EUR para el contador de gasto del panel de dev (los
-     *  precios de Meshy/fal son USD; el cliente 2D muestra euros). */
+     *  precios de Meshy/fal son USD; el cliente muestra euros). */
     usd_eur_rate: number;
     texture_lazy_load: boolean;
     /** Techo del cache de assets en bytes. Al arrancar (y vía POST
