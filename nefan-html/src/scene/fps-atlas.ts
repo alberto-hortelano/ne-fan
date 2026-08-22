@@ -108,7 +108,14 @@ export class FpsAtlasController {
       await this.runFor(key, { resolveOnly: !this.deps.generationOn() });
     } finally {
       this.pendingTiles.delete(key);
-      if (this.queuedTiles.delete(key)) void this.onActiveTile(key).catch(() => {});
+      // El re-disparo es la ÚLTIMA oportunidad de ese tile: si se lo come un
+      // catch mudo, el jugador se queda en clay sin que nada lo diga y el
+      // síntoma aparece a un pipeline de distancia.
+      if (this.queuedTiles.delete(key)) {
+        void this.onActiveTile(key).catch((err) =>
+          errors.push("fps-atlas", `re-disparo del atlas de ${key}`, err),
+        );
+      }
     }
   }
 
