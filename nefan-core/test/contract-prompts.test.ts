@@ -17,13 +17,15 @@ const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.met
 /** Marcadores load-bearing por archivo: identificadores que también existen
  *  en el código (scene-expand, consequence-handler, ground, volumes). */
 const CONTRACT_MARKERS: Record<string, string[]> = {
-  // world_rules explica la elección de style_ref desde el catálogo
-  // world.style_refs — candar los identificadores evita que el prompt y el
-  // wire diverjan (el enum de categorías murió con las refs libres).
+  // world_rules ya no nombra style_ref: la de ESCENA se retiró y las que
+  // quedan (NPC, cara de volumen) se explican donde se declaran
+  // (narrative_event.md y tile_instructions.md).
   "world_rules.md": [
-    "style_ref", "world.style_refs", "HUMANOID", "story_update", "ui_doc_get",
+    "world.style_token", "HUMANOID", "story_update", "ui_doc_get",
   ],
-  "ui_systems.md": ["overworld", "fps", "dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
+  // ui_systems ya no describe un eje de vistas (hay una sola): sus
+  // identificadores son los sistemas que el motor SÍ puede leer del ui_state.
+  "ui_systems.md": ["dialogue", "spawn_entity", "combat_system", "plugin_event", "render_mode", "ui_state"],
   // generate_tile.place / nearby_places: los rellena buildGenerateTileCtx al
   // anclar un place del world map a un tile (viaje desde «Salidas»). Si el
   // prompt deja de nombrarlos, el motor recibe el campo sin saber qué es.
@@ -55,10 +57,11 @@ describe("contrato narrativo — tool schemas compartidos", () => {
     });
   }
 
-  it("generate_scene.json ofrece style_ref LIBRE (sin enum) y solo la variante tile", () => {
-    // Las refs de estilo son libres (ids del pack, catálogo en
-    // world.style_refs): un enum aquí recrearía las categorías fijas. Y el
-    // bloque `stage` del plató no puede volver a ofrecerse al modelo.
+  it("generate_scene.json no ofrece style_ref de escena y solo la variante tile", () => {
+    // La `style_ref` de ESCENA elegía la lámina del repintado del tile y se
+    // retiró con él: no puede volver a ofrecerse al modelo (si vuelve, el
+    // motor la emite y nadie la consume — eje fail-silent). La de NPC sigue
+    // viva dentro de `entities`. El bloque `stage` del plató, tampoco.
     const tool = JSON.parse(
       readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8"),
     ) as {
@@ -67,11 +70,15 @@ describe("contrato narrativo — tool schemas compartidos", () => {
       };
     };
     const props = tool.input_schema.properties;
-    assert.equal(props.style_tag, undefined, "style_tag murió — el campo es style_ref");
-    assert.equal(props.style_ref?.type, "string");
-    assert.equal(props.style_ref?.enum, undefined, "style_ref debe ser libre, sin enum");
+    assert.equal(props.style_tag, undefined, "style_tag murió con el campo que aliasaba");
+    assert.equal(props.style_ref, undefined, "la style_ref de ESCENA se retiró del contrato");
     assert.equal(props.stage, undefined, "el bloque stage del plató se retiró del contrato");
     assert.equal(props.tile?.type, "object", "la única variante viva es el tile");
+    // La de NPC sí sigue declarada (elige el aspecto del skin).
+    assert.ok(
+      JSON.stringify(props.entities).includes('"style_ref"'),
+      "la style_ref de entidad (npc) sigue viva",
+    );
   });
 });
 

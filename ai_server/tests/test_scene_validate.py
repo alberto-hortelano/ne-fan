@@ -103,6 +103,16 @@ class TestVariantesRetiradas(unittest.TestCase):
         out = validate_scene_response(s)
         self.assertNotIn("stage", out)
 
+    def test_la_style_ref_de_escena_no_sobrevive(self):
+        # Se retiró con el repintado del tile (nadie la consume en primera
+        # persona). El rechazo duro vive en el gate zod; aquí, como `stage`,
+        # se descarta para que no se persista un campo que ya no existe.
+        for campo in ("style_ref", "style_tag"):
+            with self.subTest(campo=campo):
+                s = base_scene()
+                s[campo] = "settlement"
+                self.assertNotIn(campo, validate_scene_response(s))
+
 
 class TestSceneValidateFailLoud(unittest.TestCase):
     def test_tile_without_biome_raises(self):

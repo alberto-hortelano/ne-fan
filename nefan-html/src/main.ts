@@ -340,20 +340,6 @@ async function requestModeChange(
   );
 }
 
-/** Vista congelada en un save que ya no existe: el cliente tiene UNA vista
- *  (primera persona) y `world.view` solo sirve ya para RECHAZAR. Un plató no
- *  se abre "por si acaso" —sería un mundo sin escenario, sin salidas pintadas
- *  y sin forma de viajar—: se dice por qué. Pre-producción, los saves no se
- *  migran (CLAUDE.md). */
-function assertPlayableView(view: unknown): void {
-  if (view === "proscenium") {
-    throw new Error(
-      'esta partida se guardó en la vista "proscenio", que ya no existe en el cliente. ' +
-        "Empieza una partida nueva.",
-    );
-  }
-}
-
 /** La sesión ya tiene estilo y modos de render aplicados.
  *
  *  Es la PRECONDICIÓN del gasto del atlas de superficies, y hay que nombrarla:
@@ -2343,7 +2329,6 @@ async function runTitleFlow(): Promise<void> {
         action.appearance,
         action.styleId || undefined,
         action.renderMode,
-        action.view,
         action.characterMode,
       );
       activeSessionId = res.sessionId;
@@ -2357,7 +2342,6 @@ async function runTitleFlow(): Promise<void> {
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
-      assertPlayableView(res.state.world?.view);
       activeSessionId = res.state.session_id;
       applySessionStyle(res.state.world?.style_id ?? "");
       applyUiTheme(res.uiTheme);

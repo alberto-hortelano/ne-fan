@@ -46,7 +46,6 @@ function makeRecord(worldDocHash: string): StyleApplicationRecord {
   return {
     schema_version: STYLE_APPLICATION_SCHEMA_VERSION,
     game_id: GAME,
-    view: "fps",
     style_id: "estilo_test",
     world_doc_hash: worldDocHash,
     applied_at: "2026-08-18T00:00:00.000Z",
@@ -68,7 +67,6 @@ function makeSnapshot(worldDocHash: string): WorldSnapshot {
     schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
     game_id: GAME,
     world_doc_hash: worldDocHash,
-    branch: "tile",
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
     scenes: { tile_0_0: { room_id: "tile_0_0", room_description: "arranque" } },
@@ -87,7 +85,7 @@ describe("pins del asset-store", () => {
         writeFileSync(join(blobs, h, "surface.png"), Buffer.alloc(100));
         db.register({ hash: h, type: "surface", subtype: "albedo", prompt: "p", size_bytes: 100 });
       }
-      db.pin(styleApplicationPinRef(GAME, "fps", "estilo_test"), ["h1"]);
+      db.pin(styleApplicationPinRef(GAME, "estilo_test"), ["h1"]);
       assert.deepEqual([...db.pinnedHashes()], ["h1"]);
       // Presupuesto 0 bytes: sin pin caerían ambos; el pineado sobrevive.
       const summary = prune(db, { surface: blobs }, 1, null);
@@ -105,7 +103,7 @@ describe("pins del asset-store", () => {
       assert.equal(summary2.pruned, 1, "solo el no pineado");
       assert.equal(db.findByHash("h1").length, 1, "el pineado sigue indexado");
 
-      assert.equal(db.unpin(styleApplicationPinRef(GAME, "fps", "estilo_test")), 1);
+      assert.equal(db.unpin(styleApplicationPinRef(GAME, "estilo_test")), 1);
       assert.equal(db.pinnedHashes().size, 0);
       db.close();
     } finally {
@@ -119,13 +117,13 @@ describe("registro de aplicación de estilo (módulo)", () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
     try {
       writeStyleApplication(gamesDir, makeRecord(worldDocHash));
-      const rec = loadStyleApplication(gamesDir, GAME, "fps", "estilo_test");
+      const rec = loadStyleApplication(gamesDir, GAME, "estilo_test");
       assert.equal(rec?.summary.cost_usd, 5.5);
       assert.deepEqual(listStyleApplications(gamesDir, GAME, worldDocHash), [
-        { view: "fps", style_id: "estilo_test", status: "ready" },
+        { style_id: "estilo_test", status: "ready" },
       ]);
       assert.deepEqual(listStyleApplications(gamesDir, GAME, "otro_hash"), [
-        { view: "fps", style_id: "estilo_test", status: "stale" },
+        { style_id: "estilo_test", status: "stale" },
       ]);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
@@ -182,7 +180,7 @@ describe("WS get_world_snapshot / record_style_application", () => {
         bundle.ctx,
       );
       assert.equal((s1.sent[0] as StyleApplicationRecordedMessage).ok, true);
-      assert.ok(loadStyleApplication(gamesDir, GAME, "fps", "estilo_test"));
+      assert.ok(loadStyleApplication(gamesDir, GAME, "estilo_test"));
 
       const s2 = makeSocket();
       await routeMessage({ type: "list_games", requestId: "l1" }, s2.socket, bundle.ctx);
@@ -191,7 +189,7 @@ describe("WS get_world_snapshot / record_style_application", () => {
       };
       const g = listed.games.find((x) => x.game_id === GAME)!;
       assert.deepEqual(g.styles_applied, [
-        { view: "fps", style_id: "estilo_test", status: "ready" },
+        { style_id: "estilo_test", status: "ready" },
       ]);
 
       // Registro inválido ⇒ ok:false sin escribir.

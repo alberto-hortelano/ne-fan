@@ -64,8 +64,8 @@ export class NarrativeClient {
 
   /** Encola la pre-generación del mundo de un juego para una vista. Resuelve
    *  al encolar; el progreso llega por onNarrativeStatus (kind "game_gen"). */
-  async generateGame(gameId: string, view?: string): Promise<{ queued: string }> {
-    const res = await this.bridge.generateGame(gameId, view);
+  async generateGame(gameId: string): Promise<{ queued: string }> {
+    const res = await this.bridge.generateGame(gameId);
     if (!res.ok) {
       throw new Error(res.error ?? "generate_game failed");
     }
@@ -73,8 +73,8 @@ export class NarrativeClient {
   }
 
   /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo). */
-  getWorldSnapshot(gameId: string, view?: string) {
-    return this.bridge.getWorldSnapshot(gameId, view);
+  getWorldSnapshot(gameId: string) {
+    return this.bridge.getWorldSnapshot(gameId);
   }
 
   /** Persiste el registro de una aplicación de estilo (escritor: el bridge). */
@@ -92,7 +92,6 @@ export class NarrativeClient {
     appearance?: { model_id: string; skin_path: string },
     styleId?: string,
     renderMode?: string,
-    view?: string,
     characterMode?: string,
   ): Promise<{
     sessionId: string;
@@ -102,7 +101,7 @@ export class NarrativeClient {
      *  del save: retocar una paleta se ve al reanudar). */
     uiTheme?: UiTheme;
   }> {
-    const res = await this.bridge.startSession(gameId, appearance, styleId, renderMode, view, characterMode);
+    const res = await this.bridge.startSession(gameId, appearance, styleId, renderMode, characterMode);
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }

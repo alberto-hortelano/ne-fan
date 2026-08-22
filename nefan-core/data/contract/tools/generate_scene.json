@@ -36,10 +36,6 @@
         "type": "string",
         "description": "2-3 sentence description of the scene, in Spanish."
       },
-      "style_ref": {
-        "type": "string",
-        "description": "Id of the style-pack reference image that best matches this scene, chosen from world.style_refs.scene (each entry is {id, description}). Include it in every scene. Unknown or missing id degrades to the first reference of the active view."
-      },
       "size": {
         "type": "object",
         "properties": {

@@ -202,36 +202,50 @@ describe("bridge ciclo de sesión", () => {
     assert.match(started3.error ?? "", /modo de render desconocido/);
   });
 
-  it("start_session con vista fps: congela world.view y el resume la acepta", async () => {
+  /** El eje de vistas murió y el save ya no congela ninguna. El riesgo de
+   *  esa retirada no es que deje de compilar: es que el resume tome una rama
+   *  VACÍA y abra una sesión sin mundo, sin error. Este test lo vigila desde
+   *  el otro lado — reanudar debe devolver el mundo, no un ok:true hueco. */
+  it("resume: la sesión reanudada trae su mundo (nunca un ok:true vacío)", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
     await routeMessage(
-      { type: "start_session", requestId: "r1", gameId: "toledo_1200", view: "fps" },
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200" },
       socket,
       ctx,
     );
     const started = sent[0] as SessionStartedMessage;
     assert.equal(started.ok, true);
-    // fps es un mundo de TILES (no de platós): la vista viaja congelada.
-    assert.equal(started.state?.world.view, "fps");
     const sessionId = started.sessionId!;
+    // El mundo del arranque existe antes de guardar (snapshot o bootstrap).
+    await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
+    const escenas = Object.keys(ctx.narrative.scenes_loaded).length;
     await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+
     const { socket: s2, sent: sent2 } = makeSocket();
     await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
-    assert.equal(resumed.state?.world.view, "fps");
+    assert.equal(
+      Object.keys(resumed.state?.scenes_loaded ?? {}).length,
+      escenas,
+      "el resume devuelve las mismas escenas, no una sesión hueca",
+    );
+    assert.ok(resumed.state?.world.active_scene_id, "escena activa restaurada");
+    // Y el catálogo de refs se recalcula del pack (personajes + caras).
+    assert.ok(Array.isArray(resumed.state?.world.style_refs.characters));
 
-    // Vista fuera del enum → aborta con la lista completa.
+    // Tolerancia del borde: un cliente viejo que siga mandando `view` no
+    // rompe nada (el zod hace strip) — el campo simplemente ya no existe.
     const { socket: s3, sent: sent3 } = makeSocket();
     await routeMessage(
-      { type: "start_session", requestId: "r4", gameId: "toledo_1200", view: "vr" },
+      { type: "start_session", requestId: "r4", gameId: "toledo_1200", view: "vr" } as never,
       s3,
       ctx,
     );
-    const bad = sent3[0] as SessionStartedMessage;
-    assert.equal(bad.ok, false);
-    assert.match(bad.error ?? "", /vista desconocida "vr".*fps/);
+    const legacy = sent3[0] as SessionStartedMessage;
+    assert.equal(legacy.ok, true, "un `view` sobrante se ignora, no aborta");
+    assert.ok(!("view" in (legacy.state?.world ?? {})), "y no se congela nada");
   });
 
   it("start_session congela el sistema de combate de game.json (default standard)", async () => {
@@ -703,7 +717,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
       game_id: "toledo_1200",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
-      world: { view: "proscenium", render_mode: "vector" },
+      world: { render_mode: "vector" },
       player: {},
       story_so_far: "",
       scenes_loaded: {},
@@ -849,7 +863,6 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     // La sesión activa avanzó EN MEMORIA (progreso aún no reflejado en ese
     // snapshot de disco) — el escritor único es narrative.
     narrative.session_id = "s5";
-    narrative.world.view = "proscenium";
     narrative.world.render_mode = "vector";
     narrative.world.character_mode = "";
     narrative.story_so_far = "el jugador cruzó tres tiles";

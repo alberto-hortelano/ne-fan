@@ -111,7 +111,7 @@ export async function runBootstrapTile(
     // con `exits`: la segunda partida de este juego arranca sin motor. Los
     // replays vuelven a pasar por broadcastScene, que re-adjunta los exits
     // desde el world map restaurado.
-    writeSessionSnapshot(ctx, sessionGameId, "tile", sceneId);
+    writeSessionSnapshot(ctx, sessionGameId, sceneId);
     broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart);
     // broadcastScene mutated the scene with `exits` — persist them.
     await ctx.narrative.save();

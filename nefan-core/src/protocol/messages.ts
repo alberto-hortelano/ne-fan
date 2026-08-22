@@ -70,10 +70,6 @@ export interface StartSessionMessage {
   /** Modo de imagen de PERSONAJES: "image" (skins IA por descripción) |
    *  "vector" (base y_bot). Ausente = sigue a renderMode. */
   characterMode?: string;
-  /** Vista del mundo elegida en el título: "overworld" | "proscenium".
-   *  Ausente = la default del juego (game.json). Congelada en el save
-   *  (`world.view`) como el estilo. */
-  view?: string;
 }
 
 export interface ResumeSessionMessage {
@@ -132,16 +128,13 @@ export interface ListGamesMessage {
 
 /** Pre-generación del mundo de un juego desde el título: el bridge crea una
  *  sesión EFÍMERA, corre el bootstrap + anillo 3×3 + places clave con el
- *  motor narrativo y persiste el snapshot en data/games/{id}/world/ (rama
- *  tile u stage según la vista). Respuesta game_generated al ENCOLAR; el
+ *  motor narrativo y persiste el snapshot en
+ *  data/games/{id}/world/tile.json. Respuesta game_generated al ENCOLAR; el
  *  progreso y el final viajan por narrative_status kind "game_gen". */
 export interface GenerateGameMessage {
   type: "generate_game";
   requestId: string;
   gameId: string;
-  /** Vista cuya rama de contenido se genera (overworld|fps ⇒ tile,
-   *  proscenium ⇒ stage). Ausente = vista default del juego. */
-  view?: string;
 }
 
 export interface SaveSessionMessage {
@@ -335,22 +328,16 @@ export interface GamesListedMessage {
     style_id: string;
     /** Resumen del mundo (~1.200 chars) — la tarjeta puede mostrar un extracto. */
     world_brief: string;
-    /** Vista DEFAULT del mundo, ya resuelta ("overworld" si game.json no la
-     *  declara). El selector del título la preselecciona. */
-    view: string;
     /** Etiquetas temáticas del mundo ([] = sin declarar, compatible con
      *  cualquier estilo). Filtran el selector de estilos. */
     tags: string[];
-    /** Estado del contenido pre-generado por rama (data/games/{id}/world/):
+    /** Estado del contenido pre-generado (data/games/{id}/world/tile.json):
      *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
-     *  cambió desde la generación, "missing" = nunca generado. Solo queda la
-     *  rama tile, que sirve a overworld Y fps. */
-    generation: {
-      tile: "ready" | "stale" | "missing";
-    };
-    /** Estilos aplicados al juego (batch de assets estilizados por vista):
-     *  "ready" = vigente, "stale" = el mundo se regeneró/editó después. */
-    styles_applied: Array<{ view: string; style_id: string; status: "ready" | "stale" }>;
+     *  cambió desde la generación, "missing" = nunca generado. */
+    generation: "ready" | "stale" | "missing";
+    /** Estilos aplicados al juego (batch de assets estilizados): "ready" =
+     *  vigente, "stale" = el mundo se regeneró/editó después. */
+    styles_applied: Array<{ style_id: string; status: "ready" | "stale" }>;
   }>;
   /** Estilos disponibles para el selector; cover_url es relativo y se
    *  resuelve contra el servicio que sirve GET /styles/{id}/{file}
@@ -360,9 +347,6 @@ export interface GamesListedMessage {
     name: string;
     description: string;
     cover_url?: string;
-    /** Vistas a las que sirve el estilo (derivadas de sus refs declaradas).
-     *  El selector del título filtra con esto. */
-    views: string[];
     /** Etiquetas temáticas del estilo: el selector filtra además por
      *  compatibilidad con las del juego (styleCompatibleWithGame). */
     tags: string[];
@@ -381,15 +365,13 @@ export interface GameCreatedMessage {
   error?: string;
 }
 
-/** Lee el snapshot de mundo pre-generado de un juego (rama de la vista) más
- *  su vocabulario canónico — lo consume el batch de "aplicar estilo" del
- *  título para computar celdas de atlas y roster de skins. */
+/** Lee el snapshot de mundo pre-generado de un juego más su vocabulario
+ *  canónico — lo consume el batch de "aplicar estilo" del título para
+ *  computar celdas de atlas y roster de skins. */
 export interface GetWorldSnapshotMessage {
   type: "get_world_snapshot";
   requestId: string;
   gameId: string;
-  /** Ausente = vista default del juego. */
-  view?: string;
 }
 
 export interface WorldSnapshotMessage {

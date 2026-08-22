@@ -1,6 +1,6 @@
 /** Registro de "estilo aplicado a un juego" — el recibo persistente del batch
- *  de assets estilizados de una (vista, estilo) sobre el snapshot de mundo:
- *  `data/games/{id}/world/styles/{view}_{style_id}.json`.
+ *  de assets estilizados de un estilo sobre el snapshot de mundo:
+ *  `data/games/{id}/world/styles/{style_id}.json`.
  *
  *  No es una caché de assets (eso vive en el asset-store, indexado por las
  *  claves naturales descripción+estilo): es el ESTADO para la UI del título
@@ -27,13 +27,12 @@ export {
 export function styleApplicationPath(
   gamesDir: string,
   gameId: string,
-  view: string,
   styleId: string,
 ): string {
   if (!SAFE_ID.test(gameId) || !SAFE_ID.test(styleId)) {
     throw new Error(`styleApplicationPath: unsafe ids "${gameId}"/"${styleId}"`);
   }
-  return join(gamesDir, gameId, "world", "styles", `${view}_${styleId}.json`);
+  return join(gamesDir, gameId, "world", "styles", `${styleId}.json`);
 }
 
 export function writeStyleApplication(gamesDir: string, record: StyleApplicationRecord): void {
@@ -45,7 +44,7 @@ export function writeStyleApplication(gamesDir: string, record: StyleApplication
   }
   mkdirSync(join(gamesDir, record.game_id, "world", "styles"), { recursive: true });
   writeFileSync(
-    styleApplicationPath(gamesDir, record.game_id, record.view, record.style_id),
+    styleApplicationPath(gamesDir, record.game_id, record.style_id),
     JSON.stringify(parsed.data, null, 2) + "\n",
     "utf-8",
   );
@@ -55,10 +54,9 @@ export function writeStyleApplication(gamesDir: string, record: StyleApplication
 export function loadStyleApplication(
   gamesDir: string,
   gameId: string,
-  view: string,
   styleId: string,
 ): StyleApplicationRecord | null {
-  const path = styleApplicationPath(gamesDir, gameId, view, styleId);
+  const path = styleApplicationPath(gamesDir, gameId, styleId);
   if (!existsSync(path)) return null;
   let raw: unknown;
   try {
@@ -80,10 +78,9 @@ export function loadStyleApplication(
 export function deleteStyleApplication(
   gamesDir: string,
   gameId: string,
-  view: string,
   styleId: string,
 ): boolean {
-  const path = styleApplicationPath(gamesDir, gameId, view, styleId);
+  const path = styleApplicationPath(gamesDir, gameId, styleId);
   if (!existsSync(path)) return false;
   unlinkSync(path);
   return true;
@@ -95,27 +92,25 @@ export function listStyleApplications(
   gamesDir: string,
   gameId: string,
   worldDocHash: string,
-): Array<{ view: string; style_id: string; status: "ready" | "stale" }> {
+): Array<{ style_id: string; status: "ready" | "stale" }> {
   const dir = join(gamesDir, gameId, "world", "styles");
   if (!SAFE_ID.test(gameId) || !existsSync(dir)) return [];
-  const out: Array<{ view: string; style_id: string; status: "ready" | "stale" }> = [];
+  const out: Array<{ style_id: string; status: "ready" | "stale" }> = [];
   for (const file of readdirSync(dir)) {
     if (!file.endsWith(".json")) continue;
-    const m = /^([a-z]+)_(.+)\.json$/.exec(file);
-    if (!m) continue;
-    const [, view, styleId] = m;
+    const styleId = file.slice(0, -".json".length);
+    if (!SAFE_ID.test(styleId)) continue;
     try {
-      const rec = loadStyleApplication(gamesDir, gameId, view, styleId);
+      const rec = loadStyleApplication(gamesDir, gameId, styleId);
       if (!rec) continue;
       out.push({
-        view: rec.view,
         style_id: rec.style_id,
         status: rec.world_doc_hash === worldDocHash ? "ready" : "stale",
       });
     } catch (err) {
       console.warn(`listStyleApplications("${gameId}", ${file}): ${(err as Error).message}`);
-      out.push({ view, style_id: styleId, status: "stale" });
+      out.push({ style_id: styleId, status: "stale" });
     }
   }
-  return out.sort((a, b) => `${a.view}_${a.style_id}`.localeCompare(`${b.view}_${b.style_id}`));
+  return out.sort((a, b) => a.style_id.localeCompare(b.style_id));
 }

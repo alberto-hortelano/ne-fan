@@ -125,10 +125,11 @@ async function main() {
   let currentRequestId: string | null = null;
   let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'develop_world' = 'scene';
   // Catálogo de refs de estilo de la sesión (world.style_refs de la última
-  // petición scene): pre-flight de `style_ref` (escena y NPCs) — un id fuera
-  // del catálogo rebota al motor con la lista válida. null = petición sin
-  // catálogo (fixtures, saves viejos) ⇒ no se valida.
-  let currentStyleRefIds: string[] | null = null;
+  // petición scene): pre-flight de `style_ref` de NPC y de `surface_ref` de
+  // cara — un id fuera del catálogo rebota al motor con la lista válida.
+  // null = petición sin catálogo (fixtures, saves viejos) ⇒ no se valida.
+  // NO hay catálogo de escena: la `style_ref` de escena se retiró (la
+  // primera persona no consume refs de escena) y el gate zod la RECHAZA.
   let currentCharacterRefIds: string[] | null = null;
   let currentFpsFaceRefIds: string[] | null = null;
 
@@ -272,7 +273,6 @@ into context:
               generate_tile?: unknown;
               world?: {
                 style_refs?: {
-                  scene?: Array<{ id?: unknown }>;
                   characters?: Array<{ id?: unknown }>;
                   fps_faces?: Array<{ id?: unknown }>;
                 };
@@ -283,7 +283,6 @@ into context:
           Array.isArray(list) && list.length > 0
             ? list.map((r) => String(r?.id ?? '')).filter(Boolean)
             : null;
-        currentStyleRefIds = catalogIds(ws?.world?.style_refs?.scene);
         currentCharacterRefIds = catalogIds(ws?.world?.style_refs?.characters);
         currentFpsFaceRefIds = catalogIds(ws?.world?.style_refs?.fps_faces);
         // Format D tiene UNA variante y la petición debe declararla:
@@ -362,27 +361,10 @@ into context:
         // prop malformado dejaba el tile sin un solo edificio).
         if (kind === 'scene') {
           const scene = parsed as Record<string, unknown>;
-          // Pre-flight de style_ref: la elección debe existir en el catálogo
-          // del pack (world.style_refs.scene de la petición). Fuera de
-          // catálogo se rebota con los ids válidos — nunca degradar en
-          // silencio una elección del motor.
-          if (
-            currentStyleRefIds !== null &&
-            typeof scene.style_ref === 'string' &&
-            scene.style_ref &&
-            !currentStyleRefIds.includes(scene.style_ref)
-          ) {
-            return {
-              content: [{
-                type: 'text',
-                text: `Invalid style_ref "${scene.style_ref}" — it must be one of the ids in ` +
-                  `world.style_refs.scene (${currentStyleRefIds.join(', ')}). Fix it and call ` +
-                  `narrative_respond again (do NOT drop the rest of the scene).`,
-              }],
-              isError: true,
-            };
-          }
-          // Ídem para las refs de personaje elegidas por NPC.
+          // Refs de personaje elegidas por NPC: la elección debe existir en
+          // el catálogo del pack (world.style_refs.characters de la
+          // petición). Fuera de catálogo se rebota con los ids válidos —
+          // nunca degradar en silencio una elección del motor.
           if (currentCharacterRefIds !== null && Array.isArray(scene.entities)) {
             for (const ent of scene.entities as Array<Record<string, unknown>>) {
               if (ent?.kind !== 'npc') continue;

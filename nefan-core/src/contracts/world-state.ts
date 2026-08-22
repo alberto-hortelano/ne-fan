@@ -162,7 +162,6 @@ export interface ScheduledEventResolveResponse {
 export interface UiDocResponse {
   /** Configuración ACTIVA (congelada en el save) de la sesión. */
   ui_state: {
-    view: string;
     render_mode: string;
     combat_system: string;
     style_id: string | undefined;

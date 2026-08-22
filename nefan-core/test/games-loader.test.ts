@@ -16,7 +16,7 @@ import {
   loadGameMeta,
   loadStyleManifest,
   loadWorldDoc,
-  styleViews,
+  styleFaceRefs,
 } from "../src/games/loader.js";
 
 const REAL_GAMES = fileURLToPath(new URL("../data/games", import.meta.url));
@@ -123,7 +123,7 @@ describe("games loader", () => {
     assert.equal(listed[0].cover_url, "/styles/mi_estilo/cover.jpg");
   });
 
-  it("refs por carpeta: la vista se deriva de la ruta; carpeta desconocida se rechaza", () => {
+  it("refs por carpeta: la ruta clasifica la ref; carpeta desconocida se rechaza", () => {
     const base = {
       style_id: "x",
       name: "x",
@@ -139,9 +139,8 @@ describe("games loader", () => {
         { id: "calle", file: "proscenium/calle.jpg", description: "una calle" },
       ],
     });
-    // fps se deriva de overworld (la lámina es mejora, no habilita).
-    assert.deepEqual(styleViews(m), ["overworld", "proscenium", "fps"]);
-    // Archivo fuera de una carpeta de vista → fail-loud.
+    assert.deepEqual(m.refs.map((r) => r.id), ["aldea", "calle"]);
+    // Archivo fuera de una carpeta del pack → fail-loud.
     assert.throws(() =>
       StyleManifestSchema.parse({
         ...base,
@@ -182,7 +181,7 @@ describe("games loader", () => {
     );
   });
 
-  it("styleViews: personajes y lámina no cuentan; refs vacías → sin vistas", () => {
+  it("styleFaceRefs: solo fps/ temáticas — ni personajes, ni lámina, ni otras carpetas", () => {
     const base = {
       style_id: "x",
       name: "x",
@@ -191,33 +190,18 @@ describe("games loader", () => {
       cover: "cover.jpg",
       tags: ["x"],
     };
-    const soloChars = StyleManifestSchema.parse({
-      ...base,
-      refs: [{ id: "noble", file: "characters/noble.jpg", description: "x" }],
-    });
-    assert.deepEqual(styleViews(soloChars), []);
-    // La lámina fps por sí sola tampoco habilita la vista fps.
-    const soloLamina = StyleManifestSchema.parse({
-      ...base,
-      refs: [{ id: "fps_surfaces", file: "fps/surfaces.jpg", description: "x", role: "fps_surfaces" }],
-    });
-    assert.deepEqual(styleViews(soloLamina), []);
-    const soloStage = StyleManifestSchema.parse({
+    const pack = StyleManifestSchema.parse({
       ...base,
       refs: [
-        { id: "claro", file: "proscenium/claro.jpg", description: "x" },
-        { id: "guerrera", file: "characters/guerrera.jpg", description: "x" },
+        { id: "fachada", file: "fps/fachada.jpg", description: "x" },
+        // La lámina de materiales no es temática: fuera del catálogo.
+        { id: "fps_surfaces", file: "fps/surfaces.jpg", description: "x", role: "fps_surfaces" },
+        { id: "noble", file: "characters/noble.jpg", description: "x" },
+        { id: "aldea", file: "overworld/aldea.jpg", description: "x" },
       ],
     });
-    // Un pack SOLO de plató no sirve fps (fps deriva de overworld).
-    assert.deepEqual(styleViews(soloStage), ["proscenium"]);
-    assert.deepEqual(styleViews(StyleManifestSchema.parse({ ...base, refs: [] })), []);
-    // Un pack solo cenital sirve overworld Y fps.
-    const soloEnv = StyleManifestSchema.parse({
-      ...base,
-      refs: [{ id: "bosque", file: "overworld/bosque.jpg", description: "x" }],
-    });
-    assert.deepEqual(styleViews(soloEnv), ["overworld", "fps"]);
+    assert.deepEqual(styleFaceRefs(pack).map((r) => r.id), ["fachada"]);
+    assert.deepEqual(styleFaceRefs(StyleManifestSchema.parse({ ...base, refs: [] })), []);
   });
 
   it("schema estricto: pack sin tags o con campos legacy es rechazado", () => {
@@ -270,10 +254,9 @@ describe("games loader", () => {
     );
     assert.throws(() => GameMetaSchema.parse({ ...base, systems: { combate: "basic" } }));
     assert.throws(() => GameMetaSchema.parse({ ...base, systems: { combat: "id con espacios" } }));
-    // Vista del mundo: enum cerrado, ausente = overworld.
-    assert.equal(GameMetaSchema.parse(base).view, undefined);
-    assert.equal(GameMetaSchema.parse({ ...base, view: "proscenium" }).view, "proscenium");
-    assert.throws(() => GameMetaSchema.parse({ ...base, view: "isometric" }));
+    // El eje de vistas murió: `view` ya no es un campo del juego y el
+    // schema estricto rechaza cualquier intento de declararlo.
+    assert.throws(() => GameMetaSchema.parse({ ...base, view: "fps" }));
   });
 
   it("los juegos y estilos shipped del repo validan", () => {
@@ -291,15 +274,9 @@ describe("games loader", () => {
       styles.map((s) => s.style_id),
       ["acero_neon", "acuarela_luminosa", "anime", "medievo_crudo", "sombra_de_cuento"],
     );
-    // Vistas: los packs shipped sirven a TODAS (refs de zona + de plató;
-    // fps se deriva de overworld — no tiene categorías propias).
+    // Cada pack shipped declara al menos una ref de cara para el atlas.
     for (const s of styles) {
-      assert.deepEqual(s.views, ["overworld", "proscenium", "fps"], s.style_id);
-    }
-    // La vista default de cada mundo viaja resuelta en el listado (ninguno
-    // declara view ⇒ overworld; la vista es del jugador, no del mundo).
-    for (const g of games) {
-      assert.equal(g.view, "overworld", g.game_id);
+      assert.ok(styleFaceRefs(loadStyleManifest(REAL_STYLES, s.style_id)).length > 0, s.style_id);
     }
   });
 });

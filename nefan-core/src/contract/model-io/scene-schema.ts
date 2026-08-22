@@ -103,6 +103,24 @@ export const FormatDSceneSchema = z
     if (s.biome === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
     }
+    // `style_ref` de ESCENA: retirado. Elegía la lámina temática que guiaba
+    // el repintado del tile, y ese repintado murió con la vista oblicua — la
+    // primera persona no consume una sola de esas refs (su arte sale de
+    // style_token + lámina de superficies + refs de CARA). El motor lo lleva
+    // en su historial y va a seguir emitiéndolo un rato: como `.passthrough()`
+    // lo dejaría entrar y scene-normalize lo tiraría después, el eje era
+    // FAIL-SILENT. Aquí se rebota con el motivo (regla del repo: salida
+    // inválida del modelo → error preciso y re-respuesta). OJO: la `style_ref`
+    // de ENTIDAD (npc) sigue viva — elige el aspecto del skin.
+    if ("style_ref" in s) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["style_ref"],
+        message:
+          "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): " +
+          "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs",
+      });
+    }
   });
 
 export type FormatDScene = z.infer<typeof FormatDSceneSchema>;

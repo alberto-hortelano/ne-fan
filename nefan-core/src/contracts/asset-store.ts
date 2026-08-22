@@ -81,7 +81,7 @@ export interface AssetByHashResponse {
 /** PLANNED F2 — registro remoto de un asset ya subido/escrito por un
  *  generador (sustituye la escritura in-process del manifest). */
 /** POST /assets/pin — protege hashes del prune bajo una referencia lógica
- *  (aplicación de estilo a juego: "game_style:{game}:{view}:{style}").
+ *  (aplicación de estilo a juego: "game_style:{game}:{style}").
  *  Re-pinear el mismo ref AÑADE hashes; DELETE /assets/pin/{ref} los retira
  *  todos (regenerar estilo = unpin del ref viejo + pin del nuevo). */
 export interface AssetPinRequest {

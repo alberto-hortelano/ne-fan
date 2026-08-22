@@ -1,7 +1,7 @@
 /** Snapshot de mundo pre-generado (data/games/{id}/world/): schema y
  *  staleness del módulo puro, replay en start_session (sin motor), escritura
  *  pasiva del bootstrap vivo e independencia del estilo (la clave de
- *  contenido es world_doc_hash + rama, nunca el estilo). */
+ *  contenido es world_doc_hash, nunca el estilo). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -12,7 +12,6 @@ import { createHash } from "node:crypto";
 import { WorldMapManager } from "../src/world-map/world-map.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
-  branchForView,
   deleteWorldSnapshot,
   loadWorldSnapshot,
   worldSnapshotPath,
@@ -55,7 +54,6 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
     schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
     game_id: gameId,
     world_doc_hash: worldDocHash,
-    branch: "tile",
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: wm.serialize(),
     scenes: {
@@ -76,40 +74,37 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
 }
 
 describe("world-snapshot (módulo puro)", () => {
-  it("escribe, carga y borra un snapshot válido; branchForView solo da la rama tile", () => {
+  it("escribe, carga y borra un snapshot válido", () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
     try {
       const snap = makeSnapshot(GAME, worldDocHash);
       writeWorldSnapshot(gamesDir, snap);
-      const loaded = loadWorldSnapshot(gamesDir, GAME, "tile", worldDocHash);
+      const loaded = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
       assert.ok(loaded);
       assert.equal(loaded.entry_scene_id, "tile_0_0");
       assert.equal(Object.keys(loaded.scenes).length, 2);
-      assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", worldDocHash), "ready");
-      assert.equal(deleteWorldSnapshot(gamesDir, GAME, "tile"), true);
-      assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", worldDocHash), "missing");
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
+      assert.equal(deleteWorldSnapshot(gamesDir, GAME), true);
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "missing");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
-    // El plató proscenio se retiró: solo queda la rama del plano continuo.
-    assert.equal(branchForView("overworld"), "tile");
-    assert.equal(branchForView("fps"), "tile");
   });
 
   it("world.md editado ⇒ stale (null + status stale); malformado ⇒ throw", () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
     try {
       writeWorldSnapshot(gamesDir, makeSnapshot(GAME, worldDocHash));
-      assert.equal(loadWorldSnapshot(gamesDir, GAME, "tile", hashOf("otro world.md")), null);
-      assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", hashOf("otro world.md")), "stale");
+      assert.equal(loadWorldSnapshot(gamesDir, GAME, hashOf("otro world.md")), null);
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, hashOf("otro world.md")), "stale");
 
-      writeFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "{no es json", "utf-8");
+      writeFileSync(worldSnapshotPath(gamesDir, GAME), "{no es json", "utf-8");
       assert.throws(
-        () => loadWorldSnapshot(gamesDir, GAME, "tile", worldDocHash),
+        () => loadWorldSnapshot(gamesDir, GAME, worldDocHash),
         /malformado/,
       );
       // El listado degrada a stale con warning, nunca tumba el título.
-      assert.equal(worldSnapshotStatus(gamesDir, GAME, "tile", worldDocHash), "stale");
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "stale");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
@@ -124,11 +119,11 @@ describe("world-snapshot (módulo puro)", () => {
 
       const versioned = makeSnapshot(GAME, worldDocHash);
       writeWorldSnapshot(gamesDir, versioned);
-      const path = worldSnapshotPath(gamesDir, GAME, "tile");
+      const path = worldSnapshotPath(gamesDir, GAME);
       const raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
       raw.schema_version = 99;
       writeFileSync(path, JSON.stringify(raw), "utf-8");
-      assert.throws(() => loadWorldSnapshot(gamesDir, GAME, "tile", worldDocHash), /inválido/);
+      assert.throws(() => loadWorldSnapshot(gamesDir, GAME, worldDocHash), /inválido/);
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
@@ -214,9 +209,9 @@ describe("world-snapshot en start_session", () => {
         first.broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
       );
       assert.equal(first.aiCalls.scene.length, 1);
-      // El snapshot pasivo quedó en data/games/{id}/world/ (rama tile).
+      // El snapshot pasivo quedó en data/games/{id}/world/tile.json.
       const snap = JSON.parse(
-        readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
+        readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8"),
       ) as WorldSnapshot;
       assert.equal(snap.entry_scene_id, "tile_0_0");
       assert.equal(Object.keys(snap.scenes).length, 1);

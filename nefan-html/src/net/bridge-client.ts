@@ -270,15 +270,15 @@ export class BridgeClient {
   /** Pre-generar el mundo de un juego (rama de la vista). La respuesta llega
    *  al ENCOLAR; el progreso y el final viajan por narrative_status kind
    *  "game_gen". */
-  generateGame(gameId: string, view?: string): Promise<GameGeneratedMessage> {
-    return this.request<GameGeneratedMessage>({ type: "generate_game", gameId, view });
+  generateGame(gameId: string): Promise<GameGeneratedMessage> {
+    return this.request<GameGeneratedMessage>({ type: "generate_game", gameId });
   }
 
   /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo).
    *  Timeout largo: el snapshot con anillo+places puede pesar varios MB. */
-  getWorldSnapshot(gameId: string, view?: string): Promise<WorldSnapshotMessage> {
+  getWorldSnapshot(gameId: string): Promise<WorldSnapshotMessage> {
     return this.request<WorldSnapshotMessage>(
-      { type: "get_world_snapshot", gameId, view },
+      { type: "get_world_snapshot", gameId },
       120_000,
     );
   }
@@ -297,10 +297,9 @@ export class BridgeClient {
     appearance?: { model_id: string; skin_path: string },
     styleId?: string,
     renderMode?: string,
-    view?: string,
     characterMode?: string,
   ): Promise<SessionStartedMessage> {
-    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode, view, characterMode });
+    return this.request<SessionStartedMessage>({ type: "start_session", gameId, appearance, styleId, renderMode, characterMode });
   }
 
   resumeSession(sessionId: string): Promise<SessionStartedMessage> {

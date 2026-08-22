@@ -11,7 +11,11 @@ import type { Consequence as WireConsequence } from "../contract/model-io/schema
 // v4: plano continuo de tiles — SceneRecord gana tile/edges, las posiciones de
 //     EntityRecord pasan a metros globales, y la escena activa v3 se envuelve
 //     como tile (0,0) al cargar (migración sin mover al jugador).
-export const SCHEMA_VERSION = 4;
+// v5: muere el eje de vistas — `world.view` y `SessionMetadata.view` ya no
+//     existen. SIN migración: pre-producción, los saves no se conservan (el
+//     campo sobrante de un save v4 se queda en el JSON sin que nadie lo lea,
+//     como pasó con `world.perspective`).
+export const SCHEMA_VERSION = 5;
 
 export interface PlayerAppearance {
   model_id: string;
@@ -32,11 +36,6 @@ export interface NarrativePlayerState {
 export interface NarrativeWorldState {
   name: string;
   atmosphere: string;
-  /** Vista del mundo ("overworld" | "proscenium"), CONGELADA al crear la
-   *  sesión (game.json → view). "proscenium" = escenas discretas tipo plató
-   *  enlazadas por el world map (sin plano continuo de tiles). Campo aditivo:
-   *  saves previos ("") = overworld. */
-  view: string;
   /** Token de texto del estilo visual (prompts de imagen). Viene del
    *  style.json del estilo congelado en la sesión. */
   style_token: string;
@@ -64,19 +63,23 @@ export interface NarrativeWorldState {
    *  CONGELADO al crear la sesión desde game.json.systems.combat. Campo
    *  aditivo: saves previos ("") = "standard". */
   combat_system: string;
-  /** Catálogo de refs del style pack que el motor puede elegir por escena
-   *  (`style_ref`): las de la vista activa (`scene`) y las de personaje
-   *  (`characters`), cada una `{id, description}`. NO es fuente de verdad:
-   *  el bridge lo RECALCULA del style.json en start_session Y resume_session
-   *  (editar el pack a mano se refleja al reanudar). Campo aditivo: saves
-   *  previos = listas vacías (sin catálogo, el server usa su fallback). */
+  /** Catálogo de refs del style pack que el motor puede elegir, cada una
+   *  `{id, description}`. NO es fuente de verdad: el bridge lo RECALCULA del
+   *  style.json en start_session Y resume_session (editar el pack a mano se
+   *  refleja al reanudar). Campo aditivo: saves previos = listas vacías (sin
+   *  catálogo, el server usa su fallback).
+   *
+   *  NO hay catálogo de ESCENA: esa `style_ref` guiaba el repintado del tile
+   *  y murió con él — la primera persona pinta con style_token + lámina de
+   *  superficies + refs de cara. */
   style_refs: {
-    scene: Array<{ id: string; description: string }>;
+    /** Refs de personaje (`characters/`): el motor elige una por NPC
+     *  (`entities[].style_ref`) y guía su skin IA. */
     characters: Array<{ id: string; description: string }>;
     /** Refs temáticas de CARA (carpeta fps/ del pack, sin la lámina): el
      *  motor las elige por cara de volumen (`surface_ref`) para guiar las
-     *  celdas hero del atlas de superficies. Solo mundos de rama tile;
-     *  ausente cuando el pack no declara ninguna. */
+     *  celdas hero del atlas de superficies. Ausente cuando el pack no
+     *  declara ninguna. */
     fps_faces?: Array<{ id: string; description: string }>;
   };
 }
@@ -207,9 +210,6 @@ export interface SessionMetadata {
   summary: string;
   scene_count: number;
   entity_count: number;
-  /** Vista congelada en el save ("overworld" | "proscenium") — el title
-   *  screen la muestra en la lista de partidas. Ausente en saves antiguos. */
-  view?: string;
   /** Modo de gráficos de ESCENARIOS congelado ("image" | "vector") — si la
    *  partida gasta créditos de imagen o va en maqueta 3D. Ausente en saves
    *  antiguos. */

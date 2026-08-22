@@ -18,7 +18,6 @@ import { loadWorldDoc } from "../src/games/loader.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   writeWorldSnapshot,
-  type WorldBranch,
 } from "../src/games/world-snapshot.js";
 import { loadWorldVocabulary } from "../src/games/vocabulary.js";
 import type { PluginManifest } from "../src/plugins/types.js";
@@ -103,7 +102,6 @@ export interface BridgeContext {
 export function writeSessionSnapshot(
   ctx: BridgeContext,
   gameId: string,
-  branch: WorldBranch,
   entrySceneId: string,
 ): void {
   if (!ctx.persistWorldSnapshots) return;
@@ -117,15 +115,14 @@ export function writeSessionSnapshot(
       schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
       game_id: gameId,
       world_doc_hash: createHash("sha256").update(worldDoc, "utf-8").digest("hex"),
-      branch,
       generated_at: new Date().toISOString(),
       world_map: structuredClone(ctx.narrative.worldMap.serialize()),
       scenes,
       entry_scene_id: entrySceneId,
     });
     console.log(
-      `Bridge: world snapshot escrito para "${gameId}" (${branch}, ` +
-        `${Object.keys(scenes).length} escenas)`,
+      `Bridge: world snapshot escrito para "${gameId}" ` +
+        `(${Object.keys(scenes).length} escenas)`,
     );
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
