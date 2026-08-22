@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NE-Fan Remote-Gen", lifespan=lifespan)
 
-# El cliente 2D (vite :3000) le habla DIRECTO desde el navegador (repintados,
+# El cliente (vite :3000) le habla DIRECTO desde el navegador (repintados,
 # sheets, styles, toggle dev). Sin CORS todo fetch muere en el preflight.
 app.add_middleware(
     CORSMiddleware,

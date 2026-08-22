@@ -25,7 +25,7 @@ class DevApiCacheRequest(BaseModel):
 
 @router.get("/dev/api_cache")
 async def dev_api_cache_status():
-    """Estado del cache de modo dev (toggle de la top bar del cliente 2D):
+    """Estado del cache de modo dev (toggle de la top bar del cliente):
     on/off + último payload guardado por canal de API."""
     return DEV_API_CACHE.status()
 
@@ -41,7 +41,7 @@ async def dev_api_cache_toggle(body: DevApiCacheRequest):
 
 @router.get("/dev/status")
 async def dev_status():
-    """Estado agregado para el panel de dev del cliente 2D (un solo poll):
+    """Estado agregado para el panel de dev del cliente (un solo poll):
     dev-cache + gasto acumulado + config de generación activa + presencia de
     claves (NUNCA sus valores). Contrato en nefan-core/src/contracts."""
     cfg = deps.config

@@ -98,7 +98,7 @@ curl -s -XPOST localhost:9899/send \
 ## Replay / "película" del log (depurar el render sin motor ni jugador)
 
 `replay-server.mjs` reproduce una sesión grabada (`runs/<ts>/events.ndjson`) como película para el
-**cliente 2D** (`nefan-html`), **sin motor narrativo, sin ai_server y sin jugador**. Esto funciona
+**cliente** (`nefan-html`), **sin motor narrativo, sin ai_server y sin jugador**. Esto funciona
 porque `events.ndjson` capturó los mismos mensajes `in` que el bridge real envía al cliente
 (`session_started`, `narrative_event` con la escena en `effects[].spawn_entity.data.scene`,
 `narrative_status`…) — que es justo lo que el cliente consume para dibujar.
@@ -119,7 +119,7 @@ dibuja cajas + etiquetas + terreno + diálogo sin backend.
 node labs/narrative/replay-server.mjs
 #    opciones: HOLD_MS=2000 FLASH_MS=150 LOOP=1 REAL_TIMING=1 PORT=9877
 #    otro run: LOG=labs/narrative/runs/<otro>/events.ndjson node labs/narrative/replay-server.mjs
-# 3) Cliente 2D en otra terminal:
+# 3) Cliente en otra terminal:
 cd nefan-html && npm run dev
 # 4) Abre el navegador, pulsa "Nueva partida", elige tavern_intro → la sesión se reproduce sola.
 ```

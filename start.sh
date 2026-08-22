@@ -828,7 +828,7 @@ run_selection() {
 
     on html && { start_html || return 1; }
 
-    # URL del cliente 2D: con el fake activo hay que abrirlo con ?ai= para que
+    # URL del cliente: con el fake activo hay que abrirlo con ?ai= para que
     # TODOS los servicios del cliente (skins, atlas, estilos) resuelvan al fake.
     if on html; then
         if on fake-ai; then

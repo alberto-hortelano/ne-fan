@@ -29,7 +29,7 @@ const STATE_API = process.env.STATE_API ?? "http://127.0.0.1:9878";
 // del headersTimeout de undici (300 s) en el fetch del bridge.
 const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 
-// ── Skin de sprite sheets (bench del cliente 2D, sin GPU) ────────────────
+// ── Skin de sprite sheets (bench del cliente, sin GPU) ────────────────
 // POST /skin_sprite_sheet: en vez del img2img real, el "skin" son los frames
 // de OTRO modelo (SKIN_SPRITE_MODEL, default paladin — solo tiene idle) para
 // que la sustitución base→skin sea VISIBLE en el cliente. Las anims sin
@@ -424,7 +424,7 @@ function checkerPng(hexColor, size = 64, cells = 8) {
 }
 
 const server = http.createServer((req, res) => {
-  // CORS: el navegador (cliente 2D) llama cross-origin; el bridge server-side
+  // CORS: el navegador (cliente) llama cross-origin; el bridge server-side
   // lo ignora. ACAO en TODAS las respuestas + preflight OPTIONS.
   const cors = {
     "Access-Control-Allow-Origin": "*",

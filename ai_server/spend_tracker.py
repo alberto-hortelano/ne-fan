@@ -7,7 +7,7 @@ ni del DevApiCache) registra su coste ESTIMADO — tablas estáticas de
 gpu-worker, remote-gen) escriben al mismo fichero: un append de una línea
 corta es atómico en POSIX (O_APPEND), así que no hace falta lock ni IPC —
 mismo patrón de estado compartido por disco que `dev_api_cache.py`. El total
-lo sirve remote-gen en GET /dev/status y el cliente 2D lo muestra en euros.
+lo sirve remote-gen en GET /dev/status y el cliente lo muestra en euros.
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ Lo demás vive en `docs/arquitectura/` y se lee **cuando toca**:
 | [`plugins.md`](docs/arquitectura/plugins.md) | añadas un sistema de juego (manifest declarativo) o una implementación intercambiable de hot loop |
 | [`ui.md`](docs/arquitectura/ui.md) | toques la interfaz in-game o el tema de un style pack |
 | [`arranque.md`](docs/arquitectura/arranque.md) | necesites arrancar el juego sin manos para un bench o una prueba |
-| [`qa/README.md`](qa/README.md) | tengas que verificar algo del cliente 2D: guiones ejecutables, no prosa |
+| [`qa/README.md`](qa/README.md) | tengas que verificar algo del cliente: guiones ejecutables, no prosa |
 
 ## Lo que ya NO se comprueba leyendo
 

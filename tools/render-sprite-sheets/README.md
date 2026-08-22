@@ -1,6 +1,6 @@
 # render-sprite-sheets
 
-Pre-renderiza las hojas de sprites Mixamo que consume el cliente 2D
+Pre-renderiza las hojas de sprites Mixamo que consume el cliente
 (`nefan-html/src/renderer/sprite-renderer.ts`). Sustituye al renderizador que
 vivía en Godot (`scenes/dev/sprite_sheet_renderer.tscn` + `tools/render_sprite_sheets.py`):
 la escena la monta **three.js** dentro de Chrome headless, así que un clon del

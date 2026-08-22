@@ -8,7 +8,7 @@ tiene valor guardado, la primera llamada pasa de verdad y queda cacheada.
 El último payload de cada canal se guarda SIEMPRE (también con el modo
 apagado): al encender el toggle ya está disponible "la última respuesta real"
 de cada API. Estado y payloads persisten en `cache/dev_api_cache/` y
-sobreviven reinicios. El toggle vive en la top bar del cliente 2D (sustituyó
+sobreviven reinicios. El toggle vive en la top bar del cliente (sustituyó
 a Auto-img) vía GET/POST /dev/api_cache.
 
 IMPORTANTE para los endpoints: los artefactos derivados de respuestas

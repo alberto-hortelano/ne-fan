@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Pre-renderiza las hojas de sprites Mixamo que consume el cliente 2D.
+/** Pre-renderiza las hojas de sprites Mixamo que consume el cliente.
  *
  * Sustituye a `tools/render_sprite_sheets.py` + la escena de Godot: aquí la
  * escena la monta three.js (`page.mjs`) dentro de Chrome headless, conducido con

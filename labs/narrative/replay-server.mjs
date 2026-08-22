@@ -4,7 +4,7 @@
 // Reproduce una sesión grabada (events.ndjson) como "película" para el cliente
 // 2D (nefan-html), SIN motor narrativo, SIN ai_server y SIN jugador.
 //
-// Suplanta al bridge en :9877: el cliente 2D se conecta igual que siempre, y
+// Suplanta al bridge en :9877: el cliente se conecta igual que siempre, y
 // este servidor le va sirviendo los frames `in` que el bridge real le mandó en
 // la sesión grabada. Material ideal para depurar el renderer 2D (terreno,
 // layout de objetos/NPCs, exits, UI de diálogo) de forma determinista.
@@ -149,7 +149,7 @@ function delayAfter(frame, nextFrame) {
 // ---------------------------------------------------------------------------
 const wss = new WebSocketServer({ port: PORT, host: "127.0.0.1" });
 console.error(`[replay] suplantando al bridge en ws://127.0.0.1:${PORT}`);
-console.error(`[replay] arranca el cliente 2D (cd nefan-html && npm run dev) y pulsa "Nueva partida".`);
+console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y pulsa "Nueva partida".`);
 
 wss.on("connection", (ws) => {
   console.error("[replay] cliente conectado");
