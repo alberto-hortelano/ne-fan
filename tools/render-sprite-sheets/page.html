@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>render-sprite-sheets</title>
+    <style>
+      /* El canvas nunca se mira: lo lee toDataURL(). Fondo a cuadros por si
+         alguien abre la página a mano con --headed para depurar. */
+      body { margin: 0; background: #202020; }
+      canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/three/build/three.module.js",
+          "three/addons/": "/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module" src="/page.mjs"></script>
+  </body>
+</html>

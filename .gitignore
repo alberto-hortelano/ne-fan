@@ -57,7 +57,10 @@ nefan-html/public/sprites/
 saves/
 
 # Mixamo/character assets (license prohibits redistribution)
-godot/assets/characters/
+/assets/characters/
+# Enlace de compatibilidad para que el proyecto Godot siga resolviendo
+# res://assets/characters/… mientras vive; muere con godot/.
+godot/assets/characters
 vendor/
 
 # Session recordings
