@@ -3,7 +3,8 @@
  *  seguros para filesystem/cache. */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -333,5 +334,47 @@ describe("games loader", () => {
         `${s.style_id}: cover ${manifest.cover} ausente`,
       );
     }
+  });
+
+  /** CANDADO: la portada tiene que ser una IMAGEN PROPIA.
+   *
+   *  `style_pack_builder.generate_missing` copia la primera ref de `faces/`
+   *  sobre `cover.jpg` cuando no existe (ai_server/style_pack_builder.py).
+   *  Es un relleno para que el pack cargue, no una decisión de arte — y sin
+   *  candado se quedó: los cinco packs llegaron a agosto con la portada
+   *  byte a byte idéntica a su `faces/fachada.jpg`, o sea cuatro tarjetas
+   *  con el mismo alzado y distinta paleta. El fichero existe en los cinco
+   *  y el test de arriba pasaba tan contento.
+   *
+   *  Las portadas de los mundos jugables son capturas del juego en primera
+   *  persona (`qa/capturar-portadas.mjs`). Este test no exige que lo sean —
+   *  exige que no sean una copia de una ref. */
+  it("estilos shipped: la portada no es una copia de una ref del pack", () => {
+    const digest = (f: string): string =>
+      createHash("sha256").update(readFileSync(f)).digest("hex");
+    const copiados: string[] = [];
+    for (const s of listStyles(REAL_STYLES)) {
+      const manifest = loadStyleManifest(REAL_STYLES, s.style_id);
+      const cover = digest(join(REAL_STYLES, s.style_id, manifest.cover));
+      const copiaDe = manifest.refs.find((ref) => {
+        const file = join(REAL_STYLES, s.style_id, ref.file);
+        return existsSync(file) && digest(file) === cover; // ausencia: test anterior
+      });
+      if (copiaDe) copiados.push(`${s.style_id} (= ${copiaDe.file})`);
+    }
+    // `anime` no es el estilo por defecto de ningún mundo, así que no se le
+    // capturó portada en la tanda de agosto de 2026 (el alcance fueron los
+    // cuatro mundos jugables). Desde que la tarjeta del título se repinta al
+    // cambiar de estilo, esta portada SÍ se ve: es deuda, no diseño.
+    //
+    // La lista es exacta a propósito: si alguien captura la de `anime`, el
+    // test falla y obliga a borrar la excepción en vez de dejarla pudrirse.
+    assert.deepEqual(
+      copiados,
+      ["anime (= faces/fachada.jpg)"],
+      "portadas que siguen siendo el relleno de generate_missing. " +
+        "Captúralas con qa/capturar-portadas.mjs; si acabas de arreglar una, " +
+        "quítala de la lista esperada de este test.",
+    );
   });
 });

@@ -79,8 +79,16 @@ describe("fps-detail", () => {
       (p) => p.volId === "vol_puerta" && p.shape === "box" && p.size[1] < 0.5 && p.pos[1] > 1,
     );
     assert.ok(corbeles.length >= 4, `≥4 corbeles (hay ${corbeles.length})`);
-    const ventanas = primsM.filter((p) => p.volId === "vol_casa" && typeof p.mat === "object");
-    assert.ok(ventanas.length >= 1, "la casa tiene ventanas");
+    // Por la CLASE que declaran, no por "tiene mat de tipo objeto": ese
+    // proxy dejó de distinguir cuando el cuerpo del edificio empezó a
+    // declarar también su material de fachada.
+    const conMat = primsM.filter((p) => p.volId === "vol_casa" && typeof p.mat === "object");
+    const ventanas = conMat.filter((p) => (p.mat as Record<string, string>).side === "window_glass");
+    assert.ok(ventanas.length >= 1, `la casa tiene ventanas (mats: ${JSON.stringify(conMat.map((p) => p.mat))})`);
+    assert.ok(
+      conMat.some((p) => (p.mat as Record<string, string>).side === "wall_stone"),
+      "el cuerpo declara su material de fachada",
+    );
     for (const w of ventanas) {
       assert.equal((w.mat as Record<string, string>).side, "window_glass");
       assert.ok(w.pos[1] > 0.5, "ventana elevada del suelo");

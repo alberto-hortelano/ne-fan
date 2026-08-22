@@ -1,0 +1,31 @@
+{
+  "_": "Poses con las que se capturaron las portadas de data/styles/*/cover.jpg. Reproducible con: node qa/capturar-portadas.mjs --games <id> --celda <col>,<row> --yaws <deg>. Las coordenadas son CELDAS del plan del tile (0,0) que generó el motor narrativo esa vez; regenerar el mundo cambia el plano y con él el encuadre.",
+  "capturado": "2026-08-22",
+  "viewport": [1536, 1024],
+  "coste_usd": 1.66,
+  "mundos": {
+    "toledo_1200": {
+      "estilo": "medievo_crudo",
+      "celda": [70, 68], "yaw": 180,
+      "encuadre": "la plazuela de la parroquia con el pozo; casas encaladas y teja curva"
+    },
+    "alta_fantasia": {
+      "estilo": "acuarela_luminosa",
+      "celda": [66, 104], "yaw": 180,
+      "encuadre": "el vado desde la orilla sur: pretil, el Girial, y la aldea al otro lado"
+    },
+    "cuentos_oscuros": {
+      "estilo": "sombra_de_cuento",
+      "celda": [63, 92], "yaw": 180,
+      "encuadre": "el camino subiendo al atardecer, con un farol encendido y la casa del pan al fondo"
+    },
+    "colonia_aster": {
+      "estilo": "acero_neon",
+      "celda": [64, 84], "yaw": 180,
+      "encuadre": "la plaza pavimentada entre bloques prefabricados, con el agrodomo y el mástil"
+    }
+  },
+  "pendiente": {
+    "anime": "sin captura propia — no es el estilo por defecto de ningún mundo, así que quedó fuera del alcance de la tanda. Su cover.jpg sigue siendo la copia de faces/fachada.jpg que pone generate_missing, y el candado de test/games-loader.test.ts lo declara como la ÚNICA excepción."
+  }
+}
