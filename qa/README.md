@@ -68,6 +68,34 @@ Reglas que hacen que un guion valga algo:
 | `12-una-sola-vista-sin-eleccion` | La otra cara de ese criterio, la que el jugador toca: que en NINGUNA de las cinco pantallas de una partida nueva —ni en el panel «Salidas», ni en el selector de fixtures, ni en el HUD, ni en una tecla— se le ofrezca o se le nombre una vista que ya no existe. Nació en rojo por el `<title>` de la pestaña ("— 2D"); **verde desde #206**, que lo corrigió |
 | `13-personajes-animados` | Que el juego sigue teniendo gente después de tirar el motor que la renderizaba (retirada de Godot, 2026-08-22): las 10 hojas del set base de `y_bot` servidas y COMPLETAS —el último frame que promete cada `meta.json`, que es el que falta cuando un render se corta—, y en una partida real un NPC que se mueve solo y un jugador que anda. Ojo al 200 mentiroso: el dev server de Vite responde al PNG que no existe con el `index.html` de la SPA, así que el aserto mira el `content-type`, no `r.ok` |
 
+## El tercer ejecutable: `qa/fixtures-sin-bridge.mjs`
+
+`presets.mjs` daba VERDE a `html-fixtures` mientras el juego renderizaba **negro**: levantar el
+puerto no es cumplir la promesa (issue #215). El preset existe para *«iterar renderer y UI con
+las fixtures del selector Room, cero backend»*, y eso solo se comprueba mirando si pinta.
+
+```bash
+node qa/fixtures-sin-bridge.mjs            # arranca html-fixtures, mide y para (~40 s)
+node qa/fixtures-sin-bridge.mjs --headed   # con ventana
+node qa/fixtures-sin-bridge.mjs --keep     # deja el stack arriba
+```
+
+Vive fuera de `guiones/` por la razón contraria a `presets.mjs`: el runner levanta
+`e2e-sin-creditos`, que lleva bridge, y aquí el sujeto es justo **no tenerlo**.
+
+Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:
+
+- **El veredicto no son píxeles.** `getImageData` sobre un canvas WebGL sin
+  `preserveDrawingBuffer` devuelve NEGRO aunque el juego esté pintando: durante el arreglo dio un
+  falso negativo perfecto, con el pueblo en la captura y el muestreo diciendo 0. Lo que se afirma
+  es `fps().frames` —los frames EMITIDOS por `render()`—, y la captura queda para el ojo.
+- **Esperar por el estado exacto.** La primera versión esperaba «un botón que ponga Cerrar»; el
+  título tiene el suyo y aparece al instante, así que medía el juego 4 s antes de que el bootstrap
+  terminara y lo declaraba roto. Se espera por `#narrative-loader` en estado `error`, que es el
+  muro del bridge y de nadie más.
+
+Probado en negativo: quitando el visor de `bootstrap()`, `frames 0 → 0` y el guion se pone rojo.
+
 ## El otro ejecutable: `qa/presets.mjs`
 
 No todo lo mecánico cabe en un guion de navegador. **¿Arranca cada preset de `./start.sh` lo

@@ -444,6 +444,8 @@ export class FpsGl {
    *  siente roto. Los pasos de ↑/↓ son de 15°, que no necesitan filtro. */
   private lookPitch = 0;
   private lastNow = 0;
+  /** Frames emitidos por render() — ver debugState. */
+  private frames = 0;
   private activeKey: string | null = null;
   private debugView: FpsDebugView = "off";
   private collisionMesh: THREE.InstancedMesh | null = null;
@@ -1335,6 +1337,7 @@ export class FpsGl {
   }
 
   render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
+    this.frames++;
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastNow) / 1000 || 0.016);
     this.lastNow = now;
@@ -1389,6 +1392,11 @@ export class FpsGl {
     const t = this.telegraph;
     const v = this.veil;
     return {
+      /** Frames EMITIDOS. Un renderer montado y con tiles instalados no
+       *  demuestra que el juego pinte: el game loop puede estar saliendo por
+       *  una guarda antes de llamar a render() y dejar el lienzo negro con la
+       *  escena cargada (issue #215). Si esto no sube, nadie está pintando. */
+      frames: this.frames,
       tiles: [...this.tiles.keys()],
       activeTile: this.activeKey,
       textured: [...this.tiles.entries()].filter(([, t2]) => t2.textured).map(([k]) => k),

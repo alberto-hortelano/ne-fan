@@ -1,6 +1,11 @@
 /** Game client over the WebSocket bridge. There is no local-simulation
  *  fallback any more: per CONFIG.session.require_bridge, the bridge MUST be
- *  reachable or the game refuses to start (see `createGameClient` below). */
+ *  reachable or the game refuses to start (see `createGameClient` below).
+ *
+ *  Lo que SÍ existe sin bridge es `ViewerGameClient`: un cliente inerte que no
+ *  simula nada y solo deja que el game loop pinte. No es un modo de juego —es
+ *  el visor de fixtures del preset `html-fixtures`— y quien lo instala
+ *  (main.ts, bootstrap) lo hace DESPUÉS de decir el error, nunca en su lugar. */
 
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
@@ -157,6 +162,53 @@ export class BridgeGameClient implements GameClient {
     if (!e) return undefined;
     return { health: e.hp, maxHealth: e.hp, weaponId: "unarmed" };
   }
+}
+
+/** Cliente INERTE: no simula, no habla con nadie, no guarda. Existe para que
+ *  el game loop pueda pintar cuando no hay bridge — sin esto `gameClient` se
+ *  queda a null, el loop sale por su guarda antes de `render()` y el lienzo se
+ *  queda NEGRO con la escena cargada (issue #215): el preset `html-fixtures`
+ *  prometía iterar renderer y UI sin backend y no pintaba nada.
+ *
+ *  Lo que NO hace es tan importante como lo que hace: sin combate (los ataques
+ *  animan y no aplican daño), sin enemigos, sin narrativa y sin partida. La
+ *  vida se queda quieta al máximo porque nadie la baja, no porque el jugador
+ *  sea invulnerable: aquí no hay quien pegue. */
+export class ViewerGameClient implements GameClient {
+  store: GameStore;
+  /** Frame neutro y CONSTANTE: se reusa en cada tick porque no cambia nunca —
+   *  un objeto nuevo por frame sería basura para el GC a 60 fps. */
+  private readonly frame: FrameResult = { events: [], playerHp: 100, enemies: [] };
+  isConnected = false;
+  isBridge = false;
+
+  constructor(store: GameStore) {
+    this.store = store;
+  }
+
+  tick(): FrameResult {
+    return this.frame;
+  }
+
+  /** Los enemigos de una fixture se ignoran a propósito: sin simulación,
+   *  pintarlos sería enseñar muñecos que no reaccionan a nada. */
+  loadRoom(): void {}
+  addEnemies(): void {}
+  respawn(): void {}
+
+  getCombatant(id: string) {
+    return id === "player"
+      ? { health: this.frame.playerHp, maxHealth: 100, weaponId: "unarmed" }
+      : undefined;
+  }
+
+  /** Nunca emite: no hay conexión que se caiga ni que vuelva. */
+  on(): void {}
+}
+
+/** Visor de fixtures para cuando el bridge no está. Ver `ViewerGameClient`. */
+export function createViewerClient(): GameClient {
+  return new ViewerGameClient(new GameStore());
 }
 
 /** Wait for the BridgeClient to connect and then build a BridgeGameClient.

@@ -55,6 +55,7 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import {
   createGameClient,
+  createViewerClient,
   type GameClient,
   type FrameResult,
   type RoomEnemy,
@@ -2287,12 +2288,32 @@ narrativeClient.onNarrativeEvent((event) => {
 void bootstrap();
 
 async function bootstrap(): Promise<void> {
+  let client: GameClient;
   try {
-    const client = await createGameClient(sharedBridge);
-    gameClient = client;
-    updateConnectionStatus(client.isConnected, true);
-    client.on("connected", () => updateConnectionStatus(true, true));
-    client.on("disconnected", () => updateConnectionStatus(false, true));
+    client = await createGameClient(sharedBridge);
+  } catch (err) {
+    // Sin bridge NO hay partida (CONFIG.session.require_bridge): el error se
+    // dice y se registra, igual que antes. Lo que cambia es lo que queda
+    // después: un cliente inerte para que el game loop pinte. Sin él,
+    // `gameClient` se quedaba a null y el loop salía por su guarda antes de
+    // render(), así que el selector de fixtures cargaba la escena sobre un
+    // lienzo NEGRO — que es justo lo que el preset `html-fixtures` promete
+    // poder hacer sin backend (issue #215).
+    setLoaderState(
+      "error",
+      "No se pudo arrancar la partida",
+      (err as Error).message,
+    );
+    errors.push("session", "bootstrap failed", err);
+    gameClient = createViewerClient();
+    updateConnectionStatus(false, true);
+    return;
+  }
+  gameClient = client;
+  updateConnectionStatus(client.isConnected, true);
+  client.on("connected", () => updateConnectionStatus(true, true));
+  client.on("disconnected", () => updateConnectionStatus(false, true));
+  try {
     await runTitleFlow();
   } catch (err) {
     setLoaderState(
