@@ -89,10 +89,9 @@ async def lifespan(app: FastAPI):
         deps.texture_gen = None
         return
 
-    # Los pesos son lazy (SD/TripoSG/LaMa cargan al primer uso);
+    # Los pesos son lazy (SD/TripoSG cargan al primer uso);
     # aquí solo se instancian los objetos y clientes.
     from model_generator import ModelGenerator
-    from plate_inpainter import PlateInpainter
     from skin_generator import SkinGenerator
     from sprite_generator import SpriteGenerator
     from texture_generator import TextureGenerator
@@ -133,10 +132,6 @@ async def lifespan(app: FastAPI):
     deps.skin_gen = SkinGenerator(
         texture_gen_ref=deps.texture_gen,
     )
-    deps.plate_inpainter = PlateInpainter(
-        texture_gen_ref=deps.texture_gen,
-    )
-
     deps.sprite_cache = AssetCache(
         cache_dir=deps.config["sprite_cache_dir"],
         asset_type="sprite",
@@ -144,15 +139,6 @@ async def lifespan(app: FastAPI):
     )
     deps.sprite_gen = SpriteGenerator(
         texture_gen_ref=deps.texture_gen,
-    )
-
-    # La placa de fondo escribe en cache/scenes con subtype "plate". Compartir el
-    # dir con narrative-llm/remote-gen es seguro: escritura atómica
-    # (tmp+replace) y registro por POST /assets — cero estado en memoria.
-    deps.scene_cache = AssetCache(
-        cache_dir=deps.config["scene_cache_dir"],
-        asset_type="scene",
-        manifest=deps.asset_manifest,
     )
 
     logger.info(f"\nGPU Worker ready. HTTP :{load_port('gpu_worker')}")

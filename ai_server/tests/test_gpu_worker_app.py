@@ -1,6 +1,5 @@
-"""Tests del proceso gpu-worker (F3) en modo mock: /health, wire de
-/generate_texture (miss → generado, hit → cached) y 503 fail-loud cuando un
-pipeline no está poblado.
+"""Tests del proceso gpu-worker (F3) en modo mock: /health y wire de
+/generate_texture (miss → generado, hit → cached).
 
 Requieren fastapi (TestClient); en entornos sin ella se saltan — el CI las
 ejecuta (fastapi/uvicorn en el pip install del job ai-server).
@@ -71,20 +70,13 @@ class GpuWorkerAppTest(unittest.TestCase):
         self.assertTrue(again["cached"])
         self.assertEqual(again["hash"], body["hash"])
 
-    def test_unpopulated_pipeline_is_503(self):
-        # El mock solo puebla texturas: la placa LaMa debe fallar ruidosa.
-        r = self.client.post(
-            "/inpaint_scene_plate", json={"image_b64": "aGk=", "mask_b64": "aGk="}
-        )
-        self.assertEqual(r.status_code, 503)
-        self.assertIn("plate_inpainter", r.json()["detail"])
-
     def test_bad_base64_is_400(self):
-        # Re-anclado: el único ejercicio de `decode_b64_png` colgaba de
-        # /peel_scene_layer (pelado del plató), que decodificaba ANTES de mirar
-        # backends. Ese endpoint murió con el proscenio, pero el decodificador
-        # lo comparten cinco routers y su fail-loud sigue siendo contrato: un
-        # base64 roto es 400, nunca una imagen vacía en silencio.
+        # Re-anclado dos veces: este ejercicio de `decode_b64_png` colgaba de
+        # /peel_scene_layer (plató) y luego de /inpaint_scene_plate (placa LaMa
+        # del repintado oblicuo). Los dos endpoints murieron con sus pipelines,
+        # pero el decodificador lo comparten los routers vivos y su fail-loud
+        # sigue siendo contrato: un base64 roto es 400, nunca una imagen vacía
+        # en silencio.
         from fastapi import HTTPException
 
         from request_util import decode_b64_png

@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateBlueprintReview, validateSceneClassify, validateImageReview, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
+import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
@@ -16,12 +16,10 @@ import type { VisionRequestMsg } from './protocol.js';
 // abajo es una guardia de deriva a nivel de tipos: si el contrato añade o quita
 // un kind de visión, `tsc -b` rompe hasta que este conjunto lo refleje — así
 // ningún kind de visión puede volver a caer al fallthrough de escena
-// (room_response), como le pasaba a image_review.
+// (room_response).
 const VISION_KINDS = [
   'weapon_orient',
   'weapon_verify',
-  'scene_classify',
-  'image_review',
 ] as const;
 type VisionKind = (typeof VISION_KINDS)[number];
 const _visionKindsCoverContract: VisionRequestMsg['kind'] = null as unknown as VisionKind;
@@ -76,14 +74,10 @@ const WEAPON_ORIENT_INSTRUCTIONS = loadPrompt('weapon_orient.md');
 
 const WEAPON_VERIFY_INSTRUCTIONS = loadPrompt('weapon_verify.md');
 
-const SCENE_CLASSIFY_INSTRUCTIONS = loadPrompt('scene_classify.md');
-
 const DEVELOP_WORLD_INSTRUCTIONS = loadPrompt('develop_world.md');
 
 const NARRATIVE_EVENT_INSTRUCTIONS = loadPrompt('narrative_event.md');
 
-const BLUEPRINT_REVIEW_INSTRUCTIONS = loadPrompt('blueprint_review.md');
-const IMAGE_REVIEW_INSTRUCTIONS = loadPrompt('image_review.md');
 
 /** Mensajes humanos para el latido de progreso según la ruta del State API
  *  que el motor acaba de llamar. Genérico para rutas nuevas. */
@@ -129,10 +123,7 @@ async function main() {
 
   // Stored request_id and kind from the last listen call, so respond knows where to send
   let currentRequestId: string | null = null;
-  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'scene_classify' | 'image_review' | 'narrative_event' | 'develop_world' | 'blueprint_review' = 'scene';
-  // Índices de región de la última petición scene_classify (para el pre-flight
-  // de completitud de la respuesta).
-  let currentClassifyIndices: number[] | null = null;
+  let currentKind: 'scene' | 'weapon_orient' | 'weapon_verify' | 'narrative_event' | 'develop_world' = 'scene';
   // Catálogo de refs de estilo de la sesión (world.style_refs de la última
   // petición scene): pre-flight de `style_ref` (escena y NPCs) — un id fuera
   // del catálogo rebota al motor con la lista válida. null = petición sin
@@ -168,12 +159,6 @@ Request kinds you may receive:
 - "scene"           → generate a top-down 2D map (Map Format D).
 - "weapon_orient"   → orient a 3D weapon mesh from 3 orthographic renders.
 - "weapon_verify"   → check a weapon is correctly placed in a character's hand.
-- "scene_classify"  → classify segmented regions of a painted scene image
-                      (solid / tall per region — the collision map is derived
-                      from your answer).
-- "image_review"    → LOOK at the final repainted tile and flag objects the
-                      image model INVENTED (not in the declared plan): return
-                      { extras: [{label, action, box_px, tall, solid, ...}] }.
 - "develop_world"   → a player-submitted world draft to develop into a full
                       world document (template embedded in the message).
 - "narrative_event" → the player answered an NPC. Return world consequences as
@@ -181,8 +166,6 @@ Request kinds you may receive:
                       ${CONSEQUENCE_TYPES_TEXT}. (dialogue is an ENTRY in that
                       array, never a top-level field; its option list is
                       "choices", not "options".)
-- "blueprint_review" → LOOK at the rendered blueprint image and check it against
-                      the scene JSON; return { approved, issues, fixes? }.
 
 Beyond responding, at ANY time during a turn you may ALSO call the state tools
 to query or mutate authoritative game state without dumping the whole world
@@ -206,12 +189,6 @@ into context:
 
         if (msg.type === 'vision_request') {
           currentKind = msg.kind;
-          // scene_classify: recordar los índices esperados para exigir una
-          // clasificación completa en narrative_respond.
-          const regions = (msg.context as { regions?: { index?: number }[] } | undefined)?.regions;
-          currentClassifyIndices = msg.kind === 'scene_classify' && Array.isArray(regions)
-            ? regions.map((r) => r.index).filter((i): i is number => Number.isInteger(i))
-            : null;
           // Build content blocks: text header + image blocks + footer
           const header = JSON.stringify({
             kind: msg.kind,
@@ -234,27 +211,12 @@ into context:
             content.push({ type: 'text', text: `(view: ${img.view})` });
           }
           const instructions =
-            msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS :
-            msg.kind === 'scene_classify' ? SCENE_CLASSIFY_INSTRUCTIONS :
-            msg.kind === 'image_review' ? IMAGE_REVIEW_INSTRUCTIONS :
-            WEAPON_ORIENT_INSTRUCTIONS;
+            msg.kind === 'weapon_verify' ? WEAPON_VERIFY_INSTRUCTIONS : WEAPON_ORIENT_INSTRUCTIONS;
           content.push({
             type: 'text',
             text: `Examine the views, then respond.\n\n${instructions}`,
           });
           return { content };
-        }
-
-        if (msg.type === 'blueprint_review') {
-          currentKind = 'blueprint_review';
-          const sceneJson = JSON.stringify(msg.scene ?? {}, null, 2);
-          return {
-            content: [
-              { type: 'text', text: 'Blueprint review request. This is the image the generator will receive:' },
-              { type: 'image', data: msg.image.data_b64, mimeType: msg.image.media_type },
-              { type: 'text', text: `Scene JSON that produced it:\n${sceneJson}\n\n${BLUEPRINT_REVIEW_INSTRUCTIONS}` },
-            ],
-          };
         }
 
         if (msg.type === 'narrative_event' && msg.kind === 'develop_world') {
@@ -361,10 +323,7 @@ into context:
     '  scene          → Map Format D map JSON\n' +
     '  weapon_orient  → { grip_point_normalized, blade_direction, up_direction, weapon_type, confidence, ... }\n' +
     '  weapon_verify  → { ok, issue, suggested_delta_euler }\n' +
-    '  scene_classify → { segments: [{ index, label, solid, tall }] } (every region index)\n' +
-    '  image_review   → { extras: [{ label, action, box_px, tall, solid, h?, depth_cells? }] }\n' +
-    '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)\n' +
-    '  blueprint_review→ { approved, issues, fixes? }  (fixes = overrides parciales)',
+    '  narrative_event→ { "consequences": [ ... ] }  (NOT a bare dialogue object)',
     {
       room_data: z.string().describe(
         'JSON string matching the pending request kind. For narrative_event it MUST be ' +
@@ -555,33 +514,6 @@ into context:
             };
           }
         }
-        if (kind === 'blueprint_review') {
-          const check = validateBlueprintReview(parsed);
-          if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid blueprint review — fix the shape and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
-          }
-        }
-        if (kind === 'scene_classify') {
-          const check = validateSceneClassify(parsed, currentClassifyIndices);
-          if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid scene classification — fix the shape and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
-          }
-        }
-        if (kind === 'image_review') {
-          const check = validateImageReview(parsed);
-          if (!check.ok) {
-            return {
-              content: [{ type: 'text', text: `Invalid image review — fix the shape and call narrative_respond again: ${check.error}` }],
-              isError: true,
-            };
-          }
-        }
         // Visión de armas: antes NO se validaba (el kind pasaba directo a
         // sendVisionResponse) y el ai_server devolvía None en silencio → 503,
         // así que una orientación/verificación mal formada del modelo jamás
@@ -652,14 +584,12 @@ into context:
         const reqId = currentRequestId;
         currentRequestId = null;
         currentKind = 'scene';
-        currentClassifyIndices = null;
 
         // Todos los kinds de VisionRequestMsg vuelven como vision_response
-        // (payload en `result`), como manda el contrato del wire. image_review
-        // llegó como vision_request: responderlo con un
-        // room_response (el fallthrough de escena) violaba el contrato y hacía
-        // que una respuesta TARDÍA cayera en la rama _timed_out_scenes/else del
-        // ai_server pensada solo para escenas.
+        // (payload en `result`), como manda el contrato del wire: responderlos
+        // con un room_response (el fallthrough de escena) violaría el contrato
+        // y haría que una respuesta TARDÍA cayera en la rama
+        // _timed_out_scenes/else del ai_server, pensada solo para escenas.
         if ((VISION_KINDS as readonly string[]).includes(kind)) {
           bridge.sendVisionResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `Vision response sent for request ${reqId}` }] };
@@ -668,11 +598,6 @@ into context:
         if (kind === 'narrative_event' || kind === 'develop_world') {
           bridge.sendNarrativeEventResponse(reqId, parsed);
           return { content: [{ type: 'text', text: `${kind} response sent for request ${reqId}` }] };
-        }
-
-        if (kind === 'blueprint_review') {
-          bridge.sendBlueprintReviewResponse(reqId, parsed);
-          return { content: [{ type: 'text', text: `Blueprint review sent for request ${reqId}` }] };
         }
 
         bridge.sendResponse(reqId, parsed);

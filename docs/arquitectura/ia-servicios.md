@@ -19,8 +19,6 @@ cada servicio con `serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
 | `/backend_status` | :8765 | Estado de meshy_3d (vía /health del gpu-worker) + ai_vision (panel del title screen) |
 | `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
 | `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
-| `/analyze_scene_image` | :8765 | Mundo derivado de la imagen del tile (SAM2 vía remote-gen + visión) |
-| `/review_stage_image` | :8765 | Inventario por visión del plató repintado (SAM2 vía remote-gen) |
 | `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
 | `/notify_session` | :8765 | Godot informa de inicio/reanudación de sesión narrativa |
 | `/report_player_choice` | :8765 | Godot reporta elección de diálogo → Claude devuelve consequences |
@@ -28,11 +26,8 @@ cada servicio con `serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
 | `/generate_model` | :8766 | Modelo GLB desde prompt (Meshy o TripoSG) |
 | `/generate_skin` | :8766 | Skin de personaje (PNG, ~10s) |
 | `/generate_sprite` | :8766 | Sprite RGBA 2D desde prompt |
-| `/inpaint_scene_plate` | :8766 | Placa de fondo del tile (LaMa local) |
-| `/peel_scene_layer` | :8766 | Pelado de una capa del plató (LaMa; FLUX vía fal opcional) |
-| `/generate_scene_image` | :8768 | Repintado del tile/plató (Meshy i2i / fal gpt-image-2) |
+| `/generate_surface_atlas` | :8768 | Atlas de superficies de la vista fps: una celda = un asset reusable |
 | `/skin_sprite_sheet` | :8768 | Sprite sheet skinneado por IA (Meshy hero-shot + atlas) |
-| `/segment` | :8768 | SAM2 auto/boxes — la única llamada fal SAM del stack |
 | `/styles/upload` | :8768 | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
 | `/styles/{id}/complete` | :8768 | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
 | `/dev/api_cache` | :8768 | Toggle del modo dev de APIs de pago (visible para los 3 procesos) |

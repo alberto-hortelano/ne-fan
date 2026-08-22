@@ -14,12 +14,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from narrative_schemas import (  # noqa: E402
-    validate_blueprint_review,
     validate_ground,
-    validate_image_review,
     validate_volumes,
     validate_narrative_reaction,
-    validate_scene_classify_response,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "nefan-core" / "data" / "contract" / "fixtures"
@@ -44,26 +41,6 @@ def accepts_reaction(payload) -> bool:
         return False
 
 
-def accepts_blueprint(payload) -> bool:
-    try:
-        validate_blueprint_review(payload)
-        return True
-    except ValueError:
-        return False
-
-
-def accepts_classify(payload, expected_indices) -> bool:
-    return validate_scene_classify_response(payload, expected_indices) is not None
-
-
-def accepts_image_review(payload) -> bool:
-    try:
-        validate_image_review(payload)
-        return True
-    except ValueError:
-        return False
-
-
 class TestContractFixtures(unittest.TestCase):
     def _run(self, kind: str, accepts):
         for name, fx in load_fixtures(kind):
@@ -81,17 +58,6 @@ class TestContractFixtures(unittest.TestCase):
     def test_reaction(self):
         self._run("reaction", lambda fx: accepts_reaction(fx["payload"]))
 
-    def test_blueprint_review(self):
-        self._run("blueprint_review", lambda fx: accepts_blueprint(fx["payload"]))
-
-    def test_scene_classify(self):
-        self._run(
-            "scene_classify",
-            lambda fx: accepts_classify(fx["payload"], fx.get("expected_indices")),
-        )
-
-    def test_image_review(self):
-        self._run("image_review", lambda fx: accepts_image_review(fx["payload"]))
 
     def test_ground_plan(self):
         """Plan de suelo declarativo: espejo de parseGround (nefan-core, zod)."""

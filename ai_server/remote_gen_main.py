@@ -2,10 +2,9 @@
 
 Start with: python ai_server/remote_gen_main.py [--port 8768]
 
-Sirve el repintado de escenas/platós (Meshy i2i / fal gpt-image-2,
+Sirve el atlas de superficies de la vista fps (fal gpt-image-2,
 routers/remote_generation.py), los sprite sheets skinneados, los style packs
-(routers/styles.py), la segmentación SAM2 (/segment — la única llamada fal
-SAM del stack, consumida por narrative-llm) y el toggle del DEV_API_CACHE
+(routers/styles.py) y el toggle del DEV_API_CACHE
 (GET/POST /dev/api_cache — el flag lo ven los otros procesos releyendo
 state.json). Sin GPU local y sin estado: escala por concurrencia HTTP
 (latencias 30-300 s por llamada remota).
@@ -14,7 +13,6 @@ state.json). Sin GPU local y sin estado: escala por concurrencia HTTP
 import argparse
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from config_snapshot import load_config, load_env_file, load_port
 
@@ -42,7 +40,6 @@ from asset_store_client import AssetStoreClient
 from deps import deps
 from routers.cache_assets import router as cache_assets_router
 from routers.remote_generation import router as remote_generation_router
-from routers.segment import router as segment_router
 from routers.styles import router as styles_router
 
 logger = logging.getLogger("ai_server")
@@ -50,8 +47,6 @@ logger = logging.getLogger("ai_server")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from fal_client import FalSamClient
-    from scene_image_generator import SceneImageGenerator
     from style_packs import StylePackResolver
 
     deps.config = load_config()
@@ -60,14 +55,6 @@ async def lifespan(app: FastAPI):
     logger.info(
         f"AssetStore: {deps.asset_manifest.base_url} "
         f"({deps.asset_manifest.total_count()} entries)"
-    )
-
-    # Compartir cache/scenes con narrative-llm/gpu-worker es seguro: escritura
-    # atómica (tmp+replace) y registro por POST /assets — cero estado en RAM.
-    deps.scene_cache = AssetCache(
-        cache_dir=deps.config["scene_cache_dir"],
-        asset_type="scene",
-        manifest=deps.asset_manifest,
     )
 
     # Librería de superficies de la vista fps: cada celda es un asset
@@ -84,25 +71,10 @@ async def lifespan(app: FastAPI):
         hero_model=deps.config["surface_hero_model"],
     )
 
-    _repo_root = Path(__file__).resolve().parent.parent
-    deps.scene_image_gen = SceneImageGenerator(
-        style_image_path=str(_repo_root / deps.config["scene_style_image"]),
-        model=deps.config["scene_model"],
-    )
     # Packs de estilo por juego (imágenes de referencia por categoría).
     # Degradación esperable si aún no hay packs: resolve() devuelve None y las
     # peticiones usan la referencia global de arriba.
     deps.style_packs = StylePackResolver()
-
-    # /segment es OPCIONAL: necesita FAL_KEY. Sin ella el server arranca
-    # igual y el endpoint devuelve 503 (narrative-llm lo reporta en su 503).
-    try:
-        deps.fal_sam = FalSamClient(
-            auto_segment_model=deps.config["auto_segment_model"],
-        )
-    except ValueError as e:
-        deps.fal_sam = None
-        logger.info(f"/segment disabled: {e} (set FAL_KEY in .env to enable)")
 
     # sprite_skin_gen sigue siendo lazy: se construye en el primer
     # /skin_sprite_sheet (necesita MESHY_API_KEY; sin ella, 503 ahí).
@@ -126,16 +98,12 @@ app.add_middleware(
 
 app.include_router(remote_generation_router)
 app.include_router(styles_router)
-app.include_router(segment_router)
 app.include_router(cache_assets_router)
 
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ready" if deps.scene_image_gen else "loading",
-        "segment_available": deps.fal_sam is not None,
-    }
+    return {"status": "ready" if deps.surface_atlas_gen else "loading"}
 
 
 if __name__ == "__main__":

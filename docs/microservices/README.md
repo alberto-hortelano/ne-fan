@@ -74,9 +74,8 @@ Dos ciclos (sin cambios respecto a hoy):
   en el gateway.
 - **narrative-llm + narrative-mcp = un servicio lógico, dos procesos**: el
   ciclo por WS :3737 es acoplamiento de despliegue total (si uno cae, el otro
-  no sirve). Los endpoints de visión (`/analyze_scene_image`,
-  `/review_stage_image`) van aquí porque necesitan el canal MCP; la llamada
-  SAM2 se delega en remote-gen (`/segment`, F4).
+  no sirve). El único endpoint de visión que queda es `/analyze_weapon`
+  (Godot, orientación de armas): vive aquí porque necesita el canal MCP.
 - **gpu-worker vs remote-gen**: separar lo que consume GPU local (escala = nº
   de GPUs, serializado por naturaleza) de lo que consume dinero (escala =
   concurrencia HTTP, latencias 30–300 s). El `gpu_lock` de asyncio NO
@@ -122,7 +121,7 @@ contracts; 🆕 = endpoint nuevo planificado; ☠ = deprecado.
 **S1 game-gateway (WS :9877)** — ✅ los `ClientMessage` de juego (input, load_room,
 respawn, ping, list_sessions, start_session, resume_session, delete_session,
 dialogue_choice, create_game, list_games, save_session, player_entered_place,
-request_tile, tile_analysis, map_plan_update, add_combatants, interact_entity)
+request_tile, add_combatants, interact_entity)
 y los 10 `ServerMessage` (state_update, pong, sessions_listed, session_started,
 narrative_event, narrative_status, games_listed, game_created, session_deleted,
 session_saved).
@@ -139,24 +138,25 @@ GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
 🆕 GET /session/{id}/llm_context (F5).
 
 **S3 narrative-llm (HTTP :8765)** — ✅ /health, /notify_session,
-/generate_scene, /report_player_choice, /develop_world,
-/review_scene_blueprint, /analyze_weapon, /analyze_scene_image,
-/review_stage_image, /backend_status. ☠ /review_scene_image ELIMINADO en F4
-(sin clientes vivos). WS :3737 completo en `narrative-mcp-ws.ts`
-(room/vision/narrative_event/blueprint_review + responses +
-narrative_progress + bridge_status + takeover).
+/generate_scene, /report_player_choice, /develop_world, /analyze_weapon,
+/backend_status. ☠ ELIMINADOS sin clientes vivos: /review_scene_image (F4),
+/review_stage_image (con el proscenio) y /review_scene_blueprint +
+/analyze_scene_image (con el repintado oblicuo). WS :3737 completo en
+`narrative-mcp-ws.ts` (room/vision/narrative_event + responses +
+narrative_progress + bridge_status + takeover); los kinds de visión vivos son
+weapon_orient y weapon_verify.
 
 **S4 gpu-worker (HTTP :8766, EXTRAÍDO en F3)** — ✅ /generate_texture,
-/generate_model, /generate_skin, /generate_sprite, /inpaint_scene_plate,
-/peel_scene_layer, /health (con `model_backend` para el /backend_status de
+/generate_model, /generate_skin, /generate_sprite, /health (con `model_backend` para el /backend_status de
 S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
 (`@internal`). ai_server proxya todos en :8765 para Godot (gpu_proxy.py).
 
-**S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_scene_image,
-/skin_sprite_sheet, /styles/upload, /styles/{style_id}/complete,
-GET+POST /dev/api_cache (el flag lo ven los otros procesos releyendo
-state.json), ✅ POST /segment (SAM2 auto/boxes — consumido por narrative-llm
-vía remote_gen_client.py), /health.
+**S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_surface_atlas,
+/skin_sprite_sheet, /styles/upload, GET /styles/{style_id}/missing,
+POST /styles/{style_id}/complete, GET+POST /dev/api_cache (el flag lo ven los
+otros procesos releyendo state.json), GET /dev/status, /health.
+☠ ELIMINADOS con el repintado oblicuo: /generate_scene_image y POST /segment
+(SAM2 — su único consumidor era /analyze_scene_image).
 
 **S6 asset-store (HTTP :8767, EXTRAÍDO en F2)** — ✅ /cache/{kind}/{hash},
 /cache/sprite_sheet/{hash}/{filename}, POST /cache/prune (con keep-list),

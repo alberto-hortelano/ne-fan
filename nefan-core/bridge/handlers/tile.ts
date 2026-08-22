@@ -12,10 +12,10 @@ import {
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
-import { TILE_CELLS, TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
+import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
-import type { LlmContext, SceneRecord } from "../../src/narrative/types.js";
+import type { LlmContext } from "../../src/narrative/types.js";
 import type { RequestTileMessage } from "../../src/protocol/messages.js";
 
 const EDGE_ES: Record<Edge, string> = {
@@ -24,52 +24,6 @@ const EDGE_ES: Record<Edge, string> = {
   east: "este",
   west: "oeste",
 };
-
-/** Banda (m) desde el borde compartido dentro de la cual un elemento del
- *  análisis de imagen del vecino se considera "toca la costura" y se pasa al
- *  LLM para que lo continúe (murallas, ríos que cruzan el borde). */
-const IMAGE_EDGE_BAND_M = 6;
-
-/** Elementos del análisis de imagen del vecino que tocan el borde compartido,
- *  con su rango de celdas a lo largo del borde (misma coordenada en ambos
- *  lados, como los crossings). `edge` = borde del TILE NUEVO hacia el vecino. */
-export function imageElementsAtSharedEdge(
-  rec: SceneRecord,
-  edge: Edge,
-): Array<{ label: string; solid: boolean; tall: boolean; at: [number, number] }> {
-  if (!rec.analysis || !rec.tile) return [];
-  const rect = tileWorldRect(rec.tile.tx, rec.tile.ty);
-  // Coordenada del borde COMPARTIDO en el lado del vecino (su borde opuesto).
-  const shared = oppositeEdge(edge);
-  const out: Array<{ label: string; solid: boolean; tall: boolean; at: [number, number] }> = [];
-  for (const el of rec.analysis.elements) {
-    let touches: boolean;
-    let along0: number;
-    let along1: number;
-    if (shared === "west" || shared === "east") {
-      const borderX = shared === "west" ? rect.minX : rect.maxX;
-      touches = el.rect.minX <= borderX + IMAGE_EDGE_BAND_M && el.rect.maxX >= borderX - IMAGE_EDGE_BAND_M;
-      along0 = (el.rect.minZ - rect.minZ) / TILE_MPC;
-      along1 = (el.rect.maxZ - rect.minZ) / TILE_MPC;
-    } else {
-      const borderZ = shared === "north" ? rect.minZ : rect.maxZ;
-      touches = el.rect.minZ <= borderZ + IMAGE_EDGE_BAND_M && el.rect.maxZ >= borderZ - IMAGE_EDGE_BAND_M;
-      along0 = (el.rect.minX - rect.minX) / TILE_MPC;
-      along1 = (el.rect.maxX - rect.minX) / TILE_MPC;
-    }
-    if (!touches) continue;
-    out.push({
-      label: el.label,
-      solid: el.solid,
-      tall: el.tall,
-      at: [
-        Math.max(0, Math.min(TILE_CELLS, Math.round(along0))),
-        Math.max(0, Math.min(TILE_CELLS, Math.round(along1))),
-      ],
-    });
-  }
-  return out;
-}
 
 /** Contexto de generación de un tile: vecinos existentes (bioma + cruces del
  *  borde compartido, `at` espejo sin transformación), entrada del jugador y
@@ -85,14 +39,12 @@ export function buildGenerateTileCtx(
     [Edge, (typeof ctx.narrative.scenes_loaded)[string]]
   >) {
     const shared = rec.edges?.[oppositeEdge(edge)];
-    const imageElements = imageElementsAtSharedEdge(rec, edge);
     neighbors[edge] = {
       tile: [rec.tile!.tx, rec.tile!.ty],
       scene_id: String(rec.scene_data.scene_id ?? ""),
       description: String(rec.scene_data.scene_description ?? ""),
       biome: shared?.biome ?? String(rec.scene_data.biome ?? "grass"),
       crossings: shared?.crossings ?? [],
-      ...(imageElements.length ? { image_elements: imageElements } : {}),
     };
   }
 

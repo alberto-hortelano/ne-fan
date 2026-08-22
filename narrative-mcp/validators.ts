@@ -12,9 +12,6 @@ import {
   WeaponOrientSchema,
   WeaponVerifySchema,
   FormatDSceneSchema,
-  SceneClassifySchema,
-  ImageReviewSchema,
-  BlueprintReviewSchema,
 } from '@nefan/core';
 
 /** Gate ESTRUCTURAL de una escena Format D (entities, size, terrain, legend,
@@ -193,37 +190,4 @@ export function validateVolumes(raw: unknown): { ok: true } | { ok: false; error
   return { ok: true };
 }
 
-/** Pre-flight de blueprint_review — delega en BlueprintReviewSchema (zod SoT).
- *  `.strict()` rechaza claves de fix desconocidas. */
-export function validateBlueprintReview(data: unknown): { ok: true } | { ok: false; error: string } {
-  return validateContract(BlueprintReviewSchema, data);
-}
-
-/** Pre-flight de scene_classify — forma vía zod + unicidad de índices y
- *  completitud contra los índices esperados del context.regions (runtime). */
-export function validateSceneClassify(
-  data: unknown,
-  expectedIndices: number[] | null,
-): { ok: true } | { ok: false; error: string } {
-  const shape = validateContract(SceneClassifySchema, data);
-  if (!shape.ok) return shape;
-  const segments = (data as { segments: { index: number }[] }).segments;
-  const seen = new Set<number>();
-  for (const s of segments) {
-    if (seen.has(s.index)) return { ok: false, error: `segments: index ${s.index} duplicado` };
-    seen.add(s.index);
-  }
-  if (expectedIndices) {
-    const missing = expectedIndices.filter((idx) => !seen.has(idx));
-    if (missing.length > 0) {
-      return { ok: false, error: `faltan clasificaciones para los índices: ${missing.join(', ')} — cada región debe aparecer` };
-    }
-  }
-  return { ok: true };
-}
-
-/** Pre-flight de image_review — delega en ImageReviewSchema (zod SoT). */
-export function validateImageReview(data: unknown): { ok: true } | { ok: false; error: string } {
-  return validateContract(ImageReviewSchema, data);
-}
 

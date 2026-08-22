@@ -79,22 +79,6 @@ export interface DevelopWorldResponse {
   };
 }
 
-// ── Reviews con visión ──
-
-export interface ReviewSceneBlueprintRequest {
-  scene_id: string;
-  /** PNG base64 del schematic — el mismo que iría al modelo de imagen. */
-  image_b64: string;
-  scene: FormatDScene;
-}
-
-export interface ReviewSceneBlueprintResponse {
-  approved: boolean;
-  issues: string[];
-  /** Overrides parciales { terrain?, ground?, volumes?, entity_moves? }. */
-  fixes?: Record<string, unknown>;
-}
-
 export interface AnalyzeWeaponRequest {
   /** Base64 crudos (sin prefijo data:). */
   images: string[];
@@ -107,35 +91,6 @@ export interface AnalyzeWeaponRequest {
  *  validate_weapon_orient_response en el server; el shape fino vive en el
  *  contrato del prompt (data/contract/prompts/weapon_orient.md). */
 export type AnalyzeWeaponResponse = Record<string, unknown>;
-
-// ── Análisis/review de imagen pintada (segmentar SIEMPRE lo pintado) ──
-
-export interface AnalyzeSceneImageRequest {
-  image_b64: string;
-  /** Viaja al modelo de visión; admite context.expected_elements
-   *  [{id, bbox_px}] como PISTA del compositor (nunca como máscara). */
-  context?: Record<string, unknown>;
-}
-
-export interface SceneSegment {
-  id: string;
-  /** id del expected_element casado, si la visión lo emparejó. */
-  element_id?: string;
-  label: string;
-  solid: boolean;
-  tall: boolean;
-  sprite_url: string;
-  /** [x, y, w, h] px de la imagen analizada. */
-  image_bbox: [number, number, number, number];
-  img_w: number;
-  img_h: number;
-}
-
-export interface AnalyzeSceneImageResponse {
-  segments: SceneSegment[];
-  /** Nº de segmentos descartados por la visión. */
-  discarded: number;
-}
 
 // ── Estado de backends ──
 
@@ -171,15 +126,7 @@ export const NarrativeLlmApi = {
     "/report_player_choice",
   ),
   developWorld: endpoint<DevelopWorldRequest, DevelopWorldResponse>("POST", "/develop_world"),
-  reviewSceneBlueprint: endpoint<ReviewSceneBlueprintRequest, ReviewSceneBlueprintResponse>(
-    "POST",
-    "/review_scene_blueprint",
-  ),
   analyzeWeapon: endpoint<AnalyzeWeaponRequest, AnalyzeWeaponResponse>("POST", "/analyze_weapon"),
-  analyzeSceneImage: endpoint<AnalyzeSceneImageRequest, AnalyzeSceneImageResponse>(
-    "POST",
-    "/analyze_scene_image",
-  ),
   backendStatus: endpoint<void, BackendStatusResponse>("GET", "/backend_status"),
   // /review_scene_image (muerto, sin clientes) ELIMINADO en F4 junto con
   // LLMClient.review_scene_image y pipe_server.py.

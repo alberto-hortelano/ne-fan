@@ -37,18 +37,13 @@ export interface NefanConfig {
     /** AI GLB models for objects/buildings via /generate_model. */
     ai_models: boolean;
     /** PROHIBIDO — no reintroducir nunca un modo de recorte por siluetas
-     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el SVG
-     *  del compositor como máscara sobre la imagen repintada se probó y NO
-     *  funciona — el modelo de imagen recoloca y reorienta lo declarado, la
-     *  máscara recorta SUELO con forma de objeto y el objeto real queda
-     *  cocido en la placa. Jamás va a funcionar. Los recortes se derivan
-     *  SIEMPRE segmentando lo que el modelo PINTÓ (SAM2 + visión); el plan
-     *  declarado solo sirve de pista (expected_elements / cajas). */
-    /** Revisión por visión del tile REPINTADO (kind MCP image_review): los
-     *  objetos que el img2img inventa ganan colisión/oclusión (keep) o se
-     *  inpaintan (remove). Requiere listener del motor; si no está, el tile
-     *  queda solo con el mundo declarado (error log, no fatal). */
-    image_review: boolean;
+     *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el plan
+     *  del motor como máscara sobre la imagen pintada se probó y NO funciona
+     *  — el modelo de imagen recoloca y reorienta lo declarado, la máscara
+     *  recorta SUELO con forma de objeto y el objeto real queda cocido en la
+     *  placa. Jamás va a funcionar. Si algún día vuelve a hacer falta un
+     *  recorte, se deriva SIEMPRE segmentando lo que el modelo PINTÓ; el plan
+     *  declarado solo sirve de pista. */
   };
   narrative: {
     /** Demand a live narrative listener (a second Claude Code session that
@@ -80,20 +75,20 @@ export interface NefanConfig {
     model_cache_dir: string;
     skin_cache_dir: string;
     sprite_cache_dir: string;
-    /** Cache for full-scene img2img backgrounds + outpainted extensions,
-     *  served at /cache/scene/{hash}. */
+    /** Cache histórico de las imágenes de escena del repintado oblicuo,
+     *  servido en /cache/scene/{hash}. El pipeline que lo llenaba murió; la
+     *  ruta sigue aquí porque el asset-store mapea el tipo "scene" a este
+     *  directorio y el manifest todavía tiene filas de ese tipo. */
     scene_cache_dir: string;
-    /** Cache for occluder sprites cut out of the scene image (SAM via fal.ai),
-     *  served at /cache/segment/{hash}. */
+    /** Cache histórico de los recortes de la segmentación SAM2, servido en
+     *  /cache/segment/{hash}. Mismo caso que scene_cache_dir: sin productor,
+     *  pero el asset-store lo mapea y el manifest lo referencia. */
     segment_cache_dir: string;
     /** Librería de celdas de superficie de la vista fps (kind "surface"),
      *  servida en /cache/surface/{hash}. */
     surface_cache_dir: string;
     texture_resolution: number;
     texture_steps: number;
-    /** Meshy image-to-image model for scene generation (best top-down:
-     *  nano-banana-pro). Also valid: nano-banana, nano-banana-2, gpt-image-2. */
-    scene_model: string;
     /** Meshy image-to-image model for character sprite skinning (hero-shot +
      *  atlas de keyframes por anim×dir — pipeline validado en labs/skinning;
      *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
@@ -103,12 +98,6 @@ export interface NefanConfig {
      *  directo. */
     surface_model: string;
     surface_hero_model: string;
-    /** Path (relative to repo root) of the art-style reference image passed as
-     *  the 2nd reference to Meshy so generated scenes match a target game look. */
-    scene_style_image: string;
-    /** fal.ai SAM2 auto-segment model id: segmentación automática completa de
-     *  la escena pintada (mundo derivado de imagen). Needs FAL_KEY. */
-    auto_segment_model: string;
     /** Tasa fija USD→EUR para el contador de gasto del panel de dev (los
      *  precios de Meshy/fal son USD; el cliente 2D muestra euros). */
     usd_eur_rate: number;
@@ -166,7 +155,6 @@ export const CONFIG: NefanConfig = {
     ai_sprites: false,
     ai_textures: false,
     ai_models: false,
-    image_review: true,
   },
   narrative: {
     require_llm: true,
@@ -191,20 +179,13 @@ export const CONFIG: NefanConfig = {
     surface_cache_dir: "cache/surfaces",
     texture_resolution: 512,
     texture_steps: 4,
-    // nano-banana-pro para escenas: en el bench de fidelidad de layout
-    // (labs/style 002_repaint_fidelity) fue a la vez el más fiel a las huellas
-    // declaradas y ~8× más rápido que gpt-image-2 (27-30 s vs 200-220 s;
-    // 9 cr Meshy / $0.15 fal). gpt-image-2 se queda para las skins de
-    // personaje (calidad de model sheet, sin requisito de layout).
-    scene_model: "nano-banana-pro",
     sprite_skin_model: "gpt-image-2",
     // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
     // para las celdas tileables (cohesión pintada a mano) y gpt-image-2 para
     // las celdas hero (techo de calidad en piezas únicas).
     surface_model: "nano-banana-pro",
     surface_hero_model: "gpt-image-2",
-    scene_style_image: "nefan-core/data/styles/battlemap-town-style.png",
-    auto_segment_model: "fal-ai/sam2/auto-segment",
+
     usd_eur_rate: 0.86,
     texture_lazy_load: true,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB

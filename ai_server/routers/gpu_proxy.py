@@ -33,7 +33,6 @@ _GPU_ENDPOINTS = (
     "/generate_model",
     "/generate_skin",
     "/generate_sprite",
-    "/inpaint_scene_plate",
 )
 
 

@@ -1,9 +1,0 @@
-{
-  "description": "action fuera del enum keep|remove",
-  "expect": "reject",
-  "payload": {
-    "extras": [
-      { "label": "poste", "action": "ignore", "box_px": [10, 10, 20, 40] }
-    ]
-  }
-}

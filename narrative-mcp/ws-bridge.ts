@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket as WsWebSocket, type WebSocket } from 'ws';
 import type {
-  BlueprintReviewResponseMsg,
   BridgeStatusResponseMsg,
   ClientMsg,
   NarrativeEventResponseMsg,
@@ -46,8 +45,7 @@ export class WsBridge {
   // Petición entregada a narrative_listen y aún sin narrative_respond: el
   // listener está OCUPADO generándola (un tile con map_svg puede llevar
   // minutos), no ausente. Sin esto, una petición que llegue justo tras un
-  // respond tardío (p. ej. el blueprint_review que el cliente dispara al
-  // recibir el tile) se rechazaba como "idle" con la sesión viva.
+  // respond tardío se rechazaba como "idle" con la sesión viva.
   private inFlightSince = 0;
 
   // Pending responses: Claude responds, Python receives
@@ -201,7 +199,7 @@ export class WsBridge {
         return;
       }
 
-      if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event' || msg.type === 'blueprint_review') {
+      if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event') {
         this.requestOrigins.set(msg.request_id, ws);
         // Fail-fast: if no MCP client (Claude Code) has ever called
         // narrative_listen, reject the request immediately so the AI server
@@ -282,12 +280,6 @@ export class WsBridge {
         request_id: msg.request_id,
         result: errorPayload,
       } satisfies NarrativeEventResponseMsg));
-    } else if (msg.type === 'blueprint_review') {
-      target.send(JSON.stringify({
-        type: 'blueprint_review_response',
-        request_id: msg.request_id,
-        result: errorPayload,
-      } satisfies BlueprintReviewResponseMsg));
     } else if (msg.type === 'room_request') {
       target.send(JSON.stringify({
         type: 'room_response',
@@ -378,15 +370,6 @@ export class WsBridge {
       request_id: requestId,
       result,
     } satisfies VisionResponseMsg, 'vision response');
-  }
-
-  /** Send blueprint review result back to Python. Called by narrative_respond. */
-  sendBlueprintReviewResponse(requestId: string, result: Record<string, unknown>): void {
-    this.sendToOrigin(requestId, {
-      type: 'blueprint_review_response',
-      request_id: requestId,
-      result,
-    } satisfies BlueprintReviewResponseMsg, 'blueprint_review response');
   }
 
   /** Send narrative reaction result back to Python. Called by narrative_respond. */

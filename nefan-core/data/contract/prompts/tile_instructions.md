@@ -30,16 +30,6 @@ HARD RULES OF THE TILE:
   landing on the edge cell; a water crossing as a `ground` water (or a `deck`
   where a road bridges it). The server validates this and rejects the tile
   otherwise.
-- IMAGE REALITY: neighbors.<edge>.image_elements (when present) lists what
-  the PAINTED image of that neighbour ACTUALLY contains near your shared
-  border — vision-classified elements {label (Spanish), solid, tall,
-  at: [c0, c1]} with their cell range along the border (same coordinate on
-  your side, like crossings). The painted image is the REAL world the player
-  sees, and may include large structures the schematic never had (walls,
-  rivers). CONTINUE them in your tile design: a "muralla"
-  spanning cells 20..90 on your shared border should continue as a `wall`
-  volume at those cells; a solid "río" should continue as a `ground` water.
-  Leave an opening if a crossing overlaps it.
 - Extend features to OTHER edges when natural (a road usually crosses the
   whole tile) — that seeds where future tiles will grow.
 - The player enters WALKING from generate_tile.entry.edge: keep that border

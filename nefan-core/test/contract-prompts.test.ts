@@ -31,14 +31,8 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
-  "scene_classify.md": ["solid", "tall"],
-  // La palabra de UNIDAD es contrato: image_review mide `h` en CELDAS del
-  // tile (persona ≈ 3.6; zod: extrasArray("celdas") en review-schemas.ts). Si
-  // desaparece, alguien cambió la unidad sin tocar los consumidores.
-  "image_review.md": ["extras", "keep", "remove", "box_px", "tall", "solid", "celdas"],
   "develop_world.md": ["world_brief", "world_md", "game_id", "style_id", "tags"],
   "narrative_event.md": ["consequences", "dialogue", "story_update", "spawn_entity", "plugin_event", "choices"],
-  "blueprint_review.md": ["ground", "volumes"],
 };
 
 const TOOLS_DIR = fileURLToPath(new URL("../data/contract/tools", import.meta.url));
@@ -48,7 +42,6 @@ const TOOLS_DIR = fileURLToPath(new URL("../data/contract/tools", import.meta.ur
 const CONTRACT_TOOLS: Record<string, string> = {
   generate_scene: "generate_scene",
   weapon_orient: "orient_weapon",
-  classify_scene: "classify_scene",
   narrative_react: "react_to_player",
 };
 

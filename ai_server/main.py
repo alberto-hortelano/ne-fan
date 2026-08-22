@@ -34,9 +34,6 @@ logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
 from llm_client import LLMClient
 from style_packs import StylePackResolver
-from remote_gen_client import RemoteGenClient
-from scene_segmenter import SceneSegmenter
-from asset_cache import AssetCache
 from asset_store_client import AssetStoreClient
 
 from deps import deps
@@ -77,18 +74,6 @@ async def lifespan(app: FastAPI):
     # narrativo (narrative.py). Lector FS sin claves — coexiste con la
     # instancia de remote-gen sin conflicto (cache por mtime).
     deps.style_packs = StylePackResolver()
-
-    deps.segment_cache = AssetCache(
-        cache_dir=deps.config["segment_cache_dir"],
-        asset_type="segment",
-        manifest=deps.asset_manifest,
-    )
-
-    # Segmentación (F4): la llamada SAM2 vive en remote-gen (POST /segment) —
-    # este proceso ya no lee FAL_KEY. remote-gen caído o sin key → los
-    # análisis fallan ruidosos (502/503 con detail) en el momento de usarla.
-    deps.remote_gen = RemoteGenClient()
-    deps.scene_segmenter = SceneSegmenter(segment_client=deps.remote_gen)
 
     # Techo de tamaño del cache: el prune corre en el asset-store (LRU con
     # keep-list de world-state). Best-effort aquí — el arranque de ai_server

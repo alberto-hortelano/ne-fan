@@ -2,9 +2,9 @@
  * sin proxy en :8765 — sus únicos clientes, el HTML, resuelven por
  * serviceUrl).
  *
- * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro,
- * fal SAM2, FLUX Fill): repintado de tiles/platós, sprite sheets skinneados,
- * style packs y segmentación. Sin GPU local, sin estado — escala por
+ * Adaptador de APIs de pago (Meshy i2i, fal.ai gpt-image-2/nano-banana-pro):
+ * atlas de superficies de la vista fps, sprite sheets skinneados y style
+ * packs. Sin GPU local, sin estado — escala por
  * concurrencia HTTP (latencias de 30–300 s por llamada remota). Registra sus
  * resultados en asset-store. Wire snake_case (Pydantic). Errores:
  * `FastApiErrorResponse`; sin FAL_KEY los endpoints que la requieren dan 503.
@@ -16,42 +16,6 @@ import { endpoint } from "./http.js";
  *  de la vista del blueprint y degrada con aviso a la primera ref de la
  *  vista si no existe — el pre-flight fail-loud vive en el bridge. */
 export type StyleTag = string;
-
-/** Repintado de la escena completa (tile oblicuo). */
-export interface GenerateSceneImageRequest {
-  /** PNG base64 del plano base: schematic Canvas (boxes) o clay del tile. */
-  image_b64: string;
-  prompt: string;
-  /** Bordes cuya franja exterior es arte REAL ya pintado del tile vecino
-   *  (continuidad de costuras). Valores: north|south|east|west. */
-  context_sides?: string[];
-  /** "boxes" (schematic legacy) | "tile" (clay greybox del tile oblicuo,
-   *  pipeline tile_greybox1). Default "boxes". El valor "svg" murió con los
-   *  compositores SVG y "stage" con el plató proscenio (agosto 2026) — el
-   *  Pydantic (remote_generation.py) ya solo acepta estos dos. */
-  blueprint_kind?: "boxes" | "tile";
-  /** false = el plano NO tiene agua (omite las cláusulas de agua: mencionarla
-   *  en planos secos ceba ríos alucinados). Default true. */
-  has_water?: boolean;
-  /** Style pack congelado en la sesión; vacío = referencia global fija. */
-  style_id?: string;
-  /** Ref del pack elegida por el motor para esta escena (id del manifest);
-   *  vacío/desconocido = primera ref de la vista del blueprint. */
-  style_ref?: StyleTag | "";
-  /** Clave de layout ESTABLE del cliente (hash hex ≤64 del GreyboxSpec
-   *  canónico). El render WebGL no es byte-determinista: sin ella cada
-   *  arranque haría cache-miss (~$0.2/plató). Vacía = se hashea el PNG. */
-  layout_key?: string;
-}
-
-export interface GenerateSceneImageResponse {
-  hash: string;
-  cached: boolean;
-  scene_url: string;
-  width?: number;
-  height?: number;
-  generation_time_ms?: number;
-}
 
 /** Celda del atlas de superficies de la vista fps (espejo del Pydantic
  *  SurfaceCellSpec). `desc` + estilo son la IDENTIDAD del asset: misma
@@ -199,42 +163,8 @@ export interface StyleCompleteResponse {
   message?: string;
 }
 
-// ── Segmentación (F4 — extrae la ÚNICA llamada fal SAM2 del stack para que
-//    narrative-llm no dependa de FAL_KEY) ──
-
-export interface SegmentBox {
-  id: string;
-  /** [x0, y0, x1, y1] px — el box prompt de SAM2 tal cual. */
-  box_xyxy: [number, number, number, number];
-}
-
-export interface SegmentRequest {
-  image_b64: string;
-  /** "auto" = SAM2 auto-segment; "boxes" = un prompt de caja por elemento. */
-  mode: "auto" | "boxes";
-  /** Obligatorio (no vacío, ids únicos) con mode "boxes"; 422 si falta. */
-  boxes?: SegmentBox[];
-}
-
-export interface SegmentMask {
-  /** id de la caja de entrada (mode "boxes") o sintético `auto_i` en orden
-   *  de detección (mode "auto"). */
-  id: string;
-  /** PNG CRUDO de fal en base64 (cutout RGBA o máscara según el modelo) —
-   *  la conversión a máscara booleana es del consumidor (mask_from_png /
-   *  _mask_from_fal), igual que cuando la llamada era in-process: los blobs
-   *  de los canales dev del consumidor siguen valiendo byte a byte. */
-  mask_b64: string;
-}
-
-export interface SegmentResponse {
-  masks: SegmentMask[];
-}
-
 export interface RemoteGenHealthResponse {
   status: "ready" | "loading";
-  /** false = sin FAL_KEY en el proceso remote-gen (/segment dará 503). */
-  segment_available: boolean;
 }
 
 // ── Cache de modo dev (respuestas de APIs de pago congeladas) ──
@@ -282,7 +212,8 @@ export interface DevStatus {
   api_cache: DevApiCacheStatus;
   spend: DevSpendStatus;
   config: {
-    scene_model: string;
+    /** Modelo del atlas de superficies de la vista fps (celdas tileables). */
+    surface_model: string;
     sprite_skin_model: string;
     /** Tasa fija USD→EUR (config.ts → runtime_config.json). */
     usd_eur_rate: number;
@@ -294,12 +225,6 @@ export interface DevStatus {
 }
 
 export const RemoteGenApi = {
-  generateSceneImage: endpoint<GenerateSceneImageRequest, GenerateSceneImageResponse>(
-    "POST",
-    "/generate_scene_image",
-  ),
-  /** Atlas de superficies de la vista fps: pinta solo las celdas que faltan
-   *  en la librería (kind "surface") y devuelve el mapping por celda. */
   generateSurfaceAtlas: endpoint<GenerateSurfaceAtlasRequest, GenerateSurfaceAtlasResponse>(
     "POST",
     "/generate_surface_atlas",
@@ -318,8 +243,6 @@ export const RemoteGenApi = {
     "/styles/{style_id}/complete",
   ),
   health: endpoint<void, RemoteGenHealthResponse>("GET", "/health"),
-  /** Interno — consumido por narrative-llm (remote_gen_client.py). */
-  segment: endpoint<SegmentRequest, SegmentResponse>("POST", "/segment"),
   /** El toggle vive aquí: los canales cacheados son las respuestas de las
    *  APIs de pago, sus únicos consumidores. Cada canal es global — compartir
    *  canal entre pipelines distintos empareja blobs con el item equivocado

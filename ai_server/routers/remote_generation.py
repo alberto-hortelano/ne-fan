@@ -1,5 +1,5 @@
-"""Adaptador de APIs de pago (S5 remote-gen): repintado de escenas/platós
-(Meshy i2i / fal gpt-image-2) y sprite sheets skinneados (Meshy + rembg).
+"""Adaptador de APIs de pago (S5 remote-gen): atlas de superficies de la vista
+fps (fal gpt-image-2) y sprite sheets skinneados (Meshy + rembg).
 
 Endpoints movidos TAL CUAL desde routers/generation.py (F4). Sin GPU local y
 sin estado — escala por concurrencia HTTP (latencias 30-300 s por llamada
@@ -12,159 +12,16 @@ import logging
 import time
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from asset_paths import SKINNED_SHEETS_DIR, SPRITE_SHEETS_DIR
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
-from request_util import decode_b64_png
-from scene_image_generator import SIDES
 from sprite_skin_meshy import SpriteSkinMeshy, hero_key
 
 logger = logging.getLogger("ai_server")
 
 router = APIRouter()
-
-
-class SceneImageRequest(BaseModel):
-    """Full-scene img2img from the 2D client's schematic capture.
-
-    `image_b64` is the base64-encoded PNG the Canvas renderer exports (terrain
-    plate + object rectangles, no characters). The result is a painted top-down
-    scene that maps 1:1 onto the same world rectangle.
-
-    `context_sides`: edges of the capture whose outermost strip is REAL,
-    already-painted art from an adjacent tile (not schematic). The model is
-    instructed to reproduce those strips and continue them seamlessly.
-
-    `blueprint_kind`: "boxes" (legacy schematic: colour zones + object boxes)
-    or "tile" (clay greybox 3D del tile oblicuo: instrucción de repintado del
-    blockout)."""
-    image_b64: str = Field(min_length=1)
-    prompt: str = Field(min_length=1)
-    context_sides: list[str] = Field(default_factory=list)
-    blueprint_kind: str = Field(default="boxes", pattern="^(boxes|tile)$")
-    # False = el plano NO tiene agua: la instrucción omite las cláusulas de
-    # agua (mencionarla en planos secos ceba ríos alucinados — bench
-    # 002_repaint_fidelity). Default True = comportamiento clásico.
-    has_water: bool = True
-    # Estilo del juego: id del pack (congelado en la sesión) y ref del pack
-    # que el motor narrativo eligió para esta escena (id LIBRE del manifest;
-    # ver StyleManifestSchema). Ausentes ⇒ referencia global fija de siempre.
-    # Un id desconocido degrada con aviso a la primera ref de la vista (el
-    # server no conoce la sesión — el pre-flight fail-loud vive en el bridge).
-    style_id: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    style_ref: str = Field(default="", pattern="^[A-Za-z0-9_.-]*$")
-    # Clave de layout ESTABLE aportada por el cliente (hash del spec greybox
-    # canónico del plató o del tile). El render WebGL no es byte-determinista:
-    # sin esta clave, cada arranque hashearía píxeles distintos ⇒ miss.
-    # Vacía ⇒ se hashea el PNG (camino legacy "boxes").
-    layout_key: str = Field(default="", pattern="^[a-f0-9]{0,64}$")
-    @field_validator("context_sides")
-    @classmethod
-    def _valid_sides(cls, v: list[str]) -> list[str]:
-        bad = [s for s in v if s not in SIDES]
-        if bad:
-            raise ValueError(f"context_sides must be in {SIDES}, got {bad}")
-        return v
-
-
-@router.post("/generate_scene_image")
-async def generate_scene_image_endpoint(body: SceneImageRequest):
-    """Repaint the client's schematic into a detailed top-down scene (img2img +
-    ControlNet canny). Cached by (prompt, layout, strength)."""
-    import asyncio
-    import hashlib
-
-    if deps.scene_image_gen is None:
-        raise HTTPException(status_code=503, detail="deps.scene_image_gen unavailable")
-
-    png = decode_b64_png(body.image_b64)
-    # layout_key del cliente (hash del spec del greybox, prefijado para no
-    # colisionar con el espacio de hashes de PNG) o hash de los píxeles.
-    layout = (
-        f"gb:{body.layout_key[:16]}" if body.layout_key
-        else hashlib.sha256(png).hexdigest()[:16]
-    )
-    # `model` is in the key so switching backends/models never serves a stale
-    # image cached under a different generator. `sides` covers the (unlikely)
-    # case of identical pixels with a different context instruction; empty is
-    # dropped from the hash so pre-existing cache entries stay valid.
-    context = {
-        "layout": layout,
-        "kind": "full",
-        "model": deps.scene_image_gen._model,
-        "sides": "+".join(sorted(body.context_sides)),
-        # Transformación server-side del esquema antes del modelo (prestretch
-        # a cuadrado, bench 002): mismo layout + mismo modelo generan píxeles
-        # distintos, así que va en la clave para no servir imágenes del
-        # pipeline anterior. v2 (bench 003): la instrucción añade las cláusulas
-        # de rol de la ref de estilo — invalida las escenas que calcaban la
-        # composición de la ref.
-        "pipeline": "prestretch2",
-    }
-    # Estilo del juego: resolver la referencia del pack. Si el pack no tiene
-    # imagen utilizable se degrada a la global — y la clave de cache NO lleva
-    # estilo, para no fragmentar el cache preexistente.
-    style_ref = None
-    if body.style_id and deps.style_packs is not None:
-        # El id lo eligió el motor narrativo; vacío o desconocido ⇒ primera
-        # ref de la vista (orden del manifest).
-        style_ref = deps.style_packs.resolve(body.style_id, body.style_ref, "overworld")
-        if style_ref is not None:
-            context["style"] = f"{style_ref.style_id}/{style_ref.ref_id}:{style_ref.content_hash}"
-    # La instrucción difiere por tipo de blueprint: mismo layout con otro kind
-    # no debe servir una imagen cacheada bajo la instrucción antigua. "boxes"
-    # se omite (como sides vacío) para no invalidar la caché preexistente.
-    if body.blueprint_kind != "boxes":
-        context["blueprint"] = body.blueprint_kind
-    # tile_greybox1: la base pasa de SVG rasterizado a render 3D greybox.
-    if body.blueprint_kind == "tile":
-        context["pipeline"] = "tile_greybox1"
-    # En modo dev-cache la imagen viene de la última respuesta Meshy (rancia):
-    # namespacear la clave para no contaminar el cache real de este layout.
-    context = DEV_API_CACHE.namespace_context(context)
-    key = deps.scene_cache.hash_key(body.prompt, context)
-
-    if deps.scene_cache.has(body.prompt, "scene", context):
-        return {"hash": key, "cached": True, "scene_url": f"/cache/scene/{key}"}
-    # Un miss regenera (~$0.2): dejar rastro de la clave para poder diagnosticar
-    # misses inesperados (p. ej. capturas no deterministas del cliente).
-    print(f"SceneImage: cache miss key={key} context={context}", flush=True)
-
-    # No deps.gpu_lock: scene generation runs remotely on Meshy (no local GPU), so
-    # holding the lock would needlessly block texture/3D GPU work for ~30s.
-    start = time.time()
-    # 502 explícito: un crash del backend remoto subiría como 500 sin pasar por
-    # el CORSMiddleware y el navegador lo enmascara como error de red.
-    try:
-        result = await asyncio.to_thread(
-            deps.scene_image_gen.generate_full, png, body.prompt,
-            body.context_sides, body.blueprint_kind,
-            style_ref.data_uri if style_ref else None,
-            style_ref.style_token if style_ref else "",
-            body.has_water,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"scene image generation failed: {e}") from e
-    elapsed_ms = int((time.time() - start) * 1000)
-
-    deps.scene_cache.put(body.prompt, "scene", result["scene"], context=context)
-    # Guardar también el schematic de entrada (el blueprint que pintó el cliente
-    # desde la escena del motor narrativo) para inspección/debug. Directo a disco
-    # sin registrar en el manifest: no es un asset reusable por el LLM.
-    blueprint_path = deps.scene_cache.get_path(key, "blueprint")
-    blueprint_path.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_path.write_bytes(png)
-
-    return {
-        "hash": key,
-        "cached": False,
-        "scene_url": f"/cache/scene/{key}",
-        "width": result["width"],
-        "height": result["height"],
-        "generation_time_ms": elapsed_ms,
-    }
 
 
 class SurfaceCellSpec(BaseModel):

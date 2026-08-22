@@ -82,13 +82,43 @@ describe("fronteras arquitectónicas", () => {
       "el campo retirado tiene que saltar en cualquiera de los procesos escaneados",
     );
 
+    // Los términos que entran con la retirada de los huérfanos del pipeline de
+    // imagen de la oblicua: kinds de visión sin emisor, campos de LlmContext
+    // que viajaban vacíos y sus rutas HTTP. Sin esta comprobación, añadirlos al
+    // patrón sería una lista que nadie ha visto saltar.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "narrative-mcp/server.ts",
+          text: "currentKind = 'blueprint_review';\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/narrative/types.ts",
+          text: "interface LlmContext {\n  scene_analysis?: { total: number };\n}\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/routers/generation.py",
+          text: '@router.post("/analyze_scene_image")\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/routers/generation.py:1",
+        "narrative-mcp/server.ts:1",
+        "nefan-core/src/narrative/types.ts:2",
+      ],
+      "los huérfanos del pipeline oblicuo tienen que saltar igual que los del plató",
+    );
+
     // Y los vecinos inocentes, callados: un identificador que solo CONTIENE la
     // palabra no es el campo (el patrón va con \b a los dos lados).
     assert.deepEqual(
       deLaRegla([
         {
           path: "nefan-core/src/scene/tile.ts",
-          text: "const stage_requests_total = 0;\nconst reviewed = 'blueprint_review';\n",
+          text: "const stage_requests_total = 0;\nconst image_reviews_total = 0;\n",
           imports: [],
         },
       ]),

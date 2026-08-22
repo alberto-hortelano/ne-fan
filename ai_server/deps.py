@@ -18,11 +18,6 @@ if TYPE_CHECKING:
     from asset_store_client import AssetStoreClient
     from llm_client import LLMClient
     from model_generator import ModelGenerator
-    from plate_inpainter import PlateInpainter
-    from scene_image_generator import SceneImageGenerator
-    from scene_segmenter import SceneSegmenter
-    from fal_client import FalSamClient
-    from remote_gen_client import RemoteGenClient
     from skin_generator import SkinGenerator
     from sprite_generator import SpriteGenerator
     from sprite_skin_meshy import SpriteSkinMeshy
@@ -35,25 +30,13 @@ class Deps:
     texture_gen: "TextureGenerator | None" = None
     model_gen: "ModelGenerator | None" = None
     skin_gen: "SkinGenerator | None" = None
-    plate_inpainter: "PlateInpainter | None" = None
     sprite_skin_gen: "SpriteSkinMeshy | None" = None
     sprite_gen: "SpriteGenerator | None" = None
-    scene_image_gen: "SceneImageGenerator | None" = None
-    scene_segmenter: "SceneSegmenter | None" = None
-    # SAM2 directo (proceso remote-gen, endpoint /segment). None = sin
-    # FAL_KEY; /segment devuelve 503. narrative-llm NO lo usa: llama a
-    # /segment por HTTP (remote_gen_client).
-    fal_sam: "FalSamClient | None" = None
-    # Cliente HTTP de remote-gen (proceso narrative-llm, F4): la segmentación
-    # viaja por POST /segment — este proceso ya no lee FAL_KEY.
-    remote_gen: "RemoteGenClient | None" = None
     style_packs: "StylePackResolver | None" = None
     asset_cache: "AssetCache | None" = None
     model_cache: "AssetCache | None" = None
     skin_cache: "AssetCache | None" = None
     sprite_cache: "AssetCache | None" = None
-    scene_cache: "AssetCache | None" = None
-    segment_cache: "AssetCache | None" = None
     # Librería de superficies de la vista fps (kind "surface", remote-gen).
     surface_cache: "AssetCache | None" = None
     surface_atlas_gen = None
