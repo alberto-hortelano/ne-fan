@@ -1,126 +1,114 @@
-# Requisitos — mutación: partir la corrida y ampliar los objetivos (#176 + #168)
+# Requisitos — ejecución parcial: solo lo que ha cambiado (#176 + #168)
 
 ## La petición del usuario, literal
+
+Primero encargó vaciar la cola de issues:
 
 > «Empieza a resolver los issues en orden, deja las dudas para el final y resuelve todo lo
 > que puedas con el flujo de agentes»
 
-Tercera tanda de la operación de vaciar la cola. Los dos issues van juntos y **#176 primero
-aunque tenga número mayor**: sin partir la corrida, ampliar objetivos multiplica un coste que
-ya son ~2 h de CPU.
+Y a mitad de esta tanda, al ver la dirección que llevaba, **la corrigió**:
 
-## Los dos issues
+> «Veo mucha optimizacion de concurrencia pero lo que hay que minimazar es la ejecucion total.
+> Modularizacion del codigo que permita ejecuciones parciales, solo lo que se ha cambiado y
+> eliminar la ejecucion global.»
 
-### #176 — «Partir la corrida de mutación por módulo: ~24 min de CPU en vez de ~2 h (5x)»
+Esa segunda frase **manda sobre el enunciado de los issues**. Los issues #176 y #168 hablan de
+repartir la corrida de mutación por módulos y de ampliar objetivos; el usuario dice que
+repartir no es la respuesta, porque **repartir no reduce el trabajo: lo reordena**. Lo que hay
+que reducir es cuánto se ejecuta, y la vía es estructural: que el código esté modularizado de
+forma que un cambio solo obligue a ejecutar lo que ese cambio puede haber roto.
 
-> `stryker.config.json` usa `testRunner: "command"` con `coverageAnalysis: "off"` — no existe
-> runner de Stryker para `node:test`, así que **la suite entera corre una vez por cada mutante**.
->
-> Censo: **1695 mutantes** = 292 `scene-normalize` + 1362 `plugins/dsl` + 41 `combat-resolver`.
-> El comando de `test:mutate` cuesta **4,23 s de CPU**. Total ≈ **2 h** (~16 min de reloj con
-> `concurrency: 10`).
->
-> Traza de imports: solo `plugins-dsl.test.ts` alcanza el DSL y solo `combat-resolver.test.ts`
-> alcanza el resolver. Para **1403 de 1695 mutantes (83 %)** los demás ficheros de test no
-> pueden matar nada.
->
-> **El arreglo**: un config + script de npm por objetivo, para que cada módulo corra solo los
-> tests que pueden matarlo. Estimado: **~24 min de CPU frente a ~2 h**.
->
-> **El obstáculo**: `npm run deuda` (`scripts/deuda.ts`) lee un único
-> `reports/mutation/mutation.json`. Partir la corrida exige fusionar los informes (la clave
-> `files` es un dict por ruta, así que la fusión es directa) o enseñar a `deuda.ts` a leer varios.
->
-> **Lo que NO es la solución**: se probó `incremental: true` y no sirve como palanca general:
-> con `testRunner: "command"` Stryker no hashea los ficheros de test, así que la caché no se
-> invalida al editar un test. Medido: vaciar dos ficheros de test y re-correr devuelve el score
-> viejo en 3 s. Por eso `npm run mutate` pasa `--force` y la caché vive en `npm run mutate:quick`.
+## Qué se descarta explícitamente
 
-### #168 — «Ampliar mutation testing más allá de 3 módulos»
+- **Afinar la concurrencia.** Ya se intentó en esta misma tanda y el usuario lo señaló como el
+  dial equivocado. Además colapsó su máquina: `concurrency: 10` de Stryker × `node --test` sin
+  `--test-concurrency` = ~130 procesos sobre 16 núcleos, **load average 129**. El acotado sigue
+  siendo necesario para no ahogar el equipo (y para que las medidas no salgan infladas: la
+  línea base honesta es **114,1 min de CPU**, no los 146,1 medidos bajo sobresuscripción), pero
+  **no es el objetivo de la tanda** y no cuenta como reducción.
+- **Repartir la corrida global en N corridas globales por módulo.** Sigue siendo ejecución
+  global; solo que troceada. Reduce el coste por mutante (batería más pequeña) pero no reduce
+  el número de veces que se ejecuta lo que nadie ha tocado.
 
-> `stryker.config.json` muta solo 3 objetivos. Todo lo demás **no está medido**, que no es lo
-> mismo que estar bien.
->
-> Dato que lo justifica: `scene-normalize.ts` tiene **97 % de cobertura y 45 % de score de
-> mutación**, con 206 mutantes vivos (84 de ellos condicionales que se pueden fijar a `true` sin
-> que ningún test se queje). Si el módulo mejor cubierto del core está así, el resto no va a
-> estar mejor.
->
-> **Candidatos** (puros, ya blindados por las reglas de frontera): `src/scene/blueprint/**`,
-> `src/scene/stage/greybox.ts`, `src/world-map/**`, `src/store/reducers.ts`.
+## Lo medido hoy, que enmarca la decisión
 
-**Corrección al enunciado de #168**: `src/scene/stage/greybox.ts` **ya no existe** —
-`src/scene/stage/` se fue entero con la vista de proscenio. Ese candidato hay que sustituirlo
-o quitarlo; el equivalente vivo del greybox está en `src/scene/blueprint/greybox.ts` y
-`src/scene/greybox/**`.
+| | reloj | CPU |
+|---|---|---|
+| `npm test` (85 suites, 1143 tests) | 6,5 s | 54,6 s |
+| `npm run coverage` | ~11 s | — |
+| **mutación completa** (1684 mutantes) | ~10 min | **114,1 min** |
+| `node qa/run.mjs` (13 guiones, Chrome real) | ~4 min | — |
 
-## Lo que ya se ha verificado sobre el repo (no hay que volver a averiguarlo)
+`nefan-core` es **un solo paquete**: 140 ficheros fuente medidos (`src/`, `bridge/`,
+`services/`) y 85 ficheros de test, sin fronteras de módulo que digan qué test cubre qué
+código. Esa es la razón de fondo por la que todo se ejecuta siempre.
 
-- **`stryker.config.json`**: `testRunner: "command"`, `commandRunner.command = "npm run
-  test:mutate"`, `coverageAnalysis: "off"`, `incremental: true` con
-  `incrementalFile: "reports/stryker-incremental.json"`, `concurrency: 10`, `timeoutMS: 10000`,
-  `jsonReporter.fileName = "reports/mutation/mutation.json"`, `thresholds {high:80, low:72,
-  break:72}`, `tempDirName: ".stryker-tmp"`. `mutate` = los tres patrones.
-- **La asimetría exacta**: `test:mutate` nombra **8 ficheros de test** (`scene-normalize`,
-  `tile`, `terrain-collision`, `scene-expand`, `plugins-dsl`, `tile-greybox`,
-  `blueprint-collision`, `combat-resolver`) para **3 patrones** de `mutate`. Con
-  `coverageAnalysis: "off"` cada mutante corre los ocho.
-- **`scripts/deuda.ts`**: ruta **única y hardcodeada** en la línea 39
-  (`join(coreRoot, "reports", "mutation", "mutation.json")`), un `existsSync` (:198) y un
-  `readFileSync` (:206). Del informe solo usa **tres cosas**: las claves de `files`, y por cada
-  mutante `status` y `mutatorName` (`location.start.line` está declarado en el tipo pero **no
-  se usa**). Vivos = `Survived` o `NoCoverage`; score = `(total-vivos)/total*100`.
-  Cruza con `stryker.config.json` (:195-197, :226-231) para avisar de objetivos sin datos, y
-  compara el mtime del informe con el de todo `.ts` bajo `src`/`bridge`/`services` (:87-99)
-  para marcar la medida como obsoleta.
-- En `nefan-core/reports/mutation/` **ya conviven cuatro JSON** (`mutation.json` 25 MB,
-  `validate-despues.json`, `validate-final.json`, `validate-net.json`) y `deuda.ts` solo mira el
-  primero. `nefan-core/reports/` está gitignorado.
-- **El candado existente**: `test/mutation-config.test.ts` (4 tests, corre en cada `npm test` y
-  por tanto en CI): (1) todo objetivo de `mutate` casa con un fichero real —con `globSync` si
-  lleva `*`—, (2) todo fichero de `test:mutate` existe, (3) `timeoutMS <= 15000` y el comando
-  lleva `--max-old-space-size`, (4) `mutate` pasa `--force`. Nació porque un objetivo apuntaba a
-  `src/combat/resolver.ts`, una ruta que **nunca existió**, y pasó meses midiendo el vacío en
-  verde.
-- **CI**: `npm run mutate` **no** corre en `ci.yml`. Vive en `.github/workflows/mutation.yml`
-  con `workflow_dispatch` + `schedule: cron "0 3 * * *"`, y sube `nefan-core/reports/mutation/`
-  como artefacto. Eso también hay que ajustarlo si la corrida se parte.
+**La suite de tests NO es el problema** (6,5 s). El problema es la mutación, por dos órdenes de
+magnitud, y en segundo lugar la batería de QA. Cualquier diseño que gaste su esfuerzo en
+acelerar `npm test` está optimizando lo que ya es barato.
+
+## Lo que ya se hizo en esta tanda y sigue valiendo como MATERIA PRIMA
+
+Está en la rama `tooling/mutacion-por-modulo`, sin commitear:
+
+- `nefan-core/data/contract/mutation-targets.json` — fuente única de qué se muta y **con qué
+  tests**, con los módulos agrupados por BATERÍA (no por tema) y un `break` por módulo medido
+  en vez de puesto a ojo. Lo relevante para esta tanda no es el reparto: es que ahí hay un
+  **mapa fichero-mutado → tests que pueden matarlo**, contrastado contra la traza de imports
+  real atravesando los barriles por símbolo.
+- `nefan-core/scripts/mutation-plan.ts` y `scripts/mutate.ts` — generan los configs de Stryker
+  desde ese mapa, sin commitearlos.
+- La extensión de `test/mutation-config.test.ts` que canda el reparto.
+
+Ese mapa es exactamente lo que hace falta para responder «qué hay que ejecutar dado este
+cambio». Reutilízalo o sustitúyelo por algo mejor, pero no lo tires sin decir por qué.
 
 ## Criterios de aceptación
 
-1. **Cada objetivo de mutación corre solo los tests que pueden matarlo.** La traza de imports
-   que justifica el reparto se demuestra, no se supone.
-2. **El coste medido baja de forma sustancial** y el informe dice el número real (antes y
-   después, en CPU y en reloj), no el estimado del issue.
-3. **`npm run deuda` sigue funcionando y no pierde información**: ve todos los objetivos, su
-   score y sus mutantes vivos por mutador, con la corrida partida. Si se fusionan informes, la
-   fusión es determinista.
-4. **`npm run deuda` sigue avisando de un objetivo sin datos.** Es la función que nació del
-   fallo de «medir el vacío en verde» y no puede debilitarse al partir la corrida: hay que
-   probarlo en negativo (quitar un informe y comprobar que avisa).
-5. **`test/mutation-config.test.ts` cubre la lista partida**: que todo objetivo de cada config
-   existe, y —lo nuevo— que **todo objetivo está asignado a exactamente un config** y que **los
-   tests que ese config corre son los que pueden alcanzarlo**. Un objetivo huérfano de config es
-   el mismo fallo de antes con otra cara.
-6. **Objetivos ampliados** (#168) sobre los candidatos vivos, con `src/scene/stage/greybox.ts`
-   sustituido por el equivalente vivo. Ampliar significa **medir**, no dejarlo configurado: el
-   informe trae el score de cada objetivo nuevo.
-7. Los mutantes vivos que aparezcan al ampliar **NO hay que matarlos todos en esta tanda** —
-   eso es trabajo de otras—, pero sí quedar en la cola de `npm run deuda` para que se vean.
-8. `.github/workflows/mutation.yml` sigue produciendo un artefacto útil con la corrida partida.
-9. `npm run verify` verde y CI de la PR entero en verde.
+1. **Un cambio acotado ejecuta trabajo acotado.** Dado un diff que toca N ficheros, existe un
+   comando que ejecuta **solo** lo que ese diff puede haber roto —tests y mutación— y el
+   informe demuestra la reducción con números reales sobre un diff real (por ejemplo, los de
+   las tandas ya cerradas de esta sesión).
+2. **La correspondencia cambio → trabajo se DERIVA, no se mantiene a mano.** Una lista escrita
+   por una persona se desincroniza en semanas y el fallo es silencioso: se deja de ejecutar lo
+   que había que ejecutar y todo sale verde. Si hay una parte declarada, tiene que haber un
+   candado que la contraste contra la realidad (el mapa actual ya lo hace contra la traza de
+   imports: ese es el listón).
+3. **Fallar en seguro.** Si el sistema no sabe qué ejecutar para un cambio —fichero nuevo, uno
+   que nadie importa, un cambio en un `.json` de datos, un cambio en el propio tooling—, la
+   respuesta por defecto es **ejecutar de más**, nunca de menos. Y decirlo.
+4. **«Eliminar la ejecución global»**: la ejecución global deja de ser la vía normal de trabajo.
+   Ver la pregunta abierta 1 sobre qué pasa con el CI y con la corrida nocturna.
+5. **La modularización que se proponga tiene que ser real, no cosmética.** Si la respuesta pasa
+   por fronteras nuevas dentro de `nefan-core`, esas fronteras tienen que ser verificables
+   (`arch-rules.json` es el mecanismo de la casa) y no romper los invariantes: lógica en core,
+   un solo formato de escena, el bridge único escritor del save.
+6. **`npm run deuda` sigue viendo la foto completa** aunque las corridas sean parciales, y
+   sigue avisando de lo que lleva sin medirse. Esa función nació del fallo de **medir el vacío
+   en verde** durante meses; probarla en negativo es obligatorio.
+7. **La máquina sigue usable mientras se ejecuta cualquier cosa.** El invariante es *procesos
+   simultáneos ≈ núcleos, nunca un múltiplo*, y va candado, no escrito en prosa.
+8. `npm run verify` verde, `npm run crap -- --check` sin crecer, CI de la PR entero en verde.
 
 ## Fuera de alcance
 
-- Cambiar de test runner (el `_comment` del config dice que ahí está la raíz del coste, pero es
-  otra operación entera).
-- Matar los mutantes que destape la ampliación.
-- Meter `npm run mutate` en `ci.yml`.
+- Matar los mutantes que destape ampliar objetivos (#168). Ampliar significa **medir**; matar
+  es trabajo de otras tandas.
+- Cambiar de test runner o de herramienta de mutación, salvo que el diseño lo exija — y
+  entonces con su coste declarado.
 - Los otros issues abiertos.
 
 ## Preguntas abiertas
 
-- ¿Fusionar los informes en uno o enseñar a `deuda.ts` a leer varios? El issue apunta a que la
-  fusión es directa; decide con el criterio de qué deja `npm run deuda` más difícil de romper.
-- Con `incremental: true` en el config y `--force` en el script, ¿sigue teniendo sentido
-  `mutate:quick` cuando la corrida esté partida por módulo? Puede que partir la haga innecesaria.
+1. **¿Qué significa «eliminar la ejecución global» para el CI?** Mi lectura por defecto, que
+   puedes discutir: se elimina como **vía normal de trabajo** (lo que corre una persona o una
+   PR), y se conserva una corrida completa **programada** como red de seguridad, porque un
+   cambio puede romper algo que el grafo de imports no predice. Si tu diseño hace innecesaria
+   esa red, dilo y demuéstralo; si la conserva, di cada cuánto y qué pasa cuando se pone roja.
+2. **¿Dónde está la frontera de módulo?** ¿Se derivan del grafo de imports (cero mantenimiento,
+   pero los barriles y los tests transversales lo emborronan), se declaran como paquetes de
+   workspace con sus propios tests (frontera real, pero es un refactor grande), o hay una
+   tercera vía? **Recomendación explícita con coste, sin empates.**
+3. **¿Aplica también a `node qa/run.mjs`?** Son ~4 minutos con Chrome real y crece con cada
+   guion. Si un cambio en el bridge no puede afectar al guion de colisión, ¿por qué se ejecuta?
