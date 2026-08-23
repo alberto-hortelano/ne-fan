@@ -336,6 +336,18 @@
           "reason": "es el arnés de esta regla: para probarla EN NEGATIVO hay que escribir el campo retirado como literal en las fixtures sintéticas. Mismo caso que arch-rules.json — un candado que solo se ha visto verde no es un candado, y la alternativa (concatenar el término en runtime para esquivar el grep) sería exactamente el truco que la regla existe para impedir."
         }
       ]
+    },
+    {
+      "id": "qa-guiones-sin-espera-por-reloj",
+      "desc": "Un guion de QA no espera por tiempo de pared: espera por ESTADO",
+      "why": "El movimiento va por delta de rAF, el typewriter por setInterval y la generacion por lo que tarde el motor: ningun tiempo de pared es determinista, asi que un guion que duerme es una moneda al aire que depende de lo ocupada que este la maquina. Lo que sustituye al reloj es un REGISTRO que el juego recuerda (ledger de viaje, episodio de tile, corrida de estilo) — el criterio 4 de #210 completo: un aserto fragil no se debilita, se blinda haciendo que el juego recuerde el paso. La regla mira SOLO los guiones: el runner (qa/run.mjs) necesita su polling y qa/lib ofrece las esperas por estado. Y no prohibe `setTimeout` a secas, porque un bucle de MUESTREO por frame (guion 10, opacidades intermedias del velo) es medir estado, no esperar reloj: lo que se prohibe es el sleep — `page.waitForTimeout(...)` y el `new Promise(r => setTimeout(r, N))`. Nace verde el dia que muere `esperarPeticiones` del guion 07, el ultimo que contaba peticiones contra un tope de 90 s.",
+      "severity": "error",
+      "files": [
+        "qa/guiones/**/*.mjs"
+      ],
+      "text": {
+        "pattern": "waitForTimeout\\s*\\(|new Promise\\s*\\(.{0,40}?setTimeout\\s*\\("
+      }
     }
   ]
 }

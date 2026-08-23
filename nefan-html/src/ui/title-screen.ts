@@ -89,6 +89,12 @@ export class TitleScreen {
    *  modo fixtures por #ts-close, que no resuelve la promesa de show(). */
   onVisibilityChange: ((visible: boolean) => void) | null = null;
   private styleApply: StyleApplyController;
+
+  /** Corrida de estilo tal y como la recuerda quien la ejecuta (bench/QA). */
+  styleRunState(): ReturnType<StyleApplyController["debugState"]> {
+    return this.styleApply.debugState();
+  }
+
   /** Última línea de progreso de generate_game (kind "game_gen"): la pinta
    *  el panel de generación del selector de mundo si está en pantalla. */
   private gameGenStatus: NarrativeStatusMessage | null = null;
@@ -100,8 +106,15 @@ export class TitleScreen {
     const s = this.gameGenStatus;
     if (!s) {
       line.textContent = "";
+      line.removeAttribute("data-gen-phase");
       return;
     }
+    // La FASE, como dato y no como prosa: `ready` y `error` son estados
+    // terminales, y quien espera (el jugador mirando, o un guion de QA) no
+    // tiene que adivinarlos leyendo el texto. Antes había que casar un regex
+    // contra el mensaje, y bastó añadir un mensaje de error nuevo para que la
+    // espera dejara de reconocer el final y se comiera su tope entero.
+    line.dataset.genPhase = s.phase;
     const mins = s.elapsedMs !== undefined ? ` · ${Math.round(s.elapsedMs / 60000)} min` : "";
     if (s.phase === "error") {
       line.innerHTML = `<span style="color:#a44">${escapeHtml(s.message ?? "la generación falló")}</span>`;

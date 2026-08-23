@@ -14,6 +14,14 @@
  *
  *  Cero créditos: preset 5, y la partida se abre en «Maqueta 3D» (vector), que
  *  no pide una sola imagen.
+ *
+ *  ALCANCE del bloque de teclado (§7): la batería entra con `?input=scripted`,
+ *  así que `KeyboardInputProvider` ni se instancia. Lo que ese bloque puede ver
+ *  son los listeners globales vivos en ese modo (`dev-tools-input.ts` y los
+ *  paneles), y por eso lleva un control positivo delante: sin él sería verde
+ *  por construcción. Una elección de vista escondida DENTRO del provider de
+ *  teclado se le escaparía; de eso se ocupan los otros siete bloques, que miran
+ *  la pantalla y el DOM.
  */
 import { abrirSelectorDeMundos, esperarTituloListo } from "../lib/sesion.mjs";
 
@@ -64,7 +72,14 @@ function controles() {
     if (r.width > 0 && r.height > 0) out.push({ tipo: "button", txt: (b.textContent ?? "").trim(), title: b.title ?? "" });
   }
   for (const s of document.querySelectorAll("select")) {
-    out.push({ tipo: "select", id: s.id, opts: [...s.options].map((o) => (o.textContent ?? "").trim()) });
+    out.push({
+      tipo: "select",
+      id: s.id,
+      opts: [...s.options].map((o) => (o.textContent ?? "").trim()),
+      // El VALOR es el id del rol (`faces`/`surfaces`/`characters`), que es lo
+      // estable; la etiqueta es prosa y cambia sin avisar.
+      vals: [...s.options].map((o) => o.value),
+    });
   }
   return out;
 }
@@ -129,14 +144,37 @@ export default async function (ctx) {
   // contenido, no vistas. Lista BLANCA a propósito (ver cabecera): se afirma
   // lo que debe haber, no lo que no debe. Una carpeta de vista resucitada
   // suspende esta afirmación sin que el guion tenga que nombrarla.
-  const ROLES = ["superficies", "caras", "personajes", "surfaces", "faces", "characters"];
-  const carpetas = est.ctrls.filter((c) => c.tipo === "select" && c.id !== "ts-style" && c.id !== "room-selector");
-  const opcionesDeCarpeta = carpetas.flatMap((c) => c.opts ?? []);
+  // Roles del CONTENIDO (data/styles/README.md): las tres carpetas obligatorias
+  // de un pack. Se afirma sobre el `value` de cada opción —el id del rol, que
+  // es lo que viaja al servidor— y no sobre su etiqueta: la etiqueta es prosa
+  // («Lámina de materiales (rejilla de muestras planas)») y la lista blanca
+  // anterior, escrita a ojo, no casaba con NINGUNA de las tres. Nadie se
+  // enteró porque el array que filtraba estaba siempre vacío.
+  const ROLES = ["surfaces", "faces", "characters"];
+  // Los desplegables de carpeta viven en «Subir estilo», que es OTRA pantalla:
+  // filtrarlos desde esta daba un array vacío, y `[].every(...)` es `true`. La
+  // lista blanca —presentada arriba como la defensa fuerte— no había mirado
+  // jamás una opción. Hay que ir a la pantalla, y luego volver.
+  await ctx.page.click("#ts-upload-style");
+  await ctx.page.waitForSelector("[data-folder]", { timeout: 30_000 });
+  const subida = await revisar("subir estilo");
+  const carpetas = subida.ctrls.filter(
+    (c) => c.tipo === "select" && c.id !== "ts-style" && c.id !== "room-selector",
+  );
+  const opcionesDeCarpeta = carpetas.flatMap((c) => c.vals ?? []);
+  ctx.log(`carpetas de subida: ${JSON.stringify(carpetas.flatMap((c) => c.opts ?? []))}`);
+  ctx.expect(
+    "la pantalla de subida ofrece de verdad sus carpetas (si no, el aserto de abajo no mira nada)",
+    opcionesDeCarpeta.length > 0,
+    `${carpetas.length} desplegables, ${opcionesDeCarpeta.length} opciones`,
+  );
   ctx.expect(
     "las carpetas de subida de estilo son roles del contenido, no vistas",
-    opcionesDeCarpeta.every((o) => ROLES.some((r) => o.toLowerCase().includes(r))),
+    opcionesDeCarpeta.length > 0 && opcionesDeCarpeta.every((v) => ROLES.includes(v)),
     JSON.stringify(opcionesDeCarpeta),
   );
+  await ctx.page.click("#ts-back");
+  await ctx.page.waitForSelector("#ts-style", { timeout: 30_000 });
 
   // ── 4. Selector de fixtures (F12): sin escenas de plató ───────────────
   const rooms = await ctx.page.$$eval("#room-selector option", (os) => os.map((o) => (o.value ?? "").trim()).filter(Boolean));
@@ -184,6 +222,35 @@ export default async function (ctx) {
     escena: window.__nefan.scene?.scene_id,
     lienzos: document.querySelectorAll("canvas").length,
   }));
+  // Control POSITIVO. Sin él este bloque NO PUEDE ponerse rojo: la batería
+  // entra con `?input=scripted`, y ese provider no instala un solo listener de
+  // teclado (lo dice su propia cabecera), así que «pulso y no pasa nada» sería
+  // cierto por construcción — verde sin comprobar nada, el vicio que esta
+  // tanda persigue. `B` (ciclar la vista de depuración del renderer) SÍ
+  // escucha en este modo, vía `dev-tools-input.ts`: si B mueve algo, las
+  // teclas LLEGAN a la aplicación, y entonces que las candidatas no muevan
+  // nada significa algo.
+  const vistaDebug0 = (await ctx.nefan("fps")).debugView;
+  await ctx.page.keyboard.press("b");
+  const vistaDebug1 = await ctx
+    .waitFor(
+      "el canal de teclado está vivo (B cambia la vista de depuración)",
+      (previa) => (window.__nefan.fps().debugView !== previa ? window.__nefan.fps().debugView : null),
+      10_000,
+      vistaDebug0,
+    )
+    .catch(() => null);
+  ctx.expect(
+    "las teclas LLEGAN a la aplicación en este modo (si no, lo de abajo no probaría nada)",
+    vistaDebug1 !== null,
+    `debugView: ${vistaDebug0} → ${vistaDebug1}`,
+  );
+  // Y se deja como estaba: la vista de depuración no puede quedarse encendida
+  // para el resto del guion ni para las capturas.
+  for (let i = 0; i < 8 && (await ctx.nefan("fps")).debugView !== vistaDebug0; i++) {
+    await ctx.page.keyboard.press("b");
+  }
+
   for (const k of ["KeyV", "KeyO", "KeyP", "KeyT", "KeyC", "Tab", "F1", "F2"]) {
     await ctx.page.keyboard.press(k.startsWith("Key") ? k.slice(3) : k).catch(() => {});
   }

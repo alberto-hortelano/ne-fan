@@ -231,6 +231,10 @@ export function broadcastScene(
     /** Punto de aparición que se PIDE al cliente en el `ready` (viaje a un
      *  place anclado): el cliente es dueño de su posición. */
     spawn?: { x: number; z: number };
+    /** De dónde sale esta escena: generada ahora, ya en sesión, o del mundo
+     *  pre-generado. Viaja en el `ready` para que el cliente pueda AFIRMAR la
+     *  diferencia en vez de suponerla. */
+    source?: "engine" | "cache" | "snapshot";
   },
 ): void {
   enrichSceneWithExits(ctx, scene);
@@ -277,6 +281,7 @@ export function broadcastScene(
     tile: isTile ? { tx: rawTile.tx!, ty: rawTile.ty! } : undefined,
     edge: meta?.edge,
     spawn: meta?.spawn,
+    source: meta?.source,
     elapsedMs,
   });
   // La escena difundida puede traer NPCs nuevos (registrados por

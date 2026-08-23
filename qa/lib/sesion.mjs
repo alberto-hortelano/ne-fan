@@ -91,6 +91,82 @@ export async function comenzar(ctx, maxMs = 180_000) {
   );
 }
 
+/** Pre-genera el mundo del juego desde el título, por el camino del jugador
+ *  (el botón «Generar mundo», que pide confirmación en dos clicks como las
+ *  acciones de pago) y deja al guion de vuelta en el home.
+ *
+ *  Lo necesitan los guiones cuyo sujeto vive en el world map (places, links,
+ *  salidas) o que leen el snapshot (el batch de estilo): ese mapa lo siembra
+ *  el motor durante la pre-generación, y sin ella no existe.
+ *
+ *  Copiado estaba en 08 y 09, con el 09 sin la afirmación del 08. Se unifica
+ *  aquí CON ella: el guion que regenera comprueba de paso que la
+ *  pre-generación no trae fallos parciales — la versión compartida es la
+ *  fuerte, no el mínimo común.
+ */
+export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
+  await abrirSelectorDeMundos(ctx);
+  await ctx.page.click(`[data-game-id="${gameId}"]`);
+
+  await ctx.page.click("#ts-gen-world");
+  const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
+  if (armado.startsWith("¿Regenerar")) await ctx.page.click("#ts-gen-world");
+
+  // Se espera a la FASE que publica el título (`data-gen-phase`), no a un
+  // regex sobre el texto: el mensaje cambia y la espera no se entera. Pasó de
+  // verdad — al añadir el aviso de "pre-generación abandonada", ninguno de los
+  // dos patrones que se casaban aquí lo reconocía y la espera se comía sus
+  // 240 s enteros para reportar un timeout genérico. El tope vuelve a ser lo
+  // que debe ser: un cortafuegos de deadlock.
+  const fin = await ctx.waitFor(
+    "la pre-generación del mundo llega a un estado terminal",
+    () => {
+      const el = document.getElementById("ts-gen-progress");
+      const fase = el?.dataset.genPhase ?? "";
+      return fase === "ready" || fase === "error"
+        ? { fase, texto: el?.textContent ?? "" }
+        : null;
+    },
+    240_000,
+  );
+  ctx.log(`pre-generación (${fin.fase}): ${fin.texto}`);
+  ctx.expect("la pre-generación del mundo termina bien", fin.fase === "ready", fin.texto);
+  ctx.expect("…y sin fallos parciales", !/Fallos parciales/i.test(fin.texto), fin.texto);
+  await ctx.page.click("#ts-back");
+}
+
+/** Espera a que un REGISTRO del juego cumpla una condición, y devuelve el
+ *  registro entero.
+ *
+ *  Es el sustituto de las esperas por reloj: en vez de «duerme 200 ms y mira a
+ *  ver si ya han salido N peticiones», se espera a que el propio juego declare
+ *  el paso en uno de sus libros (`__nefan.viaje`, `.tileEpisodios`, `.skins`,
+ *  `.estilo()`). `maxMs` es un cortafuegos de deadlock, no la condición de
+ *  parada, y al saltar el mensaje trae el ÚLTIMO valor del registro — que es
+ *  lo que dice qué paso está muerto.
+ *
+ *  `libro` es el nombre de la clave en `window.__nefan` (`nombre()` si es
+ *  función) y solo se usa para CONTAR QUÉ PASÓ si el cortafuegos salta;
+ *  `probe` es la condición, evaluada dentro de la página como en `waitFor`. */
+export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, arg = undefined) {
+  try {
+    return await ctx.waitFor(desc, probe, maxMs, arg);
+  } catch {
+    const v = await leerLibro(ctx, libro).catch((e) => ({ __err: String(e) }));
+    throw new Error(`${desc}: el juego nunca lo registró · ${libro}=${JSON.stringify(v)}`);
+  }
+}
+
+/** Lee uno de los libros del juego (`viaje`, `tileEpisodios`, `skins`,
+ *  `estilo`), sea propiedad o función. */
+export async function leerLibro(ctx, libro) {
+  return ctx.page.evaluate((nombre) => {
+    const hook = window.__nefan;
+    const v = hook[nombre];
+    return typeof v === "function" ? v.call(hook) : (v ?? null);
+  }, libro);
+}
+
 /** Celda del grid → centro de la celda en coordenadas de MUNDO, usando el
  *  origen y el metros-por-celda que declara la propia world scene (nada de
  *  constantes copiadas del código). */

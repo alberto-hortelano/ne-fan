@@ -12,7 +12,10 @@
  *   1. desde el destino, el panel ofrece la vuelta y NO ofrece el lugar donde
  *      el jugador ya está (ofrecerlo significa que el panel está pintando las
  *      salidas de OTRO lugar);
- *   2. clicar la vuelta devuelve al jugador al tile de partida, en suelo libre;
+ *   2. clicar la vuelta devuelve al jugador al tile de partida, en suelo libre,
+ *      y lo hace VIAJANDO (el ledger de `__nefan.viaje` prueba que la escena
+ *      del destino se difundió y que el spawn se aplicó, no que el jugador
+ *      apareciera allí por otra vía);
  *   3. ya de vuelta, el panel vuelve a ofrecer el destino y sigue sin ofrecer
  *      el lugar donde está — el bucle ida/vuelta se puede repetir.
  *
@@ -22,33 +25,9 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { abrirSelectorDeMundos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
-
-/** Pre-genera el mundo desde el título (mismo motivo que en el guion 08: el
- *  world map viaja en el snapshot de `data/games/{id}/world/` y un snapshot
- *  escrito antes de que el motor de bench sembrara el destino no lo trae).
- *  Copiado a propósito en vez de compartido: `qa/lib/` lo importan varios
- *  guiones y tocarlo aquí cambiaría el 08. */
-async function regenerarMundo(ctx) {
-  await abrirSelectorDeMundos(ctx);
-  await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
-
-  await ctx.page.click("#ts-gen-world");
-  const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
-  if (armado.startsWith("¿Regenerar")) await ctx.page.click("#ts-gen-world");
-
-  await ctx.waitFor(
-    "la pre-generación del mundo termina",
-    () => {
-      const t = document.getElementById("ts-gen-progress")?.textContent ?? "";
-      return /generado:/.test(t) || /falló|error/i.test(t) ? t : null;
-    },
-    240_000,
-  );
-  await ctx.page.click("#ts-back");
-}
 
 /** Estado que el jugador puede ver: en qué tile está, dónde, y qué le ofrece
  *  el panel de salidas. */
@@ -70,44 +49,72 @@ async function pulsarSalida(ctx, nombre) {
   await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
 }
 
-/** El viaje ha terminado cuando el JUGADOR está en otro tile — no cuando
- *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn). */
-async function esperarLlegada(ctx, tileAnterior, desc) {
-  return ctx.waitFor(
-    desc,
-    (anterior) => {
-      const t = window.__nefan.currentTile;
-      if (!t || t === anterior) return null;
-      return {
-        tile: t,
-        pos: window.__nefan.state().pos,
-        rect: window.__nefan.scene?.world_rect ?? null,
-        exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
-      };
-    },
-    240_000,
-    tileAnterior,
-  );
+/** Qué paso del viaje está muerto, leído del ledger que el juego RECUERDA
+ *  (`window.__nefan.viaje`). Sin esto, un viaje que no llega NUNCA y uno que
+ *  tarda dan exactamente el mismo veredicto —«timeout esperando… (último
+ *  valor: null)»—, que es lo que dejó el cuelgue del 12,5 % sin diagnosticar
+ *  durante ocho corridas. */
+function pasoMuerto(l, tileAnterior) {
+  if (!l) return "el cliente no registró el viaje: no llegó ni a pedírselo al bridge";
+  if (l.error) return `el bridge abortó el viaje: ${l.error}`;
+  if (!l.encolado && !l.escenaRecibida)
+    return "el bridge no acusó recibo (ni «Viajando a…» ni escena): la petición murió antes de la cola";
+  if (!l.escenaRecibida)
+    return `el bridge encoló el viaje (${l.encolado}) pero nunca difundió la escena del destino: el job murió en la cola`;
+  if (!l.spawnAplicado)
+    return `la escena ${l.escenaRecibida} llegó, pero nadie pidió el spawn: el jugador se quedó donde estaba`;
+  return `el spawn se aplicó en ${JSON.stringify(l.spawnAplicado)} y aun así el jugador sigue en ${tileAnterior}`;
 }
 
-/** El home del título pinta el botón "Nueva partida" ANTES de colgarle su
- *  handler (`renderHome` lo enchufa tras `await listSessions()` y tras pintar
- *  las tarjetas de saves). Clicarlo dentro de esa ventana no hace nada y no
- *  avisa de nada. Esperar al "Bridge OK" del status es esperar por ESTADO, que
- *  es la regla de estos guiones. Sin esto el guion es una moneda al aire en
- *  cuanto la máquina acumula partidas guardadas. */
-async function homeListo(ctx) {
-  await ctx.waitFor(
-    "el título termina de cargar sus saves (status 'Bridge OK')",
-    () => /Bridge OK/.test(document.getElementById("ts-status")?.textContent ?? ""),
-    60_000,
+/** El viaje ha terminado cuando el JUGADOR está en otro tile — no cuando
+ *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn).
+ *  Se espera por ESTADO contra el ledger: un fallo declarado corta al
+ *  instante, y el tope de 240 s queda como cortafuegos de deadlock, no como
+ *  condición de parada. Al saltar, el fallo NOMBRA el paso muerto. */
+async function esperarLlegada(ctx, tileAnterior, desc) {
+  const roto = (l) => new Error(`${desc}: ${pasoMuerto(l, tileAnterior)} · ledger=${JSON.stringify(l)}`);
+  const r = await ctx
+    .waitFor(
+      desc,
+      (anterior) => {
+        const t = window.__nefan.currentTile;
+        const v = window.__nefan.viaje;
+        // Viaje declarado roto por el bridge: no hay nada más que esperar.
+        if (v && v.error) return { __roto: v };
+        if (!t || t === anterior) return null;
+        return {
+          tile: t,
+          pos: window.__nefan.state().pos,
+          rect: window.__nefan.scene?.world_rect ?? null,
+          exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
+        };
+      },
+      240_000,
+      tileAnterior,
+    )
+    .catch(async () => {
+      throw roto(await ctx.nefan("viaje"));
+    });
+  if (r.__roto) throw roto(r.__roto);
+  r.ledger = await ctx.nefan("viaje");
+  return r;
+}
+
+/** El viaje se hizo VIAJANDO: el bridge difundió la escena del destino y pidió
+ *  el spawn. Sin esto, llegar al tile andando (o por un spawn de otra cosa)
+ *  contaría como viaje bueno. */
+function comprobarLedger(ctx, llegada, desc) {
+  const l = llegada.ledger;
+  ctx.log(`viaje: ${JSON.stringify(l)}`);
+  ctx.expect(
+    `${desc}: el bridge difundió la escena del destino y pidió el spawn`,
+    Boolean(l && l.escenaRecibida && l.spawnAplicado && !l.error),
+    JSON.stringify(l),
   );
 }
 
 export default async function (ctx) {
-  await homeListo(ctx);
-  await regenerarMundo(ctx);
-  await homeListo(ctx);
+  await regenerarMundo(ctx, GAME_ID);
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
   await comenzar(ctx);
 
@@ -131,6 +138,7 @@ export default async function (ctx) {
     return;
   }
   ctx.log(`en el destino: ${enDestino.tile} · salidas ${JSON.stringify(enDestino.exits.map((e) => e.place_id))}`);
+  comprobarLedger(ctx, enDestino, "la ida");
   await ctx.shot("en-el-destino");
 
   ctx.expect(
@@ -143,6 +151,13 @@ export default async function (ctx) {
   const vuelta = enDestino.exits.find((e) => e.place_id !== destino.place_id) ?? enDestino.exits[0];
 
   // ── 2. Vuelta ───────────────────────────────────────────────────────────
+  // Foto del episodio del tile de partida ANTES de volver: la vuelta tiene que
+  // producir uno nuevo (otro `arrived`), y con `source: "cache"`.
+  const origenAntes = await ctx.page.evaluate(
+    (k) => window.__nefan.tileEpisodios.find((e) => e.key === k) ?? null,
+    partida.tile,
+  );
+  ctx.log(`episodio del origen antes de volver: ${JSON.stringify(origenAntes)}`);
   await pulsarSalida(ctx, vuelta.name);
   const regreso = await esperarLlegada(ctx, enDestino.tile, "el jugador vuelve al tile de partida").catch(
     (err) => {
@@ -155,6 +170,31 @@ export default async function (ctx) {
     return;
   }
   ctx.log(`de vuelta: ${regreso.tile} · salidas ${JSON.stringify(regreso.exits.map((e) => e.place_id))}`);
+  comprobarLedger(ctx, regreso, "la vuelta");
+  // La RAMA, que es el sujeto de este guion: cacheada, no generación.
+  ctx.expect(
+    "la vuelta NO pasa por la cola de generación: el bridge re-difunde la escena que ya tenía",
+    regreso.ledger?.encolado === null,
+    `encolado=${JSON.stringify(regreso.ledger?.encolado)} — si dice "queued", la vuelta se está REGENERANDO ` +
+      `(espera larga y créditos en un stack real)`,
+  );
+  const origenDespues = await esperarRegistro(
+    ctx,
+    `el cliente registra de dónde salió ${regreso.tile} al volver`,
+    "tileEpisodios",
+    (k) => {
+      const e = window.__nefan.tileEpisodios.find((x) => x.key === k.key);
+      return e && e.source !== null && e.arrived !== k.arrived ? e : null;
+    },
+    30_000,
+    { key: partida.tile, arrived: origenAntes?.arrived ?? null },
+  ).catch(() => null);
+  ctx.log(`episodio del origen tras volver: ${JSON.stringify(origenDespues)}`);
+  ctx.expect(
+    "y el bridge declara esa escena como CACHÉ, no como generación nueva",
+    origenDespues?.source === "cache",
+    `source=${origenDespues?.source}`,
+  );
   await ctx.shot("de-vuelta");
   ctx.expect("la vuelta acaba en el tile de partida", regreso.tile === partida.tile, regreso.tile);
   ctx.expect(

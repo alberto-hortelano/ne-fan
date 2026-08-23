@@ -94,10 +94,14 @@ export default async function (ctx) {
   ctx.expect("hay al menos un NPC en la escena de la sesión", estado.npcs.length > 0);
 
   const mundo = await ctx.nefan("fps");
+  // `billboards` a secas cuenta TAMBIÉN el decorado (updateObject comparte el
+  // mapa con updateEntity), así que «hay al menos tantos billboards como NPCs»
+  // lo cumple cualquier escena con cajas y CERO personajes montados — el fallo
+  // exacto que este aserto existe para cazar. Se cuenta lo que se afirma.
   ctx.expect(
-    "el mundo 3D tiene billboards montados (los personajes son billboards de sprite)",
-    mundo.billboards >= estado.npcs.length,
-    `billboards=${mundo.billboards} npcs=${estado.npcs.length}`,
+    "cada NPC de la escena tiene su billboard de PERSONAJE montado en el mundo 3D",
+    mundo.billboardsPersonaje >= estado.npcs.length,
+    `billboardsPersonaje=${mundo.billboardsPersonaje} npcs=${estado.npcs.length} (billboards totales, decorado incluido: ${mundo.billboards})`,
   );
 
   // --- El NPC se mueve SOLO (el sim del bridge lo conduce) ---

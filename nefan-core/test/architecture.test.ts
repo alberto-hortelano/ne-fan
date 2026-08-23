@@ -229,6 +229,51 @@ describe("fronteras arquitectónicas", () => {
   // three en el cliente ⇒ un único contexto WebGL en la pestaña. Probado en
   // negativo contra la config real, porque la regla verde de hoy no distingue
   // "nadie más importa three" de "la excepción se comió la regla".
+  // Nace VERDE (el último sleep, `esperarPeticiones` del guion 07, muere en la
+  // misma PR), y una regla verde no demuestra nada por sí sola: se le enseña lo
+  // que existe para cortar y lo que NO debe cortar.
+  it("[error] qa-guiones-sin-espera-por-reloj: el sleep salta, el muestreo por frame no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "qa-guiones-sin-espera-por-reloj");
+
+    // Las dos formas de dormir que había o podía haber en un guion.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // Literalmente `esperarPeticiones`, que muere en esta PR.
+          path: "qa/guiones/07-npc-clave-del-skin.mjs",
+          text: "while (Date.now() - t0 < maxMs) {\n  await ctx.page.waitForTimeout(200);\n}\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-inventado.mjs",
+          text: "// deja que respire\nawait new Promise((r) => setTimeout(r, 500));\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["qa/guiones/07-npc-clave-del-skin.mjs:2", "qa/guiones/99-inventado.mjs:2"],
+      "un guion que duerme tiene que saltar, escriba el sleep como lo escriba",
+    );
+
+    // Y lo que NO es esperar por reloj: el bucle de muestreo por frame del
+    // guion 10 (mide opacidades del velo y para por ESTADO, con un tope solo
+    // de cortafuegos), y el runner, que necesita su polling y está fuera del
+    // alcance de la regla a propósito.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "qa/guiones/10-fps-telegraph-etiquetas-y-niebla.mjs",
+          text: "const tick = () => {\n  if (llegada && v === null) return res(ok);\n  setTimeout(tick, 16);\n};\n",
+          imports: [],
+        },
+        { path: "qa/run.mjs", text: "await new Promise((r) => setTimeout(r, 150));\n", imports: [] },
+        { path: "qa/lib/sesion.mjs", text: "await new Promise((r) => setTimeout(r, 5));\n", imports: [] },
+      ]),
+      [],
+      "medir por frame no es dormir, y el runner queda fuera de la regla",
+    );
+  });
+
   it("[error] three-solo-en-fps-gl: cualquier otro importador de three salta", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "three-solo-en-fps-gl");

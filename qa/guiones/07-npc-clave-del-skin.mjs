@@ -18,8 +18,19 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backendEsFalso, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { backendEsFalso, nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
 
+/** Precondición DECLARADA (qa/run.mjs la ejecuta antes de lanzar el guion):
+ *   · `mundo`   — el batch de estilo lee el snapshot del mundo y deriva de él
+ *                 el roster de personajes; heredar el que dejó otro guion es
+ *                 heredar SU roster. Aquí se borra y este guion genera el suyo.
+ *   · `fake-ai` — el motor falso cachea las páginas de atlas ya "pintadas" en
+ *                 memoria de proceso; con la caché caliente de un guion
+ *                 anterior el plan anuncia menos de lo que anunciaría en frío,
+ *                 y este guion compara lo anunciado con lo emitido. */
+export const aisla = ["mundo", "fake-ai"];
+
+const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
 const FIXTURE_EN_DISCO = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -56,30 +67,82 @@ export default async function (ctx) {
     }
   });
 
+  // El mundo lo genera ESTE guion (el runner acaba de borrar el que hubiera):
+  // el batch de estilo deriva su roster del snapshot, así que heredarlo de
+  // otro guion sería comparar contra un mundo que no es el suyo.
+  await regenerarMundo(ctx, GAME_ID);
+
   // ── 1. Vía B: el batch de estilo, desde el título ────────────────────────
-  const { styleId } = await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image" });
+  const { styleId } = await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
   await ctx.page.click("#ts-apply-style");
   await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });
   const plan = await ctx.page.$eval("#ts-style-plan", (e) => e.innerText);
   ctx.expect("el plan de estilo enumera los skins de personaje", /personaje/i.test(plan), plan.slice(0, 200));
   ctx.expect("el plan anuncia su coste antes de gastar", /\$/.test(plan), plan.slice(0, 200));
   await ctx.shot("plan-de-estilo");
-  // Cuántos skins anuncia el plan: "(N personajes × M anims)". Se espera por
-  // ESE número de peticiones, no por un tiempo de pared.
+  // Lo que el plan ANUNCIA al jugador (y por lo que le cobra): "(N personajes
+  // × M anims)".
   const [, personajes, anims] = /\((\d+) personajes? × (\d+) anims?\)/.exec(plan) ?? [];
-  const esperadas = Number(personajes ?? 0) * Number(anims ?? 0);
-  ctx.expect("el plan dice cuántos skins va a pedir", esperadas > 0, `personajes=${personajes} anims=${anims}`);
+  const anunciados = Number(personajes ?? 0) * Number(anims ?? 0);
+  ctx.expect("el plan dice cuántos skins va a pedir", anunciados > 0, `personajes=${personajes} anims=${anims}`);
+
   await ctx.page.click("#ts-style-run");
-  const hayBatch = await esperarPeticiones(ctx, peticiones, esperadas || 1, 90_000);
-  ctx.expect("el batch de estilo pide los skins que anunció", hayBatch, `${peticiones.length}/${esperadas} peticiones`);
+  // Se espera a que la corrida SE DECLARE TERMINADA (lo apunta el propio
+  // StyleApplyController al acabar), no a que hayan llegado N peticiones antes
+  // de que se agote un tope. La diferencia importa: contra el reloj, un batch
+  // que se queda corto agota los 90 s y uno que se pasa no se nota. Con el
+  // registro, las dos cosas se ven al terminar.
+  const corrida = await esperarRegistro(
+    ctx,
+    "el batch de estilo termina",
+    "estilo",
+    () => (window.__nefan.estilo()?.done ? window.__nefan.estilo() : null),
+    180_000,
+  );
+  ctx.log(`corrida de estilo: ${JSON.stringify(corrida)}`);
+  // Los fallos se REGISTRAN, no se afirman: contra el bench, el motor falso
+  // devuelve 500 en las anims para las que no tiene hoja (es su forma de
+  // ejercitar la cancelación de la cola de skins del cliente), así que exigir
+  // cero fallos aquí sería afirmar sobre el fake y no sobre el juego. Lo que
+  // sí se exige es que un fallo de respuesta NO cambie lo que se pidió.
+  if (corrida.failures.length) ctx.log(`fallos de la corrida (esperables en bench): ${corrida.failures.length}`);
+  // Lo prometido == lo emitido == lo capturado por el cable. Tres números que
+  // hasta ahora nadie cuadraba: "dijo 3 y pidió 2" pasaba de largo.
+  ctx.expect(
+    "el batch EMITE exactamente los skins que su plan anunció (si no, el coste que se cobró no es el que se gasta)",
+    corrida.issued.skins === anunciados,
+    `anunciados=${anunciados} emitidos=${corrida.issued.skins}`,
+  );
+  ctx.expect(
+    "y por el cable salieron esos mismos, ni uno más",
+    peticiones.length === corrida.issued.skins,
+    `capturadas=${peticiones.length} emitidas=${corrida.issued.skins}`,
+  );
   const batch = peticiones.map((p) => p.body);
   const corte = peticiones.length;
 
   // ── 2. Vía A: la partida ─────────────────────────────────────────────────
   await comenzar(ctx);
-  await esperarPeticiones(ctx, peticiones, corte + 1, 60_000);
+  // Igual que arriba: se espera a que la PARTIDA declare en su libro de skins
+  // qué personajes ha pedido, no a que lleguen N peticiones antes de un tope.
+  const libro = await esperarRegistro(
+    ctx,
+    "la partida apunta en su libro los skins que pide",
+    "skins",
+    () => (window.__nefan.skins.length > 0 ? window.__nefan.skins : null),
+    120_000,
+  );
+  ctx.log(`libro de skins de la partida: ${JSON.stringify(libro)}`);
   const partida = peticiones.slice(corte).map((p) => p.body);
   ctx.expect("la partida pide el skin de sus NPCs", partida.length > 0, `${partida.length} peticiones`);
+  // Contenido, no cardinales: dos conjuntos distintos del mismo tamaño pasaban.
+  const promptsCable = [...new Set(partida.map((p) => p.prompt))].sort();
+  const promptsLibro = [...new Set(libro.map((sk) => sk.prompt))].sort();
+  ctx.expect(
+    "y lo que pide por el cable son los MISMOS personajes que apuntó en su libro",
+    JSON.stringify(promptsCable) === JSON.stringify(promptsLibro),
+    `cable=${JSON.stringify(promptsCable)} libro=${JSON.stringify(promptsLibro)}`,
+  );
   if (!batch.length || !partida.length) return;
 
   const npcs = await ctx.page.evaluate(() => window.__nefan.scene?.npcs ?? []);
@@ -88,22 +151,53 @@ export default async function (ctx) {
   ctx.log(`partida: ${clave(partida[0])}`);
 
   // ── 3. Las dos vías derivan la MISMA clave ───────────────────────────────
+  // Antes esto era una igualdad de CONJUNTOS batch↔partida, y era frágil por
+  // construcción: el batch cubre TODAS las escenas del mundo pre-generado y la
+  // partida solo el tile en el que está. Cuadra mientras el mundo tenga un
+  // único personaje y se pone rojo, sin que haya bug, en cuanto otra escena
+  // traiga uno. Se parte en las dos afirmaciones que de verdad importan, y las
+  // dos son MÁS fuertes que la igualdad:
+  //   (1) todo personaje de la partida está en el batch con la clave IDÉNTICA
+  //       — el doble pago, que es el sujeto del guion, intacto;
+  //   (2) el batch pide tantos personajes distintos como anunció su plan —
+  //       su propio contrato, que la igualdad nunca comprobó.
   const idsBatch = [...new Set(batch.map(claveDePersonaje))].sort();
   const idsPartida = [...new Set(partida.map(claveDePersonaje))].sort();
+  const huerfanos = idsPartida.filter((id) => !idsBatch.includes(id));
   ctx.expect(
-    "partida y batch piden EXACTAMENTE los mismos personajes vestidos (si no, se paga dos veces)",
-    JSON.stringify(idsBatch) === JSON.stringify(idsPartida),
-    `batch=${JSON.stringify(idsBatch)}\n      partida=${JSON.stringify(idsPartida)}`,
+    "todo personaje que pide la PARTIDA lo pre-generó el batch con la misma clave (si no, se paga dos veces)",
+    huerfanos.length === 0,
+    `sin gemelo en el batch: ${JSON.stringify(huerfanos)}\n      batch=${JSON.stringify(idsBatch)}`,
   );
+  ctx.expect(
+    "el batch pide tantos personajes distintos como anunció su plan",
+    idsBatch.length === Number(personajes ?? 0),
+    `distintos=${idsBatch.length} anunciados=${personajes}`,
+  );
+  // La comparación byte a byte es EL SUJETO del guion, y vivía en un bucle con
+  // `continue` que podía iterar cero veces sin que nadie lo notara: si el batch
+  // y la partida desalinean el `anim`, no hay gemela que encontrar, el bucle no
+  // corre y el guion pasa en verde con el doble pago vivo. (`claveDePersonaje`
+  // excluye `anim` a propósito, así que el aserto de huérfanos tampoco lo ve.)
+  // Se cuenta cuántas parejas se han comparado de verdad y se exige que haya.
+  let comparadas = 0;
   for (const p of partida) {
     const gemela = batch.find((b) => b.anim === p.anim && b.prompt === p.prompt);
     if (!gemela) continue; // el batch pide las 3 anims; la partida, las que necesita
+    comparadas++;
     ctx.expect(
       `la clave de caché coincide byte a byte (${p.anim})`,
       clave(gemela) === clave(p),
       `${clave(gemela)}  vs  ${clave(p)}`,
     );
   }
+  ctx.expect(
+    "y esa comparación llegó a hacerse al menos una vez (con `anim` dentro de la clave)",
+    comparadas > 0,
+    `0 parejas (anim, prompt) en común entre batch y partida — ` +
+      `batch=${JSON.stringify([...new Set(batch.map((b) => `${b.prompt}/${b.anim}`))])} ` +
+      `partida=${JSON.stringify([...new Set(partida.map((p) => `${p.prompt}/${p.anim}`))])}`,
+  );
 
   // ── 4. …y esa clave sale de los campos del NPC ───────────────────────────
   for (const p of partida) {
@@ -175,13 +269,3 @@ export default async function (ctx) {
   ctx.expect("una `description` vacía NO viaja", !("description" in declarados.basura), JSON.stringify(declarados.basura));
 }
 
-/** Espera a que haya al menos `n` peticiones capturadas. No es un sleep: la
- *  condición es el número de peticiones, y el tope solo evita colgarse. */
-async function esperarPeticiones(ctx, buffer, n, maxMs) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < maxMs) {
-    if (buffer.length >= n) return true;
-    await ctx.page.waitForTimeout(200);
-  }
-  return buffer.length >= n;
-}

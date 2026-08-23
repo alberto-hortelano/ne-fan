@@ -73,6 +73,26 @@ export interface StyleApplyPlan {
   skins: Array<{ prompt: string; role?: string }>;
 }
 
+/** Corrida de estilo, tal y como la RECUERDA el controlador que la ejecuta.
+ *
+ *  Un batch que anuncia 3 skins y pide 2 es un bug de facturación: el jugador
+ *  ve un coste y paga otro. Contarlo desde fuera contra un reloj no lo caza —
+ *  esperar «al menos N peticiones» se agota igual si nunca llegan, y no dice
+ *  nada si llegan de más. Aquí queda escrito lo que el plan PROMETIÓ, lo que la
+ *  corrida EMITIÓ de verdad y cuándo se dio por terminada, para poder comparar
+ *  las tres cosas cuando ya no queda nada en vuelo. */
+export interface StyleRunLedger {
+  /** Lo que anunció el plan (y por tanto lo que se le cobró al jugador). */
+  planned: { skins: number; anims: number; cells: number };
+  /** Lo que la corrida llegó a PEDIR de verdad. */
+  issued: { skins: number; cells: number };
+  /** Peticiones que el server declaró servidas de caché (no repagadas). */
+  cached: { skins: number; cells: number };
+  /** false mientras haya algo en vuelo. Es la señal de "ya se puede comparar". */
+  done: boolean;
+  failures: string[];
+}
+
 export interface StyleApplyResult {
   costUsd: number;
   cellsPainted: number;
@@ -99,6 +119,15 @@ interface SnapshotScene {
 }
 
 export class StyleApplyController {
+  /** Última corrida (o la que va) — la escribe `run()`, que es el camino que
+   *  se prueba: un contador alimentado desde fuera se pondría verde solo. */
+  private ledger: StyleRunLedger | null = null;
+
+  /** Estado para el hook __nefan / guiones de QA. */
+  debugState(): StyleRunLedger | null {
+    return this.ledger ? { ...this.ledger, failures: [...this.ledger.failures] } : null;
+  }
+
   constructor(
     private narrative: NarrativeClient,
     private urls: StyleApplyUrls,
@@ -289,6 +318,19 @@ export class StyleApplyController {
     const failures: string[] = [];
     const pinnedHashes = new Set<string>();
     const selected = new Set(plan.blocks.filter((b) => b.selected).map((b) => b.id));
+    const skinsBlock = plan.blocks.find((b) => b.id === "skins")!;
+    const led: StyleRunLedger = {
+      planned: {
+        skins: selected.has("skins") ? skinsBlock.missing : 0,
+        anims: AUTO_SKIN_ANIMS.length,
+        cells: selected.has("atlas") ? plan.cells.length : 0,
+      },
+      issued: { skins: 0, cells: 0 },
+      cached: { skins: 0, cells: 0 },
+      done: false,
+      failures,
+    };
+    this.ledger = led;
 
     if (selected.has("pack") && plan.blocks.find((b) => b.id === "pack")!.missing > 0) {
       onProgress("Completando las referencias del estilo…");
@@ -332,7 +374,9 @@ export class StyleApplyController {
         costUsd += data.cost_usd;
         for (const cell of Object.values(data.cells)) {
           pinnedHashes.add(cell.hash);
-          if (!cell.cached) cellsPainted++;
+          led.issued.cells++;
+          if (cell.cached) led.cached.cells++;
+          else cellsPainted++;
         }
         if (data.missing > 0) {
           failures.push(`atlas: ${data.missing} celdas quedaron sin pintar`);
@@ -347,6 +391,9 @@ export class StyleApplyController {
         for (const anim of AUTO_SKIN_ANIMS) {
           done++;
           onProgress(`Skins: ${skin.prompt.slice(0, 32)}… (${done}/${total})`);
+          // Se cuenta ANTES de disparar: "emitido" es lo que salió por el
+          // cable, lo conteste el server o no.
+          led.issued.skins++;
           try {
             const res = await fetch(`${this.urls.remote}/skin_sprite_sheet`, {
               method: "POST",
@@ -370,7 +417,8 @@ export class StyleApplyController {
             if (!data.ok) throw new Error(data.error ?? "sin ok en la respuesta");
             const c = data.meta?.skin?.cost_usd ?? 0;
             costUsd += c;
-            if (!data.cached) skinsPainted++;
+            if (data.cached) led.cached.skins++;
+            else skinsPainted++;
           } catch (err) {
             failures.push(`skin "${skin.prompt.slice(0, 32)}" (${anim}): ${(err as Error).message}`);
           }
@@ -426,6 +474,10 @@ export class StyleApplyController {
       notes: [...plan.notes, ...failures.map((f) => `fallo: ${f}`)].slice(0, 32),
     });
     if (!rec.ok) failures.push(`registro no persistido: ${rec.error ?? "error desconocido"}`);
+
+    // Ya no queda nada en vuelo: a partir de aquí lo emitido es comparable con
+    // lo prometido. Es la señal que sustituye a "espera 90 s a ver si llegan".
+    led.done = true;
 
     return {
       costUsd: Math.round(costUsd * 100) / 100,

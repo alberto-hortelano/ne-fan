@@ -134,6 +134,72 @@ describe("POST /vocabulary (State API)", () => {
       rmSync(gamesDir, { recursive: true, force: true });
     }
   });
+
+  /** Levanta el State API sobre un narrative dado y devuelve su URL. */
+  async function servidor(narrative: Parameters<typeof createStateHttpServer>[0]["narrative"], gamesDir: string) {
+    const server: Server = createStateHttpServer({
+      port: 0,
+      narrative,
+      npcDirector: new NpcDirector(narrative),
+      gamesDir,
+      onMutation: () => {},
+      onProgress: () => {},
+    });
+    await new Promise<void>((res) => server.once("listening", () => res()));
+    return { server, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  }
+
+  // Las dos ramas de FALLO del endpoint no las tocaba ningún test, y eso tenía
+  // una consecuencia que no se ve leyendo: `--experimental-test-coverage` les
+  // atribuía el count del bloque que las envuelve, así que la medida decía
+  // "cubiertas" 3 de cada 5 pasadas. Era el 100 % del baile de CRAP de `handle`
+  // (158.4 ⇄ 159.0). Cubrirlas de verdad es lo que arregla las dos cosas: el
+  // agujero de cobertura y el ruido de la medida.
+  it("sin sesión activa ⇒ 404 (el vocabulario pertenece a una partida)", async () => {
+    const { gamesDir } = tmpGamesDir();
+    const { narrative } = makeNarrativeState(); // sin startNewSession: no hay sesión
+    const { server, baseUrl } = await servidor(narrative, gamesDir);
+    try {
+      const res = await fetch(`${baseUrl}/vocabulary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: makeVocab(hashOf("x")).entries }),
+      });
+      assert.equal(res.status, 404);
+      const body = (await res.json()) as { ok: boolean; error?: string };
+      assert.equal(body.ok, false);
+      assert.match(body.error ?? "", /no active session/);
+      assert.equal(loadWorldVocabulary(gamesDir, GAME, hashOf("x")), null, "no escribió nada");
+    } finally {
+      server.close();
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("si la escritura falla, el error SALE (400 con su motivo), no se traga", async () => {
+    const { gamesDir } = tmpGamesDir();
+    const { narrative } = makeNarrativeState();
+    narrative.startNewSession(GAME);
+    // Sesión abierta pero sin world_doc_hash (setWorldInfo aún no ha corrido:
+    // el motor puede llamar a vocabulary_set antes de tiempo). El schema de
+    // WorldVocabulary lo rechaza y writeWorldVocabulary LANZA.
+    assert.equal(narrative.world.world_doc_hash, "", "precondición: sin hash de mundo");
+    const { server, baseUrl } = await servidor(narrative, gamesDir);
+    try {
+      const res = await fetch(`${baseUrl}/vocabulary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: makeVocab(hashOf("x")).entries }),
+      });
+      assert.equal(res.status, 400);
+      const body = (await res.json()) as { ok: boolean; error?: string };
+      assert.equal(body.ok, false);
+      assert.match(body.error ?? "", /vocabulario inválido/);
+    } finally {
+      server.close();
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("world_vocabulary en turnos de tile", () => {

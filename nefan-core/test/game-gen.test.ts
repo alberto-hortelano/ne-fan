@@ -254,3 +254,31 @@ describe("generate_game", () => {
     }
   });
 });
+
+describe("generate_game abandonado", () => {
+  it("la barra del título no se queda girando: error kind game_gen", async () => {
+    // Un takeover (otro start_session, otra pre-generación) vacía la cola. Sin
+    // aviso, la tarjeta del juego se queda en "generando" para siempre: nadie
+    // más difunde kind "game_gen", y el título trata `error` como final.
+    const bundle = makeCtx({ gamesDir: FIXTURE_GAMES });
+    let soltar!: () => void;
+    bundle.ctx.sceneGen.enqueue({
+      key: "bloqueo",
+      blocking: true,
+      run: () => new Promise<void>((r) => { soltar = r; }),
+    });
+    const { socket } = makeSocket();
+    await routeMessage({ type: "generate_game", requestId: "g1", gameId: GAME }, socket, bundle.ctx);
+    assert.deepEqual(bundle.ctx.sceneGen.pending, [`gamegen:${GAME}`]);
+
+    bundle.ctx.sceneGen.abandonAll();
+    await waitFor(
+      () =>
+        bundle.broadcasts.some(
+          (m) => m.type === "narrative_status" && m.kind === "game_gen" && m.phase === "error",
+        ),
+      1000,
+    ).catch(() => assert.fail("la pre-generación abandonada no avisó: la tarjeta gira para siempre"));
+    soltar();
+  });
+});
