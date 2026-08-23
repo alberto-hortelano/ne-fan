@@ -106,8 +106,15 @@ export class TitleScreen {
     const s = this.gameGenStatus;
     if (!s) {
       line.textContent = "";
+      line.removeAttribute("data-gen-phase");
       return;
     }
+    // La FASE, como dato y no como prosa: `ready` y `error` son estados
+    // terminales, y quien espera (el jugador mirando, o un guion de QA) no
+    // tiene que adivinarlos leyendo el texto. Antes había que casar un regex
+    // contra el mensaje, y bastó añadir un mensaje de error nuevo para que la
+    // espera dejara de reconocer el final y se comiera su tope entero.
+    line.dataset.genPhase = s.phase;
     const mins = s.elapsedMs !== undefined ? ` · ${Math.round(s.elapsedMs / 60000)} min` : "";
     if (s.phase === "error") {
       line.innerHTML = `<span style="color:#a44">${escapeHtml(s.message ?? "la generación falló")}</span>`;

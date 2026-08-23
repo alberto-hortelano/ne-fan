@@ -34,6 +34,7 @@ import {
   type BridgeContext,
   type ClientSocket,
 } from "../context.js";
+import type { SceneGenOutcome } from "../scene-gen-queue.js";
 import { generateBootstrapTileScene } from "./bootstrap-tile.js";
 import { generateTileScene } from "./tile.js";
 import type { GenerateGameMessage } from "../../src/protocol/messages.js";
@@ -137,7 +138,7 @@ async function invalidateStyleApplications(
 export async function runGameGeneration(
   ctx: BridgeContext,
   gameId: string,
-): Promise<void> {
+): Promise<SceneGenOutcome> {
   const start = Date.now();
   const status = (phase: "generating" | "progress" | "ready" | "error", message: string): void =>
     ctx.broadcastNarrative({
@@ -206,9 +207,11 @@ export async function runGameGeneration(
       parts.push(`Fallos parciales (se generarán en partida): ${failures.join(" · ")}`);
     }
     status("ready", parts.join(" "));
+    return { delivered: true };
   } catch (err) {
     console.warn(`Bridge: generate_game "${gameId}" falló:`, err);
     status("error", `La generación del mundo falló: ${(err as Error).message ?? err}`);
+    return { delivered: true };
   } finally {
     // El save efímero se borra SIEMPRE — el snapshot es el artefacto. Si un
     // takeover reemplazó la sesión, borrar por id sigue siendo seguro (el id

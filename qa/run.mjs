@@ -137,11 +137,54 @@ async function ensureStack() {
   return child;
 }
 
+/** El stack que arrancó ESTA corrida (null = ya había uno). Lo guarda el
+ *  módulo para que el manejador de señales pueda matarlo: sin esto, un Ctrl+C
+ *  dejaba el stack vivo y el tmp en el disco, y la corrida siguiente detectaba
+ *  «puertos arriba», se saltaba TODOS los `aisla` y daba rojos falsos. */
+let stackPropio = null;
+let saliendo = false;
+
+/** Única salida del runner: apaga lo que arrancó esta corrida y borra su tmp.
+ *  La llaman el final feliz, el error y las señales — un Ctrl+C no puede dejar
+ *  el disco ni los puertos en un estado que envenene la corrida siguiente. */
+function salir(code, motivo) {
+  if (saliendo) return;
+  saliendo = true;
+  if (motivo) console.log(`\n· ${motivo}`);
+  if (stackPropio && !KEEP) {
+    try {
+      process.kill(-stackPropio.pid, "SIGINT");
+    } catch {
+      console.log("· el stack ya no estaba");
+    }
+  } else if (stackPropio) {
+    console.log("· stack sigue arriba (--keep)");
+  }
+  if (!KEEP) rmSync(TMP, { recursive: true, force: true });
+  else console.log(`· disco efímero sin borrar: ${TMP}`);
+  process.exit(code);
+}
+
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => salir(130, `${sig}: apagando el stack y borrando ${TMP}`));
+}
+
+/** Restos de corridas anteriores que murieron a lo bruto. Se borran al empezar
+ *  (dos baterías a la vez no pueden convivir: comparten puertos). */
+function limpiarTmpViejos() {
+  const raiz = join(here, ".tmp");
+  if (!existsSync(raiz)) return;
+  const viejos = readdirSync(raiz).filter((d) => join(raiz, d) !== TMP);
+  for (const d of viejos) rmSync(join(raiz, d), { recursive: true, force: true });
+  if (viejos.length) console.log(`· ${viejos.length} tmp de corridas muertas borrados`);
+}
+
 /** Disco efímero de la corrida: copia REAL de `data/games` (lo mismo que tiene
  *  el jugador) menos los mundos ya pre-generados — el mundo se genera dentro de
  *  la corrida por el camino del jugador, no se copia de un artefacto rancio.
  *  Copiarlo sería heredar justo lo que esto viene a cortar. */
 function prepararDisco() {
+  limpiarTmpViejos();
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(TMP_SAVES, { recursive: true });
   cpSync(GAMES_ORIGEN, TMP_GAMES, { recursive: true });
@@ -179,8 +222,20 @@ async function resetFakeAi() {
  *  Un guion que no declara nada corre sobre lo que dejó el anterior, a
  *  propósito: la declaración es la precondición, y una precondición que no
  *  existe no debe inventarse por simetría. */
-async function aislar(nombre, aisla) {
+async function aislar(nombre, aisla, propio) {
   if (!Array.isArray(aisla) || aisla.length === 0) return [];
+  // Sin stack propio no hay disco efímero que vaciar: no sabemos dónde guarda
+  // sus saves ni sus mundos el stack que ya estaba. Antes esto se saltaba en
+  // SILENCIO y el guion daba una roja que no era del juego sino de su
+  // precondición perdida. Ahora se dice y se para: un veredicto que no
+  // significa lo que dice es exactamente el problema de #210.
+  const deDisco = aisla.filter((q) => q === "saves" || q === "mundo");
+  if (!propio && deDisco.length) {
+    throw new Error(
+      `necesita [${deDisco.join(", ")}] virgen y el stack no lo arrancó esta corrida ` +
+        `(no sé dónde tiene el disco). Párala del todo —./start.sh y tecla k— y vuelve a lanzar.`,
+    );
+  }
   const hechos = [];
   for (const qué of aisla) {
     switch (qué) {
@@ -329,10 +384,16 @@ async function main() {
 
   prepararDisco();
   const stack = await ensureStack();
+  stackPropio = stack;
   if (!stack) {
-    // Stack ajeno: no sabe de nuestro disco efímero, así que la corrida NO es
-    // hermética. Se dice, en vez de fingir aislamiento.
-    console.log("· OJO: stack ajeno — corre contra SU disco, no contra qa/.tmp");
+    // El stack que ya estaba no sabe de nuestro disco efímero, así que la
+    // corrida NO es hermética. Puede ser de otra persona o el huérfano de una
+    // corrida anterior que murió a lo bruto: desde aquí no se distingue, así
+    // que no se le llama "ajeno" — se dice lo único que se sabe seguro.
+    console.log(
+      "· OJO: el stack ya estaba arriba y NO lo arrancó esta corrida — usa SU disco, no qa/.tmp.\n" +
+        "       Los guiones que necesiten saves o mundo vírgenes fallarán diciéndolo.",
+    );
   }
   console.log(`· orden: ${ORDEN}`);
   const browser = await chromium.launch({
@@ -347,15 +408,18 @@ async function main() {
     console.log(`\n▶ ${nombre}`);
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
-    if (stack) {
-      try {
-        const hechos = await aislar(nombre, mod.aisla);
-        if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
-      } catch (err) {
-        console.log(`    ✘ ERROR aislando: ${err.message}`);
-        resultados.push({ nombre, ok: false, fallos: [`aisla falló: ${err.message}`], fatal: err });
-        continue;
-      }
+    try {
+      const hechos = await aislar(nombre, mod.aisla, Boolean(stack));
+      if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
+    } catch (err) {
+      console.log(`    ✘ PRECONDICIÓN NO GARANTIZADA: ${err.message}`);
+      resultados.push({
+        nombre,
+        ok: false,
+        fallos: [`precondición no garantizada: ${err.message}`],
+        fatal: err,
+      });
+      continue;
     }
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errores = [];
@@ -393,19 +457,15 @@ async function main() {
   }
 
   await browser.close();
-  if (stack && !KEEP) process.kill(-stack.pid, "SIGINT");
-  else if (stack) console.log("\n· stack sigue arriba (--keep)");
-  if (!KEEP) rmSync(TMP, { recursive: true, force: true });
-  else console.log(`· disco efímero sin borrar: ${TMP}`);
 
   const ok = resultados.filter((r) => r.ok).length;
   console.log(`\n${"─".repeat(60)}`);
   for (const r of resultados) console.log(`${r.ok ? "✔" : "✘"} ${r.nombre}`);
   console.log(`${ok}/${resultados.length} guiones en verde · capturas en qa/capturas/`);
-  process.exit(ok === resultados.length ? 0 : 1);
+  salir(ok === resultados.length ? 0 : 1);
 }
 
 main().catch((err) => {
   console.error("runner:", err);
-  process.exit(2);
+  salir(2);
 });

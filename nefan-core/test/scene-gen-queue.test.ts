@@ -14,6 +14,7 @@ function makeJob(key: string, blocking: boolean, ran: string[]) {
       run: async () => {
         ran.push(key);
         await gate;
+        return { delivered: true as const };
       },
     },
     release: () => release(),
@@ -78,7 +79,7 @@ describe("SceneGenQueue", () => {
   it("un job que lanza no rompe el drenado", async () => {
     const q = new SceneGenQueue();
     const ran: string[] = [];
-    q.enqueue({ key: "boom", blocking: true, run: async () => { throw new Error("kaboom"); } });
+    q.enqueue({ key: "boom", blocking: true, run: async (): Promise<never> => { throw new Error("kaboom"); } });
     const b = makeJob("after", false, ran);
     q.enqueue(b.job);
     await tick();
@@ -103,7 +104,7 @@ describe("SceneGenQueue: promesa de ENTREGA", () => {
     const { delivery } = q.enqueue({
       key: "boom",
       blocking: true,
-      run: async () => { throw new Error("kaboom"); },
+      run: async (): Promise<never> => { throw new Error("kaboom"); },
     });
     assert.deepEqual(await delivery, { ok: false, error: "kaboom" });
   });
@@ -120,8 +121,8 @@ describe("SceneGenQueue: promesa de ENTREGA", () => {
     q.enqueue(bloqueo.job);
     await tick();
 
-    const a = q.enqueue({ key: "place_forja", blocking: true, run: async () => { ran.push("A"); } });
-    const b = q.enqueue({ key: "place_forja", blocking: true, run: async () => { ran.push("B"); } });
+    const a = q.enqueue({ key: "place_forja", blocking: true, run: async () => { ran.push("A"); return { delivered: true as const }; } });
+    const b = q.enqueue({ key: "place_forja", blocking: true, run: async () => { ran.push("B"); return { delivered: true as const }; } });
     assert.equal(a.status, "queued");
     assert.equal(b.status, "duplicate");
     assert.deepEqual(q.pending, ["place_forja"]);
@@ -151,9 +152,24 @@ describe("SceneGenQueue: promesa de ENTREGA", () => {
     const { delivery } = q.enqueue({
       key: "boom",
       blocking: true,
-      run: async () => { throw null; },
+      run: async (): Promise<never> => { throw null; },
     });
     assert.deepEqual(await delivery, { ok: false, error: "null" });
+  });
+
+  it("un job que TERMINA sin difundir nada no cuenta como entregado", async () => {
+    // La segunda cara del cuelgue del #210: el job corre, vuelve sin excepción
+    // y sin haber dicho NADA al cliente (los `return` mudos de "el lugar se
+    // realizó mientras esperaba en la cola"). Antes eso resolvía la entrega en
+    // verde y el jugador se quedaba con el velo puesto para siempre, con la
+    // firma exacta del bug original: sin escena, sin error, sin pista.
+    const q = new SceneGenQueue();
+    const { delivery } = q.enqueue({
+      key: "place_forja",
+      blocking: true,
+      run: async () => ({ delivered: false as const, motivo: "salí por la puerta de atrás" }),
+    });
+    assert.deepEqual(await delivery, { ok: false, error: "salí por la puerta de atrás" });
   });
 
   it("abandonAll sobre una cola inactiva no revienta", async () => {

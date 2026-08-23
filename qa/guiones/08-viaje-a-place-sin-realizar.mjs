@@ -9,7 +9,13 @@
  *  jugador aparece dentro.
  *
  *  Lo que este guion protege, andando y no leyendo JSON:
- *   1. el botón de la salida existe y el destino NO estaba realizado;
+ *   1. el botón de la salida existe y el destino NO estaba realizado — y eso
+ *      se AFIRMA, no se supone: el bridge tiene dos ramas para «Salidas» y
+ *      por la cacheada pasan en verde todos los demás asertos de este guion
+ *      (llega un tile, es otro, el jugador cae dentro y en suelo libre). Sin
+ *      mirar la rama, este guion pasaría sin ejercer la generación que dice
+ *      probar. Se mira con lo que el bridge DECLARA: `viaje.encolado` (la
+ *      rama cacheada ni llega a tocar la cola) y `tileEpisodios[].source`;
  *   2. clicarlo trae un TILE nuevo (scene_id `tile_x_y`), no una escena suelta;
  *   3. el jugador acaba DENTRO del rect de ese tile, en suelo libre;
  *   4. el tile ES el lugar (el motor recibió `generate_tile.place`);
@@ -25,7 +31,7 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -62,6 +68,20 @@ export default async function (ctx) {
 
   // ── 2. Clicar la salida trae un TILE nuevo ──────────────────────────────
   await ctx.page.click("#travel-panel button.travel-exit");
+  // El destino NO estaba realizado ⇒ el viaje pasa por la COLA del bridge y el
+  // acuse lo dice. Por la rama cacheada no habría acuse ninguno.
+  const acuse = await esperarRegistro(
+    ctx,
+    "el bridge acusa el viaje (el lugar no estaba realizado: hay que generarlo)",
+    "viaje",
+    () => (window.__nefan.viaje?.encolado ? window.__nefan.viaje : null),
+    60_000,
+  ).catch(() => null);
+  ctx.expect(
+    "el destino NO estaba realizado: el viaje entra en la cola de generación",
+    acuse?.encolado === "queued" || acuse?.encolado === "promoted",
+    `encolado=${JSON.stringify(acuse?.encolado)} — sin acuse, el bridge está re-difundiendo una escena que ya tenía`,
+  );
   const llegada = await ctx
     .waitFor(
       "el destino llega y el jugador aparece en él",
@@ -103,6 +123,22 @@ export default async function (ctx) {
     llegada.scene_id,
   );
   ctx.expect("y es un tile NUEVO, no el de partida", llegada.scene_id !== antes.scene_id, llegada.scene_id);
+  // «Nuevo» para el cliente no es «generado»: un tile del mundo pre-generado
+  // también llega nuevo. Quien decide es el BRIDGE, que declara el origen.
+  const epDestino = await esperarRegistro(
+    ctx,
+    `el cliente registra de dónde salió ${llegada.scene_id}`,
+    "tileEpisodios",
+    (k) => window.__nefan.tileEpisodios.find((e) => e.key === k && e.source !== null) ?? null,
+    30_000,
+    llegada.scene_id,
+  ).catch(() => null);
+  ctx.log(`episodio del destino: ${JSON.stringify(epDestino)}`);
+  ctx.expect(
+    "y lo acaba de GENERAR el motor (no es un HIT de caché ni del mundo pre-generado)",
+    epDestino?.source === "engine",
+    `source=${epDestino?.source}`,
+  );
   const lado = llegada.rect.maxX - llegada.rect.minX;
   ctx.expect(
     "con el tamaño de un tile (el mismo que el de partida)",

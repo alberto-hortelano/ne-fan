@@ -2140,8 +2140,12 @@ narrativeClient.onNarrativeStatus((status) => {
   if (status.kind === "scene") {
     switch (status.phase) {
       case "generating":
+        // Con `placeId` esto es un VIAJE, y el rótulo se queda en «Viajando…»:
+        // es lo que el jugador acaba de pulsar y lo que va a leer durante toda
+        // la espera (30-60 s con el motor real). «Generando escena…» es jerga
+        // de motor y además no casa con su propio detalle («Viajando a X…»).
         showLoader(
-          "Generando escena...",
+          status.placeId ? "Viajando..." : "Generando escena...",
           status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
         );
         break;

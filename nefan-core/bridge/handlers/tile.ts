@@ -17,6 +17,7 @@ import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
 import type { RequestTileMessage } from "../../src/protocol/messages.js";
+import type { SceneGenOutcome } from "../scene-gen-queue.js";
 
 const EDGE_ES: Record<Edge, string> = {
   north: "norte",
@@ -172,9 +173,12 @@ export async function runTileGeneration(
   opts: {
     placeId?: string;
     message?: string;
+    /** Nombre del LUGAR al que se viaja, para el mensaje de error que lee el
+     *  jugador. Sin él, un viaje fallido le enseñaba coordenadas de tile. */
+    destino?: string;
     spawnAt?: () => { x: number; z: number } | undefined;
   } = {},
-): Promise<void> {
+): Promise<SceneGenOutcome> {
   const key = tileKey(tx, ty);
   const start = Date.now();
   const fail = (message: string): void =>
@@ -188,18 +192,18 @@ export async function runTileGeneration(
       elapsedMs: Date.now() - start,
     });
   try {
-    // El tile pudo generarse mientras esperaba en la cola. Con spawn pedido
-    // (viaje) hay que difundirlo igual: si no, el jugador no se movería.
+    // El tile pudo generarse mientras esperaba en la cola: se difunde IGUAL.
+    // Antes solo se difundía si había spawn pedido, así que un `request_tile`
+    // cuyo tile apareció mientras esperaba volvía mudo y el cliente se quedaba
+    // con su key en `frontier.requested` y el velo puesto.
     const already = ctx.narrative.getTile(tx, ty);
     if (already) {
-      if (opts.spawnAt) {
-        broadcastScene(ctx, key, already.scene_data, Date.now() - start, {
-          edge: approachEdge,
-          spawn: opts.spawnAt(),
-          source: "cache",
-        });
-      }
-      return;
+      broadcastScene(ctx, key, already.scene_data, Date.now() - start, {
+        edge: approachEdge,
+        spawn: opts.spawnAt?.(),
+        source: "cache",
+      });
+      return { delivered: true };
     }
     ctx.broadcastNarrative({
       type: "narrative_status",
@@ -214,7 +218,18 @@ export async function runTileGeneration(
           : `Generando el tile (${tx}, ${ty})...`),
     });
     const res = await generateTileScene(ctx, tx, ty, approachEdge, { placeId: opts.placeId });
-    if (res === "exists") return;
+    if (res === "exists") {
+      // Apareció mientras se generaba (otro camino lo registró): se difunde
+      // el que hay. Volver mudo dejaba esperando a quien lo pidió.
+      const ahora = ctx.narrative.getTile(tx, ty);
+      if (!ahora) return { delivered: false, motivo: `el tile ${key} se registró y desapareció` };
+      broadcastScene(ctx, key, ahora.scene_data, Date.now() - start, {
+        edge: approachEdge,
+        spawn: opts.spawnAt?.(),
+        source: "cache",
+      });
+      return { delivered: true };
+    }
     broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, {
       edge: approachEdge,
       spawn: opts.spawnAt?.(),
@@ -222,10 +237,36 @@ export async function runTileGeneration(
       // sobre el `ground` que el motor acaba de declarar).
       source: "engine",
     });
+    return { delivered: true };
   } catch (err) {
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
-    fail(`Error: ${(err as Error).message ?? err}`);
+    // Si esto es un VIAJE, quien lo pulsó eligió un lugar por su nombre: el
+    // mensaje nombra el lugar y traduce el motivo, y el volcado de la
+    // excepción se queda en el `console.warn` de arriba (era lo que el jugador
+    // leía: «No se pudo generar el tile (2, 0). fetch failed»).
+    // Explorando NO se traduce: ahí el motivo exacto —un tile que el validador
+    // rechaza, un cruce que no continúa— es lo único que dice qué ha pasado, y
+    // no hay un nombre de destino que ponerle en su lugar.
+    fail(
+      opts.destino
+        ? `No se pudo llegar a ${opts.destino}. ${motivoParaElJugador(err)}`
+        : `Error: ${(err as Error).message ?? err}`,
+    );
+    return { delivered: true };
   }
+}
+
+/** Traduce un fallo interno a algo que quien juega pueda leer (el detalle
+ *  técnico se queda en el `console.warn` de arriba). */
+function motivoParaElJugador(err: unknown): string {
+  const raw = (err as Error)?.message ?? String(err);
+  if (/fetch failed|ECONNREFUSED|socket hang up|timeout/i.test(raw)) {
+    return "El motor narrativo no responde; inténtalo de nuevo en un momento.";
+  }
+  if (/no es jugable/i.test(raw)) {
+    return "El motor narrativo devolvió un terreno inservible; inténtalo de nuevo.";
+  }
+  return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }
 
 export async function handleRequestTile(

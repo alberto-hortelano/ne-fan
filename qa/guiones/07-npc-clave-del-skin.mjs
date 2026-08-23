@@ -135,10 +135,13 @@ export default async function (ctx) {
   ctx.log(`libro de skins de la partida: ${JSON.stringify(libro)}`);
   const partida = peticiones.slice(corte).map((p) => p.body);
   ctx.expect("la partida pide el skin de sus NPCs", partida.length > 0, `${partida.length} peticiones`);
+  // Contenido, no cardinales: dos conjuntos distintos del mismo tamaño pasaban.
+  const promptsCable = [...new Set(partida.map((p) => p.prompt))].sort();
+  const promptsLibro = [...new Set(libro.map((sk) => sk.prompt))].sort();
   ctx.expect(
-    "y lo que pide por el cable son los personajes que apuntó en su libro",
-    new Set(partida.map((p) => p.prompt)).size === new Set(libro.map((s) => s.prompt)).size,
-    `cable=${JSON.stringify([...new Set(partida.map((p) => p.prompt))])} libro=${JSON.stringify(libro.map((s) => s.prompt))}`,
+    "y lo que pide por el cable son los MISMOS personajes que apuntó en su libro",
+    JSON.stringify(promptsCable) === JSON.stringify(promptsLibro),
+    `cable=${JSON.stringify(promptsCable)} libro=${JSON.stringify(promptsLibro)}`,
   );
   if (!batch.length || !partida.length) return;
 
@@ -171,15 +174,30 @@ export default async function (ctx) {
     idsBatch.length === Number(personajes ?? 0),
     `distintos=${idsBatch.length} anunciados=${personajes}`,
   );
+  // La comparación byte a byte es EL SUJETO del guion, y vivía en un bucle con
+  // `continue` que podía iterar cero veces sin que nadie lo notara: si el batch
+  // y la partida desalinean el `anim`, no hay gemela que encontrar, el bucle no
+  // corre y el guion pasa en verde con el doble pago vivo. (`claveDePersonaje`
+  // excluye `anim` a propósito, así que el aserto de huérfanos tampoco lo ve.)
+  // Se cuenta cuántas parejas se han comparado de verdad y se exige que haya.
+  let comparadas = 0;
   for (const p of partida) {
     const gemela = batch.find((b) => b.anim === p.anim && b.prompt === p.prompt);
     if (!gemela) continue; // el batch pide las 3 anims; la partida, las que necesita
+    comparadas++;
     ctx.expect(
       `la clave de caché coincide byte a byte (${p.anim})`,
       clave(gemela) === clave(p),
       `${clave(gemela)}  vs  ${clave(p)}`,
     );
   }
+  ctx.expect(
+    "y esa comparación llegó a hacerse al menos una vez (con `anim` dentro de la clave)",
+    comparadas > 0,
+    `0 parejas (anim, prompt) en común entre batch y partida — ` +
+      `batch=${JSON.stringify([...new Set(batch.map((b) => `${b.prompt}/${b.anim}`))])} ` +
+      `partida=${JSON.stringify([...new Set(partida.map((p) => `${p.prompt}/${p.anim}`))])}`,
+  );
 
   // ── 4. …y esa clave sale de los campos del NPC ───────────────────────────
   for (const p of partida) {

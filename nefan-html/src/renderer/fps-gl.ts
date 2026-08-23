@@ -436,6 +436,11 @@ export class FpsGl {
     string,
     { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial; lastDir?: number }
   >();
+  /** Ids que son PERSONAJE (sprite 8-dir de `updateEntity`), no decorado.
+   *  El mapa de arriba lo comparten los dos, así que contar sus entradas no
+   *  dice cuántos personajes hay montados: una escena con cajas satisface
+   *  cualquier «hay al menos N billboards» con CERO personajes. */
+  private billboardsPersonaje = new Set<string>();
   private texByImage = new WeakMap<HTMLImageElement, THREE.Texture>();
   private renderYaw = 0;
   /** Inclinación de la mirada en radianes (positivo = arriba). A diferencia
@@ -1207,6 +1212,7 @@ export class FpsGl {
 
   /** Billboard 8-dir de una entidad con sprite; caja esquemática si no. */
   private updateEntity(e: Entity, now: number): void {
+    this.billboardsPersonaje.add(e.id);
     let slot = this.billboards.get(e.id);
     if (!slot) {
       const geo = new THREE.PlaneGeometry(FRAME_WORLD_M, FRAME_WORLD_M);
@@ -1406,6 +1412,12 @@ export class FpsGl {
        *  aquí. Cero hasta el primer render. */
       pitchDeg: Math.round((this.cam.rotation.x * 180) / Math.PI),
       billboards: [...this.billboards.entries()].filter(([, s]) => s.mesh.visible).length,
+      /** Solo los de PERSONAJE, visibles. `billboards` cuenta también el
+       *  decorado (updateObject usa el mismo mapa), así que es lo que hay que
+       *  mirar para afirmar que los personajes están montados. */
+      billboardsPersonaje: [...this.billboards.entries()].filter(
+        ([id, s]) => s.mesh.visible && this.billboardsPersonaje.has(id),
+      ).length,
       debugView: this.debugView,
       viewport: { w: this.canvas.clientWidth || this.canvas.width, h: this.canvas.clientHeight || this.canvas.height },
       telegraph: t
@@ -1441,6 +1453,7 @@ export class FpsGl {
     }
     this.disposeVeil();
     for (const key of [...this.tiles.keys()]) this.removeTile(key);
+    this.billboardsPersonaje.clear();
     for (const slot of this.billboards.values()) {
       this.scene.remove(slot.mesh);
       slot.mesh.geometry.dispose();

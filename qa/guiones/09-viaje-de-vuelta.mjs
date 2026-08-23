@@ -25,7 +25,7 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -151,6 +151,13 @@ export default async function (ctx) {
   const vuelta = enDestino.exits.find((e) => e.place_id !== destino.place_id) ?? enDestino.exits[0];
 
   // ── 2. Vuelta ───────────────────────────────────────────────────────────
+  // Foto del episodio del tile de partida ANTES de volver: la vuelta tiene que
+  // producir uno nuevo (otro `arrived`), y con `source: "cache"`.
+  const origenAntes = await ctx.page.evaluate(
+    (k) => window.__nefan.tileEpisodios.find((e) => e.key === k) ?? null,
+    partida.tile,
+  );
+  ctx.log(`episodio del origen antes de volver: ${JSON.stringify(origenAntes)}`);
   await pulsarSalida(ctx, vuelta.name);
   const regreso = await esperarLlegada(ctx, enDestino.tile, "el jugador vuelve al tile de partida").catch(
     (err) => {
@@ -164,6 +171,30 @@ export default async function (ctx) {
   }
   ctx.log(`de vuelta: ${regreso.tile} · salidas ${JSON.stringify(regreso.exits.map((e) => e.place_id))}`);
   comprobarLedger(ctx, regreso, "la vuelta");
+  // La RAMA, que es el sujeto de este guion: cacheada, no generación.
+  ctx.expect(
+    "la vuelta NO pasa por la cola de generación: el bridge re-difunde la escena que ya tenía",
+    regreso.ledger?.encolado === null,
+    `encolado=${JSON.stringify(regreso.ledger?.encolado)} — si dice "queued", la vuelta se está REGENERANDO ` +
+      `(espera larga y créditos en un stack real)`,
+  );
+  const origenDespues = await esperarRegistro(
+    ctx,
+    `el cliente registra de dónde salió ${regreso.tile} al volver`,
+    "tileEpisodios",
+    (k) => {
+      const e = window.__nefan.tileEpisodios.find((x) => x.key === k.key);
+      return e && e.source !== null && e.arrived !== k.arrived ? e : null;
+    },
+    30_000,
+    { key: partida.tile, arrived: origenAntes?.arrived ?? null },
+  ).catch(() => null);
+  ctx.log(`episodio del origen tras volver: ${JSON.stringify(origenDespues)}`);
+  ctx.expect(
+    "y el bridge declara esa escena como CACHÉ, no como generación nueva",
+    origenDespues?.source === "cache",
+    `source=${origenDespues?.source}`,
+  );
   await ctx.shot("de-vuelta");
   ctx.expect("la vuelta acaba en el tile de partida", regreso.tile === partida.tile, regreso.tile);
   ctx.expect(

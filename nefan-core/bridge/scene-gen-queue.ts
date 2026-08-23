@@ -15,16 +15,36 @@
  *  encoló un job que `abandonAll` borró antes de que corriera. Sin ella, un
  *  takeover dejaba viajes muertos sin escena y sin error. */
 
+/** Lo que un job DEBE declarar al terminar: si le dijo algo al cliente o no.
+ *
+ *  Que el job termine y que el cliente se entere son cosas distintas, y
+ *  confundirlas costó el cuelgue del issue #210 dos veces: la primera con
+ *  `abandonAll` borrando jobs en silencio, la segunda con `return` mudos
+ *  DENTRO del job («el lugar se realizó mientras esperaba en la cola»), que
+ *  resolvían la entrega en verde sin difundir escena, spawn ni error — misma
+ *  firma, velo eterno.
+ *
+ *  Por eso el tipo de retorno NO es `void`: un `return;` suelto en un `run`
+ *  no compila, así que el tercer camino mudo de mañana falla en `tsc` y no
+ *  en la cara del jugador tres meses después. */
+export type SceneGenOutcome =
+  /** Difundí lo que el cliente esperaba (escena, spawn o error). */
+  | { delivered: true }
+  /** Terminé sin decirle NADA al cliente: alguien tiene que hacerlo por mí. */
+  | { delivered: false; motivo: string };
+
 export interface SceneGenJob {
   key: string;
   blocking: boolean;
-  run: () => Promise<void>;
+  run: () => Promise<SceneGenOutcome>;
 }
 
 /** Resultado de ENTREGA de un job: `ok:false` = NO llegó a correr (la cola lo
- *  abandonó) o lanzó sin difundir nada. RESUELVE siempre, nunca rechaza: un
- *  caller que no espere la entrega no puede tumbar el bridge con un
- *  unhandledRejection, y el que sí la espera decide qué difundir. */
+ *  abandonó), lanzó, o terminó declarando que no difundió nada. RESUELVE
+ *  siempre, nunca rechaza: un caller que no espere la entrega no puede tumbar
+ *  el bridge con un unhandledRejection, y el que sí la espera decide qué
+ *  difundir. `ok:true` significa «el cliente ya lo sabe», no «la función
+ *  volvió». */
 export type SceneGenDelivery = { ok: true } | { ok: false; error: string };
 
 /** Lo que devuelve `enqueue`: cómo se encoló y la promesa de ENTREGA de esa
@@ -117,7 +137,11 @@ export class SceneGenQueue {
     this.inFlight = job;
     job
       .run()
-      .then(() => job.delivery.settle({ ok: true }))
+      .then((outcome) =>
+        job.delivery.settle(
+          outcome.delivered ? { ok: true } : { ok: false, error: outcome.motivo },
+        ),
+      )
       .catch((err) => {
         // El run debe difundir su propio error; esto es el último recurso
         // para que un throw inesperado no pare la cola.

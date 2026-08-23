@@ -16,6 +16,7 @@ import {
   writeSessionSnapshot,
   type BridgeContext,
 } from "../context.js";
+import type { SceneGenOutcome } from "../scene-gen-queue.js";
 
 /** Núcleo del bootstrap de tile, compartido por la sesión en vivo y por
  *  generate_game: llama al motor (que siembra el world map vía map tools),
@@ -94,7 +95,7 @@ export async function generateBootstrapTileScene(
 export async function runBootstrapTile(
   ctx: BridgeContext,
   sessionGameId: string,
-): Promise<void> {
+): Promise<SceneGenOutcome> {
   const sceneStart = Date.now();
   const fail = (message: string): void =>
     ctx.broadcastNarrative({
@@ -115,8 +116,14 @@ export async function runBootstrapTile(
     broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart, { source: "engine" });
     // broadcastScene mutated the scene with `exits` — persist them.
     await ctx.narrative.save();
+    return { delivered: true };
   } catch (err) {
     console.warn("Bridge: generate_scene failed:", err);
+    // El motivo va ENTERO: un mundo que no arranca deja al jugador sin partida
+    // y sin nada que reintentar, así que aquí la causa exacta es lo útil (un
+    // `place_id` que falta, un tile injugable). No es el caso del viaje, que
+    // sí tiene un destino con nombre y un botón para reintentar.
     fail(`Error: ${(err as Error).message ?? err}`);
+    return { delivered: true };
   }
 }

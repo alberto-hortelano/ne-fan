@@ -112,17 +112,26 @@ export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
   const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
   if (armado.startsWith("¿Regenerar")) await ctx.page.click("#ts-gen-world");
 
-  await ctx.waitFor(
-    "la pre-generación del mundo termina",
+  // Se espera a la FASE que publica el título (`data-gen-phase`), no a un
+  // regex sobre el texto: el mensaje cambia y la espera no se entera. Pasó de
+  // verdad — al añadir el aviso de "pre-generación abandonada", ninguno de los
+  // dos patrones que se casaban aquí lo reconocía y la espera se comía sus
+  // 240 s enteros para reportar un timeout genérico. El tope vuelve a ser lo
+  // que debe ser: un cortafuegos de deadlock.
+  const fin = await ctx.waitFor(
+    "la pre-generación del mundo llega a un estado terminal",
     () => {
-      const t = document.getElementById("ts-gen-progress")?.textContent ?? "";
-      return /generado:/.test(t) || /falló|error/i.test(t) ? t : null;
+      const el = document.getElementById("ts-gen-progress");
+      const fase = el?.dataset.genPhase ?? "";
+      return fase === "ready" || fase === "error"
+        ? { fase, texto: el?.textContent ?? "" }
+        : null;
     },
     240_000,
   );
-  const linea = await ctx.page.$eval("#ts-gen-progress", (e) => e.textContent ?? "");
-  ctx.log(`pre-generación: ${linea}`);
-  ctx.expect("el mundo se pre-genera sin fallos parciales", !/Fallos parciales|falló/i.test(linea), linea);
+  ctx.log(`pre-generación (${fin.fase}): ${fin.texto}`);
+  ctx.expect("la pre-generación del mundo termina bien", fin.fase === "ready", fin.texto);
+  ctx.expect("…y sin fallos parciales", !/Fallos parciales/i.test(fin.texto), fin.texto);
   await ctx.page.click("#ts-back");
 }
 

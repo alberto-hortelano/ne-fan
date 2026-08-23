@@ -126,7 +126,7 @@ va a poner rojo mañana por esto, pero la no-determinación sigue viva y hoy es 
 1. **La causa de #210 está IDENTIFICADA con una medida, no con una hipótesis.** Antes de tocar
    nada hay que reproducir la intermitencia y demostrar de dónde sale. Si al medir resulta que
    los focos A y B de arriba no son la causa, se dice y se persigue la que sea.
-2. **`node qa/run.mjs` da 13/13 en CINCO corridas completas consecutivas**, arrancando el stack
+2. **`node qa/run.mjs` da 12/12 (son 12 guiones: no existe el 04) en CINCO corridas completas consecutivas**, arrancando el stack
    desde cero, sin `--keep` y sin tocar nada entre medias. Una sola corrida verde no demuestra
    nada: es exactamente lo que ya pasaba.
 3. **La batería es independiente del orden**: correr los guiones al revés (o en un orden

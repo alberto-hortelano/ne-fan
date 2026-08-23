@@ -167,11 +167,19 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
 
     // Feedback al jugador: "Viajando a…" mientras genera, y el ready PIDE el
     // spawn en el centro del tile (2,0) → x = 128, z = 0.
-    const generating = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "generating",
+    // Dos "generating": el acuse del viaje (kind scene, con placeId) y el del
+    // tile que lo materializa. Los dos nombran el destino.
+    const acuse = broadcasts.find(
+      (m): m is NarrativeStatusMessage =>
+        m.type === "narrative_status" && m.phase === "generating" && m.kind === "scene",
     );
-    assert.equal(generating?.kind, "tile");
-    assert.match(generating?.message ?? "", /Viajando a La Forja/);
+    assert.equal(acuse?.placeId, "forja");
+    const generating = broadcasts.find(
+      (m): m is NarrativeStatusMessage =>
+        m.type === "narrative_status" && m.phase === "generating" && m.kind === "tile",
+    );
+    assert.ok(generating, "el tile del viaje también anuncia que se está generando");
+    assert.match(generating.message ?? "", /Viajando a La Forja/);
     const ready = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
     );
@@ -313,6 +321,75 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.equal(narrative.worldMap.get("forja")?.anchor, undefined);
   });
 
+  it("si el lugar se realiza MIENTRAS el viaje espera en la cola, el jugador llega igual", async () => {
+    // H2 de QA: `runPlaceTravel` volvía con un `return` mudo al descubrir que
+    // el lugar ya estaba realizado. La entrega resolvía en verde, nadie
+    // difundía escena ni spawn ni error, y el cliente se quedaba con el velo
+    // puesto para siempre — el cuelgue del #210 sobreviviendo DENTRO de su
+    // propio arreglo. Ahora ese camino ENTREGA: es un viaje a un lugar que ya
+    // existe, y se difunde como tal.
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+    seedTravelWorld(narrative);
+    let soltar!: () => void;
+    ctx.sceneGen.enqueue({
+      key: "bloqueo",
+      blocking: true,
+      run: () => new Promise<void>((r) => { soltar = r; }).then(() => ({ delivered: true as const })),
+    });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    assert.deepEqual(ctx.sceneGen.pending, ["place_forja"], "el viaje espera en la cola");
+
+    // Mientras espera, OTRO camino realiza el lugar (el jugador exploró hasta
+    // su tile, o el motor lo realizó por su cuenta con las tools de mapa).
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", place_id: "forja", ...tileScene() }),
+      [],
+      { activate: false },
+    );
+    narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0 };
+    broadcasts.length = 0;
+
+    soltar();
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"), 2000)
+      .catch(() => assert.fail("el viaje terminó MUDO: ni escena, ni spawn, ni error — velo eterno"));
+
+    const scene = broadcasts.find(
+      (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
+    );
+    assert.ok(scene, "la escena del destino se difunde");
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.deepEqual(ready?.spawn, { x: 64, z: 0 }, "y con el spawn: viajar es APARECER allí");
+    assert.equal(ready?.source, "cache", "el bridge declara que no lo generó ahora");
+    assert.equal(aiCalls.scene.length, 0, "no se gastó motor en un lugar que ya existía");
+  });
+
+  it("un viaje que falla le dice al jugador A DÓNDE iba, sin vomitar la excepción", async () => {
+    // H5 de QA, capturado en vivo con el motor caído: el jugador pulsaba
+    // «Molino del bench» y leía «Error: No se pudo generar el tile (2, 0).
+    // fetch failed» — coordenadas de tile y una expresión en inglés, sin
+    // nombrar el sitio al que quería ir. El motivo técnico no se pierde: se
+    // queda en el log del bridge, que es su sitio.
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: false, error: "fetch failed" }) },
+    });
+    seedTravelWorld(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.match(err?.message ?? "", /No se pudo llegar a La Forja/, "nombra el destino que se pulsó");
+    assert.match(err?.message ?? "", /no responde/, "y traduce el motivo");
+    assert.doesNotMatch(err?.message ?? "", /fetch failed/, "sin el volcado de la excepción");
+    assert.doesNotMatch(err?.message ?? "", /tile \(\d/, "sin coordenadas de tile");
+  });
+
   it("acusa el viaje SIEMPRE, diciendo cómo lo encoló", async () => {
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
@@ -345,7 +422,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     ctx.sceneGen.enqueue({
       key: "bloqueo",
       blocking: true,
-      run: () => new Promise<void>((r) => { soltarBloqueo = r; }),
+      run: () => new Promise<void>((r) => { soltarBloqueo = r; }).then(() => ({ delivered: true as const })),
     });
 
     const { socket } = makeSocket();
@@ -366,7 +443,11 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     const errores = broadcasts.filter(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
-    assert.equal(errores.length, 2, "un error por caller (el que encoló y el que recibió duplicate)");
+    assert.equal(
+      errores.length,
+      1,
+      "UN error por viaje fallido, no uno por click: el panel del cliente no deduplica",
+    );
     for (const e of errores) {
       assert.equal(e.kind, "scene", "el loader del cliente lo muestra");
       assert.equal(e.placeId, "forja");
