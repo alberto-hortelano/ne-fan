@@ -30,7 +30,7 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 |-------------|-----------|
 | `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y un cliente que solo pinta, dirección de dependencias, módulos puros sin `node:*`, three.js solo en `fps-gl.ts`, el cliente sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
 | `nefan-core/data/contract/quality-thresholds.json` (`npm run crap`) | complejidad × cobertura: tope de no-empeorar y suelo de cobertura |
-| `stryker.config.json` (`npm run mutate`) | si los tests se enterarían de un cambio, no solo si pasan por la línea |
+| `nefan-core/data/contract/mutation-targets.json` (`npm run mutate`) | si los tests se enterarían de un cambio, no solo si pasan por la línea — y que **todo** fichero del núcleo puro esté medido o eximido con motivo escrito: sin esa totalidad, un diff sobre un fichero sin dueño sale verde sin medir nada |
 | `qa/run.mjs` | que el juego real hace lo que se dice, desde el arranque |
 | `test/contract-model-io.test.ts` | que los prompts y tools del modelo no divergen del zod |
 | `.claude/hooks/ci-verde.sh` (hook `Stop`) | que nadie da una tarea por terminada con el CI de su PR pendiente o en rojo. Verde en local NO es verde: el runner tiene otro sistema de ficheros y ninguna caché |
@@ -42,7 +42,11 @@ esas. La prosa se olvida a mitad de contexto; un test que falla, no.
 deriva la cola de trabajo de esas mismas herramientas — violaciones congeladas,
 funciones sobre el objetivo de CRAP, mutantes supervivientes — y avisa cuando una
 medida está obsoleta. Un item desaparece de la cola cuando se arregla, no cuando
-alguien se acuerda de tacharlo. Lo que ninguna herramienta mide (trocear un
+alguien se acuerda de tacharlo. **Y no hace falta medirlo todo para saberlo**:
+`npm run afectado` dice qué módulos de mutación puede haber roto un diff, y
+`npm run mutate -- --cambiado` corre solo esos; ante la duda ejecuta de más y lo
+dice, y la corrida completa queda para la nocturna.
+Lo que ninguna herramienta mide (trocear un
 fichero, una funcionalidad nueva) va a **issues de GitHub**, que se cierran desde
 la PR.
 

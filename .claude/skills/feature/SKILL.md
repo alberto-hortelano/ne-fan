@@ -79,7 +79,7 @@ Si el informe trae desviaciones del plan que afectan al diseño, vuelve al arqui
 Antes de llamar a QA, dos pasos baratos que evitan una vuelta entera:
 
 - **Cleaner**: invoca la skill `/simplify` sobre el diff. El código recién escrito casi siempre tiene una abstracción de más o una duplicación que se ve mejor en frío.
-- **Hardener**: si el cambio toca módulos puros, `cd nefan-core && npm run mutate`. Un mutante que sobrevive en código nuevo es un test que no comprueba lo que dice comprobar. Los supervivientes vuelven al ingeniero, no a QA.
+- **Hardener**: si el cambio toca módulos puros, `cd nefan-core && npm run mutate -- --cambiado`. Un mutante que sobrevive en código nuevo es un test que no comprueba lo que dice comprobar. Los supervivientes vuelven al ingeniero, no a QA.
 
 ## 4 · QA
 
