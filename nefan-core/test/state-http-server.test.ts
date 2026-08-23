@@ -14,7 +14,8 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import { createStateHttpServer, pluginRegisterBody } from "../bridge/state-http-server.js";
+import { createStateHttpServer } from "../bridge/state-http-server.js";
+import { pluginRegisterBody } from "../bridge/state-http/context.js";
 
 const COUNTER_MANIFEST = JSON.parse(
   readFileSync(
