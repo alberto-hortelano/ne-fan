@@ -189,7 +189,7 @@ export function addNeighborhoodSceneIds(
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
-      const id = n ? ((n.scene_data.scene_id ?? n.scene_data.room_id) as string | undefined) : undefined;
+      const id = n ? (n.scene_data.scene_id as string | undefined) : undefined;
       if (id) sceneIds.add(id);
     }
   }
@@ -264,7 +264,7 @@ export function broadcastScene(
         kind: "spawn_entity",
         entityId: sceneId,
         entityKind: "object",
-        description: String(scene.room_description ?? scene.scene_description ?? sceneId),
+        description: String(scene.scene_description ?? sceneId),
         position: [0, 0, 0],
         data: { scene: worldScene },
         eventId: "scene_init",

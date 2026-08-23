@@ -301,7 +301,7 @@
       "cell": [56, 84],
       "footprint": [1, 1],
       "glyph": "n",
-      "role": "mayor",
+      "role": "villager",
       "description": "alcaldesa de cabello cano con una vara de mando"
     },
     {
@@ -311,7 +311,7 @@
       "cell": [28, 92],
       "footprint": [1, 1],
       "glyph": "n",
-      "role": "smith",
+      "role": "merchant",
       "description": "herrero fornido con mandil de cuero quemado"
     },
     {
@@ -321,7 +321,7 @@
       "cell": [62, 102],
       "footprint": [1, 1],
       "glyph": "n",
-      "role": "innkeeper",
+      "role": "merchant",
       "description": "posadera menuda con delantal de lino"
     },
     {
@@ -341,7 +341,7 @@
       "cell": [104, 52],
       "footprint": [1, 1],
       "glyph": "n",
-      "role": "miller",
+      "role": "peasant",
       "description": "molinero blanco de harina hasta las cejas"
     },
     {

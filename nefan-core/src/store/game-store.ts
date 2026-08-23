@@ -11,9 +11,6 @@ export type GlobalCallback = (eventName: string, payload: Record<string, unknown
 export function createInitialState(): GameState {
   return {
     world: {
-      room_id: "",
-      room_data: {},
-      rooms_visited: {},
       region: "forgotten_depths",
       time_of_day: "night",
       atmosphere: "ominous",

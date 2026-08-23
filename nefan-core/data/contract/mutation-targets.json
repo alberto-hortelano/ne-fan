@@ -388,10 +388,11 @@
         "test/combat-systems.test.ts",
         "test/simulation.test.ts",
         "test/state-projection.test.ts",
-        "test/store-immutability.test.ts"
+        "test/store-immutability.test.ts",
+        "test/store-reducers.test.ts"
       ],
       "break": 41,
-      "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada."
+      "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada. `store-reducers.test.ts` entra en la batería el día que se borra el estado muerto de sala (#175): al irse `room_changed`/`room_visited` desaparecieron diez mutantes BIEN matados y el módulo cayó por debajo del break sin que el código restante hubiera empeorado. La señal no era el borrado, era que el resto de los `case` no tenía dueño — se ejercían a través del sim, sin un solo aserto sobre lo que escriben."
     }
   ]
 }

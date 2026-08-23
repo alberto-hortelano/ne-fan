@@ -71,7 +71,6 @@ export function fakeBootstrapTile(over: Record<string, unknown> = {}): Record<st
   return {
     tile: { tx: 0, ty: 0 },
     scene_id: "tile_0_0",
-    room_id: "tile_0_0",
     biome: "grass",
     scene_description: "una escena",
     entities: [

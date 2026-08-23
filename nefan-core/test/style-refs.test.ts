@@ -9,7 +9,8 @@ import {
   normalizeTag,
   styleCompatibleWithGame,
 } from "../src/games/style-refs.js";
-import { styleRoleForNpc } from "../src/games/style-categories.js";
+import { npcSkinStyleRef, styleRoleForNpc } from "../src/games/style-categories.js";
+import { NPC_ROLES, type NpcRole } from "../src/simulation/npc-roles.js";
 import { styleRefCatalog } from "../bridge/handlers/session.js";
 import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import type { StyleManifest } from "../src/games/loader.js";
@@ -54,11 +55,35 @@ describe("style-refs — compatibilidad temática estilo↔juego", () => {
 });
 
 describe("styleRoleForNpc (transitorio, fase 3 lo elimina)", () => {
-  it("guard/soldier/warrior → warrior; noble → noble; default commoner", () => {
-    assert.equal(styleRoleForNpc("guard"), "warrior");
-    assert.equal(styleRoleForNpc("noble"), "noble");
-    assert.equal(styleRoleForNpc("peasant"), "commoner");
+  // El vocabulario de `role` es CERRADO (NPC_ROLES) y la tabla lo cubre
+  // entero: se recorre aquí para que añadir un rol sin decidir cómo se viste
+  // rompa el test además de no compilar.
+  it("cubre los cuatro roles del vocabulario, y solo el guardia va armado", () => {
+    const esperado: Record<NpcRole, string> = {
+      peasant: "commoner",
+      villager: "commoner",
+      merchant: "commoner",
+      guard: "warrior",
+    };
+    for (const role of NPC_ROLES) {
+      assert.equal(styleRoleForNpc(role), esperado[role], `rol ${role}`);
+    }
+    assert.deepEqual([...NPC_ROLES].sort(), Object.keys(esperado).sort(), "sin roles sin vestir");
+  });
+
+  it("un rol fuera del vocabulario (o ausente) cae a commoner, no a la rama que suene", () => {
+    // `noble`, `soldier` y `warrior` eran etiquetas del switch viejo y NO son
+    // roles: hoy la ref noble solo la alcanza un `style_ref` explícito del
+    // motor (ver npcSkinStyleRef abajo).
+    for (const inventado of ["noble", "soldier", "warrior", "smith", "Guard", ""]) {
+      assert.equal(styleRoleForNpc(inventado), "commoner", `rol inventado "${inventado}"`);
+    }
     assert.equal(styleRoleForNpc(undefined), "commoner");
+  });
+
+  it("la ref noble sigue siendo alcanzable, pero solo si el motor la ELIGE", () => {
+    assert.equal(npcSkinStyleRef({ role: "villager", style_ref: "noble" }), "noble");
+    assert.equal(npcSkinStyleRef({ role: "villager" }), "commoner");
   });
 });
 

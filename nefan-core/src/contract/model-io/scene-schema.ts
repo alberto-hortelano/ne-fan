@@ -17,14 +17,15 @@
  *  la vista que lo pintaba: una escena sin `tile` es un error de contrato, no
  *  una escena pequeña.
  *
- *  `.passthrough()` a propósito en scene y entity: campos legacy/retirados
- *  (room_id, style_tag, exits, ambient_event…) NO deben
- *  provocar rechazo (tolerancia: fixtures offline y saves viejos siguen
- *  pasando). El gate cubre lo que el modelo DEBE emitir bien, no lo que sobra. */
+ *  `.passthrough()` a propósito en scene y entity: campos tolerados que el
+ *  modelo puede seguir emitiendo (exits, ambient_event…) NO deben provocar
+ *  rechazo (tolerancia: fixtures offline y saves viejos siguen pasando). El
+ *  gate cubre lo que el modelo DEBE emitir bien, no lo que sobra. */
 
 import { z } from "zod";
 import { GroundSchema } from "../../scene/blueprint/ground.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
+import { NPC_ROLES } from "../../simulation/npc-roles.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -44,6 +45,25 @@ export const EntitySchema = z
     texture_hash: z.string().optional(),
     model_hash: z.string().optional(),
     attach: z.literal("wall").optional(),
+    // ── NPCs: con qué se viste y cómo se comporta ────────────────────────
+    // `role` NO es el oficio: es el preset de conducta que el sim implementa
+    // (NPC_ROLES, la misma lista que el enum de `spawn_entity` — un NPC no
+    // puede declarar su oficio con un vocabulario en un tool y con otro en el
+    // vecino). Enum CERRADO a propósito: un `role: "herrero"` no degradaría a
+    // villager en silencio, se le devuelve al motor con los cuatro valores.
+    // El oficio viaja en `name` y en `description`, que es de donde sale el
+    // prompt del skin IA.
+    role: z.enum(NPC_ROLES).optional(),
+    // `description` es el PROMPT del skin del personaje (aspecto, no
+    // biografía). Opcional en el zod y exigida en la prosa del prompt: este
+    // schema canda también las fixtures de `data/scenes/`, y las 14 sondas de
+    // z-order de zorder_test.json no tienen aspecto que describir ni deben
+    // pagar un skin. Sin ella, el prompt del skin es el nombre propio del
+    // NPC («Beltrán»), que no describe a nadie.
+    description: z.string().min(1).optional(),
+    // Ref de personaje del catálogo del pack (world.style_refs.characters)
+    // ELEGIDA por el motor; sin ella, el default sale del `role`.
+    style_ref: z.string().min(1).optional(),
   })
   .passthrough();
 

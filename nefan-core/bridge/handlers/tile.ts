@@ -120,7 +120,6 @@ export async function generateTileScene(
   // El bridge fija la verdad geométrica aunque el motor invente otra cosa.
   res.scene.tile = { tx, ty };
   res.scene.scene_id = key;
-  res.scene.room_id = key;
   // De qué LUGAR es este tile lo decide el BRIDGE, no el modelo: el place que
   // se está realizando al viajar (`opts.placeId`) o el que ya tiene su anchor
   // en estas coordenadas (`tileCtx.place`, el mismo que viajó al motor en el

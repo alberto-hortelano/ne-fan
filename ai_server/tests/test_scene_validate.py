@@ -12,7 +12,11 @@ import glob
 import os
 import unittest
 
-from ai_server.narrative_schemas import validate_scene_response
+from ai_server.narrative_schemas import (
+    NPC_ROLES,
+    validate_narrative_reaction,
+    validate_scene_response,
+)
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCENES = os.path.join(REPO, "nefan-core", "data", "scenes")
@@ -107,11 +111,9 @@ class TestVariantesRetiradas(unittest.TestCase):
         # Se retiró con el repintado del tile (nadie la consume en primera
         # persona). El rechazo duro vive en el gate zod; aquí, como `stage`,
         # se descarta para que no se persista un campo que ya no existe.
-        for campo in ("style_ref", "style_tag"):
-            with self.subTest(campo=campo):
-                s = base_scene()
-                s[campo] = "settlement"
-                self.assertNotIn(campo, validate_scene_response(s))
+        s = base_scene()
+        s["style_ref"] = "settlement"
+        self.assertNotIn("style_ref", validate_scene_response(s))
 
 
 class TestSceneValidateFailLoud(unittest.TestCase):
@@ -190,3 +192,86 @@ class TestEntityStyleRefSurvives(unittest.TestCase):
         for basura in (42, "", None, {"id": "x"}):
             with self.subTest(valor=basura):
                 self.assertNotIn("style_ref", self._npc(style_ref=basura))
+
+
+class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
+    """`role` y `description` son los otros DOS campos con los que el motor
+    viste y anima a un NPC, y se caían por el MISMO agujero que `style_ref`:
+    la lista blanca de `validate_scene_response` no los copiaba. Sin `role`,
+    todo NPC de escena resolvía el preset `villager` (deambula y huye) y un
+    guardia declarado no se quedaba quieto; sin `description`, el prompt del
+    skin era el nombre propio del personaje."""
+
+    def _npc(self, **extra):
+        s = base_scene()
+        s["entities"].append(
+            {"id": "guardia", "kind": "npc", "name": "Guardia Roric", "cell": [2, 1],
+             "footprint": [1, 1], "glyph": "n", **extra}
+        )
+        return validate_scene_response(s)["entities"][-1]
+
+    def test_el_rol_declarado_sobrevive(self):
+        self.assertEqual(self._npc(role="guard")["role"], "guard")
+
+    def test_la_descripcion_declarada_sobrevive(self):
+        npc = self._npc(description="guardia con lanza y capa parda")
+        self.assertEqual(npc["description"], "guardia con lanza y capa parda")
+
+    def test_sin_declararlos_no_se_inventan(self):
+        npc = self._npc()
+        self.assertNotIn("role", npc)
+        self.assertNotIn("description", npc)
+
+    def test_un_rol_inventado_LANZA_nombrando_el_vocabulario(self):
+        # Fail-loud al modelo: un oficio en `role` no degrada a villager en
+        # silencio — el error dice los valores y dónde va el oficio.
+        with self.assertRaises(ValueError) as cm:
+            self._npc(role="herrero")
+        self.assertIn("herrero", str(cm.exception))
+        self.assertIn("guard", str(cm.exception))
+
+    def test_una_descripcion_vacia_no_viaja(self):
+        # "" como prompt del skin pediría una imagen sin descripción; el
+        # cliente cae al nombre, que al menos nombra a alguien.
+        for basura in ("", "   ", 42, None):
+            with self.subTest(valor=basura):
+                self.assertNotIn("description", self._npc(description=basura))
+
+
+class TestSpawnEntityLlevaRolYRef(unittest.TestCase):
+    """La reconstrucción por allow-list de `validate_narrative_reaction` corre
+    en las DOS vías (API directa y MCP) y tiraba `role` y `style_ref`: estaban
+    declarados en el zod y consumidos por el cliente, pero no llegaban nunca.
+    Vivos de contrato, muertos de datos."""
+
+    def _spawn(self, **extra):
+        out = validate_narrative_reaction({
+            "consequences": [
+                {"type": "spawn_entity", "entity_kind": "npc",
+                 "description": "un guardia con yelmo abollado", **extra},
+            ],
+        })
+        return out["consequences"][0]
+
+    def test_rol_y_ref_llegan_hasta_la_consequence(self):
+        c = self._spawn(role="guard", style_ref="characters_capitana")
+        self.assertEqual(c["role"], "guard")
+        self.assertEqual(c["style_ref"], "characters_capitana")
+
+    def test_sin_declararlos_no_se_inventan(self):
+        c = self._spawn()
+        self.assertNotIn("role", c)
+        self.assertNotIn("style_ref", c)
+
+    def test_un_rol_inventado_LANZA(self):
+        with self.assertRaises(ValueError) as cm:
+            self._spawn(role="herrero")
+        self.assertIn("herrero", str(cm.exception))
+
+    def test_el_vocabulario_es_el_MISMO_que_el_de_una_entity_de_escena(self):
+        # Un NPC no puede declarar su conducta con un vocabulario en
+        # generate_scene y con otro en spawn_entity: es el fallo que esta
+        # tanda cierra, y lo que parecería arbitrario en un mes.
+        for role in sorted(NPC_ROLES):
+            with self.subTest(role=role):
+                self.assertEqual(self._spawn(role=role)["role"], role)

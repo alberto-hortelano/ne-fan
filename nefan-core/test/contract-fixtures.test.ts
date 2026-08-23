@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import {
+  validateFormatDScene,
   validateNarrativeReaction,
   validateVolumes,
 } from "../../narrative-mcp/validators.js";
@@ -52,6 +53,12 @@ const VALIDATORS: Record<string, (fx: Fixture) => { ok: boolean; svg?: string }>
   // volumes: el pre-flight ESTRICTO del MCP (narrative_respond rechaza con el
   // error preciso y el motor re-responde — fail-loud, nunca descartar).
   volumes_plan: (fx) => validateVolumes((fx.payload as { volumes: unknown }).volumes),
+  // La escena Format D entera. Es el set que impide que el VOCABULARIO de
+  // `role` vuelva a separarse entre los dos procesos: el zod lo canda con
+  // `z.enum(NPC_ROLES)` y el saneador Python leyendo el enum del tool, y aquí
+  // los dos contestan a las mismas seis escenas. Sin esto, la divergencia no
+  // tiene señal — que es exactamente cómo llegó a existir.
+  scene: (fx) => validateFormatDScene(fx.payload),
 };
 
 for (const [kind, run] of Object.entries(VALIDATORS)) {

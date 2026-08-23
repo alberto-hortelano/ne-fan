@@ -9,7 +9,10 @@ import {
   type NpcWorldAdapter,
 } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
-import { resolveRoleParams, NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
+import { resolveRoleParams, NPC_ROLES, NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
+import { NarrativeState } from "../src/narrative/narrative-state.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SeededRng } from "../src/rng.js";
 import type { EntityRecord } from "../src/narrative/types.js";
 import type { Vec3 } from "../src/types.js";
@@ -443,5 +446,68 @@ describe("resolveRoleParams", () => {
   it("override inválido se ignora con warning", () => {
     const params = resolveRoleParams({ role: "peasant", behavior: { walk_speed: "rápido" } });
     assert.equal(params.walk_speed, NPC_ROLE_PRESETS.peasant.walk_speed);
+  });
+});
+
+/** El criterio de #173, extremo a extremo dentro del core: un guardia
+ *  DECLARADO en la escena se comporta como guardia. Antes el `role` no cruzaba
+ *  el contrato, así que este camino existía entero y no lo recorría nadie:
+ *  todo NPC de escena resolvía el preset `villager` (deambula 6 m, huye de las
+ *  peleas) y un guardia declarado ni se quedaba en su puesto ni percibía el
+ *  combate. Lo que se ejercita es la cadena real —Format D → EntityRecord.data
+ *  → preset—, no `resolveRoleParams` a solas. */
+describe("el rol declarado en la escena llega hasta el preset de conducta", () => {
+  function tileCon(npc: Record<string, unknown>): Record<string, unknown> {
+    return {
+      scene_id: "tile_0_0",
+      scene_description: "una escena",
+      tile: { tx: 0, ty: 0 },
+      biome: "grass",
+      entities: [
+        { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+        { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+      ],
+    };
+  }
+
+  function recordDe(npc: Record<string, unknown>): EntityRecord {
+    const state = new NarrativeState(new MemorySessionStorage());
+    state.startNewSession("plugtest");
+    // Expandido como lo entrega el bridge (biome + primitivas → grid 128×128).
+    state.recordSceneLoaded("tile_0_0", expandScenePrimitives(tileCon(npc)));
+    const rec = state.entities.find((e) => e.id === npc.id);
+    assert.ok(rec, `el NPC ${String(npc.id)} no quedó registrado`);
+    return rec;
+  }
+
+  it("un guardia declarado se planta y entra a la pelea", () => {
+    const rec = recordDe({ id: "roric", name: "Guardia Roric", role: "guard",
+      description: "guardia con lanza y capa parda" });
+    assert.equal(rec.data.role, "guard", "el rol tiene que llegar a EntityRecord.data");
+    assert.equal(rec.data.description, "guardia con lanza y capa parda",
+      "y con él la descripción, que es el prompt del skin");
+
+    const params = resolveRoleParams(rec.data);
+    assert.equal(params.role, "guard");
+    assert.equal(params.intervenes_in_combat, true, "un guardia interviene");
+    assert.equal(params.flees_from_combat, false, "y no huye");
+    assert.equal(params.perception_radius, NPC_ROLE_PRESETS.guard.perception_radius);
+  });
+
+  it("sin rol declarado, el mismo NPC es el aldeano de siempre", () => {
+    const rec = recordDe({ id: "anon", name: "Aldeano" });
+    assert.ok(!("role" in rec.data), "sin rol no se inventa uno");
+
+    const params = resolveRoleParams(rec.data);
+    assert.equal(params.role, "villager");
+    assert.equal(params.flees_from_combat, true);
+    assert.equal(params.intervenes_in_combat, false);
+  });
+
+  it("cada rol del vocabulario resuelve SU preset, no el de al lado", () => {
+    for (const role of NPC_ROLES) {
+      const params = resolveRoleParams(recordDe({ id: `npc_${role}`, name: "X", role }).data);
+      assert.deepEqual(params, NPC_ROLE_PRESETS[role], `el rol ${role} no resolvió su preset`);
+    }
   });
 });

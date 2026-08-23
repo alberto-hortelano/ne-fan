@@ -63,7 +63,7 @@ export function migrateActiveSceneToTile(state: NarrativeState): void {
   const tileScene = expandScenePrimitives({
     tile: { tx: 0, ty: 0 },
     scene_id: tileKey(0, 0),
-    scene_description: old.scene_description ?? old.room_description ?? "",
+    scene_description: old.scene_description ?? "",
     biome: "grass",
     terrain_patches: [{ at: [colOff, rowOff], rows: patchRows }],
     terrain_legend: old.terrain_legend ?? {},

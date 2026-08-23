@@ -1,0 +1,28 @@
+{
+  "description": "el bioma es la base del tile (el engine sintetiza el grid desde él): sin bioma no hay suelo que pintar",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      }
+    ]
+  }
+}

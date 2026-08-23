@@ -61,7 +61,6 @@ describe("bridge routing básico", () => {
     assert.equal(update.enemies.length, 1);
     assert.equal(update.enemies[0].id, "skel_1");
     assert.equal(store.state.enemies.length, 1);
-    assert.equal(store.state.world.room_id, "crypt_001");
   });
 
   it("respawn responde con state_update y HP restaurado", async () => {

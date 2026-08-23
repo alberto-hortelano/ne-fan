@@ -84,7 +84,7 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
   });
 
   it("tolera campos legacy por passthrough (no rechaza)", () => {
-    assert.equal(accepts({ ...base, room_id: "s", ambient_event: "viento", style_tag: "x", exits: [] }), true);
+    assert.equal(accepts({ ...base, ambient_event: "viento", exits: [] }), true);
   });
 });
 

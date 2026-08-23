@@ -12,6 +12,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
+import { NPC_ROLES } from "../src/simulation/npc-roles.js";
+
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
 /** Marcadores load-bearing por archivo: identificadores que también existen
@@ -30,7 +32,9 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   // anclar un place del world map a un tile (viaje desde «Salidas»). Si el
   // prompt deja de nombrarlos, el motor recibe el campo sin saber qué es.
   "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces", "generate_tile.place", "nearby_places"],
-  "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell"],
+  // `role` y `description` de NPC: el motor lee el PROMPT, no el tool JSON. Un
+  // campo declarado solo en el JSON es un campo que el motor no emite nunca.
+  "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell", "role", "description"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
   "develop_world.md": ["world_brief", "world_md", "game_id", "style_id", "tags"],
@@ -70,7 +74,6 @@ describe("contrato narrativo — tool schemas compartidos", () => {
       };
     };
     const props = tool.input_schema.properties;
-    assert.equal(props.style_tag, undefined, "style_tag murió con el campo que aliasaba");
     assert.equal(props.style_ref, undefined, "la style_ref de ESCENA se retiró del contrato");
     assert.equal(props.stage, undefined, "el bloque stage del plató se retiró del contrato");
     assert.equal(props.tile?.type, "object", "la única variante viva es el tile");
@@ -79,6 +82,57 @@ describe("contrato narrativo — tool schemas compartidos", () => {
       JSON.stringify(props.entities).includes('"style_ref"'),
       "la style_ref de entidad (npc) sigue viva",
     );
+  });
+
+  // `generate_scene.json` NO está en CONTRACTS: es el único tool escrito a
+  // mano, así que el codegen no lo mantiene en sync con el zod y su enum de
+  // `role` puede separarse de NPC_ROLES sin que nada se queje. Este caso es su
+  // guardia de deriva hasta que #203 generalice el problema — y es el mismo
+  // fallo que esta tanda vino a arreglar, repetido un nivel más abajo.
+  it("el vocabulario de `role` del tool ES NPC_ROLES, y los tres procesos leen el mismo", () => {
+    const tool = JSON.parse(readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8")) as {
+      input_schema: {
+        properties: {
+          entities: { items: { properties: Record<string, { enum?: string[]; type?: string }> } };
+        };
+      };
+    };
+    const deEscena = tool.input_schema.properties.entities.items.properties.role;
+
+    assert.ok(deEscena, "generate_scene declara `role` en su entity");
+    assert.equal(deEscena.type, "string");
+    assert.deepEqual(
+      deEscena.enum,
+      [...NPC_ROLES],
+      "el enum del tool a mano se ha separado de NPC_ROLES: cópialo (mismo orden) o arregla la fuente",
+    );
+
+    // Y el enum del tool VECINO, que sí sale del codegen. Que los dos coincidan
+    // es la mitad de #173: un NPC no puede declarar su conducta con un
+    // vocabulario en generate_scene y con otro en spawn_entity.
+    const react = JSON.parse(readFileSync(resolve(TOOLS_DIR, "narrative_react.json"), "utf-8")) as unknown;
+    const spawnRoles = JSON.stringify(react).match(/"enum":\s*\[\s*"peasant"[^\]]*\]/);
+    assert.ok(spawnRoles, "narrative_react ya no declara el enum de role de spawn_entity");
+    assert.deepEqual(
+      JSON.parse(`{${spawnRoles[0]}}`).enum,
+      [...NPC_ROLES],
+      "spawn_entity y generate_scene tienen que pedir el mismo vocabulario",
+    );
+  });
+
+  it("el prompt de escena EXIGE la descripción del NPC y dice que el rol no es el oficio", () => {
+    // El motor lee el .md, no el JSON: un campo que solo esté en el tool no lo
+    // emite nunca. Y `description` es opcional en el zod A PROPÓSITO (canda
+    // también las fixtures, y las 14 sondas de z-order no tienen aspecto), así
+    // que lo único que la exige es esta prosa.
+    const md = readFileSync(resolve(PROMPTS_DIR, "scene_instructions.md"), "utf-8");
+    assert.match(md, /REQUIRED for every named NPC|REQUIRED for every NPC you name/,
+      "sin exigirla en la prosa, `description` opcional en el zod es `description` ausente");
+    assert.match(md, /`role` is NOT the job/,
+      "el motor tiene que saber dónde va el oficio, o inventará roles y se le rechazará el tile");
+    for (const role of NPC_ROLES) {
+      assert.ok(md.includes(role), `el prompt no nombra el rol "${role}"`);
+    }
   });
 });
 

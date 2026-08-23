@@ -193,6 +193,20 @@
               ],
               "description": "decor only: snap to the nearest wall cell (torches, signs, banners)."
             },
+            "role": {
+              "type": "string",
+              "enum": [
+                "peasant",
+                "guard",
+                "villager",
+                "merchant"
+              ],
+              "description": "NPCs only, optional: BEHAVIOUR preset the simulation runs for this NPC (guard stands its ground and steps into a fight; the rest wander and flee). It is NOT the job — a smith, a mayor or an innkeeper are villagers/merchants who happen to have a trade, and the trade goes in `name` and `description`. Same four values as spawn_entity. Omit and the NPC behaves as a villager."
+            },
+            "description": {
+              "type": "string",
+              "description": "NPCs: what this character LOOKS LIKE, in Spanish, one line ('herrero fornido con mandil de cuero quemado'). It is the prompt that paints their AI skin, so describe appearance — build, clothes, tools, hair — not biography. Without it the skin is painted from their proper name, which describes nobody. Always write one for a named NPC."
+            },
             "style_ref": {
               "type": "string",
               "description": "NPCs only, optional: id of the character reference from world.style_refs.characters that best matches this NPC's look (guides the AI skin). Missing/unknown id falls back to a role-derived default."

@@ -132,7 +132,6 @@ export function handleLoadRoom(
     ctx.sim.addCombatant(combatant, enemy.personality);
   }
 
-  ctx.store.dispatch("room_changed", { room_id: msg.roomId });
   ctx.store.dispatch("enemies_projected", {
     enemies: msg.enemies.map((e) => ({
       id: e.id,

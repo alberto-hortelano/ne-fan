@@ -9,8 +9,8 @@
  *  nefan-core, clientes que solo pintan").
  *
  *  Fail-loud: a malformed Format D entity throws rather than being silently
- *  dropped. A payload that is NOT Format D is returned verbatim (already-resolved
- *  world scene, e.g. legacy room JSON or a `change_scene` payload). */
+ *  dropped. A payload that is NOT Format D is returned verbatim (an
+ *  already-resolved world scene, e.g. a `change_scene` payload). */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { tileWorldRect } from "./tile.js";
@@ -35,6 +35,15 @@ type FormatDEntity = {
   h?: number;
   texture_hash?: string;
   model_hash?: string;
+  /** NPCs. Los tres campos con los que el motor viste y anima al personaje:
+   *  `role` es el preset de conducta (NPC_ROLES; el oficio va en el nombre y
+   *  en la descripción), `description` el prompt del skin IA y `style_ref` la
+   *  ref de personaje que el motor eligió del catálogo del pack. Declarados
+   *  aquí porque el contrato los declara: son datos del motor, no un extra
+   *  que este módulo adivine. */
+  role?: string;
+  description?: string;
+  style_ref?: string;
 };
 
 /** Formas válidas que el cliente entiende. `shape` inválido se ignora (cae a box). */
@@ -169,9 +178,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       if (!ent.name) {
         throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
       }
-      const role = (ent as { role?: unknown }).role;
-      const styleRef = (ent as { style_ref?: unknown }).style_ref;
-      const description = (ent as { description?: unknown }).description;
+      // El `typeof` no sobra pese al tipo: como el resto de este módulo,
+      // `ent` viene de un JSON sin validar (save, fixture a mano) y un
+      // `role: 42` propagado revienta al derivar la clave del skin.
+      const { role, style_ref: styleRef, description } = ent;
       npcs.push({
         id: ent.id,
         name: ent.name,
@@ -215,10 +225,8 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   }
 
   return {
-    scene_id: raw.scene_id ?? raw.room_id,
-    room_id: raw.scene_id ?? raw.room_id,
-    scene_description: raw.scene_description ?? raw.room_description ?? "",
-    room_description: raw.scene_description ?? raw.room_description ?? "",
+    scene_id: raw.scene_id,
+    scene_description: raw.scene_description ?? "",
     dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
     // Coordenadas del plano continuo: rect mundial de la escena/tile y, si es
     // un tile, sus coords de grid. El cliente ancla capas/colisión aquí.

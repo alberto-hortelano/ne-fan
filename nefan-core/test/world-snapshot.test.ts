@@ -58,15 +58,13 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
     world_map: wm.serialize(),
     scenes: {
       tile_0_0: {
-        room_id: "tile_0_0",
         scene_id: "tile_0_0",
-        room_description: "Tile de arranque del snapshot",
+        scene_description: "Tile de arranque del snapshot",
         entities: [{ id: "player", kind: "player", cell: [4, 4] }],
       },
       tile_1_0: {
-        room_id: "tile_1_0",
         scene_id: "tile_1_0",
-        room_description: "Vecino este pre-generado",
+        scene_description: "Vecino este pre-generado",
       },
     },
     entry_scene_id: "tile_0_0",

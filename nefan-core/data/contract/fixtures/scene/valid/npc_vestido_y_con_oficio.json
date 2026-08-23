@@ -1,0 +1,46 @@
+{
+  "description": "un NPC con los TRES campos del motor: role del vocabulario, description (prompt del skin) y style_ref elegida",
+  "expect": "accept",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      },
+      {
+        "id": "roric",
+        "kind": "npc",
+        "name": "Guardia Roric",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "n",
+        "role": "guard",
+        "description": "guardia con lanza y capa parda",
+        "style_ref": "warrior"
+      }
+    ]
+  }
+}

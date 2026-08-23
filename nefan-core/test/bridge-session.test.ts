@@ -676,9 +676,9 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       name: "El Campamento",
     });
     narrative.recordSceneLoaded("scene_camp", {
-      room_id: "scene_camp",
+      scene_id: "scene_camp",
       place_id: "camp",
-      room_description: "un campamento",
+      scene_description: "un campamento",
     });
     narrative.recordEntitySpawned(
       "bandit_1",
