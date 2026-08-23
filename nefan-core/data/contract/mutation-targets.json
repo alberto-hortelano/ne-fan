@@ -267,13 +267,14 @@
       ],
       "tests": [
         "test/blueprint-ground.test.ts",
+        "test/derive-vegetation.test.ts",
         "test/fps-atlas-golden.test.ts",
         "test/fps-riqueza.test.ts",
         "test/plan-collision.test.ts",
         "test/scatter.test.ts"
       ],
       "break": 65,
-      "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
+      "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). derive-vegetation entra desde #174: el scatter derivado esquiva el suelo, y sus casos construyen los rasgos con `parseGround` — un mutante que rompa el parseo lo mata su `assert.ok(p.ok)`. Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
       "excluidos": [
         {
           "test": "test/contract-fixtures.test.ts",

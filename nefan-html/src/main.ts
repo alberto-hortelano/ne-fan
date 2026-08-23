@@ -742,6 +742,7 @@ function composeTilePlan(
       structures: raw.structures as never,
       vegetation_zones: raw.vegetation_zones as never,
       entities: raw.entities as never,
+      ground,
     },
     declared,
   );

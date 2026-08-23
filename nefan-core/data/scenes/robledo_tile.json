@@ -1,6 +1,6 @@
 {
   "scene_id": "robledo_tile",
-  "scene_description": "Robledo ocupa la orilla oeste del río Negro. El camino real cruza el puente de tablones, pasa junto a la casa del concejo y desemboca en la plaza empedrada del pozo. Al este del río gira la rueda del molino.",
+  "scene_description": "Robledo ocupa la orilla oeste del río Negro. El camino real cruza el puente de tablones, pasa junto a la casa del concejo y desemboca en la plaza empedrada del pozo. Al oeste, un pinar ralo flanquea el camino sin invadirlo. Al este del río gira la rueda del molino.",
   "tile": {
     "tx": 0,
     "ty": 0
@@ -11,41 +11,26 @@
     "b": "puente de tablones",
     "_": "camino de tierra"
   },
-  "terrain_patches": [
-    {
-      "at": [84, 0],
-      "rows": [
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww"
-      ]
-    },
-    {
-      "at": [84, 60],
-      "rows": [
-        "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb", "bbbbbbbb"
-      ]
-    },
-    {
-      "at": [84, 68],
-      "rows": [
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww",
-        "wwwwwwww", "wwwwwwww", "wwwwwwww", "wwwwwwww"
-      ]
-    }
-  ],
   "ground": [
+    {
+      "id": "rio_negro_n",
+      "kind": "water",
+      "label": "río Negro",
+      "rect": [84, 0, 8, 60]
+    },
+    {
+      "id": "rio_negro_s",
+      "kind": "water",
+      "label": "río Negro",
+      "rect": [84, 68, 8, 60]
+    },
+    {
+      "id": "puente_tablones",
+      "kind": "deck",
+      "label": "puente de tablones",
+      "rect": [84, 60, 8, 8],
+      "material": "wood"
+    },
     {
       "id": "camino_real",
       "kind": "path",
@@ -91,6 +76,13 @@
         "ry": 6
       },
       "material": "dirt"
+    }
+  ],
+  "vegetation_zones": [
+    {
+      "type": "pino",
+      "area": [2, 50, 46, 26],
+      "density": 0.15
     }
   ],
   "entities": [
