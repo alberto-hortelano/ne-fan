@@ -28,14 +28,6 @@ describe("GameStore — payload aliasing invariant", () => {
     assert.deepEqual(store.state.player.pos, [7, 8, 9]);
   });
 
-  it("room_changed: mutating payload.room_data after dispatch does not affect state", () => {
-    const store = new GameStore();
-    const room_data: Record<string, unknown> = { exits: ["north", "south"] };
-    store.dispatch("room_changed", { room_id: "r1", room_data, enemies: [] });
-    (room_data.exits as string[]).push("east");
-    assert.deepEqual(store.state.world.room_data, { exits: ["north", "south"] });
-  });
-
   it("enemies_projected: mutating payload.enemies after dispatch does not affect state", () => {
     const store = new GameStore();
     const enemies = [{ id: "e1", hp: 100, alive: true } as never];
@@ -46,26 +38,24 @@ describe("GameStore — payload aliasing invariant", () => {
     assert.equal((store.state.enemies[0] as unknown as { hp: number }).hp, 100);
   });
 
-  it("room_visited: mutating payload.room_data after dispatch does not affect state", () => {
-    const store = new GameStore();
-    const room_data: Record<string, unknown> = { name: "tavern" };
-    store.dispatch("room_visited", { room_id: "r1", room_data });
-    room_data.name = "different";
-    assert.deepEqual(store.state.world.rooms_visited["r1"], { name: "tavern" });
-  });
 });
 
-describe("GameStore — room_changed/enemies_projected decoupling", () => {
-  it("room_changed without enemies does NOT wipe the existing list", () => {
+describe("GameStore — la lista de enemigos solo la escribe enemies_projected", () => {
+  // El invariante que protegía el viejo par room_changed/enemies_projected:
+  // cambiar de escena NO vacía el combate. Ahora que el estado de sala murió,
+  // el sujeto es el que siempre lo escribió — y lo que se comprueba es que
+  // NINGÚN otro evento del reducer toca la lista.
+  it("un evento ajeno (cambio de escena, movimiento) no toca la lista", () => {
     const store = new GameStore();
     store.dispatch("enemies_projected", {
       enemies: [{ id: "e1", pos: [0, 0, 0], hp: 100, max_hp: 100,
                   weapon_id: "club", combat_state: "idle", alive: true } as never],
     });
     assert.equal(store.state.enemies.length, 1);
-    store.dispatch("room_changed", { room_id: "next", room_data: {} });
-    assert.equal(store.state.enemies.length, 1);
-    assert.equal(store.state.world.room_id, "next");
+    store.dispatch("player_moved", { pos: [9, 0, 9] });
+    store.dispatch("meta_update", { fps: 60 });
+    assert.equal(store.state.enemies.length, 1, "solo enemies_projected escribe enemigos");
+    assert.equal((store.state.enemies[0] as unknown as { id: string }).id, "e1");
   });
 
   it("enemies_projected without payload yields an empty list", () => {

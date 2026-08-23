@@ -153,7 +153,7 @@ describe("formatDToWorld", () => {
   });
 
   it("returns a non-Format-D payload unchanged", () => {
-    const legacy = { room_id: "crypt", dimensions: { width: 10, height: 4, depth: 8 }, surfaces: {}, objects: [] };
+    const legacy = { scene_id: "crypt", dimensions: { width: 10, height: 4, depth: 8 }, surfaces: {}, objects: [] };
     assert.equal(formatDToWorld(legacy), legacy);
   });
 
@@ -291,36 +291,21 @@ describe("formatDToWorld — el NPC llega entero a la clave de caché del skin",
  *  renderer 2D (`terrain.color` como fallback sin textura) y el pipeline de
  *  estilo (`style_ref`, `biome`). Nadie asserteaba nada de ahí. */
 describe("formatDToWorld — la cola de la world scene", () => {
-  it("scene_id y room_id salen del scene_id; un save viejo los saca de room_id", () => {
+  it("el id de la world scene es el scene_id de la escena, sin alias que lo dupliquen", () => {
     const w = formatDToWorld(makeFormatD());
     assert.equal(w.scene_id, "taberna_test");
-    assert.equal(w.room_id, "taberna_test", "el alias legacy apunta al mismo id");
-
-    const viejo = makeFormatD();
-    delete viejo.scene_id;
-    viejo.room_id = "cripta_vieja";
-    const w2 = formatDToWorld(viejo);
-    assert.equal(w2.scene_id, "cripta_vieja");
-    assert.equal(w2.room_id, "cripta_vieja");
+    assert.equal(Object.keys(w).filter((k) => w[k] === "taberna_test").length, 1,
+      "un solo campo lleva el id: dos nombres para el mismo valor es lo que se retiró");
   });
 
-  it("la descripción cae de scene_description a room_description y, sin ninguna, a ''", () => {
+  it("la descripción viaja tal cual y, sin ella, es cadena VACÍA", () => {
     assert.equal(formatDToWorld(makeFormatD()).scene_description, "Una taberna de prueba.");
 
-    const viejo = makeFormatD();
-    delete viejo.scene_description;
-    viejo.room_description = "Una cripta húmeda.";
-    const w2 = formatDToWorld(viejo);
-    assert.equal(w2.scene_description, "Una cripta húmeda.");
-    assert.equal(w2.room_description, "Una cripta húmeda.");
-
-    // Sin ninguna de las dos, cadena VACÍA: el HUD la pinta tal cual, y un
-    // texto de relleno sería peor que nada.
+    // Sin descripción, cadena VACÍA: el HUD la pinta tal cual, y un texto de
+    // relleno sería peor que nada.
     const muda = makeFormatD();
     delete muda.scene_description;
-    const w3 = formatDToWorld(muda);
-    assert.equal(w3.scene_description, "");
-    assert.equal(w3.room_description, "");
+    assert.equal(formatDToWorld(muda).scene_description, "");
   });
 
   it("emite un color de terreno usable como fallback sin textura", () => {
@@ -348,16 +333,13 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 
   // La `style_ref` de ESCENA se retiró (guiaba el repintado del tile, que
-  // murió con la vista oblicua): normalizar no la propaga, ni ella ni su
-  // alias legacy `style_tag`. La de ENTIDAD (npc) sigue viva y tiene sus
-  // propios casos más abajo.
+  // murió con la vista oblicua): normalizar no la propaga. La de ENTIDAD
+  // (npc) sigue viva y tiene sus propios casos más abajo.
   it("la style_ref de escena no llega a la world scene (campo retirado)", () => {
     const conRef = makeFormatD();
     conRef.style_ref = "settlement";
-    conRef.style_tag = "settlement";
     const w = formatDToWorld(conRef) as Record<string, unknown>;
     assert.ok(!("style_ref" in w), "no se propaga la elección de escena");
-    assert.ok(!("style_tag" in w), "tampoco el alias legacy");
   });
 
   it("el biome viaja solo si es una cadena", () => {

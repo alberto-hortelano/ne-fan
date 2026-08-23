@@ -65,7 +65,6 @@ export async function generateBootstrapTileScene(
   res.scene.tile = { tx: 0, ty: 0 };
   const sceneId = tileKey(0, 0);
   res.scene.scene_id = sceneId;
-  res.scene.room_id = sceneId;
   // A qué LUGAR pertenece el tile de arranque. Es el único tile en el que el
   // bridge no puede decidirlo solo (el mapa lo acaba de sembrar el motor en
   // esta misma llamada), así que se cruza lo que declaró con el mapa real: si

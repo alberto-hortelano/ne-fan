@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     result = validateScene(scene);
   }
 
-  console.log(`escena: ${scene.scene_id ?? scene.room_id} (place_id: ${scene.place_id ?? "—"}) — validación ${via}`);
+  console.log(`escena: ${scene.scene_id} (place_id: ${scene.place_id ?? "—"}) — validación ${via}`);
   console.log(`stats: ${JSON.stringify(result.stats)}`);
   const { legend, solidChars } = resolveTerrainLegend((hasUnexpandedPrimitives(scene) ? expandScenePrimitives(scene) : scene).terrain_legend);
   console.log(`solid_chars: ${solidChars.join(" ")} | legend: ${JSON.stringify(legend)}`);

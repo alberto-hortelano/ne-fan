@@ -39,9 +39,9 @@ describe("bridge player_entered_place + map triggers", () => {
       name: "La Posada",
     });
     narrative.recordSceneLoaded("scene_tavern", {
-      room_id: "scene_tavern",
+      scene_id: "scene_tavern",
       place_id: "tavern",
-      room_description: "la posada",
+      scene_description: "la posada",
     });
     narrative.worldMap.addTrigger("tavern", {
       id: "greet",
@@ -88,9 +88,9 @@ describe("bridge player_entered_place + map triggers", () => {
 
     narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
     narrative.recordSceneLoaded("scene_cueva", {
-      room_id: "scene_cueva",
+      scene_id: "scene_cueva",
       place_id: "cueva",
-      room_description: "la cueva",
+      scene_description: "la cueva",
     });
     narrative.worldMap.addTrigger("cueva", {
       id: "al_entrar",
@@ -134,9 +134,9 @@ describe("bridge player_entered_place + map triggers", () => {
     narrative.startNewSession("plugtest");
     narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
     narrative.recordSceneLoaded("scene_cueva", {
-      room_id: "scene_cueva",
+      scene_id: "scene_cueva",
       place_id: "cueva",
-      room_description: "la cueva",
+      scene_description: "la cueva",
     });
     narrative.worldMap.addTrigger("cueva", {
       id: "al_entrar",
@@ -168,8 +168,8 @@ describe("bridge player_entered_place + map triggers", () => {
     narrative.worldMap.upsertPlace({ id: "bosque", kind: "landmark", parent_id: "world", name: "Bosque" });
     // Desde la aldea se sale al bosque por el sur ⇒ desde el bosque, por el norte.
     narrative.worldMap.addLink({ from: "aldea", to: "bosque", kind: "path", edge: "south" });
-    narrative.recordSceneLoaded("scene_aldea", { room_id: "scene_aldea", place_id: "aldea", room_description: "x" });
-    narrative.recordSceneLoaded("scene_bosque", { room_id: "scene_bosque", place_id: "bosque", room_description: "x" });
+    narrative.recordSceneLoaded("scene_aldea", { scene_id: "scene_aldea", place_id: "aldea", scene_description: "x" });
+    narrative.recordSceneLoaded("scene_bosque", { scene_id: "scene_bosque", place_id: "bosque", scene_description: "x" });
 
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);

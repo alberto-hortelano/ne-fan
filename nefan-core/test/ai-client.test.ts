@@ -139,11 +139,11 @@ describe("AiClient", () => {
     const client = new AiClient({
       baseUrl: "http://test",
       fetchImpl: mockFetch(() =>
-        new Response(JSON.stringify({ room_id: "r1", objects: [] }), { status: 200 }),
+        new Response(JSON.stringify({ scene_id: "r1", objects: [] }), { status: 200 }),
       ),
     });
     const r = await client.generateScene(ctx);
     assert.equal(r.ok, true);
-    assert.equal((r.scene as { room_id: string }).room_id, "r1");
+    assert.equal((r.scene as { scene_id: string }).scene_id, "r1");
   });
 });

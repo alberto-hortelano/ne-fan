@@ -69,7 +69,7 @@ function makeSnapshot(worldDocHash: string): WorldSnapshot {
     world_doc_hash: worldDocHash,
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
-    scenes: { tile_0_0: { room_id: "tile_0_0", room_description: "arranque" } },
+    scenes: { tile_0_0: { scene_id: "tile_0_0", scene_description: "arranque" } },
     entry_scene_id: "tile_0_0",
   };
 }

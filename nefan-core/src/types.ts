@@ -89,9 +89,6 @@ export interface EnemyState {
 }
 
 export interface WorldState {
-  room_id: string;
-  room_data: Record<string, unknown>;
-  rooms_visited: Record<string, unknown>;
   region: string;
   time_of_day: string;
   atmosphere: string;

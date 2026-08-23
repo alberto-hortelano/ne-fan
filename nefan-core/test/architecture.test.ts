@@ -180,6 +180,64 @@ describe("fronteras arquitectónicas", () => {
       "las carpetas de las vistas retiradas tienen que saltar en cualquier proceso",
     );
 
+    // Los TRES alias de sala (#175). `room_id`/`room_description` los emitía
+    // formatDToWorld DUPLICADOS junto a scene_id/scene_description, y el
+    // saneador de ai_server reescribía el uno desde el otro: el sitio por el
+    // que vuelven es una fixture o un dump de escena copiado a mano, no
+    // escribir código nuevo. `style_tag` volvía por el world.md de un juego,
+    // que es prosa para el modelo y no la compila nadie.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/scene/scene-normalize.ts",
+          text: "return {\n  room_id: raw.scene_id,\n};\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'data["room_description"] = data["scene_description"]\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/scenes/robledo_tile.json",
+          text: '{\n  "scene_id": "tile_0_0",\n  "style_tag": "settlement"\n}\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/games/x/world.md",
+          text: "Preferir escenas con `style_tag` settlement.\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/narrative_schemas.py:1",
+        "nefan-core/data/games/x/world.md:1",
+        "nefan-core/data/scenes/robledo_tile.json:3",
+        "nefan-core/src/scene/scene-normalize.ts:2",
+      ],
+      "los alias de sala tienen que saltar en el código, en el saneador y en los datos",
+    );
+
+    // Y sus vecinos VIVOS, callados: `room_data` es el sobre del wire MCP y
+    // `roomId` el mensaje `load_room` del protocolo. Si el patrón los cazara,
+    // el gate nacería rojo contra dos campos en uso.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "narrative-mcp/server.ts",
+          text: "async ({ room_data }) => JSON.parse(room_data)\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/protocol/messages.ts",
+          text: "interface LoadRoom { roomId: string }\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "el sobre del wire MCP y el roomId del protocolo siguen vivos",
+    );
+
     // Vecinos inocentes de ESTOS dos: el patrón casa PALABRAS completas, así
     // que `proscenio` (la palabra española, que aparece en los comentarios que
     // explican qué murió) y un identificador que solo las contenga se quedan

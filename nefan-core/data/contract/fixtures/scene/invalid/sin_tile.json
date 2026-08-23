@@ -1,0 +1,24 @@
+{
+  "description": "Format D tiene UNA variante: sin `tile` es la escena suelta retirada (issue #172)",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "aldea_suelta",
+    "scene_description": "Una aldea sin sitio en el mundo.",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      }
+    ]
+  }
+}

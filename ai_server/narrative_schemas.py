@@ -52,6 +52,30 @@ RESERVED_TERRAIN = {
 
 VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
 
+
+def _npc_roles_del_contrato() -> set:
+    """Vocabulario de `role` de un NPC, LEÍDO del tool compartido.
+
+    Fuente única: `NPC_ROLES` (nefan-core/src/simulation/npc-roles.ts), que
+    genera el enum de `spawn_entity` por codegen y del que se copia el de
+    `entities[].role` en generate_scene.json (un test de deriva compara los
+    dos). Aquí se LEE ese JSON en vez de escribir los cuatro valores a mano:
+    un cuarto sitio que copiar es un cuarto sitio del que separarse, y esta
+    tanda existe justo porque el contrato y el saneador ya se habían separado.
+    Fail-loud al importar si el tool se queda sin enum.
+    """
+    props = GENERATE_SCENE_TOOL["input_schema"]["properties"]["entities"]["items"]["properties"]
+    roles = props.get("role", {}).get("enum")
+    if not isinstance(roles, list) or not roles:
+        raise ValueError(
+            "generate_scene.json: `entities[].role` sin enum — el vocabulario de roles "
+            "de NPC es obligatorio (espejo de NPC_ROLES en nefan-core)"
+        )
+    return set(roles)
+
+
+NPC_ROLES = _npc_roles_del_contrato()
+
 # Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
 # GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.
 # "hill" = relieve suave declarable (h en metros, ±6, sin colisión).
@@ -443,18 +467,9 @@ def validate_scene_response(data: dict) -> dict:
     import uuid as _uuid
 
     # ── Identity & description ───────────────────────────────────────────
-    scene_id = (
-        data.get("scene_id")
-        or data.get("room_id")  # legacy alias
-        or f"scene_{_uuid.uuid4().hex[:8]}"
-    )
+    scene_id = data.get("scene_id") or f"scene_{_uuid.uuid4().hex[:8]}"
     data["scene_id"] = scene_id
-    # Keep `room_id` as alias so older clients keep working.
-    data["room_id"] = scene_id
-    data["scene_description"] = (
-        data.get("scene_description") or data.get("room_description") or "Un paraje desolado."
-    )
-    data["room_description"] = data["scene_description"]
+    data["scene_description"] = data.get("scene_description") or "Un paraje desolado."
     data["ambient_event"] = data.get("ambient_event") or ""
 
     # ── Tile (Format D v3, plano continuo) ───────────────────────────────
@@ -471,7 +486,6 @@ def validate_scene_response(data: dict) -> dict:
         tx, ty = raw_tile["tx"], raw_tile["ty"]
         data["tile"] = {"tx": tx, "ty": ty}
         data["scene_id"] = f"tile_{tx}_{ty}"
-        data["room_id"] = data["scene_id"]
         data.pop("size", None)
         data.pop("terrain", None)
         cols, rows = 128, 128
@@ -531,13 +545,12 @@ def validate_scene_response(data: dict) -> dict:
     # pinta con style_token + lámina de superficies + refs de CARA. El gate la
     # RECHAZA aguas arriba (pre-flight MCP); aquí se descarta con traza, como
     # `stage`. La que sigue viva es la de cada NPC (`entities[].style_ref`).
-    for _retirado in ("style_ref", "style_tag"):
-        if data.pop(_retirado, None) is not None:
-            print(
-                f"validate_scene_response: {_retirado} de escena descartado "
-                "(la ref de escena se retiró con el repintado del tile)",
-                flush=True,
-            )
+    if data.pop("style_ref", None) is not None:
+        print(
+            "validate_scene_response: style_ref de escena descartado "
+            "(la ref de escena se retiró con el repintado del tile)",
+            flush=True,
+        )
 
     # ── Terrain legend ───────────────────────────────────────────────────
     # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
@@ -687,6 +700,26 @@ def validate_scene_response(data: dict) -> dict:
         # se perdía en silencio y TODO NPC caía al rol por defecto.
         if isinstance(ent.get("style_ref"), str) and ent["style_ref"]:
             clean_ent["style_ref"] = ent["style_ref"]
+        # Los otros DOS campos con los que el motor viste y anima al NPC, y que
+        # se caían aquí por el mismo agujero que `style_ref` antes de su fix:
+        #   · `role` — preset de conducta (npc-roles.ts). Sin él, TODO NPC de
+        #     escena es un villager: un guardia declarado ni se queda quieto ni
+        #     percibe la pelea.
+        #   · `description` — el prompt del skin IA. Sin ella se pinta desde el
+        #     nombre propio del personaje, que no describe a nadie.
+        # `role` va contra el enum del contrato y LANZA: un oficio inventado
+        # ("herrero") no degrada a villager en silencio, vuelve al motor con el
+        # vocabulario y el sitio donde sí va el oficio.
+        if ent.get("role") is not None:
+            if ent["role"] not in NPC_ROLES:
+                raise ValueError(
+                    f"entity '{eid}': `role` '{ent['role']}' no está en el vocabulario; "
+                    f"permitidos: {sorted(NPC_ROLES)}. El oficio va en `name`/`description`, "
+                    "no en `role` (que es el preset de conducta)"
+                )
+            clean_ent["role"] = ent["role"]
+        if isinstance(ent.get("description"), str) and ent["description"].strip():
+            clean_ent["description"] = ent["description"].strip()
         if isinstance(ent.get("texture_hash"), str):
             clean_ent["texture_hash"] = ent["texture_hash"]
         if isinstance(ent.get("model_hash"), str):
@@ -922,6 +955,21 @@ def validate_narrative_reaction(data: dict | None) -> dict:
             }
             if c.get("name"):
                 entry["name"] = str(c["name"])
+            # El MISMO par que en una entity de escena (clean_ent), y por el
+            # mismo motivo: esta reconstrucción por allow-list corre en las DOS
+            # vías —API directa y MCP (llm_client.sendVisionResponse)— así que
+            # `role` y `style_ref` estaban declarados en el zod, consumidos por
+            # el cliente y NO llegaban nunca: vivos de contrato, muertos de
+            # datos. `role` contra el enum, fail-loud como en la escena.
+            if c.get("role") is not None:
+                if c["role"] not in NPC_ROLES:
+                    raise ValueError(
+                        f"spawn_entity[{idx}].role='{c['role']}' invalid; "
+                        f"allowed: {sorted(NPC_ROLES)}"
+                    )
+                entry["role"] = c["role"]
+            if c.get("style_ref"):
+                entry["style_ref"] = str(c["style_ref"])
             if c.get("texture_hash"):
                 entry["texture_hash"] = str(c["texture_hash"])
             if c.get("model_hash"):

@@ -19,6 +19,8 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
       "shape": "box"|"cylinder"|"sphere"|"cone",     // optional; default box
       "h": <metres>,                                 // height in METRES — ALWAYS declare it for furniture/props (table 0.75, bench 0.45, barrel 0.9, shelf 2.0…); without it the engine falls back to semantic defaults by label, generic per-kind otherwise
+      "role": "peasant"|"guard"|"villager"|"merchant", // NPCs: BEHAVIOUR preset (see DRESSING AND BEHAVIOUR below). Not the job. Omitted ⇒ villager
+      "description": "<spanish, one line>",          // NPCs: what they LOOK LIKE — the prompt that paints their skin. REQUIRED for every named NPC
       "style_ref": "<character ref id>" },           // NPCs only, optional: id from world.style_refs.characters whose description best matches this NPC's look (guides the AI skin); missing/unknown falls back to a role-derived default
     ...
   ]
@@ -96,6 +98,23 @@ ENTITY RULES
   bigger; carts/log piles 2×1.
 - NPCs and player are always 1×1.
 - Place NPCs at their workspot (smith near smithy, innkeeper at inn's door).
+
+DRESSING AND BEHAVIOUR OF AN NPC (`description` + `role`)
+- `description` is REQUIRED for every NPC you name. It is not flavour text: it
+  is the prompt that PAINTS the character, so write what they look like, in
+  Spanish, in one line — build, clothes, tools, hair ("herrero fornido con
+  mandil de cuero quemado"). Without it the engine paints them from their
+  proper name, and "Beltrán" describes nobody: you get the same anonymous
+  villager for every person in the world.
+- `role` is the BEHAVIOUR preset the simulation runs, and there are exactly
+  four: `guard` holds its post and steps into a fight nearby; `merchant` stays
+  close to its stall; `peasant` and `villager` wander and flee from combat.
+- `role` is NOT the job. A smith, a mayor, a miller or an innkeeper are
+  `merchant` or `villager` who happen to have a trade — the trade goes in
+  `name` and `description`, which is where it is actually SEEN. Inventing a
+  role ("herrero", "alcaldesa") is rejected and you will be asked to re-answer.
+- Same four values as `spawn_entity`, so an NPC you spawn later behaves like
+  the one you placed on the map.
 - Player starts where the narrative says they enter the scene.
 - "decor" = purely aesthetic set dressing: wall torches, banners, rugs, cobwebs,
   hanging signs, stains. Visible on the map but NO collision and NO interaction.

@@ -60,7 +60,7 @@ describe("createSimCollisionProvider", () => {
     // Escena legacy (no Format D) no rompe.
     const s = new NarrativeState(new MemorySessionStorage());
     s.startNewSession("plugtest");
-    s.recordSceneLoaded("vieja_cripta", { room_id: "vieja_cripta", npcs: [] });
+    s.recordSceneLoaded("vieja_cripta", { scene_id: "vieja_cripta", npcs: [] });
     const legacy = createSimCollisionProvider(s);
     assert.ok(!legacy.blocksCircle(0, 0, 0.5));
   });

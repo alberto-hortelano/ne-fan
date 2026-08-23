@@ -19,10 +19,12 @@ export function applyReducer(
       if (payload.pitch !== undefined) state.player.camera_pitch = payload.pitch as number;
       break;
 
+    // Dos nombres del protocolo para la MISMA escritura: el bridge distingue
+    // daño de curación al emitir (y el cliente lo pinta distinto), pero aquí
+    // los dos son "el HP nuevo es este". Estaban duplicados línea a línea, y
+    // eso hacía inmortal a un mutante: vaciar un `case` caía en el otro y el
+    // estado quedaba igual, así que ningún test podía enterarse.
     case "player_damaged":
-      state.player.hp = (payload.new_hp as number) ?? state.player.hp;
-      break;
-
     case "player_healed":
       state.player.hp = (payload.new_hp as number) ?? state.player.hp;
       break;
@@ -81,26 +83,10 @@ export function applyReducer(
       break;
     }
 
-    case "room_changed":
-      // World-only: room_id + room_data. Enemies are projected from
-      // NarrativeState via the dedicated `enemies_projected` action so a
-      // room_changed without enemies no longer wipes the combat list — see
-      // next.md §1.3 and src/store/state-projection.ts.
-      state.world.room_id = (payload.room_id as string) ?? "";
-      state.world.room_data = payload.room_data
-        ? structuredClone(payload.room_data as Record<string, unknown>)
-        : {};
-      break;
-
     case "enemies_projected":
       state.enemies = payload.enemies
         ? structuredClone(payload.enemies as EnemyState[])
         : [];
-      break;
-
-    case "room_visited":
-      state.world.rooms_visited[payload.room_id as string] =
-        payload.room_data !== undefined ? structuredClone(payload.room_data) : {};
       break;
 
     case "weapon_changed":

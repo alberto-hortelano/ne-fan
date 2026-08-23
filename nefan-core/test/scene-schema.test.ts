@@ -13,8 +13,10 @@ import { resolve } from "node:path";
 
 import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
+import { NPC_ROLES } from "../src/simulation/npc-roles.js";
 
 const SCENES = fileURLToPath(new URL("../data/scenes", import.meta.url));
+const TOOLS = fileURLToPath(new URL("../data/contract/tools", import.meta.url));
 
 function accepts(scene: unknown): true | string {
   const r = FormatDSceneSchema.safeParse(scene);
@@ -84,7 +86,7 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
   });
 
   it("tolera campos legacy por passthrough (no rechaza)", () => {
-    assert.equal(accepts({ ...base, room_id: "s", ambient_event: "viento", style_tag: "x", exits: [] }), true);
+    assert.equal(accepts({ ...base, ambient_event: "viento", exits: [] }), true);
   });
 });
 
@@ -139,5 +141,62 @@ describe("FormatDSceneSchema — solo queda el tile", () => {
   it("con `tile` pasa: la retirada no toca a la variante viva", () => {
     const tile = { scene_id: "tile_0_0", scene_description: "campo", tile: { tx: 0, ty: 0 }, biome: "grass", entities: [] };
     assert.equal(accepts(tile), true);
+  });
+});
+
+/** El rechazo de un rol inventado es el ÚNICO modo de fallo nuevo que esta
+ *  tanda le añade al motor, así que su mensaje es parte del contrato: el
+ *  pre-flight MCP se lo pega al `isError` de narrative_respond y el motor
+ *  re-responde con él delante, en bucle, ANTES de que la escena llegue a
+ *  nadie. `formatError` solo le enseña el PRIMER issue, de modo que ese
+ *  primero tiene que bastar para arreglarlo sin adivinar. */
+describe("FormatDSceneSchema — un rol inventado vuelve al modelo accionable", () => {
+  const tileCon = (npc: Record<string, unknown>) => ({
+    scene_id: "tile_0_0",
+    scene_description: "El pueblo, a media mañana.",
+    tile: { tx: 0, ty: 0 },
+    biome: "dirt",
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+      { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+    ],
+  });
+
+  it("nombra AL NPC por su id, el rol ofensor y los cuatro valores", () => {
+    const res = validateContract(
+      FormatDSceneSchema,
+      tileCon({ id: "boris_herrero", name: "Boris el Herrero", role: "herrero" }),
+    );
+    assert.equal(res.ok, false, "un oficio en `role` no puede colarse");
+    if (res.ok) return;
+    // El id: con ochenta entidades en un tile, "entities[37]" obliga a contar.
+    assert.match(res.error, /boris_herrero/, res.error);
+    assert.match(res.error, /"herrero"/, res.error);
+    for (const rol of NPC_ROLES) assert.match(res.error, new RegExp(rol), res.error);
+    // Y dónde SÍ va el oficio: sin esto el motor solo sabe que se equivocó.
+    assert.match(res.error, /`name`/, res.error);
+    assert.match(res.error, /`description`/, res.error);
+  });
+
+  it("el mensaje es el MISMO que da el saneador de ai_server", () => {
+    // Los dos procesos rechazan por la misma lista; si divergieran, ai_server
+    // lanzaría DESPUÉS del pre-flight y ahí ya no hay re-respuesta: el tile se
+    // pierde (llm_client.py lo trata como divergencia de reglas, y lo es).
+    const espejo = JSON.parse(
+      readFileSync(resolve(TOOLS, "generate_scene.json"), "utf-8"),
+    ) as { input_schema: { properties: { entities: { items: { properties: { role: { enum: string[] } } } } } } };
+    assert.deepEqual(
+      espejo.input_schema.properties.entities.items.properties.role.enum,
+      [...NPC_ROLES],
+      "el enum que lee ai_server tiene que ser el que rechaza este gate",
+    );
+  });
+
+  it("cada rol del vocabulario pasa (el gate no rechaza de más)", () => {
+    for (const rol of NPC_ROLES) {
+      assert.equal(accepts(tileCon({ id: `npc_${rol}`, name: "X", role: rol })), true, rol);
+    }
+    // Y sin `role`, que sigue siendo opcional.
+    assert.equal(accepts(tileCon({ id: "anon", name: "Aldeano" })), true);
   });
 });

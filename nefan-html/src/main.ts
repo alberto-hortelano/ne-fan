@@ -770,7 +770,7 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
   const key = isGridTile
     ? tileKey(tile!.tx, tile!.ty)
-    : String(data.scene_id ?? data.room_id ?? "scene");
+    : String(data.scene_id ?? "scene");
   const firstTile = tileStore.entries.size === 0;
 
   // Rect mundial del tile (los tiles de grid lo derivan de la geometría core;

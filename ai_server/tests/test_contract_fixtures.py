@@ -6,6 +6,7 @@ los validadores espejo TS de narrative-mcp (test/contract-fixtures.test.ts):
 si alguien endurece o relaja un lado sin el otro, uno de los dos suites rompe
 en CI en vez de divergir en silencio.
 """
+import copy
 import json
 import sys
 import unittest
@@ -17,6 +18,7 @@ from narrative_schemas import (  # noqa: E402
     validate_ground,
     validate_volumes,
     validate_narrative_reaction,
+    validate_scene_response,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "nefan-core" / "data" / "contract" / "fixtures"
@@ -41,6 +43,14 @@ def accepts_reaction(payload) -> bool:
         return False
 
 
+def accepts_scene(payload) -> bool:
+    try:
+        validate_scene_response(copy.deepcopy(payload))
+        return True
+    except ValueError:
+        return False
+
+
 class TestContractFixtures(unittest.TestCase):
     def _run(self, kind: str, accepts):
         for name, fx in load_fixtures(kind):
@@ -57,6 +67,14 @@ class TestContractFixtures(unittest.TestCase):
 
     def test_reaction(self):
         self._run("reaction", lambda fx: accepts_reaction(fx["payload"]))
+
+    def test_scene(self):
+        """Escena Format D: espejo de FormatDSceneSchema (el gate del
+        pre-flight MCP). Es el set que sujeta el VOCABULARIO de `role` — el zod
+        con `z.enum(NPC_ROLES)`, este saneador leyendo el enum del tool — para
+        que no vuelvan a separarse sin que nadie se entere. `copy.deepcopy`
+        porque validate_scene_response MUTA lo que recibe."""
+        self._run("scene", lambda fx: accepts_scene(fx["payload"]))
 
 
     def test_ground_plan(self):
