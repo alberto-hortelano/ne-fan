@@ -13,6 +13,8 @@
 import { TILE_CELLS } from "../tile.js";
 import { volumeFootprint } from "./footprint.js";
 import { fnv1a, seededRng, uniform } from "../../rng.js";
+import { buildScatterExclusions } from "./scatter.js";
+import type { GroundFeature } from "./ground.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
 
 interface RawDoor {
@@ -64,6 +66,10 @@ export interface DeriveInput {
   scene_id?: string;
   structures?: RawStructure[];
   vegetation_zones?: RawZone[];
+  /** Rasgos del suelo YA parseados (el fail-loud vive en el call site): el
+   *  scatter de `vegetation_zones` los esquiva — ver
+   *  `scatterVegetationVolumes`, que dice también qué queda fuera. */
+  ground?: GroundFeature[];
   /** Entities del esquema — las estáticas (building/tree/prop/decor) derivan
    *  su volumen para que el blueprint las pinte proyectadas (sin esto, el
    *  cliente caería a cajas sin proyectar sobre el plan). */
@@ -170,10 +176,41 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
     blockers.push(rect);
   }
 
-  const zones = Array.isArray(raw.vegetation_zones) ? raw.vegetation_zones : [];
   const placed: [number, number][] = declared
     .filter((v) => v.type === "tree")
     .map((v) => (v as Extract<Volume, { type: "tree" }>).at as [number, number]);
+  out.push(...scatterVegetationVolumes(raw, blockers, placed));
+  return out;
+}
+
+/** `vegetation_zones` → árboles/matas dispersos: scatter ralo y determinista
+ *  (SeededRng por `scene_id` + índice de zona). Rechaza por `blockers` (con
+ *  margen ±3 celdas), por separación mínima entre plantas y por el SUELO
+ *  declarado.
+ *
+ *  La exclusión de suelo es el MISMO predicado que gobierna el scatter de
+ *  detalle fps y el relieve (`buildScatterExclusions`): las tres rutas del
+ *  blueprint esquivan lo mismo — huellas, agua, decks y la banda del camino
+ *  (w/2 + 0,5). **Qué queda FUERA**: se ancla en `ground`, así que el agua o
+ *  los caminos declarados SOLO como chars de `terrain_patches` no la ven —
+ *  esos los esquiva la otra ruta de vegetación, la del grid ya rasterizado
+ *  (`expandScenePrimitives` en `scene-expand.ts`). Los parches de material
+ *  (`kind: "area"` — plaza, huerto) SÍ se pueblan: son material, y una zona
+ *  declarada sobre un huerto debe poder plantarse.
+ *
+ *  `placed` entra con los árboles que declaró el motor (semillas de
+ *  separación) y sale con los colocados aquí: mutación in-place a propósito,
+ *  para que las zonas sucesivas se separen también de las anteriores. */
+function scatterVegetationVolumes(
+  raw: DeriveInput,
+  blockers: [number, number, number, number][],
+  placed: [number, number][],
+): Volume[] {
+  const out: Volume[] = [];
+  const zones = Array.isArray(raw.vegetation_zones) ? raw.vegetation_zones : [];
+  // Volumes `[]` a propósito: las huellas ya se miran arriba con margen ±3,
+  // más ancho que el ±0,5 del predicado.
+  const onGround = buildScatterExclusions([], raw.ground ?? []);
   for (let zi = 0; zi < zones.length; zi++) {
     const zone = zones[zi];
     const density = typeof zone?.density === "number" ? Math.min(1, Math.max(0, zone.density)) : 0;
@@ -193,6 +230,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): V
       const u = uniform(rng, area[0] + 2, area[0] + area[2] - 2);
       const v = uniform(rng, area[1] + 2, area[1] + area[3] - 2);
       if (blockers.some((r) => u > r[0] - 3 && u < r[0] + r[2] + 3 && v > r[1] - 3 && v < r[1] + r[3] + 3)) continue;
+      if (onGround(u, v)) continue; // camino, agua o deck declarado
       if (placed.some(([pu, pv]) => (pu - u) * (pu - u) + (pv - v) * (pv - v) < minSep * minSep)) continue;
       placed.push([u, v]);
       const s = Math.round(uniform(rng, isBush ? 0.7 : 0.75, isBush ? 1.1 : 1.2) * 100) / 100;

@@ -9,7 +9,7 @@ import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
+import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import {
   deriveVolumesFromSchema,
@@ -742,6 +742,7 @@ function composeTilePlan(
       structures: raw.structures as never,
       vegetation_zones: raw.vegetation_zones as never,
       entities: raw.entities as never,
+      ground,
     },
     declared,
   );
@@ -836,7 +837,16 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
   if (prevEntry?.svgApplied && !sceneChanged) {
     tileStore.setSvgCollider(key, prevEntry.svgCollider);
   } else if (plan) {
-    applyPlanCollision(key, { ground: plan.ground, volumes: plan.volumes }, rect, tileStore);
+    // La leyenda de ESTA escena decide si el agua declarada bloquea: un vado
+    // (`{name, solid:false}`) tiene que abrirse en las DOS fuentes o el
+    // jugador rebota contra un río que el autor abrió.
+    applyPlanCollision(
+      key,
+      { ground: plan.ground, volumes: plan.volumes },
+      rect,
+      tileStore,
+      (data.terrain_grid as TerrainGridData | undefined)?.solid_chars ?? DEFAULT_SOLID_CHARS,
+    );
   }
   // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
   // spawn explícito). En el resto de tiles el jugador entra andando.

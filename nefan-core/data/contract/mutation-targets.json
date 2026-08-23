@@ -187,13 +187,14 @@
       "id": "scene-normalize",
       "mutate": ["src/scene/scene-normalize.ts"],
       "tests": [
+        "test/plan-collision.test.ts",
         "test/scene-expand.test.ts",
         "test/scene-normalize.test.ts",
         "test/terrain-collision.test.ts",
         "test/tile.test.ts"
       ],
       "break": 98,
-      "porque": "Format D → world scene: el único camino hasta lo que el cliente pinta. Los cuatro son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión."
+      "porque": "Format D → world scene: el único camino hasta lo que el cliente pinta. Son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión. plan-collision entra el 2026-08-23 con el vado, y entra porque el candado de imports lo obliga: ejerce `resolveTerrainLegend` (misma escena con `w: \"agua\"` y con `w: {name, solid:false}`), pero NO sube el score — medido las dos veces el 2026-08-23: 98,91 % con él y 98,91 % sin él, cero mutantes nuevos muertos y 70 s en vez de 54 s. Esos mutantes ya los mataba scene-normalize.test.ts. Se queda porque meterlo en `excluidos` sería mentira (importa el fichero mutado de verdad); si hay que abaratar este módulo, este es el candidato."
     },
     {
       "id": "plugins-dsl",
@@ -267,13 +268,14 @@
       ],
       "tests": [
         "test/blueprint-ground.test.ts",
+        "test/derive-vegetation.test.ts",
         "test/fps-atlas-golden.test.ts",
         "test/fps-riqueza.test.ts",
         "test/plan-collision.test.ts",
         "test/scatter.test.ts"
       ],
       "break": 65,
-      "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
+      "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). derive-vegetation entra desde #174 porque el candado de imports lo obliga: sus casos construyen los rasgos con `parseGround`, que este módulo muta. NO sube el score — medido el 2026-08-23 por QA y confirmado: 65,67 % con él y 65,67 % sin él, cero mutantes nuevos muertos, y la batería paga el fichero una vez por mutante. Se queda porque meterlo en `excluidos` sería mentira (importa un fichero mutado de verdad), no porque mida nada nuevo: si algún día hay que abaratar este módulo, este es el candidato. Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
       "excluidos": [
         {
           "test": "test/contract-fixtures.test.ts",
