@@ -20,6 +20,8 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
+import { rotuloDeStatus } from "@nefan-core/src/protocol/status-labels.js";
+import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import type { Entity } from "./renderer/types.js";
@@ -51,6 +53,7 @@ import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { errors } from "./ui/error-log.js";
+import { paso } from "./ui/async-ui.js";
 import { ActionBar } from "./ui/action-bar.js";
 import { WorldLabels, type WorldLabel } from "./ui/world-labels.js";
 import { PortraitView } from "./ui/portrait.js";
@@ -2130,17 +2133,13 @@ narrativeClient.onNarrativeStatus((status) => {
         hideLoader();
         break;
       case "error": {
-        const detail = status.message ?? "Algo falló generando el tile.";
-        errors.push("narrative", detail);
         if (t) frontier.onTileError(t.tx, t.ty);
-        // Con overlay abierto (bootstrap del mundo o viaje desde «Salidas»)
-        // el error va AL overlay: si no, el jugador se queda mirando un
-        // "Viajando..." que ya no va a terminar nunca.
-        if (!tileStore.hasGridTiles || loaderEl?.classList.contains("visible")) {
-          setLoaderState("error", "Error al generar el mundo", detail);
-        } else {
-          log(`⚠ ${detail.slice(0, 100)}`);
-        }
+        // Qué se lee y DÓNDE lo decide una función pura de core: con overlay
+        // abierto (bootstrap del mundo o viaje desde «Salidas») el error va
+        // AL overlay, porque si no el jugador se queda mirando un
+        // "Viajando..." que ya no va a terminar nunca; una frontera que se
+        // genera sola en segundo plano, a la línea de mensajes.
+        pintarFalloDelMotor(status);
         break;
       }
     }
@@ -2162,12 +2161,9 @@ narrativeClient.onNarrativeStatus((status) => {
       case "ready":
         hideLoader();
         break;
-      case "error": {
-        const detail = status.message ?? "Algo falló en el motor narrativo.";
-        errors.push("narrative", detail);
-        setLoaderState("error", "Error al generar la escena", detail);
+      case "error":
+        pintarFalloDelMotor(status);
         break;
-      }
     }
     return;
   }
@@ -2179,11 +2175,25 @@ narrativeClient.onNarrativeStatus((status) => {
   // error-log y a un overlay descartable.
   if (status.phase === "error") {
     interactPendingUntil = 0;
-    const detail = status.message ?? "El motor narrativo rechazó la reacción.";
-    errors.push("narrative", detail);
-    setLoaderState("error", "El motor narrativo rechazó la respuesta", detail);
+    pintarFalloDelMotor(status);
   }
 });
+
+/** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
+ *  `main.ts` pintaba «Error al generar el mundo» y «Error al generar la
+ *  escena» —jerga de motor— encima de un cuerpo que el bridge ya había
+ *  escrito para quien juega (#180). Ahora el rótulo sale de `rotuloDeStatus`
+ *  (nefan-core), que además decide si el fallo tapa la pantalla o se queda en
+ *  la línea de mensajes; el cliente solo pinta. */
+function pintarFalloDelMotor(status: NarrativeStatusMessage): void {
+  const rotulo = rotuloDeStatus(status, {
+    mundoVacio: !tileStore.hasGridTiles,
+    overlayAbierto: loaderEl?.classList.contains("visible") ?? false,
+  });
+  errors.push("narrative", rotulo.detalle);
+  if (rotulo.destino === "overlay") setLoaderState("error", rotulo.titulo, rotulo.detalle);
+  else log(`⚠ ${rotulo.detalle.slice(0, 100)}`);
+}
 
 /** Materializa un `spawn_entity` del motor narrativo EN LA ESCENA VIVA, sin
  *  recargar. El `position` ya viene resuelto en metros mundo por el bridge
@@ -2300,21 +2310,25 @@ narrativeClient.onNarrativeEvent((event) => {
           const t = scene.tile as { tx: number; ty: number } | undefined;
           if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
             // Tile del plano: ADITIVO (los anteriores no desaparecen).
-            void addTile(scene).then(() => {
-              const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
-              if (edge) {
-                // Sin destello de llegada: el feedback ES que el muro de
-                // niebla de esa frontera se disipa y descubre el terreno
-                // nuevo. Un flash encima solo tapaba lo que hay que mirar.
-                const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
-                log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
-              } else {
-                log(`🌍 tile listo: ${effect.entityId}`);
-              }
-            });
+            paso(
+              addTile(scene).then(() => {
+                const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
+                if (edge) {
+                  // Sin destello de llegada: el feedback ES que el muro de
+                  // niebla de esa frontera se disipa y descubre el terreno
+                  // nuevo. Un flash encima solo tapaba lo que hay que mirar.
+                  const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
+                  log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
+                } else {
+                  log(`🌍 tile listo: ${effect.entityId}`);
+                }
+              }),
+              "scene",
+              `el tile ${effect.entityId} llegó pero no se pudo instalar`,
+            );
           } else {
             // Escena legacy (save v3 sin migrar).
-            void loadSceneData(scene);
+            paso(loadSceneData(scene), "scene", `no se pudo cargar la escena ${effect.entityId}`);
             log(`🌍 escena cargada: ${effect.entityId}`);
           }
         } else {
@@ -2335,7 +2349,10 @@ narrativeClient.onNarrativeEvent((event) => {
   }
 });
 
-void bootstrap();
+// `bootstrap` se traga sus propios fallos de sesión, pero no los de la vía de
+// escape (crear el cliente visor, pintar el estado de conexión): sin canal,
+// un fallo ahí dejaba el cliente en negro sin una sola línea que lo dijera.
+paso(bootstrap(), "session", "arrancar el cliente");
 
 async function bootstrap(): Promise<void> {
   let client: GameClient;
@@ -2375,10 +2392,32 @@ async function bootstrap(): Promise<void> {
   }
 }
 
+/** El título es un BUCLE hasta que arranca una partida (#189).
+ *
+ *  Antes se llamaba una sola vez y su `finally` hacía `titleScreen.hide()`
+ *  pasara lo que pasara: cualquier fallo de sesión —un save borrado, un
+ *  plugin que no casa, un sistema de combate desconocido— dejaba al jugador
+ *  en una pantalla sin nada que pulsar, y la única salida era recargar. Ahora
+ *  el fallo vuelve al título CON su motivo, y el título sigue vivo porque
+ *  `show()` rearma su promesa en cada vuelta.
+ *
+ *  El `hide()` solo ocurre en el camino de ÉXITO. */
 async function runTitleFlow(): Promise<void> {
+  let aviso: string | undefined;
+  for (;;) {
+    const seguir = await unIntentoDeArrancar(aviso);
+    if (seguir === null) return; // partida en marcha
+    aviso = seguir;
+  }
+}
+
+/** Un intento: enseña el título, espera la elección y la ejecuta. Devuelve
+ *  `null` si la partida arrancó, o el motivo que hay que enseñar en el título
+ *  si no. Solo relanza si es el propio título el que no se puede pintar. */
+async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
   let action: TitleAction;
   try {
-    action = await titleScreen.show();
+    action = await titleScreen.show({ aviso });
   } catch (err) {
     titleScreen.hide();
     setLoaderState(
@@ -2458,16 +2497,25 @@ async function runTitleFlow(): Promise<void> {
       if (underResume) setActiveClientTile(underResume.key);
     }
   } catch (err) {
-    setLoaderState(
-      "error",
-      "No se pudo iniciar la sesión",
-      (err as Error).message,
-    );
     errors.push("session", "session start/resume failed", err);
-    throw err;
-  } finally {
-    titleScreen.hide();
+    // El error va AL TÍTULO, no al loader: el título tiene z-index 9999 y el
+    // loader 70, así que un título de vuelta escondería el error debajo y el
+    // jugador volvería a la pantalla inicial sin saber por qué.
+    hideLoader();
+    // La sesión pudo quedar a medio aplicar (el fallo puede llegar después de
+    // `applySessionReady`): sin esto, el segundo intento arrancaría sobre los
+    // tiles del primero.
+    resetWorld();
+    activeSessionId = null;
+    const que =
+      action.kind === "new_game"
+        ? "No se pudo empezar la partida"
+        : "No se pudo reanudar la partida";
+    return `${que}: ${(err as Error).message}`;
   }
+  // Solo aquí: la partida está en marcha y el título deja de hacer falta.
+  titleScreen.hide();
+  return null;
 }
 
 scheduleNextFrame();

@@ -530,6 +530,71 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // La deuda nueva de esta tanda (#181). Hace falta probarla en negativo por
+  // partida doble: es `warn` con un `max` congelado —o sea, hoy está "verde"
+  // por definición— y además su patrón lleva DOS exclusiones deliberadas (el
+  // `.catch` en la misma línea y el `void main()` del GLSL). Un patrón que
+  // excluye de más no se distingue de uno que no caza nada mirando el conteo.
+  it("[deuda] html-sin-promesa-muda: el void mudo salta; el que tiene canal y el GLSL, no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "html-sin-promesa-muda");
+
+    // Las tres formas que tenía el cliente: el `void` suelto, el que va dentro
+    // de un handler de una línea y el que viaja como argumento.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // Literalmente #181: el click de «Nueva partida» hasta esta PR.
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: 'newBtn.addEventListener("click", () => {\n  void this.renderWorldSelect();\n});\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/x.ts",
+          text: 'btn.addEventListener("click", () => void this.onModeBadge(btn, sessions));\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/y.ts",
+          text: "setInterval(() => void this.poll(), POLL_MS);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/ui/title-screen.ts:2",
+        "nefan-html/src/ui/x.ts:1",
+        "nefan-html/src/ui/y.ts:1",
+      ],
+      "un void sin canal tiene que saltar, esté suelto o dentro de un handler",
+    );
+
+    // Y lo que NO es una promesa muda: el `void p.catch(...)` (que sí tiene
+    // canal), `paso()` (el sustituto), el `void main()` del GLSL — que no es
+    // JavaScript ni es una promesa — y un `void 0`.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: 'void ctrl.onActiveTile(key).catch((err: unknown) => errors.push("scene", "falló", err));\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: 'paso(this.renderWorldSelect(), "title", "abrir el selector de mundos");\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/fps-gl.ts",
+          text: '"varying float vY; void main(){ vY = normalize(position).y; }",\n',
+          imports: [],
+        },
+        { path: "nefan-html/src/ui/z.ts", text: "const nada = void 0;\n", imports: [] },
+      ]),
+      [],
+      "un void con catch, el sustituto, el GLSL y `void 0` no son promesas mudas",
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

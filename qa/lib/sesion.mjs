@@ -20,27 +20,40 @@ export async function backendEsFalso(ctx) {
   });
 }
 
-/** El home del título se termina de armar ASÍNCRONAMENTE: `renderHome` pinta
- *  el botón «Nueva partida» de una tacada en el `innerHTML` y solo le cuelga
- *  el handler DESPUÉS de `await listSessions()`. Entre las dos cosas hay una
- *  ventana —151 ms medidos contra el bridge del preset 5— en la que el botón
- *  existe, se deja pulsar y el click NO HACE NADA.
+/** El título está en pantalla y su botón de partida nueva, pintado.
  *
- *  Esperar a que el botón exista es, por tanto, esperar a la señal
- *  equivocada: el guion pulsa dentro de la ventana y luego se queda colgado
- *  esperando una pantalla que nadie va a pintar. La señal buena es el status,
- *  que `renderHome` fija justo antes de enganchar el handler y sin ningún
- *  `await` por medio: si el texto ya se ve desde fuera, el handler está
- *  puesto.
+ *  HASTA #181 esto no bastaba, y aquí vivía el workaround que lo decía: el
+ *  botón se pintaba de una tacada en el `innerHTML` y `renderHome` solo le
+ *  colgaba el handler DESPUÉS de `await listSessions()` —151 ms medidos, hasta
+ *  30 s si el bridge tardaba—, así que la espera tenía que colarse por la
+ *  puerta de atrás y mirar el texto de `#ts-status` para adivinar que el
+ *  handler ya estaba puesto. Los quince guiones que pasan por aquí esquivaban
+ *  el bug en vez de ejercerlo.
  *
- *  Valen las dos salidas —bridge vivo y bridge caído— a propósito: con el
- *  bridge caído el guion debe seguir y fallar por su propia afirmación, no
- *  por un timeout opaco aquí. */
+ *  Ahora el enganche va en el mismo bloque síncrono que pinta el botón: si el
+ *  botón está en el DOM, escucha. La espera vuelve a ser lo que debía ser —que
+ *  el título haya llegado— y el guion 18 es quien afirma que responde. */
 export async function esperarTituloListo(ctx, maxMs = 30_000) {
   return ctx.waitFor(
-    "el home del título termina de cargar los saves (el botón ya escucha)",
+    "el título está en pantalla con su botón de partida nueva",
+    () => document.getElementById("ts-new")?.textContent ?? null,
+    maxMs,
+  );
+}
+
+/** La lista de partidas del bridge ya ha llegado al título.
+ *
+ *  NO es el workaround de arriba con otro nombre, y la diferencia es toda:
+ *  aquello gateaba el CLICK de «Nueva partida» —una acción que no depende de
+ *  los saves— en la señal de otra cosa. Esto lo espera SOLO quien va a leer la
+ *  lista (la tarjeta de un save, una revisión del home entero), que es
+ *  esperar lo que de verdad se necesita. Vale el bridge caído a propósito: el
+ *  guion debe seguir y fallar por su propia afirmación, no por un timeout
+ *  opaco aquí. */
+export async function esperarListaDeSaves(ctx, maxMs = 30_000) {
+  return ctx.waitFor(
+    "el título termina de listar las partidas guardadas del bridge",
     () => {
-      if (!document.getElementById("ts-new")) return null;
       const t = document.getElementById("ts-status")?.textContent ?? "";
       return /^Bridge OK/.test(t) || /No se puede contactar al bridge/.test(t) ? t : null;
     },
@@ -49,12 +62,49 @@ export async function esperarTituloListo(ctx, maxMs = 30_000) {
 }
 
 /** Abre el selector de mundos desde el home. ÚNICO sitio donde se pulsa
- *  «Nueva partida»: la espera de arriba va incluida para que ningún guion
- *  vuelva a pulsar un botón que todavía no escucha. */
+ *  «Nueva partida». */
 export async function abrirSelectorDeMundos(ctx) {
   await esperarTituloListo(ctx);
   await ctx.page.click("#ts-new");
   await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
+}
+
+/** Borra un save POR EL CABLE DEL BRIDGE, no por la UI.
+ *
+ *  Sirve para producir el repro real de #189: un fallo de sesión con el bridge
+ *  ARRIBA. El save desaparece del disco mientras el título sigue enseñando su
+ *  tarjeta, y «Reanudar» se encuentra un `session_not_found`.
+ *
+ *  Va por WebSocket y no por el botón «Borrar» del título a propósito: ese
+ *  botón abre un `confirm()` del navegador, que BLOQUEA la página y deja al
+ *  harness sin respuesta. Y el bridge sigue siendo el único escritor del save:
+ *  `delete_session` es su propia ruta (`bridge/router.ts`), la misma que usa
+ *  la UI. */
+export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = "ws://127.0.0.1:9877") {
+  const ok = await ctx.page.evaluate(
+    ([url, id]) =>
+      new Promise((res, rej) => {
+        const ws = new WebSocket(url);
+        let contestado = false;
+        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
+        // Un socket que se cierra sin contestar es un fallo, no una espera
+        // eterna: sin esto el guion se colgaría dentro del evaluate.
+        ws.onclose = () => {
+          if (!contestado) rej(new Error(`${url} se cerró sin contestar a delete_session`));
+        };
+        ws.onopen = () => ws.send(JSON.stringify({ type: "delete_session", sessionId: id, requestId: "qa-18" }));
+        ws.onmessage = (ev) => {
+          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
+          if (m.type !== "session_deleted") return;
+          contestado = true;
+          ws.close();
+          res(Boolean(m.ok));
+        };
+      }),
+    [wsUrl, sessionId],
+  );
+  if (!ok) throw new Error(`el bridge no borró el save ${sessionId}`);
+  return ok;
 }
 
 /** Abre partida nueva: mundo → modo de personajes → estilo → Continuar →

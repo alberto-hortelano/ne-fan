@@ -45,7 +45,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { nuevaPartida, comenzar, esperarTituloListo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, esperarListaDeSaves, esperarTituloListo } from "../lib/sesion.mjs";
 
 export const aisla = ["saves"];
 
@@ -237,6 +237,9 @@ export default async function (ctx) {
   await ctx.page.goto(ctx.page.url(), { waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible tras recargar", () => Boolean(window.__nefan));
   await esperarTituloListo(ctx);
+  // La tarjeta del save la pinta `list_sessions`, que llega después del
+  // primer pintado del home: lo que se espera es la LISTA, no el título.
+  await esperarListaDeSaves(ctx);
 
   const tarjeta = await ctx.page.$(`button[data-action="resume"][data-session-id="${sessionId}"]`);
   ctx.expect("el título ofrece REANUDAR la partida recién jugada", Boolean(tarjeta), sessionId);
