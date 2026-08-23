@@ -132,12 +132,17 @@ export function applyPlanCollision(
   plan: { ground?: GroundFeature[]; volumes?: Volume[] },
   rect: { minX: number; minZ: number; maxX: number; maxZ: number },
   tileStore: TileStore,
+  /** `terrain_grid.solid_chars` de ESA escena: la leyenda decide si el agua
+   *  declarada en `ground` bloquea. Un vado (`{name, solid:false}` sobre el
+   *  char del agua) tiene que abrirse también en el plan, o el jugador rebota
+   *  contra un río que el autor abrió. */
+  solidChars: readonly string[],
 ): void {
   try {
     // Agua∖decks del suelo declarado + huellas de los volúmenes, unidos por la
     // MISMA función de core que usa el bridge (sim-collision) — jugador y NPCs
     // colisionan igual sobre el mismo plan.
-    const grid = planCollisionGrid(plan.ground, plan.volumes, rect);
+    const grid = planCollisionGrid(plan.ground, plan.volumes, rect, { solidChars });
     const collider = grid ? createTerrainCollider(grid) : null;
     tileStore.setSvgCollider(key, collider);
     dlog(

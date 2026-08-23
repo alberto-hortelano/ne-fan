@@ -126,26 +126,46 @@ describe("deriveVolumesFromSchema: vegetation_zones", () => {
   it("la fixture robledo_tile: el pinar flanquea el camino real y no lo pisa", () => {
     // Esta fixture es la que sostiene la EVIDENCIA VISUAL del arreglo (preset
     // html-fixtures, selector Room). Sin este candado, alguien le quita la
-    // zona de vegetación o el `ground` del río y la captura de qa/ deja de ser
-    // reproducible sin que nada se ponga rojo.
+    // zona de vegetación o el `ground` del camino y la captura de qa/ deja de
+    // ser reproducible sin que nada se ponga rojo.
     const raw = JSON.parse(
       readFileSync(fileURLToPath(new URL("../data/scenes/robledo_tile.json", import.meta.url)), "utf-8"),
     ) as Record<string, unknown>;
-    // MISMA composición que composeTilePlan (main.ts): ground parseado + derive.
-    const derived = deriveVolumesFromSchema(
-      {
-        scene_id: "robledo_tile",
-        entities: raw.entities as never,
-        vegetation_zones: raw.vegetation_zones as never,
-        ground: suelo(raw.ground as unknown[]),
-      },
-      [],
-    ).filter((v) => v.id.startsWith("derived_veg_"));
+    // MISMA composición que composeTilePlan (main.ts): ground parseado +
+    // derive. Y el MISMO `scene_id`: main.ts pasa la CLAVE DE TILE, no el
+    // scene_id del JSON, y de ahí sale la semilla del scatter — con
+    // "robledo_tile" este test candaba un pinar distinto del que se ve en
+    // pantalla (mismo recuento, otras posiciones).
+    const pinar = (ground?: GroundFeature[]) =>
+      deriveVolumesFromSchema(
+        {
+          scene_id: "tile_0_0",
+          entities: raw.entities as never,
+          vegetation_zones: raw.vegetation_zones as never,
+          ...(ground ? { ground } : {}),
+        },
+        [],
+      ).filter((v) => v.id.startsWith("derived_veg_"));
 
-    assert.ok(derived.length >= 8, `el pinar debe verse: ${derived.length} volúmenes`);
-    // camino_real: y=63,5 · w=4 → banda 2,5 celdas. Río Negro: cols 84..92.
-    assert.deepEqual(derived.filter((v) => Math.abs(at(v)[1] - 63.5) <= 2.5).map(at), [], "calzada libre");
-    assert.deepEqual(derived.filter((v) => at(v)[0] >= 84 && at(v)[0] <= 92).map(at), [], "río libre");
+    // camino_real: y=63,5 · w=4 → banda 2,5 celdas.
+    const enCalzada = (v: Volume) => Math.abs(at(v)[1] - 63.5) <= 2.5;
+    // Aserción PAREADA, y aquí no es un lujo: sin ella basta con mover la zona
+    // lejos del camino para que "calzada libre" salga verde sin comprobar
+    // nada. Este par afirma que la zona de la fixture SIGUE cruzando el
+    // camino, que es lo único que la convierte en evidencia.
+    const sinSuelo = pinar();
+    assert.ok(
+      sinSuelo.filter(enCalzada).length > 0,
+      `la zona debe seguir cruzando la calzada para ser evidencia: ${JSON.stringify(sinSuelo.map(at))}`,
+    );
+
+    const derived = pinar(suelo(raw.ground as unknown[]));
+    assert.ok(derived.length >= 3, `el pinar debe verse: ${derived.length} volúmenes`);
+    assert.deepEqual(derived.filter(enCalzada).map(at), [], "calzada libre");
+    // NO se comprueba aquí el río: la zona declarada ([2,50,46,26] → u∈[4,46])
+    // no llega a las columnas 84-92 del río Negro, así que una aserción de
+    // "río libre" sobre esta fixture no podría ponerse roja jamás. El agua la
+    // cubre el test de arriba, con un `ground` sintético que sí la solapa.
   });
 
   it("un type de matorral produce bush", () => {

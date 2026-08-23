@@ -20,7 +20,7 @@ import {
   type TerrainCollider,
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
-import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import { DEFAULT_SOLID_CHARS, formatDToWorld } from "../src/scene/scene-normalize.js";
 import {
   parseGround,
   parseVolumes,
@@ -45,6 +45,10 @@ function buildPlanCollider(
   sceneId: string,
   sceneData: { ground?: unknown; volumes?: unknown },
   rect: WorldRect,
+  /** Solidez resuelta de la leyenda de ESA escena: el agua que el autor
+   *  declaró vadeable no bloquea tampoco por el plan (ver planCollisionGrid).
+   *  Sin ella, jugador y NPCs discreparían del vado. */
+  solidChars: readonly string[],
   dims?: CollisionGridDims,
 ): TerrainCollider | null {
   let ground: GroundFeature[] | undefined;
@@ -63,7 +67,7 @@ function buildPlanCollider(
   }
   if (!ground && !volumes) return null;
   try {
-    return createTerrainCollider(planCollisionGrid(ground, volumes, rect, dims));
+    return createTerrainCollider(planCollisionGrid(ground, volumes, rect, { solidChars, dims }));
   } catch (err) {
     console.warn(`[sim-collision] ${sceneId}: plan no deriva colisión —`, err);
     return null;
@@ -80,8 +84,11 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
 
     // 1. terrain_grid del esquema. formatDToWorld devuelve el raw intacto en
     // escenas no-Format-D (legacy), que no traen terrain_grid → sin fuente.
+    // Su leyenda resuelta (`solid_chars`) manda también sobre el plan (2).
+    let solidChars: readonly string[] = DEFAULT_SOLID_CHARS;
     try {
       const world = formatDToWorld(rec.scene_data) as { terrain_grid?: TerrainGridData };
+      if (world.terrain_grid?.solid_chars) solidChars = world.terrain_grid.solid_chars;
       const tc = createTerrainCollider(world.terrain_grid ?? null);
       if (tc) colliders.push(tc);
     } catch (err) {
@@ -95,6 +102,7 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
         sceneId,
         rec.scene_data,
         tileWorldRect(rec.tile.tx, rec.tile.ty),
+        solidChars,
       );
       if (planCollider) colliders.push(planCollider);
     }

@@ -5,9 +5,10 @@
  *  los árboles que se VEN en primera persona y de cuyos troncos sale la
  *  colisión— perdió su exclusión al podar un campo muerto y nadie se enteró:
  *  ningún tile del repo declaraba una zona de vegetación, así que la ruta no
- *  se ejercía. Con una zona declarada, 3 de cada 56 árboles caían sobre la
- *  calzada, y cada uno estampa un disco de tronco de ≥0,9 celdas: ~1 m de
- *  camino real bloqueado por un árbol que el motor nunca puso ahí.
+ *  se ejercía. En el caso de referencia del issue (una zona `rest` al 0,5)
+ *  caían 3 de 48 árboles sobre la calzada, y cada uno estampa un disco de
+ *  tronco de ≥0,9 celdas: ~1 m de camino real bloqueado por un árbol que el
+ *  motor nunca puso ahí.
  *
  *  Lo que se comprueba aquí es lo que le pasa a quien juega: que el camino se
  *  puede RECORRER. El recuento de árboles es el síntoma; el tropiezo es el
@@ -17,10 +18,12 @@
  *  pinar del camino real y el río Negro como agua de `ground`): la vía de
  *  `html-fixtures`, sin motor y sin gastar un crédito.
  *
- *  EN NEGATIVO (probado el 2026-08-23): quitar `if (onGround(u, v)) continue;`
- *  de `nefan-core/src/scene/blueprint/derive.ts` lo pone rojo — 12 de las 249
- *  muestras del eje del camino pasan a bloquear y el jugador no llega a los
- *  16 m: se queda contra un tronco.
+ *  EN NEGATIVO (re-probado el 2026-08-23 con la fixture al 0,05): quitar
+ *  `if (onGround(u, v)) continue;` de
+ *  `nefan-core/src/scene/blueprint/derive.ts` lo pone rojo — muestras del eje
+ *  del camino pasan a bloquear y el jugador no llega a los 16 m: se queda
+ *  contra un tronco. Y el paso 4 lo pone rojo por el otro lado: una exclusión
+ *  que VACIARA la zona deja el camino libre y el pinar sin un solo árbol.
  */
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
@@ -151,31 +154,104 @@ export default async function (ctx) {
   await esperarFrames(ctx);
   await ctx.shot("camino-real-despejado");
 
-  // ── 4. El pinar SÍ existe a los lados: la exclusión no vació la zona ─────
+  // ── 4. El pinar SÍ existe, y cada árbol FRENA: aparta, no vacía ─────────
   // Un arreglo que borrase la vegetación entera también dejaría el camino
-  // libre, y sería peor que el bug. Se mira desde el jugador: girado al
-  // norte, con el pinar delante, tiene que haber suelo ocupado cerca.
-  const alrededor = await ctx.page.evaluate(
+  // libre, y sería peor que el bug. Se mira sobre el plan que el juego ha
+  // compuesto —los árboles que el motor no puso a mano— y se toca uno a uno:
+  // cada tronco tiene que frenar al jugador. Muestrear una banda a ciegas
+  // dependía de que hubiera MUCHOS árboles: bastaba bajar la densidad de la
+  // fixture para que el paso se quedara sin nada que encontrar y se pusiera
+  // rojo (o, con la exclusión rota, verde por casualidad).
+  const pinar = await ctx.page.evaluate(
     ({ ox, oz, mpc, y }) => {
-      let ocupadas = 0;
-      let total = 0;
-      // Banda de 6 celdas a cada lado del camino, fuera de su ancho: ahí es
-      // donde el pinar tiene que estar.
-      for (let c = 4; c <= 46; c += 1) {
-        for (const dy of [-9, -7, 7, 9]) {
-          total++;
-          if (window.__nefan.probeCollide(ox + c * mpc, oz + (y + dy) * mpc)) ocupadas++;
-        }
-      }
-      return { ocupadas, total };
+      const vols = (window.__nefan.scene?.__plan?.volumes ?? []).filter((v) => String(v.id).startsWith("derived_veg_"));
+      return vols.map((v) => ({
+        id: v.id,
+        at: v.at,
+        distanciaAlEje: Math.abs(v.at[1] - y),
+        choca: window.__nefan.probeCollide(ox + v.at[0] * mpc, oz + v.at[1] * mpc),
+      }));
     },
     { ox, oz, mpc: plano.mpc, y: eje.y },
   );
-  ctx.log(`arcenes del pinar: ${alrededor.ocupadas}/${alrededor.total} muestras ocupadas`);
+  ctx.log(`pinar derivado: ${pinar.length} árbol(es) · ${pinar.map((p) => p.at.join(",")).join(" · ")}`);
   ctx.expect(
-    "el pinar sigue plantado a los lados (la exclusión aparta, no vacía)",
-    alrededor.ocupadas > 0,
-    `${alrededor.ocupadas}/${alrededor.total}`,
+    "la exclusión aparta, no vacía: el pinar sigue teniendo árboles",
+    pinar.length > 0,
+    `${pinar.length}`,
+  );
+  const blandos = pinar.filter((p) => !p.choca);
+  ctx.expect(
+    "cada árbol del pinar frena al jugador (es tronco, no decorado)",
+    blandos.length === 0,
+    JSON.stringify(blandos),
+  );
+  // Y ninguno en la calzada — el paso 2 lo mira por muestreo del eje; esto lo
+  // dice sobre el árbol concreto, que es lo que se lee en el informe.
+  const enCalzada = pinar.filter((p) => p.distanciaAlEje <= 2.5);
+  ctx.expect(
+    "ningún árbol del pinar está plantado dentro de la banda del camino",
+    enCalzada.length === 0,
+    JSON.stringify(enCalzada),
+  );
+
+  // ── 5. Lo que el motor colocó A MANO sobre un camino sigue ahí ───────────
+  // La exclusión entra SOLO en el bucle de `vegetation_zones`. Si algún día se
+  // aplicara también a `structures`/`entities`, el pozo que el motor puso en
+  // la plaza —declarado a caballo de `camino_plaza` y `camino_herreria`—
+  // desaparecería SIN QUE NADA SE PUSIERA ROJO: el camino saldría aún más
+  // despejado y los pasos 2 y 3 seguirían verdes. Es la pérdida silenciosa de
+  // geometría declarada, y por eso se mira aquí y no en la unidad: el jugador
+  // se topa con el brocal, no con un array.
+  const declarado = await ctx.page.evaluate(
+    ({ mpc }) => {
+      const s = window.__nefan.scene;
+      const obj = (s.objects ?? []).find((o) => o.id === "pozo");
+      const g = s.terrain_grid;
+      const [ox, oz] = g.origin;
+      // ¿De verdad está sobre un camino declarado? Si alguien mueve el pozo o
+      // el camino, esta comprobación deja de significar nada — así que se
+      // afirma, no se supone.
+      const sobre = (s.ground ?? [])
+        .filter((f) => f.kind === "path")
+        .filter((f) => {
+          const w = (f.w ?? 4) / 2 + 0.5;
+          const u = obj ? (obj.position[0] - ox) / mpc : NaN;
+          const v = obj ? (obj.position[2] - oz) / mpc : NaN;
+          return f.points.some((_, i) => {
+            if (i + 1 >= f.points.length) return false;
+            const [ax, az] = f.points[i];
+            const [bx, bz] = f.points[i + 1];
+            const dx = bx - ax;
+            const dz = bz - az;
+            const len2 = dx * dx + dz * dz || 1e-9;
+            const t = Math.min(1, Math.max(0, ((u - ax) * dx + (v - az) * dz) / len2));
+            const px = ax + dx * t;
+            const pz = az + dz * t;
+            return (u - px) * (u - px) + (v - pz) * (v - pz) < w * w;
+          });
+        })
+        .map((f) => f.id);
+      return {
+        hay: Boolean(obj),
+        pos: obj ? [obj.position[0], obj.position[2]] : null,
+        sobre,
+        choca: obj ? window.__nefan.probeCollide(obj.position[0], obj.position[2]) : false,
+      };
+    },
+    { mpc: plano.mpc },
+  );
+  ctx.log(`pozo declarado a mano: ${declarado.hay ? "presente" : "AUSENTE"} · sobre ${JSON.stringify(declarado.sobre)}`);
+  ctx.expect(
+    "el pozo de la plaza está declarado ENCIMA de un camino (si no, este paso no prueba nada)",
+    declarado.sobre.length > 0,
+    JSON.stringify(declarado),
+  );
+  ctx.expect("el pozo que el motor puso a mano sobre el camino sigue en la escena", declarado.hay, JSON.stringify(declarado.pos));
+  ctx.expect(
+    "…y sigue siendo sólido (la exclusión no se comió su volumen)",
+    declarado.choca,
+    JSON.stringify(declarado),
   );
 
   // La otra mitad de la regla, en foto: el río Negro (agua declarada en

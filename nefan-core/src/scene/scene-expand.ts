@@ -25,7 +25,7 @@
 import { SeededRng, fnv1a } from "../rng.js";
 import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
-import { shapeContains } from "./blueprint/ground-collision.js";
+import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
 
 type Rect = [number, number, number, number]; // [col, row, w, h]
 
@@ -147,7 +147,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
   for (const f of parsed.features) {
     if (f.kind !== "water") continue;
     for (let r = 0; r < TILE_CELLS; r++) for (let c = 0; c < TILE_CELLS; c++) {
-      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = "w";
+      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = GROUND_WATER_CHAR;
     }
   }
   for (const f of parsed.features) {
@@ -391,7 +391,7 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     for (let r = r0; r < r0 + h; r++) {
       for (let c = c0; c < c0 + w; c++) {
         const ch = grid[r][c];
-        if (wallChars.has(ch) || ch === "w") continue; // ni muros ni agua
+        if (wallChars.has(ch) || ch === GROUND_WATER_CHAR) continue; // ni muros ni agua
         // En tiles solo se planta sobre el propio bioma (excluye caminos,
         // parches, suelos interiores…), con margen alrededor de sendas.
         if (biomeChar !== null && ch !== biomeChar) continue;

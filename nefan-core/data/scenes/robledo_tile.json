@@ -82,7 +82,7 @@
     {
       "type": "pino",
       "area": [2, 50, 46, 26],
-      "density": 0.15
+      "density": 0.05
     }
   ],
   "entities": [
