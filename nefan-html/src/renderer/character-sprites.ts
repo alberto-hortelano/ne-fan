@@ -183,6 +183,23 @@ export class CharacterSpriteManager {
     for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
   }
 
+  /** Libro de skins: qué personajes ha PEDIDO la partida y con qué rol, más
+   *  las anims encoladas y las ya listas. Estado para el hook __nefan / QA —
+   *  lo escribe `requestSkin`, que es el camino que se prueba. Sustituye a
+   *  esperar N peticiones de red contra un reloj: aquí está escrito lo que el
+   *  juego pidió, se conteste o no. */
+  debugState(): Array<{ prompt: string; role?: string; queued: string[]; ready: string[]; failed: boolean }> {
+    return [...this.skins.entries()].map(([skinnedModel, s]) => ({
+      prompt: s.prompt,
+      ...(s.role ? { role: s.role } : {}),
+      queued: [...s.queued],
+      ready: [...this.readySkins]
+        .filter((k) => k.startsWith(`${skinnedModel}/`))
+        .map((k) => k.slice(skinnedModel.length + 1)),
+      failed: s.failed,
+    }));
+  }
+
   private enqueueAnim(skinnedModel: string, state: SkinState, anim: string): void {
     state.queued.add(anim);
     this.chain = this.chain.then(async () => {

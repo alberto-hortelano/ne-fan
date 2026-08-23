@@ -196,6 +196,7 @@ export async function runTileGeneration(
         broadcastScene(ctx, key, already.scene_data, Date.now() - start, {
           edge: approachEdge,
           spawn: opts.spawnAt(),
+          source: "cache",
         });
       }
       return;
@@ -217,6 +218,9 @@ export async function runTileGeneration(
     broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, {
       edge: approachEdge,
       spawn: opts.spawnAt?.(),
+      // El tile se ha generado y rasterizado AHORA (expandScenePrimitives
+      // sobre el `ground` que el motor acaba de declarar).
+      source: "engine",
     });
   } catch (err) {
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
@@ -242,13 +246,29 @@ export async function handleRequestTile(
   if (existing) {
     // Re-render al volver: difusión inmediata del esquema persistido, sin LLM
     // y sin robar la escena activa (eso lo decide la posición del jugador).
-    broadcastScene(ctx, tileKey(tx, ty), existing.scene_data, undefined, { edge: msg.edge });
+    broadcastScene(ctx, tileKey(tx, ty), existing.scene_data, undefined, { edge: msg.edge, source: "cache" });
     return;
   }
-  const { status } = ctx.sceneGen.enqueue({
+  const { status, delivery } = ctx.sceneGen.enqueue({
     key: tileKey(tx, ty),
     blocking: msg.reason === "blocking",
     run: () => runTileGeneration(ctx, tx, ty, msg.edge),
+  });
+  // Fail-loud de la ENTREGA: un `abandonAll` (takeover de sesión, regeneración
+  // de mundo) borraba este job en silencio y el cliente se quedaba con la key
+  // en `frontier.requested` y el velo puesto hasta su propio timeout de 5 min,
+  // sin volver a pedir el tile. Vale igual para el prefetch: sin el error, esa
+  // key no se libera y el tile no se vuelve a pedir al acercarse otra vez.
+  void delivery.then((res) => {
+    if (res.ok) return;
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "tile",
+      tile: { tx, ty },
+      edge: msg.edge,
+      message: `Error: ${res.error}`,
+    });
   });
   if (status !== "queued" && msg.reason === "blocking") {
     // Ya en cola/en vuelo: re-difundir generating para que el cliente que

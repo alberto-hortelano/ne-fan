@@ -112,7 +112,7 @@ export async function runBootstrapTile(
     // replays vuelven a pasar por broadcastScene, que re-adjunta los exits
     // desde el world map restaurado.
     writeSessionSnapshot(ctx, sessionGameId, sceneId);
-    broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart);
+    broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart, { source: "engine" });
     // broadcastScene mutated the scene with `exits` — persist them.
     await ctx.narrative.save();
   } catch (err) {

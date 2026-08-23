@@ -319,6 +319,14 @@ export interface NarrativeStatusMessage {
    *  SU entrega. Va al ledger de viaje del cliente — un cuelgue con
    *  "duplicate" apunta a la cola; con "queued", al motor. */
   enqueued?: "queued" | "duplicate" | "promoted";
+  /** De dónde salió la escena que acompaña a este status (`ready`):
+   *  "engine" = el motor la acaba de generar y el bridge la ha rasterizado
+   *  AHORA; "cache" = ya estaba en la sesión y se re-difunde sin LLM;
+   *  "snapshot" = viene del mundo pre-generado del juego. Observacional: el
+   *  cliente lo apunta en su episodio de tile. Sin él, una generación viva y
+   *  un HIT de caché son indistinguibles desde fuera, que es justo lo que el
+   *  guion 05 afirma estar probando. */
+  source?: "engine" | "cache" | "snapshot";
   /** Dónde debe APARECER el jugador cuando la escena queda lista (viaje a un
    *  place anclado del plano continuo), en metros mundo. El cliente es dueño
    *  de su posición —la reporta en `sim_input`—, así que el bridge la PIDE en

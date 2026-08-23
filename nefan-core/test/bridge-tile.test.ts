@@ -178,3 +178,94 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
   });
 });
+
+describe("bridge: de dónde salió la escena (`source` del ready)", () => {
+  const tileScene = () => ({ biome: "grass", scene_description: "campo", ground: [], entities: [] });
+  const readyDe = (broadcasts: unknown[]) =>
+    (broadcasts as NarrativeStatusMessage[]).findLast(
+      (m) => m.type === "narrative_status" && m.phase === "ready",
+    );
+
+  it("un tile generado AHORA se declara `engine`; su re-difusión, `cache`", async () => {
+    // Sin esto, una generación viva y un HIT de caché llegan iguales al
+    // cliente — y el guion 05, que dice comprobar que la rasterización sigue
+    // viva, pasaba en verde sobre un tile servido de caché.
+    const { ctx, broadcasts, narrative, aiCalls } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+    });
+    narrative.startNewSession("plugtest");
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", ...tileScene() }),
+    );
+    const { socket } = makeSocket();
+
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+    assert.equal(readyDe(broadcasts)?.source, "engine", "recién generado por el motor");
+    assert.equal(aiCalls.scene.length, 1);
+
+    // Volver a pedirlo: mismo tile, sin LLM — y el cliente tiene que poder
+    // distinguirlo.
+    broadcasts.length = 0;
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.equal(readyDe(broadcasts)?.source, "cache");
+    assert.equal(aiCalls.scene.length, 1, "el re-render no gastó motor");
+  });
+});
+
+describe("bridge: la cola abandonada avisa a quien la espera", () => {
+  const tileScene = () => ({ biome: "grass", scene_description: "campo", ground: [], entities: [] });
+
+  /** Ocupa el "en vuelo" para que el job siguiente se quede en la COLA, que es
+   *  de donde lo borra abandonAll. Devuelve el suelte. */
+  function ocuparCola(ctx: ReturnType<typeof makeCtx>["ctx"]): () => void {
+    let soltar!: () => void;
+    ctx.sceneGen.enqueue({
+      key: "bloqueo",
+      blocking: true,
+      run: () => new Promise<void>((r) => { soltar = r; }),
+    });
+    return () => soltar();
+  }
+
+  it("request_tile abandonado ⇒ narrative_status error de ESE tile (el velo se levanta)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", ...tileScene() }),
+    );
+    const soltar = ocuparCola(ctx);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    assert.deepEqual(ctx.sceneGen.pending, ["tile_1_0"]);
+
+    ctx.sceneGen.abandonAll();
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"), 1000)
+      .catch(() => assert.fail("nadie avisó del tile abandonado: el cliente se queda con el velo puesto"));
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(err?.kind, "tile");
+    assert.deepEqual(err?.tile, { tx: 1, ty: 0 }, "el error nombra el tile (el cliente lo necesita para liberar su key)");
+    assert.equal(err?.edge, "east");
+    soltar();
+  });
+
+  it("un PREFETCH abandonado también avisa (si no, esa key no se vuelve a pedir)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", ...tileScene() }),
+    );
+    const soltar = ocuparCola(ctx);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 0, ty: 1, reason: "prefetch", edge: "south" }, socket, ctx);
+    ctx.sceneGen.abandonAll();
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"), 1000)
+      .catch(() => assert.fail("el prefetch abandonado se perdió en silencio"));
+    soltar();
+  });
+});

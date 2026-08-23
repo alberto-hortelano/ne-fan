@@ -14,7 +14,15 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { nuevaPartida, comenzar, celdaAMundo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, celdaAMundo, esperarRegistro } from "../lib/sesion.mjs";
+
+/** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
+ *   · `mundo` — el §6 exige un tile RASTERIZADO EN VIVO, y un mundo
+ *     pre-generado por otro guion trae el anillo 3×3 ya horneado: el vecino
+ *     del este existiría y el bridge lo re-difundiría de caché, con lo que
+ *     este guion pasaría con la rasterización muerta. Sin artefacto de mundo,
+ *     la partida arranca con bootstrap vivo y el vecino no existe. */
+export const aisla = ["mundo"];
 
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
@@ -132,8 +140,8 @@ export default async function (ctx) {
   // ── 5. El jugador se lo encuentra andando, no leyendo el JSON ───────────
   // Punto de partida: el tramo libre más cercano al borde SUR del agua, con
   // pista de al menos 4 celdas para que se note el avance. Después se empuja
-  // al jugador hacia el norte. El TIMEOUT es el éxito: si logra meterse en una
-  // celda de agua, la condición se cumple y el guion se pone rojo.
+  // al jugador hacia el norte y gana la primera de dos condiciones de ESTADO:
+  // meterse en el agua (el fallo) o avanzar medio metro (la prueba de empuje).
   const salida = await ctx.page.evaluate(
     ({ colAgua }) => {
       const g = window.__nefan.scene.terrain_grid;
@@ -162,22 +170,27 @@ export default async function (ctx) {
   await ctx.nefan("setYaw", Math.PI); // forward = −Z = hacia el norte, contra el agua
   ctx.expect("el punto de partida está libre", (await ctx.nefan("probeCollide", salida.x, salida.zSalida)) === false);
 
-  let entro = true;
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador ENTRA en el agua (esto sería el fallo)",
-      (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-      6000,
-      salida.zAgua,
-    )
-    .catch(() => {
-      entro = false;
-    });
+  // Carrera de DOS condiciones de estado, sin reloj: o el jugador se mete en el
+  // agua (el fallo) o avanza medio metro hacia ella (la prueba de que empujaba
+  // de verdad y se paró en la orilla). Antes se empujaba 6 s y se daba por
+  // hecho que 6 s dan 0,5 m — que es cierto en una máquina ociosa y falso en
+  // una cargada: el movimiento va por delta de rAF.
+  const carrera = await ctx.holdUntil(
+    "up",
+    "el jugador entra en el agua, o avanza medio metro hacia ella",
+    ({ zAgua, zSalida }) => {
+      const z = window.__nefan.state().pos.z;
+      if (z <= zAgua) return { entro: true, z };
+      if (z < zSalida - 0.5) return { entro: false, z };
+      return null;
+    },
+    60_000,
+    { zAgua: salida.zAgua, zSalida: salida.zSalida },
+  );
   const fin = (await ctx.nefan("state")).pos;
   ctx.expect(
     "el jugador NO entra en el agua declarada en `ground`",
-    !entro,
+    !carrera.entro,
     `z final ${fin.z.toFixed(2)} vs última fila de agua ${salida.zAgua.toFixed(2)}`,
   );
   ctx.expect("pero sí avanzó hacia ella", fin.z < salida.zSalida - 0.5, `${salida.zSalida.toFixed(2)} → ${fin.z.toFixed(2)}`);
@@ -190,12 +203,19 @@ export default async function (ctx) {
   // Explorar hacia el este pide un tile al motor y su grid se construye AHORA
   // en el bridge, desde el `ground` que el motor acaba de declarar. Camino del
   // jugador: caminar hasta la frontera, aceptar la propuesta y cruzar.
+  //
+  // Y esa distinción, que es TODO lo que este bloque afirma, hasta ahora no se
+  // comprobaba: un tile servido de caché y uno rasterizado en vivo llegan
+  // iguales al cliente, así que con un mundo pre-generado por otro guion el
+  // vecino del este ya existía y esto pasaba en verde con la rasterización
+  // muerta. El bridge declara el ORIGEN en el `ready` y el cliente lo apunta en
+  // su episodio de tile: aquí se EXIGE "engine".
   const antesTiles = await ctx.nefan("tiles");
   const cols = await ctx.page.evaluate(() => window.__nefan.scene.terrain_grid.grid[0].length);
   await ctx.nefan("setPlayerPos", plano.origin[0] + (cols - 8) * plano.mpc, 0);
   await ctx.nefan("setYaw", Math.PI / 2); // este
   const propuesta = await ctx
-    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, 60_000)
+    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, 120_000)
     .catch((err) => {
       ctx.expect("caminar al este propone explorar el tile vecino", false, err.message);
       return null;
@@ -238,6 +258,22 @@ export default async function (ctx) {
     });
   if (!nuevo) return;
   ctx.log(`tile nuevo ${nuevo.scene_id} · ${nuevo.rasgos} rasgos · chars ${JSON.stringify(nuevo.cuenta)}`);
+
+  // De dónde salió, según el BRIDGE (no según lo que parezca desde aquí).
+  const episodio = await esperarRegistro(
+    ctx,
+    `el cliente registra de dónde salió ${nuevo.scene_id}`,
+    "tileEpisodios",
+    (key) => window.__nefan.tileEpisodios.find((e) => e.key === key && e.source !== null) ?? null,
+    30_000,
+    nuevo.scene_id,
+  );
+  ctx.log(`episodio de tile: ${JSON.stringify(episodio)}`);
+  ctx.expect(
+    "el tile del que habla este bloque lo acaba de GENERAR el motor (no es un HIT de caché ni del mundo pre-generado)",
+    episodio.source === "engine",
+    `source=${episodio.source}`,
+  );
 
   ctx.expect("el tile nuevo declara camino en `ground`", nuevo.caminos.length > 0, JSON.stringify(nuevo.caminos));
   for (const c of nuevo.caminos) {

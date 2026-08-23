@@ -25,36 +25,12 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { abrirSelectorDeMundos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
 
-/** Pre-genera el mundo desde el título, por el camino del jugador (el botón
- *  de regenerar pide confirmación en dos clicks, como las acciones de pago). */
-async function regenerarMundo(ctx) {
-  await abrirSelectorDeMundos(ctx);
-  await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
-
-  await ctx.page.click("#ts-gen-world");
-  const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
-  if (armado.startsWith("¿Regenerar")) await ctx.page.click("#ts-gen-world");
-
-  await ctx.waitFor(
-    "la pre-generación del mundo termina",
-    () => {
-      const t = document.getElementById("ts-gen-progress")?.textContent ?? "";
-      return /generado:/.test(t) || /falló|error/i.test(t) ? t : null;
-    },
-    240_000,
-  );
-  const linea = await ctx.page.$eval("#ts-gen-progress", (e) => e.textContent ?? "");
-  ctx.log(`pre-generación: ${linea}`);
-  ctx.expect("el mundo se pre-genera sin fallos parciales", !/Fallos parciales|falló/i.test(linea), linea);
-  await ctx.page.click("#ts-back");
-}
-
 export default async function (ctx) {
-  await regenerarMundo(ctx);
+  await regenerarMundo(ctx, GAME_ID);
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
   await comenzar(ctx);
 

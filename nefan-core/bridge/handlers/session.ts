@@ -434,7 +434,7 @@ async function replayWorldSnapshot(ctx: BridgeContext, snap: WorldSnapshot): Pro
   const entryScene = structuredClone(snap.scenes[snap.entry_scene_id]);
   ctx.narrative.recordSceneLoaded(snap.entry_scene_id, entryScene);
   await ctx.narrative.save();
-  broadcastScene(ctx, snap.entry_scene_id, entryScene, 0);
+  broadcastScene(ctx, snap.entry_scene_id, entryScene, 0, { source: "snapshot" });
   await ctx.narrative.save();
 }
 

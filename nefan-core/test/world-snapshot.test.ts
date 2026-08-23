@@ -152,6 +152,9 @@ describe("world-snapshot en start_session", () => {
         (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
       );
       assert.ok(ready, "narrative_status ready");
+      // …y el ready DICE que viene del mundo pre-generado. El guion 05 lo usa
+      // para no dar por "rasterizado en vivo" un tile que venía horneado.
+      assert.equal(ready.source, "snapshot");
       // Todas las escenas del snapshot quedan servibles al instante.
       assert.ok(narrative.scenes_loaded["tile_0_0"]);
       assert.ok(narrative.scenes_loaded["tile_1_0"]);

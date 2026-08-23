@@ -25,33 +25,9 @@
  *
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
-import { abrirSelectorDeMundos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 
 const GAME_ID = "alta_fantasia";
-
-/** Pre-genera el mundo desde el título (mismo motivo que en el guion 08: el
- *  world map viaja en el snapshot de `data/games/{id}/world/` y un snapshot
- *  escrito antes de que el motor de bench sembrara el destino no lo trae).
- *  Copiado a propósito en vez de compartido: `qa/lib/` lo importan varios
- *  guiones y tocarlo aquí cambiaría el 08. */
-async function regenerarMundo(ctx) {
-  await abrirSelectorDeMundos(ctx);
-  await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
-
-  await ctx.page.click("#ts-gen-world");
-  const armado = await ctx.page.$eval("#ts-gen-world", (b) => b.textContent ?? "");
-  if (armado.startsWith("¿Regenerar")) await ctx.page.click("#ts-gen-world");
-
-  await ctx.waitFor(
-    "la pre-generación del mundo termina",
-    () => {
-      const t = document.getElementById("ts-gen-progress")?.textContent ?? "";
-      return /generado:/.test(t) || /falló|error/i.test(t) ? t : null;
-    },
-    240_000,
-  );
-  await ctx.page.click("#ts-back");
-}
 
 /** Estado que el jugador puede ver: en qué tile está, dónde, y qué le ofrece
  *  el panel de salidas. */
@@ -137,24 +113,8 @@ function comprobarLedger(ctx, llegada, desc) {
   );
 }
 
-/** El home del título pinta el botón "Nueva partida" ANTES de colgarle su
- *  handler (`renderHome` lo enchufa tras `await listSessions()` y tras pintar
- *  las tarjetas de saves). Clicarlo dentro de esa ventana no hace nada y no
- *  avisa de nada. Esperar al "Bridge OK" del status es esperar por ESTADO, que
- *  es la regla de estos guiones. Sin esto el guion es una moneda al aire en
- *  cuanto la máquina acumula partidas guardadas. */
-async function homeListo(ctx) {
-  await ctx.waitFor(
-    "el título termina de cargar sus saves (status 'Bridge OK')",
-    () => /Bridge OK/.test(document.getElementById("ts-status")?.textContent ?? ""),
-    60_000,
-  );
-}
-
 export default async function (ctx) {
-  await homeListo(ctx);
-  await regenerarMundo(ctx);
-  await homeListo(ctx);
+  await regenerarMundo(ctx, GAME_ID);
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
   await comenzar(ctx);
 

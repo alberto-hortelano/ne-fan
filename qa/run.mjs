@@ -13,16 +13,27 @@
  *  rAF y el typewriter por setInterval, así que ningún `sleep` es
  *  determinista: se espera por ESTADO.
  *
+ *  La corrida es HERMÉTICA: el stack arranca contra `qa/.tmp/<runid>/{saves,
+ *  games}` (NEFAN_SAVES_DIR / NEFAN_GAMES_DIR), copia real de `data/games` sin
+ *  mundos pre-generados, y ese directorio se borra al salir. Así una corrida no
+ *  hereda el disco de la anterior. Dentro de una corrida, cada guion declara qué
+ *  necesita virgen con `export const aisla = ["saves"|"mundo"|"fake-ai"]` y el
+ *  runner ejecuta SOLO eso antes de lanzarlo — la precondición de cada guion,
+ *  escrita, que hasta ahora no existía en ningún sitio.
+ *
  *  Uso:
  *    node qa/run.mjs                  todos los guiones
  *    node qa/run.mjs colision hud     solo los que casen con esos nombres
  *    node qa/run.mjs --headed         con ventana, para mirar qué hace
- *    node qa/run.mjs --keep           deja el stack arriba al terminar
+ *    node qa/run.mjs --keep           deja el stack arriba y el tmp sin borrar
  *    node qa/run.mjs --url URL        usa un stack ya arrancado
+ *    node qa/run.mjs --orden inverso  al revés (criterio: mismo veredicto)
+ *    node qa/run.mjs --diag           una línea de diagnóstico por guion
  */
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
-import { readdirSync, mkdirSync, rmSync } from "node:fs";
+import { readdirSync, mkdirSync, rmSync, cpSync, existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import net from "node:net";
@@ -37,12 +48,21 @@ const opt = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : fallback;
 };
-const filters = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--url");
+/** Opciones que llevan valor: su valor NO es un filtro de nombre de guion. */
+const CON_VALOR = new Set(["--url", "--orden"]);
+const filters = args.filter((a, i) => !a.startsWith("--") && !CON_VALOR.has(args[i - 1]));
 
 const HEADED = flag("--headed");
 const KEEP = flag("--keep");
+const DIAG = flag("--diag");
+const ORDEN = opt("--orden", "alfabetico");
 const BASE = opt("--url", "http://localhost:3000");
 const FAKE_AI = "http://127.0.0.1:18765";
+const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
+const TMP = join(here, ".tmp", RUN_ID);
+const TMP_SAVES = join(TMP, "saves");
+const TMP_GAMES = join(TMP, "games");
+const GAMES_ORIGEN = join(repoRoot, "nefan-core", "data", "games");
 /** ?raf=timer: en headless la pestaña no está "visible" y el rAF se pausaría;
  *  el pump por Web Worker mantiene el game loop vivo. */
 const URL_QS = `?input=scripted&ai=${encodeURIComponent(FAKE_AI)}&raf=timer`;
@@ -98,16 +118,125 @@ async function ensureStack() {
   // uno, y entonces esto levantaría otro stack y fallaría por timeout sin decir
   // por qué.
   console.log("· arrancando ./start.sh --preset e2e-sin-creditos…");
+  console.log(`· disco efímero: ${TMP}`);
   const child = spawn("./start.sh", ["--preset", "e2e-sin-creditos"], {
     cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
+    // Disco propio de la corrida: sin esto la batería lee y ESCRIBE en los
+    // saves y los mundos pre-generados del repo, y la corrida N deja el disco
+    // distinto para la N+1 (medido: el snapshot de mundo cambiaba de md5 cada
+    // vez). El bridge respeta las dos variables (ws-server.ts:46,52) y
+    // start.sh las hereda del entorno.
+    env: { ...process.env, NEFAN_SAVES_DIR: TMP_SAVES, NEFAN_GAMES_DIR: TMP_GAMES },
   });
   child.stdout.on("data", (b) => process.env.QA_VERBOSE && process.stdout.write(`  | ${b}`));
   child.stderr.on("data", (b) => process.env.QA_VERBOSE && process.stderr.write(`  ! ${b}`));
   for (const [port, label] of PUERTOS) await waitPort(port, label);
   console.log("· stack listo");
   return child;
+}
+
+/** Disco efímero de la corrida: copia REAL de `data/games` (lo mismo que tiene
+ *  el jugador) menos los mundos ya pre-generados — el mundo se genera dentro de
+ *  la corrida por el camino del jugador, no se copia de un artefacto rancio.
+ *  Copiarlo sería heredar justo lo que esto viene a cortar. */
+function prepararDisco() {
+  rmSync(TMP, { recursive: true, force: true });
+  mkdirSync(TMP_SAVES, { recursive: true });
+  cpSync(GAMES_ORIGEN, TMP_GAMES, { recursive: true });
+  limpiarMundos();
+}
+
+/** Borra los artefactos de mundo pre-generado del disco efímero: es lo que pide
+ *  `aisla: ["mundo"]`. Las aplicaciones de estilo (`world/styles/`) NO se tocan
+ *  aquí: las invalida `generate_game` al escribir el snapshot nuevo, que es el
+ *  camino real y el que corre a continuación. */
+function limpiarMundos() {
+  let borrados = 0;
+  for (const juego of readdirSync(TMP_GAMES)) {
+    const world = join(TMP_GAMES, juego, "world");
+    if (!existsSync(world)) continue;
+    for (const f of readdirSync(world)) {
+      if (f.endsWith(".json")) {
+        rmSync(join(world, f), { force: true });
+        borrados++;
+      }
+    }
+  }
+  return borrados;
+}
+
+/** Reset del estado de PROCESO del motor falso (tiles servidos, atlas
+ *  "pintados", turnos de diálogo). Es lo que pide `aisla: ["fake-ai"]`. */
+async function resetFakeAi() {
+  const res = await fetch(`${FAKE_AI}/dev/reset`, { method: "POST" });
+  if (!res.ok) throw new Error(`/dev/reset HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Ejecuta SOLO lo que el guion declare en `export const aisla = [...]`.
+ *  Un guion que no declara nada corre sobre lo que dejó el anterior, a
+ *  propósito: la declaración es la precondición, y una precondición que no
+ *  existe no debe inventarse por simetría. */
+async function aislar(nombre, aisla) {
+  if (!Array.isArray(aisla) || aisla.length === 0) return [];
+  const hechos = [];
+  for (const qué of aisla) {
+    switch (qué) {
+      case "saves":
+        rmSync(TMP_SAVES, { recursive: true, force: true });
+        mkdirSync(TMP_SAVES, { recursive: true });
+        hechos.push("saves vaciados");
+        break;
+      case "mundo":
+        hechos.push(`mundos borrados (${limpiarMundos()} artefactos)`);
+        break;
+      case "fake-ai": {
+        const r = await resetFakeAi();
+        hechos.push(`fake-ai reseteado (${JSON.stringify(r.limpiado)})`);
+        break;
+      }
+      default:
+        throw new Error(`${nombre}: aisla desconocido "${qué}" (vale saves|mundo|fake-ai)`);
+    }
+  }
+  return hechos;
+}
+
+/** Cuánto tarda el título en tener su lista de partidas — el `list_sessions`
+ *  del bridge, por su propio cable. Es lo que espera el jugador mirando el home
+ *  y crece con cada save que se acumula. */
+function medirListSessions() {
+  return new Promise((resolve) => {
+    const ws = new WebSocket("ws://127.0.0.1:9877");
+    const fin = (v) => { try { ws.close(); } catch { /* ya cerrado */ } resolve(v); };
+    const t = setTimeout(() => fin(null), 10_000);
+    ws.onerror = () => { clearTimeout(t); fin(null); };
+    ws.onopen = () => {
+      const t0 = Date.now();
+      ws.onmessage = (ev) => {
+        const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
+        if (m.type !== "sessions_listed") return;
+        clearTimeout(t);
+        fin({ ms: Date.now() - t0, n: m.sessions?.length ?? 0 });
+      };
+      ws.send(JSON.stringify({ type: "list_sessions", requestId: "diag" }));
+    };
+  });
+}
+
+/** Foto barata del disco, del motor falso y del bridge, para el `--diag`. */
+async function diagnostico() {
+  const saves = existsSync(TMP_SAVES) ? readdirSync(TMP_SAVES).length : 0;
+  const mundos = {};
+  for (const juego of readdirSync(TMP_GAMES)) {
+    const f = join(TMP_GAMES, juego, "world", "tile.json");
+    if (existsSync(f)) mundos[juego] = createHash("sha256").update(readFileSync(f)).digest("hex").slice(0, 8);
+  }
+  const fake = await fetch(`${FAKE_AI}/dev/counters`).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+  const list = await medirListSessions();
+  return { saves, mundos, fake, list };
 }
 
 /** Contexto que recibe cada guion. Todo lo que ofrece espera por estado; no
@@ -184,6 +313,11 @@ async function main() {
     .filter((f) => f.endsWith(".mjs"))
     .filter((f) => filters.length === 0 || filters.some((q) => f.includes(q)))
     .sort();
+  if (ORDEN === "inverso") guiones.reverse();
+  else if (ORDEN !== "alfabetico") {
+    console.error(`--orden "${ORDEN}" no existe (vale alfabetico|inverso)`);
+    process.exit(2);
+  }
 
   if (guiones.length === 0) {
     console.error("No hay guiones que casen con:", filters.join(", ") || "(todos)");
@@ -193,7 +327,14 @@ async function main() {
   rmSync(SHOTS, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
 
+  prepararDisco();
   const stack = await ensureStack();
+  if (!stack) {
+    // Stack ajeno: no sabe de nuestro disco efímero, así que la corrida NO es
+    // hermética. Se dice, en vez de fingir aislamiento.
+    console.log("· OJO: stack ajeno — corre contra SU disco, no contra qa/.tmp");
+  }
+  console.log(`· orden: ${ORDEN}`);
   const browser = await chromium.launch({
     executablePath: "/usr/bin/google-chrome",
     headless: !HEADED,
@@ -205,11 +346,23 @@ async function main() {
     const nombre = file.replace(/\.mjs$/, "");
     console.log(`\n▶ ${nombre}`);
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
+    // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
+    if (stack) {
+      try {
+        const hechos = await aislar(nombre, mod.aisla);
+        if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
+      } catch (err) {
+        console.log(`    ✘ ERROR aislando: ${err.message}`);
+        resultados.push({ nombre, ok: false, fallos: [`aisla falló: ${err.message}`], fatal: err });
+        continue;
+      }
+    }
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errores = [];
     page.on("pageerror", (e) => errores.push(String(e)));
     const ctx = makeCtx(page, nombre);
     let fatal = null;
+    const t0 = Date.now();
     try {
       await page.goto(`${BASE}/${URL_QS}`, { waitUntil: "domcontentloaded" });
       await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
@@ -218,6 +371,17 @@ async function main() {
       fatal = err;
       console.log(`    ✘ ERROR: ${err.message}`);
       await ctx.shot("error").catch(() => {});
+    }
+    if (DIAG) {
+      const libros = await page
+        .evaluate(() => ({
+          viaje: window.__nefan.viaje ?? null,
+          tiles: window.__nefan.tileEpisodios ?? null,
+          estilo: window.__nefan.estilo ? window.__nefan.estilo() : null,
+        }))
+        .catch((e) => ({ __err: String(e) }));
+      console.log(`    ⓘ ${Date.now() - t0} ms · ${JSON.stringify(await diagnostico())}`);
+      console.log(`    ⓘ libros: ${JSON.stringify(libros)}`);
     }
     if (errores.length) {
       console.log(`    ✘ ${errores.length} excepción(es) en la página`);
@@ -231,6 +395,8 @@ async function main() {
   await browser.close();
   if (stack && !KEEP) process.kill(-stack.pid, "SIGINT");
   else if (stack) console.log("\n· stack sigue arriba (--keep)");
+  if (!KEEP) rmSync(TMP, { recursive: true, force: true });
+  else console.log(`· disco efímero sin borrar: ${TMP}`);
 
   const ok = resultados.filter((r) => r.ok).length;
   console.log(`\n${"─".repeat(60)}`);

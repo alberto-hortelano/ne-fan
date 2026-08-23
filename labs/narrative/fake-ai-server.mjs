@@ -453,6 +453,17 @@ const server = http.createServer((req, res) => {
       estimated_cost_usd: 0,
     });
   }
+  // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin
+  // tocar. Va aparte de /dev/status a propósito — ese espeja un contrato real
+  // del ai_server y no puede llevar campos que solo existen en el bench.
+  if (req.method === "GET" && req.url === "/dev/counters") {
+    return send(200, {
+      tiles: tileByKey.size,
+      surfaces: surfaceImages.size,
+      dialogueTurn: fakeDialogueTurn,
+      apiCache: fakeDevCacheEnabled,
+    });
+  }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
   // el fake no llama APIs de pago, pero el checkbox del cliente debe operar.
   if (req.method === "GET" && req.url === "/dev/api_cache") {
@@ -550,6 +561,27 @@ const server = http.createServer((req, res) => {
             },
           ],
         });
+      }
+      // Reset del ESTADO DE PROCESO del fake (qa/run.mjs entre guiones). El
+      // fake acumula estado que ningún reinicio de página borra —tiles ya
+      // servidos, atlas ya "pintados", turnos de diálogo— y con él un guion
+      // hereda la caché caliente del anterior: el batch de estilo pide menos
+      // páginas de las que su plan anunció y el guion cuenta peticiones que
+      // nunca llegan. Reiniciar el proceso entero costaba el arranque del
+      // stack; esto cuesta un POST.
+      if (req.method === "POST" && req.url === "/dev/reset") {
+        const antes = {
+          tiles: tileByKey.size,
+          surfaces: surfaceImages.size,
+          dialogueTurn: fakeDialogueTurn,
+          apiCache: fakeDevCacheEnabled,
+        };
+        tileByKey.clear();
+        surfaceImages.clear();
+        fakeDialogueTurn = 0;
+        fakeDevCacheEnabled = false;
+        console.error(`[fake-ai] /dev/reset: ${JSON.stringify(antes)} → todo a cero`);
+        return send(200, { ok: true, limpiado: antes });
       }
       if (req.method === "POST" && req.url === "/dev/api_cache") {
         try {

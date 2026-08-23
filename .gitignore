@@ -61,6 +61,8 @@ vendor/
 
 # QA: capturas de cada corrida (regenerables)
 qa/capturas/
+# Disco efímero de una corrida de qa/run.mjs (saves + games de la corrida).
+qa/.tmp/
 
 # Cobertura (regenerable con `npm run coverage`)
 nefan-core/coverage/

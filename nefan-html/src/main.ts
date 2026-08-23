@@ -46,6 +46,7 @@ import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
 import { TravelLedger } from "./ui/travel-ledger.js";
+import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
@@ -422,6 +423,8 @@ const travelPanel = new TravelPanel();
 /** Lo que el juego recuerda del último viaje pedido por «Salidas», paso a
  *  paso: sin esto, un viaje que no llega y uno lento son el mismo silencio. */
 const travelLedger = new TravelLedger();
+/** Qué tile se pidió, cuál llegó y DE DÓNDE salió (motor / caché / snapshot). */
+const tileLedger = new TileLedger();
 const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
 // Tema base: la partida lo sustituye por el del estilo al abrir sesión. Ya
@@ -461,6 +464,10 @@ const nefanHook: Record<string, unknown> = {
   get frontier() { return frontier.debugState(); },
   /** Ledger del último viaje por «Salidas»: qué paso se dio y cuál no. */
   get viaje() { return travelLedger.debugState(); },
+  /** Episodios de tile: pedido/llegada y el ORIGEN que declara el bridge. */
+  get tileEpisodios() { return tileLedger.debugState(); },
+  /** Libro de skins: qué personajes ha pedido la PARTIDA (y con qué rol). */
+  get skins() { return characterSprites.debugState(); },
   probeCollide(x: number, z: number) { return collidesAt(x, z); },
   /** UI de juego: acciones ofrecidas y tema activo (bench/E2E). */
   ui: {
@@ -1572,8 +1579,10 @@ function gameLoop(now: number): void {
     // el vecino (gasta LLM/créditos — el jugador confirma con Y o rechaza con
     // N), velo direccional pegado al borde, promoción a blocking si espera.
     if (activeSessionId && tileStore.hasGridTiles) {
-      const requestTile = (tx: number, ty: number, edge: FrontierEdge, reason: "prefetch" | "blocking"): void =>
+      const requestTile = (tx: number, ty: number, edge: FrontierEdge, reason: "prefetch" | "blocking"): void => {
+        tileLedger.pedido(`tile_${tx}_${ty}`);
         narrativeClient.requestTile(tx, ty, reason, edge);
+      };
       const { veil, timedOut, proposal } = frontier.tick(
         performance.now(),
         playerPos.x,
@@ -1967,6 +1976,9 @@ graphicsChip = new GraphicsModeChip({
 // Oculto mientras el título está abierto (ahí el modo se elige en el propio
 // título); reaparece al cerrarlo — incluido el cierre fixtures (#ts-close).
 titleScreen.onVisibilityChange = (visible) => graphicsChip?.setHidden(visible);
+// Corrida de «Aplicar estilo» para el bench/QA: lo prometido, lo emitido y si
+// ya terminó. Lo escribe el propio StyleApplyController.
+(nefanHook as { estilo?: unknown }).estilo = () => titleScreen.styleRunState();
 
 dialoguePanel.onChoice = (idx, text) => {
   input.dialogueActive = false;
@@ -2091,6 +2103,11 @@ narrativeClient.onNarrativeStatus((status) => {
   // no el overlay central — salvo el bootstrap (mundo aún vacío).
   if (status.kind === "tile") {
     const t = status.tile;
+    if (t) {
+      const key = `tile_${t.tx}_${t.ty}`;
+      if (status.phase === "ready") tileLedger.llegado(key, status.source ?? null);
+      if (status.phase === "error") tileLedger.fallo(key, status.message ?? "sin mensaje");
+    }
     switch (status.phase) {
       case "generating":
         if (t) frontier.onStatusText(t.tx, t.ty, status.message ?? "Generando el mundo");

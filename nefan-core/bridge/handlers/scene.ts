@@ -44,7 +44,7 @@ export async function handlePlayerEnteredPlace(
     // Place anclado al plano continuo: viajar es APARECER en él, no solo
     // re-difundir su tile. El spawn se PIDE al cliente (dueño de la posición).
     const spawn = resolvePlaceTarget(ctx.narrative, placeId) ?? undefined;
-    broadcastScene(ctx, cachedSceneId, cachedScene, undefined, { spawn });
+    broadcastScene(ctx, cachedSceneId, cachedScene, undefined, { spawn, source: "cache" });
     // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
     // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
     // volvería a disparar.

@@ -75,10 +75,23 @@ export async function handleGenerateGame(
   // broadcasts o el progreso kind "game_gen" nunca le llegaría (los clientes
   // solo se suscriben en start/resume_session).
   ctx.subscribe(ws);
-  const { status: queued } = ctx.sceneGen.enqueue({
+  const { status: queued, delivery } = ctx.sceneGen.enqueue({
     key: `gamegen:${msg.gameId}`,
     blocking: false,
     run: () => runGameGeneration(ctx, msg.gameId),
+  });
+  // Fail-loud de la ENTREGA: si un takeover abandona este job, la barra de
+  // progreso de la tarjeta del juego se queda girando para siempre (nadie más
+  // difunde kind "game_gen"). El título trata `error` como final: repinta los
+  // chips y deja volver a intentarlo.
+  void delivery.then((res) => {
+    if (res.ok) return;
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "game_gen",
+      message: `La pre-generación de "${msg.gameId}" no llegó a correr: ${res.error}`,
+    });
   });
   ctx.send(ws, {
     type: "game_generated",

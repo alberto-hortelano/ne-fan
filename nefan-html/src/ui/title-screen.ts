@@ -89,6 +89,12 @@ export class TitleScreen {
    *  modo fixtures por #ts-close, que no resuelve la promesa de show(). */
   onVisibilityChange: ((visible: boolean) => void) | null = null;
   private styleApply: StyleApplyController;
+
+  /** Corrida de estilo tal y como la recuerda quien la ejecuta (bench/QA). */
+  styleRunState(): ReturnType<StyleApplyController["debugState"]> {
+    return this.styleApply.debugState();
+  }
+
   /** Última línea de progreso de generate_game (kind "game_gen"): la pinta
    *  el panel de generación del selector de mundo si está en pantalla. */
   private gameGenStatus: NarrativeStatusMessage | null = null;
