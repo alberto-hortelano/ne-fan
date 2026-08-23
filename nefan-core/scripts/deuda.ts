@@ -32,11 +32,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "./arch-collect.js";
 import { crapRows, readThresholds, type CrapRow } from "./crap-score.js";
+import {
+  dueñoDe,
+  ficherosMutados,
+  leerPlan,
+  perimetro,
+  resumenDeMutantes,
+  rutaInforme,
+  type PlanMutacion,
+} from "./mutation-plan.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const coreRoot = join(here, "..");
 const LCOV = join(coreRoot, "coverage", "lcov.info");
-const MUTACION = join(coreRoot, "reports", "mutation", "mutation.json");
 const MEDIDOS = ["src", "bridge", "services"];
 
 export interface Item {
@@ -120,7 +128,11 @@ export function bloqueFronteras(): Bloque {
     for (const v of r.violations) {
       items.push({
         donde: `${v.path}:${v.line}`,
-        que: `${r.rule.id} — ${unaLinea(v.detail ?? r.rule.message)}`,
+        // `detail` no es opcional en el checker: el `?? r.rule.message` que
+        // había aquí era una rama muerta que además nombraba un campo que la
+        // regla no tiene. No se veía porque `scripts/` no entra en el
+        // `tsc --noEmit` del CI (ver el informe).
+        que: `${r.rule.id} — ${unaLinea(v.detail)}`,
         peso: 1,
       });
     }
@@ -190,50 +202,132 @@ interface MutacionReport {
   >;
 }
 
-export function bloqueMutacion(cambio: ReturnType<typeof ultimoCambio>): Bloque {
-  const fuente = "reports/mutation/mutation.json + stryker.config.json";
-  const objetivos = (
-    JSON.parse(readFileSync(join(coreRoot, "stryker.config.json"), "utf-8")) as { mutate: string[] }
-  ).mutate;
-  if (!existsSync(MUTACION)) {
-    return {
-      titulo: "Mutación — supervivientes",
-      fuente,
-      aviso: `sin medir — corre \`npm run mutate\` (${objetivos.length} objetivo(s) configurado(s))`,
-      items: [],
-    };
-  }
-  const rep = JSON.parse(readFileSync(MUTACION, "utf-8")) as MutacionReport;
+/** Un módulo del plan de mutación y el informe de su última corrida. `report`
+ *  ausente = ese módulo NO se midió; NO es lo mismo que "no tiene deuda", y de
+ *  distinguir esas dos cosas va la mitad de este bloque. */
+export interface InformeModulo {
+  id: string;
+  /** Ficheros que el módulo declara mutar, para poder decir qué se quedó sin
+   *  medir sin tener que abrir el informe que falta. */
+  ficheros: readonly string[];
+  report?: MutacionReport;
+}
+
+/** Fusión de los informes por módulo. Determinista: los módulos van en el
+ *  orden del plan y los items se ordenan por supervivientes y, a igualdad, por
+ *  ruta — nunca por el orden de las claves de un JSON. */
+export function itemsDeMutacion(informes: readonly InformeModulo[]): Item[] {
   const items: Item[] = [];
-  for (const [file, info] of Object.entries(rep.files)) {
-    const vivos = info.mutants.filter((m) => m.status === "Survived" || m.status === "NoCoverage");
-    if (vivos.length === 0) continue;
-    const total = info.mutants.length;
-    const muertos = total - vivos.length;
-    const score = total === 0 ? 0 : (muertos / total) * 100;
-    const porTipo = new Map<string, number>();
-    for (const m of vivos) porTipo.set(m.mutatorName, (porTipo.get(m.mutatorName) ?? 0) + 1);
-    const top = [...porTipo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-    items.push({
-      donde: file,
-      que:
-        `${vivos.length} mutantes vivos de ${total} (score ${score.toFixed(0)}%) — ` +
-        top.map(([k, n]) => `${k}×${n}`).join(", "),
-      peso: vivos.length,
-    });
+  for (const { report } of informes) {
+    if (!report) continue;
+    for (const [file, info] of Object.entries(report.files)) {
+      const { total, vivos, score } = resumenDeMutantes(info.mutants);
+      if (vivos === 0) continue;
+      const porTipo = new Map<string, number>();
+      for (const m of info.mutants) {
+        if (m.status !== "Survived" && m.status !== "NoCoverage") continue;
+        porTipo.set(m.mutatorName, (porTipo.get(m.mutatorName) ?? 0) + 1);
+      }
+      const top = [...porTipo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+      items.push({
+        donde: file,
+        que:
+          `${vivos} mutantes vivos de ${total} (score ${score.toFixed(0)}%) — ` +
+          top.map(([k, n]) => `${k}×${n}`).join(", "),
+        peso: vivos,
+      });
+    }
   }
-  items.sort((a, b) => b.peso - a.peso);
-  const medidos = new Set(Object.keys(rep.files));
-  // Un objetivo configurado del que el report no dice nada no es "sin deuda":
-  // es que esa corrida no lo cubrió (glob distinto, corrida parcial).
-  const sinDatos = objetivos.filter((g) => !g.includes("*") && !medidos.has(g));
-  const avisos = [avisoDeFrescura("`npm run mutate`", MUTACION, cambio)];
-  if (sinDatos.length) avisos.push(`objetivos sin datos en el último report: ${sinDatos.join(", ")}`);
+  return items.sort((a, b) => b.peso - a.peso || a.donde.localeCompare(b.donde));
+}
+
+/** El aviso que nació de un fallo real: un objetivo apuntaba a una ruta que no
+ *  existía y pasó meses MIDIENDO EL VACÍO EN VERDE. Partir la corrida por
+ *  módulos multiplica las maneras de que eso vuelva a pasar —basta con que un
+ *  módulo no se corra— así que el aviso ahora es por módulo y dice el comando
+ *  exacto que arregla justo lo que falta.
+ *
+ *  Empieza por "sin medir" a propósito: es la marca que `cabeceraDe` busca para
+ *  declarar la cola PARCIAL en el titular. Una medida a medias tiene el mismo
+ *  modo de fallo que la ausente — un total pequeño que se lee como la deuda
+ *  entera. */
+export function avisoSinDatos(informes: readonly InformeModulo[]): string | undefined {
+  const faltan = informes.filter((i) => !i.report);
+  if (faltan.length === 0) return undefined;
+  const ids = faltan.map((i) => i.id);
+  const ficheros = faltan.reduce((n, i) => n + i.ficheros.length, 0);
+  if (faltan.length === informes.length) {
+    return `sin medir — corre \`npm run mutate\` (${informes.length} módulos, ${ficheros} ficheros configurados)`;
+  }
+  return (
+    `sin medir ${faltan.length} de ${informes.length} módulos (${ficheros} ficheros sin dato) — ` +
+    `corre \`npm run mutate -- ${ids.join(" ")}\``
+  );
+}
+
+/** Lo que NADIE muta, aunque esté dentro del perímetro puro.
+ *
+ *  Con la corrida partida hay dos maneras de no tener medida, y solo una se ve
+ *  desde los informes: que un módulo no se haya corrido. La otra es que el
+ *  fichero no sea objetivo de ningún módulo, y esa no deja rastro — es la que
+ *  tuvo a esta casa meses en verde sobre un objetivo que apuntaba a una ruta
+ *  muerta. Que ahora esté DECLARADA en `sin_mutar` con su motivo la hace
+ *  imposible de olvidar, pero no la convierte en medida: se cuenta y se
+ *  enseña, agrupada por directorio, para que la lista tenga que menguar. */
+export function avisoDeExentos(exentos: readonly string[]): string | undefined {
+  if (exentos.length === 0) return undefined;
+  const porDir = new Map<string, number>();
+  for (const f of exentos) {
+    const dir = f.split("/").slice(0, -1).join("/");
+    porDir.set(dir, (porDir.get(dir) ?? 0) + 1);
+  }
+  const top = [...porDir.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([d, n]) => `${d} (${n})`);
+  return (
+    `${exentos.length} ficheros del perímetro puro NO los muta nadie — están en \`sin_mutar\` con motivo: ` +
+    `${top.join(", ")}${porDir.size > 4 ? `, +${porDir.size - 4} dir.` : ""}`
+  );
+}
+
+function exentosDel(plan: PlanMutacion): string[] {
+  return perimetro(plan).filter((f) => dueñoDe(plan, f).tipo === "exento");
+}
+
+/** Lee el informe de cada módulo del plan. Un JSON ilegible NO se degrada a
+ *  "sin datos": eso escondería un informe corrupto detrás del mismo aviso que
+ *  un informe que nadie ha generado. */
+function leerInformes(plan: PlanMutacion): InformeModulo[] {
+  return plan.modulos.map((m) => {
+    const ruta = rutaInforme(m.id);
+    const ficheros = ficherosMutados(m);
+    if (!existsSync(ruta)) return { id: m.id, ficheros };
+    return { id: m.id, ficheros, report: JSON.parse(readFileSync(ruta, "utf-8")) as MutacionReport };
+  });
+}
+
+export function bloqueMutacion(cambio: ReturnType<typeof ultimoCambio>): Bloque {
+  const fuente = "reports/mutation/<módulo>.json + data/contract/mutation-targets.json";
+  const plan = leerPlan();
+  const informes = leerInformes(plan);
+  const medidos = informes.filter((i) => i.report).map((i) => rutaInforme(i.id));
+  // La frescura se juzga por el informe MÁS VIEJO: con la corrida partida, un
+  // módulo medido hace un mes junto a otro de hace un minuto es exactamente el
+  // caso en el que la cola describe código que ya no existe. Y con la corrida
+  // PARCIAL (`npm run mutate -- --cambiado`) eso deja de ser raro: lo normal
+  // pasa a ser que unos módulos se hayan medido hoy y otros la semana pasada.
+  const masViejo = medidos.sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs)[0];
+  const avisos = [
+    avisoSinDatos(informes),
+    masViejo ? avisoDeFrescura("`npm run mutate`", masViejo, cambio) : undefined,
+    avisoDeExentos(exentosDel(plan)),
+  ];
   return {
     titulo: "Mutación — supervivientes",
     fuente,
     aviso: avisos.filter(Boolean).join(" · ") || undefined,
-    items,
+    items: itemsDeMutacion(informes),
   };
 }
 

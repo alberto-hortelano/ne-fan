@@ -8,7 +8,16 @@ import assert from "node:assert/strict";
 
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "../scripts/arch-collect.js";
-import { bloqueFronteras, cabeceraDe, enColaDeCrap, unaLinea } from "../scripts/deuda.js";
+import {
+  avisoDeExentos,
+  avisoSinDatos,
+  bloqueFronteras,
+  cabeceraDe,
+  enColaDeCrap,
+  itemsDeMutacion,
+  unaLinea,
+  type InformeModulo,
+} from "../scripts/deuda.js";
 
 describe("cola de deuda · fronteras", () => {
   const reports = reportByRule(archConfig, checkArchitecture(archConfig, loadArchFiles()));
@@ -75,6 +84,157 @@ describe("cola de deuda · complejidad × cobertura", () => {
 
   it("el umbral es estricto: justo en el objetivo no entra", () => {
     assert.deepEqual(enColaDeCrap([fila("justa", 30, 0.5)], 30), []);
+  });
+});
+
+describe("cola de deuda · mutación repartida en varios informes", () => {
+  // Datos sintéticos por el mismo motivo que arriba: `reports/` no se versiona,
+  // así que contra los informes reales estos tests pasarían en verde sobre una
+  // lista vacía en cualquier clon limpio y en CI.
+  const mutante = (status: string, mutatorName = "ConditionalExpression") => ({
+    status,
+    mutatorName,
+    location: { start: { line: 1 } },
+  });
+  const informe = (id: string, file: string, vivos: number, muertos: number): InformeModulo => ({
+    id,
+    ficheros: [file],
+    report: {
+      files: {
+        [file]: {
+          mutants: [
+            ...Array.from({ length: vivos }, () => mutante("Survived")),
+            ...Array.from({ length: muertos }, () => mutante("Killed")),
+          ],
+        },
+      },
+    },
+  });
+
+  it("junta los ficheros de todos los módulos en una sola cola", () => {
+    const items = itemsDeMutacion([informe("a", "src/a.ts", 2, 8), informe("b", "src/b.ts", 7, 3)]);
+    assert.deepEqual(
+      items.map((i) => i.donde),
+      ["src/b.ts", "src/a.ts"],
+      "los peores primero, vengan del módulo que vengan",
+    );
+    assert.match(items[0].que, /7 mutantes vivos de 10 \(score 30%\)/);
+  });
+
+  it("la fusión es determinista: a igual número de vivos, ordena por ruta", () => {
+    const orden = (a: string, b: string) =>
+      itemsDeMutacion([informe("m1", a, 3, 1), informe("m2", b, 3, 1)]).map((i) => i.donde);
+    assert.deepEqual(orden("src/z.ts", "src/a.ts"), ["src/a.ts", "src/z.ts"]);
+    assert.deepEqual(orden("src/a.ts", "src/z.ts"), ["src/a.ts", "src/z.ts"]);
+  });
+
+  it("un módulo sin informe no aporta items, pero tampoco los inventa", () => {
+    const items = itemsDeMutacion([informe("a", "src/a.ts", 1, 9), { id: "b", ficheros: ["src/b.ts"] }]);
+    assert.deepEqual(
+      items.map((i) => i.donde),
+      ["src/a.ts"],
+    );
+  });
+
+  it("NoCoverage cuenta como vivo: nadie ejecutó esa línea", () => {
+    const items = itemsDeMutacion([
+      {
+        id: "a",
+        ficheros: ["src/a.ts"],
+        report: { files: { "src/a.ts": { mutants: [mutante("NoCoverage"), mutante("Killed")] } } },
+      },
+    ]);
+    assert.equal(items[0].peso, 1);
+    assert.match(items[0].que, /score 50%/);
+  });
+
+  it("avisa de CADA módulo sin medir y dice el comando que lo arregla", () => {
+    // Es la función que nació de medir el vacío en verde durante meses. Partir
+    // la corrida multiplica las formas de que un objetivo se quede sin medir:
+    // basta con que un módulo no llegue a correrse.
+    const aviso = avisoSinDatos([
+      informe("medido", "src/a.ts", 1, 1),
+      { id: "world-map", ficheros: ["src/world-map/world-map.ts", "src/world-map/edges.ts"] },
+      { id: "store", ficheros: ["src/store/reducers.ts"] },
+    ]);
+    assert.match(aviso ?? "", /^sin medir 2 de 3 módulos/);
+    assert.match(aviso ?? "", /3 ficheros sin dato/);
+    assert.match(aviso ?? "", /npm run mutate -- world-map store/);
+  });
+
+  it("con todos los módulos medidos no hay aviso", () => {
+    assert.equal(avisoSinDatos([informe("a", "src/a.ts", 1, 1)]), undefined);
+  });
+
+  it("sin ningún informe, el aviso pide la corrida entera", () => {
+    const aviso = avisoSinDatos([
+      { id: "a", ficheros: ["src/a.ts"] },
+      { id: "b", ficheros: ["src/b.ts"] },
+    ]);
+    assert.match(aviso ?? "", /^sin medir — corre `npm run mutate` \(2 módulos, 2 ficheros/);
+  });
+
+  it("una corrida PARCIAL de ayer no se lee como la foto completa", () => {
+    // El caso que estrena `npm run mutate -- --cambiado`: lo normal pasa a ser
+    // que unos módulos se midieran hoy y otros no se hayan tocado. La cola
+    // tiene que seguir diciendo de CUÁLES no hay dato — si se limitara a sumar
+    // los informes que encuentra, una selección estrecha daría un total
+    // pequeño que se leería como "queda poca deuda".
+    const informes = [
+      informe("medido-hoy", "src/a.ts", 4, 6),
+      { id: "no-tocado", ficheros: ["src/b.ts", "src/c.ts"] },
+      { id: "tampoco", ficheros: ["src/d.ts"] },
+    ];
+    assert.equal(itemsDeMutacion(informes).length, 1, "solo aporta items el módulo que sí se midió");
+    const aviso = avisoSinDatos(informes);
+    assert.match(aviso ?? "", /sin medir 2 de 3 módulos/);
+    assert.match(aviso ?? "", /npm run mutate -- no-tocado tampoco/);
+  });
+
+  it("cuenta los ficheros que NO muta nadie, aunque todo lo medible esté medido", () => {
+    // La segunda forma de no tener medida, y la que no deja rastro en los
+    // informes: el fichero que no es objetivo de ningún módulo. Está declarado
+    // en `sin_mutar` con motivo —el candado de totalidad no admite otra cosa—,
+    // pero declarado no es medido, y la cola tiene que decirlo.
+    const aviso = avisoDeExentos([
+      "src/contracts/http.ts",
+      "src/contracts/common.ts",
+      "src/combat/enemy-ai.ts",
+      "src/scene/aim.ts",
+    ]);
+    assert.match(aviso ?? "", /^4 ficheros del perímetro puro NO los muta nadie/);
+    assert.match(aviso ?? "", /src\/contracts \(2\)/, "agrupa por directorio, peor primero");
+    assert.match(aviso ?? "", /sin_mutar/);
+  });
+
+  it("sin exentos no hay aviso: la lista vacía es la meta, no un dato que enseñar", () => {
+    assert.equal(avisoDeExentos([]), undefined);
+  });
+
+  it("los exentos NO marcan la cola parcial: es una decisión escrita, no una medida que falta", () => {
+    // La diferencia importa. "Sin medir" es que la corrida no se hizo y hay que
+    // hacerla; un exento es que alguien decidió y lo firmó. Mezclarlos dejaría
+    // la cola en PARCIAL permanente y el marcador dejaría de significar nada
+    // justo el día que un módulo se quede de verdad sin correr.
+    const out = cabeceraDe([
+      { titulo: "Fronteras", fuente: "x", items: [] },
+      { titulo: "Mutación — supervivientes", fuente: "y", aviso: avisoDeExentos(["src/a.ts"]), items: [] },
+    ]);
+    assert.match(out, /Deuda medida/);
+    assert.doesNotMatch(out, /PARCIAL/);
+  });
+
+  it("un módulo sin medir marca la cola PARCIAL en el titular", () => {
+    // El aviso empieza por "sin medir" a propósito: es lo que `cabeceraDe`
+    // busca. Una medida a medias engaña igual que la ausente — un total
+    // pequeño que se lee como la deuda entera.
+    const aviso = avisoSinDatos([informe("a", "src/a.ts", 1, 1), { id: "b", ficheros: ["src/b.ts"] }]);
+    const out = cabeceraDe([
+      { titulo: "Fronteras", fuente: "x", items: [] },
+      { titulo: "Mutación — supervivientes", fuente: "y", aviso, items: [] },
+    ]);
+    assert.match(out, /PARCIAL/);
+    assert.match(out, /mutación/);
   });
 });
 
