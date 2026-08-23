@@ -8,7 +8,8 @@ import type {
   PlaceDetailResponse,
   PlaceUpsertResponse,
 } from "../../src/contracts/world-state.js";
-import { bad, mutated, notFound, ok, parseBody, type RouteHandler } from "./context.js";
+import { bad, mutated, notFound, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 export const mapRoutes = {
   getMap: (ctx) => ok(ctx.narrative.worldMap.serialize() satisfies ResponseOf<typeof WorldStateApi.getMap>),
@@ -62,4 +63,4 @@ export const mapRoutes = {
       return bad((err as Error).message);
     }
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

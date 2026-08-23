@@ -7,7 +7,8 @@ import type {
   PluginRegisterResponse,
   WorldStateApi,
 } from "../../src/contracts/world-state.js";
-import { bad, mutated, ok, parseBody, type RouteHandler } from "./context.js";
+import { bad, mutated, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 export const pluginRoutes = {
   listPlugins: (ctx) => ok({ plugins: ctx.plugins.list() } satisfies PluginListResponse),
@@ -35,4 +36,4 @@ export const pluginRoutes = {
       return bad((err as Error).message);
     }
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

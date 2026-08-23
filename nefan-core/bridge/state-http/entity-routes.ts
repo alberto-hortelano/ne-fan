@@ -11,7 +11,8 @@ import type {
   InventoryMutationResponse,
   PlayerEntityResponse,
 } from "../../src/contracts/world-state.js";
-import { mutated, notFound, ok, parseBody, type RouteHandler } from "./context.js";
+import { mutated, notFound, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 export const entityRoutes = {
   listEntities: (ctx) =>
@@ -69,4 +70,4 @@ export const entityRoutes = {
       inventory: ctx.narrative.getInventory(params.id),
     } satisfies InventoryMutationResponse);
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

@@ -17,7 +17,8 @@ import type {
   VocabularySetResponse,
   WorldDocResponse,
 } from "../../src/contracts/world-state.js";
-import { bad, mutated, notFound, ok, parseBody, type RouteHandler } from "./context.js";
+import { bad, mutated, notFound, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 /** Documento canónico de sistemas de UI (compartido con el resto de prompts
  *  del contrato) — lo sirve GET /ui_doc para la tool MCP ui_doc_get. */
@@ -122,4 +123,4 @@ export const docRoutes = {
       remaining: narrative.scheduled_events.length,
     } satisfies ScheduledEventResolveResponse);
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

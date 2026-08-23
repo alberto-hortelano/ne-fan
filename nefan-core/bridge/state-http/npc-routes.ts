@@ -6,7 +6,8 @@ import {
 } from "../../src/contracts/request-schemas.js";
 import type { ResponseOf } from "../../src/contracts/http.js";
 import type { NpcsInTransitResponse, WorldStateApi } from "../../src/contracts/world-state.js";
-import { bad, mutated, notFound, ok, parseBody, type RouteHandler } from "./context.js";
+import { bad, mutated, notFound, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 export const npcRoutes = {
   npcsInTransit: (ctx) =>
@@ -39,4 +40,4 @@ export const npcRoutes = {
     if (!result.ok) return bad(result.error ?? "set directive failed");
     return mutated(result satisfies ResponseOf<typeof WorldStateApi.setNpcDirective>);
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

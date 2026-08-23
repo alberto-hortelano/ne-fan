@@ -14,7 +14,8 @@ import type { SceneRecord } from "../../src/narrative/types.js";
 import type { NarrativeState } from "../../src/narrative/narrative-state.js";
 import type { ResponseOf } from "../../src/contracts/http.js";
 import type { SceneAssetRefsResponse, WorldStateApi } from "../../src/contracts/world-state.js";
-import { mutated, notFound, ok, parseBody, type RouteHandler } from "./context.js";
+import { mutated, notFound, ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 /** Para un tile, el contexto de costuras lo construye el SERVIDOR desde los
  *  edges de los vecinos registrados — el motor no puede olvidarse de pasarlo
@@ -59,4 +60,4 @@ export const sceneRoutes = {
       return notFound((err as Error).message);
     }
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

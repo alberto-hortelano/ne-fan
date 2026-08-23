@@ -3,10 +3,17 @@
  *  `WorldStateApi` ya era el dato con los 29 endpoints (method + path); el
  *  router lo duplicaba en 28 guardas `method === … && path === …`, y un
  *  endpoint nuevo sin rama solo lo cazaba un test de contrato al que había
- *  que acordarse de mirar. Aquí la garantía va en el TIPO:
- *  `Record<RouteKey, RouteHandler>` hace que un endpoint sin handler NO
- *  COMPILE, y el `satisfies` de cada fichero de handlers hace que un handler
- *  sin endpoint tampoco. */
+ *  que acordarse de mirar. Aquí la garantía va en el TIPO, y son tres cosas
+ *  distintas que NO compilan (las tres comprobadas rompiéndolas a mano):
+ *   1. un endpoint del contrato sin handler → falla `Record<RouteKey, …>` aquí;
+ *   2. AMPLIAR el contrato con un endpoint 29 → el mismo error, así que no se
+ *      puede añadir una ruta sin decidir quién la contesta;
+ *   3. un handler que no corresponde a ningún endpoint → falla `RouteGroup` en
+ *      el fichero del handler.
+ *  La 3 no salía gratis: con `Record<string, RouteHandler>` compilaba, porque
+ *  TypeScript no comprueba propiedades sobrantes a través de un spread. Lo
+ *  cazó QA leyendo esta misma cabecera, que prometía una garantía que no
+ *  existía. */
 import { WorldStateApi } from "../../src/contracts/world-state.js";
 import type { RouteHandler } from "./context.js";
 import { docRoutes } from "./doc-routes.js";
@@ -26,6 +33,22 @@ import { sessionRoutes } from "./session-routes.js";
 export const PLANNED_ROUTES = ["getLlmContext"] as const;
 
 export type RouteKey = Exclude<keyof typeof WorldStateApi, (typeof PLANNED_ROUTES)[number]>;
+
+/** El tipo con el que cada fichero de handlers se declara.
+ *
+ *  `Partial<Record<RouteKey, …>>` y no `Record<string, …>`: la diferencia es
+ *  justo la SEGUNDA dirección de la garantía. Con `string` por clave, un
+ *  handler que no corresponde a ningún endpoint del contrato compilaba tan
+ *  campante y se quedaba ahí, muerto, pareciendo vivo — y el `Record<RouteKey,
+ *  RouteHandler>` de abajo no lo cazaba porque TypeScript no comprueba
+ *  propiedades sobrantes a través de un spread. Con `RouteKey`, el error sale
+ *  en el fichero del handler, que es donde está el fallo.
+ *
+ *  Lo que esto NO canda, y lo canda un test: el mismo endpoint servido por dos
+ *  ficheros. Los dos serían claves válidas, el último spread ganaría en
+ *  silencio, y quien lo caza es el aserto de unicidad de
+ *  test/state-http-dispatch.test.ts. */
+export type RouteGroup = Partial<Record<RouteKey, RouteHandler>>;
 
 export const ROUTES: Record<RouteKey, RouteHandler> = {
   ...sessionRoutes,

@@ -3,7 +3,8 @@
 import { NarrativeProgressRequestSchema } from "../../src/contracts/request-schemas.js";
 import type { ResponseOf } from "../../src/contracts/http.js";
 import type { WorldStateApi, WorldStateHealthResponse } from "../../src/contracts/world-state.js";
-import { ok, parseBody, type RouteHandler } from "./context.js";
+import { ok, parseBody } from "./context.js";
+import type { RouteGroup } from "./routes.js";
 
 export const sessionRoutes = {
   health: (ctx) =>
@@ -56,4 +57,4 @@ export const sessionRoutes = {
     ctx.onProgress(parsed.data.message.slice(0, 300));
     return ok({ ok: true } satisfies ResponseOf<typeof WorldStateApi.narrativeProgress>);
   },
-} satisfies Record<string, RouteHandler>;
+} satisfies RouteGroup;

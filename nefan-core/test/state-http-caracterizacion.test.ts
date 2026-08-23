@@ -14,7 +14,21 @@
  *
  *  Los demás huecos verificados por grep: /sessions/asset_refs sin
  *  sessionStorage, JSON inválido, body > 256 KiB, OPTIONS, GET /entity/player
- *  y la normalización de barras del path. */
+ *  y la normalización de barras del path.
+ *
+ *  Y aquí viven los TRES cambios de comportamiento del corte, cada uno en su
+ *  `describe("… CAMBIO DECLARADO n …")`. Están escritos aquí a propósito:
+ *  `implementacion.md` no se commitea, así que este fichero es la única
+ *  memoria que va a quedar dentro de un mes de qué dejó de funcionar igual y
+ *  por qué se decidió que daba igual.
+ *   1. Segmentos de más y barras dobles INTERIORES ⇒ 404 (antes contestaban
+ *      por otra URL; uno de esos casos además escribía el save).
+ *   2. TODO POST lee su body ⇒ un JSON roto es 500 en las dos rutas que lo
+ *      ignoraban, y un cuerpo > 256 KiB corta el socket en tres que antes
+ *      contestaban.
+ *   3. `POST /vocabulary` ve el body antes que su propia comprobación de
+ *      sesión activa. La guarda de SEGURIDAD `x-nefan-session` NO se movió, y
+ *      hay un test que lo sujeta. */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -46,6 +60,12 @@ interface Harness {
   narrative: NarrativeState;
   /** Cuántas veces se llamó a onMutation (el save del bridge). */
   mutaciones: () => number;
+  /** Registra un plugin EN PROCESO (sin pasar por el cable) y devuelve su id.
+   *  Hace falta para ejercer el camino de ÉXITO de GET /plugins/{id}/inspect:
+   *  con un id inexistente el handler sale por `bad(...)` y nunca llega a su
+   *  `ok(...)`, así que un `mutated` colado ahí no lo vería nadie. Sembrarlo
+   *  aquí y no con un POST previo mantiene el test independiente del orden. */
+  sembrarPlugin: (nombre: string) => string;
   cerrar: () => void;
 }
 
@@ -91,6 +111,8 @@ function levantar(opts: { conStorage: boolean; gamesDir: string }): Promise<Harn
         baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
         narrative,
         mutaciones: () => mutaciones,
+        sembrarPlugin: (nombre) =>
+          registerRuntimePlugin(narrative, activePlugins, { ...COUNTER_MANIFEST, name: nombre }).id,
         cerrar: () => server.close(),
       }),
     );
@@ -116,6 +138,8 @@ async function pedir(
 let h: Harness;
 let gamesDir: string;
 let schedId: string;
+/** Plugin YA registrado: lo necesita el camino de éxito de /plugins/{id}/inspect. */
+let pluginVivo: string;
 
 before(async () => {
   // Copia del juego de fixtures: GET /world_doc lee el world.md de disco y
@@ -132,6 +156,7 @@ before(async () => {
   h.narrative.recordEntitySpawned("boris", "npc", "escena_1", [0, 0, 0], { name: "Boris" });
   h.narrative.recordSceneLoaded("tile_carac", { scene_id: "tile_carac" });
   schedId = h.narrative.addScheduledEvent("Vira se entera", "al volver", "evt_carac");
+  pluginVivo = h.sembrarPlugin("contador_de_caracterizacion");
 });
 
 after(() => {
@@ -230,12 +255,21 @@ const MUTADORAS: Array<{ nombre: string; method: string; path: () => string; bod
 
 /** Las 16 rutas con rama que NO mutan. Un `mutated: true` de más aquí
  *  escribiría el save en cada lectura del motor narrativo. */
-const NO_MUTADORAS: Array<{ nombre: string; method: string; path: string; body?: unknown }> = [
+const NO_MUTADORAS: Array<{
+  nombre: string;
+  method: string;
+  path: string | (() => string);
+  body?: unknown;
+}> = [
   { nombre: "GET /health", method: "GET", path: "/health" },
   { nombre: "GET /map", method: "GET", path: "/map" },
   { nombre: "GET /map/place/{id}", method: "GET", path: "/map/place/millhaven" },
   { nombre: "GET /entities", method: "GET", path: "/entities" },
   { nombre: "GET /entity/{id}", method: "GET", path: "/entity/boris" },
+  // El shape especial del jugador es OTRA rama del mismo handler, y es de lo
+  // que más lee el motor narrativo: marcarla como mutadora reescribiría el
+  // state.json entero en cada lectura. La fila de `/entity/boris` no la toca.
+  { nombre: "GET /entity/{id}", method: "GET", path: "/entity/player" },
   { nombre: "GET /entity/{id}/inventory", method: "GET", path: "/entity/boris/inventory" },
   { nombre: "GET /world_doc", method: "GET", path: "/world_doc" },
   { nombre: "GET /ui_doc", method: "GET", path: "/ui_doc" },
@@ -243,7 +277,10 @@ const NO_MUTADORAS: Array<{ nombre: string; method: string; path: string; body?:
   { nombre: "GET /npcs/in_transit", method: "GET", path: "/npcs/in_transit" },
   { nombre: "GET /npc/{id}", method: "GET", path: "/npc/boris" },
   { nombre: "GET /plugins", method: "GET", path: "/plugins" },
+  // Con un id inexistente el handler sale por `bad(...)`: hace falta ADEMÁS
+  // el camino de éxito, o su `ok(...)` no lo ejerce nadie con el contador.
   { nombre: "GET /plugins/{id}/inspect", method: "GET", path: "/plugins/deadbeef/inspect" },
+  { nombre: "GET /plugins/{id}/inspect", method: "GET", path: () => `/plugins/${pluginVivo}/inspect` },
   { nombre: "GET /sessions/asset_refs", method: "GET", path: "/sessions/asset_refs" },
   {
     nombre: "POST /narrative_progress",
@@ -287,22 +324,29 @@ describe("State API · caracterización del flag `mutated`", () => {
     // Si alguien añade un endpoint, esta cuenta obliga a decidir a qué lado
     // cae — que es exactamente la decisión que un refactor pierde en silencio.
     assert.equal(MUTADORAS.length, 12);
-    assert.equal(NO_MUTADORAS.length, 16);
+    assert.equal(new Set(NO_MUTADORAS.map((r) => r.nombre)).size, 16);
+    // Más sondas que rutas: dos rutas tienen DOS caminos de éxito distintos
+    // (`/entity/player` frente a una entidad normal, y un plugin que existe
+    // frente a uno que no), y el contador solo ve el camino que se recorre.
+    // Un `mutated` colado en el camino no ejercido pasaba desapercibido con el
+    // repo entero en verde: lo encontró QA, y estas dos filas lo cierran.
+    assert.equal(NO_MUTADORAS.length, 18);
   });
 
   it("las 16 rutas restantes NO persisten: onMutation +0 cada una", async () => {
     for (const ruta of NO_MUTADORAS) {
       const antes = h.mutaciones();
-      const res = await pedir(h.baseUrl, ruta.method, ruta.path, ruta.body);
+      const path = typeof ruta.path === "function" ? ruta.path() : ruta.path;
+      const res = await pedir(h.baseUrl, ruta.method, path, ruta.body);
       assert.notEqual(
         res.status,
         404 as number,
-        `${ruta.nombre} cayó al 404: ${JSON.stringify(res.body)}`,
+        `${ruta.nombre} (${path}) cayó al 404: ${JSON.stringify(res.body)}`,
       );
       assert.equal(
         h.mutaciones() - antes,
         0,
-        `${ruta.nombre} disparó onMutation: escribe el save en una LECTURA del motor`,
+        `${ruta.nombre} (${path}) disparó onMutation: escribe el save en una LECTURA del motor`,
       );
     }
   });
@@ -336,24 +380,6 @@ describe("State API · bordes del transporte", () => {
     const body = (await res.json()) as { error?: string };
     assert.match(String(body.error), /invalid JSON body/);
     assert.equal(h.mutaciones() - antes, 0);
-  });
-
-  it("CAMBIO DECLARADO: JSON inválido en los dos POST sin body ya no se ignora", async () => {
-    // `POST /npc/{id}/arrive` y `POST /scheduled_event/{id}/resolve` eran las
-    // dos únicas ramas que NUNCA leían el body: un cuerpo corrupto entraba y
-    // el handler seguía como si nada. Ahora el despacho lee el body de TODO
-    // POST, así que un JSON roto sale con 500 `invalid JSON body` en vez de
-    // colar. Es más fail-loud —quien manda basura se entera— y es el segundo
-    // y último cambio de comportamiento de #225, declarado en implementacion.md.
-    for (const path of ["/npc/boris/arrive", `/scheduled_event/${schedId}/resolve`]) {
-      const res = await fetch(`${h.baseUrl}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{roto",
-      });
-      assert.equal(res.status, 500, path);
-      assert.match(String(((await res.json()) as { error?: string }).error), /invalid JSON body/);
-    }
   });
 
   it("body vacío en un POST llega como undefined y lo rebota el zod con 400", async () => {
@@ -460,24 +486,32 @@ describe("State API · bordes del transporte", () => {
   });
 });
 
-describe("State API · CAMBIO DECLARADO: la ruta pedida es la ruta contestada", () => {
-  it("una URL con segmentos de más ya no se contesta con el recurso de OTRA URL", async () => {
+describe("State API · CAMBIO DECLARADO 1: la ruta pedida es la ruta contestada", () => {
+  it("segmentos de más y barras dobles INTERIORES dejan de colar", async () => {
     // El router de la cadena de ifs miraba `parts[2]` sin comprobar
-    // `parts.length`, y `parts` venía de un `filter(Boolean)` que se comía las
-    // barras vacías: `/map/place/millhaven/lo-que-sea` devolvía 200 con el
-    // place `millhaven`, y `/entity//boris` con la entidad `boris`. Una
-    // respuesta 200 para una URL que nadie pidió.
+    // `parts.length`, sobre un array del que `filter(Boolean)` ya había
+    // quitado los huecos. Dos consecuencias, y la segunda es más ancha que la
+    // primera: `/map/place/millhaven/lo-que-sea` devolvía 200 con el place
+    // `millhaven`, y CUALQUIER barra doble interior se colapsaba, así que
+    // `/map//place/world` o `/entity/player//inventory` también contestaban.
+    // Una respuesta 200 para una URL que nadie pidió.
     //
-    // `matchRoute` exige la plantilla EXACTA, así que pasan a 404. Es el único
-    // cambio de comportamiento de #225 y va declarado en implementacion.md:
-    // ningún emisor real las produce (narrative-mcp y los clientes tipados
-    // pasan por `fillPath`, que percent-codifica el id y nunca mete un
-    // segmento de más).
+    // `matchRoute` exige la plantilla EXACTA, así que todas pasan a 404.
+    // Ningún emisor real las produce: narrative-mcp y los clientes tipados
+    // pasan por `fillPath`, que percent-codifica el id (los 21 sitios de
+    // narrative-mcp verificados por QA). Declarado en implementacion.md.
     for (const path of [
+      // el hueco en posición de {param}
       "/map/place/millhaven/lo-que-sea",
       "/map/place//millhaven",
       "/entity//boris",
       "/entity//boris/inventory",
+      // …y el hueco en cualquier OTRA posición, que es la mitad que faltaba
+      // por escribir: la encontró QA midiendo main contra la rama.
+      "/map//place/millhaven",
+      "/entity/player//inventory",
+      "/plugins//deadbeef/inspect",
+      "/npcs//in_transit",
     ]) {
       const { status, body } = await pedir(h.baseUrl, "GET", path);
       assert.equal(status, 404, `${path} contestó ${status}`);
@@ -486,6 +520,102 @@ describe("State API · CAMBIO DECLARADO: la ruta pedida es la ruta contestada", 
     // Y la ruta bien escrita sigue contestando, que es la otra mitad.
     assert.equal((await pedir(h.baseUrl, "GET", "/map/place/millhaven")).status, 200);
     assert.equal((await pedir(h.baseUrl, "GET", "/entity/boris")).status, 200);
+    assert.equal((await pedir(h.baseUrl, "GET", "/entity/player/inventory")).status, 200);
+  });
+
+  it("…incluido un POST que ANTES escribía el save", async () => {
+    // `POST /entity/boris//inventory` daba 200 y MUTABA en el router viejo.
+    // Ahora es un 404 que no toca nada. Es el único de los casos nuevos que
+    // tenía efecto de escritura, y por eso se comprueba con el contador: un
+    // 404 que aun así persistiera sería peor que el 200 de antes.
+    const antes = h.mutaciones();
+    const res = await pedir(h.baseUrl, "POST", "/entity/boris//inventory", { item: { id: "x" } });
+    assert.equal(res.status, 404);
+    assert.equal(h.mutaciones() - antes, 0, "una ruta que ya no existe no puede escribir el save");
+  });
+});
+
+describe("State API · CAMBIO DECLARADO 3: POST /vocabulary ve antes el body que su sesión", () => {
+  it("con la sesión cerrada Y el body roto, gana el body (500, antes 404)", async () => {
+    // El router viejo comprobaba la sesión activa ANTES de leer el body; ahora
+    // el despacho lee el body de todo POST y esa comprobación vive dentro del
+    // handler. Solo se nota cuando pasan las dos cosas a la vez, y narrative-mcp
+    // no puede producirlo (serializa con JSON.stringify). Lo encontró QA.
+    const sin = await levantar({ conStorage: true, gamesDir });
+    try {
+      sin.narrative.session_id = null;
+      const roto = await fetch(`${sin.baseUrl}/vocabulary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{roto",
+      });
+      assert.equal(roto.status, 500);
+      assert.match(String(((await roto.json()) as { error?: string }).error), /invalid JSON body/);
+      // Con el body BIEN, la respuesta es la de siempre: el cambio se limita
+      // al caso en que además el cuerpo es basura.
+      const bueno = await pedir(sin.baseUrl, "POST", "/vocabulary", { entries: [] });
+      assert.equal(bueno.status, 404);
+      assert.match(String(bueno.body.error), /no active session/);
+    } finally {
+      sin.cerrar();
+    }
+  });
+
+  it("lo que NO se movió: la guarda de sesión sigue ANTES de leer el body", async () => {
+    // Esto es lo que de verdad importa del orden. `x-nefan-session` es un
+    // invariante de SEGURIDAD: una petición de otra sesión tiene que rebotar
+    // sin que su cuerpo llegue a tocarse, por roto o por enorme que venga.
+    const roto = await fetch(`${h.baseUrl}/vocabulary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-nefan-session": "sesion-pisada" },
+      body: "{roto",
+    });
+    assert.equal(roto.status, 409, "el body no puede adelantar a la guarda de sesión");
+    assert.match(String(((await roto.json()) as { error?: string }).error), /session_mismatch/);
+  });
+});
+
+describe("State API · CAMBIO DECLARADO 2: JSON inválido y body enorme en TODO POST", () => {
+  it("JSON inválido en los dos POST que no leían el body ya no se ignora", async () => {
+    // `POST /npc/{id}/arrive` y `POST /scheduled_event/{id}/resolve` eran las
+    // dos únicas ramas que NUNCA leían el body: un cuerpo corrupto entraba y
+    // el handler seguía como si nada. Ahora el despacho lee el body de TODO
+    // POST, así que un JSON roto sale con 500 `invalid JSON body` en vez de
+    // colar. Es más fail-loud y va en la buena dirección.
+    for (const path of ["/npc/boris/arrive", `/scheduled_event/${schedId}/resolve`]) {
+      const res = await fetch(`${h.baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{roto",
+      });
+      assert.equal(res.status, 500, path);
+      assert.match(String(((await res.json()) as { error?: string }).error), /invalid JSON body/);
+    }
+  });
+
+  it("…y con más de 256 KiB esas mismas rutas pasan a cortar el socket", async () => {
+    // La cara fea del mismo cambio, y hay que decirla: `readJson` hace
+    // `req.destroy()`, así que un cuerpo enorme no da 500 — tumba la conexión.
+    // Tres rutas que antes CONTESTABAN (arrive, resolve y /vocabulary) ahora
+    // no contestan, y por la vía MCP eso sale como «bridge unreachable», que
+    // señala al servicio caído cuando el problema es el tamaño del cuerpo.
+    // Inalcanzable desde el motor (manda `{}`), pero es un modo de fallo nuevo
+    // y engañoso. El arreglo de verdad —contestar 400 como pide el contrato en
+    // vez de destruir el socket— es el item de backlog que ya estaba anotado, y
+    // ahora abarca tres rutas más. No se hace aquí: cambiaría también
+    // `POST /map/place`, que hoy ya se comporta así.
+    const enorme = JSON.stringify({ entries: "x".repeat(300 * 1024) });
+    for (const path of ["/npc/boris/arrive", `/scheduled_event/${schedId}/resolve`, "/vocabulary"]) {
+      await assert.rejects(
+        fetch(`${h.baseUrl}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: enorme,
+        }),
+        /fetch failed/,
+        path,
+      );
+    }
   });
 });
 

@@ -181,9 +181,7 @@
   "modulos": [
     {
       "id": "scene-normalize",
-      "mutate": [
-        "src/scene/scene-normalize.ts"
-      ],
+      "mutate": ["src/scene/scene-normalize.ts"],
       "tests": [
         "test/plan-collision.test.ts",
         "test/scene-expand.test.ts",
@@ -196,32 +194,21 @@
     },
     {
       "id": "plugins-dsl",
-      "mutate": [
-        "src/plugins/dsl/*.ts"
-      ],
-      "tests": [
-        "test/plugin-migrate.test.ts",
-        "test/plugins-dsl.test.ts"
-      ],
+      "mutate": ["src/plugins/dsl/*.ts"],
+      "tests": ["test/plugin-migrate.test.ts", "test/plugins-dsl.test.ts"],
       "break": 70,
       "porque": "El evaluador de condiciones y efectos de los plugins: 1362 de los 1684 mutantes de la corrida vieja. plugin-migrate importa evaluate.ts y errors.ts directamente, así que entra en la batería — la corrida vieja lo dejaba fuera."
     },
     {
       "id": "combat-resolver",
-      "mutate": [
-        "src/combat/combat-resolver.ts"
-      ],
-      "tests": [
-        "test/combat-resolver.test.ts"
-      ],
+      "mutate": ["src/combat/combat-resolver.ts"],
+      "tests": ["test/combat-resolver.test.ts"],
       "break": 68,
       "porque": "La fórmula de daño. Los tests de sistemas y de simulación lo alcanzan por transitividad pero no lo ejercen: el único que lo importa es el suyo."
     },
     {
       "id": "blueprint-volumenes",
-      "mutate": [
-        "src/scene/blueprint/volumes.ts"
-      ],
+      "mutate": ["src/scene/blueprint/volumes.ts"],
       "tests": [
         "test/blueprint-collision.test.ts",
         "test/custom-volume.test.ts",
@@ -259,10 +246,7 @@
     },
     {
       "id": "blueprint-plan",
-      "mutate": [
-        "src/scene/blueprint/index.ts",
-        "src/scene/blueprint/plan-collision.ts"
-      ],
+      "mutate": ["src/scene/blueprint/index.ts", "src/scene/blueprint/plan-collision.ts"],
       "tests": [
         "test/blueprint-collision.test.ts",
         "test/plan-collision.test.ts",
@@ -297,12 +281,8 @@
     },
     {
       "id": "blueprint-scatter",
-      "mutate": [
-        "src/scene/blueprint/scatter.ts"
-      ],
-      "tests": [
-        "test/scatter.test.ts"
-      ],
+      "mutate": ["src/scene/blueprint/scatter.ts"],
+      "tests": ["test/scatter.test.ts"],
       "break": 43,
       "porque": "El sembrado determinista de detalle sobre el tile (538 líneas, el fichero más grande del blueprint) con una batería de un solo test: el reparto por batería lo hace casi gratis de medir."
     },
@@ -313,19 +293,13 @@
         "src/scene/blueprint/palette.ts",
         "src/scene/blueprint/time-of-day.ts"
       ],
-      "tests": [
-        "test/derive-vegetation.test.ts",
-        "test/surfaces.test.ts",
-        "test/time-of-day.test.ts"
-      ],
+      "tests": ["test/derive-vegetation.test.ts", "test/surfaces.test.ts", "test/time-of-day.test.ts"],
       "break": 59,
       "porque": "Lo que el engine deriva del bioma cuando el motor no lo dice: vegetación, paleta y hora del día. Tres ficheros pequeños que comparten batería."
     },
     {
       "id": "blueprint-fps-spec",
-      "mutate": [
-        "src/scene/blueprint/fps-spec.ts"
-      ],
+      "mutate": ["src/scene/blueprint/fps-spec.ts"],
       "tests": [
         "test/custom-volume.test.ts",
         "test/fps-atlas-golden.test.ts",
@@ -344,21 +318,14 @@
         "src/scene/blueprint/fps-interior.ts",
         "src/scene/blueprint/fps-relief.ts"
       ],
-      "tests": [
-        "test/fps-detail.test.ts",
-        "test/fps-riqueza.test.ts"
-      ],
+      "tests": ["test/fps-detail.test.ts", "test/fps-riqueza.test.ts"],
       "break": 42,
       "porque": "Detalle por cara, relieve e interiores: la riqueza visible del tile. Se llega a los tres desde fps-spec.ts, y los dos tests de la batería son los que tienen ese detalle por sujeto."
     },
     {
       "id": "blueprint-fps-ambiente",
-      "mutate": [
-        "src/scene/blueprint/fps-ambience.ts"
-      ],
-      "tests": [
-        "test/fps-ambience.test.ts"
-      ],
+      "mutate": ["src/scene/blueprint/fps-ambience.ts"],
+      "tests": ["test/fps-ambience.test.ts"],
       "break": 66,
       "porque": "Niebla, luz y cielo del tile. Un fichero, un test que lo importa: la batería mínima posible."
     },
@@ -380,24 +347,14 @@
     },
     {
       "id": "greybox-superficies",
-      "mutate": [
-        "src/scene/greybox/surfaces.ts"
-      ],
-      "tests": [
-        "test/custom-volume.test.ts",
-        "test/fps-atlas-golden.test.ts",
-        "test/surfaces.test.ts"
-      ],
+      "mutate": ["src/scene/greybox/surfaces.ts"],
+      "tests": ["test/custom-volume.test.ts", "test/fps-atlas-golden.test.ts", "test/surfaces.test.ts"],
       "break": 83,
       "porque": "Las caras y sus materiales: qué superficie recibe qué celda del atlas. La otra mitad del greybox, con batería propia más corta."
     },
     {
       "id": "world-map",
-      "mutate": [
-        "src/world-map/*.ts",
-        "!src/world-map/index.ts",
-        "!src/world-map/npc-director.ts"
-      ],
+      "mutate": ["src/world-map/*.ts", "!src/world-map/index.ts", "!src/world-map/npc-director.ts"],
       "tests": [
         "test/bootstrap-place.test.ts",
         "test/edges.test.ts",
@@ -412,9 +369,7 @@
     },
     {
       "id": "npc-director",
-      "mutate": [
-        "src/world-map/npc-director.ts"
-      ],
+      "mutate": ["src/world-map/npc-director.ts"],
       "tests": [
         "test/npc-director.test.ts",
         "test/state-http-caracterizacion.test.ts",
@@ -428,9 +383,7 @@
     },
     {
       "id": "store",
-      "mutate": [
-        "src/store/*.ts"
-      ],
+      "mutate": ["src/store/*.ts"],
       "tests": [
         "test/combat-systems.test.ts",
         "test/simulation.test.ts",
@@ -443,14 +396,8 @@
     },
     {
       "id": "state-http-dispatch",
-      "mutate": [
-        "src/contracts/http.ts",
-        "bridge/state-http/dispatch.ts"
-      ],
-      "tests": [
-        "test/state-http-contract.test.ts",
-        "test/state-http-dispatch.test.ts"
-      ],
+      "mutate": ["src/contracts/http.ts", "bridge/state-http/dispatch.ts"],
+      "tests": ["test/state-http-contract.test.ts", "test/state-http-dispatch.test.ts"],
       "break": 100,
       "porque": "Quién decide QUÉ endpoint contesta una URL. `http.ts` sale de `sin_mutar` con la tanda #225: `fillPath` ya vivía ahí y ahora también su inversa, `matchRoute`, que es la pieza capaz de desviar una ruta EN SILENCIO — un mutante que relaje la comparación de segmentos hace que `/map/place/x/y` vuelva a contestar por `/map/place/x`, y ninguna respuesta cambia de forma. Va con `dispatch.ts` porque los dos son el mismo camino y ningún test importa uno sin el otro; y va con dispatch.ts EXPRESAMENTE porque `bridge/` no está en el reparto: la guarda de sesión y el flag `mutated` que llega al borde son lo más caro de perder de todo el State API, y este es el único sitio del bridge donde hoy se miden. La batería son los dos únicos tests que importan lo mutado: el de contrato recorre las 29 rutas del contrato contra el server real y el de despacho llama a `matchRoute` y a `dispatchStateRequest` a pelo, sin abrir un puerto. Suelo 100 medido el 2026-08-23 sobre 103 mutantes: la primera corrida dio 85,8 % con 16 vivos, y los 16 señalaban cosas de verdad — la normalización de barras duplicada entre el matcher y el despacho, un segmento vacío en posición de {param} que ningún test tocaba (los tres que había los rebotaba la longitud, no la guarda), el mensaje del 409 que solo se comprobaba por su primera palabra, y un tope de bucle que no podía matarse porque el mutante era equivalente. Se arreglaron el código y los tests, no el número."
     }
