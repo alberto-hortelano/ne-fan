@@ -22,8 +22,9 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
 2. **Itera hasta que las herramientas den verde**, no hasta que a ti te parezca terminado:
    - `cd nefan-core && npm run verify` (build + lint + test, incluye el checker de fronteras).
    - `npm run crap -- --check`: la deuda del módulo que tocas no puede crecer.
-   - `npm run mutate` sobre tu módulo si es de los puros: **un mutante que sobrevive en el
-     código que acabas de escribir es un test que no lo comprueba**. Mátalos.
+   - `npm run mutate -- --cambiado`: mide solo lo que tu diff puede haber roto (y
+     `npm run afectado` te lo explica antes, fichero a fichero). **Un mutante que sobrevive en
+     el código que acabas de escribir es un test que no lo comprueba**. Mátalos.
    - Los umbrales viven en `nefan-core/data/contract/quality-thresholds.json` y
      `nefan-core/data/contract/arch-rules.json`. Si uno te estorba, dilo en el informe;
      NO lo subas por tu cuenta salvo que los requisitos te autoricen explícitamente.

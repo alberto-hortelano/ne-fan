@@ -5,12 +5,29 @@ name: Mutation testing
 # cambia, y esa pregunta se puede contestar una vez al día.
 on:
   workflow_dispatch:
+    inputs:
+      modulos:
+        description: "ids de módulo del plan, separados por espacios (vacío = todos)"
+        required: false
+        default: ""
   schedule:
     - cron: "0 3 * * *"
 
 jobs:
   mutation:
     runs-on: ubuntu-latest
+    # 42 ficheros mutados en 17 módulos = 8825 mutantes. Corrida completa medida
+    # el 2026-08-23 en una máquina de 16 hilos: 31m28 de reloj y 333 min de CPU.
+    # Este runner tiene 4 hilos, así que el reloj se acerca al CPU. El tope está
+    # para que un mutante que se atasque no se coma el día.
+    #
+    # AQUÍ SÍ VA LA COMPLETA, y a propósito: es la red que el selector no puede
+    # tender. `npm run mutate -- --cambiado` (scripts/afectado.ts) decide qué
+    # correr desde el grafo de imports de runtime, y ese grafo no ve lo que un
+    # test lee en runtime (un fixture, un prompt, un .json de data/). La
+    # nocturna es quien caza lo que la selección del día se dejó; si baja el
+    # score de un módulo que nadie corrió, ESE es el hallazgo.
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: nefan-core
@@ -22,9 +39,23 @@ jobs:
           cache: npm
           cache-dependency-path: nefan-core/package-lock.json
       - run: npm ci
-      - run: npm run mutate
+      # La corrida está partida por módulos (data/contract/mutation-targets.json)
+      # y el runner los recorre SIN cortar en el primero que baje de su break:
+      # una sola corrida deja medidos todos y el artefacto sube completo. El
+      # fallo se reporta al final, con el código de salida.
+      #
+      # `modulos` viaja por variable de entorno y no interpolado en el `run`:
+      # lo que escribe quien lanza el workflow no entra en la línea de comandos.
+      # La concurrencia la decide la máquina (scripts/mutate.ts): por defecto media
+      # máquina, que es lo correcto en un portátil con alguien delante. Aquí no
+      # hay nadie usándola, así que se le da todo menos un núcleo.
+      - run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $MODULOS
+        env:
+          MODULOS: ${{ inputs.modulos }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          # Un JSON por módulo; `npm run deuda` los lee todos y avisa por
+          # nombre del que falte.
           name: informe-mutacion
           path: nefan-core/reports/mutation/

@@ -1,0 +1,397 @@
+{
+  "_comment": "El reparto de la mutación por módulos. Fuente ÚNICA de qué se muta y con qué tests: de aquí salen los configs de Stryker (los genera scripts/mutate.ts y NO se commitean), la selección parcial de scripts/afectado.ts, la cola de `npm run deuda` y el candado de test/mutation-config.test.ts. POR QUÉ ESTÁ PARTIDO: con testRunner \"command\" Stryker no ve los tests uno a uno, coverageAnalysis va en `off` y cada mutante ejecuta la batería ENTERA que se le pase — así que la batería es el único dial de coste que hay. Medido el 2026-08-23 sobre la corrida de un solo config: 1684 mutantes con ocho ficheros de test por mutante, la mayoría de los cuales ni importaba el fichero mutado; 114,1 min de CPU con el paralelismo acotado. El reparto amplió los objetivos de 3 a 42 ficheros y los mutantes de 1684 a 6962, así que la corrida completa de HOY no es comparable con aquella: lo que abarata el trabajo no es que la completa cueste menos, es que casi nunca hace falta la completa (`npm run mutate -- --cambiado`). LA BATERÍA NO ES LIBRE: el candado la contrasta contra la traza de imports REAL —atravesando los barriles por el símbolo importado—, así que (1) todo test que importe un fichero mutado tiene que estar en su batería o en `excluidos` con motivo, (2) todo test de la batería tiene que alcanzar algún fichero mutado, si no es CPU quemada una vez por mutante, y (3) todo fichero mutado tiene que estar en exactamente un módulo, sin huérfanos en los `directorios_completos`. EL REPARTO ES TOTAL: todo .ts del perímetro puro —el que declara `core-puro-sin-node` en arch-rules.json— está en un módulo o en `sin_mutar` con motivo escrito, y `npm test` se pone rojo si aparece uno sin dueño. Sin esa totalidad, un diff que tocara solo ficheros sin dueño seleccionaría cero módulos y saldría verde sin que nadie midiera nada, que es la misma forma del fallo que tuvo esta casa meses con un objetivo apuntando a una ruta muerta. POR QUÉ LOS MÓDULOS NO SON TEMÁTICOS: agrupan por BATERÍA. `volumes.ts` va solo porque lo importan trece tests; juntarlo con la huella haría que los 977 mutantes de collision/footprint/volume-metrics pagasen esos trece. BREAK: el suelo de cada módulo es su score MEDIDO redondeado hacia abajo, no un número a ojo; sube conforme se maten supervivientes. Sustituye al break global de 72 de stryker.config.json, que era la media que sostenía plugins-dsl (1362 de los 1684 mutantes) y aprobaba por 0,86 puntos tapando lo que hicieran los pequeños.",
+  "comando": "NODE_OPTIONS=--max-old-space-size=1024 node --import tsx --test --test-concurrency=1",
+  "directorios_completos": [
+    "src/plugins/dsl",
+    "src/scene/blueprint",
+    "src/scene/greybox",
+    "src/store",
+    "src/world-map"
+  ],
+  "sin_mutar": [
+    {
+      "fichero": "src/combat/combat-system.ts",
+      "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
+    },
+    {
+      "fichero": "src/combat/basic-combat-system.ts",
+      "porque": "La implementación de combate por defecto. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/standard-combat-system.ts",
+      "porque": "El combate cuerpo a cuerpo completo. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/shooting-combat-system.ts",
+      "porque": "El combate a distancia por cono frontal. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/combat-manager.ts",
+      "porque": "Quien orquesta ataques y turnos sobre el sistema activo. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/enemy-ai.ts",
+      "porque": "La IA de los enemigos: personalidad, agresividad y elección de ataque. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/difficulty-presets.ts",
+      "porque": "Los presets de dificultad. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/combat-data.ts",
+      "porque": "La carga de combat_config.json y sus derivados. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/combatant.ts",
+      "porque": "El estado de un combatiente y sus transiciones. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/combat/registry.ts",
+      "porque": "El registro de sistemas de combate intercambiables. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/arch/check.ts",
+      "porque": "El checker de fronteras. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Con un matiz propio: su batería (architecture.test.ts) escanea el árbol ENTERO, y con `coverageAnalysis: off` eso se paga una vez por mutante — necesita una batería propia más barata antes de entrar. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/schemas.ts",
+      "porque": "Los zod que son la frontera con el modelo: fuente de verdad de los tools. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/scene-schema.ts",
+      "porque": "El zod de la escena Format D, el que rechaza una escena sin `tile`. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/json-schema.ts",
+      "porque": "La traducción de zod a JSON Schema para los tools del MCP. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/render.ts",
+      "porque": "El render de los prompts del contrato. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/regions.ts",
+      "porque": "Las regiones del contrato de escena. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contract/model-io/validate.ts",
+      "porque": "El pre-flight fail-loud de la salida del modelo. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/gateway.ts",
+      "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
+    },
+    {
+      "fichero": "src/contracts/index.ts",
+      "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
+    },
+    {
+      "fichero": "src/contracts/narrative-mcp-ws.ts",
+      "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
+    },
+    {
+      "fichero": "src/contracts/asset-store.ts",
+      "porque": "El contrato del asset-store (:8767). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/gpu-worker.ts",
+      "porque": "El contrato del GPU worker (:8766). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/narrative-llm.ts",
+      "porque": "El contrato de la llamada narrativa al LLM. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/remote-gen.ts",
+      "porque": "El contrato del remote-gen (:8768). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/request-schemas.ts",
+      "porque": "Los zod de petición de los servicios. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/common.ts",
+      "porque": "Los tipos y zod que comparten los contratos de servicio. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/http.ts",
+      "porque": "El contrato HTTP común: códigos y forma del error. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/service-registry.ts",
+      "porque": "El registro de servicios y sus puertos. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/contracts/world-state.ts",
+      "porque": "El contrato del estado del mundo que expone la State API. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/protocol/messages.ts",
+      "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
+    },
+    {
+      "fichero": "src/protocol/message-schema.ts",
+      "porque": "El zod del wire cliente↔bridge. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/image-collision.ts",
+      "porque": "Trece líneas: la constante del carácter sólido de una rejilla venida de imagen. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Ningún test lo importa por su nombre, aunque quince baterías lo cargan de rebote. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/scene-validate.ts",
+      "porque": "El validador de jugabilidad (flood-fill sobre 128×128). Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Con un aviso: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada ya es medible, pero conviene que vaya en un módulo solo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/scene-expand.ts",
+      "porque": "La expansión de primitivas de escena. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/terrain-collision.ts",
+      "porque": "La colisión contra el terreno del tile. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/tile.ts",
+      "porque": "La geometría del tile: coordenadas, celdas y metros. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/tile-edges.ts",
+      "porque": "Los bordes entre tiles y el bloqueo direccional. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/scene/aim.ts",
+      "porque": "El apuntado y el cono frontal. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/simulation/game-loop.ts",
+      "porque": "El bucle de simulación que corre en el bridge. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/simulation/npc-behavior.ts",
+      "porque": "La vida ambiental de los NPCs — 739 líneas, el mayor del perímetro sin medir. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/simulation/npc-behavior-registry.ts",
+      "porque": "El registro de comportamientos de NPC. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/simulation/npc-roles.ts",
+      "porque": "Los roles y directivas que ejecuta el NpcBehaviorSystem. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    },
+    {
+      "fichero": "src/systems/registry.ts",
+      "porque": "El registro de sistemas de juego intercambiables. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+    }
+  ],
+  "modulos": [
+    {
+      "id": "scene-normalize",
+      "mutate": ["src/scene/scene-normalize.ts"],
+      "tests": [
+        "test/scene-expand.test.ts",
+        "test/scene-normalize.test.ts",
+        "test/terrain-collision.test.ts",
+        "test/tile.test.ts"
+      ],
+      "break": 98,
+      "porque": "Format D → world scene: el único camino hasta lo que el cliente pinta. Los cuatro son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión."
+    },
+    {
+      "id": "plugins-dsl",
+      "mutate": ["src/plugins/dsl/*.ts"],
+      "tests": ["test/plugin-migrate.test.ts", "test/plugins-dsl.test.ts"],
+      "break": 70,
+      "porque": "El evaluador de condiciones y efectos de los plugins: 1362 de los 1684 mutantes de la corrida vieja. plugin-migrate importa evaluate.ts y errors.ts directamente, así que entra en la batería — la corrida vieja lo dejaba fuera."
+    },
+    {
+      "id": "combat-resolver",
+      "mutate": ["src/combat/combat-resolver.ts"],
+      "tests": ["test/combat-resolver.test.ts"],
+      "break": 68,
+      "porque": "La fórmula de daño. Los tests de sistemas y de simulación lo alcanzan por transitividad pero no lo ejercen: el único que lo importa es el suyo."
+    },
+    {
+      "id": "blueprint-volumenes",
+      "mutate": ["src/scene/blueprint/volumes.ts"],
+      "tests": [
+        "test/blueprint-collision.test.ts",
+        "test/custom-volume.test.ts",
+        "test/derive-vegetation.test.ts",
+        "test/fps-ambience.test.ts",
+        "test/fps-atlas-golden.test.ts",
+        "test/fps-detail.test.ts",
+        "test/fps-riqueza.test.ts",
+        "test/plan-collision.test.ts",
+        "test/prism-volume.test.ts",
+        "test/scatter.test.ts",
+        "test/surfaces.test.ts",
+        "test/tile-greybox.test.ts",
+        "test/volume-metrics.test.ts"
+      ],
+      "break": 73,
+      "porque": "El vocabulario de volúmenes que el motor narrativo declara y el greybox construye. Va SOLO en su módulo justamente por su batería de trece: es el fichero con más fan-in del blueprint y arrastrar a nadie más con él sale caro. Dos de esos trece llegan por el barril."
+    },
+    {
+      "id": "blueprint-huella",
+      "mutate": [
+        "src/scene/blueprint/collision.ts",
+        "src/scene/blueprint/footprint.ts",
+        "src/scene/blueprint/volume-metrics.ts"
+      ],
+      "tests": [
+        "test/blueprint-collision.test.ts",
+        "test/custom-volume.test.ts",
+        "test/fps-ambience.test.ts",
+        "test/prism-volume.test.ts",
+        "test/volume-metrics.test.ts"
+      ],
+      "break": 55,
+      "porque": "La huella XZ y la colisión que sale de ella — lo que de verdad bloquea al jugador. La colisión NUNCA se deriva de píxeles, así que un mutante vivo aquí es que nadie comprueba por dónde se puede pasar. blueprint-collision y prism-volume entran por el BARRIL (importan volumeCollisionGrid y parseVolumes de blueprint/index.js): sin ellos, collision.ts medía 29,6 % en vez de 61,6 %. Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca."
+    },
+    {
+      "id": "blueprint-plan",
+      "mutate": ["src/scene/blueprint/index.ts", "src/scene/blueprint/plan-collision.ts"],
+      "tests": [
+        "test/blueprint-collision.test.ts",
+        "test/plan-collision.test.ts",
+        "test/prism-volume.test.ts"
+      ],
+      "break": 89,
+      "porque": "La puerta del blueprint (el barril que consume el bridge) y la colisión del plano declarativo. Ningún test importa plan-collision.ts por su nombre: se llega por el barril, y por eso los dos van juntos."
+    },
+    {
+      "id": "blueprint-suelo",
+      "mutate": [
+        "src/scene/blueprint/ground.ts",
+        "src/scene/blueprint/ground-collision.ts",
+        "src/scene/blueprint/ground-prims.ts"
+      ],
+      "tests": [
+        "test/blueprint-ground.test.ts",
+        "test/fps-atlas-golden.test.ts",
+        "test/fps-riqueza.test.ts",
+        "test/plan-collision.test.ts",
+        "test/scatter.test.ts"
+      ],
+      "break": 65,
+      "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
+      "excluidos": [
+        {
+          "test": "test/contract-fixtures.test.ts",
+          "porque": "Importa ../../narrative-mcp/validators.js, FUERA de nefan-core. Stryker copia el paquete a un sandbox (.stryker-tmp/sandbox-*) y esa ruta relativa se sale de la copia: el dry run muere con ERR_MODULE_NOT_FOUND antes de mutar nada. Medido el 2026-08-23: con este test en la batería, blueprint-suelo no dejaba informe."
+        }
+      ]
+    },
+    {
+      "id": "blueprint-scatter",
+      "mutate": ["src/scene/blueprint/scatter.ts"],
+      "tests": ["test/scatter.test.ts"],
+      "break": 43,
+      "porque": "El sembrado determinista de detalle sobre el tile (538 líneas, el fichero más grande del blueprint) con una batería de un solo test: el reparto por batería lo hace casi gratis de medir."
+    },
+    {
+      "id": "blueprint-derive",
+      "mutate": [
+        "src/scene/blueprint/derive.ts",
+        "src/scene/blueprint/palette.ts",
+        "src/scene/blueprint/time-of-day.ts"
+      ],
+      "tests": ["test/derive-vegetation.test.ts", "test/surfaces.test.ts", "test/time-of-day.test.ts"],
+      "break": 59,
+      "porque": "Lo que el engine deriva del bioma cuando el motor no lo dice: vegetación, paleta y hora del día. Tres ficheros pequeños que comparten batería."
+    },
+    {
+      "id": "blueprint-fps-spec",
+      "mutate": ["src/scene/blueprint/fps-spec.ts"],
+      "tests": [
+        "test/custom-volume.test.ts",
+        "test/fps-atlas-golden.test.ts",
+        "test/fps-detail.test.ts",
+        "test/fps-riqueza.test.ts",
+        "test/scatter.test.ts",
+        "test/surfaces.test.ts"
+      ],
+      "break": 63,
+      "porque": "La spec que consume el renderer de primera persona, que es la vista ÚNICA del juego. Seis tests la importan directamente; va sola por lo mismo que volumes.ts."
+    },
+    {
+      "id": "blueprint-fps-detalle",
+      "mutate": [
+        "src/scene/blueprint/fps-detail.ts",
+        "src/scene/blueprint/fps-interior.ts",
+        "src/scene/blueprint/fps-relief.ts"
+      ],
+      "tests": ["test/fps-detail.test.ts", "test/fps-riqueza.test.ts"],
+      "break": 42,
+      "porque": "Detalle por cara, relieve e interiores: la riqueza visible del tile. Se llega a los tres desde fps-spec.ts, y los dos tests de la batería son los que tienen ese detalle por sujeto."
+    },
+    {
+      "id": "blueprint-fps-ambiente",
+      "mutate": ["src/scene/blueprint/fps-ambience.ts"],
+      "tests": ["test/fps-ambience.test.ts"],
+      "break": 66,
+      "porque": "Niebla, luz y cielo del tile. Un fichero, un test que lo importa: la batería mínima posible."
+    },
+    {
+      "id": "greybox-volumenes",
+      "mutate": [
+        "src/scene/blueprint/greybox.ts",
+        "src/scene/greybox/common.ts",
+        "src/scene/greybox/volume-prims.ts"
+      ],
+      "tests": [
+        "test/custom-volume.test.ts",
+        "test/fps-detail.test.ts",
+        "test/prism-volume.test.ts",
+        "test/tile-greybox.test.ts"
+      ],
+      "break": 33,
+      "porque": "El builder greybox: volúmenes declarativos → geometría 3D determinista, que es el arte del modo sin imagen. Es el equivalente VIVO del candidato `src/scene/stage/greybox.ts` del issue #168 — aquella carpeta se fue entera con la vista de proscenio."
+    },
+    {
+      "id": "greybox-superficies",
+      "mutate": ["src/scene/greybox/surfaces.ts"],
+      "tests": ["test/custom-volume.test.ts", "test/fps-atlas-golden.test.ts", "test/surfaces.test.ts"],
+      "break": 83,
+      "porque": "Las caras y sus materiales: qué superficie recibe qué celda del atlas. La otra mitad del greybox, con batería propia más corta."
+    },
+    {
+      "id": "world-map",
+      "mutate": ["src/world-map/*.ts", "!src/world-map/index.ts", "!src/world-map/npc-director.ts"],
+      "tests": [
+        "test/bootstrap-place.test.ts",
+        "test/edges.test.ts",
+        "test/map-triggers.test.ts",
+        "test/place-anchor.test.ts",
+        "test/style-application.test.ts",
+        "test/world-map.test.ts",
+        "test/world-snapshot.test.ts"
+      ],
+      "break": 72,
+      "porque": "El mapa multinivel: lugares, enlaces, anclas y triggers. Candidato del issue #168. `index.ts` se excluye porque es un barril que ningún test carga (sus mutantes serían NoCoverage sin significar nada) y npc-director.ts porque tiene otra batería."
+    },
+    {
+      "id": "npc-director",
+      "mutate": ["src/world-map/npc-director.ts"],
+      "tests": [
+        "test/npc-director.test.ts",
+        "test/state-http-contract.test.ts",
+        "test/state-http-server.test.ts",
+        "test/vocabulary.test.ts"
+      ],
+      "break": 80,
+      "porque": "Quién mueve a los NPCs por el mapa entre escenas. Sale de world-map porque sus cuatro tests no son los del mapa."
+    },
+    {
+      "id": "store",
+      "mutate": ["src/store/*.ts"],
+      "tests": [
+        "test/combat-systems.test.ts",
+        "test/simulation.test.ts",
+        "test/state-projection.test.ts",
+        "test/store-immutability.test.ts"
+      ],
+      "break": 41,
+      "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada."
+    }
+  ]
+}
