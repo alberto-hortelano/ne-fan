@@ -25,7 +25,7 @@ import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import { CONFIG } from "../src/config.js";
 import { resolveServiceUrl } from "../src/contracts/common.js";
-import { createStateHttpServer } from "./state-http-server.js";
+import { createStateHttpServer, pluginRegisterBody } from "./state-http-server.js";
 import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import { intakeClientMessage } from "./message-intake.js";
@@ -146,24 +146,43 @@ createStateHttpServer({
   plugins: {
     register: (raw) => {
       const result = registerRuntimePlugin(narrative, ctx.activePlugins, raw);
-      console.log(
-        `Bridge: plugin '${result.manifest.name}' v${result.manifest.version} ` +
-          `activado en runtime (${result.id.slice(0, 12)}…, ${result.fixturesPassed} fixtures)`,
-      );
+      const name = result.manifest.name;
+      const version = result.manifest.version;
+      const short = result.id.slice(0, 12);
+      // Que el motor haya EVOLUCIONADO un plugin —y sobre todo que haya tomado
+      // uno shipped— no puede ser algo que se deduzca del warning del siguiente
+      // resume: se dice aquí, cuando pasa.
+      if (result.action === "migrated" && result.fromOriginAuthor === "developer") {
+        console.warn(
+          `Bridge: el motor narrativo TOMA el plugin de disco '${name}' ` +
+            `v${result.fromVersion}→v${version} (${short}…) — el JSON de data/…/plugins/ ` +
+            `queda inerte para esta sesión: el manifest vigente vive ya en el save`,
+        );
+      } else {
+        console.log(
+          result.action === "migrated"
+            ? `Bridge: plugin '${name}' migrado v${result.fromVersion}→v${version} en runtime (${short}…)`
+            : result.action === "unchanged"
+              ? `Bridge: plugin '${name}' v${version} ya activo (${short}…) — registro idempotente`
+              : `Bridge: plugin '${name}' v${version} activado en runtime ` +
+                `(${short}…, ${result.fixturesPassed} fixtures)`,
+        );
+      }
       // plugin_activated (§7.3 paso 5): se notifica con el status existente
       // para no tocar los parsers de cliente.
       ctx.broadcastNarrative({
         type: "narrative_status",
         phase: "ready",
         kind: "consequences",
-        message: `Plugin activado: ${result.manifest.name} (${result.id.slice(0, 12)}…)`,
+        message:
+          result.action === "migrated"
+            ? `Plugin evolucionado: ${name} v${result.fromVersion}→v${version}` +
+              (result.fromOriginAuthor === "developer" ? " (sustituye al de disco)" : "")
+            : result.action === "unchanged"
+              ? `Plugin ya activo: ${name} v${version}`
+              : `Plugin activado: ${name} (${short}…)`,
       });
-      return {
-        id: result.id,
-        name: result.manifest.name,
-        version: result.manifest.version,
-        fixturesPassed: result.fixturesPassed,
-      };
+      return pluginRegisterBody(result);
     },
     list: () =>
       [...ctx.activePlugins.entries()].map(([id, m]) =>

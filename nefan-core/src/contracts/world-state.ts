@@ -191,6 +191,18 @@ export interface PluginRegisterResponse {
   name: string;
   version: number;
   fixturesPassed: number;
+  /** Qué pasó con el registry (§7.3 "Evolución"): `created` plugin nuevo,
+   *  `migrated` el mismo `name` con versión mayor sustituyó al vigente
+   *  migrando su slice, `unchanged` el mismo manifest exacto (no-op). El motor
+   *  narrativo tiene que poder distinguirlos: si creía crear y evolucionó, su
+   *  modelo del mundo cambió. */
+  action: "created" | "migrated" | "unchanged";
+  /** Solo en `migrated`: versión sustituida. */
+  from_version?: number;
+  /** Solo en `migrated`: autor del record sustituido. `developer` significa
+   *  que el motor acaba de tomar un plugin shipped y su JSON de disco queda
+   *  inerte para esta sesión. */
+  from_origin_author?: "developer" | "narrative_engine";
 }
 
 export interface NarrativeProgressRequest {

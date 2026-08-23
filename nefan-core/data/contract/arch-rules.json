@@ -79,7 +79,7 @@
     {
       "id": "html-no-importa-core-con-node",
       "desc": "El cliente 2D no puede importar los módulos del core que usan node:fs/path/crypto",
-      "why": "La frontera browser-safe la sostiene hoy solo una separación deliberada de ficheros (games/style-application-schema vs style-application). Un import nuevo mete node:fs en el bundle de Vite y rompe el cliente en tiempo de carga.",
+      "why": "La frontera browser-safe la sostiene hoy solo una separación deliberada de ficheros (games/style-application-schema vs style-application). Un import nuevo mete node:fs en el bundle de Vite y rompe el cliente en tiempo de carga. `narrative-state` entra en la lista el día que empieza a importar `plugins/hash` (node:crypto) para comprobar que el manifest embebido de un record migrado es de verdad el de su id: hasta entonces solo arrastraba `session-storage` como tipo, que se borra al compilar, y era importable del navegador por accidente. Nadie lo importa hoy desde el cliente, así que la regla nace verde; está aquí para que el día que alguien lo intente lo pare el checker y no un bundle roto en tiempo de carga.",
       "severity": "error",
       "files": [
         "nefan-html/src/**/*.ts"
@@ -91,6 +91,7 @@
           "games/vocabulary(\\.js)?$",
           "games/world-snapshot(\\.js)?$",
           "narrative/asset-index(\\.js)?$",
+          "narrative/narrative-state(\\.js)?$",
           "narrative/session-storage(\\.js)?$",
           "plugins/loader(\\.js)?$",
           "contracts/common(\\.js)?$"
@@ -245,6 +246,30 @@
       "text": {
         "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*(?://[^\\n]*\\s*|/\\*[\\s\\S]*?\\*/\\s*)*\\}|\\.catch\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
       }
+    },
+    {
+      "id": "cadena-de-migracion-unica",
+      "desc": "Solo src/plugins/migrate.ts ejecuta la cadena migrate[v] (runMigrationStep)",
+      "why": "Un plugin evoluciona por dos caminos —el manifest del disco sube de versión en resume, y el motor narrativo manda un `plugin_register` con versión mayor (issue #164)— y la política del salto (bump real, una entrada `migrate` por cada versión intermedia, nunca degradar) tiene que ser LA MISMA, con el mismo texto de rechazo. Mientras vivió entera dentro de loader.ts, resolver el caso runtime pedía a gritos un `if` local en register.ts: dos jueces del mismo manifest que darían veredictos distintos sobre el mismo salto, y nadie se enteraría hasta que un save quedara a medias con un slice convertido a un shape que sus reglas ya no leen. Ahora la decisión vive en migrate.ts (módulo puro) y montar un segundo juez exige llamar a runMigrationStep, que es exactamente lo que esta regla corta. Los tests quedan fuera del alcance a propósito: test/plugin-migrate.test.ts lo llama para probar que es slice-only y puro (el contrato del DSL, no la política de versiones que lo usa) y test/architecture.test.ts necesita el literal para probar esta regla en negativo.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts"
+      ],
+      "text": {
+        "pattern": "\\brunMigrationStep\\b"
+      },
+      "exceptions": [
+        {
+          "path": "nefan-core/src/plugins/dsl/evaluate.ts",
+          "reason": "define runMigrationStep — es el intérprete de una tanda de efectos sobre el slice, no la política de versiones que decide si el salto es legal"
+        },
+        {
+          "path": "nefan-core/src/plugins/migrate.ts",
+          "reason": "es el juez único del salto de versión: el resume (loader.ts) y plugin_register (register.ts) le preguntan a él y solo traducen su rechazo al error de su operación"
+        }
+      ]
     },
     {
       "id": "python-sin-error-con-200",

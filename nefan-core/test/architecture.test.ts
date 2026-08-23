@@ -274,6 +274,59 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Nace VERDE: al extraer la cadena a migrate.ts, los dos únicos sitios que
+  // nombran runMigrationStep en producción son su definición y su juez. Una
+  // regla que solo se ha visto verde no distingue "nadie duplica la cadena" de
+  // "el patrón no caza nada", así que se le enseña el segundo juez que existe
+  // para cortar —el `if` local en register.ts que la tarea pedía a gritos— y
+  // los dos dueños, callados.
+  it("[error] cadena-de-migracion-unica: un segundo juez del salto de versión salta", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "cadena-de-migracion-unica");
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // Exactamente la tentación: resolver el caso runtime aquí en vez de
+          // preguntarle a migrate.ts.
+          path: "nefan-core/src/plugins/register.ts",
+          text:
+            'import { runMigrationStep } from "./dsl/evaluate.js";\n' +
+            "const slice = runMigrationStep(effects, ctx);\n",
+          imports: [{ spec: "./dsl/evaluate.js", line: 1 }],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "// resume rápido\nslice = runMigrationStep(m.migrate[v], ctx);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/session.ts:2",
+        "nefan-core/src/plugins/register.ts:1",
+        "nefan-core/src/plugins/register.ts:2",
+      ],
+      "quien ejecute la cadena fuera de migrate.ts tiene que saltar, sea core o bridge",
+    );
+
+    // Los dos dueños: el intérprete que la define y el juez que la usa.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/plugins/dsl/evaluate.ts",
+          text: "export function runMigrationStep(effects: Effect[], ctx: DslContext): unknown {\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/plugins/migrate.ts",
+          text: "slice = runMigrationStep(effects, { slice, ...ctxExtras });\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   it("[error] three-solo-en-fps-gl: cualquier otro importador de three salta", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "three-solo-en-fps-gl");

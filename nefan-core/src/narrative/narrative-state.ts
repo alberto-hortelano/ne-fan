@@ -26,7 +26,8 @@ import { WorldMapManager } from "../world-map/world-map.js";
 import type { Edge } from "../world-map/types.js";
 import { neighborTile, tileKey, type TileCoord } from "../scene/tile.js";
 import { computeTileEdges } from "../scene/tile-edges.js";
-import type { PluginRecord, PluginManifest } from "../plugins/types.js";
+import type { PluginRecord, PluginManifest, PluginOrigin } from "../plugins/types.js";
+import { computePluginId } from "../plugins/hash.js";
 import { migrateActiveSceneToTile, migrateWorldMapFromV1 } from "./migrations.js";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
@@ -520,23 +521,52 @@ export class NarrativeState {
     return this.plugins.find((p) => p.id === id);
   }
 
-  /** Registra un plugin activado (génesis F3 o plugin_register F5). Id
-   *  duplicado es un bug del caller — fail-loud. */
+  /** Registra un plugin activado (génesis F3 o plugin_register F5). Id o
+   *  `name` duplicados son un bug del caller — fail-loud.
+   *
+   *  El candado del `name` es el que hace irrepresentable el bug de #164: un
+   *  plugin que sube de versión trae id nuevo (la version entra en el hash),
+   *  así que el chequeo por id lo dejaba pasar y la sesión acababa con dos
+   *  records del mismo sistema, el viejo huérfano. Un plugin que evoluciona
+   *  pasa por `migratePluginRecord`, no por aquí. */
   addPlugin(record: PluginRecord): void {
     if (this.getPluginRecord(record.id)) {
       throw new Error(`NarrativeState.addPlugin: id duplicado ${record.id}`);
+    }
+    const sameName = this.plugins.find((p) => p.name === record.name);
+    if (sameName) {
+      throw new Error(
+        `NarrativeState.addPlugin: ya hay un plugin '${record.name}' activo ` +
+          `(v${sameName.version}, ${sameName.id.slice(0, 12)}…) — una versión nueva ` +
+          `se MIGRA con migratePluginRecord, no se añade al lado`,
+      );
     }
     this.plugins.push(record);
     this.dirty = true;
   }
 
   /** Sustituye un PluginRecord migrado (F7, §7.3 "Evolución"): nuevo
-   *  id/version/slice del manifest evolucionado, preservando name/origin/
-   *  activated_at. Tras esto el save refleja la versión nueva y los próximos
-   *  resume casan por id sin re-migrar. */
+   *  id/version/slice/origin del manifest evolucionado, preservando name y
+   *  activated_at (cuándo entró el sistema en la partida, no cuándo cambió de
+   *  versión). Tras esto el save refleja la versión nueva y los próximos
+   *  resume casan por id sin re-migrar.
+   *
+   *  `manifest` es OBLIGATORIO y decide quién define las reglas a partir de
+   *  ahora: `null` cuando el manifest sigue viniendo del FS (resume de un
+   *  shipped), el manifest normalizado cuando queda embebido en el save
+   *  (registro en runtime, §7.6). No es ceremonia: si un record migrado
+   *  conservara el manifest de la versión ANTERIOR bajo el id nuevo, todos los
+   *  asserts de id/version/slice pasarían y el siguiente resume serviría las
+   *  reglas viejas. Por eso además se comprueba el hash. */
   migratePluginRecord(
     oldId: string,
-    next: { id: string; version: number; slice: unknown },
+    next: {
+      id: string;
+      version: number;
+      slice: unknown;
+      manifest: PluginManifest | null;
+      origin: PluginOrigin;
+    },
   ): void {
     const record = this.getPluginRecord(oldId);
     if (!record) {
@@ -545,9 +575,22 @@ export class NarrativeState {
     if (next.id !== oldId && this.getPluginRecord(next.id)) {
       throw new Error(`NarrativeState.migratePluginRecord: id destino duplicado ${next.id}`);
     }
+    if (next.manifest) {
+      const hash = computePluginId(next.manifest);
+      if (hash !== next.id) {
+        throw new Error(
+          `NarrativeState.migratePluginRecord: el manifest embebido (v${next.manifest.version}, ` +
+            `hash ${hash.slice(0, 12)}…) no es el del id ${next.id.slice(0, 12)}… — ` +
+            `el record serviría reglas de otra versión en el próximo resume`,
+        );
+      }
+    }
     record.id = next.id;
     record.version = next.version;
     record.slice = next.slice;
+    record.origin = next.origin;
+    if (next.manifest) record.manifest = next.manifest;
+    else delete record.manifest;
     this.dirty = true;
   }
 

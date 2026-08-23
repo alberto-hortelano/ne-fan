@@ -22,6 +22,7 @@ import { oppositeEdge } from "../src/world-map/edges.js";
 import type { Edge } from "../src/world-map/types.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
 import type { ErrorResponse, PluginInspectResult } from "../src/contracts/common.js";
+import type { RegisteredPlugin } from "../src/plugins/register.js";
 import {
   InventoryAddRequestSchema,
   InventoryRemoveRequestSchema,
@@ -85,9 +86,11 @@ export interface StateHttpServerOptions {
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
    *  dispatcher (`activePlugins`) es estado del bridge. */
   plugins: {
-    /** Valida y activa un manifest runtime. Lanza PluginRegisterError con el
-     *  motivo si es inválido. */
-    register: (raw: unknown) => { id: string; name: string; version: number; fixturesPassed: number };
+    /** Valida y activa un manifest runtime, o EVOLUCIONA el plugin vigente del
+     *  mismo `name` (`action`, §7.3). Lanza PluginRegisterError con el motivo
+     *  si es inválido o si el salto de versión no es legal. El cuerpo se arma
+     *  con `pluginRegisterBody`. */
+    register: (raw: unknown) => Omit<PluginRegisterResponse, "ok">;
     /** Plugins activos de la sesión, resumidos para el motor narrativo. */
     list: () => Array<Record<string, unknown>>;
     /** Detalle de un plugin (F6): una derived_view concreta o el slice
@@ -103,6 +106,25 @@ interface RouteResult {
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
+
+/** `RegisteredPlugin` (core) → cuerpo de `PluginRegisterResponse` (wire).
+ *  Vive junto al tipo del hook para que el mapeo exista UNA vez: ws-server y
+ *  los harnesses de test montan el mismo hook, y una traducción copiada en
+ *  cada uno diverge sin que ningún test se entere. Los campos de `migrated`
+ *  se omiten cuando no aplican en vez de viajar como `null`. */
+export function pluginRegisterBody(result: RegisteredPlugin): Omit<PluginRegisterResponse, "ok"> {
+  return {
+    id: result.id,
+    name: result.manifest.name,
+    version: result.manifest.version,
+    fixturesPassed: result.fixturesPassed,
+    action: result.action,
+    ...(result.fromVersion === undefined ? {} : { from_version: result.fromVersion }),
+    ...(result.fromOriginAuthor === undefined
+      ? {}
+      : { from_origin_author: result.fromOriginAuthor }),
+  };
+}
 
 /** Documento canónico de sistemas de UI (compartido con el resto de prompts
  *  del contrato) — lo sirve GET /ui_doc para la tool MCP ui_doc_get. */
