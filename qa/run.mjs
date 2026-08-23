@@ -62,7 +62,13 @@ const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const TMP = join(here, ".tmp", RUN_ID);
 const TMP_SAVES = join(TMP, "saves");
 const TMP_GAMES = join(TMP, "games");
+/** Los plugins COMUNES a todos los mundos viven al lado de `games/`, y el
+ *  loader los busca ahí mismo (`{gamesDir}/../plugins`). Si el disco efímero
+ *  solo copia `games/`, TODA corrida de QA juega sin `economy` —el sistema que
+ *  mueve `player.gold`— y una partida de bench deja de ser la del jugador. */
+const TMP_PLUGINS = join(TMP, "plugins");
 const GAMES_ORIGEN = join(repoRoot, "nefan-core", "data", "games");
+const PLUGINS_ORIGEN = join(repoRoot, "nefan-core", "data", "plugins");
 /** ?raf=timer: en headless la pestaña no está "visible" y el rAF se pausaría;
  *  el pump por Web Worker mantiene el game loop vivo. */
 const URL_QS = `?input=scripted&ai=${encodeURIComponent(FAKE_AI)}&raf=timer`;
@@ -188,6 +194,7 @@ function prepararDisco() {
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(TMP_SAVES, { recursive: true });
   cpSync(GAMES_ORIGEN, TMP_GAMES, { recursive: true });
+  if (existsSync(PLUGINS_ORIGEN)) cpSync(PLUGINS_ORIGEN, TMP_PLUGINS, { recursive: true });
   limpiarMundos();
 }
 

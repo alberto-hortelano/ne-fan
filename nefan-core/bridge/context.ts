@@ -28,6 +28,7 @@ import { seededRng } from "../src/rng.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
 import type { SimCollisionProvider } from "./sim-collision.js";
 import {
+  describePluginTickError,
   dispatchPluginEvents,
   type PluginAppliedEffect,
   type PluginEventInput,
@@ -313,13 +314,25 @@ export function runPluginTick(
 ): PluginAppliedEffect[] {
   if (events.length === 0) return [];
   const result = dispatchPluginEvents(ctx.narrative, ctx.activePlugins, events);
+  // Referencia colgante: se dice ENTERA en el log (es donde se depura) y el
+  // turno sigue con los demás eventos. Lo que el jugador nota es que ese
+  // tenderete no le vende, no un overlay a pantalla completa.
+  for (const u of result.undelivered) {
+    console.warn(
+      `Bridge: evento '${u.type}' no entregado en ${eventId} (${u.reason}, ` +
+        `plugin ${u.pluginId.slice(0, 12)}…) — se omite ese evento; el resto del tick sigue`,
+    );
+  }
   if (!result.ok) {
     console.error(`Bridge: plugin tick aborted for ${eventId}:`, result.error);
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
       kind: "consequences",
-      message: `plugin ${result.error?.code}: ${JSON.stringify(result.error)}`,
+      // Al jugador, la frase; el volcado del error ya está en el log de arriba.
+      message: result.error
+        ? describePluginTickError(result.error, (id) => ctx.narrative.resolvePluginRecord(id)?.name)
+        : "Un sistema del juego no pudo completar el turno.",
     });
     return [];
   }

@@ -16,7 +16,7 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import { createStateHttpServer } from "../bridge/state-http-server.js";
+import { createStateHttpServer, pluginRegisterBody } from "../bridge/state-http-server.js";
 import { WorldStateApi } from "../src/contracts/world-state.js";
 import { fillPath, type Endpoint } from "../src/contracts/http.js";
 
@@ -42,15 +42,8 @@ before(async () => {
     onMutation: () => {},
     onProgress: () => {},
     plugins: {
-      register: (raw) => {
-        const result = registerRuntimePlugin(narrative, activePlugins, raw);
-        return {
-          id: result.id,
-          name: result.manifest.name,
-          version: result.manifest.version,
-          fixturesPassed: result.fixturesPassed,
-        };
-      },
+      register: (raw) =>
+        pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
       list: () =>
         [...activePlugins.entries()].map(([id, m]) => ({ id, name: m.name, version: m.version })),
       inspect: (id, view) =>

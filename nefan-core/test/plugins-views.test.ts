@@ -10,6 +10,7 @@ import {
   type PluginManifest,
   type PluginRecord,
 } from "../src/plugins/types.js";
+import { computePluginId } from "../src/plugins/hash.js";
 import {
   buildPluginLlmViews,
   inspectPlugin,
@@ -44,7 +45,11 @@ function commerceSlice() {
 
 function record(manifest: PluginManifest, slice: unknown, embed = false): PluginRecord {
   return {
-    id: manifest.id ?? "a".repeat(64),
+    // Con el manifest embebido, el id TIENE que ser su hash: es lo que el
+    // resume comprueba antes de servir esas reglas (un record que dice una
+    // versión y sirve otra pasa todos los asserts de campos). Sin embeber, el
+    // id da igual para lo que miden estos tests.
+    id: embed ? computePluginId(manifest) : (manifest.id ?? "a".repeat(64)),
     name: manifest.name,
     version: manifest.version,
     slice,

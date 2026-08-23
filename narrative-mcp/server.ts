@@ -817,7 +817,23 @@ into context:
     `anything fails the registration is rejected with the reason. On success ` +
     `the plugin survives save/load (manifest persisted in the session) and you ` +
     `can drive it with {"type": "plugin_event", "plugin_id", "event_type", ` +
-    `"payload"} consequences. Required manifest fields: version (int ≥ 1), ` +
+    `"payload"} consequences. EVOLUTION: registering the same "name" with a ` +
+    `HIGHER version REPLACES the active plugin (the response says ` +
+    `action:"migrated" with from_version) — its live slice is converted by your ` +
+    `"migrate" chain, which must have one entry per intermediate version ` +
+    `(migrate["1"] to go 1→2, migrate["1"]+migrate["2"] to go 1→3) and may only ` +
+    `write inside slice.*. A gap in that chain, the same version with different ` +
+    `rules, or a LOWER version are all rejected with the reason. Re-sending the ` +
+    `exact same manifest is a no-op (action:"unchanged"), so a retry after a ` +
+    `timeout is safe. Never register a variant under a new name to work around a ` +
+    `rejection: that leaves two systems fighting over the same fiction. Two things ` +
+    `to know when you evolve: "projections" are NOT re-run on a migration (they would ` +
+    `wipe the live state), so whatever the new version needs in its slice must be ` +
+    `produced by "migrate" — a projection added in v2 stays dead for every session ` +
+    `that migrates; and the plugin_id CHANGES (it is the manifest hash), so use the ` +
+    `new id from the response onwards. Ids you already wrote into map triggers keep ` +
+    `working: the engine forwards the old id to the current plugin. ` +
+    `Required manifest fields: version (int ≥ 1), ` +
     `name, description, origin {author: "narrative_engine", rationale}, slice ` +
     `{schema, initial}, plus reads/writes/events_consumed/events_produced/` +
     `projections/derived_views/fixtures as needed. Writes outside your slice ` +

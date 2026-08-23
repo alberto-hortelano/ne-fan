@@ -30,6 +30,7 @@ describe("registerRuntimePlugin", () => {
     const { state, active } = freshSession();
     const result = registerRuntimePlugin(state, active, counterManifest());
     assert.match(result.id, /^[0-9a-f]{64}$/);
+    assert.equal(result.action, "created");
     assert.equal(result.fixturesPassed, 2);
     const record = state.getPluginRecord(result.id);
     assert.equal(record?.name, "test_counter");
@@ -62,14 +63,9 @@ describe("registerRuntimePlugin", () => {
     );
   });
 
-  it("rejects duplicates, missing fixtures, bad shape, divergent id and static errors", () => {
+  it("rejects missing fixtures, bad shape, divergent id and static errors", () => {
     const { state, active } = freshSession();
     registerRuntimePlugin(state, active, counterManifest());
-    // duplicado
-    assert.throws(
-      () => registerRuntimePlugin(state, active, counterManifest()),
-      (err: unknown) => err instanceof PluginRegisterError && /ya está activo/.test(err.message),
-    );
     // sin fixtures (obligatorias en runtime)
     const noFixtures = { ...counterManifest(), name: "sin_fixtures", fixtures: [] };
     assert.throws(

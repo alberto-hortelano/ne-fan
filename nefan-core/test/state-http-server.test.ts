@@ -14,7 +14,7 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import { createStateHttpServer } from "../bridge/state-http-server.js";
+import { createStateHttpServer, pluginRegisterBody } from "../bridge/state-http-server.js";
 
 const COUNTER_MANIFEST = JSON.parse(
   readFileSync(
@@ -46,15 +46,8 @@ before(async () => {
       progressMessages.push(message);
     },
     plugins: {
-      register: (raw) => {
-        const result = registerRuntimePlugin(narrative, activePlugins, raw);
-        return {
-          id: result.id,
-          name: result.manifest.name,
-          version: result.manifest.version,
-          fixturesPassed: result.fixturesPassed,
-        };
-      },
+      register: (raw) =>
+        pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
       list: () =>
         [...activePlugins.entries()].map(([id, m]) =>
           pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
@@ -407,6 +400,7 @@ describe("state HTTP API", () => {
     assert.equal(reg.status, 200);
     assert.equal(reg.body.ok, true);
     assert.equal(reg.body.name, "test_counter");
+    assert.equal(reg.body.action, "created");
     const pluginId = reg.body.id as string;
 
     const listed = await get("/plugins");
@@ -417,12 +411,53 @@ describe("state HTTP API", () => {
     assert.ok("slice" in inspected.body || "available_views" in inspected.body);
   });
 
-  it("plugins: register sin manifest → 400; duplicado → 400", async () => {
+  it("plugins: register sin manifest → 400; el MISMO manifest → 200 unchanged", async () => {
     const missing = await post("/plugins/register", {});
     assert.equal(missing.status, 400);
 
-    const dup = await post("/plugins/register", { manifest: COUNTER_MANIFEST });
-    assert.equal(dup.status, 400);
+    // Reintento de la tool (timeout, doble envío): mismo hash ⇒ no-op, no un
+    // error que el motor solo pueda esquivar inventándose un bump de versión.
+    const again = await post("/plugins/register", { manifest: COUNTER_MANIFEST });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.action, "unchanged");
+    assert.equal(((await get("/plugins")).body.plugins as unknown[]).length, 1);
+  });
+
+  it("plugins: versión mayor con migrate → 200 migrated; salto sin migrate → 400 con el motivo", async () => {
+    // v2 del mismo `name`: renombra count→hits y trae la cadena migrate[1].
+    const v2 = {
+      ...COUNTER_MANIFEST,
+      version: 2,
+      description: "Contador v2: el valor se llama hits.",
+      slice: { schema: { type: "object" }, initial: { hits: 0 } },
+      events_consumed: [
+        { type: "counter_inc", do: [{ op: "inc", path: "slice.hits", value: 1 }] },
+      ],
+      events_produced: [],
+      migrate: {
+        "1": [
+          { op: "set", path: "slice.hits", value: "slice.count" },
+          { op: "remove", path: "slice.count" },
+        ],
+      },
+      fixtures: [{ before: { hits: 4 }, event: { type: "counter_inc" }, after: { hits: 5 } }],
+    };
+    const migrated = await post("/plugins/register", { manifest: v2 });
+    assert.equal(migrated.status, 200);
+    assert.equal(migrated.body.action, "migrated");
+    assert.equal(migrated.body.from_version, 1);
+    assert.equal(migrated.body.from_origin_author, "developer");
+    assert.equal(migrated.body.version, 2);
+    // Sustituye: sigue habiendo UN plugin con ese name, no dos.
+    assert.equal(((await get("/plugins")).body.plugins as unknown[]).length, 1);
+
+    // v4 desde v2 sin migrate[3]: rechazo 4xx con el motivo, nunca un 200.
+    const v4 = { ...v2, version: 4, description: "Contador v4", migrate: { "2": [] } };
+    const hueco = await post("/plugins/register", { manifest: v4 });
+    assert.equal(hueco.status, 400);
+    assert.match(String(hueco.body.error), /falta 'migrate\[2\]'/);
+    const vigentes = (await get("/plugins")).body.plugins as Array<{ version: number }>;
+    assert.deepEqual(vigentes.map((p) => p.version), [2], "el rechazo no muta nada");
   });
 
   it("GET /plugins/{id}/inspect inexistente → 400 con motivo", async () => {
