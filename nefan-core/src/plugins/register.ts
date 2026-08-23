@@ -91,8 +91,7 @@ export function registerRuntimePlugin(
   const normalized: PluginManifest = { ...manifest, id };
 
   // Mismo hash = mismo manifest: ya se validó y activó en su momento, así que
-  // no se re-ejecutan projections (borrarían el slice vivo) ni fixtures — el
-  // `fixturesPassed` que se devuelve son las que pasaron al activarlo.
+  // no se re-ejecutan projections (borrarían el slice vivo) ni fixtures.
   const sameId = state.getPluginRecord(id);
   if (sameId) {
     // El registry en memoria puede haberse quedado corto (un shipped se
@@ -101,7 +100,10 @@ export function registerRuntimePlugin(
     return {
       id,
       manifest: sameId.manifest ?? normalized,
-      fixturesPassed: manifest.fixtures.length,
+      // CERO, y es la verdad: en esta llamada no se ha replayado ninguna. Con
+      // el número del manifest, el motor leería «tu sistema acaba de pasar N
+      // pruebas» de una llamada en la que no se ejecutó nada.
+      fixturesPassed: 0,
       action: "unchanged",
     };
   }

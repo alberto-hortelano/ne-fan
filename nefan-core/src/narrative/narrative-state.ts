@@ -521,6 +521,22 @@ export class NarrativeState {
     return this.plugins.find((p) => p.id === id);
   }
 
+  /** Como `getPluginRecord`, pero siguiendo la dirección que dejó una
+   *  migración: un id que fue de este sistema resuelve al record de ahora
+   *  (`PluginRecord.superseded_ids`).
+   *
+   *  Es DELIBERADO que sea otra función y no una caída dentro de
+   *  `getPluginRecord`: quien pregunta «¿existe este manifest exacto?»
+   *  —`registerRuntimePlugin` para decidir si un registro es un no-op— tiene
+   *  que seguir viendo que NO, o volver a mandar el manifest v1 después de
+   *  migrar pasaría por idempotente en vez de por la degradación que es.
+   *  Aquí se resuelve la IDENTIDAD DEL SISTEMA; allí, la del manifest. */
+  resolvePluginRecord(id: string): PluginRecord | undefined {
+    return (
+      this.getPluginRecord(id) ?? this.plugins.find((p) => p.superseded_ids?.includes(id))
+    );
+  }
+
   /** Registra un plugin activado (génesis F3 o plugin_register F5). Id o
    *  `name` duplicados son un bug del caller — fail-loud.
    *
@@ -533,6 +549,7 @@ export class NarrativeState {
     if (this.getPluginRecord(record.id)) {
       throw new Error(`NarrativeState.addPlugin: id duplicado ${record.id}`);
     }
+    assertManifestMatchesId("addPlugin", record.id, record.manifest);
     const sameName = this.plugins.find((p) => p.name === record.name);
     if (sameName) {
       throw new Error(
@@ -575,15 +592,11 @@ export class NarrativeState {
     if (next.id !== oldId && this.getPluginRecord(next.id)) {
       throw new Error(`NarrativeState.migratePluginRecord: id destino duplicado ${next.id}`);
     }
-    if (next.manifest) {
-      const hash = computePluginId(next.manifest);
-      if (hash !== next.id) {
-        throw new Error(
-          `NarrativeState.migratePluginRecord: el manifest embebido (v${next.manifest.version}, ` +
-            `hash ${hash.slice(0, 12)}…) no es el del id ${next.id.slice(0, 12)}… — ` +
-            `el record serviría reglas de otra versión en el próximo resume`,
-        );
-      }
+    assertManifestMatchesId("migratePluginRecord", next.id, next.manifest);
+    if (next.id !== oldId) {
+      // La dirección anterior, para que lo que ya tuviera escrito el id viejo
+      // (map triggers del save, memoria del motor) siga encontrando el sistema.
+      record.superseded_ids = [...(record.superseded_ids ?? []), oldId];
     }
     record.id = next.id;
     record.version = next.version;
@@ -758,4 +771,22 @@ function generateSessionId(): string {
   return `${ts}-${rnd.toString(16).padStart(6, "0")}`;
 }
 
-
+/** El manifest embebido de un record TIENE que ser el de su id (el id es su
+ *  hash). Si no, el record dice una versión y sirve las reglas de otra, y eso
+ *  no se nota hasta el resume siguiente: todos los asserts de id/version/slice
+ *  pasan en verde. Se comprueba en las DOS puertas de escritura —`addPlugin` y
+ *  `migratePluginRecord`—; la de lectura la guarda `bindPluginsForResume`. */
+function assertManifestMatchesId(
+  metodo: string,
+  id: string,
+  manifest: PluginManifest | null | undefined,
+): void {
+  if (!manifest) return;
+  const hash = computePluginId(manifest);
+  if (hash === id) return;
+  throw new Error(
+    `NarrativeState.${metodo}: el manifest embebido (v${manifest.version}, ` +
+      `hash ${hash.slice(0, 12)}…) no es el del id ${id.slice(0, 12)}… — ` +
+      `el record serviría reglas de otra versión en el próximo resume`,
+  );
+}

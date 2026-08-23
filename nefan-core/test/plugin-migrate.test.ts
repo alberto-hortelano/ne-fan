@@ -17,6 +17,7 @@ import {
 } from "../src/plugins/loader.js";
 import { PluginRegisterError, registerRuntimePlugin } from "../src/plugins/register.js";
 import { dispatchPluginEvents } from "../src/plugins/dispatcher.js";
+import { inspectPlugin } from "../src/plugins/views.js";
 import { runMigrationStep } from "../src/plugins/dsl/evaluate.js";
 import { DslError } from "../src/plugins/dsl/errors.js";
 import { validateManifestStatic } from "../src/plugins/validate.js";
@@ -278,6 +279,11 @@ describe("plugin migration on plugin_register (#164)", () => {
     const result = registerRuntimePlugin(state, active, R1);
     assert.equal(result.action, "unchanged");
     assert.equal(result.id, v1Id);
+    assert.equal(
+      result.fixturesPassed,
+      0,
+      "no se replayó ninguna: decir el número del manifest le vendería al motor una validación que no ocurrió",
+    );
     assert.equal(state.plugins.length, 1);
     assert.deepEqual(
       state.getPluginRecord(v1Id)?.slice,
@@ -334,13 +340,124 @@ describe("plugin migration on plugin_register (#164)", () => {
     await state.save();
     const s2 = new NarrativeState(storage);
     await s2.loadSession(state.session_id);
-    const active2 = bindPluginsForResume(s2, [shipped]);
+    const avisos: string[] = [];
+    const warn = console.warn;
+    console.warn = (msg: unknown) => void avisos.push(String(msg));
+    let active2: Map<string, PluginManifest>;
+    try {
+      active2 = bindPluginsForResume(s2, [shipped]);
+    } finally {
+      console.warn = warn;
+    }
     assert.equal(active2.get(result.id)?.version, 2);
     assert.equal(active2.has(shipped.id), false);
+    // El aviso del resume es la ÚNICA señal que queda del secuestro en los
+    // arranques siguientes: tiene que decir que lo sustituyeron, no que el
+    // plugin es nuevo y nunca se activó, que es lo contrario de lo que pasó.
+    const aviso = avisos.find((a) => a.includes("score")) ?? "";
+    assert.match(aviso, /sustituyó por v2/, aviso);
+    assert.doesNotMatch(aviso, /plugins nuevos sólo se activan/, aviso);
+    assert.match(aviso, /partida nueva/, "y qué haría falta para deshacerlo");
+  });
+});
+
+describe("un id viejo sigue encontrando su sistema (referencias colgantes)", () => {
+  // El `plugin_id` es el hash del manifest, así que evolucionar le cambia el
+  // id al sistema. Lo que quedó escrito con el id viejo NO se puede reescribir
+  // entero: están los map triggers del save, el historial de consequences (que
+  // es un acta de lo que pasó y falsearlo sería peor), y sobre todo lo que el
+  // motor narrativo recuerde de un `plugin_list` de hace diez turnos, que no
+  // vive en el save de nadie. Por eso el record guarda su dirección anterior.
+
+  it("el record apunta de dónde viene, y solo cuando de verdad cambió de id", () => {
+    const { state, active, v1Id } = runtimeV1WithPoints(3);
+    const { id } = registerRuntimePlugin(state, active, R2);
+    assert.deepEqual(state.getPluginRecord(id)?.superseded_ids, [v1Id]);
+    // Un no-op no inventa una dirección nueva.
+    registerRuntimePlugin(state, active, R2);
+    assert.deepEqual(state.getPluginRecord(id)?.superseded_ids, [v1Id]);
+  });
+
+  it("un evento dirigido al id de ANTES de migrar se entrega igual", () => {
+    const { state, active, v1Id } = runtimeV1WithPoints(5);
+    const { id } = registerRuntimePlugin(state, active, R2);
+
+    // Exactamente lo que hace un map trigger escrito antes de la migración:
+    // la consequence lleva el plugin_id que existía cuando se escribió.
+    const tick = dispatchPluginEvents(state, active, [
+      { pluginId: v1Id, type: "add", payload: { n: 4 } },
+    ]);
+    assert.equal(tick.ok, true, JSON.stringify(tick.error));
+    assert.deepEqual(tick.undelivered, [], "no es una referencia colgante: es la anterior");
+    assert.deepEqual(state.getPluginRecord(id)?.slice, { score: 9, level: 1 });
+  });
+
+  it("y sobrevive al save→resume, que es cuando el trigger se pisa de verdad", async () => {
+    const { state, storage, active } = runtimeV1WithPoints(1);
+    const v1Id = state.plugins[0].id;
+    const { id } = registerRuntimePlugin(state, active, R2);
+    await state.save();
+
+    const s2 = new NarrativeState(storage);
+    await s2.loadSession(state.session_id);
+    const active2 = bindPluginsForResume(s2, []);
+    const tick = dispatchPluginEvents(s2, active2, [
+      { pluginId: v1Id, type: "level_up", payload: {} },
+    ]);
+    assert.equal(tick.ok, true, JSON.stringify(tick.error));
+    assert.deepEqual(s2.getPluginRecord(id)?.slice, { score: 1, level: 2 });
+  });
+
+  it("plugin_inspect por el id viejo responde con el VIGENTE, no con un 'desconocido'", () => {
+    const { state, active, v1Id } = runtimeV1WithPoints(2);
+    const { id } = registerRuntimePlugin(state, active, R2);
+    const info = inspectPlugin(
+      { plugins: state.plugins, world: state.world, player: state.player, entities: state.entities },
+      active,
+      v1Id,
+    );
+    assert.equal(info.id, id, "le devuelve al motor el id que debe usar a partir de ahora");
+    assert.equal(info.version, 2);
+    assert.deepEqual(info.slice, { score: 2, level: 1 });
+  });
+
+  it("un id que nunca fue de nadie sigue siendo desconocido (la dirección no es un comodín)", () => {
+    const { state, active } = runtimeV1WithPoints(1);
+    registerRuntimePlugin(state, active, R2);
+    const tick = dispatchPluginEvents(state, active, [
+      { pluginId: "f".repeat(64), type: "add", payload: { n: 1 } },
+    ]);
+    assert.equal(tick.ok, true, "no tumba el turno…");
+    assert.deepEqual(tick.undelivered, [
+      { pluginId: "f".repeat(64), type: "add", reason: "unknown_plugin" },
+    ]);
+    assert.deepEqual(state.plugins[0].slice, { score: 1, level: 1 }, "…pero tampoco lo aplica");
+  });
+
+  it("re-registrar el manifest VIEJO sigue siendo una degradación, no un no-op", () => {
+    // La dirección anterior resuelve la identidad del SISTEMA; `getPluginRecord`
+    // sigue resolviendo la del MANIFEST. Si se hubiera puesto la caída dentro
+    // de getPluginRecord, esto respondería `unchanged` y el motor creería que
+    // ha vuelto a la v1.
+    const { state, active } = runtimeV1WithPoints(1);
+    registerRuntimePlugin(state, active, R2);
+    assert.throws(
+      () => registerRuntimePlugin(state, active, R1),
+      (e: unknown) => e instanceof PluginRegisterError && /ANTERIOR al del save/.test(e.message),
+    );
   });
 });
 
 describe("una sola cadena de migración: los dos caminos rechazan con el MISMO texto", () => {
+  // «El mismo texto» se comprueba carácter a carácter, que es lo único que lo
+  // distingue de «uno parecido». Con un matiz que hay que dejar escrito: el
+  // veredicto es idéntico y el camino del FS le AÑADE un localizador —qué
+  // fichero del disco trae el manifest ofensivo—, porque quien lee ese error
+  // es alguien que acaba de romper un JSON y si no, tiene que buscarlo entre
+  // data/plugins/ y data/games/{id}/plugins/. Ese dato no puede vivir en el
+  // texto compartido: en el registro en runtime no hay fichero ninguno. Así
+  // que la relación que se pin, y también exacta, es «el del resume es el del
+  // registro más el localizador, y nada más».
   /** El mensaje del rechazo, no solo su clase: es lo único que distingue "el
    *  mismo texto" de "uno parecido". */
   function mensajeDe(fn: () => unknown, tipo: new (...a: never[]) => Error): string {
@@ -372,12 +489,16 @@ describe("una sola cadena de migración: los dos caminos rechazan con el MISMO t
     return mensajeDe(() => registerRuntimePlugin(state, active, target), PluginRegisterError);
   }
 
+  /** El veredicto del resume, sin el localizador que le añade su envoltorio. */
+  const conRuta = (registro: string, target: unknown) =>
+    `${registro} (el manifest nuevo es ${lp(target).file})`;
+
   it("hueco en la cadena: 'falta migrate[1]' idéntico en resume y en registro", async () => {
     const v3 = { ...R2, version: 3, description: "v3", migrate: { "2": R2.migrate["1"] } };
     const resume = await mensajeResume(R1, v3);
     const registro = mensajeRegistro(R1, v3);
     assert.match(resume, /falta 'migrate\[1\]'/);
-    assert.equal(registro, resume);
+    assert.equal(resume, conRuta(registro, v3));
   });
 
   it("cambio sin bump de versión: mismo texto (ids incluidos, que salen del hash)", async () => {
@@ -385,7 +506,17 @@ describe("una sola cadena de migración: los dos caminos rechazan con el MISMO t
     const resume = await mensajeResume(R1, v1b);
     const registro = mensajeRegistro(R1, v1b);
     assert.match(resume, /mantiene version 1/);
-    assert.equal(registro, resume);
+    assert.equal(resume, conRuta(registro, v1b));
+  });
+
+  it("y el localizador es lo ÚNICO que el resume añade: el veredicto no cambia", async () => {
+    const v3 = { ...R2, version: 3, description: "v3", migrate: { "2": R2.migrate["1"] } };
+    const resume = await mensajeResume(R1, v3);
+    const registro = mensajeRegistro(R1, v3);
+    assert.ok(resume.startsWith(registro), `${resume}\n≠ ${registro}…`);
+    // Y al revés: al motor narrativo no se le manda a tocar un fichero que él
+    // nunca ha tenido delante.
+    assert.doesNotMatch(registro, /archivo|disco|\.json/i, registro);
   });
 
   it("degradación: mismo texto", async () => {
@@ -410,7 +541,7 @@ describe("una sola cadena de migración: los dos caminos rechazan con el MISMO t
     const registro = mensajeDe(() => registerRuntimePlugin(state, active, R1), PluginRegisterError);
 
     assert.match(resume, /ANTERIOR al del save/);
-    assert.equal(registro, resume);
+    assert.equal(resume, `${registro} (el manifest nuevo es ${lp(R1).file})`);
   });
 
   it("un salto rechazado no deja el estado a medias", () => {
@@ -444,6 +575,50 @@ describe("candados del record migrado (NarrativeState)", () => {
     );
     assert.equal(state.plugins[0].version, 1, "nada se tocó");
     assert.equal(active.size, 1);
+  });
+
+  it("addPlugin exige la misma correspondencia manifest↔id que su hermano", () => {
+    // El candado tiene que estar en las DOS puertas de escritura: si solo lo
+    // lleva la migración, un alta puede meter el mismo trampantojo por el lado
+    // fácil y el resume siguiente sirve reglas de otra versión.
+    const { state } = runtimeV1WithPoints(1);
+    const v1Manifest = state.plugins[0].manifest!;
+    assert.throws(
+      () =>
+        state.addPlugin({
+          id: computePluginId(PluginManifestSchema.parse(R2)),
+          name: "otro_sistema",
+          version: 2,
+          slice: {},
+          origin: R2.origin,
+          activated_at: new Date().toISOString(),
+          manifest: v1Manifest,
+        }),
+      /no es el del id/,
+    );
+    assert.equal(state.plugins.length, 1);
+  });
+
+  it("y el resume no se cree un manifest embebido que no es el de su id", async () => {
+    // La puerta de LECTURA: un save es un fichero y puede llegar corrupto (una
+    // edición a mano, un bridge con un bug). Servirlo significa jugar con
+    // reglas que no son las que el id promete, y eso no chilla solo.
+    const { state, storage, active } = runtimeV1WithPoints(1);
+    const { id } = registerRuntimePlugin(state, active, R2);
+    await state.save();
+
+    const s2 = new NarrativeState(storage);
+    await s2.loadSession(state.session_id);
+    // El manifest v1 bajo el id v2, escrito directamente en el estado cargado.
+    s2.plugins[0].manifest = PluginManifestSchema.parse({ ...R1, id: undefined });
+    assert.throws(
+      () => bindPluginsForResume(s2, []),
+      (e: unknown) =>
+        e instanceof PluginIntegrityError &&
+        /no es el suyo/.test(e.message) &&
+        /save está corrupto/.test(e.message),
+    );
+    assert.equal(id.length, 64);
   });
 
   it("addPlugin rechaza un segundo record con el mismo name (el bug de #164, irrepresentable)", () => {
@@ -541,18 +716,70 @@ describe("migratePluginSlice: el texto y el motivo de cada rechazo", () => {
   });
 
   it("un paso que revienta se reporta con su versión y el motivo del DSL", () => {
-    // migrate es slice-only: escribir fuera lanza en runMigrationStep. Aquí se
-    // llama al módulo directamente, saltándose validateManifestStatic, que es
-    // quien lo caza antes en los dos caminos de producción.
-    const externo = {
+    // Un fallo que la validación estática NO puede cazar y que sí llega a
+    // producción: el path de escritura interpola algo que durante una
+    // migración no existe. `event` solo existe cuando el plugin consume un
+    // evento; en un migrate no hay ninguno, así que la clave no resuelve.
+    // (Escribir FUERA del slice también lanza, pero eso ya lo corta
+    // validateManifestStatic antes de llegar aquí por los dos caminos.)
+    const interp = {
       ...V2,
-      writes: ["player.gold"],
-      migrate: { "1": [{ op: "set" as const, path: "player.gold", value: 5 }] },
+      migrate: { "1": [{ op: "set" as const, path: "slice.{event.key}", value: 1 }] },
     };
-    const err = rechazo(recordDe(V1, { points: 1 }), externo);
+    assert.deepEqual(
+      validateManifestStatic(PluginManifestSchema.parse(interp)),
+      [],
+      "el manifest es estáticamente válido: este fallo solo se ve al migrar",
+    );
+    const err = rechazo(recordDe(V1, { points: 1 }), interp);
     assert.equal(err.kind, "step_failed");
     assert.match(err.message, /^migrate\[1\] de 'score' falló: /);
-    assert.match(err.message, /player\.gold/, "el motivo del DSL viaja entero");
+    assert.match(err.message, /interpolación/, "el motivo del DSL viaja entero");
+  });
+});
+
+describe("una cadena de más de un paso, con éxito", () => {
+  // Lo que la descripción de `plugin_register` le promete al motor:
+  // «migrate["1"]+migrate["2"] to go 1→3». Todos los demás casos de v3 del
+  // fichero están para provocar el rechazo por hueco; este recorre el bucle
+  // de verdad, que es lo que va a hacer un mundo que lleve meses vivo.
+  //
+  // migrate[2] lee `slice.score`, que SOLO existe si migrate[1] corrió antes:
+  // así el test distingue «se aplicaron los dos, en orden» de «se aplicó el
+  // último», que es el fallo que un bucle mal escrito produce.
+  const V3 = {
+    ...V2,
+    version: 3,
+    description: "puntos + nivel + rango",
+    slice: { schema: { type: "object" }, initial: { score: 0, level: 1, rango: 0 } },
+    migrate: {
+      "1": V2.migrate["1"],
+      "2": [{ op: "set" as const, path: "slice.rango", value: "slice.score" }],
+    },
+    fixtures: [
+      {
+        before: { score: 1, level: 1, rango: 1 },
+        event: { type: "add", n: 1 },
+        after: { score: 2, level: 1, rango: 1 },
+      },
+    ],
+  };
+
+  it("migratePluginSlice recorre v1→v3 aplicando los dos pasos en orden", () => {
+    const slice = migratePluginSlice(recordDe(V1, { points: 7 }), lp(V3), SIN_MAS);
+    assert.deepEqual(slice, { score: 7, level: 1, rango: 7 });
+  });
+
+  it("y por el camino del motor: un solo registro salta dos versiones de golpe", () => {
+    const { state, active, v1Id } = runtimeV1WithPoints(7);
+    const result = registerRuntimePlugin(state, active, { ...V3, origin: R2.origin });
+    assert.equal(result.action, "migrated");
+    assert.equal(result.fromVersion, 1);
+    assert.equal(state.plugins.length, 1);
+    const rec = state.getPluginRecord(result.id);
+    assert.equal(rec?.version, 3);
+    assert.deepEqual(rec?.slice, { score: 7, level: 1, rango: 7 });
+    assert.deepEqual(rec?.superseded_ids, [v1Id], "la dirección anterior es la del salto entero");
   });
 });
 

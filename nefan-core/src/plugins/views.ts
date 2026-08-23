@@ -111,15 +111,24 @@ export function pluginListSummary(
 
 /** Detalle de un plugin bajo demanda (tool MCP `plugin_inspect`). Con
  *  `viewName` evalúa esa derived_view; sin él, devuelve el slice completo más
- *  el catálogo de vistas. Fail-loud: plugin o vista inexistentes lanzan. */
+ *  el catálogo de vistas. Fail-loud: plugin o vista inexistentes lanzan.
+ *
+ *  El id puede ser el de una versión anterior del mismo sistema: el motor
+ *  narrativo pregunta por lo que recuerda de un `plugin_list` de hace turnos, y
+ *  entre medias el plugin pudo evolucionar (que le cambia el id). Se sigue la
+ *  dirección que dejó la migración y se responde con el id VIGENTE, que es el
+ *  que el motor debe usar a partir de ahora. */
 export function inspectPlugin(
   src: PluginViewSources,
   manifests: ManifestResolver | undefined,
-  id: string,
+  ref: string,
   viewName?: string,
 ): PluginInspectResult {
-  const record = src.plugins.find((p) => p.id === id);
-  if (!record) throw new Error(`plugin desconocido '${id}'`);
+  const record =
+    src.plugins.find((p) => p.id === ref) ??
+    src.plugins.find((p) => p.superseded_ids?.includes(ref));
+  if (!record) throw new Error(`plugin desconocido '${ref}'`);
+  const id = record.id;
   const manifest = resolveManifest(record, manifests);
   if (!manifest) {
     throw new Error(

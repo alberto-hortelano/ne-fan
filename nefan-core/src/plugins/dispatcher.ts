@@ -8,11 +8,21 @@
  *  path no toca NarrativeState ni hace save, y un tap ahí exige un diseño de
  *  batching propio — queda para una fase posterior.
  *
- *  Transaccional: todo el tick evalúa sobre working copies; si CUALQUIER
- *  evento falla (plugin desconocido, ciclo, escritura rechazada, error del
- *  DSL), no se commitea NADA y se devuelve el error tipado. Routing
- *  multi-consumer por `type` en orden alfabético de plugin_id; el plugin_id
- *  de la consequence es validación y trazabilidad, no routing exclusivo.
+ *  Transaccional: todo el tick evalúa sobre working copies; si la evaluación
+ *  falla a medias (ciclo de eventos, escritura rechazada, error del DSL) no se
+ *  commitea NADA y se devuelve el error tipado. Routing multi-consumer por
+ *  `type` en orden alfabético de plugin_id; el plugin_id de la consequence es
+ *  validación y trazabilidad, no routing exclusivo.
+ *
+ *  Lo que NO aborta el tick: un evento que no se puede ENTREGAR (va dirigido a
+ *  un plugin que no está, o a uno que no consume ese type). No ha aplicado
+ *  nada, así que saltárselo no deja estado a medias — y tumbar el turno entero
+ *  por una referencia colgante castiga a los demás eventos del mismo trigger,
+ *  que no tienen culpa. Sale en `undelivered` para que el bridge lo diga.
+ *  Pasa de verdad: el `plugin_id` es el hash del manifest, así que evolucionar
+ *  un plugin (§7.3) le cambia el id y deja colgando lo que el motor ya había
+ *  escrito con el viejo. Antes de darlo por perdido se sigue la dirección que
+ *  dejó la migración (`state.resolvePluginRecord`).
  */
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import type { ConsequenceEffect } from "../narrative/types.js";
@@ -45,15 +55,56 @@ export type PluginTickError =
 
 export type PluginAppliedEffect = Extract<ConsequenceEffect, { kind: "plugin_applied" }>;
 
+/** Un evento que no se pudo ENTREGAR: iba dirigido a un plugin que no está en
+ *  la sesión, o a uno que no consume ese type. No es lo mismo que un error de
+ *  evaluación y por eso no aborta el tick (ver el comentario de la cabecera):
+ *  un evento que no se entrega no ha aplicado nada, así que saltárselo no deja
+ *  estado a medias. Se devuelve para que el caller lo diga en voz alta. */
+export interface UndeliveredPluginEvent {
+  pluginId: string;
+  type: string;
+  reason: "unknown_plugin" | "not_consumed";
+}
+
 export interface PluginTickResult {
   ok: boolean;
   effects: PluginAppliedEffect[];
   error?: PluginTickError;
+  /** Eventos descartados por falta de destino. `ok` puede ser true con esto
+   *  lleno: el resto del tick sí se aplicó. */
+  undelivered: UndeliveredPluginEvent[];
 }
 
 interface ExternalWriteOp {
   path: string;
   value: unknown;
+}
+
+/** El fallo del tick, dicho para quien juega: sin códigos, sin ids y sin JSON.
+ *  El detalle técnico va al log del bridge y al error-log del cliente; esto es
+ *  lo que puede acabar en un overlay delante de alguien que solo quería
+ *  comprar una daga. `nameOf` traduce el id al nombre del sistema (el jugador
+ *  no ha visto un sha256 en su vida). */
+export function describePluginTickError(
+  error: PluginTickError,
+  nameOf?: (pluginId: string) => string | undefined,
+): string {
+  const sistema = (id: string) => {
+    const name = nameOf?.(id);
+    return name ? `«${name}»` : "un sistema del juego";
+  };
+  switch (error.code) {
+    case "dsl_error":
+      return `Un sistema del juego (${sistema(error.pluginId)}) falló al resolver '${error.type}'.`;
+    case "write_rejected":
+      return `${sistema(error.pluginId)} intentó cambiar algo que no le corresponde.`;
+    case "emit_limit_exceeded":
+      return "Dos sistemas del juego se respondieron en bucle y se ha cortado el turno.";
+    case "not_consumed":
+      return `${sistema(error.pluginId)} no sabe qué hacer con '${error.type}'.`;
+    case "unknown_plugin":
+      return "Falta un sistema del juego que la partida daba por activo.";
+  }
 }
 
 export function dispatchPluginEvents(
@@ -62,7 +113,7 @@ export function dispatchPluginEvents(
   events: PluginEventInput[],
   opts?: { maxEmits?: number },
 ): PluginTickResult {
-  if (events.length === 0) return { ok: true, effects: [] };
+  if (events.length === 0) return { ok: true, effects: [], undelivered: [] };
   const maxEmits = opts?.maxEmits ?? MAX_EMITS_PER_TICK;
 
   // Working copies: nada toca NarrativeState hasta el commit.
@@ -73,6 +124,7 @@ export function dispatchPluginEvents(
   };
   const appliedWrites: ExternalWriteOp[] = [];
   const effects: PluginAppliedEffect[] = [];
+  const undelivered: UndeliveredPluginEvent[] = [];
   const trace: string[] = [];
 
   // Suscriptores por type, en orden alfabético de plugin_id (§7.4).
@@ -98,12 +150,17 @@ export function dispatchPluginEvents(
     const event = queue.shift() as PluginEventInput;
 
     if (event.pluginId !== undefined) {
-      const target = manifests.get(event.pluginId);
-      if (!target || !state.getPluginRecord(event.pluginId)) {
-        return fail({ code: "unknown_plugin", pluginId: event.pluginId });
+      // El id puede ser el de una versión anterior del mismo sistema: se sigue
+      // la dirección que dejó la migración antes de declararlo desconocido.
+      const record = state.resolvePluginRecord(event.pluginId);
+      const target = record ? manifests.get(record.id) : undefined;
+      if (!target) {
+        undelivered.push({ pluginId: event.pluginId, type: event.type, reason: "unknown_plugin" });
+        continue;
       }
       if (!target.events_consumed.some((e) => e.type === event.type)) {
-        return fail({ code: "not_consumed", pluginId: event.pluginId, type: event.type });
+        undelivered.push({ pluginId: event.pluginId, type: event.type, reason: "not_consumed" });
+        continue;
       }
     }
 
@@ -190,10 +247,10 @@ export function dispatchPluginEvents(
   }
   if (appliedWrites.length > 0) state.markDirty();
 
-  return { ok: true, effects };
+  return { ok: true, effects, undelivered };
 
   function fail(error: PluginTickError): PluginTickResult {
-    return { ok: false, effects: [], error };
+    return { ok: false, effects: [], error, undelivered };
   }
 }
 

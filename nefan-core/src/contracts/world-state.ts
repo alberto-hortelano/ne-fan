@@ -190,6 +190,8 @@ export interface PluginRegisterResponse {
   id: string;
   name: string;
   version: number;
+  /** Fixtures replayadas EN ESTA LLAMADA. Con `action: "unchanged"` es 0: el
+   *  manifest ya estaba activo y no se vuelve a validar nada. */
   fixturesPassed: number;
   /** Qué pasó con el registry (§7.3 "Evolución"): `created` plugin nuevo,
    *  `migrated` el mismo `name` con versión mayor sustituyó al vigente

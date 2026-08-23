@@ -182,6 +182,29 @@ createStateHttpServer({
               ? `Plugin ya activo: ${name} v${version}`
               : `Plugin activado: ${name} (${short}…)`,
       });
+      // …y para que llegue A LA PANTALLA, por el feed de eventos, que es el
+      // único canal de estos que el cliente pinta hoy (un narrative_status
+      // `ready/consequences` lo descarta en silencio). Solo la migración: es
+      // la que cambia un sistema con el que el jugador ya estaba tratando, y
+      // si el que cambia es un plugin del juego, el cambio es IRREVERSIBLE
+      // para ese save — el JSON del disco deja de mandar.
+      if (result.action === "migrated") {
+        ctx.broadcastNarrative({
+          type: "narrative_event",
+          eventId: "plugin_register",
+          consequences: [],
+          effects: [
+            {
+              kind: "ambient_message",
+              message:
+                `⚙️ el sistema «${name}» ha cambiado de versión (v${result.fromVersion} → v${version})` +
+                (result.fromOriginAuthor === "developer"
+                  ? " — a partir de ahora manda la del motor narrativo, no la del juego"
+                  : ""),
+            },
+          ],
+        });
+      }
       return pluginRegisterBody(result);
     },
     list: () =>

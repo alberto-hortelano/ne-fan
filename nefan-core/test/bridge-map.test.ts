@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { routeMessage } from "../bridge/router.js";
+import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
   NarrativeEventMessage,
@@ -64,6 +65,100 @@ describe("bridge player_entered_place + map triggers", () => {
     );
     assert.ok(triggerEvent, "map_trigger difundido");
     assert.ok(narrative.story_so_far.includes("Huele a estofado."));
+  });
+
+  it("un trigger con el plugin_id de ANTES de migrar sigue sirviendo, y sin overlay", async () => {
+    // El caso de #164 visto desde el mapa: el motor deja triggers escritos y
+    // sigue narrando; cuando el jugador llega, el sistema al que apuntan puede
+    // haber cambiado de versión — y migrar le cambia el id (es el hash del
+    // manifest). Antes: el tick entero abortaba, el jugador no compraba y se
+    // comía un narrative_status de error.
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    const v1 = {
+      version: 1,
+      name: "contador",
+      description: "cuenta visitas",
+      origin: { author: "narrative_engine" as const, rationale: "test" },
+      slice: { schema: { type: "object" }, initial: { visitas: 0 } },
+      events_consumed: [{ type: "visita", do: [{ op: "inc" as const, path: "slice.visitas", value: 1 }] }],
+      fixtures: [{ before: { visitas: 0 }, event: { type: "visita" }, after: { visitas: 1 } }],
+    };
+    const alta = registerRuntimePlugin(narrative, ctx.activePlugins, v1);
+
+    narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
+    narrative.recordSceneLoaded("scene_cueva", {
+      room_id: "scene_cueva",
+      place_id: "cueva",
+      room_description: "la cueva",
+    });
+    narrative.worldMap.addTrigger("cueva", {
+      id: "al_entrar",
+      when: { type: "player_entered" },
+      consequences: [
+        // El id de la v1, que es el que existía cuando se escribió el trigger.
+        { type: "plugin_event", plugin_id: alta.id, event_type: "visita", payload: {} },
+        { type: "story_update", delta: "La cueva huele a humedad." },
+      ],
+    });
+
+    // El motor evoluciona el sistema DESPUÉS de haber escrito el trigger.
+    const v2 = {
+      ...v1,
+      version: 2,
+      description: "cuenta visitas y ecos",
+      slice: { schema: { type: "object" }, initial: { visitas: 0, ecos: 0 } },
+      migrate: { "1": [{ op: "set" as const, path: "slice.ecos", value: 0 }] },
+    };
+    const migrado = registerRuntimePlugin(narrative, ctx.activePlugins, v2);
+    assert.equal(migrado.action, "migrated");
+    assert.notEqual(migrado.id, alta.id);
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
+
+    assert.deepEqual(
+      narrative.getPluginRecord(migrado.id)?.slice,
+      { visitas: 1, ecos: 0 },
+      "el evento llegó al sistema vigente por la dirección que dejó la migración",
+    );
+    assert.equal(
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+      false,
+      "y al jugador no se le enseña nada roto",
+    );
+  });
+
+  it("un plugin_id que no es de nadie no se lleva por delante el resto del trigger", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
+    narrative.recordSceneLoaded("scene_cueva", {
+      room_id: "scene_cueva",
+      place_id: "cueva",
+      room_description: "la cueva",
+    });
+    narrative.worldMap.addTrigger("cueva", {
+      id: "al_entrar",
+      when: { type: "player_entered" },
+      consequences: [
+        { type: "plugin_event", plugin_id: "f".repeat(64), event_type: "visita", payload: {} },
+        { type: "story_update", delta: "La cueva huele a humedad." },
+      ],
+    });
+
+    const { socket } = makeSocket();
+    await routeMessage({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
+
+    assert.ok(
+      narrative.story_so_far.includes("La cueva huele a humedad."),
+      "la consequence inocente del mismo trigger se aplica igual",
+    );
+    assert.equal(
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+      false,
+      "una referencia colgante se dice en el log del bridge, no en la cara del jugador",
+    );
   });
 
   it("las exits de la escena difundida llevan edge (directo e inverso)", async () => {

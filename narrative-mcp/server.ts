@@ -826,7 +826,13 @@ into context:
     `rules, or a LOWER version are all rejected with the reason. Re-sending the ` +
     `exact same manifest is a no-op (action:"unchanged"), so a retry after a ` +
     `timeout is safe. Never register a variant under a new name to work around a ` +
-    `rejection: that leaves two systems fighting over the same fiction. ` +
+    `rejection: that leaves two systems fighting over the same fiction. Two things ` +
+    `to know when you evolve: "projections" are NOT re-run on a migration (they would ` +
+    `wipe the live state), so whatever the new version needs in its slice must be ` +
+    `produced by "migrate" — a projection added in v2 stays dead for every session ` +
+    `that migrates; and the plugin_id CHANGES (it is the manifest hash), so use the ` +
+    `new id from the response onwards. Ids you already wrote into map triggers keep ` +
+    `working: the engine forwards the old id to the current plugin. ` +
     `Required manifest fields: version (int ≥ 1), ` +
     `name, description, origin {author: "narrative_engine", rationale}, slice ` +
     `{schema, initial}, plus reads/writes/events_consumed/events_produced/` +

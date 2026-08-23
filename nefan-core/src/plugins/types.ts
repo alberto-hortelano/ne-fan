@@ -215,6 +215,15 @@ export interface PluginRecord {
   /** Sólo se persiste para plugins generados por la IA
    *  (origin.author === "narrative_engine"); los shipped se releen del FS. */
   manifest?: PluginManifest;
+  /** Ids que este MISMO sistema tuvo antes de migrar, del más viejo al más
+   *  reciente. El `id` es el hash del manifest, así que evolucionar le cambia
+   *  el id al sistema y deja colgando todo lo que ya lo tenía escrito: los
+   *  `plugin_id` de los map triggers del save, los de `dialogue_history`, y —
+   *  fuera del save y por tanto imposible de reescribir— los que el motor
+   *  narrativo recuerde de un `plugin_list` de hace diez turnos. En vez de
+   *  perseguir cada copia, el record guarda su propia dirección anterior y
+   *  `resolvePluginRecord` la reenvía. */
+  superseded_ids?: string[];
 }
 
 // ── Vistas para el motor narrativo (F6, §7.6) ───────────────────────────────
