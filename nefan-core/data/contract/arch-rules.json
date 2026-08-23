@@ -248,6 +248,18 @@
       }
     },
     {
+      "id": "handlers-sin-servidor",
+      "desc": "Los handlers del State API y su despacho no conocen el transporte HTTP",
+      "why": "Es el criterio de aceptación de #225 convertido en checker. `handle` era una cadena de 441 líneas con ocho parámetros posicionales que empezaban por `IncomingMessage`: para ejercer una sola ruta había que abrir un puerto, y por eso las tres tandas que iban a editar ahí (#179, #195, #224) habrían aterrizado todas en el mismo fichero. La definición FALSABLE de «probable sola» es que la pieza se invoque sin levantar un servidor, y hace falta un checker porque `bridge/` NO está en el reparto de data/contract/mutation-targets.json: no hay score de mutación que lo demuestre por nosotros. El patrón caza las cuatro formas de volver a atarlo al transporte —importar node:http, nombrar IncomingMessage o ServerResponse, o llamar a createServer—; la primera es también un import, pero el motor de reglas solo admite `imports` o `text`, nunca los dos, y como `node:http` aparece igualmente en el texto del import, el patrón de texto las cubre todas. `state-http-server.ts` NO entra en `files`: ahí es donde el transporte tiene que vivir, y es su único sitio.",
+      "severity": "error",
+      "files": [
+        "nefan-core/bridge/state-http/**/*.ts"
+      ],
+      "text": {
+        "pattern": "node:http|\\bIncomingMessage\\b|\\bServerResponse\\b|\\bcreateServer\\s*\\("
+      }
+    },
+    {
       "id": "cadena-de-migracion-unica",
       "desc": "Solo src/plugins/migrate.ts ejecuta la cadena migrate[v] (runMigrationStep)",
       "why": "Un plugin evoluciona por dos caminos —el manifest del disco sube de versión en resume, y el motor narrativo manda un `plugin_register` con versión mayor (issue #164)— y la política del salto (bump real, una entrada `migrate` por cada versión intermedia, nunca degradar) tiene que ser LA MISMA, con el mismo texto de rechazo. Mientras vivió entera dentro de loader.ts, resolver el caso runtime pedía a gritos un `if` local en register.ts: dos jueces del mismo manifest que darían veredictos distintos sobre el mismo salto, y nadie se enteraría hasta que un save quedara a medias con un slice convertido a un shape que sus reglas ya no leen. Ahora la decisión vive en migrate.ts (módulo puro) y montar un segundo juez exige llamar a runMigrationStep, que es exactamente lo que esta regla corta. Los tests quedan fuera del alcance a propósito: test/plugin-migrate.test.ts lo llama para probar que es slice-only y puro (el contrato del DSL, no la política de versiones que lo usa) y test/architecture.test.ts necesita el literal para probar esta regla en negativo. Lo que esta regla NO es, dicho para que nadie se confíe (QA, 2026-08-23): corta la CADENA, no la POLÍTICA. Un `if (manifest.version <= prior.version) throw …` copiado en register.ts no la dispara. Se estudió ampliarla a las comparaciones de versión y se descartó a propósito: en migrate.ts la comparación se escribe `to < from` sobre variables locales, así que cualquier patrón de texto que buscara `version` lo esquivaría un copista con dos `const`, y un candado que parece cubrir lo que no cubre es peor que no tenerlo. El argumento por el que basta: un pre-chequeo local solo podría RECHAZAR de más, nunca aprobar un salto que la cadena rechaza, porque el slice migrado sigue teniendo que salir de migratePluginSlice; para cambiar de verdad el veredicto hay que reimplementar el bucle, y eso exige runMigrationStep, que es justo lo que aquí se corta. Lo que vigila que los dos caminos digan lo MISMO son los tests de paridad de test/plugin-migrate.test.ts, que comparan el mensaje carácter a carácter.",

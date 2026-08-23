@@ -1,6 +1,6 @@
 /** Test de contrato F0: cada endpoint de la tabla `WorldStateApi`
  *  (src/contracts/world-state.ts) tiene una rama real en el router de
- *  bridge/state-http-server.ts — ninguna petición cae al 404 genérico
+ *  bridge/state-http/routes.ts — ninguna petición cae al 404 genérico
  *  "no route for". Los 400/404 de dominio VALEN (la ruta existe y respondió).
  *
  *  Nombre elegido para no colisionar con contract-fixtures/contract-prompts
@@ -16,13 +16,17 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import { createStateHttpServer, pluginRegisterBody } from "../bridge/state-http-server.js";
+import { createStateHttpServer } from "../bridge/state-http-server.js";
+import { pluginRegisterBody } from "../bridge/state-http/context.js";
 import { WorldStateApi } from "../src/contracts/world-state.js";
 import { fillPath, type Endpoint } from "../src/contracts/http.js";
+import { PLANNED_ROUTES } from "../bridge/state-http/routes.js";
 
-/** Endpoints del contrato SIN rama en el router de hoy (documentados así):
- *  - getLlmContext (PLANNED F5) */
-const SKIP = new Set(["getLlmContext"]);
+/** Los endpoints del contrato SIN handler los declara el propio router
+ *  (`PLANNED_ROUTES`), que es de donde sale el tipo `RouteKey`: una lista
+ *  aparte aquí se desincronizaría en silencio y este test aprobaría el
+ *  endpoint que alguien acaba de dejar sin implementar. */
+const SKIP = new Set<string>(PLANNED_ROUTES);
 
 let server: Server;
 let baseUrl: string;

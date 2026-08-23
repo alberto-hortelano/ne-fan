@@ -49,3 +49,94 @@ export function fillPath(template: string, params: Record<string, string> = {}):
     return encodeURIComponent(value);
   });
 }
+
+/** Una tabla de endpoints como `WorldStateApi`: nombre → endpoint. El
+ *  matcher solo mira `method` y `path`, así que la restricción se queda en
+ *  esos dos campos: pedir `Endpoint<…>` con sus phantom types haría que
+ *  `WorldStateApi` —29 endpoints con 29 pares de tipos distintos— no casara. */
+export type EndpointTable = Record<string, { readonly method: HttpMethod; readonly path: string }>;
+
+export interface RouteMatch<K extends string> {
+  /** La clave de la tabla, no el path: el que despacha ya no re-parsea nada. */
+  key: K;
+  /** Los `{param}` de la plantilla, tal cual venían en la URL (SIN decodificar
+   *  el percent-encoding: es lo que hacía el router de la cadena de ifs y
+   *  cambiarlo aquí sería un cambio de contrato disfrazado de refactor). */
+  params: Record<string, string>;
+}
+
+/** La INVERSA exacta de `fillPath`: qué endpoint de la tabla pidió esta URL.
+ *
+ *  Existe porque sin ella cada router improvisa su propio `parts[2] === …`
+ *  duplicando a mano una tabla que ya es un dato — y ahí es donde nacen las
+ *  rutas que contestan por una URL que nadie pidió.
+ *
+ *  Reglas, todas verificables:
+ *  - Segmentos EXACTOS: `/map/place/x/y` no es `/map/place/{id}`, y una barra
+ *    doble interior tampoco se colapsa. Un `{param}` nunca casa con vacío.
+ *  - Las barras FINALES se recortan (`/health/` ≡ `/health`), que es lo que
+ *    hacía el router y lo que emiten los clientes despistados.
+ *  - Precedencia: si una URL casa con una plantilla literal y con otra que usa
+ *    `{param}`, gana la literal (`/npcs/in_transit` antes que `/npcs/{id}`).
+ *  - El método forma parte de la identidad: `GET /vocabulary` no es
+ *    `POST /vocabulary`. */
+export function matchRoute<T extends EndpointTable>(
+  table: T,
+  method: string,
+  path: string,
+): RouteMatch<Extract<keyof T, string>> | null {
+  const pedido = normalizePath(path).split("/");
+  let conParams: RouteMatch<Extract<keyof T, string>> | null = null;
+  for (const key of Object.keys(table)) {
+    const ep = table[key];
+    if (ep.method !== method) continue;
+    const plantilla = ep.path.split("/");
+    if (plantilla.length !== pedido.length) continue;
+    const params: Record<string, string> = {};
+    let casa = true;
+    let literal = true;
+    for (const [i, segmento] of plantilla.entries()) {
+      const nombre = paramName(segmento);
+      if (nombre === null) {
+        if (segmento !== pedido[i]) {
+          casa = false;
+          break;
+        }
+      } else if (pedido[i] === "") {
+        // `/npc//arrive`: el id vendría VACÍO y el handler buscaría el npc "".
+        // Tiene que rebotar aquí; la comprobación de longitud no lo caza,
+        // porque los segmentos cuadran.
+        casa = false;
+        break;
+      } else {
+        params[nombre] = pedido[i];
+        literal = false;
+      }
+    }
+    if (!casa) continue;
+    const encontrado = { key: key as Extract<keyof T, string>, params };
+    if (literal) return encontrado;
+    conParams ??= encontrado;
+  }
+  return conParams;
+}
+
+/** Un path en su forma canónica: sin barras finales, y `/` para la raíz.
+ *  Vive aquí y no en el router porque el despacho la necesita para las MISMAS
+ *  dos cosas que el matcher —decidir qué ruta es y nombrarla en el error— y
+ *  dos normalizaciones separadas divergen: bastaría con que una recortara una
+ *  barra y la otra todas para que `/health//` fuese una ruta para el matcher y
+ *  otra distinta para la guarda de sesión. */
+export function normalizePath(path: string): string {
+  return path.replace(/\/+$/, "") || "/";
+}
+
+/** `"{id}"` → `"id"`; cualquier otro segmento → `null`.
+ *  Anclado a propósito: un `{param}` ocupa el segmento ENTERO. `x{id}` es un
+ *  literal, no un parámetro — y que ningún endpoint escriba algo así lo canda
+ *  test/state-http-dispatch.test.ts sobre la tabla real, porque `fillPath` SÍ
+ *  sustituiría ahí dentro y las dos funciones dejarían de ser inversas. */
+function paramName(segmento: string): string | null {
+  const m = /^\{([^}]+)\}$/.exec(segmento);
+  return m ? m[1] : null;
+}

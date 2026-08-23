@@ -114,10 +114,6 @@
       "porque": "Los tipos y zod que comparten los contratos de servicio. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/contracts/http.ts",
-      "porque": "El contrato HTTP común: códigos y forma del error. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/contracts/service-registry.ts",
       "porque": "El registro de servicios y sus puertos. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -376,12 +372,14 @@
       "mutate": ["src/world-map/npc-director.ts"],
       "tests": [
         "test/npc-director.test.ts",
+        "test/state-http-caracterizacion.test.ts",
         "test/state-http-contract.test.ts",
+        "test/state-http-dispatch.test.ts",
         "test/state-http-server.test.ts",
         "test/vocabulary.test.ts"
       ],
-      "break": 80,
-      "porque": "Quién mueve a los NPCs por el mapa entre escenas. Sale de world-map porque sus cuatro tests no son los del mapa."
+      "break": 81,
+      "porque": "Quién mueve a los NPCs por el mapa entre escenas. Sale de world-map porque sus cuatro tests no son los del mapa. Los dos tests de #225 (caracterización y despacho) entran el 2026-08-23 porque el candado de imports lo obliga —los dos construyen un NpcDirector— y SÍ suben el score: medido las dos veces ese día, 80,5 % sin ellos (23 vivos) y 81,4 % con ellos (22 vivos), a cambio de 36 s → 53 s. Un mutante más muerto, así que se quedan por medir, no solo por obligación; suelo 80 → 81."
     },
     {
       "id": "store",
@@ -395,6 +393,13 @@
       ],
       "break": 41,
       "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada. `store-reducers.test.ts` entra en la batería el día que se borra el estado muerto de sala (#175): al irse `room_changed`/`room_visited` desaparecieron diez mutantes BIEN matados y el módulo cayó por debajo del break sin que el código restante hubiera empeorado. La señal no era el borrado, era que el resto de los `case` no tenía dueño — se ejercían a través del sim, sin un solo aserto sobre lo que escriben."
+    },
+    {
+      "id": "state-http-dispatch",
+      "mutate": ["src/contracts/http.ts", "bridge/state-http/dispatch.ts"],
+      "tests": ["test/state-http-contract.test.ts", "test/state-http-dispatch.test.ts"],
+      "break": 100,
+      "porque": "Quién decide QUÉ endpoint contesta una URL. `http.ts` sale de `sin_mutar` con la tanda #225: `fillPath` ya vivía ahí y ahora también su inversa, `matchRoute`, que es la pieza capaz de desviar una ruta EN SILENCIO — un mutante que relaje la comparación de segmentos hace que `/map/place/x/y` vuelva a contestar por `/map/place/x`, y ninguna respuesta cambia de forma. Va con `dispatch.ts` porque los dos son el mismo camino y ningún test importa uno sin el otro; y va con dispatch.ts EXPRESAMENTE porque `bridge/` no está en el reparto: la guarda de sesión y el flag `mutated` que llega al borde son lo más caro de perder de todo el State API, y este es el único sitio del bridge donde hoy se miden. La batería son los dos únicos tests que importan lo mutado: el de contrato recorre las 29 rutas del contrato contra el server real y el de despacho llama a `matchRoute` y a `dispatchStateRequest` a pelo, sin abrir un puerto. Suelo 100 medido el 2026-08-23 sobre 103 mutantes: la primera corrida dio 85,8 % con 16 vivos, y los 16 señalaban cosas de verdad — la normalización de barras duplicada entre el matcher y el despacho, un segmento vacío en posición de {param} que ningún test tocaba (los tres que había los rebotaba la longitud, no la guarda), el mensaje del 409 que solo se comprobaba por su primera palabra, y un tope de bucle que no podía matarse porque el mutante era equivalente. Se arreglaron el código y los tests, no el número."
     }
   ]
 }

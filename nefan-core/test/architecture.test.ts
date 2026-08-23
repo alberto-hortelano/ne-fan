@@ -432,6 +432,66 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // El candado que sustituye a la prosa del criterio de aceptación de #225
+  // («cada pieza se invoca sin levantar un servidor HTTP»). Hace falta porque
+  // `bridge/` NO está en el reparto de mutación: nada más lo demuestra. Y
+  // hace falta probarlo en negativo por partida doble — sobre el árbol de hoy
+  // está verde, y una regla verde no demuestra nada: la primera versión de
+  // estos handlers la puso ROJA por los COMENTARIOS que nombraban los tipos
+  // del transporte, así que se sabe que caza texto de verdad.
+  it("[error] handlers-sin-servidor: las cuatro formas de volver a atar un handler al transporte saltan", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "handlers-sin-servidor");
+
+    // Las cuatro: el import del módulo, los dos tipos y el constructor. Da
+    // igual si entran por un import, por una firma o por un parámetro
+    // posicional — que es como estaban en el `handle` de 441 líneas.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/bridge/state-http/map-routes.ts",
+          text: 'import type { IncomingMessage } from "node:http";\n',
+          imports: [{ spec: "node:http", line: 1 }],
+        },
+        {
+          path: "nefan-core/bridge/state-http/dispatch.ts",
+          text: "function despacha(req: IncomingMessage, res: ServerResponse) {}\n",
+        },
+        {
+          path: "nefan-core/bridge/state-http/npc-routes.ts",
+          text: "const s = createServer((req, res) => {});\n",
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        // Dos aciertos por línea donde el import trae ADEMÁS el tipo: el
+        // patrón caza los dos términos, y así se ve que no es uno solo el que
+        // está haciendo todo el trabajo.
+        "nefan-core/bridge/state-http/dispatch.ts:1",
+        "nefan-core/bridge/state-http/dispatch.ts:1",
+        "nefan-core/bridge/state-http/map-routes.ts:1",
+        "nefan-core/bridge/state-http/map-routes.ts:1",
+        "nefan-core/bridge/state-http/npc-routes.ts:1",
+      ],
+    );
+
+    // Y los dos inocentes: el transporte, que es donde ESO tiene que vivir, y
+    // un handler que solo habla de su contexto.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/bridge/state-http-server.ts",
+          text: 'import { createServer, type IncomingMessage, type ServerResponse } from "node:http";\n',
+          imports: [{ spec: "node:http", line: 1 }],
+        },
+        {
+          path: "nefan-core/bridge/state-http/entity-routes.ts",
+          text: "export const entityRoutes = { getEntity: (ctx, { params }) => ok(ctx.narrative.getEntity(params.id)) };\n",
+        },
+      ]),
+      [],
+    );
+  });
+
   // La deuda congelada es la que más fácil se pudre: `max` se baja en la PR
   // que arregla un catch, y nadie vuelve a comprobar que el patrón siga
   // cazando los que quedan. Probado en negativo con las DOS formas que el
