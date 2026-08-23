@@ -187,26 +187,31 @@ Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []
 ## Equipo de agentes (roles y coordinación)
 
 El trabajo sustancial se hace en equipo: la **sesión principal coordina** (habla con el
-usuario, fija los requisitos, decide y delega) y tres roles especializados viven en
+usuario, fija los requisitos, decide y delega) y cuatro roles especializados viven en
 `.claude/agents/`:
 
 | Rol | Qué hace | Qué NO hace |
 |-----|----------|-------------|
+| `critico` | Decide si la tarea DEBE hacerse tal como está escrita: separa el problema real de la solución que propone, verifica su premisa contra el código, imagina el repo el día después y busca conflictos con otras tareas. Veredicto: vigente / reencuadrada / obsoleta / en conflicto / prematura. Produce `critica.md` | No diseña ni implementa; no opina de estilo ni de diseño interno |
 | `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / cliente / ai_server), contratos y formatos afectados, qué hay que borrar (claves de caché incluidas), mejoras estructurales. Produce `plan.md` | No escribe código de producción |
 | `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y los supervivientes de mutación del módulo que tocó, muertos. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
 | `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` de lo que sea mecánico | **No arregla nada** — reporta |
 
 Los subagentes arrancan con **contexto limpio y no se ven entre sí**: todo el handoff viaja
 por ficheros (ver `docs/agents/README.md`). Lo que no esté escrito ahí, para ellos no existe —
-empezando por la cita literal de la petición del usuario en `requisitos.md`. Los cuatro
-documentos viven en `docs/agents/<tarea>/`, pero solo se commitean `requisitos.md` y `qa.md`
-(qué se pidió y qué se verificó): `.gitignore` deja fuera el plan y el informe de
-implementación, que envejecen mal y a los tres meses son documentación falsa.
+empezando por la cita literal de la petición del usuario en `requisitos.md`. Los cinco
+documentos viven en `docs/agents/<tarea>/`, pero solo se commitean `requisitos.md`, `critica.md`
+y `qa.md` (qué se pidió, por qué se hizo así o no se hizo, y qué se verificó): `.gitignore` deja
+fuera el plan y el informe de implementación, que envejecen mal y a los tres meses son
+documentación falsa.
 
 **Cuándo se dispara** (regla del coordinador, sin esperar a que lo pidan): cualquier tarea que
 toque más de un fichero de lógica, cambie un contrato o un formato, o sea observable por el
-jugador → ciclo completo `requisitos → arquitecto → [visto bueno del usuario] → ingeniero →
-qa`. Un typo, un color o una pregunta se hacen directamente: el ciclo cuesta cuatro contextos
+jugador → ciclo completo `requisitos → crítico → [visto bueno del usuario] → arquitecto →
+ingeniero → qa`. **El crítico va primero y no se salta cuando la tarea viene de un issue, del
+backlog o de una tanda anterior**: el fallo más caro del ciclo no es un plan malo, es un plan
+bueno sobre una tarea que no había que hacer, y ese material es justo el que se pudre. Solo se
+salta cuando la tarea la acaba de describir el usuario y no toca nada más. Un typo, un color o una pregunta se hacen directamente: el ciclo cuesta cuatro contextos
 y no debe salir más caro que el trabajo. `/feature <descripción>` fuerza el ciclo entero;
 `/final-check` es la verificación de objetivo en solitario, sin equipo.
 

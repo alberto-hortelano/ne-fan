@@ -1,21 +1,22 @@
 ---
 name: feature
-description: Ejecuta el ciclo completo de equipo sobre una tarea — requisitos (coordinador) → plan (arquitecto) → tests+implementación (ingeniero) → validación de usuario (QA) → corrección de hallazgos. Úsala para cualquier trabajo sustancial de ne-fan; para un cambio trivial es sobrecoste.
+description: Ejecuta el ciclo completo de equipo sobre una tarea — requisitos (coordinador) → crítica de la tarea (crítico) → plan (arquitecto) → tests+implementación (ingeniero) → validación de usuario (QA) → corrección de hallazgos. Úsala para cualquier trabajo sustancial de ne-fan; para un cambio trivial es sobrecoste.
 ---
 
 # /feature — ciclo de equipo
 
-Tú eres el **coordinador**: hablas con el usuario, decides el alcance y delegas. Los tres roles (`arquitecto`, `ingeniero`, `qa`) viven en `.claude/agents/`. Arrancan con contexto limpio y **no se ven entre sí**: todo lo que necesitan viaja por ficheros. Si no lo escribes ahí, no existe para ellos.
+Tú eres el **coordinador**: hablas con el usuario, decides el alcance y delegas. Los cuatro roles (`critico`, `arquitecto`, `ingeniero`, `qa`) viven en `.claude/agents/`. Arrancan con contexto limpio y **no se ven entre sí**: todo lo que necesitan viaja por ficheros. Si no lo escribes ahí, no existe para ellos.
 
 `<tarea>` = `AAAA-MM-DD-slug-corto` (fecha de hoy, slug en kebab-case del objetivo).
 
-**Los cuatro documentos viven en `docs/agents/<tarea>/`** — una sola carpeta, una sola ruta
+**Los cinco documentos viven en `docs/agents/<tarea>/`** — una sola carpeta, una sola ruta
 que pasar. Dos se commitean y dos no, y de eso se encarga `.gitignore`, no tu memoria:
 
 | Fichero | Lo escribe | ¿Se commitea? |
 |---|---|---|
 | `requisitos.md` | coordinador | **sí** — qué se pidió, con la cita literal. Envejece bien: es historia |
 | `qa.md` | `qa` | **sí** — qué se verificó y con qué evidencia |
+| `critica.md` | `critico` | **sí** — por qué la tarea se hizo así, se reencuadró o se descartó. Envejece bien por el mismo motivo que `requisitos.md`: no describe código, describe una decisión |
 | `plan.md`, `implementacion.md` | `arquitecto`, `ingeniero` | **no** (ignorados por `.gitignore`) — son andamio: commiteados, a los tres meses son documentación falsa que alguien se cree |
 
 Pasa siempre la **ruta absoluta** de la carpeta al lanzar un rol: ellos no adivinan dónde está.
@@ -31,6 +32,33 @@ Antes de lanzar a nadie, escribe `docs/agents/<tarea>/requisitos.md`:
 - **Preguntas abiertas** con la suposición por defecto de cada una.
 
 Si algo es ambiguo y cambia materialmente el trabajo, pregúntalo al usuario AHORA — no a mitad del ciclo, cuando ya se ha gastado un plan.
+
+## 1.5 · Crítico
+
+Lánzalo con la ruta antes que a nadie más. Devuelve `critica.md`, que empieza por un veredicto:
+**VIGENTE**, **REENCUADRADA**, **OBSOLETA**, **EN CONFLICTO** o **PREMATURA**.
+
+Existe porque el fallo más caro del ciclo no es un plan malo: es un plan **bueno** sobre una
+tarea que no había que hacer. Un issue de hace tres semanas puede haberse quedado sin sujeto,
+describir la solución equivocada a un problema real, o chocar con otro que se cerró mientras
+tanto — y sin este paso eso se descubre con un arquitecto y medio ingeniero ya gastados.
+
+Qué haces con cada veredicto:
+
+- **VIGENTE** → sigue al arquitecto sin más trámite. Es el caso frecuente y cuesta minutos.
+- **REENCUADRADA** o **PREMATURA** → **lleva la crítica al usuario antes de seguir**. Cambia lo
+  que se va a construir, así que no es tuya la decisión. Sus correcciones entran en
+  `requisitos.md` (el crítico ya te lo deja redactado para pegar) y el arquitecto lee la versión
+  nueva.
+- **OBSOLETA** → no lances al arquitecto. Preséntale al usuario la evidencia y, con su visto
+  bueno, cierra el issue pegando el texto que trae la crítica. Cerrar una tarea con pruebas es
+  entregar trabajo, no escaquearse de él.
+- **EN CONFLICTO** → decide con el usuario el orden o la fusión con la otra tarea, y reescribe
+  `requisitos.md` antes de continuar.
+
+Salta este paso solo cuando la tarea la acaba de describir el usuario en la conversación y no
+toca nada más: ahí la premisa es fresca. Para cualquier cosa que venga de un issue, del backlog
+o de una tanda anterior, **no lo saltes** — es justo el material que se pudre.
 
 ## 2 · Arquitecto
 
@@ -73,4 +101,4 @@ Cambio de una línea, typo, ajuste de color, pregunta. El ciclo cuesta cuatro co
 
 ## Paralelismo
 
-Arquitecto → ingeniero → QA es una cadena; no la paralelices. Lo que sí puede ir en paralelo (un solo mensaje con varias llamadas a `Agent`) es la **exploración previa**: varios `Explore` sobre subsistemas distintos para alimentar `requisitos.md`.
+Crítico → arquitecto → ingeniero → QA es una cadena; no la paralelices (y el crítico va primero justamente para que los otros tres no se gasten en balde). Lo que sí puede ir en paralelo (un solo mensaje con varias llamadas a `Agent`) es la **exploración previa**: varios `Explore` sobre subsistemas distintos para alimentar `requisitos.md`.
