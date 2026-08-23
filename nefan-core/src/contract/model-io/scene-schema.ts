@@ -49,11 +49,21 @@ export const EntitySchema = z
     // `role` NO es el oficio: es el preset de conducta que el sim implementa
     // (NPC_ROLES, la misma lista que el enum de `spawn_entity` — un NPC no
     // puede declarar su oficio con un vocabulario en un tool y con otro en el
-    // vecino). Enum CERRADO a propósito: un `role: "herrero"` no degradaría a
-    // villager en silencio, se le devuelve al motor con los cuatro valores.
-    // El oficio viaja en `name` y en `description`, que es de donde sale el
-    // prompt del skin IA.
-    role: z.enum(NPC_ROLES).optional(),
+    // vecino). Vocabulario CERRADO a propósito: un `role: "herrero"` no
+    // degradaría a villager en silencio, se le devuelve al motor. El oficio
+    // viaja en `name` y en `description`, que es de donde sale el prompt del
+    // skin IA.
+    //
+    // `z.string()` + refinamiento en vez de `z.enum(NPC_ROLES)`, y no es un
+    // aflojamiento: la lista es la misma y el rechazo también. Lo que cambia
+    // es el MENSAJE, que aquí es la pieza que trabaja — este gate es el único
+    // cuyo error vuelve al modelo, y `formatError` solo le enseña el PRIMER
+    // issue. Un enum solo sabe decir «entities[37].role: Invalid enum value»;
+    // el refinamiento tiene la entity entera delante, así que puede nombrar
+    // al NPC por su id y decir dónde va el oficio — que es lo accionable
+    // cuando el tile trae ochenta entidades. Espejo exacto del mensaje que da
+    // `clean_ent` en ai_server.
+    role: z.string().min(1).optional(),
     // `description` es el PROMPT del skin del personaje (aspecto, no
     // biografía). Opcional en el zod y exigida en la prosa del prompt: este
     // schema canda también las fixtures de `data/scenes/`, y las 14 sondas de
@@ -65,7 +75,19 @@ export const EntitySchema = z
     // ELEGIDA por el motor; sin ella, el default sale del `role`.
     style_ref: z.string().min(1).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((e, ctx) => {
+    if (e.role === undefined || (NPC_ROLES as readonly string[]).includes(e.role)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["role"],
+      message:
+        `el NPC "${e.id}" declara role "${e.role}", que no es un rol de conducta. ` +
+        `Los únicos son ${NPC_ROLES.join(" | ")} (los mismos que en spawn_entity). ` +
+        `El oficio —herrero, alcaldesa, molinero— va en \`name\` y en \`description\`, ` +
+        `que es de donde sale su aspecto; \`role\` solo elige cómo se comporta.`,
+    });
+  });
 
 export const SceneSizeSchema = z.object({
   cols: z.number().int().min(1),

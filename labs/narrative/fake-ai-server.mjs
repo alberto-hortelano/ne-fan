@@ -232,6 +232,14 @@ function bootstrapTile() {
       // `description` es el prompt de su skin y `role` el preset de conducta
       // (vocabulario cerrado NPC_ROLES). Sin los dos, el bench mediría un
       // mundo donde todos son el mismo aldeano anónimo — que es el bug #173.
+      //
+      // Y una advertencia sobre lo que ESTE fichero NO puede probar: al
+      // llevarlos escritos a mano, la batería de qa/ seguiría verde si
+      // mañana el contrato dejara de pedirlos. Quien sujeta eso es el
+      // candado de deriva de nefan-core/test/contract-prompts.test.ts (el
+      // enum del tool == NPC_ROLES, y el prompt nombrando los dos campos);
+      // el bench no es una segunda red ahí, es el doble de un motor
+      // conforme.
       { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n",
         role: "merchant", description: "tabernero corpulento de mandil manchado" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
