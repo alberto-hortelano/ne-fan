@@ -16,6 +16,7 @@ import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from ".
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
+import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
 import type { RequestTileMessage } from "../../src/protocol/messages.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
 
@@ -239,33 +240,18 @@ export async function runTileGeneration(
     return { delivered: true };
   } catch (err) {
     console.warn(`Bridge: generación del tile ${key} falló:`, err);
-    // Si esto es un VIAJE, quien lo pulsó eligió un lugar por su nombre: el
-    // mensaje nombra el lugar y traduce el motivo, y el volcado de la
-    // excepción se queda en el `console.warn` de arriba (era lo que el jugador
-    // leía: «No se pudo generar el tile (2, 0). fetch failed»).
-    // Explorando NO se traduce: ahí el motivo exacto —un tile que el validador
-    // rechaza, un cruce que no continúa— es lo único que dice qué ha pasado, y
-    // no hay un nombre de destino que ponerle en su lugar.
-    fail(
-      opts.destino
-        ? `No se pudo llegar a ${opts.destino}. ${motivoParaElJugador(err)}`
-        : `Error: ${(err as Error).message ?? err}`,
-    );
+    // SIEMPRE traducido, con o sin destino. El nombre del lugar es un PREFIJO
+    // cuando lo hay —quien pulsó «Salidas» eligió un sitio por su nombre—, no
+    // la condición para traducir: antes, sin `destino`, este `fail` soltaba la
+    // excepción cruda («Error: No se pudo generar el tile (2, 0). fetch
+    // failed»), que es lo que se lee al EXPLORAR — el camino más frecuente de
+    // los dos. (El del arranque es el catch de `bootstrap-tile.ts`, traducido
+    // por su lado.) El volcado técnico se queda en el `console.warn` de
+    // arriba, que es donde sirve.
+    const motivo = motivoParaElJugador(err);
+    fail(opts.destino ? `No se pudo llegar a ${opts.destino}. ${motivo}` : motivo);
     return { delivered: true };
   }
-}
-
-/** Traduce un fallo interno a algo que quien juega pueda leer (el detalle
- *  técnico se queda en el `console.warn` de arriba). */
-function motivoParaElJugador(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  if (/fetch failed|ECONNREFUSED|socket hang up|timeout/i.test(raw)) {
-    return "El motor narrativo no responde; inténtalo de nuevo en un momento.";
-  }
-  if (/no es jugable/i.test(raw)) {
-    return "El motor narrativo devolvió un terreno inservible; inténtalo de nuevo.";
-  }
-  return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }
 
 export async function handleRequestTile(

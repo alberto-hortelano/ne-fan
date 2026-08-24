@@ -23,7 +23,7 @@
  *  teclado se le escaparía; de eso se ocupan los otros siete bloques, que miran
  *  la pantalla y el DOM.
  */
-import { abrirSelectorDeMundos, esperarTituloListo } from "../lib/sesion.mjs";
+import { abrirSelectorDeMundos, esperarListaDeSaves, esperarTituloListo } from "../lib/sesion.mjs";
 
 /** Palabras que sólo tenían sentido con la oblicua o el proscenio vivos, EN
  *  LA LENGUA EN QUE EL JUGADOR LAS LEERÍA (la UI del juego está en español).
@@ -116,6 +116,9 @@ export default async function (ctx) {
 
   // ── 1. Home del título ────────────────────────────────────────────────
   await esperarTituloListo(ctx);
+  // El home se revisa ENTERO, así que se espera también a la lista de saves:
+  // un home a medio pintar solo podría dejar pasar un control, no cazarlo.
+  await esperarListaDeSaves(ctx);
   await revisar("home del título");
 
   // ── 2. Selector de mundos ─────────────────────────────────────────────

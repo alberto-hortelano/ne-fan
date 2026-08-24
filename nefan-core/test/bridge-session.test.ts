@@ -357,7 +357,12 @@ describe("bridge ciclo de sesión", () => {
     assert.match(started.error ?? "", /game_load_failed/);
   });
 
-  it("start_session difunde narrative_status: error si la generación falla", async () => {
+  it("start_session difunde narrative_status: error si la generación falla, TRADUCIDO", async () => {
+    // El `ok:true` de la primera línea es el hecho que sostiene #189: la
+    // sesión arranca ANTES de que el mundo exista, así que este fallo no llega
+    // por el rechazo de `startSession` sino por un broadcast posterior. Y lo
+    // que el jugador lee ahí no puede ser el volcado del motor (#180): antes
+    // era «Error: No se pudo generar la escena. MCP caído».
     const { ctx, broadcasts } = makeCtx({
       ai: { generateScene: async () => ({ ok: false, error: "MCP caído" }) },
     });
@@ -374,7 +379,29 @@ describe("bridge ciclo de sesión", () => {
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
-    assert.ok(err?.message?.includes("MCP caído"));
+    assert.ok(!err?.message?.includes("MCP caído"), `volcado al jugador: ${err?.message}`);
+    assert.equal(err?.message, "El motor narrativo no pudo construirlo; inténtalo de nuevo.");
+  });
+
+  it("y el motor MUDO en el arranque tampoco enseña la excepción", async () => {
+    // El caso real del bench: el ai_server caído. `generateScene` no devuelve
+    // `ok:false`, LANZA — otra rama del mismo catch.
+    const { ctx, broadcasts } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          throw new Error("fetch failed");
+        },
+      },
+    });
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(err?.message, "El motor narrativo no responde; inténtalo de nuevo en un momento.");
   });
 
   it("resume normaliza scene_data en el wire y deja la persistencia en Format D crudo", async () => {

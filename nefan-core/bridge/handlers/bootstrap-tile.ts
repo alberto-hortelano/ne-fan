@@ -7,6 +7,7 @@
  *  broadcast). */
 import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
+import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
 import { resolveBootstrapPlaceId } from "../../src/world-map/bootstrap-place.js";
@@ -118,11 +119,15 @@ export async function runBootstrapTile(
     return { delivered: true };
   } catch (err) {
     console.warn("Bridge: generate_scene failed:", err);
-    // El motivo va ENTERO: un mundo que no arranca deja al jugador sin partida
-    // y sin nada que reintentar, así que aquí la causa exacta es lo útil (un
-    // `place_id` que falta, un tile injugable). No es el caso del viaje, que
-    // sí tiene un destino con nombre y un botón para reintentar.
-    fail(`Error: ${(err as Error).message ?? err}`);
+    // TRADUCIDO. Aquí decía «el motivo va ENTERO porque el jugador no tiene
+    // nada que reintentar», y esa premisa se cayó: el overlay del mundo vacío
+    // ya ofrece volver al título (#189), así que sí hay adónde ir. Lo que
+    // quedaba era que en el ARRANQUE —el momento en que más falla— se leyera
+    // «Error: No se pudo generar la escena. fetch failed», que es un volcado
+    // de motor, no una frase (#180). La causa exacta —un place_id que falta,
+    // un tile injugable, el motor mudo— sigue entera en el `console.warn` de
+    // arriba, que es el log de quien desarrolla.
+    fail(motivoParaElJugador(err));
     return { delivered: true };
   }
 }

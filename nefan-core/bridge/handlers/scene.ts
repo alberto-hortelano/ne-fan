@@ -14,6 +14,7 @@ import { resolvePlaceTarget } from "../../src/world-map/place-target.js";
 import { tileKey, type TileCoord } from "../../src/scene/tile.js";
 import { activeTileOf, runTileGeneration } from "./tile.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
+import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
 import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
 
 export async function handlePlayerEnteredPlace(
@@ -188,18 +189,4 @@ async function runPlaceTravel(
     });
     return { delivered: true };
   }
-}
-
-/** Traduce un fallo interno a algo que quien juega pueda leer. El detalle
- *  técnico NO se pierde: lo escribe `console.warn` en el log del bridge, que
- *  es donde sirve. */
-function motivoParaElJugador(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  if (/fetch failed|ECONNREFUSED|socket hang up|timeout/i.test(raw)) {
-    return "El motor narrativo no responde; inténtalo de nuevo en un momento.";
-  }
-  if (/no da punto de aparición|no hay sitio|anclaje/i.test(raw)) {
-    return "No hay sitio libre en el mapa para colocarlo.";
-  }
-  return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }

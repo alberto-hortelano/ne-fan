@@ -91,10 +91,31 @@ export function handleListGames(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): void {
+  // CONTESTA SIEMPRE. `listGames` lanza si el directorio de juegos no existe
+  // (instalación rota, `NEFAN_GAMES_DIR` mal), y `routeMessage` no envuelve a
+  // sus handlers: el throw salía como unhandled rejection, nadie respondía y
+  // el cliente se comía los 30 s de su timeout para acabar diciendo «el
+  // servidor no contesta» — plausible y falso, porque el servidor está vivo.
+  // Un listado vacío tampoco vale: «no hay ningún mundo instalado» es otra
+  // mentira distinta. Va el motivo, y el cliente lo traduce.
+  let listado: ReturnType<typeof listGames>;
+  try {
+    listado = listGames(ctx.gamesDir);
+  } catch (err) {
+    console.error("Bridge: list_games falló:", err);
+    ctx.send(ws, {
+      type: "games_listed",
+      requestId: msg.requestId,
+      error: `games_dir_unreadable: ${(err as Error).message ?? err}`,
+      games: [],
+      styles: [],
+    });
+    return;
+  }
   ctx.send(ws, {
     type: "games_listed",
     requestId: msg.requestId,
-    games: listGames(ctx.gamesDir).map((g) => {
+    games: listado.map((g) => {
       let worldDocHash = "";
       try {
         worldDocHash = createHash("sha256")

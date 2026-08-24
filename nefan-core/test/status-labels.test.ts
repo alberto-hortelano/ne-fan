@@ -1,0 +1,343 @@
+/** El rótulo que lee quien juega cuando el motor falla (#180).
+ *
+ *  Lo que se comprueba aquí NO es que las cadenas sean bonitas, es la
+ *  DECISIÓN: qué fallo tapa la pantalla y cuál se queda en la línea de
+ *  mensajes, y cuál de los cuatro títulos corresponde a cada situación. Esa
+ *  decisión vivía en dos `if` de `main.ts` con el rótulo escrito a mano al
+ *  lado, y no había forma de probarla sin navegador. */
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  motivoDeSesionParaElJugador,
+  motivoParaElJugador,
+  rotuloDeStatus,
+} from "../src/protocol/status-labels.js";
+import type { NarrativeStatusMessage } from "../src/protocol/messages.js";
+
+/** Lo que el bridge manda en el ARRANQUE del mundo: motivo traducido y SIN
+ *  nombre de destino, porque en el arranque no se viaja a ningún sitio.
+ *
+ *  Este fixture decía «No se pudo llegar a Robledo. …» para todos los casos,
+ *  incluido el del mundo vacío — y ese cuerpo ahí no llegaba nunca: hasta
+ *  2026-08-24 `tile.ts` solo traducía si el fallo traía `destino`, así que en
+ *  el arranque el jugador leía «Error: No se pudo generar la escena. fetch
+ *  failed». El test heredaba la premisa falsa y por eso el hueco no se vio
+ *  (QA §3.3). Los casos de VIAJE traen ahora su cuerpo con el destino puesto,
+ *  explícitamente, porque son los únicos donde el bridge lo escribe. */
+const fallo = (extra: Partial<NarrativeStatusMessage> = {}): NarrativeStatusMessage => ({
+  type: "narrative_status",
+  phase: "error",
+  kind: "tile",
+  message: "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+  ...extra,
+});
+
+/** El cuerpo de un VIAJE fallido: el destino como prefijo del motivo. Es lo
+ *  que compone `runTileGeneration` cuando `opts.destino` existe. */
+const CUERPO_DE_VIAJE =
+  "No se pudo llegar a Robledo. El motor narrativo no responde; inténtalo de nuevo en un momento.";
+
+describe("rótulo de un fallo del motor", () => {
+  it("tile con el mundo todavía vacío: la partida no llegó a empezar", () => {
+    const r = rotuloDeStatus(fallo({ tile: { tx: 0, ty: 0 } }), {
+      mundoVacio: true,
+      overlayAbierto: true,
+    });
+    assert.equal(r.destino, "overlay");
+    assert.equal(r.titulo, "La partida no pudo empezar");
+    // El cuerpo del arranque: traducido y sin destino que nombrar.
+    assert.equal(r.detalle, "El motor narrativo no responde; inténtalo de nuevo en un momento.");
+  });
+
+  it("tile con overlay abierto: el jugador está esperando un viaje, el error va al overlay", () => {
+    const r = rotuloDeStatus(fallo({ tile: { tx: 2, ty: 0 }, message: CUERPO_DE_VIAJE }), {
+      mundoVacio: false,
+      overlayAbierto: true,
+    });
+    assert.deepEqual(
+      { destino: r.destino, titulo: r.titulo, detalle: r.detalle },
+      { destino: "overlay", titulo: "No se pudo llegar", detalle: CUERPO_DE_VIAJE },
+    );
+  });
+
+  it("tile de frontera en segundo plano: al log, NO tapa la pantalla", () => {
+    // Es el caso que distingue esta función de «pintar el error siempre»: la
+    // frontera se genera sola mientras el jugador camina, y su feedback es el
+    // velo del borde. Un overlay modal aquí interrumpe una partida en curso
+    // por algo que el jugador ni pidió.
+    const r = rotuloDeStatus(fallo({ tile: { tx: 1, ty: 0 }, message: "Error: fetch failed" }), {
+      mundoVacio: false,
+      overlayAbierto: false,
+    });
+    assert.equal(r.destino, "log");
+    assert.equal(r.detalle, "Error: fetch failed");
+  });
+
+  it("escena de un VIAJE (trae placeId): no se pudo llegar", () => {
+    const r = rotuloDeStatus(
+      fallo({ kind: "scene", placeId: "ermita_del_vado", message: "No se pudo viajar a Ermita del vado. El motor narrativo no responde; inténtalo de nuevo en un momento." }),
+      { mundoVacio: false, overlayAbierto: true },
+    );
+    assert.deepEqual(
+      { destino: r.destino, titulo: r.titulo },
+      { destino: "overlay", titulo: "No se pudo llegar" },
+    );
+  });
+
+  it("escena SIN place: no se pudo preparar el lugar", () => {
+    const r = rotuloDeStatus(fallo({ kind: "scene", placeId: undefined }), {
+      mundoVacio: false,
+      overlayAbierto: true,
+    });
+    assert.deepEqual(
+      { destino: r.destino, titulo: r.titulo },
+      { destino: "overlay", titulo: "No se pudo preparar el lugar" },
+    );
+  });
+
+  it("una escena sin place no depende del contexto de pintado: siempre al overlay", () => {
+    // El contraste con el tile de frontera: una escena que el motor preparaba
+    // se pidió desde el juego, así que su fallo se enseña aunque no haya
+    // overlay abierto. Sin esto, `overlayAbierto` podría estar decidiendo por
+    // todos los kinds y el test de arriba no lo notaría.
+    const r = rotuloDeStatus(fallo({ kind: "scene" }), {
+      mundoVacio: false,
+      overlayAbierto: false,
+    });
+    assert.equal(r.destino, "overlay");
+  });
+
+  it("consequences: la reacción narrativa rechazada conserva su rótulo", () => {
+    const r = rotuloDeStatus(fallo({ kind: "consequences", message: undefined }), {
+      mundoVacio: false,
+      overlayAbierto: false,
+    });
+    assert.deepEqual(r, {
+      destino: "overlay",
+      titulo: "El motor narrativo rechazó la respuesta",
+      detalle: "El motor narrativo rechazó la reacción.",
+      salida: "cerrar",
+    });
+  });
+
+  it("sin `message` cada kind trae su propio cuerpo, no un «algo falló» genérico", () => {
+    const cuerpo = (kind: NarrativeStatusMessage["kind"]): string =>
+      rotuloDeStatus(fallo({ kind, message: undefined }), {
+        mundoVacio: true,
+        overlayAbierto: true,
+      }).detalle;
+    assert.equal(cuerpo("tile"), "Algo falló generando el tile.");
+    assert.equal(cuerpo("scene"), "Algo falló en el motor narrativo.");
+    assert.equal(cuerpo("consequences"), "El motor narrativo rechazó la reacción.");
+    assert.equal(cuerpo("game_gen"), "El motor narrativo rechazó la reacción.");
+  });
+
+  it("un `message` vacío NO se sustituye por el de por defecto", () => {
+    // `??` y `||` se confunden en este sitio exacto y la diferencia es
+    // observable: con `||`, un mensaje vacío del bridge se cambiaría por el
+    // texto genérico y el jugador leería una causa inventada.
+    assert.equal(rotuloDeStatus(fallo({ message: "" }), { mundoVacio: true, overlayAbierto: true }).detalle, "");
+  });
+
+  it("rotular algo que NO es un fallo es un error de quien llama (fail-loud)", () => {
+    for (const phase of ["generating", "progress", "ready"] as const) {
+      assert.throws(
+        () => rotuloDeStatus(fallo({ phase }), { mundoVacio: true, overlayAbierto: true }),
+        /solo rotula fallos/,
+        `phase "${phase}" debería rechazarse`,
+      );
+    }
+  });
+});
+
+describe("la salida del overlay: qué puede hacer el jugador con el muro", () => {
+  it("sin mundo pintado el overlay ofrece VOLVER AL TÍTULO, no solo cerrarse", () => {
+    // El fallo más probable de los primeros segundos: `start_session` contesta
+    // ok:true antes de generar el tile, así que el motor mudo no rechaza y no
+    // pasa por el catch del bucle del título. Cerrar ahí dejaba al jugador con
+    // cielo vacío y sin nada que pulsar (#189, QA §3.2).
+    const r = rotuloDeStatus(fallo({ tile: { tx: 0, ty: 0 } }), {
+      mundoVacio: true,
+      overlayAbierto: true,
+    });
+    assert.equal(r.destino, "overlay");
+    assert.equal(r.salida, "volver-al-titulo");
+  });
+
+  it("con la partida en marcha el overlay se cierra y ya: hay mundo detrás", () => {
+    const r = rotuloDeStatus(fallo({ tile: { tx: 2, ty: 0 }, message: CUERPO_DE_VIAJE }), {
+      mundoVacio: false,
+      overlayAbierto: true,
+    });
+    assert.equal(r.destino, "overlay");
+    assert.equal(r.salida, "cerrar");
+  });
+
+  it("lo que decide la salida es el MUNDO VACÍO, no el kind ni el overlay", () => {
+    // Sin esto, `salida` podría estar clavada al caso del tile de bootstrap y
+    // un fallo de escena en el arranque —el mismo callejón— saldría con la
+    // salida equivocada sin que nadie se enterara.
+    for (const kind of ["tile", "scene", "consequences", "game_gen"] as const) {
+      for (const overlayAbierto of [true, false]) {
+        const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
+        assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);
+        assert.equal(r.salida, "volver-al-titulo", `${kind}/${overlayAbierto}`);
+      }
+    }
+  });
+});
+
+describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
+  /** Excepciones REALES de este camino, copiadas de donde se lanzan. */
+  const CRUDOS = [
+    "fetch failed",
+    "request to http://127.0.0.1:8765/generate_scene failed, reason: connect ECONNREFUSED 127.0.0.1:8765",
+    "socket hang up",
+    "El tile (2, 0) no es jugable: el camino del borde oeste no continúa",
+    "el anclaje de Robledo no da punto de aparición",
+    "No se pudo generar el tile (1, 0). Revisa el motor narrativo.",
+  ];
+
+  it("ningún motivo devuelve la excepción cruda", () => {
+    // El criterio de #180: el jugador nunca lee una excepción. Si alguien
+    // devuelve `raw` en cualquier rama, esto se pone rojo.
+    for (const raw of CRUDOS) {
+      const motivo = motivoParaElJugador(new Error(raw));
+      assert.ok(!motivo.includes(raw), `«${raw}» llegó entero al jugador: ${motivo}`);
+      assert.ok(!/fetch|ECONNREFUSED|socket|http:\/\//i.test(motivo), motivo);
+      assert.match(motivo, /^El motor narrativo|^No hay sitio/, motivo);
+    }
+  });
+
+  it("el motor caído, el terreno inservible y el sitio ocupado se distinguen", () => {
+    // Tres causas, tres frases: colapsarlas en una sola dejaría al jugador sin
+    // saber si reintentar sirve de algo.
+    const caido = motivoParaElJugador(new Error("fetch failed"));
+    const inservible = motivoParaElJugador(new Error("El tile (2, 0) no es jugable: …"));
+    const sinSitio = motivoParaElJugador(new Error("el anclaje de Robledo no da punto de aparición"));
+    const generico = motivoParaElJugador(new Error("algo raro"));
+    assert.equal(new Set([caido, inservible, sinSitio, generico]).size, 4);
+    assert.match(caido, /no responde/);
+    assert.match(inservible, /terreno inservible/);
+    assert.match(sinSitio, /No hay sitio libre/);
+  });
+
+  it("aguanta un rechazo que no es Error (el motor puede rechazar con un string)", () => {
+    assert.equal(
+      motivoParaElJugador("fetch failed"),
+      "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
+  });
+
+  it("un rechazo VACÍO no revienta la vía de error", () => {
+    // `generateScene` puede rechazar con `undefined` (un `throw` sin valor, un
+    // await sobre una promesa rechazada sin motivo). Si esto lanzara, la
+    // excepción saldría DENTRO del catch que existe para contarla y el jugador
+    // se quedaría sin mensaje ninguno: el fail-loud reventando en su propio
+    // canal es el peor sitio.
+    assert.equal(
+      motivoParaElJugador(undefined),
+      "El motor narrativo no pudo construirlo; inténtalo de nuevo.",
+    );
+    assert.equal(
+      motivoParaElJugador(null),
+      "El motor narrativo no pudo construirlo; inténtalo de nuevo.",
+    );
+  });
+});
+
+describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => {
+  /** Los códigos REALES que el bridge y el cliente ponen en `#ts-error`,
+   *  copiados de `bridge/handlers/session.ts`, `bridge-client.ts` y
+   *  `title-screen.ts`. El de `game_load_failed` es el que llevaba dentro la
+   *  ruta absoluta del disco de quien juega (QA §3.4). */
+  const CRUDOS = [
+    "session_not_found",
+    "game_load_failed: game.json malformed (/home/al/code/ne-fan/nefan-core/data/games/alta_fantasia/game.json): Expected property name or '}' in JSON at position 2 (line 1 column 3)",
+    "plugin_integrity: el plugin comercio no está en data/games/alta_fantasia/plugins",
+    'combat_system_unknown: "duelo" (esperaba basic|standard)',
+    'npc_behavior_unknown: "ronda" (esperaba basic)',
+    "Bridge not connected",
+    "Bridge request timeout: list_games",
+    "no games available in bridge — check nefan-core/data/games/",
+    "games_dir_unreadable: games directory not found: /home/al/code/ne-fan/nefan-core/data/games",
+  ];
+
+  it("ninguno enseña el código, la ruta del disco ni el volcado", () => {
+    for (const raw of CRUDOS) {
+      const motivo = motivoDeSesionParaElJugador(new Error(raw));
+      assert.ok(!motivo.includes(raw), `«${raw}» llegó entero al jugador: ${motivo}`);
+      assert.ok(!/_|\/home\/|Bridge |JSON|\.json/.test(motivo), `jerga en «${motivo}» (de ${raw})`);
+      assert.match(motivo, /\.$/, `«${motivo}» no es una frase`);
+    }
+  });
+
+  /** Cada código con la frase EXACTA que le toca. La tabla y no un «son
+   *  distintos entre sí»: con solo contar frases distintas, borrar una rama
+   *  entera y dejar que caiga al motivo genérico sigue dando el mismo número
+   *  —lo dijo la mutación, con seis supervivientes— y el jugador leería «no se
+   *  pudo completarlo» donde el juego sabe exactamente qué ha pasado. */
+  const ESPERADO: Array<[string, string]> = [
+    ["session_not_found", "Esa partida guardada ya no está en el disco."],
+    ["game_load_failed", "Los datos de ese mundo están dañados y no se pueden leer."],
+    ["plugin_integrity", "Los añadidos de ese mundo no casan con la partida guardada."],
+    ["combat_system_unknown", "Ese mundo usa un sistema que esta versión del juego no conoce."],
+    ["npc_behavior_unknown", "Ese mundo usa un sistema que esta versión del juego no conoce."],
+    ["Bridge not connected", "Se ha perdido la conexión con el servidor del juego."],
+    ["Bridge request timeout", "El servidor del juego no contesta; inténtalo de nuevo."],
+    ["no games available", "No hay ningún mundo instalado."],
+    // Instalación ROTA, no vacía: son causas distintas y la frase también.
+    ["games_dir_unreadable", "Falta la carpeta de mundos del juego: la instalación está incompleta."],
+  ];
+
+  it("cada código del bridge tiene SU frase, no una genérica que valga para todo", () => {
+    for (const [i, [, frase]] of ESPERADO.entries()) {
+      assert.equal(motivoDeSesionParaElJugador(new Error(CRUDOS[i])), frase, CRUDOS[i]);
+    }
+  });
+
+  it("un rechazo que no es Error se lee igual (el bridge puede rechazar con un string)", () => {
+    // `request()` de `bridge-client.ts` rechaza con Error, pero `paso()` recibe
+    // `unknown` y una promesa puede rechazar con cualquier cosa. Sin esto, leer
+    // el código de un rechazo-string dejaría de funcionar sin que nadie lo
+    // notara (la mutación lo dijo: `?? String(err)` por `&& String(err)` pasaba).
+    assert.equal(
+      motivoDeSesionParaElJugador("session_not_found"),
+      "Esa partida guardada ya no está en el disco.",
+    );
+  });
+
+  it("un rechazo VACÍO no revienta la vía de error", () => {
+    assert.equal(
+      motivoDeSesionParaElJugador(undefined),
+      "El servidor del juego no pudo completarlo; inténtalo de nuevo.",
+    );
+    assert.equal(
+      motivoDeSesionParaElJugador(null),
+      "El servidor del juego no pudo completarlo; inténtalo de nuevo.",
+    );
+  });
+
+  it("los motivos que el jugador puede ACCIONAR se distinguen entre sí", () => {
+    // Un save que ya no está, un mundo roto, unos añadidos que no casan, un
+    // servidor caído, uno que no contesta y una instalación sin mundos piden
+    // cosas distintas de quien juega: colapsarlos en «no se pudo» sería no
+    // decir nada. Los DOS que sí comparten frase son a propósito
+    // (`combat_system_unknown` y `npc_behavior_unknown`): para el jugador son
+    // el mismo hecho —el mundo pide algo que su juego no trae— y distinguirlos
+    // solo nombraría un subsistema que no conoce. 9 códigos → 8 frases.
+    const distintos = CRUDOS.map((raw) => motivoDeSesionParaElJugador(new Error(raw)));
+    assert.equal(new Set(distintos).size, 8, JSON.stringify(distintos));
+    assert.equal(distintos[3], distintos[4], "combate y NPCs comparten frase a propósito");
+    assert.match(distintos[0], /ya no está/);
+    assert.match(distintos[1], /dañados/);
+    assert.match(distintos[5], /conexión/);
+    assert.match(distintos[6], /no contesta/);
+  });
+
+  it("un fallo que nadie previó sigue siendo una frase, no un volcado", () => {
+    const motivo = motivoDeSesionParaElJugador(new Error("EPIPE write"));
+    assert.equal(motivo, "El servidor del juego no pudo completarlo; inténtalo de nuevo.");
+  });
+});

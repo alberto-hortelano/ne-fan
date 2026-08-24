@@ -11,7 +11,7 @@ import type {
   NarrativeStatusMessage,
   SessionStartedMessage,
 } from "../src/protocol/messages.js";
-import { fakeBootstrapTile, makeCtx, makeSocket, waitFor } from "./helpers.js";
+import { capturarLogDelBridge, fakeBootstrapTile, makeCtx, makeSocket, waitFor } from "./helpers.js";
 
 type SceneResult = Awaited<ReturnType<import("../bridge/context.js").NarrativeAiClient["generateScene"]>>;
 
@@ -54,15 +54,27 @@ describe("guardas anti-takeover de sesión", () => {
     // La escena tardía del bootstrap A llega: se DESCARTA sin escribir en B…
     // (los dos bootstraps son el tile (0,0), así que lo que distingue a una
     // respuesta de la otra es su descripción, no el id.)
-    resolvers[0]!({ ok: true, scene: fakeBootstrapTile({ scene_description: "vieja" }) });
-    await waitFor(() =>
-      broadcasts.some(
-        (m): m is NarrativeStatusMessage =>
-          m.type === "narrative_status" &&
-          m.phase === "error" &&
-          /descartado sin escribir/.test(m.message ?? ""),
-      ),
-    );
+    //
+    // El motivo del descarte ya NO viaja por el wire: lo que el jugador lee es
+    // una frase traducida (#180) y el diagnóstico se queda en el log del
+    // bridge. La afirmación no se relaja, cambia de canal: se espera el error
+    // por el wire y se comprueba el POR QUÉ en el log.
+    const log = capturarLogDelBridge();
+    try {
+      resolvers[0]!({ ok: true, scene: fakeBootstrapTile({ scene_description: "vieja" }) });
+      await waitFor(() =>
+        broadcasts.some(
+          (m): m is NarrativeStatusMessage =>
+            m.type === "narrative_status" && m.phase === "error" && m.kind === "tile",
+        ),
+      );
+      assert.ok(
+        log.lineas.some((l) => /descartado sin escribir/.test(l)),
+        `el bridge no registró el descarte: ${JSON.stringify(log.lineas)}`,
+      );
+    } finally {
+      log.soltar();
+    }
     assert.equal(Object.keys(narrative.scenes_loaded).length, 0, "nada de A escrito en B");
 
     // …y el bootstrap de B (encolado detrás, serialización intacta) corre y
@@ -135,16 +147,23 @@ describe("guardas anti-takeover de sesión", () => {
     // la vía normal): la defensa en profundidad del job debe descartar.
     narrative.startNewSession("plugtest");
     const newSession = narrative.session_id;
-    resolveScene({ ok: true, scene: fakeBootstrapTile() });
-
-    await waitFor(() =>
-      broadcasts.some(
-        (m): m is NarrativeStatusMessage =>
-          m.type === "narrative_status" &&
-          m.phase === "error" &&
-          /descartado sin escribir/.test(m.message ?? ""),
-      ),
-    );
+    const log = capturarLogDelBridge();
+    try {
+      resolveScene({ ok: true, scene: fakeBootstrapTile() });
+      await waitFor(() =>
+        broadcasts.some(
+          (m): m is NarrativeStatusMessage =>
+            m.type === "narrative_status" && m.phase === "error" && m.kind === "tile",
+        ),
+      );
+      // El POR QUÉ, en el log del bridge (ver el test de arriba).
+      assert.ok(
+        log.lineas.some((l) => /descartado sin escribir/.test(l)),
+        `el bridge no registró el descarte: ${JSON.stringify(log.lineas)}`,
+      );
+    } finally {
+      log.soltar();
+    }
     // Nada escrito en la sesión nueva.
     assert.equal(Object.keys(narrative.scenes_loaded).length, 0);
     assert.equal(narrative.session_id, newSession);

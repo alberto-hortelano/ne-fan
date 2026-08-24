@@ -330,6 +330,17 @@
 #narrative-loader .elapsed { color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }
 #narrative-loader .dismiss { display: none; margin-top: 6px; }
 #narrative-loader.error .dismiss { display: inline-flex; }
+/* …salvo cuando no hay mundo detrás: ahí cerrar es el callejón del issue 189
+   y el único botón es «Volver al título». El `hidden` lo pone main.ts; sin
+   esta regla el `display:inline-flex` de arriba le ganaría al atributo.
+   (El issue va sin almohadilla a propósito: una almohadilla y tres dígitos
+   los lee como color hexadecimal el candado game-ui-css-sin-literales.) */
+#narrative-loader.error .dismiss[hidden] { display: none; }
+/* La salida del mundo vacío (issue 189). El `hidden` lo pone main.ts con lo
+   que decide rotuloDeStatus; sin la regla explícita, `nf-action` (inline-flex)
+   gana al `display:none` del atributo. */
+#narrative-loader .volver { margin-top: 6px; }
+#narrative-loader .volver[hidden] { display: none; }
 @keyframes nf-spin { to { transform: rotate(360deg); } }
 
 /* ── Diario de la sesión (tecla H) ──────────────────────────────────────── */

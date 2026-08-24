@@ -18,11 +18,14 @@ import type {
 } from "@nefan-core/src/narrative/types.js";
 import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
+import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-labels.js";
 import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,
 } from "@nefan-core/src/games/style-refs.js";
 import { serviceUrl } from "../net/service-urls.js";
+import { errors } from "./error-log.js";
+import { paso } from "./async-ui.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
 import {
   CHAR_MODE_LABELS,
@@ -143,7 +146,11 @@ export class TitleScreen {
         // Refrescar chips/botones si el selector de mundo sigue en pantalla.
         const panel = this.content.querySelector("#ts-gen");
         if (panel && this.root.style.display !== "none") {
-          void this.renderWorldSelect(this.lastSelectedGameId ?? undefined);
+          paso(
+            this.renderWorldSelect(this.lastSelectedGameId ?? undefined),
+            "title",
+            "refrescar el selector de mundos tras la generación",
+          );
         }
       }
     });
@@ -194,10 +201,19 @@ export class TitleScreen {
       "display: none",
       "flex-direction: column",
       "align-items: center",
-      "justify-content: center",
+      // ANCLADO ARRIBA, no centrado (#181-c). Con `center`, el bloque de
+      // contenido crece hacia ABAJO cuando llega la lista de saves y su borde
+      // superior sube la MITAD de lo que crece: 238 px de lista movían
+      // «Nueva partida» 119 px hacia arriba, bajo el cursor de quien ya lo
+      // estaba pulsando. Reordenar el home no bastaba —el botón no se movía
+      // DENTRO del bloque, se movía el bloque entero—, y reservarle altura a
+      // `#ts-sessions` serían números mágicos que dependen de N. Anclado
+      // arriba, lo que hay por encima del botón no cambia nunca y el botón se
+      // queda clavado en el viewport con 0 o con 200 partidas.
+      "justify-content: flex-start",
       "z-index: 9999",
-      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px):
-      // en viewports bajos el centrado vertical metía el título debajo.
+      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px),
+      // que se pinta encima: sin él el título nacería debajo del panel.
       "padding: 96px 32px 32px",
     ].join(";");
     this.content = document.createElement("div");
@@ -256,17 +272,49 @@ export class TitleScreen {
     // bottom, no height: el panel no empieza en y=0 (la barra del HUD queda
     // encima) — lo que hay que despejar es hasta dónde LLEGA.
     const devBottom = dev ? Math.ceil(dev.getBoundingClientRect().bottom) : 0;
-    this.root.style.paddingTop = `${Math.max(96, devBottom + 10)}px`;
+    // Suelo en FRACCIÓN DEL ALTO, no 96 px fijos: anclado arriba (#181-c) y
+    // con 0 partidas, la columna quedaba pegada al borde superior con más de
+    // la mitad del lienzo negro debajo y se leía inacabada. Un 20 % del alto
+    // la baja lo justo para que se lea deliberada. Es del VIEWPORT y no del
+    // contenido a propósito: cualquier cosa que ceda al crecer la lista
+    // devolvería el botón moviéndose bajo el cursor, que es el bug que C1
+    // cerró. `min(…, 160)` para que en viewports bajos no se coma la lista.
+    //
+    // OJO, y esto es lo que hay que leer antes de cerrar nada: hoy este suelo
+    // TAPA el issue #250 (el panel de dev se rellena async, este método
+    // re-mide con un ResizeObserver y el botón se desplazaba +24 px bajo el
+    // cursor en anchos estrechos). Lo tapa porque 160 gana a `devBottom + 10`
+    // ≈ 120 a los tamaños medidos — NO porque esté arreglado. Con un panel más
+    // alto (una ventana aún más estrecha, un chip más) vuelve a ganar
+    // `devBottom` y el desplazamiento reaparece. El verde de esa medida es
+    // circunstancial; #250 sigue abierto.
+    const suelo = Math.min(160, Math.max(96, Math.round(window.innerHeight * 0.2)));
+    this.root.style.paddingTop = `${Math.max(suelo, devBottom + 10)}px`;
   }
 
-  async show(): Promise<TitleAction> {
+  /** Abre el título y resuelve con lo que el jugador elija.
+   *
+   *  `aviso` es el motivo por el que se VUELVE aquí (una sesión que no pudo
+   *  arrancar): se pinta arriba, encima del botón, y desaparece al siguiente
+   *  repintado del home.
+   *
+   *  La promesa se arma ANTES de pintar. Antes se armaba después del
+   *  `await renderHome()` —o sea, después del `await listSessions()`— y
+   *  durante esa ventana `this.resolve` seguía en `null`: el «Comenzar» del
+   *  final del selector llamaba a `this.resolve?.(…)` y el optional chaining
+   *  lo convertía en un no-op mudo. Con el enganche del botón movido al
+   *  primer pintado, esa ventana pasaría a ser alcanzable de verdad. */
+  async show(opts: { aviso?: string } = {}): Promise<TitleAction> {
     this.root.style.display = "flex";
     this.onVisibilityChange?.(true);
     this.reserveDevPanelSpace();
-    await this.renderHome();
-    return new Promise<TitleAction>((res) => {
+    const eleccion = new Promise<TitleAction>((res) => {
       this.resolve = res;
     });
+    // Si el home no se puede pintar, show() RECHAZA (lo espera el catch de
+    // main.ts): la promesa de arriba se queda pendiente y no la lee nadie.
+    await this.renderHome(opts.aviso);
+    return eleccion;
   }
 
   hide(): void {
@@ -281,21 +329,67 @@ export class TitleScreen {
     return this.root.style.display !== "none";
   }
 
-  private async renderHome(): Promise<void> {
+  /** Pinta un motivo en el hueco de error del home, si el home está en
+   *  pantalla. Es lo que lee el jugador cuando algo del propio título falla
+   *  (el bridge no contesta, la sesión no arranca): sin esto el fallo solo
+   *  existía en la consola. */
+  private mostrarErrorEnHome(motivo: string): void {
+    const el = this.content.querySelector<HTMLElement>("#ts-error");
+    if (!el) return;
+    el.innerHTML = `<span style="color:#a44">${escapeHtml(motivo)}</span>`;
+    el.style.display = "";
+  }
+
+  private async renderHome(aviso?: string): Promise<void> {
     this.modeArmed.clear();
     this.content.style.maxWidth = "720px";
+    // ORDEN A PROPÓSITO: todo lo que puede cambiar DESPUÉS del primer pintado
+    // (el estado del bridge, la lista de saves) va POR DEBAJO del botón. Con
+    // el orden anterior, `#ts-sessions` se repintaba al volver `listSessions`
+    // y empujaba «Nueva partida» hacia abajo tantos píxeles como partidas
+    // hubiera: el botón ya escuchaba, pero se movía bajo el cursor.
     this.content.innerHTML = `
       <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
       <p style="margin-bottom:18px;color:#999">Selecciona una partida o empieza una nueva.</p>
-      <div id="ts-status" style="margin-bottom:18px;font-size:12px;color:#666"></div>
-      <h2 style="margin-bottom:10px;color:#bbb">Partidas guardadas</h2>
-      <div id="ts-sessions" style="margin-bottom:24px"></div>
+      <div id="ts-error" style="margin-bottom:18px;font-size:13px;display:none"></div>
       <button id="ts-new" style="${BTN_PRIMARY_CSS}">Nueva partida</button>
+      <h2 style="margin:24px 0 10px;color:#bbb">Partidas guardadas</h2>
+      <div id="ts-status" style="margin-bottom:12px;font-size:12px;color:#666"></div>
+      <div id="ts-sessions" style="margin-bottom:24px"></div>
     `;
 
     const statusEl = this.content.querySelector("#ts-status") as HTMLElement;
     const sessionsEl = this.content.querySelector("#ts-sessions") as HTMLElement;
     const newBtn = this.content.querySelector("#ts-new") as HTMLButtonElement;
+
+    if (aviso) this.mostrarErrorEnHome(aviso);
+
+    // EL ENGANCHE VA AQUÍ, en el mismo bloque síncrono que pinta el botón, y
+    // no después del `await` de abajo (#181): entre pintar y enganchar había
+    // una ventana —151 ms medidos en el caso feliz, hasta los 30 s del
+    // timeout de request si el bridge tarda— en la que el botón existía, se
+    // dejaba pulsar y el click NO HACÍA NADA. `renderWorldSelect` no lee la
+    // lista de saves, así que no hay nada que esperar.
+    newBtn.addEventListener("click", () => {
+      // El selector awaitea `listGames()` antes de pintar: sin esto, el click
+      // no tiene ningún acuse de recibo hasta que vuelve el bridge.
+      newBtn.disabled = true;
+      newBtn.textContent = "Cargando mundos…";
+      paso(this.renderWorldSelect(), "title", "abrir el selector de mundos", (err) => {
+        // Y si no vuelve: el botón se devuelve a su sitio y el motivo se lee
+        // en pantalla. Antes esto era `void this.renderWorldSelect()` — sin
+        // catch, sin registro y sin nada que ver.
+        newBtn.disabled = false;
+        newBtn.textContent = "Nueva partida";
+        // TRADUCIDO: aquí se leían «Bridge not connected», «Bridge request
+        // timeout: list_games» y «no games available in bridge — check
+        // nefan-core/data/games/». El crudo no se pierde: `paso()` ya lo ha
+        // metido en el `detail` de la entrada del error-log.
+        this.mostrarErrorEnHome(
+          `No se pudo abrir el selector de mundos. ${motivoDeSesionParaElJugador(err)}`,
+        );
+      });
+    });
 
     statusEl.textContent = "Cargando saves desde el bridge...";
     let sessions: SessionMetadata[] = [];
@@ -304,7 +398,14 @@ export class TitleScreen {
       statusEl.textContent = `Bridge OK — ${sessions.length} partidas guardadas.`;
       statusEl.style.color = "#4a4";
     } catch (err) {
-      statusEl.innerHTML = `<span style="color:#a44">No se puede contactar al bridge (${(err as Error).message}). Arranca <code>./start.sh</code> y elige un preset con bridge (p. ej. "Cliente web (dev)").</span>`;
+      // Hermano de `#ts-error`, y hasta ahora con el mismo defecto: aquí se
+      // leía «No se puede contactar al bridge (…). Arranca ./start.sh y elige
+      // un preset con bridge» — instrucciones de desarrollo a quien no tiene
+      // terminal. El motivo crudo va al error-log, como en todo lo demás.
+      errors.push("title", "listar las partidas guardadas", err);
+      statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(
+        `No se pudieron cargar las partidas guardadas. ${motivoDeSesionParaElJugador(err)}`,
+      )}</span>`;
     }
 
     if (sessions.length === 0) {
@@ -335,13 +436,11 @@ export class TitleScreen {
       // maqueta sin que el atlas de superficies gaste créditos al entrar. En
       // partida, el mismo campo lo cambia el chip de gráficos (🎨/🧱).
       for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-mode-facet]")) {
-        btn.addEventListener("click", () => void this.onModeBadge(btn, sessions));
+        btn.addEventListener("click", () =>
+          paso(this.onModeBadge(btn, sessions), "title", "cambiar el modo del save"),
+        );
       }
     }
-
-    newBtn.addEventListener("click", () => {
-      void this.renderWorldSelect();
-    });
   }
 
   /** Badges de modo armados (primer click de encendido) → timestamp. Se
@@ -657,7 +756,11 @@ export class TitleScreen {
       }
     });
     applyStyleBtn.addEventListener("click", () => {
-      void this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value);
+      paso(
+        this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value),
+        "title",
+        "calcular el coste de aplicar el estilo",
+      );
     });
 
     refreshSelection();
@@ -665,15 +768,15 @@ export class TitleScreen {
     refreshGenPanel();
 
     (this.content.querySelector("#ts-back") as HTMLButtonElement)
-      .addEventListener("click", () => void this.renderHome());
+      .addEventListener("click", () => paso(this.renderHome(), "title", "volver al home del título"));
     continueBtn.addEventListener("click", () => {
       if (!styleSel.value) return;
-      void this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode);
+      this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode);
     });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
-      .addEventListener("click", () => void this.renderCreateWorld());
+      .addEventListener("click", () => this.renderCreateWorld());
     (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
-      .addEventListener("click", () => void this.renderUploadStyle());
+      .addEventListener("click", () => this.renderUploadStyle());
   }
 
   /** Panel de aplicación de estilo: plan con coste (SIN gastar) → checkboxes
@@ -827,7 +930,9 @@ export class TitleScreen {
       "click",
       () => rowsEl.insertAdjacentHTML("beforeend", rowHtml()),
     );
-    backBtn.addEventListener("click", () => void this.renderWorldSelect());
+    backBtn.addEventListener("click", () =>
+      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
+    );
 
     uploadBtn.addEventListener("click", async () => {
       const name = nameEl.value.trim();
@@ -972,7 +1077,9 @@ export class TitleScreen {
       reader.readAsText(file);
     });
 
-    backBtn.addEventListener("click", () => void this.renderWorldSelect());
+    backBtn.addEventListener("click", () =>
+      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
+    );
     createBtn.addEventListener("click", async () => {
       const draft = draftEl.value.trim();
       if (draft.length < 20) {
@@ -1052,7 +1159,9 @@ export class TitleScreen {
     const modelSel = this.content.querySelector("#ts-model") as HTMLSelectElement | null;
     const skinInput = this.content.querySelector("#ts-skin") as HTMLInputElement | null;
 
-    back.addEventListener("click", () => void this.renderWorldSelect());
+    back.addEventListener("click", () =>
+      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
+    );
     start.addEventListener("click", () => {
       this.resolve?.({
         kind: "new_game",

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { routeMessage } from "../bridge/router.js";
+import { runTileGeneration } from "../bridge/handlers/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
   NarrativeEventMessage,
@@ -112,8 +113,66 @@ describe("bridge request_tile (plano continuo)", () => {
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
-    assert.ok(err?.message?.includes("no es jugable"), err?.message);
+    // El rechazo llega TRADUCIDO. Hasta 2026-08-24 aquí viajaba el texto del
+    // validador («El tile (1, 0) no es jugable: …»), que es diagnóstico de
+    // motor: sigue entero en el `console.warn` del bridge.
+    assert.equal(
+      err?.message,
+      "El motor narrativo devolvió un terreno inservible; inténtalo de nuevo.",
+    );
     assert.ok(!narrative.hasTile(1, 0));
+  });
+
+  it("el motor mudo en el ARRANQUE no le enseña la excepción al jugador (#180)", async () => {
+    // El camino que da nombre a la tanda: primer tile, sin `destino` que
+    // nombrar. La traducción vivía en un ternario que solo entraba si el viaje
+    // traía destino, así que justo aquí —el momento en que más falla— el
+    // jugador leía «Error: No se pudo generar la escena. fetch failed».
+    const crudo = "fetch failed";
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          throw new Error(crudo);
+        },
+      },
+    });
+    narrative.startNewSession("plugtest");
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 0, ty: 0, reason: "blocking" }, socket, ctx);
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
+    );
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(err?.kind, "tile");
+    assert.ok(!err?.message?.includes(crudo), `la excepción llegó cruda: ${err?.message}`);
+    assert.equal(
+      err?.message,
+      "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
+  });
+
+  it("y en un VIAJE el destino es un PREFIJO del mismo motivo, no una condición", async () => {
+    // La otra mitad de la misma decisión: con destino se antepone el nombre
+    // del lugar; el motivo traducido es el mismo. Si alguien devolviera el
+    // ternario, este par de tests se separa: uno pide destino, el otro no.
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          throw new Error("fetch failed");
+        },
+      },
+    });
+    narrative.startNewSession("plugtest");
+    await runTileGeneration(ctx, 3, 0, undefined, { destino: "Molino del bench" });
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(
+      err?.message,
+      "No se pudo llegar a Molino del bench. El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
   });
 
   it("blocking repetido mientras genera → generating re-difundido, una sola llamada", async () => {

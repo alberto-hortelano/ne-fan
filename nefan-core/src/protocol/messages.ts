@@ -337,6 +337,12 @@ export interface NarrativeStatusMessage {
 export interface GamesListedMessage {
   type: "games_listed";
   requestId: string;
+  /** Presente solo si el listado NO se pudo hacer (instalación rota: el
+   *  directorio de juegos no existe). `games` y `styles` llegan vacíos, y el
+   *  cliente RECHAZA con este motivo en vez de enseñar «no hay mundos» —que
+   *  sería mentira— o de quedarse esperando los 30 s del timeout de request,
+   *  que era lo que pasaba cuando el handler lanzaba y nadie contestaba. */
+  error?: string;
   games: Array<{
     game_id: string;
     title: string;

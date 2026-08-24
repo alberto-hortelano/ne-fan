@@ -130,6 +130,10 @@
         <div class="title" id="narrative-loader-title">Generando escena...</div>
         <div class="detail" id="narrative-loader-detail">El motor narrativo está construyendo el mundo. Puede tardar un momento.</div>
         <div class="elapsed" id="narrative-loader-elapsed"></div>
+        <!-- Solo cuando el fallo deja al jugador SIN MUNDO (#189): cerrar ahí
+             le deja mirando un cielo negro sin nada que pulsar, y recargar era
+             la única salida. Lo decide `rotuloDeStatus` en el core. -->
+        <button class="volver nf-action" id="narrative-loader-back" type="button" hidden>Volver al título</button>
         <button class="dismiss nf-action" id="narrative-loader-dismiss" type="button">Cerrar</button>
       </div>
     </div>
