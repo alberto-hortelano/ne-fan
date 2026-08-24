@@ -125,7 +125,8 @@ export const AssetStoreApi = {
   ),
   /** Hero-shot de identidad del pipeline de skins (1024², figura entera
    *  sobre fondo neutro): el cliente lo recorta a busto para el retrato del
-   *  diálogo. `key` = hero_key de ai_server/sprite_skin_meshy.py. Almacén
+   *  diálogo. `key` = `hero_key` del adaptador de sprite-forge
+   *  (ai_server/routers/remote_generation.py). Almacén
    *  paralelo sin manifest, como los frames. */
   getSpriteHero: endpoint<void, BinaryResponse, "key">("GET", "/cache/sprite_hero/{key}"),
   /** @deprecated RUTA MUERTA desde que existe el catch-all: /cache/{kind}/

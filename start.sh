@@ -22,6 +22,10 @@ PORT_ASSETS=8767
 PORT_GPU=8766
 PORT_RGEN=8768
 PORT_FAKE=18765    # fake-ai-server (labs/narrative) — emula S3–S6, 0 créditos
+PORT_FORGE=8770    # sprite-forge — hojas de sprites de personaje (repo APARTE)
+# sprite-forge vive fuera de este repo (lo usa más de un proyecto). Sin él,
+# remote-gen devuelve 503 en /skin_sprite_sheet y los NPC salen en maniquí.
+SPRITE_FORGE_DIR="${NEFAN_SPRITE_FORGE_DIR:-$HOME/code/sprite-forge}"
 
 # narrative-mcp del launcher: 1 (default) = placeholder con NARRATIVE_EAGER_BIND
 # que posee :3737 hasta que el terminal del motor haga takeover; 0 = NO
@@ -233,6 +237,49 @@ start_remote_gen() {
     echo "✅ remote-gen :$PORT_RGEN  (log: $LOG_DIR/nefan-remote-gen.log)"
 }
 
+# Lee una variable de .env sin exportar el fichero entero. Los servicios Python
+# lo cargan ellos mismos (`load_env_file`), así que el shell NO tiene estas
+# variables: un servicio que no sea Python tiene que venir a buscarlas.
+dotenv_get() {
+    [[ -f "$PROJECT_DIR/.env" ]] || return 0
+    sed -n "s/^$1=//p" "$PROJECT_DIR/.env" | head -1 | tr -d '"'"'"'\r'
+}
+
+start_sprite_forge() {
+    # Vive en OTRO repositorio: lo usa más de un proyecto y ne-fan es un
+    # consumidor suyo, no su dueño. Si no está clonado se dice y se sigue —
+    # el resto del stack funciona, solo que sin personajes vestidos.
+    if [[ ! -d "$SPRITE_FORGE_DIR" ]]; then
+        echo "⚠️  sprite-forge no está en $SPRITE_FORGE_DIR"
+        echo "    (clónalo o define NEFAN_SPRITE_FORGE_DIR; sin él los NPC salen en maniquí)"
+        return 0
+    fi
+    port_busy "$PORT_FORGE" && kill_port "$PORT_FORGE"
+    (
+        cd "$PROJECT_DIR" || exit 1
+        # El worker de repintado es Python y necesita ESTE venv (fastapi,
+        # uvicorn, rembg). Sin activarlo, sprite-forge sirve hojas base pero
+        # `skin.enabled=false` y todos los NPC salen en maniquí — con el stack
+        # diciendo ✅. Los otros tres subshells de este fichero ya lo activan;
+        # que este no lo hiciera fue el fallo.
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+        # La clave de imagen: ne-fan la llama MESHY_API_KEY en .env y el
+        # servicio, que no sabe de proveedores concretos, SPRITE_FORGE_IMAGE_KEY.
+        # Se traduce aquí, que es la frontera. Si no está, el servicio sirve
+        # hojas base y lo DICE en /catalog (no finge repintar).
+        export SPRITE_FORGE_IMAGE_KEY="${SPRITE_FORGE_IMAGE_KEY:-$(dotenv_get MESHY_API_KEY)}"
+        export SPRITE_FORGE_PYTHON="$PROJECT_DIR/.venv/bin/python"
+        cd "$SPRITE_FORGE_DIR" || exit 1
+        # Los assets de personaje los pone quien despliega: aquí, los de ne-fan.
+        exec node bin/sprite-forge.mjs serve \
+            --assets "$PROJECT_DIR/assets/characters" --port "$PORT_FORGE"
+    ) >"$LOG_DIR/nefan-sprite-forge.log" 2>&1 &
+    track_started $! "$PORT_FORGE"
+    wait_for_http_health "http://127.0.0.1:$PORT_FORGE/catalog" 90 "sprite-forge" || return 1
+    echo "✅ sprite-forge :$PORT_FORGE  (log: $LOG_DIR/nefan-sprite-forge.log)"
+}
+
 start_narrative_mcp() {
     # NEFAN_EAGER_BIND=0: NO arrancar el placeholder — el terminal de Claude
     # Code del motor será el único dueño de :3737 (flujo de labs/narrative,
@@ -352,7 +399,7 @@ EOF
 # posicionales (una tabla se lee bien así), pero los CONSUMIDORES no: preguntan
 # por clave con `on <clave>`. Añadir o quitar un servicio ya no puede desplazar
 # en silencio lo que arranca un preset.
-SERVICES=(bridge narrative-mcp ai_server html asset-store gpu-worker remote-gen fake-ai replay-server)
+SERVICES=(bridge narrative-mcp ai_server html asset-store gpu-worker remote-gen sprite-forge fake-ai replay-server)
 # Service slot index → display label
 SERVICE_LABELS=(
     "bridge          :9877"
@@ -362,6 +409,7 @@ SERVICE_LABELS=(
     "asset-store     :8767"
     "gpu-worker      :8766"
     "remote-gen      :8768"
+    "sprite-forge    :8770"
     "fake-ai-server  :18765"
     "replay-server   :9877"
 )
@@ -374,6 +422,7 @@ SERVICE_HINTS=(
     "blobs + manifest SQLite + covers de estilos"
     "texturas SD / modelos / LaMa (GPU local, sin créditos)"
     "Meshy/fal + SAM2 + atlas fps + estilos — GASTA créditos si se invoca"
+    "hojas de sprites de personaje (repo aparte ~/code/sprite-forge) — remote-gen lo necesita para vestir NPCs"
     "emula narrative-llm+gpu-worker+remote-gen+asset-store — 0 créditos (bench)"
     "reproduce una sesión grabada como película (suplanta al bridge; LOG=runs/…/events.ndjson)"
 )
@@ -452,20 +501,23 @@ PRESET_DESCS=(
 # NEFAN_AI_SERVER y el cliente se abre con ?ai= (URL impresa al arrancar).
 # "Story web sin imágenes" quita gpu-worker/remote-gen a propósito: los
 # pipelines de imagen del cliente quedan sin backend (elige Maqueta 3D).
-#                  bridge  narr  ai  html  assets  gpu  rgen  fake  replay
+# sprite-forge acompaña SIEMPRE a remote-gen: es de quien remote-gen obtiene
+# las hojas de personaje. Sin él, /skin_sprite_sheet devuelve 503 y todos los
+# NPC salen en maniquí — con el stack "arrancado" y sin pista de por qué.
+#                  bridge  narr  ai  html  assets  gpu  rgen  forge  fake  replay
 PRESET_PROFILES=(
-    "1 1 1 1 1 1 1 0 0"   # Play
-    "1 0 0 1 1 0 1 0 0"   # Cliente web (dev)
-    "1 0 0 1 0 0 0 1 0"   # E2E sin créditos
-    "1 1 1 1 1 0 0 0 0"   # Story web sin imágenes
-    "1 0 1 0 1 0 0 0 0"   # Playtest motor (bench)
-    "0 0 0 1 0 0 0 0 1"   # Replay web (película)
-    "0 0 0 1 0 0 0 0 0"   # HTML fixtures
-    "0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
+    "1 1 1 1 1 1 1 1 0 0"   # Play
+    "1 0 0 1 1 0 1 1 0 0"   # Cliente web (dev)
+    "1 0 0 1 0 0 0 0 1 0"   # E2E sin créditos
+    "1 1 1 1 1 0 0 0 0 0"   # Story web sin imágenes
+    "1 0 1 0 1 0 0 0 0 0"   # Playtest motor (bench)
+    "0 0 0 1 0 0 0 0 0 1"   # Replay web (película)
+    "0 0 0 1 0 0 0 0 0 0"   # HTML fixtures
+    "0 0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
 )
 
 # Live state — applied by TUI, consumed by launcher.
-declare -a ACTIVE=(0 0 0 0 0 0 0 0 0)
+declare -a ACTIVE=(0 0 0 0 0 0 0 0 0 0)
 
 apply_preset() {
     local idx=$1
@@ -805,6 +857,7 @@ run_selection() {
     # primer uso; el fake antes que el bridge (que arranca apuntándole).
     on asset-store  && { start_asset_store   || return 1; }
     on gpu-worker   && { start_gpu_worker    || return 1; }
+    on sprite-forge && { start_sprite_forge  || return 1; }
     on remote-gen   && { start_remote_gen    || return 1; }
     on fake-ai      && { start_fake_ai       || return 1; }
     on replay-server && { start_replay       || return 1; }
@@ -876,6 +929,7 @@ cmd_status() {
         "asset-store:$PORT_ASSETS"
         "gpu-worker:$PORT_GPU"
         "remote-gen:$PORT_RGEN"
+        "sprite-forge:$PORT_FORGE"
         "fake-ai:$PORT_FAKE"
         "HTML:$PORT_HTML"
     )
@@ -901,7 +955,7 @@ cmd_status() {
 
 # Todos los puertos que el launcher puede haber ocupado — compartido por
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
-ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU" "$PORT_RGEN" "$PORT_FAKE")
+ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
 
 # La tecla `k`: parar un stack entero, incluido el que dejó otra corrida. A
 # diferencia de `cleanup`, aquí SÍ se mata por puerto lo que no arrancamos —

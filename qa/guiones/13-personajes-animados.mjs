@@ -2,7 +2,7 @@
  *
  *  Es el criterio que justificó toda la tanda de la retirada del cliente Godot
  *  (2026-08-22): el renderizador de hojas de sprites se portó a three.js
- *  (`tools/render-sprite-sheets/`) ANTES de borrar nada, precisamente para que
+ *  (hoy el CLI de sprite-forge, repo aparte) ANTES de borrar nada, para que
  *  el juego no se quedara sin gente. Un `npm test` verde no dice nada de esto:
  *  las hojas son 28 MB fuera de git, las carga el cliente por HTTP y el fallo
  *  se ve en pantalla, no en el compilador.
@@ -32,7 +32,7 @@ const ANIMS_BASE = [
 ];
 
 export default async function (ctx) {
-  // --- 1. Las hojas que produce tools/render-sprite-sheets, servidas ---
+  // --- 1. Las hojas que produce sprite-forge, servidas por Vite ---
   const hojas = await ctx.page.evaluate(async (anims) => {
     const out = [];
     for (const anim of anims) {

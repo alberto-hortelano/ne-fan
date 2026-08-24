@@ -1,7 +1,7 @@
 /** Loads pre-rendered Mixamo sprite sheets and serves the right frame for a
  * given (animation, facing direction, time) tuple.
  *
- * Sheet layout on disk (produced by tools/render-sprite-sheets/render.mjs):
+ * Sheet layout on disk (lo produce el CLI de sprite-forge, repo aparte):
  *   public/sprites/{model}/{anim}/{angle}/dir_{D}_frame_{F:03}.png
  *   public/sprites/{model}/{anim}/{angle}/meta.json
  *

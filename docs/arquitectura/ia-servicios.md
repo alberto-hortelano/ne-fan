@@ -1,6 +1,6 @@
 # Servicios de IA, modelos y pre-generación
 
-Los tres procesos Python, qué modelo hace qué, el bench de skinning y la pre-generación de mundo y estilo. Consúltalo antes de tocar nada que gaste créditos.
+Los tres procesos Python, qué modelo hace qué, las hojas de sprites de personaje y la pre-generación de mundo y estilo. Consúltalo antes de tocar nada que gaste créditos.
 
 > Extraído de `CLAUDE.md` para que el prompt base quepa en la zona útil del contexto.
 > Es la misma documentación, movida. Si algo de aquí es verificable mecánicamente,
@@ -28,7 +28,8 @@ en `nefan-core/src/contracts/`.
 | `/generate_skin` | :8766 | Skin de personaje (PNG, ~10s) |
 | `/generate_sprite` | :8766 | Sprite RGBA 2D desde prompt |
 | `/generate_surface_atlas` | :8768 | Atlas de superficies de la vista fps: una celda = un asset reusable |
-| `/skin_sprite_sheet` | :8768 | Sprite sheet skinneado por IA (Meshy hero-shot + atlas) |
+| `/skin_sprite_sheet` | :8768 | **Adaptador** de sprite-forge (:8770, repo aparte): viste una anim de un personaje y guarda lo generado en `cache/sprite_sheets/` |
+| `/sprite_catalog` | :8768 | Proxy del `/catalog` de sprite-forge: modelos, animaciones, ángulos y `calls_per_anim` (el coste que se enseña ANTES de gastar) |
 | `/styles/upload` | :8768 | Sube un estilo de usuario (JSON base64) y reporta categorías faltantes + coste |
 | `/styles/{id}/complete` | :8768 | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
 | `/dev/api_cache` | :8768 | Toggle del modo dev de APIs de pago (visible para los 3 procesos) |
@@ -46,15 +47,18 @@ en `nefan-core/src/contracts/`.
 
 VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
 
-## labs/skinning — pruebas de IA sobre sprites
+## sprite-forge — hojas de sprites de personaje (servicio aparte)
 
-Bench permanente para evaluar APIs de skinning (Meshy, fal.ai, video models, etc.) sobre los sprite sheets que pre-renderiza `tools/render-sprite-sheets/`. Vive en el repo porque la tecnologia avanza rapido y hace falta repetir pruebas. Ver `labs/skinning/README.md` para detalles. Hallazgos consolidados:
-- **V1 single** y **V2 anchor** dan deriva inaceptable.
-- **V3 rolling** funciona con base limpia (Y Bot), caro pero viable.
-- **V4 atlas (≤10 frames en 5×2)** es lo mejor: 1 llamada, consistencia perfecta dentro del atlas. **NO escala** a >10 frames — el modelo colapsa a la misma pose.
-- **V5 packed (2026-08-18)**: varias DIRECCIONES comparten atlas (fila = dirección + hero de ancla) dentro del techo de 10 celdas — validado en gpt-image-2 y nano-banana-pro, EN PRODUCCIÓN (`plan_dir_batches`): un personaje auto (idle/walk/run) baja de 25 a 17 llamadas. Grids de aspecto extremo (4×1) rompen la integridad; el letterbox de gpt-image-2 se recorta con `fit_atlas_output`.
-- **Pose-lock (T-posegate 2026-08-18)**: el prompt del atlas DEBE fijar la pose de cada celda y degradar el hero a "appearance only" (`build_atlas_prompt`), y el hero se genera en pose neutral, nunca T-pose — si no, los atlas de poses sutiles (idle) salen como turnaround en T-pose. Un output que no repinta el clay se rechaza fail-loud (`atlas_echo_score`), nunca se cachea.
-- **Locomotion (walk/run)** requiere Hips XZ lock o el personaje sale del cell. Implementado en `tools/render-sprite-sheets/page.mjs:lockHipsXZ()`.
+Las hojas de personaje ya no se producen aquí: la capacidad vive en **sprite-forge** (repo propio, `github.com/alberto-hortelano/sprite-forge`), con UNA puerta HTTP en **:8770** y cuatro rutas — `GET /catalog`, `POST /sheets` (hojas base: gratis, deterministas, cacheadas), `POST /identity` (hero-shot de identidad, una llamada de pago) y `POST /skins` (una anim vestida por petición). Son dos lenguajes tras la misma puerta: Node monta la escena three.js en Chrome headless y planifica, un worker Python repinta. Dónde vive lo dice `ai_server.sprite_forge_url` (por defecto `http://127.0.0.1:8770`).
+
+**ne-fan es UN consumidor suyo, no su dueño:**
+- `POST /skin_sprite_sheet` (:8768) es el **adaptador**, y el wire no cambia: resuelve la ref de personaje del style pack (`style_id`/`style_role`), llama al servicio, guarda lo que vuelve en `cache/sprite_sheets/{key}` y apunta el gasto — sprite-forge devuelve IMÁGENES y no guarda nada de lo que genera. `angle` es **obligatorio**: su viejo defecto (`isometric_30`) era una vista retirada en agosto, así que una petición sin ángulo acababa en 404.
+- `GET /sprite_catalog` (:8768) proxya el `/catalog`: qué modelos, animaciones y ángulos ofrece el despliegue y **cuántas llamadas de imagen cuesta vestir cada anim** (`calls_per_anim`). Existe para que el cliente pregunte el coste antes de gastar en vez de espejar el número a mano.
+- **La credencial de imagen viaja traducida.** ne-fan la tiene en `.env` como `MESHY_API_KEY`; sprite-forge la espera como `SPRITE_FORGE_IMAGE_KEY`, porque es agnóstico al proveedor y no puede llamarla por el nombre de uno. La traducción vive en `start.sh` (`start_sprite_forge`), que además le activa el `.venv` como a los otros tres servicios Python. Sin clave el servicio **no se muere**: sirve hojas base y anuncia `skin.enabled: false`, y quien pida repintado recibe un motivo en vez de un maniquí mudo.
+- Las hojas BASE se siguen sirviendo estáticas desde `nefan-html/public/sprites` (las sirve Vite); lo que cambia es quién las produce: el CLI del servicio (`sprite-forge render --assets … --out nefan-html/public/sprites`).
+- Los FBX de Mixamo siguen en `assets/characters/` (gitignorados). sprite-forge no distribuye assets — los pone quien despliega, y eso es la licencia, no higiene.
+
+Las lecciones del pipeline (atlas de pocas celdas, direcciones empaquetadas por lote, pose-lock del hero, rechazo fail-loud del output que no repinta el clay, lock de Hips en XZ en los clips de locomoción) están **hormigonadas allí**, con sus tests y su bench de paridad de píxel. Aquí ya no queda copia que se desincronice: ver su README.
 
 ## Pre-generación: mundo por juego y estilo por (juego, estilo)
 

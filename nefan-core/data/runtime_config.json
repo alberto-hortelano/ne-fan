@@ -28,6 +28,7 @@
     "texture_resolution": 512,
     "texture_steps": 4,
     "sprite_skin_model": "gpt-image-2",
+    "sprite_forge_url": "http://127.0.0.1:8770",
     "surface_model": "nano-banana-pro",
     "surface_hero_model": "gpt-image-2",
     "usd_eur_rate": 0.86,

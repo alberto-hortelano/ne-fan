@@ -82,7 +82,8 @@ export function readSpriteSheetFrame(
   return { status: 200, contentType: "image/png", body: readFileSync(path) };
 }
 
-/** Los heroes se nombran por su hash de 16 hex (sprite_skin_meshy.hero_key). */
+/** Los heroes se nombran por su hash de 16 hex (`hero_key` del adaptador de
+ *  sprite-forge, ai_server/routers/remote_generation.py). */
 const HERO_KEY_RE = /^[0-9a-f]{16}$/;
 
 /** GET /cache/sprite_hero/{key} — hero-shot de identidad del pipeline de

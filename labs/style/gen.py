@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bench de generación de referencias de estilo vía fal.ai (gpt-image-2).
 
-Análogo en pequeño a labs/skinning pero para las imágenes de referencia de los
+Bench de generación de imágenes de referencia de estilo — el mismo patrón de
 style packs: cada run es un subdir auto-contenido en runs/ con los PNG, un
 manifest.json que asocia el prompt EXACTO a cada imagen, y un index.html para
 revisarlas lado a lado.

@@ -76,8 +76,10 @@ async def lifespan(app: FastAPI):
     # peticiones usan la referencia global de arriba.
     deps.style_packs = StylePackResolver()
 
-    # sprite_skin_gen sigue siendo lazy: se construye en el primer
-    # /skin_sprite_sheet (necesita MESHY_API_KEY; sin ella, 503 ahí).
+    # Los sprite sheets de personaje los produce sprite-forge (proceso aparte,
+    # repo propio): aquí solo queda el adaptador, que no construye nada al
+    # arrancar. Si el servicio no está, /skin_sprite_sheet devuelve 503 con la
+    # URL a la que intentó llamar.
 
     logger.info(f"\nRemote-Gen ready. HTTP :{load_port('remote_gen')}")
     yield

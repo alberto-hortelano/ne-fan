@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from model_generator import ModelGenerator
     from skin_generator import SkinGenerator
     from sprite_generator import SpriteGenerator
-    from sprite_skin_meshy import SpriteSkinMeshy
     from style_packs import StylePackResolver
     from texture_generator import TextureGenerator
 
@@ -30,7 +29,6 @@ class Deps:
     texture_gen: "TextureGenerator | None" = None
     model_gen: "ModelGenerator | None" = None
     skin_gen: "SkinGenerator | None" = None
-    sprite_skin_gen: "SpriteSkinMeshy | None" = None
     sprite_gen: "SpriteGenerator | None" = None
     style_packs: "StylePackResolver | None" = None
     asset_cache: "AssetCache | None" = None
