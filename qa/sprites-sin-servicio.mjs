@@ -31,7 +31,12 @@
  *  arranca UN stack con navegador y se lo pasa a todos, y esto necesita arrancar
  *  y MATAR un servicio a media prueba, sin navegador ninguno.
  *
- *  Uso:  node qa/sprites-sin-servicio.mjs [--keep]
+ *  Uso:  node qa/sprites-sin-servicio.mjs [--keep] [--reusar]
+ *
+ *  Arranca sus dos servicios y se niega a reutilizar un remote-gen ajeno sin
+ *  `--reusar`: un proceso levantado antes de tu último cambio sigue ejecutando
+ *  el adaptador VIEJO, y un verde así no vale nada (pasó durante la validación
+ *  de esta misma tanda).
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs";
@@ -42,6 +47,8 @@ import net from "node:net";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 const KEEP = process.argv.includes("--keep");
+/** Reutilizar un remote-gen que ya esté arriba. Por defecto NO: ver abajo. */
+const REUSAR = process.argv.includes("--reusar");
 
 /** Nada de constantes copiadas: los puertos y la URL del servicio salen de
  *  donde los lee el propio juego. */
@@ -156,12 +163,30 @@ async function main() {
   }
 
   // ── remote-gen, que es quien tiene el adaptador ──
-  const yaHabia = await portBusy(RGEN_PORT);
-  if (!yaHabia) {
+  //
+  // Si ya hay uno escuchando, este guion NO lo reutiliza en silencio, y la razón
+  // salió de tropezar con ella: Python carga el módulo del adaptador al
+  // arrancar, así que un remote-gen levantado antes de tu último cambio sigue
+  // ejecutando el código VIEJO. Durante la validación de esta misma tanda, un
+  // proceso de hace dos minutos hizo que el guion diera VERDE con el bug
+  // reintroducido a propósito. Un candado que da fe de un fichero que no es el
+  // que corre es peor que no tener candado.
+  if (await portBusy(RGEN_PORT)) {
+    if (!REUSAR) {
+      console.log(`ROJO — ya hay algo escuchando en :${RGEN_PORT} y no lo he arrancado yo.`);
+      console.log("  Ese proceso cargó el adaptador cuando arrancó: si has tocado");
+      console.log("  ai_server/routers/remote_generation.py después, este guion daría fe del");
+      console.log("  código VIEJO. Párala (./start.sh → k) o pasa --reusar si sabes que es el bueno.");
+      return 1;
+    }
+    console.log(`  ⚠️  reutilizo el remote-gen que ya estaba en :${RGEN_PORT} (--reusar):`);
+    console.log("      este verde vale por el código que ESE proceso cargó, no por el del disco.\n");
+  } else {
     arrancar("bash", ["-c", "source .venv/bin/activate && exec python -u ai_server/remote_gen_main.py"],
       { cwd: repoRoot }, "rgen");
     if (!(await waitPort(RGEN_PORT, 120_000))) {
       console.log(`ROJO — remote-gen no llegó a escuchar en :${RGEN_PORT}.`);
+      for (const h of hijos) if (h.etiqueta === "rgen") console.log(h.log.join("").trimEnd());
       return 1;
     }
   }

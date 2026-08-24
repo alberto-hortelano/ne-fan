@@ -131,8 +131,15 @@ maniquí y el retrato del diálogo en blanco, teniendo los ficheros ahí. Lo arr
 (`cache/sprite_sheets/_base_keys.json`) y esto es su candado — el adaptador no tiene ni un test.
 
 ```bash
-node qa/sprites-sin-servicio.mjs      # arranca forge (--sin-skin) + remote-gen, mata forge a media prueba (~40 s)
+node qa/sprites-sin-servicio.mjs           # arranca forge (--sin-skin) + remote-gen, mata forge a media prueba (~40 s)
+node qa/sprites-sin-servicio.mjs --reusar  # aprovecha un remote-gen que ya esté arriba (ver abajo)
 ```
+
+**Se niega a reutilizar un remote-gen ajeno**, y eso es lo que más le costó aprender: Python
+carga el adaptador al arrancar, así que un proceso levantado antes de tu último cambio ejecuta
+el código VIEJO. Durante la validación de esta tanda, un remote-gen de dos minutos antes hizo
+que el guion diera **VERDE con el bug reintroducido a propósito**. Ahora eso es ROJO con su
+motivo, y `--reusar` lo dice en voz alta cuando de verdad quieres reutilizarlo.
 
 Cero créditos por construcción, no por confianza: `sprite-forge` arranca **sin worker de
 repintado**, así que no hay nada que pueda llamar a un proveedor; las cuatro rutas que ejerce

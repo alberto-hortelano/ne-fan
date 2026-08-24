@@ -396,3 +396,210 @@ al cerrar hay que correr **`node qa/presets.mjs`** (no solo `qa/run.mjs`) y
 **`node qa/sprites-sin-servicio.mjs`**. Y queda pendiente, para el usuario y con créditos, la
 única comprobación que ningún guion puede hacer: un NPC vestido en pantalla y su retrato en el
 diálogo.
+
+---
+---
+
+# Re-validación tras la corrección (2026-08-24, segunda vuelta)
+
+**Veredicto: APTO.** El bloqueante está cerrado y lo he comprobado **desde mi propio shell
+limpio**, que es justo la diferencia que dejó pasar la primera vez. Los dos hallazgos
+IMPORTANTES están candados con pruebas que he puesto rojas a mano. Quedan tres MENORES abiertos
+y una comprobación que sigue costando créditos y sigue siendo del usuario.
+
+Commits nuevos: `92d519b` (sprite-forge) y `d81d41c` (ne-fan).
+
+## 11 · Los hallazgos, uno a uno
+
+| # | Hallazgo | Estado | Evidencia |
+|---|---|---|---|
+| **1a** | sprite-forge moría en silencio (exit 0, log vacío) si el worker no arrancaba | ✅ **cerrado** | Mismo comando que antes daba `EXIT=0` y **0 bytes**: ahora `EXIT=124` (siguió vivo los 90 s) y **812 bytes** de log con la causa entera, el `ModuleNotFoundError: No module named 'httpx'` del worker incluido, y las hojas base sirviéndose. Probada también la otra rama: `SPRITE_FORGE_PYTHON=/no/existe/python` → sigue vivo y dice `no se pudo lanzar "/no/existe/python": spawn … ENOENT` |
+| **1b** | `start.sh` no daba al servicio ni intérprete ni credencial | ✅ **cerrado** | `./start.sh --preset cliente-web` desde mi shell (sin `.venv` activado, sin variables): **5 ✅**, `repintado: meshy · gpt-image-2 · 6 en paralelo`, `/catalog → skin.enabled: true`. Y `node qa/presets.mjs`: **7/7 presets arrancan exactamente su máscara**, `play` y `cliente-web` incluidos |
+| **2** | El adaptador sin un solo test | ✅ **cerrado** | `ai_server/tests/test_sprite_forge_adapter.py`: **29** pruebas (el mensaje del commit dice 30) contra un sprite-forge de mentira en localhost — claves, índice, wire, pago-una-vez, propagación fail-loud y servicio caído. `Ran 135 tests · OK` en `ai_server` (eran 106) |
+| **3** | El ciclo de vida del worker sin tests en el repo nuevo | ✅ **cerrado** | `test/skin-worker.test.mjs`, 11 pruebas. sprite-forge pasa de 65 a **76 Node** + 24 Python; CI verde en `92d519b` |
+| **4** | README del repo nuevo, §«Qué necesita» y §«Ficheros», del paso 2 | ❌ **sigue abierto** | §«Qué necesita» aún dice *«Python 3 + numpy + Pillow **solo para `tools/comparar.py`**»* cuando Python es media puerta del servicio, y no nombra `SPRITE_FORGE_IMAGE_KEY`; §«Ficheros» sigue sin `src/skin.mjs`, `src/anim-profile.mjs` ni `python/` (grep = 0). Sí se añadió un párrafo bueno en §«El repintado es opcional» |
+| **5** | ne-fan no documenta la credencial del servicio | ❌ **sigue abierto**, pero pierde importancia | `grep MESHY_API_KEY\|SPRITE_FORGE_IMAGE_KEY docs/arquitectura/*.md` = 0. Ya no muerde a quien usa `start.sh` (lo traduce el launcher), solo a quien despliegue de otra forma |
+| **6** | Indentación rota en el comentario de `asset-store.ts` | ❌ **sigue abierto** | `nefan-core/src/contracts/asset-store.ts:128` sigue con un espacio de menos. Cosmético |
+
+## 12 · E3 — la afirmación sobre `node --test`, verificada
+
+Dice que su primer intento de test **no valía**: reintrodujo E1 y los 75 siguieron verdes,
+porque E1 no es «la promesa no resuelve» sino «el bucle de eventos se vacía», y dentro de
+`node --test` el bucle nunca está vacío. **Es cierto, y lo he medido.** Reintroduje el bug
+en `parar()` (esperar un `exit` ya ocurrido, con el temporizador `unref`-eado):
+
+```
+1) el servicio REAL, el flujo del usuario   EXIT=0 · log de 0 bytes   ← el bug está de vuelta, idéntico
+2) npm test                                 76 tests · 75 pass · 1 fail
+   ✖ EL fallo de E1: en un proceso SOLO, arrancar() dice por qué antes de salir (28 ms)
+```
+
+Solo cae la que arranca un proceso aparte; **las otras diez del mismo fichero pasan**. Y hay
+una segunda medida que lo explica mejor que el argumento: con el bug, esas diez tardan
+**4008 ms**; sin él, **3,9 ms**. El temporizador `unref`-eado de 4 s sí dispara bajo el
+runner (hay bucle de sobra), así que la decisión acaba tomándose y el aserto pasa — solo que
+cuatro segundos tarde. **El reloj grita y ningún aserto lo mira.** La forma que eligió es la
+correcta; si algún día quiere una segunda red barata, medir el tiempo de `arrancar()` la da.
+
+Restaurado: `git diff` de `src/skin.mjs` vacío.
+
+## 13 · E2 — tres caras para un NPC, mirado en los datos y en el cable
+
+**En los datos.** Calculando con la función real del adaptador, no con una copia:
+
+```
+personaje                       hero de HOY        con la fórmula de ANTES   ¿existe el fichero?
+Telmo, el sacristán             d3a8841bd427df4d   3 distintos               SÍ
+Blas, el tabernero              59586058f39a4e62   3 distintos               SÍ
+Nuño, carbonero de Carboneras   cc54482a1939ea3f   3 distintos               SÍ
+```
+
+`d3a8841b…` es exactamente el hero que decía el commit. Las tres anims de cada personaje
+tienen **tres `base_key` distintos** (`84b8b91…`, `51d5f4a…`, `f9e4d5f…`) en su `meta.json`:
+con la fórmula vieja —que colgaba de `base_key`— tres caras eran inevitables, y en disco
+quedan tres heroes de aquella fórmula como prueba. Las claves de sheet **siguen siendo tres**,
+o sea que el arreglo no ha colapsado las anims por el otro lado.
+
+**Aviso de método**: mi primer chequeo leyó `skin.hero_key` del `meta.json`, que **no existe**;
+«1 hero distinto» era `{None}` en las tres. Un verde que no comprobaba nada, cazado por mirar
+los valores en vez del recuento.
+
+**En el cable**, que es lo que pinta el retrato — personaje nuevo, tres anims, proveedor `fake`:
+
+```
+idle  sheet=c93ca6b10b028bda  hero_url=/cache/sprite_hero/cb3fa8278ce85989
+walk  sheet=1f99d9efb6d9a68f  hero_url=/cache/sprite_hero/cb3fa8278ce85989
+run   sheet=c040448bce77a25e  hero_url=/cache/sprite_hero/cb3fa8278ce85989
+  heroes distintos: 1 ✔    sheets distintos: 3 ✔
+  gasto registrado: 338 → 338 eventos · $123,46 → $123,46
+```
+
+Un solo `hero_url` para las tres, un fichero en disco, y **cero euros**. `portrait.ts` pinta
+lo que llegue en `heroUrl`, así que un NPC ya no puede cambiar de cara al echar a andar.
+
+**En negativo, y por la puerta de atrás**: volví a colgar el hero de la animación **sin tocar
+la firma** (para esquivar el `inspect.signature` de `test_el_hero_NO_depende_de_la_animacion`).
+Cae la que mide comportamiento:
+
+```
+FAIL: test_el_hero_se_paga_UNA_vez_por_personaje
+AssertionError: '/identity' unexpectedly found in ['/sheets', '/identity', '/skins']
+```
+
+El candado no es solo estructural: pilla el bug aunque entre disfrazado. Restaurado, `git
+diff` vacío.
+
+## 14 · Mi guion: intacto, y con un agujero MÍO que he tapado
+
+**Intacto**: `git log` sobre `qa/sprites-sin-servicio.mjs` da un solo commit (el suyo, que lo
+recogió del árbol), 228 líneas, los cuatro asertos y sus umbrales tal como los dejé, y el
+árbol de trabajo sin diferencias con el commit. No lo tocó.
+
+**Su verde es del código**, y lo he probado como toca: con el adaptador devuelto a su forma
+pre-arreglo el guion da **ROJO** (2 de 4), y con el código de hoy da **VERDE**. Su primera
+corrida en rojo fue por lo que dice —el sujeto era una de las hojas que quedaron huérfanas al
+cambiar la clave—, y regenerar el dato con el proveedor falso es la respuesta correcta: el
+guion elige su sujeto del disco y no lleva ninguno escrito dentro.
+
+**Pero encontré un agujero mío, y es de los que este proyecto llama «verde que no comprueba
+nada».** En una de mis pasadas el guion dio VERDE **con el bug reintroducido**. La causa no era
+el guion en abstracto sino que había un `remote-gen` mío levantado dos minutos antes: Python
+carga el adaptador al arrancar, así que ese proceso ejecutaba el código VIEJO y el guion lo
+reutilizó en silencio. Un candado que da fe de un fichero que no es el que corre es peor que no
+tener candado, así que lo he arreglado (es mi entregable, no código de producción):
+
+```
+$ node qa/sprites-sin-servicio.mjs          # con un remote-gen ajeno arriba
+ROJO — ya hay algo escuchando en :8768 y no lo he arrancado yo.
+  Ese proceso cargó el adaptador cuando arrancó: si has tocado
+  ai_server/routers/remote_generation.py después, este guion daría fe del
+  código VIEJO. Párala (./start.sh → k) o pasa --reusar si sabes que es el bueno.
+$ node qa/sprites-sin-servicio.mjs          # sin nada previo
+VERDE — el arte pagado sobrevive a la caída, y lo nuevo dice por qué no puede.
+```
+
+Las dos ramas probadas. `qa/README.md` lo cuenta con la lección, que es la que vale.
+
+Y una consecuencia del arreglo 1b que ahora importa más: **`start.sh` inyecta la clave REAL**,
+así que cualquier herramienta que arranque sprite-forge de la forma normal tiene un proveedor
+de pago vivo detrás. Que mi guion lo arranque con `--sin-skin` deja de ser una elegancia y pasa
+a ser lo que garantiza que QA no gaste.
+
+## 15 · Las hojas huérfanas, con la cuenta hecha
+
+Cambiar la composición de la clave dejó 12 hojas que ya no encuentra nadie. Desglosadas:
+
+```
+hojas alcanzables con la clave de hoy : 15
+hojas huérfanas                       : 12   →  9 con coste 1,92 $ (api=None)  +  3 del fake (0 $)
+directorios sin meta.json             :  0
+```
+
+Las **9 pagadas de verdad** (9 × 1,92 $ = **17,28 $**) son exactamente la exposición que el
+plan §5 midió y el usuario aceptó, y ya estaban huérfanas **antes** de esta ronda (informe
+§12). Lo que esta ronda dejó huérfano son las **3 del proveedor falso: 0 €**. No se ha perdido
+un euro nuevo.
+
+## 16 · Estado de las herramientas (todo corrido por mí, sin mutación en vuelo)
+
+| Comando | Resultado |
+|---|---|
+| `./start.sh --preset cliente-web` (shell limpio) | **5 ✅**, sprite-forge con repintado activo |
+| `node qa/presets.mjs` | **7/7 presets** arrancan exactamente su máscara |
+| `node qa/run.mjs` | **16/16 guiones en verde** (07 y 13 incluidos) |
+| `node qa/sprites-sin-servicio.mjs` | **VERDE**, y ROJO con el adaptador pre-arreglo |
+| `npm test` (nefan-core) | **1291 · 0 fallos** |
+| `npm run crap -- --check` | **✔ dentro de los umbrales** (1064 funciones medidas, cobertura 90,1 %) |
+| `unittest ai_server` · `ruff` · `compileall` | **135 tests OK** · `All checks passed` · ok |
+| `npm test` + unittest (sprite-forge) | **76 + 24 = 100 en verde** |
+| CI de sprite-forge | verde en `92d519b` (19 s) |
+| `tools/huellas.sh` sobre `public/sprites` | **idénticas** a la foto congelada: nadie tocó las hojas del juego |
+| Wire intacto | `git diff 093c1c1..HEAD` sobre `nefan-html/`, `labs/narrative/` y `qa/guiones/`: **vacío** |
+
+## 17 · Lo que sigue sin probarse
+
+- **La llamada real al proveedor**: un NPC vestido en pantalla y su retrato en el diálogo.
+  Ahora está *a un paso*: con `--preset play` el stack entero arranca, `skin.enabled=true` y
+  `api=meshy`, y toda la fontanería por debajo está ejercida con el fake (adaptador → servicio
+  → disco → asset-store → cliente). Lo único sin recorrer es la llamada de pago. Sigue siendo
+  decisión del usuario y sigue costando: **17 llamadas por personaje** (1 hero + 8 + 4 + 4),
+  que a 0,24 $ son **4,08 $ el primero**.
+- **Crítica visual del repintado**: imposible sin créditos. El hero que produce el fake es un
+  desplazamiento de color determinista, no arte: sirve para verificar geometría y alfa, no para
+  juzgar una cara. Lo que sí he vuelto a comprobar es que las hojas BASE que pinta el juego son
+  las de siempre, byte a byte.
+- **Concurrencia del worker** — declarada por el ingeniero, no medida.
+- **La regeneración de `public/sprites`** — trabajo futuro declarado en `requisitos.md`.
+
+## 18 · Observaciones nuevas (ninguna bloquea)
+
+- **El hero ya no depende del contenido del FBX.** Al quitarle `base_key` se fue también el
+  hash del fichero: cambiar la malla detrás del nombre `y_bot` invalidaría las hojas pero
+  **conservaría la cara vieja**. Es una asimetría con el principio que el propio servicio se
+  aplica (*«cambiar un fichero detrás del mismo nombre debe invalidar, no servir rancio»*), y
+  nace de una decisión correcta —el hero no puede depender de la anim—. Con assets de
+  despliegue, cambiarlos es un escenario real; añadir el hash del modelo a `hero_key`
+  costaría una línea y no reintroduce la anim.
+- **La cuenta del commit dice 30 pruebas del adaptador; son 29** (`grep -c "    def test_"`).
+  Sin consecuencia, pero es la tercera vez que una cuenta del informe solo sale midiendo.
+- **La captura de esta corrida del guion 13 no enseña al personaje**: el «Tabernero corpulento»
+  aparece como etiqueta flotante sin nadie debajo, porque el NPC se ha ido andando (lo conduce
+  el sim y el propio guion lo exige). El aserto que manda —`billboardsPersonaje >= npcs`— está
+  verde, y la corrida anterior sí lo pilló en el vano. De paso, y **preexistente y fuera de esta
+  tanda**: la etiqueta de un NPC se pinta aunque el NPC esté detrás de un muro.
+
+## Veredicto de la re-validación
+
+**APTO.**
+
+Los cuatro criterios literales del usuario siguen cumpliéndose —y no los he dado por buenos por
+inercia: las hojas del juego siguen siendo byte a byte las mismas y el wire del cliente no se ha
+movido—. Lo que tumbaba la primera vuelta, el arranque, está arreglado en las dos capas y
+verificado donde importaba: **desde un shell limpio, con `qa/presets.mjs` dando 7/7**, que es
+precisamente la herramienta que no se había corrido.
+
+Y la ronda deja el sitio mejor de como estaba: el adaptador pasó de cero pruebas a 29, el ciclo
+de vida del worker de cero a 11, y por el camino aparecieron dos bugs que nadie buscaba —un NPC
+con tres caras y un servicio que se moría mudo—, los dos candados con pruebas que he puesto
+rojas a mano. Lo que queda son tres MENORES de documentación y comentario, y la única
+comprobación que ningún guion puede hacer: pagar 4,08 $ y mirar al herrero a la cara.
