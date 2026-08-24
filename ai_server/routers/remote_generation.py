@@ -259,18 +259,25 @@ def _apuntar_base(triple: str, base_key: str) -> None:
     _BASE_KEYS_INDEX.write_text(json.dumps(idx, indent=2, sort_keys=True))
 
 
-def _skin_sheet_key(base_key: str, prompt: str, ai_model: str, style_key: str) -> str:
+def _skin_sheet_key(
+    base_key: str, model: str, anim: str, angle: str, prompt: str, ai_model: str, style_key: str
+) -> str:
     """Clave del sheet VESTIDO en la caché de ne-fan.
 
     `base_key` viene de sprite-forge y es el hash de la hoja base CON su
     configuración (incluido el contenido de los FBX): si la base cambia, esto
     cambia. Antes se usaba el mtime del meta.json de la hoja en disco, que
     dependía de cuándo se había renderizado en ESTA máquina.
+
+    El triple `{model}/{anim}/{angle}` va ADEMÁS, aunque hoy `base_key` ya lo
+    codifique: esta clave no debe depender de cómo componga la suya el servicio.
+    El día que allí cambie la receta, aquí no se puede empezar a servir el
+    `walk` de un personaje cuando alguien pide su `run`.
     """
     import hashlib
 
     payload = "\n".join(
-        [base_key, prompt.strip().lower(), ai_model, style_key,
+        [base_key, model, anim, angle, prompt.strip().lower(), ai_model, style_key,
          # v3 (2026-08-24): las hojas las produce sprite-forge y la clave pasa a
          # colgar de su base_key. Los sheets v2 se derivaban de otra cadena.
          "skinforge_v3",
@@ -281,19 +288,23 @@ def _skin_sheet_key(base_key: str, prompt: str, ai_model: str, style_key: str) -
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def hero_key(prompt: str, base_key: str, ai_model: str, style_key: str = "") -> str:
+def hero_key(prompt: str, model: str, angle: str, ai_model: str, style_key: str = "") -> str:
     """Clave del hero-shot de identidad de un personaje (16 hex).
 
     Función de MÓDULO a propósito: el retrato del diálogo consulta si el hero ya
     existe, y una consulta de solo lectura no puede exigir credenciales de nadie.
 
-    El hero se pinta SOBRE un fotograma de la hoja base, así que `base_key` —que
-    ya incluye modelo, ángulo y tamaño— es lo que lo identifica junto al prompt.
+    **NO lleva la animación, y es lo único que importa de esta clave.** El
+    hero-shot existe para que las tres animaciones de un personaje sean la MISMA
+    persona: se paga una vez y las demás lo heredan. Colgarlo de la identidad de
+    la hoja base —que incluye el hash del clip— le daba a `idle`, `walk` y `run`
+    tres heroes distintos: el triple de coste y, peor, tres caras para el mismo
+    NPC. `model` y `angle` sí van: el hero se pinta sobre un fotograma suyo.
     """
     import hashlib
 
     payload = "\n".join(
-        [prompt.strip().lower(), base_key, ai_model, style_key,
+        [prompt.strip().lower(), model, angle, ai_model, style_key,
          "heroforge_v3", DEV_API_CACHE.namespace_suffix()]
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
@@ -371,10 +382,10 @@ async def skin_sprite_sheet_endpoint(request: Request):
             f"identidad conocida ({base_key}) — sin verificar la hoja base"
         )
 
-    key = _skin_sheet_key(base_key, prompt, ai_model, style_key)
+    key = _skin_sheet_key(base_key, model, anim, angle, prompt, ai_model, style_key)
     out_dir = SKINNED_SHEETS_DIR / key
     out_meta_path = out_dir / "meta.json"
-    hero_k = hero_key(prompt, base_key, ai_model, style_key)
+    hero_k = hero_key(prompt, model, angle, ai_model, style_key)
     hero_path = SKINNED_SHEETS_DIR / "heroes" / f"{hero_k}.png"
 
     start = time.time()

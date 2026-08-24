@@ -222,3 +222,59 @@ es la causa de las dos cosas que el ingeniero midió en su §3:
    ingeniero construyó el congelado para que una desviación que deja de ocurrir se ponga
    **roja pidiendo que la borren** — o sea que el propio candado dirá si se fue.
 5. Si al verlo el tono no convence, se revierte: son 30 s y las hojas están gitignoradas.
+
+---
+
+# Ronda de corrección (2026-08-24) — QA: NO APTO
+
+Los cuatro criterios literales del usuario **se cumplen**, verificados por QA como un tercero
+(imagen de referencia propia, `style_note` en texto libre, cero identificadores de ne-fan, 32
+PNG en base64 y **0 ficheros nuevos** en todo el árbol del servicio). Lo que lo tumba es el
+arranque.
+
+### E1 · `--preset play` y `--preset cliente-web` NO arrancan — OBLIGATORIO
+
+```
+❌ sprite-forge /health did not respond within 90s
+$ wc -c /tmp/nefan-sprite-forge.log
+0
+```
+
+Dos defectos encadenados, los dos con arreglo pequeño:
+
+1. **En sprite-forge**: `parar()` (`src/skin.mjs`) espera un `exit` que **ya ocurrió**, y el
+   `setTimeout` de rescate está **`unref`'d**, así que el bucle de eventos se vacía y Node sale
+   con 0 **antes de imprimir** el `! repintado NO disponible` que ya estaba escrito. El README
+   promete lo contrario de lo que hace.
+2. **En ne-fan**: `start_sprite_forge` **no activa el `.venv`** —los otros tres subshells sí lo
+   hacen— ni pasa `SPRITE_FORGE_IMAGE_KEY`, que ne-fan tiene en `.env` con otro nombre. Con solo
+   arreglar lo primero, `skin.enabled=false` y **vuelve el maniquí** que §9.7 daba por cerrado.
+
+**El candado ya existía y no se corrió**: `qa/presets.mjs` reconoce el servicio nuevo sin tocarlo
+y da `✘ NO levantó`. Los 16/16 de `qa/run.mjs` no lo desmienten — esa batería levanta el único
+preset con servicios que **no** incluye sprite-forge. Correrlo pasa a ser parte de la
+verificación de cualquier cambio en `start.sh`.
+
+**La lección, escrita para que no se repita**: el `✅ sprite-forge :8770` del informe salió de un
+shell con el venv ya activado. Es un «funciona en mi máquina» con la evidencia dentro — el
+entorno del que verifica no es el del usuario.
+
+### E2 · El adaptador es el único puente y tiene cero tests
+
+~270 líneas, y el anterior tenía 228 que se borraron con él. Es por donde pasa todo lo que ne-fan
+pide al servicio. Tests suyos, con su rojo demostrado.
+
+### E3 · El ciclo de vida del worker, sin test en el repo nuevo
+
+Es justo lo que falló en E1. Un test que lo habría cazado vale más que el arreglo.
+
+### E4 · Adoptar el candado de QA
+
+`qa/sprites-sin-servicio.mjs` (cuatro comprobaciones sobre el arreglo del arte pagado, cero
+créditos por construcción, probado en negativo). **No se toca**: se pone verde por el código.
+
+### Corrección al informe
+
+§9.7 dice que lo único sin probar es la llamada al proveedor. Es falso: falta **el preset `play`
+entero**. Esa comprobación cuesta créditos y sigue siendo del usuario, pero decirlo de menos es
+lo que dejó pasar E1.

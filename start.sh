@@ -237,6 +237,14 @@ start_remote_gen() {
     echo "✅ remote-gen :$PORT_RGEN  (log: $LOG_DIR/nefan-remote-gen.log)"
 }
 
+# Lee una variable de .env sin exportar el fichero entero. Los servicios Python
+# lo cargan ellos mismos (`load_env_file`), así que el shell NO tiene estas
+# variables: un servicio que no sea Python tiene que venir a buscarlas.
+dotenv_get() {
+    [[ -f "$PROJECT_DIR/.env" ]] || return 0
+    sed -n "s/^$1=//p" "$PROJECT_DIR/.env" | head -1 | tr -d '"'"'"'\r'
+}
+
 start_sprite_forge() {
     # Vive en OTRO repositorio: lo usa más de un proyecto y ne-fan es un
     # consumidor suyo, no su dueño. Si no está clonado se dice y se sigue —
@@ -248,6 +256,20 @@ start_sprite_forge() {
     fi
     port_busy "$PORT_FORGE" && kill_port "$PORT_FORGE"
     (
+        cd "$PROJECT_DIR" || exit 1
+        # El worker de repintado es Python y necesita ESTE venv (fastapi,
+        # uvicorn, rembg). Sin activarlo, sprite-forge sirve hojas base pero
+        # `skin.enabled=false` y todos los NPC salen en maniquí — con el stack
+        # diciendo ✅. Los otros tres subshells de este fichero ya lo activan;
+        # que este no lo hiciera fue el fallo.
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+        # La clave de imagen: ne-fan la llama MESHY_API_KEY en .env y el
+        # servicio, que no sabe de proveedores concretos, SPRITE_FORGE_IMAGE_KEY.
+        # Se traduce aquí, que es la frontera. Si no está, el servicio sirve
+        # hojas base y lo DICE en /catalog (no finge repintar).
+        export SPRITE_FORGE_IMAGE_KEY="${SPRITE_FORGE_IMAGE_KEY:-$(dotenv_get MESHY_API_KEY)}"
+        export SPRITE_FORGE_PYTHON="$PROJECT_DIR/.venv/bin/python"
         cd "$SPRITE_FORGE_DIR" || exit 1
         # Los assets de personaje los pone quien despliega: aquí, los de ne-fan.
         exec node bin/sprite-forge.mjs serve \
