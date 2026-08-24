@@ -168,6 +168,42 @@ function expande(patron: string): string[] {
 
 const normaliza = (p: string): string => p.split("\\").join("/");
 
+/** El fichero de fronteras, relativo a nefan-core. El instrumento de medida lo
+ *  usa por UNA de sus reglas (`REGLA_PERIMETRO`), no entero: ver
+ *  `patronesDelPerimetro`. */
+export const RUTA_ARCH_RULES = "data/contract/arch-rules.json";
+
+export type PatronesPerimetro = { ok: true; patrones: string[] } | { ok: false; porque: string };
+
+/** Lo ÚNICO que el perímetro de mutación toma de `arch-rules.json`: los `files`
+ *  de la regla que declara el núcleo puro, ya sin el prefijo del paquete.
+ *
+ *  Está aislado en una función que recibe el CONTENIDO —y no la ruta— porque
+ *  `scripts/afectado.ts` la aplica a dos versiones del fichero (antes y después
+ *  del diff) para decidir si un cambio de fronteras puede alterar qué se muta.
+ *  Que sea la MISMA proyección que usa `perimetro` no es una coincidencia que
+ *  haya que recordar: si mañana el perímetro empezara a mirar otro campo, lo
+ *  miraría desde aquí, y la comparación del selector lo vería sola. Dos
+ *  lecturas paralelas del mismo fichero es justo el fallo mudo que este
+ *  perímetro existe para cerrar. */
+export function patronesDelPerimetro(contenido: string): PatronesPerimetro {
+  let arch: unknown;
+  try {
+    arch = JSON.parse(contenido);
+  } catch (err) {
+    return { ok: false, porque: `no es JSON válido: ${(err as Error).message}` };
+  }
+  const reglas = (arch as { rules?: unknown }).rules;
+  if (!Array.isArray(reglas)) return { ok: false, porque: "no tiene una lista `rules`" };
+  const regla = reglas.find(
+    (r: unknown) => typeof r === "object" && r !== null && (r as { id?: unknown }).id === REGLA_PERIMETRO,
+  ) as { files?: string[] } | undefined;
+  if (!regla?.files?.length) {
+    return { ok: false, porque: `no tiene la regla "${REGLA_PERIMETRO}" con ficheros` };
+  }
+  return { ok: true, patrones: regla.files.map((f) => f.replace(/^nefan-core\//, "")) };
+}
+
 /** El PERÍMETRO: qué ficheros tienen que tener respuesta a «si cambia esto,
  *  ¿qué hay que ejecutar?».
  *
@@ -180,18 +216,15 @@ const normaliza = (p: string): string => p.split("\\").join("/");
  *  Fail-loud si la regla desaparece o cambia de nombre: quedarse con un
  *  perímetro vacío sería un candado que aprueba sin mirar nada. */
 export function perimetro(plan: PlanMutacion): string[] {
-  const arch = JSON.parse(readFileSync(join(coreRoot, "data", "contract", "arch-rules.json"), "utf8")) as {
-    rules: { id: string; files?: string[] }[];
-  };
-  const regla = arch.rules.find((r) => r.id === REGLA_PERIMETRO);
-  if (!regla?.files?.length) {
+  const proyeccion = patronesDelPerimetro(readFileSync(join(coreRoot, RUTA_ARCH_RULES), "utf8"));
+  if (!proyeccion.ok) {
     throw new Error(
-      `arch-rules.json ya no tiene la regla "${REGLA_PERIMETRO}" con ficheros: el perímetro de mutación ` +
-        `sale de ahí, y sin ella el candado de totalidad aprobaría sin mirar nada`,
+      `${RUTA_ARCH_RULES} ${proyeccion.porque}: el perímetro de mutación sale de ahí, ` +
+        `y sin esa regla el candado de totalidad aprobaría sin mirar nada`,
     );
   }
   const patrones = [
-    ...regla.files.map((f) => f.replace(/^nefan-core\//, "")),
+    ...proyeccion.patrones,
     ...plan.directorios_completos.map((d) => `${d}/*.ts`),
   ];
   const out = new Set<string>();
@@ -482,6 +515,67 @@ export function testsQueImportan(ficheros: readonly string[]): string[] {
  *  puede mutar un barril al que se llega por reexportación. */
 export function alcanceDe(modulo: ModuloMutacion): Set<string> {
   return cierreDeRuntime([...modulo.tests, ...ficherosMutados(modulo)]);
+}
+
+const cacheLecturas = new Map<string, boolean>();
+
+/** ¿Este fichero LEE ese dato, nombrándolo? La pregunta que el grafo de imports
+ *  no contesta: un `readFileSync(join(root, "data", "contract", "x.json"))` no
+ *  es una arista de import y por eso el selector, ante un dato cualquiera,
+ *  ejecuta de más.
+ *
+ *  Se mira el nombre del fichero dentro de los LITERALES DE CADENA, no el texto
+ *  crudo, y las dos mitades importan:
+ *
+ *  · Por el nombre y no la ruta entera, porque el código real la parte
+ *    (`join(coreRoot, "data", "contract", "arch-rules.json")`) y buscar la ruta
+ *    completa no encontraría a su único lector de verdad.
+ *  · Por los literales y no el texto, porque media casa NOMBRA un fichero de
+ *    contrato en un comentario para explicar qué regla la sujeta
+ *    (`src/plugins/migrate.ts` cita `arch-rules.json` sin abrirlo jamás), y
+ *    contar esas menciones devolvería el «ejecuta todo» que se quiere acotar.
+ *
+ *  Se queda del lado seguro donde no puede saber: un fichero del alcance que ya
+ *  no está en el árbol cuenta como lector. */
+export function leeElDato(fichero: string, nombre: string): boolean {
+  const clave = `${fichero}|${nombre}`;
+  const previo = cacheLecturas.get(clave);
+  if (previo !== undefined) return previo;
+  const lee = calculaLectura(join(coreRoot, fichero), nombre);
+  cacheLecturas.set(clave, lee);
+  return lee;
+}
+
+function calculaLectura(abs: string, nombre: string): boolean {
+  if (!existsSync(abs)) return true;
+  const texto = readFileSync(abs, "utf8");
+  // Prefiltro barato: sin la cadena en el texto no hace falta parsear nada, y
+  // esto se pregunta por cada fichero del alcance de los módulos.
+  if (!texto.includes(nombre)) return false;
+  const sf = ts.createSourceFile(abs, texto, ts.ScriptTarget.ESNext, true);
+  let lee = false;
+  const visita = (n: ts.Node): void => {
+    if (lee) return;
+    if (esCadena(n) && n.text.includes(nombre)) {
+      lee = true;
+      return;
+    }
+    ts.forEachChild(n, visita);
+  };
+  visita(sf);
+  return lee;
+}
+
+function esCadena(
+  n: ts.Node,
+): n is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.TemplateHead | ts.TemplateMiddle | ts.TemplateTail {
+  return (
+    ts.isStringLiteral(n) ||
+    ts.isNoSubstitutionTemplateLiteral(n) ||
+    ts.isTemplateHead(n) ||
+    ts.isTemplateMiddle(n) ||
+    ts.isTemplateTail(n)
+  );
 }
 
 export function rutaInforme(id: string): string {

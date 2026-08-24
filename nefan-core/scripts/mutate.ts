@@ -107,7 +107,7 @@ function corre(plan: PlanMutacion, modulo: ModuloMutacion, concurrencia: number)
 function aCorrer(plan: PlanMutacion, argv: readonly string[]): ModuloMutacion[] {
   if (argv.includes("--cambiado")) {
     const origen = ficherosCambiados(argv);
-    const sel = seleccionar(contextoDe(plan), origen.ficheros);
+    const sel = seleccionar(contextoDe(plan, origen.revisiones), origen.ficheros);
     console.log(
       `Selección desde ${origen.descripcion}: ${sel.ids.length} de ${plan.modulos.length} módulos` +
         `${sel.todos ? " (corrida completa: el selector no puede descartar nada)" : ""}.`,
