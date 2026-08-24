@@ -1,11 +1,10 @@
 # labs/style — bench de generación de referencias de estilo
 
-Bench permanente (hermano de `labs/skinning/`) para evaluar modelos de imagen
-como generadores de las **imágenes de referencia de los style packs**
-(`nefan-core/data/styles/{id}/`, ver su README). Cada run es un subdir
-auto-contenido en `runs/` (gitignored) con los PNG, un `manifest.json` que
-asocia el prompt EXACTO y los parámetros a cada imagen, y un `index.html`
-para revisarlas lado a lado.
+Bench permanente para evaluar modelos de imagen como generadores de las
+**imágenes de referencia de los style packs** (`nefan-core/data/styles/{id}/`,
+ver su README). Cada run es un subdir auto-contenido en `runs/` (gitignored)
+con los PNG, un `manifest.json` que asocia el prompt EXACTO y los parámetros a
+cada imagen, y un `index.html` para revisarlas lado a lado.
 
 ```bash
 source .venv/bin/activate

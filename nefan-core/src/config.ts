@@ -89,10 +89,15 @@ export interface NefanConfig {
     surface_cache_dir: string;
     texture_resolution: number;
     texture_steps: number;
-    /** Meshy image-to-image model for character sprite skinning (hero-shot +
-     *  atlas de keyframes por anim×dir — pipeline validado en labs/skinning;
-     *  la vía local SD1.5+ControlNet quedó descartada por deriva). */
+    /** Modelo image-to-image con el que sprite-forge viste a los personajes
+     *  (hero-shot de identidad + atlas de keyframes por anim×dir). */
     sprite_skin_model: string;
+    /** Dónde escucha **sprite-forge**, el servicio de hojas de sprites de
+     *  personaje. Vive en su propio repo (~/code/sprite-forge) porque lo usa
+     *  más de un proyecto: ne-fan es UN consumidor suyo, no su dueño. Si no
+     *  está arriba, /skin_sprite_sheet devuelve 503 diciendo a qué URL
+     *  intentó llamar, y el cliente degrada a la hoja base. */
+    sprite_forge_url: string;
     /** Modelos del atlas de superficies de la vista fps (bench labs/fps):
      *  tileables (surface_model) y celdas hero (surface_hero_model), fal
      *  directo. */
@@ -178,6 +183,7 @@ export const CONFIG: NefanConfig = {
     texture_resolution: 512,
     texture_steps: 4,
     sprite_skin_model: "gpt-image-2",
+    sprite_forge_url: "http://127.0.0.1:8770",
     // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
     // para las celdas tileables (cohesión pintada a mano) y gpt-image-2 para
     // las celdas hero (techo de calidad en piezas únicas).

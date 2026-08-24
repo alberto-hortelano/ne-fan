@@ -16,7 +16,7 @@ las decisiones en [decisions.md](decisions.md).
 | S2 | **world-state** | Fuente de verdad del mundo: `NarrativeState` (único escritor de saves), `WorldMapManager`, `NpcDirector`, plugins runtime | HTTP | 9878 (9878, mismo proceso que S1) | `contracts/world-state.ts` |
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
 | S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para clientes no migrados**)** | `contracts/gpu-worker.ts` |
-| S5 | **remote-gen** | Adaptador Meshy/fal: scene images, sprite sheets, style packs, segmentación SAM2 | HTTP | **8768 (extraído en F4** — `ai_server/remote_gen_main.py`; sin proxy, los clientes HTML resuelven por serviceUrl**)** | `contracts/remote-gen.ts` |
+| S5 | **remote-gen** | Adaptador de generación remota: atlas de superficies (Meshy/fal), style packs de usuario y las hojas de sprites de personaje — de las que **no es dueño**: las produce `sprite-forge` (:8770, repo aparte) y S5 solo adapta, cachea y apunta el gasto | HTTP | **8768 (extraído en F4** — `ai_server/remote_gen_main.py`; sin proxy, los clientes HTML resuelven por serviceUrl**)** | `contracts/remote-gen.ts` |
 | S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para clientes no migrados**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
 
@@ -147,11 +147,18 @@ S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
 (gpu_proxy.py).
 
 **S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_surface_atlas,
-/skin_sprite_sheet, /styles/upload, GET /styles/{style_id}/missing,
-POST /styles/{style_id}/complete, GET+POST /dev/api_cache (el flag lo ven los
-otros procesos releyendo state.json), GET /dev/status, /health.
+/skin_sprite_sheet, GET /sprite_catalog, /styles/upload,
+GET /styles/{style_id}/missing, POST /styles/{style_id}/complete, GET+POST
+/dev/api_cache (el flag lo ven los otros procesos releyendo state.json),
+GET /dev/status, /health.
 ☠ ELIMINADOS con el repintado oblicuo: /generate_scene_image y POST /segment
 (SAM2 — su único consumidor era /analyze_scene_image).
+Los dos de sprites son **adaptadores de un servicio externo**, `sprite-forge`
+(:8770, repo aparte, `sprite_forge_url`): /skin_sprite_sheet conserva su wire y
+añade lo que es de ne-fan (ref de personaje del style pack, caché en
+`cache/sprite_sheets/`, gasto), porque el servicio devuelve imágenes y no guarda
+nada; /sprite_catalog proxya su /catalog para que el cliente sepa el coste
+(`calls_per_anim`) antes de gastar.
 
 **S6 asset-store (HTTP :8767, EXTRAÍDO en F2)** — ✅ /cache/{kind}/{hash},
 /cache/sprite_sheet/{hash}/{filename}, POST /cache/prune (con keep-list),
@@ -169,6 +176,6 @@ el cliente real desde fuera.
 
 | Cliente | S1 | S2 | S3 | S4 | S5 | S6 |
 |---------|----|----|----|----|----|----|
-| nefan-html | todo lo autoritativo | covers estilos (→S6 en F2) | review/analyze de imagen | peel, plate, sprites | scene image, sheets, styles | GET blobs |
+| nefan-html | todo lo autoritativo | covers estilos (→S6 en F2) | review/analyze de imagen | peel, plate, sprites | atlas de superficies, sheets + `/sprite_catalog`, styles | GET blobs |
 | gateway (S1) | — | in-process (→contrato en F6) | generate_scene, choices, develop_world, sprites | vía AiClient | — | assetExists |
 | narrative-mcp | — | 18 tools de estado | (es su sidecar) | — | — | — |

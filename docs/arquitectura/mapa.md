@@ -56,8 +56,6 @@ labs/                     Benches de experimentación (ver labs/README.md)
                            caché+gasto), images (data URIs, raster), sam (SAM2
                            cacheado), fidelity_score, report, capture.sh
   serve.sh                 Servidor estático de labs/ entero en :8912 (sin caché)
-  skinning/                Skinning AI sobre sprites Mixamo (run.py --preset;
-                           generador interactivo FastAPI en :8911)
   style/                   Referencias de estilo y fidelidad de layout (gen.py,
                            fidelity.py)
   fps/                     Bench de la vista de juego: dump_spec, escenas, capturas

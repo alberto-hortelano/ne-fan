@@ -55,9 +55,9 @@ node qa/run.mjs --headed         # con ventana, para mirar qué hace
 
 ## Lecciones aprendidas sobre animaciones Mixamo
 
-Aplican al renderizador de hojas de sprites (`tools/render-sprite-sheets/`), que es
-quien consume hoy los FBX de Mixamo:
+Aplican a **sprite-forge** (repo aparte, servicio en :8770), que es quien consume
+hoy los FBX de Mixamo y produce las hojas de sprites de personaje:
 
-- **Hips XZ drift:** las locomociones de Mixamo mueven el bone Hips en XZ (root motion horneado). Sin tratarlo, el personaje se sale de la celda del sprite. Solución: congelar Hips en XZ al primer keyframe en walk/run/strafe, preservando Y para que sobreviva el balanceo. Ataques e idle no se congelan: su drift es ~0.
+- **Hips XZ drift:** las locomociones de Mixamo mueven el bone Hips en XZ (root motion horneado). Sin tratarlo, el personaje se sale de la celda del sprite. Solución: congelar Hips en XZ al primer keyframe en walk/run/strafe, preservando Y para que sobreviva el balanceo. Ataques e idle no se congelan: su drift es ~0. Qué clips son locomoción lo declara el set de assets (`"locomotion": true`), no una lista de nombres en el código: un set que llame `andar` a la caminata tiene que poder decirlo.
 - **Animaciones estáticas vs con pasos:** usar animaciones SIN pasos hacia adelante para los ataques (attack(4), slash, slash(5), slash(3)). Las que tienen pasos (attack, attack(2)) deslizan los pies al congelar el Hips.
 - **El prefijo de hueso no siempre casa:** el modelo puede traer `mixamorig_` y la animación `mixamorig1_`. Si no se reescribe el prefijo de las pistas, el personaje renderiza en pose de reposo — y eso se ve igual que "la animación no carga".

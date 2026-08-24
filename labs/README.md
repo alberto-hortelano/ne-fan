@@ -12,9 +12,13 @@ los pares descripción↔plató) se fueron con ellas a `archivo/labs/`, junto a
 `plantillas/`: sus 460 MB de runs no estaban en git y ningún `git checkout`
 los devolvería, así que se movieron enteros en vez de borrarse.
 
+`skinning/` se fue por otra puerta: el pipeline que validaba (base Mixamo +
+repintado por atlas) vive ahora en **sprite-forge**, su propio repo con sus
+tests y su bench de paridad, y su material generado quedó archivado en
+`archivo/labs/skinning/`.
+
 | Lab | Qué mide | Entry point | Estado |
 |-----|----------|-------------|--------|
-| `skinning/` | APIs de skinning IA sobre sprites Mixamo (V1–V4; gana V4 atlas ≤10 frames) | `python3 labs/skinning/run.py --preset <name>` · generador interactivo `./labs/skinning/serve.sh` (:8911) | permanente |
 | `style/` | Referencias de estilo + fidelidad de layout del repintado de blueprints | `python labs/style/gen.py <run>` · `python labs/style/fidelity.py <subcmd>` | cerrado (hallazgos aplicados) |
 | `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,fake-ai-server,replay-server}.mjs` · `check-scene.ts` | activo (tooling de E2E) |
 | `fps/` | Modo 3D primera persona estilo Doom: atlas de superficies IA + sprites y_bot 8-dir | `viewer.html` en :8912 · `python3 labs/fps/gen.py <run>` | activo |
@@ -42,9 +46,7 @@ los devolvería, así que se movieron enteros en vez de borrarse.
   (`render/runs/_cache`, `style/runs/002_*/masks`, `stage/runs/.sam_cache`).
   NO moverlas ni renombrar su esquema de fichero: se re-pagaría todo.
 - **Navegación**: `./labs/serve.sh` sirve `labs/` entero en **:8912** sin
-  caché (reports, demos, galerías). Excepción: skinning tiene su FastAPI
-  interactivo en **:8911** (`./labs/skinning/serve.sh`) porque genera bajo
-  demanda.
+  caché (reports, demos, galerías).
 - **runs/ gitignored** en todos los labs salvo `escenografia/`, que commitea
   sus salidas deliberadamente (son la referencia visual del veredicto).
 - Los `.ts` de los labs (`check-scene.ts`, `dump_stage.ts`,

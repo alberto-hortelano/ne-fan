@@ -64,8 +64,12 @@ export interface GenerateSurfaceAtlasResponse {
   missing: number;
 }
 
-/** Sprite sheet de personaje skinneado por IA (Meshy i2i hero-shot + atlas
- *  por dirección + rembg). OJO: el endpoint actual lee JSON crudo, sin
+/** Sprite sheet de personaje vestido por IA. Lo produce **sprite-forge** (repo
+ *  aparte, `sprite_forge_url`): hero-shot de identidad + atlas de keyframes por
+ *  dirección. remote-gen es solo el ADAPTADOR — resuelve la ref de personaje
+ *  del style pack, guarda lo generado y apunta el gasto, porque el servicio
+ *  devuelve imágenes y no guarda nada.
+ *  OJO: el endpoint actual lee JSON crudo, sin
  *  modelo Pydantic — este shape es el contrato observado del wire. */
 export interface SkinSpriteSheetRequest {
   /** Modelo base del sheet (p. ej. "y_bot"). */

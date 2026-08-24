@@ -40,7 +40,8 @@ The client is **nefan-html**: a first-person WebGL renderer (three.js) in the br
 |-------|---------|-------|
 | **Claude (MCP bridge)** | Open-world scene generation, narrative reactions (dialogue → consequences → dynamic spawns), weapon orientation via vision | `narrative-mcp` + `ai_server/llm_client.py` |
 | **SD 1.5 + LCM-LoRA + TAESD** | Seamless PBR textures (albedo + normal), ~1s | `texture_generator.py` |
-| **SD 1.5 img2img (+ControlNet)** | Character skins and sprite sheets | `controlnet_skin.py` |
+| **SD 1.5 img2img** | Character skin variants over the base UV atlas | `skin_generator.py` |
+| **sprite-forge** (separate service, `:8770`) | Character sprite sheets: base render (three.js in headless Chrome, free and deterministic) + AI repaint | [`sprite-forge`](https://github.com/alberto-hortelano/sprite-forge); adapter in `ai_server/routers/remote_generation.py` |
 | **Meshy / TripoSG** | GLB models from prompts | `model_generator.py` |
 | **Meshy image models + SAM (fal.ai)** | 2D scene backgrounds + occluder segmentation | `scene_image_generator.py` |
 
@@ -71,9 +72,8 @@ ne-fan/
 ├── nefan-html/        # First-person client (three.js/WebGL) — display, input, HUD
 ├── ai_server/         # FastAPI: textures, models, skins, scene gen (:8765)
 ├── narrative-mcp/     # MCP bridge: Claude ↔ ai_server (:3737)
-├── tools/             # Build tooling (Mixamo sprite-sheet renderer)
 ├── qa/                # Executable QA scripts that drive the real game
-├── labs/              # Experiment benches (skinning, style, render, fps, narrative)
+├── labs/              # Experiment benches (style, fps, authoring, narrative)
 └── docs/              # Design documents (Spanish)
 ```
 
