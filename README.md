@@ -23,8 +23,8 @@ The client is **nefan-html**: a first-person WebGL renderer (three.js) in the br
                    │ HTTP
 ┌──────────────────┴────────────────────────────────────────────────┐
 │                    ai_server (FastAPI :8765)                       │
-│  SD 1.5 + LCM-LoRA + TAESD (PBR textures) · img2img (skins)        │
-│  Meshy/TripoSG (GLB models) · scene image gen (img2img/outpaint)   │
+│  Surface atlas for the fps view (remote APIs) · style packs        │
+│  Character sheets delegated to sprite-forge (:8770, own repo)      │
 │  Claude vía narrative-mcp (:3737) — scene generation & reactions   │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -32,7 +32,7 @@ The client is **nefan-html**: a first-person WebGL renderer (three.js) in the br
 - **Game logic lives in `nefan-core`** (TypeScript, zero rendering dependencies); the client only paints, which keeps the renderer swappable. Combat resolution is authoritative from the bridge; the game still runs without it (local fallback).
 - **NarrativeState is the canonical save** — the whole playthrough (world, player, entities, dialogue history, world map, active plugins) lives in one versioned, multi-slot JSON.
 - **Declarative plugins** — complete game systems (commerce, reputation…) as pure JSON manifests executed by an interpreter: state slice, event reducers with a small DSL, derived views for the LLM, and deterministic fixtures validated before activation. The narrative engine drives them with `plugin_event` consequences and can even register new plugins at runtime.
-- **Asset library indexed by hash** — everything generated is tracked in a manifest (with LRU pruning); the narrative engine reuses cached assets by hash instead of regenerating.
+- **Asset library indexed by hash** — everything generated is tracked in a manifest (with LRU pruning). The narrative engine can reuse cached *surfaces* by hash; the texture/model reuse path was retired with the gpu-worker in #199.
 
 ## Generative Models
 

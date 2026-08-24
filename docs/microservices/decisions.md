@@ -24,9 +24,10 @@
    clientes; se reevalúa si aparecen timeouts reales.
 7. **Simulación y SceneGenQueue NO son servicios** (in-process en el
    gateway). Hot loop y prioridades dependientes de la posición del jugador.
-8. **Puertos objetivo**: 8766 gpu-worker, 8767 asset-store, 8768 remote-gen
-   (bloque contiguo al 8765). Registrados en `contracts/common.ts` (SERVICES)
-   y, cuando se extraigan, en `config.ts`/`runtime_config.json`.
+8. **Puertos objetivo**: ~~8766 gpu-worker~~ (**libre desde #199**: el worker
+   se retiró), 8767 asset-store, 8768 remote-gen (bloque contiguo al 8765);
+   8770 sprite-forge, que vive en su propio repo. Registrados en
+   `contracts/common.ts` (SERVICES) y en `config.ts`/`runtime_config.json`.
 9. **Orden de extracción: S6 → S4 → S5 → (F5) → S2 opcional.** El asset-store
    primero porque el manifest compartido bloquea el resto.
 10. **node:sqlite (`DatabaseSync`) para el índice del asset-store** (F2):
@@ -44,12 +45,12 @@
     hecho vía `POST /assets`; hash de oro fijado en
     `ai_server/tests/test_asset_cache.py`.
 
-13. **El peel "flux" llama a fal DIRECTO desde el gpu-worker** (F3), no vía
-    remote-gen: el fallback flux→lama re-deriva la clave de caché en local
-    (lógica entrelazada con el cache) y peel se extrajo antes de que
-    remote-gen exista. FAL_KEY es opcional en el gpu-worker (sin ella degrada
-    a LaMa). Deuda de frontera consciente ("remote-gen = dinero") — revisable
-    si remote-gen gana un endpoint de fill.
+13. ~~**El peel "flux" llama a fal DIRECTO desde el gpu-worker**~~ (F3;
+    **sin sujeto**: LaMa desapareció del código antes de #199 y el peel se
+    fue con el worker — solo sobrevive como etiqueta en un dato de
+    `test_spend_tracker.py:32`). Era deuda de frontera consciente
+    ("remote-gen = dinero"): el fallback flux→lama re-derivaba la clave de
+    caché en local y peel se extrajo antes de que remote-gen existiera.
 14. ~~**`gpu_lock` se queda DENTRO del gpu-worker**~~ (F3; **sin sujeto desde
     #199**: el worker se retiró y el lock se fue con él). Era lock de
     coherencia además de CUDA (Skin/Sprite/ModelGenerator mutan el pipe SD

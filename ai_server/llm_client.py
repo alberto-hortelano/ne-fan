@@ -259,7 +259,13 @@ class LLMClient:
         cortas admitidas ("banco de piedra" es una entrada válida), dedupe por
         prompt (las celdas de superficie se repiten por estilo) e intercalado
         round-robin por tipo — una muestra VARIADA, no el tipo más reciente
-        monopolizando la ventana."""
+        monopolizando la ventana.
+
+        El round-robin está INACTIVO desde #199: con el gpu-worker se fueron
+        `texture`/`model`/`sprite` y `REUSABLE_ASSET_TYPES` quedó en un solo
+        tipo, `surface`. El código se conserva porque su sujeto puede volver
+        —un segundo tipo reutilizable lo reactiva sin tocar nada—, no por
+        nostalgia: si pasa otro año sin un segundo tipo, bórralo."""
         if self.asset_manifest is not None:
             try:
                 assets = self.asset_manifest.list_assets(

@@ -61,10 +61,10 @@ Sin argumentos, presenta un menú con presets que respetan dependencias entre se
 
 | Preset | Slug | Servicios | Cuándo |
 |--------|------|-----------|--------|
-| 1 · Play | `play` | asset-store + gpu-worker + remote-gen + bridge + narrative-mcp + ai_server + pausa Claude Code + cliente | Sesión narrativa completa — GASTA créditos con Imagen IA |
-| 2 · Cliente web (dev) | `cliente-web` | bridge + asset-store + remote-gen + cliente | Iterar UI y renderer sin motor narrativo — solo gasta si activas Imagen IA en el juego |
+| 1 · Play | `play` | asset-store + remote-gen + sprite-forge + bridge + narrative-mcp + ai_server + pausa Claude Code + cliente | Sesión narrativa completa — GASTA créditos con Imagen IA |
+| 2 · Cliente web (dev) | `cliente-web` | bridge + asset-store + remote-gen + sprite-forge + cliente | Iterar UI y renderer sin motor narrativo — solo gasta si activas Imagen IA en el juego |
 | 3 · E2E sin créditos | `e2e-sin-creditos` | fake-ai-server (:18765) + bridge (`NEFAN_AI_SERVER`) + cliente | Bench E2E todo mockeado, 0 créditos; imprime la URL con `?ai=`. Es el que levanta `qa/run.mjs` |
-| 4 · Story web sin imágenes | `story-web-sin-imagenes` | como Play sin gpu-worker ni remote-gen | Jugar la narrativa con los servicios de imagen APAGADOS — imposible gastar en imágenes |
+| 4 · Story web sin imágenes | `story-web-sin-imagenes` | como Play sin remote-gen ni sprite-forge | Jugar la narrativa con los servicios de imagen APAGADOS — imposible gastar en imágenes |
 | 5 · Playtest motor (bench) | `playtest-motor` | bridge + ai_server + asset-store, SIN placeholder de narrative-mcp; pausa ANTES de ai_server | Flujo de `labs/narrative/`: el terminal del motor posee :3737; conducir con `game-emulator.mjs` (:9899) |
 | 6 · Replay web (película) | `replay-web` | replay-server (suplanta al bridge :9877; `LOG=runs/…/events.ndjson`) + cliente | Reproducir una sesión grabada: renderer determinista sin motor ni ai_server |
 | 7 · HTML fixtures | `html-fixtures` | solo el cliente | Iterar renderer/UI con las fixtures del selector Room, cero backend |

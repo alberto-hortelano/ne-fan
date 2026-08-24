@@ -1,5 +1,5 @@
 """Snapshot de configuración compartido por los procesos Python del stack
-(narrative-llm :8765, gpu-worker :8766, remote-gen :8768): carga del `.env`
+(narrative-llm :8765, remote-gen :8768, asset-store :8767): carga del `.env`
 del repo y lectura del runtime_config.json que genera
 `nefan-core/scripts/dump-config.ts` (fuente única: nefan-core/src/config.ts).
 """
