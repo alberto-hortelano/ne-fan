@@ -42,8 +42,6 @@ export const EntitySchema = z
     glyph: z.string().length(1),
     shape: z.enum(["box", "cylinder", "sphere", "cone"]).optional(),
     h: z.number().positive().optional(),
-    texture_hash: z.string().optional(),
-    model_hash: z.string().optional(),
     attach: z.literal("wall").optional(),
     // ── NPCs: con qué se viste y cómo se comporta ────────────────────────
     // `role` NO es el oficio: es el preset de conducta que el sim implementa

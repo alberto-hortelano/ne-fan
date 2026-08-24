@@ -110,8 +110,8 @@ Cómo lo hace:
 - Los broadcasts (`narrative_status`/`narrative_event`/`state_update`) se reemiten en orden grabado
   con ritmo de película. El input por frame / `dialogue_choice` / etc. del cliente se ignoran: avanza sola.
 
-No necesita ai_server: las entidades traen `texture_hash` (no `sprite_hash`), así que el renderer 2D
-dibuja cajas + etiquetas + terreno + diálogo sin backend.
+No necesita ai_server: los eventos grabados se reemiten TAL CUAL (la escena viaja ya normalizada en
+el log), así que no hay nada que generar y el renderer pinta terreno, volúmenes y diálogo sin backend.
 
 ```bash
 # 1) Asegúrate de que el bridge REAL no ocupa :9877 (lo suplantamos).

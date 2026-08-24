@@ -6,27 +6,27 @@ Los tres procesos Python, qué modelo hace qué, las hojas de sprites de persona
 > Es la misma documentación, movida. Si algo de aquí es verificable mecánicamente,
 > su sitio es `nefan-core/data/contract/arch-rules.json`, no la prosa.
 
-## Stack Python de IA — Endpoints (3 procesos desde F3/F4)
+## Stack Python de IA — Endpoints (2 procesos)
 
-`ai_server/main.py` (narrative-llm :8765), `ai_server/gpu_worker_main.py`
-(:8766) y `ai_server/remote_gen_main.py` (:8768) comparten paquete y `.venv`.
-:8765 proxya los endpoints GPU y `/cache|/assets` para los clientes no
-migrados; el cliente web resuelve cada servicio con `serviceUrl()`. Contratos
-en `nefan-core/src/contracts/`.
+`ai_server/main.py` (narrative-llm :8765) y `ai_server/remote_gen_main.py`
+(:8768) comparten paquete y `.venv`. :8765 proxya `/cache|/assets` para los
+clientes no migrados; el cliente web resuelve cada servicio con
+`serviceUrl()`. Contratos en `nefan-core/src/contracts/`.
+
+El **gpu-worker** (:8766) y sus cuatro endpoints de generación local con GPU
+se retiraron enteros en #199: llevaban desde julio sin un solo consumidor
+vivo. Lo que hoy pinta el mundo son las superficies de remote-gen y las hojas
+de personaje de sprite-forge.
 
 | Endpoint | Proceso | Que hace |
 |----------|---------|----------|
-| `/health` | los 3 | Estado del proceso (el del gpu-worker incluye `model_backend`) |
-| `/backend_status` | :8765 | Estado de meshy_3d (vía /health del gpu-worker) + ai_vision (panel del title screen) |
+| `/health` | los 2 | Estado del proceso |
+| `/backend_status` | :8765 | Estado de `ai_vision`. NOTA: hoy no tiene ningún cliente en `nefan-html/src` — candidato a retirada |
 | `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
 | `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
 | `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |
 | `/notify_session` | :8765 | El bridge informa de inicio/reanudación de sesión narrativa (`AiClient`) |
 | `/report_player_choice` | :8765 | El bridge reporta la elección de diálogo → Claude devuelve consequences |
-| `/generate_texture` | :8766 | Textura PBR seamless (albedo+normal), ~1s |
-| `/generate_model` | :8766 | Modelo GLB desde prompt (Meshy o TripoSG) |
-| `/generate_skin` | :8766 | Skin de personaje (PNG, ~10s) |
-| `/generate_sprite` | :8766 | Sprite RGBA 2D desde prompt |
 | `/generate_surface_atlas` | :8768 | Atlas de superficies de la vista fps: una celda = un asset reusable |
 | `/skin_sprite_sheet` | :8768 | **Adaptador** de sprite-forge (:8770, repo aparte): viste una anim de un personaje y guarda lo generado en `cache/sprite_sheets/` |
 | `/sprite_catalog` | :8768 | Proxy del `/catalog` de sprite-forge: modelos, animaciones, ángulos y `calls_per_anim` (el coste que se enseña ANTES de gastar) |
@@ -34,18 +34,17 @@ en `nefan-core/src/contracts/`.
 | `/styles/{id}/complete` | :8768 | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
 | `/dev/api_cache` | :8768 | Toggle del modo dev de APIs de pago (visible para los 3 procesos) |
 | `/assets`, `/assets/by_hash/{hash}` | :8767 | Índice de assets del manifest (asset-store; :8765 proxya) |
-| `/cache/{type}/{hash}` | :8767 | Servir asset cacheado (albedo/normal/roughness/model/skin/sprite; :8765 proxya) |
+| `/cache/{type}/{hash}` | :8767 | Servir asset cacheado (`surface`/`sprite_sheet` vivos; `texture`/`model`/`skin`/`sprite` ya sin productor, se sirven los históricos; :8765 proxya) |
 
 ## Modelos de IA y que hacen
 
 | Modelo | Uso | Donde |
 |--------|-----|-------|
 | **Claude Sonnet 4.5** | Genera escenas open-world, reacciona a las elecciones del jugador esculpiendo el mundo (spawn dinámico de edificios/NPCs/objetos), orienta armas vía visión | llm_client.py via MCP bridge o API |
-| **SD 1.5** + LCM-LoRA + TAESD | Texturas PBR seamless tiling (4 pasos, fp16) | texture_generator.py |
-| **SD 1.5** | Imagenes referencia para modelos 3D | model_generator.py |
-| **rembg** (u2net) | Quitar fondo de referencias de modelo | model_generator.py |
 
-VRAM: ~3 GB pico (fp16). Todo secuencial con GPU lock (sin concurrencia CUDA).
+Ya no queda generación local con GPU: se fue entera con el gpu-worker (#199),
+y con ella torch/diffusers y sus ~5 GB de `.venv`. Todo lo generativo de
+imagen es remoto (remote-gen) o del servicio de sprites (sprite-forge).
 
 ## sprite-forge — hojas de sprites de personaje (servicio aparte)
 

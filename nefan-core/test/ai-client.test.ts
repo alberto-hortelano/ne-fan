@@ -117,24 +117,6 @@ describe("AiClient", () => {
     assert.deepEqual(r.consequences, []);
   });
 
-  it("generateSprite2D defaults to top_down angle", async () => {
-    let body: unknown = null;
-    const client = new AiClient({
-      baseUrl: "http://test",
-      fetchImpl: mockFetch((_url, init) => {
-        body = init.body ? JSON.parse(String(init.body)) : null;
-        return new Response(
-          JSON.stringify({ hash: "abc", cached: false, sprite_url: "/cache/sprite/abc" }),
-          { status: 200 },
-        );
-      }),
-    });
-    const r = await client.generateSprite2D({ prompt: "a barrel" });
-    assert.equal(r.ok, true);
-    assert.equal(r.hash, "abc");
-    assert.equal((body as { angle: string }).angle, "top_down");
-  });
-
   it("generateScene returns scene on 200", async () => {
     const client = new AiClient({
       baseUrl: "http://test",

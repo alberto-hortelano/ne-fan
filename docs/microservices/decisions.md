@@ -50,7 +50,8 @@
     remote-gen exista. FAL_KEY es opcional en el gpu-worker (sin ella degrada
     a LaMa). Deuda de frontera consciente ("remote-gen = dinero") — revisable
     si remote-gen gana un endpoint de fill.
-14. **`gpu_lock` se queda DENTRO del gpu-worker** (F3): es lock de
+14. ~~**`gpu_lock` se queda DENTRO del gpu-worker**~~ (F3; **sin sujeto desde
+    #199**: el worker se retiró y el lock se fue con él). Era lock de
     coherencia además de CUDA (Skin/Sprite/ModelGenerator mutan el pipe SD
     compartido — padding, LoRA, device — y restauran; FastAPI async
     intercala). Lo extraído es no compartirlo con los endpoints narrativos.

@@ -24,7 +24,7 @@ function makeFormatD(): Record<string, unknown> {
       "gggggggggg",
     ],
     entities: [
-      { id: "tavern", kind: "building", name: "Taberna", cell: [2, 1], footprint: [4, 2], glyph: "H", texture_hash: "abc" },
+      { id: "tavern", kind: "building", name: "Taberna", cell: [2, 1], footprint: [4, 2], glyph: "H" },
       { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 2], footprint: [1, 1], glyph: "n" },
       { id: "player", kind: "player", name: "Tú", cell: [5, 5], footprint: [1, 1], glyph: "@" },
     ],
@@ -85,7 +85,6 @@ describe("formatDToWorld", () => {
     assert.deepEqual(tavern.scale, [8, 2.5, 4]);
     assert.equal(tavern.category, "building");
     assert.equal(tavern.description, "Taberna");
-    assert.equal(tavern.texture_hash, "abc");
   });
 
   it("extracts npcs and the player start", () => {
@@ -197,24 +196,6 @@ describe("formatDToWorld", () => {
     // Un biome no-cadena se descarta: la expansión se queda sin base y falla
     // fuerte en vez de pintar un tile mudo.
     assert.throws(() => formatDToWorld(tile(42)), /biome/i);
-  });
-
-  it("conserva los hashes declarados y OMITE la clave cuando faltan", () => {
-    const conHashes = makeFormatD();
-    (conHashes.entities as Record<string, unknown>[])[0].model_hash = "m123";
-    const obj = objectsOf(formatDToWorld(conHashes))[0];
-    assert.equal(obj.texture_hash, "abc");
-    assert.equal(obj.model_hash, "m123");
-
-    // Sin hash la clave NO puede existir con valor vacío: el consumidor decide
-    // por PRESENCIA de la clave, no por verdad — una clave presente y nula
-    // haría que el objeto pareciera tener asset cacheado y se quedara sin
-    // material.
-    const sinHash = makeFormatD();
-    delete (sinHash.entities as Record<string, unknown>[])[0].texture_hash;
-    const desnudo = objectsOf(formatDToWorld(sinHash))[0];
-    assert.ok(!("texture_hash" in desnudo), `texture_hash no debería existir: ${JSON.stringify(desnudo)}`);
-    assert.ok(!("model_hash" in desnudo), `model_hash no debería existir: ${JSON.stringify(desnudo)}`);
   });
 
   it("throws on an invalid kind", () => {

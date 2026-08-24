@@ -41,7 +41,7 @@ export interface ErrorResponse {
   error: string;
 }
 
-/** Error de los servicios FastAPI (narrative-llm, gpu-worker, remote-gen,
+/** Error de los servicios FastAPI (narrative-llm, remote-gen,
  *  asset-store mientras vivan en Python): HTTPException → `{detail}`. Los
  *  422 de validación llevan el detail estructurado de Pydantic. */
 export interface FastApiErrorResponse {

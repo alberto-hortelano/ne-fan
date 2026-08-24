@@ -15,10 +15,9 @@ describe("registro de servicios ↔ config", () => {
     assert.equal(SERVICES["narrative-llm"].currentPort, CONFIG.ai_server.port);
     // Extraídos: puerto propio, atado a su entrada de CONFIG.ports.
     assert.equal(SERVICES["asset-store"].currentPort, CONFIG.ports.asset_store);
-    assert.equal(SERVICES["gpu-worker"].currentPort, CONFIG.ports.gpu_worker);
     assert.equal(SERVICES["remote-gen"].currentPort, CONFIG.ports.remote_gen);
     // Los servicios aún no extraídos co-viven en ai_server: mismo puerto.
-    for (const name of ["gpu-worker", "asset-store", "remote-gen"] as const) {
+    for (const name of ["asset-store", "remote-gen"] as const) {
       if (SERVICES[name].extractionPhase !== undefined) {
         assert.equal(SERVICES[name].currentPort, CONFIG.ai_server.port,
           `${name} sin extraer debe escuchar donde ai_server`);
@@ -40,7 +39,7 @@ describe("resolveServiceUrl", () => {
     // Un env con otros overrides no afecta a este servicio (asset-store ya
     // extraído en F2 → su puerto propio).
     assert.equal(
-      resolveServiceUrl("asset-store", { NEFAN_URL_GPU_WORKER: "http://x:1" }),
+      resolveServiceUrl("asset-store", { NEFAN_URL_REMOTE_GEN: "http://x:1" }),
       "http://127.0.0.1:8767",
     );
   });

@@ -96,12 +96,6 @@
                 "style_ref": {
                   "type": "string"
                 },
-                "texture_hash": {
-                  "type": "string"
-                },
-                "model_hash": {
-                  "type": "string"
-                },
                 "character_type": {
                   "type": "string"
                 }

@@ -39,7 +39,6 @@ from asset_store_client import AssetStoreClient
 from deps import deps
 from routers.asset_proxy import router as asset_proxy_router
 from routers.generation import router as generation_router
-from routers.gpu_proxy import router as gpu_proxy_router
 from routers.narrative import router as narrative_router
 
 logger = logging.getLogger("ai_server")
@@ -66,10 +65,9 @@ async def lifespan(app: FastAPI):
         asset_manifest=deps.asset_manifest,
     )
 
-    # F3/F4: los pipelines GPU viven en el gpu-worker (:8766) y los de APIs
-    # de pago en remote-gen (:8768). Este proceso solo conserva lo narrativo
-    # y la visión, y proxya los endpoints GPU para los clientes no migrados
-    # (gpu_proxy).
+    # F4: los pipelines de APIs de pago viven en remote-gen (:8768). Este
+    # proceso solo conserva lo narrativo y la visión — la generación local
+    # con GPU se retiró entera con el gpu-worker (#199).
     #
     # Packs de estilo por juego: /develop_world los LISTA para el motor
     # narrativo (narrative.py). Lector FS sin claves — coexiste con la
@@ -104,9 +102,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)
 
-# Allow the HTML 2D client (vite dev server on :3000) to call /generate_sprite
-# and /cache/sprite/{hash} from the browser. Without this, every fetch fails
-# the CORS preflight (OPTIONS) and the renderer never gets a sprite.
+# Allow the HTML client (vite dev server on :3000) to call this server from
+# the browser. Without this, every fetch fails the CORS preflight (OPTIONS).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -115,12 +112,10 @@ app.add_middleware(
 )
 
 # Routers por dominio (importan `deps` directamente, sin ciclos con main).
-# asset_proxy reenvía /cache|/assets al asset-store (:8767) y gpu_proxy los
-# endpoints GPU al gpu-worker (:8766) para clientes no migrados.
+# asset_proxy reenvía /cache|/assets al asset-store (:8767).
 # El repintado, /styles y el toggle /dev/api_cache viven en remote-gen
 # (:8768) — sin proxy: sus únicos clientes (HTML) resuelven por serviceUrl.
 app.include_router(asset_proxy_router)
-app.include_router(gpu_proxy_router)
 app.include_router(generation_router)
 app.include_router(narrative_router)
 
@@ -132,10 +127,6 @@ async def health():
     return {
         "status": "ready" if deps.llm_client else "loading",
         "mode": "narrative",
-        # Transitorio F3: el pipeline de texturas vive en el gpu-worker; el
-        # campo se conserva constante para no romper el shape.
-        # NO consultar aquí al gpu-worker — /health se pollea mucho.
-        "texture_pipeline": "lazy",
         "cache_total_bytes": cache_total,
         "cache_max_bytes": cache_max,
         "cache_over_limit": bool(cache_max and cache_total > cache_max),

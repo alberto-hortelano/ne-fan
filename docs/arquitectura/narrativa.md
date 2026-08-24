@@ -16,7 +16,7 @@ Cómo viaja una escena desde Claude hasta el cliente, y cómo una elección de d
 3. Claude Code (en otra terminal) llama `narrative_listen()` → recibe el world_state
 4. Claude genera la escena JSON completa, opcionalmente referenciando assets cacheados por hash → llama `narrative_respond(scene_json)`
 5. ai_server la devuelve al bridge, que la registra en su NarrativeState (Format D crudo), la **normaliza con `formatDToWorld`** y la difunde como `narrative_event` (effect `spawn_entity` con `data.scene` = world scene; el resume normaliza igual vía `sessionDataForClient`)
-6. El cliente la recibe por `NarrativeClient` y la monta con `FpsRenderer` (que respeta `texture_hash`/`model_hash` para reuso); el player spawnea en `__player_start`
+6. El cliente la recibe por `NarrativeClient` y la monta con `FpsRenderer`; el player spawnea en `__player_start`
 
 **Identidad de mundo en el contexto**: `world.description` (el brief) viaja en CADA turno vía `serializeForLlm`; el `world.md` completo solo en el bootstrap (`world_document`) y bajo demanda con la tool MCP `world_doc_get` (→ `GET /world_doc` del State API). Los SISTEMAS DE UI del cliente (diálogo, viaje/salidas, spawns, HUD de combate, modo gráfico, plugins, triggers de mapa) están documentados para el motor en `data/contract/prompts/ui_systems.md`, servido con la tool MCP `ui_doc_get` (→ `GET /ui_doc`: doc + `ui_state` con la configuración ACTIVA de la sesión). Las restricciones de motor (cámara en PRIMERA PERSONA a la altura de los ojos, SOLO personajes humanoides, sin beats, `style_ref` por escena desde `world.style_refs`) viven en `WORLD_RULES` (narrative-mcp/server.ts) con espejo en `narrative_schemas.py`.
 

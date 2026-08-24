@@ -33,8 +33,6 @@ type FormatDEntity = {
   /** Altura en METROS (no en celdas — el footprint sí va en celdas). Opcional;
    *  sin ella se aplica el default por kind (KIND_DEFAULT_HEIGHT). */
   h?: number;
-  texture_hash?: string;
-  model_hash?: string;
   /** NPCs. Los tres campos con los que el motor viste y anima al personaje:
    *  `role` es el preset de conducta (NPC_ROLES; el oficio va en el nombre y
    *  en la descripción), `description` el prompt del skin IA y `style_ref` la
@@ -219,8 +217,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // Forma: explícita si es válida; si no, los árboles son redondos por defecto.
     if (ent.shape && VALID_SHAPES.has(ent.shape)) obj.shape = ent.shape;
     else if (ent.kind === "tree") obj.shape = "cylinder";
-    if (ent.texture_hash) obj.texture_hash = ent.texture_hash;
-    if (ent.model_hash) obj.model_hash = ent.model_hash;
     objects.push(obj);
   }
 

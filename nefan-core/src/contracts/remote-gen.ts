@@ -201,7 +201,7 @@ export interface DevSpendCall {
   usd: number;
   /** Qué se generó (prompt recortado, categoría de style pack…). */
   what: string;
-  /** Proceso que lanzó la llamada ("remote-gen", "gpu-worker"…). */
+  /** Proceso que lanzó la llamada ("remote-gen", "narrative-llm"…). */
   service: string;
 }
 

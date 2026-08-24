@@ -30,12 +30,6 @@ export interface NefanConfig {
      *  OFF by default: cada anim son varias llamadas Meshy (créditos reales);
      *  con false todos los personajes usan la base y_bot. */
     ai_skin: boolean;
-    /** AI 2D sprites for entities via /generate_sprite (asset-cache). */
-    ai_sprites: boolean;
-    /** AI PBR textures for objects via /generate_texture. */
-    ai_textures: boolean;
-    /** AI GLB models for objects/buildings via /generate_model. */
-    ai_models: boolean;
     /** PROHIBIDO — no reintroducir nunca un modo de recorte por siluetas
      *  DECLARADAS (el extinto `image_analysis: "masks"`): rasterizar el plan
      *  del motor como máscara sobre la imagen pintada se probó y NO funciona
@@ -71,6 +65,12 @@ export interface NefanConfig {
     llm_timeout_s: number;
     port: number;
     cache_root: string;
+    /** Caches HISTÓRICOS de lo que generaba el gpu-worker, retirado en #199:
+     *  texturas PBR, modelos GLB, skins y sprites 2D. Ya NO tienen productor,
+     *  pero services/asset-store/config.ts mapea esos cuatro kinds a estos
+     *  directorios y el manifest conserva sus filas: sin la ruta, los blobs
+     *  ya generados dejarían de servirse. Mismo caso que scene_cache_dir y
+     *  segment_cache_dir, aquí debajo. */
     texture_cache_dir: string;
     model_cache_dir: string;
     skin_cache_dir: string;
@@ -87,8 +87,6 @@ export interface NefanConfig {
     /** Librería de celdas de superficie de la vista fps (kind "surface"),
      *  servida en /cache/surface/{hash}. */
     surface_cache_dir: string;
-    texture_resolution: number;
-    texture_steps: number;
     /** Modelo image-to-image con el que sprite-forge viste a los personajes
      *  (hero-shot de identidad + atlas de keyframes por anim×dir). */
     sprite_skin_model: string;
@@ -106,7 +104,6 @@ export interface NefanConfig {
     /** Tasa fija USD→EUR para el contador de gasto del panel de dev (los
      *  precios de Meshy/fal son USD; el cliente muestra euros). */
     usd_eur_rate: number;
-    texture_lazy_load: boolean;
     /** Techo del cache de assets en bytes. Al arrancar (y vía POST
      *  /cache/prune) se evictan los assets menos usados (LRU por `last_used`
      *  del manifest) hasta bajar del límite. 0 = sin límite. */
@@ -132,8 +129,6 @@ export interface NefanConfig {
     html: number;
     /** asset-store (S6): blobs content-addressed + manifest SQLite (F2). */
     asset_store: number;
-    /** gpu-worker (S4): pipelines GPU locales — SD/TripoSG/LaMa (F3). */
-    gpu_worker: number;
     /** remote-gen (S5): adaptador Meshy/fal — repintados, sheets, SAM2 (F4). */
     remote_gen: number;
   };
@@ -155,9 +150,6 @@ export const CONFIG: NefanConfig = {
     // faceta personajes (world.character_mode, toggle del menú dev). Sin
     // MESHY_API_KEY el endpoint responde 503 y el cliente degrada a y_bot.
     ai_skin: true,
-    ai_sprites: false,
-    ai_textures: false,
-    ai_models: false,
   },
   narrative: {
     require_llm: true,
@@ -180,8 +172,6 @@ export const CONFIG: NefanConfig = {
     scene_cache_dir: "cache/scenes",
     segment_cache_dir: "cache/segments",
     surface_cache_dir: "cache/surfaces",
-    texture_resolution: 512,
-    texture_steps: 4,
     sprite_skin_model: "gpt-image-2",
     sprite_forge_url: "http://127.0.0.1:8770",
     // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
@@ -191,7 +181,6 @@ export const CONFIG: NefanConfig = {
     surface_hero_model: "gpt-image-2",
 
     usd_eur_rate: 0.86,
-    texture_lazy_load: true,
     cache_max_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB
     manifest_db: "cache/manifest.sqlite3",
   },
@@ -201,7 +190,6 @@ export const CONFIG: NefanConfig = {
     narrative_ws: 3737,
     html: 3000,
     asset_store: SERVICES["asset-store"].currentPort,
-    gpu_worker: SERVICES["gpu-worker"].currentPort,
     remote_gen: SERVICES["remote-gen"].currentPort,
   },
   content: {

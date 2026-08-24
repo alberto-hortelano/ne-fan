@@ -11,7 +11,6 @@ export type ServiceName =
   | "game-gateway"
   | "world-state"
   | "narrative-llm"
-  | "gpu-worker"
   | "remote-gen"
   | "asset-store";
 
@@ -51,16 +50,6 @@ export const SERVICES = {
     description:
       "Narrativa con LLM: generate_scene, choices, develop_world, reviews con visión. narrative-mcp (:3737) es su sidecar.",
   },
-  "gpu-worker": {
-    protocol: "http",
-    port: 8766,
-    // Extraído en F3: proceso propio (ai_server/gpu_worker_main.py).
-    // narrative-llm mantiene un proxy transparente de los endpoints GPU en
-    // :8765 para clientes no migrados.
-    currentPort: 8766,
-    description:
-      "Generación local con GPU: texturas SD1.5, skins, sprites, modelos, inpainting LaMa. 1 proceso = 1 GPU.",
-  },
   "asset-store": {
     protocol: "http",
     port: 8767,
@@ -82,7 +71,7 @@ export const SERVICES = {
   },
 } as const satisfies Record<ServiceName, ServiceSpec>;
 
-/** URL base de un servicio. Orden: override por env (`NEFAN_URL_GPU_WORKER`,
+/** URL base de un servicio. Orden: override por env (`NEFAN_URL_REMOTE_GEN`,
  *  `NEFAN_URL_ASSET_STORE`…) → loopback con el puerto ACTUAL. `env` se inyecta
  *  (process.env en Node, un env sintético desde query params en el navegador)
  *  para que el módulo siga siendo puro. */

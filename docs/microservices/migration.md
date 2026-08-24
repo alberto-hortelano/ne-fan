@@ -77,7 +77,11 @@ seguridad inter-proceso). Test de escrituras concurrentes en
 corrupción — imposible hoy); clientes funcionando vía proxy; bench del coste
 de registro vs el rewrite de 5,8 MB actual; `start.sh` con el servicio nuevo.
 
-## F3 — Extraer gpu-worker (:8766) ✅ (2026-08-05)
+## F3 — Extraer gpu-worker (:8766) ✅ (2026-08-05) · **REVERTIDA POR RETIRADA (#199, 2026-08-24)**
+
+> El gpu-worker ya NO existe: se retiró entero al comprobar que sus cuatro
+> endpoints llevaban desde julio sin un solo consumidor vivo. Lo que sigue es
+> el REGISTRO HISTÓRICO de la extracción, no el estado actual del sistema.
 
 Ejecutada: proceso propio `ai_server/gpu_worker_main.py` (mismo paquete
 Python, entrypoint nuevo; los 6 endpoints viven en

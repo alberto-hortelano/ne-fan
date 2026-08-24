@@ -240,12 +240,15 @@ class LLMClient:
         }
         print(f"LLM: active session set to {session_id} (game={game_id}, resume={is_resume})")
 
-    #: Tipos que el motor puede REUSAR (texture_hash/model_hash en entities,
-    #: superficies de la vista fps). scene/plate quedan FUERA: sus prompts son
-    #: instrucciones de repintado/inpaint ("The object being removed is…") y
-    #: con la DB real monopolizaban las 30 entradas — el motor no veía ni una
-    #: textura (hallazgo medido 2026-08-14).
-    REUSABLE_ASSET_TYPES = "texture,model,sprite,surface"
+    #: Tipos que el motor puede REUSAR: solo las superficies de la vista fps,
+    #: y por DESCRIPCIÓN verbatim (cache-hit por prompt), no por hash. Los
+    #: kinds texture/model/sprite salieron con el gpu-worker (#199): eran los
+    #: únicos que producía, así que sin él la ventana se llenaba de entradas
+    #: que ningún proceso podía volver a generar. scene/plate quedan FUERA:
+    #: sus prompts son instrucciones de repintado/inpaint ("The object being
+    #: removed is…") y con la DB real monopolizaban las 30 entradas — el motor
+    #: no veía ni una superficie (hallazgo medido 2026-08-14).
+    REUSABLE_ASSET_TYPES = "surface"
 
     def _inject_available_assets(self, payload: dict, limit: int = 30) -> dict:
         """Add `available_assets` and active session info to a request payload

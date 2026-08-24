@@ -2,9 +2,9 @@
 
 Endpoints movidos TAL CUAL desde main.py (el estado runtime viene de `deps`).
 Incluye /backend_status y /analyze_weapon porque comparten el mismo dominio
-(estado y visión de los backends generativos). Los pipelines GPU locales
-viven en routers/gpu_generation.py (F3) y los de APIs de pago (repintado,
-sprite sheets skinneados) en routers/remote_generation.py (F4).
+(estado y visión de los backends generativos). Los pipelines de APIs de pago
+(repintado, sprite sheets skinneados) viven en routers/remote_generation.py
+(F4); la generación local con GPU se retiró entera con el gpu-worker (#199).
 """
 
 import logging
@@ -77,30 +77,6 @@ async def backend_status_endpoint():
     """Report the state of optional backends."""
     import asyncio
 
-    from routers.gpu_proxy import GPU_WORKER_URL, fetch_gpu_worker_health
-
-    # Meshy 3D vive en el gpu-worker desde F3: agregación best-effort de su
-    # /health (timeout 2 s). El shape de la respuesta no cambia.
-    worker = await fetch_gpu_worker_health()
-    backend = worker.get("model_backend") if worker else None
-    if backend == "meshy":
-        meshy_status = {"state": "ready", "message": "API key configurada"}
-    elif backend == "triposg":
-        meshy_status = {
-            "state": "fallback",
-            "message": "Meshy no configurado (usando TripoSG local)",
-        }
-    elif backend == "none":
-        meshy_status = {
-            "state": "down",
-            "message": "no disponible (define MESHY_API_KEY en .env)",
-        }
-    else:
-        meshy_status = {
-            "state": "down",
-            "message": f"gpu-worker no disponible ({GPU_WORKER_URL})",
-        }
-
     # AI Vision (MCP bridge listener preferred, direct API as fallback)
     if not deps.llm_client:
         vision_status = {"state": "down", "message": "LLM client no disponible"}
@@ -127,7 +103,6 @@ async def backend_status_endpoint():
             vision_status = api_or_down("no hay Claude Code escuchando narrative_listen")
 
     return {
-        "meshy_3d": meshy_status,
         "ai_vision": vision_status,
     }
 
