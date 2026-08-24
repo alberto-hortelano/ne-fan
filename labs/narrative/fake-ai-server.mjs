@@ -609,6 +609,28 @@ const server = http.createServer((req, res) => {
         }
         return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
       }
+      if (req.method === "GET" && req.url === "/sprite_catalog") {
+        // El catálogo del servicio de sprites, tal como lo reexpone remote-gen.
+        // Sin esta ruta el cliente caería a su cota baja de coste y el bench
+        // estaría probando el camino de respaldo para siempre en vez del bueno.
+        // Los perfiles son los del set que usa el juego: idle 8 keyframes (8
+        // llamadas), walk/run 4 (4 lotes de 2 direcciones).
+        const perfiles = { idle: [8, 2.2, 8], walk: [4, 3.6, 4], run: [4, 6.0, 4] };
+        const animaciones = [];
+        for (const [id, [kf, fps, calls]] of Object.entries(perfiles)) {
+          const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${id}/frontal_8/meta.json`;
+          if (!existsSync(metaPath)) continue; // el catálogo sale del DISCO, como el de verdad
+          animaciones.push({ id, keyframes: kf, play_fps: fps, calls_per_anim: calls });
+        }
+        return send(200, {
+          service: "sprite-forge", version: "fake", set: "fake",
+          models: [{ id: SKIN_SPRITE_MODEL }],
+          animations: animaciones,
+          angles: [{ id: "frontal_8", directions: 8 }],
+          skin: { enabled: true, api: "fake", ai_model: "gpt-image-2", cost_usd_per_call: 0 },
+          warnings: [],
+        });
+      }
       if (req.method === "POST" && req.url === "/skin_sprite_sheet") {
         let body = {};
         try {

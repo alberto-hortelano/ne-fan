@@ -457,9 +457,11 @@ async def sprite_catalog_endpoint():
     """Qué ofrece el sprite-forge de este despliegue: modelos, animaciones,
     ángulos y **cuántas llamadas de imagen cuesta vestir cada anim**.
 
-    Existe para que el cliente deje de espejar a mano ese número. `SKIN_IMAGE_CALLS`
-    era `1 + 8 + 4 + 4` escrito en un comentario, y es lo que se le enseña al
-    usuario ANTES de gastar: en cuanto cambiara un perfil, mentiría.
+    Existe para que el cliente deje de espejar a mano ese número. Lo llevaba
+    escrito como una suma en un comentario —una llamada de identidad más los
+    lotes de cada anim—, y es justo el número que se le enseña al usuario ANTES
+    de gastar: en cuanto alguien retocase un perfil de keyframes, mentiría. Y el
+    planificador que lo calcula ya no vive en este repo.
     """
     url = f"{_sprite_forge_url()}/catalog"
     try:
