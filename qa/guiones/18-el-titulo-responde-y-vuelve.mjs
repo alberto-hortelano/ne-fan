@@ -1,7 +1,7 @@
 /** Los primeros segundos de partida: el título RESPONDE y se puede VOLVER a él.
  *
- *  Tres bugs de la misma pantalla, y los tres invisibles desde dentro del
- *  juego porque ninguno cambia una respuesta ni lanza una excepción:
+ *  Dos bugs de la misma pantalla, los dos invisibles desde dentro del juego
+ *  porque ninguno cambia una respuesta ni lanza una excepción:
  *
  *   · #181 — «Nueva partida» se pintaba de una tacada en el `innerHTML` y solo
  *     se le colgaba el handler DESPUÉS de `await listSessions()`. Entre las dos
@@ -9,17 +9,26 @@
  *     en el caso feliz y hasta los 30 s del timeout de request si el bridge
  *     tardaba en contestar. Este guion es además el que quita la venda: el
  *     harness (`qa/lib/sesion.mjs`) esperaba a que el texto de `#ts-status`
- *     delatara que el handler ya estaba puesto, así que los quince guiones que
+ *     delatara que el handler ya estaba puesto, así que los trece guiones que
  *     arrancan partida ESQUIVABAN el bug en vez de ejercerlo.
- *
- *   · #181-c — y al llegar la lista de saves, `#ts-sessions` se repintaba
- *     ENCIMA del botón y lo empujaba hacia abajo tantos píxeles como partidas
- *     hubiera. Un botón que se mueve bajo el cursor mientras lo pulsas es la
- *     otra mitad del mismo «no ha pasado nada».
  *
  *   · #189 — cualquier fallo de sesión ocultaba el título en un `finally`, y
  *     `runTitleFlow` se llamaba UNA sola vez: el jugador se quedaba en una
  *     pantalla sin nada que pulsar y la única salida era recargar.
+ *
+ *  DOS ASERTOS SALIERON DE AQUÍ (QA 2026-08-24), porque los dos pasaban con su
+ *  bug puesto y un verde que no puede ponerse rojo es peor que no tener guion:
+ *
+ *   · #181-c «el botón NO se mueve cuando llega la lista» medía
+ *     `rect(#ts-new).top − rect(padre).top`, y el padre es justo el bloque que
+ *     se desplaza: daba 97 px → 97 px con el botón moviéndose 119 px bajo el
+ *     cursor. Lo mide ahora, en coordenadas de VIEWPORT, el bloque 2 de
+ *     `19-el-titulo-arranca-de-verdad.mjs`.
+ *   · «el título de vuelta está VIVO» pulsaba `#ts-new`, un listener del DOM
+ *     que sobrevive a todo, y no llegaba a «Comenzar», que es lo único que lee
+ *     `this.resolve` — lo único que puede quedar muerto. Probado: con `show()`
+ *     sin rearmar su promesa, este guion pasaba entero. Lo canda ahora el
+ *     bloque 3 del 19, que ARRANCA una partida desde el título de vuelta.
  *
  *  El repro de #189 que traía el issue («arranca sin bridge y pulsa Nueva
  *  partida») es FALSO y por eso no se usa aquí: sin bridge no se sale del
@@ -47,27 +56,23 @@ export const aisla = ["saves"];
 const GAME_ID = "alta_fantasia";
 
 /** El espía: se instala ANTES de que corra el cliente y vigila el DOM. En
- *  cuanto aparece `#ts-new` anota dónde nació y qué decía el status, y —si la
- *  URL trae `qa18=click`— lo PULSA en ese mismo instante.
+ *  cuanto aparece `#ts-new` anota qué decía el status en ese instante y —si la
+ *  URL trae `qa18=click`— lo PULSA.
  *
  *  El callback de un MutationObserver corre en la microtarea siguiente al
  *  bloque síncrono que hizo la mutación: exactamente el primer momento en que
  *  el botón existe para el mundo exterior. Si el handler se cuelga después de
- *  un `await`, ahí todavía no está. */
+ *  un `await`, ahí todavía no está.
+ *
+ *  Ya NO mide dónde nace el botón: esa medida vive en el guion 19, y en
+ *  coordenadas de viewport (ver la cabecera). */
 function instalarEspia(page) {
   return page.addInitScript(() => {
     const querClicar = new URLSearchParams(location.search).get("qa18") === "click";
-    window.__qa18 = { visto: false, status: null, offset: null };
+    window.__qa18 = { visto: false, status: null };
     const obs = new MutationObserver(() => {
       const btn = document.getElementById("ts-new");
       if (!btn || window.__qa18.visto) return;
-      const padre = btn.parentElement;
-      // Offset relativo AL PADRE a propósito: el panel de dev reescribe el
-      // padding superior del título con un ResizeObserver, así que medir
-      // contra el viewport mezclaría dos movimientos distintos.
-      window.__qa18.offset = Math.round(
-        btn.getBoundingClientRect().top - padre.getBoundingClientRect().top,
-      );
       window.__qa18.status = document.getElementById("ts-status")?.textContent ?? "(sin #ts-status)";
       window.__qa18.visto = true;
       obs.disconnect();
@@ -95,8 +100,8 @@ async function recargar(ctx, extra = {}) {
 
 export default async function (ctx) {
   // ── 0. Una partida de verdad, para que el título tenga algo que listar ──
-  // #181-c solo se ve con la lista NO vacía: sin saves no hay nada que empuje
-  // al botón, y el guion aprobaría el bug por falta de sujeto.
+  // El fallo de sesión del bloque 2 se produce borrando ESE save por el cable
+  // del bridge: sin una tarjeta que pulsar no hay «Reanudar» que falle.
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
   await comenzar(ctx);
   ctx.log("partida sembrada: el título tendrá una tarjeta que listar");
@@ -110,7 +115,7 @@ export default async function (ctx) {
     () => (window.__qa18?.visto ? window.__qa18 : null),
     30_000,
   );
-  ctx.log(`al pulsar: status="${espiado.status}" · offset=${espiado.offset}px`);
+  ctx.log(`al pulsar: status="${espiado.status}"`);
 
   // NO CONCLUYENTE antes que verde: si el espía llegó tarde —después de que
   // volviera `listSessions`— el click habría registrado por la razón
@@ -136,36 +141,12 @@ export default async function (ctx) {
   await ctx.shot("el-primer-click-abre-el-selector");
   if (!respondio) return;
 
-  // ── 2. #181-c — el botón no se desplaza al llegar la lista de saves ─────
+  // ── 2. #189 — un fallo de sesión devuelve al título con el motivo ───────
+  // Volver al home: el bloque 1 dejó la página en el selector de mundos, y el
+  // save que hay que sabotear se lee de su tarjeta. La espera por la LISTA es
+  // de quien va a LEERLA (no gatea ningún click, que era el workaround).
   await recargar(ctx); // sin `qa18=click`: el espía solo mira
-  const alPintar = await ctx.waitFor(
-    "el espía mide dónde nace el botón",
-    () => (window.__qa18?.visto ? window.__qa18 : null),
-    30_000,
-  );
-  const textoLista = await esperarListaDeSaves(ctx);
-  const conLaLista = await ctx.page.evaluate(() => {
-    const btn = document.getElementById("ts-new");
-    const padre = btn.parentElement;
-    return {
-      offset: Math.round(btn.getBoundingClientRect().top - padre.getBoundingClientRect().top),
-      partidas: document.querySelectorAll('button[data-action="resume"]').length,
-    };
-  });
-  ctx.log(`«${textoLista}» · offset ${alPintar.offset}px → ${conLaLista.offset}px con ${conLaLista.partidas} partida(s)`);
-  ctx.expect(
-    "hay al menos una partida listada (si no, nada podría empujar al botón)",
-    conLaLista.partidas >= 1,
-    `${conLaLista.partidas} tarjetas de save`,
-  );
-  ctx.expect(
-    "el botón NO se mueve cuando llega la lista de partidas",
-    alPintar.offset === conLaLista.offset,
-    `${alPintar.offset}px → ${conLaLista.offset}px: el botón se desplaza bajo el cursor`,
-  );
-  await ctx.shot("el-boton-no-se-mueve");
-
-  // ── 3. #189 — un fallo de sesión devuelve al título, y VIVO ─────────────
+  await esperarListaDeSaves(ctx);
   const sessionId = await ctx.page.$eval(
     'button[data-action="resume"]',
     (b) => b.dataset.sessionId,
@@ -204,9 +185,15 @@ export default async function (ctx) {
     trasElFallo.visible,
     "el título quedó oculto: el jugador se queda en una pantalla sin nada que pulsar (#189)",
   );
+  // El motivo, y EN CRISTIANO. Aquí se leía «No se pudo reanudar la partida:
+  // session_not_found»: la primera mitad escrita para el jugador y la segunda
+  // para el programador. El código sigue entero en el `detail` de la entrada
+  // del error-log, que es donde sirve.
   ctx.expect(
-    "…y el título dice qué ha pasado, con el motivo",
-    /reanudar/i.test(trasElFallo.texto) && /session_not_found/.test(trasElFallo.texto),
+    "…y el título dice qué ha pasado sin enseñarle el código del bridge",
+    /reanudar/i.test(trasElFallo.texto) &&
+      /ya no está/i.test(trasElFallo.texto) &&
+      !/session_not_found/.test(trasElFallo.texto),
     trasElFallo.texto,
   );
   ctx.expect(
@@ -214,22 +201,9 @@ export default async function (ctx) {
     trasElFallo.registro.some((e) => e.fuente === "session"),
     JSON.stringify(trasElFallo.registro.slice(0, 3)),
   );
-
-  // Lo que separa «el título se ve» de «el título FUNCIONA», que es la trampa
-  // que tenía este arreglo: bastaba con no ocultarlo para que la pantalla
-  // volviera, pero su promesa ya estaba consumida y el siguiente «Comenzar»
-  // no resolvía a nadie. Se comprueba pulsando.
-  await ctx.page.click("#ts-new");
-  let vivo = true;
-  try {
-    await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
-  } catch {
-    vivo = false;
-  }
-  ctx.expect(
-    "el título de vuelta está VIVO: «Nueva partida» sigue abriendo el selector",
-    vivo,
-    "el título se ve pero no responde — visible y muerto",
-  );
-  await ctx.shot("el-titulo-de-vuelta-sigue-vivo");
+  // Aquí NO se comprueba que el título de vuelta esté vivo: pulsar «Nueva
+  // partida» solo ejercita un listener del DOM, que sobrevive a cualquier
+  // cosa. Lo que puede quedar muerto es `this.resolve`, y no se lee hasta
+  // «Comenzar», dos pantallas más allá. Lo canda el bloque 3 del guion 19,
+  // que arranca una partida entera desde este mismo título de vuelta.
 }

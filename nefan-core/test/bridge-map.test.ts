@@ -11,6 +11,7 @@ import type {
   NarrativeStatusMessage,
   } from "../src/protocol/messages.js";
 import {
+  capturarLogDelBridge,
   makeCtx,
   makeSocket,
   waitFor,
@@ -668,15 +669,25 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
   it("el bootstrap SIN place_id, habiendo mapa, es error — no un panel vacío", async () => {
     const { ctx, broadcasts } = bootstrapWith(tileScene());
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
-    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+      await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    } finally {
+      log.soltar();
+    }
 
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
-    // El motivo llega al motor y le dice qué añadir.
-    assert.match(err?.message ?? "", /place_id/);
-    assert.match(err?.message ?? "", /panel de \s*salidas sale VACÍO|salidas/);
+    // Lo que lee QUIEN JUEGA: una frase, no el diagnóstico (#180). Un
+    // `place_id` que falta no le dice nada y es del motor, no suyo.
+    assert.equal(err?.message, "El motor narrativo no pudo construirlo; inténtalo de nuevo.");
+    // Y el diagnóstico, entero, donde ahora vive: el log del bridge. Es lo que
+    // dice QUÉ añadir, y sin esto la traducción habría borrado la pista.
+    const diagnostico = log.lineas.join(" | ");
+    assert.match(diagnostico, /place_id/, diagnostico);
+    assert.match(diagnostico, /salidas/i, diagnostico);
     // Y lo que NO pasa: difundir una escena muda con el panel apagado.
     assert.equal(exitsOf(broadcasts), undefined, "ninguna escena difundida");
   });

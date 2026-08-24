@@ -49,6 +49,11 @@ export class NarrativeClient {
 
   async listGames(): Promise<{ games: GameInfo[]; styles: StyleInfo[] }> {
     const res = await this.bridge.listGames();
+    // Mismo patrón que `createGame`/`generateGame`: si el bridge dice que no
+    // pudo, se rechaza con SU motivo. Sin esto, una instalación rota llegaba
+    // aquí como una lista vacía y el título decía «no hay ningún mundo
+    // instalado», que es una causa distinta y falsa.
+    if (res.error) throw new Error(res.error);
     return { games: res.games, styles: res.styles };
   }
 

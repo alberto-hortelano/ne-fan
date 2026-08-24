@@ -20,7 +20,11 @@ import {
 } from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
-import { rotuloDeStatus } from "@nefan-core/src/protocol/status-labels.js";
+import {
+  motivoDeSesionParaElJugador,
+  rotuloDeStatus,
+  type SalidaDelOverlay,
+} from "@nefan-core/src/protocol/status-labels.js";
 import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
@@ -2033,6 +2037,7 @@ const loaderTitle = document.getElementById("narrative-loader-title");
 const loaderDetail = document.getElementById("narrative-loader-detail");
 const loaderElapsed = document.getElementById("narrative-loader-elapsed");
 const loaderDismiss = document.getElementById("narrative-loader-dismiss");
+const loaderBack = document.getElementById("narrative-loader-back");
 
 let loaderStartedAt = 0;
 let loaderTicker: ReturnType<typeof setInterval> | null = null;
@@ -2063,21 +2068,52 @@ function updateLoaderProgress(message: string): void {
   if (loaderDetail) loaderDetail.textContent = message;
 }
 
+/** El motivo del último muro que ofrecía volver al título. Se lo lleva el
+ *  título en la vuelta: quien pulsa «Volver al título» acaba de leerlo, pero
+ *  llegar a una pantalla que no dice nada de lo que acaba de pasar es la
+ *  mitad muda de #189 («vuelve al título VIVO, con el motivo en pantalla»). */
+let motivoDelUltimoMuro: string | null = null;
+
 function hideLoader(): void {
   if (!loaderEl) return;
   loaderEl.classList.remove("visible", "error");
+  if (loaderBack) loaderBack.hidden = true;
+  if (loaderDismiss) loaderDismiss.hidden = false;
+  // El muro se va y su motivo con él: quien lo lea después
+  // (`volverAlTitulo`) tiene que leerlo ANTES de cerrarlo, no heredarlo de un
+  // fallo viejo.
+  motivoDelUltimoMuro = null;
   if (loaderTicker) {
     clearInterval(loaderTicker);
     loaderTicker = null;
   }
 }
 
-function setLoaderState(state: "error", title: string, detail: string): void {
+/** `salida` dice qué puede HACER el jugador con este muro. Por defecto,
+ *  cerrarlo y seguir con su partida; `volver-al-titulo` cuando detrás no hay
+ *  partida ninguna y cerrar le dejaría sin nada que pulsar (#189). */
+function setLoaderState(
+  state: "error",
+  title: string,
+  detail: string,
+  salida: SalidaDelOverlay = "cerrar",
+): void {
   if (!loaderEl) return;
   loaderEl.classList.remove("error");
   loaderEl.classList.add("visible", state);
   if (loaderTitle) loaderTitle.textContent = title;
   if (loaderDetail) loaderDetail.textContent = detail;
+  const sinMundo = salida === "volver-al-titulo";
+  if (loaderBack) loaderBack.hidden = !sinMundo;
+  // Y sin mundo NO HAY ADÓNDE CERRAR: «Cerrar» dejaba al jugador en el mismo
+  // callejón de #189 que la salida de al lado venía a abrir —cielo vacío,
+  // cinco botones de ataque y recargar— y con el mismo peso visual, así que
+  // media pantalla pulsaba la que no era. Donde sí sigue estando es en los
+  // muros que tienen partida detrás (`salida: "cerrar"`), que son todos los
+  // demás — incluido el del arranque sin bridge, que es el que cierra
+  // `qa/fixtures-sin-bridge.mjs` para entrar al modo fixtures.
+  if (loaderDismiss) loaderDismiss.hidden = sinMundo;
+  motivoDelUltimoMuro = sinMundo ? `${title}. ${detail}` : null;
   if (loaderTicker) {
     clearInterval(loaderTicker);
     loaderTicker = null;
@@ -2085,6 +2121,9 @@ function setLoaderState(state: "error", title: string, detail: string): void {
 }
 
 if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
+if (loaderBack) {
+  loaderBack.onclick = () => paso(volverAlTitulo(), "session", "volver a la pantalla de título");
+}
 
 narrativeClient.onNarrativeStatus((status) => {
   // ── Latido de progreso del motor narrativo ────────────────────────────
@@ -2191,7 +2230,9 @@ function pintarFalloDelMotor(status: NarrativeStatusMessage): void {
     overlayAbierto: loaderEl?.classList.contains("visible") ?? false,
   });
   errors.push("narrative", rotulo.detalle);
-  if (rotulo.destino === "overlay") setLoaderState("error", rotulo.titulo, rotulo.detalle);
+  if (rotulo.destino === "overlay") {
+    setLoaderState("error", rotulo.titulo, rotulo.detalle, rotulo.salida);
+  }
   else log(`⚠ ${rotulo.detalle.slice(0, 100)}`);
 }
 
@@ -2392,6 +2433,10 @@ async function bootstrap(): Promise<void> {
   }
 }
 
+/** ¿Hay un bucle de título en marcha? Lo lee `runTitleFlow` para no
+ *  re-entrar sobre sí mismo desde `volverAlTitulo()`. */
+let tituloEnMarcha = false;
+
 /** El título es un BUCLE hasta que arranca una partida (#189).
  *
  *  Antes se llamaba una sola vez y su `finally` hacía `titleScreen.hide()`
@@ -2402,13 +2447,43 @@ async function bootstrap(): Promise<void> {
  *  `show()` rearma su promesa en cada vuelta.
  *
  *  El `hide()` solo ocurre en el camino de ÉXITO. */
-async function runTitleFlow(): Promise<void> {
-  let aviso: string | undefined;
-  for (;;) {
-    const seguir = await unIntentoDeArrancar(aviso);
-    if (seguir === null) return; // partida en marcha
-    aviso = seguir;
+async function runTitleFlow(avisoInicial?: string): Promise<void> {
+  // Re-entrante desde `volverAlTitulo()`, pero no DOS veces a la vez: dos
+  // bucles compartiendo el mismo `titleScreen` se pisarían el `resolve` y el
+  // segundo «Comenzar» arrancaría dos sesiones.
+  if (tituloEnMarcha) return;
+  tituloEnMarcha = true;
+  try {
+    let aviso: string | undefined = avisoInicial;
+    for (;;) {
+      const seguir = await unIntentoDeArrancar(aviso);
+      if (seguir === null) return; // partida en marcha
+      aviso = seguir;
+    }
+  } finally {
+    tituloEnMarcha = false;
   }
+}
+
+/** La salida del mundo vacío (#189, hallazgo 3.2 de QA).
+ *
+ *  `start_session` contesta `ok:true` ANTES de generar el tile, así que un
+ *  motor que no responde durante la generación del mundo inicial NO hace
+ *  rechazar a `startSession` y NO pasa por el catch de `unIntentoDeArrancar`:
+ *  para cuando llega el `narrative_status` de error, el título ya se ocultó y
+ *  el bucle ya devolvió. El jugador se quedaba con cielo vacío, barra de vida
+ *  al 100 % y cinco botones de ataque, sin mundo y sin nada que le devolviera
+ *  al título — recargar, literalmente la frase del issue.
+ *
+ *  Esto lo devuelve al título por el mismo camino que un fallo de sesión: el
+ *  mundo a cero, la sesión soltada y el bucle otra vez en marcha. */
+async function volverAlTitulo(): Promise<void> {
+  const motivo = motivoDelUltimoMuro ?? undefined;
+  hideLoader();
+  resetWorld();
+  activeSessionId = null;
+  sessionModesApplied = false;
+  await runTitleFlow(motivo);
 }
 
 /** Un intento: enseña el título, espera la elección y la ejecuta. Devuelve
@@ -2511,7 +2586,12 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       action.kind === "new_game"
         ? "No se pudo empezar la partida"
         : "No se pudo reanudar la partida";
-    return `${que}: ${(err as Error).message}`;
+    // TRADUCIDO, no volcado: aquí se leía «…: game_load_failed: game.json
+    // malformed (/home/…/games/alta_fantasia/game.json): Expected property
+    // name…», con la ruta absoluta del disco de quien juega dentro. El crudo
+    // sigue entero en el `errors.push` de arriba (va al `detail` de la entrada
+    // del error-log), que es donde sirve.
+    return `${que}. ${motivoDeSesionParaElJugador(err)}`;
   }
   // Solo aquí: la partida está en marcha y el título deja de hacer falta.
   titleScreen.hide();

@@ -170,3 +170,32 @@ export async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
     await new Promise((r) => setTimeout(r, 5));
   }
 }
+
+/** Captura el log del BRIDGE (console.warn/error) hasta que se suelta.
+ *
+ *  Desde 2026-08-24 el `narrative_status` de error lleva el motivo escrito
+ *  para QUIEN JUEGA (#180): el volcado técnico —qué excepción, qué `place_id`
+ *  falta, qué job se descartó— ya no viaja por el wire, se queda en el
+ *  `console.warn` del bridge. Los tests que afirmaban sobre ese diagnóstico no
+ *  pierden su sujeto: cambian al canal donde el diagnóstico vive ahora.
+ *
+ *  Devuelve las líneas (argumentos unidos, los Error por su `message`) y el
+ *  `soltar()` que hay que llamar SIEMPRE en un `finally`: sin él, el resto de
+ *  la suite se quedaría sin consola. */
+export function capturarLogDelBridge(): { lineas: string[]; soltar: () => void } {
+  const lineas: string[] = [];
+  const warn = console.warn;
+  const error = console.error;
+  const recoger = (...args: unknown[]): void => {
+    lineas.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(" "));
+  };
+  console.warn = recoger;
+  console.error = recoger;
+  return {
+    lineas,
+    soltar: () => {
+      console.warn = warn;
+      console.error = error;
+    },
+  };
+}

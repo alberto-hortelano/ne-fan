@@ -8,7 +8,10 @@ import type {
   ServerMessage,
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
+import { join } from "node:path";
+
 import {
+  capturarLogDelBridge,
   makeCtx,
   makeSocket,
   REAL_GAMES_DIR,
@@ -33,6 +36,35 @@ describe("bridge routing básico", () => {
     assert.ok(msg.games.some((g) => g.game_id === "toledo_1200"));
     assert.ok(msg.games.every((g) => g.world_brief.length > 100));
     assert.ok(msg.styles.some((st) => st.style_id === "medievo_crudo"));
+  });
+
+  it("list_games con el directorio AUSENTE contesta el motivo, no revienta", async () => {
+    // El agujero de fail-loud que midió QA: `listGames` lanza si el directorio
+    // no existe y `routeMessage` no envuelve a sus handlers, así que el throw
+    // salía como unhandled rejection del proceso, NADIE contestaba y el
+    // cliente se comía los 30 s de su timeout de request para acabar diciendo
+    // «el servidor no contesta» — plausible y falso.
+    const { ctx } = makeCtx({
+      gamesDir: join(REAL_GAMES_DIR, "no-existe-este-directorio"),
+      stylesDir: REAL_STYLES_DIR,
+    });
+    const { socket, sent } = makeSocket();
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage({ type: "list_games", requestId: "r1" }, socket, ctx);
+    } finally {
+      log.soltar();
+    }
+    assert.equal(sent.length, 1, "el cliente tiene que recibir ALGO");
+    const msg = sent[0] as Extract<ServerMessage, { type: "games_listed" }>;
+    assert.equal(msg.requestId, "r1");
+    assert.match(msg.error ?? "", /games_dir_unreadable/);
+    // Y lista vacía, que NO es lo mismo que «no hay mundos»: por eso viaja el
+    // `error` — sin él, el cliente diría «no hay ningún mundo instalado».
+    assert.deepEqual(msg.games, []);
+    assert.deepEqual(msg.styles, []);
+    // El diagnóstico con la ruta, en el log del bridge.
+    assert.match(log.lineas.join(" | "), /games directory not found/);
   });
 
   it("load_room resetea al player y proyecta los enemigos", async () => {

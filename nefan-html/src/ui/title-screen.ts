@@ -18,11 +18,13 @@ import type {
 } from "@nefan-core/src/narrative/types.js";
 import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
+import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-labels.js";
 import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,
 } from "@nefan-core/src/games/style-refs.js";
 import { serviceUrl } from "../net/service-urls.js";
+import { errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
 import {
@@ -199,10 +201,19 @@ export class TitleScreen {
       "display: none",
       "flex-direction: column",
       "align-items: center",
-      "justify-content: center",
+      // ANCLADO ARRIBA, no centrado (#181-c). Con `center`, el bloque de
+      // contenido crece hacia ABAJO cuando llega la lista de saves y su borde
+      // superior sube la MITAD de lo que crece: 238 px de lista movían
+      // «Nueva partida» 119 px hacia arriba, bajo el cursor de quien ya lo
+      // estaba pulsando. Reordenar el home no bastaba —el botón no se movía
+      // DENTRO del bloque, se movía el bloque entero—, y reservarle altura a
+      // `#ts-sessions` serían números mágicos que dependen de N. Anclado
+      // arriba, lo que hay por encima del botón no cambia nunca y el botón se
+      // queda clavado en el viewport con 0 o con 200 partidas.
+      "justify-content: flex-start",
       "z-index: 9999",
-      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px):
-      // en viewports bajos el centrado vertical metía el título debajo.
+      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px),
+      // que se pinta encima: sin él el título nacería debajo del panel.
       "padding: 96px 32px 32px",
     ].join(";");
     this.content = document.createElement("div");
@@ -261,7 +272,24 @@ export class TitleScreen {
     // bottom, no height: el panel no empieza en y=0 (la barra del HUD queda
     // encima) — lo que hay que despejar es hasta dónde LLEGA.
     const devBottom = dev ? Math.ceil(dev.getBoundingClientRect().bottom) : 0;
-    this.root.style.paddingTop = `${Math.max(96, devBottom + 10)}px`;
+    // Suelo en FRACCIÓN DEL ALTO, no 96 px fijos: anclado arriba (#181-c) y
+    // con 0 partidas, la columna quedaba pegada al borde superior con más de
+    // la mitad del lienzo negro debajo y se leía inacabada. Un 20 % del alto
+    // la baja lo justo para que se lea deliberada. Es del VIEWPORT y no del
+    // contenido a propósito: cualquier cosa que ceda al crecer la lista
+    // devolvería el botón moviéndose bajo el cursor, que es el bug que C1
+    // cerró. `min(…, 160)` para que en viewports bajos no se coma la lista.
+    //
+    // OJO, y esto es lo que hay que leer antes de cerrar nada: hoy este suelo
+    // TAPA el issue #250 (el panel de dev se rellena async, este método
+    // re-mide con un ResizeObserver y el botón se desplazaba +24 px bajo el
+    // cursor en anchos estrechos). Lo tapa porque 160 gana a `devBottom + 10`
+    // ≈ 120 a los tamaños medidos — NO porque esté arreglado. Con un panel más
+    // alto (una ventana aún más estrecha, un chip más) vuelve a ganar
+    // `devBottom` y el desplazamiento reaparece. El verde de esa medida es
+    // circunstancial; #250 sigue abierto.
+    const suelo = Math.min(160, Math.max(96, Math.round(window.innerHeight * 0.2)));
+    this.root.style.paddingTop = `${Math.max(suelo, devBottom + 10)}px`;
   }
 
   /** Abre el título y resuelve con lo que el jugador elija.
@@ -353,8 +381,12 @@ export class TitleScreen {
         // catch, sin registro y sin nada que ver.
         newBtn.disabled = false;
         newBtn.textContent = "Nueva partida";
+        // TRADUCIDO: aquí se leían «Bridge not connected», «Bridge request
+        // timeout: list_games» y «no games available in bridge — check
+        // nefan-core/data/games/». El crudo no se pierde: `paso()` ya lo ha
+        // metido en el `detail` de la entrada del error-log.
         this.mostrarErrorEnHome(
-          `No se pudo abrir el selector de mundos: ${(err as Error).message}`,
+          `No se pudo abrir el selector de mundos. ${motivoDeSesionParaElJugador(err)}`,
         );
       });
     });
@@ -366,7 +398,14 @@ export class TitleScreen {
       statusEl.textContent = `Bridge OK — ${sessions.length} partidas guardadas.`;
       statusEl.style.color = "#4a4";
     } catch (err) {
-      statusEl.innerHTML = `<span style="color:#a44">No se puede contactar al bridge (${(err as Error).message}). Arranca <code>./start.sh</code> y elige un preset con bridge (p. ej. "Cliente web (dev)").</span>`;
+      // Hermano de `#ts-error`, y hasta ahora con el mismo defecto: aquí se
+      // leía «No se puede contactar al bridge (…). Arranca ./start.sh y elige
+      // un preset con bridge» — instrucciones de desarrollo a quien no tiene
+      // terminal. El motivo crudo va al error-log, como en todo lo demás.
+      errors.push("title", "listar las partidas guardadas", err);
+      statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(
+        `No se pudieron cargar las partidas guardadas. ${motivoDeSesionParaElJugador(err)}`,
+      )}</span>`;
     }
 
     if (sessions.length === 0) {

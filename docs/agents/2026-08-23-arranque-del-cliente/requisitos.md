@@ -162,3 +162,158 @@ se queda para el fallo de `show()`.
 El botón «Borrar» del título abre un `confirm()` (`title-screen.ts:326`), que **bloquea el
 navegador y deja el harness sin respuesta**. Por eso `borrarSaveComoOtroCliente(id)` va por WS
 (`delete_session`, `bridge/router.ts:76`) y no por la UI.
+
+---
+
+# Ronda de corrección (2026-08-24) — decisiones del coordinador sobre `qa.md`
+
+QA devolvió **NO APTO** con cuatro cosas que paran la tanda y cuatro menores. Esto es lo
+que se hace con cada una. **Lo que aquí se decide no se re-discute**: si algo no se puede
+hacer como está escrito, se para y se dice, no se improvisa una desviación.
+
+## Obligatorio para volver a mirarlo
+
+### C1 · #181-c: el botón deja de moverse bajo el cursor (hallazgo 3.1)
+
+Criterio literal incumplido: **−119 px con 3 saves, −15 px con 0**. La causa está medida y
+no es el orden del home: `justify-content: center` en `title-screen.ts:202` centra el bloque
+verticalmente, así que al crecer la lista 238 px hacia abajo el bloque **sube 119**.
+
+**Decisión: `justify-content: flex-start`.** Es la salida que ataca la causa; reservar la
+altura de `#ts-sessions` a ojo son números mágicos y el plan ya la desaconsejaba. El
+`padding: 96px 32px 32px` que ya existe evita que el título se pegue al borde superior.
+
+Esto **cambia lo que ve quien arranca el juego**, así que va con captura: el título con 0
+saves y con 3, y una frase diciendo si la composición aguanta. Si al verlo queda mal, se
+dice y se para — no se compensa con márgenes inventados.
+
+**Medida de aceptación**: `rect(#ts-new).top` **en coordenadas de viewport** (no relativo al
+padre) idéntico antes y después de llegar la lista, con 0 y con 3 saves. Es el bloque 2 de
+`qa/guiones/19`, que hoy está rojo: se pone verde sin tocar el guion.
+
+### C2 · Los dos verdes que no pueden ponerse rojos (hallazgos §2.3 y 3.1)
+
+`qa/guiones/18` tiene dos asertos que pasan con el bug puesto, probados por QA:
+
+- el de #181-c, que mide **relativo al padre — que es justo el elemento que se mueve**;
+- «el título de vuelta está VIVO», que solo pulsa `#ts-new` y nunca llega a «Comenzar»,
+  o sea que no toca `this.resolve`, que es lo único que puede quedar muerto.
+
+**Decisión: `qa/guiones/19` es el candado bueno y se queda tal cual** (sus cuatro bloques
+están probados en negativo). Del 18 se **quitan** esos dos asertos, con un comentario que
+diga qué cobertura se marcha y al bloque de 19 que la recoge. No se dejan los dos guiones
+midiendo lo mismo, y no sobrevive ningún aserto incapaz de ponerse rojo.
+
+### C3 · #180: el cuerpo del overlay, no solo el rótulo (hallazgo 3.3)
+
+`motivoParaElJugador` vive en un ternario (`bridge/handlers/tile.ts:250-254`) que solo entra
+**si hay `destino`**, o sea solo en viajes. En el arranque —el estado que da nombre a la
+tanda— el jugador lee `Error: No se pudo generar la escena. fetch failed`.
+
+**Decisión: traducir siempre.** El nombre del destino es un prefijo cuando lo hay, no la
+condición para traducir. Ojo al comentario que hay ahí escrito: dice que explorando NO se
+traduce a propósito, porque el motivo exacto es lo único que informa. Esa razón vale para
+un tile que el validador rechaza, **no** para `fetch failed` en el arranque: el criterio es
+que el jugador nunca lea una excepción cruda, así que lo que hoy cae al `else` pasa por
+`motivoParaElJugador` y el detalle técnico se queda en el `console.warn` que ya existe.
+
+Y con ello, **corregir el fixture de `status-labels.test.ts`**: usa como cuerpo «No se pudo
+llegar a Robledo…» para el caso `mundoVacio`, que es justo el cuerpo que ahí no llegaba. El
+test heredó la premisa falsa; por eso el hueco no se vio.
+
+### C4 · `#ts-error` deja de enseñar tripas (hallazgo 3.4)
+
+Es la superficie que **abre esta tanda**, y hoy imprime `game_load_failed: … (/home/…/games/
+alta_fantasia/game.json): Expected property name…` — con la ruta absoluta del disco de quien
+juega. `session_not_found`, `Bridge not connected` y `Bridge request timeout: list_games`
+son de la misma clase.
+
+**Decisión: un `motivoDeSesionParaElJugador` con la misma forma que `motivoParaElJugador`**,
+y el detalle crudo al `errors.push`, que para eso está. La primera mitad de cada frase ya
+está escrita para el jugador: solo falta la segunda.
+
+## Decidir y ejecutar, con freno
+
+### C5 · #189 para el fallo que responde `ok` y falla después (hallazgo 3.2)
+
+`start_session` contesta `ok:true` antes de generar el tile, así que el motor mudo **no pasa
+por el catch del bucle**: mundo a 0 tiles, sin título, y recargar como única salida — la
+frase literal del issue que esta tanda venía a cerrar. Cerrar #189 dejando esto fuera sería
+cerrarlo en falso.
+
+**Dirección**: el gancho ya existe. `pintarFalloDelMotor` (`main.ts:2187`) ya recibe el
+fallo y ya sabe `mundoVacio`, y `runTitleFlow` ya es un bucle re-entrante con `resetWorld()`.
+Lo que falta es que ese overlay, **cuando el mundo está vacío**, ofrezca volver al título en
+vez de solo cerrarse.
+
+**Freno explícito**: si al medirlo resulta que no se contiene en el cliente —que hace falta
+re-secuenciar el protocolo o mover el `ok:true` del bridge—, **para y dilo**. Eso sería otra
+tanda, y se declara por escrito en `implementacion.md` para que #189 se cierre sabiendo qué
+queda fuera. Lo que no vale es cerrarlo en silencio.
+
+### C6 · El `why` del candado, que es fichero de contrato (hallazgo 3.5)
+
+Tres cuentas mal en `arch-rules.json` y en las cabeceras: en `main.ts` eran **tres**, no
+cuatro; «1 era muda de verdad» eran **tres**; y los guiones que pasan por `sesion.mjs` son
+**doce** (`05,07,08,09,10,11,12,13,14,15,17,18`), no quince. Corregir en los tres sitios
+donde está escrito. El `max: 8` es correcto y no se toca.
+
+## A issue, fuera de esta tanda (los abro yo al cerrar)
+
+3.6 (el HUD y el `#error-log` se leen por debajo del título al volver) · 3.7 (el rótulo del
+viaje repite el principio del cuerpo — si sale gratis al tocar C3, hazlo y dilo) · 3.8 (el
+guion 15 es una moneda al aire **también en `main`**: el umbral no tiene sujeto; el arreglo
+es que el sim recuerde el desplazamiento máximo, como `telegraphEpisode` en el guion 10) ·
+`no-floating-promises` no activo en `nefan-html`, que es el punto ciego grande del candado
+nuevo · el fallo TARDÍO de sesión (§7 de `qa.md`), que sigue sin medir.
+
+## Verificación de la ronda
+
+`qa/guiones/19` **entero en verde** (hoy 6/7) sin haber tocado sus asertos, `qa/guiones/18`
+sin ningún aserto incapaz de ponerse rojo, la batería completa, `npm run verify`,
+`crap -- --check`, y `npm run afectado && npm run mutate -- --cambiado` sobre lo tocado.
+Más las capturas de C1.
+
+---
+
+# Segunda ronda (2026-08-24) — la reserva de QA
+
+QA devolvió **APTO CON RESERVAS**: los cuatro bloqueantes cerrados y candados (14 de los 22
+asertos vivos puestos en rojo por el propio QA). Queda esto.
+
+### D1 · El muro del mundo vacío no ofrece «Cerrar» (hallazgo 6.1) — OBLIGATORIO
+
+Pulsar «Cerrar» en el muro deja al jugador **en el callejón exacto de #189**, con la misma
+lista de clicables que midió la primera vuelta: `#room-selector`, `#ds-menu-btn` y los cinco
+botones de ataque, sin mundo y sin salida. La puerta está justo al lado y con el mismo peso
+visual, así que la mitad de la gente pulsará la que no es.
+
+**Decisión: cuando no hay mundo, no hay adónde cerrar.** El overlay del mundo vacío ofrece
+**solo** «Volver al título». `Rotulo.salida` ya distingue ese caso, así que el sitio existe.
+Con su aserto en `qa/guiones/20`, probado en negativo.
+
+### D2 · `list_games` sin directorio es un unhandled rejection del bridge (hallazgo 6.3)
+
+Nadie contesta, el cliente espera los 30 s y luego dice «El servidor no contesta» — que ahora
+suena plausible y **es falso**. Es una violación del fail-loud que el propio proyecto tiene
+escrito, en el camino que esta tanda vino a arreglar. El handler captura y contesta error; el
+cliente dice lo que pasa de verdad.
+
+### D3 · `#ts-status` deja de darle instrucciones de dev al jugador (hallazgo 6.4)
+
+Le dice que arranque `./start.sh`. Misma familia que C4: quien juega no tiene terminal.
+
+### D4 · El estado vacío del título (hallazgo 6.5)
+
+Con 0 saves quedan **476 de 800 px vacíos (60 %)**, no «un tercio». QA no pide volver a
+`center` —rompería C1— y tiene razón.
+
+**Decisión: prueba un desplazamiento vertical que NO dependa del contenido** (`padding-top`
+en `vh`, o el bloque anclado a una fracción fija del alto). Eso baja el contenido sin
+reintroducir el movimiento, porque no se recalcula al crecer la lista. **Requisito duro**: el
+bloque 2 del guion 19 sigue verde con 0, 3 y 12 saves, y a 900×600 y 500×800. Si no queda
+mejor que ahora, se deja como está y se dice por escrito — no se compensa con márgenes que
+dependan de cuántos saves haya.
+
+**6.2 va a issue** (el panel de dev reescribe `padding-top` async y mueve el botón +24 px en
+anchos estrechos): es pre-existente, no es la lista, y cae fuera del criterio literal.

@@ -27,8 +27,10 @@ export async function backendEsFalso(ctx) {
  *  colgaba el handler DESPUÉS de `await listSessions()` —151 ms medidos, hasta
  *  30 s si el bridge tardaba—, así que la espera tenía que colarse por la
  *  puerta de atrás y mirar el texto de `#ts-status` para adivinar que el
- *  handler ya estaba puesto. Los quince guiones que pasan por aquí esquivaban
- *  el bug en vez de ejercerlo.
+ *  handler ya estaba puesto. Los TRECE guiones que pasan por aquí
+ *  (05,07,08,09,10,11,12,13,14,15,17,18,19) esquivaban el bug en vez de
+ *  ejercerlo — no quince: los otros cinco de `qa/guiones/` entran por
+ *  `closeTitle` (modo fixtures) y nunca tocaron este workaround.
  *
  *  Ahora el enganche va en el mismo bloque síncrono que pinta el botón: si el
  *  botón está en el DOM, escucha. La espera vuelve a ser lo que debía ser —que

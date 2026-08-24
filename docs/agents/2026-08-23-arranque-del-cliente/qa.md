@@ -1,375 +1,438 @@
 # QA — El arranque del cliente (#181 + #189 + #180)
 
-Rama `fix/arranque-del-cliente`, cambios sin commitear. Validado desde el arranque real
-(`./start.sh --preset e2e-sin-creditos`), no desde los tests. El árbol se restauró byte a byte
-tras cada prueba en negativo (`md5sum -c`, verificado 6 veces).
+Rama `fix/arranque-del-cliente`, cambios sin commitear sobre `d5c3382`.
 
-**Veredicto: NO APTO.** Tres de los cinco mecanismos funcionan y están bien hechos. Pero un
-criterio de aceptación literal (**#181-c, «el botón no se desplaza bajo el cursor»**) **no se
-cumple** —119 px medidos— y el guion que lo certifica lo mide en un sistema de referencia donde
-el movimiento es invisible por construcción. Y el aserto que el guion 18 anuncia como el más
-valioso («el título de vuelta está VIVO») **sigue verde con el bug puesto**. Dos verdes que no
-comprueban nada, que es exactamente lo que el proyecto tiene escrito que no se acepta.
+**Dos vueltas.** La primera (2026-08-23) devolvió **NO APTO** con cuatro cosas que paraban la
+tanda. Esta segunda (2026-08-24) valida la **ronda de corrección** C1–C6, con **QA nuevo**: no
+doy por buena ninguna medida del informe anterior ni del de implementación — todo lo que aquí
+lleva un número lo he medido yo, desde el arranque real (`./start.sh --preset e2e-sin-creditos`,
+cero créditos), y las pruebas en negativo las he reproducido una a una restaurando el árbol con
+`md5sum -c` (nunca con `git checkout --`: en un árbol sin commitear eso se lleva la ronda entera
+del fichero, como descubrió el ingeniero).
+
+**Veredicto: APTO CON RESERVAS.** Los **cuatro bloqueantes están cerrados** y cada uno tiene su
+medida y su rojo demostrado. La reserva es una sola y tiene nombre: **el botón «Cerrar» del muro
+del mundo vacío sigue llevando, en un click, exactamente al callejón de #189** que C5 vino a
+cerrar. No lo bloquea porque el criterio literal («que el overlay ofrezca volver al título») se
+cumple y la salida está justo al lado; pero el estado sin salida sigue siendo alcanzable a
+propósito y eso no puede cerrarse en silencio.
 
 ---
 
 ## 1. Criterios
 
-Sacados de `requisitos.md` (petición original + las tres correcciones del coordinador), no del plan.
+Sacados de `requisitos.md` —petición original, reencuadre del crítico y la ronda C1–C6—, no del
+plan ni del informe de implementación.
 
-| # | Criterio (literal) | Veredicto | Evidencia |
+### 1.1 Los cuatro bloqueantes de la vuelta anterior
+
+| # | Criterio (literal) | Veredicto | Evidencia MÍA |
 |---|---|---|---|
-| **#181-a** | El botón «Nueva partida» escucha desde su primer pintado (ventana muerta = 0) | ✅ cumple | `qa/guiones/18`: el espía clica `#ts-new` en la microtarea siguiente a su pintado, con `#ts-status` todavía en «Cargando saves desde el bridge...», y el selector abre. En negativo (enganche detrás del `await`) el guion se pone rojo — reproducido por mí, §5.1 |
-| **#181-b** | El click deja de tragarse el fallo: `errors.push` + algo que el jugador lea | ✅ cumple | `qa/guiones/19` bloque 4 (nuevo): `#ts-error` = «No se pudo abrir el selector de mundos: Bridge request timeout: list_games», entrada `title` en `#error-log`, botón restaurado. Confirmado además con el bridge muerto (`Bridge not connected`) y con el directorio de juegos vacío (`no games available in bridge`) |
-| **#181-c** | **El botón no se desplaza bajo el cursor al llegar la lista de saves** | ❌ **NO cumple** | Medido en coordenadas de viewport (donde vive el cursor): **463 px → 344 px con 3 saves (−119 px)**; **−15 px incluso con 0 saves**. El orden viejo daba **+118 px**: el cambio invierte el signo y conserva la magnitud. `qa/guiones/19` bloque 2. Mecanismo en §3.1 |
-| **#181-d** | (corrección nº1) `show()` arma `resolve` ANTES de `renderHome` | ✅ cumple | `qa/guiones/19` bloque 1 (nuevo): con `sessions_listed` retenido 20 s, se recorre mundo → personajes → Continuar → **Comenzar** dentro de la ventana y **la partida arranca**. En negativo (orden viejo) el bloque se pone rojo y «Comenzar» es un no-op mudo. **El ingeniero declaró que esto no se podía candar; sí se puede** |
-| **#189-1** | Producir el repro real (fallo de sesión con el bridge ARRIBA) | ✅ cumple | `borrarSaveComoOtroCliente` por WS (`delete_session`) → «Reanudar» → `session_not_found`. Producido también por segunda vía: `game.json` roto → `game_load_failed` en **partida nueva**, que es el único camino donde el loader está abierto (§2, exp. D) |
-| **#189-2** | Tras el fallo, el jugador vuelve al título **vivo**, con el motivo en pantalla | ⚠️ parcial | Vivo de verdad: verificado hasta arrancar una partida entera desde el título de vuelta (`qa/guiones/19` bloque 3). Dos y tres fallos seguidos: mundo a 0 tiles, jugador en la posición de reset, la partida siguiente arranca limpia. **Pero solo cubre los fallos que hacen RECHAZAR a `start/resumeSession`**: cuando el motor no contesta generando el mundo inicial —el fallo más probable de los primeros segundos— el jugador se queda sin salida salvo recargar. §3.2 |
-| **#189-3** | Tras el fallo, `errors.push` registra el motivo | ✅ cumple | `#error-log` con fuente `session`: `session start/resume failed`. Aserto del guion 18 |
-| **#180** | Los rótulos de `main.ts` dejan de ser jerga de motor | ⚠️ parcial | El TÍTULO sí: con el motor muerto al arrancar, el overlay dice **«La partida no pudo empezar»**, no «Error al generar el mundo» (exp. F, captura). Pero el CUERPO que lee el jugador en ese mismo overlay es **«Error: No se pudo generar la escena. fetch failed»**: `motivoParaElJugador` solo se aplica si hay `opts.destino`, o sea solo en viajes. §3.3 |
-| **corr. nº2** | `paso()` sustituye los `void` del fichero; `max` congelado en el residuo REAL | ✅ cumple | Medido por mí con el patrón de la propia regla: **21 en HEAD → 8 en el árbol**, y los 8 son exactamente los que enumera el `why`. `title-screen.ts` y `main.ts` a cero. `max: 8` no tiene holgura. Las cuentas del `why` sí tienen errores (§4.1, hallazgo menor) |
-| **corr. nº3** | El guion se llama `18-el-titulo-responde-y-vuelve.mjs` | ✅ cumple | `qa/guiones/18-el-titulo-responde-y-vuelve.mjs` |
-| **plan §5** | Retirar el workaround del harness (`esperarTituloListo`) | ✅ cumple | Retirado. Los guiones afectados son **12**, no 15 (§4.4). Ninguno quedó esperando por casualidad: §3.4 |
-| **alcance** | #224 fuera; no rediseñar el título; no tocar el modelo de saves | ✅ cumple | El diff no toca `session-storage.ts` ni el formato de save. El home se reordena (era necesario para #181-c), no se rediseña |
-| **batería** | La batería completa en verde | ✅ cumple (17/17 previos) | Corrida entera dos veces por mí: **17/17** la primera, **17/18** la segunda (el único rojo es el guion 19 nuevo, y solo su aserto de #181-c). Log: `bateria-final.log` |
-| **núcleo** | `npm test`, `npm run crap --check`, `npm run deuda` | ✅ cumple | `1303 tests / 0 fail`. `1067 funciones medidas · cobertura 90.2% · CRAP máx 126 ≤ 127` — **no es la corrida envenenada** de «0 funciones medidas». Deuda: `html-sin-promesa-muda ×8`, `title-screen.ts` y `main.ts` ausentes |
-| **fallo tardío** | Volver al título tras un fallo POSTERIOR a `applySessionReady` | ⚠️ no probado | No he encontrado forma de provocarlo con el motor falso sin fabricar un save corrupto a mano. §6 |
+| **C1 · 3.1** | «El botón no debe desplazarse bajo el cursor al llegar la lista de saves» — Δ 0 px en **coordenadas de viewport**, con 0 y con 3 saves | ✅ **cerrado** | Medido con partidas sembradas por el camino del jugador y espía de `MutationObserver` en el instante del pintado: **0 saves 193→193 px (Δ 0)**, **3 saves 193→193 (Δ 0)**, **12 saves 193→193 (Δ 0)**, y **900×600 con 3 saves 181→181 (Δ 0)**. El bloque crece de 262 a 672 px y su borde superior no se mueve del `top: 96px`. Capturas `qa/capturas/qa2-c1-{00,03,12}-saves.png` |
+| | …y el candado se pone verde **por el arreglo**, sin tocar el guion | ✅ | `qa/guiones/19` es **byte a byte el de `d5c3382`** (`md5 055e4d94…`, `git diff` vacío). Su bloque 2, que la vuelta anterior dejó rojo, sale verde: `en el viewport: 193px → 193px`. **Negativo mío**: devolviendo la única línea a `justify-content: center`, el bloque 2 se pone **rojo** (`413px → 333px`, −80 px con 2 partidas) y mi medida independiente da **−220 px con 12** |
+| **C2 · §2.3 y 3.1** | Del guion 18 salen los dos asertos que pasaban con el bug puesto; ninguno de los que quedan puede quedarse verde con su bug | ✅ **cerrado** | Los dos se fueron (`el botón NO se mueve` y `el título de vuelta está VIVO`), con la cabecera diciendo qué bloque del 19 recoge cada uno. **Los cinco que quedan los he puesto rojos yo, uno a uno** (§4): la guarda de NO CONCLUYENTE incluida, que no es un sello de goma |
+| **C3 · 3.3** | El **cuerpo** del overlay deja de ser volcado de motor, en los **dos** caminos | ✅ **cerrado** | En el arranque real con el motor caído: `DETALLE: El motor narrativo no responde; inténtalo de nuevo en un momento.` **Negativo mío**: devolviendo `fail(\`Error: …\`)` en `bootstrap-tile.ts` —y nada más— reaparece **literalmente** la cadena que midió la vuelta anterior, `Error: No se pudo generar la escena. fetch failed`, y `qa/guiones/20` se pone rojo en tres asertos. **El ingeniero tiene razón corrigiendo el hallazgo**: esa cadena la escribe `bootstrap-tile.ts`, no el ternario de `tile.ts` |
+| **C5 · 3.2** | El fallo que responde `ok:true` y falla después deja de ser un callejón: el overlay del mundo vacío ofrece volver al título | ✅ **cerrado** | Escenario real, motor de verdad caído (§3): muro con «Volver al título» → título de vuelta **con el motivo escrito** → el título está VIVO (el segundo «Comenzar» vuelve a resolver) → aguanta **dos fallos seguidos**. Candado nuevo: **`qa/guiones/20-el-mundo-vacio-tiene-salida.mjs`**, verde y **probado en negativo cinco veces** (§5) |
 
----
+### 1.2 Las dos correcciones menores
 
-## 2. Las tres afirmaciones que se pedía medir
-
-### 2.1 «El `max` del candado es 8, no 18» — **el número es correcto; la explicación, no**
-
-`max: 8` es **exacto**. Aplicando el patrón literal de `arch-rules.json` sobre el árbol salen
-8 aciertos, y son uno a uno los que enumera el `why`. Sobre HEAD el mismo patrón da 21. Sin holgura.
-
-Pero la aritmética de §5 del informe no cuadra (18 − 5 − 2 − 1 = 10, no 8), y las dos mitades
-de la explicación no son iguales de ciertas:
-
-| Afirmación | Veredicto | Medida |
-|---|---|---|
-| «contaba `void p.catch(...)`, que sí tienen canal» | **CIERTA** | **7 de los 18** tienen canal: 5 con `.catch` en la misma línea (`main.ts:363,828,1047,1531`, `fps-atlas.ts:115`) y 2 cadenas multilínea que acaban en `.catch` (`fps-renderer.ts:84`, la carga diferida de three.js; `dev-status-panel.ts:169`, el toggle de dev-cache). Leídas una a una |
-| «y tres llamadas que ni siquiera son promesas (`renderCharacterEditor`, `renderCreateWorld`, `renderUploadStyle`)» | **las tres SON síncronas… pero no estaban en los 18** | `title-screen.ts:832 renderUploadStyle(): void`, `:994 renderCreateWorld(): void`, `:1077 renderCharacterEditor(...): void`. Ahora bien: los 18 del coordinador son *29 − los 11 de title-screen*, y esos tres viven dentro de los 11. **No explican ni uno solo de los 18**; explican por qué de los 11 solo 8 necesitaban `paso()` |
-| ¿De dónde salen entonces los 10 restantes? | **3 los arregló él** | `main.ts:2303` (`void addTile(scene).then(...)`, cadena multilínea sin `.catch` — la única ocupante del punto ciego), `:2317 void loadSceneData(scene);` y `:2338 void bootstrap();`. En el informe figura como «1 era muda de verdad y la arreglé»: eran **tres**, y son trabajo suyo, no medida inflada del coordinador |
-
-**Conclusión**: los 18 estaban inflados en **7** (39 %), no en 10. Congelar el `max` en 18 habría
-dejado sitio para siete promesas mudas nuevas sin que la regla dijera nada; 8 es el número honesto.
-
-**El punto ciego que la regla declara (cadena multilínea) hoy no tiene ocupante: CIERTO.** Barrí
-`nefan-html/src` entero: solo quedan dos `void` multilínea y las dos acaban en `.catch`.
-
-**Pero hay tres puntos ciegos MÁS que el `why` no declara**, probados contra el patrón real:
-
-```
-pasa   | void this.foo(); // sigue          ← un comentario al final rompe el ancla [;,]\s*$
-pasa   | () => void this.foo())             ← una línea que acaba en ')' en vez de ';' o ','
-pasa   | this.foo();                        ← sin `void` la regla no la ve…
-```
-
-…y esa última es la que importa: **quitar el `void` desactiva el candado**, y
-`@typescript-eslint/no-floating-promises` **no está activo** en `nefan-html`
-(`eslint.config.js` usa `tseslint.configs.recommended`, sin type-checking). O sea que el idioma
-honesto se persigue y el descuidado pasa. No es motivo para rechazar la regla —caza el patrón
-real que causó #181 y su test en negativo es bueno—, pero el `why` promete más alcance del que tiene.
-
-### 2.2 «#181-b no se puede probar como pedía el plan» — **la premisa sí, la conclusión no**
-
-**Premisa CIERTA, verificada en vivo** (exp. I): con el bridge abajo, `createGameClient` rechaza a
-los 5 s, `bootstrap` sale por su catch y **`runTitleFlow` no llega a llamarse**. Medido:
-`#title-screen` existe pero `display:none`, y **`#ts-new` no está en el DOM**. El loader dice «No se
-pudo arrancar la partida». No hay botón que pulsar: el escenario del plan es inalcanzable.
-
-**Conclusión FALSA**: «no queda candado ejecutable» no se sostiene. Encontré **tres** caminos al
-mismo estado con el bridge arriba, y dos de ellos no matan ningún servicio:
-
-1. **El bridge no contesta a `list_games`** — envolviendo el `WebSocket` de la página para no
-   enviar ese frame. `request()` vence a los 30 s (que es el techo real que identificó el crítico)
-   y el fallo llega por el camino de verdad. Determinista, sin tocar el stack compartido.
-   **Es el bloque 4 de `qa/guiones/19`, y se pone rojo si se devuelve el `void` mudo.**
-2. **Directorio de juegos vacío** — el bridge relee `gamesDir` en cada `list_games`
-   (`loader.ts:306`), así que basta apartar los mundos: `#ts-error` = «No se pudo abrir el selector
-   de mundos: no games available in bridge — check nefan-core/data/games/», entrada `title` en el
-   log, botón restaurado, y al devolver los mundos el selector vuelve a abrir.
-3. **El bridge muere con el título abierto** — el escenario que él ejecutó a mano. Reproducido:
-   `#ts-error` = «No se pudo abrir el selector de mundos: Bridge not connected».
-
-### 2.3 «El guion 18 canda el bucle de #189, no la retirada del `finally`» — **CIERTO, y hay más**
-
-Devolví `finally { titleScreen.hide() }` **con el bucle puesto** y corrí el guion 18:
-
-```
-✔ tras el fallo de sesión el jugador está OTRA VEZ en el título
-✔ …y el título dice qué ha pasado, con el motivo
-✔ el título de vuelta está VIVO: «Nueva partida» sigue abriendo el selector
-✔ 18-el-titulo-responde-y-vuelve · 1/1 guiones en verde
-```
-
-**Confirmado**: la retirada del `finally` no tiene candado propio. Es inocuo con el bucle (solo
-ahorra un parpadeo de ocultar-y-reenseñar) y quitarlo sigue siendo lo correcto, pero el guion 18
-promete «se vuelve a un título vivo y con motivo», no «el `finally` no vuelve».
-
-**Y hay un segundo hueco, peor, que él no vio.** El comentario del guion 18 dice, del último aserto:
-
-> *«Lo que separa «el título se ve» de «el título FUNCIONA», que es la trampa que tenía este
-> arreglo: bastaba con no ocultarlo para que la pantalla volviera, pero su promesa ya estaba
-> consumida y el siguiente «Comenzar» no resolvía a nadie. Se comprueba pulsando.»*
-
-**No lo comprueba.** Pulsa `#ts-new` y espera `[data-game-id]`; ese click va contra un
-`addEventListener` del DOM que sobrevive a todo. El que puede quedar muerto es `this.resolve`, y
-no se lee hasta «Comenzar», dos pantallas más allá. Lo probé escribiendo la «opción C disfrazada»
-—que `show()` no rearme `this.resolve` entre vueltas del bucle— y el guion 18 **pasa entero**:
-
-```
-✔ el título de vuelta está VIVO: «Nueva partida» sigue abriendo el selector
-✔ 18-el-titulo-responde-y-vuelve · 1/1 guiones en verde
-```
-
-…mientras que llegar hasta «Comenzar» en ese mismo estado **no arranca nada**. Es el riesgo
-«título vivo-muerto» que el plan enumera en §8 y que el guion dice cubrir. Ahora lo cubre el
-bloque 3 de `qa/guiones/19`.
-
----
-
-## 3. Hallazgos
-
-### 3.1 BLOQUEANTE — #181-c no se cumple, y su candado no puede verlo
-
-**Qué esperaba el usuario** (criterio literal de `requisitos.md`): *«El botón no debe desplazarse
-bajo el cursor al llegar la lista de saves»*.
-
-**Qué pasa.** El botón se sigue desplazando exactamente lo mismo que antes; lo único que cambió es
-el signo.
-
-| | al pintar | con la lista | Δ |
+| # | Criterio | Veredicto | Evidencia MÍA |
 |---|---|---|---|
-| Orden nuevo, 3 saves | 463 px | 344 px | **−119 px** |
-| Orden viejo, 3 saves | 554 px | 672 px | **+118 px** |
-| Orden nuevo, 0 saves | 463 px | 448 px | −15 px |
+| **C4 · 3.4** | `#ts-error` deja de enseñar códigos y rutas de disco | ✅ **cerrado** | Las **cinco** cadenas que listaba el hallazgo, verificadas EN VIVO una a una: `session_not_found` → «Esa partida guardada ya no está en el disco.» (batería, guion 18); `game_load_failed` **con la ruta absoluta** → «Los datos de ese mundo están dañados y no se pueden leer.» (rompiendo el `game.json` con el selector abierto, `qa/capturas/qa2-c4-game-load-failed.png`); `Bridge not connected` → «Se ha perdido la conexión…»; `Bridge request timeout: list_games` → «El servidor del juego no contesta…» (batería, guion 19); `no games available` → «No hay ningún mundo instalado.» (68 ms, con el directorio de juegos vacío). Y el crudo **no se pierde**: la entrada `session` del `#error-log` sigue trayendo `game_load_failed` entero |
+| **C6 · 3.5** | Las tres cuentas del `why` de `arch-rules.json`, corregidas contra la medida | ✅ **cerrado** | Re-medidas por mí: `main.ts` en `d5c3382^` tenía **7** `void`, de los que **3** eran mudos y los otros 4 son `void fpsAtlasController….catch(…)` — es lo que dice ahora el `why`. Los guiones que pasan por `sesion.mjs` son **13** (`grep -l` + revisión uno a uno de que los trece entran por `esperarTituloListo`), y así consta en `sesion.mjs`, en la cabecera del 18 y en el `why`. `max: 8` es el residuo real: aplicando el patrón **literal de la propia regla** salen 8, en los mismos ficheros que enumera (fps-atlas 1, dev-menu 1, dev-status-panel 2, graphics-mode 1, history-browser 1, portrait 2) |
 
-**Mecanismo, medido y aislado**: `#title-screen` es `display:flex` con **`justify-content:center`**,
-así que el bloque de contenido está centrado verticalmente. Cuando llega la lista, el bloque
-**crece 238 px hacia abajo y su top sube 119 px** — exactamente la mitad, verificado
-(`contenido: top 366→247 · alto 232→470`). El `padding-top` del panel de dev no cambia: no es él.
+### 1.3 Lo que ya estaba verde y sigue verde (re-verificado, no heredado)
 
-**Por qué nadie lo vio**: el guion 18 mide `rect(#ts-new).top − rect(padre).top`, y el padre es el
-bloque que se mueve. En esa referencia el número es 97 px → 97 px **con cualquier layout**: sale
-verde con el orden nuevo y también saldría verde con el viejo si el botón no cambiara de sitio
-dentro del bloque. El cursor del jugador no vive en coordenadas del padre.
+| # | Criterio | Veredicto | Evidencia MÍA |
+|---|---|---|---|
+| **#181-a** | El botón escucha desde su primer pintado | ✅ | Guion 18, batería completa: el espía pulsa con `#ts-status` en «Cargando saves desde el bridge...» y el selector abre. Negativo mío **4.2**: enganche detrás del `await` → **rojo** |
+| **#181-b** | El click deja de tragarse el fallo | ✅ | Guion 19 bloque 4: `#ts-error` = «No se pudo abrir el selector de mundos. El servidor del juego no contesta; inténtalo de nuevo.», entrada `title` en el log, botón restaurado |
+| **#181-d** | `show()` arma `resolve` ANTES de `renderHome` | ✅ | Guion 19 bloque 1, verde: «Comenzar» dentro de la ventana de carga arranca la partida. Y la otra mitad —que la promesa se **rearme** en cada vuelta— la puse roja yo (**4.7**): bloque 3 del 19 y guion 20 en rojo. El `tituloEnMarcha` que añadió C5 **no ha debilitado ese candado** |
+| **#189-1/2/3** | Repro real, vuelta a un título VIVO, motivo en pantalla y en el log | ✅ | Guion 18 + guion 19 bloque 3 + guion 20. Los tres negativos correspondientes, rojos (§4, §5) |
+| **#180** | Los rótulos dejan de ser jerga de motor | ✅ | «La partida no pudo empezar» sobre un cuerpo ya traducido, en el arranque real |
+| **batería** | La batería completa en verde | ✅ | **19/19** en la corrida final con el árbol de entrega (`bateria-final.log`). Y **18/18** en la primera corrida del día, antes de tocar nada |
+| **núcleo** | `npm run verify`, cobertura, CRAP, deuda | ✅ | `1319 tests / 0 fail`. `1067 funciones medidas · cobertura 90,2 % · CRAP máx 126 ≤ 127` — **no es la corrida envenenada** de «0 funciones medidas». `npm run deuda`: **66 items**, los mismos, con `html-sin-promesa-muda ×8` y `title-screen.ts`/`main.ts` ausentes, y **sin aviso de medida obsoleta** |
+| **cliente** | `tsc --noEmit`, `lint`, `build` | ✅ | Los tres en verde, corridos por mí |
+| **mutación** | `status-labels` sin supervivientes | ✅ | Re-corrida por mí: `96 mutantes · 0 vivos · score 100,0 % (break 100)`. Lo doy por medido, no por declarado |
+| **fixtures** | `qa/fixtures-sin-bridge.mjs` (el ingeniero toca el markup del loader que usa) | ✅ | `frames 14 → 41 · tiles ["tile_0_0"] · billboards 66 · ✔ html-fixtures pinta sin backend` |
+| **alcance** | #224 fuera; no rediseñar el título; no tocar el modelo de saves | ✅ | El diff no toca `session-storage.ts` ni el formato de save. El único cambio visible del título es una línea de `justify-content` (§6, hallazgo menor de composición) |
 
-**Reproducción desde el arranque**: `./start.sh --preset e2e-sin-creditos`, jugar 2–3 partidas para
-sembrar saves, recargar el título, poner el cursor sobre «Nueva partida» en cuanto aparece y
-esperar ~150 ms. El botón se va hacia arriba. Automatizado en `qa/guiones/19` bloque 2 (rojo hoy).
+### 1.4 Lo que sigue sin probarse
 
-**Salidas posibles** (no las decido yo): `justify-content:flex-start` en el título, o reservar la
-altura de `#ts-sessions` desde el primer pintado. La segunda la desaconsejaba el plan §8 por
-números mágicos; la primera cambia la composición y hay que verla.
-
-### 3.2 IMPORTANTE — #189 sigue abierto para el fallo más probable de los primeros segundos
-
-`start_session` responde `ok:true` **antes** de generar el tile (`session.ts:374`; el plan lo
-anota en §2 y luego no actúa). Así que cuando el motor no contesta generando el mundo inicial,
-el fallo **no pasa por el catch de `unIntentoDeArrancar`**: el título ya se ocultó y el bucle ya
-devolvió `null`.
-
-Medido tras cerrar el overlay de error, que es lo único que la pantalla ofrece:
-
-```
-título visible: false · loader: false
-mundo: 0 tiles · escena=null
-controles clicables en pantalla: ["#room-selector","#ds-menu-btn","1Quick","2Heavy",
-                                  "3Medium","4Defensive","5Precise","#gfx-chip"]
-```
-
-El jugador se queda con un cielo vacío, una barra de vida al 100 y cinco botones de ataque, sin
-mundo y **sin nada que le devuelva al título**. La única salida es recargar — literalmente la frase
-de #189. No es una regresión (en HEAD pasaba lo mismo), pero la tanda da #189 por cerrado y el
-usuario lo describió como *«la pantalla a la que no se puede volver cuando algo falla»*.
-
-**Reproducción desde el arranque**: arrancar los tres servicios por separado (si se usa `./start.sh`,
-su `trap` mata el stack entero al morir uno) — `node labs/narrative/fake-ai-server.mjs`,
-`NEFAN_AI_SERVER=http://127.0.0.1:18765 npx tsx bridge/ws-server.ts`, `npm run dev` —, llegar a
-«Comenzar», matar `:18765` justo antes de pulsarlo, pulsar, y cerrar el overlay.
-
-No lo dejo en `qa/guiones/`: automatizarlo dentro del runner exige o matar un servicio del que
-depende el resto de la batería, o que el fake-ai-server sepa fallar a petición (no tiene endpoint
-para eso). Lo segundo es barato y sería el camino.
-
-### 3.3 IMPORTANTE — #180: el rótulo está arreglado, el cuerpo del mismo overlay no
-
-La premisa sobre la que el crítico redujo #180 a «dos rótulos» —*«el cuerpo ya está escrito para
-quien juega por `motivoParaElJugador` (cf7b446)»*— **solo vale para los viajes**. En
-`tile.ts:250-254` la traducción está dentro de un ternario:
-
-```ts
-fail(opts.destino
-  ? `No se pudo llegar a ${opts.destino}. ${motivoParaElJugador(err)}`
-  : `Error: ${(err as Error).message ?? err}`);
-```
-
-Sin `destino` —o sea, en el arranque del mundo y en la frontera— el jugador lee el error crudo.
-Medido en el overlay real (captura):
-
-```
-TÍTULO : La partida no pudo empezar        ← arreglado por esta tanda
-DETALLE: Error: No se pudo generar la escena. fetch failed   ← sigue siendo jerga de motor
-```
-
-O sea: en el estado que da nombre a la tanda —los primeros segundos— #180 queda a medias, y la
-mitad que queda es la que el usuario nombró («lo que se lee cuando falla»). El fixture del test de
-`status-labels` usa como cuerpo «No se pudo llegar a Robledo. El motor narrativo no responde…»
-incluso para el caso `mundoVacio`, que es justo el cuerpo que ahí **no** llega: el test hereda la
-premisa falsa y por eso el hueco no se vio.
-
-### 3.4 IMPORTANTE — el canal nuevo (`#ts-error`) enseña errores internos al jugador
-
-`#ts-error` es la superficie que esta tanda ABRE, y hoy imprime literalmente lo que venga:
-
-- `No se pudo reanudar la partida: session_not_found`
-- `No se pudo empezar la partida: game_load_failed: game.json malformed (/home/…/games/alta_fantasia/game.json): Expected property name or '}' in JSON at position 2 (line 1 column 3)` — **con la ruta absoluta del disco de quien juega**
-- `No se pudo abrir el selector de mundos: Bridge not connected`
-- `No se pudo abrir el selector de mundos: Bridge request timeout: list_games`
-- `No se pudo abrir el selector de mundos: no games available in bridge — check nefan-core/data/games/`
-
-El ingeniero anota el primero en su backlog (§8.2). Los otros cuatro son de la mitad que sí
-escribió esta tanda, y la primera mitad de cada frase demuestra que el sitio para traducirlos ya
-existe. Con `motivoParaElJugador` a mano en el bridge, esto es un `motivoDeSesionParaElJugador` de
-diez líneas, no un rediseño.
-
-### 3.5 MENOR — el `why` del candado, que es fichero de contrato, tiene tres cuentas mal
-
-- «En `main.ts` había cuatro y se fueron los cuatro» → eran **tres** (`grep -c "paso(" main.ts` = 3;
-  los cuatro `void ... .catch(...)` de `fpsAtlasController` siguen ahí, con razón).
-- El informe: «1 era muda de verdad y la arreglé» → eran tres, y la resta no cuadra (§2.1).
-- «los quince guiones que pasan por aquí» (en `sesion.mjs`, en la cabecera del guion 18 y en el
-  informe) → son **doce**: `05,07,08,09,10,11,12,13,14,15,17,18`. Los otros cinco entran por
-  `closeTitle` (modo fixtures) y nunca tocaron el workaround.
-
-Números pequeños, pero el `why` de `arch-rules.json` es lo que alguien leerá dentro de tres meses
-para decidir si baja el `max`.
-
-### 3.6 MENOR — la vuelta al título deja pasar el HUD por debajo
-
-`#title-screen` es `rgba(8,8,12,0.97)` con `z-index:9999`; `#error-log` está a 8900 y el HUD del
-juego por debajo. Al volver al título tras un fallo se leen fantasmas del panel de errores y de la
-barra de acciones detrás del texto, justo al lado del botón «✕ cerrar». Se ve en
-`qa/capturas/18-…-03-de-vuelta-en-el-titulo-con-el-motivo.png`. Es pre-existente (pasa igual en el
-arranque), pero antes de esta tanda nadie volvía al título con la partida a medias detrás.
-
-### 3.7 MENOR — el rótulo del viaje repite el principio del cuerpo
-
-`TÍTULO: No se pudo llegar` sobre `DETALLE: No se pudo llegar a Molino del bench. El motor…`.
-Se lee dos veces lo mismo. El rótulo podría ser el nombre del destino.
-
-### 3.8 MENOR (pre-existente, CONFIRMADO) — el guion 15 es una moneda al aire, y también en `main`
-
-El ingeniero lo declara pre-existente. **Lo es**, y lo demuestro sin lugar a dudas: corrí el guion
-15 **sobre `main`** (con la tanda entera en `git stash` y los ficheros nuevos apartados):
-
-```
-main, corrida 1:  mercader: 9.22 → 10.28 m   ✔ verde   (margen: 0,06 m sobre el umbral de 1)
-main, corrida 2:  mercader: 9.16 → 10.13 m   ✘ ROJO    (0,97 m: le faltaron 3 cm)
-```
-
-Y **el umbral no tiene sujeto**: `atacarYVer` espera a que el NPC se desplace **1,5 m** con un
-cortafuegos de 30 s, pero el aserto pide solo **1 m**. Si la espera se cumpliera, el aserto pasaría
-con 0,5 m de margen; como nunca se cumple, lo que decide el veredicto es **dónde estaba el NPC
-cuando venció el cortafuegos de pared** — que es exactamente lo que la regla 1 de `qa/README.md`
-prohíbe. En mis dos corridas verdes del guion 15 sobre la tanda, la distancia recorrida fue 1,06 m:
-verde por 6 cm. El arreglo no es bajar el umbral: es que el sim RECUERDE el desplazamiento máximo
-alcanzado, como ya se hizo con `telegraphEpisode` en el guion 10.
+| # | Criterio | Veredicto | Por qué |
+|---|---|---|---|
+| **fallo TARDÍO de sesión** | Volver al título tras un fallo POSTERIOR a `applySessionReady` **dentro** del `try` | ⚠️ **no probado** | Sigue sin camino desde el juego. Ojo: el fallo tardío MÁS probable —el motor que no genera el mundo— **sí** está cubierto ahora por C5; lo que queda sin medir es una excepción dentro del propio `try` (p. ej. `setPlayerAppearance`), que no sé provocar sin fabricar estado. Riesgo §8 del plan, vivo |
+| **gasto de créditos** | — | ⚠️ **no probado** | **Cero créditos** en todo lo anterior: preset `e2e-sin-creditos`, motor falso y, para el escenario del motor caído, un puerto donde no hay nada. No se ha ejercido ningún camino con IA real |
+| **mutación completa** | Los otros 18 módulos | ⚠️ **no reproducida** | Solo he re-corrido `status-labels`, que es el módulo que la ronda cambia. Los demás los leo del informe y de `npm run deuda` (39 supervivientes, sin aviso de obsolescencia), no de una corrida mía |
 
 ---
 
-## 4. Lo que dejo ejecutable
+## 2. Lo que exigía escrutinio especial
 
-**`qa/guiones/19-el-titulo-arranca-de-verdad.mjs`** (nuevo). Cubre los cuatro huecos del 18, y los
-cuatro se descubrieron probando el 18 en negativo. Estado actual: **6 asertos verdes, 1 rojo** — el
-rojo es el hallazgo 3.1, y se pondrá verde cuando el botón deje de moverse.
+### 2.1 `qa/guiones/19` no se ha tocado — comprobado, no creído
 
-| Bloque | Qué canda | Probado en negativo |
+```
+$ git diff d5c3382 -- qa/guiones/19-el-titulo-arranca-de-verdad.mjs
+(vacío)
+$ md5sum qa/guiones/19-el-titulo-arranca-de-verdad.mjs
+055e4d940ce2092dc61cb401331a11a0
+$ git show d5c3382:qa/guiones/19-el-titulo-arranca-de-verdad.mjs | md5sum
+055e4d940ce2092dc61cb401331a11a0
+```
+
+Sus cuatro bloques, corridos enteros: **verdes**. Y los dos que dependen del código que esta ronda
+toca los he puesto rojos yo (§4.6 y §4.7): el bloque 2 con `justify-content: center` y el bloque 3
+con `show()` sin rearmar su promesa. **El verde del bloque 2 viene del arreglo, no de una rebaja
+del guion.** De paso, el rojo del negativo enseña la trampa que destapó la vuelta anterior, en la
+misma línea: `en el bloque : 97px → 97px` mientras `en el viewport: 413px → 333px`.
+
+### 2.2 «Usé `git checkout --` y me llevé C1 y C4 por delante» — el árbol está entero
+
+El ingeniero declara el susto y dice que reaplicó las dos ediciones. **Comprobado**: el árbol que
+recibo tiene `nefan-html/src/ui/title-screen.ts` con `md5 b4a14d98e5589c442e3a9c9dbe895c37` — el
+mismo hash que él dice haber verificado— y las dos correcciones **funcionan en vivo**, que es lo
+que de verdad importa: C1 mide Δ 0 px en el navegador (§1.1) y C4 traduce las cinco cadenas
+(§1.2). No he dado por buena ninguna corrección por leerla en el diff: las siete de la ronda están
+ejercidas contra el juego corriendo.
+
+El `git diff --stat` de entrega es exactamente el suyo (18 ficheros, +791/−186) y mi único añadido
+al repositorio es `qa/guiones/20-el-mundo-vacio-tiene-salida.mjs`, sin tocar nada existente.
+
+### 2.3 «La mutación me puso rojo y arreglé los tests, no el umbral» — cierto
+
+Re-corrida por mí: `status-labels 96 mutantes · 0 vivos · 100,0 % (break 100)`. Y el arreglo es el
+que dice: `test/status-labels.test.ts` trae ahora una **tabla código → frase EXACTA** para los ocho
+códigos reales, más dos rechazos raros (`undefined`/`null` y un `string` en vez de `Error`). Un
+«las siete frases son distintas» habría seguido pasando con media función borrada; una tabla, no.
+El umbral (`break 100`) no se ha tocado.
+
+### 2.4 «Tres tests pre-existentes cambian de canal, no de exigencia» — afirman MÁS, no menos
+
+Leídos uno a uno contra su versión de `d5c3382`:
+
+| Test | Antes | Ahora |
 |---|---|---|
-| 1 | «Comenzar» **dentro** de la ventana de carga de saves arranca la partida (corrección nº1) | `show()` con el orden viejo (`resolve` tras `renderHome`) → **rojo**, y el aserto de NO CONCLUYENTE sigue verde |
-| 2 | El botón no se desplaza **en el viewport** al llegar la lista | Rojo hoy: es el hallazgo. Con el orden viejo del home también rojo (+41 px) |
-| 3 | El título de vuelta **arranca una partida entera**, no solo abre el selector | `show()` sin rearmar `resolve` entre vueltas → **rojo** (y el guion 18 verde) |
-| 4 | El click no es mudo cuando el bridge no contesta (#181-b), con acuse de recibo inmediato | Click devuelto a `void this.renderWorldSelect()` → **rojo**, más una excepción sin capturar en la página |
+| `bridge-map` · bootstrap sin `place_id` | `assert.match(err.message, /place_id/)` + `/salidas/` **sobre el wire** | **igualdad exacta** de la frase que lee el jugador + las dos `match` sobre el **log del bridge** (`capturarLogDelBridge`) |
+| `bridge-session-guards` ×2 (anti-takeover) | esperaba un `narrative_status` con `/descartado sin escribir/` | espera el error por el wire **y** exige el `descartado sin escribir` en el log del bridge |
+| `bridge-tile` · tile no jugable | `assert.ok(err.message.includes("no es jugable"))` | **igualdad exacta** de la frase traducida |
+| `bridge-session` · generación fallida | `assert.ok(err.message.includes("MCP caído"))` | **igualdad exacta** de la frase + `assert.ok(!includes("MCP caído"))` |
 
-**Instrumentación, declarada dentro del guion**: los bloques 1 y 4 envuelven el `WebSocket` de la
-página para retrasar `sessions_listed` y para no enviar `list_games`. No ocultan ningún obstáculo:
-producen uno que el jugador puede tener (un bridge lento — el techo de 30 s que identificó el
-crítico) sin tocar el bridge compartido por la batería.
+Ninguno pierde su sujeto: el diagnóstico se sigue exigiendo, en el canal donde ahora vive, y
+además se exige que el jugador **no** lo lea. Cuatro `includes`/`match` sustituidos por igualdades
+exactas es más exigencia, no menos.
 
----
-
-## 5. Pruebas en negativo que reproduje yo
-
-Cada una cambiando **solo lo suyo**, y restaurando el árbol con `md5sum -c` verificado.
-
-1. **Enganche detrás del `await`** → guion 18 rojo en «pulsar «Nueva partida» en su primer pintado
-   abre el selector» (reproducido; coincide con el informe).
-2. **`finally { hide() }` devuelto CON el bucle** → guion 18 **verde 1/1**. Confirma §2.3.
-3. **`show()` sin rearmar `resolve`** → guion 18 **verde 1/1**, guion 19 bloque 3 rojo.
-4. **`show()` con el orden viejo** → guion 19 bloque 1 rojo, guion 18 verde.
-5. **Click devuelto al `void` mudo** → guion 19 bloque 4 rojo.
-6. **Orden viejo del home** → el botón se mueve +118 px en viewport y +80 px dentro del bloque.
+Una pega pequeña, no bloqueante: `capturarLogDelBridge` pisa `console.warn`/`console.error`
+globales. Dentro de un fichero de `node:test` los tests corren en serie, así que es seguro hoy;
+pero el `finally` que lo suelta es lo único que separa a la suite de quedarse sin consola, y eso
+conviene que siga escrito donde está.
 
 ---
 
-## 6. Workarounds e instrumentación usados
+## 3. El escenario que más importaba: C5 desde el arranque, con el motor caído de verdad
 
-Ninguno ocultó un obstáculo que el jugador vaya a tener. Los declaro todos:
+`start_session` contesta `ok:true` antes de generar el tile. Para ejercerlo **sin matar el
+fake-ai-server que comparten los otros 18 guiones** —y sin toparme con el `trap` de `./start.sh`,
+que se lleva el stack entero cuando muere un hijo— levanté un **segundo bridge** en un puerto
+libre, apuntado a un ai_server que no existe:
 
-| Qué | Por qué NO es un hallazgo |
+```
+NEFAN_BRIDGE_PORT=9977 NEFAN_STATE_HTTP_PORT=9978 \
+NEFAN_AI_SERVER=http://127.0.0.1:9 \
+NEFAN_SAVES_DIR=…/saves NEFAN_GAMES_DIR=…/games  npx tsx bridge/ws-server.ts
+```
+
+y apunté el cliente con `?bridge=ws://127.0.0.1:9977`, que es un override REAL del contrato
+(`nefan-html/src/net/service-urls.ts` → `NEFAN_URL_GAME_GATEWAY`). El fallo lo produce el motor de
+verdad al no estar (ECONNREFUSED), recorre el bridge de verdad y llega al cliente por el
+`narrative_status` de siempre: **no es estado sintético**. El disco de juegos va sin snapshots de
+mundo — con ellos `start_session` replaya y no llama al motor, y la prueba daría un verde vacío.
+
+Salida real:
+
+```
+── 1. arranque con el motor caído ──
+  TÍTULO : La partida no pudo empezar
+  DETALLE: El motor narrativo no responde; inténtalo de nuevo en un momento.
+  ✔ el rótulo no es jerga de motor
+  ✔ el CUERPO no es una excepción cruda (#180 / C3)
+  ✔ el muro ofrece VOLVER AL TÍTULO (#189 / C5)
+── 2. «Volver al título» ──
+  #ts-error: La partida no pudo empezar. El motor narrativo no responde; inténtalo de nuevo en un momento.
+  ✔ el jugador está OTRA VEZ en el título   ✔ …y el título dice POR QUÉ ha vuelto
+  ✔ …y el muro ya no está por encima
+── 3. segundo fallo seguido ──
+  ✔ el segundo fallo también ofrece volver   ✔ …y se vuelve al título por segunda vez
+```
+
+Cuatro cosas de golpe, y las cuatro son las que pedía el encargo. Ese escenario ya no depende de
+que alguien lo repita a mano: es el guion 20 (§5).
+
+---
+
+## 4. Pruebas en negativo que reproduje yo
+
+Cada una cambiando **solo lo suyo**, y restaurando el árbol reescribiendo el texto original y
+verificando el hash (`md5sum -c`, verde en las once).
+
+| # | Qué rompí | Qué se puso rojo |
+|---|---|---|
+| 4.1 | La marca de agua del guion 18: `statusEl.textContent = "Cargando saves…"` movido detrás del `await` | Guion 18 · **la guarda de NO CONCLUYENTE** (`status en el instante del click: ""`). No es un sello de goma |
+| 4.2 | El `addEventListener` del botón, detrás del `await listSessions()` | Guion 18 · `pulsar «Nueva partida» en su primer pintado abre el selector` |
+| 4.3 | `runTitleFlow` de vuelta a un solo intento | Guion 18 · muere esperando `el título vuelve con el motivo del fallo escrito` |
+| 4.4 | La traducción de C4 revertida (`${que}: ${err.message}`) | Guion 18 · `…y el título dice qué ha pasado sin enseñarle el código del bridge` — `No se pudo reanudar la partida: session_not_found` |
+| 4.5 | El `errors.push` del catch de sesión, retirado | Guion 18 · `…y queda registrado en el log de errores con la fuente session` |
+| 4.6 | `justify-content: flex-start` → `center` | Guion **19 bloque 2** (`413px → 333px`) y mi medida independiente (`413px → 193px`, −220 px con 12 saves) |
+| 4.7 | `show()` sin rearmar `resolve` entre vueltas | Guion **19 bloque 3** y guion **20** (`no hubo segundo intento`) |
+| 4.8 | C3 revertido en `bootstrap-tile.ts` | Guion **20** ×3 asertos, con la cadena de la vuelta anterior **reproducida literalmente**: `Error: No se pudo generar la escena. fetch failed` |
+| 4.9 | `salida` clavada a `"cerrar"` en `status-labels.ts` | Guion **20** · `el muro del mundo vacío ofrece VOLVER AL TÍTULO` |
+| 4.10 | `volverAlTitulo()` sin re-entrar en `runTitleFlow` | Guion **20** · muere esperando `el título vuelve con el motivo escrito` |
+| 4.11 | El guion 20 SIN borrar los snapshots de mundo | Guion **20** · muere esperando el muro: con snapshot no hay llamada al motor y la prueba no probaría nada. El gotcha que le costó una hora al ingeniero queda candado |
+
+**Qué cubre esto exactamente, sin redondear** (22 asertos vivos en los tres guiones del título):
+
+| Guion | Asertos | Rojos demostrados por MÍ | Guardas de NO CONCLUYENTE | Heredados |
+|---|---|---|---|---|
+| 18 | 5 | **5** (4.1–4.5) | — | — |
+| 19 | 9 | **2** (4.6 bloque 2, 4.7 bloque 3) | 2 (`el «Comenzar» cae DENTRO`, `hay al menos una partida listada`) | 5 — el aserto de `show()` del bloque 1 y los cuatro del bloque 4, cuyos negativos probó el QA anterior sobre un guion que he verificado **byte a byte idéntico** y cuyo código de referencia esta ronda no cambia (el orden de `show()` y el `paso()` del click siguen siendo los mismos; C4 solo cambió el TEXTO que ese handler escribe, y ese texto sí lo he puesto rojo yo en 4.4) |
+| 20 | 8 | **7** (4.7–4.10) | 1 (`el fallo deja el mundo VACÍO`, y 4.11 demuestra que su incumplimiento mata el guion en vez de aprobarlo) | — |
+
+**Ninguno de los 22 puede quedarse verde con su bug puesto**, y los 14 que dependen de código que
+esta ronda toca los he puesto rojos yo.
+
+---
+
+## 5. Lo que dejo ejecutable
+
+**`qa/guiones/20-el-mundo-vacio-tiene-salida.mjs`** (nuevo). Canda C5 y la mitad de C3 que vive en
+el arranque — lo único mecánico de la ronda que se quedaba sin candado (el ingeniero lo declara en
+su §7, y decía que hacía falta un `/dev/fail_next_scene` en el motor falso; hace falta esto, que no
+toca el motor falso de nadie).
+
+| Aserto | Probado en negativo |
 |---|---|
-| Retrasar `sessions_listed` en el `WebSocket` de la página | Emula un bridge lento, que es el estado que #181 describe y cuyo techo (30 s) identificó el crítico. Sin él, la ventana dura 150 ms y ningún recorrido de UI cabe dentro |
-| No enviar `list_games` | Igual: un bridge que no contesta. Alternativa sin instrumentación (directorio de juegos vacío) probada y con el mismo resultado |
-| Apartar los mundos de `data/games` del disco efímero | Estado real (instalación rota / `NEFAN_GAMES_DIR` mal). Se devuelven y el selector vuelve a abrir |
-| Romper el `game.json` con el selector ya pintado | Única forma que encontré de provocar un fallo de **partida nueva** con el loader abierto — el caso donde el riesgo «dos overlays» podía darse. Resultado: `hideLoader()` funciona, no hay error tapado |
-| Matar `:18765` / `:9877` | Estados reales (motor caído, bridge caído). Obligó a arrancar los servicios por separado: `./start.sh` mata el stack entero por su `trap` cuando muere un hijo |
-| `git stash` de la tanda para correr el guion 15 sobre `main` | Solo para comprobar pre-existencia. Árbol restaurado y verificado |
+| el fallo deja el mundo VACÍO (guarda de NO CONCLUYENTE) | 4.11 — con snapshot de mundo el guion muere, no aprueba |
+| el muro del ARRANQUE no le enseña la excepción del motor (#180) | 4.8 |
+| …y le dice qué ha pasado en una frase que puede accionar | 4.8 |
+| el muro del mundo vacío ofrece VOLVER AL TÍTULO (#189) | 4.9 |
+| «Volver al título» devuelve al título, con el motivo y sin el muro encima | 4.10 |
+| …y el motivo tampoco es jerga de motor | 4.8 |
+| el título de vuelta está VIVO: «Comenzar» vuelve a resolver | 4.7 |
+| …y el segundo fallo seguido también ofrece la salida | 4.7 y 4.9 |
+
+Detalles que el guion declara dentro, para que nadie los tenga que deducir:
+
+- **Instrumentación, no estado sintético**: el segundo bridge de §3. No oculta ningún obstáculo —
+  produce uno que el jugador tiene el día que el ai_server no está.
+- **Puertos 9977/9978**, fuera del catálogo de `start.sh`; si están ocupados el guion **falla
+  diciéndolo** en vez de dar un verde raro.
+- **Mata el GRUPO de procesos**, no el `npx`: matando solo al envoltorio, el `tsx` de dentro se
+  queda con el puerto y la corrida siguiente muere en el arranque. Medido — me pasó.
+- **Un aserto que quité antes de entregarlo**: «el mundo queda a cero tras la vuelta». En este
+  camino el mundo ya nace vacío, así que pasaba con `resetWorld()` puesto y quitado. Queda como
+  `ctx.log`. (Y de paso: `window.__nefan.status()` **no** expone `tiles`; el libro bueno es
+  `window.__nefan.tiles`. Con el accesor equivocado ese aserto medía `undefined` y siempre daba 0.)
+
+Comprobado además que **no envenena la batería**: 19/19 con él dentro, y `--orden inverso` (el
+guion 20 primero, el 18 después) también verde. Deja los puertos libres al terminar.
 
 ---
 
-## 7. No probado
+## 6. Hallazgos
 
-- **Fallo TARDÍO de sesión** (posterior a `applySessionReady`, p. ej. `setPlayerAppearance`
-  reventando): el bucle llama a `resetWorld()` y `activeSessionId = null`, pero `sessionModesApplied`,
-  el tema de UI y `historyBrowser.setSession` conservan lo del intento anterior. No he encontrado
-  forma de provocarlo con el motor falso sin fabricar un save corrupto a mano, que ya no sería el
-  flujo del jugador. Riesgo §8 del plan, **sigue vivo y sin medir**.
-- **Muchos saves (20, 200)**: probado con 0, 1, 2 y 3. El desplazamiento del hallazgo 3.1 crece con
-  N hasta que el bloque llena la pantalla y `max-height:100%` lo clava; a partir de ahí deja de
-  moverse. No he medido dónde está ese punto.
-- **Gasto de créditos**: cero en todo lo anterior — preset `e2e-sin-creditos` y motor falso. No se
-  ha ejercido ningún camino con IA real.
-- **Mutación**: no la he vuelto a correr (34 min de reloj y el diff no cambió desde su corrida).
-  Reviso su resultado como dato del ingeniero, no como medida mía.
+### 6.1 IMPORTANTE — «Cerrar» sigue llevando al callejón de #189, en un click
+
+**Qué esperaba el usuario** (#189, literal): *«la pantalla a la que no se puede volver cuando algo
+falla»*, *«la única salida es recargar»*.
+
+**Qué pasa.** El muro del mundo vacío ofrece dos botones del mismo peso visual: «Volver al título»
+y, justo debajo, «Cerrar». Pulsar «Cerrar» deja al jugador **exactamente** en el estado que midió
+la vuelta anterior en su §3.2:
+
+```
+título visible: false · muro: false · tiles: 0
+clicables: ["#room-selector","#ds-menu-btn","1Quick","2Heavy","3Medium","4Defensive","5Precise","#gfx-chip"]
+```
+
+Cielo vacío, barra de vida al 100 %, cinco botones de ataque y **ninguna forma de volver que no sea
+recargar**. La lista de clicables es la misma, elemento por elemento, que la del informe anterior.
+Captura: `qa/capturas/qa2-c5-03-tras-cerrar.png`.
+
+**Reproducción desde el arranque**: el escenario de §3 (o `node qa/run.mjs 20` y, en vez de pulsar
+«Volver al título», pulsar «Cerrar»). Tres servicios por separado si se hace a mano: `./start.sh`
+mata el stack entero por su `trap` cuando muere un hijo.
+
+**Por qué no lo llamo bloqueante**: el encargo C5 pedía que el overlay *«ofrezca volver al título
+en vez de solo cerrarse»*, y lo ofrece; la salida está a un centímetro del trampolín. El ingeniero
+justifica conservar «Cerrar» porque lo pulsa `qa/fixtures-sin-bridge.mjs` sobre el muro de
+arranque — y **eso es correcto**: comprobado que los tres `setLoaderState` del muro de arranque
+usan la `salida` por defecto (`"cerrar"`) y ahí el botón «Volver al título» ni aparece. Lo que no
+se sostiene es que en el mundo vacío convivan la salida y la trampa con el mismo aspecto.
+
+**Salidas posibles** (no las decido yo): que en el mundo vacío «Cerrar» no se pinte; o que ahí
+«Cerrar» haga lo mismo que «Volver al título». Candarlo cuesta **un aserto** en el guion 20, al
+lado de los que ya hay.
+
+### 6.2 MENOR (pre-existente, fuera del alcance) — el botón SÍ se sigue moviendo, por otra causa
+
+En un viewport estrecho el botón se desplaza **+24 px** bajo el cursor después de pintarse, y **no
+es la lista de saves**: pasa igual con 0 partidas.
+
+```
+500×800 · 3 saves : #ts-new VIEWPORT 181px → 205px (Δ +24) · bloque 96px → 120px
+500×800 · 0 saves : #ts-new VIEWPORT 181px → 205px (Δ +24)
+```
+
+**Mecanismo, medido y aislado**: `reserveDevPanelSpace()` (`title-screen.ts:258-274`) fija
+`paddingTop = max(96, devBottom + 10)` y lo re-mide con un `ResizeObserver`. El panel de dev
+`#dev-status` se **rellena de forma asíncrona** (chips de coste y de servicios), y en anchos
+estrechos ese relleno le añade una línea. Traza del propio panel:
+
+```
+devBottom=  55  #ts-new.top=  181  «… Bridge img: inactivo caché 0✓/0✗ Dev-cache Im»
+devBottom= 110  #ts-new.top=  181  «… Bridge img: inactivo caché 0✓/0✗ Dev-cache ga»   ← +55 px de panel
+```
+
+A 1280×800 el panel cabe en una línea y el efecto es **0 px** — por eso ni el guion 19 ni yo lo
+vimos en las medidas principales. `#dev-status` **no está gateado por `import.meta.env.DEV`**:
+vive en `index.html` y `DevStatusPanel` se construye siempre, así que un jugador con la ventana
+estrecha lo tiene igual.
+
+**No bloquea**: el criterio literal dice *«al llegar la lista de saves»*, y por esa vía el
+desplazamiento es 0 px con 0, 3 y 12 partidas y a 1280 y 900 de ancho. **Es pre-existente** (el
+`ResizeObserver` y el `padding` calculado ya estaban; con `center` pasaba lo mismo) y la vuelta
+anterior lo rozó sin medirlo — era justo la razón que daba el guion 18 viejo para medir contra el
+padre. Va a issue. Candarlo es correr el bloque 2 del guion 19 también a 500×800.
+
+### 6.3 MENOR (pre-existente) — un `list_games` que revienta deja al cliente esperando 30 s y luego le miente
+
+Con el directorio de juegos **inexistente** (no vacío: ausente), `handleListGames` lanza y **nadie
+contesta**:
+
+```
+Bridge: unhandled rejection: Error: games directory not found: …/games
+    at listGames (src/games/loader.ts:308:11)
+    at handleListGames (bridge/handlers/session.ts:97:12)
+    at routeMessage (bridge/router.ts:53:7)
+```
+
+El cliente agota su timeout de request (30 s) y entonces —correctamente, según la traducción
+nueva— dice «El servidor del juego no contesta; inténtalo de nuevo.» El problema es que ahora esa
+frase suena **plausible y es falsa**: el servidor está vivo y lo que pasa es que la instalación
+está rota. Antes al menos el silencio no afirmaba nada.
+
+Es un agujero de fail-loud del bridge (`router.ts` no envuelve el handler), **no lo introduce esta
+tanda** y está fuera de su alcance, pero cae justo sobre la superficie que la tanda abre. Con el
+directorio **existente y vacío** el camino sí es correcto: «No hay ningún mundo instalado.» en
+68 ms.
+
+### 6.4 MENOR — `#ts-status`, el hermano de `#ts-error`, sigue hablándole al desarrollador
+
+C4 tradujo `#ts-error`. Justo debajo, `#ts-status` sigue escribiendo, cuando el bridge no contesta
+a `listSessions`:
+
+> «No se puede contactar al bridge (…). Arranca `./start.sh` y elige un preset con bridge (p. ej.
+> "Cliente web (dev)").»
+
+Mismo hueco, mismo párrafo de pantalla, misma clase de jerga; el encargo nombraba `#ts-error` y el
+ingeniero se ciñó a él, que es lo correcto. A issue, con `motivoDeSesionParaElJugador` ya escrito
+al lado.
+
+### 6.5 MENOR (crítica visual) — el estado vacío del título queda descompensado, y es más de lo que dice el informe
+
+El informe dice que con 0 partidas *«queda un tercio de pantalla vacío por debajo»*. **Medido: son
+476 px de 800, un 60 %.** El contenido termina en `y=324` y por debajo no hay nada.
+
+Mirándolo como director de arte y no como checklist: con 3 y con 12 partidas la composición
+**aguanta bien** —jerarquía de arriba abajo, título → frase → acción primaria → lista, sin saltos—
+y el anclaje arriba es claramente lo correcto. Con **0 partidas**, que es lo primero que ve quien
+estrena el juego, la pantalla se lee **inacabada** más que aireada: una columna pegada al borde
+superior y medio lienzo negro debajo, con la costura del fondo del juego asomando al 3 % por el
+`rgba(8,8,12,0.97)`.
+
+**No pido volver a `center`** —es la causa del bug— ni compensar con márgenes inventados, que es
+justo lo que el encargo prohibía. Es material para un issue del estado vacío del título (dar
+presencia a «— Ninguna partida todavía —», o una portada). Lo digo porque el encargo pedía
+mirarlo y decirlo, y porque el número del informe se queda corto por la mitad.
+
+### 6.6 Observación — la lista larga se corta sin avisar
+
+Con 12 partidas el bloque llega a su `max-height` (672 px) y la última tarjeta queda cortada por el
+borde inferior, sin ninguna señal de que haya más. Pre-existente, idéntico antes y después de C1, y
+vecino de #224 (que el crítico separó). Lo dejo anotado, no lo cuento como hallazgo de esta ronda.
+Captura: `qa/capturas/qa2-c1-12-saves.png`.
+
+### 6.7 Lo que sigue vivo del informe anterior
+
+- **3.6 · el HUD y el `#error-log` se leen por debajo del título** — sigue igual, y ahora **pesa
+  más**: con C5, volver al título con una partida a medias detrás deja de ser un caso raro y pasa
+  a ser el camino normal de un arranque fallido. Se ve en `qa/capturas/c5-de-vuelta-en-el-titulo.png`
+  (barra de vida, botones de ataque y los avisos del motor asomando). Ya iba a issue.
+- **3.7 · el rótulo del viaje repite el principio del cuerpo** — no hecho, con el motivo medido por
+  el ingeniero: el `narrative_status` de un tile no lleva el nombre del lugar, así que no salía
+  gratis. Correcto tal como estaba previsto.
+- **3.8 · el guion 15 es una moneda al aire** — **confirmado otra vez**: en mis dos corridas verdes
+  el mercader recorrió 1,37 m y 1,06 m contra un umbral de 1 m (márgenes de 37 y 6 cm), con la
+  espera interna pidiendo 1,5 m que nunca llega a cumplirse. Sigue decidiéndolo el cortafuegos de
+  pared. Ya iba a issue.
+- **`no-floating-promises` no activo en `nefan-html`** — sigue siendo el punto ciego grande del
+  candado nuevo: quitar el `void` lo desactiva. Ya iba a issue.
+- **Una errata sin consecuencia**: `implementacion.md` §C6 cita `grep -c "paso(" main.ts` = 3, y
+  hoy son **4** — C5 añadió `paso(volverAlTitulo(), …)`. El `why` de `arch-rules.json`, que es el
+  fichero de contrato, dice lo correcto (tres mudos en `d5c3382^`); la línea rancia está solo en
+  el informe efímero.
+
+---
+
+## 7. Workarounds e instrumentación
+
+Ninguno oculta un obstáculo que el jugador vaya a tener. Los declaro todos, con su veredicto.
+
+| Qué | Veredicto |
+|---|---|
+| **Segundo bridge en :9977 apuntado a un ai_server inexistente**, elegido con `?bridge=` | **No es un hallazgo.** Produce un estado que el jugador tiene (el ai_server caído) por el camino real, y evita matar el motor falso compartido o disparar el `trap` de `./start.sh`. El override `?bridge=` es contrato, no puerta trasera |
+| Disco de juegos propio para ese bridge, **sin snapshots de mundo** | **No es un hallazgo, es la precondición**: con snapshot, `start_session` replaya y no llama al motor. Está candado en el guion 20 (4.11) |
+| Romper el `game.json` en ese disco con el selector ya pintado | **No es un hallazgo**: instalación corrupta, estado real. Restaurado desde `.bak` al terminar |
+| Vaciar / apartar el directorio de juegos de ese disco | **Vaciarlo** no es hallazgo (instalación sin mundos). **Apartarlo entero** destapó 6.3, que sí es hallazgo |
+| Matar `:9977` con el título abierto | **No es un hallazgo**: el servidor caído es estado real. Sirvió para la frase «Se ha perdido la conexión…» |
+| Sembrar 12 partidas jugando 12 veces desde el título | **No es un hallazgo**: es el camino del jugador, solo que repetido |
+| Espía `MutationObserver` que anota dónde nace `#ts-new` | **No es un hallazgo**: solo mira, no cambia nada. Es la única forma de fotografiar el instante del primer pintado |
+| Restaurar la **mtime** de `bootstrap-tile.ts` y `status-labels.ts` tras las pruebas en negativo | **Declarado**: mis reversiones dejaron los ficheros con contenido idéntico (`md5` verificado) pero fecha nueva, y `npm run deuda` los marcaba como «medida posiblemente obsoleta» sin serlo. Devolví la fecha; el contenido no se tocó y `deuda` vuelve a salir limpio |
+| Once ediciones en negativo sobre el árbol | **Restauradas y verificadas** con `md5sum -c` las once, reescribiendo el texto original — nunca con `git checkout --` |
 
 ---
 
 ## 8. Veredicto
 
-**NO APTO.** Falta poco y casi todo está bien hecho, pero lo que falta es de la clase que este
-repositorio tiene escrito que no se acepta.
+**APTO CON RESERVAS.**
 
-Funciona y está candado: el botón escucha desde su primer pintado; el click ya no es mudo por
-ninguno de los tres caminos que probé; `show()` arma su promesa a tiempo y la partida arranca
-incluso dentro de la ventana; el bucle aguanta dos y tres fallos seguidos sin dejar mundo a medias;
-el `hideLoader()` del catch evita el error tapado; el rótulo del overlay dejó de ser jerga de motor;
-el `max: 8` es el residuo real y su regla está probada en negativo.
+Los **cuatro bloqueantes de la vuelta anterior están cerrados**, y no de palabra:
 
-Lo que lo para:
+1. **#181-c cumple** — Δ **0 px** en viewport con 0, 3 y 12 partidas, y a 1280 y 900 de ancho.
+   El bloque 2 del guion 19, que estaba rojo, sale verde **con el guion intacto byte a byte**, y
+   vuelve a ponerse rojo en cuanto devuelvo la línea a `center`.
+2. **No queda ningún aserto incapaz de ponerse rojo** en los guiones del título: los dos falsos
+   verdes salieron del 18 con su cobertura recogida en el 19, y de los **22** asertos vivos de los
+   guiones 18, 19 y 20, **14 los he puesto rojos yo**, 3 son guardas de NO CONCLUYENTE y 5 los
+   hereda el guion 19 —intacto byte a byte— del QA anterior, sobre código que esta ronda no
+   cambia (§4).
+3. **#180 está cerrado por los dos caminos**, y el hallazgo apuntaba al fichero equivocado: la
+   cadena que leía el jugador la escribía `bootstrap-tile.ts`. Lo demuestro al revés — devolviendo
+   solo esa línea, reaparece literalmente.
+4. **#189 cubre el fallo que responde `ok` y falla después**, ejercido con el motor caído de
+   verdad y ahora candado en `qa/guiones/20`.
 
-1. **#181-c no se cumple** (−119 px bajo el cursor) **y el guion 18 lo declara cumplido** midiendo
-   en un sistema de referencia donde el fallo es invisible. Un criterio no cumplido es corregible;
-   un candado que da verde sobre él es lo caro.
-2. **El aserto que el guion 18 anuncia como su más valioso** —«el título de vuelta está VIVO»—
-   **pasa con el bug puesto**. Lo probé.
-3. **#189 se cierra para el fallo que rechaza y se queda abierto para el que responde `ok` y falla
-   después**, que es el más probable de los primeros segundos: el jugador acaba sin mundo, sin
-   título y sin más salida que recargar.
+Y con ellos: `#ts-error` sin códigos ni rutas de disco (las cinco cadenas verificadas en vivo), las
+tres cuentas del `why` correctas contra mi propia medida, `1319 tests / 0 fail`, CRAP y cobertura
+sin moverse, deuda en los mismos 66 items, `status-labels` con 96 mutantes y **0 vivos**
+re-corridos por mí, la batería **19/19** y `fixtures-sin-bridge` verde.
 
-Lo mínimo para volver a mirarlo: arreglar (o decidir explícitamente no arreglar, por escrito) el
-centrado vertical del título; adoptar los bloques 2 y 3 de `qa/guiones/19` —o meterlos en el 18— para
-que los dos verdes falsos dejen de serlo; y decidir qué se hace con 3.2, aunque sea abrir issue y
-declararlo fuera de esta tanda. 3.3, 3.4 y 3.8 pueden ir a issues sin bloquear.
+**La reserva, una sola y con nombre**: el botón «Cerrar» del muro del mundo vacío sigue llevando en
+un click al callejón exacto de #189 (§6.1), con la misma lista de elementos clicables que midió la
+vuelta anterior. Cerrar la tanda dejando eso sin decir sería cerrar #189 a medias por segunda vez.
+No pido otra vuelta del ciclo: pido que **se abra el issue con la repro de §6.1 y se diga por
+escrito que queda fuera**, o que se gaste el aserto que ya tiene sitio en el guion 20.
+
+A issue, sin bloquear: 6.2 (el panel de dev sigue moviendo el botón en anchos estrechos), 6.3 (el
+`list_games` que revienta y deja al cliente 30 s esperando), 6.4 (`#ts-status` sigue hablando de
+`./start.sh`), 6.5 (el estado vacío del título) y lo que ya venía de la vuelta anterior (3.6, 3.8,
+`no-floating-promises`).
