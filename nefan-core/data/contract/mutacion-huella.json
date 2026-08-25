@@ -3712,9 +3712,9 @@
       "duenos": []
     },
     "src/scene/scene-normalize.ts": {
-      "sha": "linea-base",
-      "run": "local",
-      "fecha": "2026-08-24T18:37:06.903Z",
+      "sha": "e41040c8af5e333b9b0808b847c8896be4d7fb39",
+      "run": "32881068200",
+      "fecha": "2026-08-25T18:03:25.435Z",
       "total": 271,
       "vivos": [
         "0fd3a439e1638275",
@@ -3723,8 +3723,15 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "sin_base": true,
-      "duenos": []
+      "sin_base": false,
+      "duenos": [
+        "e41040c",
+        "53f129a",
+        "ce94081",
+        "a84002d",
+        "7c6848f",
+        "#273"
+      ]
     },
     "src/session/session-facets.ts": {
       "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
