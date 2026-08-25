@@ -59,6 +59,39 @@ The interactive launcher offers presets that respect service dependencies (asset
 
 `./start.sh --list` prints all eight. Presets are addressed **by slug**, not by number: numbers shift when a preset is retired.
 
+### Characters, on a fresh clone
+
+`nefan-html/public/sprites/` is **gitignored and empty on a fresh clone**, so nobody has a body
+yet. That is licensing, not an oversight: the sheets are renders of Mixamo FBX rigs, and Adobe
+does not allow redistributing derivatives. You supply the rigs; the renderer is free,
+deterministic and offline (three.js in headless Chrome — no credits, no GPU).
+
+Bring your own animation set — any humanoid rig works. What ships here is an **example** that
+happens to be Mixamo, laid out in [docs/assets-de-personaje.md](docs/assets-de-personaje.md);
+`sets/mixamo.json` in
+sprite-forge only says where to look and what each clip is called. What actually exists is
+whatever is on your disk.
+
+```bash
+git clone https://github.com/alberto-hortelano/sprite-forge ~/code/sprite-forge
+cd ~/code/sprite-forge && npm install
+
+# The ten sheets the client needs to render anyone at all (BASE_ANIMS on the base model):
+node bin/sprite-forge.mjs render \
+  --models y_bot \
+  --anims idle walk run quick heavy medium defensive precise hit_react death \
+  --assets ~/code/ne-fan/assets/characters \
+  --out   ~/code/ne-fan/nefan-html/public/sprites
+```
+
+Add `--dry-run` first to see the jobs and what is already cached. Note that `--all` will *not*
+work as a first step: a full catalogue is 320 sheets and a single request is capped at 32 —
+name the models and animations you want, in batches.
+
+`y_bot` is the fallback every character falls back to (`renderer/character-sprites.ts`), so
+without those ten sheets nothing on screen has a body. The title screen offers other base
+models, but only the ones you have rendered will show up dressed — see #216.
+
 Manual startup, controls, and all development conventions are documented in [CLAUDE.md](CLAUDE.md) (Spanish — the project's working language).
 
 ## Project Structure
