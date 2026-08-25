@@ -162,6 +162,28 @@ function escribeHuella(h: Huella): void {
   writeFileSync(rutaHuella(), `${JSON.stringify(h, null, 2)}\n`);
 }
 
+/** La huella COMMITEADA (la de HEAD), que es contra la que se calcula el delta.
+ *
+ *  No la del árbol de trabajo, y la diferencia se pagó en la primera pasada
+ *  real: `repartir` escribe la huella nueva, así que una SEGUNDA pasada antes de
+ *  commitear comparaba contra lo que ella misma acababa de escribir y el delta
+ *  se colapsaba a cero — el comentario de la PR salía sin los supervivientes
+ *  NUEVOS y sin decir que los había perdido. Con la base en HEAD, `repartir` es
+ *  idempotente: correrlo dos veces da el mismo reparto, y «el delta se ve en el
+ *  diff» pasa a ser literal (base = HEAD, resultado = árbol de trabajo).
+ *
+ *  Que el fichero no esté en HEAD es la primera vez y se dice; que git no pueda
+ *  contestar es otra cosa y se lanza. */
+function huellaEnHead(): Huella {
+  const ruta = `${nombrePaquete}/${RUTA_HUELLA}`;
+  const existe = spawnSync("git", ["cat-file", "-e", `HEAD:${ruta}`], { cwd: raizRepo });
+  if (existe.status !== 0) {
+    console.log(`(${RUTA_HUELLA} no está en HEAD: primera corrida, todo saldrá SIN BASE)`);
+    return HUELLA_VACIA;
+  }
+  return JSON.parse(git(["show", `HEAD:${ruta}`])) as Huella;
+}
+
 /** El coste de un módulo en mutantes, según la última medida que haya de sus
  *  ficheros. Sale de la huella (≈75 KB) y no de los informes (76 MB): es lo que
  *  deja a `pendiente` y al tope de `local` decir un número sin abrir nada. */
@@ -368,7 +390,7 @@ function repartir(argv: readonly string[]): void {
   const corrida = leerCorrida();
   exigeDescargaLimpia(corrida);
   const tag = shaDelTag();
-  const base = leerHuella();
+  const base = huellaEnHead();
   const commits = commitsDelRango(plan, tag, corrida.sha);
 
   const repartos: Reparto[] = [];

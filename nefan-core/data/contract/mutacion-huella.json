@@ -2,7 +2,7 @@
   "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano.",
   "ficheros": {
     "bridge/state-http/dispatch.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:46.296Z",
       "total": 43,
@@ -13,20 +13,29 @@
       "duenos": []
     },
     "src/combat/attack-area.ts": {
-      "sha": "bootstrap",
-      "run": "local",
-      "fecha": "2026-08-25T10:31:21.434Z",
-      "total": 22,
-      "vivos": [],
-      "nuevos": [],
+      "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
+      "run": "32876809618",
+      "fecha": "2026-08-25T17:16:42.236Z",
+      "total": 36,
+      "vivos": [
+        "3d1ae35f2b223ac8",
+        "8a9bf46b51321753"
+      ],
+      "nuevos": [
+        "3d1ae35f2b223ac8",
+        "8a9bf46b51321753"
+      ],
       "resueltos": 0,
-      "sin_base": true,
-      "duenos": []
+      "sin_base": false,
+      "duenos": [
+        "7c6848f",
+        "#273"
+      ]
     },
     "src/combat/combat-resolver.ts": {
-      "sha": "bootstrap",
-      "run": "local",
-      "fecha": "2026-08-25T10:31:21.434Z",
+      "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
+      "run": "32876809618",
+      "fecha": "2026-08-25T17:16:42.236Z",
       "total": 41,
       "vivos": [
         "2a5875060aa43b44",
@@ -37,11 +46,14 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "sin_base": true,
-      "duenos": []
+      "sin_base": false,
+      "duenos": [
+        "7c6848f",
+        "#273"
+      ]
     },
     "src/contracts/http.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:46.296Z",
       "total": 60,
@@ -52,7 +64,7 @@
       "duenos": []
     },
     "src/plugins/dsl/deep-equal.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 59,
@@ -83,7 +95,7 @@
       "duenos": []
     },
     "src/plugins/dsl/effects.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 96,
@@ -110,7 +122,7 @@
       "duenos": []
     },
     "src/plugins/dsl/errors.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 2,
@@ -123,7 +135,7 @@
       "duenos": []
     },
     "src/plugins/dsl/evaluate.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 68,
@@ -149,7 +161,7 @@
       "duenos": []
     },
     "src/plugins/dsl/paths.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 437,
@@ -331,7 +343,7 @@
       "duenos": []
     },
     "src/plugins/dsl/predicates.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 106,
@@ -366,7 +378,7 @@
       "duenos": []
     },
     "src/plugins/dsl/values.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:41:07.069Z",
       "total": 594,
@@ -542,7 +554,7 @@
       "duenos": []
     },
     "src/protocol/status-labels.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:52.396Z",
       "total": 100,
@@ -553,7 +565,7 @@
       "duenos": []
     },
     "src/scene/blueprint/collision.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:49:55.852Z",
       "total": 557,
@@ -779,7 +791,7 @@
       "duenos": []
     },
     "src/scene/blueprint/derive.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:18:54.251Z",
       "total": 387,
@@ -900,7 +912,7 @@
       "duenos": []
     },
     "src/scene/blueprint/footprint.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:49:55.852Z",
       "total": 227,
@@ -1076,7 +1088,7 @@
       "duenos": []
     },
     "src/scene/blueprint/fps-ambience.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:01:01.406Z",
       "total": 172,
@@ -1146,7 +1158,7 @@
       "duenos": []
     },
     "src/scene/blueprint/fps-detail.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:00:51.939Z",
       "total": 539,
@@ -1509,7 +1521,7 @@
       "duenos": []
     },
     "src/scene/blueprint/fps-interior.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:00:51.939Z",
       "total": 181,
@@ -1610,7 +1622,7 @@
       "duenos": []
     },
     "src/scene/blueprint/fps-relief.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:00:51.939Z",
       "total": 224,
@@ -1728,7 +1740,7 @@
       "duenos": []
     },
     "src/scene/blueprint/fps-spec.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:00:07.487Z",
       "total": 330,
@@ -1859,7 +1871,7 @@
       "duenos": []
     },
     "src/scene/blueprint/greybox.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:30:35.208Z",
       "total": 119,
@@ -1956,7 +1968,7 @@
       "duenos": []
     },
     "src/scene/blueprint/ground-collision.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:35:59.635Z",
       "total": 166,
@@ -1992,7 +2004,7 @@
       "duenos": []
     },
     "src/scene/blueprint/ground-prims.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:35:59.635Z",
       "total": 219,
@@ -2122,7 +2134,7 @@
       "duenos": []
     },
     "src/scene/blueprint/ground.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:35:59.635Z",
       "total": 117,
@@ -2157,7 +2169,7 @@
       "duenos": []
     },
     "src/scene/blueprint/palette.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:18:54.251Z",
       "total": 78,
@@ -2237,9 +2249,9 @@
       "duenos": []
     },
     "src/scene/blueprint/plan-collision.ts": {
-      "sha": "bootstrap",
-      "run": "local",
-      "fecha": "2026-08-24T18:50:12.006Z",
+      "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
+      "run": "32876809618",
+      "fecha": "2026-08-25T17:16:42.236Z",
       "total": 41,
       "vivos": [
         "0cc9a3e3a2790f83",
@@ -2249,11 +2261,14 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "sin_base": true,
-      "duenos": []
+      "sin_base": false,
+      "duenos": [
+        "7c6848f",
+        "#273"
+      ]
     },
     "src/scene/blueprint/scatter.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:54:31.170Z",
       "total": 1040,
@@ -2852,7 +2867,7 @@
       "duenos": []
     },
     "src/scene/blueprint/time-of-day.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:18:54.251Z",
       "total": 15,
@@ -2863,7 +2878,7 @@
       "duenos": []
     },
     "src/scene/blueprint/volume-metrics.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:49:55.852Z",
       "total": 193,
@@ -2930,7 +2945,7 @@
       "duenos": []
     },
     "src/scene/blueprint/volumes.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:17:04.097Z",
       "total": 362,
@@ -3037,7 +3052,7 @@
       "duenos": []
     },
     "src/scene/greybox/common.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:30:35.208Z",
       "total": 22,
@@ -3053,7 +3068,7 @@
       "duenos": []
     },
     "src/scene/greybox/surfaces.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:11:48.885Z",
       "total": 516,
@@ -3150,7 +3165,7 @@
       "duenos": []
     },
     "src/scene/greybox/volume-prims.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-25T10:30:35.208Z",
       "total": 795,
@@ -3697,7 +3712,7 @@
       "duenos": []
     },
     "src/scene/scene-normalize.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T18:37:06.903Z",
       "total": 271,
@@ -3711,8 +3726,22 @@
       "sin_base": true,
       "duenos": []
     },
+    "src/session/session-facets.ts": {
+      "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
+      "run": "32876809618",
+      "fecha": "2026-08-25T17:16:42.236Z",
+      "total": 28,
+      "vivos": [],
+      "nuevos": [],
+      "resueltos": 0,
+      "sin_base": true,
+      "duenos": [
+        "7c6848f",
+        "#273"
+      ]
+    },
     "src/store/game-store.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:29.778Z",
       "total": 69,
@@ -3765,7 +3794,7 @@
       "duenos": []
     },
     "src/store/reducers.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:29.778Z",
       "total": 91,
@@ -3776,7 +3805,7 @@
       "duenos": []
     },
     "src/store/state-projection.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:10:29.778Z",
       "total": 63,
@@ -3803,7 +3832,7 @@
       "duenos": []
     },
     "src/world-map/bootstrap-place.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 72,
@@ -3824,7 +3853,7 @@
       "duenos": []
     },
     "src/world-map/edges.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 50,
@@ -3840,7 +3869,7 @@
       "duenos": []
     },
     "src/world-map/map-triggers.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 38,
@@ -3859,7 +3888,7 @@
       "duenos": []
     },
     "src/world-map/npc-director.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:09:44.419Z",
       "total": 118,
@@ -3893,7 +3922,7 @@
       "duenos": []
     },
     "src/world-map/place-anchor.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 36,
@@ -3907,7 +3936,7 @@
       "duenos": []
     },
     "src/world-map/place-target.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 35,
@@ -3954,7 +3983,7 @@
       "duenos": []
     },
     "src/world-map/types.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 15,
@@ -3978,7 +4007,7 @@
       "duenos": []
     },
     "src/world-map/world-map.ts": {
-      "sha": "bootstrap",
+      "sha": "linea-base",
       "run": "local",
       "fecha": "2026-08-24T19:08:50.163Z",
       "total": 254,
