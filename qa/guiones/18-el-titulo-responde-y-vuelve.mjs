@@ -147,6 +147,11 @@ export default async function (ctx) {
   // de quien va a LEERLA (no gatea ningún click, que era el workaround).
   await recargar(ctx); // sin `qa18=click`: el espía solo mira
   await esperarListaDeSaves(ctx);
+  // La MARCA DE AGUA del cliente sin partida: recién recargado, el título
+  // arriba y nada aplicado. Es contra esto contra lo que se compara la vuelta
+  // — «los dos caminos de vuelta al título dejan el cliente idéntico» (#249).
+  const antesDelIntento = await leerCliente(ctx);
+  ctx.log(`cliente en el título: ${JSON.stringify(antesDelIntento)}`);
   const sessionId = await ctx.page.$eval(
     'button[data-action="resume"]',
     (b) => b.dataset.sessionId,
@@ -201,9 +206,73 @@ export default async function (ctx) {
     trasElFallo.registro.some((e) => e.fuente === "session"),
     JSON.stringify(trasElFallo.registro.slice(0, 3)),
   );
+
+  // ── 3. #249 — la vuelta no deja media sesión pegada ─────────────────────
+  // El catch del bucle deshacía UNA de las cinco cosas que aplica el éxito
+  // (`activeSessionId`), y se dejaba puestas el estilo, el tema, los modos de
+  // render y la sesión del libro de historia. La peor de todas es el gate del
+  // gasto: con él armado, el tile que el bridge difunde DESPUÉS del fallo
+  // paga un atlas con el estilo de la partida que no arrancó.
+  const despuesDelFallo = await leerCliente(ctx);
+  ctx.log(`cliente tras el fallo: ${JSON.stringify(despuesDelFallo)}`);
+  ctx.expect(
+    "volver al título deja el cliente COMO ESTABA: ni sesión, ni estilo, ni modos, ni tema",
+    JSON.stringify(despuesDelFallo.sesion) === JSON.stringify(antesDelIntento.sesion),
+    `${JSON.stringify(antesDelIntento.sesion)} → ${JSON.stringify(despuesDelFallo.sesion)}`,
+  );
+  ctx.expect(
+    "…y no ha pagado ni una imagen por el camino",
+    despuesDelFallo.imagenes === antesDelIntento.imagenes,
+    `caché ${antesDelIntento.imagenes} → ${despuesDelFallo.imagenes}`,
+  );
+
+  // ── 4. #246 — el HUD no se lee por debajo del título ─────────────────────
+  // El overlay del título es traslúcido: con la partida pintando detrás se
+  // leían fantasmas de la barra de acciones y del panel de errores entre su
+  // texto, al lado del botón de cerrar. Se mide la CAJA, no el CSS.
+  ctx.expect(
+    "con el título arriba, el HUD de juego no ocupa ni un píxel",
+    despuesDelFallo.cajas.gameUi === 0,
+    `#game-ui: ${despuesDelFallo.cajas.gameUi} px²`,
+  );
+  ctx.expect(
+    "…ni el panel de errores, que se leía justo al lado del botón de cerrar",
+    despuesDelFallo.cajas.errorLog === 0,
+    `#error-log: ${despuesDelFallo.cajas.errorLog} px²`,
+  );
+  // Y el panel de dev SÍ sigue: vigila el gasto, y crear mundo o estilo desde
+  // el título es justo donde se gasta. Sin esto, «ocultar el HUD» podría
+  // haberse hecho tapándolo todo.
+  ctx.expect(
+    "…pero el panel de dev sigue visible: es el que vigila el gasto",
+    despuesDelFallo.cajas.devStatus > 0,
+    `#dev-status: ${despuesDelFallo.cajas.devStatus} px²`,
+  );
   // Aquí NO se comprueba que el título de vuelta esté vivo: pulsar «Nueva
   // partida» solo ejercita un listener del DOM, que sobrevive a cualquier
   // cosa. Lo que puede quedar muerto es `this.resolve`, y no se lee hasta
   // «Comenzar», dos pantallas más allá. Lo canda el bloque 3 del guion 19,
   // que arranca una partida entera desde este mismo título de vuelta.
+}
+
+/** Lo que el cliente tiene APLICADO ahora mismo: las facetas de la sesión, el
+ *  contador de imágenes del panel de dev y el tamaño de las cajas que el
+ *  título tiene que tapar. Un solo `evaluate` para que las tres medidas sean
+ *  del mismo instante. */
+function leerCliente(ctx) {
+  return ctx.page.evaluate(() => {
+    const area = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      return Math.round(r.width * r.height);
+    };
+    return {
+      sesion: window.__nefan.sesion(),
+      // "caché 0✓/1✗ · cliente 2" → la línea entera: cualquier generación
+      // nueva la mueve.
+      imagenes: document.getElementById("ds-cache")?.textContent ?? "(sin panel)",
+      cajas: { gameUi: area("game-ui"), errorLog: area("error-log"), devStatus: area("dev-status") },
+    };
+  });
 }

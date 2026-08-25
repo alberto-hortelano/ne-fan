@@ -74,7 +74,7 @@ export class FsSessionStorage implements SessionStorage {
 
   /** Guarda la sesión. Las escrituras de la MISMA sesión se serializan: el
    *  bridge guarda desde muchos sitios (cada mutación del State API, los map
-   *  triggers, la generación de un tile, save_session) y dos writes solapados
+   *  triggers, la generación de un tile, un diálogo) y dos writes solapados
    *  compartían el fichero temporal — el rename del primero se lo llevaba y el
    *  segundo moría con ENOENT, tumbando la operación que lo hubiera pedido
    *  (medido: un viaje del jugador que se quedaba a medias, sin escena).

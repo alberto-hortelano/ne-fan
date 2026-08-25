@@ -62,6 +62,7 @@ import { ActionBar } from "./ui/action-bar.js";
 import { WorldLabels, type WorldLabel } from "./ui/world-labels.js";
 import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
+import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import {
   createGameClient,
   createViewerClient,
@@ -215,9 +216,23 @@ let devMenu: DevMenu | null = null;
  *  que devMenu. */
 let graphicsChip: GraphicsModeChip | null = null;
 
-/** true cuando los modos de render del SAVE ya están aplicados (respuesta de
- *  start/resume) — gate del gasto automático del atlas fps (ver abajo). */
-let sessionModesApplied = false;
+/** La sesión del cliente: UN valor con todo lo que una partida imprime aquí
+ *  (id, estilo, modos de render, sistema de combate, tema de UI), y los dos
+ *  verbos que la mueven. `enter` y `leave` recorren el MISMO código —«sin
+ *  partida» es un valor del mismo tipo—, así que los dos caminos de vuelta al
+ *  título no pueden dejar el cliente distinto: no hay reset que olvidar.
+ *
+ *  Los sinks son los aplicadores de siempre; se cablean aquí y se invocan
+ *  todos en cada transición. Ninguno corre en el arranque del módulo (el
+ *  primer `apply` es el del título), así que pueden referirse a cosas que se
+ *  declaran más abajo. */
+const session = createClientSession({
+  style: (styleId) => applySessionStyle(styleId),
+  theme: (uiTheme) => applyUiTheme(uiTheme),
+  renderModes: (renderMode, characterMode) => applyRenderModes(renderMode, characterMode),
+  combat: (combatSystem) => applySessionCombatSystem(combatSystem),
+  history: (sessionId) => historyBrowser.setSession(sessionId),
+});
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
 // lo que falta y las escenas siguientes reutilizan por descripción+estilo.
@@ -241,7 +256,7 @@ const fpsAtlasController = new FpsAtlasController(
     // el gate, reanudar una partida VECTOR pintaba atlas de pago en esa
     // ventana (visto en vivo 2026-08-14). Hasta aplicar los modos del save,
     // el controller solo RESUELVE contra la librería ($0).
-    generationOn: () => sessionModesApplied && scenesGenerationOn(),
+    generationOn: () => session.active && scenesGenerationOn(),
     log: (msg) => log(msg),
     onGeneration: (e) => devPanel.recordGeneration(e),
   },
@@ -341,8 +356,8 @@ async function requestModeChange(
   facet: "scenes" | "characters",
   mode: "image" | "vector",
 ): Promise<void> {
-  if (activeSessionId) {
-    await narrativeClient.setRenderMode(activeSessionId, facet, mode);
+  if (session.active) {
+    await narrativeClient.setRenderMode(session.id, facet, mode);
   } else if (facet === "scenes") {
     localStorage.setItem(AUTOIMG_KEY, mode === "image" ? "1" : "0");
   } else {
@@ -354,17 +369,16 @@ async function requestModeChange(
   );
 }
 
-/** La sesión ya tiene estilo y modos de render aplicados.
+/** Lo único que es de ENTRAR y no tiene simétrico al salir.
  *
- *  Es la PRECONDICIÓN del gasto del atlas de superficies, y hay que nombrarla:
+ *  La precondición del gasto del atlas de superficies es `session.active`:
  *  entre el broadcast de la escena y la respuesta de start/resume, `style_id`
- *  es "" y `scenesMode` el default del cliente. Antes lo ordenaba por
- *  accidente el gate de vista (applySessionView corría DESPUÉS de
- *  applySessionStyle); sin él, un tile de bootstrap dispararía el atlas contra
- *  un estilo vacío. El controller se planta solo sin estilo — esto es la
- *  re-emisión que lo despierta. */
-function applySessionReady(): void {
-  sessionModesApplied = true;
+ *  es "" y `scenesMode` el default del cliente, así que hasta que la sesión
+ *  está aplicada el controller solo RESUELVE contra la librería ($0). El
+ *  controller se planta solo sin estilo — esto es la re-emisión que lo
+ *  despierta cuando ya lo hay. Al salir no hay nada que re-emitir: el mundo
+ *  se ha ido. */
+function despiertaElAtlasDeLaSesion(): void {
   const key = activeTileKey;
   if (!key) return;
   void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
@@ -488,6 +502,11 @@ const nefanHook: Record<string, unknown> = {
     theme: () => currentUiTheme(),
     setTheme: (t: UiTheme) => applyUiTheme(t),
   },
+  /** Facetas de la sesión aplicadas AHORA MISMO (id, estilo, modos, combate,
+   *  tema). Es lo que hace medible «los dos caminos de vuelta al título dejan
+   *  el cliente idéntico»: se lee de vuelta en el título y tiene que salir el
+   *  mismo objeto por los dos. */
+  sesion: () => session.facets,
   /** Trazas de los pipelines de imagen/colisión (dev/debug-log.ts): apagadas
    *  por defecto; también `?debug=1` en la URL. */
   debug(on: boolean) { setDebugLog(on); },
@@ -684,7 +703,12 @@ async function loadSceneFile(globKey: string): Promise<void> {
   }
 
   const mod = await loader();
-  await loadSceneData(mod.default);
+  // El selector «Room» TOMA EL MUNDO: lo que se carga es una escena de prueba,
+  // no la partida de nadie. El bridge necesita oírlo para dejar de escuchar al
+  // sim con el save de la partida que hubiera detrás (QA 2026-08-25: sin esto,
+  // asomarse a una fixture escribía las coordenadas del muñeco en el
+  // `state.json` y «Reanudar» te dejaba ahí).
+  await loadSceneData(mod.default, { tomaElMundo: true });
 }
 
 /** Vacía el mundo del cliente (arranque de sesión, resume, fixtures). */
@@ -697,6 +721,17 @@ function resetWorld(): void {
   // Mundo nuevo, mirada al frente: reanudar con los ojos clavados en el suelo
   // porque así acabó la partida anterior es desconcertante.
   playerPitch = 0;
+  // Y a la posición de arranque. La de la partida ANTERIOR sobrevivía a este
+  // reset, y ahora que el save lleva la posición viva del sim, el primer
+  // guardado de la partida siguiente se la llevaba dentro: empezabas una
+  // partida nueva y su save decía que estabas donde acabaste la vieja.
+  playerPos.x = 0;
+  playerPos.y = 0;
+  playerPos.z = 2;
+  // El aspecto del jugador es del mundo que se va: dejarlo puesto hace que
+  // volver al título re-pida su skin IA (imagen de pago) por un mundo que ya
+  // no existe.
+  playerSkinPrompt = "";
   enemyEntities = [];
   objectEntities = [];
   npcEntities = [];
@@ -706,11 +741,22 @@ function resetWorld(): void {
   sceneData = null;
 }
 
+/** Opciones de carga de escena. `tomaElMundo` es la diferencia entre «esta es
+ *  una escena de PRUEBA y a partir de ahora el mundo es mío» (el selector
+ *  «Room») y «este tile se AÑADE al mundo que ya tienes» (la partida). Viaja
+ *  hasta el bridge como `load_room` — ver `bridge/world-claim.ts`. */
+interface OpcionesDeCarga {
+  tomaElMundo?: boolean;
+}
+
 /** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
  *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
-async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
+async function loadSceneData(
+  rawData: Record<string, unknown>,
+  opts: OpcionesDeCarga = {},
+): Promise<void> {
   resetWorld();
-  await addTile(rawData);
+  await addTile(rawData, opts);
 }
 
 /** Compone el PLAN del tile: `ground` + `volumes` declarados por el motor,
@@ -772,7 +818,10 @@ function composeTilePlan(
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
  *  sustituye (re-render al volver a un tile). */
-async function addTile(rawData: Record<string, unknown>): Promise<void> {
+async function addTile(
+  rawData: Record<string, unknown>,
+  opts: OpcionesDeCarga = {},
+): Promise<void> {
   const data = formatDToWorld(rawData);
   const tile = data.tile as { tx: number; ty: number } | undefined;
   const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
@@ -1028,13 +1077,15 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     setActiveClientTile(key);
   }
 
-  // Sim: los tiles de grid añaden combatientes de forma ADITIVA (sin reset);
-  // las escenas legacy (fixtures) siguen reseteando la sala entera.
+  // Sim: los tiles de la PARTIDA añaden combatientes de forma ADITIVA (sin
+  // reset), porque el mundo es un plano continuo. Tomar el mundo —el selector
+  // «Room», o una escena legacy suelta— manda `load_room`, que además le dice
+  // al bridge que lo que va a andar por aquí no es el jugador de la partida.
   if (gameClient) {
-    if (isGridTile) {
-      gameClient.addEnemies(enemies);
-    } else {
+    if (opts.tomaElMundo || !isGridTile) {
       gameClient.loadRoom(data, key, enemies);
+    } else {
+      gameClient.addEnemies(enemies);
     }
   }
 
@@ -1623,7 +1674,7 @@ function gameLoop(now: number): void {
     // Frontera del plano: al acercarse a un borde sin tile se PROPONE generar
     // el vecino (gasta LLM/créditos — el jugador confirma con Y o rechaza con
     // N), velo direccional pegado al borde, promoción a blocking si espera.
-    if (activeSessionId && tileStore.hasGridTiles) {
+    if (session.active && tileStore.hasGridTiles) {
       const requestTile = (tx: number, ty: number, edge: FrontierEdge, reason: "prefetch" | "blocking"): void => {
         tileLedger.pedido(`tile_${tx}_${ty}`);
         narrativeClient.requestTile(tx, ty, reason, edge);
@@ -1718,14 +1769,19 @@ function gameLoop(now: number): void {
   // Attack
   const attackRequested = dialoguePanel.isVisible ? false : input.consumeAttack();
 
-  // Tick
-  const result: FrameResult = gameClient.tick(delta, {
-    playerPosition: playerPos,
-    playerForward: playerForward,
-    playerMoving: input.state.up || input.state.down || input.state.left || input.state.right,
-    attackRequested,
-    attackType: attackRequested ? input.state.selectedAttack : undefined,
-  });
+  // Tick — pero NO mientras el título cubre la pantalla: ahí no hay jugador
+  // que simular. El frame que se mandaba llevaba la posición por defecto del
+  // cliente y, ahora que el save arrastra la posición viva del sim (#245),
+  // conducía la partida que el jugador acababa de dejar hasta el origen.
+  const result: FrameResult = titleScreen.isVisible
+    ? gameClient.idle()
+    : gameClient.tick(delta, {
+        playerPosition: playerPos,
+        playerForward: playerForward,
+        playerMoving: input.state.up || input.state.down || input.state.left || input.state.right,
+        attackRequested,
+        attackType: attackRequested ? input.state.selectedAttack : undefined,
+      });
 
   // Process combat events for attack visualization + triggers de animación
   let playerOneShot: string | undefined;
@@ -1935,12 +1991,11 @@ const sharedBridge = new BridgeClient(serviceUrl("game-gateway"));
 const narrativeClient = new NarrativeClient(sharedBridge);
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
-let activeSessionId: string | null = null;
 
 // Cambio de modo de render difundido por el bridge (otro cliente de la misma
 // sesión, o el eco de este — re-aplicar es idempotente).
 sharedBridge.on("render_mode_changed", (msg) => {
-  if (msg.sessionId !== activeSessionId) return;
+  if (msg.sessionId !== session.id) return;
   applyRenderModes(
     msg.facet === "scenes" ? msg.renderMode : scenesMode,
     msg.facet === "characters" ? msg.renderMode : charactersMode,
@@ -2017,20 +2072,29 @@ graphicsChip = new GraphicsModeChip({
     scenesOn: scenesGenerationOn(),
     charsOn: characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
     charsAvailable: CONFIG.graphics.ai_skin,
-    hasSession: activeSessionId !== null,
+    hasSession: session.active,
   }),
   setMode: (facet, mode) => requestModeChange(facet, mode),
 });
 // Oculto mientras el título está abierto (ahí el modo se elige en el propio
 // título); reaparece al cerrarlo — incluido el cierre fixtures (#ts-close).
-titleScreen.onVisibilityChange = (visible) => graphicsChip?.setHidden(visible);
+//
+// Y con él, TODO lo que se leía por debajo del título: el HUD de juego y el
+// error-log asomaban entre el texto porque la partida seguía pintando detrás
+// (#246). Un interruptor y no una lista de widgets: el motivo lo lleva el
+// propio título, así que quien añada un panel nuevo no tiene que acordarse de
+// nada. `dataset.titulo` es lo que lee la regla de CSS.
+titleScreen.onVisibilityChange = (visible) => {
+  graphicsChip?.setHidden(visible);
+  document.documentElement.dataset.titulo = visible ? "1" : "0";
+};
 // Corrida de «Aplicar estilo» para el bench/QA: lo prometido, lo emitido y si
 // ya terminó. Lo escribe el propio StyleApplyController.
 (nefanHook as { estilo?: unknown }).estilo = () => titleScreen.styleRunState();
 
 dialoguePanel.onChoice = (idx, text) => {
   input.dialogueActive = false;
-  if (!activeSessionId) return;
+  if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
     eventId: `client_${Date.now()}`,  // bridge generates the canonical id
@@ -2043,7 +2107,7 @@ dialoguePanel.onChoice = (idx, text) => {
 
 dialoguePanel.onFreeText = (freeText) => {
   input.dialogueActive = false;
-  if (!activeSessionId) return;
+  if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
     eventId: `client_${Date.now()}`,
@@ -2056,7 +2120,7 @@ dialoguePanel.onFreeText = (freeText) => {
 };
 
 travelPanel.onTravel = (placeId) => {
-  if (!activeSessionId) return;
+  if (!session.active) return;
   showLoader("Viajando...", "El motor narrativo está preparando el lugar.");
   travelLedger.pedido(placeId);
   narrativeClient.enterPlace(placeId);
@@ -2511,10 +2575,22 @@ async function runTitleFlow(avisoInicial?: string): Promise<void> {
 async function volverAlTitulo(): Promise<void> {
   const motivo = motivoDelUltimoMuro ?? undefined;
   hideLoader();
-  resetWorld();
-  activeSessionId = null;
-  sessionModesApplied = false;
+  abandonarLaPartida();
   await runTitleFlow(motivo);
+}
+
+/** Dejar la partida: el mundo a cero y la sesión soltada. Los DOS caminos de
+ *  vuelta al título pasan por aquí — que sean dos llamadas y no una es lo que
+ *  producía #249 (uno deshacía cinco cosas y el otro una).
+ *
+ *  Ojo con lo que esto NO garantiza, para que nadie lo lea de más: que un
+ *  TERCER camino de vuelta al título se acuerde de llamarla sigue siendo
+ *  responsabilidad de quien lo escriba. Lo inexpresable es la asimetría entre
+ *  FACETAS (`session-facets.ts`), no entre caminos; hoy los caminos son dos y
+ *  los dos tienen guion en vivo (18 y 20). */
+function abandonarLaPartida(): void {
+  resetWorld();
+  session.leave();
 }
 
 /** Un intento: enseña el título, espera la elección y la ejecuta. Devuelve
@@ -2550,25 +2626,35 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         action.renderMode,
         action.characterMode,
       );
-      activeSessionId = res.sessionId;
-      applySessionStyle(res.state.world?.style_id ?? "");
-      applyUiTheme(res.uiTheme);
-      applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
-      applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      applySessionReady();
-      historyBrowser.setSession(res.sessionId);
+      session.enter({
+        sessionId: res.sessionId,
+        styleId: res.state.world?.style_id ?? "",
+        renderMode: res.state.world?.render_mode ?? "",
+        characterMode: res.state.world?.character_mode ?? "",
+        combatSystem: res.state.world?.combat_system ?? "",
+        // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
+        uiTheme: res.uiTheme ?? BASE_UI_THEME,
+      });
+      despiertaElAtlasDeLaSesion();
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
-      activeSessionId = res.state.session_id;
-      applySessionStyle(res.state.world?.style_id ?? "");
-      applyUiTheme(res.uiTheme);
-      applyRenderModes(res.state.world?.render_mode ?? "", res.state.world?.character_mode ?? "");
-      applySessionCombatSystem(res.state.world?.combat_system ?? "");
-      applySessionReady();
-      historyBrowser.setSession(res.state.session_id);
+      session.enter({
+        sessionId: res.state.session_id,
+        styleId: res.state.world?.style_id ?? "",
+        renderMode: res.state.world?.render_mode ?? "",
+        characterMode: res.state.world?.character_mode ?? "",
+        combatSystem: res.state.world?.combat_system ?? "",
+        // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
+        uiTheme: res.uiTheme ?? BASE_UI_THEME,
+      });
+      despiertaElAtlasDeLaSesion();
       log(`Reanudada: ${res.state.session_id}`);
+      // El mundo anterior se va ANTES de vestir al jugador: `resetWorld`
+      // borra también su prompt de skin (es del mundo que se va), y vestirlo
+      // primero lo dejaría desnudo.
+      resetWorld();
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
       // completos (o vacío) cae a la base y_bot dentro de setPlayerAppearance.
       const desiredModel = res.state.player.appearance.model_id;
@@ -2580,7 +2666,6 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       // escena activa se añade la última para quedar como activa si es legacy.
       const activeId = res.state.world?.active_scene_id;
       const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown>; tile?: unknown }> | undefined;
-      resetWorld();
       let added = 0;
       for (const [id, rec] of Object.entries(scenes ?? {})) {
         if (!rec?.scene_data || !rec.tile || id === activeId) continue;
@@ -2593,7 +2678,9 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         added++;
       }
       if (added === 0) log(`(sin escena en el save — esperando narrativa)`);
-      // La posición viene del save (el bridge la snapshotea en save_session).
+      // La posición viene del save, y ahora está VIVA: el bridge ata el
+      // combatiente del sim al NarrativeState al sembrarlo, así que cualquiera
+      // de sus guardados la lleva fresca (issue #245).
       const savedPos = res.state.player?.position;
       if (Array.isArray(savedPos) && savedPos.length === 3) {
         playerPos.x = savedPos[0];
@@ -2608,11 +2695,11 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     // loader 70, así que un título de vuelta escondería el error debajo y el
     // jugador volvería a la pantalla inicial sin saber por qué.
     hideLoader();
-    // La sesión pudo quedar a medio aplicar (el fallo puede llegar después de
-    // `applySessionReady`): sin esto, el segundo intento arrancaría sobre los
-    // tiles del primero.
-    resetWorld();
-    activeSessionId = null;
+    // La sesión pudo quedar a medio aplicar (el fallo puede llegar DESPUÉS de
+    // `session.enter`): sin esto, el segundo intento arrancaría sobre los
+    // tiles del primero. `leave()` es el mismo camino que usa `volverAlTitulo`
+    // — los dos retornos al título dejan el cliente idéntico por construcción.
+    abandonarLaPartida();
     const que =
       action.kind === "new_game"
         ? "No se pudo empezar la partida"

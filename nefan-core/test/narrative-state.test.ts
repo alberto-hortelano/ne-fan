@@ -548,3 +548,61 @@ describe("NarrativeState.serializeForLlm", () => {
     assert.equal(s2.serializeForLlm().story_so_far, "El herrero juró venganza.");
   });
 });
+
+/** La frescura del jugador viaja con el OBJETO, no con la llamada: quien
+ *  guarda no tiene que acordarse de refrescar nada. Es lo que hace que el save
+ *  número catorce —el que alguien escriba mañana— nazca fresco. */
+describe("NarrativeState: runtime del jugador atado al save", () => {
+  it("save() tira de la fuente atada: el save no se escribe con el arranque", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    let vivo = { position: { x: 3, y: 1, z: -4 }, health: 61 };
+    s.bindPlayerRuntime(() => vivo);
+
+    await s.save();
+    assert.deepEqual((await storage.read(id))!.player.position, [3, 1, -4]);
+    assert.equal((await storage.read(id))!.player.health, 61);
+
+    // Y el SIGUIENTE save, sin que nadie vuelva a atar nada.
+    vivo = { position: { x: -9, y: 1, z: 12 }, health: 8 };
+    await s.save();
+    assert.deepEqual((await storage.read(id))!.player.position, [-9, 1, 12]);
+    assert.equal((await storage.read(id))!.player.health, 8);
+  });
+
+  it("sin jugador vivo se conserva lo persistido (no es un error)", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    s.bindPlayerRuntime(() => ({ position: { x: 5, y: 1, z: 5 }, health: 50 }));
+    await s.save();
+    // Título, o bootstrap antes de sembrar el sim: la fuente da null.
+    s.bindPlayerRuntime(() => null);
+    await s.save();
+    assert.deepEqual((await storage.read(id))!.player.position, [5, 1, 5], "no se pisa con nada");
+    assert.equal((await storage.read(id))!.player.health, 50);
+  });
+
+  it("la atadura es de UNA sesión: start y load la sueltan", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const primera = s.startNewSession("g");
+    s.bindPlayerRuntime(() => ({ position: { x: 20, y: 1, z: 20 }, health: 7 }));
+    await s.save();
+
+    // Partida nueva en el mismo proceso: el runtime atado era de la otra.
+    const segunda = s.startNewSession("g");
+    await s.save();
+    assert.deepEqual(
+      (await storage.read(segunda))!.player.position,
+      [0, 1, 0],
+      "el arranque, no el final de la partida anterior",
+    );
+    assert.equal((await storage.read(segunda))!.player.health, 100);
+
+    // Y reanudar la primera tampoco arrastra el runtime de la segunda.
+    s.bindPlayerRuntime(() => ({ position: { x: 33, y: 1, z: 33 }, health: 3 }));
+    assert.equal(await s.loadSession(primera), true);
+    await s.save();
+    assert.deepEqual((await storage.read(primera))!.player.position, [20, 1, 20]);
+    assert.equal((await storage.read(primera))!.player.health, 7);
+  });
+});

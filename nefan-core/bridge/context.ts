@@ -40,6 +40,7 @@ import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import { resolveExitEdge } from "../src/world-map/edges.js";
 import type { SceneExit, ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
+import type { WorldClaim } from "./world-claim.js";
 
 /** Superficie mínima de socket que usan los handlers — un WebSocket de `ws`
  *  la cumple, y los tests pueden pasar un capturador. */
@@ -89,6 +90,12 @@ export interface BridgeContext {
   /** Tracking de la activación por posición (tile/place bajo el jugador),
    *  gateado por cambio de celda para no costar nada en el hot loop. */
   posTracking: { cellKey: string | null; placeId: string | null };
+  /** El dueño del mundo del sim: quién puede escribir en él y si la partida
+   *  guardada está escuchando (`bridge/world-claim.ts`). Tomar el mundo y
+   *  decidir si el save escucha son la MISMA llamada — separarlos es lo que
+   *  dejaba el `state.json` de una partida con las coordenadas del muñeco de
+   *  una fixture dentro. */
+  world: WorldClaim;
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;

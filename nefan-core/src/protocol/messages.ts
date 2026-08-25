@@ -137,11 +137,6 @@ export interface GenerateGameMessage {
   gameId: string;
 }
 
-export interface SaveSessionMessage {
-  type: "save_session";
-  requestId?: string;
-}
-
 /** The player walked into a world-map place. The bridge realizes the place's
  *  low-level scene on demand (lazy realize): if it already has a scene it is
  *  re-broadcast, otherwise the narrative engine generates one. */
@@ -215,7 +210,6 @@ export type ClientMessage =
   | GenerateGameMessage
   | GetWorldSnapshotMessage
   | RecordStyleApplicationMessage
-  | SaveSessionMessage
   | PlayerEnteredPlaceMessage
   | RequestTileMessage
   | AddCombatantsMessage
@@ -465,12 +459,6 @@ export interface RenderModeChangedMessage {
   renderMode: "image" | "vector";
 }
 
-export interface SessionSavedMessage {
-  type: "session_saved";
-  requestId?: string;
-  ok: boolean;
-}
-
 export type ServerMessage =
   | StateUpdateMessage
   | PongMessage
@@ -485,5 +473,4 @@ export type ServerMessage =
   | StyleApplicationRecordedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
-  | RenderModeChangedMessage
-  | SessionSavedMessage;
+  | RenderModeChangedMessage;

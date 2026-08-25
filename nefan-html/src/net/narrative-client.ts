@@ -136,11 +136,6 @@ export class NarrativeClient {
     return res.ok;
   }
 
-  async save(): Promise<boolean> {
-    const res = await this.bridge.saveSession();
-    return res.ok;
-  }
-
   sendDialogueChoice(payload: {
     eventId: string;
     choiceIndex: number;

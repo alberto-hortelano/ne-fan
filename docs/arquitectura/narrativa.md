@@ -8,7 +8,7 @@ Cómo viaja una escena desde Claude hasta el cliente, y cómo una elección de d
 
 ## MCP bridge — Como funciona la narrativa
 
-**Sesión canónica en el bridge**: la sesión vive ahí (`NarrativeState` TS + plugins) y el cliente habla con él por WebSocket (`net/bridge-client.ts`) con `start_session`/`resume_session`/`save_session`/`dialogue_choice`/`interact_entity`. El cliente no persiste nada: hay **un solo escritor** de `saves/{id}/state.json`, el bridge, que además snapshotea pos/HP del sim al guardar y resiembra el sim al reanudar. Sin bridge no hay sesión — el cliente queda en modo visual/dev sobre las fixtures locales, sin plugins ni motor narrativo.
+**Sesión canónica en el bridge**: la sesión vive ahí (`NarrativeState` TS + plugins) y el cliente habla con él por WebSocket (`net/bridge-client.ts`) con `start_session`/`resume_session`/`dialogue_choice`/`interact_entity`. El cliente no persiste nada: hay **un solo escritor** de `saves/{id}/state.json`, el bridge, que además lleva pos/HP VIVOS del sim en cada save (`bindPlayerRuntime`, atado al sembrar) y resiembra el sim al reanudar. Sin bridge no hay sesión — el cliente queda en modo visual/dev sobre las fixtures locales, sin plugins ni motor narrativo.
 
 **Generación de escena inicial open-world**:
 1. El cliente envía `start_session` al bridge; el bridge crea la sesión, activa plugins shipped y hace POST `/generate_scene` a ai_server (`AiClient.generateScene` en nefan-core)

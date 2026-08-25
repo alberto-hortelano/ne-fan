@@ -88,6 +88,20 @@
 }
 #dev-menu-items .dm-item button:disabled { opacity: 0.5; cursor: default; }
 
+/* EL TÍTULO TAPA EL JUEGO (#246).
+   El overlay del título es traslúcido (rgba(8,8,12,0.97)) y está a 9999, así
+   que el HUD de la partida y el error-log se leían de fantasmas entre su
+   texto — justo al lado del botón de cerrar. Subir la opacidad no arregla la
+   causa: es que la partida sigue pintando debajo.
+
+   Es un INTERRUPTOR y no una lista de widgets: el motivo lo lleva el propio
+   título (`titleScreen.onVisibilityChange` escribe `data-titulo`), así que un
+   panel nuevo dentro de #game-ui nace ya oculto ahí sin que nadie se acuerde.
+   El panel de dev (#dev-status, z-index 10000) se queda: vigila el gasto, y
+   crear mundo o estilo desde el título es justo donde se gasta. */
+html[data-titulo="1"] #game-ui,
+html[data-titulo="1"] #error-log { display: none; }
+
 /* Error-log: siempre visible, nunca tematizado. */
 #error-log {
   position: fixed;

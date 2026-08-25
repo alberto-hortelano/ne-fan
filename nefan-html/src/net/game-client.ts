@@ -51,6 +51,12 @@ type EventHandler = (...args: unknown[]) => void;
 
 export interface GameClient {
   tick(delta: number, inputs: TickInputs): FrameResult;
+  /** Un frame SIN conducir la simulación: se pinta, pero no se manda input.
+   *  Es lo que corre mientras el título cubre la pantalla — ahí no hay
+   *  jugador que simular, y el frame que se mandaba llevaba la posición por
+   *  defecto del cliente. Con el save arrastrando la posición viva del sim
+   *  (#245), ese frame se llevaba por delante la partida guardada. */
+  idle(): FrameResult;
   loadRoom(roomData: Record<string, unknown>, roomId: string, enemies: RoomEnemy[]): void;
   /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
    *  sim ni al player — el mundo es un plano continuo. */
@@ -117,14 +123,18 @@ export class BridgeGameClient implements GameClient {
 
   tick(delta: number, inputs: TickInputs): FrameResult {
     this.bridge.sendInput(delta, inputs);
+    return this.idle();
+  }
 
-    // Return pending frame if available, otherwise last known state with no events
+  /** Lo mismo SIN mandar input: consume el frame pendiente si lo hay (un
+   *  state_update en vuelo sigue siendo estado real) y si no repite el último
+   *  conocido sin eventos. */
+  idle(): FrameResult {
     if (this.pendingFrame) {
       const frame = this.pendingFrame;
       this.pendingFrame = null;
       return frame;
     }
-
     return { ...this.lastState, events: [] };
   }
 
@@ -187,6 +197,11 @@ export class ViewerGameClient implements GameClient {
   }
 
   tick(): FrameResult {
+    return this.frame;
+  }
+
+  /** Sin simulación, conducir y no conducir son lo mismo. */
+  idle(): FrameResult {
     return this.frame;
   }
 

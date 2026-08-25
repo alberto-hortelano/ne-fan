@@ -111,11 +111,11 @@ contracts; 🆕 = endpoint nuevo planificado; ☠ = deprecado.
 
 **S1 game-gateway (WS :9877)** — ✅ los `ClientMessage` de juego (input, load_room,
 respawn, ping, list_sessions, start_session, resume_session, delete_session,
-dialogue_choice, create_game, list_games, save_session, player_entered_place,
+dialogue_choice, create_game, list_games, player_entered_place,
 request_tile, add_combatants, interact_entity)
-y los 10 `ServerMessage` (state_update, pong, sessions_listed, session_started,
-narrative_event, narrative_status, games_listed, game_created, session_deleted,
-session_saved).
+y los 9 `ServerMessage` (state_update, pong, sessions_listed, session_started,
+narrative_event, narrative_status, games_listed, game_created,
+session_deleted).
 
 **S2 world-state (HTTP :9878)** — ✅ /health, /map, /map/place/{id},
 POST /map/place, POST /map/link, POST /map/trigger, /entities, /entity/{id},

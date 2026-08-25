@@ -1,5 +1,9 @@
 /** Handlers de ciclo de vida de sesión: listado de juegos/sesiones, start,
- *  resume, delete y save. */
+ *  resume y delete.
+ *
+ *  Guardar NO es un handler: el save se escribe donde el mundo cambia (trece
+ *  sitios) y lleva el runtime del jugador fresco porque `reseedSimForSession`
+ *  TOMA EL MUNDO para la sesión (`bridge/world-claim.ts`). */
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -53,7 +57,6 @@ import type {
   ListGamesMessage,
   ListSessionsMessage,
   ResumeSessionMessage,
-  SaveSessionMessage,
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
 
@@ -250,6 +253,7 @@ export async function handleListSessions(
  *  resume — misma fuente). Común a start_session y resume_session. */
 function reseedSimForSession(
   ctx: BridgeContext,
+  ws: ClientSocket,
   combatId: string,
   npcBehaviorId: string | undefined,
 ): void {
@@ -268,6 +272,11 @@ function reseedSimForSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
+  // Sembrar el sim y TOMAR EL MUNDO son el mismo acto: a partir de aquí
+  // conduce este socket y CUALQUIER save() del bridge lleva la posición y la
+  // vida vivas del combatiente. Sin esto el save solo sabía dónde empezó la
+  // partida (reanudar te devolvía al origen y te curaba a 100).
+  ctx.world.claimForSession(ws);
 }
 
 export async function handleStartSession(
@@ -389,7 +398,7 @@ export async function handleStartSession(
     });
     return;
   }
-  reseedSimForSession(ctx, combatId, npcBehaviorId);
+  reseedSimForSession(ctx, ws, combatId, npcBehaviorId);
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, msg.gameId, false);
   await ctx.narrative.save();
   ctx.subscribe(ws);
@@ -556,7 +565,7 @@ export async function handleResumeSession(
         `catálogo de refs del save conservado: ${(err as Error).message ?? err}`,
     );
   }
-  reseedSimForSession(ctx, combatId, npcBehaviorId);
+  reseedSimForSession(ctx, ws, combatId, npcBehaviorId);
   // Los NPC del save vuelven a la vida ambiental donde se quedaron (su
   // posición vive en el EntityRecord persistido).
   npcSync(ctx);
@@ -699,20 +708,3 @@ export async function handleSetRenderMode(
   });
 }
 
-export async function handleSaveSession(
-  msg: SaveSessionMessage,
-  ws: ClientSocket,
-  ctx: BridgeContext,
-): Promise<void> {
-  // Snapshot del runtime antes de escribir: posición y HP viven en el sim
-  // durante el juego y sólo se persisten aquí (un único punto de sincronía).
-  const player = ctx.sim.getCombatant("player");
-  if (player) {
-    ctx.narrative.updatePlayerPosition(player.position, ctx.narrative.world.active_scene_id);
-    ctx.narrative.updatePlayerHealth(player.health);
-  } else {
-    console.warn("Bridge: save_session without player combatant — runtime snapshot skipped");
-  }
-  const ok = await ctx.narrative.save();
-  ctx.send(ws, { type: "session_saved", requestId: msg.requestId, ok });
-}

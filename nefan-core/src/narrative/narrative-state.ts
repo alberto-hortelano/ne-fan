@@ -35,6 +35,20 @@ import { registerSceneNpcs } from "./npc-records.js";
 export type AssetValidator = (hash: string) => Promise<boolean>;
 export type LoadWarningSink = (source: string, message: string) => void;
 
+/** Lo que el RUNTIME sabe del jugador y el save no puede saber solo: dónde
+ *  está y cuánta vida le queda AHORA MISMO. Durante la partida eso vive en el
+ *  combatiente del sim, no aquí. */
+export interface PlayerRuntime {
+  position: Vec3Like;
+  health: number;
+}
+
+/** Fuente del runtime del jugador, ATADA al save (`bindPlayerRuntime`).
+ *  Devolver `null` no es un error: es «no hay jugador vivo» (el título, el
+ *  bootstrap antes de sembrar el sim), y entonces se conserva lo persistido —
+ *  un save no puede empeorar por guardarse. */
+export type PlayerRuntimeSource = () => PlayerRuntime | null;
+
 export interface LoadSessionOptions {
   /** Probe each unique asset hash in `asset_index_snapshot` against the live
    *  manifest. Hashes the validator reports as missing (resolved `false`) are
@@ -100,6 +114,9 @@ export class NarrativeState {
   private nextEventSeq = 0;
   private nextSchedSeq = 0;
   private dirty = false;
+  /** Fuente del runtime del jugador de ESTA sesión (ver bindPlayerRuntime).
+   *  No se persiste: es la atadura con el sim, no un campo del save. */
+  private playerRuntime: PlayerRuntimeSource | null = null;
   /** Índice en memoria tileKey → sceneId (reconstruido en load, actualizado en
    *  recordSceneLoaded). No se persiste: se deriva de scenes_loaded[].tile. */
   private tileIndex = new Map<string, string>();
@@ -149,6 +166,35 @@ export class NarrativeState {
 
   // ── Lifecycle ──
 
+  /** Ata (o suelta, con `null`) la fuente del runtime del jugador.
+   *
+   *  `save()` tira de ella ANTES de serializar, así que la frescura viaja con
+   *  el OBJETO y no con la llamada: quien guarda no tiene que acordarse de
+   *  refrescar nada, y el save número catorce —el que alguien escriba mañana
+   *  en un handler nuevo— nace fresco igual que los trece de hoy. Antes esto
+   *  era un snapshot manual en UN handler de guardado explícito, el único que
+   *  lo hacía, y el mensaje que lo disparaba no lo mandaba nadie: la posición
+   *  y la vida del jugador no se persistían JAMÁS (issue #245).
+   *
+   *  La atadura pertenece a una sesión concreta: `startNewSession` y
+   *  `loadSession` la sueltan, porque cambiar de identidad deja al runtime
+   *  atado hablando de una partida que ya no es esta. Quien siembra el sim la
+   *  vuelve a atar (`reseedSimForSession` en el bridge): sembrar y atar son el
+   *  mismo acto. */
+  bindPlayerRuntime(src: PlayerRuntimeSource | null): void {
+    this.playerRuntime = src;
+  }
+
+  /** Vuelca el runtime vivo sobre `player` justo antes de serializar. Sin
+   *  fuente atada (o sin jugador vivo) se conserva lo persistido. */
+  private refreshPlayerFromRuntime(): void {
+    const live = this.playerRuntime?.();
+    if (!live) return;
+    this.player.position = toTuple(live.position);
+    this.player.health = live.health;
+    if (this.world.active_scene_id) this.player.current_scene_id = this.world.active_scene_id;
+  }
+
   startNewSession(gameId: string): string {
     this.session_id = generateSessionId();
     this.game_id = gameId;
@@ -168,6 +214,10 @@ export class NarrativeState {
     this.nextEventSeq = 0;
     this.nextSchedSeq = 0;
     this.tileIndex.clear();
+    // La sesión anterior se llevó su runtime: quien siembre el sim de ESTA
+    // volverá a atarlo. Sin esto, el primer save de la partida nueva
+    // escribiría la posición del jugador de la vieja.
+    this.playerRuntime = null;
     this.dirty = true;
     return this.session_id;
   }
@@ -258,6 +308,9 @@ export class NarrativeState {
       console.warn(`NarrativeState: unsupported schema_version ${data.schema_version}`);
       return false;
     }
+    // Mismo motivo que en startNewSession: el runtime atado era de la sesión
+    // que estaba cargada, no de la que se está cargando.
+    this.playerRuntime = null;
     this.session_id = data.session_id;
     this.game_id = data.game_id;
     this.created_at = data.created_at;
@@ -310,6 +363,7 @@ export class NarrativeState {
 
   async save(): Promise<boolean> {
     if (!this.session_id) return false;
+    this.refreshPlayerFromRuntime();
     this.updated_at = nowIso();
     const payload = this.toSessionData();
     await this.storage.write(this.session_id, payload);

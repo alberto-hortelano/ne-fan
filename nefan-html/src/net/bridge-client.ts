@@ -16,7 +16,6 @@ import type {
   SessionDeletedMessage,
   RenderModeSetMessage,
   RenderModeChangedMessage,
-  SessionSavedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
@@ -313,10 +312,6 @@ export class BridgeClient {
    *  escenarios o personajes. Bajar a vector solo bloquea generación nueva. */
   setRenderMode(sessionId: string, renderMode: "image" | "vector", facet: "scenes" | "characters"): Promise<RenderModeSetMessage> {
     return this.request<RenderModeSetMessage>({ type: "set_render_mode", sessionId, renderMode, facet });
-  }
-
-  saveSession(): Promise<SessionSavedMessage> {
-    return this.request<SessionSavedMessage>({ type: "save_session" });
   }
 
   sendDialogueChoice(payload: {

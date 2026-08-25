@@ -146,7 +146,6 @@ Formatos verificados en `nefan-core/bridge/ws-server.ts` y `nefan-core/src/proto
 - `{type:"interact_entity", entityId, entityName}` → `narrative_event` (consequences)
 - `{type:"dialogue_choice", eventId, speaker, chosenText, choiceIndex, freeText?}` → `narrative_event`
 - `{type:"player_entered_place", placeId}` → `narrative_event` con la escena del lugar
-- `{type:"save_session"}` → `session_saved`
 
 Los juegos en disco son los de `nefan-core/data/games/` (`alta_fantasia`, `cuentos_oscuros`,
 `toledo_1200`, `colonia_aster`, más los `user_*` subidos) — comprobar con `list_games`.

@@ -24,6 +24,8 @@ export async function handleInput(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Escribe en el sim quien TIENE EL MUNDO (`bridge/world-claim.ts`).
+  if (!ctx.world.canDrive(ws)) return;
   // Sim aún sin sembrar (title screen, o bridge recién reiniciado antes del
   // resume): responder aquí con playerHp 0 haría que el cliente matara al
   // player. Sin combatiente no hay nada que simular ni reportar.
@@ -96,6 +98,12 @@ export function handleLoadRoom(
   const playerMaxHp = ctx.store.state.player.max_hp || 100;
   const inSession = ctx.narrative.session_id !== "" && livePlayer !== undefined;
   const playerHp = inSession ? livePlayer!.health : playerMaxHp;
+  // Cargar una fixture del selector «Room» es TOMAR EL MUNDO para una escena
+  // de prueba: conduce quien la cargó y la partida guardada deja de escuchar
+  // al sim — lo que ande por aquí es un muñeco, no el jugador de nadie. Si el
+  // mundo lo tiene OTRO socket no se toca nada: una pestaña ajena no le
+  // congela la partida a quien está jugando.
+  if (!ctx.world.claimForFixture(ws)) return;
   // Reset simulation for new room
   ctx.sim.reset();
   // Sin sesión (fixtures legacy), el cliente asume el catálogo ESTÁNDAR: el
@@ -160,6 +168,9 @@ export function handleLoadRoom(
 }
 
 export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
+  // Reaparecer MUEVE al jugador, y con el save escuchando al sim eso acaba en
+  // el `state.json`: mismo dueño que el input.
+  if (!ctx.world.canDrive(ws)) return;
   const events = ctx.sim.respawn(msg.pos);
   const response: StateUpdateMessage = {
     type: "state_update",
@@ -180,6 +191,8 @@ export function handleAddCombatants(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): void {
+  // Poblar el mundo también es escribir en él: mismo dueño.
+  if (!ctx.world.canDrive(ws)) return;
   const projected = [...ctx.store.state.enemies];
   let added = 0;
   for (const enemy of msg.enemies) {
