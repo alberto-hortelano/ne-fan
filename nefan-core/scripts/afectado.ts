@@ -60,6 +60,7 @@ import {
   resumenDeMutantes,
   rutaInforme,
   RUTA_ARCH_RULES,
+  RUTA_HUELLA,
   type PlanMutacion,
 } from "./mutation-plan.js";
 
@@ -85,7 +86,7 @@ const TOOLING = [
   "tsconfig.json",
 ];
 
-export type Clase = "fuente" | "test" | "tooling" | "dato" | "ajeno";
+export type Clase = "fuente" | "test" | "tooling" | "dato" | "salida" | "ajeno";
 
 /** En qué cajón cae un fichero cambiado, dada su ruta relativa a nefan-core
  *  (los de fuera del paquete llegan con `../`, que es como los normaliza la
@@ -93,6 +94,9 @@ export type Clase = "fuente" | "test" | "tooling" | "dato" | "ajeno";
 export function clasifica(ruta: string): Clase {
   if (ruta.startsWith("../")) return "ajeno";
   if (TOOLING.some((t) => (t.endsWith("/") ? ruta.startsWith(t) : ruta === t))) return "tooling";
+  // ANTES de la regla del `.ts`, que manda a "dato" cualquier JSON del paquete
+  // y de ahí a la corrida completa. Ver `efectoDeSalida`.
+  if (ruta === RUTA_HUELLA) return "salida";
   if (!ruta.endsWith(".ts")) return "dato";
   if (ruta.startsWith("test/")) return "test";
   if (/^(src|bridge|services)\//.test(ruta)) return "fuente";
@@ -249,9 +253,43 @@ function efectoDeArchRules(ctx: Contexto): Efecto {
   };
 }
 
+/** La huella de la última corrida (`data/contract/mutacion-huella.json`) es la
+ *  SALIDA de la medida, no su instrumento — y esa diferencia vale la corrida
+ *  completa.
+ *
+ *  Sin esta rama el fichero cae en `clasifica` → "dato" (es un `.json` dentro
+ *  del paquete) y de ahí a `todos: true`, con una explicación perfectamente
+ *  razonable —«los tests lo leen en runtime y eso no aparece en ningún grafo de
+ *  imports»— que nadie leería como un bug. El autogol sería permanente y no
+ *  ocasional: la huella cambia en CADA corrida, y `deuda` juzga la frescura con
+ *  el diff desde el tag, así que a partir de la primera medida los 20 módulos
+ *  saldrían "posiblemente obsoletos" para siempre y la corrida seleccionada
+ *  pasaría de 300 mutantes a 9.040. Y `ficherosCambiados` incluye lo no
+ *  trackeado (`afectado.ts:444`), así que saltaría antes incluso de commitear.
+ *
+ *  Que NO es instrumento se comprueba, no se declara: quien la lea en runtime la
+ *  fuerza a correr igual que a cualquier otro dato (`ctx.leen`). Hoy no la lee
+ *  ninguna batería —solo `scripts/`, que ya es tooling por su cuenta—; el día
+ *  que una lo haga, saldrá seleccionada sola. */
+function efectoDeSalida(ctx: Contexto, f: string): Efecto {
+  const ids = ctx.leen(f.split("/").pop() as string);
+  return {
+    fichero: f,
+    clase: "salida",
+    ids,
+    todos: false,
+    porque:
+      "es la SALIDA de la medida (la huella de la última corrida), no su instrumento: " +
+      (ids.length > 0
+        ? "pero esas baterías la leen en runtime"
+        : "no la lee ninguna batería, así que no puede cambiar la suerte de un solo mutante"),
+  };
+}
+
 function efectoDe(ctx: Contexto, f: string): Efecto {
   const clase = clasifica(f);
   if (clase === "fuente") return efectoDeFuente(ctx, f);
+  if (clase === "salida") return efectoDeSalida(ctx, f);
   if (f === RUTA_ARCH_RULES) return efectoDeArchRules(ctx);
   if (clase === "tooling") {
     return {
