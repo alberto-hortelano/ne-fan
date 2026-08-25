@@ -19,7 +19,7 @@
 import http from "node:http";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 18765);
@@ -40,6 +40,19 @@ let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
+// Imágenes de los packs de estilo (portadas y refs). Son ficheros COMMITEADOS
+// del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
+// mismo que serviría el asset-store con GET /styles/{id}/{file}.
+const STYLES_DIR = fileURLToPath(new URL("../../nefan-core/data/styles/", import.meta.url));
+/** Mismos tipos y mismo filtro de nombre que `readStyleFile` / `SAFE_ID`. */
+const STYLE_FILE_MIME = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".json": "application/json",
+};
+const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
 
 // ── Tiles del plano continuo ─────────────────────────────────────────────
 // TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
@@ -470,6 +483,41 @@ const server = http.createServer((req, res) => {
       cost_per_image_usd: 0.18,
       estimated_cost_usd: 0,
     });
+  }
+  // GET /styles/{style_id}/{file} — la portada del estilo y las refs del pack.
+  //
+  // Bajo `?ai=`, el cliente resuelve el asset-store a ESTE server (los tres
+  // servicios a la vez, service-urls.ts), así que sin esta ruta las cuatro
+  // portadas del selector daban 404 en el bench y el título del preset
+  // e2e-sin-creditos se abría con cuatro marcos rotos (#218). Va DESPUÉS de
+  // /styles/{id}/missing, que es otra ruta y no lleva extensión.
+  //
+  // Se COPIA el contrato de `readStyleFile` (nefan-core/services/asset-store/
+  // blob-store.ts), no se importa: el fake es .mjs y el único JS de nefan-core
+  // es `dist/`, que el preset e2e-sin-creditos no construye. Si aquella cambia
+  // (MIME nuevo, dos subcarpetas), esto se queda atrás — lo caza el guion 26,
+  // que exige una portada REAL pintada.
+  if (req.method === "GET" && /^\/styles\//.test(req.url ?? "")) {
+    // `new URL` normaliza `..` y `%2e%2e` en el pathname antes de que lleguemos
+    // aquí; los checks por segmento son defensa en profundidad, como en el
+    // original.
+    const partes = new URL(req.url, "http://127.0.0.1").pathname.split("/").slice(1).map(decodeURIComponent);
+    if (partes.length === 3 || partes.length === 4) {
+      const [, styleId, ...resto] = partes;
+      const file = resto.join("/");
+      const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
+      const mime = STYLE_FILE_MIME[ext];
+      const seguro = partes.slice(1).every((s) => SAFE_ID.test(s) && !s.includes(".."));
+      if (!mime || !seguro) {
+        return send(400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
+      }
+      const path = `${STYLES_DIR}${styleId}/${file}`;
+      if (!existsSync(path) || !statSync(path).isFile()) {
+        return send(404, { ok: false, error: `style file not found: ${styleId}/${file}` });
+      }
+      res.writeHead(200, { "Content-Type": mime, "Cache-Control": "max-age=300", ...cors });
+      return res.end(readFileSync(path));
+    }
   }
   // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin
   // tocar. Va aparte de /dev/status a propósito — ese espeja un contrato real
