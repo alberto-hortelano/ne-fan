@@ -99,19 +99,32 @@ export default async function (ctx) {
     Boolean(dicho?.entrada?.msg.includes(ROTA)) && Boolean(dicho?.linea?.includes(ROTA)),
     JSON.stringify({ entrada: dicho?.entrada?.msg, linea: dicho?.linea }),
   );
-  // MEDIDO, NO AFIRMADO — y hay que decir por qué. El arreglo pone el canal,
-  // pero NO devuelve el `<select>` a su sitio: tras el fallo el desplegable
-  // sigue mostrando la fixture que no cargó mientras el mundo es la anterior,
-  // así que la etiqueta de la pantalla miente sobre qué se está viendo. Es un
-  // hallazgo abierto del QA de #248, no algo que este guion deba dar por
-  // bueno: cuando se arregle, esta línea se asciende a `ctx.expect`.
+  // La OTRA mitad del mismo bug, y la que sobrevivió al primer arreglo: decir
+  // «no cargó» y dejar la etiqueta apuntando a la fixture que no cargó cambia
+  // el fallo mudo por uno que MIENTE. Los dos canales de arriba se van del
+  // log en ocho líneas; el desplegable se queda, y es lo primero que se mira
+  // para saber qué se está viendo. Nació como hallazgo abierto del QA de #248
+  // —medido con `ctx.log` para no envenenar la batería— y se asciende aquí en
+  // el mismo commit que lo arregla.
   const etiqueta = await ctx.page.evaluate(() => ({
     select: document.getElementById("room-selector")?.value ?? "",
     mundo: window.__nefan.scene?.scene_id ?? "",
   }));
-  ctx.log(
-    `el <select> muestra "${etiqueta.select}" y el mundo sigue en "${etiqueta.mundo}" ` +
-      `(hallazgo abierto: la etiqueta no vuelve)`,
+  ctx.log(`el <select> muestra "${etiqueta.select}" y el mundo está en "${etiqueta.mundo}"`);
+  ctx.expect(
+    "el <select> vuelve a la fixture que SÍ se está viendo, en vez de quedarse en la que falló",
+    etiqueta.select.includes(CONTROL) && !etiqueta.select.includes(ROTA),
+    JSON.stringify(etiqueta),
+  );
+  // El invariante de verdad, y escrito para que PUEDA ponerse rojo: no que
+  // cada mitad sea `robledo_tile` por separado —eso seguía verde con el bug
+  // dentro, porque el mundo nunca dejó de ser el control— sino que la etiqueta
+  // y el mundo nombren LA MISMA escena, sea cual sea. El `mundo` no vacío es
+  // guarda contra el `includes("")`, que sería verde siempre.
+  ctx.expect(
+    "…y el desplegable nombra la MISMA escena que el mundo pinta: la pantalla dice UNA cosa",
+    etiqueta.mundo.length > 0 && etiqueta.select.includes(etiqueta.mundo),
+    JSON.stringify(etiqueta),
   );
   await ctx.shot("selector-fixture-rota");
 

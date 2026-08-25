@@ -1330,6 +1330,12 @@ dialoguePanel.onAdvanced = () => {
 
 // --- Scene selector handler ---
 
+/** La fixture que el desplegable está enseñando DE VERDAD (vacío = ninguna: el
+ *  mundo viene del bridge, o aún no se ha elegido). El `<select>` se actualiza
+ *  solo al elegir, así que sin esto no hay a dónde volver cuando la carga
+ *  falla. */
+let fixtureCargada = "";
+
 sceneSelector.addEventListener("change", () => {
   const value = sceneSelector.value;
   if (!value) return;
@@ -1337,9 +1343,21 @@ sceneSelector.addEventListener("change", () => {
   // no-op MUDO (el modo de fallo de #181): la escena no cambiaba, el rechazo
   // se perdía y quien conduce el preset `html-fixtures` no se enteraba de
   // nada. Ahora el fallo llega al registro de errores y a la línea del juego.
-  paso(loadSceneFile(value), "scene", `no se pudo cargar la fixture ${value}`, () =>
-    log(`⚠ no se pudo cargar la escena ${value}`),
-  );
+  //
+  // Y el desplegable VUELVE. Decir «no cargó» y dejar la etiqueta apuntando a
+  // la fixture que no cargó es cambiar el fallo mudo por uno que miente: la
+  // pantalla diría dos cosas distintas sobre qué escena se está viendo, y el
+  // mensaje se va del log en ocho líneas mientras la etiqueta se queda.
+  const anterior = fixtureCargada;
+  fixtureCargada = value;
+  paso(loadSceneFile(value), "scene", `no se pudo cargar la fixture ${value}`, () => {
+    log(`⚠ no se pudo cargar la escena ${value}`);
+    // Salvo que mientras tanto se haya elegido otra: revertir por encima de una
+    // elección posterior sería mentir en la otra dirección.
+    if (sceneSelector.value !== value) return;
+    fixtureCargada = anterior;
+    sceneSelector.value = anterior;
+  });
 });
 
 // --- Respawn ---
