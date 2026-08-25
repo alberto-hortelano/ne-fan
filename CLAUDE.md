@@ -42,10 +42,12 @@ esas. La prosa se olvida a mitad de contexto; un test que falla, no.
 deriva la cola de trabajo de esas mismas herramientas — violaciones congeladas,
 funciones sobre el objetivo de CRAP, mutantes supervivientes — y avisa cuando una
 medida está obsoleta. Un item desaparece de la cola cuando se arregla, no cuando
-alguien se acuerda de tacharlo. **Y no hace falta medirlo todo para saberlo**:
-`npm run afectado` dice qué módulos de mutación puede haber roto un diff, y
-`npm run mutate -- --cambiado` corre solo esos; ante la duda ejecuta de más y lo
-dice, y la corrida completa queda para la nocturna.
+alguien se acuerda de tacharlo. **La mutación no se corre a mano**: es de minutos y satura la máquina de quien
+está delante. Corre sola en el runner (`.github/workflows/mutation.yml`, cron a
+las 3:00, corrida completa) y sus supervivientes llegan a la cola por
+`npm run deuda`. `npm run afectado` sigue sirviendo para SABER qué módulos puede
+haber roto un diff sin medir nada; si uno hay que medirlo antes de la nocturna,
+se lanza el workflow a mano (`workflow_dispatch`) — en el runner, no aquí.
 Lo que ninguna herramienta mide (trocear un
 fichero, una funcionalidad nueva) va a **issues de GitHub**, que se cierran desde
 la PR.
