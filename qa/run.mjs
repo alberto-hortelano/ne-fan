@@ -31,6 +31,7 @@
  *    node qa/run.mjs --diag           una línea de diagnóstico por guion
  */
 import { chromium } from "playwright-core";
+import { abrirNavegador } from "./lib/navegador.mjs";
 import { spawn } from "node:child_process";
 import { readdirSync, mkdirSync, rmSync, cpSync, existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -403,11 +404,7 @@ async function main() {
     );
   }
   console.log(`· orden: ${ORDEN}`);
-  const browser = await chromium.launch({
-    executablePath: "/usr/bin/google-chrome",
-    headless: !HEADED,
-    args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu"],
-  });
+  const browser = await abrirNavegador(chromium, { headed: HEADED });
 
   const resultados = [];
   for (const file of guiones) {
