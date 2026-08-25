@@ -147,6 +147,7 @@ export function makeCtx(
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
     posTracking: { cellKey: null, placeId: null },
+    simDriver: null,
     subscribe(ws) {
       subscribers.add(ws);
     },

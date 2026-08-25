@@ -1,0 +1,117 @@
+/** El estado de sesión del cliente, como UN valor.
+ *
+ *  Antes eran dos variables sueltas de módulo (`activeSessionId` y
+ *  `sessionModesApplied`) que tenían que moverse juntas, más cinco aplicadores
+ *  sueltos (estilo, tema de UI, modos de render, sistema de combate, libro de
+ *  historia). Entrar los ponía los cinco; salir deshacía DOS por un camino
+ *  (`volverAlTitulo`) y UNO por el otro (el catch del bucle del título). Esa
+ *  asimetría no era cosmética: el gate del gasto de imagen es
+ *  «sesión aplicada && modo imagen», así que un retorno al título que se
+ *  dejaba el flag puesto pagaba un atlas con el estilo de la partida que no
+ *  llegó a arrancar (issue #249).
+ *
+ *  Aquí no hay reset que olvidar porque NO HAY RESET: «sin partida» es un
+ *  valor del mismo tipo (`NO_SESSION`), y entrar y salir son la misma función
+ *  con distinto argumento. Añadir una faceta obliga a darle su neutro (o no
+ *  compila) y a cablear su sink (o el test que enumera el record se pone
+ *  rojo).
+ *
+ *  Módulo PURO: no toca el DOM ni node:*. Los efectos los pone el cliente en
+ *  los sinks — este fichero solo garantiza que se aplican todos, siempre, en
+ *  los dos sentidos. */
+
+import { BASE_UI_THEME, type UiTheme } from "../games/ui-theme.js";
+
+/** Todo lo que una partida imprime en el cliente. Un campo aquí es una cosa
+ *  que hay que deshacer al volver al título — por eso viven juntos. */
+export interface SessionFacets {
+  /** Id del save. "" = no hay partida. */
+  sessionId: string;
+  /** Estilo visual congelado en el save (clave de caché de imagen). */
+  styleId: string;
+  /** Modo de render de escenarios ("image" | "vector" | ""). */
+  renderMode: string;
+  /** Modo de render de personajes ("image" | "vector" | ""). */
+  characterMode: string;
+  /** Sistema de combate de la sesión ("" = catálogo estándar). */
+  combatSystem: string;
+  /** Tema de UI del style pack. */
+  uiTheme: UiTheme;
+}
+
+/** «Sin partida», como valor. Es el ÚNICO sitio donde se escribe el neutro de
+ *  cada faceta: una faceta nueva sin neutro no compila. */
+export const NO_SESSION: SessionFacets = {
+  sessionId: "",
+  styleId: "",
+  renderMode: "",
+  characterMode: "",
+  combatSystem: "",
+  uiTheme: BASE_UI_THEME,
+};
+
+/** Los efectos de cada faceta, que pone el cliente. Se invocan TODOS en cada
+ *  transición, con los valores de la sesión al entrar y con los neutros al
+ *  salir: el sink no sabe en qué sentido va, y por eso no puede divergir. */
+export interface FacetSinks {
+  /** Estilo visual → generadores de imagen (atlas de superficies, skins). */
+  style(styleId: string): void;
+  /** Tema de UI → custom properties de #game-ui. */
+  theme(uiTheme: UiTheme): void;
+  /** Modos de render por faceta → gates de generación del cliente. */
+  renderModes(renderMode: string, characterMode: string): void;
+  /** Sistema de combate → catálogo de ataques del HUD y teclas 1..N. */
+  combat(combatSystem: string): void;
+  /** Sesión del libro de historia. Con un id rancio, abrir el libro pide
+   *  `resume_session` y hace TAKEOVER de otra partida en el bridge: no es
+   *  cosmético. */
+  history(sessionId: string): void;
+}
+
+/** La sesión del cliente: un valor y dos verbos que son el mismo acto. */
+export interface ClientSession {
+  /** Id del save, "" si no hay partida. */
+  readonly id: string;
+  /** ¿Hay partida aplicada? Es la precondición del gasto de imagen. */
+  readonly active: boolean;
+  /** Copia de las facetas vigentes (para el hook de bench/QA: es lo que hace
+   *  MEDIBLE «los dos caminos de vuelta al título dejan el cliente igual»). */
+  readonly facets: SessionFacets;
+  /** Entra en una partida: aplica sus facetas. */
+  enter(facets: SessionFacets): void;
+  /** Sale al título: aplica los neutros. Mismo camino, mismos sinks. */
+  leave(): void;
+}
+
+export function createClientSession(sinks: FacetSinks): ClientSession {
+  let vigentes: SessionFacets = NO_SESSION;
+
+  /** El único camino. `enter` y `leave` se distinguen por el ARGUMENTO, no
+   *  por el código que recorren. */
+  function apply(facets: SessionFacets): void {
+    vigentes = facets;
+    sinks.style(facets.styleId);
+    sinks.theme(facets.uiTheme);
+    sinks.renderModes(facets.renderMode, facets.characterMode);
+    sinks.combat(facets.combatSystem);
+    sinks.history(facets.sessionId);
+  }
+
+  return {
+    get id() {
+      return vigentes.sessionId;
+    },
+    get active() {
+      return vigentes.sessionId !== "";
+    },
+    get facets() {
+      return { ...vigentes };
+    },
+    enter(facets: SessionFacets) {
+      apply(facets);
+    },
+    leave() {
+      apply(NO_SESSION);
+    },
+  };
+}

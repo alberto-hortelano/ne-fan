@@ -156,11 +156,6 @@ const RecordStyleApplicationMessageSchema = z.object({
   record: z.record(z.string(), z.unknown()),
 });
 
-const SaveSessionMessageSchema = z.object({
-  type: z.literal("save_session"),
-  requestId: z.string().optional(),
-});
-
 const PlayerEnteredPlaceMessageSchema = z.object({
   type: z.literal("player_entered_place"),
   placeId: z.string(),
@@ -204,7 +199,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   GenerateGameMessageSchema,
   GetWorldSnapshotMessageSchema,
   RecordStyleApplicationMessageSchema,
-  SaveSessionMessageSchema,
   PlayerEnteredPlaceMessageSchema,
   RequestTileMessageSchema,
   AddCombatantsMessageSchema,

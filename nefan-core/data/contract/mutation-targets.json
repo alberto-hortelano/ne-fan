@@ -406,6 +406,13 @@
       "tests": ["test/status-labels.test.ts"],
       "break": 100,
       "porque": "El rótulo que lee QUIEN JUEGA cuando el motor falla (#180): decide qué fallo tapa la pantalla, cuál se queda en la línea de mensajes y cuál de los cuatro títulos toca. Módulo propio con batería de un fichero porque es el único test que lo importa: es una función pura de veinte líneas y meterla en cualquier otro módulo obligaría a los mutantes de ESE a pagar su suite, que es el coste que el reparto existe para evitar. Entra al reparto y no a `sin_mutar` porque la decisión ES el sujeto de su test: un mutante que cambie el `destino` de la frontera de `log` a `overlay` interrumpe una partida en curso y ninguna forma de respuesta cambia. Suelo 100 medido el 2026-08-23 sobre 46 mutantes. La primera corrida dio 97,9 % con un vivo, y el vivo señalaba código y no un aserto que faltara: el `titulo` de la rama `log` no lo lee nadie, así que cambiarle el texto no podía romper nada. Se arregló el TIPO —`Rotulo` pasó a ser unión discriminada y la rama de log ya no tiene título— en vez de añadir un aserto sobre algo que no se pinta."
+    },
+    {
+      "id": "session-facets",
+      "mutate": ["src/session/session-facets.ts"],
+      "tests": ["test/session-facets.test.ts"],
+      "break": 100,
+      "porque": "El estado de sesión del CLIENTE como un solo valor: entrar en una partida y volver al título recorren el MISMO `apply`, y «sin partida» es un valor del mismo tipo. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core). Nace con suelo 100 porque es todo o nada: treinta líneas sin ramas de negocio, y sus dos únicos mutantes interesantes —quitar la llamada a un sink dentro de `apply`, o cambiar el neutro de una faceta en `NO_SESSION`— son EXACTAMENTE el bug que el módulo existe para hacer inexpresable (#249: el catch del bucle del título deshacía una de las cinco cosas que ponía el éxito, el gate del gasto se quedaba armado y el tile que el bridge difundía después pagaba un atlas de una partida que no arrancó). Dejarlo en `sin_mutar` sería tener el candado sin medir. Sin corrida todavía: la nocturna lo mide (queda anotado en el informe de implementación)."
     }
   ]
 }

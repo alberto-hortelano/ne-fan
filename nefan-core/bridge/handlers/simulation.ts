@@ -24,6 +24,13 @@ export async function handleInput(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // El sim lo conduce QUIEN TOMÓ EL MUNDO: el socket que pasó por
+  // start_session, resume_session o load_room. Cualquier otro (el cliente
+  // todavía en el título tras un F5, otra pestaña abierta, un bench pegado al
+  // puerto) manda su `playerPosition` por defecto en cada frame, y desde que
+  // el save lleva la posición y la vida VIVAS del combatiente (#245) ese frame
+  // ajeno se lleva por delante la partida guardada.
+  if (ctx.simDriver && ws !== ctx.simDriver) return;
   // Sim aún sin sembrar (title screen, o bridge recién reiniciado antes del
   // resume): responder aquí con playerHp 0 haría que el cliente matara al
   // player. Sin combatiente no hay nada que simular ni reportar.
@@ -96,6 +103,12 @@ export function handleLoadRoom(
   const playerMaxHp = ctx.store.state.player.max_hp || 100;
   const inSession = ctx.narrative.session_id !== "" && livePlayer !== undefined;
   const playerHp = inSession ? livePlayer!.health : playerMaxHp;
+  // Quien carga una fixture TOMA el mundo: a partir de aquí conduce él, y el
+  // jugador del sim ya no es el de la partida (si la hubiera) — se suelta la
+  // atadura para que un guardado de esa sesión no se lleve la posición del
+  // muñeco de la fixture.
+  ctx.simDriver = ws;
+  ctx.narrative.bindPlayerRuntime(null);
   // Reset simulation for new room
   ctx.sim.reset();
   // Sin sesión (fixtures legacy), el cliente asume el catálogo ESTÁNDAR: el

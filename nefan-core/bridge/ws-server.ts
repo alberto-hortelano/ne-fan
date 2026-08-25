@@ -12,7 +12,6 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { GameSimulation } from "../src/simulation/game-loop.js";
-import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
@@ -98,6 +97,7 @@ const ctx: BridgeContext = {
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
   posTracking: { cellKey: null, placeId: null },
+  simDriver: null,
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },
@@ -111,10 +111,12 @@ const ctx: BridgeContext = {
   },
 };
 
-// Add player
-sim.addCombatant(
-  createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }),
-);
+// El jugador NO se siembra al arrancar el PROCESO. Aquí había un combatiente
+// en (0,0,0) desde el primer segundo del bridge, y con él la guarda de
+// `handleInput` («sim aún sin sembrar») no saltaba nunca: cualquier socket
+// conducía el sim antes de que hubiera partida. Quien siembra al jugador es
+// quien sabe dónde está: `reseedSimForSession` (start/resume, con la posición
+// del save) o `handleLoadRoom` (fixtures del selector «Room»).
 
 // Don't crash the bridge if a downstream service (ai_server) is offline.
 process.on("unhandledRejection", (reason) => {
@@ -254,6 +256,10 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("close", () => {
     narrativeSubscribers.delete(ws);
+    // Quien conducía el sim se ha ido: el mundo queda sin dueño hasta que
+    // alguien lo tome (start/resume/load_room). Sin esto, un cliente que
+    // recarga la página dejaría el sim clavado a un socket muerto.
+    if (ctx.simDriver === ws) ctx.simDriver = null;
     console.log("Bridge: client disconnected");
   });
 });

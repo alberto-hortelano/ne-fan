@@ -72,7 +72,6 @@ const RESPONSE_TYPES = new Set([
   "games_listed",
   "sessions_listed",
   "session_started",
-  "session_saved",
   "session_deleted",
 ]);
 const responseQueues = {};
@@ -98,7 +97,6 @@ const REQUEST_TO_RESPONSE = {
   list_sessions: "sessions_listed",
   start_session: "session_started",
   resume_session: "session_started",
-  save_session: "session_saved",
   delete_session: "session_deleted",
 };
 
@@ -122,8 +120,6 @@ function synthResponse(respType) {
         type: "games_listed",
         games: [{ game_id: "tavern_intro", title: "The Calling" }],
       };
-    case "session_saved":
-      return { type: "session_saved", ok: true };
     case "session_deleted":
       return { type: "session_deleted", ok: true };
     default:

@@ -89,6 +89,16 @@ export interface BridgeContext {
   /** Tracking de la activación por posición (tile/place bajo el jugador),
    *  gateado por cambio de celda para no costar nada en el hot loop. */
   posTracking: { cellKey: string | null; placeId: string | null };
+  /** Quién CONDUCE el sim: el socket que tomó el mundo (start_session,
+   *  resume_session o load_room de una fixture). Los `input` de cualquier otro
+   *  se ignoran.
+   *
+   *  Sin esto, el bridge sembraba un combatiente en (0,0,0) al arrancar el
+   *  PROCESO y cualquier socket movía al jugador: el cliente que está en el
+   *  título tras un F5 late a 60 Hz con su posición por defecto, y desde que
+   *  el save lleva la posición VIVA del combatiente (#245) eso corrompe la
+   *  partida guardada. `null` = nadie ha tomado el mundo todavía. */
+  simDriver: ClientSocket | null;
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
   send(ws: ClientSocket, msg: ServerMessage): void;

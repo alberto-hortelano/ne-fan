@@ -220,7 +220,7 @@ describe("bridge ciclo de sesión", () => {
     // El mundo del arranque existe antes de guardar (snapshot o bootstrap).
     await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
     const escenas = Object.keys(ctx.narrative.scenes_loaded).length;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     const { socket: s2, sent: sent2 } = makeSocket();
     await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
@@ -262,8 +262,9 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(sim.combatSystem.id, "basic");
     assert.equal(sim.combatSystem.attacks.length, 1);
 
-    // El input con "strike" simula; con un ataque estándar el sim lanza.
-    const { socket: s2, sent: sent2 } = makeSocket();
+    // El input con "strike" simula; con un ataque estándar el sim lanza. Va
+    // por el socket de la partida: con sesión abierta, el sim solo lo conduce
+    // quien está DENTRO (el que pasó por start_session).
     await routeMessage(
       {
         type: "input",
@@ -276,10 +277,11 @@ describe("bridge ciclo de sesión", () => {
           attackType: "strike",
         },
       },
-      s2,
+      socket,
       ctx,
     );
-    const update = sent2[0] as StateUpdateMessage;
+    const update = sent.find((m) => m.type === "state_update") as StateUpdateMessage;
+    assert.ok(update, "el socket de la sesión conduce el sim");
     assert.equal(update.type, "state_update");
     assert.ok(update.events.some((e) => e.type === "attack_started"));
 
@@ -321,7 +323,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     // Proceso nuevo: el sistema sale del save, no del game.json.
     narrative.startNewSession("plugtest");
@@ -336,7 +338,7 @@ describe("bridge ciclo de sesión", () => {
 
     // Save con un id que ya no existe en el registro ⇒ resume abortado.
     narrative.world.combat_system = "retirado";
-    await routeMessage({ type: "save_session", requestId: "r4" }, s2, ctx);
+    await ctx.narrative.save();
     const { socket: s3, sent: sent3 } = makeSocket();
     await routeMessage({ type: "resume_session", requestId: "r5", sessionId }, s3, ctx);
     const bad = sent3[0] as SessionStartedMessage;
@@ -420,7 +422,7 @@ describe("bridge ciclo de sesión", () => {
       ],
       ambient_event: "",
     });
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
@@ -459,7 +461,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     // Simular proceso nuevo: vaciar los plugins activos y reanudar.
     ctx.activePlugins = new Map();
@@ -484,7 +486,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     // Save de la era de dos perspectivas: inyectar el campo congelado legacy.
     const saved = await storage.read(sessionId);
@@ -542,7 +544,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await routeMessage({ type: "save_session" }, socket, ctx);
+    await ctx.narrative.save();
 
     await routeMessage({ type: "list_sessions", requestId: "r2" }, socket, ctx);
     const listed = sent.find((m) => m.type === "sessions_listed") as Extract<
@@ -602,9 +604,14 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.equal(sent.length, 0);
   });
 
-  it("save_session snapshotea posición y HP del sim en el save", async () => {
-    const bundle = makeCtx();
-    const { ctx, narrative, sim, storage } = bundle;
+  /** El sujeto es la FRESCURA del save, no un mensaje: la posición y la vida
+   *  viven en el combatiente del sim durante la partida, y hasta #245 solo se
+   *  copiaban al save en un handler de guardado explícito cuyo mensaje no
+   *  mandaba nadie. Ahora la fuente va ATADA al NarrativeState, así que se
+   *  ejerce por un guardado CUALQUIERA del bridge —aquí el de `dialogue_choice`,
+   *  que no sabe nada de posiciones— y se lee el fichero de disco. */
+  it("un guardado cualquiera del bridge lleva la posición y la vida VIVAS", async () => {
+    const { ctx, narrative, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
@@ -612,13 +619,121 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const player = sim.getCombatant("player")!;
     player.position = { x: 4, y: 1, z: 7 };
     player.health = 42;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    // Un diálogo: guarda porque cambió la historia, no porque nadie le pida
+    // un snapshot del jugador.
+    await routeMessage(
+      {
+        type: "dialogue_choice",
+        eventId: "e1",
+        choiceIndex: 0,
+        speaker: "Tabernero",
+        chosenText: "Hola",
+      },
+      socket,
+      ctx,
+    );
 
     assert.deepEqual(narrative.player.position, [4, 1, 7]);
     assert.equal(narrative.player.health, 42);
     const onDisk = (await storage.read(sessionId))!;
-    assert.deepEqual(onDisk.player.position, [4, 1, 7]);
-    assert.equal(onDisk.player.health, 42);
+    assert.deepEqual(onDisk.player.position, [4, 1, 7], "la posición viva llegó al disco");
+    assert.equal(onDisk.player.health, 42, "y la vida también: reanudar ya no cura");
+  });
+
+  /** La otra mitad: el runtime atado es de UNA sesión. Sin soltarlo al
+   *  cambiar de identidad, el primer save de la partida nueva escribiría la
+   *  posición del jugador de la vieja. */
+  it("empezar otra partida suelta el runtime de la anterior", async () => {
+    const { ctx, narrative, sim, storage } = makeCtx();
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    sim.getCombatant("player")!.position = { x: 40, y: 1, z: 40 };
+
+    // Sesión nueva EN CRUDO (sin pasar por el handler, que resiembra y vuelve
+    // a atar): el sim sigue con el combatiente de la partida anterior.
+    narrative.startNewSession("plugtest");
+    await narrative.save();
+    const onDisk = (await storage.read(narrative.session_id))!;
+    assert.deepEqual(onDisk.player.position, [0, 1, 0], "arranque, no el final de la anterior");
+  });
+
+  /** Con partida abierta, el sim lo conduce QUIEN ESTÁ DENTRO. Antes el
+   *  bridge sembraba un combatiente en (0,0,0) al arrancar el PROCESO, así que
+   *  la guarda de handleInput no saltaba nunca y cualquier socket movía al
+   *  jugador. Con el save llevando la posición viva, eso deja de ser latente:
+   *  el cliente que está en el título tras un F5 late a 60 Hz con su posición
+   *  por defecto y se lleva por delante la partida guardada. */
+  it("con sesión abierta, un socket de fuera NO conduce el sim", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
+
+    // Otro socket: conectado al mismo bridge, pero nunca pasó por
+    // start/resume (el cliente en el título, otra pestaña, un bench pegado).
+    const { socket: fuera, sent: sentFuera } = makeSocket();
+    const paso = (x: number, z: number) => ({
+      type: "input" as const,
+      delta: 0.016,
+      inputs: {
+        playerPosition: { x, y: 0, z },
+        playerForward: { x: 0, y: 0, z: -1 },
+        playerMoving: true,
+      },
+    });
+    await routeMessage(paso(0, 2), fuera, ctx);
+    assert.deepEqual(
+      sim.getCombatant("player")!.position,
+      { x: 12, y: 1, z: -6 },
+      "el socket de fuera movió al jugador",
+    );
+    assert.equal(sentFuera.length, 0, "ni se le contesta con un state_update");
+
+    // Y el de DENTRO sí, que es lo que impide que este verde sea vacío.
+    const antes = sent.length;
+    await routeMessage(paso(0, 2), socket, ctx);
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 0, y: 0, z: 2 });
+    assert.ok(sent.length > antes, "el socket de la sesión sí conduce y recibe estado");
+  });
+
+  /** Cargar una fixture del selector «Room» también es TOMAR el mundo: quien
+   *  la carga conduce, y el jugador del sim deja de ser el de la partida — si
+   *  no, un guardado de la sesión viva se llevaría la posición del muñeco de
+   *  la fixture. */
+  it("cargar una fixture toma el mundo y suelta al jugador de la partida", async () => {
+    const { ctx, sim, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
+    await ctx.narrative.save();
+
+    // Otra pestaña abre una fixture: el mundo pasa a ser suyo.
+    const { socket: fixtura, sent: sentFixtura } = makeSocket();
+    await routeMessage({ type: "load_room", roomId: "crypt_001", enemies: [] }, fixtura, ctx);
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 7, y: 0, z: 3 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      fixtura,
+      ctx,
+    );
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 7, y: 0, z: 3 }, "la fixture conduce");
+    assert.ok(sentFixtura.length > 0);
+
+    // Y el save de la partida NO se lleva al muñeco de la fixture.
+    await ctx.narrative.save();
+    assert.deepEqual(
+      (await storage.read(sessionId))!.player.position,
+      [30, 1, 30],
+      "la partida guardada conserva dónde estaba el jugador",
+    );
   });
 
   it("resume_session resiembra el sim con la posición y HP guardados", async () => {
@@ -630,7 +745,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const player = sim.getCombatant("player")!;
     player.position = { x: -5, y: 1, z: 9 };
     player.health = 33;
-    await routeMessage({ type: "save_session", requestId: "r2" }, socket, ctx);
+    await ctx.narrative.save();
 
     // Ensuciar el runtime como haría seguir jugando (o una sesión distinta).
     player.health = 100;

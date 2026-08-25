@@ -150,6 +150,11 @@ export default async function (ctx) {
     url.searchParams.set("bridge", `ws://127.0.0.1:${PUERTO_WS}`);
     await ctx.page.goto(url.toString(), { waitUntil: "domcontentloaded" });
     await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
+    await ctx.page.waitForSelector("#ts-new", { timeout: 30_000 });
+    // Marca de agua del cliente SIN partida: es contra esto contra lo que se
+    // compara la vuelta al título por el camino tardío (#249).
+    const antesDeEmpezar = await leerCliente(ctx);
+    ctx.log(`cliente en el título: ${JSON.stringify(antesDeEmpezar)}`);
 
     // ── 1. El arranque falla DESPUÉS del ok:true ──────────────────────────
     await hastaComenzar(ctx);
@@ -230,6 +235,30 @@ export default async function (ctx) {
       !/fetch failed|ECONNREFUSED|^Error:/i.test(vuelta.motivo),
       vuelta.motivo,
     );
+    // #249 — el camino TARDÍO: `start_session` contestó ok:true, la sesión se
+    // aplicó ENTERA (estilo, tema, modos, combate, libro de historia) y el
+    // fallo llegó después. Es el caso que el issue daba por «no medido»:
+    // volver por aquí tiene que dejar el cliente igual que volver por el
+    // catch del bucle — y sin haber pagado una imagen con el estilo de una
+    // partida que no arrancó.
+    const trasVolver = await leerCliente(ctx);
+    ctx.log(`cliente tras volver: ${JSON.stringify(trasVolver)}`);
+    ctx.expect(
+      "un fallo TARDÍO devuelve el cliente al estado del título, sin media sesión pegada",
+      JSON.stringify(trasVolver.sesion) === JSON.stringify(antesDeEmpezar.sesion),
+      `${JSON.stringify(antesDeEmpezar.sesion)} → ${JSON.stringify(trasVolver.sesion)}`,
+    );
+    ctx.expect(
+      "…y sin pagar una imagen por la partida que no arrancó",
+      trasVolver.imagenes === antesDeEmpezar.imagenes,
+      `caché ${antesDeEmpezar.imagenes} → ${trasVolver.imagenes}`,
+    );
+    ctx.expect(
+      "…con el HUD y el error-log fuera de la pantalla del título (#246)",
+      trasVolver.cajas.gameUi === 0 && trasVolver.cajas.errorLog === 0,
+      JSON.stringify(trasVolver.cajas),
+    );
+
     // El mundo sigue a cero, pero eso NO se afirma aquí: en este camino el
     // mundo ya nace vacío (el fallo es el del primer tile), así que un
     // `tiles === 0` pasaría con `resetWorld()` puesto y quitado — un verde
@@ -266,4 +295,23 @@ export default async function (ctx) {
     }
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Lo que el cliente tiene APLICADO ahora mismo (mismo lector que el guion
+ *  18): facetas de la sesión, contador de imágenes del panel de dev y tamaño
+ *  de las cajas que el título tiene que tapar. */
+function leerCliente(ctx) {
+  return ctx.page.evaluate(() => {
+    const area = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      return Math.round(r.width * r.height);
+    };
+    return {
+      sesion: window.__nefan.sesion(),
+      imagenes: document.getElementById("ds-cache")?.textContent ?? "(sin panel)",
+      cajas: { gameUi: area("game-ui"), errorLog: area("error-log"), devStatus: area("dev-status") },
+    };
+  });
 }
