@@ -195,8 +195,16 @@ const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
       baseSheetsLoaded = true;
     })
   : Promise.resolve();
+// El mensaje NOMBRA EL REMEDIO (#255): las hojas son 28 MB fuera de git, así
+// que un clon limpio llega aquí siempre y «incompleto» a secas no le dice a
+// nadie qué hacer. Ni el fallback existe — sin `y_bot` no hay a qué degradar.
 baseSheetsReady.catch((err) =>
-  errors.push("sprite", `set base ${BASE_MODEL} incompleto — personajes sin sprite`, err),
+  errors.push(
+    "sprite",
+    `set base ${BASE_MODEL} incompleto — personajes sin sprite. Las hojas no están en el repo: ` +
+      `genéralas con sprite-forge, receta en docs/assets-de-personaje.md`,
+    err,
+  ),
 );
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
  *  espera a que la sesión decida nada. three.js entra por import dinámico

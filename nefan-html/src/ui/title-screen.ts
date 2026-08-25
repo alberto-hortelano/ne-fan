@@ -251,6 +251,50 @@ export class TitleScreen {
     });
     this.root.appendChild(close);
     document.body.appendChild(this.root);
+    this.vigilarPortadas();
+  }
+
+  /** Una portada que no llega degrada al marcador y DEJA RASTRO (#218).
+   *
+   *  En fase de CAPTURA sobre la raíz del título y enganchado UNA sola vez: el
+   *  `error` de un `<img>` no burbujea, pero sí baja en captura, así que este
+   *  único listener cubre también las tarjetas que se repintan enteras por
+   *  `outerHTML` al cambiar de estilo en el desplegable — sin que quien las
+   *  repinte tenga que acordarse de nada.
+   *
+   *  Quitar el `<img>` descubre el marcador, que `coverHtml` ya dejó debajo.
+   *  El registro va por el canal de la capa (`errors.push`, CLAUDE.md
+   *  §Errores): sin él, el arreglo cambiaría un fallo feo por uno mudo. */
+  private vigilarPortadas(): void {
+    this.root.addEventListener(
+      "error",
+      (ev) => {
+        const img = ev.target;
+        if (!(img instanceof HTMLImageElement)) return;
+        const estilo = img.dataset.coverImg;
+        if (!estilo) return;
+        const src = img.src;
+        // El id ("medievo_crudo") es lo que hay en el disco; el `alt` es lo
+        // que se lee en la tarjeta ("Medievo crudo"). El mensaje lleva los
+        // DOS: uno sirve para ir al fichero, el otro para saber qué caja de la
+        // pantalla es la que se quedó sin imagen.
+        errors.push(
+          "title",
+          `la portada del estilo ${img.alt} (${estilo}) no cargó (${src}) — la tarjeta lo dice en su marcador`,
+        );
+        // La caja pasa al estado «avería», que NO es el del pack sin portada
+        // (ver `marcadorHtml`): en pantalla eran idénticos y solo los separaba
+        // esta entrada del registro, que en el título no se lee.
+        const caja = img.closest<HTMLElement>("[data-cover-for]");
+        const marca = caja?.querySelector("[data-cover-marker]");
+        if (caja && marca) {
+          caja.dataset.coverFailed = estilo;
+          marca.outerHTML = marcadorHtml(img.alt, true);
+        }
+        img.remove();
+      },
+      true,
+    );
   }
 
   /** El panel de dev (#dev-status, z-index 10000) queda POR ENCIMA del título
@@ -1206,11 +1250,47 @@ const COVER_W = 192;
 const COVER_H = 128;
 const COVER_BOX = `width:${COVER_W}px;height:${COVER_H}px;flex:none;border:1px solid #333`;
 
+/** La portada NO elige entre imagen y marcador (#218): el marcador —el nombre
+ *  del ESTILO— está SIEMPRE debajo y la imagen se pinta encima cuando hay
+ *  `cover_url`. Antes eran dos ramas excluyentes, así que una portada
+ *  declarada que no llegaba (el asset-store caído, un pack a medias, el fake
+ *  del bench sin esa ruta) dejaba el icono de imagen rota del navegador: lo
+ *  primero que ve quien abre el juego, y sin rastro en ningún sitio. Con el
+ *  marcador debajo, quitar el `<img>` basta para degradar a algo legible —lo
+ *  hace `vigilarPortadas`, que además deja la entrada en el error-log. */
+const COVER_MARK_CSS =
+  "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;text-align:center;padding:4px";
+
+/** El marcador que hay debajo de toda portada, en sus DOS estados, y juntos a
+ *  propósito: son lo mismo visto por quien mira la tarjeta, y hasta ahora se
+ *  veían IGUAL.
+ *
+ *  - `hueco`: el pack no declara portada (`cover_url` ausente — `loader.ts`
+ *    solo la pone si el fichero existe). Nada ha fallado: es un mundo sin arte
+ *    de portada todavía, y se pinta apagado y en silencio.
+ *  - `fallo`: la portada estaba declarada y NO llegó (asset-store caído, pack
+ *    a medias, ruta que el bench no sirve). Eso es una avería y se dice, con
+ *    el mismo texto que el registro de errores guarda entero.
+ *
+ *  Sin la diferencia, un asset-store caído y un pack sin arte eran el mismo
+ *  cuadro gris y lo único que los separaba era una entrada del error-log que
+ *  el título esconde (#218; hallazgo C2/H2 de QA). */
+function marcadorHtml(nombre: string, fallo: boolean): string {
+  const fondo = fallo
+    ? "background:linear-gradient(135deg,#2c211d,#1a1512);border:1px solid #6b4636"
+    : "background:linear-gradient(135deg,#23202b,#161419)";
+  const aviso = fallo
+    ? `<div data-cover-aviso style="color:#c9825e;font-size:10px;letter-spacing:0.3px">⚠ portada no disponible</div>`
+    : "";
+  return `<div data-cover-marker style="${COVER_MARK_CSS};${fondo};color:${fallo ? "#9a8880" : "#555"}"><div data-cover-nombre>${escapeHtml(nombre)}</div>${aviso}</div>`;
+}
+
 function coverHtml(g: GameInfo, style: StyleInfo | undefined): string {
-  const inner = style?.cover_url
-    ? `<img src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`
-    : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#23202b,#161419);display:flex;align-items:center;justify-content:center;color:#555;font-size:11px;text-align:center;padding:4px">${escapeHtml(style?.name ?? g.style_id)}</div>`;
-  return `<div data-cover-for="${escapeAttr(g.game_id)}" style="${COVER_BOX};overflow:hidden">${inner}</div>`;
+  const marcador = marcadorHtml(style?.name ?? g.style_id, false);
+  const img = style?.cover_url
+    ? `<img data-cover-img="${escapeAttr(style.style_id)}" alt="${escapeAttr(style.name)}" src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">`
+    : "";
+  return `<div data-cover-for="${escapeAttr(g.game_id)}" style="${COVER_BOX};overflow:hidden;position:relative">${marcador}${img}</div>`;
 }
 
 function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {

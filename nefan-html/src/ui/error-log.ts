@@ -25,6 +25,7 @@ const SOURCE_COLORS: Record<string, string> = {
   session: "#e36b6b",
   scene: "#69b6d9",
   config: "#bdbd5e",
+  title: "#5fc9c0",
 };
 
 const MAX_ENTRIES = 200;

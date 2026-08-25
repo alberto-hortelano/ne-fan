@@ -19,7 +19,7 @@
 import http from "node:http";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 18765);
@@ -40,6 +40,29 @@ let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
+// Imágenes de los packs de estilo (portadas y refs). Son ficheros COMMITEADOS
+// del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
+// mismo que serviría el asset-store con GET /styles/{id}/{file}.
+const STYLES_DIR = fileURLToPath(new URL("../../nefan-core/data/styles/", import.meta.url));
+/** `path.extname` sin importar `node:path`: la extensión en minúsculas, y ""
+ *  cuando no hay (incluido el fichero-punto `.jpg`, que para `extname` NO
+ *  tiene extensión). El original llama a `extname`; escribirlo «parecido» era
+ *  otra vía de desvío, así que se escribe la regla entera. */
+function extension(file) {
+  const base = file.slice(file.lastIndexOf("/") + 1);
+  const i = base.lastIndexOf(".");
+  return i > 0 ? base.slice(i).toLowerCase() : "";
+}
+
+/** Mismos tipos y mismo filtro de nombre que `readStyleFile` / `SAFE_ID`. */
+const STYLE_FILE_MIME = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".json": "application/json",
+};
+const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
 
 // ── Tiles del plano continuo ─────────────────────────────────────────────
 // TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
@@ -470,6 +493,57 @@ const server = http.createServer((req, res) => {
       cost_per_image_usd: 0.18,
       estimated_cost_usd: 0,
     });
+  }
+  // GET /styles/{style_id}/{file} — la portada del estilo y las refs del pack.
+  //
+  // Bajo `?ai=`, el cliente resuelve el asset-store a ESTE server (los tres
+  // servicios a la vez, service-urls.ts), así que sin esta ruta las cuatro
+  // portadas del selector daban 404 en el bench y el título del preset
+  // e2e-sin-creditos se abría con cuatro marcos rotos (#218). Va DESPUÉS de
+  // /styles/{id}/missing, que es otra ruta y no lleva extensión.
+  //
+  // Se COPIA el contrato de `readStyleFile` (nefan-core/services/asset-store/
+  // blob-store.ts), no se importa: el fake es .mjs y el único JS de nefan-core
+  // es `dist/`, que el preset e2e-sin-creditos no construye. Si aquella cambia
+  // (MIME nuevo, dos subcarpetas), esto se queda atrás — lo caza el guion 26,
+  // que exige una portada REAL pintada.
+  if (req.method === "GET" && /^\/styles\//.test(req.url ?? "")) {
+    // Las tres líneas siguientes son las de `http-server.ts:82-85`, COPIADAS
+    // TAL CUAL, y esa literalidad es el arreglo: la primera versión de esta
+    // ruta las escribió «a su manera» (con `decodeURIComponent` por segmento y
+    // sin recortar la barra final) y se desvió del original en dos casos el
+    // mismo día — `cover%2Ejpg` daba 200 donde el real da 400, y una barra
+    // final daba 400 donde el real da 200 (QA C4). `new URL` normaliza además
+    // `..` y `%2e%2e`; los checks por segmento son defensa en profundidad,
+    // como en el original.
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const partes = path.split("/").filter(Boolean);
+    if (partes.length === 3 || partes.length === 4) {
+      const [, styleId, ...resto] = partes;
+      const file = resto.join("/");
+      const mime = STYLE_FILE_MIME[extension(file)];
+      const seguro = partes.slice(1).every((s) => SAFE_ID.test(s) && !s.includes(".."));
+      if (!mime || !seguro) {
+        return send(400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
+      }
+      const fichero = `${STYLES_DIR}${styleId}/${file}`;
+      if (!existsSync(fichero) || !statSync(fichero).isFile()) {
+        return send(404, { ok: false, error: `style file not found: ${styleId}/${file}` });
+      }
+      const cuerpo = readFileSync(fichero);
+      res.writeHead(200, {
+        "Content-Type": mime,
+        // El real lo manda (`Content-Length: r.body.byteLength`); sin él esto
+        // salía chunked. No lo nota un <img>, pero la ruta existe para
+        // PARECERSE al original, y una diferencia que nadie mide es la que
+        // luego explica una hora de bench.
+        "Content-Length": cuerpo.byteLength,
+        "Cache-Control": "max-age=300",
+        ...cors,
+      });
+      return res.end(cuerpo);
+    }
   }
   // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin
   // tocar. Va aparte de /dev/status a propósito — ese espeja un contrato real

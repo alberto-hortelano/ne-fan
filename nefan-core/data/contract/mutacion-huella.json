@@ -2249,9 +2249,9 @@
       "duenos": []
     },
     "src/scene/blueprint/plan-collision.ts": {
-      "sha": "7c6848f98ed773482310cfe8026d692e56c06045",
-      "run": "32876809618",
-      "fecha": "2026-08-25T17:16:42.236Z",
+      "sha": "23ac0761d6656f76c3f742a7ba53a554dee17d9b",
+      "run": "32888188751",
+      "fecha": "2026-08-25T19:15:03.676Z",
       "total": 41,
       "vivos": [
         "0cc9a3e3a2790f83",
@@ -2263,7 +2263,7 @@
       "resueltos": 0,
       "sin_base": false,
       "duenos": [
-        "7c6848f",
+        "#276",
         "#273"
       ]
     },
