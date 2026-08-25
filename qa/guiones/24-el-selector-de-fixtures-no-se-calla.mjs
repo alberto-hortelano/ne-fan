@@ -1,0 +1,136 @@
+/** Que el selector «Room» DIGA que una fixture no cargó (#248).
+ *
+ *  Antes de #248 el `change` del selector llamaba a `loadSceneFile(value)` —una
+ *  `async function`— y soltaba la promesa: sin `void`, sin `.catch`, sin
+ *  `paso()`. Si el módulo de la fixture no llegaba, el rechazo se perdía entero
+ *  (el cliente no tiene handler de `unhandledrejection`) y el selector era un
+ *  **no-op MUDO**: el `<select>` mostraba la fixture nueva, el mundo se quedaba
+ *  en la anterior y no había ni una entrada en el registro de errores ni una
+ *  línea en el juego. Es el modo de fallo de #181, en el selector que existe
+ *  para conducir el preset `html-fixtures`.
+ *
+ *  `no-floating-promises` (eslint, desde #248) impide que vuelva a ESCRIBIRSE
+ *  así, y `html-sin-promesa-muda` (arch-rules) impide la variante con `void`
+ *  sin canal. Ninguna de las dos puede ver lo que aquí se afirma: que el fallo
+ *  llegue a la PANTALLA. Ese es el hueco que cubre este guion.
+ *
+ *  El fallo se inyecta en el BORDE —la petición del JSON de la fixture se
+ *  aborta—, no dentro del cliente: es lo que pasa con una fixture ausente,
+ *  corrupta o un dev server que se cayó a mitad. Nada se fuerza ni se stubea
+ *  del lado del juego, y el `<select>` se conduce por su evento `change` real
+ *  (`__nefan.loadFixture` hace `dispatchEvent(new Event("change"))`).
+ */
+
+/** La fixture que se sabotea. La otra (`robledo_tile`) hace de control: si
+ *  ninguna de las dos cargara, el verde de este guion no querría decir nada. */
+const ROTA = "zorder_test";
+const CONTROL = "robledo_tile";
+
+/** Lo que el jugador tiene delante, leído del DOM: el panel de errores y las
+ *  líneas del juego. No son píxeles — es el texto que se lee en pantalla, que
+ *  es exactamente el sujeto de este guion. */
+function loQueDiceLaPantalla() {
+  return {
+    entradas: [...document.querySelectorAll(".error-log__entry")].map((e) => ({
+      fuente: e.querySelector(".error-log__source")?.textContent ?? "",
+      msg: e.querySelector(".error-log__msg")?.textContent ?? "",
+    })),
+    lineas: [...(document.getElementById("combat-log")?.children ?? [])].map((c) => c.textContent ?? ""),
+  };
+}
+
+export default async function (ctx) {
+  // --- El flujo del jugador: el título se cierra por su botón ---
+  await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? { hay: true } : null));
+  await ctx.nefan("closeTitle");
+  await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
+
+  // --- Control: una fixture que SÍ carga ---
+  await ctx.nefan("loadFixture", CONTROL);
+  await ctx.waitFor("la fixture de control pinta", () => (window.__nefan.status().scene ? { ok: true } : null));
+  ctx.expect("el selector carga una fixture sana (control)", (await ctx.nefan("status")).scene === true);
+
+  // --- El sabotaje, en el borde: el JSON de la otra fixture no llega nunca ---
+  await ctx.page.route(`**/scenes/${ROTA}.json*`, (route) => route.abort("failed"));
+
+  const antes = await ctx.page.evaluate(loQueDiceLaPantalla);
+
+  // --- Se conduce el <select> REAL, por su evento `change` ---
+  await ctx.nefan("loadFixture", ROTA);
+
+  const dicho = await ctx
+    .waitFor(
+      "el cliente dice en pantalla que la fixture no cargó",
+      (rota) => {
+        const entrada = [...document.querySelectorAll(".error-log__entry")]
+          .map((e) => ({
+            fuente: e.querySelector(".error-log__source")?.textContent ?? "",
+            msg: e.querySelector(".error-log__msg")?.textContent ?? "",
+          }))
+          .find((e) => e.msg.includes(rota) && /no se pudo cargar/i.test(e.msg));
+        const linea = [...(document.getElementById("combat-log")?.children ?? [])]
+          .map((c) => c.textContent ?? "")
+          .find((t) => t.includes(rota) && /no se pudo cargar/i.test(t));
+        return entrada && linea ? { entrada, linea } : null;
+      },
+      10_000,
+      ROTA,
+    )
+    .catch(() => null);
+
+  const ahora = await ctx.page.evaluate(loQueDiceLaPantalla);
+
+  ctx.expect(
+    "el fallo de la fixture deja ENTRADA en el registro de errores",
+    Boolean(dicho?.entrada),
+    `entradas ${antes.entradas.length} → ${ahora.entradas.length}: ${JSON.stringify(ahora.entradas.slice(0, 4))}`,
+  );
+  ctx.expect(
+    "y una LÍNEA en el juego, donde el jugador está mirando",
+    Boolean(dicho?.linea),
+    `líneas: ${JSON.stringify(ahora.lineas.slice(0, 4))}`,
+  );
+  if (dicho) {
+    ctx.log(`registro: [${dicho.entrada.fuente}] ${dicho.entrada.msg}`);
+    ctx.log(`línea del juego: ${dicho.linea}`);
+  }
+  ctx.expect(
+    "el mensaje NOMBRA la fixture que falló (un «algo falló» no sirve para nada)",
+    Boolean(dicho?.entrada?.msg.includes(ROTA)) && Boolean(dicho?.linea?.includes(ROTA)),
+    JSON.stringify({ entrada: dicho?.entrada?.msg, linea: dicho?.linea }),
+  );
+  // MEDIDO, NO AFIRMADO — y hay que decir por qué. El arreglo pone el canal,
+  // pero NO devuelve el `<select>` a su sitio: tras el fallo el desplegable
+  // sigue mostrando la fixture que no cargó mientras el mundo es la anterior,
+  // así que la etiqueta de la pantalla miente sobre qué se está viendo. Es un
+  // hallazgo abierto del QA de #248, no algo que este guion deba dar por
+  // bueno: cuando se arregle, esta línea se asciende a `ctx.expect`.
+  const etiqueta = await ctx.page.evaluate(() => ({
+    select: document.getElementById("room-selector")?.value ?? "",
+    mundo: window.__nefan.scene?.scene_id ?? "",
+  }));
+  ctx.log(
+    `el <select> muestra "${etiqueta.select}" y el mundo sigue en "${etiqueta.mundo}" ` +
+      `(hallazgo abierto: la etiqueta no vuelve)`,
+  );
+  await ctx.shot("selector-fixture-rota");
+
+  // --- No es un estado sin salida: el selector sigue sirviendo ---
+  await ctx.page.unroute(`**/scenes/${ROTA}.json*`);
+  await ctx.nefan("loadFixture", CONTROL);
+  const recuperado = await ctx
+    .waitFor(
+      "tras el fallo, el selector vuelve a cargar una fixture",
+      () => {
+        const f = window.__nefan.fps();
+        return window.__nefan.status().scene && f && f.ready && f.activeTile ? f : null;
+      },
+      20_000,
+    )
+    .catch(() => null);
+  ctx.expect(
+    "un fallo de fixture no deja el cliente en un estado sin salida",
+    Boolean(recuperado),
+    recuperado ? `tile activo: ${recuperado.activeTile}` : "el selector dejó de responder tras el fallo",
+  );
+}
