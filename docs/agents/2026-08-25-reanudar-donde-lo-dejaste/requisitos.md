@@ -109,3 +109,85 @@ bosque: ellos tocan `main.ts` en ~700-1050, tú en ~2450-2600. Quien aterrice se
 
 **Criterio de terminado, ampliado**: además de reanudar donde lo dejaste con la vida que tenías,
 **los dos caminos de vuelta al título dejan el cliente idéntico** — y ninguno paga una imagen.
+
+---
+
+# Ronda de corrección (coordinador, 2026-08-25)
+
+QA da **NO APTO**. Los cuatro primeros puntos del encargo están cumplidos y probados en rojo por
+QA, no de fiado: reanudar funciona jugando (2,06 m de separación contra 0,5 de tolerancia, así
+que un arreglo que cayera al `__player_start` fallaría), #249 y #246 verdes por los dos caminos,
+y `save_session` a cero con su candado en rojo.
+
+**El bloqueante es la desviación del plan, y es nuevo de esta tanda.**
+
+## B1 — mirar una fixture SÍ se lleva la partida (obligatorio)
+
+Reproducible en dos clicks, 3/3 corridas, con guion: `qa/guiones/25-mirar-fixtures-no-se-lleva-la-partida.mjs`.
+
+> Jugar → andar 2 m → **F5** → título → **«✕ Cerrar (modo fixtures)»** → elegir una fixture →
+> andar → el motor escribe. El `state.json` de la partida pasa de `[0.25, 0, 5.49]` a
+> `[-10.25, 0, -1.68]` —la posición del muñeco de la fixture— y **«Reanudar» te deja ahí**,
+> entre los árboles detrás de la taberna.
+
+**El mecanismo**: `handleLoadRoom` es el único sitio que suelta `bindPlayerRuntime`, y **el
+cliente ya no manda `load_room`** — solo lo emite para escenas que no son tile, y las tres
+fixtures del selector son Format D con `tile`.
+
+**Y el candado que debería haberlo cazado usa `crypt_001`, una sala legacy: es un candado sobre
+un camino que nadie recorre.** Es el mismo modo de fallo que esta jornada lleva persiguiendo
+desde por la mañana, ahora dentro de la tanda que lo introduce. Arreglar el bug sin arreglar eso
+deja el siguiente igual de invisible.
+
+Por eso la frase del informe «mirar una fixture ya no puede meter al muñeco en el save de la
+partida viva» es **falsa en el flujo real**. No es un matiz: es la afirmación con la que se
+justificó desviarse del plan.
+
+QA verificó en un experimento **revertido** que soltar la atadura en `ws.on("close")` pone su
+guion 10/10 verde sin romper las fixtures — pero avisa de que **eso solo cubre la variante del
+F5**, no la de volver al título con el mismo socket. No lo tomes como la solución: tómalo como
+prueba de que el sitio de la atadura es el problema.
+
+## B2 — dos huecos más del mismo modelo, medidos
+
+- **`respawn` no está gateado**, y con `bindPlayerRuntime` **sí llega al save** — contra lo que
+  afirma `implementacion.md`. Corrige también la afirmación.
+- **Un `load_room` ajeno congela al jugador de la partida viva.**
+
+Los tres (B1 + estos dos) son el mismo agujero: **quién puede escribir en el mundo de otro**. Si
+los arreglas de uno en uno vuelven; el criterio es que el modelo diga quién es el dueño y que
+nadie más pueda tocarlo.
+
+## B3 — la asimetría es medio inexpresable, y la mitad que falta ya tiene dueño
+
+QA lo midió: faceta sin neutro **no compila** ✅, sink sin cablear en el cliente **no compila**
+✅, pero **un sink que `apply()` no llama deja `npm run verify` entero verde** — porque el test
+que «enumera el record» enumera el doble del test, y **`tsc` no cubre `test/**`**.
+
+Eso último es **#231(b)**, que está en la cola detrás de la tanda del bosque. **No lo arregles
+aquí.** Lo que sí te toca: que ese test no pueda enumerar su propio doble. Si no se puede sin
+#231(b), **dilo por escrito** y déjalo anotado en el issue — pero no lo dejes callado.
+
+La asimetría entre *caminos* (un tercer camino que olvide `session.leave()`) sigue siendo
+expresable. Hoy solo hay dos y los dos tienen guion, así que **no es bloqueante** — pero dilo en
+el informe en vez de afirmar que es inexpresable.
+
+## Lo que NO se toca
+
+- **El guion 25 de QA es suyo**: no lo modifiques para que pase. Cuando B1 esté arreglado, tiene
+  que ponerse verde solo.
+- **La mutación**: QA verificó a mano que los dos mutantes interesantes de `session-facets`
+  mueren, y que el agujero real de ese módulo es el alcance de `tsc`, que la mutación tampoco
+  vería. No la corras.
+
+## Lo que queda abierto y no bloquea
+
+Que un fallo tardío **no pague un atlas** —lo que de verdad importa de #249— está sólido **por
+lectura pero sin medir**: ni el guion 18 ni el 20 llegan a producir un tile después del fallo.
+Sigue haciendo falta el endpoint de fallo a petición del fake, que está asignado a otra tanda.
+Déjalo escrito como hueco conocido.
+
+## Criterio de esta ronda
+
+Que el guion 25 de QA pase **sin tocarlo**, y que el candado del dueño del mundo se haya visto
+**rojo** por el camino que el jugador recorre de verdad — no por uno legacy.
