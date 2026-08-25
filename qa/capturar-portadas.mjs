@@ -11,8 +11,11 @@
  *  instalado en `qa/node_modules`, y este script reutiliza `qa/lib/sesion.mjs`
  *  (el mismo camino del jugador desde el título) y los hooks `window.__nefan`.
  *
- *  A diferencia del runner de QA, aquí NO se usa swiftshader: la captura es
- *  arte y se hace con la GPU real, en ventana.
+ *  La captura es arte, así que se hace con la GPU real (`qa/lib/navegador.mjs`).
+ *  Hasta el 2026-08-25 esta cabecera decía eso mismo y el código de veinte
+ *  líneas más abajo pasaba `--use-angle=swiftshader` en cuanto no hubiera
+ *  ventana: **las portadas headless salieron de un rasterizador por software**.
+ *  Ahora lo dicho y lo hecho coinciden.
  *
  *  GASTA CRÉDITOS: cada mundo pinta su tile de entrada (páginas de 1024² a
  *  $0,15-0,17). El script imprime el gasto de remote-gen antes y después de
@@ -24,6 +27,7 @@
  *    node qa/capturar-portadas.mjs --games X --pose 12.5,-3,45 --pose 0,0,180
  */
 import { chromium } from "playwright-core";
+import { abrirNavegador } from "./lib/navegador.mjs";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -204,15 +208,10 @@ async function capturarMundo(browser, gameId) {
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
-  const browser = await chromium.launch({
-    executablePath: "/usr/bin/google-chrome",
-    headless: !HEADED,
-    // Rasterizado por software, igual que el runner de QA. Con ventana real
-    // (--headed) la corrida depende de que el escritorio esté DESBLOQUEADO:
-    // Chrome frena el render de una ventana ocluida por el salvapantallas y
-    // la espera de pintura se cuelga sin decir por qué.
-    args: HEADED ? [] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu"],
-  });
+  // Con ventana real (--headed) la corrida depende de que el escritorio esté
+  // DESBLOQUEADO: Chrome frena el render de una ventana ocluida por el
+  // salvapantallas y la espera de pintura se cuelga sin decir por qué.
+  const browser = await abrirNavegador(chromium, { headed: HEADED });
   const resumen = [];
   try {
     for (const g of GAMES) resumen.push(await capturarMundo(browser, g.trim()));

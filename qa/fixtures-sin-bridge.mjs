@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
 import { chromium } from "playwright-core";
+import { abrirNavegador } from "./lib/navegador.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -85,11 +86,7 @@ async function main() {
     if (!(await waitPort(PORT, 60000))) throw new Error(`el preset no levantó :${PORT} en 60 s`);
   }
 
-  const browser = await chromium.launch({
-    executablePath: "/usr/bin/google-chrome",
-    headless: !HEADED,
-    args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu"],
-  });
+  const browser = await abrirNavegador(chromium);
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
