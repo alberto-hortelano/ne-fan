@@ -24,6 +24,10 @@ import {
   avisoDeFrescura,
   claveDeMutante,
   deltaDeCorrida,
+  estadoDeReparto,
+  marcaDeCorrida,
+  muroDeMutacion,
+  yaComentada,
   deltaDeFichero,
   fusiona,
   hash64,
@@ -140,6 +144,26 @@ describe("huella · la identidad de un mutante son SIETE componentes", () => {
     const conEspacios = mutante({ replacement: "a b\nc" });
     assert.equal(claveDeMutante("src/a.ts", conEspacios).split("\u0000").length, 7);
     assert.notEqual(huellaDeMutante("src/a.ts", conEspacios), huellaDeMutante("src/a.ts", mutante({ replacement: "a b c" })));
+  });
+
+  it("el hash es de 64 BITS, y eso se afirma, no se deduce de una probabilidad", () => {
+    // El candado que faltaba. El test de colisiones de abajo NO se entera de un
+    // truncado a 32 bits: con 20.000 tuplas las colisiones esperadas son 0,047,
+    // o sea que solo saltaría el 4,6 % de las veces. Y la presión para truncar
+    // es real —la huella salió en 109 KB, no en los ~30 KB que estimaba el
+    // plan—, así que el día que alguien quiera adelgazar el fichero el verde le
+    // diría que adelante. La longitud y un valor fijo sí lo cazan siempre.
+    assert.equal(hash64("").length, 16, "16 hex = 64 bits; menos es otro hash");
+    assert.match(hash64("nefan"), /^[0-9a-f]{16}$/);
+    // Valores fijos: cambiar el algoritmo, el offset, el primo o la anchura
+    // rompe esto de forma determinista, en cualquier máquina y sin azar.
+    assert.equal(hash64(""), "cbf29ce484222325", "el offset FNV-1a de 64 bits");
+    assert.equal(hash64("nefan"), "5830af1e8d002389");
+    assert.equal(
+      huellaDeMutante("src/a.ts", mutante()),
+      "b2170e6ba81dca02",
+      "la huella de una tupla concreta es estable: la base commiteada depende de ello",
+    );
   });
 
   it("el hash no colisiona en el orden de magnitud del problema", () => {
@@ -304,7 +328,27 @@ describe("atribución · por módulo × alcance, y honesta", () => {
 
 describe("atribución · de qué PR es un asunto de commit", () => {
   it("coge la ÚLTIMA referencia: las issues cerradas van antes que la PR", () => {
+    // Asunto REAL de este repo, y elegido a propósito: son DOS grupos que casan
+    // el regex, así que primera y última difieren de verdad. El fixture que
+    // había antes —"… (#245 #249 #246) (#273)"— no podía poner rojo este test:
+    // el grupo con espacios NO casa `/\(#(\d+)\)/`, así que producía una sola
+    // coincidencia y `todos[0] === todos[último]`. Con `todos[0]` en el fuente,
+    // la batería entera seguía en verde. Verificado en las dos direcciones.
+    assert.equal(prDelAsunto("Se retira el gpu-worker y con él la cadena de reuse por hash (#199) (#258)"), 258);
+    // No es un caso de laboratorio: 4 de los últimos 200 commits tienen esta
+    // forma, y en todos ellos la PRIMERA referencia es la issue que se cierra.
+    // Coger la primera mandaría el reparto a comentar sobre una issue cerrada
+    // en vez de sobre la PR que trajo el superviviente.
+    assert.equal(prDelAsunto("El selector mira `arch-rules.json` por REGLA (#230) (#254)"), 254);
+  });
+
+  it("un grupo con varias issues juntas no cuenta como referencia", () => {
+    // "(#245 #249 #246)" no casa el regex (los dígitos no van pegados al
+    // paréntesis de cierre), y eso es lo que hace que el asunto de #273 dé una
+    // sola coincidencia. Se afirma aquí para que el fixture de arriba no vuelva
+    // a apoyarse en ello sin decirlo.
     assert.equal(prDelAsunto("Reanudar te devuelve donde lo dejaste (#245 #249 #246) (#273)"), 273);
+    assert.equal(prDelAsunto("Solo issues juntas (#245 #249 #246)"), undefined);
   });
 
   it("un asunto sin referencia no inventa una", () => {
@@ -528,6 +572,93 @@ describe("frescura y antigüedad, sin `mtime`", () => {
   it("una fecha ilegible cuenta como sin medir, no como fresca", () => {
     const aviso = avisoDeAntiguedad([{ id: "a", fecha: "ayer por la tarde" }], Date.now(), 7);
     assert.match(aviso ?? "", /sin medir NUNCA/);
+  });
+});
+
+describe("el muro de `npm run mutate`", () => {
+  // H4: era la decisión más nueva de la tanda y la única sin batería, en un
+  // trabajo cuya tesis es que un candado sin candado no vale.
+  it("sin autorizar, no se corre, y el mensaje dice qué hacer en su lugar", () => {
+    const m = muroDeMutacion(undefined);
+    assert.equal(m.ok, false);
+    if (m.ok) return;
+    assert.match(m.mensaje, /npm run mutacion -- pendiente/);
+    assert.match(m.mensaje, /npm run mutacion -- local <id>/);
+    assert.match(m.mensaje, /SIGUE\n {2}TRABAJANDO|SIGUE/, "tiene que decir que no se espere");
+  });
+
+  it("solo `si` abre el muro: un valor cualquiera NO cuenta", () => {
+    // Un `NEFAN_MUTATE_AUTORIZADO=0` heredado del entorno abriría de par en par
+    // un muro que comprobara "hay algo". Es el fallo silencioso exacto.
+    assert.equal(muroDeMutacion("si").ok, true);
+    for (const v of ["", "0", "no", "false", "SI", "sí", "1", "true"]) {
+      assert.equal(muroDeMutacion(v).ok, false, `"${v}" no debería abrir el muro`);
+    }
+  });
+});
+
+describe("repartir · idempotencia, que ya ha costado dos bugs", () => {
+  // H5. Los dos: (1) dos pasadas antes de commitear publicaron comentarios
+  // contradictorios sobre la misma corrida; (2) una tercera pasada, ya
+  // commiteada la huella, la reescribía borrando `nuevos` y `duenos`.
+  const conRun = (run: string, ficheros: readonly string[]): Huella => ({
+    ficheros: Object.fromEntries(ficheros.map((f) => [f, medida({ run })])),
+  });
+
+  it("ningún fichero con esta corrida → pendiente de repartir", () => {
+    assert.deepEqual(estadoDeReparto("99", ["src/a.ts"], conRun("7", ["src/a.ts"])), {
+      tipo: "pendiente",
+    });
+  });
+
+  it("todos con esta corrida → ya repartida, y no se vuelve a tocar", () => {
+    assert.deepEqual(estadoDeReparto("99", ["src/a.ts", "src/b.ts"], conRun("99", ["src/a.ts", "src/b.ts"])), {
+      tipo: "ya repartida",
+    });
+  });
+
+  it("a medias NO se colapsa con ninguno de los otros dos", () => {
+    // Media huella con esta corrida y media sin ella es una huella incoherente.
+    // Leerla como "pendiente" la reescribiría entera perdiendo lo de la mitad
+    // ya repartida; como "ya repartida", dejaría la otra mitad sin dueño para
+    // siempre. Las dos lecturas pierden datos en silencio.
+    const base: Huella = { ficheros: { "src/a.ts": medida({ run: "99" }), "src/b.ts": medida({ run: "7" }) } };
+    assert.deepEqual(estadoDeReparto("99", ["src/a.ts", "src/b.ts"], base), {
+      tipo: "a medio repartir",
+      repartidos: 1,
+      total: 2,
+    });
+  });
+
+  it("un fichero que la huella no conoce cuenta como sin repartir, no como repartido", () => {
+    assert.deepEqual(estadoDeReparto("99", ["src/nuevo.ts"], { ficheros: {} }), { tipo: "pendiente" });
+  });
+});
+
+describe("repartir · un comentario por corrida y PR", () => {
+  // La ventana que produjo los dos comentarios de #273: el guardia de la huella
+  // solo está armado cuando la huella está COMMITEADA, y entre
+  // `repartir --comentar` y el `git commit` cabe otro `repartir --comentar`.
+  // Aquí la idempotencia se comprueba donde ocurre el efecto: en la PR.
+  it("reconoce su propio comentario por la marca invisible", () => {
+    const cuerpo = `${marcaDeCorrida("32876809618")}\n## Mutación · lo que sea`;
+    assert.equal(yaComentada([cuerpo], "32876809618"), true);
+  });
+
+  it("no confunde la corrida de al lado", () => {
+    assert.equal(yaComentada([marcaDeCorrida("32876809618")], "32881068200"), false);
+    assert.equal(yaComentada([], "32876809618"), false);
+  });
+
+  it("reconoce también los comentarios publicados antes de que existiera la marca", () => {
+    // Los dos de #273 no la llevan. Sin esta rama, un reparto de esa misma
+    // corrida publicaría un tercero.
+    const viejo = "## Mutación · corrida [32876809618](https://github.com/…) sobre `7c6848f`";
+    assert.equal(yaComentada([viejo], "32876809618"), true);
+  });
+
+  it("un comentario ajeno no se toma por el propio", () => {
+    assert.equal(yaComentada(["Buen trabajo, pero la corrida 32876809618 no me convence"], "32876809618"), false);
   });
 });
 

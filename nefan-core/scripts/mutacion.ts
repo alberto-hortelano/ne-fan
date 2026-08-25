@@ -56,6 +56,9 @@ import {
 import {
   atribuir,
   deltaDeCorrida,
+  estadoDeReparto,
+  marcaDeCorrida,
+  yaComentada,
   fusiona,
   HUELLA_VACIA,
   huellaDeMutante,
@@ -297,6 +300,24 @@ function pendiente(argv: readonly string[]): void {
     }
   }
 
+  // QUIÉN CABE EN EL TOPE, con su margen. El conjunto medible en local cambia
+  // sin que nadie lo relacione: basta con que alguien añada un test a un módulo
+  // que estaba a dos mutantes de la línea para que salga del conjunto en
+  // silencio. Enseñarlo convierte ese silencio en un número.
+  const medibles = plan.modulos
+    .map((m) => ({ id: m.id, coste: costeDe(plan, huella, m.id) }))
+    .filter((m): m is { id: string; coste: number } => m.coste !== undefined && m.coste <= plan.tope_local)
+    .sort((a, b) => a.coste - b.coste);
+  if (medibles.length > 0) {
+    const alBorde = medibles[medibles.length - 1];
+    console.log(
+      `\n  Medibles aquí (tope ${plan.tope_local}): ` +
+        medibles.map((m) => `${m.id} ${m.coste}`).join(" · ") +
+        `\n  ${alBorde.id} está a ${plan.tope_local - alBorde.coste} mutante(s) del tope: ` +
+        `el próximo test que se le añada lo saca del conjunto.`,
+    );
+  }
+
   console.log(
     `\n  Autorízalo:  Actions → "Mutation testing" → Run workflow (input vacío = este rango)` +
       `\n  Respaldo:    gh workflow run ${WORKFLOW} -r ${git(["rev-parse", "--abbrev-ref", "HEAD"])}` +
@@ -448,6 +469,20 @@ function repartir(argv: readonly string[]): void {
       console.log(`\n─── comentario que iría a #${pr} (usa --comentar para publicarlo) ───\n${cuerpo}`);
       continue;
     }
+    // IDEMPOTENCIA DONDE OCURRE EL EFECTO. El guardia de la huella solo está
+    // armado cuando la huella está COMMITEADA, y entre `repartir --comentar` y
+    // el `git commit` cabe otro `repartir --comentar`. Por esa ventana salieron
+    // los dos comentarios contradictorios de #273: mismo run, veredictos
+    // opuestos, y nada en la PR que dijera cuál mandaba. Preguntar a la PR
+    // cierra la ventana entera, esté la huella donde esté.
+    if (yaComentada(cuerposDeComentarios(pr), corrida.run_id)) {
+      console.log(
+        `#${pr} ya tiene el comentario de la corrida ${corrida.run_id}: no se publica otro.\n` +
+          `  Dos comentarios de la misma corrida no se distinguen entre sí, y el segundo no ` +
+          `corrige al primero: los deja contradiciéndose.`,
+      );
+      continue;
+    }
     gh(["api", `repos/{owner}/{repo}/issues/${pr}/comments`, "--input", "-"], JSON.stringify({ body: cuerpo }));
     console.log(`Comentado en #${pr}.`);
   }
@@ -460,27 +495,20 @@ function repartir(argv: readonly string[]): void {
   }
 }
 
-/** ¿Está esta corrida ya repartida y commiteada?
- *
- *  Lo destapó la primera pasada real, y perdía información sin decirlo:
- *  commiteada la huella, un segundo `repartir` de la MISMA corrida calcula el
- *  delta contra sí misma —correctamente, cero— y reescribe la huella dejando
- *  `nuevos` y `duenos` vacíos. El resultado es que `npm run deuda` deja de
- *  enseñar «2 NUEVOS · #273» y nadie se entera de que el dato existió.
- *
- *  Con la corrida a medio repartir (unos ficheros commiteados y otros no) se
- *  lanza: eso es una huella incoherente, y seguir adelante la consolidaría. */
+/** ¿Está esta corrida ya repartida y commiteada? La REGLA vive en
+ *  `mutacion-huella.ts` (`estadoDeReparto`, pura y con candado); aquí solo se
+ *  leen los ficheros del informe y se actúa sobre el veredicto. */
 function yaRepartida(corrida: Corrida, base: Huella): boolean {
   const ficheros = corrida.modulos_con_informe.flatMap((id) => Object.keys(leerInforme(id).files));
-  const repartidos = ficheros.filter((f) => base.ficheros[f]?.run === corrida.run_id);
-  if (repartidos.length === 0) return false;
-  if (repartidos.length < ficheros.length) {
+  const estado = estadoDeReparto(corrida.run_id, ficheros, base);
+  if (estado.tipo === "a medio repartir") {
     throw new Error(
       `la corrida ${corrida.run_id} está a medio repartir en la huella de HEAD: ` +
-        `${repartidos.length} de ${ficheros.length} ficheros ya la llevan. Arregla la huella ` +
+        `${estado.repartidos} de ${estado.total} ficheros ya la llevan. Arregla la huella ` +
         `(git checkout ${RUTA_HUELLA} y vuelve a repartir) antes de seguir.`,
     );
   }
+  if (estado.tipo === "pendiente") return false;
   console.log(
     `\nLa corrida ${corrida.run_id} ya está repartida y commiteada: no se toca la huella.\n` +
       `  Volver a repartirla borraría los NUEVOS y sus dueños, que es justo lo que hay que leer.\n` +
@@ -562,8 +590,19 @@ function imprimeReparto(repartos: readonly Reparto[], corrida: Corrida): void {
   console.log("");
 }
 
+/** Los cuerpos de los comentarios que ya tiene una PR. Fail-loud: si `gh` no
+ *  puede contestar NO se degrada a "no hay ninguno", porque eso llevaría a
+ *  publicar el duplicado que esto existe para impedir. */
+function cuerposDeComentarios(pr: number): string[] {
+  const crudo = gh(["api", `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`]);
+  return (JSON.parse(crudo) as { body?: string }[]).map((c) => c.body ?? "");
+}
+
 function comentarioDe(pr: number, repartos: readonly Reparto[], corrida: Corrida): string {
   const lineas = [
+    // Marca invisible para reconocer los comentarios de esta corrida sin
+    // depender de cómo esté redactada la cabecera.
+    marcaDeCorrida(corrida.run_id),
     `## Mutación · corrida [${corrida.run_id}](https://github.com/alberto-hortelano/ne-fan/actions/runs/${corrida.run_id}) sobre \`${corrida.sha.slice(0, 7)}\``,
     "",
     `Esta PR es **candidata** de ${repartos.length} módulo(s) medidos: el diff de su commit selecciona ese módulo, ` +

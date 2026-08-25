@@ -514,3 +514,105 @@ export function avisoDeAntiguedad(
   }
   return `${partes.join(" · ")} — pídelo: npm run mutacion -- pendiente`;
 }
+
+// ── el muro de `npm run mutate` ──────────────────────────────────────────────
+
+export type Muro = { ok: true } | { ok: false; mensaje: string };
+
+/** Si esta máquina puede correr `npm run mutate` en absoluto.
+ *
+ *  Es la decisión más nueva de esta tanda y era la única sin candado, en un
+ *  trabajo cuya tesis es justamente que un candado sin candado no vale. Vive
+ *  aquí —pura, sobre el VALOR de la variable y no sobre `process.env`— para que
+ *  un test la ejerza sin arrancar nada: `scripts/mutate.ts` llama a `main()` al
+ *  cargarse, así que un test que lo importara lanzaría una corrida.
+ *
+ *  La comparación es contra `"si"` EXACTO y no contra "hay algo": un
+ *  `NEFAN_MUTATE_AUTORIZADO=0` heredado del entorno abriría el muro de par en
+ *  par, y ese es precisamente el modo de fallo silencioso que se quiere evitar. */
+export function muroDeMutacion(autorizado: string | undefined): Muro {
+  if (autorizado === "si") return { ok: true };
+  return {
+    ok: false,
+    mensaje: [
+      "",
+      "  `npm run mutate` no se corre aquí. NO BUSQUES CÓMO SALTÁRTELO.",
+      "",
+      "  La mutación se PIDE. Es de minutos, satura la máquina de quien está",
+      "  delante, y una corrida que nadie ha autorizado no tiene dueño cuando",
+      "  aparece un superviviente: eso es el trabajo que luego no hace nadie.",
+      "",
+      "  Lo que SÍ es tuyo:",
+      "",
+      "    npm run mutacion -- pendiente     qué falta por medir, y cuánto cuesta",
+      "    npm run mutacion -- local <id>    UN módulo, si cabe en el tope",
+      "",
+      "  Si tu módulo no cabe en el tope, PÍDELA: dilo en tu informe y SIGUE",
+      "  TRABAJANDO. No la esperes — una petición pendiente no bloquea ningún",
+      "  merge, y el resultado vuelve solo al sitio donde se causó.",
+      "",
+      "  Más barato y más concluyente que medir: prueba en negativo el candado",
+      "  que añadas. Rómpelo a propósito, míralo rojo, revierte y cuéntalo.",
+      "",
+    ].join("\n"),
+  };
+}
+
+// ── idempotencia de `repartir` ───────────────────────────────────────────────
+
+export type EstadoDeReparto =
+  | { tipo: "pendiente" }
+  | { tipo: "ya repartida" }
+  | { tipo: "a medio repartir"; repartidos: number; total: number };
+
+/** ¿Está esta corrida ya repartida en esa huella?
+ *
+ *  Vive aquí, y no dentro de `mutacion.ts`, porque este verbo YA HA PERDIDO
+ *  DATOS DOS VECES y las dos se arreglaron con un guardia que nadie ejercía:
+ *
+ *    1. Correr `repartir` dos veces antes de commitear calculaba el delta
+ *       contra la huella que la primera pasada acababa de escribir, y publicaba
+ *       un comentario que decía «ya estaban» de dos supervivientes NUEVOS.
+ *    2. Ya commiteada la huella, una tercera pasada la reescribía dejando
+ *       `nuevos` y `duenos` vacíos, y `npm run deuda` dejaba de decir de quién
+ *       era cada superviviente sin avisar de que lo había perdido.
+ *
+ *  Un bug que aparece dos veces en el mismo verbo merece un candado, no un
+ *  parche. La regla es de dos structs planos: no hace falta git para ejercerla,
+ *  y el motivo que se escribió para no probarla («sería un test que en CI no
+ *  comprueba nada») no se sostenía.
+ *
+ *  El estado intermedio NO se colapsa con ninguno de los otros dos: media
+ *  huella con esta corrida y media sin ella es una huella incoherente, y seguir
+ *  adelante la consolidaría. */
+export function estadoDeReparto(
+  runId: string,
+  ficheros: readonly string[],
+  huella: Huella,
+): EstadoDeReparto {
+  const repartidos = ficheros.filter((f) => huella.ficheros[f]?.run === runId).length;
+  if (repartidos === 0) return { tipo: "pendiente" };
+  if (repartidos === ficheros.length) return { tipo: "ya repartida" };
+  return { tipo: "a medio repartir", repartidos, total: ficheros.length };
+}
+
+/** La marca invisible que `repartir` mete en cada comentario para reconocer los
+ *  suyos. Un `<!-- … -->` no se ve al leer la PR y no depende de la prosa. */
+export function marcaDeCorrida(runId: string): string {
+  return `<!-- nefan-mutacion:run=${runId} -->`;
+}
+
+/** ¿Ya hay un comentario de esta corrida en esa PR?
+ *
+ *  Cierra la ventana que produjo los dos comentarios contradictorios de #273: el
+ *  guardia de la huella solo está armado cuando la huella está COMMITEADA, y
+ *  entre `repartir --comentar` y el `git commit` cabe otro `repartir --comentar`.
+ *  Aquí la idempotencia se comprueba donde ocurre el efecto —en la PR— y no en
+ *  un estado local que aún no se ha guardado.
+ *
+ *  Se acepta también la cabecera en prosa (`corrida [<id>]`) para reconocer los
+ *  comentarios publicados antes de que existiera la marca. */
+export function yaComentada(cuerpos: readonly string[], runId: string): boolean {
+  const marca = marcaDeCorrida(runId);
+  return cuerpos.some((c) => c.includes(marca) || c.includes(`corrida [${runId}]`));
+}
