@@ -29,6 +29,13 @@ jobs:
       - run: npm ci
         working-directory: narrative-mcp
       - run: npx tsc --noEmit
+      # `scripts/` no entra en el `include` del tsconfig de build (#231a): ese
+      # lo consume `tsc -b` desde narrative-mcp por project reference y
+      # ampliarlo emitiría `dist/scripts/*.js` + `.d.ts`. Sus tipos se
+      # comprueban con un proyecto aparte en modo noEmit. Sin este paso, un
+      # error de tipos en una rama no ejecutada de `scripts/` pasa
+      # desapercibido — que es como se coló `r.rule.message` en #229.
+      - run: npm run typecheck:scripts
       - run: npm run lint
       - run: npm run build
       - run: npm test

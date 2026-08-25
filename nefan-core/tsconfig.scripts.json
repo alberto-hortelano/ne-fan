@@ -1,0 +1,25 @@
+{
+  // Tipos de `scripts/` (#231a). Va APARTE del tsconfig de build a propósito:
+  // aquel lo consume `tsc -b` desde narrative-mcp por project reference, y
+  // ampliar su `include` emitiría `dist/scripts/*.js` + `.d.ts` que nadie
+  // consume. Aquí solo se COMPRUEBA: `noEmit`, sin `composite`, sin
+  // `declaration` y sin `rootDir`.
+  //
+  // El resto de opciones replica el tsconfig de build para que un fichero de
+  // `scripts/` se compruebe con el mismo rasero que uno de `src/`.
+  //
+  // `test/` NO entra aquí: es #231(b), va detrás de la tanda del bosque
+  // (#243/#233/#232) porque 19 de sus errores viven en tests cuyo sujeto
+  // reescribe esa tanda.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["scripts/**/*.ts"]
+}
