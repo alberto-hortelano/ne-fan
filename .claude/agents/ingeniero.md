@@ -23,11 +23,13 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
    - `cd nefan-core && npm run verify` (build + lint + test, incluye el checker de fronteras).
    - `npm run crap -- --check`: la deuda del módulo que tocas no puede crecer.
    - **Mutación: `npm run mutacion -- local <id>` para el módulo que tocas, y nunca
-     `npm run mutate`.** El verbo `local` mide UN módulo con dos núcleos y **rechaza** el que
-     pase del tope (`tope_local` en `mutation-targets.json`), diciéndote su coste: así puedes
-     cerrar tu bucle en los módulos baratos sin poder equivocarte hacia arriba, y la máquina de
-     quien está delante no se entera. `npm run mutate` a secas sigue siendo la corrida entera y
-     satura la máquina: no es tuyo, es del runner.
+     `npm run mutate`.** El verbo `local` mide UN módulo con dos núcleos (medido: techo real de
+     2 procesos de test) y **rechaza** el que pase del tope (`tope_local`, hoy 120 mutantes ≈ 70 s):
+     así cierras tu bucle en los módulos baratos sin poder equivocarte hacia arriba. El tope lo
+     aplica `mutate.ts` a CUALQUIER corrida local, así que `npm run mutate` a secas también se
+     niega — pero no lo escribas ni de pasada: **cuidado con los backticks sin escapar dentro de
+     comillas dobles en bash**, que son sustitución de comandos. Así se lanzó por accidente la
+     corrida completa el 2026-08-25, con el usuario delante.
      Si tu módulo no cabe en el tope, **sigue sin esperarla**: una medida pendiente no bloquea
      nada. Se pide con `npm run mutacion -- pendiente` y la autoriza el usuario desde Actions
      (o desde el móvil). Deja el motivo como trailer del commit —`Mutación: <por qué>`, junto a

@@ -97,6 +97,11 @@ jobs:
         run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $IDS
         env:
           IDS: ${{ steps.seleccion.outputs.ids }}
+          # El muro de `mutate.ts` se niega a correr sin esto. Aquí SÍ se pone,
+          # y es la única razón por la que se pone: en el runner no hay nadie
+          # delante cuya máquina se pueda saturar, y la corrida está autorizada
+          # por la persona que pulsó «Run workflow».
+          NEFAN_MUTATE_AUTORIZADO: "si"
 
       # EL MANIFIESTO LO ESCRIBE CI, no `traer`: `traer` solo puede escribir lo
       # que CREÍA que iba a pasar. Y hace falta porque el código de salida no

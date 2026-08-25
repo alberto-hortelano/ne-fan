@@ -43,6 +43,8 @@ import { availableParallelism } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { contextoDe, ficherosCambiados, seleccionar } from "./afectado.js";
+import { costeDe, leerHuella } from "./mutacion.js";
+import { permisoLocal } from "./mutacion-huella.js";
 import {
   concurrenciaDe,
   configDe,
@@ -132,7 +134,48 @@ function aCorrer(plan: PlanMutacion, argv: readonly string[]): ModuloMutacion[] 
   return ids.length > 0 ? ids.map((id) => moduloPorId(plan, id)) : plan.modulos;
 }
 
+/** EL MURO. `npm run mutate` no lo corre un agente, y por eso este script se
+ *  niega en vez de fiarse de que alguien lo recuerde.
+ *
+ *  El 2026-08-25 la persona que usa esta máquina preguntó dos veces qué se le
+ *  estaba comiendo el procesador. Las dos veces era esto, y la segunda fue el
+ *  ingeniero que estaba construyendo el sistema para que dejara de pasar. Una
+ *  regla escrita en `ingeniero.md` se olvida a mitad de contexto; un proceso
+ *  que no arranca, no.
+ *
+ *  Las dos vías legítimas la traen puesta: `npm run mutacion -- local <id>`
+ *  (un módulo, con tope y dos núcleos) y el runner de GitHub, donde no hay
+ *  nadie delante. */
+function muroDeAutorizacion(): void {
+  if (process.env.NEFAN_MUTATE_AUTORIZADO === "si") return;
+  console.error(
+    [
+      "",
+      "  `npm run mutate` no se corre aquí. NO BUSQUES CÓMO SALTÁRTELO.",
+      "",
+      "  La mutación se PIDE. Es de minutos, satura la máquina de quien está",
+      "  delante, y una corrida que nadie ha autorizado no tiene dueño cuando",
+      "  aparece un superviviente: eso es el trabajo que luego no hace nadie.",
+      "",
+      "  Lo que SÍ es tuyo:",
+      "",
+      "    npm run mutacion -- pendiente     qué falta por medir, y cuánto cuesta",
+      "    npm run mutacion -- local <id>    UN módulo, si cabe en el tope",
+      "",
+      "  Si tu módulo no cabe en el tope, PÍDELA: dilo en tu informe y SIGUE",
+      "  TRABAJANDO. No la esperes — una petición pendiente no bloquea ningún",
+      "  merge, y el resultado vuelve solo al sitio donde se causó.",
+      "",
+      "  Más barato y más concluyente que medir: prueba en negativo el candado",
+      "  que añadas. Rómpelo a propósito, míralo rojo, revierte y cuéntalo.",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 function main(): void {
+  muroDeAutorizacion();
   const argv = process.argv.slice(2);
   const plan = leerPlan();
   if (argv.includes("--ids")) {
@@ -141,6 +184,28 @@ function main(): void {
   }
   const modulos = aCorrer(plan, argv);
   if (modulos.length === 0) return;
+
+  // EL TOPE VIVE AQUÍ, no solo en `npm run mutacion -- local`. Un tope que solo
+  // protege el camino que alguien recuerda usar no es un tope: el 2026-08-25 un
+  // backtick sin escapar dentro de un `echo` —sustitución de comandos— lanzó
+  // este script sin argumentos, o sea los 20 módulos a concurrencia 8, en la
+  // máquina de la persona que estaba trabajando. No esquivó el tope por encima:
+  // pasó por debajo, por la puerta que no tenía cerradura.
+  //
+  // En CI no aplica: allí no hay nadie delante y la corrida completa es lo que
+  // se le pide (GitHub Actions exporta CI=true).
+  const huella = leerHuella();
+  const coste = modulos.reduce<number | undefined>((n, m) => {
+    const c = costeDe(plan, huella, m.id);
+    return n === undefined || c === undefined ? undefined : n + c;
+  }, 0);
+  const que = modulos.length === 1 ? `"${modulos[0].id}"` : `estos ${modulos.length} módulos`;
+  const permiso = permisoLocal(que, coste, plan.tope_local, Boolean(process.env.CI));
+  if (!permiso.ok) {
+    console.error(`\nNO se mide aquí: ${permiso.porque}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   const nucleos = availableParallelism();
   const concurrencia = concurrenciaDe(nucleos, process.env.NEFAN_MUTATE_CONCURRENCY);

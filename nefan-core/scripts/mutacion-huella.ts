@@ -368,25 +368,43 @@ export function verificaDescarga(c: Corrida, presentes: readonly string[]): stri
 
 export type PermisoLocal = { ok: true; coste: number } | { ok: false; porque: string };
 
-/** Si un módulo se puede medir en la máquina de quien está programando.
+/** Si esto se puede medir en la máquina de quien está programando. `que` es lo
+ *  que se va a medir: un id de módulo, o la corrida entera.
  *
- *  El coste está MUY mal repartido y por eso el tope no es política sino
- *  aritmética: `blueprint-plan` son 41 mutantes (~2 min de CPU a concurrencia 2)
- *  y `plugins-dsl` 1.362 (~50 min). Prohibirlo todo curaba con una regla un bug
- *  que ya está arreglado —la saturación del 2026-08-23 fue `concurrency: 10` ×
- *  15 procesos de `node --test`— y dejaba a CLAUDE.md pidiéndole al ingeniero
- *  «los supervivientes del módulo que tocó, muertos» sin darle con qué mirarlo.
+ *  LO GUARDA `mutate.ts`, NO SOLO EL VERBO `local`, y esa diferencia se pagó el
+ *  2026-08-25 en la máquina del usuario: un backtick sin escapar dentro de un
+ *  `echo` —`echo "(sin `npm run mutate` en …)"`, que en bash es SUSTITUCIÓN DE
+ *  COMANDOS— lanzó `npm run mutate` sin argumentos. Los 20 módulos, concurrencia
+ *  8, load average 14. El tope existía y no sirvió de nada, porque vivía en un
+ *  verbo que aquel accidente no pasó por encima: lo esquivó por debajo. Un tope
+ *  que solo protege el camino que alguien recuerda usar no es un tope.
+ *
+ *  El coste está MUY mal repartido y por eso el número no es política sino
+ *  aritmética: `blueprint-plan` son 41 mutantes y `plugins-dsl` 1.362.
+ *  Prohibirlo todo curaba con una regla un bug que ya está arreglado —la
+ *  saturación del 2026-08-23 fue `concurrency: 10` × 15 procesos de
+ *  `node --test`— y dejaba a CLAUDE.md pidiéndole al ingeniero «los
+ *  supervivientes del módulo que tocó, muertos» sin darle con qué mirarlo.
  *
  *  Sin coste conocido NO se autoriza. Un módulo estrenado podría ser
  *  `plugins-dsl`, y "no lo sé, adelante" es justo el error hacia arriba que este
  *  tope existe para hacer imposible: se mide una vez en CI y a partir de ahí su
- *  coste está en la huella. */
-export function permisoLocal(id: string, coste: number | undefined, tope: number): PermisoLocal {
+ *  coste está en la huella.
+ */
+export function permisoLocal(
+  que: string,
+  coste: number | undefined,
+  tope: number,
+  enCI = false,
+): PermisoLocal {
+  // En el runner no hay nadie delante y la corrida completa es justo lo que se
+  // le pide: el tope es una propiedad de la MÁQUINA, no del repositorio.
+  if (enCI) return { ok: true, coste: coste ?? 0 };
   if (coste === undefined) {
     return {
       ok: false,
       porque:
-        `no hay medida previa de "${id}", así que no se sabe cuánto cuesta y podría ser de los caros. ` +
+        `no hay medida previa de ${que}, así que no se sabe cuánto cuesta y podría ser de los caros. ` +
         `Pídelo: npm run mutacion -- pendiente`,
     };
   }
@@ -394,7 +412,7 @@ export function permisoLocal(id: string, coste: number | undefined, tope: number
     return {
       ok: false,
       porque:
-        `"${id}" son ${coste} mutantes y el tope local es ${tope}: aquí hay alguien trabajando. ` +
+        `${que} son ${coste} mutantes y el tope local es ${tope}: aquí hay alguien trabajando. ` +
         `Pídelo (npm run mutacion -- pendiente) y sigue sin esperarlo — una medida pendiente no bloquea nada`,
     };
   }

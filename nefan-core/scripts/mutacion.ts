@@ -626,7 +626,7 @@ function local(argv: readonly string[]): void {
   const r = spawnSync("npx", ["tsx", "scripts/mutate.ts", id], {
     cwd: coreRoot,
     stdio: "inherit",
-    env: { ...process.env, NEFAN_MUTATE_CONCURRENCY: "2" },
+    env: { ...process.env, NEFAN_MUTATE_CONCURRENCY: "2", NEFAN_MUTATE_AUTORIZADO: "si" },
   });
   process.exitCode = r.status ?? 1;
 }

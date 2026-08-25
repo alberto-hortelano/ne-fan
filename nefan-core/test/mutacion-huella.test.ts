@@ -40,6 +40,7 @@ import {
   type MedidaDeFichero,
   type MutanteMedido,
 } from "../scripts/mutacion-huella.js";
+import { leerPlan } from "../scripts/mutation-plan.js";
 
 const mutante = (over: Partial<MutanteMedido> = {}): MutanteMedido => ({
   mutatorName: "ConditionalExpression",
@@ -400,6 +401,24 @@ describe("tope local · no se puede equivocar hacia arriba", () => {
     assert.equal(permisoLocal("x", 151, 150).ok, false);
   });
 
+  it("el tope guarda la CORRIDA ENTERA, no solo un módulo suelto", () => {
+    // La lección del 2026-08-25: el tope vivía en el verbo `local` y el
+    // accidente no pasó por encima, pasó por debajo — `npm run mutate` a secas,
+    // los 20 módulos, la puerta que no tenía cerradura. Ahora lo guarda
+    // `mutate.ts`, así que el sujeto del permiso puede ser una corrida.
+    const p = permisoLocal("estos 20 módulos", 9082, 120);
+    assert.equal(p.ok, false);
+    if (p.ok) return;
+    assert.match(p.porque, /9082 mutantes/);
+  });
+
+  it("en CI el tope NO aplica: allí no hay nadie delante", () => {
+    // El tope es una propiedad de la MÁQUINA, no del repositorio. En el runner
+    // la corrida completa es justo lo que se le pide.
+    assert.equal(permisoLocal("estos 20 módulos", 9082, 120, true).ok, true);
+    assert.equal(permisoLocal("session-facets", undefined, 120, true).ok, true);
+  });
+
   it("sin medida previa NO se autoriza: podría ser de los caros", () => {
     // "No lo sé, adelante" es justo el error hacia arriba que este tope existe
     // para hacer imposible. Se mide una vez en CI y a partir de ahí el coste
@@ -514,6 +533,22 @@ describe("frescura y antigüedad, sin `mtime`", () => {
 
 describe("la huella commiteada es el histórico que este repo no tenía", () => {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+  it("el tope real está por DEBAJO de lo que cuesta la corrida entera", () => {
+    // Sin esta relación el tope no protege de nada, y no es una comprobación
+    // circular: contrasta el número del plan contra el coste MEDIDO que hay en
+    // la huella. Si alguien subiera `tope_local` por encima de los 9.082
+    // mutantes del plan completo, `npm run mutate` volvería a poder tumbar la
+    // máquina de quien está delante y esto se pondría rojo.
+    const plan = leerPlan();
+    const huella = JSON.parse(
+      readFileSync(resolve(raiz, "data/contract/mutacion-huella.json"), "utf8"),
+    ) as Huella;
+    const total = Object.values(huella.ficheros).reduce((n, m) => n + m.total, 0);
+    assert.ok(total > 0, "la huella no tiene costes: el tope no tendría contra qué medirse");
+    const p = permisoLocal(`los ${plan.modulos.length} módulos`, total, plan.tope_local);
+    assert.equal(p.ok, false, `tope_local=${plan.tope_local} deja pasar la corrida entera (${total} mutantes)`);
+  });
 
   it("existe, es legible y tiene medidas dentro", () => {
     // No comprueba números concretos (los cambia cada corrida): comprueba que
