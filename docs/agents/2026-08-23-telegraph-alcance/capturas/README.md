@@ -10,3 +10,17 @@ sin sujeto. Mismo recorrido y mismo stack en los dos lados.
 | `02-impacto` | El destello de impacto ya respeta el cono frontal. Antes lo teñía una tercera copia de la fórmula que se lo saltaba: un enemigo a la espalda se pintaba verde mientras el resolver no hacía daño |
 | **`04-puerto-sobre-el-embarcadero`** | **El par que más dice.** #185 no era un riesgo futuro: `puerto_tile` (15 rasgos, ninguna rareza) dejaba el suelo a 0,219 m contra los 0,2 del parche. El «antes» es una pantalla **sin telegraph ninguno**, con el ataque cargado |
 | `05-puerto-suelo-desde-el-muelle` · `06-puerto-suelo-rasante` | El mismo enterramiento visto de cerca y a ras |
+
+## Añadidas por QA (2026-08-25)
+
+Tomadas en vivo sobre `e2e-sin-creditos`, mismo coste (cero). Sostienen `qa.md`:
+
+| Captura | Qué prueba |
+|---|---|
+| `qa-11-heavy-2.png` | `heavy` en una PARTIDA real (mundo del fake-ai-server, maqueta 3D): contorno rojo y cuerdas del cono |
+| `qa-12-precise.png` | el destello de IMPACTO gris — la losa que se juzga en §2 |
+| `qa-13-precise-windup.png` | `precise` (radio 0,77 m): el contorno NO se come el parche pequeño |
+| `qa-20-puerto-heavy.png` | el parche cruzando dos suelos (empedrado claro y tablones oscuros) |
+| `qa-21-zorder-npcs.png` | sobre hierba limpia: la forma del área sin nada que la ensucie |
+| `qa-30-enterrado.png` | holgura −0,01 m y el parche **se sigue viendo**: los calcos ya no escriben profundidad |
+| `qa-31-enterrado-opaco.png` | lo mismo + `depthWrite:true` ⇒ el síntoma exacto del «antes»: desaparece sobre el embarcadero y sobrevive sobre el empedrado |

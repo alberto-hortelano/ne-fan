@@ -81,3 +81,72 @@ que exige transmitir el alcance.
 
 **VIGENTE (#184) · REENCUADRADA (#185).** La fusión de los dos en una tanda es correcta:
 mismo fichero, mismo parche, mismas capturas. Ver `critica.md`. Sin decisiones de producto pendientes.
+
+---
+
+# Ronda de corrección (coordinador, 2026-08-25)
+
+QA da **APTO CON RESERVAS** (`qa.md`). Confirma y **amplía** las dos afirmaciones load-bearing
+del ingeniero: la convención de altura estaba mal en los tres documentos (el plan corto media
+rebanada, el issue y la crítica **una entera**), y el candado nuevo lo puso rojo de **cinco**
+maneras, no tres.
+
+Lo que hay que corregir antes de mergear la PR #263:
+
+## C1 — H1: el candado tiene un agujero por donde vuelve #185 (obligatorio)
+
+`groundOrder` solo se aplica a prims dentro de `GROUND_BAND_MIN/MAX` (0,045–0,185 celdas). Con
+`Y_DECK = 0.18`, **cualquier capa nueva por encima del deck cae fuera de la banda**: no es calco
+(conserva `depthWrite`, o sea entierra) y **el test no la mide**. QA lo reprodujo: una capa a
+0,22 celdas da cara alta real 0,125 m —exactamente la cota del parche— con
+`ground-overlay.test.ts` en **verde**.
+
+O sea: la tanda arregla el enterramiento de hoy y deja abierta la puerta por la que volvería
+mañana. Y el comentario de `greybox.ts:66-72` **promete lo contrario** — que es el mismo pecado
+del comentario que esta tanda vino a borrar.
+
+**No vale ampliar la banda a ojo.** Lo que hay que conseguir es que el test mida **todas** las
+prims de suelo, esté donde esté su cota, o que sea imposible añadir una capa de suelo fuera del
+mecanismo que la hace calco. Si el arreglo correcto resulta ser mayor que esta tanda, **dilo por
+escrito** y abre el issue: es preferible eso a un candado que sabemos agujereado.
+
+## C2 — H3/H4: los números de la convención vieja sobreviven en lo entregado
+
+`3.2855` en la §3 de `implementacion.md` y `0,2115 / −0,0115` en el docstring del guion 22 están
+calculados con `pos.y + t/2`. El propio hallazgo de la tanda es que esa convención es falsa:
+dejarla escrita en la evidencia es sembrar el siguiente error. Corrígelos con la cota real
+(`pos.y + t`), que QA ya midió: puerto **0,2310**, `robledo_tile` **0,1330**, `puerto_tile`
+**0,2190**.
+
+## C3 — H5: «arma desnuda» no es un estado alcanzable
+
+Dos sitios lo describen como un caso probado. `main.ts:534` fija `playerWeaponId = "short_sword"`,
+así que ese estado no existe hoy. O se dice que no es alcanzable, o se deja de citar como cubierto.
+
+## C4 — H2, menor y a criterio: el destello de impacto no es afirmable
+
+La tercera copia de la fórmula (la que se saltaba el cono frontal) es el único cambio visible
+**sin candado**, porque `debugState` no publica su calidad. QA lo verificó a mano con la
+proyección exacta —enemigo a la espalda: fórmula vieja **1.0**, nueva **0**— pero eso no queda
+sujeto. Si publicar esa calidad es barato, hazlo; si no, decláralo como hueco conocido.
+
+## Lo que NO se toca
+
+- **El guion 23 de QA** (`23-telegraph-los-cinco-ataques-y-todo-suelo.mjs`) es suyo y está en
+  verde con los 22 anteriores. No lo modifiques para que pase.
+- **Las reservas de gusto** (el rojo muy saturado con halo; el relleno tiñe el suelo hasta
+  quitarle identidad de material — los tablones pasan a naranja; el dial es
+  `TELEGRAPH_FILL_MIN_A`) son del usuario, que está fuera. **Déjalas como están** y que las
+  decida mirando.
+
+## Gotcha que QA pagó y tú no tienes por qué volver a pagar
+
+Tras un `git checkout`, **vite sigue sirviendo la versión anterior de un fichero de
+`nefan-core`**. Hay que reiniciar el cliente antes de creerse un antes/después: si no, un
+negativo sale falso-verde.
+
+## Coste de máquina — restricción nueva de esta ronda
+
+El usuario ha avisado de que la CPU va cargada. **Exporta `NEFAN_MUTATE_CONCURRENCY=3`** antes
+de cualquier `npm run mutate`, y no corras la batería entera de QA más de una vez. El defecto
+del repo (`floor(núcleos/2)` = 8 workers) asume una máquina libre, y no lo está.
