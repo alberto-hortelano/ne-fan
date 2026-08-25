@@ -57,6 +57,21 @@ const Y_WATER = 0.13;
 const Y_DECK = 0.18;
 const LAYER_T = 0.03;
 
+/** Cara ALTA del stack de rasgos planos del suelo, en celdas. Es un techo por
+ *  CONSTRUCCIÓN, no una medida sobre fixtures: todos los rasgos de `ground`
+ *  salen de `groundFeaturePrims` con grosor `LAYER_T` sobre una de las cuatro
+ *  capas, y la más alta es el deck. Sea cual sea el tile —un camino o los 64
+ *  rasgos que permite el schema— nada de `ground` pasa de aquí.
+ *
+ *  `LAYER_T` entero, no la mitad: `pos.y` de una prim es su BASE, no su centro
+ *  (contrato de `GreyboxPrimitive`), así que la cara alta del deck está un
+ *  grosor por encima de `Y_DECK`.
+ *
+ *  De este número sale la cota a la que se dibuja cualquier calco de suelo
+ *  (`GROUND_OVERLAY_Y_M` en fps-spec). Si alguien añade una capa por encima
+ *  del deck y no actualiza esto, `test/ground-overlay.test.ts` se pone rojo. */
+export const GROUND_STACK_TOP_CELLS = Y_DECK + LAYER_T;
+
 /** Detalle procedural del suelo — manchas orgánicas del bioma, piedritas y
  *  flores dispersas, sembradas por tile (determinista: caché intacta). */
 function groundDetailPrims(base: string, biome: string, seedKey: string): GreyboxPrimitive[] {

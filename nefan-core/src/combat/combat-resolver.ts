@@ -4,6 +4,13 @@
 import type { Vec3, EffectiveParams } from "../types.js";
 import { distance, sub, cross, dot, normalized } from "../vec3.js";
 
+/** Coseno del semiángulo del cono frontal: 0.5 ⇒ ±60° (cono de 120°). Es una
+ *  CONSTANTE del contrato de combate, no un número suelto de `isInFront`: el
+ *  telegraph tiene que dibujar exactamente este arco (`attack-area.ts`), y con
+ *  el 0.5 escrito dos veces las dos mitades podían divergir sin que nada
+ *  fallara. */
+export const FRONT_COS = 0.5;
+
 /** ¿El defensor está en el semiespacio FRONTAL del atacante (dentro de un
  *  cono de ~120°)? La precisión sola mide distancia perpendicular a la línea
  *  del forward tratada como infinita, así que sin este gate un objetivo justo
@@ -16,9 +23,10 @@ export function isInFront(attackerFwd: Vec3, attackerPos: Vec3, defenderPos: Vec
     z: defenderPos.z - attackerPos.z,
   });
   const fwdXz = normalized({ x: attackerFwd.x, y: 0, z: attackerFwd.z });
-  // dot > 0.5 ⇒ dentro de ±60° del frente. En distancia ~0 (toDefXz nulo) el
-  // producto es 0 y no se golpea, coherente con "cuerpo a cuerpo real".
-  return dot(fwdXz, toDefXz) > 0.5;
+  // dot > FRONT_COS ⇒ dentro de ±60° del frente. En distancia ~0 (toDefXz
+  // nulo) el producto es 0 y no se golpea, coherente con "cuerpo a cuerpo
+  // real".
+  return dot(fwdXz, toDefXz) > FRONT_COS;
 }
 
 export function calculateDistanceFactor(

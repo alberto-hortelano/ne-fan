@@ -1,0 +1,625 @@
+{
+  "scene_id": "puerto_tile",
+  "scene_description": "El Puerto de la Sirga vive de la ría que lo parte en dos. Cuatro embarcaderos de tablones se meten en el agua desde el muelle empedrado, y las calles del barrio de arriba bajan hasta él entre la lonja, la cordelería y la taberna del Ancla. Al otro lado del agua, el astillero y su rampa de varada.",
+  "tile": {
+    "tx": 0,
+    "ty": 0
+  },
+  "biome": "grass",
+  "terrain_legend": {
+    "w": "agua de la ría",
+    "b": "tablones de los embarcaderos",
+    "_": "empedrado del muelle"
+  },
+  "ground": [
+    {
+      "id": "ria",
+      "kind": "water",
+      "label": "ría de la Sirga",
+      "polygon": [
+        [
+          -8,
+          62
+        ],
+        [
+          136,
+          68
+        ],
+        [
+          136,
+          90
+        ],
+        [
+          -8,
+          84
+        ]
+      ]
+    },
+    {
+      "id": "embarcadero_1",
+      "kind": "deck",
+      "label": "embarcadero de la lonja",
+      "rect": [
+        14,
+        58,
+        8,
+        26
+      ],
+      "material": "wood"
+    },
+    {
+      "id": "embarcadero_2",
+      "kind": "deck",
+      "label": "embarcadero del Ancla",
+      "rect": [
+        40,
+        59,
+        8,
+        26
+      ],
+      "material": "wood"
+    },
+    {
+      "id": "embarcadero_3",
+      "kind": "deck",
+      "label": "embarcadero de la cordelería",
+      "rect": [
+        66,
+        60,
+        8,
+        26
+      ],
+      "material": "wood"
+    },
+    {
+      "id": "embarcadero_4",
+      "kind": "deck",
+      "label": "embarcadero del astillero",
+      "rect": [
+        92,
+        61,
+        8,
+        26
+      ],
+      "material": "wood"
+    },
+    {
+      "id": "muelle_alto",
+      "kind": "path",
+      "label": "muelle de arriba",
+      "points": [
+        [
+          0,
+          56
+        ],
+        [
+          44,
+          58
+        ],
+        [
+          86,
+          59
+        ],
+        [
+          128,
+          60
+        ]
+      ],
+      "w": 6,
+      "material": "stone"
+    },
+    {
+      "id": "muelle_bajo",
+      "kind": "path",
+      "label": "muelle de abajo",
+      "points": [
+        [
+          0,
+          92
+        ],
+        [
+          42,
+          94
+        ],
+        [
+          88,
+          95
+        ],
+        [
+          128,
+          96
+        ]
+      ],
+      "w": 5,
+      "material": "stone"
+    },
+    {
+      "id": "calle_lonja",
+      "kind": "path",
+      "label": "calle de la lonja",
+      "points": [
+        [
+          18,
+          18
+        ],
+        [
+          18,
+          32
+        ],
+        [
+          20,
+          42
+        ],
+        [
+          24,
+          50
+        ],
+        [
+          18,
+          56
+        ]
+      ],
+      "w": 4,
+      "material": "cobble"
+    },
+    {
+      "id": "calle_cordeleria",
+      "kind": "path",
+      "label": "calle de la cordelería",
+      "points": [
+        [
+          58,
+          12
+        ],
+        [
+          58,
+          28
+        ],
+        [
+          62,
+          38
+        ],
+        [
+          66,
+          48
+        ],
+        [
+          70,
+          58
+        ]
+      ],
+      "w": 4,
+      "material": "cobble"
+    },
+    {
+      "id": "calle_taberna",
+      "kind": "path",
+      "label": "callejón del Ancla",
+      "points": [
+        [
+          36,
+          28
+        ],
+        [
+          40,
+          36
+        ],
+        [
+          44,
+          46
+        ],
+        [
+          44,
+          57
+        ]
+      ],
+      "w": 3,
+      "material": "cobble"
+    },
+    {
+      "id": "rampa_varada",
+      "kind": "path",
+      "label": "rampa de varada",
+      "points": [
+        [
+          96,
+          96
+        ],
+        [
+          97,
+          104
+        ],
+        [
+          100,
+          112
+        ],
+        [
+          104,
+          118
+        ],
+        [
+          108,
+          124
+        ]
+      ],
+      "w": 5,
+      "material": "wood"
+    },
+    {
+      "id": "plaza_lonja",
+      "kind": "area",
+      "label": "plazuela de la lonja",
+      "rect": [
+        8,
+        40,
+        20,
+        14
+      ],
+      "material": "cobble"
+    },
+    {
+      "id": "plaza_ancla",
+      "kind": "area",
+      "label": "plaza del Ancla",
+      "rect": [
+        34,
+        40,
+        16,
+        14
+      ],
+      "material": "cobble"
+    },
+    {
+      "id": "plaza_pescado",
+      "kind": "area",
+      "label": "plaza del pescado",
+      "rect": [
+        60,
+        42,
+        18,
+        12
+      ],
+      "material": "stone"
+    },
+    {
+      "id": "plaza_astillero",
+      "kind": "area",
+      "label": "explanada del astillero",
+      "rect": [
+        88,
+        98,
+        22,
+        16
+      ],
+      "material": "gravel"
+    }
+  ],
+  "vegetation_zones": [
+    {
+      "type": "pino",
+      "area": [
+        2,
+        100,
+        40,
+        26
+      ],
+      "density": 0.04
+    }
+  ],
+  "entities": [
+    {
+      "id": "lonja",
+      "kind": "building",
+      "name": "Lonja del pescado",
+      "cell": [
+        6,
+        22
+      ],
+      "footprint": [
+        16,
+        12
+      ],
+      "glyph": "L",
+      "h": 6
+    },
+    {
+      "id": "taberna_ancla",
+      "kind": "building",
+      "name": "Taberna del Ancla",
+      "cell": [
+        30,
+        20
+      ],
+      "footprint": [
+        12,
+        9
+      ],
+      "glyph": "A",
+      "h": 5
+    },
+    {
+      "id": "cordeleria",
+      "kind": "building",
+      "name": "Cordelería",
+      "cell": [
+        64,
+        16
+      ],
+      "footprint": [
+        14,
+        10
+      ],
+      "glyph": "C",
+      "h": 4.5
+    },
+    {
+      "id": "almacen_sal",
+      "kind": "building",
+      "name": "Almacén de la sal",
+      "cell": [
+        92,
+        24
+      ],
+      "footprint": [
+        14,
+        12
+      ],
+      "glyph": "S",
+      "h": 6.5
+    },
+    {
+      "id": "astillero",
+      "kind": "building",
+      "name": "Astillero",
+      "cell": [
+        108,
+        96
+      ],
+      "footprint": [
+        16,
+        14
+      ],
+      "glyph": "T",
+      "h": 7
+    },
+    {
+      "id": "faro_viejo",
+      "kind": "building",
+      "name": "Faro viejo",
+      "cell": [
+        118,
+        44
+      ],
+      "footprint": [
+        6,
+        6
+      ],
+      "glyph": "F",
+      "h": 11
+    },
+    {
+      "id": "grua_muelle",
+      "kind": "prop",
+      "name": "Grúa de mano del muelle",
+      "cell": [
+        26,
+        53
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "g",
+      "h": 4
+    },
+    {
+      "id": "pila_barricas",
+      "kind": "prop",
+      "name": "Pila de barricas",
+      "cell": [
+        46,
+        53
+      ],
+      "footprint": [
+        3,
+        2
+      ],
+      "glyph": "b",
+      "h": 1.4
+    },
+    {
+      "id": "redes_tendidas",
+      "kind": "prop",
+      "name": "Redes tendidas a secar",
+      "cell": [
+        64,
+        54
+      ],
+      "footprint": [
+        4,
+        2
+      ],
+      "glyph": "r",
+      "h": 1.6
+    },
+    {
+      "id": "cabrestante",
+      "kind": "prop",
+      "name": "Cabrestante del embarcadero",
+      "cell": [
+        16,
+        56
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "n",
+      "h": 1
+    },
+    {
+      "id": "cajas_pescado",
+      "kind": "prop",
+      "name": "Cajas de pescado",
+      "cell": [
+        70,
+        44
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "j",
+      "h": 0.8
+    },
+    {
+      "id": "farol_muelle",
+      "kind": "item",
+      "name": "Farol del muelle",
+      "cell": [
+        42,
+        55
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "f"
+    },
+    {
+      "id": "bita_amarre",
+      "kind": "decor",
+      "name": "Bita de amarre",
+      "cell": [
+        22,
+        58
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "o"
+    },
+    {
+      "id": "pino_oeste",
+      "kind": "tree",
+      "name": "Pino del recodo",
+      "cell": [
+        6,
+        106
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "P"
+    },
+    {
+      "id": "pino_sur",
+      "kind": "tree",
+      "name": "Pino del sur",
+      "cell": [
+        34,
+        116
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "P"
+    },
+    {
+      "id": "olmo_alto",
+      "kind": "tree",
+      "name": "Olmo de la plazuela",
+      "cell": [
+        30,
+        44
+      ],
+      "footprint": [
+        2,
+        2
+      ],
+      "glyph": "O"
+    },
+    {
+      "id": "sabela_lonjera",
+      "kind": "npc",
+      "name": "Sabela",
+      "role": "merchant",
+      "description": "Mujer de brazos gruesos y delantal encerado; subasta el pescado a gritos.",
+      "cell": [
+        16,
+        46
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "1"
+    },
+    {
+      "id": "brendan_cordelero",
+      "kind": "npc",
+      "name": "Brendan",
+      "role": "villager",
+      "description": "Hombre enjuto con las manos llenas de cáñamo, trenza maromas sin mirarlas.",
+      "cell": [
+        68,
+        48
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "2"
+    },
+    {
+      "id": "muriel_tabernera",
+      "kind": "npc",
+      "name": "Muriel",
+      "role": "merchant",
+      "description": "Tabernera de voz ronca, seca jarras en la puerta del Ancla.",
+      "cell": [
+        40,
+        44
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "3"
+    },
+    {
+      "id": "olmo_estibador",
+      "kind": "npc",
+      "name": "Olmo",
+      "role": "peasant",
+      "description": "Estibador ancho de espaldas, descarga fardos en el embarcadero del Ancla.",
+      "cell": [
+        44,
+        66
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "4"
+    },
+    {
+      "id": "player",
+      "kind": "player",
+      "name": "Jugador",
+      "cell": [
+        43,
+        62
+      ],
+      "footprint": [
+        1,
+        1
+      ],
+      "glyph": "@"
+    }
+  ],
+  "ambient_event": "Las tablas del embarcadero crujen con la marea y huele a salitre y a brea caliente."
+}

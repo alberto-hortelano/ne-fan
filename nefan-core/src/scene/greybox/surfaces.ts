@@ -52,6 +52,13 @@ export interface SurfacePrim extends GreyboxPrimitive {
    *  fps-spec en las prims de volúmenes que NO aplanan el relieve
    *  (tree/bush/rock — viven sobre la ladera, no la allanan). */
   anchor?: boolean;
+  /** Orden de PINTADO de un rasgo plano del suelo (área→camino→agua→deck,
+   *  juntas tras sus cajas), creciente y contiguo dentro del tile. Solo lo
+   *  llevan los rasgos de `ground`: son calcos coplanares, y su prioridad
+   *  visual se resuelve por orden de pintado, no separándolos en Y — separar
+   *  en Y hacía crecer el suelo sin techo y enterraba lo que se dibuja encima
+   *  (issue #185). El renderer lo traduce a `renderOrder`. */
+  groundOrder?: number;
 }
 
 export type SurfaceGroup = "side" | "top" | "bottom" | "caps";
