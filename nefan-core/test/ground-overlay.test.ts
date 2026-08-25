@@ -11,8 +11,17 @@
  *
  *  La cota ya no se mide: se DERIVA del generador. Y para que siga siendo
  *  cierta, esto la contrasta contra el peor tile que el schema permite
- *  construir, no contra una fixture bonita. Si alguien añade una capa por
- *  encima del deck, o vuelve a escalonar las prims en Y, esto se pone rojo. */
+ *  construir, no contra una fixture bonita. Si alguien le da a un rasgo una
+ *  cota propia, o vuelve a escalonar las prims en Y, esto se pone rojo.
+ *
+ *  Segunda vuelta (hallazgo H1 de QA): este candado tenía un agujero con la
+ *  forma exacta del bug que vigila. Lo que contaba como "rasgo de suelo" —para
+ *  pintarse como calco Y para entrar en esta medida— lo decidía un olfateador
+ *  por ALTURA (`cat` + una banda de y), así que una capa por encima del deck se
+ *  caía fuera: enterraba el telegraph y salía verde. Ahora la marca la pone
+ *  quien emite la prim (`groundLayer`, ground-prims.ts) y su cota sale de la
+ *  TABLA de capas del builder, así que la medida alcanza a todo el suelo, esté
+ *  a la altura que esté. */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -23,7 +32,14 @@ import {
   GROUND_STACK_TOP_M,
   buildFpsTileSpec,
 } from "../src/scene/blueprint/fps-spec.js";
+import {
+  GROUND_LAYERS_CELLS,
+  GROUND_LAYER_T_CELLS,
+  GROUND_STACK_TOP_CELLS,
+} from "../src/scene/blueprint/greybox.js";
+import { groundFeaturePrims } from "../src/scene/blueprint/ground-prims.js";
 import { MAX_GROUND_FEATURES, parseGround } from "../src/scene/blueprint/ground.js";
+import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Prim del tile ya en METROS, tal como sale de `buildFpsTileSpec`. El tipo se
  *  deriva de la función que se llama, no se importa de `surfaces.ts`: este
@@ -41,7 +57,10 @@ function caraAltaM(p: PrimM): number {
   return p.pos[1] + t;
 }
 
-/** Prims de rasgo de suelo del tile ya en metros. */
+/** Prims de rasgo de suelo del tile ya en metros. Filtra por la MARCA, no por
+ *  una banda de alturas: si el filtro dependiera de la cota, una capa nueva
+ *  por encima del deck se escaparía de la medida — que es exactamente cómo
+ *  este candado tenía un agujero (H1). */
 function rasgosDeSuelo(primsM: PrimM[]): PrimM[] {
   return primsM.filter((p) => p.groundOrder !== undefined);
 }
@@ -103,6 +122,56 @@ describe("techo del suelo y cota de los calcos", () => {
       alta >= GROUND_STACK_TOP_M - 1e-9,
       `el techo ${GROUND_STACK_TOP_M} m está por encima de la cara alta real ${alta} m`,
     );
+    // Y el peor tile ejercita TODAS las capas de la tabla. Sin esto, añadir
+    // una capa nueva subiría el techo sin que nadie la construyera nunca aquí:
+    // la medida seguiría en verde midiendo un mundo que ya no es el peor.
+    const capas = new Set(suelo.map((p) => p.groundLayer));
+    assert.deepEqual(
+      [...capas].sort(),
+      Object.keys(GROUND_LAYERS_CELLS).sort(),
+      "si añades una capa a GROUND_LAYERS_CELLS, dale un rasgo en el peor tile",
+    );
+  });
+
+  it("ningún rasgo se apoya en una cota propia: todas salen de la tabla de capas", () => {
+    // El agujero de H1 en su forma más directa: una capa con la y escrita a
+    // mano en el emisor —una pasarela «un poco por encima del deck»— rompía el
+    // techo y, cuando además se salía de la banda, ni se medía. Con la cota
+    // atada a la tabla, una y inventada es ROJA aunque quepa bajo el techo.
+    const g = peorTileLegal();
+    assert.ok(g.ok, `el peor tile tiene que ser LEGAL: ${g.ok ? "" : g.error}`);
+    const { primsM } = buildFpsTileSpec({ ground: g.features, volumes: [], biome: "grass" }, "peor_tile");
+    for (const p of rasgosDeSuelo(primsM)) {
+      const capa = p.groundLayer;
+      assert.ok(capa, `un rasgo de suelo sin capa declarada (y = ${p.pos[1]} m)`);
+      assert.equal(
+        p.pos[1],
+        GROUND_LAYERS_CELLS[capa] * TILE_MPC,
+        `la prim de la capa "${capa}" no está en la cota de su capa`,
+      );
+    }
+  });
+
+  it("una capa POR ENCIMA del deck sigue siendo suelo — la marca no mira la altura", () => {
+    // La reproducción de H1, hecha candado: se emite el mismo rasgo con una
+    // tabla cuya capa alta está muy por encima de donde vivía la banda vieja
+    // (0,185 celdas). Si el emisor dejara de marcar —o marcara solo "por
+    // debajo de tanto"—, esa capa volvería a ser invisible para el candado y a
+    // enterrar el telegraph.
+    const g = parseGround([{ id: "pasarela", kind: "deck", rect: [10, 10, 8, 8], material: "wood" }]);
+    assert.ok(g.ok, `la pasarela es legal: ${g.ok ? "" : g.error}`);
+    const yAlta = GROUND_STACK_TOP_CELLS + 0.5;
+    const prims = groundFeaturePrims(g.features, {
+      toXZ: (u, v) => [u, v],
+      scale: 1,
+      layers: { ...GROUND_LAYERS_CELLS, deck: yAlta },
+      layerT: GROUND_LAYER_T_CELLS,
+    });
+    assert.ok(prims.length > 0, "la pasarela emite prims");
+    for (const p of prims) {
+      assert.equal(p.pos[1], yAlta, "la prim está donde dice la tabla");
+      assert.equal(p.groundLayer, "deck", `prim a ${p.pos[1]} celdas SIN marcar como suelo`);
+    }
   });
 
   it("un tile de puerto ordinario deja sitio al calco con la holgura entera", () => {

@@ -59,7 +59,16 @@ crecía sin techo: un tile de puerto legal lo subía a 0,219 m y enterraba lo
 que se dibuja encima (#185). Hoy el techo es CONSTANTE
 (`GROUND_STACK_TOP_M` = 0,105 m) y de él sale la cota de cualquier calco
 (`GROUND_OVERLAY_Y_M`), candada contra el peor tile del schema en
-`test/ground-overlay.test.ts`. Ya no emite cámara ni
+`test/ground-overlay.test.ts`.
+
+Qué prims son suelo lo dice la MARCA que les pone su emisor
+(`groundLayer`, en `ground-prims.ts`), no su altura, y su cota sale de la
+TABLA de capas del builder (`GROUND_LAYERS_CELLS`), de la que se deriva el
+techo. Las dos cosas son el mismo candado: mientras se olfateaba por altura
+—`cat` + una banda de y— una capa por encima del deck se caía fuera, dejaba de
+ser calco (volvía a escribir profundidad ⇒ enterraba el telegraph) y encima no
+la medía el test. Añadir una capa hoy es añadirla a la tabla: el techo y la
+cota del calco suben solos. Ya no emite cámara ni
 `elements`/`occluders`: esos tres los pedía el repintado de la oblicua y se
 fueron con él. Sigue siendo DETERMINISTA, que es lo que permite hashear
 `canonicalGreyboxJson(spec)` como clave de caché.
@@ -104,6 +113,10 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   (`attackAreaMargin`, `nefan-core/src/combat/attack-area.ts`) sí los
   distingue. Esa es la ÚNICA fórmula del área: el cliente no tiene copia, y
   `test/attack-area.test.ts` la afirma contra `resolveAttack` punto por punto.
+  El **destello de impacto** se tiñe con la misma verdad
+  (`attackFlashQuality`, core): también la PROYECCIÓN del enemigo al plano del
+  ataque es fórmula, no dibujo — escrita a mano en el cliente se saltaba el
+  cono frontal y un enemigo a la espalda salía verde pleno.
 - **Nombre del NPC y mirilla** (`ui/world-labels.ts`): etiquetas DOM temadas,
   no texto dentro del lienzo.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y

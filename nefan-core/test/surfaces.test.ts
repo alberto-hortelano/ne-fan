@@ -247,26 +247,31 @@ describe("buildFpsTileSpec", () => {
     const plan = medievalPlan();
     const parsed = parseVolumes(plan.volumes);
     assert.ok(parsed.ok);
-    // Camino con codo (2 cajas + 3 juntas cilíndricas) + plaza: en el greybox
-    // compartido todas las prims de una capa son coplanares exactas, y esa
-    // coplanaridad la resuelve el ORDEN DE PINTADO, no la altura.
+    // Camino con codo (2 cajas + 3 juntas cilíndricas), plaza, río y muelle:
+    // en el greybox compartido todas las prims de una capa son coplanares
+    // exactas, y esa coplanaridad la resuelve el ORDEN DE PINTADO, no la
+    // altura.
+    // Las CUATRO capas, no dos: con solo área y camino, una marca que dependa
+    // de la altura (la banda que esto vino a retirar) daría el mismo resultado
+    // y la comprobación de abajo no distinguiría las dos cosas.
     const ground = [
       { id: "camino", kind: "path" as const, points: [[20, 20], [80, 20], [80, 80]] as [number, number][], w: 4, material: "dirt" as const },
       { id: "plaza", kind: "area" as const, rect: [30, 30, 20, 20] as [number, number, number, number], material: "cobblestone" as const },
+      { id: "rio", kind: "water" as const, rect: [0, 100, 128, 16] as [number, number, number, number] },
+      { id: "muelle", kind: "deck" as const, rect: [40, 96, 10, 24] as [number, number, number, number], material: "wood" as const },
     ];
     const build = () =>
       buildFpsTileSpec({ ground, volumes: parsed.volumes, biome: "dirt" }, "test_fps");
     const { spec, primsM } = build();
-    // Rasgos ground = prims terrain|water noShadow en la banda de capas
-    // (Y_AREA 0.05 … Y_DECK 0.18 en celdas → índice compartido con el spec).
-    const isGroundBand = (p: { cat: string; noShadow?: boolean }, y: number, scale: number): boolean =>
-      (p.cat === "terrain" || p.cat === "water") && p.noShadow === true && y >= 0.045 * scale && y <= 0.185 * scale;
-    const specGround = spec.primitives.filter((p) => isGroundBand(p, p.pos[1], 1));
-    assert.ok(specGround.length >= 6, `camino+plaza emiten ≥6 prims ground (hay ${specGround.length})`);
+    // Un rasgo de suelo se reconoce por la MARCA que le puso quien lo emitió
+    // (`groundLayer`), no por olfatearle la altura: mientras se olfateaba, una
+    // capa por encima de la banda dejaba de ser calco y de medirse (H1 de QA).
+    const specGround = spec.primitives.filter((p) => p.groundLayer !== undefined);
+    assert.ok(specGround.length >= 8, `camino+plaza+agua+muelle emiten ≥8 prims ground (hay ${specGround.length})`);
     // El enriquecimiento fps (fps-detail/scatter) rompe la paridad de índices
-    // pero PRESERVA el orden relativo de los rasgos ground y no añade prims
-    // en su banda: se casan por orden de emisión.
-    const primsGround = primsM.filter((p) => isGroundBand(p, p.pos[1], 0.5));
+    // pero PRESERVA el orden relativo de los rasgos ground y no marca ninguna
+    // prim más: se casan por orden de emisión.
+    const primsGround = primsM.filter((p) => p.groundLayer !== undefined);
     assert.equal(primsGround.length, specGround.length, "mismos rasgos ground en el spec fps");
     // groundOrder: contiguo desde 0 y en el orden de emisión (contractual:
     // área→camino→agua→deck, juntas tras sus cajas). De ahí sale el
@@ -276,12 +281,14 @@ describe("buildFpsTileSpec", () => {
       primsGround.map((_, j) => j),
       "groundOrder contiguo y creciente en el orden de emisión",
     );
-    // Y NADIE fuera de la banda lo lleva: un renderOrder de calco sobre un
-    // muro lo dejaría sin escribir profundidad.
-    assert.equal(
-      primsM.filter((p) => p.groundOrder !== undefined).length,
-      primsGround.length,
-      "solo los rasgos planos del suelo llevan groundOrder",
+    // Marca y orden son la MISMA cosa: todo rasgo marcado se pinta como calco
+    // y nadie más lo hace (un renderOrder de calco sobre un muro lo dejaría
+    // sin escribir profundidad). Sin esta igualdad, la altura volvería a
+    // decidir quién es suelo por la puerta de atrás.
+    assert.deepEqual(
+      primsM.filter((p) => p.groundOrder !== undefined),
+      primsGround,
+      "llevan groundOrder exactamente los rasgos marcados como suelo",
     );
     // La y es EXACTAMENTE la de su capa escalada: cero escalonado. Es lo que
     // le da techo al suelo (ground-overlay.test.ts) — un lift por prim, por
@@ -292,7 +299,7 @@ describe("buildFpsTileSpec", () => {
     // Determinista: dos builds → mismas y y mismo orden.
     const again = build();
     assert.deepEqual(
-      again.primsM.filter((p) => isGroundBand(p, p.pos[1], 0.5)).map((p) => [p.pos[1], p.groundOrder]),
+      again.primsM.filter((p) => p.groundLayer !== undefined).map((p) => [p.pos[1], p.groundOrder]),
       primsGround.map((p) => [p.pos[1], p.groundOrder]),
     );
   });

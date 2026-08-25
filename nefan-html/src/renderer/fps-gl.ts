@@ -572,6 +572,10 @@ export class FpsGl {
     episode: number;
     windupFrames: number;
     impactFrames: number;
+    /** Calidad MÁXIMA con la que se tiñó el destello de impacto (0..1). Va en
+     *  el episodio y no solo en la foto de `telegraph` porque el destello dura
+     *  0,3 s de sim: quien mire desde fuera no lo pilla. */
+    impactQuality: number;
     /** Frames de wind-up en los que el punto óptimo no era proyectable
      *  (queda detrás del ojo): ni dentro ni fuera del cuadro, ausente. */
     unprojectedFrames: number;
@@ -998,6 +1002,7 @@ export class FpsGl {
         episode: (this.telegraphEpisode?.episode ?? 0) + 1,
         windupFrames: 0,
         impactFrames: 0,
+        impactQuality: 0,
         unprojectedFrames: 0,
         screenYMin: null,
         screenYMax: null,
@@ -1109,6 +1114,7 @@ export class FpsGl {
     if (!ep) return;
     if (mode === "impact") {
       ep.impactFrames++;
+      ep.impactQuality = Math.max(ep.impactQuality, this.telegraph?.impactQuality ?? 0);
       return;
     }
     ep.windupFrames++;
@@ -1586,6 +1592,13 @@ export class FpsGl {
              *  llegar el golpe, no solo dónde pega perfecto. */
             borde: this.telegraphBorde ?? { cerca: null, lejos: null },
             alcance: attackAreaReach(t.params),
+            /** Calidad (0..1) con la que se TIÑE el destello de impacto: la
+             *  del mejor enemigo dentro del área (`attackFlashQuality` de
+             *  core, la misma fórmula que resuelve el daño). Verde = golpe
+             *  bueno, gris = no llegaste. Se publica porque era el único
+             *  cambio visible de la tanda del telegraph sin forma de
+             *  afirmarse desde fuera: en `windup` todavía vale 0. */
+            impactQuality: Math.round(t.impactQuality * 1000) / 1000,
           }
         : null,
       /** Recuento del último episodio de telegraph (o del que corre). A

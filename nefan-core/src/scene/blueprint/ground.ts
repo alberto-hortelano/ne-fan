@@ -131,6 +131,14 @@ export const MAX_GROUND_FEATURES = 64;
 export const GroundSchema = z.array(GroundFeatureSchema).max(MAX_GROUND_FEATURES);
 
 export type GroundFeature = z.infer<typeof GroundFeatureSchema>;
+
+/** CAPA plana del suelo: todo rasgo menos `hill`, que no es una capa sino
+ *  relieve del terreno (no emite prim plana). Cada capa tiene UNA elevación,
+ *  declarada en la tabla del builder (`greybox.ts`), y de esa tabla sale el
+ *  techo del suelo. Añadir un `kind` plano al schema rompe la compilación de
+ *  la tabla hasta que se le da su capa: es la única forma de que el techo
+ *  siga siendo cierto. */
+export type GroundLayer = Exclude<GroundFeature["kind"], "hill">;
 export type GroundPath = z.infer<typeof GroundPathSchema>;
 export type GroundArea = z.infer<typeof GroundAreaSchema>;
 export type GroundWater = z.infer<typeof GroundWaterSchema>;

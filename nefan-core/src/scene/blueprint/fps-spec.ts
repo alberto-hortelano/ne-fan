@@ -65,19 +65,18 @@ export const GROUND_OVERLAY_CLEARANCE_M = 0.02;
  *  sola. */
 export const GROUND_OVERLAY_Y_M = GROUND_STACK_TOP_M + GROUND_OVERLAY_CLEARANCE_M;
 
-/** Banda de elevación (celdas) de los rasgos ground del greybox: Y_AREA 0.05
- *  … Y_DECK 0.18. El detalle procedural queda por debajo (≤0.05 con cat
- *  decor) y el agua de fuente muy por encima (1.05, cat water). */
-const GROUND_BAND_MIN = 0.045;
-const GROUND_BAND_MAX = 0.185;
-
+/** ¿Es esta prim un rasgo plano de `ground`? Lo dice la MARCA que le puso
+ *  quien la emitió (`groundFeaturePrims`), no su cota.
+ *
+ *  Aquí vivía un olfateador —`cat` terrain|water + `noShadow` + `y` dentro de
+ *  una banda 0,045…0,185 celdas— y era un agujero con forma de candado: una
+ *  capa por encima del deck se caía de la banda, así que ni se pintaba como
+ *  calco (seguía escribiendo profundidad ⇒ ENTERRABA el telegraph) ni la medía
+ *  `test/ground-overlay.test.ts`, que filtra por `groundOrder`. O sea que el
+ *  candado de #185 dejaba abierta la puerta por la que #185 vuelve. Con la
+ *  marca en origen, el alcance no depende de la altura de la capa. */
 function isGroundFeaturePrim(p: GreyboxPrimitive): boolean {
-  return (
-    (p.cat === "terrain" || p.cat === "water") &&
-    p.noShadow === true &&
-    p.pos[1] >= GROUND_BAND_MIN &&
-    p.pos[1] <= GROUND_BAND_MAX
-  );
+  return p.groundLayer !== undefined;
 }
 
 /** Plan del tile + bloque opcional de scatter declarativo (crudo — se valida

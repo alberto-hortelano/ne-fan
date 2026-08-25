@@ -5,9 +5,8 @@
 
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { setDebugLog } from "./dev/debug-log.js";
-import { sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
-import { attackAreaQuality } from "@nefan-core/src/combat/attack-area.js";
+import { attackFlashQuality } from "@nefan-core/src/combat/attack-area.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
@@ -1720,21 +1719,21 @@ function gameLoop(now: number): void {
       // precisión escritas a mano) que además se saltaba el cono frontal: un
       // enemigo a la espalda teñía el destello de verde mientras el resolver
       // no le hacía ni un punto de daño. El color no adorna, informa.
-      let quality = 0;
-      for (const ee of enemyEntities) {
-        if (!ee.alive) continue;
-        const params = attackVisual?.params ?? getSelectedParams();
-        const dir = sub(ee.pos, playerPos);
-        // Al plano del ataque: avance sobre el forward, lateral a su derecha.
-        const avance = playerForward.x * dir.x + playerForward.z * dir.z;
-        const lateral = playerForward.x * dir.z - playerForward.z * dir.x;
-        quality = Math.max(quality, attackAreaQuality(params, avance, lateral));
-      }
+      //
+      // La PROYECCIÓN al plano del ataque también es de core: escrita aquí no
+      // había forma de afirmarla —el cliente no tiene harness— y era la mitad
+      // de la fórmula que se saltaba el cono.
+      const params = attackVisual?.params ?? getSelectedParams();
       attackVisual = {
         active: true,
         mode: "impact",
-        params: attackVisual?.params ?? getSelectedParams(),
-        impactQuality: quality,
+        params,
+        impactQuality: attackFlashQuality(
+          params,
+          playerPos,
+          playerForward,
+          enemyEntities.filter((ee) => ee.alive).map((ee) => ee.pos),
+        ),
         fadeTimer: 0.3,
       };
     } else if (e.type === "attack_landed") {

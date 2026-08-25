@@ -75,6 +75,41 @@ export function attackAreaMargin(p: AttackAreaParams, u: number, s: number): num
   return Math.max(radial, lateral, conoMargin(u, s));
 }
 
+/** Punto o dirección en el plano del suelo (metros). La `y` no interviene: el
+ *  área del ataque es plana. */
+export interface AreaPlaneVec {
+  x: number;
+  z: number;
+}
+
+/** Calidad que TIÑE el destello de impacto (0..1): la del MEJOR objetivo
+ *  dentro del área, 0 si no hay ninguno. Proyecta cada objetivo al plano del
+ *  ataque —avance sobre el `forward` del atacante, lateral a su derecha— y lo
+ *  evalúa con la misma `attackAreaQuality` que dibuja el parche y que resuelve
+ *  el daño.
+ *
+ *  Vive en core porque la PROYECCIÓN es parte de la fórmula, no del dibujo. El
+ *  cliente llevaba la suya escrita a mano —`distancia × precisión` sin el cono
+ *  frontal—, así que un enemigo a la ESPALDA teñía el destello de verde
+ *  («golpe perfecto») mientras el resolver no le hacía ni un punto de daño. */
+export function attackFlashQuality(
+  p: AttackAreaParams,
+  from: AreaPlaneVec,
+  forward: AreaPlaneVec,
+  targets: Iterable<AreaPlaneVec>,
+): number {
+  let mejor = 0;
+  for (const t of targets) {
+    const dx = t.x - from.x;
+    const dz = t.z - from.z;
+    const avance = forward.x * dx + forward.z * dz;
+    const lateral = forward.x * dz - forward.z * dx;
+    const q = attackAreaQuality(p, avance, lateral);
+    if (q > mejor) mejor = q;
+  }
+  return mejor;
+}
+
 /** Alcance del área a lo largo del forward (`s = 0`): el borde CERCA y el
  *  borde LEJOS, en metros. Es lo que el jugador necesita saber —dónde empieza
  *  y dónde deja de llegar el golpe— y lo que el renderer proyecta a pantalla

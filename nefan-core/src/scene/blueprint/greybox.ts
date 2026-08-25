@@ -16,7 +16,7 @@ import { seededRng, uniform } from "../../rng.js";
 import { TILE_CELLS } from "../tile.js";
 import { BIOME_COLORS, darken, lighten } from "./palette.js";
 import { ellipsePoints, groundFeaturePrims } from "./ground-prims.js";
-import type { GroundFeature } from "./ground.js";
+import type { GroundFeature, GroundLayer } from "./ground.js";
 import type { GateVolume, Volume } from "./volumes.js";
 import type { GreyboxLight, GreyboxPrimitive } from "../greybox/common.js";
 import { volumePrimsForTile } from "../greybox/volume-prims.js";
@@ -47,30 +47,42 @@ const BIOME_FLOWERS: Record<string, string[]> = {
   swamp: ["#a9b86a"],
 };
 
-/** Elevaciones (celdas) de las capas planas del suelo — separadas para que el
- *  z-buffer nunca haga z-fighting y el orden visual sea el del contrato:
- *  detalle < áreas/caminos < agua < deck. */
+/** Elevación (celdas) del detalle procedural del suelo — manchas, piedritas y
+ *  flores. Va por DEBAJO de todas las capas de `ground`: no es un rasgo
+ *  declarado, es la textura del bioma. */
 const Y_DETAIL = 0.02;
-const Y_AREA = 0.05;
-const Y_PATH = 0.09;
-const Y_WATER = 0.13;
-const Y_DECK = 0.18;
-const LAYER_T = 0.03;
+
+/** Elevación (celdas) de CADA capa plana de `ground`, en el orden visual del
+ *  contrato: áreas < caminos < agua < deck. Es la ÚNICA fuente de la cota de
+ *  un rasgo —`groundFeaturePrims` no escribe ninguna y a mano— y es un
+ *  `Record<GroundLayer, …>`: un `kind` plano nuevo en el schema no compila
+ *  hasta que se le declara aquí su capa. */
+export const GROUND_LAYERS_CELLS: Record<GroundLayer, number> = {
+  area: 0.05,
+  path: 0.09,
+  water: 0.13,
+  deck: 0.18,
+};
+/** Grosor (celdas) de toda capa plana del suelo. */
+export const GROUND_LAYER_T_CELLS = 0.03;
 
 /** Cara ALTA del stack de rasgos planos del suelo, en celdas. Es un techo por
- *  CONSTRUCCIÓN, no una medida sobre fixtures: todos los rasgos de `ground`
- *  salen de `groundFeaturePrims` con grosor `LAYER_T` sobre una de las cuatro
- *  capas, y la más alta es el deck. Sea cual sea el tile —un camino o los 64
- *  rasgos que permite el schema— nada de `ground` pasa de aquí.
+ *  CONSTRUCCIÓN, no una medida sobre fixtures, y se DERIVA de la tabla: la
+ *  capa más alta más un grosor. Sea cual sea el tile —un camino o los 64
+ *  rasgos que permite el schema— nada de `ground` pasa de aquí, porque nada de
+ *  `ground` se emite fuera de la tabla.
  *
- *  `LAYER_T` entero, no la mitad: `pos.y` de una prim es su BASE, no su centro
- *  (contrato de `GreyboxPrimitive`), así que la cara alta del deck está un
- *  grosor por encima de `Y_DECK`.
+ *  El grosor ENTERO, no la mitad: `pos.y` de una prim es su BASE, no su centro
+ *  (contrato de `GreyboxPrimitive`), así que la cara alta de la capa más alta
+ *  está un grosor por encima de su elevación.
  *
  *  De este número sale la cota a la que se dibuja cualquier calco de suelo
- *  (`GROUND_OVERLAY_Y_M` en fps-spec). Si alguien añade una capa por encima
- *  del deck y no actualiza esto, `test/ground-overlay.test.ts` se pone rojo. */
-export const GROUND_STACK_TOP_CELLS = Y_DECK + LAYER_T;
+ *  (`GROUND_OVERLAY_Y_M` en fps-spec). Una capa NUEVA sube este techo sola y
+ *  con él la cota del calco; lo que `test/ground-overlay.test.ts` pone rojo es
+ *  la otra vía —una prim de suelo con cota propia, fuera de la tabla—, que es
+ *  la que enterraría el telegraph (#185). */
+export const GROUND_STACK_TOP_CELLS =
+  Math.max(...Object.values(GROUND_LAYERS_CELLS)) + GROUND_LAYER_T_CELLS;
 
 /** Detalle procedural del suelo — manchas orgánicas del bioma, piedritas y
  *  flores dispersas, sembradas por tile (determinista: caché intacta). */
@@ -150,11 +162,8 @@ export function buildTileGreyboxSpec(plan: TileGreyboxPlan, seedKey: string): Ti
     ...groundFeaturePrims(plan.ground ?? [], {
       toXZ: (u, v) => [u, v],
       scale: 1,
-      yArea: Y_AREA,
-      yPath: Y_PATH,
-      yWater: Y_WATER,
-      yDeck: Y_DECK,
-      layerT: LAYER_T,
+      layers: GROUND_LAYERS_CELLS,
+      layerT: GROUND_LAYER_T_CELLS,
     }),
   );
 

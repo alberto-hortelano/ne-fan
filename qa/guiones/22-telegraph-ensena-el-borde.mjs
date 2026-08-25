@@ -15,7 +15,7 @@
  *  golden mientras el suelo crecía 2 mm por prim sin tope. Un tile de puerto
  *  ordinario (río, cuatro embarcaderos, seis calles y cuatro plazas: quince
  *  rasgos de los 64 que permite el schema) dejaba la cara alta del suelo en
- *  0,2115 m y el telegraph desaparecía ENTERRADO bajo el embarcadero. No era
+ *  0,219 m y el telegraph desaparecía ENTERRADO bajo el embarcadero. No era
  *  un riesgo futuro: `puerto_tile` es esa escena, y está en el selector Room.
  *
  *  Se comprueba lo que le pasa a quien juega, sin leer un solo píxel:
@@ -29,10 +29,19 @@
  *  el embarcadero.
  *
  *  EN NEGATIVO: con el código de antes de esta tanda el paso 1 se pone rojo en
- *  `puerto_tile` (holgura −0,0115 m: el parche está bajo el deck) y el paso 2
+ *  `puerto_tile` (holgura −0,019 m: el parche está bajo el deck) y el paso 2
  *  sigue verde — porque el borde ESTABA en cuadro, solo que con alfa cero.
  *  Comprobado también al revés: subir `GROUND_STACK_TOP_CELLS` o volver a
  *  escalonar las prims pone rojo el paso 1 en las dos fixtures.
+ *
+ *  Las cotas de arriba son la BASE de la prim más su grosor ENTERO (`pos.y` es
+ *  la base, contrato de `GreyboxPrimitive`). Medirlas por el CENTRO —el error
+ *  que cometieron el plan y esta misma cabecera— las deja 7,5 mm cortas y hace
+ *  parecer menor un defecto que era mayor.
+ *
+ *  Y un aviso operativo que costó un falso verde: tras un `git checkout` de un
+ *  fichero de `nefan-core`, vite sigue sirviendo el transform ANTERIOR. Un
+ *  antes/después exige reiniciar el cliente, o el negativo sale verde.
  */
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
@@ -105,6 +114,21 @@ async function enWindup(ctx) {
   );
 }
 
+/** Espera a que el episodio de telegraph en curso se APAGUE solo y devuelve su
+ *  recuento. El destello de impacto dura 0,3 s de sim y quien muestree desde
+ *  fuera se lo salta; el renderer cuenta los frames que pinta, así que el
+ *  episodio no pierde ninguno. */
+function esperarEpisodio(ctx) {
+  return ctx.waitFor(
+    "el episodio del telegraph se completa y se apaga solo",
+    () => {
+      const ep = window.__nefan.fps()?.telegraphEpisode;
+      return ep && ep.ended ? { ...ep } : null;
+    },
+    30_000,
+  );
+}
+
 /** ¿Este punto de pantalla está dentro del cuadro? El 15 % inferior lo tapa la
  *  barra de acciones, así que no cuenta como "visible". */
 function enCuadro(p, viewport) {
@@ -167,10 +191,12 @@ export default async function (ctx) {
     enCuadro(tPuerto.borde.lejos, tPuerto.viewport),
     JSON.stringify(tPuerto.borde.lejos),
   );
-  // El CERCANO cae a los pies —a 0,2 m del jugador con el arma desnuda—, así
-  // que con la mirada a −30° queda por debajo del cuadro y exigirlo sería
-  // exigir que el jugador se mire las botas. Lo que sí se exige es que exista
-  // y esté PROYECTADO (no detrás del ojo): es el otro extremo del alcance.
+  // El CERCANO cae a los pies —a 0,2 m del jugador con la espada corta, que es
+  // el arma que el cliente equipa SIEMPRE (`main.ts`: `playerWeaponId` es una
+  // constante, no hay estado de "desarmado" alcanzable hoy)—, así que con la
+  // mirada a −30° queda por debajo del cuadro y exigirlo sería exigir que el
+  // jugador se mire las botas. Lo que sí se exige es que exista y esté
+  // PROYECTADO (no detrás del ojo): es el otro extremo del alcance.
   ctx.expect(
     "el borde CERCANO del alcance existe y está proyectado",
     tPuerto.borde.cerca !== null,
@@ -241,4 +267,28 @@ export default async function (ctx) {
   await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot(`telegraph-borde-${corto}`);
+
+  // ── 5. El destello del impacto no miente sobre a quién diste ────────────
+  // El color del destello es un DATO: verde = golpe bueno, gris = no llegaste.
+  // Lo tiñe la calidad del mejor enemigo dentro del área (`attackFlashQuality`
+  // de core, la misma fórmula que resuelve el daño). Sin enemigos en la
+  // fixture no hay a quién dar, así que el destello tiene que salir GRIS: un
+  // parche que se tiñera de la selección del ataque en vez de del impacto
+  // volvería a decir "golpe perfecto" sin haber tocado a nadie, que es
+  // exactamente lo que hacía la copia de la fórmula que esta tanda retiró.
+  const episodio = await esperarEpisodio(ctx);
+  ctx.log(
+    `episodio ${episodio.episode}: ${episodio.windupFrames} frames de wind-up + ` +
+      `${episodio.impactFrames} de impacto · calidad del destello ${episodio.impactQuality}`,
+  );
+  ctx.expect(
+    "el impacto llega a pintarse (si no, lo de abajo sería un verde vacío)",
+    episodio.impactFrames > 0,
+    `${episodio.impactFrames} frames`,
+  );
+  ctx.expect(
+    "y sin nadie a quien golpear el destello sale GRIS, no 'golpe perfecto'",
+    episodio.impactQuality === 0,
+    `calidad ${episodio.impactQuality}`,
+  );
 }

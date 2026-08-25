@@ -20,6 +20,7 @@ import {
   attackAreaMargin,
   attackAreaQuality,
   attackAreaReach,
+  attackFlashQuality,
   type AttackAreaParams,
 } from "../src/combat/attack-area.js";
 import { FRONT_COS, resolveAttack } from "../src/combat/combat-resolver.js";
@@ -197,5 +198,67 @@ describe("área del ataque: calidad y margen al borde", () => {
     }
     // Un ataque con tolerancia mayor que el óptimo llega hasta los pies.
     assert.equal(attackAreaReach({ optimal_distance: 1, distance_tolerance: 3, area_radius: 1 }).cerca, 0);
+  });
+});
+
+/** El destello de impacto: el ÚNICO trozo de esta tanda que el jugador ve y
+ *  que no tenía candado (hallazgo H2 de QA). El color no adorna, informa: verde
+ *  = golpe bueno, gris = no llegaste. Con la fórmula escrita a mano en el
+ *  cliente, un enemigo a la espalda salía VERDE PLENO mientras el resolver no
+ *  hacía ni un punto de daño; ahora la proyección al plano del ataque vive
+ *  aquí y se puede afirmar sin navegador ni enemigos vivos. */
+describe("calidad del destello de impacto", () => {
+  /** Marco NO trivial: atacante fuera del origen y mirando en diagonal. Con el
+   *  atacante en (0,0) mirando a +z, una proyección referida al origen del
+   *  mundo daría los mismos números y el test no distinguiría las dos. */
+  const from = { x: 7.25, z: -3.5 };
+  const ang = 0.9;
+  const forward = { x: Math.sin(ang), z: Math.cos(ang) };
+  const enPlano = (u: number, s: number) => ({
+    x: from.x + forward.x * u + forward.z * s,
+    z: from.z + forward.z * u - forward.x * s,
+  });
+
+  it("a la espalda el destello es GRIS, aunque esté a la distancia óptima", () => {
+    for (const [id, p] of tiposDeAtaque()) {
+      const delante = attackFlashQuality(p, from, forward, [enPlano(p.optimal_distance, 0)]);
+      assert.ok(delante > 0.99, `${id}: delante y en el óptimo el destello es pleno (${delante})`);
+      const espalda = attackFlashQuality(p, from, forward, [enPlano(-p.optimal_distance, 0)]);
+      assert.equal(espalda, 0, `${id}: a la espalda el destello NO puede teñirse`);
+      // A 90° tampoco: el cono es de ±60°, y esta es la distancia a la que la
+      // fórmula vieja daba color (0.15, verdoso) en vez de gris.
+      const costado = attackFlashQuality(p, from, forward, [enPlano(0, p.optimal_distance)]);
+      assert.equal(costado, 0, `${id}: a 90° el golpe no llega`);
+    }
+  });
+
+  it("se queda con el MEJOR objetivo, y sin objetivos no hay destello", () => {
+    const [, p] = tiposDeAtaque()[0];
+    const lejos = enPlano(p.optimal_distance + p.distance_tolerance * 0.9, 0);
+    const clavado = enPlano(p.optimal_distance, 0);
+    const qLejos = attackFlashQuality(p, from, forward, [lejos]);
+    assert.ok(qLejos > 0 && qLejos < 0.5, `el del filo tiñe poco (${qLejos})`);
+    assert.ok(
+      attackFlashQuality(p, from, forward, [lejos, clavado]) >
+        attackFlashQuality(p, from, forward, [lejos]),
+      "con dos objetivos manda el mejor, no el primero",
+    );
+    assert.equal(attackFlashQuality(p, from, forward, []), 0, "sin objetivos, gris");
+  });
+
+  it("es exactamente la calidad del área en el punto proyectado", () => {
+    // Una sola fórmula: si el destello divergiera del parche, el jugador vería
+    // un color que el suelo desmiente.
+    const [, p] = tiposDeAtaque()[1];
+    for (const [u, s] of [[1.2, 0.4], [2.0, -0.9], [0.3, 0.1], [3.4, 1.6]] as [number, number][]) {
+      const destello = attackFlashQuality(p, from, forward, [enPlano(u, s)]);
+      const parche = attackAreaQuality(p, u, s);
+      // Ir y volver por coordenadas de mundo mueve el último bit del float; lo
+      // que se afirma es que es la MISMA fórmula, no la misma redondeo.
+      assert.ok(
+        Math.abs(destello - parche) < 1e-12,
+        `(u=${u}, s=${s}): destello ${destello} vs parche ${parche}`,
+      );
+    }
   });
 });
