@@ -1,61 +1,154 @@
 name: Mutation testing
 
-# No corre en cada PR: es de minutos, no de segundos. La cobertura ya va en CI
-# y dice que el test PASÓ POR la línea; esto dice si se habría ENTERADO de que
-# cambia, y esa pregunta se puede contestar una vez al día.
+# La mutación se PIDE y la autoriza una persona. No hay cron.
+#
+# El cron estaba porque parecía la alternativa a que cada agente lanzara su
+# tanda en la máquina de quien programa; pero una nocturna que mide cuatro PR
+# juntas no sabe de cuál salió cada superviviente, y ese trabajo —averiguarlo a
+# mano, después— es justo el que no se hace nunca. Aquí la corrida se lanza
+# cuando alguien pulsa "Run workflow" (desde el navegador del móvil también), y
+# vuelve con dueño: `npm run mutacion -- repartir` reparte cada hallazgo entre
+# las PR del rango cuyo diff selecciona ese módulo.
+#
+# En su lugar, `npm run deuda` avisa cuando un módulo lleva demasiados días sin
+# medida: sin nocturna, la única forma de que un módulo se quede años sin medir
+# es que nadie lo mire, y eso lo mira el aviso.
 on:
   workflow_dispatch:
     inputs:
       modulos:
-        description: "ids de módulo del plan, separados por espacios (vacío = todos)"
+        description: "vacío = lo que falta por medir desde el tag mutacion-ultima · TODOS = corrida completa · o ids de módulo separados por espacios"
         required: false
         default: ""
-  schedule:
-    - cron: "0 3 * * *"
+
+# Solo para reposicionar el tag `mutacion-ultima`. No se commitea nada: la
+# huella la escribe `repartir` en la máquina de quien reparte y viaja en la PR,
+# que es donde un delta se puede REVISAR.
+permissions:
+  contents: write
 
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    # 42 ficheros mutados en 17 módulos = 8825 mutantes. Corrida completa medida
-    # el 2026-08-23 en una máquina de 16 hilos: 31m28 de reloj y 333 min de CPU.
-    # Este runner tiene 4 hilos, así que el reloj se acerca al CPU. El tope está
-    # para que un mutante que se atasque no se coma el día.
-    #
-    # AQUÍ SÍ VA LA COMPLETA, y a propósito: es la red que el selector no puede
-    # tender. `npm run mutate -- --cambiado` (scripts/afectado.ts) decide qué
-    # correr desde el grafo de imports de runtime, y ese grafo no ve lo que un
-    # test lee en runtime (un fixture, un prompt, un .json de data/). La
-    # nocturna es quien caza lo que la selección del día se dejó; si baja el
-    # score de un módulo que nadie corrió, ESE es el hallazgo.
+    # 42 ficheros mutados en 20 módulos = 9.040 mutantes. Corrida completa
+    # medida el 2026-08-23 en una máquina de 16 hilos: 31m28 de reloj y 333 min
+    # de CPU. Este runner tiene 4 hilos, así que el reloj se acerca al CPU. El
+    # tope está para que un mutante que se atasque no se coma el día — y por eso
+    # el artefacto sube con `if: always()`: una corrida truncada por el timeout
+    # sigue trayendo lo que llegó a medir, y `corrida.json` dice qué falta.
     timeout-minutes: 180
     defaults:
       run:
         working-directory: nefan-core
     steps:
       - uses: actions/checkout@v4
+        with:
+          # OBLIGATORIO. Por defecto `checkout` clona con profundidad 1 y sin
+          # tags: `mutacion-ultima`, `--rango`, `merge-base` y `blame` fallan
+          # con "bad object". Y el fallo es del tipo caro — si alguien lo
+          # capturara y lo degradara a "no ha cambiado nada", este workflow
+          # saldría VERDE sin medir un solo mutante, que es la forma exacta del
+          # fallo que `scripts/afectado.ts` describe en su cabecera. Sin esto el
+          # paso de selección revienta, y así tiene que ser.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: nefan-core/package-lock.json
       - run: npm ci
-      # La corrida está partida por módulos (data/contract/mutation-targets.json)
-      # y el runner los recorre SIN cortar en el primero que baje de su break:
-      # una sola corrida deja medidos todos y el artefacto sube completo. El
-      # fallo se reporta al final, con el código de salida.
-      #
-      # `modulos` viaja por variable de entorno y no interpolado en el `run`:
-      # lo que escribe quien lanza el workflow no entra en la línea de comandos.
-      # La concurrencia la decide la máquina (scripts/mutate.ts): por defecto media
-      # máquina, que es lo correcto en un portátil con alguien delante. Aquí no
-      # hay nadie usándola, así que se le da todo menos un núcleo.
-      - run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $MODULOS
+
+      # QUÉ SE MIDE. El input vacío no significa "todo": significa "lo que falta
+      # por medir desde la última corrida", que es MÁS correcto que la unión de
+      # lo que los agentes hubieran pedido — coge también las PR que nadie pidió
+      # y los commits directos a main (11 de los últimos 40 no llevan `(#NNN)`).
+      # Un rango que no selecciona nada NO se degrada a la corrida completa: el
+      # paso falla, porque gastar 180 minutos de runner midiendo cero es peor
+      # que decirlo.
+      - name: Qué hay que medir
+        id: seleccion
+        run: |
+          if [ "$MODULOS" = "TODOS" ]; then
+            echo "origen=todos" >> "$GITHUB_OUTPUT"
+            echo "ids=" >> "$GITHUB_OUTPUT"
+          elif [ -n "$MODULOS" ]; then
+            echo "origen=explicito" >> "$GITHUB_OUTPUT"
+            echo "ids=$MODULOS" >> "$GITHUB_OUTPUT"
+          else
+            IDS="$(npm run --silent mutacion -- pendiente --ids)"
+            echo "seleccionados: $IDS"
+            echo "origen=rango" >> "$GITHUB_OUTPUT"
+            echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+          fi
         env:
+          # Lo que escribe quien lanza el workflow viaja por variable de entorno
+          # y no interpolado en el `run`: no entra en la línea de comandos.
           MODULOS: ${{ inputs.modulos }}
+
+      # El runner recorre los módulos SIN cortar en el primero que baje de su
+      # break: una sola corrida deja medidos todos y el artefacto sube completo.
+      # El fallo se reporta con el código de salida, y por eso los pasos de
+      # abajo llevan `if: always()`.
+      #
+      # La concurrencia la decide la máquina (scripts/mutate.ts): por defecto
+      # media máquina, que es lo correcto en un portátil con alguien delante.
+      # Aquí no hay nadie usándola, así que se le da todo menos un núcleo.
+      - name: Medir
+        run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $IDS
+        env:
+          IDS: ${{ steps.seleccion.outputs.ids }}
+          # El muro de `mutate.ts` se niega a correr sin esto. Aquí SÍ se pone,
+          # y es la única razón por la que se pone: en el runner no hay nadie
+          # delante cuya máquina se pueda saturar, y la corrida está autorizada
+          # por la persona que pulsó «Run workflow».
+          NEFAN_MUTATE_AUTORIZADO: "si"
+
+      # EL MANIFIESTO LO ESCRIBE CI, no `traer`: `traer` solo puede escribir lo
+      # que CREÍA que iba a pasar. Y hace falta porque el código de salida no
+      # sirve de criterio — `mutate.ts` sale con 1 tanto si la medida fue
+      # completa y destapó una regresión como si se truncó, así que filtrar por
+      # "conclusion == success" rechazaría justo las corridas con el hallazgo.
+      #
+      # `corrida.json`, SIN punto inicial: `upload-artifact@v4` excluye los
+      # ficheros ocultos y un manifiesto que no viaja es un manifiesto que no
+      # existe.
+      - name: Manifiesto de la corrida
+        id: manifiesto
+        if: always()
+        run: npm run --silent mutacion -- manifiesto --origen "$ORIGEN" --pedidos "$IDS" --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID"
+        env:
+          ORIGEN: ${{ steps.seleccion.outputs.origen }}
+          IDS: ${{ steps.seleccion.outputs.ids }}
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          # Un JSON por módulo; `npm run deuda` los lee todos y avisa por
-          # nombre del que falte.
+          # Un JSON por módulo más `corrida.json`. Los baja
+          # `npm run mutacion -- traer`, que vacía el directorio antes para no
+          # mezclar dos medidas en una foto que nunca existió.
           name: informe-mutacion
           path: nefan-core/reports/mutation/
+
+      # El tag solo se mueve cuando la corrida puede DECLARAR medido todo lo que
+      # había desde la anterior: origen `rango` o `todos`, y todos los módulos
+      # pedidos con informe. Una lista explícita de módulos no mueve nada —
+      # movería el tag declarando medido lo que nadie midió, y a partir de ahí
+      # el agujero sería invisible.
+      #
+      # Y solo desde `main`. El tag dice hasta dónde se ha medido la historia de
+      # main; ponerlo en un commit de una rama que aún no está mergeada deja el
+      # rango `mutacion-ultima..main` calculado desde un punto que main no
+      # contiene, y lo que se midió fue código que todavía no está ahí. El
+      # motivo se IMPRIME en vez de saltarse el paso en silencio: un paso gris en
+      # la UI no dice por qué.
+      - name: Reposicionar mutacion-ultima
+        if: always() && steps.manifiesto.outputs.mueve_tag == 'true'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "NO se mueve el tag: esta corrida midió $GITHUB_REF, no main."
+            echo "Lo medido aún no está en la historia de main, así que el tag mentiría sobre el rango."
+            exit 0
+          fi
+          git tag -f mutacion-ultima "$GITHUB_SHA"
+          git push -f origin mutacion-ultima
+          echo "mutacion-ultima → $GITHUB_SHA"

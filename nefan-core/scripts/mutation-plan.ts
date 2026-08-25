@@ -71,6 +71,14 @@ const PlanSchema = z.object({
    *  El tope de heap va aquí y no en argv porque `node --test` abre un proceso
    *  hijo por fichero y los hijos NO heredan las flags del padre. */
   comando: z.string(),
+  /** Cuántos mutantes puede llegar a medir un módulo en la máquina de quien
+   *  está programando (`npm run mutacion -- local <id>`). No es una política
+   *  sino aritmética: el coste está muy mal repartido —41 mutantes el módulo
+   *  más barato, 1.362 el más caro— y sin tope la única regla posible era
+   *  "no midas nada", que dejaba a CLAUDE.md pidiendo supervivientes muertos
+   *  sin dar con qué mirarlos. Obligatorio y sin defecto: un tope que se puede
+   *  omitir es un tope que desaparece sin que nadie lo note. */
+  tope_local: z.number().int().positive(),
   /** Directorios que se miden ENTEROS. El candado exige que cada `.ts` de
    *  estos esté nombrado por algún módulo: si no, un fichero nuevo se cuela
    *  sin que nadie lo mida y nada falla — el agujero por el que un objetivo
@@ -98,6 +106,19 @@ export type ExentoMutacion = z.infer<typeof ExentoSchema>;
 export type PlanMutacion = z.infer<typeof PlanSchema>;
 
 export const RUTA_PLAN = join(coreRoot, "data", "contract", "mutation-targets.json");
+
+/** La huella de la última corrida, relativa a nefan-core. Es lo ÚNICO que se
+ *  commitea de una medida: el informe entero son 76 MB (`plugins-dsl` 20 MB él
+ *  solo) y además lleva el código fuente de cada `replacement`.
+ *
+ *  Va versionada a propósito. `reports/` está gitignorado, es por-worktree y
+ *  `mutate.ts:91-95` borra el informe ANTES de correr —deliberadamente, para
+ *  que una corrida caída no deje enseñando el veredicto de la semana pasada—,
+ *  así que no hay sitio ahí para el estado anterior. Commitearla da además algo
+ *  que este repositorio no tenía: el delta se ve EN EL DIFF, y «esta corrida
+ *  añade 4 supervivientes» deja de ser prosa generada para ser un cambio
+ *  revisable. */
+export const RUTA_HUELLA = "data/contract/mutacion-huella.json";
 
 /** Lee y VALIDA el plan. Fail-loud a propósito: un plan mal formado que se
  *  degrada a "no hay módulos" es otra forma de medir el vacío en verde. */
@@ -582,6 +603,13 @@ export function rutaInforme(id: string): string {
   return join(coreRoot, "reports", "mutation", `${id}.json`);
 }
 
+/** VIVO, en un solo sitio. Lo consultan el score de aquí abajo y la huella de
+ *  la corrida (`scripts/mutacion-huella.ts`): con dos definiciones, la cola de
+ *  deuda y el delta acabarían discrepando sobre el mismo informe. */
+export function esVivo(status: string): boolean {
+  return status === "Survived" || status === "NoCoverage";
+}
+
 /** El score tal y como lo calcula Stryker, en un solo sitio: el runner lo
  *  imprime y `npm run deuda` lo pone en la cola, y si cada uno usara su propia
  *  cuenta acabarían discrepando sobre el mismo informe.
@@ -596,7 +624,7 @@ export function resumenDeMutantes(mutantes: readonly { status: string }[]): {
   vivos: number;
   score: number;
 } {
-  const vivos = mutantes.filter((m) => m.status === "Survived" || m.status === "NoCoverage").length;
+  const vivos = mutantes.filter((m) => esVivo(m.status)).length;
   const detectados = mutantes.filter((m) => m.status === "Killed" || m.status === "Timeout").length;
   const total = vivos + detectados;
   return { total, vivos, score: total === 0 ? 0 : (detectados / total) * 100 };

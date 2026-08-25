@@ -1,0 +1,618 @@
+/** La huella de una corrida de mutación: qué supervivientes había, cuáles son
+ *  nuevos y de quién son. Todo lo que decide algo, sin tocar git ni el disco.
+ *
+ *  POR QUÉ ESTE FICHERO EXISTE APARTE de `scripts/mutacion.ts`. El delta y la
+ *  atribución son las dos cosas que pueden equivocarse EN VERDE: si el delta
+ *  colapsa "no había medida" con "no ha cambiado nada", la cola se queda muda; y
+ *  si la atribución inventa un dueño, el hallazgo va a parar a quien no lo trajo
+ *  y nadie lo arregla. Un test que las ejercitara a través de git correría en CI
+ *  sobre un clon superficial y pasaría en verde sin comprobar nada — es
+ *  exactamente lo que `deuda.ts:159` ya documenta de `enColaDeCrap`. Así que
+ *  aquí no entra `node:child_process`, ni git, ni una lectura de fichero: se
+ *  ejerce con datos sintéticos en cualquier máquina.
+ *
+ *  LA HUELLA ES UNA TUPLA DE SIETE COMPONENTES, y no es una elección estética.
+ *  Medido sobre los 19 informes que había en disco el 2026-08-25 (9.040
+ *  mutantes, 3.524 supervivientes): con `(fichero, línea, mutador)` hay **1.155
+ *  supervivientes indistinguibles entre sí** (el 33 %), porque Stryker genera
+ *  varios mutantes en la misma línea y el mismo mutador cambiando solo el
+ *  `replacement` o las columnas. Con fichero + línea/columna de inicio y de fin
+ *  + mutador + `replacement`, las colisiones son **0**. Sin las siete, un
+ *  superviviente nuevo se descontaría contra uno viejo distinto y el delta
+ *  diría "no ha cambiado nada" justo cuando algo cambió.
+ *
+ *  La base se indexa POR FICHERO, no por id de módulo: afinar el plan mueve
+ *  ficheros de un módulo a otro, y un módulo renombrado perdería su base sin que
+ *  nada lo dijera — otra vez el verde que no comprueba nada.
+ */
+import { esVivo } from "./mutation-plan.js";
+
+// ── la tupla y su hash ───────────────────────────────────────────────────────
+
+/** Lo que este módulo necesita de un mutante del informe de Stryker. */
+export interface MutanteMedido {
+  mutatorName: string;
+  replacement?: string;
+  status: string;
+  location: { start: { line: number; column: number }; end: { line: number; column: number } };
+}
+
+/** El separador de la clave. Escapado y no literal: un NUL crudo dentro del
+ *  fuente hace que `grep` trate el fichero como binario y deje de encontrar sus
+ *  propias funciones.
+ *
+ *  Que sea NUL y no un espacio importa: el `replacement` es CODIGO FUENTE y
+ *  puede llevar espacios y saltos de linea, asi que con un separador que pueda
+ *  aparecer dentro de un campo dos tuplas distintas podrian dar la misma clave
+ *  — justo lo que esta clave existe para impedir. */
+const SEPARADOR = "\u0000";
+
+/** Las SIETE componentes, en texto y separadas por algo que no puede aparecer
+ *  dentro de ninguna de ellas. Separada del hash para que el candado pueda comprobar qué
+ *  entra en la identidad sin depender de la función de hash. */
+export function claveDeMutante(fichero: string, m: MutanteMedido): string {
+  const { start, end } = m.location;
+  return [
+    fichero,
+    start.line,
+    start.column,
+    end.line,
+    end.column,
+    m.mutatorName,
+    m.replacement ?? "",
+  ].join(SEPARADOR);
+}
+
+const FNV_OFFSET = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const MASK64 = 0xffffffffffffffffn;
+
+/** FNV-1a de 64 bits, en hexadecimal de 16 caracteres.
+ *
+ *  Escrito a mano en vez de tirar de `node:crypto` para que este fichero no
+ *  importe nada del entorno: es lo que lo deja ejercitable con datos sintéticos
+ *  desde cualquier test. 64 bits sobran para el tamaño del problema — con 3.524
+ *  supervivientes la probabilidad de colisión ronda 3·10⁻¹³—, y el candado
+ *  además la comprueba contra los informes reales en vez de fiarse del cálculo.
+ *
+ *  Se guarda el hash y no la tupla porque la tupla lleva el `replacement`, que
+ *  es CÓDIGO FUENTE: meterlo en un fichero de `data/` haría que el guardia de
+ *  campos retirados (`campos-retirados-no-vuelven`) tuviera que perseguir texto
+ *  que nadie escribió a mano. Y son ~200 KB contra ~75 KB. */
+export function hash64(s: string): string {
+  let h = FNV_OFFSET;
+  for (let i = 0; i < s.length; i++) {
+    h ^= BigInt(s.charCodeAt(i));
+    h = (h * FNV_PRIME) & MASK64;
+  }
+  return h.toString(16).padStart(16, "0");
+}
+
+export function huellaDeMutante(fichero: string, m: MutanteMedido): string {
+  return hash64(claveDeMutante(fichero, m));
+}
+
+/** Los supervivientes de un fichero, con su huella, y cuántos mutantes se
+ *  midieron en total. VIVO es lo mismo que para `npm run deuda` y para el
+ *  `break` del runner (`esVivo`, en mutation-plan.ts): una segunda definición de
+ *  "vivo" acabaría discrepando con la primera sobre el mismo informe. */
+export function vivosDeFichero(
+  fichero: string,
+  mutantes: readonly MutanteMedido[],
+): { vivos: string[]; total: number } {
+  const vivos: string[] = [];
+  let detectados = 0;
+  for (const m of mutantes) {
+    if (esVivo(m.status)) vivos.push(huellaDeMutante(fichero, m));
+    else if (m.status === "Killed" || m.status === "Timeout") detectados += 1;
+  }
+  return { vivos: [...vivos].sort(), total: vivos.length + detectados };
+}
+
+// ── el fichero de huella ─────────────────────────────────────────────────────
+
+/** La medida de UN fichero fuente en la última corrida que lo tocó. */
+export interface MedidaDeFichero {
+  /** El commit medido, la corrida de CI de la que salió y cuándo. Sustituye al
+   *  `mtime`, que con corridas diferidas pasa a ser la fecha de la DESCARGA:
+   *  `deuda.ts:102-106` ya avisaba de que un merge o un checkout tocan mtimes
+   *  sin cambiar el contenido. */
+  sha: string;
+  run: string;
+  fecha: string;
+  /** Mutantes con veredicto (vivos + detectados). Es el coste real del módulo,
+   *  y lo que deja a `pendiente` y al tope de `local` decir un número sin abrir
+   *  los 76 MB de informes. */
+  total: number;
+  /** Huellas de los supervivientes, ordenadas para que el diff sea legible. */
+  vivos: string[];
+  /** Los que NO estaban en la medida anterior de este fichero. Vacío con
+   *  `sin_base`: sin medida previa no hay "nuevo" que valga. */
+  nuevos: string[];
+  /** Cuántos supervivientes de la medida anterior ya no están. Se cuenta y se
+   *  enseña: un superviviente nuevo que cae donde estaba uno viejo dejaría el
+   *  total igual, y ese silencio es el fallo caro. */
+  resueltos: number;
+  /** No había medida anterior de este fichero. NI "nuevo" NI "ya estaba". */
+  sin_base: boolean;
+  /** Quién pudo traerlos: las PR del rango cuyo diff selecciona este módulo.
+   *  Vacío = sin dueño en el rango, que se dice, no se descarta. */
+  duenos: string[];
+}
+
+export interface Huella {
+  _comment?: string;
+  /** Ruta del fuente (relativa a nefan-core) → su última medida. */
+  ficheros: Record<string, MedidaDeFichero>;
+}
+
+export const HUELLA_VACIA: Huella = { ficheros: {} };
+
+// ── el delta, con TRES estados ───────────────────────────────────────────────
+
+export interface DeltaDeFichero {
+  fichero: string;
+  /** `sin base` no es "todo nuevo" ni "todo viejo": es que no hay contra qué
+   *  comparar. Meter un módulo estrenado en "nuevo" inundaría al agente con
+   *  cientos de hallazgos y garantizaría que deje de leerlos; meterlo en "ya
+   *  estaba", silencio. */
+  base: "con base" | "sin base";
+  nuevos: string[];
+  yaEstaban: string[];
+  resueltos: string[];
+  total: number;
+}
+
+/** El delta de un fichero contra su medida anterior. */
+export function deltaDeFichero(
+  fichero: string,
+  ahora: { vivos: readonly string[]; total: number },
+  base: MedidaDeFichero | undefined,
+): DeltaDeFichero {
+  if (!base) {
+    return {
+      fichero,
+      base: "sin base",
+      nuevos: [],
+      yaEstaban: [],
+      resueltos: [],
+      total: ahora.total,
+    };
+  }
+  const antes = new Set(base.vivos);
+  const despues = new Set(ahora.vivos);
+  return {
+    fichero,
+    base: "con base",
+    nuevos: ahora.vivos.filter((h) => !antes.has(h)),
+    yaEstaban: ahora.vivos.filter((h) => antes.has(h)),
+    // Los resueltos se cuentan aparte de los nuevos A PROPÓSITO. Un
+    // superviviente nuevo que cae justo donde murió uno viejo deja el TOTAL
+    // idéntico; si el delta fuera una resta, esa corrida diría "sin cambios"
+    // teniendo un hallazgo dentro.
+    resueltos: base.vivos.filter((h) => !despues.has(h)),
+    total: ahora.total,
+  };
+}
+
+/** El delta de una corrida entera. Solo de los ficheros MEDIDOS: los que esta
+ *  corrida no tocó no tienen delta ninguno, ni cero ni nada. */
+export function deltaDeCorrida(
+  medidos: Readonly<Record<string, { vivos: readonly string[]; total: number }>>,
+  base: Huella,
+): DeltaDeFichero[] {
+  return Object.keys(medidos)
+    .sort()
+    .map((f) => deltaDeFichero(f, medidos[f], base.ficheros[f]));
+}
+
+/** La huella nueva: lo medido se sustituye, lo NO medido se conserva.
+ *
+ *  Conservar es lo correcto y no una comodidad: un módulo que esta corrida no
+ *  midió sigue teniendo la medida que tenía, con su fecha, y por eso `deuda`
+ *  puede avisar de que lleva N días sin tocarse. Si se cayera del fichero, el
+ *  módulo pasaría a "sin base" y su deuda desaparecería de la cola en silencio,
+ *  que es la forma exacta de este fallo. */
+export function fusiona(base: Huella, medidos: Readonly<Record<string, MedidaDeFichero>>): Huella {
+  const ficheros: Record<string, MedidaDeFichero> = { ...base.ficheros };
+  for (const [f, m] of Object.entries(medidos)) ficheros[f] = m;
+  const ordenado: Record<string, MedidaDeFichero> = {};
+  for (const f of Object.keys(ficheros).sort()) ordenado[f] = ficheros[f];
+  return { ...base, ficheros: ordenado };
+}
+
+// ── atribución: por módulo × alcance, nunca por línea ────────────────────────
+
+/** Un commit del rango sin medir, con los módulos que su diff SELECCIONA.
+ *  Quién calcula esos módulos (git + `seleccionar`) es asunto de `mutacion.ts`;
+ *  aquí llegan ya calculados para que la regla de reparto se pueda ejercer sin
+ *  fabricar commits. */
+export interface CommitDelRango {
+  sha: string;
+  asunto: string;
+  /** El `(#NNN)` del asunto, si lo lleva. 11 de los últimos 40 commits de este
+   *  repo NO lo llevan (van directos a main), y esos también tienen que poder
+   *  ser dueños. */
+  pr?: number;
+  modulos: readonly string[];
+}
+
+export interface Atribucion {
+  modulo: string;
+  candidatos: CommitDelRango[];
+  veredicto: "uno" | "varios" | "sin dueño";
+  /** Cómo se lee en un comentario: «#273», «#274 o #276», «sin dueño en el rango». */
+  etiqueta: string;
+}
+
+/** De quién es un módulo: las PR del rango cuyo diff lo selecciona.
+ *
+ *  NO se usa `git blame`. `blame` contesta «quién escribió esta línea» y la
+ *  pregunta es «qué cambio movió la suerte de este mutante», que no es la misma
+ *  — y donde más se separan es justo en el hallazgo valioso: el mutante que pasa
+ *  de `Killed` a `Survived` en código que nadie tocó, porque la PR debilitó un
+ *  test o cambió un fixture; ahí blame apunta a un commit de hace meses. Hay dos
+ *  casos más, medidos: 148 supervivientes son `BlockStatement`, cuyo
+ *  `location.start.line` es la línea de la FIRMA y no del cuerpo (reescribir el
+ *  cuerpo entero no te adjudica el hallazgo, y renombrar un parámetro sí); y con
+ *  squash, si dos PR tocan el fichero, blame da la que se mergeó DESPUÉS, no la
+ *  culpable — basta un `npm run format`.
+ *
+ *  Con dos candidatos se nombran LOS DOS. Un dueño equivocado es peor que dos
+ *  candidatos: el equivocado se descarta en diez segundos y el hallazgo se queda
+ *  sin nadie. */
+export function atribuir(modulo: string, commits: readonly CommitDelRango[]): Atribucion {
+  const candidatos = commits.filter((c) => c.modulos.includes(modulo));
+  const nombres = candidatos.map(nombreDeCommit);
+  if (candidatos.length === 0) {
+    return { modulo, candidatos, veredicto: "sin dueño", etiqueta: "sin dueño en el rango" };
+  }
+  if (candidatos.length === 1) return { modulo, candidatos, veredicto: "uno", etiqueta: nombres[0] };
+  return { modulo, candidatos, veredicto: "varios", etiqueta: nombres.join(" o ") };
+}
+
+export function nombreDeCommit(c: CommitDelRango): string {
+  return c.pr === undefined ? c.sha.slice(0, 7) : `#${c.pr}`;
+}
+
+/** El `(#NNN)` de un asunto de commit, que es como los deja el squash-merge de
+ *  GitHub. Se coge el ÚLTIMO: los asuntos de esta casa citan las issues que
+ *  cierran antes de la PR — «… (#245 #249 #246) (#273)» es la PR 273. */
+export function prDelAsunto(asunto: string): number | undefined {
+  const todos = [...asunto.matchAll(/\(#(\d+)\)/g)];
+  const ultimo = todos[todos.length - 1];
+  return ultimo ? Number(ultimo[1]) : undefined;
+}
+
+// ── el manifiesto de la corrida ──────────────────────────────────────────────
+
+/** De dónde salió la lista de módulos que se midió. Decide si el tag puede
+ *  moverse: solo una corrida que cubra el RANGO entero puede declarar medido
+ *  todo lo que hay desde el tag. */
+export type OrigenCorrida = "rango" | "todos" | "explicito";
+
+/** Lo que CI escribe en el artefacto. Lo escribe CI y no `traer` porque `traer`
+ *  solo puede escribir lo que CREÍA que iba a pasar.
+ *
+ *  Hace falta porque el código de salida no sirve de criterio: `mutate.ts` sale
+ *  con 1 si un módulo baja de su `break`, así que una medida COMPLETA que
+ *  destape una regresión deja el run en rojo — y una TRUNCADA también. Filtrar
+ *  por `conclusion == success` rechazaría justo las corridas que traen el
+ *  hallazgo. */
+export interface Corrida {
+  sha: string;
+  run_id: string;
+  origen: OrigenCorrida;
+  modulos_pedidos: string[];
+  modulos_con_informe: string[];
+  fecha: string;
+}
+
+export interface VeredictoCorrida {
+  completa: boolean;
+  mueveTag: boolean;
+  porque: string;
+}
+
+export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
+  const faltan = c.modulos_pedidos.filter((id) => !c.modulos_con_informe.includes(id));
+  if (faltan.length > 0) {
+    return {
+      completa: false,
+      mueveTag: false,
+      porque: `la corrida pidió ${c.modulos_pedidos.length} módulos y ${faltan.length} no dejaron informe (${faltan.join(", ")})`,
+    };
+  }
+  if (c.origen === "explicito") {
+    return {
+      completa: true,
+      mueveTag: false,
+      porque:
+        "midió una lista explícita de módulos, no el rango: mover el tag declararía medido todo lo " +
+        "que hay desde la corrida anterior, y no lo está",
+    };
+  }
+  return {
+    completa: true,
+    mueveTag: true,
+    porque: `midió ${c.origen === "todos" ? "todos los módulos del plan" : "todo lo que el rango seleccionaba"} y todos dejaron informe`,
+  };
+}
+
+/** Lo que hay en `reports/mutation/` después de bajar el artefacto, contra lo
+ *  que el manifiesto dice que debería haber.
+ *
+ *  Los dos lados importan. Que FALTE un informe declarado es una corrida
+ *  truncada. Que SOBRE uno es peor y más silencioso: un informe de la semana
+ *  pasada que se quedó en el directorio se mezcla con los recién bajados y
+ *  `npm run deuda` presenta las dos medidas como si fueran la misma foto. */
+export function verificaDescarga(c: Corrida, presentes: readonly string[]): string[] {
+  const errores: string[] = [];
+  const faltan = c.modulos_pedidos.filter((id) => !presentes.includes(id));
+  if (faltan.length > 0) {
+    errores.push(
+      `el manifiesto declara ${faltan.length} módulo(s) que no vienen en el artefacto: ${faltan.join(", ")}`,
+    );
+  }
+  const sobran = presentes.filter((id) => !c.modulos_con_informe.includes(id));
+  if (sobran.length > 0) {
+    errores.push(
+      `hay ${sobran.length} informe(s) que esta corrida no generó: ${sobran.join(", ")} — ` +
+        `son de una medida anterior y mezclarlos daría una foto que nunca existió`,
+    );
+  }
+  return errores;
+}
+
+// ── el tope de la medida local ───────────────────────────────────────────────
+
+export type PermisoLocal = { ok: true; coste: number } | { ok: false; porque: string };
+
+/** Si esto se puede medir en la máquina de quien está programando. `que` es lo
+ *  que se va a medir: un id de módulo, o la corrida entera.
+ *
+ *  LO GUARDA `mutate.ts`, NO SOLO EL VERBO `local`, y esa diferencia se pagó el
+ *  2026-08-25 en la máquina del usuario: un backtick sin escapar dentro de un
+ *  `echo` —`echo "(sin `npm run mutate` en …)"`, que en bash es SUSTITUCIÓN DE
+ *  COMANDOS— lanzó `npm run mutate` sin argumentos. Los 20 módulos, concurrencia
+ *  8, load average 14. El tope existía y no sirvió de nada, porque vivía en un
+ *  verbo que aquel accidente no pasó por encima: lo esquivó por debajo. Un tope
+ *  que solo protege el camino que alguien recuerda usar no es un tope.
+ *
+ *  El coste está MUY mal repartido y por eso el número no es política sino
+ *  aritmética: `blueprint-plan` son 41 mutantes y `plugins-dsl` 1.362.
+ *  Prohibirlo todo curaba con una regla un bug que ya está arreglado —la
+ *  saturación del 2026-08-23 fue `concurrency: 10` × 15 procesos de
+ *  `node --test`— y dejaba a CLAUDE.md pidiéndole al ingeniero «los
+ *  supervivientes del módulo que tocó, muertos» sin darle con qué mirarlo.
+ *
+ *  Sin coste conocido NO se autoriza. Un módulo estrenado podría ser
+ *  `plugins-dsl`, y "no lo sé, adelante" es justo el error hacia arriba que este
+ *  tope existe para hacer imposible: se mide una vez en CI y a partir de ahí su
+ *  coste está en la huella.
+ */
+export function permisoLocal(
+  que: string,
+  coste: number | undefined,
+  tope: number,
+  enCI = false,
+): PermisoLocal {
+  // En el runner no hay nadie delante y la corrida completa es justo lo que se
+  // le pide: el tope es una propiedad de la MÁQUINA, no del repositorio.
+  if (enCI) return { ok: true, coste: coste ?? 0 };
+  if (coste === undefined) {
+    return {
+      ok: false,
+      porque:
+        `no hay medida previa de ${que}, así que no se sabe cuánto cuesta y podría ser de los caros. ` +
+        `Pídelo: npm run mutacion -- pendiente`,
+    };
+  }
+  if (coste > tope) {
+    return {
+      ok: false,
+      porque:
+        `${que} son ${coste} mutantes y el tope local es ${tope}: aquí hay alguien trabajando. ` +
+        `Pídelo (npm run mutacion -- pendiente) y sigue sin esperarlo — una medida pendiente no bloquea nada`,
+    };
+  }
+  return { ok: true, coste };
+}
+
+// ── lo que `npm run deuda` dice de cada fichero ──────────────────────────────
+
+/** La coletilla de un item de la cola: de dónde salió esta medida y qué hay de
+ *  nuevo en ella. Los TRES estados, otra vez, porque es donde se leen. */
+export function anotacionDeFichero(vivosAhora: readonly string[], base: MedidaDeFichero | undefined): string {
+  if (!base) return "sin base de comparación — nadie lo había medido antes";
+  const nuevos = new Set(base.nuevos);
+  const conocidos = new Set(base.vivos);
+  const sigueNuevo = vivosAhora.filter((h) => nuevos.has(h)).length;
+  const desconocidos = vivosAhora.filter((h) => !conocidos.has(h)).length;
+  const partes: string[] = [];
+  if (base.sin_base) partes.push("sin base de comparación — primera medida");
+  else if (sigueNuevo > 0) {
+    partes.push(`${sigueNuevo} NUEVOS · ${base.duenos.length > 0 ? base.duenos.join(" o ") : "sin dueño en el rango"}`);
+  } else partes.push("ya estaban");
+  if (base.resueltos > 0) partes.push(`${base.resueltos} resueltos`);
+  // Un superviviente que no está NI en los vivos NI en los nuevos de la última
+  // medida solo puede venir de una corrida local posterior. Decirlo evita leer
+  // la atribución de la huella como si cubriera también a estos.
+  if (desconocidos > 0) partes.push(`${desconocidos} sin atribuir (medidos después en local)`);
+  return partes.join(" · ");
+}
+
+/** Qué hacer con un módulo que la cola señala. Sustituye a los cinco sitios que
+ *  mandaban `npm run mutate`, que es justo lo que la política de esta casa
+ *  prohíbe correr en la máquina de quien programa. */
+export function queHacerCon(id: string, coste: number | undefined, tope: number): string {
+  const permiso = permisoLocal(id, coste, tope);
+  return permiso.ok
+    ? `npm run mutacion -- local ${id}  (${permiso.coste} mutantes)`
+    : `npm run mutacion -- pendiente  (${coste === undefined ? "sin medida previa" : `${coste} mutantes, tope local ${tope}`})`;
+}
+
+// ── frescura y antigüedad, sin `mtime` ───────────────────────────────────────
+
+/** Los módulos cuya medida puede estar describiendo código que ya no existe.
+ *
+ *  La lista la calcula `seleccionar()` en `deuda.ts` —«el diff desde el tag
+ *  selecciona este módulo»—, que es la misma función que decide qué correr y ya
+ *  sabe si un cambio puede alterar la suerte de un mutante. Es estrictamente
+ *  mejor que el `mtime`, que el propio código admitía que miente («un merge o un
+ *  checkout tocan mtimes sin cambiar el contenido») y que con corridas diferidas
+ *  pasa a ser la fecha de la descarga. */
+export function avisoDeFrescura(desactualizados: readonly string[]): string | undefined {
+  if (desactualizados.length === 0) return undefined;
+  const muestra = desactualizados.slice(0, 3).join(", ");
+  const resto = desactualizados.length > 3 ? ` y ${desactualizados.length - 3} más` : "";
+  return (
+    `posiblemente obsoleta en ${desactualizados.length} módulo(s) — el diff desde mutacion-ultima los ` +
+    `selecciona: ${muestra}${resto}`
+  );
+}
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/** El aviso que sustituye al cron. Sin nocturna, la única forma de que un módulo
+ *  se quede años sin medir es que nadie lo mire; esto lo mira.
+ *
+ *  El punto ciego que el YAML documentaba —el selector no ve lo que un test lee
+ *  en runtime— se estrecha mucho con el rango desde el tag (coge TODO lo
+ *  mergeado, no solo lo que alguien pidió), pero no se cierra del todo, y este
+ *  aviso es lo que impide que esa ceguera sea silenciosa. */
+export function avisoDeAntiguedad(
+  medidas: readonly { id: string; fecha?: string }[],
+  ahoraMs: number,
+  dias: number,
+): string | undefined {
+  const viejos: { id: string; dias: number }[] = [];
+  const nunca: string[] = [];
+  for (const m of medidas) {
+    if (m.fecha === undefined) {
+      nunca.push(m.id);
+      continue;
+    }
+    const t = Date.parse(m.fecha);
+    if (Number.isNaN(t)) {
+      nunca.push(m.id);
+      continue;
+    }
+    const d = Math.floor((ahoraMs - t) / DIA_MS);
+    if (d > dias) viejos.push({ id: m.id, dias: d });
+  }
+  if (viejos.length === 0 && nunca.length === 0) return undefined;
+  const partes: string[] = [];
+  if (nunca.length > 0) partes.push(`${nunca.join(", ")} sin medir NUNCA`);
+  viejos.sort((a, b) => b.dias - a.dias);
+  const [peor, ...resto] = viejos;
+  if (peor) {
+    partes.push(
+      `${peor.id} lleva ${peor.dias} días sin medida` +
+        (resto.length > 0 ? ` · ${resto.length} módulo(s) más de ${dias} días` : ""),
+    );
+  }
+  return `${partes.join(" · ")} — pídelo: npm run mutacion -- pendiente`;
+}
+
+// ── el muro de `npm run mutate` ──────────────────────────────────────────────
+
+export type Muro = { ok: true } | { ok: false; mensaje: string };
+
+/** Si esta máquina puede correr `npm run mutate` en absoluto.
+ *
+ *  Es la decisión más nueva de esta tanda y era la única sin candado, en un
+ *  trabajo cuya tesis es justamente que un candado sin candado no vale. Vive
+ *  aquí —pura, sobre el VALOR de la variable y no sobre `process.env`— para que
+ *  un test la ejerza sin arrancar nada: `scripts/mutate.ts` llama a `main()` al
+ *  cargarse, así que un test que lo importara lanzaría una corrida.
+ *
+ *  La comparación es contra `"si"` EXACTO y no contra "hay algo": un
+ *  `NEFAN_MUTATE_AUTORIZADO=0` heredado del entorno abriría el muro de par en
+ *  par, y ese es precisamente el modo de fallo silencioso que se quiere evitar. */
+export function muroDeMutacion(autorizado: string | undefined): Muro {
+  if (autorizado === "si") return { ok: true };
+  return {
+    ok: false,
+    mensaje: [
+      "",
+      "  `npm run mutate` no se corre aquí. NO BUSQUES CÓMO SALTÁRTELO.",
+      "",
+      "  La mutación se PIDE. Es de minutos, satura la máquina de quien está",
+      "  delante, y una corrida que nadie ha autorizado no tiene dueño cuando",
+      "  aparece un superviviente: eso es el trabajo que luego no hace nadie.",
+      "",
+      "  Lo que SÍ es tuyo:",
+      "",
+      "    npm run mutacion -- pendiente     qué falta por medir, y cuánto cuesta",
+      "    npm run mutacion -- local <id>    UN módulo, si cabe en el tope",
+      "",
+      "  Si tu módulo no cabe en el tope, PÍDELA: dilo en tu informe y SIGUE",
+      "  TRABAJANDO. No la esperes — una petición pendiente no bloquea ningún",
+      "  merge, y el resultado vuelve solo al sitio donde se causó.",
+      "",
+      "  Más barato y más concluyente que medir: prueba en negativo el candado",
+      "  que añadas. Rómpelo a propósito, míralo rojo, revierte y cuéntalo.",
+      "",
+    ].join("\n"),
+  };
+}
+
+// ── idempotencia de `repartir` ───────────────────────────────────────────────
+
+export type EstadoDeReparto =
+  | { tipo: "pendiente" }
+  | { tipo: "ya repartida" }
+  | { tipo: "a medio repartir"; repartidos: number; total: number };
+
+/** ¿Está esta corrida ya repartida en esa huella?
+ *
+ *  Vive aquí, y no dentro de `mutacion.ts`, porque este verbo YA HA PERDIDO
+ *  DATOS DOS VECES y las dos se arreglaron con un guardia que nadie ejercía:
+ *
+ *    1. Correr `repartir` dos veces antes de commitear calculaba el delta
+ *       contra la huella que la primera pasada acababa de escribir, y publicaba
+ *       un comentario que decía «ya estaban» de dos supervivientes NUEVOS.
+ *    2. Ya commiteada la huella, una tercera pasada la reescribía dejando
+ *       `nuevos` y `duenos` vacíos, y `npm run deuda` dejaba de decir de quién
+ *       era cada superviviente sin avisar de que lo había perdido.
+ *
+ *  Un bug que aparece dos veces en el mismo verbo merece un candado, no un
+ *  parche. La regla es de dos structs planos: no hace falta git para ejercerla,
+ *  y el motivo que se escribió para no probarla («sería un test que en CI no
+ *  comprueba nada») no se sostenía.
+ *
+ *  El estado intermedio NO se colapsa con ninguno de los otros dos: media
+ *  huella con esta corrida y media sin ella es una huella incoherente, y seguir
+ *  adelante la consolidaría. */
+export function estadoDeReparto(
+  runId: string,
+  ficheros: readonly string[],
+  huella: Huella,
+): EstadoDeReparto {
+  const repartidos = ficheros.filter((f) => huella.ficheros[f]?.run === runId).length;
+  if (repartidos === 0) return { tipo: "pendiente" };
+  if (repartidos === ficheros.length) return { tipo: "ya repartida" };
+  return { tipo: "a medio repartir", repartidos, total: ficheros.length };
+}
+
+/** La marca invisible que `repartir` mete en cada comentario para reconocer los
+ *  suyos. Un `<!-- … -->` no se ve al leer la PR y no depende de la prosa. */
+export function marcaDeCorrida(runId: string): string {
+  return `<!-- nefan-mutacion:run=${runId} -->`;
+}
+
+/** ¿Ya hay un comentario de esta corrida en esa PR?
+ *
+ *  Cierra la ventana que produjo los dos comentarios contradictorios de #273: el
+ *  guardia de la huella solo está armado cuando la huella está COMMITEADA, y
+ *  entre `repartir --comentar` y el `git commit` cabe otro `repartir --comentar`.
+ *  Aquí la idempotencia se comprueba donde ocurre el efecto —en la PR— y no en
+ *  un estado local que aún no se ha guardado.
+ *
+ *  Se acepta también la cabecera en prosa (`corrida [<id>]`) para reconocer los
+ *  comentarios publicados antes de que existiera la marca. */
+export function yaComentada(cuerpos: readonly string[], runId: string): boolean {
+  const marca = marcaDeCorrida(runId);
+  return cuerpos.some((c) => c.includes(marca) || c.includes(`corrida [${runId}]`));
+}

@@ -55,7 +55,10 @@ const ctx = (
           ? { tipo: "exento", porque: "solo declara tipos" }
           : { tipo: "huerfano" },
   existe: (f) => f !== "src/scene/borrado.ts",
-  leen: (nombre) => (nombre === "arch-rules.json" ? [...lectores] : []),
+  // Los dos ficheros de `data/contract/` que el selector consulta por LECTOR y
+  // no por cajón: las fronteras y la huella de la última corrida.
+  leen: (nombre) =>
+    nombre === "arch-rules.json" || nombre === "mutacion-huella.json" ? [...lectores] : [],
   archRules: () => archRules,
 });
 
@@ -72,6 +75,16 @@ describe("selector · en qué cajón cae cada fichero", () => {
     assert.equal(clasifica("data/contract/mutation-targets.json"), "tooling");
     assert.equal(clasifica("stryker.config.json"), "tooling");
     assert.equal(clasifica("../qa/run.mjs"), "ajeno");
+  });
+
+  it("la huella de la última corrida es SALIDA, no dato ni instrumento", () => {
+    // La distinción vale la corrida completa. Sin ella, `data/contract/
+    // mutacion-huella.json` cae en "dato" —es un .json del paquete— y de ahí a
+    // `todos: true`, con una explicación razonable que nadie leería como un
+    // bug. Y sería PERMANENTE, no ocasional: la huella cambia en cada corrida y
+    // la frescura de `deuda` mira el diff desde el tag, así que a partir de la
+    // primera medida los 20 módulos saldrían obsoletos para siempre.
+    assert.equal(clasifica("data/contract/mutacion-huella.json"), "salida");
   });
 
   it("un .ts que no es fuente ni test cuenta como dato, no como fuente", () => {
@@ -142,6 +155,26 @@ describe("selector · ante la duda, de MÁS, y diciéndolo", () => {
     // Borrar un fichero cambia a quien lo importaba, y del borrado no queda
     // grafo que consultar.
     disparaTodo("src/scene/borrado.ts", /ya no está en el árbol/);
+  });
+
+  it("la huella NO fuerza la corrida completa, y dice sobre qué se apoya", () => {
+    // El par negativo del test de arriba: el MISMO cajón de ficheros (un .json
+    // dentro del paquete) y respuestas opuestas, porque uno lo leen los tests
+    // en runtime y el otro es la salida de la medida. Si la excepción
+    // desapareciera, este test se pondría rojo con `todos: true`.
+    const s = sel("data/contract/mutacion-huella.json");
+    assert.equal(s.todos, false);
+    assert.deepEqual(s.ids, []);
+    assert.match(s.efectos[0].porque, /SALIDA de la medida/);
+    assert.match(s.efectos[0].porque, /no la lee ninguna batería/);
+  });
+
+  it("…pero si una batería LLEGARA a leerla, la seleccionaría sola", () => {
+    // Que no sea instrumento se comprueba, no se declara: la excepción no dice
+    // "esto es inocuo", dice "no lo lee nadie", y quien lo lea la fuerza igual.
+    const s = seleccionar(ctx(undefined, ["alfa"]), ["data/contract/mutacion-huella.json"]);
+    assert.deepEqual(s.ids, ["alfa"]);
+    assert.equal(s.todos, false);
   });
 
   it("un solo fichero dudoso arrastra a todo el diff", () => {

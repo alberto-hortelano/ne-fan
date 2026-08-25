@@ -91,10 +91,15 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
   // Datos sintéticos por el mismo motivo que arriba: `reports/` no se versiona,
   // así que contra los informes reales estos tests pasarían en verde sobre una
   // lista vacía en cualquier clon limpio y en CI.
+  let serie = 0;
+  // Cada mutante sintético necesita una ubicación COMPLETA: la huella son siete
+  // componentes y con la línea sola dos mutantes de la misma línea serían el
+  // mismo. `serie` los separa igual que las columnas los separan de verdad.
   const mutante = (status: string, mutatorName = "ConditionalExpression") => ({
     status,
     mutatorName,
-    location: { start: { line: 1 } },
+    replacement: `r${(serie += 1)}`,
+    location: { start: { line: 1, column: serie }, end: { line: 1, column: serie + 2 } },
   });
   const informe = (id: string, file: string, vivos: number, muertos: number): InformeModulo => ({
     id,
@@ -159,7 +164,59 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
     ]);
     assert.match(aviso ?? "", /^sin medir 2 de 3 módulos/);
     assert.match(aviso ?? "", /3 ficheros sin dato/);
-    assert.match(aviso ?? "", /npm run mutate -- world-map store/);
+    assert.match(aviso ?? "", /world-map/);
+    assert.match(aviso ?? "", /store/);
+  });
+
+  it("el aviso NO manda `npm run mutate`: es lo que no se puede correr aquí", () => {
+    // La herramienta contradecía a la doctrina en cinco sitios. Éste era el más
+    // caro: la cola de trabajo pidiendo la corrida entera en la máquina de
+    // quien está programando.
+    const sinMedir = [{ id: "plugins-dsl", ficheros: ["src/plugins/dsl/paths.ts"] }];
+    assert.doesNotMatch(avisoSinDatos(sinMedir) ?? "", /npm run mutate\b/);
+    assert.doesNotMatch(cabeceraDe([{ titulo: "Mutación", fuente: "x", aviso: "sin medir", items: [] }]), /npm run mutate\b/);
+  });
+
+  it("cada módulo sin medir lleva SU comando, no uno genérico", () => {
+    // Un módulo barato se mide aquí; uno caro se pide. El aviso lo dice por
+    // módulo porque la respuesta no es la misma para todos.
+    const aviso = avisoSinDatos(
+      [{ id: "caro", ficheros: ["src/a.ts"] }],
+      (id) => `npm run mutacion -- pendiente (${id} no cabe)`,
+    );
+    assert.match(aviso ?? "", /caro no cabe/);
+  });
+
+  it("un módulo que solo tiene HUELLA está medido: no marca la cola parcial", () => {
+    // La huella commiteada sobrevive a un clon; `reports/` no. Contar como "sin
+    // medir" a un módulo con huella dejaría la cola en PARCIAL permanente en
+    // cualquier máquina recién clonada, y el marcador dejaría de significar
+    // nada justo el día que un módulo se quede de verdad sin correr.
+    const soloHuella: InformeModulo = {
+      id: "b",
+      ficheros: ["src/b.ts"],
+      base: {
+        "src/b.ts": {
+          sha: "abc1234",
+          run: "1",
+          fecha: "2026-08-25T00:00:00.000Z",
+          total: 10,
+          vivos: ["0123456789abcdef"],
+          nuevos: [],
+          resueltos: 0,
+          sin_base: false,
+          duenos: ["#273"],
+        },
+      },
+    };
+    assert.equal(avisoSinDatos([informe("a", "src/a.ts", 1, 1), soloHuella]), undefined);
+    const items = itemsDeMutacion([soloHuella]);
+    assert.deepEqual(
+      items.map((i) => i.donde),
+      ["src/b.ts"],
+      "y su deuda sí sale en la cola",
+    );
+    assert.match(items[0].que, /de la huella/);
   });
 
   it("con todos los módulos medidos no hay aviso", () => {
@@ -171,7 +228,7 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
       { id: "a", ficheros: ["src/a.ts"] },
       { id: "b", ficheros: ["src/b.ts"] },
     ]);
-    assert.match(aviso ?? "", /^sin medir — corre `npm run mutate` \(2 módulos, 2 ficheros/);
+    assert.match(aviso ?? "", /^sin medir — 2 módulos, 2 ficheros configurados/);
   });
 
   it("una corrida PARCIAL de ayer no se lee como la foto completa", () => {
@@ -188,7 +245,8 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
     assert.equal(itemsDeMutacion(informes).length, 1, "solo aporta items el módulo que sí se midió");
     const aviso = avisoSinDatos(informes);
     assert.match(aviso ?? "", /sin medir 2 de 3 módulos/);
-    assert.match(aviso ?? "", /npm run mutate -- no-tocado tampoco/);
+    assert.match(aviso ?? "", /no-tocado/);
+    assert.match(aviso ?? "", /tampoco/);
   });
 
   it("cuenta los ficheros que NO muta nadie, aunque todo lo medible esté medido", () => {
@@ -258,7 +316,7 @@ describe("cola de deuda · el titular no puede aparentar completitud", () => {
     const out = cabeceraDe([
       bloque("Fronteras", 27),
       bloque("Complejidad", 0, "sin medir — corre `npm run coverage`"),
-      bloque("Mutación", 0, "sin medir — corre `npm run mutate`"),
+      bloque("Mutación", 0, "sin medir — npm run mutacion -- pendiente"),
     ]);
     assert.match(out, /PARCIAL/);
     assert.match(out, /1 de 3 fuentes/);

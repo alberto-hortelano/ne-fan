@@ -17,13 +17,20 @@
  *  worker de Stryker gasta un proceso de test a la vez y el total simultáneo
  *  vuelve a ser ≈ la concurrencia que se pida aquí.
  *
- *  Uso:
- *    npm run mutate -- --cambiado        # SOLO lo que el diff puede haber roto
- *    npm run mutate                      # todos los módulos del plan
- *    npm run mutate -- world-map         # solo esos (por id)
- *    npm run mutate -- --ids             # los ids en JSON (matriz de CI)
+ *  ESTE SCRIPT NO SE INVOCA A MANO. Lo llaman el runner de CI y
+ *  `npm run mutacion -- local <id>`, que son los dos sitios donde una corrida
+ *  tiene dueño; a pelo se niega (`muroDeAutorizacion`). Lo tuyo es:
  *
- *    NEFAN_MUTATE_CONCURRENCY=15 npm run mutate   # la máquina es toda tuya
+ *    npm run mutacion -- pendiente       qué falta por medir, y cuánto cuesta
+ *    npm run mutacion -- local <id>      UN módulo, si cabe en el tope local
+ *
+ *  Lo único que sigue funcionando sin autorizar es `--ids`, que son metadatos:
+ *
+ *    npm run mutate -- --ids             los ids del plan en JSON
+ *
+ *  Con NEFAN_MUTATE_AUTORIZADO=si (lo pone CI, y `local` para su módulo) admite
+ *  además `--cambiado`, `--desde <ref>`, `--rango <a>..<b>` y una lista de ids.
+ *  NEFAN_MUTATE_CONCURRENCY fija cuántos mutantes a la vez.
  *
  *  `--cambiado` es la vía normal de trabajo y delega en `scripts/afectado.ts`:
  *  la corrida completa deja de ser lo que se corre por costumbre y pasa a ser
@@ -38,11 +45,13 @@
  *  CI esté completo. El código de salida es 1 si alguno falló.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { contextoDe, ficherosCambiados, seleccionar } from "./afectado.js";
+import { costeDe, leerHuella } from "./mutacion.js";
+import { muroDeMutacion, permisoLocal } from "./mutacion-huella.js";
 import {
   concurrenciaDe,
   configDe,
@@ -95,10 +104,21 @@ function corre(plan: PlanMutacion, modulo: ModuloMutacion, concurrencia: number)
   rmSync(informe, { force: true });
 
   const t0 = Date.now();
-  const r = spawnSync(STRYKER, ["run", relative(coreRoot, cfg)], { cwd: coreRoot, stdio: "inherit" });
-  const segundos = (Date.now() - t0) / 1000;
-  const { total, vivos, score } = resumenDelInforme(modulo.id);
-  return { id: modulo.id, ok: r.status === 0, segundos, total, vivos, score };
+  try {
+    const r = spawnSync(STRYKER, ["run", relative(coreRoot, cfg)], { cwd: coreRoot, stdio: "inherit" });
+    const segundos = (Date.now() - t0) / 1000;
+    const { total, vivos, score } = resumenDelInforme(modulo.id);
+    return { id: modulo.id, ok: r.status === 0, segundos, total, vivos, score };
+  } finally {
+    // EL CONFIG NO SOBREVIVE A SU CORRIDA. Un config generado es un `stryker
+    // run` completo que no pasa ni por el muro ni por el tope: lleva sus
+    // objetivos y su `concurrency` CONGELADOS dentro. Los 19 que dejó la
+    // corrida accidental del 2026-08-25 llevaban `concurrency: 8` — el número
+    // exacto que saturó la máquina— esperando a que alguien nombrara la ruta.
+    // Se regenera desde el plan en cada corrida, así que no se pierde nada:
+    // `configDe` es determinista y tiene candado.
+    rmSync(cfg, { force: true });
+  }
 }
 
 /** Qué módulos se van a correr, y por qué. Con `--cambiado` la respuesta la da
@@ -132,15 +152,73 @@ function aCorrer(plan: PlanMutacion, argv: readonly string[]): ModuloMutacion[] 
   return ids.length > 0 ? ids.map((id) => moduloPorId(plan, id)) : plan.modulos;
 }
 
+/** EL MURO. `npm run mutate` no lo corre un agente, y por eso este script se
+ *  niega en vez de fiarse de que alguien lo recuerde.
+ *
+ *  El 2026-08-25 la persona que usa esta máquina preguntó dos veces qué se le
+ *  estaba comiendo el procesador. Las dos veces era esto, y la segunda fue el
+ *  ingeniero que estaba construyendo el sistema para que dejara de pasar. Una
+ *  regla escrita en `ingeniero.md` se olvida a mitad de contexto; un proceso
+ *  que no arranca, no.
+ *
+ *  Las dos vías legítimas la traen puesta: `npm run mutacion -- local <id>`
+ *  (un módulo, con tope y dos núcleos) y el runner de GitHub, donde no hay
+ *  nadie delante. */
+function muroDeAutorizacion(): void {
+  // La decisión vive en `mutacion-huella.ts`, pura y con candado: aquí solo se
+  // le da el valor del entorno y se actúa. Era la única decisión nueva de la
+  // tanda sin batería que la mirase.
+  const muro = muroDeMutacion(process.env.NEFAN_MUTATE_AUTORIZADO);
+  if (muro.ok) return;
+  console.error(muro.mensaje);
+  process.exit(1);
+}
+
 function main(): void {
   const argv = process.argv.slice(2);
   const plan = leerPlan();
+  // `--ids` va ANTES del muro a propósito: es un `console.log` de los ids del
+  // plan, cero CPU y cero mutantes. Bloquearlo no protegía nada y el mensaje
+  // del muro —"NO BUSQUES CÓMO SALTÁRTELO"— sobre una lista de metadatos solo
+  // enseña a ignorar el muro.
   if (argv.includes("--ids")) {
     console.log(JSON.stringify(plan.modulos.map((m) => m.id)));
     return;
   }
+  muroDeAutorizacion();
   const modulos = aCorrer(plan, argv);
   if (modulos.length === 0) return;
+
+  // Barrido de los configs que dejó una corrida anterior que no llegó a su
+  // `finally` (un Ctrl+C, un OOM, un SIGKILL como el que paró la corrida
+  // accidental). Cada uno es un bypass esperando a que alguien lo nombre.
+  if (existsSync(DIR_CONFIGS)) {
+    for (const f of readdirSync(DIR_CONFIGS)) {
+      if (f.endsWith(".config.json")) rmSync(join(DIR_CONFIGS, f), { force: true });
+    }
+  }
+
+  // EL TOPE VIVE AQUÍ, no solo en `npm run mutacion -- local`. Un tope que solo
+  // protege el camino que alguien recuerda usar no es un tope: el 2026-08-25 un
+  // backtick sin escapar dentro de un `echo` —sustitución de comandos— lanzó
+  // este script sin argumentos, o sea los 20 módulos a concurrencia 8, en la
+  // máquina de la persona que estaba trabajando. No esquivó el tope por encima:
+  // pasó por debajo, por la puerta que no tenía cerradura.
+  //
+  // En CI no aplica: allí no hay nadie delante y la corrida completa es lo que
+  // se le pide (GitHub Actions exporta CI=true).
+  const huella = leerHuella();
+  const coste = modulos.reduce<number | undefined>((n, m) => {
+    const c = costeDe(plan, huella, m.id);
+    return n === undefined || c === undefined ? undefined : n + c;
+  }, 0);
+  const que = modulos.length === 1 ? `"${modulos[0].id}"` : `estos ${modulos.length} módulos`;
+  const permiso = permisoLocal(que, coste, plan.tope_local, Boolean(process.env.CI));
+  if (!permiso.ok) {
+    console.error(`\nNO se mide aquí: ${permiso.porque}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   const nucleos = availableParallelism();
   const concurrencia = concurrenciaDe(nucleos, process.env.NEFAN_MUTATE_CONCURRENCY);
@@ -183,4 +261,6 @@ function main(): void {
   }
 }
 
-main();
+// Importado (candado) no ejecuta nada; solo al invocarlo como comando. Sin
+// esto, un test que importara este fichero lanzaría una corrida de mutación.
+if (process.argv[1]?.endsWith("mutate.ts")) main();
