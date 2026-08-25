@@ -393,6 +393,8 @@ function repartir(argv: readonly string[]): void {
   const base = huellaEnHead();
   const commits = commitsDelRango(plan, tag, corrida.sha);
 
+  if (yaRepartida(corrida, base)) return;
+
   const repartos: Reparto[] = [];
   const medidos: Record<string, MedidaDeFichero> = {};
 
@@ -454,6 +456,35 @@ function repartir(argv: readonly string[]): void {
         `Se cuentan y se enseñan; no se descartan.`,
     );
   }
+}
+
+/** ¿Está esta corrida ya repartida y commiteada?
+ *
+ *  Lo destapó la primera pasada real, y perdía información sin decirlo:
+ *  commiteada la huella, un segundo `repartir` de la MISMA corrida calcula el
+ *  delta contra sí misma —correctamente, cero— y reescribe la huella dejando
+ *  `nuevos` y `duenos` vacíos. El resultado es que `npm run deuda` deja de
+ *  enseñar «2 NUEVOS · #273» y nadie se entera de que el dato existió.
+ *
+ *  Con la corrida a medio repartir (unos ficheros commiteados y otros no) se
+ *  lanza: eso es una huella incoherente, y seguir adelante la consolidaría. */
+function yaRepartida(corrida: Corrida, base: Huella): boolean {
+  const ficheros = corrida.modulos_con_informe.flatMap((id) => Object.keys(leerInforme(id).files));
+  const repartidos = ficheros.filter((f) => base.ficheros[f]?.run === corrida.run_id);
+  if (repartidos.length === 0) return false;
+  if (repartidos.length < ficheros.length) {
+    throw new Error(
+      `la corrida ${corrida.run_id} está a medio repartir en la huella de HEAD: ` +
+        `${repartidos.length} de ${ficheros.length} ficheros ya la llevan. Arregla la huella ` +
+        `(git checkout ${RUTA_HUELLA} y vuelve a repartir) antes de seguir.`,
+    );
+  }
+  console.log(
+    `\nLa corrida ${corrida.run_id} ya está repartida y commiteada: no se toca la huella.\n` +
+      `  Volver a repartirla borraría los NUEVOS y sus dueños, que es justo lo que hay que leer.\n` +
+      `  La cola viva sigue en: npm run deuda\n`,
+  );
+  return true;
 }
 
 /** Los supervivientes NUEVOS, con su sitio exacto. La huella sola no vale para
