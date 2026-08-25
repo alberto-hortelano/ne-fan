@@ -108,3 +108,33 @@ viven en `volume-metrics.test.ts` y `fps-ambience.test.ts`, cuyo sujeto reescrib
 > especies conviviendo— **y un solo camino desde el esquema hasta la huella colisionable,
 > compartido por cliente, bridge y pre-generación**. `density`, un significado por campo,
 > candado. Verificable jugando.
+
+---
+
+## Segundo addendum del coordinador, tras el plan (2026-08-25)
+
+El plan está escrito y **corrige dos cosas de la crítica** que cambian el orden del trabajo: los
+snapshots pre-generados **no están commiteados** (`.gitignore:81`), y limpiarlos es el **primer**
+paso y no el último — porque al quitar el filtro `scattered` **y** `MAX_ENTITY_VOLUMES` a la vez,
+sus 1.049 y 480 entities estampadas derivarían un volumen cada una.
+
+**Una decisión más, que es mía y no del plan:**
+
+El plan mide una **regresión de contenido** y la manda entera al usuario: los 8 tiles exteriores
+de `alta_fantasia` no declaran `scatter_zones`, así que pasan de 48 postes a ~2 árboles y quedan
+casi pelados hasta que se regenere el mundo con el motor. Eso es correcto como aviso, pero es
+media respuesta: **la doctrina de esta tanda es que la masa visual no se pierde, cambia de
+canal**, y si al ejecutarla la masa se pierde de verdad, la doctrina era prosa.
+
+Antes de dar la tanda por hecha, el ingeniero tiene que responder a esto con una medida:
+
+1. **¿Se puede migrar `vegetation_zones` → `scatter_zones` en el script determinista, sin
+   inventar contenido?** La zona ya está declarada; lo que hay que ver es si esos tiles traen ya
+   un `scatter_generator` utilizable. **Si lo traen, hazlo**: es cambiar un campo de sitio, no
+   crear mundo. **Si no lo traen, NO lo inventes** — anótalo y sigue.
+2. **En cualquiera de los dos casos, capturas antes y después** de uno de esos 8 tiles, en
+   `qa/capturas/`. El usuario está fuera y esta es exactamente la decisión que va a querer tomar
+   mirando, no leyendo. Que tenga las dos imágenes esperándole.
+
+No es un freno: la tanda sigue y se entrega. Es que la pregunta llegue respondida o, como
+mínimo, fotografiada.
