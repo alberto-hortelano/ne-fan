@@ -32,9 +32,6 @@ export { AiClient } from "./narrative/ai-client.js";
 export type {
   AiClientOptions,
   SceneGenerationResult,
-  SkinGenerationResult,
-  SpriteGenerationResult,
-  SpriteAngle,
 } from "./narrative/ai-client.js";
 export { dispatchConsequences } from "./narrative/consequence-handler.js";
 export type {

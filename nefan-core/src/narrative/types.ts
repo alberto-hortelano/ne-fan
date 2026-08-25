@@ -133,8 +133,6 @@ export type Consequence =
       description: string;
       position_hint?: string;
       name?: string;
-      texture_hash?: string;
-      model_hash?: string;
       character_type?: string;
       /** Rol de comportamiento ambiental (peasant | guard | villager |
        *  merchant). Fluye a entity.data y lo consume el NpcBehaviorSystem;

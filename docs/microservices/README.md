@@ -15,7 +15,7 @@ las decisiones en [decisions.md](decisions.md).
 | S1 | **game-gateway** | Sesiones en vivo: WS con clientes, routing, `GameSimulation` (hot loop) y `SceneGenQueue` in-process | WS | 9877 (9877) | `contracts/gateway.ts` |
 | S2 | **world-state** | Fuente de verdad del mundo: `NarrativeState` (único escritor de saves), `WorldMapManager`, `NpcDirector`, plugins runtime | HTTP | 9878 (9878, mismo proceso que S1) | `contracts/world-state.ts` |
 | S3 | **narrative-llm** | Narrativa LLM: generate_scene, choices, develop_world, reviews con visión; narrative-mcp (:3737) como sidecar | HTTP + WS | 8765 (8765) | `contracts/narrative-llm.ts`, `contracts/narrative-mcp-ws.ts` |
-| S4 | **gpu-worker** | Generación local con GPU: SD1.5 (texturas/skins/sprites), TripoSG, LaMa. 1 proceso = 1 GPU | HTTP | **8766 (extraído en F3** — `ai_server/gpu_worker_main.py`; ai_server proxya los endpoints GPU para clientes no migrados**)** | `contracts/gpu-worker.ts` |
+| ~~S4~~ | ~~**gpu-worker**~~ | **RETIRADO (#199, 2026-08-24)** — generación local con GPU (SD1.5, TripoSG). Sus cuatro endpoints llevaban desde julio sin consumidor vivo: se fue el proceso, su contrato y sus dependencias (torch/diffusers). Está en el historial de git | — | — | — |
 | S5 | **remote-gen** | Adaptador de generación remota: atlas de superficies (Meshy/fal), style packs de usuario y las hojas de sprites de personaje — de las que **no es dueño**: las produce `sprite-forge` (:8770, repo aparte) y S5 solo adapta, cachea y apunta el gasto | HTTP | **8768 (extraído en F4** — `ai_server/remote_gen_main.py`; sin proxy, los clientes HTML resuelven por serviceUrl**)** | `contracts/remote-gen.ts` |
 | S6 | **asset-store** | Blobs content-addressed + manifest SQLite + styles binarios | HTTP | **8767 (extraído en F2** — `nefan-core/services/asset-store/`; ai_server proxya `/cache\|/assets` para clientes no migrados**)** | `contracts/asset-store.ts` |
 | — | **@nefan/core** (librería) | Lógica pura compartida: combate/registry, `formatDToWorld`, compositores blueprint/stage, colisión, `GameStore`, tipos | import | — | — |
@@ -70,12 +70,9 @@ Dos ciclos (sin cambios respecto a hoy):
   ciclo por WS :3737 es acoplamiento de despliegue total (si uno cae, el otro
   no sirve). El único endpoint de visión que queda es `/analyze_weapon`
   (orientación de armas): vive aquí porque necesita el canal MCP.
-- **gpu-worker vs remote-gen**: separar lo que consume GPU local (escala = nº
-  de GPUs, serializado por naturaleza) de lo que consume dinero (escala =
-  concurrencia HTTP, latencias 30–300 s). El `gpu_lock` de asyncio NO
-  desaparece dentro del worker (F3): además de CUDA protege la coherencia del
-  pipe SD compartido que Skin/Sprite/ModelGenerator mutan y restauran; lo que
-  muere es compartirlo con los endpoints narrativos.
+- ~~**gpu-worker vs remote-gen**~~ (obsoleta desde #199): separaba lo que
+  consume GPU local de lo que consume dinero. Ya no hay GPU local que separar
+  — el gpu-worker se retiró entero y solo queda el eje del dinero.
 - **asset-store primero (F2)**: es la única pieza que TODOS los generadores
   escriben y TODOS los clientes leen. `cache/manifest.json` (~5,8 MB,
   reescrito entero en cada registro, ~17k entradas) no soporta escrituras
@@ -140,11 +137,11 @@ GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
 narrative_progress + bridge_status + takeover); los kinds de visión vivos son
 weapon_orient y weapon_verify.
 
-**S4 gpu-worker (HTTP :8766, EXTRAÍDO en F3)** — ✅ /generate_texture,
-/generate_model, /generate_skin, /generate_sprite, /health (con `model_backend` para el /backend_status de
-S3), /diagnostic/skin_test_controlnet + /diagnostic/skin_test_frame
-(`@internal`). ai_server proxya todos en :8765 para clientes no migrados
-(gpu_proxy.py).
+**S4 gpu-worker — RETIRADO en #199 (2026-08-24).** Servía /generate_texture,
+/generate_model, /generate_skin y /generate_sprite; ninguno tenía consumidor
+vivo desde julio. Con el proceso se fueron su proxy en :8765, la mitad
+`meshy_3d` de /backend_status y la cadena de reuse por hash del contrato de
+escena. Los `/diagnostic/skin_test_*` que este documento listaba NO existían.
 
 **S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_surface_atlas,
 /skin_sprite_sheet, GET /sprite_catalog, /styles/upload,

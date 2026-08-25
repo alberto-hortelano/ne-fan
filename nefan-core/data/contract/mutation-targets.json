@@ -94,10 +94,6 @@
       "porque": "El contrato del asset-store (:8767). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/contracts/gpu-worker.ts",
-      "porque": "El contrato del GPU worker (:8766). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/contracts/narrative-llm.ts",
       "porque": "El contrato de la llamada narrativa al LLM. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },

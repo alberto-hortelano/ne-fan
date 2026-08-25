@@ -240,12 +240,15 @@ class LLMClient:
         }
         print(f"LLM: active session set to {session_id} (game={game_id}, resume={is_resume})")
 
-    #: Tipos que el motor puede REUSAR (texture_hash/model_hash en entities,
-    #: superficies de la vista fps). scene/plate quedan FUERA: sus prompts son
-    #: instrucciones de repintado/inpaint ("The object being removed is…") y
-    #: con la DB real monopolizaban las 30 entradas — el motor no veía ni una
-    #: textura (hallazgo medido 2026-08-14).
-    REUSABLE_ASSET_TYPES = "texture,model,sprite,surface"
+    #: Tipos que el motor puede REUSAR: solo las superficies de la vista fps,
+    #: y por DESCRIPCIÓN verbatim (cache-hit por prompt), no por hash. Los
+    #: kinds texture/model/sprite salieron con el gpu-worker (#199): eran los
+    #: únicos que producía, así que sin él la ventana se llenaba de entradas
+    #: que ningún proceso podía volver a generar. scene/plate quedan FUERA:
+    #: sus prompts son instrucciones de repintado/inpaint ("The object being
+    #: removed is…") y con la DB real monopolizaban las 30 entradas — el motor
+    #: no veía ni una superficie (hallazgo medido 2026-08-14).
+    REUSABLE_ASSET_TYPES = "surface"
 
     def _inject_available_assets(self, payload: dict, limit: int = 30) -> dict:
         """Add `available_assets` and active session info to a request payload
@@ -256,7 +259,13 @@ class LLMClient:
         cortas admitidas ("banco de piedra" es una entrada válida), dedupe por
         prompt (las celdas de superficie se repiten por estilo) e intercalado
         round-robin por tipo — una muestra VARIADA, no el tipo más reciente
-        monopolizando la ventana."""
+        monopolizando la ventana.
+
+        El round-robin está INACTIVO desde #199: con el gpu-worker se fueron
+        `texture`/`model`/`sprite` y `REUSABLE_ASSET_TYPES` quedó en un solo
+        tipo, `surface`. El código se conserva porque su sujeto puede volver
+        —un segundo tipo reutilizable lo reactiva sin tocar nada—, no por
+        nostalgia: si pasa otro año sin un segundo tipo, bórralo."""
         if self.asset_manifest is not None:
             try:
                 assets = self.asset_manifest.list_assets(

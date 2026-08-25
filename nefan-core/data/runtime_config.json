@@ -1,10 +1,7 @@
 {
   "graphics": {
     "character_sprites": true,
-    "ai_skin": true,
-    "ai_sprites": false,
-    "ai_textures": false,
-    "ai_models": false
+    "ai_skin": true
   },
   "narrative": {
     "require_llm": true,
@@ -25,14 +22,11 @@
     "scene_cache_dir": "cache/scenes",
     "segment_cache_dir": "cache/segments",
     "surface_cache_dir": "cache/surfaces",
-    "texture_resolution": 512,
-    "texture_steps": 4,
     "sprite_skin_model": "gpt-image-2",
     "sprite_forge_url": "http://127.0.0.1:8770",
     "surface_model": "nano-banana-pro",
     "surface_hero_model": "gpt-image-2",
     "usd_eur_rate": 0.86,
-    "texture_lazy_load": true,
     "cache_max_bytes": 2147483648,
     "manifest_db": "cache/manifest.sqlite3"
   },
@@ -42,7 +36,6 @@
     "narrative_ws": 3737,
     "html": 3000,
     "asset_store": 8767,
-    "gpu_worker": 8766,
     "remote_gen": 8768
   },
   "content": {

@@ -47,8 +47,8 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 
-ai_server/                Python FastAPI — 3 procesos: main.py (narrativa :8765),
-                          gpu_worker_main.py (:8766), remote_gen_main.py (:8768)
+ai_server/                Python FastAPI — 2 procesos: main.py (narrativa :8765),
+                          remote_gen_main.py (:8768)
 narrative-mcp/            Node.js MCP bridge
 
 labs/                     Benches de experimentación (ver labs/README.md)

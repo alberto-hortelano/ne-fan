@@ -20,8 +20,8 @@
 //     ignoran: la película auto-avanza sola.
 //
 // Requisitos: que el bridge real NO esté en :9877 (lo suplantamos). No hace
-// falta ai_server: las entidades de la escena traen texture_hash (no
-// sprite_hash), así que el renderer 2D dibuja cajas+etiquetas sin backend.
+// falta ai_server: los eventos se reemiten TAL CUAL como se grabaron —la
+// escena viaja ya normalizada— así que no hay nada que generar.
 //
 // Uso:
 //   node labs/narrative/replay-server.mjs                 # usa el run por defecto

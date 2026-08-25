@@ -19,7 +19,6 @@ PORT_HTML=3000
 PORT_AI=8765
 PORT_NARR=3737
 PORT_ASSETS=8767
-PORT_GPU=8766
 PORT_RGEN=8768
 PORT_FAKE=18765    # fake-ai-server (labs/narrative) — emula S3–S6, 0 créditos
 PORT_FORGE=8770    # sprite-forge — hojas de sprites de personaje (repo APARTE)
@@ -133,7 +132,7 @@ preflight_tools() {
 
 preflight_services() {
     local missing=()
-    if on ai_server || on gpu-worker || on remote-gen; then
+    if on ai_server || on remote-gen; then
         [[ -d "$PROJECT_DIR/.venv" ]] || missing+=("Python venv missing — python -m venv .venv && source .venv/bin/activate && pip install -r ai_server/requirements.txt")
     fi
     # replay-server también: importa `ws` desde nefan-core/node_modules.
@@ -209,19 +208,6 @@ start_asset_store() {
     track_started $! "$PORT_ASSETS"
     wait_for_http_health "http://127.0.0.1:$PORT_ASSETS/health" 30 "asset-store" || return 1
     echo "✅ asset-store :$PORT_ASSETS  (log: $LOG_DIR/nefan-asset-store.log)"
-}
-
-start_gpu_worker() {
-    port_busy "$PORT_GPU" && kill_port "$PORT_GPU"
-    (
-        cd "$PROJECT_DIR" || exit 1
-        # shellcheck disable=SC1091
-        source .venv/bin/activate
-        exec python -u ai_server/gpu_worker_main.py
-    ) >"$LOG_DIR/nefan-gpu-worker.log" 2>&1 &
-    track_started $! "$PORT_GPU"
-    wait_for_http_health "http://127.0.0.1:$PORT_GPU/health" 30 "gpu-worker" || return 1
-    echo "✅ gpu-worker :$PORT_GPU  (log: $LOG_DIR/nefan-gpu-worker.log)"
 }
 
 start_remote_gen() {
@@ -399,7 +385,7 @@ EOF
 # posicionales (una tabla se lee bien así), pero los CONSUMIDORES no: preguntan
 # por clave con `on <clave>`. Añadir o quitar un servicio ya no puede desplazar
 # en silencio lo que arranca un preset.
-SERVICES=(bridge narrative-mcp ai_server html asset-store gpu-worker remote-gen sprite-forge fake-ai replay-server)
+SERVICES=(bridge narrative-mcp ai_server html asset-store remote-gen sprite-forge fake-ai replay-server)
 # Service slot index → display label
 SERVICE_LABELS=(
     "bridge          :9877"
@@ -407,7 +393,6 @@ SERVICE_LABELS=(
     "ai_server       :8765"
     "HTML            :3000"
     "asset-store     :8767"
-    "gpu-worker      :8766"
     "remote-gen      :8768"
     "sprite-forge    :8770"
     "fake-ai-server  :18765"
@@ -420,10 +405,9 @@ SERVICE_HINTS=(
     "Python narrative/LLM server"
     "Cliente web en primera persona (three.js) — el juego"
     "blobs + manifest SQLite + covers de estilos"
-    "texturas SD / modelos / LaMa (GPU local, sin créditos)"
     "Meshy/fal + SAM2 + atlas fps + estilos — GASTA créditos si se invoca"
     "hojas de sprites de personaje (repo aparte ~/code/sprite-forge) — remote-gen lo necesita para vestir NPCs"
-    "emula narrative-llm+gpu-worker+remote-gen+asset-store — 0 créditos (bench)"
+    "emula narrative-llm+remote-gen+asset-store — 0 créditos (bench)"
     "reproduce una sesión grabada como película (suplanta al bridge; LOG=runs/…/events.ndjson)"
 )
 
@@ -486,7 +470,7 @@ PRESET_DESCS=(
     "Stack completo + Claude Code + cliente web: historia, NPCs, mapas y diálogo — GASTA créditos con Imagen IA (Meshy/fal)"
     "bridge + HTML + asset-store + remote-gen (fps/estilos operativos) — solo gasta si activas Imagen IA en el juego"
     "fake-ai-server + bridge + HTML — todo mockeado, 0 créditos (bench E2E)"
-    "motor narrativo con los servicios de imagen APAGADOS (sin gpu-worker ni remote-gen): imposible gastar en imágenes — juega en Maqueta 3D / y_bot"
+    "motor narrativo con los servicios de imagen APAGADOS (sin remote-gen ni sprite-forge): imposible gastar en imágenes — juega en Maqueta 3D / y_bot"
     "bridge + ai_server + asset-store, SIN placeholder de narrative-mcp: el terminal del motor posee :3737 (labs/narrative; conduce con game-emulator :9899)"
     "replay-server + HTML: reproduce una sesión grabada como película, sin motor ni ai_server — renderer determinista (LOG=runs/…/events.ndjson)"
     "solo el cliente web: fixtures del selector Room + teclas dev, cero backend"
@@ -494,30 +478,30 @@ PRESET_DESCS=(
 )
 # El asset-store acompaña a cualquier preset con bridge o ai_server: el
 # gateway resuelve assetExists contra :8767 y los generadores registran ahí.
-# gpu-worker y remote-gen acompañan a los presets con ai_server; "Cliente
-# web (dev)" lleva remote-gen (la vista fps pide /generate_surface_atlas y
-# aplicar estilo pasa por /styles/*) pero no gpu-worker. "E2E sin créditos"
-# usa el fake para TODO (emula también el asset-store): el bridge recibe
-# NEFAN_AI_SERVER y el cliente se abre con ?ai= (URL impresa al arrancar).
-# "Story web sin imágenes" quita gpu-worker/remote-gen a propósito: los
+# remote-gen acompaña a los presets con ai_server; "Cliente web (dev)"
+# también lo lleva (la vista fps pide /generate_surface_atlas y aplicar
+# estilo pasa por /styles/*). "E2E sin créditos" usa el fake para TODO
+# (emula también el asset-store): el bridge recibe NEFAN_AI_SERVER y el
+# cliente se abre con ?ai= (URL impresa al arrancar).
+# "Story web sin imágenes" quita remote-gen/sprite-forge a propósito: los
 # pipelines de imagen del cliente quedan sin backend (elige Maqueta 3D).
 # sprite-forge acompaña SIEMPRE a remote-gen: es de quien remote-gen obtiene
 # las hojas de personaje. Sin él, /skin_sprite_sheet devuelve 503 y todos los
 # NPC salen en maniquí — con el stack "arrancado" y sin pista de por qué.
-#                  bridge  narr  ai  html  assets  gpu  rgen  forge  fake  replay
+#                  bridge  narr  ai  html  assets  rgen  forge  fake  replay
 PRESET_PROFILES=(
-    "1 1 1 1 1 1 1 1 0 0"   # Play
-    "1 0 0 1 1 0 1 1 0 0"   # Cliente web (dev)
-    "1 0 0 1 0 0 0 0 1 0"   # E2E sin créditos
-    "1 1 1 1 1 0 0 0 0 0"   # Story web sin imágenes
-    "1 0 1 0 1 0 0 0 0 0"   # Playtest motor (bench)
-    "0 0 0 1 0 0 0 0 0 1"   # Replay web (película)
-    "0 0 0 1 0 0 0 0 0 0"   # HTML fixtures
-    "0 0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
+    "1 1 1 1 1 1 1 0 0"   # Play
+    "1 0 0 1 1 1 1 0 0"   # Cliente web (dev)
+    "1 0 0 1 0 0 0 1 0"   # E2E sin créditos
+    "1 1 1 1 1 0 0 0 0"   # Story web sin imágenes
+    "1 0 1 0 1 0 0 0 0"   # Playtest motor (bench)
+    "0 0 0 1 0 0 0 0 1"   # Replay web (película)
+    "0 0 0 1 0 0 0 0 0"   # HTML fixtures
+    "0 0 0 0 0 0 0 0 0"   # Custom (filled in from current selection)
 )
 
 # Live state — applied by TUI, consumed by launcher.
-declare -a ACTIVE=(0 0 0 0 0 0 0 0 0 0)
+declare -a ACTIVE=(0 0 0 0 0 0 0 0 0)
 
 apply_preset() {
     local idx=$1
@@ -849,14 +833,13 @@ run_selection() {
     echo "▶ Launching selected services..."
     echo ""
 
-    # Order: asset-store → gpu-worker → remote-gen → fake-ai → replay →
+    # Order: asset-store → sprite-forge → remote-gen → fake-ai → replay →
     # bridge → narrative-mcp → ai_server → (Claude pause) → html.
     # El asset-store va PRIMERO: ai_server hace count/prune al arrancar
-    # y el gateway puede pedir assetExists temprano; gpu-worker y remote-gen
-    # antes que ai_server para que /backend_status y /segment ya los vean al
-    # primer uso; el fake antes que el bridge (que arranca apuntándole).
+    # y el gateway puede pedir assetExists temprano; remote-gen antes que
+    # ai_server para que /segment ya lo vea al primer uso; el fake antes
+    # que el bridge (que arranca apuntándole).
     on asset-store  && { start_asset_store   || return 1; }
-    on gpu-worker   && { start_gpu_worker    || return 1; }
     on sprite-forge && { start_sprite_forge  || return 1; }
     on remote-gen   && { start_remote_gen    || return 1; }
     on fake-ai      && { start_fake_ai       || return 1; }
@@ -927,7 +910,6 @@ cmd_status() {
         "narrative-mcp:$PORT_NARR"
         "ai_server:$PORT_AI"
         "asset-store:$PORT_ASSETS"
-        "gpu-worker:$PORT_GPU"
         "remote-gen:$PORT_RGEN"
         "sprite-forge:$PORT_FORGE"
         "fake-ai:$PORT_FAKE"
@@ -955,7 +937,7 @@ cmd_status() {
 
 # Todos los puertos que el launcher puede haber ocupado — compartido por
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
-ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_GPU" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
+ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
 
 # La tecla `k`: parar un stack entero, incluido el que dejó otra corrida. A
 # diferencia de `cleanup`, aquí SÍ se mata por puerto lo que no arrancamos —

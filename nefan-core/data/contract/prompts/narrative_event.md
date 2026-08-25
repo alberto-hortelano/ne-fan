@@ -56,11 +56,12 @@ The pre-flight rejects anything that deviates and hands you the exact error to
 fix, so match the type rather than guessing field names.
 
 Semantic notes the type cannot express:
-- Max 4 consequences. available_assets is a growing library with short
-  descriptions: reuse an entry by hash (texture_hash/model_hash on spawned
-  entities) when it matches what you imagine; if nothing fits, describe
-  freely — anything new gets generated once and joins the library. Never
-  force a reuse that doesn't fit the fiction.
+- Max 4 consequences. available_assets is a growing library of painted
+  surfaces with short descriptions: reusing one is a matter of describing the
+  same thing the same way (a verbatim description is a cache hit), never a
+  hash you copy. If nothing fits, describe freely — anything new gets
+  generated once and joins the library. Never force a reuse that doesn't fit
+  the fiction.
 - No aliases: the discriminant is `type` and the options list is `choices`
   (never `options`); a top-level `dialogue`/`show_dialogue` is rejected.
 - spawn_entity NPCs/enemies must be HUMANOID (never animals or non-humanoid
@@ -114,8 +115,6 @@ NarrativeReaction = {
       position_hint?: string;  // Pista de dónde aparece, p.ej. 'junto a la fuente'
       role?: "peasant"|"guard"|"villager"|"merchant";  // Rol de comportamiento ambiental (NPCs); desconocido degrada a villager
       style_ref?: string;  // NPCs: id de la referencia de personaje de world.style_refs.characters que mejor case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol
-      texture_hash?: string;  // Reusar textura cacheada por hash
-      model_hash?: string;  // Reusar modelo cacheado por hash
       character_type?: string;
     }
     | {

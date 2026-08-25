@@ -36,27 +36,9 @@ export interface SceneGenerationResult {
   error?: string;
 }
 
-export interface SkinGenerationResult {
-  ok: boolean;
-  hash?: string;
-  cached?: boolean;
-  skin_url?: string;
-  error?: string;
-}
-
-export interface SpriteGenerationResult {
-  ok: boolean;
-  hash?: string;
-  cached?: boolean;
-  sprite_url?: string;
-  error?: string;
-}
-
 export type ReportPlayerChoiceResult =
   | { ok: true; consequences: Consequence[] }
   | { ok: false; error: string };
-
-export type SpriteAngle = "top_down" | "frontal_8";
 
 export class AiClient {
   private baseUrl: string;
@@ -185,29 +167,6 @@ export class AiClient {
     }
   }
 
-  async generateSprite2D(opts: {
-    prompt: string;
-    angle?: SpriteAngle;
-    width?: number;
-    height?: number;
-    styleToken?: string;
-  }): Promise<SpriteGenerationResult> {
-    try {
-      const res = await this.request("POST", "/generate_sprite", {
-        prompt: opts.prompt,
-        angle: opts.angle ?? "top_down",
-        width: opts.width ?? 256,
-        height: opts.height ?? 256,
-        style_token: opts.styleToken,
-      });
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-      const data = (await res.json()) as { hash?: string; cached?: boolean; sprite_url?: string };
-      return { ok: true, hash: data.hash, cached: data.cached, sprite_url: data.sprite_url };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    }
-  }
-
   /** Probe whether a cached asset is still present in the server manifest.
    *  Returns true on 200, false on 404. Throws for other HTTP errors or
    *  network failures — caller decides how to treat the uncertainty. */
@@ -216,21 +175,6 @@ export class AiClient {
     if (res.ok) return true;
     if (res.status === 404) return false;
     throw new Error(`assetExists ${hash}: HTTP ${res.status}`);
-  }
-
-  async generateSkin(opts: {
-    prompt: string;
-    strength?: number;
-    gamma?: number;
-  }): Promise<SkinGenerationResult> {
-    try {
-      const res = await this.request("POST", "/generate_skin", opts);
-      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-      const data = (await res.json()) as { hash?: string; cached?: boolean; skin_url?: string };
-      return { ok: true, hash: data.hash, cached: data.cached, skin_url: data.skin_url };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    }
   }
 
   private async request(

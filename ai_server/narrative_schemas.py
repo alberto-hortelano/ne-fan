@@ -720,10 +720,6 @@ def validate_scene_response(data: dict) -> dict:
             clean_ent["role"] = ent["role"]
         if isinstance(ent.get("description"), str) and ent["description"].strip():
             clean_ent["description"] = ent["description"].strip()
-        if isinstance(ent.get("texture_hash"), str):
-            clean_ent["texture_hash"] = ent["texture_hash"]
-        if isinstance(ent.get("model_hash"), str):
-            clean_ent["model_hash"] = ent["model_hash"]
         # decor puede pedir snap al muro más cercano (lo resuelve el expander TS).
         if ent.get("attach") == "wall":
             clean_ent["attach"] = "wall"
@@ -970,10 +966,6 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 entry["role"] = c["role"]
             if c.get("style_ref"):
                 entry["style_ref"] = str(c["style_ref"])
-            if c.get("texture_hash"):
-                entry["texture_hash"] = str(c["texture_hash"])
-            if c.get("model_hash"):
-                entry["model_hash"] = str(c["model_hash"])
             out.append(entry)
         elif t == "schedule_event":
             description = str(c.get("description", "")).strip()

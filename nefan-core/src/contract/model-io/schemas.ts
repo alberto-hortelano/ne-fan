@@ -52,8 +52,6 @@ const SpawnEntityConsequence = z
         "NPCs: id de la referencia de personaje de world.style_refs.characters que mejor " +
           "case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol",
       ),
-    texture_hash: z.string().optional().describe("Reusar textura cacheada por hash"),
-    model_hash: z.string().optional().describe("Reusar modelo cacheado por hash"),
     character_type: z.string().optional(),
   })
   .passthrough();

@@ -100,14 +100,12 @@ export interface BackendState {
 }
 
 export interface BackendStatusResponse {
-  meshy_3d: BackendState;
   ai_vision: BackendState;
 }
 
 export interface AiServerHealthResponse {
   status: "ready" | "loading";
   mode: "narrative";
-  texture_pipeline: "loaded" | "lazy";
   cache_total_bytes: number;
   cache_max_bytes: number;
   cache_over_limit: boolean;
@@ -116,8 +114,8 @@ export interface AiServerHealthResponse {
 // ── Tabla de endpoints ──
 
 export const NarrativeLlmApi = {
-  /** Shape actual del monolito; tras F2–F4 los campos de cache/texturas
-   *  migran al health de asset-store/gpu-worker. */
+  /** Shape actual del monolito; tras F2–F4 los campos de cache migran al
+   *  health de asset-store. */
   health: endpoint<void, AiServerHealthResponse>("GET", "/health"),
   notifySession: endpoint<NotifySessionRequest, NotifySessionResponse>("POST", "/notify_session"),
   generateScene: endpoint<GenerateSceneRequest, GenerateSceneResponse>("POST", "/generate_scene"),

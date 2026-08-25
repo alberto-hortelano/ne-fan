@@ -90,14 +90,20 @@ jobs:
         with:
           python-version: "3.11"
       # pillow + httpx: deps ligeras de los tests de imagen y del adaptador de
-      # sprite-forge. fastapi + uvicorn + numpy (F3): tests del proceso
-      # gpu-worker — importar gpu_worker_main arrastra skin_generator y
-      # texture_generator, que usan numpy a nivel de módulo. El resto de la
-      # suite sigue siendo stdlib-only.
+      # sprite-forge. fastapi: lo usan test_spend_tracker y
+      # test_sprite_forge_adapter (TestClient). numpy: lo importa
+      # surface_atlas_generator.make_tileable, sujeto de test_surface_atlas.
+      # El resto de la suite sigue siendo stdlib-only.
+      #
+      # uvicorn NO hace falta (#199): solo lo importan main.py y
+      # remote_gen_main.py, que ningún test importa y que compileall compila
+      # sin ejecutar. Ojo con quitar de más: estos tests NO son skipUnless
+      # salvo los de sprite-forge, así que una dep ausente los volvería
+      # verdes y VACÍOS en vez de rojos — comparar el conteo, no el color.
       #
       # La geometría del atlas de repintado ya NO se prueba aquí: se fue con el
       # módulo a sprite-forge, y allí corre en su propio CI.
-      - run: pip install ruff pillow httpx fastapi uvicorn numpy
+      - run: pip install ruff pillow httpx fastapi numpy
       - run: ruff check ai_server
       # labs/ no tiene tests ni lint (benches), pero compileall lo mantiene
       # al menos sintácticamente válido — es código que se retoma cada pocos

@@ -138,14 +138,15 @@ GLYPH RULES
 - Single printable ASCII char. NOT equal to any terrain char in the same map.
 - Glyphs CAN repeat across entities (all trees can be "T") — ids disambiguate.
 
-ASSET REUSE — available_assets is a GROWING LIBRARY of already-generated
-assets (textures, 3D models, sprites, painted surfaces), each with a short
-description and a 16-char hash. Reuse is OPTIONAL, never forced:
-- If an entry matches what you imagine for an entity, add "texture_hash" or
-  "model_hash" with its hash — the engine loads it instantly, for free.
-- If nothing fits, just describe what you want (texture_prompt/model_prompt,
-  or surface_desc on a volume): it gets generated once and JOINS the library
-  for future scenes. Never bend your scene to fit an existing asset.
+ASSET REUSE — available_assets is a GROWING LIBRARY of already-painted
+surfaces, each with a short description. Reuse is OPTIONAL, never forced,
+and it works by DESCRIPTION, not by hash:
+- If an entry matches a face you're describing, reuse its description
+  VERBATIM in that volume's surface_desc — an identical description is a
+  cache hit and the engine loads the painted surface for free.
+- If nothing fits, just describe what you want: it gets painted once and
+  JOINS the library for future scenes. Never bend your scene to fit an
+  existing asset.
 
 VALIDATION before responding:
 - [ ] every terrain row is exactly cols chars
