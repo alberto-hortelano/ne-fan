@@ -244,7 +244,9 @@ export default async function (ctx) {
   // persistiera nada y se limitara a caer al arranque de la escena. Andando,
   // los dos puntos se separan y el aserto distingue una cosa de la otra.
   await ctx.nefan("setYaw", 0); // +z: calle abierta, lejos de la taberna
-  const andado = await ctx
+  // El `catch` traga el cortafuegos de holdUntil a propósito: lo que decide no
+  // es si llegó a los 2 m, es la separación MEDIDA de abajo.
+  await ctx
     .holdUntil(
       "up",
       "el jugador se aleja de su punto de arranque",
@@ -261,10 +263,10 @@ export default async function (ctx) {
     )
     .catch(() => null);
   const posAntes = await ctx.nefan("playerPos");
-  ctx.log(`el jugador anduvo hasta ${JSON.stringify(posAntes)} (${andado ? `${andado.d.toFixed(1)} m` : "no se movió"})`);
+  const separacion = Math.hypot(posAntes.x - posArranque.x, posAntes.z - posArranque.z);
+  ctx.log(`el jugador anduvo hasta ${JSON.stringify(posAntes)} (${separacion.toFixed(1)} m)`);
   // NO CONCLUYENTE antes que verde: si no se ha movido, lo de abajo no
   // distingue «se persiste la posición» de «se cae al __player_start».
-  const separacion = Math.hypot(posAntes.x - posArranque.x, posAntes.z - posArranque.z);
   ctx.expect(
     "el jugador se ha ALEJADO del arranque de la escena (si no, el resto no prueba nada)",
     separacion >= 1.5,
@@ -280,7 +282,7 @@ export default async function (ctx) {
     description: "Fuerza un guardado con el jugador ya lejos del arranque.",
   });
 
-  // ── 3b. Y el save de DISCO ya lleva dónde está el jugador ────────────────
+  // ── 3c. Y el save de DISCO ya lleva dónde está el jugador ────────────────
   // La mitad del arreglo que se ve sin recargar nada: la posición vive en el
   // combatiente del sim y ninguno de los trece guardados del bridge la
   // copiaba al save. Se mira el fichero, no la memoria.
