@@ -703,7 +703,12 @@ async function loadSceneFile(globKey: string): Promise<void> {
   }
 
   const mod = await loader();
-  await loadSceneData(mod.default);
+  // El selector «Room» TOMA EL MUNDO: lo que se carga es una escena de prueba,
+  // no la partida de nadie. El bridge necesita oírlo para dejar de escuchar al
+  // sim con el save de la partida que hubiera detrás (QA 2026-08-25: sin esto,
+  // asomarse a una fixture escribía las coordenadas del muñeco en el
+  // `state.json` y «Reanudar» te dejaba ahí).
+  await loadSceneData(mod.default, { tomaElMundo: true });
 }
 
 /** Vacía el mundo del cliente (arranque de sesión, resume, fixtures). */
@@ -736,11 +741,22 @@ function resetWorld(): void {
   sceneData = null;
 }
 
+/** Opciones de carga de escena. `tomaElMundo` es la diferencia entre «esta es
+ *  una escena de PRUEBA y a partir de ahora el mundo es mío» (el selector
+ *  «Room») y «este tile se AÑADE al mundo que ya tienes» (la partida). Viaja
+ *  hasta el bridge como `load_room` — ver `bridge/world-claim.ts`. */
+interface OpcionesDeCarga {
+  tomaElMundo?: boolean;
+}
+
 /** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
  *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
-async function loadSceneData(rawData: Record<string, unknown>): Promise<void> {
+async function loadSceneData(
+  rawData: Record<string, unknown>,
+  opts: OpcionesDeCarga = {},
+): Promise<void> {
   resetWorld();
-  await addTile(rawData);
+  await addTile(rawData, opts);
 }
 
 /** Compone el PLAN del tile: `ground` + `volumes` declarados por el motor,
@@ -802,7 +818,10 @@ function composeTilePlan(
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
  *  sustituye (re-render al volver a un tile). */
-async function addTile(rawData: Record<string, unknown>): Promise<void> {
+async function addTile(
+  rawData: Record<string, unknown>,
+  opts: OpcionesDeCarga = {},
+): Promise<void> {
   const data = formatDToWorld(rawData);
   const tile = data.tile as { tx: number; ty: number } | undefined;
   const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
@@ -1058,13 +1077,15 @@ async function addTile(rawData: Record<string, unknown>): Promise<void> {
     setActiveClientTile(key);
   }
 
-  // Sim: los tiles de grid añaden combatientes de forma ADITIVA (sin reset);
-  // las escenas legacy (fixtures) siguen reseteando la sala entera.
+  // Sim: los tiles de la PARTIDA añaden combatientes de forma ADITIVA (sin
+  // reset), porque el mundo es un plano continuo. Tomar el mundo —el selector
+  // «Room», o una escena legacy suelta— manda `load_room`, que además le dice
+  // al bridge que lo que va a andar por aquí no es el jugador de la partida.
   if (gameClient) {
-    if (isGridTile) {
-      gameClient.addEnemies(enemies);
-    } else {
+    if (opts.tomaElMundo || !isGridTile) {
       gameClient.loadRoom(data, key, enemies);
+    } else {
+      gameClient.addEnemies(enemies);
     }
   }
 
@@ -2554,9 +2575,22 @@ async function runTitleFlow(avisoInicial?: string): Promise<void> {
 async function volverAlTitulo(): Promise<void> {
   const motivo = motivoDelUltimoMuro ?? undefined;
   hideLoader();
+  abandonarLaPartida();
+  await runTitleFlow(motivo);
+}
+
+/** Dejar la partida: el mundo a cero y la sesión soltada. Los DOS caminos de
+ *  vuelta al título pasan por aquí — que sean dos llamadas y no una es lo que
+ *  producía #249 (uno deshacía cinco cosas y el otro una).
+ *
+ *  Ojo con lo que esto NO garantiza, para que nadie lo lea de más: que un
+ *  TERCER camino de vuelta al título se acuerde de llamarla sigue siendo
+ *  responsabilidad de quien lo escriba. Lo inexpresable es la asimetría entre
+ *  FACETAS (`session-facets.ts`), no entre caminos; hoy los caminos son dos y
+ *  los dos tienen guion en vivo (18 y 20). */
+function abandonarLaPartida(): void {
   resetWorld();
   session.leave();
-  await runTitleFlow(motivo);
 }
 
 /** Un intento: enseña el título, espera la elección y la ejecuta. Devuelve
@@ -2665,8 +2699,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     // `session.enter`): sin esto, el segundo intento arrancaría sobre los
     // tiles del primero. `leave()` es el mismo camino que usa `volverAlTitulo`
     // — los dos retornos al título dejan el cliente idéntico por construcción.
-    resetWorld();
-    session.leave();
+    abandonarLaPartida();
     const que =
       action.kind === "new_game"
         ? "No se pudo empezar la partida"

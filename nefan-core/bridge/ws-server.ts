@@ -15,6 +15,7 @@ import { GameSimulation } from "../src/simulation/game-loop.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { GameStore } from "../src/store/game-store.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
+import { createWorldClaim } from "./world-claim.js";
 import { FsSessionStorage } from "../src/narrative/session-storage.js";
 import { AiClient } from "../src/narrative/ai-client.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
@@ -97,7 +98,7 @@ const ctx: BridgeContext = {
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
   posTracking: { cellKey: null, placeId: null },
-  simDriver: null,
+  world: createWorldClaim(narrative, sim),
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },
@@ -256,10 +257,10 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("close", () => {
     narrativeSubscribers.delete(ws);
-    // Quien conducía el sim se ha ido: el mundo queda sin dueño hasta que
-    // alguien lo tome (start/resume/load_room). Sin esto, un cliente que
-    // recarga la página dejaría el sim clavado a un socket muerto.
-    if (ctx.simDriver === ws) ctx.simDriver = null;
+    // Quien tenía el mundo se ha ido: queda sin dueño y el save deja de
+    // escuchar al sim. Sin esto, un F5 dejaba la partida guardada oyendo a un
+    // sim que el siguiente cliente conduce sin ser el suyo.
+    ctx.world.release(ws);
     console.log("Bridge: client disconnected");
   });
 });

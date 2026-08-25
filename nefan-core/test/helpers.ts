@@ -16,6 +16,7 @@ import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
+import { createWorldClaim } from "../bridge/world-claim.js";
 import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
@@ -147,7 +148,7 @@ export function makeCtx(
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
     posTracking: { cellKey: null, placeId: null },
-    simDriver: null,
+    world: createWorldClaim(narrative, sim),
     subscribe(ws) {
       subscribers.add(ws);
     },

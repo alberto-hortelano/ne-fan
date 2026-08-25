@@ -13,8 +13,8 @@
  *  Aquí no hay reset que olvidar porque NO HAY RESET: «sin partida» es un
  *  valor del mismo tipo (`NO_SESSION`), y entrar y salir son la misma función
  *  con distinto argumento. Añadir una faceta obliga a darle su neutro (o no
- *  compila) y a cablear su sink (o el test que enumera el record se pone
- *  rojo).
+ *  compila), a darle un aplicador (o no compila) y a cablear su sink en el
+ *  cliente (o no compila): las tres las comprueba `tsc` sobre `src/`.
  *
  *  Módulo PURO: no toca el DOM ni node:*. Los efectos los pone el cliente en
  *  los sinks — este fichero solo garantiza que se aplican todos, siempre, en
@@ -83,18 +83,40 @@ export interface ClientSession {
   leave(): void;
 }
 
+/** Qué le toca a cada sink de las facetas. Es un tipo MAPEADO sobre
+ *  `FacetSinks`, así que un sink nuevo sin entrada aquí **no compila** — y
+ *  `apply` recorre este record en vez de nombrar los sinks uno a uno, así que
+ *  tampoco puede olvidarse de llamarlo.
+ *
+ *  Antes esto eran cinco llamadas escritas a mano dentro de `apply` y la
+ *  garantía la daba un test que enumeraba… su propio doble; como `tsc` no mira
+ *  `test/**`, un sink sin llamar dejaba `npm run verify` entero verde (QA
+ *  2026-08-25, hallazgo M1). Ahora la garantía la da el compilador sobre
+ *  `src/`, que sí se comprueba. */
+const APLICADORES: {
+  [K in keyof FacetSinks]: (sinks: FacetSinks, f: SessionFacets) => void;
+} = {
+  style: (s, f) => s.style(f.styleId),
+  theme: (s, f) => s.theme(f.uiTheme),
+  renderModes: (s, f) => s.renderModes(f.renderMode, f.characterMode),
+  combat: (s, f) => s.combat(f.combatSystem),
+  history: (s, f) => s.history(f.sessionId),
+};
+
+/** Los nombres de los sinks, derivados del record de arriba: no hay una
+ *  segunda lista que mantener. Lo usa el test para enumerar sin inventarse
+ *  nada. */
+export const NOMBRES_DE_SINK = Object.keys(APLICADORES) as (keyof FacetSinks)[];
+
 export function createClientSession(sinks: FacetSinks): ClientSession {
   let vigentes: SessionFacets = NO_SESSION;
 
   /** El único camino. `enter` y `leave` se distinguen por el ARGUMENTO, no
-   *  por el código que recorren. */
+   *  por el código que recorren; y ninguno de los dos puede saltarse un sink,
+   *  porque no los nombra: recorre el record de aplicadores. */
   function apply(facets: SessionFacets): void {
     vigentes = facets;
-    sinks.style(facets.styleId);
-    sinks.theme(facets.uiTheme);
-    sinks.renderModes(facets.renderMode, facets.characterMode);
-    sinks.combat(facets.combatSystem);
-    sinks.history(facets.sessionId);
+    for (const nombre of NOMBRES_DE_SINK) APLICADORES[nombre](sinks, facets);
   }
 
   return {

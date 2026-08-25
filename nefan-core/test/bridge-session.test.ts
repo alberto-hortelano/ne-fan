@@ -696,11 +696,16 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.ok(sent.length > antes, "el socket de la sesión sí conduce y recibe estado");
   });
 
-  /** Cargar una fixture del selector «Room» también es TOMAR el mundo: quien
-   *  la carga conduce, y el jugador del sim deja de ser el de la partida — si
-   *  no, un guardado de la sesión viva se llevaría la posición del muñeco de
-   *  la fixture. */
-  it("cargar una fixture toma el mundo y suelta al jugador de la partida", async () => {
+  /** EL CAMINO DEL JUGADOR, no uno legacy: jugar → F5 → título → «✕ Cerrar
+   *  (modo fixtures)» → una fixture del selector. El socket de la partida se
+   *  cerró, así que el mundo queda sin dueño y lo toma el cliente nuevo — para
+   *  una escena de PRUEBA, así que el save deja de escuchar al sim.
+   *
+   *  El candado que había aquí antes usaba `crypt_001`, una sala legacy sin
+   *  `tile`: era un candado sobre un mensaje que el cliente ya no manda (QA
+   *  2026-08-25). La fixture es una de las de verdad, y el candado en vivo por
+   *  el camino entero es `qa/guiones/25-mirar-fixtures-no-se-lleva-la-partida.mjs`. */
+  it("mirar una fixture tras un F5 no se lleva la partida guardada", async () => {
     const { ctx, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
@@ -708,15 +713,18 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
     await ctx.narrative.save();
 
-    // Otra pestaña abre una fixture: el mundo pasa a ser suyo.
+    // F5: el socket de la partida se va. El mundo queda sin dueño.
+    ctx.world.release(socket);
+
+    // La pestaña nueva abre una fixture del selector y anda por ella.
     const { socket: fixtura, sent: sentFixtura } = makeSocket();
-    await routeMessage({ type: "load_room", roomId: "crypt_001", enemies: [] }, fixtura, ctx);
+    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, fixtura, ctx);
     await routeMessage(
       {
         type: "input",
         delta: 0.016,
         inputs: {
-          playerPosition: { x: 7, y: 0, z: 3 },
+          playerPosition: { x: -10.25, y: 0, z: -1.68 },
           playerForward: { x: 0, y: 0, z: -1 },
           playerMoving: true,
         },
@@ -724,16 +732,98 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       fixtura,
       ctx,
     );
-    assert.deepEqual(sim.getCombatant("player")!.position, { x: 7, y: 0, z: 3 }, "la fixture conduce");
+    assert.deepEqual(
+      sim.getCombatant("player")!.position,
+      { x: -10.25, y: 0, z: -1.68 },
+      "el modo fixtures sigue siendo jugable tras una partida en el mismo bridge",
+    );
     assert.ok(sentFixtura.length > 0);
 
-    // Y el save de la partida NO se lleva al muñeco de la fixture.
+    // Y el motor escribe en la partida mientras tanto: no se lleva al muñeco.
     await ctx.narrative.save();
     assert.deepEqual(
       (await storage.read(sessionId))!.player.position,
       [30, 1, 30],
       "la partida guardada conserva dónde estaba el jugador",
     );
+  });
+
+  /** Variante SIN F5: el jugador vuelve al título con la misma pestaña (el
+   *  botón «Volver al título» del muro) y de ahí se va a las fixtures. Ahí el
+   *  mundo lo sigue teniendo SU socket, así que la toma no la refresca nadie —
+   *  y sin embargo el save tiene que soltarse igual. */
+  it("…y tampoco volviendo al título con la misma pestaña", async () => {
+    const { ctx, sim, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
+    await ctx.narrative.save();
+
+    // Mismo socket, ahora mirando una fixture.
+    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: -10.25, y: 0, z: -1.68 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      socket,
+      ctx,
+    );
+    await ctx.narrative.save();
+    assert.deepEqual((await storage.read(sessionId))!.player.position, [30, 1, 30]);
+  });
+
+  /** Y una pestaña AJENA no le quita el mundo a quien está jugando: antes le
+   *  congelaba el jugador (su `input` dejaba de mover nada). */
+  it("un load_room ajeno no le roba el mundo a la partida viva", async () => {
+    const { ctx, sim } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    assert.equal((sent[0] as SessionStartedMessage).ok, true);
+
+    const { socket: ajeno, sent: sentAjeno } = makeSocket();
+    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, ajeno, ctx);
+    assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
+
+    // El jugador de verdad sigue conduciendo.
+    await routeMessage(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 4, y: 0, z: 4 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      socket,
+      ctx,
+    );
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 4, y: 0, z: 4 });
+  });
+
+  /** Reaparecer también MUEVE al jugador, y con el save escuchando al sim eso
+   *  acaba en el `state.json`: mismo dueño que el input (I3 de QA). */
+  it("un respawn ajeno no teletransporta al jugador de la partida", async () => {
+    const { ctx, sim, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
+
+    const { socket: ajeno, sent: sentAjeno } = makeSocket();
+    await routeMessage({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, ajeno, ctx);
+    assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
+    assert.deepEqual(sim.getCombatant("player")!.position, { x: 12, y: 1, z: -6 });
+
+    await ctx.narrative.save();
+    assert.deepEqual((await storage.read(sessionId))!.player.position, [12, 1, -6]);
   });
 
   it("resume_session resiembra el sim con la posición y HP guardados", async () => {
@@ -789,9 +879,12 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
       withSession.ctx,
     );
     withSession.sim.getCombatant("player")!.health = 55;
-    const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ ...loadRoom }, s2, withSession.ctx);
-    const inSessionUpdate = sent2[0] as StateUpdateMessage;
+    // Por el MISMO socket: es el camino real (el jugador vuelve al título con
+    // su pestaña y abre el selector «Room»). Un socket ajeno no puede tomar
+    // el mundo de una partida viva — eso lo canda el test de abajo.
+    sent.length = 0;
+    await routeMessage({ ...loadRoom }, socket, withSession.ctx);
+    const inSessionUpdate = sent[0] as StateUpdateMessage;
     assert.equal(inSessionUpdate.playerHp, 55);
     // Transición de escena, NO respawn: sin evento player_respawned (el
     // cliente teletransportaría al player al spawn pisando un resume).

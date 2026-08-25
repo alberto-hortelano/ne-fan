@@ -3,7 +3,7 @@
  *
  *  Guardar NO es un handler: el save se escribe donde el mundo cambia (trece
  *  sitios) y lleva el runtime del jugador fresco porque `reseedSimForSession`
- *  se lo ata al NarrativeState (`bindPlayerRuntime`). */
+ *  TOMA EL MUNDO para la sesión (`bridge/world-claim.ts`). */
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -272,17 +272,11 @@ function reseedSimForSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
-  // Quien abre la partida es quien la conduce: los `input` de cualquier otro
-  // socket se ignoran a partir de aquí (ver BridgeContext.simDriver).
-  ctx.simDriver = ws;
-  // Sembrar y ATAR son el mismo acto: a partir de aquí, CUALQUIER save() del
-  // bridge lleva la posición y la vida vivas del combatiente. Sin esto el
-  // save solo sabía dónde empezó la partida (reanudar te devolvía al origen y
-  // te curaba a 100).
-  ctx.narrative.bindPlayerRuntime(() => {
-    const live = ctx.sim.getCombatant("player");
-    return live ? { position: live.position, health: live.health } : null;
-  });
+  // Sembrar el sim y TOMAR EL MUNDO son el mismo acto: a partir de aquí
+  // conduce este socket y CUALQUIER save() del bridge lleva la posición y la
+  // vida vivas del combatiente. Sin esto el save solo sabía dónde empezó la
+  // partida (reanudar te devolvía al origen y te curaba a 100).
+  ctx.world.claimForSession(ws);
 }
 
 export async function handleStartSession(

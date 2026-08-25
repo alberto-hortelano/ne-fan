@@ -12,6 +12,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  NOMBRES_DE_SINK,
   NO_SESSION,
   createClientSession,
   type FacetSinks,
@@ -71,10 +72,12 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     ]);
   });
 
-  /** EL candado. Se enumeran las claves del record de sinks, así que no hay
-   *  lista que mantener a mano: el día que aparezca una faceta nueva, su sink
-   *  entra en `FacetSinks` (o no compila) y aquí se exige que `leave()` lo
-   *  llame igual que `enter()`. */
+  /** Que `apply` no pueda saltarse un sink lo garantiza el TIPO
+   *  (`APLICADORES` es un mapeado sobre `FacetSinks` y `apply` lo recorre), no
+   *  este test: antes se enumeraba `Object.keys(sinks)` —el doble de aquí— y
+   *  como `tsc` no mira `test/**`, un sink sin llamar dejaba todo verde (QA
+   *  M1). Lo que se enumera ahora es la lista que exporta el MÓDULO, así que
+   *  el test no puede quedarse corto sin que el módulo se quede corto también. */
   it("leave invoca TODOS los sinks, con el neutro de cada faceta", () => {
     const { sinks, llamadas } = espia();
     const s = createClientSession(sinks);
@@ -84,9 +87,10 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     s.leave();
 
     const invocados = new Set(llamadas.map(([nombre]) => nombre));
-    for (const nombre of Object.keys(sinks)) {
+    for (const nombre of NOMBRES_DE_SINK) {
       assert.ok(invocados.has(nombre), `leave() no deshace el sink "${nombre}"`);
     }
+    assert.equal(NOMBRES_DE_SINK.length, Object.keys(sinks).length, "el doble cubre el record");
     assert.deepEqual(llamadas, [
       ["style", ""],
       ["theme", BASE_UI_THEME],
