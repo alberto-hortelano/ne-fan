@@ -11,6 +11,7 @@
  *    entrada en el error-log por skin, sin reintentos.
  */
 import { CONFIG } from "@nefan-core/src/config.js";
+import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-labels.js";
 import { errors } from "../ui/error-log.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
@@ -123,8 +124,15 @@ export class CharacterSpriteManager {
       // El motivo CONCRETO de la primera viaja en el mensaje: sin él, agrupar
       // los fallos cambiaría «HTTP 404 on /sprites/y_bot/idle/…» por un
       // recuento que no dice dónde mirar.
+      //
+      // Y el CÓDIGO va delante porque este rechazo no se queda aquí: sube por
+      // `setPlayerAppearance` hasta el catch del arranque, que lo traduce con
+      // `motivoDeSesionParaElJugador`. Sin código, esa traducción no lo
+      // reconocía y le decía al jugador que el servidor había fallado y que
+      // reintentara (#255 p2, hallazgo H1 de QA).
       throw new Error(
-        `faltan ${fallidas.length} de ${BASE_ANIMS.length} hojas (${fallidas.join(", ")}) — ${String(primera.reason)}`,
+        `${FALLO_HOJAS_BASE}: faltan ${fallidas.length} de ${BASE_ANIMS.length} hojas ` +
+          `(${fallidas.join(", ")}) — ${String(primera.reason)}`,
       );
     }
   }

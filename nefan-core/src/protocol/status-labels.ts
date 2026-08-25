@@ -154,6 +154,18 @@ export function motivoParaElJugador(err: unknown): string {
   return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }
 
+/** Código del ÚNICO fallo de arranque que no viene del bridge: el set base de
+ *  hojas de personaje no está servido (un clon limpio — `public/sprites/` está
+ *  en `.gitignore`, #255).
+ *
+ *  Es una constante y no un literal suelto porque los dos extremos están en
+ *  repositorios distintos del árbol: lo LANZA el cliente
+ *  (`nefan-html/src/renderer/character-sprites.ts`, que lo importa de aquí) y
+ *  lo lee la función de abajo. Con dos literales sueltos, renombrar uno dejaba
+ *  al jugador con el motivo genérico y nada lo habría dicho: es exactamente el
+ *  fallo que se está arreglando, servido otra vez. */
+export const FALLO_HOJAS_BASE = "character_sheets_missing";
+
 /** Traduce un fallo de SESIÓN a algo que quien juega pueda leer.
  *
  *  Hermana de `motivoParaElJugador`, para el canal que abrió la tanda del
@@ -166,6 +178,20 @@ export function motivoParaElJugador(err: unknown): string {
  *  `detail` de la entrada del error-log. */
 export function motivoDeSesionParaElJugador(err: unknown): string {
   const raw = (err as Error)?.message ?? String(err);
+  // No todo fallo de arranque es del servidor, y este es el que le pasa a
+  // TODO el que clona el repo: sin las hojas de `y_bot` el jugador no puede
+  // tener cuerpo, así que `setPlayerAppearance` rechaza y el intento entero
+  // vuelve al título. Hasta 2026-08-25 caía en el motivo genérico y se leía
+  // «El servidor del juego no pudo completarlo; inténtalo de nuevo»: un
+  // fichero que falta disfrazado de servidor con hipo, y con un consejo
+  // —reintentar— que no puede funcionar NUNCA. Va primero porque es el único
+  // que no habla de la partida sino de la instalación.
+  if (raw.includes(FALLO_HOJAS_BASE)) {
+    return (
+      "Faltan las hojas de sprites del personaje, que no viajan en el repositorio: " +
+      "genéralas con sprite-forge siguiendo docs/assets-de-personaje.md."
+    );
+  }
   if (/session_not_found/.test(raw)) {
     return "Esa partida guardada ya no está en el disco.";
   }

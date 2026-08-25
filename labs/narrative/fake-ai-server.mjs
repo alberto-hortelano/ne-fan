@@ -44,6 +44,16 @@ const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", im
 // del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
 // mismo que serviría el asset-store con GET /styles/{id}/{file}.
 const STYLES_DIR = fileURLToPath(new URL("../../nefan-core/data/styles/", import.meta.url));
+/** `path.extname` sin importar `node:path`: la extensión en minúsculas, y ""
+ *  cuando no hay (incluido el fichero-punto `.jpg`, que para `extname` NO
+ *  tiene extensión). El original llama a `extname`; escribirlo «parecido» era
+ *  otra vía de desvío, así que se escribe la regla entera. */
+function extension(file) {
+  const base = file.slice(file.lastIndexOf("/") + 1);
+  const i = base.lastIndexOf(".");
+  return i > 0 ? base.slice(i).toLowerCase() : "";
+}
+
 /** Mismos tipos y mismo filtro de nombre que `readStyleFile` / `SAFE_ID`. */
 const STYLE_FILE_MIME = {
   ".jpg": "image/jpeg",
@@ -498,25 +508,41 @@ const server = http.createServer((req, res) => {
   // (MIME nuevo, dos subcarpetas), esto se queda atrás — lo caza el guion 26,
   // que exige una portada REAL pintada.
   if (req.method === "GET" && /^\/styles\//.test(req.url ?? "")) {
-    // `new URL` normaliza `..` y `%2e%2e` en el pathname antes de que lleguemos
-    // aquí; los checks por segmento son defensa en profundidad, como en el
-    // original.
-    const partes = new URL(req.url, "http://127.0.0.1").pathname.split("/").slice(1).map(decodeURIComponent);
+    // Las tres líneas siguientes son las de `http-server.ts:82-85`, COPIADAS
+    // TAL CUAL, y esa literalidad es el arreglo: la primera versión de esta
+    // ruta las escribió «a su manera» (con `decodeURIComponent` por segmento y
+    // sin recortar la barra final) y se desvió del original en dos casos el
+    // mismo día — `cover%2Ejpg` daba 200 donde el real da 400, y una barra
+    // final daba 400 donde el real da 200 (QA C4). `new URL` normaliza además
+    // `..` y `%2e%2e`; los checks por segmento son defensa en profundidad,
+    // como en el original.
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const partes = path.split("/").filter(Boolean);
     if (partes.length === 3 || partes.length === 4) {
       const [, styleId, ...resto] = partes;
       const file = resto.join("/");
-      const ext = file.slice(file.lastIndexOf(".")).toLowerCase();
-      const mime = STYLE_FILE_MIME[ext];
+      const mime = STYLE_FILE_MIME[extension(file)];
       const seguro = partes.slice(1).every((s) => SAFE_ID.test(s) && !s.includes(".."));
       if (!mime || !seguro) {
         return send(400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
       }
-      const path = `${STYLES_DIR}${styleId}/${file}`;
-      if (!existsSync(path) || !statSync(path).isFile()) {
+      const fichero = `${STYLES_DIR}${styleId}/${file}`;
+      if (!existsSync(fichero) || !statSync(fichero).isFile()) {
         return send(404, { ok: false, error: `style file not found: ${styleId}/${file}` });
       }
-      res.writeHead(200, { "Content-Type": mime, "Cache-Control": "max-age=300", ...cors });
-      return res.end(readFileSync(path));
+      const cuerpo = readFileSync(fichero);
+      res.writeHead(200, {
+        "Content-Type": mime,
+        // El real lo manda (`Content-Length: r.body.byteLength`); sin él esto
+        // salía chunked. No lo nota un <img>, pero la ruta existe para
+        // PARECERSE al original, y una diferencia que nadie mide es la que
+        // luego explica una hora de bench.
+        "Content-Length": cuerpo.byteLength,
+        "Cache-Control": "max-age=300",
+        ...cors,
+      });
+      return res.end(cuerpo);
     }
   }
   // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin

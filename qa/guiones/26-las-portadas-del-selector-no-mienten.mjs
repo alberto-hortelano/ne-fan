@@ -17,6 +17,13 @@
  *     con el nombre del estilo y el fallo deja ENTRADA en el registro de
  *     errores. Un icono roto es un fallo mudo con cara de fallo; un marcador
  *     sin entrada sería un fallo mudo sin cara: hacen falta los dos.
+ *  3. Y ese marcador DICE que la portada falló, en vez de parecerse al de un
+ *     pack que no declara portada. Los dos casos se veían idénticos —el mismo
+ *     cuadro gris con el nombre— y lo único que los separaba era una entrada
+ *     del registro que el título esconde mientras está delante. El estado de
+ *     avería lo escribe SOLO el listener del fallo, así que el pack sin arte
+ *     no puede llevarlo; lo que este guion mide es que el que sí falló lo
+ *     lleva y el que cargó bien no.
  *
  *  El sabotaje va en el BORDE (las imágenes del pack no llegan), no dentro del
  *  cliente, y se hace ANTES de que nadie pida ninguna portada: así el segundo
@@ -52,7 +59,13 @@ function loQueEnsenanLasTarjetas() {
       cargada: Boolean(img?.complete && img.naturalWidth > 0),
       ancho: img?.naturalWidth ?? 0,
       src: img?.getAttribute("src") ?? "",
-      marcador: (caja.textContent ?? "").trim(),
+      marcador: (caja.querySelector("[data-cover-nombre]")?.textContent ?? "").trim(),
+      // El estado «avería» de la caja: existe SOLO cuando una portada
+      // declarada no llegó. Un pack que no declara portada pinta el mismo
+      // marcador sin nada de esto.
+      averia: Boolean(caja.querySelector("[data-cover-aviso]")),
+      marcada: caja.getAttribute("data-cover-failed") ?? "",
+      aviso: (caja.querySelector("[data-cover-aviso]")?.textContent ?? "").trim(),
       etiqueta: (etiqueta?.textContent ?? "").replace(/^·\s*Estilo:\s*/, "").trim(),
     };
   });
@@ -122,6 +135,15 @@ export default async function (ctx) {
       sinPortada.every((t) => avisos.some((m) => m.includes(t.etiqueta) && /\/styles\/[^/]+\//.test(m))),
     JSON.stringify(avisos.slice(0, 4)),
   );
+  // Y la avería se ve EN LA TARJETA, no solo en un registro que esta pantalla
+  // esconde: «se cayó el asset-store» y «este pack todavía no tiene portada»
+  // eran el mismo cuadro gris. El estado de avería lo escribe únicamente el
+  // listener del fallo, así que un pack sin `cover_url` nunca lo lleva.
+  ctx.expect(
+    "la tarjeta DICE que la portada falló, en vez de parecer un pack sin arte",
+    sinPortada.every((t) => t.averia && /no disponible/i.test(t.aviso) && t.marcada.length > 0),
+    JSON.stringify(sinPortada.map((t) => ({ juego: t.juego, aviso: t.aviso, marcada: t.marcada }))),
+  );
   await ctx.shot("sin-portadas-marcador-y-registro");
 
   // ── 2. Con las portadas servidas: se ven de verdad (el control) ──
@@ -160,6 +182,15 @@ export default async function (ctx) {
     "…y con ellas servidas no hay ni una queja de portada en el registro",
     avisosAhora.length === 0,
     JSON.stringify(avisosAhora.slice(0, 4)),
+  );
+  // El otro lado del aserto de arriba, y lo que lo convierte en una
+  // distinción y no en un adorno: sin avería, la caja no lleva NADA de la
+  // avería. Si el aviso se pintara siempre, «portada caída» volvería a ser
+  // indistinguible de «pack sin portada», solo que al revés.
+  ctx.expect(
+    "una portada que SÍ llegó no lleva marca de avería (el aviso no es decorado)",
+    conPortada.every((t) => !t.averia && t.marcada === ""),
+    JSON.stringify(conPortada.map((t) => ({ juego: t.juego, averia: t.averia, marcada: t.marcada }))),
   );
   await ctx.shot("portadas-del-bench-pintadas");
 }

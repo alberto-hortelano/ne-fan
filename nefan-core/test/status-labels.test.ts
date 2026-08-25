@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  FALLO_HOJAS_BASE,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
   rotuloDeStatus,
@@ -262,6 +263,10 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     "Bridge request timeout: list_games",
     "no games available in bridge — check nefan-core/data/games/",
     "games_dir_unreadable: games directory not found: /home/al/code/ne-fan/nefan-core/data/games",
+    // El ÚNICO que no viene del bridge: lo lanza el cliente al no poder vestir
+    // al jugador. Copiado verbatim de lo que compone `preloadBase`
+    // (nefan-html/src/renderer/character-sprites.ts) en un clon limpio.
+    `${FALLO_HOJAS_BASE}: faltan 10 de 10 hojas (idle, walk, run, quick, heavy, medium, defensive, precise, hit_react, death) — Error: HTTP 404 on /sprites/y_bot/idle/frontal_8/meta.json`,
   ];
 
   it("ninguno enseña el código, la ruta del disco ni el volcado", () => {
@@ -289,6 +294,16 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     ["no games available", "No hay ningún mundo instalado."],
     // Instalación ROTA, no vacía: son causas distintas y la frase también.
     ["games_dir_unreadable", "Falta la carpeta de mundos del juego: la instalación está incompleta."],
+    // Ni el servidor ni la partida: la INSTALACIÓN de quien juega. Es el único
+    // motivo que nombra un remedio, porque es el único que quien lo lee puede
+    // ejecutar (#255 p2). Antes caía en el genérico: «el servidor no pudo
+    // completarlo; inténtalo de nuevo», que además de falso mandaba a repetir
+    // lo que no puede salir bien mientras falten los ficheros.
+    [
+      FALLO_HOJAS_BASE,
+      "Faltan las hojas de sprites del personaje, que no viajan en el repositorio: " +
+        "genéralas con sprite-forge siguiendo docs/assets-de-personaje.md.",
+    ],
   ];
 
   it("cada código del bridge tiene SU frase, no una genérica que valga para todo", () => {
@@ -326,14 +341,44 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     // decir nada. Los DOS que sí comparten frase son a propósito
     // (`combat_system_unknown` y `npc_behavior_unknown`): para el jugador son
     // el mismo hecho —el mundo pide algo que su juego no trae— y distinguirlos
-    // solo nombraría un subsistema que no conoce. 9 códigos → 8 frases.
+    // solo nombraría un subsistema que no conoce. 10 códigos → 9 frases.
     const distintos = CRUDOS.map((raw) => motivoDeSesionParaElJugador(new Error(raw)));
-    assert.equal(new Set(distintos).size, 8, JSON.stringify(distintos));
+    assert.equal(new Set(distintos).size, 9, JSON.stringify(distintos));
     assert.equal(distintos[3], distintos[4], "combate y NPCs comparten frase a propósito");
     assert.match(distintos[0], /ya no está/);
     assert.match(distintos[1], /dañados/);
     assert.match(distintos[5], /conexión/);
     assert.match(distintos[6], /no contesta/);
+  });
+
+  it("el clon sin hojas NO se confunde con un servidor con hipo, y el consejo se puede seguir", () => {
+    // Los dos lados de H1: lo que la frase tiene que decir y lo que NO puede
+    // decir. El «no» importa tanto como el «sí» — el motivo genérico manda
+    // reintentar, y reintentar sin generar las hojas falla siempre igual, así
+    // que el jugador se queda en un bucle con una partida basura por vuelta.
+    const motivo = motivoDeSesionParaElJugador(
+      new Error(`${FALLO_HOJAS_BASE}: faltan 10 de 10 hojas (idle, walk) — Error: HTTP 404 on /sprites/y_bot/idle/frontal_8/meta.json`),
+    );
+    assert.match(motivo, /hojas de sprites del personaje/);
+    assert.match(motivo, /docs\/assets-de-personaje\.md/);
+    assert.doesNotMatch(motivo, /inténtalo de nuevo/);
+    assert.doesNotMatch(motivo, /servidor/);
+    // Y el crudo no se cuela: ni el código, ni la ruta del fichero que faltó.
+    assert.doesNotMatch(motivo, /character_sheets_missing|HTTP 404|\/sprites\//);
+  });
+
+  it("el código viaja en un solo sitio: el que lo lanza importa la misma constante", () => {
+    // El cliente compone el mensaje con `FALLO_HOJAS_BASE` importado de aquí
+    // (character-sprites.ts). Este test no puede importar el cliente, pero sí
+    // fijar que la constante es la que ambos usan: si alguien la cambia por un
+    // literal distinto en un lado, la traducción deja de reconocerlo y el
+    // jugador vuelve al motivo genérico sin que nada se ponga rojo.
+    assert.equal(FALLO_HOJAS_BASE, "character_sheets_missing");
+    assert.notEqual(
+      motivoDeSesionParaElJugador(new Error("faltan 10 de 10 hojas — HTTP 404")),
+      motivoDeSesionParaElJugador(new Error(`${FALLO_HOJAS_BASE}: faltan 10 de 10 hojas — HTTP 404`)),
+      "sin el código, el mismo texto tiene que caer en el genérico: la identidad la da el código, no la prosa",
+    );
   });
 
   it("un fallo que nadie previó sigue siendo una frase, no un volcado", () => {
