@@ -124,7 +124,7 @@ export default async function (ctx) {
   if (!npcId) return;
 
   await ctx.shot("partida-recien-empezada");
-  const posAntes = await ctx.nefan("playerPos");
+  const posArranque = await ctx.nefan("playerPos");
   const vidaAntes = await ctx.page.evaluate(
     () => Number(document.getElementById("player-hp-text")?.textContent ?? "0"),
   );
@@ -232,9 +232,53 @@ export default async function (ctx) {
     `${enCaliente.status} ${JSON.stringify(enCaliente.body).slice(0, 200)}`,
   );
 
-  // ── 3. Nada más toca el save ────────────────────────────────────────────
+  // ── 3. Nada más tocó el save ENTRE escritura y escritura ────────────────
   // Ni andar, ni viajar, ni dialogar: cualquiera de esas cosas llama a
-  // `narrative.save()` por su cuenta y taparía un `mutated` perdido.
+  // `narrative.save()` por su cuenta y habría tapado un `mutated` perdido. Por
+  // eso lo de arriba se mide una a una, con el fichero delante, ANTES de que
+  // el jugador dé un paso.
+
+  // ── 3b. Y ahora el jugador ANDA, que es lo que hace que el resto valga ──
+  // Sin esto, el punto donde se reanuda coincide con el `__player_start` del
+  // tile, y todo lo que viene después pasaría IGUAL con un arreglo que no
+  // persistiera nada y se limitara a caer al arranque de la escena. Andando,
+  // los dos puntos se separan y el aserto distingue una cosa de la otra.
+  await ctx.nefan("setYaw", 0); // +z: calle abierta, lejos de la taberna
+  const andado = await ctx
+    .holdUntil(
+      "up",
+      "el jugador se aleja de su punto de arranque",
+      (a) => {
+        const p = window.__nefan.playerPos;
+        const d = Math.hypot(p.x - a.x, p.z - a.z);
+        // 2 m: la calle del tile del bench se acaba en una pared poco después,
+        // y el listón real es el de abajo (separarse MUCHO más que la
+        // tolerancia de 0,5 m con la que se compara luego).
+        return d >= 2 ? { x: p.x, z: p.z, d } : null;
+      },
+      15_000,
+      { x: posArranque.x, z: posArranque.z },
+    )
+    .catch(() => null);
+  const posAntes = await ctx.nefan("playerPos");
+  ctx.log(`el jugador anduvo hasta ${JSON.stringify(posAntes)} (${andado ? `${andado.d.toFixed(1)} m` : "no se movió"})`);
+  // NO CONCLUYENTE antes que verde: si no se ha movido, lo de abajo no
+  // distingue «se persiste la posición» de «se cae al __player_start».
+  const separacion = Math.hypot(posAntes.x - posArranque.x, posAntes.z - posArranque.z);
+  ctx.expect(
+    "el jugador se ha ALEJADO del arranque de la escena (si no, el resto no prueba nada)",
+    separacion >= 1.5,
+    `arranque ${JSON.stringify(posArranque)} · ahora ${JSON.stringify(posAntes)} (${separacion.toFixed(2)} m)`,
+  );
+  // Un guardado del motor DESPUÉS de andar: es el que tiene que llevarse la
+  // posición nueva.
+  await api("POST", "/map/place", {
+    id: "qa_testigo_andado",
+    kind: "site",
+    parent_id: null,
+    name: "Piedra del camino",
+    description: "Fuerza un guardado con el jugador ya lejos del arranque.",
+  });
 
   // ── 3b. Y el save de DISCO ya lleva dónde está el jugador ────────────────
   // La mitad del arreglo que se ve sin recargar nada: la posición vive en el
@@ -242,11 +286,11 @@ export default async function (ctx) {
   // copiaba al save. Se mira el fichero, no la memoria.
   const enDisco = leerSave(sessionId);
   ctx.expect(
-    "el state.json de disco lleva la posición VIVA del jugador",
+    "el state.json de disco lleva la posición VIVA del jugador, no la de arranque",
     Array.isArray(enDisco?.player?.position) &&
       Math.abs(enDisco.player.position[0] - posAntes.x) <= 0.5 &&
       Math.abs(enDisco.player.position[2] - posAntes.z) <= 0.5,
-    `save: ${JSON.stringify(enDisco?.player?.position)} · vivo: ${JSON.stringify(posAntes)}`,
+    `save: ${JSON.stringify(enDisco?.player?.position)} · vivo: ${JSON.stringify(posAntes)} · arranque: ${JSON.stringify(posArranque)}`,
   );
   ctx.expect(
     "…y su vida, que es el otro campo que solo vivía en el sim",
@@ -342,6 +386,11 @@ export default async function (ctx) {
     "…y no en (0,0), que en este tile es el interior de la taberna",
     Math.abs(posDespues.x) > 0.01 || Math.abs(posDespues.z) > 0.01,
     JSON.stringify(posDespues),
+  );
+  ctx.expect(
+    "…ni en el `__player_start` de la escena: se PERSISTIÓ, no se cayó al arranque",
+    Math.hypot(posDespues.x - (arranque?.x ?? 0), posDespues.z - (arranque?.z ?? 0)) >= 1.5,
+    `reanudó en ${JSON.stringify(posDespues)} · __player_start ${JSON.stringify(arranque)}`,
   );
   // La vida se mide aquí porque el resume la resiembra en el sim y el HUD la
   // pinta; lo que este guion NO puede es bajarla (no hay quien pegue en el
