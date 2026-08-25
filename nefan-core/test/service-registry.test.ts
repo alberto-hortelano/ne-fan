@@ -13,16 +13,14 @@ describe("registro de servicios ↔ config", () => {
     assert.equal(SERVICES["game-gateway"].currentPort, CONFIG.ports.bridge);
     assert.equal(SERVICES["world-state"].currentPort, CONFIG.ports.state_api);
     assert.equal(SERVICES["narrative-llm"].currentPort, CONFIG.ai_server.port);
-    // Extraídos: puerto propio, atado a su entrada de CONFIG.ports.
-    assert.equal(SERVICES["asset-store"].currentPort, CONFIG.ports.asset_store);
-    assert.equal(SERVICES["remote-gen"].currentPort, CONFIG.ports.remote_gen);
-    // Los servicios aún no extraídos co-viven en ai_server: mismo puerto.
-    for (const name of ["asset-store", "remote-gen"] as const) {
-      if (SERVICES[name].extractionPhase !== undefined) {
-        assert.equal(SERVICES[name].currentPort, CONFIG.ai_server.port,
-          `${name} sin extraer debe escuchar donde ai_server`);
-      }
-    }
+    // Extraídos: puerto propio, atado a su entrada de CONFIG.ports. Debajo
+    // hubo un bucle que decía comprobar que los servicios "sin extraer"
+    // escuchan donde ai_server, y no ejecutaba NINGUNA de sus aserciones: su
+    // guarda era `extractionPhase !== undefined` sobre asset-store y
+    // remote-gen, que no lo declaran (`as const satisfies` en
+    // src/contracts/service-registry.ts). De haberse ejecutado habría fallado,
+    // comparando 8767/8768 contra CONFIG.ai_server.port (8765). Borrado
+    // entero en #231a: las dos líneas de arriba ya afirman lo correcto.
   });
 });
 
