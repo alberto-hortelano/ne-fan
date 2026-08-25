@@ -34,28 +34,31 @@
  *  agenda: el bridge guarda por su cuenta mientras el jugador está en otra
  *  pantalla, y es justo entonces cuando la posición se pierde.
  *
- *  ESTADO: NACE ROJO, y no por deuda ajena — por un hallazgo de esta misma
- *  tanda. Medido tres veces seguidas, determinista y con la GPU real:
+ *  ESTADO: VERDE desde el 2026-08-25. Nació ROJO por un hallazgo de esta misma
+ *  tanda y se arregló en su ronda de corrección; lo que sigue describe el bug
+ *  tal como se midió, en pasado, porque es lo que este guion existe para
+ *  impedir que vuelva. Medido tres veces seguidas, determinista y con la GPU real:
  *
  *      dejó la partida en {x:0.25, z:5.49} → el save pasa a [-10.25, 0, -1.68]
  *      (la posición del muñeco de la fixture) y «Reanudar» le deja ahí.
  *
- *  El mecanismo: `handleLoadRoom` (el único sitio del bridge que SUELTA la
- *  atadura del jugador con `bindPlayerRuntime(null)`) es inalcanzable desde el
- *  cliente de hoy. `nefan-html` solo manda `load_room` para escenas que NO son
- *  tile (`main.ts`, rama `else` de `isGridTile`), y las TRES fixtures de
+ *  El mecanismo ERA: `handleLoadRoom` (el único sitio del bridge que soltaba la
+ *  atadura del jugador) era inalcanzable desde el cliente. `nefan-html` solo manda `load_room` para escenas que NO son
+ *  tile (rama `else` de `isGridTile`), y las TRES fixtures de
  *  `nefan-core/data/scenes/` son Format D con `tile` — el candado se probó
- *  contra un mensaje que nadie manda ya. Y tras un F5 `simDriver` vuelve a
+ *  contra un mensaje que nadie mandaba ya. Ese es el modo de fallo que hay que
+ *  recordar: no un bug, un CANDADO VERDE SOBRE CÓDIGO MUERTO. Y tras un F5 `simDriver` vuelve a
  *  `null` (`ws-server.ts`, `ws.on("close")`), así que el socket nuevo conduce
  *  sin haber tomado el mundo.
  *
- *  PROBADO EN VERDE (experimento de diagnóstico, revertido, NO es un arreglo
- *  propuesto ni aplicado): añadiendo `ctx.narrative.bindPlayerRuntime(null)`
- *  junto al `ctx.simDriver = null` del cierre de socket, los diez asertos
- *  salen verdes — incluido el de que las fixtures siguen siendo jugables. Es
- *  la prueba de que este guion discrimina y no está rojo por construcción.
- *  Ojo: eso cubre la variante del F5, no la de volver al título con el MISMO
- *  socket y cerrarlo a fixtures (ahí `simDriver` sigue siendo ese socket).
+ *  CÓMO SE ARREGLÓ: `bridge/world-claim.ts` juntó los dos hechos que estaban
+ *  sueltos y se movían a mano desde cuatro sitios — «quién conduce el sim» y «a
+ *  qué escucha el save». Y `load_room` dejó de ser código muerto: el selector
+ *  «Room» vuelve a mandarlo, porque cargar una fixture ES tomar el mundo.
+ *
+ *  CÓMO SE PONE ROJO (probado): que la atadura del save sobreviva al dueño del
+ *  mundo. Entonces este guion reproduce la medida de arriba clavada. Si alguien
+ *  lo ve verde sin creerse que discrimina, ese es el experimento.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
