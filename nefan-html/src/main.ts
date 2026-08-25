@@ -1274,7 +1274,11 @@ function applyTurnKeys(): void {
 // look y atacar con LMB.
 fpsRenderer.element.addEventListener("click", () => {
   if (!dialoguePanel.isVisible) {
-    fpsRenderer.element.requestPointerLock();
+    // El navegador RECHAZA la captura si el documento no tiene el foco o si
+    // se sale del lock y se vuelve a pedir demasiado pronto. El cliente no
+    // tiene handler de `unhandledrejection`, así que sin este canal el ratón
+    // simplemente no se capturaba y no lo decía nadie.
+    paso(fpsRenderer.element.requestPointerLock(), "input", "no se pudo capturar el ratón (pointer lock)");
   }
 });
 
@@ -1329,7 +1333,13 @@ dialoguePanel.onAdvanced = () => {
 sceneSelector.addEventListener("change", () => {
   const value = sceneSelector.value;
   if (!value) return;
-  loadSceneFile(value);
+  // Sin canal, un módulo de fixture que no carga dejaba el selector en un
+  // no-op MUDO (el modo de fallo de #181): la escena no cambiaba, el rechazo
+  // se perdía y quien conduce el preset `html-fixtures` no se enteraba de
+  // nada. Ahora el fallo llega al registro de errores y a la línea del juego.
+  paso(loadSceneFile(value), "scene", `no se pudo cargar la fixture ${value}`, () =>
+    log(`⚠ no se pudo cargar la escena ${value}`),
+  );
 });
 
 // --- Respawn ---
