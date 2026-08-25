@@ -35,31 +35,48 @@ import {
   type ScatterCount,
 } from "./scatter.js";
 import type { SurfaceDescFaces, SurfaceRefFaces, Volume } from "./volumes.js";
-import { buildTileGreyboxSpec, type TileGreyboxPlan, type TileGreyboxSpec } from "./greybox.js";
+import {
+  GROUND_STACK_TOP_CELLS,
+  buildTileGreyboxSpec,
+  type TileGreyboxPlan,
+  type TileGreyboxSpec,
+} from "./greybox.js";
 
-/** Separación extra por prim entre rasgos planos del suelo (metros). El
- *  greybox escalona ENTRE capas (área<path<agua<deck) pero dentro de una capa
- *  todas las prims comparten y — coplanares exactas (cajas de segmento +
- *  cilindros de junta de un path). En perspectiva fps en tiempo real esas
- *  coplanares z-fightean. 2 mm por prim es invisible a pie pero supera la
- *  precisión del z-buffer hasta el fog (~1.6 mm a 90 m con near 0.3). El
- *  desplazamiento se aplica AQUÍ, no en el builder compartido: de sus prims
- *  sale la identidad de las celdas del atlas. */
-const GROUND_STAGGER_M = 0.002;
+/** Cara alta del stack de rasgos planos del suelo, en METROS (0,105). Es
+ *  CONSTANTE sea cual sea el tile —ocho rasgos o los 64 del schema—: los
+ *  rasgos ya no se separan en Y, se pintan en orden (`groundOrder`). */
+export const GROUND_STACK_TOP_M = GROUND_STACK_TOP_CELLS * TILE_MPC;
 
-/** Banda de elevación (celdas) de los rasgos ground del greybox: Y_AREA 0.05
- *  … Y_DECK 0.18. El detalle procedural queda por debajo (≤0.05 con cat
- *  decor) y el agua de fuente muy por encima (1.05, cat water). */
-const GROUND_BAND_MIN = 0.045;
-const GROUND_BAND_MAX = 0.185;
+/** Holgura entre la cara alta del suelo y cualquier calco que se dibuje
+ *  encima. 2 cm: suficiente para que el calco no comparta profundidad con el
+ *  deck ni a 90 m, y poco para que siga leyendo como SUELO y no como una
+ *  chapa flotando a los pies del jugador. */
+export const GROUND_OVERLAY_CLEARANCE_M = 0.02;
 
+/** Altura a la que va cualquier calco sobre el suelo (telegraph del ataque,
+ *  overlay de colisión), en metros sobre el relieve.
+ *
+ *  DERIVADA, no medida: estuvo en 0,2 m a ojo sobre dos fixtures del golden
+ *  mientras el suelo crecía 2 mm por prim sin techo. Un tile de puerto con
+ *  quince rasgos —río, cuatro embarcaderos, seis calles y cuatro plazas, o
+ *  sea `data/scenes/puerto_tile.json`— dejaba la cara alta del suelo en
+ *  0,219 m y ENTERRABA el telegraph del ataque (issue #185). Retirado el
+ *  escalonado, el suelo tiene techo por construcción y esta cota se explica
+ *  sola. */
+export const GROUND_OVERLAY_Y_M = GROUND_STACK_TOP_M + GROUND_OVERLAY_CLEARANCE_M;
+
+/** ¿Es esta prim un rasgo plano de `ground`? Lo dice la MARCA que le puso
+ *  quien la emitió (`groundFeaturePrims`), no su cota.
+ *
+ *  Aquí vivía un olfateador —`cat` terrain|water + `noShadow` + `y` dentro de
+ *  una banda 0,045…0,185 celdas— y era un agujero con forma de candado: una
+ *  capa por encima del deck se caía de la banda, así que ni se pintaba como
+ *  calco (seguía escribiendo profundidad ⇒ ENTERRABA el telegraph) ni la medía
+ *  `test/ground-overlay.test.ts`, que filtra por `groundOrder`. O sea que el
+ *  candado de #185 dejaba abierta la puerta por la que #185 vuelve. Con la
+ *  marca en origen, el alcance no depende de la altura de la capa. */
 function isGroundFeaturePrim(p: GreyboxPrimitive): boolean {
-  return (
-    (p.cat === "terrain" || p.cat === "water") &&
-    p.noShadow === true &&
-    p.pos[1] >= GROUND_BAND_MIN &&
-    p.pos[1] <= GROUND_BAND_MAX
-  );
+  return p.groundLayer !== undefined;
 }
 
 /** Plan del tile + bloque opcional de scatter declarativo (crudo — se valida
@@ -277,13 +294,21 @@ export function buildFpsTileSpec(plan: FpsTilePlanInput, seedKey: string): FpsTi
       scaled.relief = reliefGrid;
     }
     if (reliefGrid && p.volId && anchorVolIds.has(p.volId)) scaled.anchor = true;
-    // Stagger intra-capa de los rasgos planos del suelo (anti z-fighting).
-    // El orden de emisión es el contractual (área→path→agua→deck, juntas
-    // tras sus cajas), así que el índice creciente preserva la prioridad
-    // visual del contrato y las juntas ganan en los codos.
+    // Orden de PINTADO de los rasgos planos del suelo. Dentro de una capa
+    // todas las prims comparten y —coplanares exactas: cajas de segmento y
+    // cilindros de junta de un mismo camino— y en perspectiva fps eso
+    // z-fightea. La respuesta NO es separarlas en Y: son calcos, y un calco se
+    // resuelve por orden de pintado. El escalonado de 2 mm por prim que vivía
+    // aquí no tenía techo (63 prims legales ya subían el suelo a 0,2235 m y
+    // enterraban el telegraph — #185) y encima dejaba el último camino
+    // flotando 12 cm sobre su capa.
+    //
+    // El orden de emisión es el contractual (área→path→agua→deck, juntas tras
+    // sus cajas), así que el índice creciente preserva la prioridad visual del
+    // contrato y las juntas ganan en los codos.
     if (isGroundFeaturePrim(p)) {
+      scaled.groundOrder = groundIdx;
       groundIdx += 1;
-      scaled.pos = [scaled.pos[0], scaled.pos[1] + groundIdx * GROUND_STAGGER_M, scaled.pos[2]];
     }
     return scaled;
   });

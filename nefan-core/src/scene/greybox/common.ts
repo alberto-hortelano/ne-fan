@@ -7,6 +7,8 @@
  *  tile se colorea desde `GROUND_MATERIAL_COLORS` (blueprint/ground-prims.ts),
  *  que es otra tabla y sigue viva. */
 
+import type { GroundLayer } from "../blueprint/ground.js";
+
 export interface GreyboxPrimitive {
   shape: "box" | "gable" | "cylinder" | "cone" | "polygon" | "sphere";
   /** box/gable: [w, h, d] m (gable: cumbrera a lo largo de d antes de rotY).
@@ -36,6 +38,16 @@ export interface GreyboxPrimitive {
   /** "vol_<id>" del volumen al que pertenece (ausente en decorado). */
   volId?: string;
   noShadow?: boolean;
+  /** CAPA plana del suelo de la que sale esta prim. **Solo la escribe
+   *  `groundFeaturePrims`**, y la escribe en TODAS las que emite: es la marca
+   *  que dice "esto es suelo", en vez de adivinarlo después por su cota.
+   *
+   *  Adivinarlo era el agujero: el post-proceso fps olfateaba `cat` + `y` en
+   *  una banda, así que una capa por encima del deck se quedaba FUERA —ni
+   *  calco (enterraba lo que se dibuja encima) ni medida por el candado del
+   *  techo (issue #185, hallazgo H1 de QA)—. Marcada en origen, el alcance del
+   *  candado no depende de a qué altura viva la capa. */
+  groundLayer?: GroundLayer;
 }
 
 export interface GreyboxLight {

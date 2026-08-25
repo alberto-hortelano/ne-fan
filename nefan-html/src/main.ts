@@ -5,8 +5,8 @@
 
 import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
 import { setDebugLog } from "./dev/debug-log.js";
-import { distance, sub } from "@nefan-core/src/vec3.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
+import { attackFlashQuality } from "@nefan-core/src/combat/attack-area.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
@@ -1714,23 +1714,26 @@ function gameLoop(now: number): void {
         fadeTimer: 0,
       };
     } else if (e.type === "attack_impacted" && e.combatantId === "player") {
-      let quality = 0;
-      for (const ee of enemyEntities) {
-        if (!ee.alive) continue;
-        const dist = distance(playerPos, ee.pos);
-        const params = attackVisual?.params ?? getSelectedParams();
-        const distFactor = Math.max(0, 1 - Math.abs(dist - params.optimal_distance) / params.distance_tolerance);
-        const dir = sub(ee.pos, playerPos);
-        const fwdXz = { x: playerForward.x, z: playerForward.z };
-        const perpDist = Math.abs(fwdXz.x * dir.z - fwdXz.z * dir.x);
-        const precFactor = Math.max(0, 1 - perpDist / params.area_radius);
-        quality = Math.max(quality, distFactor * precFactor);
-      }
+      // Calidad del destello = la del ÁREA de core, la misma que resuelve el
+      // daño. Aquí vivía una tercera copia de la fórmula (distancia ×
+      // precisión escritas a mano) que además se saltaba el cono frontal: un
+      // enemigo a la espalda teñía el destello de verde mientras el resolver
+      // no le hacía ni un punto de daño. El color no adorna, informa.
+      //
+      // La PROYECCIÓN al plano del ataque también es de core: escrita aquí no
+      // había forma de afirmarla —el cliente no tiene harness— y era la mitad
+      // de la fórmula que se saltaba el cono.
+      const params = attackVisual?.params ?? getSelectedParams();
       attackVisual = {
         active: true,
         mode: "impact",
-        params: attackVisual?.params ?? getSelectedParams(),
-        impactQuality: quality,
+        params,
+        impactQuality: attackFlashQuality(
+          params,
+          playerPos,
+          playerForward,
+          enemyEntities.filter((ee) => ee.alive).map((ee) => ee.pos),
+        ),
         fadeTimer: 0.3,
       };
     } else if (e.type === "attack_landed") {

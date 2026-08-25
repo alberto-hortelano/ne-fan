@@ -48,8 +48,27 @@ geometría.
 
 `buildTileGreyboxSpec(plan, tileKey)` (`blueprint/greybox.ts`,
 `TILE_GREYBOX_VERSION`) es la base compartida: primitivas en celdas (suelo de
-bioma + detalle sembrado + rasgos ground escalonados en y + volúmenes por
-TRAMOS vía `greybox/volume-prims.ts`) y luces fijas. Ya no emite cámara ni
+bioma + detalle sembrado + rasgos ground en cuatro capas + volúmenes por
+TRAMOS vía `greybox/volume-prims.ts`) y luces fijas.
+
+Los rasgos de `ground` son **calcos**: dentro de una capa son coplanares
+exactos, y su prioridad la resuelve el ORDEN DE PINTADO (`groundOrder`, que
+fps-spec numera y el renderer traduce a `renderOrder` sin escribir
+profundidad), no la altura. Antes se escalonaban 2 mm por prim y el suelo
+crecía sin techo: un tile de puerto legal lo subía a 0,219 m y enterraba lo
+que se dibuja encima (#185). Hoy el techo es CONSTANTE
+(`GROUND_STACK_TOP_M` = 0,105 m) y de él sale la cota de cualquier calco
+(`GROUND_OVERLAY_Y_M`), candada contra el peor tile del schema en
+`test/ground-overlay.test.ts`.
+
+Qué prims son suelo lo dice la MARCA que les pone su emisor
+(`groundLayer`, en `ground-prims.ts`), no su altura, y su cota sale de la
+TABLA de capas del builder (`GROUND_LAYERS_CELLS`), de la que se deriva el
+techo. Las dos cosas son el mismo candado: mientras se olfateaba por altura
+—`cat` + una banda de y— una capa por encima del deck se caía fuera, dejaba de
+ser calco (volvía a escribir profundidad ⇒ enterraba el telegraph) y encima no
+la medía el test. Añadir una capa hoy es añadirla a la tabla: el techo y la
+cota del calco suben solos. Ya no emite cámara ni
 `elements`/`occluders`: esos tres los pedía el repintado de la oblicua y se
 fueron con él. Sigue siendo DETERMINISTA, que es lo que permite hashear
 `canonicalGreyboxJson(spec)` como clave de caché.
@@ -86,6 +105,18 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   (`calidad = factor_distancia × factor_precision × …`), así que sin verlo el
   combate es a ciegas. Se fija ANTES de `render()`: en WebGL no queda lienzo
   sobre el que garabatear una vez emitido el frame.
+  Dibuja DOS cosas, no una (#184): el relleno degradado dice dónde se pega
+  mejor y un **contorno rojo** dice hasta dónde llega — los tres límites del
+  área, el anillo radial, la banda lateral y el arco del cono de ±60°. Necesita
+  dos variables porque la calidad no sirve para dibujar el borde: vale 0 en la
+  frontera Y a diez metros. El margen al borde en metros
+  (`attackAreaMargin`, `nefan-core/src/combat/attack-area.ts`) sí los
+  distingue. Esa es la ÚNICA fórmula del área: el cliente no tiene copia, y
+  `test/attack-area.test.ts` la afirma contra `resolveAttack` punto por punto.
+  El **destello de impacto** se tiñe con la misma verdad
+  (`attackFlashQuality`, core): también la PROYECCIÓN del enemigo al plano del
+  ataque es fórmula, no dibujo — escrita a mano en el cliente se saltaba el
+  cono frontal y un enemigo a la espalda salía verde pleno.
 - **Nombre del NPC y mirilla** (`ui/world-labels.ts`): etiquetas DOM temadas,
   no texto dentro del lienzo.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y

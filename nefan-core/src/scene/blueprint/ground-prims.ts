@@ -1,13 +1,19 @@
-/** Primitivas greybox de los rasgos `ground` (area/path/water/deck) —
- *  compartidas por el TILE oblicuo (celdas, transform identidad) y el PLATÓ
- *  proscenio (metros, origen en rect.minX/minZ, suavizado de curvas).
+/** Primitivas greybox de los rasgos `ground` (area/path/water/deck) para el
+ *  builder del TILE (celdas, transform identidad).
  *
  *  Contrato de orden: SIEMPRE cuatro pasadas areas→paths→water→decks — el
  *  array de primitivas es posicional (los occluders del tile indexan por
- *  rango) y el escalonado en y da el orden visual sin z-fighting. */
+ *  rango) y de ese orden sale el orden de PINTADO de los calcos (`groundOrder`
+ *  en fps-spec): las capas ya no se separan en y.
+ *
+ *  Contrato de cota: la elevación de un rasgo sale SIEMPRE de la tabla de
+ *  capas que pasa el builder (`o.layers`), nunca de un número escrito aquí, y
+ *  cada prim sale MARCADA con su capa (`groundLayer`). Las dos cosas son la
+ *  misma: quien conoce el techo del suelo es la tabla, y quien sabe qué prims
+ *  son suelo es quien las emite. */
 
 import { PALETTE } from "./palette.js";
-import type { GroundFeature } from "./ground.js";
+import type { GroundFeature, GroundLayer } from "./ground.js";
 import type { GreyboxPrimitive } from "../greybox/common.js";
 
 /** Colores de suelo por material declarado (rasgos `ground`). */
@@ -62,13 +68,14 @@ export function catmullRomSample(pts: [number, number][], subdiv: number): [numb
 export interface GroundPrimsOptions {
   /** Transform celda→unidades del builder (identidad en el tile). */
   toXZ: (u: number, v: number) => [number, number];
-  /** Escala de LONGITUDES celda→unidades (1 en el tile, mpc en el plató). */
+  /** Escala de LONGITUDES celda→unidades (1 en el tile). */
   scale: number;
-  /** Elevaciones por capa y grosor, en unidades del builder. */
-  yArea: number;
-  yPath: number;
-  yWater: number;
-  yDeck: number;
+  /** Elevación de CADA capa plana, en unidades del builder. Es un
+   *  `Record<GroundLayer, …>`: un `kind` plano nuevo en el schema no compila
+   *  hasta que se le da su cota, y de esta misma tabla sale el techo del suelo
+   *  (`GROUND_STACK_TOP_CELLS`). Ninguna capa puede aparecer por libre. */
+  layers: Record<GroundLayer, number>;
+  /** Grosor de toda capa plana, en unidades del builder. */
   layerT: number;
   /** Overrides de color por material (encima de GROUND_MATERIAL_COLORS). */
   colors?: Record<string, string>;
@@ -79,26 +86,27 @@ export interface GroundPrimsOptions {
 
 function flatShapePrims(
   f: Extract<GroundFeature, { kind: "area" | "water" | "deck" }>,
-  yBase: number,
+  layer: GroundLayer,
   color: string,
   cat: GreyboxPrimitive["cat"],
   o: GroundPrimsOptions,
 ): GreyboxPrimitive[] {
+  const yBase = o.layers[layer];
   if (f.rect) {
     const [c0, r0, w, d] = f.rect;
     const [x, z] = o.toXZ(c0 + w / 2, r0 + d / 2);
-    return [{ shape: "box", size: [w * o.scale, o.layerT, d * o.scale], pos: [x, yBase, z], color, cat, noShadow: true }];
+    return [{ shape: "box", size: [w * o.scale, o.layerT, d * o.scale], pos: [x, yBase, z], color, cat, noShadow: true, groundLayer: layer }];
   }
   if (f.ellipse) {
     const pts = ellipsePoints(
       f.ellipse.center[0], f.ellipse.center[1], f.ellipse.rx, f.ellipse.ry,
       o.ellipseSegments ?? 16,
     ).map(([u, v]) => o.toXZ(u, v));
-    return [{ shape: "polygon", size: [o.layerT], pos: [0, yBase, 0], points: pts, color, cat, noShadow: true }];
+    return [{ shape: "polygon", size: [o.layerT], pos: [0, yBase, 0], points: pts, color, cat, noShadow: true, groundLayer: layer }];
   }
   if (f.polygon) {
     const pts = (f.polygon as [number, number][]).map(([u, v]) => o.toXZ(u, v));
-    return [{ shape: "polygon", size: [o.layerT], pos: [0, yBase, 0], points: pts, color, cat, noShadow: true }];
+    return [{ shape: "polygon", size: [o.layerT], pos: [0, yBase, 0], points: pts, color, cat, noShadow: true, groundLayer: layer }];
   }
   return [];
 }
@@ -110,6 +118,7 @@ function pathPrims(
   o: GroundPrimsOptions,
 ): GreyboxPrimitive[] {
   const w = (f.w ?? 4) * o.scale;
+  const yPath = o.layers.path;
   const prims: GreyboxPrimitive[] = [];
   let pts = (f.points as [number, number][]).map(([u, v]) => o.toXZ(u, v));
   if (o.smoothPathSubdiv && o.smoothPathSubdiv > 1) pts = catmullRomSample(pts, o.smoothPathSubdiv);
@@ -121,15 +130,16 @@ function pathPrims(
     prims.push({
       shape: "box",
       size: [len, o.layerT, w],
-      pos: [(ax + bx) / 2, o.yPath, (az + bz) / 2],
+      pos: [(ax + bx) / 2, yPath, (az + bz) / 2],
       rotY: -Math.atan2(bz - az, bx - ax),
       color,
       cat: "terrain",
       noShadow: true,
+      groundLayer: "path",
     });
   }
   for (const [px, pz] of pts) {
-    prims.push({ shape: "cylinder", size: [w / 2, o.layerT], pos: [px, o.yPath, pz], color, cat: "terrain", noShadow: true });
+    prims.push({ shape: "cylinder", size: [w / 2, o.layerT], pos: [px, yPath, pz], color, cat: "terrain", noShadow: true, groundLayer: "path" });
   }
   return prims;
 }
@@ -142,17 +152,17 @@ export function groundFeaturePrims(features: GroundFeature[], o: GroundPrimsOpti
   };
   const out: GreyboxPrimitive[] = [];
   for (const f of features) {
-    if (f.kind === "area") out.push(...flatShapePrims(f, o.yArea, color(f.material, "#8f7757"), "terrain", o));
+    if (f.kind === "area") out.push(...flatShapePrims(f, "area", color(f.material, "#8f7757"), "terrain", o));
   }
   for (const f of features) {
     if (f.kind === "path") out.push(...pathPrims(f, color(f.material ?? "dirt", "#8f7757"), o));
   }
   for (const f of features) {
-    if (f.kind === "water") out.push(...flatShapePrims(f, o.yWater, PALETTE.water, "water", o));
+    if (f.kind === "water") out.push(...flatShapePrims(f, "water", PALETTE.water, "water", o));
   }
   for (const f of features) {
     if (f.kind === "deck") {
-      out.push(...flatShapePrims(f, o.yDeck, f.material === "stone" ? "#8b8678" : PALETTE.woodTop, "terrain", o));
+      out.push(...flatShapePrims(f, "deck", f.material === "stone" ? "#8b8678" : PALETTE.woodTop, "terrain", o));
     }
   }
   return out;

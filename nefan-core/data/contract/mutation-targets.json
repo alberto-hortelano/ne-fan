@@ -197,10 +197,10 @@
     },
     {
       "id": "combat-resolver",
-      "mutate": ["src/combat/combat-resolver.ts"],
-      "tests": ["test/combat-resolver.test.ts"],
-      "break": 68,
-      "porque": "La fórmula de daño. Los tests de sistemas y de simulación lo alcanzan por transitividad pero no lo ejercen: el único que lo importa es el suyo."
+      "mutate": ["src/combat/attack-area.ts", "src/combat/combat-resolver.ts"],
+      "tests": ["test/attack-area.test.ts", "test/combat-resolver.test.ts"],
+      "break": 92,
+      "porque": "La fórmula de daño y esa MISMA fórmula vista como área en el suelo (attack-area: lo que dibuja el telegraph del ataque). Van en el mismo módulo porque son una sola verdad — el telegraph tenía copia propia y podía divergir del resolver sin que nada fallara. Los tests de sistemas y de simulación las alcanzan por transitividad pero no las ejercen: los únicos que las importan son estos dos."
     },
     {
       "id": "blueprint-volumenes",
@@ -263,10 +263,11 @@
         "test/derive-vegetation.test.ts",
         "test/fps-atlas-golden.test.ts",
         "test/fps-riqueza.test.ts",
+        "test/ground-overlay.test.ts",
         "test/plan-collision.test.ts",
         "test/scatter.test.ts"
       ],
-      "break": 65,
+      "break": 67,
       "porque": "El `ground` declarativo del tile → prims de suelo y su colisión: lo que decide si un río corta el paso o es pintura. plan-collision entra por el BARRIL (importa groundCollisionGrid de blueprint/index.js). derive-vegetation entra desde #174 porque el candado de imports lo obliga: sus casos construyen los rasgos con `parseGround`, que este módulo muta. NO sube el score — medido el 2026-08-23 por QA y confirmado: 65,67 % con él y 65,67 % sin él, cero mutantes nuevos muertos, y la batería paga el fichero una vez por mutante. Se queda porque meterlo en `excluidos` sería mentira (importa un fichero mutado de verdad), no porque mida nada nuevo: si algún día hay que abaratar este módulo, este es el candidato. Suelo medido el 2026-08-23 en la primera corrida completa del plan (55,7 % y 65,7 %): antes iba a 0 porque el módulo aún no se había medido nunca.",
       "excluidos": [
         {
@@ -301,6 +302,7 @@
         "test/fps-atlas-golden.test.ts",
         "test/fps-detail.test.ts",
         "test/fps-riqueza.test.ts",
+        "test/ground-overlay.test.ts",
         "test/scatter.test.ts",
         "test/surfaces.test.ts"
       ],
@@ -335,6 +337,7 @@
       "tests": [
         "test/custom-volume.test.ts",
         "test/fps-detail.test.ts",
+        "test/ground-overlay.test.ts",
         "test/prism-volume.test.ts",
         "test/tile-greybox.test.ts"
       ],

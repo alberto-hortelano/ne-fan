@@ -26,6 +26,12 @@ import {
   type SurfacePrim,
 } from "@nefan-core/src/scene/greybox/surfaces.js";
 import { reliefAtM, type ReliefGrid } from "@nefan-core/src/scene/blueprint/fps-relief.js";
+import { GROUND_OVERLAY_Y_M } from "@nefan-core/src/scene/blueprint/fps-spec.js";
+import {
+  attackAreaMargin,
+  attackAreaQuality,
+  attackAreaReach,
+} from "@nefan-core/src/combat/attack-area.js";
 import { TILE_CELLS, TILE_MPC } from "@nefan-core/src/scene/tile.js";
 
 /** Lado del tile en metros (64). */
@@ -63,20 +69,43 @@ export interface FpsDebugCollision {
   size: number;
 }
 
-/** Altura a la que va cualquier calco sobre el suelo, en metros. El suelo NO
- *  acaba en y=0: el greybox apila los rasgos planos (área→camino→agua→deck,
- *  Y_DECK 0.18 celdas = 0.09 m) y fps-spec les añade 2 mm por prim para que
- *  no z-fighteen — medido sobre las fixtures del golden, la cara alta del
- *  stack queda en 0,13 m. A ras, un calco queda ENTERRADO bajo el camino y la
- *  plaza; a 0,2 m flota justo por encima y sigue leyendo como suelo. */
-const GROUND_OVERLAY_Y = 0.2;
+/** Altura a la que va cualquier calco sobre el suelo, en metros. NO es un
+ *  número de este fichero: sale de la cara alta del stack de rasgos planos que
+ *  emite el greybox más su holgura, y ese techo lo fija —y lo canda— el core
+ *  (`GROUND_OVERLAY_Y_M`). El cliente solo pinta a la altura que le dicen. */
+const GROUND_OVERLAY_Y = GROUND_OVERLAY_Y_M;
+
+/** Base del `renderOrder` de los calcos de suelo. Los rasgos de `ground` son
+ *  coplanares por capa y su prioridad la resuelve el ORDEN DE PINTADO
+ *  (`groundOrder` del core), no la altura. Va muy por debajo de 0 para que
+ *  todos los calcos se pinten ANTES que el resto de transparentes de la
+ *  escena —el muro de niebla (1) y el telegraph (2) incluidos—: un calco de
+ *  suelo nunca debe taparlos. Con margen para las 1984 prims que el schema
+ *  llega a permitir. */
+const GROUND_DECAL_ORDER_BASE = -10000;
 
 // ── Telegraph del ataque ──────────────────────────────────────────────────
 /** Resolución de la rejilla del telegraph (avance × lateral). Topología fija:
  *  las posiciones se re-drapean cada frame y la calidad solo al cambiar los
- *  params del ataque. */
-const TELEGRAPH_U_STEPS = 20;
-const TELEGRAPH_S_STEPS = 10;
+ *  params del ataque. El lateral subió de 10 a 24 cuando el parche empezó a
+ *  dibujar el arco del cono: con 10 pasos la cuerda salía facetada. */
+const TELEGRAPH_U_STEPS = 24;
+const TELEGRAPH_S_STEPS = 24;
+/** Semiancho del contorno del borde, en metros. El área entera se ve, pero lo
+ *  que hay que LEER es dónde deja de llegar el golpe: una banda de ±15 cm
+ *  centrada en la frontera se distingue a los pies sin comerse un parche
+ *  pequeño (`precise` tiene 0,7 m de radio). */
+const TELEGRAPH_RIM_M = 0.15;
+/** Margen que la rejilla se extiende MÁS ALLÁ del área. Sin él la mitad
+ *  exterior del contorno quedaría recortada por el borde de la malla y la
+ *  frontera volvería a leerse como un corte, no como un límite. */
+const TELEGRAPH_PAD_M = TELEGRAPH_RIM_M * 1.4;
+/** Alfa mínima del relleno DENTRO del área. La alfa era la calidad, así que
+ *  donde el color decía "rojo, aquí ya casi no llegas" la alfa valía cero y no
+ *  se veía nada: el jugador solo veía el punto dulce y no el alcance (#184).
+ *  Con suelo, el degradado sigue diciendo dónde pega mejor y el área entera se
+ *  ve. */
+const TELEGRAPH_FILL_MIN_A = 0.28;
 /** Altura del parche sobre el terreno: la de cualquier calco de suelo. Estuvo
  *  a 45 cm mientras la cámara era de yaw puro —el combate cuerpo a cuerpo
  *  (0,9–2,5 m) caía por debajo del encuadre y había que levantarlo para que
@@ -151,26 +180,49 @@ void main() {
 }`;
 
 /** Telegraph: la calidad por vértice (0..1) es la MISMA que resuelve el daño
- *  (`combat-resolver`), así que el color no adorna — informa. Rojo en el borde
- *  del área, verde en el punto óptimo; en impacto, tinte plano de resultado. */
+ *  (`attack-area` de core), así que el color no adorna — informa. Rojo en el
+ *  borde del área, verde en el punto óptimo; en impacto, tinte plano de
+ *  resultado.
+ *
+ *  Dos variables, no una. La calidad (`vQ`) dice CUÁNTO pega; el margen al
+ *  borde (`vM`, metros, negativo dentro) dice HASTA DÓNDE llega. Antes la
+ *  alfa era la calidad, y como el color rojo exige calidad 0, la rampa roja
+ *  tenía alfa 0: el límite del área —lo único que evita fallar el golpe— era
+ *  justo lo invisible. Ahora el relleno tiene suelo de alfa dentro del área y
+ *  el borde se dibuja como CONTORNO desde el margen, que sí sabe distinguir
+ *  "al filo" de "lejísimos". El contorno cubre los tres límites: el anillo
+ *  radial, la banda lateral y el arco del cono frontal. */
 const TELEGRAPH_FRAGMENT = `
 varying float vQ;
+varying float vM;
 uniform float uOpacity;
 uniform float uImpact;
+uniform float uRim;
+uniform float uFillMin;
 uniform vec3 uImpactColor;
 void main() {
-  vec3 windup = mix(vec3(1.0, 0.18, 0.10), vec3(0.20, 1.0, 0.28), vQ);
-  vec3 c = mix(windup, uImpactColor, uImpact);
-  float a = mix(vQ, step(0.001, vQ), uImpact) * uOpacity;
+  vec3 rojo = vec3(1.0, 0.18, 0.10);
+  float dentro = step(vM, 0.0);
+  float borde = 1.0 - smoothstep(0.0, uRim, abs(vM));
+  // Relleno: suelo de alfa + degradado de calidad. En impacto, silueta plana
+  // del área (el destello dice resultado, no alcance) y sin contorno.
+  float relleno = dentro * mix(uFillMin + (1.0 - uFillMin) * vQ, 1.0, uImpact);
+  float a = max(relleno, borde * (1.0 - uImpact)) * uOpacity;
   if (a <= 0.004) discard;
+  vec3 windup = mix(rojo, vec3(0.20, 1.0, 0.28), vQ);
+  // El contorno es rojo pase lo que pase: es el "hasta aquí".
+  vec3 c = mix(mix(windup, rojo, borde), uImpactColor, uImpact);
   gl_FragColor = vec4(c, a);
 }`;
 
 const TELEGRAPH_VERTEX = `
 attribute float aQuality;
+attribute float aMargin;
 varying float vQ;
+varying float vM;
 void main() {
   vQ = aQuality;
+  vM = aMargin;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
@@ -199,6 +251,13 @@ interface TileEntry {
    *  día↔atardecer cambia la luz de verdad. */
   lightsM: GreyboxLight[];
   ambience?: { sky?: { top: string; bottom: string }; fog?: { color: string; near: number; far: number } };
+  /** Cara ALTA real de los calcos de suelo instalados (metros de mundo,
+   *  relieve incluido), y cuántos hay. No adorna: es lo que permite afirmar
+   *  desde fuera —sin leer píxeles— que el telegraph del ataque se dibuja POR
+   *  ENCIMA del suelo y no enterrado bajo un embarcadero, que es justo lo que
+   *  pasaba (#185) y lo que ninguna captura demuestra por sí sola. */
+  groundTopY: number;
+  groundDecals: number;
 }
 
 function gableGeometry(w: number, h: number, d: number): THREE.ExtrudeGeometry {
@@ -374,6 +433,7 @@ function buildTelegraphGeometry(): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(nu * ns * 3), 3));
   geo.setAttribute("aQuality", new THREE.BufferAttribute(new Float32Array(nu * ns), 1));
+  geo.setAttribute("aMargin", new THREE.BufferAttribute(new Float32Array(nu * ns), 1));
   const idx: number[] = [];
   for (let iu = 0; iu < TELEGRAPH_U_STEPS; iu++) {
     for (let is = 0; is < TELEGRAPH_S_STEPS; is++) {
@@ -385,28 +445,45 @@ function buildTelegraphGeometry(): THREE.BufferGeometry {
   return geo;
 }
 
-/** Calidad por vértice = la MISMA fórmula que resuelve el daño
- *  (`combat-resolver`: factor_distancia × factor_precision, con el cono
- *  frontal de isInFront). Se calcula sobre (avance u, lateral s), así que no
- *  depende de dónde esté el jugador: solo de los params del ataque. */
+/** Extensión de la rejilla del telegraph en el plano (avance, lateral). La
+ *  malla cubre el área MÁS un margen: el contorno del borde está centrado en
+ *  la frontera, así que su mitad exterior necesita superficie donde pintarse.
+ *  Una sola fuente para el drapeado y para los atributos — con dos, la calidad
+ *  y las posiciones se desalinearían vértice a vértice. */
+function telegraphExtent(params: AttackTelegraph["params"]): {
+  uMin: number;
+  uMax: number;
+  sHalf: number;
+} {
+  const { cerca, lejos } = attackAreaReach(params);
+  return {
+    uMin: Math.max(0, cerca - TELEGRAPH_PAD_M),
+    uMax: lejos + TELEGRAPH_PAD_M,
+    sHalf: params.area_radius + TELEGRAPH_PAD_M,
+  };
+}
+
+/** Calidad y margen por vértice. La fórmula NO vive aquí: es la de core
+ *  (`attack-area`), la misma que resuelve el daño. El cliente solo pinta —
+ *  cuando tenía copia propia, el parche podía divergir del resolver sin que
+ *  nada fallara. Se calcula sobre (avance u, lateral s), así que no depende de
+ *  dónde esté el jugador: solo de los params del ataque. */
 function fillTelegraphQuality(geo: THREE.BufferGeometry, params: AttackTelegraph["params"]): void {
   const q = geo.attributes.aQuality as THREE.BufferAttribute;
-  const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
-  const uMax = params.optimal_distance + params.distance_tolerance;
+  const m = geo.attributes.aMargin as THREE.BufferAttribute;
+  const { uMin, uMax, sHalf } = telegraphExtent(params);
   let vi = 0;
   for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
     const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
     for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
-      const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
-      const d = Math.hypot(u, s);
-      // isInFront: dot(forward, dir) > 0.5 ⇒ dentro de ±60° del frente.
-      const front = d > 1e-6 && u / d > 0.5 ? 1 : 0;
-      const dist = Math.max(0, 1 - Math.abs(d - params.optimal_distance) / params.distance_tolerance);
-      const prec = Math.max(0, 1 - Math.abs(s) / params.area_radius);
-      q.setX(vi++, dist * prec * front);
+      const s = sHalf * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+      q.setX(vi, attackAreaQuality(params, u, s));
+      m.setX(vi, attackAreaMargin(params, u, s));
+      vi++;
     }
   }
   q.needsUpdate = true;
+  m.needsUpdate = true;
 }
 
 /** Yaw de un vector XZ (0 = +z, crece hacia +x). */
@@ -470,6 +547,12 @@ export class FpsGl {
   private telegraph: AttackTelegraph | null = null;
   /** Punto óptimo del golpe proyectado a píxeles del lienzo (solo debugState). */
   private telegraphScreen: { x: number; y: number; depthM: number } | null = null;
+  /** Los dos BORDES del alcance (sobre la línea del forward) en píxeles del
+   *  lienzo, o null cada uno si queda detrás del ojo. Solo debugState. */
+  private telegraphBorde: {
+    cerca: { x: number; y: number } | null;
+    lejos: { x: number; y: number } | null;
+  } | null = null;
   /** Recuento del episodio de telegraph que se está PINTANDO, frame a frame.
    *
    *  No es una traza de conveniencia: es la única forma honesta de afirmar
@@ -489,6 +572,10 @@ export class FpsGl {
     episode: number;
     windupFrames: number;
     impactFrames: number;
+    /** Calidad MÁXIMA con la que se tiñó el destello de impacto (0..1). Va en
+     *  el episodio y no solo en la foto de `telegraph` porque el destello dura
+     *  0,3 s de sim: quien mire desde fuera no lo pilla. */
+    impactQuality: number;
     /** Frames de wind-up en los que el punto óptimo no era proyectable
      *  (queda detrás del ojo): ni dentro ni fuera del cuadro, ausente. */
     unprojectedFrames: number;
@@ -526,9 +613,9 @@ export class FpsGl {
     // comprime las altas luces sin apagar la escena.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
-    // near 0.3 (no 0.1): ×3 de precisión de z-buffer — con 0.1 las capas del
-    // suelo (separadas 2 mm por el stagger de fps-spec) aún z-fighteaban a
-    // media distancia. Nada renderiza a <0.3 m del ojo (radio jugador 0.4).
+    // near 0.3 (no 0.1): ×3 de precisión de z-buffer — con 0.1 las cuatro
+    // capas del suelo (separadas 2 cm entre sí) aún z-fighteaban a media
+    // distancia. Nada renderiza a <0.3 m del ojo (radio jugador 0.4).
     this.cam = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.3, 600);
     this.sky = skyDome();
     this.scene.add(this.sky);
@@ -566,6 +653,8 @@ export class FpsGl {
     const cellByKey = new Map<string, SurfaceCell>();
     for (const page of layout.pages) for (const c of page.cells) cellByKey.set(c.key, c);
     const tileRelief = primsM.find((p) => p.relief)?.relief;
+    let groundTopY = 0;
+    let groundDecals = 0;
 
     primsM.forEach((prim, i) => {
       const assign: SurfaceAssign | undefined = layout.assign[i];
@@ -656,7 +745,25 @@ export class FpsGl {
         )?.[0];
         mats.push((g && groupMaterial[g]) || clay());
       }
+      // Calcos de suelo: coplanares por capa, y su prioridad la manda el
+      // contrato (área→camino→agua→deck, juntas tras sus cajas), no la altura.
+      // Se pintan en ese orden SIN escribir profundidad, que es como se
+      // resuelve un decal: sin escalonarlos en Y el suelo tiene techo y deja
+      // sitio al telegraph (#185). `transparent` los mete a todos en la misma
+      // pasada ordenada — sin él el deck (opaco) se pintaría ANTES que el agua
+      // (translúcida) y el agua lo taparía. `depthTest` se queda: un muro
+      // delante del camino lo sigue tapando.
+      if (prim.groundOrder !== undefined) {
+        for (const m of mats) {
+          const sm = m as THREE.MeshStandardMaterial;
+          sm.transparent = true;
+          sm.depthWrite = false;
+        }
+      }
       const mesh = new THREE.Mesh(geo, nSlots === 1 ? mats[0] : mats);
+      if (prim.groundOrder !== undefined) {
+        mesh.renderOrder = GROUND_DECAL_ORDER_BASE + prim.groundOrder;
+      }
       mesh.position.set(...prim.pos);
       if (prim.rotY) mesh.rotation.y = prim.rotY;
       if (prim.rotX) mesh.rotation.x = prim.rotX;
@@ -664,6 +771,17 @@ export class FpsGl {
       if (prim.scale) mesh.scale.set(...prim.scale);
       mesh.castShadow = !prim.noShadow;
       mesh.receiveShadow = true;
+      // Cara ALTA del calco sobre su suelo local, medida ANTES del drapeado:
+      // el telegraph también se drapea sobre el mismo relieve, así que lo que
+      // decide si queda enterrado es la altura RELATIVA al terreno, no la
+      // absoluta. (Bajo un rasgo de `ground` el relieve está aplanado, así que
+      // ese drapeado es una constante que se cancela en los dos lados.)
+      if (prim.groundOrder !== undefined) {
+        groundDecals++;
+        geo.computeBoundingBox();
+        const top = mesh.position.y + (geo.boundingBox?.max.y ?? 0);
+        if (top > groundTopY) groundTopY = top;
+      }
       // Relieve: el detalle plano del suelo (manchas/piedritas/flores, sin
       // sombra) se DRAPEA vértice a vértice sobre la rejilla; el scatter 3D
       // (decor con sombra) y las prims `anchor` (vegetación/rocas de volumen
@@ -695,6 +813,8 @@ export class FpsGl {
       rect,
       lightsM,
       ambience,
+      groundTopY,
+      groundDecals,
     });
     this.ambienceKey = null; // el próximo frame re-aplica la del tile del jugador
     // Luces: las del último tile instalado mandan (son fijas por bioma y
@@ -882,6 +1002,7 @@ export class FpsGl {
         episode: (this.telegraphEpisode?.episode ?? 0) + 1,
         windupFrames: 0,
         impactFrames: 0,
+        impactQuality: 0,
         unprojectedFrames: 0,
         screenYMin: null,
         screenYMax: null,
@@ -896,6 +1017,8 @@ export class FpsGl {
         uniforms: {
           uOpacity: { value: 0 },
           uImpact: { value: 0 },
+          uRim: { value: TELEGRAPH_RIM_M },
+          uFillMin: { value: TELEGRAPH_FILL_MIN_A },
           uImpactColor: { value: new THREE.Color("#808080") },
         },
         vertexShader: TELEGRAPH_VERTEX,
@@ -933,14 +1056,13 @@ export class FpsGl {
     // Right = forward girado 90° (mismo marco que el strafe de main.ts).
     const rx = -fz;
     const rz = fx;
-    const uMin = Math.max(0, params.optimal_distance - params.distance_tolerance);
-    const uMax = params.optimal_distance + params.distance_tolerance;
+    const { uMin, uMax, sHalf } = telegraphExtent(params);
     const pos = t.geo.attributes.position as THREE.BufferAttribute;
     let vi = 0;
     for (let iu = 0; iu <= TELEGRAPH_U_STEPS; iu++) {
       const u = uMin + ((uMax - uMin) * iu) / TELEGRAPH_U_STEPS;
       for (let is = 0; is <= TELEGRAPH_S_STEPS; is++) {
-        const s = params.area_radius * ((2 * is) / TELEGRAPH_S_STEPS - 1);
+        const s = sHalf * ((2 * is) / TELEGRAPH_S_STEPS - 1);
         const wx = player.pos.x + fx * u + rx * s;
         const wz = player.pos.z + fz * u + rz * s;
         pos.setXYZ(vi++, wx, this.reliefWorldAt(wx, wz) + TELEGRAPH_Y_M, wz);
@@ -954,6 +1076,21 @@ export class FpsGl {
     const ox = player.pos.x + fx * params.optimal_distance;
     const oz = player.pos.z + fz * params.optimal_distance;
     this.telegraphScreen = this.projectToScreen(ox, this.reliefWorldAt(ox, oz) + TELEGRAPH_Y_M, oz);
+    // Y dónde caen los dos BORDES del alcance sobre la línea del forward. El
+    // punto óptimo dice dónde se pega perfecto; esto dice hasta dónde llega,
+    // que es lo que el issue #184 echaba en falta. Publicado por debugState,
+    // se puede afirmar que la frontera está en cuadro sin leer píxeles.
+    const alcance = attackAreaReach(params);
+    const proyectarEnForward = (m: number): { x: number; y: number } | null => {
+      const bx = player.pos.x + fx * m;
+      const bz = player.pos.z + fz * m;
+      const p = this.projectToScreen(bx, this.reliefWorldAt(bx, bz) + TELEGRAPH_Y_M, bz);
+      return p ? { x: Math.round(p.x), y: Math.round(p.y) } : null;
+    };
+    this.telegraphBorde = {
+      cerca: proyectarEnForward(alcance.cerca),
+      lejos: proyectarEnForward(alcance.lejos),
+    };
     this.tallyTelegraphFrame(mode);
     t.mat.uniforms.uOpacity.value = Math.min(1, Math.max(0, opacity) * TELEGRAPH_GAIN);
     t.mat.uniforms.uImpact.value = mode === "impact" ? 1 : 0;
@@ -977,6 +1114,7 @@ export class FpsGl {
     if (!ep) return;
     if (mode === "impact") {
       ep.impactFrames++;
+      ep.impactQuality = Math.max(ep.impactQuality, this.telegraph?.impactQuality ?? 0);
       return;
     }
     ep.windupFrames++;
@@ -1419,6 +1557,23 @@ export class FpsGl {
         ([id, s]) => s.mesh.visible && this.billboardsPersonaje.has(id),
       ).length,
       debugView: this.debugView,
+      /** El SUELO del tile activo frente a la cota de los calcos, en metros.
+       *  `topY` es la cara alta real de los rasgos planos ya instalados
+       *  (relieve incluido) y `overlayY` la altura a la que se dibuja el
+       *  telegraph. Si `overlayY` no supera a `topY`, el parche está
+       *  ENTERRADO y el jugador combate a ciegas — que es lo que ocurría en un
+       *  tile de puerto (#185). Es lo que permite afirmarlo sin leer píxeles. */
+      suelo: (() => {
+        const t2 = this.activeKey ? this.tiles.get(this.activeKey) : null;
+        return t2
+          ? {
+              topY: Math.round(t2.groundTopY * 10000) / 10000,
+              overlayY: Math.round(GROUND_OVERLAY_Y * 10000) / 10000,
+              holguraM: Math.round((GROUND_OVERLAY_Y - t2.groundTopY) * 10000) / 10000,
+              calcos: t2.groundDecals,
+            }
+          : null;
+      })(),
       viewport: { w: this.canvas.clientWidth || this.canvas.width, h: this.canvas.clientHeight || this.canvas.height },
       telegraph: t
         ? {
@@ -1431,6 +1586,19 @@ export class FpsGl {
             screen: this.telegraphScreen
               ? { x: Math.round(this.telegraphScreen.x), y: Math.round(this.telegraphScreen.y) }
               : null,
+            /** Píxeles del lienzo de los dos bordes del ALCANCE sobre la línea
+             *  del forward (cerca/lejos), o null los que queden detrás del
+             *  ojo. Es lo que permite afirmar que el jugador ve dónde deja de
+             *  llegar el golpe, no solo dónde pega perfecto. */
+            borde: this.telegraphBorde ?? { cerca: null, lejos: null },
+            alcance: attackAreaReach(t.params),
+            /** Calidad (0..1) con la que se TIÑE el destello de impacto: la
+             *  del mejor enemigo dentro del área (`attackFlashQuality` de
+             *  core, la misma fórmula que resuelve el daño). Verde = golpe
+             *  bueno, gris = no llegaste. Se publica porque era el único
+             *  cambio visible de la tanda del telegraph sin forma de
+             *  afirmarse desde fuera: en `windup` todavía vale 0. */
+            impactQuality: Math.round(t.impactQuality * 1000) / 1000,
           }
         : null,
       /** Recuento del último episodio de telegraph (o del que corre). A
