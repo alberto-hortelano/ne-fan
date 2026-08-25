@@ -42,7 +42,9 @@
  *    npm run afectado -- --ids                 # JSON de ids (matriz de CI)
  *    npm run afectado -- --coste               # además, qué % de los mutantes
  *
- *  Correr lo seleccionado: `npm run mutate -- --cambiado` (o `--desde`).
+ *  Este comando NO mide: dice qué HABRÍA que medir. Medirlo es otra cosa y no
+ *  se hace aquí — `npm run mutacion -- local <id>` si el módulo cabe en el tope
+ *  local, y si no, `npm run mutacion -- pendiente` y lo autoriza una persona.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -549,7 +551,9 @@ function imprimeCoste(sel: Seleccion, todos: readonly string[]): void {
   const suma = (ids: readonly string[]): number => ids.reduce((n, id) => n + (medidos.get(id) ?? 0), 0);
   const total = suma(todos);
   if (total === 0) {
-    console.log("  coste: sin informes en reports/mutation/ — corre `npm run mutate` para poder compararlo");
+    console.log(
+      "  coste: sin informes en reports/mutation/ — bájalos con `npm run mutacion -- traer` para poder compararlo",
+    );
     return;
   }
   const sinMedir = todos.filter((id) => !medidos.has(id));
@@ -579,7 +583,8 @@ function imprime(sel: Seleccion, origen: Origen, todos: readonly string[], coste
     console.log(`  Esto NO es un visto bueno: es que la mutación no tiene nada que decir de este diff.`);
   } else {
     console.log(
-      `  EJECUTA ${sel.ids.length} de ${todos.length} módulos:  npm run mutate -- ${sel.ids.join(" ")}`,
+      `  HABRÍA QUE MEDIR ${sel.ids.length} de ${todos.length} módulos: ${sel.ids.join(" ")}\n` +
+        `  (uno barato, aquí: npm run mutacion -- local <id> · el resto se pide: npm run mutacion -- pendiente)`,
     );
     for (const id of sel.ids) {
       const porQue = sel.efectos.filter((e) => e.ids.includes(id)).map((e) => e.fichero);

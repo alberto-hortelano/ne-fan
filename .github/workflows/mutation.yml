@@ -129,9 +129,21 @@ jobs:
       # pedidos con informe. Una lista explícita de módulos no mueve nada —
       # movería el tag declarando medido lo que nadie midió, y a partir de ahí
       # el agujero sería invisible.
+      #
+      # Y solo desde `main`. El tag dice hasta dónde se ha medido la historia de
+      # main; ponerlo en un commit de una rama que aún no está mergeada deja el
+      # rango `mutacion-ultima..main` calculado desde un punto que main no
+      # contiene, y lo que se midió fue código que todavía no está ahí. El
+      # motivo se IMPRIME en vez de saltarse el paso en silencio: un paso gris en
+      # la UI no dice por qué.
       - name: Reposicionar mutacion-ultima
         if: always() && steps.manifiesto.outputs.mueve_tag == 'true'
         run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "NO se mueve el tag: esta corrida midió $GITHUB_REF, no main."
+            echo "Lo medido aún no está en la historia de main, así que el tag mentiría sobre el rango."
+            exit 0
+          fi
           git tag -f mutacion-ultima "$GITHUB_SHA"
           git push -f origin mutacion-ultima
           echo "mutacion-ultima → $GITHUB_SHA"

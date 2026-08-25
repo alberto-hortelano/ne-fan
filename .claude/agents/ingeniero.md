@@ -22,14 +22,19 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
 2. **Itera hasta que las herramientas den verde**, no hasta que a ti te parezca terminado:
    - `cd nefan-core && npm run verify` (build + lint + test, incluye el checker de fronteras).
    - `npm run crap -- --check`: la deuda del módulo que tocas no puede crecer.
-   - **NO corras `npm run mutate`.** La mutación es de minutos y satura la máquina de quien
-     está delante; corre sola en el runner de GitHub (`.github/workflows/mutation.yml`, cron a
-     las 3:00) y sus supervivientes entran por `npm run deuda` como backlog, que es el
-     mecanismo que este repositorio ya tiene para eso. Si crees que tu diff necesita medirse
-     antes de esa nocturna, **pídelo en el informe**: se lanza a mano con `workflow_dispatch`,
-     también en el runner. Lo que sí es tuyo, y es más barato y más concluyente, es **probar
-     en negativo** cada candado que añadas: rómpelo a propósito, míralo rojo, revierte y
-     cuéntalo.
+   - **Mutación: `npm run mutacion -- local <id>` para el módulo que tocas, y nunca
+     `npm run mutate`.** El verbo `local` mide UN módulo con dos núcleos y **rechaza** el que
+     pase del tope (`tope_local` en `mutation-targets.json`), diciéndote su coste: así puedes
+     cerrar tu bucle en los módulos baratos sin poder equivocarte hacia arriba, y la máquina de
+     quien está delante no se entera. `npm run mutate` a secas sigue siendo la corrida entera y
+     satura la máquina: no es tuyo, es del runner.
+     Si tu módulo no cabe en el tope, **sigue sin esperarla**: una medida pendiente no bloquea
+     nada. Se pide con `npm run mutacion -- pendiente` y la autoriza el usuario desde Actions
+     (o desde el móvil). Deja el motivo como trailer del commit —`Mutación: <por qué>`, junto a
+     los `Co-Authored-By:`— y dilo también en el informe; el resultado vuelve solo, como
+     comentario en la PR y como cola de `npm run deuda`, con su dueño al lado.
+     Lo que sí es tuyo siempre, y es más barato y más concluyente que medir, es **probar en
+     negativo** cada candado que añadas: rómpelo a propósito, míralo rojo, revierte y cuéntalo.
    - Los umbrales viven en `nefan-core/data/contract/quality-thresholds.json` y
      `nefan-core/data/contract/arch-rules.json`. Si uno te estorba, dilo en el informe;
      NO lo subas por tu cuenta salvo que los requisitos te autoricen explícitamente.

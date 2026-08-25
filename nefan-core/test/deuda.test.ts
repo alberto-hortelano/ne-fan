@@ -316,7 +316,7 @@ describe("cola de deuda · el titular no puede aparentar completitud", () => {
     const out = cabeceraDe([
       bloque("Fronteras", 27),
       bloque("Complejidad", 0, "sin medir — corre `npm run coverage`"),
-      bloque("Mutación", 0, "sin medir — corre `npm run mutate`"),
+      bloque("Mutación", 0, "sin medir — npm run mutacion -- pendiente"),
     ]);
     assert.match(out, /PARCIAL/);
     assert.match(out, /1 de 3 fuentes/);

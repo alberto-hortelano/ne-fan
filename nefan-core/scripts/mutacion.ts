@@ -218,8 +218,10 @@ function informesPresentes(): string[] {
 function leerCorrida(): Corrida {
   if (!existsSync(RUTA_CORRIDA)) {
     throw new Error(
-      `no hay ${relative(coreRoot, RUTA_CORRIDA)}: lo escribe CI dentro del artefacto. ` +
-        `Baja una corrida primero: npm run mutacion -- traer`,
+      `no hay ${relative(coreRoot, RUTA_CORRIDA)}: el manifiesto lo escribe CI DENTRO del artefacto. ` +
+        `O no has bajado ninguna corrida todavía, o la que has bajado es anterior a que CI lo escribiera ` +
+        `— y sin manifiesto no hay forma de saber qué módulos se pidieron ni si la medida quedó completa. ` +
+        `Baja una posterior: npm run mutacion -- traer`,
     );
   }
   return JSON.parse(readFileSync(RUTA_CORRIDA, "utf8")) as Corrida;

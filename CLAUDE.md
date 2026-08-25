@@ -30,7 +30,8 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 |-------------|-----------|
 | `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y un cliente que solo pinta, dirección de dependencias, módulos puros sin `node:*`, three.js solo en `fps-gl.ts`, el cliente sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
 | `nefan-core/data/contract/quality-thresholds.json` (`npm run crap`) | complejidad × cobertura: tope de no-empeorar y suelo de cobertura |
-| `nefan-core/data/contract/mutation-targets.json` (`npm run mutate`) | si los tests se enterarían de un cambio, no solo si pasan por la línea — y que **todo** fichero del núcleo puro esté medido o eximido con motivo escrito: sin esa totalidad, un diff sobre un fichero sin dueño sale verde sin medir nada |
+| `nefan-core/data/contract/mutation-targets.json` (`npm run mutacion`) | si los tests se enterarían de un cambio, no solo si pasan por la línea — y que **todo** fichero del núcleo puro esté medido o eximido con motivo escrito: sin esa totalidad, un diff sobre un fichero sin dueño sale verde sin medir nada |
+| `nefan-core/data/contract/mutacion-huella.json` | de quién es cada superviviente y cuál es NUEVO. Va commiteado: el delta se ve en el diff, y un clon limpio ve la deuda de mutación en vez de una fuente vacía |
 | `qa/run.mjs` | que el juego real hace lo que se dice, desde el arranque |
 | `test/contract-model-io.test.ts` | que los prompts y tools del modelo no divergen del zod |
 | `.claude/hooks/ci-verde.sh` (hook `Stop`) | que nadie da una tarea por terminada con el CI de su PR pendiente o en rojo. Verde en local NO es verde: el runner tiene otro sistema de ficheros y ninguna caché |
@@ -42,15 +43,35 @@ esas. La prosa se olvida a mitad de contexto; un test que falla, no.
 deriva la cola de trabajo de esas mismas herramientas — violaciones congeladas,
 funciones sobre el objetivo de CRAP, mutantes supervivientes — y avisa cuando una
 medida está obsoleta. Un item desaparece de la cola cuando se arregla, no cuando
-alguien se acuerda de tacharlo. **La mutación no se corre a mano**: es de minutos y satura la máquina de quien
-está delante. Corre sola en el runner (`.github/workflows/mutation.yml`, cron a
-las 3:00, corrida completa) y sus supervivientes llegan a la cola por
-`npm run deuda`. `npm run afectado` sigue sirviendo para SABER qué módulos puede
-haber roto un diff sin medir nada; si uno hay que medirlo antes de la nocturna,
-se lanza el workflow a mano (`workflow_dispatch`) — en el runner, no aquí.
-Lo que ninguna herramienta mide (trocear un
-fichero, una funcionalidad nueva) va a **issues de GitHub**, que se cierran desde
-la PR.
+alguien se acuerda de tacharlo. Y cada superviviente sale con **su estado y su
+dueño**: NUEVO (y de qué PR), ya estaba, o *sin base de comparación* — que no es
+ninguna de las dos y no se colapsa con ellas.
+
+**La mutación se PIDE, la autoriza una persona y vuelve con dueño.** No hay
+cron: una nocturna que mide cuatro PR juntas no sabe de cuál salió cada
+superviviente, y averiguarlo después, a mano, es el trabajo que no se hace nunca.
+El ciclo entero es `npm run mutacion` (en `nefan-core`):
+
+| Verbo | Quién | Qué hace |
+|---|---|---|
+| `pendiente` | el usuario y el coordinador | qué falta por medir desde el tag `mutacion-ultima`, con su coste en mutantes |
+| `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste |
+| `traer [run-id]` | el coordinador | vacía `reports/mutation/` y baja el artefacto; rechaza una descarga en la que falte o sobre un informe |
+| `repartir [--comentar]` | el coordinador | delta contra la huella de HEAD, atribución honesta y comentario en la PR de origen |
+
+Autorizar es entrar en Actions → *Mutation testing* → **Run workflow** (funciona
+desde el navegador del móvil). Input vacío = lo que falta desde el tag; `TODOS` =
+la corrida completa. Una petición pendiente **no bloquea nada**: se cierra la
+tanda y el resultado llega después, al sitio donde se causó.
+
+La atribución es «las PR del rango cuyo diff selecciona ese módulo», no
+`git blame`: blame contesta quién escribió la línea, y la pregunta es qué cambio
+movió la suerte del mutante. Con dos candidatas se nombran las dos — un dueño
+equivocado es peor que dos candidatos.
+
+`npm run afectado` sigue sirviendo para SABER qué módulos puede haber roto un
+diff sin medir nada. Lo que ninguna herramienta mide (trocear un fichero, una
+funcionalidad nueva) va a **issues de GitHub**, que se cierran desde la PR.
 
 ## Arrancar el juego
 
@@ -199,7 +220,7 @@ usuario, fija los requisitos, decide y delega) y cuatro roles especializados viv
 |-----|----------|-------------|
 | `critico` | Decide si la tarea DEBE hacerse tal como está escrita: separa el problema real de la solución que propone, verifica su premisa contra el código, imagina el repo el día después y busca conflictos con otras tareas. Veredicto: vigente / reencuadrada / obsoleta / en conflicto / prematura. Produce `critica.md` | No diseña ni implementa; no opina de estilo ni de diseño interno |
 | `arquitecto` | Dónde encaja el cambio (nefan-core / bridge / cliente / ai_server), contratos y formatos afectados, qué hay que borrar (claves de caché incluidas), mejoras estructurales. Produce `plan.md` | No escribe código de producción |
-| `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y los supervivientes de mutación del módulo que tocó, muertos. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
+| `ingeniero` | Implementa y **demuestra** que funciona: `npm run verify` verde, la deuda que toca sin crecer y, si su módulo cabe en el tope local, sus supervivientes muertos (`npm run mutacion -- local <id>`); si no cabe, la pide y **sigue sin esperarla**. Produce `implementacion.md` | No improvisa desviaciones en silencio; no commitea sin que se le pida |
 | `qa` | Valida contra la petición ORIGINAL desde el punto de vista del jugador: estados del sistema, flujo real desde el arranque, regla del workaround, pasada adversarial, crítica visual. Produce `qa.md` **y un guion ejecutable** en `qa/guiones/` de lo que sea mecánico | **No arregla nada** — reporta |
 
 Los subagentes arrancan con **contexto limpio y no se ven entre sí**: todo el handoff viaja
