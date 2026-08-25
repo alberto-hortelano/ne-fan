@@ -67,3 +67,45 @@ sincronización técnico NO es eso: eso se decide aquí.
 Guardar, salir, reanudar, y **estar donde estabas** — no en el origen, no dentro de un
 edificio. Verificado en el flujo real desde el arranque, no en un test de unidad. Y un fallo
 tardío que devuelva al título **sin nada pegado** del intento anterior.
+
+---
+
+## Addendum del coordinador, tras la crítica (2026-08-25)
+
+La premisa de #245 está **verificada en vivo hoy** y sigue rota (guion 17 con `--diag`: empieza en
+`{0.25, 0, 3.25}`, reanuda en `{0,0,0}`; la captura sale encerrada en un volumen y sin cielo).
+Pero el issue apuntaba al dial equivocado y el crítico lo corrige. Los dos issues quedan
+REENCUADRADOS y están actualizados en GitHub.
+
+**Decisiones que tomo yo, con su medida delante:**
+
+1. **No es «el cliente no llama a `save_session`».** El bridge ya escribe `state.json` en trece
+   sitios y ya tiene la posición viva en `ctx.store.state.player.pos`. Lo que no se refresca antes
+   de escribir es `NarrativeState.player.position` **y `player.health`**. El trabajo es que el
+   guardado lleve fresco lo que ya tiene delante, y **`save_session` se retira entero** — tipo,
+   zod, router, handler, cliente, replay-server y tests, grep a cero, con su línea en
+   `campos-retirados-no-vuelven`.
+2. **No hay que elegir cadencia.** Los tres candidatos del issue ya guardan. El freno explícito
+   **no se dispara**.
+3. **El fallback a `__player_start` sale del alcance.** El save nunca viene sin posición
+   (`DEFAULT_PLAYER.position = [0,1,0]`): no hay estado del que caer, y fabricarlo sería cambiar
+   el contrato para tapar un síntoma que la otra mitad elimina.
+4. **#246 entra en esta tanda** (mismo seam por el otro lado; el gancho ya existe en
+   `titleScreen.onVisibilityChange`, `main.ts:1995`). **#250 y #251 NO**: son layout de
+   `title-screen.ts`, independientes de esto y colisionando entre sí. Van juntos en otra tanda.
+5. **El endpoint de fallo a petición de `fake-ai-server.mjs` NO entra aquí**: va con la tanda de
+   candados (#231/#248/#247).
+6. **#249 es un bug de créditos**, no de estado pegado: el tile que el bridge difunde tras el
+   fallo entra por `onNarrativeEvent`, que no está gateado por sesión, y **paga un atlas** con el
+   estilo de la partida que no arrancó.
+
+**Para el usuario, anotado y sin frenar la cola**: hoy reanudar te **cura siempre a 100 HP**.
+Se arregla con lo mismo, asumiendo que el daño debe persistir. Si no debiera, es diseño de juego
+y lo dirá él. **Asume que persiste.**
+
+**Orden en la cola**: esta tanda va **después** de `#248` (que activa `no-floating-promises` en
+`nefan-html`, para que cualquier promesa suelta que añadas nazca roja) y es **disjunta** del
+bosque: ellos tocan `main.ts` en ~700-1050, tú en ~2450-2600. Quien aterrice segundo, rebasa.
+
+**Criterio de terminado, ampliado**: además de reanudar donde lo dejaste con la vida que tenías,
+**los dos caminos de vuelta al título dejan el cliente idéntico** — y ninguno paga una imagen.

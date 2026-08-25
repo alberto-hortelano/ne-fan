@@ -69,3 +69,42 @@ eso sí es dirección de producto y lo revisa el usuario al volver. Todo lo dem�
 Un bosque en el que **todo lo que se ve se comporta igual**: o todo frena o todo se atraviesa,
 sin dos especies conviviendo. Verificable jugando, no leyendo. Y `density` con **un** solo
 significado, candado.
+
+---
+
+## Addendum del coordinador, tras la crítica (2026-08-25)
+
+El crítico **tumba mi lectura y la mejora**: el sujeto no es la vegetación, es que **una entity
+estática del esquema y su volumen del plan son dos representaciones del mismo objeto que nadie
+reconcilia**. La vegetación es su caso más ruidoso, no su causa. Los tres issues quedan
+REENCUADRADOS y están actualizados en GitHub.
+
+**Decisiones que tomo yo, con su medida delante:**
+
+1. **La salida 1 de #243 se adopta** (retirar el estampado de entities de la ruta B). Es
+   coherencia interna, no dirección de producto: los clientes 2D/Godot murieron en agosto, el
+   canal sancionado para masa visual sin colisión ya existe (`scatter_zones`) y el crítico midió
+   que **no toca ninguna clave de caché de imagen** — mismos 26 volúmenes, mismas 11 identidades
+   de celda de atlas. **Cero euros.**
+2. **La salida 2 de #232 se adopta** (la derivación viaja resuelta, unificada en core). El
+   crítico la midió alcanzable en esta tanda: hoy hay **tres** copias de la misma composición
+   (`main.ts:723`, `style-apply.ts:216` y la que le falta al bridge) sincronizadas por un
+   comentario. Y casa con la decisión ya tomada por el usuario, «lógica en core, el cliente solo
+   pinta».
+3. **#234 se funde en esta tanda.** Es la mitad «duplicación» de #233 ya materializada; aparte
+   se paga dos veces el mismo refactor.
+4. **El freno no se dispara.** Queda una pregunta abierta para el usuario, anotada en la
+   bitácora de la jornada y en `critica.md`: la ruta A **satura en 10-11 árboles por zona** pase
+   lo que pase con `density`, así que los bosques serán arboledas ralas con detalle visual. Subir
+   ese techo cambia cómo se anda por un bosque y es decisión suya. **No lo toques en esta tanda.**
+
+**Orden en la cola**, decidido con las tres críticas de hoy delante: `#248` → `#231(a)` →
+**[esta tanda]** → `#231(b)` → `#247`. #231(b) va detrás porque 19 de sus 59 errores de tipos
+viven en `volume-metrics.test.ts` y `fps-ambience.test.ts`, cuyo sujeto reescribes tú.
+
+**Criterio de terminado, corregido por el crítico** — sustituye al de arriba:
+
+> Un bosque en el que todo lo que se ve se comporta igual —o frena o se atraviesa, sin dos
+> especies conviviendo— **y un solo camino desde el esquema hasta la huella colisionable,
+> compartido por cliente, bridge y pre-generación**. `density`, un significado por campo,
+> candado. Verificable jugando.
