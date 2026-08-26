@@ -83,3 +83,73 @@ premisas load-bearing son:
 Y un tercer punto que el plan da por hecho: que `writeSessionSnapshot`
 (`bridge/handlers/bootstrap-tile.ts`) preserva el trabajo caro del motor aunque el save nunca
 llegue a existir.
+
+---
+
+# Corrección del coste y decisión del usuario (2026-08-26, tras la crítica)
+
+## El dato que estaba mal cuando el usuario eligió
+
+La opción que se le enseñó decía: «el tile generado NO se repaga, porque el snapshot del mundo
+del juego sí se escribe aparte». Eso es cierto **por la vía del snapshot pre-generado** y
+**falso por la vía del motor vivo**:
+
+- `writeSessionSnapshot` solo corre si `generateBootstrapTileScene` **tuvo éxito**
+  (`nefan-core/bridge/handlers/bootstrap-tile.ts:105-115`).
+- La reutilización de una respuesta tardía del motor está indexada por `session_id`
+  (`ai_server/llm_client.py:324-337`, `_scene_retry_key` → `"{session}:tile_0_0"`): partida
+  nueva ⇒ clave nueva ⇒ no engancha ni la respuesta tardía (`_late_scenes`) ni la generación
+  en vuelo (`_inflight_scenes`).
+
+Hoy, cerrar la pestaña durante un bootstrap lento y reanudar después sirve la escena **gratis**.
+Con esta tanda, se repaga entero. Verificado además por el coordinador: lo que se repaga son
+**minutos del motor narrativo (MCP), no créditos de imagen** — el bootstrap no genera imágenes;
+las pide el cliente después del broadcast.
+
+## La decisión, literal
+
+Preguntado con el coste corregido delante, el usuario elige:
+
+> **Sí, seguir con la opción 3.** Se renuncia al «reanudar ES el reintento» y se borran las DOS
+> piezas que quedan sin sujeto: el reintento de resume (`session.ts:588-619`) y la poda de saves
+> vacíos (`session.ts:234-246`). Coste: un bootstrap interrumpido se repaga entero — minutos del
+> motor, cero créditos de imagen — y solo en juegos sin snapshot pre-generado, o sea la primera
+> partida de un mundo recién creado.
+
+Descartadas explícitamente: mudar la ventana de reintento a memoria (reusar la sesión provisional
+desde «Comenzar»), y cerrar #279 sin hacer nada.
+
+## Correcciones de alcance que trae la crítica (vinculantes)
+
+1. **Se borran DOS piezas, no una**: el reintento de resume sin escenas Y la poda de saves
+   vacíos de `handleListSessions`. La segunda no estaba en el plan.
+2. **No hay «un solo `storage.write`»**: hay dos (`narrative-state.ts:369` y `session.ts:697`).
+   El segundo solo pisa un save que acaba de leer y aborta si no existe, así que la conclusión
+   se sostiene — pero el candado hay que enunciarlo sobre los dos.
+3. **El ack cuelga de que el tile se AÑADA**, no de `installTile`: `main.ts:887` solo corre
+   `if (isGridTile && planInfo)` y `composeTilePlan` devuelve `null` con `ground` y `volumes`
+   vacíos. Un tile legal pero pelado dejaría una partida que no se escribe nunca.
+4. **El criterio 1 se verifica dentro del guion 27**, no en un guion 29 nuevo: el 27 ya produce
+   el clon limpio en el borde y ya vuelve al título con aviso. Un guion con `aisla:["saves"]`
+   añadiría otra corrida con stack propio a un runner con los puertos clavados (#271, #274).
+5. **Existía una alternativa sin tocar el wire** y hay que decir por qué se descarta: `input`
+   solo sale con el título oculto (`main.ts:1784`), así que `input` + `scenes_loaded ≠ 0` cubría
+   los criterios. Se descarta porque `input` significa «el jugador se movió», no «la partida
+   existe»: un refactor que lo mandara desde el título rompería el invariante en silencio.
+6. **Quitar el `finally` de `game-gen.ts` quita también un efecto lateral**: `deleteSession`
+   resetea `session_id` cuando coincide con la activa (`narrative-state.ts:373-379`). Hay que
+   mirar quién lo lee después, no suponerlo.
+
+## Criterio de aceptación 5 (nuevo, de la crítica)
+
+Mientras la partida aún no existe en disco, abrir el libro de historia (tecla `H`) no puede
+dejar la sesión viva sin plugins: `history-browser.ts:78-81` hace `resumeSession` de la sesión
+activa sin gate, y el bridge vacía `ctx.activePlugins` (`session.ts:489`) **antes** del
+`loadSession` que fallaría. Es una regresión alcanzable que hoy no existe.
+
+## Dependencia: #270 entra en la tanda
+
+`comenzar()` (`qa/lib/sesion.mjs:135-144`) da la partida por arrancada cuando llega la escena,
+no cuando el título deja de interceptar — que es justo el instante del ack. Sin cerrarlo, esta
+tanda fabrica intermitentes en los guiones 14, 17 y 25; cerrándolo, los blinda. Se arregla
+dentro de esta tanda y se cierra #270 con ella.
