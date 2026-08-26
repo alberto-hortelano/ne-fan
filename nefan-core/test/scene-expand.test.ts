@@ -5,8 +5,13 @@ import { expandScenePrimitives, hasUnexpandedPrimitives } from "../src/scene/sce
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import { createTerrainCollider } from "../src/scene/terrain-collision.js";
 
-/** Escena estilo ejemplo del prompt: grid de hierba con una room + puerta sur,
- *  camino como feature y zona de vegetación al sur. */
+/** Escena estilo ejemplo del prompt: grid de hierba con una room + puerta sur
+ *  y un decor pegado al muro.
+ *
+ *  Ya NO lleva `vegetation_zones`: el expander dejó de estampar entities de
+ *  vegetación en el grid (esta tanda) y su zona no significaría nada aquí. La
+ *  masa forestal se compone como volúmenes del plan — `derive-vegetation` y
+ *  `vegetation-density` cubren lo que este fichero cubría de ella. */
 function makeScene(): Record<string, unknown> {
   return {
     scene_id: "taberna_exp",
@@ -16,9 +21,6 @@ function makeScene(): Record<string, unknown> {
     terrain_legend: {},
     structures: [
       { type: "room", rect: [2, 1, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
-    ],
-    vegetation_zones: [
-      { type: "pino", area: [0, 9, 16, 3], density: 0.2 },
     ],
     entities: [
       { id: "antorcha", kind: "decor", name: "antorcha de pared", cell: [4, 3], footprint: [1, 1], glyph: "i", attach: "wall" },
@@ -60,22 +62,6 @@ describe("expandScenePrimitives", () => {
     assert.equal(hasUnexpandedPrimitives(once), false);
   });
 
-  it("scatters deterministic vegetation outside rooms and doors", () => {
-    const a = expandScenePrimitives(makeScene());
-    const b = expandScenePrimitives(makeScene());
-    const treesA = (a.entities as Record<string, unknown>[]).filter((e) => e.kind === "tree");
-    const treesB = (b.entities as Record<string, unknown>[]).filter((e) => e.kind === "tree");
-    assert.ok(treesA.length > 0, "la zona 16x3 con density 0.2 debe plantar árboles");
-    assert.deepEqual(treesA, treesB, "misma seed (scene_id) → mismo scatter");
-    const grid = a.terrain as string[];
-    for (const t of treesA) {
-      const [c, r] = t.cell as [number, number];
-      assert.ok(r >= 9 && r < 12, `árbol ${t.id} fuera del área`);
-      assert.equal(grid[r][c], "g", `árbol ${t.id} sobre celda no-hierba`);
-      assert.ok(!(c === 7 && r === 9), "no planta sobre el player");
-    }
-  });
-
   it("snaps attach:wall decor to the nearest wall cell", () => {
     const out = expandScenePrimitives(makeScene());
     const torch = (out.entities as Record<string, unknown>[]).find((e) => e.id === "antorcha")!;
@@ -89,8 +75,6 @@ describe("expandScenePrimitives", () => {
     assert.throws(() => expandScenePrimitives(bad1), /se sale del grid/);
     const bad2 = { ...makeScene(), structures: [{ type: "room", rect: [2, 1, 10, 7], doors: [{ side: "south", at: 9, width: 2 }] }] };
     assert.throws(() => expandScenePrimitives(bad2), /no cabe en el lado/);
-    const bad3 = { ...makeScene(), vegetation_zones: [{ type: "pino", area: [0, 9, 16, 3], density: 2 }] };
-    assert.throws(() => expandScenePrimitives(bad3), /density/);
   });
 
   it("formatDToWorld expands defensively and the walls collide", () => {

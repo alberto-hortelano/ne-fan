@@ -11,13 +11,6 @@ import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
-import {
-  deriveVolumesFromSchema,
-  parseGround,
-  parseVolumes,
-  type GroundFeature,
-  type Volume,
-} from "@nefan-core/src/scene/blueprint/index.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import {
@@ -780,61 +773,6 @@ async function loadSceneData(
   await addTile(rawData, opts);
 }
 
-/** Compone el PLAN del tile: `ground` + `volumes` declarados por el motor,
- *  completados con los derivados del esquema (vegetation_zones → árboles,
- *  structures → edificios). De aquí salen las dos cosas que el juego usa: la
- *  geometría 3D (FpsRenderer.installTile) y la colisión (applyPlanCollision).
- *  Devuelve null en escenas legacy sin plan ni primitivas derivables. */
-function composeTilePlan(
-  raw: Record<string, unknown>,
-  data: Record<string, unknown>,
-  key: string,
-  isGridTile: boolean,
-): FpsTilePlan | null {
-  if (!isGridTile) return null;
-  let ground: GroundFeature[] = [];
-  if (Array.isArray(data.ground)) {
-    const parsed = parseGround(data.ground);
-    if (parsed.ok) {
-      ground = parsed.features;
-    } else {
-      errors.push("scene", `ground de ${key} inválido (${parsed.error}); se ignora`);
-    }
-  }
-  let declared: Volume[] = [];
-  if (Array.isArray(data.volumes)) {
-    const parsed = parseVolumes(data.volumes);
-    if (parsed.ok) {
-      declared = parsed.volumes;
-    } else {
-      errors.push("scene", `volumes de ${key} inválidos (${parsed.error}); se usan solo los derivados`);
-    }
-  }
-  const derived = deriveVolumesFromSchema(
-    {
-      scene_id: key,
-      structures: raw.structures as never,
-      vegetation_zones: raw.vegetation_zones as never,
-      entities: raw.entities as never,
-      ground,
-    },
-    declared,
-  );
-  const volumes = [...declared, ...derived];
-  if (ground.length === 0 && volumes.length === 0) return null;
-  return {
-    ground,
-    volumes,
-    biome: typeof raw.biome === "string" ? raw.biome : undefined,
-    scatter_generators: data.scatter_generators ?? raw.scatter_generators,
-    scatter_zones: data.scatter_zones ?? raw.scatter_zones,
-    scene_description:
-      typeof raw.scene_description === "string" ? raw.scene_description
-      : typeof data.scene_description === "string" ? data.scene_description
-      : undefined,
-  };
-}
-
 /** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
  *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
  *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
@@ -866,19 +804,13 @@ async function addTile(
   } catch (err) {
     errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
   }
-  // Plan del tile: los volumes del LLM completados con los derivados del
-  // esquema (vegetación, estructuras). El plan lee campos del Format D crudo
-  // (structures/vegetation_zones/biome) que la world scene no emite. Con el
-  // bridge normalizando en el wire, rawData ya ES la world scene — el crudo
-  // viaja en __format_d.
-  const planInfo = composeTilePlan(
-    (data.__format_d as Record<string, unknown> | undefined) ?? rawData,
-    data as Record<string, unknown>,
-    key,
-    isGridTile,
-  );
-  if (planInfo) {
-    (data as Record<string, unknown>).__plan = planInfo;
+  // Plan del tile: viene RESUELTO en la world scene (`__plan`, compuesto por
+  // core en la normalización — ver src/scene/tile-plan.ts). El cliente no
+  // deriva nada: si lo hiciera habría dos composiciones del mismo tile y
+  // divergirían por los argumentos, que es como divergen estas cosas.
+  const planInfo = (data.__plan as FpsTilePlan | undefined) ?? null;
+  for (const aviso of (data.__plan_warnings as string[] | undefined) ?? []) {
+    errors.push("scene", `plan de ${key}: ${aviso}`);
   }
 
   const prevEntry = tileStore.entries.get(key);
@@ -954,6 +886,9 @@ async function addTile(
   // caen los que pertenecían a ESTE tile y ya no figuran en su scene data.
   npcEntities = npcEntities.filter((n) => !(n.tileKey === key && !npcIds.has(n.id)));
   const enemies: RoomEnemy[] = [];
+  // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si el
+  // greybox ya lo pinta (y entonces no lleva billboard encima).
+  const tipoDeVolumen = new Map((planInfo?.volumes ?? []).map((v) => [v.id, v.type]));
 
   for (const obj of objects) {
     const pos: Vec3 = {
@@ -1030,7 +965,10 @@ async function addTile(
         sizeXZ,
         sizeY,
         shape,
-        sceneDeclared: true,
+        // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
+        // world scene). Presente = no se dibuja billboard encima; `building`
+        // además no se puede mirar (su centro no es un punto al que apuntar).
+        volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
       };
       objectEntities.push(objectEntity);
     }
@@ -1112,8 +1050,9 @@ async function addTile(
 
   // El mundo de la PARTIDA está pintado: media entrada (#279). Cuelga de que
   // el tile se AÑADA y no de `installTile`, que solo corre con un plan no
-  // vacío (`composeTilePlan` devuelve null sin ground ni volumes): un tile
-  // legal pero pelado dejaría una partida que no se escribe nunca. El atlas de
+  // vacío (la world scene no trae `__plan` si el tile no tiene ni suelo ni
+  // volúmenes): un tile legal pero pelado dejaría una partida que no se
+  // escribe nunca. El atlas de
   // imagen tampoco entra —es fire-and-forget— así que «pintado» sigue siendo
   // honesto con remote-gen caído. Las fixtures del selector «Room» quedan
   // fuera por las dos guardas: no son la partida de nadie.
@@ -1256,6 +1195,12 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     /** Carga una fixture del selector Room por nombre parcial, conduciendo el
      *  <select> real. Fail-loud si no existe: un guion que "no encuentra" la
      *  escena y sigue en verde no vale nada. */
+    /** Añade un tile MÁS al mundo sin resetearlo, con su Format D crudo.
+     *  Es lo que `loadFixture` no puede hacer (toma el mundo y lo vacía), y
+     *  sin ello no hay forma de medir desde el árbol el coste de varios tiles
+     *  residentes — que es de donde sale `MAX_TILE_VOLUMES`
+     *  (`qa/presupuesto-de-volumenes.mjs`). Solo DEV, como el resto del hook. */
+    addTileRaw: (raw: Record<string, unknown>) => addTile(raw),
     loadFixture: (name: string) => {
       const option = [...sceneSelector.options].find((o) => o.value.includes(name));
       if (!option) {
@@ -1534,10 +1479,12 @@ function updateWorldLabels(): void {
   const personajes = npcEntities.filter((n) => n.alive !== false);
   // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
   // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
-  // Los edificios declarados en la escena quedan fuera: los pinta el greybox
-  // por volúmenes y su centro no es un punto al que se pueda apuntar.
+  // Los EDIFICIOS quedan fuera: su centro no es un punto al que se pueda
+  // apuntar (estás dentro o pegado a la fachada). El resto de lo que el
+  // greybox pinta —un árbol, un barril— sí se puede mirar y nombrar: que el
+  // plan lo pinte como volumen decide cómo se DIBUJA, no si tiene nombre.
   const objetos = objectEntities.filter(
-    (o) => Boolean(o.label?.trim()) && !(o.sceneDeclared && o.category === "building"),
+    (o) => Boolean(o.label?.trim()) && o.volumeType !== "building",
   );
 
   // El rayo de la CÁMARA, no la proyección horizontal del forward: desde que

@@ -13,6 +13,7 @@
  *  already-resolved world scene, e.g. a `change_scene` payload). */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import { composeTilePlan } from "./tile-plan.js";
 import { tileWorldRect } from "./tile.js";
 
 /** The world-coordinate scene shape a renderer consumes. Loose by design — the
@@ -141,6 +142,11 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
           maxZ: (rows * mpc) / 2,
         };
 
+  // El PLAN del tile, compuesto UNA vez y resuelto en el wire: de él salen la
+  // geometría 3D, la colisión del jugador y la de los NPCs. Quien lo consume
+  // lo LEE — nadie vuelve a derivar (ver src/scene/tile-plan.ts).
+  const { plan, representedBy, warnings } = composeTilePlan(raw);
+
   const objects: Record<string, unknown>[] = [];
   const npcs: Record<string, unknown>[] = [];
   let playerStart: { x: number; z: number } | null = null;
@@ -213,6 +219,11 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       scale: [w * mpc, entH, h * mpc],
       category,
       description: ent.name,
+      // Qué volumen del plan REPRESENTA a esta entity. Con él, el cliente la
+      // pinta UNA vez (como volumen del greybox, que además colisiona) en vez
+      // de dibujar encima un billboard que se atraviesa. Ausente = no está en
+      // el plan (spawn dinámico, item): se pinta como billboard.
+      ...(representedBy[ent.id] ? { volume_id: representedBy[ent.id] } : {}),
     };
     // Forma: explícita si es válida; si no, los árboles son redondos por defecto.
     if (ent.shape && VALID_SHAPES.has(ent.shape)) obj.shape = ent.shape;
@@ -245,12 +256,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       // Los consume `createTerrainCollider`.
       solid_chars: solidChars,
     },
-    // Plan del tile (rasgos de suelo declarativos + volúmenes tipados).
-    // Validado por ai_server (y por parseGround/parseVolumes en el bridge al
-    // persistir retoques); aquí passthrough — el cliente construye el greybox
-    // 3D del tile y deriva la colisión de agua/decks + huellas. Los campos
-    // SVG antiguos (map_ground, terrain_svg) de saves viejos se IGNORAN
-    // (precedente world.perspective: se conservan en el JSON, nadie los lee).
+    // Plan del tile DECLARADO (rasgos de suelo + volúmenes tipados), tal cual
+    // lo mandó el motor: es provenance, no la fuente de render. Lo que se
+    // pinta y lo que colisiona es `__plan`, que además trae lo derivado.
     ground: Array.isArray(raw.ground) ? raw.ground : undefined,
     volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
     // Scatter declarativo (vista fps): passthrough crudo — lo valida el gate
@@ -269,6 +277,11 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     exits: raw.exits,
     // Metadatos para el cliente — el renderer los ignora.
     __player_start: playerStart,
+    // El plan COMPUESTO (declarado + derivado del esquema). Viaja resuelto a
+    // propósito: si cada consumidor lo derivara por su cuenta, divergirían en
+    // los argumentos y el bosque del cliente no sería el del bridge.
+    __plan: plan ?? undefined,
+    __plan_warnings: warnings.length > 0 ? warnings : undefined,
     __format_d: raw,
   };
 }

@@ -36,8 +36,13 @@ export interface Entity {
   /** Tile del que procede el NPC (clave del scene data que lo declaró) —
    *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
   tileKey?: string;
-  /** true = estático declarado en el scene data (no un spawn dinámico). */
-  sceneDeclared?: boolean;
+  /** Tipo del volumen del plan que YA representa a esta entity (`volume_id`
+   *  de la world scene → `__plan.volumes[].type`). Presente = el greybox la
+   *  pinta como volumen sólido, así que no lleva billboard encima: era la
+   *  doble representación por la que un árbol declarado escondía dentro de su
+   *  copa un poste que se atravesaba. Ausente = spawn dinámico o item, que se
+   *  pintan como billboard. */
+  volumeType?: string;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
   category?: string;

@@ -24,6 +24,7 @@
 
 import { z } from "zod";
 import { GroundSchema } from "../../scene/blueprint/ground.js";
+import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 
@@ -113,6 +114,11 @@ export const FormatDSceneSchema = z
     terrain_legend: TerrainLegendSchema.optional(),
     ground: GroundSchema.optional(),
     volumes: VolumesSchema.optional(),
+    // Vegetación de masa: el MISMO zod que compone el plan
+    // (blueprint/vegetation.ts), no una copia con las mismas reglas. Su
+    // `density` va en ejemplares/m² con un tope derivado de la geometría del
+    // paso del jugador: un bosque intransitable no se puede pedir.
+    vegetation_zones: VegetationZonesSchema.optional(),
     entities: z.array(EntitySchema),
   })
   .passthrough()

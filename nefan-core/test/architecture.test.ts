@@ -283,6 +283,129 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Nace VERDE, y una regla verde no distingue "nadie compone el plan por su
+  // cuenta" de "el patrón no caza nada". Se le enseña exactamente lo que
+  // existe para cortar —el cliente y el bridge derivando el plan— y lo que NO
+  // debe cortar: el compositor de core y quien LEE el plan ya resuelto.
+  it("[error] un-solo-derivador-del-plan: componer el plan fuera de core salta", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "un-solo-derivador-del-plan");
+
+    // Literalmente lo que había hasta esta PR: el cliente componiendo el plan
+    // del tile y el batch de estilo derivando los volúmenes por su cuenta. Y
+    // el bridge, que es por donde volvería (la tentación de «derivo aquí y no
+    // toco el wire»).
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: "function composeTilePlan(\n  raw: Record<string, unknown>,\n): FpsTilePlan | null {\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: "const derived = deriveVolumesFromSchema({ seed: sceneId }, declared);\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/sim-collision.ts",
+          text: "// dos líneas\n// de contexto\nconst vols = deriveVolumesFromSchema(rec.scene_data, declared);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/sim-collision.ts:3",
+        "nefan-html/src/main.ts:1",
+        "nefan-html/src/ui/style-apply.ts:1",
+      ],
+      "componer el plan fuera de core tiene que saltar, sea el cliente o el bridge",
+    );
+
+    // Y lo que NO es un segundo derivador: el compositor de core (fuera del
+    // alcance de la regla a propósito) y quien lee el plan ya resuelto.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/scene/tile-plan.ts",
+          text: "export function composeTilePlan(raw: Record<string, unknown>): TilePlanComposition {\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const planInfo = (data.__plan as FpsTilePlan | undefined) ?? null;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/sim-collision.ts",
+          text: "const plan = world.__plan ?? null;\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "leer `__plan` no es derivarlo, y core es quien lo compone",
+    );
+  });
+
+  // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
+  // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
+  // es una lista que nadie ha probado.
+  it("[error] scattered y las primitivas del esquema no vuelven al cliente", () => {
+    const retirados = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
+    const cliente = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "cliente-no-convierte-celdas-a-metros");
+
+    // `scattered`: la marca de las entities que estampaba la ruta B. Vuelve por
+    // un dump viejo o por un saneador que la reinyecte, no escribiendo código.
+    assert.deepEqual(
+      retirados([
+        {
+          path: "nefan-core/src/scene/blueprint/derive.ts",
+          text: "function isScatterEntity(ent: RawEntity): boolean {\n  return ent.scattered === true;\n}\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'ent["scattered"] = True\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/scenes/robledo_tile.json",
+          text: '{\n  "id": "pino_z0_3",\n  "scattered": true\n}\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/narrative_schemas.py:1",
+        "nefan-core/data/scenes/robledo_tile.json:3",
+        "nefan-core/src/scene/blueprint/derive.ts:2",
+      ],
+      "el campo de la ruta retirada salta en cualquiera de los procesos escaneados",
+    );
+
+    // Y las primitivas del esquema en el CLIENTE: leerlas es componer el plan
+    // por su cuenta, que es la misma frontera que prohíbe convertir celdas.
+    assert.deepEqual(
+      cliente([
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const zonas = raw.vegetation_zones;\nconst rooms = raw.structures;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["nefan-html/src/main.ts:1", "nefan-html/src/main.ts:2"],
+    );
+
+    // Vecino inocente: el plan RESUELTO no nombra primitivas, y el cliente
+    // puede seguir leyéndolo.
+    assert.deepEqual(
+      cliente([
+        { path: "nefan-html/src/main.ts", text: "const plan = data.__plan;\n", imports: [] },
+      ]),
+      [],
+    );
+  });
+
   // Es EL criterio de la operación "solo la vista 3D": un único importador de
   // three en el cliente ⇒ un único contexto WebGL en la pestaña. Probado en
   // negativo contra la config real, porque la regla verde de hoy no distingue

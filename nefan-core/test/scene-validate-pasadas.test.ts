@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 
 import {
   buildWalkableMap,
+  composePlan,
   checkDeclaredChars,
   checkPlayerSpawn,
   checkReachability,
@@ -28,6 +29,7 @@ import {
   reportPlanBudget,
   type Cell,
   type Findings,
+  type PlanMask,
   type TileView,
   type WalkableMap,
 } from "../src/scene/scene-validate.js";
@@ -54,11 +56,21 @@ const vistaTile = (over: Partial<TileView> = {}): TileView =>
 
 const hallazgos = (view: TileView): Findings => emptyFindings(view.cols, view.rows);
 
+/** Plan que no bloquea nada: el neutro para probar las pasadas que solo miran
+ *  el terreno. Lo que el PLAN aporta a la máscara se prueba aparte, sobre un
+ *  tile de verdad (describe «composePlan»), porque componerlo pide las
+ *  dimensiones reales del tile. */
+const SIN_PLAN: PlanMask = { solid: () => false, volumes: 0 };
+
 /** Máscara + hallazgos de un grid, que es lo que consumen media docena de pasadas. */
-function mapaDe(filas: string[], scene: Record<string, unknown> = {}): { view: TileView; map: WalkableMap; found: Findings } {
+function mapaDe(
+  filas: string[],
+  scene: Record<string, unknown> = {},
+  plan: PlanMask = SIN_PLAN,
+): { view: TileView; map: WalkableMap; found: Findings } {
   const view = vista(filas, { scene });
   const found = hallazgos(view);
-  return { view, map: buildWalkableMap(view, found), found };
+  return { view, map: buildWalkableMap(view, plan, found), found };
 }
 
 /** Bordes sin ningún cruce: el punto de partida para declarar solo los que importan. */
@@ -157,39 +169,14 @@ describe("buildWalkableMap", () => {
     assert.equal(map.isWalkable([0, 2]), false);
   });
 
-  it("una huella que se sale por el borde derecho NO muerde la fila siguiente", () => {
+  it("lo que bloquea el PLAN tampoco se pisa, y no muerde la fila siguiente", () => {
     // La máscara es fila-mayor: sin el corte por columna, la celda [cols, r]
     // escribe en el índice de [0, r+1]. El bug clásico del grid plano.
-    const { map } = mapaDe(["gggg", "gggg", "gggg"], {
-      entities: [{ id: "muralla", kind: "building", cell: [3, 0], footprint: [2, 1] }],
-    });
-    assert.equal(map.isWalkable([3, 0]), false, "lo que cae dentro sí se tapa");
+    const plan: PlanMask = { solid: (c, r) => r === 0 && c >= 3, volumes: 1 };
+    const { map } = mapaDe(["gggg", "gggg", "gggg"], {}, plan);
+    assert.equal(map.isWalkable([3, 0]), false, "lo que el plan tapa no se pisa");
     assert.equal(map.isWalkable([0, 1]), true, "la fila siguiente queda intacta");
     assert.equal(map.walkableCells, 11);
-  });
-
-  it("building, prop y tree estampan su huella; el resto de kinds no", () => {
-    const { map } = mapaDe(["gggg", "gggg", "gggg"], {
-      entities: [
-        { id: "casa", kind: "building", cell: [0, 0], footprint: [2, 1] },
-        { id: "mesa", kind: "prop", cell: [2, 0] },
-        { id: "roble", kind: "tree", cell: [3, 1] },
-        { id: "moneda", kind: "item", cell: [0, 2], footprint: [2, 2] },
-      ],
-    });
-    assert.deepEqual(
-      [map.isWalkable([0, 0]), map.isWalkable([1, 0]), map.isWalkable([2, 0]), map.isWalkable([3, 1])],
-      [false, false, false, false],
-    );
-    assert.equal(map.isWalkable([0, 2]), true, "un item no bloquea");
-    assert.equal(map.walkableCells, 8);
-  });
-
-  it("una huella que se sale del grid recorta en vez de reventar", () => {
-    const { map } = mapaDe(["gg", "gg"], {
-      entities: [{ id: "muralla", kind: "building", cell: [1, 1], footprint: [9, 9] }],
-    });
-    assert.equal(map.walkableCells, 3);
   });
 
   it("separa al player y a los NPCs del decorado, y las entities rotas se ignoran", () => {
@@ -207,6 +194,85 @@ describe("buildWalkableMap", () => {
     assert.equal(map.walkableCells, 3, "ni player ni NPC bloquean");
   });
 });
+
+/** La pasada que ATA el validador al juego: la máscara con la que se juzga la
+ *  jugabilidad sale del MISMO plan que pinta el cliente y colisiona el bridge.
+ *  Antes esta pasada tenía su propia idea de qué bloquea —la huella de cada
+ *  entity—, así que veía los postes de vegetación que el juego atravesaba y no
+ *  veía ni uno de los árboles que el juego sí frena. */
+describe("composePlan", () => {
+  const tileConPlan = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    tile: { tx: 0, ty: 0 },
+    scene_id: "tile_0_0",
+    scene_description: "Un claro.",
+    biome: "meadow",
+    entities: [],
+    ...over,
+  });
+
+  const abrir = (scene: Record<string, unknown>) => {
+    const r = openTile(scene);
+    assert.ok(r.ok, "el tile tiene que abrir");
+    if (!r.ok) throw new Error("unreachable");
+    const found = hallazgos(r.view);
+    return { view: r.view, found, mask: composePlan(r.view, found) };
+  };
+
+  it("la vegetación de masa BLOQUEA en el validador (antes no veía ni un árbol)", () => {
+    // 0,04/m² sobre el tile entero = 164 pinos: el bosque de tile entero más
+    // denso que cabe en el presupuesto (a 0,05 son 205 y el recorte entraría
+    // en escena, que es lo que mide el caso de al lado).
+    const { mask, found } = abrir(
+      tileConPlan({ vegetation_zones: [{ type: "pino", area: "rest", density: 0.04 }] }),
+    );
+    assert.equal(found.stats.volumes_total, 164, "164 pinos = 4096 m² × 0,04/m²");
+    assert.deepEqual(found.errors, [], "y cabe: sin aviso de presupuesto");
+    // Un tile de hierba sin plan no bloquea nada; con el pinar, sí.
+    const bloqueadas = contarSolidas(mask);
+    // ~2,8 celdas por tronco (el disco de 0,9-1,08 celdas de radio).
+    assert.ok(bloqueadas > 400, `troncos rasterizados: ${bloqueadas} celdas`);
+    const { mask: pelado } = abrir(tileConPlan());
+    assert.equal(contarSolidas(pelado), 0, "sin plan no hay nada que bloquear");
+  });
+
+  it("una entity estática bloquea por SU VOLUMEN, que es lo que el jugador choca", () => {
+    const { mask } = abrir(
+      tileConPlan({
+        entities: [{ id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [6, 4], glyph: "B" }],
+      }),
+    );
+    assert.equal(mask.solid(42, 41), true, "dentro de la huella");
+    assert.equal(mask.solid(60, 60), false, "lejos, no");
+  });
+
+  it("un item no es geometría: no bloquea", () => {
+    const { mask } = abrir(
+      tileConPlan({
+        ground: [{ id: "senda", kind: "path", points: [[0, 64], [128, 64]], w: 4, material: "dirt" }],
+        entities: [{ id: "moneda", kind: "item", name: "moneda", cell: [40, 40], footprint: [2, 2], glyph: "$" }],
+      }),
+    );
+    assert.equal(mask.solid(40, 40), false);
+  });
+
+  it("lo que el compositor no pudo componer sale como ERROR: el motor re-responde", () => {
+    // En esta capa el aviso del plan es accionable de verdad — el motor puede
+    // volver a mandar la escena. Por eso aquí es error y en el cliente es una
+    // línea del log.
+    const { found } = abrir(
+      tileConPlan({ vegetation_zones: [{ type: "pino", area: "rest", density: 0.5 }] }),
+    );
+    assert.equal(found.errors.length, 1, found.errors.join(" | "));
+    assert.match(found.errors[0], /EJEMPLARES POR m²/);
+  });
+});
+
+/** Celdas que bloquea una máscara de plan sobre el tile entero. */
+function contarSolidas(mask: PlanMask): number {
+  let n = 0;
+  for (let r = 0; r < 128; r++) for (let c = 0; c < 128; c++) if (mask.solid(c, r)) n++;
+  return n;
+}
 
 describe("checkScatter", () => {
   it("sin bloques de scatter no dice nada", () => {
@@ -379,7 +445,7 @@ describe("checkSeams", () => {
   it("el cruce continuado casa con tolerancia de ±2 celdas, incluida la última", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const seams = checkSeams(view, map, bordeCon("north", [{ type: "path", at: 42, width: 2 }]), {
       required_crossings: [{ edge: "north", type: "path", at: 40, width: 2 }],
     }, null, found);
@@ -389,7 +455,7 @@ describe("checkSeams", () => {
   it("un cruce INCOMPATIBLE al lado no vale como continuación", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const seams = checkSeams(view, map, bordeCon("south", [{ type: "path", at: 40, width: 2 }]), {
       required_crossings: [{ edge: "south", type: "river", at: 40, width: 2 }],
     }, null, found);
@@ -400,7 +466,7 @@ describe("checkSeams", () => {
   it("un cruce compatible pero LEJOS no continúa nada", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const seams = checkSeams(view, map, bordeCon("north", [{ type: "path", at: 100, width: 2 }]), {
       required_crossings: [{ edge: "north", type: "path", at: 40, width: 2 }],
     }, null, found);
@@ -410,7 +476,7 @@ describe("checkSeams", () => {
   it("el borde sur mira la ÚLTIMA fila del tile", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const seams = checkSeams(view, map, bordeCon("south", [{ type: "path", at: 7, width: 2 }]), {
       required_crossings: [{ edge: "south", type: "path", at: 7, width: 2 }],
     }, null, found);
@@ -420,7 +486,7 @@ describe("checkSeams", () => {
   it("el borde este mira su propia columna del grid", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const seams = checkSeams(view, map, bordeCon("east", [{ type: "path", at: 7, width: 2 }]), {
       required_crossings: [{ edge: "east", type: "path", at: 7, width: 2 }],
     }, null, found);
@@ -429,11 +495,11 @@ describe("checkSeams", () => {
 
   it("la entrada también tiene tolerancia ±2, y fuera de ella no siembra", () => {
     const view = vistaTile();
-    const cerca = checkSeams(view, buildWalkableMap(view, hallazgos(view)), bordeCon("north", [{ type: "path", at: 42, width: 2 }]),
+    const cerca = checkSeams(view, buildWalkableMap(view, SIN_PLAN, hallazgos(view)), bordeCon("north", [{ type: "path", at: 42, width: 2 }]),
       { required_crossings: [], entry: { edge: "north", at: 40 } }, null, hallazgos(view));
     assert.deepEqual(cerca.startCells, [[42, 0]]);
 
-    const lejos = checkSeams(view, buildWalkableMap(view, hallazgos(view)), bordeCon("north", [{ type: "path", at: 43, width: 2 }]),
+    const lejos = checkSeams(view, buildWalkableMap(view, SIN_PLAN, hallazgos(view)), bordeCon("north", [{ type: "path", at: 43, width: 2 }]),
       { required_crossings: [], entry: { edge: "north", at: 40 } }, null, hallazgos(view));
     assert.deepEqual(lejos.startCells, [], "a tres celdas ya no es la misma entrada");
   });
@@ -441,7 +507,7 @@ describe("checkSeams", () => {
   it("con entrada Y cruce requerido, el arranque es UNO: la entrada", () => {
     const view = vistaTile();
     const found = hallazgos(view);
-    const map = buildWalkableMap(view, found);
+    const map = buildWalkableMap(view, SIN_PLAN, found);
     const edges = bordeCon("west", [{ type: "path", at: 40, width: 2 }]);
     const seams = checkSeams(view, map, edges, {
       required_crossings: [{ edge: "west", type: "path", at: 40, width: 2 }],

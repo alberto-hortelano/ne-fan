@@ -1512,10 +1512,11 @@ export class FpsGl {
       this.updateEntity(e, now);
     }
     for (const e of objects) {
-      // Los edificios-entity legacy sí viven en el greybox (volumes); el resto
-      // de entities de escena (props/decor/items) NO se derivan a prims — sin
-      // esto eran invisibles en fps (mobiliario de interiores incluido).
-      if (e.sceneDeclared && e.category === "building") continue;
+      // Lo que el PLAN ya pinta como volumen no se dibuja otra vez: el
+      // billboard encima era la mitad que no colisionaba. Lo que no está en el
+      // plan (spawn dinámico, item, mobiliario tapado por un edificio) sí —
+      // sin esto sería invisible en fps.
+      if (e.volumeType !== undefined) continue;
       seen.add(e.id);
       this.updateObject(e);
     }

@@ -222,6 +222,17 @@ function clearGatePassage(
   }
 }
 
+/** Radio (celdas) del TRONCO de un árbol: lo ÚNICO que bloquea de un árbol
+ *  (la copa se dibuja grande y se atraviesa). Suelo de 0,9 celdas = 0,45 m de
+ *  radio para que un ejemplar pequeño siga siendo un obstáculo real.
+ *
+ *  FUENTE ÚNICA: lo consume la colisión (aquí) y la separación mínima entre
+ *  ejemplares del scatter de `vegetation_zones` (`vegetation.ts`), que se
+ *  DERIVA de este radio — si el tronco engorda, el bosque se abre solo. */
+export function treeTrunkRadiusCells(s: number): number {
+  return Math.max(0.9, 0.9 * s);
+}
+
 /** Radio (celdas) del disco de colisión de un volumen SÓLIDO UNIFORME
  *  (tower/fountain/rock/prop-punto) — FUENTE ÚNICA compartida por
  *  `volumeCollisionGrid` (markDisc) y la huella del manifest
@@ -271,7 +282,7 @@ export function volumeCollisionGrid(
       case "tree":
         // Árbol: colisión solo en el tronco (la copa se dibuja grande pero no
         // bloquea) — radio propio, NO el disco sólido uniforme.
-        markDisc(grid, v.at[0], v.at[1], Math.max(0.9, 0.9 * (v.s ?? 1)), dims);
+        markDisc(grid, v.at[0], v.at[1], treeTrunkRadiusCells(v.s ?? 1), dims);
         break;
       case "gate": {
         // jambas: cuerpo completo; el vano se limpia en la pasada final

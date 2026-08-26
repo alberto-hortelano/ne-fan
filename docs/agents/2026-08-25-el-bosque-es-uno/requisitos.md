@@ -138,3 +138,44 @@ Antes de dar la tanda por hecha, el ingeniero tiene que responder a esto con una
 
 No es un freno: la tanda sigue y se entrega. Es que la pregunta llegue respondida o, como
 mínimo, fotografiada.
+
+---
+
+# Decisión de producto del usuario (2026-08-26)
+
+El crítico marcó una pregunta como tuya y el plan la dejó explícitamente sin tocar:
+
+> «La ruta A **satura en ~11 árboles por zona** pase lo que pase con `density` (`minSep` 8 celdas
+> = 4 m entre troncos, divisor 22, tope 48). Si quieres pinares que frenen de verdad hay que subir
+> ese techo, y eso cambia cómo se anda por un bosque. Si no se toca, los bosques serán arboledas
+> ralas con detalle visual.»
+
+Preguntado con tres salidas —dejarlo y medirlo jugando · subirlo en esta tanda · exponerlo como
+dial del contrato—, el usuario elige la tercera:
+
+> **Que lo decida el motor narrativo.** Exponer el techo como dial del contrato para que el motor
+> pida «pinar cerrado» o «robledal abierto» según la escena, en vez de una constante para todo el
+> mundo. Es la más ambiciosa: da riqueza de verdad, pero abre la puerta a que el motor pida un
+> bosque intransitable y hay que acotarlo por arriba de todos modos.
+
+## Qué añade eso al alcance
+
+1. **El techo deja de ser una constante** y pasa a ser algo que el motor puede pedir por zona.
+   Hoy son tres números escondidos (`minSep` 8, divisor 22, tope 48) que ninguna prosa de contrato
+   menciona.
+2. **Acotado por arriba, sin excepción.** El motor puede pedir un bosque cerrado; no puede pedir
+   uno intransitable ni uno que cuelgue el cliente. `MAX_ENTITY_VOLUMES = 80` existe porque
+   «derivar cientos de trees colgaba el cliente»: el límite de rendimiento es real y hay que
+   medirlo en esta tanda, no suponerlo.
+3. **Jugabilidad**: un bosque en el que no se puede pasar es un bosque roto. La cota superior tiene
+   que dejar siempre un camino — y eso es verificable, no opinable: `validateScene` ya sabe
+   comprobar jugabilidad y `scene-validate.ts` es donde vive esa pregunta.
+4. **La prosa del contrato dice lo que el código HACE.** Es el criterio que ya traía la tanda
+   (`density`, un significado por campo, candado); el dial nuevo nace con esa misma exigencia o no
+   nace.
+
+## Lo que NO cambia
+
+El resto de la tanda sigue igual: se retira la vegetación de postes (ruta B), se unifica la
+derivación en un solo camino compartido por cliente, bridge y pre-generación, y `density` pasa a
+tener un significado por campo con candado.

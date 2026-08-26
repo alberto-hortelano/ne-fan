@@ -90,6 +90,14 @@ MAX_GROUND_FEATURES = 64
 VOLUME_TYPES = {"building", "wall", "tower", "gate", "tree", "bush", "rock", "fountain", "prop", "prism", "custom"}
 MAX_VOLUMES = 160
 
+# Vegetación de masa (`vegetation_zones`). Espejo de
+# nefan-core/src/scene/blueprint/vegetation.ts, donde el tope NO es un número
+# elegido: sale de que quepa el jugador entre dos troncos
+# (MIN_SEP_TREE → MAX_VEG_DENSITY). `density` = EJEMPLARES POR m², la misma
+# unidad que scatter_zones.density.
+MAX_VEG_DENSITY = 0.08
+MAX_VEGETATION_ZONES = 8
+
 
 TILE_CELLS = 128
 # Márgenes de celda fuera del tile que admite cada schema (espejo de los
@@ -749,24 +757,39 @@ def validate_scene_response(data: dict) -> dict:
     else:
         data.pop("structures", None)
 
+    # Vegetación de masa: espejo del zod de nefan-core
+    # (src/scene/blueprint/vegetation.ts, la fuente de verdad). `density` son
+    # EJEMPLARES POR m² con tope MAX_VEG_DENSITY —el que deriva de que el
+    # jugador quepa entre dos troncos—, así que aquí NO vale con comprobar que
+    # es un número: hasta esta tanda un `density: 2` pasaba entero por este
+    # saneador mientras el bloque de scatter de al lado (líneas ~600) sí
+    # validaba su rango. Mismo nombre, dos unidades y una de las dos rutas sin
+    # puerta. Una zona fuera de rango se descarta CON TRAZA, como el resto de
+    # este saneador; el gate estructural del MCP la rebota antes con el motivo.
     raw_veg = data.get("vegetation_zones")
     if isinstance(raw_veg, list):
         clean_veg = []
-        for i, z in enumerate(raw_veg[:16]):
+        for i, z in enumerate(raw_veg[:MAX_VEGETATION_ZONES]):
             area_ok = z.get("area") == "rest" or (
                 isinstance(z.get("area"), list)
                 and len(z["area"]) == 4
                 and all(isinstance(v, int) for v in z["area"])
             ) if isinstance(z, dict) else False
+            density = z.get("density") if isinstance(z, dict) else None
+            density_ok = isinstance(density, (int, float)) and 0 < density <= MAX_VEG_DENSITY
             if (
                 isinstance(z, dict)
                 and isinstance(z.get("type"), str)
                 and area_ok
-                and isinstance(z.get("density"), (int, float))
+                and density_ok
             ):
                 clean_veg.append(z)
             else:
-                print(f"validate_scene_response: vegetation_zones[{i}] malformada, descartada", flush=True)
+                print(
+                    f"validate_scene_response: vegetation_zones[{i}] malformada "
+                    f"(density en ejemplares/m², (0, {MAX_VEG_DENSITY}]), descartada",
+                    flush=True,
+                )
         data["vegetation_zones"] = clean_veg
     else:
         data.pop("vegetation_zones", None)

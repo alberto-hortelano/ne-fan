@@ -551,7 +551,9 @@ into context:
             const s = v.stats;
             if (s && typeof s.volumes_declared === 'number') {
               lines.push(
-                `Plan utilization: volumes ${s.volumes_declared}/${s.volumes_cap}, ` +
+                `Plan utilization: volumes ${s.volumes_declared}/${s.volumes_cap} declared, ` +
+                  `${s.volumes_total}/${s.volumes_total_cap} composed (declared + derived from the schema: ` +
+                  `structures, static entities and vegetation_zones), ` +
                   `ground ${s.ground_features}/${s.ground_cap}, ` +
                   `scatter zones ${s.scatter_zones}, vegetation zones ${s.vegetation_zones}, ` +
                   `distinct building heights ${s.distinct_building_heights}`,
