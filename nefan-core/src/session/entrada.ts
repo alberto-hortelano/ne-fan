@@ -2,13 +2,25 @@
  *
  *  La frontera la eligió el usuario y es una CONJUNCIÓN, no un evento: «ya se
  *  ha vestido Y ha pintado el tile inicial». Las dos mitades llegan por
- *  caminos distintos y en cualquier orden, y la que llega antes cambia según
- *  el día: con snapshot de mundo pre-generado el tile aterriza mientras el
- *  cliente todavía espera a las hojas del personaje — está medido y escrito en
- *  `qa/guiones/27-el-clon-limpio-quiere-jugar.mjs`, donde el tile llega ANTES
- *  de que el vestido falle. Colgar la entrada solo del tile deja pasar
- *  exactamente ese caso (nacería la partida de un arranque que vuelve al
- *  título); colgarla solo del vestido deja partidas sin mundo (#189).
+ *  caminos distintos y en cualquier orden, y cuál llega antes depende de si
+ *  vestir al jugador tarda más o menos que un round-trip por WebSocket — o
+ *  sea, de la máquina y del día. Las dos órdenes son alcanzables y las dos
+ *  están medidas (`qa/guiones/29-la-partida-existe-cuando-el-jugador-entra.mjs`).
+ *
+ *  El caso que obliga a la conjunción NO necesita ningún fallo, y es el que
+ *  mide el bloque 3 de ese guion: mientras el jugador se viste, el mundo ya
+ *  está pintado y el título sigue delante. Colgar la entrada solo del tile
+ *  escribiría la partida ahí —y con ella la de cualquier arranque que todavía
+ *  puede volver al título, que es la tarjeta fantasma de #279—; colgarla solo
+ *  del vestido deja partidas sin mundo (#189), y eso lo canda el guion 20.
+ *
+ *  Un aviso para quien lea el guion 27, que también la ejerce: allí la ventana
+ *  se CONSTRUYE (el 404 de las hojas espera a que el mundo esté pintado, y el
+ *  guion afirma esa precondición). En el clon limpio real el 404 es
+ *  instantáneo y el orden se invierte: el vestido falla ANTES de que llegue el
+ *  tile, y entonces lo que impide el save no es esta conjunción sino el reset
+ *  de la faceta al volver al título. Los dos caminos importan y cada uno tiene
+ *  su guion; ninguno sustituye al otro.
  *
  *  Por qué es un módulo y no dos booleanos en `main.ts`: dos flags sueltos que
  *  tienen que moverse juntos, y un reset que hay que acordarse de hacer al

@@ -625,7 +625,7 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(ctx.narrative.session_id, sessionId, "y la sesión no se ha movido");
   });
 
-  it("set_render_mode sobre una partida que aún no ha empezado no miente con un ok", async () => {
+  it("set_render_mode con el mundo todavía en vuelo no miente con un ok", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
     await routeMessage(
@@ -644,7 +644,11 @@ describe("bridge ciclo de sesión", () => {
       { type: "render_mode_set" }
     >;
     assert.equal(res.ok, false);
-    assert.match(res.error ?? "", /aún no ha empezado/);
+    // La frase es sobre lo que el jugador VE, no sobre el estado interno (H4
+    // de QA): con un motor lento el título ya se fue y está DENTRO mirando
+    // el loader, así que «entra en ella» era falso justo aquí.
+    assert.match(res.error ?? "", /el mundo todavía no ha llegado/);
+    assert.doesNotMatch(res.error ?? "", /entra en ella/);
   });
 
   it("list_sessions y delete_session operan sobre el storage", async () => {

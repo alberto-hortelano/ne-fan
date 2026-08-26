@@ -1,12 +1,19 @@
 /** El candado de #279: una partida existe en disco cuando el jugador ha
  *  llegado a jugarla, y eso son DOS cosas a la vez.
  *
- *  El caso que obliga a la conjunción está medido y escrito en
- *  `qa/guiones/27-el-clon-limpio-quiere-jugar.mjs`: el tile del bridge llega
- *  ANTES de que se resuelva la apariencia del jugador, así que durante unos ms
- *  hay mundo y título a la vez. Anunciar la entrada con solo una de las dos
- *  mitades escribiría el save de un arranque que un instante después vuelve al
- *  título — que es exactamente la tarjeta de partida fantasma del issue. */
+ *  El caso que obliga a la conjunción está medido en vivo, y NO necesita que
+ *  falle nada: `qa/guiones/29-la-partida-existe-cuando-el-jugador-entra.mjs`,
+ *  bloque 3 — mientras el jugador se viste, el mundo ya está pintado y el
+ *  título sigue delante. Anunciar la entrada con solo una de las dos mitades
+ *  escribiría el save ahí, y con él el de cualquier arranque que un instante
+ *  después vuelve al título: la tarjeta de partida fantasma del issue.
+ *
+ *  El guion 27 ejerce esa misma ventana con un fallo dentro, pero CONSTRUYE el
+ *  orden (retiene el 404 de las hojas hasta que el mundo está pintado, y lo
+ *  afirma como precondición). En el clon limpio real el orden es el contrario
+ *  —el vestido falla antes de que llegue el tile— y entonces quien impide el
+ *  save es el reset de la faceta, no esto. Los tests de abajo cubren los DOS
+ *  órdenes porque los dos ocurren. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

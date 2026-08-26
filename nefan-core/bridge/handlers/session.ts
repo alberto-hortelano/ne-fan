@@ -663,12 +663,18 @@ export async function handleSetRenderMode(
     } catch (err) {
       return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // La partida aún no existe (el jugador sigue arrancándola): el cambio se
+    // La partida aún no existe (el bootstrap sigue en vuelo): el cambio se
     // aplicó en memoria pero NO se persistió. Contestar `ok` sería prometer
     // algo que el siguiente resume no va a encontrar.
+    //
+    // La frase habla de lo que el jugador VE, no del estado interno. «Aún no
+    // ha empezado / entra en ella» era falso justo cuando este caso ocurre:
+    // con un motor lento el título ya se fue y el jugador está DENTRO, delante
+    // del loader, cuando toca el chip de gráficos. Es la misma familia de
+    // mentira amable que #277 vino a quitar.
     if (!escrito) {
       return fail(
-        `la partida ${msg.sessionId} aún no ha empezado: entra en ella y vuelve a cambiar el modo`,
+        "el mundo todavía no ha llegado: espera a verlo en pantalla y vuelve a cambiar el modo",
       );
     }
     console.log(`Bridge: modo de render cambiado en ${msg.sessionId} (${facet} → ${msg.renderMode}, sesión activa)`);

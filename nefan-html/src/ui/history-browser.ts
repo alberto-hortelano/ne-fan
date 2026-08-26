@@ -87,7 +87,7 @@ export class HistoryBrowser {
         const msg = (err as Error).message;
         const texto =
           msg === "session_not_found"
-            ? "La partida aún no ha empezado: el libro se llena cuando el mundo está en pantalla."
+            ? "El mundo todavía no ha llegado: el libro se llena cuando la partida está en marcha."
             : `No se pudo cargar la sesión: ${msg}`;
         this.content.innerHTML = `<div class="hb-note hb-note--error">${escapeHtml(texto)}</div>`;
         return;
