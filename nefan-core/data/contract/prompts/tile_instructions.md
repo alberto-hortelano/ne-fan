@@ -14,7 +14,7 @@ Call narrative_respond with this JSON (Tile Format):
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres). In first person an entity renders as a single primitive (its `shape` + h); a `volumes` entry (prop/custom…) is what produces real composed geometry
   "ground": [ … ],   // ground features (paths/plazas/water/decks/hills) — see MAP PLAN below
   "volumes": [ … ],  // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
-  "vegetation_zones": [ … ]   // optional: engine-planted vegetation masses — see MAP PLAN below
+  "vegetation_zones": [ … ]   // optional: engine-planted vegetation masses (density in specimens/m²) — see MAP PLAN below
 }
 
 HARD RULES OF THE TILE:
@@ -200,18 +200,41 @@ classifier). Nothing fills vegetation for you: what you do not declare
 
 3) OPTIONAL "vegetation_zones" — mass vegetation planted BY THE ENGINE,
 deterministically: [{ "type": Spanish plant name ("pino", "matorral",
-"zarza"…), "area": [col,row,w,h] in cells | "rest" (every bare-biome cell
-of the whole tile), "density": 0..1 (fraction of eligible cells), "glyph"? }].
-The engine avoids paths, water, buildings and occupied cells automatically
-and keeps your declared tree volumes as spacing seeds; the result is REAL
-tree/bush volumes (trunk collision, visible in every view). A `type`
-matching arbusto/mata/matorral/helecho/zarza/bush plants bushes; anything
-else plants trees. This is the tool for forests, hedgerows and
-undergrowth; hand-place `tree` volumes for singular specimens. The zones
-are DESIGN, not delegation: where each mass starts and ends, which species
-grows where and at what density is your composition — a single uniform
-"rest" blanket is rarely what the world doc implies, and vegetation alone
-does not make a tile rich: the QUALITY BAR applies to the whole plan.
+"zarza"…), "area": [col,row,w,h] in cells | "rest" (the whole tile),
+"density": SPECIMENS PER m², "seed"? }] (max 8 zones). What comes out are
+REAL tree/bush volumes — the same thing you would get by hand-placing
+`tree` volumes, with trunk collision and shade. A `type` matching
+arbusto/mata/matorral/helecho/zarza/bush plants bushes (decorative, they do
+not block); anything else plants trees.
+
+DENSITY IS THE DIAL OF THE FOREST, and its unit is the one foresters use —
+specimens per square metre, the same unit as `scatter_zones.density`:
+
+  0.01  open oakwood, 100 stems/ha — you see through it
+  0.05  mature forest — the horizon closes but you walk straight
+  0.08  closed pinewood, 800 stems/ha — you zigzag between trunks
+
+0.08 is the CEILING and it is not a taste: at that density trunks are
+already 2.58 m apart, which is the closest two of them can stand and still
+let the player through. Ask for more and the tile is rejected — the engine
+will not hand you a forest it cannot deliver, and a wood you cannot cross
+is a broken wood.
+
+A zone spends the tile's VOLUME BUDGET: 240 composed volumes per tile
+(your declared `volumes` + everything the schema implies), and the
+validator returns what you used as volumes_total / volumes_total_cap. So
+the ceiling is not free: a "rest" zone at 0.08 asks for ~328 specimens and
+does NOT fit — the same density over half the tile does (~164), and a
+whole-tile forest fits at 0.05 (~205). A tile cannot be a closed pinewood
+AND a dense village; choose, or say where each one is.
+
+The engine avoids paths, water, decks and building footprints
+automatically, and keeps your declared tree volumes as spacing seeds. The
+zones are DESIGN, not delegation: where each mass starts and ends, which
+species grows where and at what density is your composition — a single
+uniform "rest" blanket is rarely what the world doc implies, and
+vegetation alone does not make a tile rich: the QUALITY BAR applies to the
+whole plan.
 
 4) OPTIONAL "scatter_generators" + "scatter_zones" — procedural mass
 placement for the first-person view. You DEFINE a generator per kind as

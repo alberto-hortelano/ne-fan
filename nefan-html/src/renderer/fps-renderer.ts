@@ -12,8 +12,7 @@
 
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/blueprint/fps-spec.js";
-import type { GroundFeature } from "@nefan-core/src/scene/blueprint/ground.js";
-import type { Volume } from "@nefan-core/src/scene/blueprint/volumes.js";
+import type { TilePlan } from "@nefan-core/src/scene/tile-plan.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
@@ -21,16 +20,12 @@ import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-g
 import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
-export interface FpsTilePlan {
-  ground: GroundFeature[];
-  volumes: Volume[];
-  biome?: string;
-  /** Bloque de scatter declarativo del tile (crudo — lo valida fps-spec). */
-  scatter_generators?: unknown;
-  scatter_zones?: unknown;
-  /** Descripción de la escena — la ambientación infiere la hora de ella. */
-  scene_description?: string;
-}
+/** El plan que instala el renderer es EL plan de core, no una copia con la
+ *  misma forma: lo compone la normalización (src/scene/tile-plan.ts) y viaja
+ *  resuelto en la world scene. Un tipo gemelo aquí era la cuarta copia de la
+ *  misma composición (#234) — no divergía todavía, y ese «todavía» es lo que
+ *  se retira. */
+export type FpsTilePlan = TilePlan;
 
 export interface FpsTileSurfaces {
   fps: FpsTileSpec;

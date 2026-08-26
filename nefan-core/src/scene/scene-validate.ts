@@ -30,11 +30,13 @@
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
+import { planCollisionGrid } from "./blueprint/plan-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
 import { MAX_VOLUMES } from "./blueprint/volumes.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
+import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
-import { TILE_CELLS } from "./tile.js";
+import { TILE_CELLS, tileWorldRect } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
@@ -56,6 +58,10 @@ export interface SceneValidationResult {
      *  que se optimiza"); el criterio de calidad vive en el prompt, no aquí. */
     volumes_declared: number;
     volumes_cap: number;
+    /** Volúmenes del plan COMPUESTO (declarados + derivados del esquema): lo
+     *  que de verdad se pinta y colisiona, y lo que gasta presupuesto. */
+    volumes_total: number;
+    volumes_total_cap: number;
     ground_features: number;
     ground_cap: number;
     scatter_zones: number;
@@ -177,6 +183,8 @@ const emptyStats = (cols = 0, rows = 0): SceneValidationResult["stats"] => ({
   npcs_reachable: 0,
   volumes_declared: 0,
   volumes_cap: MAX_VOLUMES,
+  volumes_total: 0,
+  volumes_total_cap: MAX_TILE_VOLUMES,
   ground_features: 0,
   ground_cap: MAX_GROUND_FEATURES,
   scatter_zones: 0,
@@ -298,39 +306,66 @@ export function checkDeclaredChars(view: TileView, found: Findings): void {
   }
 }
 
-// ═══ Pasada 2 · máscara walkable ════════════════════════════════════════════
+// ═══ Pasada 2 · el plan compuesto ═══════════════════════════════════════════
 
-/** Terreno no sólido MENOS las huellas que bloquean, y de paso las entities
- *  que no son decorado: el player declarado (aún sin juzgar) y los NPCs.
+/** Qué celdas bloquea el PLAN del tile, y de qué tamaño es. */
+export interface PlanMask {
+  /** ¿Bloquea el plan esta celda? Fuera del grid, «no». */
+  solid(c: number, r: number): boolean;
+  /** Volúmenes del plan compuesto (declarados + derivados). */
+  volumes: number;
+}
+
+/** Compone el plan del tile —el MISMO que pinta el cliente y colisiona el
+ *  bridge, `composeTilePlan`— y lo rasteriza a la máscara con la que se juzga
+ *  la jugabilidad.
+ *
+ *  Antes esta pasada tenía su propia idea de qué bloquea: estampaba la huella
+ *  de cada entity estática. O sea que veía los postes de vegetación que el
+ *  juego atravesaba y NO veía ni un árbol de los que el juego sí frena — el
+ *  validador juzgaba un tile que nadie llegaba a jugar. Lo que el compositor
+ *  tuvo que ignorar o recortar sale como ERROR: en esta capa el motor puede
+ *  re-responder, que es lo único que arregla un plan que no cabe. */
+export function composePlan(view: TileView, found: Findings): PlanMask {
+  const { plan, warnings } = composeTilePlan(view.scene);
+  for (const w of warnings) found.errors.push(w);
+  found.stats.volumes_total = plan?.volumes.length ?? 0;
+  const tile = view.scene.tile as { tx: number; ty: number };
+  const grid = plan
+    ? planCollisionGrid(plan.ground, plan.volumes, tileWorldRect(tile.tx, tile.ty), {
+        // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
+        // no bloquea tampoco por el plan — igual que en juego.
+        solidChars: [...view.solid],
+      })
+    : null;
+  const solidChars = new Set(grid?.solid_chars ?? []);
+  return {
+    volumes: plan?.volumes.length ?? 0,
+    solid: (c, r) =>
+      grid !== null && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows && solidChars.has(grid.grid[r][c]),
+  };
+}
+
+// ═══ Pasada 3 · máscara walkable ════════════════════════════════════════════
+
+/** Terreno no sólido MENOS lo que bloquea el PLAN, y de paso las entities que
+ *  no son decorado: el player declarado (aún sin juzgar) y los NPCs, que son
+ *  objetivos de alcanzabilidad y no obstáculos.
  *  No emite errores — construye el material de las cuatro pasadas siguientes. */
-export function buildWalkableMap(view: TileView, found: Findings): WalkableMap {
+export function buildWalkableMap(view: TileView, planMask: PlanMask, found: Findings): WalkableMap {
   const { cols, rows, grid } = view;
   const walkable: boolean[] = new Array(cols * rows);
   for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) walkable[r * cols + c] = !view.solid.has(grid[r][c]);
+    for (let c = 0; c < cols; c++) walkable[r * cols + c] = !view.solid.has(grid[r][c]) && !planMask.solid(c, r);
   }
   const entities = Array.isArray(view.scene.entities) ? (view.scene.entities as Record<string, unknown>[]) : [];
-  const blockingKinds = new Set(["building", "prop", "tree"]);
   let player: Cell | null = null;
   const npcs: PlacedNpc[] = [];
   for (const e of entities) {
     if (!e || !Array.isArray(e.cell)) continue;
     const [c, r] = e.cell as Cell;
-    if (e.kind === "player") {
-      player = [c, r];
-      continue;
-    }
-    if (e.kind === "npc") {
-      npcs.push({ id: String(e.id), cell: [c, r] });
-      continue;
-    }
-    if (!blockingKinds.has(String(e.kind))) continue;
-    const fp = (Array.isArray(e.footprint) ? e.footprint : [1, 1]) as Cell;
-    for (let rr = r; rr < r + (fp[1] ?? 1); rr++) {
-      for (let cc = c; cc < c + (fp[0] ?? 1); cc++) {
-        if (cc >= 0 && rr >= 0 && cc < cols && rr < rows) walkable[rr * cols + cc] = false;
-      }
-    }
+    if (e.kind === "player") player = [c, r];
+    else if (e.kind === "npc") npcs.push({ id: String(e.id), cell: [c, r] });
   }
   found.stats.walkable_cells = walkable.filter(Boolean).length;
   found.stats.npcs_total = npcs.length;
@@ -531,9 +566,11 @@ export function collectDoorCells(view: TileView, found: Findings): Cell[] {
 
 // ═══ Pasada 7 · utilización de los presupuestos del plan ════════════════════
 
-/** Telemetría objetiva de vuelta al motor sobre lo DECLARADO, no lo expandido
- *  (el scatter de vegetación estampa entities que no son del motor). El
- *  criterio de calidad vive en la QUALITY BAR del prompt, no aquí. */
+/** Telemetría objetiva de vuelta al motor: lo que DECLARÓ (su presupuesto de
+ *  `volumes`) y lo que gasta el plan COMPUESTO — el motor no puede componer el
+ *  tile en su cabeza, así que si no se le dice cuánto ocupa su vegetación de
+ *  masa no puede decidir si le queda sitio. El criterio de calidad vive en la
+ *  QUALITY BAR del prompt, no aquí. */
 export function reportPlanBudget(view: TileView, found: Findings): void {
   const { raw } = view;
   found.stats.volumes_declared = Array.isArray(raw.volumes) ? (raw.volumes as unknown[]).length : 0;
@@ -682,7 +719,8 @@ export function validateScene(
   const found = emptyFindings(view.cols, view.rows);
 
   checkDeclaredChars(view, found);
-  const map = buildWalkableMap(view, found);
+  const planMask = composePlan(view, found);
+  const map = buildWalkableMap(view, planMask, found);
   checkScatter(view, found);
   const player = checkPlayerSpawn(view, map, tileContext, found);
   const seams = checkSeams(view, map, computeTileEdges(view.scene), tileContext, player, found);

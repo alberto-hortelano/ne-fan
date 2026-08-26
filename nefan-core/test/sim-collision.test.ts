@@ -5,6 +5,7 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
+import { composeTilePlan } from "../src/scene/tile-plan.js";
 
 /** Tile 0,0: rect mundo [-32,32). Celda (c,r) → mundo (-32 + (c+0.5)·0.5). */
 function cellCenter(c: number, r: number): { x: number; z: number } {
@@ -63,5 +64,56 @@ describe("createSimCollisionProvider", () => {
     s.recordSceneLoaded("vieja_cripta", { scene_id: "vieja_cripta", npcs: [] });
     const legacy = createSimCollisionProvider(s);
     assert.ok(!legacy.blocksCircle(0, 0, 0.5));
+  });
+});
+
+/** #232: el bridge NO veía los volúmenes DERIVADOS del esquema, solo los
+ *  `volumes` declarados. En un tile cuyo pueblo viene de `structures` —o cuyo
+ *  bosque viene de `vegetation_zones`, que es la mayoría— los NPCs se metían
+ *  dentro de las casas y atravesaban los troncos que al jugador sí le frenan.
+ *  Hoy el bridge lee el plan COMPUESTO de la world scene: la misma huella con
+ *  la que juega el jugador. */
+describe("createSimCollisionProvider · el bridge colisiona con el plan COMPUESTO", () => {
+  it("los troncos de la vegetación de masa frenan a los NPCs (antes: ninguno)", () => {
+    const provider = createSimCollisionProvider(makeState({
+      vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }],
+    }));
+    // Los mismos árboles que compone el juego: se preguntan al compositor y se
+    // comprueban uno a uno. Muestrear a ciegas dependería de que hubiera
+    // muchos; así, si el bosque cambia, el test sigue mirando SUS árboles.
+    const plan = composeTilePlan(
+      expandScenePrimitives({
+        tile: { tx: 0, ty: 0 },
+        scene_id: "tile_0_0",
+        scene_description: "campo",
+        biome: "grass",
+        entities: [],
+        vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }],
+      }) as Record<string, unknown>,
+    ).plan;
+    const pinos = (plan?.volumes ?? []).filter((v) => v.id.startsWith("derived_veg_"));
+    assert.ok(pinos.length > 100, `el pinar tiene que existir: ${pinos.length}`);
+    const blandos = pinos.filter((v) => {
+      const at = (v as Extract<typeof v, { type: "tree" }>).at;
+      const p = cellCenter(at[0] - 0.5, at[1] - 0.5);
+      return !provider.blocksCircle(p.x, p.z, 0.3);
+    });
+    assert.deepEqual(blandos.map((v) => v.id), [], "cada tronco derivado frena también en el bridge");
+  });
+
+  it("los edificios que salen de `structures` dejan de ser transparentes", () => {
+    const provider = createSimCollisionProvider(makeState({
+      structures: [{ type: "room", rect: [40, 40, 12, 10], doors: [{ side: "south", at: 4, width: 3 }] }],
+    }));
+    // La celda 41 es INTERIOR a la sala: en el grid es suelo ("o") y solo la
+    // tapa el anillo de 1,5 celdas del volumen derivado. Radio pequeño a
+    // propósito: con uno de jugador el AABB tocaría la fila 40, que ya era
+    // muro en el grid, y el test pasaría sin comprobar nada nuevo.
+    const anillo = cellCenter(45, 41);
+    assert.ok(provider.blocksCircle(anillo.x, anillo.z, 0.1), "el anillo del edificio derivado bloquea");
+    const dentro = cellCenter(45, 45);
+    assert.ok(!provider.blocksCircle(dentro.x, dentro.z, 0.1), "…y el interior de la sala se puede pisar");
+    const vano = cellCenter(45, 49);
+    assert.ok(!provider.blocksCircle(vano.x, vano.z, 0.1), "…y su vano sigue abierto");
   });
 });

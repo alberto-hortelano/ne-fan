@@ -19,17 +19,19 @@ import {
   STYLE_APPLICATION_SCHEMA_VERSION,
   styleApplicationPinRef,
 } from "@nefan-core/src/games/style-application-schema.js";
-import {
-  buildFpsTileSpec,
-  deriveVolumesFromSchema,
-  parseGround,
-  parseVolumes,
-  type GroundFeature,
-  type Volume,
-} from "@nefan-core/src/scene/blueprint/index.js";
+import { buildFpsTileSpec } from "@nefan-core/src/scene/blueprint/index.js";
+import type { TilePlan } from "@nefan-core/src/scene/tile-plan.js";
 import { buildLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
+
+/** Lo que el batch lee de una world scene normalizada: el plan compuesto (de
+ *  donde salen las celdas del atlas) y quién lleva skin. */
+interface WorldSceneDelBatch {
+  __plan?: TilePlan;
+  npcs?: Array<{ id: string; name?: string; description?: string; role?: string; style_ref?: string }>;
+  objects?: Array<{ id: string; description?: string; combat?: unknown }>;
+}
 
 /** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */
 const MAX_CELLS_PER_REQUEST = 64;
@@ -203,6 +205,13 @@ export class StyleApplyController {
     const costPerImage = catalog?.skin?.cost_usd_per_call ?? pack.cost_per_image_usd;
 
     // ── Celdas del atlas: mismas funciones puras que la vista en vivo ──
+    // UNA normalización por escena para todo el batch: de ella salen el plan
+    // (celdas del atlas) y los npcs/objects (skins). Dos llamadas darían dos
+    // composiciones del mismo tile.
+    const normalizadas = new Map<string, WorldSceneDelBatch>();
+    for (const [sceneId, scene] of scenes) {
+      normalizadas.set(sceneId, formatDToWorld(scene as Record<string, unknown>) as WorldSceneDelBatch);
+    }
     let cells: SurfaceCellSpec[] = [];
     let missingCells: number;
     let sceneDescription = "";
@@ -213,42 +222,15 @@ export class StyleApplyController {
         if (!sceneDescription && typeof scene.scene_description === "string") {
           sceneDescription = scene.scene_description;
         }
-        // MISMO plan que compone la partida (composeTilePlan de main.ts):
-        // ground/volumes parseados + volúmenes DERIVADOS del esquema — sin
-        // esto las celdas no casarían con las que pedirá la vista fps.
-        let ground: GroundFeature[] = [];
-        if (Array.isArray(scene.ground)) {
-          const parsed = parseGround(scene.ground);
-          if (parsed.ok) ground = parsed.features;
-        }
-        let declared: Volume[] = [];
-        if (Array.isArray(scene.volumes)) {
-          const parsed = parseVolumes(scene.volumes);
-          if (parsed.ok) declared = parsed.volumes;
-        }
-        const derived = deriveVolumesFromSchema(
-          {
-            scene_id: sceneId,
-            structures: scene.structures as never,
-            vegetation_zones: scene.vegetation_zones as never,
-            entities: scene.entities as never,
-            ground,
-          },
-          declared,
-        );
-        const volumes = [...declared, ...derived];
-        if (ground.length === 0 && volumes.length === 0) continue;
-        const fps = buildFpsTileSpec(
-          {
-            ground,
-            volumes,
-            biome: scene.biome as never,
-            scatter_generators: scene.scatter_generators as never,
-            scatter_zones: scene.scatter_zones as never,
-            scene_description: scene.scene_description as never,
-          },
-          sceneId,
-        );
+        // El MISMO plan que compone la partida, y por el mismo camino: la
+        // normalización de core lo resuelve en `__plan` (src/scene/tile-plan.ts).
+        // Antes esto lo recomponía a mano, y el seed que le pasaba —el id de
+        // la escena— podía no ser el que usa la partida: mismas celdas por
+        // casualidad, otro bosque en cuanto uno de los dos se moviera.
+        const world = normalizadas.get(sceneId)!;
+        const plan = world.__plan;
+        if (!plan) continue;
+        const fps = buildFpsTileSpec(plan, sceneId);
         const layout = buildLayout(fps.primsM);
         for (const page of layout.pages) {
           for (const c of page.cells) {
@@ -286,11 +268,8 @@ export class StyleApplyController {
     // ── Skins: mismas reglas de prompt/rol que la partida (main.ts) ──
     const skinSeen = new Set<string>();
     const skins: Array<{ prompt: string; role?: string }> = [];
-    for (const [, scene] of scenes) {
-      const world = formatDToWorld(scene as Record<string, unknown>) as {
-        npcs?: Array<{ id: string; name?: string; description?: string; role?: string; style_ref?: string }>;
-        objects?: Array<{ id: string; description?: string; combat?: unknown }>;
-      };
+    for (const [sceneId] of scenes) {
+      const world = normalizadas.get(sceneId)!;
       for (const npc of world.npcs ?? []) {
         const prompt = npc.description ?? npc.name ?? npc.id;
         if (!prompt || skinSeen.has(prompt)) continue;

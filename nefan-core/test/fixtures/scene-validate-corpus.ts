@@ -80,7 +80,10 @@ function planDeTile(over: Record<string, unknown> = {}): Record<string, unknown>
       { id: "casa_b", label: "casa", type: "building", rect: [40, 20, 10, 8], wall_h: 8 },
       { id: "torre", label: "torre", type: "tower", at: [70, 30] },
     ],
-    vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }],
+    // 0,01 ejemplares/m² = 41 pinos en el tile: la densidad se elige a
+    // propósito para que el golden siga midiendo lo que medía (un tile
+    // jugable con algo de bosque) y no 205 troncos que taparían el resto.
+    vegetation_zones: [{ type: "pino", area: "rest", density: 0.01 }],
     scatter_generators: { guijarro: { parts: [{ shape: "box", size: [0.4, 0.3, 0.4] }] } },
     scatter_zones: [
       { kind: "guijarro", shape: { type: "rect", x0: 0, z0: 80, x1: 30, z1: 110 }, density: 0.1 },
@@ -361,11 +364,15 @@ export function casosDeValidacion(): CasoValidacion[] {
       ctx: BOOTSTRAP,
     },
     {
-      name: "puerta-parcialmente-bloqueada",
-      cubre: "puertas: un prop tapa una celda del vano → aviso, no error",
+      name: "prop-dentro-de-un-edificio-no-tapa-su-vano",
+      cubre: "puertas: el mobiliario bajo techo se PINTA pero no colisiona (lo tapa el volumen del edificio)",
+      // Un carro en el vano de la posada. En el PLAN —el que compone el juego—
+      // una entity cuyo rect ya cubre un volumen no deriva el suyo: el
+      // mobiliario de un interior es atrezo, no geometría. Hasta esta tanda el
+      // validador estampaba su huella igual y avisaba de una puerta bloqueada
+      // que en partida se cruzaba sin tocar nada.
       scene: () => {
         const s = escenaBootstrap();
-        // El vano pedido (width 2) lo ensancha el expander a 3 celdas: se tapa una.
         (s.entities as Record<string, unknown>[]).push({
           id: "carro", kind: "prop", name: "carro", cell: [14, 76], footprint: [1, 1], glyph: "c",
         });
@@ -405,6 +412,31 @@ export function casosDeValidacion(): CasoValidacion[] {
       name: "telemetria-del-plan",
       cubre: "presupuestos: volumes/ground/scatter/vegetación y alturas distintas",
       scene: () => planDeTile(),
+    },
+
+    // ── El dial del bosque y su presupuesto ───────────────────────────────
+    {
+      name: "pinar-cerrado-al-tope",
+      cubre: "plan: la densidad máxima del contrato sobre media zona, compuesta entera",
+      // Media zona a 0,08 = 164 pinos: el bosque más cerrado que cabe en el
+      // presupuesto de un tile que además tiene pueblo.
+      scene: () => planDeTile({ vegetation_zones: [{ type: "pino", area: [0, 0, 64, 128], density: 0.08 }] }),
+    },
+    {
+      name: "plan-que-no-cabe-en-el-presupuesto",
+      cubre: "plan: el recorte se DICE con los tres números, no se trunca en silencio",
+      scene: () =>
+        planDeTile({
+          entities: Array.from({ length: 100 }, (_, i) => ({
+            id: `trasto_${i}`,
+            kind: "prop",
+            name: "trasto",
+            cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
+            footprint: [1, 1],
+            glyph: "x",
+          })),
+          vegetation_zones: [{ type: "pino", area: "rest", density: 0.08 }],
+        }),
     },
 
     // ── Varias pasadas a la vez: el ORDEN de los mensajes es contrato ─────

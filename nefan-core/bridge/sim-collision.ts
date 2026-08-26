@@ -3,9 +3,13 @@
  *  Espejo del CollisionSystem del cliente (fuentes en unión), construido solo
  *  con lo que el bridge tiene persistido en NarrativeState:
  *  1. terrain_grid del esquema (formatDToWorld — muros W, agua w, leyenda);
- *  2. PLAN declarado: agua∖decks del `ground` + huellas de los `volumes`,
- *     unidos por la MISMA función de core que el cliente (planCollisionGrid),
- *     no dos colliders OR'd — así jugador y NPCs colisionan idéntico.
+ *  2. PLAN COMPUESTO (`__plan` de la world scene: lo declarado por el motor
+ *     MÁS lo derivado del esquema — edificios de `structures`, entities
+ *     estáticas y la vegetación de masa), rasterizado con la MISMA función de
+ *     core que el cliente (planCollisionGrid), no dos colliders OR'd — así
+ *     jugador y NPCs colisionan idéntico. Antes aquí solo entraban los
+ *     `volumes` DECLARADOS, así que en un tile cuyo pueblo viene de
+ *     `structures` los NPCs se metían dentro de las casas.
  *
  *  Lazy + caché por sceneId: nada revisa un plan ya emitido, así que la caché
  *  no se invalida. Un grid inconsistente degrada ese tile a "sin esa fuente"
@@ -22,13 +26,12 @@ import {
 } from "../src/scene/terrain-collision.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld } from "../src/scene/scene-normalize.js";
 import {
-  parseGround,
-  parseVolumes,
   planCollisionGrid,
   type CollisionGridDims,
   type GroundFeature,
   type Volume,
 } from "../src/scene/blueprint/index.js";
+import type { TilePlan } from "../src/scene/tile-plan.js";
 import { tileKey, tileWorldRect, worldToTile, type WorldRect } from "../src/scene/tile.js";
 
 export interface SimCollisionProvider {
@@ -36,14 +39,14 @@ export interface SimCollisionProvider {
   blocksCircle(x: number, z: number, radius: number): boolean;
 }
 
-/** Collider del PLAN de una escena (agua∖decks del ground + huellas de los
- *  volumes), unidos por la MISMA función de core que el cliente
+/** Collider del PLAN ya compuesto (agua∖decks del ground + huellas de los
+ *  volumes), rasterizado con la MISMA función de core que el cliente
  *  (applyPlanCollision) — un solo grid, no dos colliders OR'd, para que
- *  jugador y NPCs colisionen idéntico. Un source con parse inválido degrada a
- *  "sin esa fuente" con warning (nunca tumba el tick). */
+ *  jugador y NPCs colisionen idéntico. El bridge NO deriva: lee `__plan`, que
+ *  ya viene compuesto de la normalización. */
 function buildPlanCollider(
   sceneId: string,
-  sceneData: { ground?: unknown; volumes?: unknown },
+  plan: { ground?: GroundFeature[]; volumes?: Volume[] },
   rect: WorldRect,
   /** Solidez resuelta de la leyenda de ESA escena: el agua que el autor
    *  declaró vadeable no bloquea tampoco por el plan (ver planCollisionGrid).
@@ -51,20 +54,8 @@ function buildPlanCollider(
   solidChars: readonly string[],
   dims?: CollisionGridDims,
 ): TerrainCollider | null {
-  let ground: GroundFeature[] | undefined;
-  const rawGround = sceneData.ground;
-  if (Array.isArray(rawGround) && rawGround.length > 0) {
-    const parsed = parseGround(rawGround);
-    if (parsed.ok) ground = parsed.features;
-    else console.warn(`[sim-collision] ${sceneId}: ground inválido (${parsed.error}) — sin agua declarada`);
-  }
-  let volumes: Volume[] | undefined;
-  const rawVolumes = sceneData.volumes;
-  if (Array.isArray(rawVolumes) && rawVolumes.length > 0) {
-    const parsed = parseVolumes(rawVolumes);
-    if (parsed.ok) volumes = parsed.volumes;
-    else console.warn(`[sim-collision] ${sceneId}: volumes inválidos (${parsed.error}) — sin huellas`);
-  }
+  const ground = plan.ground?.length ? plan.ground : undefined;
+  const volumes = plan.volumes?.length ? plan.volumes : undefined;
   if (!ground && !volumes) return null;
   try {
     return createTerrainCollider(planCollisionGrid(ground, volumes, rect, { solidChars, dims }));
@@ -84,23 +75,26 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
 
     // 1. terrain_grid del esquema. formatDToWorld devuelve el raw intacto en
     // escenas no-Format-D (legacy), que no traen terrain_grid → sin fuente.
-    // Su leyenda resuelta (`solid_chars`) manda también sobre el plan (2).
+    // Su leyenda resuelta (`solid_chars`) manda también sobre el plan (2), y
+    // de la misma normalización sale el plan compuesto.
     let solidChars: readonly string[] = DEFAULT_SOLID_CHARS;
+    let plan: TilePlan | null = null;
     try {
-      const world = formatDToWorld(rec.scene_data) as { terrain_grid?: TerrainGridData };
+      const world = formatDToWorld(rec.scene_data) as { terrain_grid?: TerrainGridData; __plan?: TilePlan };
       if (world.terrain_grid?.solid_chars) solidChars = world.terrain_grid.solid_chars;
+      plan = world.__plan ?? null;
       const tc = createTerrainCollider(world.terrain_grid ?? null);
       if (tc) colliders.push(tc);
     } catch (err) {
       console.warn(`[sim-collision] ${sceneId}: terrain_grid no deriva colisión —`, err);
     }
 
-    // 2. El plan declarado solo aplica a tiles del plano continuo (tienen
+    // 2. El plan compuesto solo aplica a tiles del plano continuo (tienen
     // rect mundial).
-    if (rec.tile) {
+    if (rec.tile && plan) {
       const planCollider = buildPlanCollider(
         sceneId,
-        rec.scene_data,
+        plan,
         tileWorldRect(rec.tile.tx, rec.tile.ty),
         solidChars,
       );

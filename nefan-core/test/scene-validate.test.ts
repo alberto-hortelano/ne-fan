@@ -229,7 +229,7 @@ describe("validateScene — telemetría del plan", () => {
         { id: "casa_b", label: "casa", type: "building", rect: [40, 20, 10, 8], wall_h: 8 },
         { id: "torre", label: "torre", type: "tower", at: [70, 30] },
       ],
-      vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }],
+      vegetation_zones: [{ type: "pino", area: "rest", density: 0.01 }],
       scatter_generators: {
         guijarro: { parts: [{ shape: "box", size: [0.4, 0.3, 0.4] }] },
       },
@@ -244,6 +244,12 @@ describe("validateScene — telemetría del plan", () => {
     assert.deepEqual(r.errors, [], r.errors.join(" | "));
     assert.equal(r.stats.volumes_declared, 3);
     assert.equal(r.stats.volumes_cap, 160);
+    // Y lo que de verdad gasta el tile: 3 declarados + los 41 pinos que pide
+    // la zona (4096 m² × 0,01/m²). El motor no puede componer el tile en su
+    // cabeza, así que si no se le dice cuánto ocupa su bosque no puede
+    // decidir si le queda presupuesto.
+    assert.equal(r.stats.volumes_total, 44);
+    assert.equal(r.stats.volumes_total_cap, 240);
     assert.equal(r.stats.ground_features, 1);
     assert.equal(r.stats.ground_cap, 64);
     assert.equal(r.stats.scatter_zones, 1);
@@ -257,6 +263,9 @@ describe("validateScene — telemetría del plan", () => {
     s.vegetation_zones = [{ type: "pino", area: "rest", density: 2 }];
     const r = validateScene(s);
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes("density")), r.errors.join(" | "));
+    // El error le dice al motor la UNIDAD y el rango, no solo que está mal:
+    // `density` cambió de significado en esta tanda y un "density inválida" a
+    // secas le dejaría adivinando entre tres semánticas viejas.
+    assert.ok(r.errors.some((e) => e.includes("EJEMPLARES POR m²")), r.errors.join(" | "));
   });
 });

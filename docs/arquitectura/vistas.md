@@ -39,8 +39,12 @@ geometría.
   vía del motor para cualquier objeto sin catálogo ni preset; el caso
   fundacional es la carreta del playtest 2026-08-16, antes un prop box con
   "skin" de carro). Huella en celdas + altura; `label` en español guía al
-  clasificador. Sin volumes explícitos se derivan del esquema
-  (`vegetation_zones` → árboles, `structures` → cutaway).
+  clasificador. El plan que se pinta y colisiona lo compone
+  `src/scene/tile-plan.ts` (`composeTilePlan`) y viaja RESUELTO en la world
+  scene (`__plan`): a los `volumes` declarados les suma los que el esquema
+  implica (`vegetation_zones` → árboles/matas con su tronco, `structures` →
+  cutaway, entities estáticas → su primitiva). Nadie más deriva: cliente,
+  bridge, batch de estilo y validador LEEN ese plan.
   FILOSOFÍA DE PROMPT (2026-08-16): los prompts del motor narrativo son
   DOCUMENTACIÓN de herramientas y contrato, nunca recetas de uso — sin
   listas de objetos-ejemplo, sin doctrina de diseño, sin "use it when": el

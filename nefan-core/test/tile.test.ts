@@ -51,7 +51,7 @@ describe("geometría de tile", () => {
 const makeForestTile = (): Record<string, unknown> =>
   forestTile({
     scene_description: "Bosque espeso con una senda.",
-    vegetation_zones: [{ type: "pino", area: "rest", density: 0.1 }],
+    vegetation_zones: [{ type: "pino", area: "rest", density: 0.02 }],
     ambient_event: "",
   });
 
@@ -72,25 +72,6 @@ describe("expansión de tiles (Format D v3)", () => {
     // Y cruza el interior (algún "_" en la columna central).
     const midCol = 64;
     assert.ok(grid.some((row) => row[midCol] === "_"), "el camino cruza el centro");
-  });
-
-  it("el scatter 'rest' es determinista, respeta el bioma y no invade el camino ni su margen", () => {
-    const a = expandScenePrimitives(makeForestTile());
-    const b = expandScenePrimitives(makeForestTile());
-    const treesA = (a.entities as Record<string, unknown>[]).filter((e) => e.kind === "tree");
-    const treesB = (b.entities as Record<string, unknown>[]).filter((e) => e.kind === "tree");
-    assert.ok(treesA.length > 500, `density 0.1 sobre ~16k celdas debería plantar >500, plantó ${treesA.length}`);
-    assert.deepEqual(treesA, treesB, "misma seed → mismo scatter");
-    const grid = a.terrain as string[];
-    for (const t of treesA) {
-      const [c, r] = t.cell as [number, number];
-      assert.equal(grid[r][c], "g", `árbol ${t.id} sobre "${grid[r][c]}" en (${c},${r})`);
-      // Margen de 1 celda alrededor del camino.
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const ch = grid[r + dr]?.[c + dc];
-        assert.ok(ch !== "_", `árbol ${t.id} pegado al camino en (${c},${r})`);
-      }
-    }
   });
 
   it("terrain_patches estampa y valida rangos", () => {
@@ -168,16 +149,5 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.equal(legacy.tile, undefined);
     const obj = (legacy.objects as { position: number[] }[])[0];
     assert.deepEqual(obj.position, [-2, 0, -2]); // misma posición que siempre
-  });
-
-  it("area:'rest' fuera de un tile es fail-loud", () => {
-    const legacy = {
-      scene_id: "s",
-      size: { cols: 8, rows: 8, meters_per_cell: 1 },
-      terrain: Array.from({ length: 8 }, () => "g".repeat(8)),
-      vegetation_zones: [{ type: "pino", area: "rest", density: 0.2 }],
-      entities: [],
-    };
-    assert.throws(() => expandScenePrimitives(legacy), /solo está disponible en tiles/);
   });
 });

@@ -6,9 +6,14 @@
  *     perímetro de muro CERRADO, el suelo interior y los huecos de puerta.
  *     Garantía por construcción: no hay muros con fugas ni salas selladas por
  *     un typo en una fila de 28 chars.
- *   - `vegetation_zones`: scatter de árboles con seed determinista derivada de
- *     `scene_id` (mismo mapa en cada expansión; sin Math.random).
  *   - `decor` con `attach: "wall"`: se pega a la celda de muro más cercana.
+ *
+ *  `vegetation_zones` NO se expande aquí y es a propósito: estampaba una
+ *  entity `tree` de 1×1 por celda plantada (cientos por tile) que se PINTABA
+ *  pero no colisionaba, mientras la misma zona derivaba aparte sus volúmenes
+ *  de verdad. Dos especies de árbol conviviendo en el mismo bosque. Hoy la
+ *  vegetación de masa tiene una sola ruta: volúmenes tree/bush del plan
+ *  (`src/scene/tile-plan.ts`).
  *
  *  Se aplica UNA vez, en el bridge, al recibir la escena del motor (antes de
  *  `recordSceneLoaded`): lo persistido y difundido es Format D plano ya
@@ -22,7 +27,6 @@
  *  que corrija; si llega hasta el bridge, el catch existente la difunde como
  *  `narrative_status: error`. */
 
-import { SeededRng, fnv1a } from "../rng.js";
 import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
@@ -46,21 +50,6 @@ interface RoomStructure {
   doors?: RoomDoor[];
 }
 
-interface VegetationZone {
-  type: string;
-  /** Rect [col,row,w,h] o "rest" (solo tiles): todo lo que siga siendo el
-   *  char del bioma — excluye automáticamente caminos rasterizados, agua,
-   *  parches, estructuras y celdas ocupadas. */
-  area: Rect | "rest";
-  /** Fracción de celdas candidatas plantadas (0..1]. */
-  density: number;
-  glyph?: string;
-}
-
-function slug(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "veg";
-}
-
 function asRect(raw: unknown, ctx: string): Rect {
   if (!Array.isArray(raw) || raw.length !== 4 || !raw.every((n) => typeof n === "number" && Number.isInteger(n))) {
     throw new Error(`${ctx}: rect/area debe ser [col,row,w,h] de enteros, got ${JSON.stringify(raw)}`);
@@ -72,13 +61,12 @@ function asRect(raw: unknown, ctx: string): Rect {
 export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
   if (raw.__expanded === true) return false;
   // Un tile SIEMPRE se expande (el fill del bioma es obligatorio aunque no
-  // haya structures ni vegetación).
+  // haya structures).
   if (raw.tile !== undefined) return true;
   const hasStructures = Array.isArray(raw.structures) && raw.structures.length > 0;
-  const hasVegetation = Array.isArray(raw.vegetation_zones) && (raw.vegetation_zones as unknown[]).length > 0;
   const hasWallDecor = Array.isArray(raw.entities) &&
     (raw.entities as Record<string, unknown>[]).some((e) => e && e.attach === "wall");
-  return hasStructures || hasVegetation || hasWallDecor;
+  return hasStructures || hasWallDecor;
 }
 
 /** Pinta un camino grueso ("_") sobre el grid mutable: celda pintada si la
@@ -161,7 +149,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
 /** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
  *  terrain_patches + rasterización de los rasgos `ground` al grid. Devuelve
  *  una copia con `size`/`terrain` sintetizados lista para la expansión
- *  compartida (structures/vegetación/decor). Fail-loud en primitivas
+ *  compartida (structures/decor). Fail-loud en primitivas
  *  imposibles — mismo contrato que el resto del expander. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
   const t = raw.tile as { tx?: unknown; ty?: unknown };
@@ -213,7 +201,7 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
-/** Expande structures/vegetation_zones/decor-attach sobre una escena Format D
+/** Expande structures/decor-attach sobre una escena Format D
  *  cruda y devuelve una copia plana marcada `__expanded`. Escena sin
  *  primitivas (o ya expandida) → se devuelve tal cual. Un tile (Format D v3,
  *  campo `tile`) pasa primero por prepareTileBase (bioma + parches + raster). */
@@ -242,7 +230,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     : [];
 
   // ── Structures: muros cerrados + suelo + puertas, por construcción ────────
-  const roomRects: Rect[] = [];
   const wallChars = new Set<string>(["W"]);
   const structures = Array.isArray(raw.structures)
     ? (raw.structures as (Partial<RoomStructure> & Record<string, unknown>)[])
@@ -304,8 +291,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
         else grid[r0 + d.at + k][c0 + w - 1] = dchar;
       }
     }
-    roomRects.push([c0, r0, w, h]);
-
     // El char de muro queda declarado sólido si la leyenda no lo hace ya.
     const entry = legend[wallChar];
     if (entry === undefined) {
@@ -314,118 +299,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
       legend[wallChar] = { name: entry, solid: true };
     } else if (entry && typeof entry === "object" && (entry as { solid?: unknown }).solid === undefined) {
       legend[wallChar] = { ...(entry as object), solid: true };
-    }
-  }
-
-  // ── Celdas ocupadas (para que el scatter no pise nada) ────────────────────
-  const occupied = new Set<number>();
-  const key = (c: number, r: number) => r * cols + c;
-  for (const rect of roomRects) {
-    for (let r = rect[1]; r < rect[1] + rect[3]; r++) {
-      for (let c = rect[0]; c < rect[0] + rect[2]; c++) occupied.add(key(c, r));
-    }
-  }
-  for (const e of entities) {
-    const cell = e.cell as [number, number] | undefined;
-    const fp = (e.footprint as [number, number] | undefined) ?? [1, 1];
-    if (!Array.isArray(cell)) continue;
-    // Player y NPCs se mueven: margen de 1 celda alrededor para que un árbol
-    // adyacente no los deje atrapados (con mpc 0.5, el AABB inflado del
-    // jugador ya solapa la celda vecina).
-    const margin = e.kind === "player" || e.kind === "npc" ? 1 : 0;
-    for (let r = cell[1] - margin; r < cell[1] + (fp[1] ?? 1) + margin; r++) {
-      for (let c = cell[0] - margin; c < cell[0] + (fp[0] ?? 1) + margin; c++) occupied.add(key(c, r));
-    }
-  }
-  // Delante de cada puerta no se planta (aproximación: celda "_" y sus vecinas).
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (grid[r][c] !== "_") continue;
-      for (const [dc, dr] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const cc = c + dc, rr = r + dr;
-        if (cc >= 0 && rr >= 0 && cc < cols && rr < rows) occupied.add(key(cc, rr));
-      }
-    }
-  }
-
-  // ── Vegetation zones: scatter determinista (seed = scene_id + índice) ─────
-  const usedIds = new Set(entities.map((e) => String(e.id)));
-  const zones = Array.isArray(raw.vegetation_zones) ? (raw.vegetation_zones as VegetationZone[]) : [];
-  // En tiles el scatter respeta el bioma y deja 1 celda de margen alrededor de
-  // los caminos/carreteras rasterizados (que los árboles no invadan la senda).
-  const biomeChar = raw.tile !== undefined ? resolveBiome(raw.biome).char : null;
-  let nearPath: Set<number> | null = null;
-  if (biomeChar !== null && zones.length > 0) {
-    nearPath = new Set<number>();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const ch = grid[r][c];
-        if (ch !== "_" && ch !== "s" && ch !== "b") continue;
-        for (const [dc, dr] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const cc = c + dc, rr = r + dr;
-          if (cc >= 0 && rr >= 0 && cc < cols && rr < rows) nearPath.add(key(cc, rr));
-        }
-      }
-    }
-  }
-  for (let zi = 0; zi < zones.length; zi++) {
-    const z = zones[zi];
-    if (!z || typeof z !== "object" || typeof z.type !== "string" || !z.type) {
-      throw new Error(`vegetation_zones[${zi}] necesita un type (nombre de la planta)`);
-    }
-    if (z.area === "rest" && biomeChar === null) {
-      throw new Error(`vegetation_zones[${zi}]: area:"rest" solo está disponible en tiles (Format D v3)`);
-    }
-    const [c0, r0, w, h] = z.area === "rest"
-      ? [0, 0, cols, rows] as Rect
-      : asRect(z.area, `vegetation_zones[${zi}]`);
-    if (c0 < 0 || r0 < 0 || c0 + w > cols || r0 + h > rows) {
-      throw new Error(`vegetation_zones[${zi}]: area [${c0},${r0},${w},${h}] se sale del grid ${cols}x${rows}`);
-    }
-    const density = typeof z.density === "number" ? z.density : NaN;
-    if (!(density > 0 && density <= 1)) {
-      throw new Error(`vegetation_zones[${zi}]: density=${z.density} debe estar en (0, 1]`);
-    }
-
-    const candidates: [number, number][] = [];
-    for (let r = r0; r < r0 + h; r++) {
-      for (let c = c0; c < c0 + w; c++) {
-        const ch = grid[r][c];
-        if (wallChars.has(ch) || ch === GROUND_WATER_CHAR) continue; // ni muros ni agua
-        // En tiles solo se planta sobre el propio bioma (excluye caminos,
-        // parches, suelos interiores…), con margen alrededor de sendas.
-        if (biomeChar !== null && ch !== biomeChar) continue;
-        if (nearPath?.has(key(c, r))) continue;
-        if (occupied.has(key(c, r))) continue;
-        candidates.push([c, r]);
-      }
-    }
-    const count = Math.min(candidates.length, Math.round(candidates.length * density));
-    const rng = new SeededRng(fnv1a(`${raw.scene_id ?? ""}:veg:${zi}`));
-    // Fisher-Yates parcial: basta con los primeros `count` de la permutación.
-    for (let i = 0; i < count; i++) {
-      const j = i + rng.nextInt(candidates.length - i);
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-      const [c, r] = candidates[i];
-      occupied.add(key(c, r));
-      const base = `${slug(z.type)}_z${zi}`;
-      let id = `${base}_${i}`;
-      let n = i;
-      while (usedIds.has(id)) id = `${base}_${++n}`;
-      usedIds.add(id);
-      entities.push({
-        id,
-        kind: "tree",
-        name: z.type,
-        cell: [c, r],
-        footprint: [1, 1],
-        glyph: typeof z.glyph === "string" && z.glyph.length === 1 ? z.glyph : "T",
-        // Marca de scatter: el compositor de blueprints NO deriva volumen de
-        // estas (la vegetación visual sale de vegetation_zones con su propio
-        // scatter ralo — un árbol del blueprint son ~10 celdas de copa, no 1;
-        // derivar cientos de trees del grid colgaba el cliente).
-        scattered: true,
-      });
     }
   }
 

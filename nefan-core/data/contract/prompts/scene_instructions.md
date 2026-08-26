@@ -59,10 +59,12 @@ from the camera come out deterministically), and write only the BASE terrain
 (grass, paths) in the grid. The volumes schema (rect, walls, roof, doors,
 cutaway) is in the MAP PLAN reference of the tile instructions.
 
-VEGETATION: don't hand-place 20 trees. Declare `vegetation_zones` (tile worlds:
-the engine plants real tree/bush masses per zone, deterministically) or tree
-`volumes`. Nothing fills vegetation on its own: undeclared vegetation does not
-exist. Hand-placed `tree` entities are still fine for singular landmarks.
+VEGETATION: don't hand-place 20 trees. Declare `vegetation_zones` (the engine
+plants real tree/bush volumes per zone, deterministically, with `density` in
+SPECIMENS PER m²: 0.01 open oakwood, 0.05 mature forest, 0.08 closed pinewood
+and ceiling) or tree `volumes`. Nothing fills vegetation on its own: undeclared
+vegetation does not exist. Hand-placed `tree` entities are still fine for
+singular landmarks.
 
 DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
 the nearest wall cell (torches, hanging signs, banners).
