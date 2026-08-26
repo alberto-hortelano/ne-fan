@@ -204,7 +204,7 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
           vivos: ["0123456789abcdef"],
           nuevos: [],
           resueltos: 0,
-          sin_base: false,
+          base: "con base",
           duenos: ["#273"],
         },
       },

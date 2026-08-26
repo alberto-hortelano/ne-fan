@@ -56,6 +56,7 @@ import {
 import {
   atribuir,
   deltaDeCorrida,
+  estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
   yaComentada,
@@ -92,6 +93,26 @@ function gitLineas(args: string[]): string[] {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** Hash del CONTENIDO del fuente en el commit que se midió — el id de blob que
+ *  git ya tiene calculado, sin leer el fichero.
+ *
+ *  Se pide sobre el commit de la CORRIDA y no sobre el árbol de trabajo: lo que
+ *  hay que recordar es de qué código habla esa medida, y el árbol de quien
+ *  reparte suele ir por delante. Fail-loud si el commit no está aquí: una
+ *  cadena vacía haría el delta incomparable en silencio para toda la corrida. */
+function blobEnCommit(sha: string, ficheroRelativoACore: string): string {
+  const ruta = `${sha}:nefan-core/${ficheroRelativoACore}`;
+  const r = spawnSync("git", ["rev-parse", ruta], { cwd: raizRepo, encoding: "utf8" });
+  if (r.status !== 0) {
+    throw new Error(
+      `no se pudo leer el contenido medido de ${ficheroRelativoACore} en ${sha.slice(0, 7)}: ` +
+        `${(r.stderr ?? "").trim() || "git rev-parse falló"}. Sin eso, el delta no sabe si las dos ` +
+        `medidas hablan del mismo código (\`git fetch\` si el commit no está en este clon).`,
+    );
+  }
+  return r.stdout.trim();
 }
 
 /** El tag, o un error que dice cómo crearlo. Degradarlo a "no hay nada medido"
@@ -424,9 +445,9 @@ function repartir(argv: readonly string[]): void {
   for (const id of corrida.modulos_con_informe) {
     const modulo = moduloPorId(plan, id);
     const informe = leerInforme(id);
-    const ahora: Record<string, { vivos: string[]; total: number }> = {};
+    const ahora: Record<string, { vivos: string[]; total: number; blob: string }> = {};
     for (const [fichero, info] of Object.entries(informe.files)) {
-      ahora[fichero] = vivosDeFichero(fichero, info.mutants);
+      ahora[fichero] = { ...vivosDeFichero(fichero, info.mutants), blob: blobEnCommit(corrida.sha, fichero) };
     }
     const deltas = deltaDeCorrida(ahora, base);
     const atribucion = atribuir(id, commits);
@@ -437,11 +458,12 @@ function repartir(argv: readonly string[]): void {
         sha: corrida.sha,
         run: corrida.run_id,
         fecha: corrida.fecha,
+        blob: ahora[d.fichero].blob,
         total: d.total,
-        vivos: [...d.nuevos, ...d.yaEstaban].sort(),
+        vivos: [...d.vivos].sort(),
         nuevos: [...d.nuevos].sort(),
         resueltos: d.resueltos.length,
-        sin_base: d.base === "sin base",
+        base: d.base,
         duenos,
       };
     }
@@ -572,11 +594,8 @@ function imprimeReparto(repartos: readonly Reparto[], corrida: Corrida): void {
   for (const r of repartos) {
     console.log(`  ${r.modulo}  →  ${r.etiqueta}`);
     for (const d of r.ficheros) {
-      const vivos = d.nuevos.length + d.yaEstaban.length;
-      const estado =
-        d.base === "sin base"
-          ? "SIN BASE de comparación"
-          : `${d.nuevos.length} nuevos · ${d.yaEstaban.length} ya estaban · ${d.resueltos.length} resueltos`;
+      const vivos = d.vivos.length;
+      const estado = estadoLegible(d);
       console.log(`    ${d.fichero}  ${vivos} vivos de ${d.total} — ${estado}`);
     }
     for (const n of r.nuevos.slice(0, 8)) {
@@ -615,11 +634,8 @@ function comentarioDe(pr: number, repartos: readonly Reparto[], corrida: Corrida
     lineas.push("| fichero | vivos / total | estado |");
     lineas.push("|---|---|---|");
     for (const d of r.ficheros) {
-      const vivos = d.nuevos.length + d.yaEstaban.length;
-      const estado =
-        d.base === "sin base"
-          ? "**sin base de comparación** (nadie lo había medido)"
-          : `${d.nuevos.length} nuevos · ${d.yaEstaban.length} ya estaban · ${d.resueltos.length} resueltos`;
+      const vivos = d.vivos.length;
+      const estado = estadoLegible(d, { markdown: true });
       lineas.push(`| \`${d.fichero}\` | ${vivos} / ${d.total} | ${estado} |`);
     }
     lineas.push("");

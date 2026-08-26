@@ -24,6 +24,7 @@ import {
   avisoDeFrescura,
   claveDeMutante,
   deltaDeCorrida,
+  estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
   muroDeMutacion,
@@ -58,11 +59,12 @@ const medida = (over: Partial<MedidaDeFichero> = {}): MedidaDeFichero => ({
   sha: "abc1234",
   run: "1",
   fecha: "2026-08-25T00:00:00.000Z",
+  blob: "blob-del-mismo-codigo",
   total: 10,
   vivos: [],
   nuevos: [],
   resueltos: 0,
-  sin_base: false,
+  base: "con base",
   duenos: [],
   ...over,
 });
@@ -217,16 +219,24 @@ describe("huella · qué cuenta como vivo y qué entra en el total", () => {
 
 describe("delta · tres estados, no dos", () => {
   const h = (r: string) => huellaDeMutante("src/a.ts", mutante({ replacement: r }));
+  /** Una medida de AHORA sobre el mismo código que la base del helper `medida`.
+   *  Explícito a propósito: comparar es lo excepcional, no lo que pasa por
+   *  defecto. */
+  const MISMO = (over: { vivos: string[]; total?: number }) => ({
+    vivos: over.vivos,
+    total: over.total ?? 10,
+    blob: "blob-del-mismo-codigo",
+  });
 
   it("mismo hash → YA ESTABA", () => {
-    const d = deltaDeFichero("src/a.ts", { vivos: [h("a")], total: 10 }, medida({ vivos: [h("a")] }));
+    const d = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("a")] }), medida({ vivos: [h("a")] }));
     assert.equal(d.base, "con base");
     assert.deepEqual(d.yaEstaban, [h("a")]);
     assert.deepEqual(d.nuevos, []);
   });
 
   it("un hash que no estaba → NUEVO", () => {
-    const d = deltaDeFichero("src/a.ts", { vivos: [h("a"), h("b")], total: 10 }, medida({ vivos: [h("a")] }));
+    const d = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("a"), h("b")] }), medida({ vivos: [h("a")] }));
     assert.deepEqual(d.nuevos, [h("b")]);
     assert.deepEqual(d.yaEstaban, [h("a")]);
   });
@@ -236,7 +246,7 @@ describe("delta · tres estados, no dos", () => {
     // tenía informe. Meterlo en "nuevo" inundaría al agente con los cientos de
     // supervivientes de un módulo estrenado y garantizaría que deje de leerlos;
     // en "ya estaba", silencio.
-    const d = deltaDeFichero("src/a.ts", { vivos: [h("a"), h("b")], total: 88 }, undefined);
+    const d = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("a"), h("b")], total: 88 }), undefined);
     assert.equal(d.base, "sin base");
     assert.deepEqual(d.nuevos, [], "sin medida anterior no hay NUEVO que valga");
     assert.deepEqual(d.yaEstaban, [], "ni YA ESTABA");
@@ -246,15 +256,84 @@ describe("delta · tres estados, no dos", () => {
   it("un superviviente nuevo que cae donde estaba uno viejo NO se descuenta en silencio", () => {
     // El caso caro. Antes 1 vivo, ahora 1 vivo: si el delta fuera una resta,
     // esta corrida diría "sin cambios" teniendo un hallazgo dentro.
-    const d = deltaDeFichero("src/a.ts", { vivos: [h("nuevo")], total: 10 }, medida({ vivos: [h("viejo")] }));
+    const d = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("nuevo")] }), medida({ vivos: [h("viejo")] }));
     assert.deepEqual(d.nuevos, [h("nuevo")]);
     assert.deepEqual(d.resueltos, [h("viejo")]);
     assert.equal(d.nuevos.length + d.yaEstaban.length, 1, "el total de vivos no ha cambiado");
   });
 
+  it("otro código → INCOMPARABLE, ni nuevo ni ya estaba (la regresión del 2026-08-26)", () => {
+    // El caso real, y caro: la corrida 32970154557 marcó 239 supervivientes
+    // NUEVOS en cuatro ficheros que NADIE tocó en el rango. La base se había
+    // medido en local a las 10:00 del 25 y el tag se plantó a las 15:08 con
+    // `bcc8b08` (#263) ya dentro, así que las huellas —que llevan línea y
+    // columna— hablaban de otro fichero. Con `--comentar` habría publicado 239
+    // hallazgos inventados en cuatro PR ajenas.
+    const d = deltaDeFichero(
+      "src/a.ts",
+      { vivos: [h("a"), h("b")], total: 309, blob: "el-codigo-de-hoy" },
+      medida({ vivos: [h("a")], total: 330, blob: "el-codigo-de-ayer" }),
+    );
+    assert.equal(d.base, "incomparable");
+    assert.deepEqual(d.nuevos, [], "no se inventa deuda de nadie");
+    assert.deepEqual(d.yaEstaban, [], "ni se afirma lo contrario");
+    assert.deepEqual(d.resueltos, [], "y nadie ha resuelto nada");
+    assert.match(d.porque ?? "", /el fichero cambió/);
+  });
+
+  it("no poder clasificar NO es no tener supervivientes", () => {
+    // La otra mitad del mismo fallo: si `vivos` saliera de sumar las dos
+    // clasificaciones, un fichero incomparable se guardaría en la huella con
+    // CERO supervivientes y la deuda desaparecería de la cola en silencio.
+    const d = deltaDeFichero(
+      "src/a.ts",
+      { vivos: [h("a"), h("b"), h("c")], total: 20, blob: "hoy" },
+      medida({ vivos: [h("a")], blob: "ayer" }),
+    );
+    assert.equal(d.vivos.length, 3, "los tres supervivientes existen aunque no se sepa de quién son");
+    assert.equal(d.total, 20);
+  });
+
+  it("una base sin blob es de antes de que se guardara: tampoco se compara", () => {
+    const d = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("a")] }), medida({ vivos: [], blob: "" }));
+    assert.equal(d.base, "incomparable");
+    assert.match(d.porque ?? "", /no guardó de qué código era/);
+  });
+
+  it("mismo código y distinto número de mutantes → cambió el INSTRUMENTO, no el código", () => {
+    // Sin este caso, subir la versión del mutador o tocar su config repartiría
+    // sus mutantes desplazados como deuda de la PR que pasara por ahí.
+    const d = deltaDeFichero(
+      "src/a.ts",
+      { vivos: [h("a")], total: 41, blob: "mismo" },
+      medida({ vivos: [h("a")], total: 63, blob: "mismo" }),
+    );
+    assert.equal(d.base, "incomparable");
+    assert.match(d.porque ?? "", /el instrumento de medida/);
+  });
+
+  it("la consola y el comentario de la PR dicen LO MISMO en los tres estados", () => {
+    // Eran dos ternarios gemelos: un estado añadido a uno solo se lee como
+    // «0 nuevos» en el otro, que es la mentira original con otra cara.
+    const conBase = deltaDeFichero("src/a.ts", MISMO({ vivos: [h("a")] }), medida({ vivos: [] }));
+    const sinBase = deltaDeFichero("src/a.ts", MISMO({ vivos: [] }), undefined);
+    const incomp = deltaDeFichero("src/a.ts", MISMO({ vivos: [] }), medida({ blob: "otro" }));
+    for (const d of [conBase, sinBase, incomp]) {
+      const consola = estadoLegible(d);
+      const markdown = estadoLegible(d, { markdown: true });
+      assert.equal(
+        consola.replace(/[A-ZÁÉÍÓÚ]+/g, (t) => t.toLowerCase()),
+        markdown.replace(/\*\*/g, ""),
+        "las dos salidas tienen que decir lo mismo",
+      );
+    }
+    assert.match(estadoLegible(incomp), /BASE DE OTRO CÓDIGO/);
+    assert.match(estadoLegible(incomp, { markdown: true }), /\*\*base de otro código\*\*/);
+  });
+
   it("el delta solo habla de los ficheros MEDIDOS: de los demás no dice ni cero", () => {
     const base: Huella = { ficheros: { "src/a.ts": medida(), "src/otro.ts": medida() } };
-    const d = deltaDeCorrida({ "src/a.ts": { vivos: [], total: 3 } }, base);
+    const d = deltaDeCorrida({ "src/a.ts": { vivos: [], total: 3, blob: "otro" } }, base);
     assert.deepEqual(
       d.map((x) => x.fichero),
       ["src/a.ts"],
