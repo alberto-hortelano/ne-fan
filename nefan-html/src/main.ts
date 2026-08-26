@@ -63,6 +63,7 @@ import { WorldLabels, type WorldLabel } from "./ui/world-labels.js";
 import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
+import { createEntrada } from "@nefan-core/src/session/entrada.js";
 import {
   createGameClient,
   createViewerClient,
@@ -234,12 +235,24 @@ let graphicsChip: GraphicsModeChip | null = null;
  *  todos en cada transición. Ninguno corre en el arranque del módulo (el
  *  primer `apply` es el del título), así que pueden referirse a cosas que se
  *  declaran más abajo. */
+/** La ENTRADA del jugador en la partida: la conjunción «ya se ha vestido Y ha
+ *  pintado el tile inicial», que es lo que hace que el save exista (#279).
+ *  Las dos mitades llegan por caminos distintos y en cualquier orden; quién
+ *  las declara está justo debajo (`addTile` y el final de
+ *  `unIntentoDeArrancar`) y el olvido al cambiar de partida lo aplica la
+ *  faceta `entrada` de la sesión, no una línea que alguien tenga que recordar. */
+const entrada = createEntrada((sessionId) => {
+  log(`la partida ${sessionId} ya se juega: se establece en disco`);
+  narrativeClient.sessionEntered(sessionId);
+});
+
 const session = createClientSession({
   style: (styleId) => applySessionStyle(styleId),
   theme: (uiTheme) => applyUiTheme(uiTheme),
   renderModes: (renderMode, characterMode) => applyRenderModes(renderMode, characterMode),
   combat: (combatSystem) => applySessionCombatSystem(combatSystem),
   history: (sessionId) => historyBrowser.setSession(sessionId),
+  entrada: (sessionId) => entrada.sesion(sessionId),
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
@@ -1096,6 +1109,15 @@ async function addTile(
       gameClient.addEnemies(enemies);
     }
   }
+
+  // El mundo de la PARTIDA está pintado: media entrada (#279). Cuelga de que
+  // el tile se AÑADA y no de `installTile`, que solo corre con un plan no
+  // vacío (`composeTilePlan` devuelve null sin ground ni volumes): un tile
+  // legal pero pelado dejaría una partida que no se escribe nunca. El atlas de
+  // imagen tampoco entra —es fire-and-forget— así que «pintado» sigue siendo
+  // honesto con remote-gen caído. Las fixtures del selector «Room» quedan
+  // fuera por las dos guardas: no son la partida de nadie.
+  if (session.active && isGridTile && !opts.tomaElMundo) entrada.mundoPintado();
 
   log("Scene loaded: " + key);
 }
@@ -2721,6 +2743,11 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
   }
   // Solo aquí: la partida está en marcha y el título deja de hacer falta.
   titleScreen.hide();
+  // …y solo aquí el jugador tiene cuerpo: `setPlayerAppearance` ya volvió sin
+  // lanzar. Es la otra mitad de la entrada (#279). Un clon sin hojas no llega
+  // hasta esta línea —cae en el catch de arriba, que abandona la partida—, así
+  // que su tile, que llegó ANTES, no basta para escribir nada.
+  entrada.vestido();
   return null;
 }
 

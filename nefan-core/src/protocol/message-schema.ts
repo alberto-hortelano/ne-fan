@@ -106,6 +106,11 @@ const DeleteSessionMessageSchema = z.object({
   sessionId: z.string(),
 });
 
+const SessionEnteredMessageSchema = z.object({
+  type: z.literal("session_entered"),
+  sessionId: z.string(),
+});
+
 const SetRenderModeMessageSchema = z.object({
   type: z.literal("set_render_mode"),
   requestId: z.string(),
@@ -192,6 +197,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   StartSessionMessageSchema,
   ResumeSessionMessageSchema,
   DeleteSessionMessageSchema,
+  SessionEnteredMessageSchema,
   SetRenderModeMessageSchema,
   DialogueChoiceMessageSchema,
   CreateGameMessageSchema,

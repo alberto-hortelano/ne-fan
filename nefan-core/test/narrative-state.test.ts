@@ -30,7 +30,7 @@ describe("NarrativeState lifecycle", () => {
     s1.appendStory("Once upon a time...");
     s1.recordEntitySpawned("npc_1", "npc", "scene_1", [1, 0, 2], { name: "Aldo" });
     s1.recordDialogueEvent("Aldo", "Hola", ["a", "b"], 1, "");
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     const ok = await s2.loadSession(id);
@@ -122,10 +122,10 @@ describe("NarrativeState lifecycle", () => {
     const storage = new MemorySessionStorage();
     const s = new NarrativeState(storage);
     s.startNewSession("a");
-    await s.save();
+    await s.establecer();
     await new Promise((r) => setTimeout(r, 5));
     s.startNewSession("b");
-    await s.save();
+    await s.establecer();
     const list = await s.listSessions();
     assert.equal(list.length, 2);
     assert.ok(list[0].updated_at >= list[1].updated_at);
@@ -135,6 +135,97 @@ describe("NarrativeState lifecycle", () => {
     const s = makeState();
     s.startNewSession("x");
     assert.equal(s.toSessionData().schema_version, SCHEMA_VERSION);
+  });
+});
+
+/** #279 — la puerta del disco. Una partida existe en `saves/` cuando el
+ *  jugador ha llegado a jugarla, y no antes: un arranque que falla después del
+ *  `ok:true` (el clon sin hojas de sprite, el motor que no responde) no puede
+ *  dejar en el título la tarjeta de una partida que nadie jugó. */
+describe("NarrativeState: la partida existe cuando el jugador entra", () => {
+  it("una sesión recién arrancada NO se escribe, por muchos save() que reciba", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    s.startNewSession("g");
+    s.appendStory("el motor ya está construyendo el mundo");
+
+    assert.deepEqual(await s.save(), { escrito: false });
+    assert.deepEqual(await s.save(), { escrito: false });
+    assert.deepEqual(await storage.list(), [], "cero directorios nuevos en saves/");
+    assert.equal(s.enDisco, false);
+  });
+
+  it("establecer() la escribe con TODO lo acumulado durante el arranque", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    // El world map del bootstrap y la escena del snapshot llegan ANTES del
+    // ack: la primera escritura tiene que llevárselos dentro.
+    s.appendStory("el mundo del bootstrap");
+    s.recordEntitySpawned("npc_1", "npc", "tile_0_0", [1, 0, 2], { name: "Aldo" });
+
+    await s.establecer();
+
+    assert.equal(s.enDisco, true);
+    const enDisco = (await storage.read(id))!;
+    assert.equal(enDisco.story_so_far, "el mundo del bootstrap");
+    assert.equal(enDisco.entities.length, 1, "lo acumulado antes del ack no se pierde");
+    // Y a partir de aquí guarda como siempre.
+    s.appendStory("y el jugador siguió");
+    assert.deepEqual(await s.save(), { escrito: true });
+    assert.match((await storage.read(id))!.story_so_far, /y el jugador siguió/);
+  });
+
+  it("reanudar no necesita ack: lo cargado del disco ya existe", async () => {
+    const { narrative: s1, storage } = makeNarrativeState();
+    const id = s1.startNewSession("g");
+    await s1.establecer();
+
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true);
+    assert.equal(s2.enDisco, true);
+    s2.appendStory("reanudada y jugando");
+    assert.deepEqual(await s2.save(), { escrito: true });
+    assert.match((await storage.read(id))!.story_so_far, /reanudada y jugando/);
+  });
+
+  it("guardar SIN sesión lanza: es un caller roto, no un estado", async () => {
+    const { narrative: s } = makeNarrativeState();
+    await assert.rejects(() => s.save(), /no hay sesión que guardar/);
+  });
+
+  it("establecer SIN sesión lanza (no se puede establecer la nada)", async () => {
+    const { narrative: s } = makeNarrativeState();
+    await assert.rejects(() => s.establecer(), /no hay sesión que establecer/);
+  });
+
+  it("borrar la partida activa la devuelve a «no hay ninguna»", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    await s.establecer();
+    assert.equal(await s.deleteSession(id), true);
+    assert.equal(s.session_id, "");
+    assert.equal(s.enDisco, false);
+    assert.deepEqual(await storage.list(), []);
+  });
+
+  /** La sesión EFÍMERA de la pre-generación de mundos: su artefacto es el
+   *  snapshot, nunca un save. Antes se borraba del disco en un `finally`; hoy
+   *  no hay nada que borrar y lo que se suelta es la identidad — que es lo que
+   *  leen «¿hay partida?» y el 409 del State API. */
+  it("descartar una sesión provisional suelta la identidad sin tocar el disco", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    s.startNewSession("g");
+    s.descartarProvisional();
+    assert.equal(s.session_id, "");
+    assert.deepEqual(await storage.list(), []);
+  });
+
+  it("…y NO se puede descartar una partida que sí existe (esa se borra)", async () => {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    await s.establecer();
+    assert.throws(() => s.descartarProvisional(), /existe en disco/);
+    assert.equal(s.session_id, id);
+    assert.equal((await storage.list()).length, 1, "el save sigue ahí");
   });
 });
 
@@ -148,7 +239,7 @@ describe("NarrativeState.loadSession asset validation", () => {
       { hash: "dead_1",  type: "tex", subtype: "albedo", prompt: "p", created_at: "", size_bytes: 0 },
       { hash: "alive_1", type: "tex", subtype: "normal", prompt: "p", created_at: "", size_bytes: 0 },
     ]);
-    await s1.save();
+    await s1.establecer();
 
     const warnings: Array<[string, string]> = [];
     const s2 = new NarrativeState(storage);
@@ -172,7 +263,7 @@ describe("NarrativeState.loadSession asset validation", () => {
     s1.setAssetIndexSnapshot([
       { hash: "h", type: "model", subtype: "glb", prompt: "p", created_at: "", size_bytes: 0 },
     ]);
-    await s1.save();
+    await s1.establecer();
 
     const warnings: Array<[string, string]> = [];
     const s2 = new NarrativeState(storage);
@@ -193,7 +284,7 @@ describe("NarrativeState.loadSession asset validation", () => {
     s1.setAssetIndexSnapshot([
       { hash: "h", type: "model", subtype: "glb", prompt: "p", created_at: "", size_bytes: 0 },
     ]);
-    await s1.save();
+    await s1.establecer();
     const s2 = new NarrativeState(storage);
     await s2.loadSession(id);
     assert.equal(s2.asset_index_snapshot.length, 1);
@@ -259,7 +350,7 @@ describe("NarrativeState.worldMap", () => {
       name: "Robledo",
       approx_position: [12, 34],
     });
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(id), true);
@@ -353,7 +444,7 @@ describe("NarrativeState.worldMap", () => {
       origin: { author: "developer", rationale: "test" },
       activated_at: "2026-01-01T00:00:00Z",
     });
-    assert.equal(await s1.save(), true);
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);
@@ -425,7 +516,7 @@ describe("NarrativeState state queries", () => {
     const id = s1.startNewSession("g");
     s1.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {});
     s1.addInventoryItem("boris", { id: "iron_key", name: "Llave de hierro" });
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(id), true);
@@ -559,7 +650,7 @@ describe("NarrativeState: runtime del jugador atado al save", () => {
     let vivo = { position: { x: 3, y: 1, z: -4 }, health: 61 };
     s.bindPlayerRuntime(() => vivo);
 
-    await s.save();
+    await s.establecer();
     assert.deepEqual((await storage.read(id))!.player.position, [3, 1, -4]);
     assert.equal((await storage.read(id))!.player.health, 61);
 
@@ -574,7 +665,7 @@ describe("NarrativeState: runtime del jugador atado al save", () => {
     const { narrative: s, storage } = makeNarrativeState();
     const id = s.startNewSession("g");
     s.bindPlayerRuntime(() => ({ position: { x: 5, y: 1, z: 5 }, health: 50 }));
-    await s.save();
+    await s.establecer();
     // Título, o bootstrap antes de sembrar el sim: la fuente da null.
     s.bindPlayerRuntime(() => null);
     await s.save();
@@ -586,11 +677,11 @@ describe("NarrativeState: runtime del jugador atado al save", () => {
     const { narrative: s, storage } = makeNarrativeState();
     const primera = s.startNewSession("g");
     s.bindPlayerRuntime(() => ({ position: { x: 20, y: 1, z: 20 }, health: 7 }));
-    await s.save();
+    await s.establecer();
 
     // Partida nueva en el mismo proceso: el runtime atado era de la otra.
     const segunda = s.startNewSession("g");
-    await s.save();
+    await s.establecer();
     assert.deepEqual(
       (await storage.read(segunda))!.player.position,
       [0, 1, 0],

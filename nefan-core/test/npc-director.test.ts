@@ -70,7 +70,7 @@ describe("NpcDirector.arriveNpc", () => {
     const d1 = new NpcDirector(s1);
     d1.moveNpcToPlace("boris", "puerto");
     d1.arriveNpc("boris");
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(id), true);

@@ -17,6 +17,7 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
 import { createWorldClaim } from "../bridge/world-claim.js";
+import { routeMessage } from "../bridge/router.js";
 import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
@@ -161,6 +162,21 @@ export function makeCtx(
     },
   };
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };
+}
+
+/** El ack del cliente: «el jugador ya entró en la partida».
+ *
+ *  Desde #279 es lo ÚNICO que hace que una sesión exista en `saves/`: nace
+ *  provisional y solo se escribe cuando el cliente confirma que se ha vestido
+ *  Y ha pintado el mundo. Un test de bridge que quiera un save en el storage
+ *  lo manda igual que el cliente —por el router, no llamando a `establecer()`
+ *  a mano—, así que además ejerce el camino de verdad. */
+export async function entrarEnLaPartida(
+  ctx: BridgeContext,
+  ws: ClientSocket,
+  sessionId: string,
+): Promise<void> {
+  await routeMessage({ type: "session_entered", sessionId }, ws, ctx);
 }
 
 /** Espera a que se cumpla una condición (para el trabajo fire-and-forget de

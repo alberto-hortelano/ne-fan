@@ -84,6 +84,24 @@ export interface DeleteSessionMessage {
   sessionId: string;
 }
 
+/** El jugador ha ENTRADO en la partida: ya se ha vestido Y el mundo está
+ *  pintado. Con esto el bridge la establece en disco — antes no existía
+ *  (#279): un arranque que falla después del `ok:true` no deja una tarjeta de
+ *  partida que nadie jugó.
+ *
+ *  Va SIN respuesta a propósito: nadie lo espera, y contestarlo invitaría a
+ *  meter un round-trip más en el arranque. No es el mensaje de «guardar la
+ *  partida» resucitado (retirado en #245, con candado en
+ *  `campos-retirados-no-vuelven`): aquel era una ORDEN de guardar que no
+ *  mandaba nadie; este es un HECHO sobre el cliente, y qué hacer con él lo
+ *  decide el bridge. */
+export interface SessionEnteredMessage {
+  type: "session_entered";
+  /** La partida en la que ha entrado. Un id que ya no es el de la sesión
+   *  activa (takeover) se descarta con aviso: el ack es de otra. */
+  sessionId: string;
+}
+
 /** Cambia el modo de render de una partida, en cualquier sentido
  *  (image⇄vector). Bajar a vector no borra lo pintado: el cliente conserva
  *  las imágenes existentes y solo deja de generar nuevas. El save puede no
@@ -203,6 +221,7 @@ export type ClientMessage =
   | StartSessionMessage
   | ResumeSessionMessage
   | DeleteSessionMessage
+  | SessionEnteredMessage
   | SetRenderModeMessage
   | DialogueChoiceMessage
   | CreateGameMessage

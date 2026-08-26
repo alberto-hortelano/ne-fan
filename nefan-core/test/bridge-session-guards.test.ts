@@ -92,9 +92,15 @@ describe("guardas anti-takeover de sesión", () => {
     );
   });
 
-  it("resume de la MISMA sesión durante su bootstrap NO re-encola la generación", async () => {
+  /** Reconexión del cliente DURANTE el bootstrap. Antes de #279 el save ya
+   *  existía y el resume salía `ok`; ahora la partida todavía no existe, así
+   *  que lo que el cliente recibe es `session_not_found`. Lo que NO puede
+   *  pasar —y es lo que sigue sujetando esta guarda— es que ese resume
+   *  abandone la generación en vuelo: el jugador se quedaría sin el mundo que
+   *  el motor está construyendo, y sin partida que reanudar. */
+  it("resume de la MISMA sesión durante su bootstrap no abandona la generación en vuelo", async () => {
     const resolvers: Array<(v: SceneResult) => void> = [];
-    const { ctx, aiCalls } = makeCtx({
+    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
       ai: {
         generateScene: () =>
           new Promise<SceneResult>((res) => {
@@ -119,11 +125,22 @@ describe("guardas anti-takeover de sesión", () => {
       ctx,
     );
     const resumed = second.sent[0] as SessionStartedMessage;
-    assert.equal(resumed.ok, true);
-    assert.equal(resumed.sessionId, sessionId);
-    // Sin segundo generateScene: el bootstrap en vuelo sigue siendo el suyo.
+    assert.equal(resumed.ok, false, "la partida aún no existe en disco: no hay nada que reanudar");
+    assert.equal(resumed.error, "session_not_found");
+    // Sin segundo generateScene: no se re-encola nada.
     assert.equal(aiCalls.scene.length, 1);
-    resolvers[0]!({ ok: true, scene: fakeBootstrapTile() });
+    // Y el bootstrap sigue VIVO y escribiendo en su sesión: si el resume lo
+    // hubiera abandonado, la escena tardía se descartaría y el mundo nunca
+    // llegaría.
+    assert.equal(narrative.session_id, sessionId, "la sesión activa no se ha movido");
+    resolvers[0]!({ ok: true, scene: fakeBootstrapTile({ scene_description: "el mundo llegó igual" }) });
+    await waitFor(() =>
+      broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+    );
+    assert.equal(
+      (narrative.scenes_loaded["tile_0_0"]?.scene_data as { scene_description?: string })?.scene_description,
+      "el mundo llegó igual",
+    );
   });
 
   it("capa 2: el job de bootstrap DESCARTA la escena si la sesión cambió durante el await", async () => {

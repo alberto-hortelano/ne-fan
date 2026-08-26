@@ -41,11 +41,10 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 
 import { nuevaPartida, comenzar, esperarListaDeSaves, esperarTituloListo } from "../lib/sesion.mjs";
+import { rutaDelSave } from "../lib/saves.mjs";
 
 export const aisla = ["saves"];
 
@@ -535,19 +534,11 @@ function leerSave(sessionId) {
  *  El disco del bench es el efímero del runner (`qa/.tmp/<corrida>/saves`), y
  *  este guion solo corre con stack propio porque declara `aisla: ["saves"]`:
  *  contra un stack ajeno el runner ni lo arranca. Devuelve null si no hay
- *  save, que es distinto de «no cambió». */
+ *  save, que es distinto de «no cambió». `rutaDelSave` vive en `qa/lib/saves.mjs`
+ *  desde #279, donde la comparten la espera de `comenzar()` y el delta del
+ *  guion 27. */
 function marcaDeGuardado(sessionId) {
   const f = rutaDelSave(sessionId);
   return f ? createHash("sha1").update(readFileSync(f)).digest("hex") : null;
 }
 
-/** Ruta del `state.json` de la sesión en el disco efímero del bench. */
-function rutaDelSave(sessionId) {
-  const raiz = join(dirname(fileURLToPath(import.meta.url)), "..", ".tmp");
-  if (!existsSync(raiz)) return null;
-  for (const corrida of readdirSync(raiz)) {
-    const f = join(raiz, corrida, "saves", sessionId, "state.json");
-    if (existsSync(f)) return f;
-  }
-  return null;
-}

@@ -154,6 +154,12 @@ export class NarrativeClient {
     this.bridge.sendPlayerEnteredPlace(placeId);
   }
 
+  /** El jugador ha entrado en la partida (vestido ∧ mundo pintado): el bridge
+   *  la establece en disco. Lo dispara `session/entrada.ts`, nunca a mano. */
+  sessionEntered(sessionId: string): void {
+    this.bridge.sendSessionEntered(sessionId);
+  }
+
   /** Pide el tile (tx,ty) del plano continuo. Si ya existe, el bridge lo
    *  re-difunde al instante sin LLM; si no, lo genera (encolado). */
   requestTile(tx: number, ty: number, reason: "prefetch" | "blocking", edge?: "north" | "south" | "east" | "west"): void {

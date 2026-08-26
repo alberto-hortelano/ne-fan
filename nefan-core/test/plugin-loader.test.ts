@@ -193,7 +193,7 @@ describe("activatePluginsForNewSession / bindPluginsForResume", () => {
     const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
     activatePluginsForNewSession(s1, loaded);
     s1.setPluginSlice(loaded[1].id, { count: 7 }); // test_counter
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);

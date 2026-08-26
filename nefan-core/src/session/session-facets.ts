@@ -66,6 +66,13 @@ export interface FacetSinks {
    *  `resume_session` y hace TAKEOVER de otra partida en el bridge: no es
    *  cosmético. */
   history(sessionId: string): void;
+  /** Sesión de la ENTRADA en la partida (`session/entrada.ts`): a qué partida
+   *  pertenecen el «ya está vestido» y el «ya pintó el mundo» que están por
+   *  llegar. Cuelga de aquí y no de dos flags en el cliente porque el olvido
+   *  al volver al título es justo el bug de #249: media entrada de la partida
+   *  que no arrancó, esperando a la mitad que falta para anunciar una sesión
+   *  que ya no existe. */
+  entrada(sessionId: string): void;
 }
 
 /** La sesión del cliente: un valor y dos verbos que son el mismo acto. */
@@ -101,6 +108,7 @@ const APLICADORES: {
   renderModes: (s, f) => s.renderModes(f.renderMode, f.characterMode),
   combat: (s, f) => s.combat(f.combatSystem),
   history: (s, f) => s.history(f.sessionId),
+  entrada: (s, f) => s.entrada(f.sessionId),
 };
 
 /** Los nombres de los sinks, derivados del record de arriba: no hay una

@@ -80,7 +80,16 @@ export class HistoryBrowser {
         const r = await this.narrative.resumeSession(this._resumeSessionId);
         state = r.state;
       } catch (err) {
-        this.content.innerHTML = `<div class="hb-note hb-note--error">No se pudo cargar la sesión: ${escapeHtml((err as Error).message)}</div>`;
+        // `session_not_found` en el libro casi nunca es «no está»: es «aún no
+        // está», porque la partida no existe en disco hasta que el jugador
+        // entra en ella (#279) y el libro se puede abrir con la tecla H
+        // durante el arranque. Se traduce; cualquier otro motivo va tal cual.
+        const msg = (err as Error).message;
+        const texto =
+          msg === "session_not_found"
+            ? "El mundo todavía no ha llegado: el libro se llena cuando la partida está en marcha."
+            : `No se pudo cargar la sesión: ${msg}`;
+        this.content.innerHTML = `<div class="hb-note hb-note--error">${escapeHtml(texto)}</div>`;
         return;
       }
     } else {

@@ -68,7 +68,7 @@ async function newSessionWithV1Slice(points: number) {
   const v1 = lp(V1);
   activatePluginsForNewSession(s1, [v1]);
   s1.setPluginSlice(v1.id, { points });
-  await s1.save();
+  await s1.establecer();
   return { storage, v1Id: v1.id, sessionId: s1.session_id };
 }
 
@@ -296,7 +296,7 @@ describe("plugin migration on plugin_register (#164)", () => {
   it("tras migrar, el resume sirve las reglas NUEVAS y es idempotente", async () => {
     const { state, storage, active } = runtimeV1WithPoints(10);
     const { id } = registerRuntimePlugin(state, active, R2);
-    assert.equal(await state.save(), true);
+    await state.establecer();
 
     // Resume sin manifests en disco: todo sale del manifest embebido.
     const s2 = new NarrativeState(storage);
@@ -337,7 +337,7 @@ describe("plugin migration on plugin_register (#164)", () => {
     assert.equal(state.plugins.length, 1);
 
     // Y en el resume manda el embebido aunque el v1 del disco siga ahí.
-    await state.save();
+    await state.establecer();
     const s2 = new NarrativeState(storage);
     await s2.loadSession(state.session_id);
     const avisos: string[] = [];
@@ -396,7 +396,7 @@ describe("un id viejo sigue encontrando su sistema (referencias colgantes)", () 
     const { state, storage, active } = runtimeV1WithPoints(1);
     const v1Id = state.plugins[0].id;
     const { id } = registerRuntimePlugin(state, active, R2);
-    await state.save();
+    await state.establecer();
 
     const s2 = new NarrativeState(storage);
     await s2.loadSession(state.session_id);
@@ -476,7 +476,7 @@ describe("una sola cadena de migración: los dos caminos rechazan con el MISMO t
     const s1 = new NarrativeState(storage);
     s1.startNewSession("game");
     activatePluginsForNewSession(s1, [lp(v1)]);
-    await s1.save();
+    await s1.establecer();
     const s2 = new NarrativeState(storage);
     await s2.loadSession(s1.session_id);
     return mensajeDe(() => bindPluginsForResume(s2, [lp(target)]), PluginIntegrityError);
@@ -525,7 +525,7 @@ describe("una sola cadena de migración: los dos caminos rechazan con el MISMO t
     const s1 = new NarrativeState(storage);
     s1.startNewSession("game");
     activatePluginsForNewSession(s1, [lp(R1)]);
-    await s1.save();
+    await s1.establecer();
     const s2 = new NarrativeState(storage);
     await s2.loadSession(s1.session_id);
     bindPluginsForResume(s2, [lp(R2)]);
@@ -605,7 +605,7 @@ describe("candados del record migrado (NarrativeState)", () => {
     // reglas que no son las que el id promete, y eso no chilla solo.
     const { state, storage, active } = runtimeV1WithPoints(1);
     const { id } = registerRuntimePlugin(state, active, R2);
-    await state.save();
+    await state.establecer();
 
     const s2 = new NarrativeState(storage);
     await s2.loadSession(state.session_id);
