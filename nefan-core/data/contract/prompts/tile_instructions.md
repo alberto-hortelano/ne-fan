@@ -220,12 +220,12 @@ let the player through. Ask for more and the tile is rejected — the engine
 will not hand you a forest it cannot deliver, and a wood you cannot cross
 is a broken wood.
 
-A zone spends the tile's VOLUME BUDGET: 240 composed volumes per tile
+A zone spends the tile's VOLUME BUDGET: 200 composed volumes per tile
 (your declared `volumes` + everything the schema implies), and the
 validator returns what you used as volumes_total / volumes_total_cap. So
 the ceiling is not free: a "rest" zone at 0.08 asks for ~328 specimens and
-does NOT fit — the same density over half the tile does (~164), and a
-whole-tile forest fits at 0.05 (~205). A tile cannot be a closed pinewood
+does NOT fit — the same density over HALF the tile does (~164), and a
+whole-tile forest fits at 0.04 (~164). A tile cannot be a closed pinewood
 AND a dense village; choose, or say where each one is.
 
 The engine avoids paths, water, decks and building footprints

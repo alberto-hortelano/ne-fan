@@ -1195,6 +1195,12 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     /** Carga una fixture del selector Room por nombre parcial, conduciendo el
      *  <select> real. Fail-loud si no existe: un guion que "no encuentra" la
      *  escena y sigue en verde no vale nada. */
+    /** Añade un tile MÁS al mundo sin resetearlo, con su Format D crudo.
+     *  Es lo que `loadFixture` no puede hacer (toma el mundo y lo vacía), y
+     *  sin ello no hay forma de medir desde el árbol el coste de varios tiles
+     *  residentes — que es de donde sale `MAX_TILE_VOLUMES`
+     *  (`qa/presupuesto-de-volumenes.mjs`). Solo DEV, como el resto del hook. */
+    addTileRaw: (raw: Record<string, unknown>) => addTile(raw),
     loadFixture: (name: string) => {
       const option = [...sceneSelector.options].find((o) => o.value.includes(name));
       if (!option) {

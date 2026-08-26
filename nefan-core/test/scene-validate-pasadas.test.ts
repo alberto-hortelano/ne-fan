@@ -219,13 +219,18 @@ describe("composePlan", () => {
   };
 
   it("la vegetación de masa BLOQUEA en el validador (antes no veía ni un árbol)", () => {
+    // 0,04/m² sobre el tile entero = 164 pinos: el bosque de tile entero más
+    // denso que cabe en el presupuesto (a 0,05 son 205 y el recorte entraría
+    // en escena, que es lo que mide el caso de al lado).
     const { mask, found } = abrir(
-      tileConPlan({ vegetation_zones: [{ type: "pino", area: "rest", density: 0.05 }] }),
+      tileConPlan({ vegetation_zones: [{ type: "pino", area: "rest", density: 0.04 }] }),
     );
-    assert.equal(found.stats.volumes_total, 205, "205 pinos = 4096 m² × 0,05/m²");
+    assert.equal(found.stats.volumes_total, 164, "164 pinos = 4096 m² × 0,04/m²");
+    assert.deepEqual(found.errors, [], "y cabe: sin aviso de presupuesto");
     // Un tile de hierba sin plan no bloquea nada; con el pinar, sí.
     const bloqueadas = contarSolidas(mask);
-    assert.ok(bloqueadas > 500, `troncos rasterizados: ${bloqueadas} celdas`);
+    // ~2,8 celdas por tronco (el disco de 0,9-1,08 celdas de radio).
+    assert.ok(bloqueadas > 400, `troncos rasterizados: ${bloqueadas} celdas`);
     const { mask: pelado } = abrir(tileConPlan());
     assert.equal(contarSolidas(pelado), 0, "sin plan no hay nada que bloquear");
   });

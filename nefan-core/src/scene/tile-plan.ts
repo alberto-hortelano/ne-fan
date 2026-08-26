@@ -42,30 +42,42 @@ export type TilePlan = FpsTilePlanInput;
  *  media fuga: limitaba las entities pero no la vegetación ni las structures,
  *  y `FormatDSceneSchema` no limita `entities`. El cuello no es la CPU
  *  (componer 328 árboles cuesta 4 ms) sino las DRAW CALLS: cada primitiva del
- *  greybox es un `THREE.Mesh` propio y el coste lo marca el TOTAL de
- *  volúmenes residentes, no los de un tile.
+ *  greybox es un `THREE.Mesh` propio y lo que cuesta es el total de volúmenes
+ *  que caen en el FRUSTUM, no los de un tile.
  *
- *  MEDIDO el 2026-08-26 (RTX 3060, Chrome/ANGLE-GL, 1280×720, cuatro tiles
- *  residentes — lo que tiene el jugador al cruzar una esquina — con el pump
- *  del bench sin espera, así que la cifra es 1/coste de frame):
+ *  MEDIDO, y la medida se repite desde el árbol:
+ *  `node qa/presupuesto-de-volumenes.mjs` (con `./start.sh --preset html-fixtures`
+ *  levantado). RTX 3060, Chrome/ANGLE-GL, 1280×720, CUATRO tiles residentes —
+ *  lo que tiene el jugador al acercarse a un vértice del plano continuo— y el
+ *  pump del bench sin espera, así que la cifra es 1/coste de frame:
  *
- *    vol/tile   de pie DENTRO de un tile     en la ESQUINA de los cuatro
- *      120                     >137 fps                        108,8 fps
- *      240                      137,3 fps                       48,1 fps
- *      480                       57,1 fps                       23,1 fps
- *      960                      (1 tile: 38,9 fps)              10,9 fps
+ *    vol/tile   mirando al eje (juego)   mirando al vértice (peor caso)
+ *      120                 129,5 fps                        109,0 fps
+ *      160                  90,3 fps                         79,0 fps
+ *      200                  68,7 fps                         61,3 fps
+ *      240                  54,4 fps                          49,7 fps
  *
- *  240 es el mayor escalón que deja la postura REAL de partida muy por encima
- *  de 60 fps (137) y la peor —los cuatro tiles enteros en pantalla, que dura
- *  lo que se tarda en cruzar la esquina— en 48. En 480 las dos caen (57 y 23).
+ *  La fila de 240 en el peor caso se midió dos veces con scripts distintos
+ *  (49,7 y 48,1 fps): está por debajo del suelo, y no por poco margen de
+ *  medida. OJO con la postura, que costó una tabla entera de números falsos:
+ *  el peor caso es mirar HACIA el vértice desde dentro de un tile; ponerse EN
+ *  el vértice deja tres de los cuatro tiles detrás de la cámara y mide ~2,5×
+ *  más rápido.
  *
- *  El escalón de margen de abajo (120) NO se toma, y el motivo es de contrato,
- *  no de gusto: `MAX_VOLUMES` deja declarar 160 volúmenes, así que un tope de
- *  120 recortaría geometría que el esquema permite pedir. El margen sale de la
- *  otra medida: entre la postura real y la peor hay 2,9× de holgura por
- *  frustum culling. Lo que queda para lo DERIVADO cuando el motor apura sus
- *  160 declarados son 80 volúmenes — casualmente, el cap viejo. */
-export const MAX_TILE_VOLUMES = 240;
+ *  CRITERIO: el plan de la tanda fijó «el mayor escalón que sostiene ≥50 fps
+ *  con 4 tiles, un escalón por debajo por margen». El SUELO se respeta tal
+ *  cual —200 da 61,3 fps con los cuatro tiles en el frustum, 240 da 49,7 y se
+ *  queda fuera—; lo que no se puede aplicar es el escalón de margen, y no por
+ *  gusto: el de abajo es 160, que es exactamente `MAX_VOLUMES`, así que un
+ *  tope ahí recortaría geometría que el propio esquema permite declarar. El
+ *  margen sale entonces de donde se puede medir: +23 % sobre el suelo en el
+ *  peor caso, 68,7 fps en la postura de juego, y unos mundos reales que ni se
+ *  acercan (los cuatro pre-generados del usuario componen entre 13 y 188
+ *  volúmenes por tile, y el peor caso exige los CUATRO al tope a la vez).
+ *
+ *  Lo que deja para lo derivado cuando el motor apura sus 160 declarados son
+ *  40 volúmenes; con un tile normal (13-53 declarados), 150 o más. */
+export const MAX_TILE_VOLUMES = 200;
 
 export interface TilePlanComposition {
   /** `null` = no hay nada que componer (ni suelo ni volúmenes): escena legacy

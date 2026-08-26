@@ -249,7 +249,7 @@ describe("validateScene — telemetría del plan", () => {
     // cabeza, así que si no se le dice cuánto ocupa su bosque no puede
     // decidir si le queda presupuesto.
     assert.equal(r.stats.volumes_total, 44);
-    assert.equal(r.stats.volumes_total_cap, 240);
+    assert.equal(r.stats.volumes_total_cap, 200);
     assert.equal(r.stats.ground_features, 1);
     assert.equal(r.stats.ground_cap, 64);
     assert.equal(r.stats.scatter_zones, 1);
