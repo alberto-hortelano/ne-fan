@@ -29,6 +29,13 @@
  *    node qa/run.mjs --url URL        usa un stack ya arrancado
  *    node qa/run.mjs --orden inverso  al revés (criterio: mismo veredicto)
  *    node qa/run.mjs --diag           una línea de diagnóstico por guion
+ *
+ *  Código de salida — son TRES, porque el veredicto de la corrida no es la
+ *  suma de los veredictos de los guiones:
+ *    0  todo verde
+ *    1  hay guiones en rojo, y todos midieron: es el juego
+ *    2  algo no llegó a medir (stack caído, precondición perdida, el runner
+ *       murió): la corrida NO dice nada del juego, ni bueno ni malo
  */
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
@@ -74,6 +81,19 @@ const PLUGINS_ORIGEN = join(repoRoot, "nefan-core", "data", "plugins");
  *  el pump por Web Worker mantiene el game loop vivo. */
 const URL_QS = `?input=scripted&ai=${encodeURIComponent(FAKE_AI)}&raf=timer`;
 
+/** Los TRES veredictos posibles de un guion, que hasta #272 eran dos.
+ *
+ *  «Falló» y «no pudo medir» no son lo mismo y confundirlos es lo que hace que
+ *  un rojo de verdad se cuele: una corrida cuyo stack se cayó a mitad pintaba
+ *  siete guiones ✘ —9/23 cuando en realidad eran 14— y no había en toda la
+ *  salida una sola línea que permitiera distinguirlo del juego roto. Cada
+ *  investigación de un rojo espurio cuesta lo mismo que la de uno real; esta
+ *  semana han sido dos. */
+const VERDE = "verde";
+const ROJO = "rojo";
+const SIN_MEDIR = "sin-medir";
+const ICONO = { [VERDE]: "✔", [ROJO]: "✘", [SIN_MEDIR]: "⊘" };
+
 function portBusy(port, host = "127.0.0.1") {
   return new Promise((resolve) => {
     const sock = net.connect({ port, host });
@@ -105,6 +125,18 @@ const PUERTOS = [
   [9877, "bridge"],
   [3000, "cliente HTML"],
 ];
+
+/** Los servicios del stack que NO contestan. Vacío = stack en pie.
+ *
+ *  Se sondea DESPUÉS DE CADA GUION porque un stack que se cae a mitad de la
+ *  batería convierte en rojo todo lo que venga detrás, y esos rojos no son del
+ *  juego: son del cadáver (#272 — «9/23 que en realidad eran 14»). Cuesta tres
+ *  conexiones TCP que, con el puerto vivo, resuelven en el acto. */
+async function serviciosCaidos() {
+  const caidos = [];
+  for (const [port, label] of PUERTOS) if (!(await portBusy(port))) caidos.push(`${label} (:${port})`);
+  return caidos;
+}
 
 async function ensureStack() {
   const vivos = [];
@@ -176,8 +208,26 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => salir(130, `${sig}: apagando el stack y borrando ${TMP}`));
 }
 
-/** Restos de corridas anteriores que murieron a lo bruto. Se borran al empezar
- *  (dos baterías a la vez no pueden convivir: comparten puertos). */
+/** Morir por una excepción tampoco puede dejar el stack vivo (#283).
+ *
+ *  Sin esto, una promesa rechazada sin `.catch()` mataba el proceso por la
+ *  puerta de atrás: `salir()` no corría, el stack se quedaba arriba apuntando a
+ *  un `qa/.tmp/<runid>` que la corrida SIGUIENTE borraba nada más empezar, y
+ *  esa corrida heredaba un stack sin disco — treinta guiones con `Timeout
+ *  30000ms` y ni una línea diciendo por qué. Le pasó dos veces a QA validando
+ *  #279. El precedente del patrón está en `bridge/ws-server.ts`; aquí NO se
+ *  perdona el fallo, se apaga limpio y se sale con 2 («la corrida no es un
+ *  veredicto»), que es lo contrario de tragárselo. */
+for (const evento of ["unhandledRejection", "uncaughtException"]) {
+  process.on(evento, (err) => {
+    console.error(`runner: ${evento}:`, err);
+    salir(2, `${evento} — apagando el stack y borrando ${TMP} antes de morir`);
+  });
+}
+
+/** Restos de corridas anteriores que murieron a lo bruto. Se borran cuando el
+ *  stack es NUESTRO (dos baterías a la vez no pueden convivir: comparten
+ *  puertos), nunca antes de saberlo: ver `main()`. */
 function limpiarTmpViejos() {
   const raiz = join(here, ".tmp");
   if (!existsSync(raiz)) return;
@@ -191,7 +241,6 @@ function limpiarTmpViejos() {
  *  la corrida por el camino del jugador, no se copia de un artefacto rancio.
  *  Copiarlo sería heredar justo lo que esto viene a cortar. */
 function prepararDisco() {
-  limpiarTmpViejos();
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(TMP_SAVES, { recursive: true });
   cpSync(GAMES_ORIGEN, TMP_GAMES, { recursive: true });
@@ -393,6 +442,14 @@ async function main() {
   prepararDisco();
   const stack = await ensureStack();
   stackPropio = stack;
+  // Los tmp de corridas muertas se borran AQUÍ y no en `prepararDisco()`, y el
+  // orden es el arreglo entero de #283: mientras no se sepa si el stack lo
+  // arrancó esta corrida, uno de esos directorios puede ser el disco que el
+  // stack heredado está usando ahora mismo. Borrarlo antes de decidirlo era
+  // arrancarle el suelo a un stack que un segundo después se adoptaba —la
+  // corrida se lo hacía a sí misma— y de ahí salían los `Timeout 30000ms` sin
+  // causa. Con stack propio, en cambio, no hay nadie leyéndolos: son basura.
+  if (stack) limpiarTmpViejos();
   if (!stack) {
     // El stack que ya estaba no sabe de nuestro disco efímero, así que la
     // corrida NO es hermética. Puede ser de otra persona o el huérfano de una
@@ -400,15 +457,23 @@ async function main() {
     // que no se le llama "ajeno" — se dice lo único que se sabe seguro.
     console.log(
       "· OJO: el stack ya estaba arriba y NO lo arrancó esta corrida — usa SU disco, no qa/.tmp.\n" +
-        "       Los guiones que necesiten saves o mundo vírgenes fallarán diciéndolo.",
+        "       Los guiones que necesiten saves o mundo vírgenes fallarán diciéndolo.\n" +
+        "       Los tmp de otras corridas quedan intactos: uno de ellos puede ser SU disco.",
     );
   }
   console.log(`· orden: ${ORDEN}`);
   const browser = await abrirNavegador(chromium, { headed: HEADED });
 
   const resultados = [];
+  /** El guion durante el cual se cayó el stack, si se cayó. A partir de ahí no
+   *  se ejecuta nada más: lo que midiera sería del cadáver, no del juego. */
+  let stackCaido = null;
   for (const file of guiones) {
     const nombre = file.replace(/\.mjs$/, "");
+    if (stackCaido) {
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: [], motivo: `no ejecutado: ${stackCaido.motivo}` });
+      continue;
+    }
     console.log(`\n▶ ${nombre}`);
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
@@ -416,12 +481,14 @@ async function main() {
       const hechos = await aislar(nombre, mod.aisla, Boolean(stack));
       if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
     } catch (err) {
-      console.log(`    ✘ PRECONDICIÓN NO GARANTIZADA: ${err.message}`);
+      // Precondición perdida = el guion NO llegó a medir. No es un rojo del
+      // juego y no puede contarse como tal (#272).
+      console.log(`    ⊘ PRECONDICIÓN NO GARANTIZADA: ${err.message}`);
       resultados.push({
         nombre,
-        ok: false,
-        fallos: [`precondición no garantizada: ${err.message}`],
-        fatal: err,
+        estado: SIN_MEDIR,
+        fallos: [],
+        motivo: `precondición no garantizada: ${err.message}`,
       });
       continue;
     }
@@ -457,16 +524,61 @@ async function main() {
       ctx.fallos.push(`${errores.length} excepción(es) no capturadas en la página`);
     }
     await page.close();
-    resultados.push({ nombre, ok: !fatal && ctx.fallos.length === 0, fallos: ctx.fallos, fatal });
+    if (fatal) ctx.fallos.push(`ERROR: ${fatal.message}`);
+
+    // ¿Sigue en pie el stack que acaba de conducir este guion? Se pregunta
+    // DESPUÉS de cada uno porque la respuesta cambia lo que significa lo que
+    // se acaba de medir: con el stack muerto, ni este veredicto ni ninguno de
+    // los siguientes es del juego.
+    const caidos = await serviciosCaidos();
+    if (caidos.length) {
+      const motivo = `el stack se cayó durante «${nombre}» (${caidos.join(", ")} dejó de contestar)`;
+      stackCaido = { nombre, motivo, caidos };
+      console.log(`    ⊘ ${motivo}`);
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo });
+      continue;
+    }
+
+    resultados.push({
+      nombre,
+      estado: ctx.fallos.length === 0 ? VERDE : ROJO,
+      fallos: ctx.fallos,
+      motivo: null,
+    });
   }
 
   await browser.close();
 
-  const ok = resultados.filter((r) => r.ok).length;
+  const cuenta = (e) => resultados.filter((r) => r.estado === e).length;
+  const verdes = cuenta(VERDE);
+  const rojos = cuenta(ROJO);
+  const sinMedir = cuenta(SIN_MEDIR);
+
   console.log(`\n${"─".repeat(60)}`);
-  for (const r of resultados) console.log(`${r.ok ? "✔" : "✘"} ${r.nombre}`);
-  console.log(`${ok}/${resultados.length} guiones en verde · capturas en qa/capturas/`);
-  salir(ok === resultados.length ? 0 : 1);
+  for (const r of resultados) {
+    console.log(`${ICONO[r.estado]} ${r.nombre}${r.motivo ? ` — ${r.motivo}` : ""}`);
+    // Un rojo dice de quién es en el propio resumen: en una batería de treinta
+    // guiones, el detalle quedó a cientos de líneas de scroll.
+    if (r.estado === ROJO) for (const f of r.fallos) console.log(`    · ${f}`);
+  }
+  const partes = [`${verdes} en verde`, `${rojos} en rojo`];
+  if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
+  console.log(`${partes.join(" · ")} de ${resultados.length} · capturas en qa/capturas/`);
+
+  // El veredicto de la CORRIDA, que no es la suma de los veredictos de los
+  // guiones: si algo no llegó a medirse, esto no dice si el juego está bien.
+  if (stackCaido) {
+    console.log(
+      `\n✖ SE CAYÓ EL STACK durante «${stackCaido.nombre}»: ${stackCaido.caidos.join(", ")} ` +
+        `dejó de contestar.\n  No son ${sinMedir} guiones rotos: son ${sinMedir} guiones que no ` +
+        `midieron nada. Arranca de nuevo con el stack en pie.`,
+    );
+  } else if (sinMedir) {
+    console.log(
+      `\n✖ ${sinMedir} guion(es) no llegaron a medir: esta corrida NO es un veredicto del juego.`,
+    );
+  }
+  salir(sinMedir > 0 ? 2 : rojos > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
