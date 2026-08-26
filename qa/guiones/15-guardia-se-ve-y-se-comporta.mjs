@@ -113,12 +113,58 @@ async function situarse(ctx, id, objetivo, tolerancia = 1.5, tramos = 12) {
   return m;
 }
 
+/** ¿NACE el NPC en una celda que bloquea el plano del tile?
+ *
+ *  Precondición de las partes 4 y 6, y la única que no se ve venir: un NPC
+ *  empotrado en un sólido puede SALIR pero no ENTRAR (`terrain-collision.ts`:
+ *  «celda que ya solapábamos en el origen → no bloquea la salida»), así que se
+ *  despega unos centímetros hasta el borde del prop y ahí se queda. Lo que
+ *  medirían entonces los dos asertos de conducta no es «este oficio huye y
+ *  este interviene», sino «un NPC acorralado no se mueve» — y lo dirían con un
+ *  rojo mudo de 0,73 m que ya costó dos investigaciones (#247, #284, #289).
+ *
+ *  Dos detalles que costaron dos corridas y que valen para el siguiente:
+ *
+ *   · Se mira la posición DE LA ESCENA (dónde lo puso el motor), no la viva de
+ *     `npcs()`: para cuando el guion llega aquí el NPC ya se ha despegado del
+ *     prop por su cuenta y su celda de AHORA está libre. Con el tabernero de
+ *     vuelta dentro del `mostrador`, la versión que preguntaba por la posición
+ *     viva pasaba en VERDE mientras el aserto de la huida caía.
+ *   · Y se pregunta por `probeCollide`, que es la colisión REAL del juego
+ *     (terreno + plan + esquema), no por `terrain_grid`: el grid de terreno
+ *     lleva los muros de las `structures`, pero NO los `volumes` — y el
+ *     `mostrador` es un volume. Preguntándole a él, el empotrado también salía
+ *     verde. Un candado que no puede ponerse rojo en el caso que existe no es
+ *     un candado. */
+const naceEnUnSolido = (ctx, posicion) =>
+  ctx.page.evaluate(([x, z]) => {
+    const bloquea = window.__nefan.probeCollide(x, z);
+    return { en: [Math.round(x * 100) / 100, Math.round(z * 100) / 100], solido: bloquea };
+  }, [posicion[0], posicion[2]]);
+
 /** Encara al NPC antes de la captura: las capturas son para que un humano MIRE
  *  qué pasó, y una en la que el personaje ha quedado fuera de cuadro no enseña
- *  nada. No decide nada (los asertos van contra el estado), solo apunta. */
+ *  nada. No decide nada (los asertos van contra el estado), solo apunta.
+ *
+ *  Y espera a que el mundo se haya DIBUJADO ya girado, contando los frames que
+ *  publica el renderer (`fps().frames`). `setYaw` es síncrono sobre el estado,
+ *  pero la imagen sale por rAF —aquí pumpeado por Web Worker (`?raf=timer`)— y
+ *  la captura se llevaba el fotograma anterior: con el tabernero fuera de la
+ *  línea de la puerta, `el-mercader-huye.png` enseñaba la fachada de la taberna
+ *  y ningún mercader. No es un sleep: la condición de parada es el contador. */
 async function encarar(ctx, id) {
   const m = await medir(ctx, id);
-  if (m) await ctx.nefan("setYaw", Math.atan2(m.npc.x - m.jugador.x, m.npc.z - m.jugador.z));
+  if (!m) return m;
+  const antes = (await ctx.nefan("fps"))?.frames ?? 0;
+  await ctx.nefan("setYaw", Math.atan2(m.npc.x - m.jugador.x, m.npc.z - m.jugador.z));
+  await ctx
+    .waitFor(
+      `el mundo se redibuja ya encarando a ${id}`,
+      (f) => ((window.__nefan.fps()?.frames ?? 0) > f + 1 ? true : null),
+      5_000,
+      antes,
+    )
+    .catch(() => ctx.log(`⚠ el renderer no emitió frame tras encarar a ${id}: la captura puede ir atrasada`));
   return m;
 }
 
@@ -244,6 +290,12 @@ export default async function (ctx) {
   await ctx.shot("tile-de-entrada");
 
   // ── 4. Ante una pelea al lado, el mercader HUYE ─────────────────────────
+  const cunaMercader = await naceEnUnSolido(ctx, mercader.position);
+  ctx.expect(
+    "el mercader NACE en suelo libre, no dentro de un prop (empotrado no puede huir y lo de abajo no prueba nada)",
+    cunaMercader && !cunaMercader.solido,
+    JSON.stringify(cunaMercader),
+  );
   const sitioMercader = await situarse(ctx, mercader.id, DISTANCIA_DE_ATAQUE);
   ctx.log(`mercader a ${sitioMercader?.d?.toFixed(2)} m del jugador antes del ataque`);
   const reaccionMercader = await atacarYVer(ctx, mercader.id);
@@ -301,6 +353,12 @@ export default async function (ctx) {
   await ctx.shot("lugar-con-guardia");
 
   // ── 6. SE COMPORTA distinto: ante la MISMA pelea, INTERVIENE ────────────
+  const cunaGuardia = await naceEnUnSolido(ctx, guardia.position);
+  ctx.expect(
+    "el guardia NACE en suelo libre, no dentro de un prop (empotrado no puede intervenir y lo de abajo no prueba nada)",
+    cunaGuardia && !cunaGuardia.solido,
+    JSON.stringify(cunaGuardia),
+  );
   const sitioGuardia = await situarse(ctx, guardia.id, DISTANCIA_DE_ATAQUE);
   ctx.log(`guardia a ${sitioGuardia?.d?.toFixed(2)} m del jugador antes del ataque`);
   ctx.expect(

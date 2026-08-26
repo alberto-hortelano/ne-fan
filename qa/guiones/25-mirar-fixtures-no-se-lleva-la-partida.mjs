@@ -66,7 +66,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { nuevaPartida, comenzar, esperarTituloListo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, esperarTituloListo, esperarListaDeSaves } from "../lib/sesion.mjs";
 
 export const aisla = ["saves"];
 
@@ -266,6 +266,13 @@ export default async function (ctx) {
   await ctx.page.goto(ctx.page.url(), { waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible tras recargar", () => Boolean(window.__nefan));
   await esperarTituloListo(ctx);
+  // La tarjeta de una partida NO se pinta con el título: llega después, con la
+  // respuesta de `list_sessions` del bridge. Buscarla justo tras
+  // `esperarTituloListo` era una carrera —verde en solitario, roja dentro de la
+  // batería, donde hay más saves acumulados y el listado tarda más (#224,
+  // #287)— y este guion era el único de los siete que leen la lista que no la
+  // esperaba. Mismo par que 27 y 29: el título llega, y luego su lista.
+  await esperarListaDeSaves(ctx);
   const tarjeta = await ctx.page.$(
     `button[data-action="resume"][data-session-id="${sessionId}"]`,
   );

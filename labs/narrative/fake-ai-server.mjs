@@ -263,7 +263,18 @@ function bootstrapTile() {
       // enum del tool == NPC_ROLES, y el prompt nombrando los dos campos);
       // el bench no es una segunda red ahí, es el doble de un motor
       // conforme.
-      { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [60, 52], footprint: [1, 1], glyph: "n",
+      // FUERA de la taberna, junto a su esquina sureste y en campo abierto, y
+      // eso es parte del doble: hasta el 2026-08-26 nacía en la celda [60, 52],
+      // que cae DENTRO del `mostrador` (`rect [55, 51, 6, 2]`). Un NPC
+      // empotrado en un sólido puede salir pero no entrar
+      // (`terrain-collision.ts`, «celda que ya solapábamos no bloquea la
+      // salida»), así que se despegaba 0,73 m y ahí se quedaba: encajonado
+      // entre el mostrador y el muro norte, en una ranura de 0,5 m por la que
+      // su círculo de 0,5 m de radio no cabe. Con eso, el guion 15 medía si un
+      // mercader acorralado huye —que no puede— en vez de si huye un mercader
+      // (#247). Aquí tiene 12 m de calle por delante y el jugador arranca a
+      // 8,3 m, justo la distancia de ataque que el guion busca.
+      { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [79, 63], footprint: [1, 1], glyph: "n",
         role: "merchant", description: "tabernero corpulento de mandil manchado" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
       // Casa declarada como ENTITY (sin volume ni structure): el compositor
