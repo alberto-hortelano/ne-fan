@@ -217,7 +217,7 @@ describe("NarrativeState — migración v3→v4", () => {
     // Spawn dinámico post-init: dispatchConsequences guarda METROS de mundo
     // (resolvePositionHint parte de la posición del jugador), nunca celdas.
     s.recordEntitySpawned("forastero", "npc", "aldea", { x: 1, y: 0, z: -1 }, { name: "Forastero" }, "narrative_request");
-    await s.save();
+    await s.establecer();
 
     // Degradar el save a v3 (como los reales pre-tiles).
     const raw = (await storage.read(sessionId))! as SessionData;
@@ -261,7 +261,7 @@ describe("NarrativeState — migración v3→v4", () => {
     const s = new NarrativeState(storage);
     const sessionId = s.startNewSession("plugtest");
     s.recordSceneLoaded("tile_0_0", makeTileScene(0, 0));
-    await s.save();
+    await s.establecer();
     const s2 = new NarrativeState(storage);
     assert.ok(await s2.loadSession(sessionId));
     assert.ok(s2.hasTile(0, 0));

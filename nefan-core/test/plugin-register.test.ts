@@ -118,7 +118,7 @@ describe("registerRuntimePlugin", () => {
       { pluginId: id, type: "counter_inc", payload: {} },
     ]);
     assert.equal(tick1.ok, true);
-    assert.equal(await s1.save(), true);
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);

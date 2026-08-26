@@ -414,6 +414,13 @@
       "tests": ["test/session-facets.test.ts"],
       "break": 100,
       "porque": "El estado de sesión del CLIENTE como un solo valor: entrar en una partida y volver al título recorren el MISMO `apply`, y «sin partida» es un valor del mismo tipo. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core). Nace con suelo 100 porque es todo o nada: treinta líneas sin ramas de negocio, y sus dos únicos mutantes interesantes —quitar la llamada a un sink dentro de `apply`, o cambiar el neutro de una faceta en `NO_SESSION`— son EXACTAMENTE el bug que el módulo existe para hacer inexpresable (#249: el catch del bucle del título deshacía una de las cinco cosas que ponía el éxito, el gate del gasto se quedaba armado y el tile que el bridge difundía después pagaba un atlas de una partida que no arrancó). Dejarlo en `sin_mutar` sería tener el candado sin medir. Sin corrida todavía: la nocturna lo mide (queda anotado en el informe de implementación)."
+    },
+    {
+      "id": "entrada-en-la-partida",
+      "mutate": ["src/session/entrada.ts"],
+      "tests": ["test/entrada.test.ts"],
+      "break": 100,
+      "porque": "Cuándo el jugador ha ENTRADO de verdad en la partida: la conjunción «ya se ha vestido Y ha pintado el tile inicial» (#279), que es la frontera literal que eligió el usuario. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core), igual que `session-facets`. Nace con suelo 100 porque cada rama ES el candado: un mutante que quite una mitad de la conjunción deja pasar exactamente el caso MEDIDO —el tile llega ANTES de que falle el vestido (`qa/guiones/27-el-clon-limpio-quiere-jugar.mjs`), así que colgar la entrada solo del mundo escribe el save de un arranque que vuelve al título—; uno que quite el `anunciada` la anuncia dos veces; uno que se cargue la guarda del id vacío la anuncia sin partida; y uno que rompa el olvido al cambiar de sesión es la forma exacta de #249 (media entrada de la partida que no arrancó, esperando a la mitad que falta para anunciar una sesión que ya no existe). Dejarlo en `sin_mutar` sería tener el candado sin medir."
     }
   ]
 }

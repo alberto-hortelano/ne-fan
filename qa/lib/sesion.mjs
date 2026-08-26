@@ -9,6 +9,7 @@
  *  Cero créditos: el preset 5 apunta `?ai=` al fake-ai-server, que sirve el
  *  tile de bootstrap y los sprite sheets sin GPU ni API de pago.
  */
+import { esperarPartidaEnDisco } from "./saves.mjs";
 
 /** ¿La página está apuntada a un backend de IA falso? Los guiones que pueden
  *  DISPARAR generación (el batch de estilo) se niegan a correr sin esto: el
@@ -129,18 +130,40 @@ export async function nuevaPartida(ctx, { gameId = "alta_fantasia", charMode = "
   return { gameId, styleId };
 }
 
-/** Segundo tramo: apariencia y Comenzar. Espera a que la escena de la sesión
- *  haya llegado de verdad (no a un tiempo de pared: el motor falso tarda lo
- *  que tarda). */
+/** Segundo tramo: apariencia y Comenzar. Vuelve cuando LA PARTIDA ESTÁ EN
+ *  MARCHA, que son tres cosas y no una (#270):
+ *
+ *   (a) el título ya no intercepta — mientras siga delante, el arranque puede
+ *       volver a él con un aviso y lo que se mida después no es una partida;
+ *   (b) hay escena — el mundo llegó del bridge;
+ *   (c) la partida EXISTE en disco — desde #279 se escribe con el ack del
+ *       cliente, así que un guion que mire el `state.json` justo después de
+ *       arrancar (el 17) corría contra un fichero que aún no está.
+ *
+ *  Esperar solo a (b) era el bug: el tile del bridge llega ANTES de que se
+ *  resuelva la apariencia, así que durante unos ms hay escena y título a la
+ *  vez —medido en el guion 27— y esta función daba por arrancada una partida
+ *  que un instante después volvía al título. Ninguna de las tres es un tiempo
+ *  de pared: `maxMs` es el cortafuegos de deadlock. */
 export async function comenzar(ctx, maxMs = 180_000) {
   await ctx.page.click("#ts-continue");
   await ctx.page.waitForSelector("#ts-start", { timeout: 30_000 });
   await ctx.page.click("#ts-start");
-  await ctx.waitFor(
-    "la escena de la sesión llega del bridge",
-    () => (window.__nefan.status().scene ? window.__nefan.scene.scene_id : null),
+  const arrancada = await ctx.waitFor(
+    "el juego está en marcha: el título fuera y la escena de la sesión dentro",
+    () => {
+      if (window.__nefan.status().title) return null;
+      if (!window.__nefan.status().scene) return null;
+      const sessionId = window.__nefan.sesion().sessionId;
+      return sessionId ? { sessionId, scene: window.__nefan.scene.scene_id } : null;
+    },
     maxMs,
   );
+  const { fuente } = await esperarPartidaEnDisco(ctx, arrancada.sessionId, maxMs);
+  ctx.log(
+    `partida ${arrancada.sessionId} en marcha · escena ${arrancada.scene} · existe en disco (${fuente})`,
+  );
+  return arrancada;
 }
 
 /** Pre-genera el mundo del juego desde el título, por el camino del jugador

@@ -213,12 +213,16 @@ export async function runGameGeneration(
     status("error", `La generación del mundo falló: ${(err as Error).message ?? err}`);
     return { delivered: true };
   } finally {
-    // El save efímero se borra SIEMPRE — el snapshot es el artefacto. Si un
-    // takeover reemplazó la sesión, borrar por id sigue siendo seguro (el id
-    // efímero es único) y deleteSession no toca la sesión activa ajena.
-    if (ephemeralSession) {
-      const ok = await ctx.narrative.deleteSession(ephemeralSession);
-      if (!ok) console.warn(`Bridge: no se pudo borrar el save efímero ${ephemeralSession}`);
+    // La sesión efímera no llegó a existir en disco (#279: nace provisional y
+    // solo el ack del jugador la establece), así que no hay save que borrar —
+    // el artefacto es el snapshot del mundo. Lo que sí hay que soltar es la
+    // IDENTIDAD: `ctx.narrative.session_id` es lo que leen «¿hay partida?»
+    // (`handleLoadRoom`, que sin esto no volvería a poner el catálogo de
+    // combate estándar al cargar una fixture), el 409 del State API y las
+    // rutas de documento. Un takeover ya la sustituyó y entonces la de aquí
+    // no es la vigente: se descarta solo si sigue siéndolo.
+    if (ephemeralSession && ctx.narrative.session_id === ephemeralSession) {
+      ctx.narrative.descartarProvisional();
     }
   }
 }

@@ -191,6 +191,18 @@ export default async function (ctx) {
       muro.volverVisible,
       "el jugador se queda con cielo vacío, cinco botones de ataque y recargar como única salida",
     );
+    // #279, criterio 3: el motor no respondió y el jugador se quedó sin
+    // mundo — tampoco puede quedarle una partida en la lista. Este bridge
+    // tiene su PROPIO disco (`dir`), así que aquí sí se puede afirmar sobre
+    // el total y no sobre un delta: cualquier cosa que aparezca ahí la ha
+    // escrito este arranque.
+    const savesDelBridgeSinMotor = readdirSync(join(dir, "saves"));
+    ctx.log(`saves del bridge sin motor: ${JSON.stringify(savesDelBridgeSinMotor)}`);
+    ctx.expect(
+      "un arranque sin motor no deja partida en disco (no hay partidas vacías)",
+      savesDelBridgeSinMotor.length === 0,
+      JSON.stringify(savesDelBridgeSinMotor),
+    );
     // Y SOLO esa. «Cerrar» al lado, con el mismo peso visual, lleva al mismo
     // callejón que la salida viene a abrir: sin mundo no hay adónde cerrar.
     // En los muros que SÍ tienen partida detrás sigue estando (es el que

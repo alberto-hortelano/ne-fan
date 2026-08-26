@@ -17,8 +17,9 @@ import type {
 } from "../src/protocol/messages.js";
 import { listGames as listGamesFs } from "../src/games/loader.js";
 import {
+  capturarLogDelBridge,
   combatConfig,
-  fakeBootstrapTile,
+  entrarEnLaPartida,
   makeCtx,
   makeSocket,
   waitFor,
@@ -220,7 +221,7 @@ describe("bridge ciclo de sesión", () => {
     // El mundo del arranque existe antes de guardar (snapshot o bootstrap).
     await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
     const escenas = Object.keys(ctx.narrative.scenes_loaded).length;
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     const { socket: s2, sent: sent2 } = makeSocket();
     await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
@@ -323,7 +324,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Proceso nuevo: el sistema sale del save, no del game.json.
     narrative.startNewSession("plugtest");
@@ -422,7 +423,7 @@ describe("bridge ciclo de sesión", () => {
       ],
       ambient_event: "",
     });
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
@@ -461,7 +462,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Simular proceso nuevo: vaciar los plugins activos y reanudar.
     ctx.activePlugins = new Map();
@@ -486,7 +487,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Save de la era de dos perspectivas: inyectar el campo congelado legacy.
     const saved = await storage.read(sessionId);
@@ -501,17 +502,16 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(resumed.ok, true);
   });
 
-  it("resume de una sesión SIN escenas reintenta el bootstrap (recuperación de timeout)", async () => {
-    // Bootstrap que falla (timeout del motor narrativo): la sesión queda
-    // guardada sin escenas. Reanudarla debe re-encolar el bootstrap — y esta
-    // vez el motor responde (en producción, la respuesta tardía cacheada).
-    let failScene = true;
-    const { ctx, narrative, aiCalls, broadcasts } = makeCtx({
+  /** SUSTITUYE al test del reintento de bootstrap, que se quedó sin sujeto
+   *  con #279 (ya no nacen saves de cero escenas, así que ninguna partida en
+   *  disco puede necesitarlo). Lo que se pierde: «reanudar re-encola el
+   *  bootstrap». Lo que se gana es el invariante que lo hace imposible, y que
+   *  es el criterio 1/3 de la tanda en unitario: un arranque que falla
+   *  DESPUÉS del ok:true no deja nada en `saves/`. */
+  it("bootstrap fallido y sin ack: el disco se queda VACÍO (nada que reanudar)", async () => {
+    const { ctx, narrative, storage, aiCalls, broadcasts } = makeCtx({
       ai: {
-        generateScene: async () =>
-          failScene
-            ? { ok: false as const, error: "HTTP 504: timeout tras 900s" }
-            : { ok: true as const, scene: fakeBootstrapTile() },
+        generateScene: async () => ({ ok: false as const, error: "HTTP 504: timeout tras 900s" }),
       },
     });
     const { socket, sent } = makeSocket();
@@ -520,19 +520,131 @@ describe("bridge ciclo de sesión", () => {
       socket,
       ctx,
     );
-    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    const started = sent[0] as SessionStartedMessage;
+    assert.equal(started.ok, true, "el arranque contesta ok ANTES de generar: ese es el caso");
     await waitFor(() => aiCalls.scene.length === 1);
     await waitFor(() =>
       broadcasts.some((b) => b.type === "narrative_status" && (b as NarrativeStatusMessage).phase === "error"),
     );
-    assert.equal(Object.keys(narrative.scenes_loaded).length, 0, "bootstrap fallido → sin escenas");
+    assert.equal(Object.keys(narrative.scenes_loaded).length, 0, "el motor no dio mundo");
+    assert.deepEqual(await storage.list(), [], "y el jugador NO se encuentra una partida que nadie jugó");
 
-    failScene = false;
+    // Y el título no la ofrece, que es donde lo ve quien juega.
+    await routeMessage({ type: "list_sessions", requestId: "r2" }, socket, ctx);
+    const listed = sent.find((m) => m.type === "sessions_listed") as Extract<
+      ServerMessage,
+      { type: "sessions_listed" }
+    >;
+    assert.deepEqual(listed.sessions, []);
+  });
+
+  it("start_session no escribe nada: la partida existe cuando el jugador entra", async () => {
+    const { ctx, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
+    // El mundo YA llegó (el tile del motor falso) y el jugador podría seguir
+    // vistiéndose: hasta que no confirme, en disco no hay nada.
+    assert.deepEqual(await storage.list(), [], "ni siquiera con la escena registrada");
+
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const enDisco = await storage.list();
+    assert.equal(enDisco.length, 1);
+    assert.equal(enDisco[0].session_id, sessionId);
+    assert.ok(enDisco[0].scene_count > 0, "y lo acumulado antes del ack viaja en esa primera escritura");
+  });
+
+  it("un ack de OTRA sesión no escribe nada, y se dice", async () => {
+    const { ctx, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    const log = capturarLogDelBridge();
+    try {
+      await entrarEnLaPartida(ctx, socket, "una-sesion-de-otro-bridge");
+    } finally {
+      log.soltar();
+    }
+    assert.deepEqual(await storage.list(), [], "el ack ajeno no puede establecer esta partida");
+    assert.ok(
+      log.lineas.some((l) => l.includes("una-sesion-de-otro-bridge") && l.includes(sessionId)),
+      log.lineas.join(" · "),
+    );
+  });
+
+  it("reanudar NO necesita ack: la partida ya existe y sigue guardando", async () => {
+    const { ctx, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    // Proceso nuevo: solo el save. Reanudar y guardar, sin ningún ack.
+    ctx.narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
     await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).ok, true);
-    await waitFor(() => aiCalls.scene.length === 2);
-    await waitFor(() => Object.keys(narrative.scenes_loaded).length > 0);
+    ctx.narrative.appendStory("el jugador siguió jugando");
+    assert.deepEqual(await ctx.narrative.save(), { escrito: true });
+    assert.match((await storage.read(sessionId))!.story_so_far, /siguió jugando/);
+  });
+
+  /** C5: la tecla `H` abre el libro y pide `resume_session` de la sesión
+   *  activa. Durante la ventana provisional eso es `session_not_found`, y el
+   *  bridge vaciaba `ctx.activePlugins` ANTES del load fallido: la partida
+   *  viva se quedaba sin plugins para el motor el resto de la sesión. */
+  it("un resume que falla NO deja la sesión viva sin plugins (la tecla H)", async () => {
+    const { ctx } = makeCtx();
+    const { socket } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    assert.equal(ctx.activePlugins.size, 3);
+    const sessionId = ctx.narrative.session_id;
+
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).ok, false);
+    assert.equal((sent2[0] as SessionStartedMessage).error, "session_not_found");
+    assert.equal(ctx.activePlugins.size, 3, "los plugins de la partida viva siguen ahí");
+    assert.equal(ctx.narrative.session_id, sessionId, "y la sesión no se ha movido");
+  });
+
+  it("set_render_mode sobre una partida que aún no ha empezado no miente con un ok", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await routeMessage(
+      { type: "set_render_mode", requestId: "r2", sessionId, renderMode: "vector", facet: "scenes" },
+      socket,
+      ctx,
+    );
+    const res = sent.find((m) => m.type === "render_mode_set") as Extract<
+      ServerMessage,
+      { type: "render_mode_set" }
+    >;
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /aún no ha empezado/);
   });
 
   it("list_sessions y delete_session operan sobre el storage", async () => {
@@ -544,7 +656,7 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     await routeMessage({ type: "list_sessions", requestId: "r2" }, socket, ctx);
     const listed = sent.find((m) => m.type === "sessions_listed") as Extract<
@@ -615,6 +727,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     const player = sim.getCombatant("player")!;
     player.position = { x: 4, y: 1, z: 7 };
@@ -652,7 +765,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     // Sesión nueva EN CRUDO (sin pasar por el handler, que resiembra y vuelve
     // a atar): el sim sigue con el combatiente de la partida anterior.
     narrative.startNewSession("plugtest");
-    await narrative.save();
+    await narrative.establecer();
     const onDisk = (await storage.read(narrative.session_id))!;
     assert.deepEqual(onDisk.player.position, [0, 1, 0], "arranque, no el final de la anterior");
   });
@@ -711,7 +824,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     // F5: el socket de la partida se va. El mundo queda sin dueño.
     ctx.world.release(socket);
@@ -758,7 +871,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
-    await ctx.narrative.save();
+    await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Mismo socket, ahora mirando una fixture.
     await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
@@ -815,6 +928,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
     sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
@@ -832,6 +946,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
     const player = sim.getCombatant("player")!;
     player.position = { x: -5, y: 1, z: 9 };
     player.health = 33;
@@ -1059,7 +1174,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   it("con la sesión ACTIVA, el cambio se difunde como render_mode_changed", async () => {
     const { ctx, narrative, broadcasts } = makeCtx();
     await ctx.sessionStorage.write("s7", legacyVectorSave("s7"));
-    narrative.session_id = "s7";
+    assert.equal(await narrative.loadSession("s7"), true, "la sesión activa sale del save");
     narrative.world.render_mode = "image";
     narrative.world.character_mode = "image";
     const { socket, sent } = makeSocket();
@@ -1079,7 +1194,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   it("con la sesión ACTIVA, el espejo en memoria fija ambos modos", async () => {
     const { ctx, narrative } = makeCtx();
     await ctx.sessionStorage.write("s4", legacyVectorSave("s4"));
-    narrative.session_id = "s4";
+    assert.equal(await narrative.loadSession("s4"), true, "la sesión activa sale del save");
     narrative.world.render_mode = "vector";
     narrative.world.character_mode = "";
     const { socket } = makeSocket();
@@ -1097,7 +1212,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     await ctx.sessionStorage.write("s5", legacyVectorSave("s5"));
     // La sesión activa avanzó EN MEMORIA (progreso aún no reflejado en ese
     // snapshot de disco) — el escritor único es narrative.
-    narrative.session_id = "s5";
+    assert.equal(await narrative.loadSession("s5"), true, "la sesión activa sale del save");
     narrative.world.render_mode = "vector";
     narrative.world.character_mode = "";
     narrative.story_so_far = "el jugador cruzó tres tiles";

@@ -34,7 +34,8 @@
  *  - los dos asertos del texto están rojos HOY: su capacidad de ponerse rojos
  *    no hay que demostrarla, hay que arreglarla.
  */
-import { esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { listarSaves } from "../lib/saves.mjs";
 
 /** La entrada accionable que el cliente escribe en el registro (main.ts). */
 const REMEDIO = "docs/assets-de-personaje.md";
@@ -44,16 +45,41 @@ export default async function (ctx) {
   // en .gitignore (28 MB de renders de FBX que Adobe no deja redistribuir),
   // así que quien clona el repo arranca exactamente así. No se toca nada del
   // lado del juego.
-  await ctx.page.route("**/sprites/**", (route) =>
-    route.fulfill({
+  //
+  // El 404 se contesta CUANDO EL MUNDO YA ESTÁ PINTADO, no al instante. No es
+  // un adorno ni un sleep: es la única forma de que este guion mida la
+  // CONJUNCIÓN de #279 en vez de solo su primera mitad. Medido el 2026-08-26
+  // instrumentando `main.ts`: con el 404 instantáneo, `baseSheetsReady` ya está
+  // rechazada cuando el jugador pulsa «Comenzar», así que el orden real es
+  //   sesión → abandonar → sesión:(ninguna) → addTile(active=false)
+  // y lo que impide el save es el reset de la faceta, no la conjunción —
+  // disparar el ack solo con `mundoPintado()` dejaba el guion VERDE. Con el
+  // 404 esperando al tile, el orden pasa a ser el del issue:
+  //   sesión → addTile(active=true) → abandonar
+  // que es el de cualquier máquina donde cargar 10 hojas tarde más que un
+  // round-trip por WebSocket. La espera es por ESTADO (que el tile esté en el
+  // mundo), con cortafuegos: si el mundo no llega, el 404 sale igual y el
+  // guion sigue midiendo lo de siempre.
+  await ctx.page.route("**/sprites/**", async (route) => {
+    await ctx
+      .waitFor("el mundo llega antes que el fallo de las hojas", () => window.__nefan?.tiles.length > 0, 60_000)
+      .catch(() => null);
+    await route.fulfill({
       status: 404,
       contentType: "application/json",
       body: JSON.stringify({ detail: "clon sin hojas (simulado por QA)" }),
-    }),
-  );
+    });
+  });
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente arranca sin hojas", () => Boolean(window.__nefan));
   await esperarTituloListo(ctx);
+
+  // Lo que hay en `saves/` ANTES de intentarlo. Se mide el DELTA y no el
+  // total porque este guion no aísla nada: corre sobre el disco que dejaron
+  // los anteriores, y aislar añadiría otra corrida con stack propio a un
+  // runner con los puertos clavados (#271, #274).
+  const savesAntes = await listarSaves(ctx);
+  ctx.log(`saves antes de intentarlo: ${savesAntes.ids.length} · fuente: ${savesAntes.fuente}`);
 
   // El camino del jugador, entero: Nueva partida → mundo → Comenzar.
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
@@ -131,5 +157,40 @@ export default async function (ctx) {
     "el cliente SÍ tiene escrito el remedio (aunque el título no lo deje ver)",
     registro.remedioEnElDom,
     JSON.stringify(registro),
+  );
+
+  // ── Y el arranque que falló NO deja partida (#279, criterio 1) ──────────
+  // Aquí es donde vive el caso: el tile del bridge YA llegó (el bootstrap va
+  // por delante de las hojas), y aun así no puede haber nacido nada, porque
+  // la partida se escribe con la conjunción vestido ∧ mundo pintado y el
+  // vestido no ocurrió. Se mide en el disco Y en lo que el título ofrece,
+  // que son dos fallos distintos: un save huérfano y una tarjeta muerta.
+  const savesDespues = await listarSaves(ctx);
+  const nuevos = savesDespues.ids.filter((id) => !savesAntes.ids.includes(id));
+  ctx.log(`saves después: ${savesDespues.ids.length} · nuevos: ${JSON.stringify(nuevos)}`);
+  ctx.expect(
+    "un arranque que falla no deja NINGÚN directorio nuevo en saves/",
+    nuevos.length === 0,
+    `aparecieron ${JSON.stringify(nuevos)} (fuente: ${savesDespues.fuente})`,
+  );
+
+  // Se RECARGA antes de mirar «Continuar», y no es ceremonia: medido en la
+  // prueba en negativo de esta tanda, el título de vuelta lista las partidas
+  // ANTES de que el bootstrap termine, así que con el candado roto el save
+  // nacía después y este aserto se quedaba verde igual. Un título recién
+  // pintado pregunta de nuevo, y entonces sí puede ponerse rojo.
+  await ctx.page.reload({ waitUntil: "domcontentloaded" });
+  await ctx.waitFor("el cliente vuelve tras recargar", () => Boolean(window.__nefan));
+  await esperarTituloListo(ctx);
+  await esperarListaDeSaves(ctx);
+  const ofrecidas = await ctx.page.$$eval(
+    '#ts-sessions [data-action="resume"]',
+    (els) => els.map((e) => e.dataset.sessionId),
+  );
+  ctx.log(`«Continuar» ofrece: ${JSON.stringify(ofrecidas)}`);
+  ctx.expect(
+    "…y «Continuar» no ofrece ninguna partida que no se llegó a jugar",
+    ofrecidas.every((id) => savesAntes.ids.includes(id)),
+    `${JSON.stringify(ofrecidas)} vs. antes ${JSON.stringify(savesAntes.ids)}`,
   );
 }

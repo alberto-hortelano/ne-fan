@@ -100,7 +100,7 @@ describe("contrato WorldStateApi ↔ router real", () => {
   it("getAssetRefs: unión de refs de escenas/entidades/snapshot de todos los saves", async () => {
     narrativeRef.recordSceneLoaded("plaza", { scene_id: "plaza" }, ["hash_a", "hash_b"]);
     narrativeRef.recordEntitySpawned("npc1", "npc", "plaza", [0, 0, 0], {}, "test", "", ["hash_c"]);
-    await narrativeRef.save();
+    await narrativeRef.establecer();
     const res = await fetch(`${baseUrl}/sessions/asset_refs`);
     assert.equal(res.status, 200);
     const body = (await res.json()) as { refs: string[] };

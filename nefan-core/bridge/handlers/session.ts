@@ -57,6 +57,7 @@ import type {
   ListGamesMessage,
   ListSessionsMessage,
   ResumeSessionMessage,
+  SessionEnteredMessage,
   StartSessionMessage,
 } from "../../src/protocol/messages.js";
 
@@ -230,21 +231,11 @@ export async function handleListSessions(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
+  // Sin poda: ya no nacen saves vacíos que podar. Una partida solo existe en
+  // disco cuando el jugador entró en ella (#279), así que el listado es
+  // espejo fiel de `saves/` y borrar es cosa del jugador desde «Continuar».
   const sessions = await ctx.sessionStorage.list();
-  // Poda de saves basura: un bootstrap fallido deja un save "0 escenas" en
-  // disco (start_session persiste antes de generar). El de la sesión ACTIVA
-  // se conserva — reanudarla ES el reintento del bootstrap (ver
-  // handleResumeSession); los demás son restos de sesiones abandonadas.
-  const alive: typeof sessions = [];
-  for (const s of sessions) {
-    if (s.scene_count === 0 && s.session_id !== ctx.narrative.session_id) {
-      const ok = await ctx.sessionStorage.delete(s.session_id);
-      if (!ok) console.error(`Bridge: no se pudo podar el save vacío ${s.session_id}`);
-      continue;
-    }
-    alive.push(s);
-  }
-  ctx.send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions: alive });
+  ctx.send(ws, { type: "sessions_listed", requestId: msg.requestId, sessions });
 }
 
 /** Resembra el sim para la sesión vigente: runtime nuevo (sin este reset el
@@ -400,7 +391,11 @@ export async function handleStartSession(
   }
   reseedSimForSession(ctx, ws, combatId, npcBehaviorId);
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, msg.gameId, false);
-  await ctx.narrative.save();
+  // Aquí NO se guarda (#279). La sesión nace provisional —en memoria y en
+  // ningún otro sitio— y solo se escribe cuando el cliente confirma que el
+  // jugador entró (`session_entered`). El único trabajo de aquel save era
+  // crear el fichero antes de tiempo, y con él la tarjeta de partida de un
+  // arranque que todavía podía fallar.
   ctx.subscribe(ws);
   ctx.send(ws, {
     type: "session_started",
@@ -486,7 +481,13 @@ export async function handleResumeSession(
     );
     ctx.sceneGen.abandonAll();
   }
-  ctx.activePlugins = new Map();
+  // El load VA PRIMERO y los plugins se vacían DESPUÉS: al revés, un resume
+  // que falla (id rancio, save borrado, y desde #279 también la partida que
+  // aún no existe en disco porque el jugador sigue arrancándola) dejaba la
+  // sesión VIVA sin plugins el resto de la partida — `loadSession` no muta
+  // nada cuando el save no está, así que el bridge seguía sirviendo la
+  // partida buena con el catálogo del motor vacío. Alcanzable con la tecla
+  // `H`: el libro de historia pide `resume_session` de la sesión activa.
   const ok = await ctx.narrative.loadSession(msg.sessionId);
   if (!ok) {
     ctx.send(ws, {
@@ -497,6 +498,7 @@ export async function handleResumeSession(
     });
     return;
   }
+  ctx.activePlugins = new Map();
   // Bind de plugins shipped (F3): el slice vive en el save, el manifest
   // se relee del FS y se casa por id (integridad fail-loud).
   try {
@@ -581,42 +583,40 @@ export async function handleResumeSession(
     state: sessionDataForClient(ctx.narrative.toSessionData()),
     uiTheme,
   });
-  // Sesión sin NINGUNA escena = el bootstrap de su creación falló (timeout
-  // del motor narrativo, MCP caído…). Reanudar ES el reintento: re-encolar
-  // el bootstrap con la MISMA sesión — si la respuesta tardía del intento
-  // anterior llegó a ai_server, la sirve al instante sin re-generar.
-  if (Object.keys(ctx.narrative.scenes_loaded).length === 0) {
-    // Resume de la MISMA sesión con su bootstrap aún en vuelo (reconexión del
-    // cliente durante la generación): no re-encolar — habría DOS bootstraps
-    // idénticos hacia el motor. El job en curso difundirá la escena al llegar.
-    // (Un job __abandonado__ de OTRA sesión no cuenta: ese sí necesita retry.)
-    const bootstrapBusy = new Set([ctx.sceneGen.current, ...ctx.sceneGen.pending]);
-    if (bootstrapBusy.has("bootstrap") || bootstrapBusy.has("bootstrap_retry")) {
-      console.log(
-        `Bridge: resume de ${ctx.narrative.session_id} con bootstrap ya en vuelo — sin reintento`,
-      );
-      return;
-    }
-    console.log(
-      `Bridge: resume de sesión sin escenas (${ctx.narrative.session_id}) — reintentando bootstrap`,
+  // Aquí vivía el reintento del bootstrap: una sesión sin NINGUNA escena era
+  // un arranque cuyo tile falló, y reanudarla re-encolaba la generación. Se
+  // quedó sin sujeto con #279 — ya no nacen saves de cero escenas, así que
+  // una partida en disco siempre trae mundo. Con él se va el «reanudar ES el
+  // reintento» que el repo eligió a propósito en `1dc55ff`: un bootstrap
+  // interrumpido se repaga entero (minutos del motor, cero créditos de
+  // imagen), decidido con el coste delante.
+}
+
+/** El jugador ENTRÓ en la partida (vestido ∧ mundo pintado): a partir de aquí
+ *  existe en disco. Es el único sitio del bridge que puede establecerla, y lo
+ *  canda `arch-rules.json` — que un handler cualquiera llame a `establecer()`
+ *  «por si acaso» compilaría igual de bien.
+ *
+ *  Sin respuesta: el cliente no espera nada. Los dos casos que no establecen
+ *  se dicen en el log, no en silencio. */
+export async function handleSessionEntered(
+  msg: SessionEnteredMessage,
+  ctx: BridgeContext,
+): Promise<void> {
+  if (msg.sessionId !== ctx.narrative.session_id) {
+    // Takeover: entre el arranque y el ack alguien cambió la sesión activa
+    // (otra pestaña, una pre-generación de mundo). Esa partida no se escribe:
+    // el singleton ya no la tiene. Se dice, porque es la señal de que un save
+    // que el jugador esperaba no va a existir.
+    console.warn(
+      `Bridge: session_entered de ${msg.sessionId} con ${ctx.narrative.session_id || "(ninguna)"} ` +
+        `activa — ack de una sesión que ya no es la de este bridge, no se establece`,
     );
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "generating",
-      kind: "tile",
-      tile: { tx: 0, ty: 0 },
-      message: "Reintentando la generación del mundo inicial...",
-    });
-    const resumeGameId = ctx.narrative.game_id;
-    ctx.sceneGen.enqueue({
-      // Key propia: con "bootstrap" el dedupe de la cola puede descartar el
-      // reintento si el job fallido del arranque aún figura en vuelo (su
-      // finally corre un microtask después del broadcast de error).
-      key: "bootstrap_retry",
-      blocking: true,
-      run: () => runBootstrapTile(ctx, resumeGameId),
-    });
+    return;
   }
+  if (ctx.narrative.enDisco) return; // resume: la partida ya existía
+  await ctx.narrative.establecer();
+  console.log(`Bridge: partida ${ctx.narrative.session_id} establecida en disco (el jugador entró)`);
 }
 
 export async function handleDeleteSession(
@@ -657,10 +657,19 @@ export async function handleSetRenderMode(
   if (ctx.narrative.session_id === msg.sessionId) {
     const res = applyRenderModeChange(ctx.narrative.world, facet, msg.renderMode);
     if (!res.ok) return fail(res.error);
+    let escrito: boolean;
     try {
-      await ctx.narrative.save();
+      ({ escrito } = await ctx.narrative.save());
     } catch (err) {
       return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // La partida aún no existe (el jugador sigue arrancándola): el cambio se
+    // aplicó en memoria pero NO se persistió. Contestar `ok` sería prometer
+    // algo que el siguiente resume no va a encontrar.
+    if (!escrito) {
+      return fail(
+        `la partida ${msg.sessionId} aún no ha empezado: entra en ella y vuelve a cambiar el modo`,
+      );
     }
     console.log(`Bridge: modo de render cambiado en ${msg.sessionId} (${facet} → ${msg.renderMode}, sesión activa)`);
     ctx.send(ws, {
@@ -693,8 +702,14 @@ export async function handleSetRenderMode(
   const res = applyRenderModeChange(data.world, facet, msg.renderMode);
   if (!res.ok) return fail(res.error);
   data.updated_at = new Date().toISOString();
+  // `writeExisting` y no `write`: desde #279 el tipo de `ctx.sessionStorage`
+  // no tiene `write`, porque un save solo puede NACER cuando el jugador entra
+  // en la partida. Aquí solo se PISA lo que se acaba de leer; si desapareció
+  // entremedias, se dice en vez de resucitarlo.
   try {
-    await ctx.sessionStorage.write(msg.sessionId, data);
+    if (!(await ctx.sessionStorage.writeExisting(msg.sessionId, data))) {
+      return fail(`la partida ${msg.sessionId} ya no existe`);
+    }
   } catch (err) {
     return fail(`no se pudo escribir la partida: ${err instanceof Error ? err.message : String(err)}`);
   }

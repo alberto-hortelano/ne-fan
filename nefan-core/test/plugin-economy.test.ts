@@ -268,7 +268,7 @@ describe("economy plugin shipped", () => {
     dispatchPluginEvents(s1, active1, [
       { pluginId: id, type: "debt_created", payload: { debt_id: "d1", amount: 6, creditor: "yishaq" } },
     ]);
-    await s1.save();
+    await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);

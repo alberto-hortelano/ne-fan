@@ -331,6 +331,15 @@ export class BridgeClient {
     this.send({ type: "player_entered_place", placeId });
   }
 
+  /** El jugador ENTRÓ en la partida: ya está vestido y el mundo pintado. Con
+   *  esto el bridge la establece en `saves/` — antes no existía (#279). Sin
+   *  respuesta: es un hecho, no una petición. Un frame perdido con el bridge
+   *  caído se registra loud como cualquier otro one-shot, y ahí la señal es
+   *  que la partida no llega a escribirse. */
+  sendSessionEntered(sessionId: string): void {
+    this.send({ type: "session_entered", sessionId });
+  }
+
   /** Tell the bridge the player walked up to an NPC and pressed interact. The
    *  bridge reports it to the narrative engine and broadcasts the reply. */
   sendInteractEntity(entityId: string, entityName: string): void {

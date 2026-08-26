@@ -16,6 +16,7 @@ import {
   handleListSessions,
   handleSetRenderMode,
   handleResumeSession,
+  handleSessionEntered,
   handleStartSession,
 } from "./handlers/session.js";
 import { handleGenerateGame } from "./handlers/game-gen.js";
@@ -74,6 +75,9 @@ export async function routeMessage(
       break;
     case "delete_session":
       await handleDeleteSession(msg, ws, ctx);
+      break;
+    case "session_entered":
+      await handleSessionEntered(msg, ctx);
       break;
     case "set_render_mode":
       await handleSetRenderMode(msg, ws, ctx);

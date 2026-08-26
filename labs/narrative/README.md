@@ -143,6 +143,12 @@ Formatos verificados en `nefan-core/bridge/ws-server.ts` y `nefan-core/src/proto
   `""` si no hay skin; omitirlo rebota con `narrative_status: error`)
   + (async) `narrative_status` y `narrative_event` con la escena
 - `{type:"resume_session", requestId, sessionId}` → `session_started` (isResume)
+- `{type:"session_entered", sessionId}` → **sin respuesta**. Es el ack del cliente: «el jugador ya
+  se ha vestido Y el mundo está pintado». Desde #279 es lo ÚNICO que hace que la partida exista en
+  `saves/{sessionId}/state.json`; sin él la sesión vive solo en memoria y NINGÚN `save()` del
+  bridge escribe nada. Este emulador **no lo manda solo**: un bench que quiera un save (o poder
+  reanudar después) tiene que enviarlo a mano tras el `session_started`. La señal de que falta es
+  un `saves/` vacío al terminar la corrida.
 - `{type:"interact_entity", entityId, entityName}` → `narrative_event` (consequences)
 - `{type:"dialogue_choice", eventId, speaker, chosenText, choiceIndex, freeText?}` → `narrative_event`
 - `{type:"player_entered_place", placeId}` → `narrative_event` con la escena del lugar

@@ -43,6 +43,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
       llamadas.push(["renderModes", `${renderMode}/${characterMode}`]),
     combat: (combatSystem) => llamadas.push(["combat", combatSystem]),
     history: (sessionId) => llamadas.push(["history", sessionId]),
+    entrada: (sessionId) => llamadas.push(["entrada", sessionId]),
   };
   return { sinks, llamadas };
 }
@@ -69,6 +70,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "image/vector"],
       ["combat", "basic"],
       ["history", "1787-abc"],
+      ["entrada", "1787-abc"],
     ]);
   });
 
@@ -97,6 +99,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "/"],
       ["combat", ""],
       ["history", ""],
+      ["entrada", ""],
     ]);
     assert.equal(s.active, false, "el gate del gasto de imagen queda desarmado");
     assert.deepEqual(s.facets, NO_SESSION);
@@ -135,6 +138,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "/"],
       ["combat", ""],
       ["history", "segunda"],
+      ["entrada", "segunda"],
     ]);
   });
 

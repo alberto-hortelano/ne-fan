@@ -21,7 +21,7 @@ import {
   type NarrativeWorldState,
   toTuple,
 } from "./types.js";
-import type { SessionStorage } from "./session-storage.js";
+import type { SessionWriter } from "./session-storage.js";
 import { WorldMapManager } from "../world-map/world-map.js";
 import type { Edge } from "../world-map/types.js";
 import { neighborTile, tileKey, type TileCoord } from "../scene/tile.js";
@@ -34,6 +34,24 @@ import { registerSceneNpcs } from "./npc-records.js";
 
 export type AssetValidator = (hash: string) => Promise<boolean>;
 export type LoadWarningSink = (source: string, message: string) => void;
+
+/** Dónde vive la partida AHORA MISMO.
+ *
+ *  - `sin_sesion`: no hay ninguna. `save()` con esto es un bug del caller.
+ *  - `provisional`: existe en memoria y en NINGÚN otro sitio. Es el estado del
+ *    arranque entero —el motor generando, el mundo llegando, el jugador
+ *    vistiéndose— y de la sesión efímera de la pre-generación de mundos.
+ *    `save()` no escribe: la puerta del disco está cerrada.
+ *  - `en_disco`: el jugador ENTRÓ (`establecer()`), o la partida se cargó de
+ *    un save que ya existía (`loadSession()`). A partir de ahí `save()`
+ *    escribe como siempre.
+ *
+ *  Que la puerta esté cerrada hasta `establecer()` es lo que convierte «el ack
+ *  llega antes de la primera escritura» en un HECHO en vez de en una carrera:
+ *  no hay nada que sincronizar, y lo acumulado durante la ventana provisional
+ *  (el world map del bootstrap, las escenas del snapshot) viaja entero dentro
+ *  de esa primera escritura, porque `save()` serializa el estado COMPLETO. */
+type Existencia = "sin_sesion" | "provisional" | "en_disco";
 
 /** Lo que el RUNTIME sabe del jugador y el save no puede saber solo: dónde
  *  está y cuánta vida le queda AHORA MISMO. Durante la partida eso vive en el
@@ -114,6 +132,10 @@ export class NarrativeState {
   private nextEventSeq = 0;
   private nextSchedSeq = 0;
   private dirty = false;
+  /** La puerta del disco. Privada y SIN setter público: las únicas
+   *  transiciones son las cuatro de abajo (startNewSession, loadSession,
+   *  establecer, deleteSession/descartarProvisional). */
+  private existencia: Existencia = "sin_sesion";
   /** Fuente del runtime del jugador de ESTA sesión (ver bindPlayerRuntime).
    *  No se persiste: es la atadura con el sim, no un campo del save. */
   private playerRuntime: PlayerRuntimeSource | null = null;
@@ -121,7 +143,13 @@ export class NarrativeState {
    *  recordSceneLoaded). No se persiste: se deriva de scenes_loaded[].tile. */
   private tileIndex = new Map<string, string>();
 
-  constructor(private storage: SessionStorage) {}
+  constructor(private storage: SessionWriter) {}
+
+  /** ¿La partida existe ya como fichero? Lo lee el handler del ack para no
+   *  volver a establecer lo que un resume ya trajo del disco. */
+  get enDisco(): boolean {
+    return this.existencia === "en_disco";
+  }
 
   // ── Tiles ──
 
@@ -218,8 +246,49 @@ export class NarrativeState {
     // volverá a atarlo. Sin esto, el primer save de la partida nueva
     // escribiría la posición del jugador de la vieja.
     this.playerRuntime = null;
+    // Nace SOLO en memoria (#279). Un arranque que falla después del `ok` no
+    // deja nada en `saves/`: no hay partida que borrar porque no llegó a
+    // haberla.
+    this.existencia = "provisional";
     this.dirty = true;
     return this.session_id;
+  }
+
+  /** El jugador ha ENTRADO en la partida: se ha vestido Y el mundo está
+   *  pintado. Es la ÚNICA transición de `provisional` a `en_disco`, y guarda
+   *  como último acto —sin ningún `await` entremedias— para que «existe» y
+   *  «está escrita» no puedan separarse ni un tick.
+   *
+   *  Quién puede llamarla lo canda `arch-rules.json`
+   *  (`la-partida-se-establece-donde-el-jugador-entra`): TypeScript no sabe
+   *  decir «este método solo se llama desde el handler del ack».
+   *
+   *  Idempotente sobre una partida que ya existe (un resume vuelve a
+   *  anunciarse): entonces es un guardado normal. */
+  async establecer(): Promise<void> {
+    if (!this.session_id) {
+      throw new Error("NarrativeState.establecer: no hay sesión que establecer");
+    }
+    this.existencia = "en_disco";
+    await this.save();
+  }
+
+  /** Tira una sesión que nunca llegó a existir (la efímera de la
+   *  pre-generación de mundos: su artefacto es el snapshot del mundo, no el
+   *  save). No toca el disco porque no hay nada que tocar; lo que hace es
+   *  soltar la IDENTIDAD, que es lo que leen `handleLoadRoom` (¿hay partida?),
+   *  el 409 del State API y las rutas de documento. Lanza sobre una partida
+   *  que sí existe: esa se borra con `deleteSession`, y confundirlas dejaría
+   *  al bridge apuntando a la nada con el save vivo. */
+  descartarProvisional(): void {
+    if (this.existencia === "en_disco") {
+      throw new Error(
+        `NarrativeState.descartarProvisional: la sesión ${this.session_id} existe en disco ` +
+          `— se borra con deleteSession, no se descarta`,
+      );
+    }
+    this.session_id = "";
+    this.existencia = "sin_sesion";
   }
 
   /** Programa un evento narrativo pendiente (consequence schedule_event).
@@ -311,6 +380,8 @@ export class NarrativeState {
     // Mismo motivo que en startNewSession: el runtime atado era de la sesión
     // que estaba cargada, no de la que se está cargando.
     this.playerRuntime = null;
+    // Viene de un fichero: existe. Reanudar no necesita ack de nadie.
+    this.existencia = "en_disco";
     this.session_id = data.session_id;
     this.game_id = data.game_id;
     this.created_at = data.created_at;
@@ -361,14 +432,28 @@ export class NarrativeState {
     return true;
   }
 
-  async save(): Promise<boolean> {
-    if (!this.session_id) return false;
+  /** Persiste la partida — si existe.
+   *
+   *  `escrito: false` NO es un error: es «la partida aún no ha empezado», un
+   *  estado del diseño (#279). Los doce sitios que guardan no tienen por qué
+   *  saber en qué fase está el arranque; el único que mira el resultado es
+   *  quien le prometió algo al jugador (el cambio de modo de render), para no
+   *  contestarle `ok` sobre algo que no se escribió.
+   *
+   *  Sin sesión LANZA, como `appendSceneAssetRefs`: guardar sin partida es un
+   *  caller roto, no un estado. Hoy eso salía mudo con un `false` que nadie
+   *  miraba. */
+  async save(): Promise<{ escrito: boolean }> {
+    if (!this.session_id) {
+      throw new Error("NarrativeState.save: no hay sesión que guardar");
+    }
+    if (this.existencia !== "en_disco") return { escrito: false };
     this.refreshPlayerFromRuntime();
     this.updated_at = nowIso();
     const payload = this.toSessionData();
     await this.storage.write(this.session_id, payload);
     this.dirty = false;
-    return true;
+    return { escrito: true };
   }
 
   async listSessions(): Promise<SessionMetadata[]> {
@@ -379,6 +464,7 @@ export class NarrativeState {
     const ok = await this.storage.delete(sessionId);
     if (ok && sessionId === this.session_id) {
       this.session_id = "";
+      this.existencia = "sin_sesion";
     }
     return ok;
   }

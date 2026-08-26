@@ -3,12 +3,34 @@ import { promises as fs } from "node:fs";
 import { resolve, dirname, sep } from "node:path";
 import type { SessionData, SessionMetadata } from "./types.js";
 
+/** Lo que ve TODO el mundo menos el escritor del save.
+ *
+ *  No tiene `write` a propósito: desde #279 una partida solo puede NACER por
+ *  el `establecer()` de `NarrativeState`, cuando el jugador entra de verdad, y un
+ *  `write` suelto en cualquier handler es exactamente la puerta que dejaría
+ *  volver los saves de partidas que nadie jugó. Lo que un handler sí puede
+ *  hacer es PISAR un save que ya existe (el modo de render de una partida
+ *  inactiva, desde el título): para eso está `writeExisting`, que no puede
+ *  crear nada.
+ *
+ *  La garantía la da el TIPO y no un checker: `BridgeContext.sessionStorage`
+ *  se declara con este interfaz, así que llamar a `write` desde un handler no
+ *  compila. El interfaz ancho lo construye un solo fichero (`ws-server.ts`) y
+ *  se lo da a `NarrativeState`, que es el escritor único. */
 export interface SessionStorage {
   read(sessionId: string): Promise<SessionData | null>;
-  write(sessionId: string, data: SessionData): Promise<void>;
+  /** Sobrescribe un save que YA existe. `false` (sin escribir nada) si no
+   *  existe — nunca lo crea. */
+  writeExisting(sessionId: string, data: SessionData): Promise<boolean>;
   delete(sessionId: string): Promise<boolean>;
   list(): Promise<SessionMetadata[]>;
   exists(sessionId: string): Promise<boolean>;
+}
+
+/** El interfaz ANCHO: el que puede crear un save. Solo lo pide
+ *  `NarrativeState` (el escritor único) y solo lo construye `ws-server.ts`. */
+export interface SessionWriter extends SessionStorage {
+  write(sessionId: string, data: SessionData): Promise<void>;
 }
 
 function isEnoent(err: unknown): boolean {
@@ -16,7 +38,7 @@ function isEnoent(err: unknown): boolean {
 }
 
 /** Stores sessions on the local filesystem under {root}/{session_id}/state.json. */
-export class FsSessionStorage implements SessionStorage {
+export class FsSessionStorage implements SessionWriter {
   private readonly rootAbs: string;
   constructor(private root: string) {
     this.rootAbs = resolve(root);
@@ -114,6 +136,14 @@ export class FsSessionStorage implements SessionStorage {
     await fs.rename(tmp, path);
   }
 
+  /** Pisa un save existente. Cuando no existe devuelve `false` SIN escribir:
+   *  crear la partida es cosa de `establecer()`, no de un parche del título. */
+  async writeExisting(sessionId: string, data: SessionData): Promise<boolean> {
+    if (!(await this.exists(sessionId))) return false;
+    await this.write(sessionId, data);
+    return true;
+  }
+
   async delete(sessionId: string): Promise<boolean> {
     const dir = this.dirFor(sessionId); // lanza si el id se escapa de saves/
     try {
@@ -163,7 +193,7 @@ export class FsSessionStorage implements SessionStorage {
 }
 
 /** In-memory storage for tests and ephemeral sessions. */
-export class MemorySessionStorage implements SessionStorage {
+export class MemorySessionStorage implements SessionWriter {
   private store = new Map<string, SessionData>();
 
   async exists(sessionId: string): Promise<boolean> {
@@ -177,6 +207,12 @@ export class MemorySessionStorage implements SessionStorage {
 
   async write(sessionId: string, data: SessionData): Promise<void> {
     this.store.set(sessionId, structuredClone(data));
+  }
+
+  async writeExisting(sessionId: string, data: SessionData): Promise<boolean> {
+    if (!this.store.has(sessionId)) return false;
+    await this.write(sessionId, data);
+    return true;
   }
 
   async delete(sessionId: string): Promise<boolean> {

@@ -168,7 +168,7 @@ describe("dispatchConsequences", () => {
       false,
       "el más antiguo cayó",
     );
-    await s.save();
+    await s.establecer();
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(id), true);
     assert.equal(s2.scheduled_events.length, 20, "la agenda sobrevive al load");
