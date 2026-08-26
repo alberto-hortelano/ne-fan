@@ -124,17 +124,33 @@ export interface MedidaDeFichero {
    *  y lo que deja a `pendiente` y al tope de `local` decir un número sin abrir
    *  los 76 MB de informes. */
   total: number;
+  /** Hash del CONTENIDO del fuente medido, en el commit de la corrida.
+   *
+   *  Lo que hace comparable a una medida con la siguiente. Sin él, el delta
+   *  contesta la pregunta equivocada: la huella de un mutante lleva línea y
+   *  columna dentro, así que cualquier desplazamiento del fichero convierte a
+   *  TODOS sus supervivientes en «nuevos» y a los de antes en «resueltos» —
+   *  ruido que se reparte como deuda de alguien.
+   *
+   *  Ocurrió: la corrida 32970154557 marcó 239 supervivientes NUEVOS en cuatro
+   *  ficheros que nadie había tocado en el rango, porque la base se midió en
+   *  local a las 10:00 y el tag se plantó a las 15:08 con `bcc8b08` (#263) ya
+   *  dentro. La base no era la foto de un commit: era un collage de esa mañana. */
+  blob: string;
   /** Huellas de los supervivientes, ordenadas para que el diff sea legible. */
   vivos: string[];
   /** Los que NO estaban en la medida anterior de este fichero. Vacío con
-   *  `sin_base`: sin medida previa no hay "nuevo" que valga. */
+   *  `sin base`: sin medida previa no hay "nuevo" que valga. */
   nuevos: string[];
   /** Cuántos supervivientes de la medida anterior ya no están. Se cuenta y se
    *  enseña: un superviviente nuevo que cae donde estaba uno viejo dejaría el
    *  total igual, y ese silencio es el fallo caro. */
   resueltos: number;
-  /** No había medida anterior de este fichero. NI "nuevo" NI "ya estaba". */
-  sin_base: boolean;
+  /** Cómo se comparó esta medida con la anterior. Viaja en la huella —y no se
+   *  recalcula al leerla— porque quien lee la cola (`deuda`) no tiene el
+   *  contenido del commit medido a mano: sin esto decía "ya estaban" de unos
+   *  supervivientes que nadie había podido comparar. */
+  base: "con base" | "sin base" | "incomparable";
   /** Quién pudo traerlos: las PR del rango cuyo diff selecciona este módulo.
    *  Vacío = sin dueño en el rango, que se dice, no se descarta. */
   duenos: string[];
@@ -155,35 +171,77 @@ export interface DeltaDeFichero {
   /** `sin base` no es "todo nuevo" ni "todo viejo": es que no hay contra qué
    *  comparar. Meter un módulo estrenado en "nuevo" inundaría al agente con
    *  cientos de hallazgos y garantizaría que deje de leerlos; meterlo en "ya
-   *  estaba", silencio. */
-  base: "con base" | "sin base";
+   *  estaba", silencio.
+   *
+   *  `incomparable` es la tercera forma de no saber, y es DISTINTA de las otras
+   *  dos: aquí SÍ hay medida anterior, pero es de otro código (o de otro
+   *  instrumento), así que sus huellas no hablan de estos mutantes. Colapsarla
+   *  con "con base" es lo que produjo 239 atribuciones falsas en la primera
+   *  corrida real del sistema. */
+  base: "con base" | "sin base" | "incomparable";
+  /** Por qué no se puede comparar. Solo con `incomparable`. */
+  porque?: string;
+  /** TODOS los supervivientes de esta corrida — el hecho crudo, que existe se
+   *  pueda clasificar o no. `nuevos`/`yaEstaban` son la CLASIFICACIÓN, y se
+   *  quedan vacías cuando no hay contra qué comparar: sin este campo, «no sé de
+   *  quién son» se leería como «no hay», y la huella guardaría cero. */
+  vivos: string[];
   nuevos: string[];
   yaEstaban: string[];
   resueltos: string[];
   total: number;
 }
 
-/** El delta de un fichero contra su medida anterior. */
+/** El delta de un fichero contra su medida anterior.
+ *
+ *  Antes de restar conjuntos hay que contestar si las dos medidas hablan del
+ *  MISMO código. Si no, la resta sale perfecta y significa lo contrario de lo
+ *  que parece. */
 export function deltaDeFichero(
   fichero: string,
-  ahora: { vivos: readonly string[]; total: number },
+  ahora: { vivos: readonly string[]; total: number; blob: string },
   base: MedidaDeFichero | undefined,
 ): DeltaDeFichero {
-  if (!base) {
-    return {
-      fichero,
-      base: "sin base",
-      nuevos: [],
-      yaEstaban: [],
-      resueltos: [],
-      total: ahora.total,
-    };
+  const sinComparar = (base: "sin base" | "incomparable", porque?: string): DeltaDeFichero => ({
+    fichero,
+    base,
+    ...(porque === undefined ? {} : { porque }),
+    vivos: [...ahora.vivos],
+    nuevos: [],
+    yaEstaban: [],
+    resueltos: [],
+    total: ahora.total,
+  });
+  if (!base) return sinComparar("sin base");
+  // Medida anterior sin blob: es de antes de que se guardara, así que no se
+  // puede saber sobre qué código se hizo. Se dice, no se adivina (pre-producción:
+  // la primera corrida con blob repuebla la huella entera).
+  if (!base.blob) {
+    return sinComparar("incomparable", "la medida anterior no guardó de qué código era");
+  }
+  if (base.blob !== ahora.blob) {
+    return sinComparar(
+      "incomparable",
+      "el fichero cambió desde la medida anterior: sus huellas llevan línea y columna, " +
+        "así que no hablan de estos mutantes",
+    );
+  }
+  // Mismo contenido y distinto número de mutantes solo puede significar que
+  // cambió el INSTRUMENTO (mutadores, config, versión). Comparar entonces
+  // atribuiría a una PR lo que hizo un cambio de herramienta.
+  if (base.total !== ahora.total) {
+    return sinComparar(
+      "incomparable",
+      `mismo código y distinto número de mutantes (${base.total} → ${ahora.total}): ` +
+        "lo que cambió es el instrumento de medida, no el código",
+    );
   }
   const antes = new Set(base.vivos);
   const despues = new Set(ahora.vivos);
   return {
     fichero,
     base: "con base",
+    vivos: [...ahora.vivos],
     nuevos: ahora.vivos.filter((h) => !antes.has(h)),
     yaEstaban: ahora.vivos.filter((h) => antes.has(h)),
     // Los resueltos se cuentan aparte de los nuevos A PROPÓSITO. Un
@@ -195,10 +253,26 @@ export function deltaDeFichero(
   };
 }
 
+/** Cómo se lee un delta, en una línea. Vive aquí —y no en la plantilla de
+ *  `mutacion.ts`— porque las DOS salidas (la consola de quien reparte y el
+ *  comentario que va a la PR) tienen que decir lo mismo: la primera versión
+ *  tenía dos ternarios gemelos, y un tercer estado añadido a uno solo se lee
+ *  como «0 nuevos» en el otro. Que es exactamente la mentira que se arregla. */
+export function estadoLegible(d: DeltaDeFichero, opts: { markdown?: boolean } = {}): string {
+  const fuerte = (t: string): string => (opts.markdown === true ? `**${t}**` : t.toUpperCase());
+  if (d.base === "sin base") {
+    return `${fuerte("sin base")} de comparación (nadie lo había medido)`;
+  }
+  if (d.base === "incomparable") {
+    return `${fuerte("base de otro código")} — ${d.porque ?? "no hay comparación posible"}`;
+  }
+  return `${d.nuevos.length} nuevos · ${d.yaEstaban.length} ya estaban · ${d.resueltos.length} resueltos`;
+}
+
 /** El delta de una corrida entera. Solo de los ficheros MEDIDOS: los que esta
  *  corrida no tocó no tienen delta ninguno, ni cero ni nada. */
 export function deltaDeCorrida(
-  medidos: Readonly<Record<string, { vivos: readonly string[]; total: number }>>,
+  medidos: Readonly<Record<string, { vivos: readonly string[]; total: number; blob: string }>>,
   base: Huella,
 ): DeltaDeFichero[] {
   return Object.keys(medidos)
@@ -423,15 +497,27 @@ export function permisoLocal(
 
 /** La coletilla de un item de la cola: de dónde salió esta medida y qué hay de
  *  nuevo en ella. Los TRES estados, otra vez, porque es donde se leen. */
-export function anotacionDeFichero(vivosAhora: readonly string[], base: MedidaDeFichero | undefined): string {
+export function anotacionDeFichero(
+  vivosAhora: readonly string[],
+  base: MedidaDeFichero | undefined,
+  blobAhora?: string,
+): string {
   if (!base) return "sin base de comparación — nadie lo había medido antes";
+  // El mismo candado que en el delta, en la cola de trabajo: sin él, `deuda`
+  // enseña como NUEVOS de una PR los supervivientes de un fichero que esa PR
+  // no tocó. Sin blob a mano (el llamador no lo tiene) no se afirma nada.
+  if (blobAhora !== undefined && base.blob !== blobAhora) {
+    return "base de otro código — el fichero cambió desde la última medida, no hay comparación";
+  }
   const nuevos = new Set(base.nuevos);
   const conocidos = new Set(base.vivos);
   const sigueNuevo = vivosAhora.filter((h) => nuevos.has(h)).length;
   const desconocidos = vivosAhora.filter((h) => !conocidos.has(h)).length;
   const partes: string[] = [];
-  if (base.sin_base) partes.push("sin base de comparación — primera medida");
-  else if (sigueNuevo > 0) {
+  if (base.base === "sin base") partes.push("sin base de comparación — primera medida");
+  else if (base.base === "incomparable") {
+    partes.push("base de otro código — no hubo comparación posible en la última corrida");
+  } else if (sigueNuevo > 0) {
     partes.push(`${sigueNuevo} NUEVOS · ${base.duenos.length > 0 ? base.duenos.join(" o ") : "sin dueño en el rango"}`);
   } else partes.push("ya estaban");
   if (base.resueltos > 0) partes.push(`${base.resueltos} resueltos`);
