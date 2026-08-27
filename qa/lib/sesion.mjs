@@ -14,7 +14,7 @@ import { esperarPartidaEnDisco } from "./saves.mjs";
 /** ¿Puede este stack disparar generación SIN gastar un céntimo?
  *
  *  Lo que había aquí antes se llamaba `backendEsFalso` y no medía nada: leía
- *  el `?ai=` de la página y comprobaba si contenía el puerto 18765 — o sea,
+ *  el `?ai=` de la página y comprobaba si contenía el puerto del motor falso — o sea,
  *  leía de vuelta la constante que el propio runner acababa de escribir en esa
  *  URL (`run.mjs` fijaba `FAKE_AI`, la metía en la query y era la única
  *  navegación del banco). Una tautología: siempre decía «sí». Los tres guiones
@@ -89,12 +89,31 @@ export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
         // estaba usando — y un bridge sin `NEFAN_AI_SERVER` apunta por defecto
         // al ai_server REAL, que cobra. Publicar el motor no sirve de nada si
         // no se sabe de quién es la respuesta.
-        const suyo = typeof body?.gateway_url === "string" ? body.gateway_url.replace(/\/+$/, "") : "";
-        const nuestro = String(urls["game-gateway"] ?? "").replace(/\/+$/, "");
+        // Se compara HOST+PUERTO, no la cadena: el mismo bridge escrito con
+        // `localhost` y con la IP de loopback es el MISMO, y darlos por distintos
+        // sería un falso negativo justo en el camino que cuesta dinero — el
+        // guardarraíl negándose con un stack legítimo. El desenlace barato,
+        // sí, pero un guardarraíl que se niega de más se acaba desactivando.
+        const mismoBridge = (a, b) => {
+          const norm = (u) => {
+            try {
+              const { hostname, port } = new URL(u);
+              const local = ["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"];
+              return `${local.includes(hostname) ? "local" : hostname}:${port}`;
+            } catch {
+              return null; // ilegible: no se puede afirmar que sean el mismo
+            }
+          };
+          const x = norm(a);
+          return x !== null && x === norm(b);
+        };
+
+        const suyo = typeof body?.gateway_url === "string" ? body.gateway_url : "";
+        const nuestro = String(urls["game-gateway"] ?? "");
         if (!suyo) {
           return { url: null, fake: false, motivo: "la State API no publica gateway_url (no sé de quién es)" };
         }
-        if (suyo !== nuestro) {
+        if (!mismoBridge(suyo, nuestro)) {
           return {
             url: null,
             fake: false,

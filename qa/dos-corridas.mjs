@@ -31,7 +31,7 @@
  *  Cero créditos: las dos corridas usan el preset `e2e-sin-creditos`.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readlinkSync } from "node:fs";
+import { existsSync, readdirSync, readlinkSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS_BASE } from "./lib/stack.mjs";
@@ -100,7 +100,36 @@ if (sucios.length) {
 }
 
 console.log(`▶ dos corridas de qa/run.mjs a la vez · guiones: ${GUIONES.join(" ")}\n`);
-const tmpAntes = new Set(existsSync(RAIZ_TMP) ? readdirSync(RAIZ_TMP) : []);
+/** ¿Tiene ese `qa/.tmp/<corrida>` un dueño VIVO?
+ *
+ *  La afirmación de abajo es «nadie borra el disco de otra corrida», y eso solo
+ *  vale para discos con dueño. Un resto de una corrida MUERTA —el que deja
+ *  `node qa/run.mjs --keep`, cuyo runner ya salió— es basura que
+ *  `limpiarTmpViejos` debe barrer: contarlo como «desaparecido» daba un ROJO
+ *  FALSO la primera vez y verde la segunda sin tocar código (medido por QA).
+ *  Un candado que da rojo sin motivo se acaba ignorando, y éste es el candado
+ *  del criterio 3. */
+function corridaConDueñoVivo(dir) {
+  const marca = join(RAIZ_TMP, dir, "vivo.pid");
+  if (!existsSync(marca)) return false;
+  const pid = Number(readFileSync(marca, "utf8").trim());
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Los discos que ya estaban Y tienen dueño vivo: los únicos que las dos
+ *  corridas están obligadas a respetar. */
+const tmpAntes = new Set(
+  (existsSync(RAIZ_TMP) ? readdirSync(RAIZ_TMP) : [])
+    .filter((d) => !d.startsWith("."))
+    .filter(corridaConDueñoVivo),
+);
+if (tmpAntes.size) console.log(`  · ${tmpAntes.size} disco(s) de corridas VIVAS que nadie puede tocar`);
 
 /** Vigilante del disco efímero MIENTRAS las dos corren.
  *
@@ -167,7 +196,7 @@ else mal("cada corrida tiene su propio RUN_ID", `A=${idA} B=${idB}`);
 // afirma es que NINGUNA se llevó por delante lo que había antes ni dejó
 // restos: `limpiarTmpViejos` ya no borra por «no es el mío».
 const tmpDespues = new Set(existsSync(RAIZ_TMP) ? readdirSync(RAIZ_TMP) : []);
-const perdidos = [...tmpAntes].filter((d) => !d.startsWith(".") && !tmpDespues.has(d));
+const perdidos = [...tmpAntes].filter((d) => !tmpDespues.has(d));
 if (perdidos.length === 0) ok("ningún qa/.tmp ajeno desapareció durante las dos corridas");
 else mal("nadie borra el disco de otra corrida", `desaparecieron: ${perdidos.join(", ")}`);
 

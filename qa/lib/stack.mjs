@@ -24,7 +24,7 @@
  *  (esperar un puerto, arrancar el stack, abrir un WebSocket de diagnóstico).
  *
  *  Fail-loud: un snapshot sin la clave que se pide, o un offset que no es un
- *  entero, son errores con nombre — no un `?? 9877` que deja el banco midiendo
+ *  entero, son errores con nombre — no un default inventado que deja el banco midiendo
  *  otro proceso.
  */
 import { readFileSync } from "node:fs";

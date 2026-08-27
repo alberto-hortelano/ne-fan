@@ -16,7 +16,7 @@
 //   node labs/narrative/game-emulator.mjs            # arranca en foreground
 //   (recomendado: lanzarlo en background y conducirlo por su API HTTP de control)
 //
-// API de control (HTTP en CTRL_PORT, default 9899) — conducir con curl:
+// API de control (HTTP en CTRL_PORT, del bloque del stack) — conducir con curl:
 //   POST /send      body = mensaje de bridge JSON   -> { ok, sentSeq }
 //   GET  /events?since=N                            -> { events:[{seq,ts,dir,msg}], cursor }
 //   GET  /wait?since=N&type=narrative_event&timeoutMs=240000
@@ -26,7 +26,7 @@
 //
 // Variables de entorno:
 //   BRIDGE_URL   (default: ports.bridge del runtime config)
-//   CTRL_PORT    (default 9899)
+//   CTRL_PORT    (default: ports.game_emulator del runtime config)
 //   RUN_DIR      (default labs/narrative/runs/<timestamp>)
 
 import http from "node:http";

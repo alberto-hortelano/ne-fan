@@ -1,7 +1,10 @@
 # QA — la máquina admite varios agentes a la vez
 
-Validado sobre `feature/la-maquina-varios-agentes` (`85b0a40` + `e9fe1da` sobre `main` `c4a6e8f`),
-el 2026-08-27, en la máquina real. Punto de vista: **quien trabaja en esta máquina**, no quien
+Validado sobre `feature/la-maquina-varios-agentes` el 2026-08-27, en la máquina real. **Dos
+vueltas**: la primera sobre `85b0a40` + `e9fe1da` (sobre `main` `c4a6e8f`); la segunda sobre
+`fb2e464` + `536c284`, donde el ingeniero cierra los tres hallazgos importantes. Todo lo de la
+primera vuelta se conserva tal cual; lo que cambió lleva su propio apartado al final
+(«Segunda vuelta»), y el veredicto de abajo es el final. Punto de vista: **quien trabaja en esta máquina**, no quien
 juega. La pregunta es «¿pueden de verdad dos agentes trabajar a la vez sin pisarse, y sin gastar
 dinero por accidente?».
 
@@ -44,7 +47,7 @@ real para los criterios 1, 2 y 3: el banco lo esquivó eligiendo el bloque +200,
 
 ### Importantes
 
-**H1 · `qa/capturas/ultima` se congeló en la primera corrida y ya no vuelve a moverse.**
+**H1 · `qa/capturas/ultima` se congeló en la primera corrida y ya no vuelve a moverse.** — **CERRADO en `fb2e464`, verificado abajo.**
 Regresión NUEVA de esta tanda. `qa/run.mjs:620` hace `rmSync(join(RAIZ_SHOTS,"ultima"), {force:true})`
 sin `recursive`, y Node sigue el enlace: sobre un symlink que apunta a un **directorio** lanza
 `ERR_FS_EISDIR`, así que el `symlinkSync` de la línea siguiente nunca se ejecuta y el `catch` lo
@@ -88,7 +91,7 @@ está construido— pero el hecho queda medido: la garantía no está en el tipo
 quien escriba el guion 32.
 
 **H3 · `?bridge=` mueve el gateway pero no `world-state`: la segunda vía puede avalar a un bridge
-que la página no está usando.** Medido con el cliente real:
+que la página no está usando.** — **CERRADO en `fb2e464`, verificado abajo.** Medido con el cliente real:
 ```
 página: ?ai=http://127.0.0.1:18765&bridge=ws://127.0.0.1:19877
 servicios(): {"game-gateway":"ws://127.0.0.1:19877","world-state":"http://127.0.0.1:9878", …}
@@ -102,7 +105,7 @@ por `?bridge=`, así que su página ya pregunta a la State API equivocada. Es un
 identidad de la vía que el criterio 5 bis existe para cubrir: publicar a qué motor apunta el bridge
 no sirve si se le pregunta al bridge de al lado.
 
-**H4 · `solo-se-mata-el-puerto-propio` cuenta llamadas a un helper, no el acto de matar.**
+**H4 · `solo-se-mata-el-puerto-propio` cuenta llamadas a un helper, no el acto de matar.** — **CERRADO en `fb2e464` (con límite nuevo, ver abajo).**
 Con `fuser -k "$PORT_HTML/tcp"` escrito en línea dentro de `start_html` —el defecto exacto que la
 regla nombra en su `why`, «las NUEVE funciones `start_*` mataban al ocupante»— el checker sale
 **44/44 en verde**. Y `pkill`, que es lo que la restricción del usuario prohíbe por su nombre, no
@@ -113,7 +116,7 @@ fuera de `kill_port`, no el nombre del helper.
 
 ### Menores
 
-**H5 · `nadie-inventa-un-puerto` no caza un literal sin la palabra «port».** `const MOTOR_QA = 18765;`
+**H5 · `nadie-inventa-un-puerto` no caza un literal sin la palabra «port».** — **CERRADO en `fb2e464` (con límite nuevo, ver abajo).** `const MOTOR_QA = 18765;`
 pasa en verde (medido). El `why` de la regla declara honestamente su alcance («se caza la FORMA de
 un puerto»), pero su `desc` promete más de lo que hace: «los puertos del stack no se escriben a
 mano fuera de su fuente única». Y ya hay dos supervivientes en el propio `start.sh`, que la regla
@@ -253,23 +256,207 @@ escribo yo para no ensuciar el diff que se está revisando.
 
 ---
 
-## Veredicto
 
-**Apto con reservas.**
+# Segunda vuelta — `fb2e464` + `536c284`
 
-Los nueve criterios (más el 5 bis) se cumplen y los he ejecutado yo, incluidos los tres que no se
-pueden afirmar leyendo: dos corridas simultáneas, el guardarraíl en sus ocho desenlaces malos, y el
-señuelo real en un puerto del catálogo. La tanda hace lo que dice: hoy el arranque no mata a nadie,
-`k` distingue de quién es cada puerto, dos baterías conviven, y el guardarraíl de dinero —que
-llevaba meses siendo una tautología— pide dos afirmaciones leídas de los backends y falla cerrado
-en todos los caminos que probé, incluido un `?ai=` manipulado.
+El ingeniero cierra los tres importantes. Re-verificado **solo lo afectado**, más una pasada
+adversarial nueva sobre lo que cambió. Nada de esto me lo he creído: está ejecutado.
 
-La reserva es **H1**: `qa/capturas/ultima` se congeló en la primera corrida y toda revisión visual
-que mire ahí está mirando otra corrida sin que nada se lo diga. Es una regresión nueva, es del
-oficio de este rol, y el arreglo es una línea (`rmSync` con `recursive`, o `unlinkSync` sobre el
-enlace). Pediría cerrarla antes de mergear.
+## Lo que corrí
 
-Lo demás no bloquea: **H2** (el prólogo que nadie exige) está declarado, ahora está **medido**, y
-es material de issue con el número al lado —7 peticiones, una de ellas `POST /skin_sprite_sheet`—;
-**H3** y **H4** son dos candados que dan verde sobre una parte de su criterio, y merecen issue
-antes de que alguien los cite como garantía.
+| Qué | Resultado |
+|---|---|
+| `node qa/guardarrail-sin-creditos.mjs` | **12/12** — «decide bien en los 12 desenlaces (10 malos, 2 buenos)», EXIT=0 |
+| `node qa/dos-corridas.mjs` | **18/18**, EXIT=0 (a la segunda; la primera dio un rojo que resultó no ser del código — ver H15) |
+| `node qa/no-mata-lo-ajeno.mjs` (el mío) | **6/6**, EXIT=0, señuelos retirados |
+| `node qa/run.mjs 07 15 17 20 21 25 --keep` | **6 en verde · 0 en rojo de 6**, EXIT=0 |
+| `NEFAN_PORT_OFFSET=200 node qa/run.mjs 21` | **1 en verde**, EXIT=0 — el guardarraíl **también dice que sí con el bloque desplazado**, que es el caso del segundo agente |
+| `npm test` | **1542/1542**, 8,66 s · **612 % de CPU** (el criterio 6 no se movió) |
+| `test/architecture.test.ts` | 44/44 en limpio |
+
+**El argumento del ingeniero de que solo cuatro guiones tocan lo cambiado se queda corto**, y por
+eso corrí seis: `/health` de la State API gana un campo, y **17 y 25 también lo leen**
+(`qa/guiones/17:112,415` y `qa/guiones/25:134`). Miran campos sueltos y no la forma entera, así que
+no se rompen — pero eso hay que verlo, no deducirlo. Los dos en verde.
+
+## H1 · `qa/capturas/ultima` — **cerrado**
+
+- **En positivo, sin trucos**: tras `node qa/run.mjs 07 15 17 20 21 25` el enlace apuntaba a esa
+  corrida (`… -> 2026-08-27T13-43-14-667Z-252272`, 15:43); tras `dos-corridas` pasó a la última de
+  las dos; tras la corrida con offset, a esa. **Se mueve.** Antes llevaba congelado desde las 14:38.
+- **En negativo**: devolviendo `rmSync(enlace,{force:true})` en lugar de `unlinkSync`,
+  `dos-corridas.mjs` cae con **dos** rojas — `ultima apunta a "…-255649", que no es ni A ni B` y
+  `las dos callaron`. El candado sujeta las dos mitades, la del enlace y la del aviso.
+- **La carrera, PROVOCADA y no razonada.** El informe la daba por buena con un análisis de los
+  cuatro entrelazados. La medí: cuatro procesos × 20 000 iteraciones del mismo par
+  `unlinkSync`+`symlinkSync` sobre el mismo enlace.
+
+  ```
+  {"yo":"A","ok":10143,"eexist":9857,"otros":{}, …}
+  {"yo":"B","ok":9414, "eexist":10586,"otros":{}, …}
+  {"yo":"C","ok":10363,"eexist":9637,"otros":{}, …}
+  {"yo":"D","ok":9716, "eexist":10284,"otros":{}, …}
+  estado final: t/ultima -> D
+  ```
+
+  Tres cosas medidas: (a) **ningún tipo de error distinto de `EEXIST`** en 80 000 intentos, así que
+  la rama que añade `536c284` es la única que hace falta y no es hipotética —bajo contención salta
+  la mitad de las veces—; (b) el estado final **siempre** es un enlace válido a uno de los
+  escritores; (c) hay una **ventana transitoria en la que el enlace no existe** (tres de los cuatro
+  lectores vieron `ENOENT` durante la tormenta). Nada de eso afecta al banco —`dos-corridas.mjs`
+  lo lee cuando las dos corridas ya han salido— pero la frase honesta es «puede no existir durante
+  un instante», no «los cuatro entrelazados terminan bien».
+
+## H3 · `?bridge=` — **cerrado, y es el que más me importaba**
+
+Medido con el **cliente real**, no con la maqueta del guion. Mismo ataque que la primera vuelta,
+y cinco más:
+
+```
+· camino normal del banco                  gateway=…:9877   → ok=true
+· ?bridge= a OTRO gateway, sin ?state=      gateway=…:19877  → ok=false
+     motivo: la State API es de OTRO bridge (ws://127.0.0.1:9877), la página usa ws://127.0.0.1:19877
+· ?bridge= al MISMO bridge, escrito igual   gateway=…:9877   → ok=true
+· ?bridge= al MISMO bridge, como localhost  gateway=localhost:9877 → ok=false   ← falso negativo, H16
+· ?state= al MISMO State API, como localhost                 → ok=true
+· ?state= a algo que no es una State API (el motor falso)     → ok=false
+     motivo: la State API no publica gateway_url (no sé de quién es)
+```
+
+El agujero que yo medí en `ok=true` ahora da `ok=false` con el motivo exacto. **En negativo**:
+anulando las dos guardas de identidad en `qa/lib/sesion.mjs`, el guion cae con 2 rojas. Y el
+`gateway_url` está candado también en unidad: borrando `gateway_url: ctx.gatewayUrl` de
+`session-routes.ts`, `state-http-dispatch.test.ts` se pone en rojo (39/40).
+
+**¿Se ha convertido en un «niégate siempre»?** No, y lo comprobé por los tres caminos que
+importan: el camino normal del banco (07, 15 y 21 dicen «cliente Y bridge declaran motor falso»),
+un `?bridge=` explícito al bridge propio, y —el que nadie había ejercido— **el bloque desplazado**:
+`NEFAN_PORT_OFFSET=200 node qa/run.mjs 21` sale en verde con el bridge en `:10077`. Ése era el
+riesgo real: si `PORT` de `ws-server.ts` y la resolución del cliente hubieran divergido bajo
+offset, el segundo agente —el destinatario de toda la tanda— se habría encontrado el guardarraíl
+negándose siempre.
+
+**La tercera vía: buscada, no encontrada.** El repaso completo de por dónde puede salir dinero
+desde la página:
+
+- La página resuelve **todo** por `serviceUrl` — `grep` de `fetch("http…` y `new WebSocket("` en
+  `nefan-html/src` a **cero**; los dos únicos literales de loopback que quedan son un comentario y
+  un mensaje de error. No hay un sexto servicio que el guardarraíl no mire.
+- `?ai=` mueve `narrative-llm`, `remote-gen` y `asset-store` **a la misma URL** (medido en la
+  página: los tres a `http://127.0.0.1:18765`), así que mirar el primero cubre al de pago
+  (`remote-gen`). Es cierto **por construcción de `envFromQuery`**, no porque nadie lo afirme: el
+  día que exista un `?rgen=`, el guardarraíl mirará el servicio equivocado. Cuesta tres líneas
+  afirmarlo y lo dejo dicho.
+- Los parámetros que mueven servicios son exactamente cuatro: `ai`, `bridge`, `state`, `offset`.
+  `?state=` es la puerta nueva, y la comprobación de identidad la cierra para el caso accidental
+  (apuntar `?state=` a otra State API se rechaza porque su `gateway_url` no casa). Para el caso
+  deliberado —`?state=` a un servidor que mienta echando el gateway de vuelta— no hay defensa
+  posible ni la debe haber: el modelo entero es «que lo declare el backend».
+
+## H4 y H5 · Las dos reglas — **cerradas, con el límite más grande de lo que dice**
+
+Mis dos ataques de la primera vuelta están **en rojo**, y también `pkill`:
+
+```
+const MOTOR_QA = 18765;                          → ✖ qa/run.mjs:837 — "= 18765"
+fuser -k "$PORT_HTML/tcp"  (en línea, subida)    → ✖ start.sh:489 — "fuser -k"   (max 1)
+pkill -f vite              (en línea, subida)    → ✖ start.sh:489 — "pkill"
+```
+
+El cambio de sujeto —del helper al **acto**— es el correcto, y `pkill` entrando por su nombre es
+justo lo que pedía la restricción del usuario.
+
+**Pero el límite declarado no es el límite real.** El `why` dice que la enumeración «caza los que
+ya existen **los escriba como los escriba**», y que lo único que se escapa es «un puerto NUEVO
+fuera del bloque y con un nombre sin *port* (`const CTRL = 9955`)». Probé cuatro formas más y
+**las cuatro pasan en verde**:
+
+| Evasión | Verde | Por qué importa |
+|---|---|---|
+| `const PUERTOS_QA = [[18765,"fake-ai-server"],[9877,"bridge"],[3000,"cliente HTML"]]` | 44/44 | Es **la tabla original que esta tanda borró** (`run.mjs:123-127`), reintroducida palabra por palabra. El número va detrás de `[`, no de `:` ni de `=` |
+| `PORT_HTML_QA="3000"` en `start.sh` | 44/44 | El puerto **entrecomillado**, que es como se escriben las variables en bash. La comilla rompe las dos ramas, incluso con «PORT» en el nombre |
+| `fuser --kill "$PORT/tcp"` | 44/44 | El mismo acto con el flag largo; el patrón exige `-k` |
+| `kill -9 $(pids_del_puerto "$PORT_HTML")` | 44/44 | Matar **por puerto** disfrazado de PID, usando un helper que ya vive en `start.sh` doce líneas más arriba |
+
+Las dos primeras están **dentro** de la clase que el `why` dice cubrir, así que el texto promete
+más de lo que el regex hace; la cuarta cae en el hueco que el `why` declara a propósito («matar
+por PID no entra»), pero `kill $(pids_del_puerto …)` no es matar por PID: es matar por puerto con
+un paso intermedio, y es la forma más natural de reintroducir el defecto en ese fichero. Las reglas
+**valen más que antes** —cazan los dos ataques que las tumbaron y `pkill`— y ninguna de estas
+evasiones está hoy en el código. Lo que hay que corregir es la **prosa**, que es lo que alguien
+citará dentro de tres meses como garantía.
+
+## Hallazgos nuevos de esta vuelta
+
+**H15 · `dos-corridas.mjs` da un rojo FALSO si una corrida anterior usó `--keep`.** Medido: la
+primera pasada cayó con `✘ nadie borra el disco de otra corrida — desaparecieron:
+2026-08-27T13-43-14-667Z-252272`. Ese directorio era el `qa/.tmp` que había dejado mi corrida con
+`--keep`: su runner ya había salido, así que su `vivo.pid` apunta a un pid muerto y
+`limpiarTmpViejos` lo barre **correctamente**. La segunda pasada, ya sin él, dio **18/18 en verde**
+sin tocar una línea de código. El guion tiene preflight de puertos y **no** de `qa/.tmp`: su
+veredicto no es hermético contra el estado que deja `--keep`. Es la cara opuesta del candado que da
+verde sin medir —éste da rojo sin que falle nada— y de la misma familia: un veredicto que no
+significa lo que dice. Refuerza **H9**.
+
+**H16 · La identidad del gateway se compara por igualdad de cadena.** `ws://localhost:9877` y
+`ws://127.0.0.1:9877` son **el mismo bridge** y el guardarraíl los da por distintos (medido). Es el
+desenlace barato —se niega con un stack legítimo, no bendice uno que cobra—, así que no cuesta
+dinero; pero es una trampa para quien escriba el próximo guion con `?bridge=`: se llevará un rojo
+que culpa al juego. Nótese que `qa/guiones/20` ya usa `?bridge=` (con `127.0.0.1`, por suerte) y
+**no** usa el `?state=` nuevo, así que su página sigue emparejada con la State API de la batería.
+
+## Lo que sigue abierto de la primera vuelta
+
+Ninguno estaba entre los tres que se mandaron cerrar, y ninguno bloquea: **H2** (el prólogo del
+guardarraíl que nadie exige — medido, material de issue), **H6** (negarse produce ROJO y no ⊘),
+**H7** (`--parar` enumera como AJENO su propia State API ya muerta, y sigue ofreciendo
+`--parar-todo`; lo volví a ver en las dos paradas de esta vuelta), **H8** (los pids de `fuser -k`
+en medio de la enumeración), **H9** (`--keep` + corrida siguiente), **H10** (la ventana del lock de
+bloque), **H11** (la regla `warn` mete items que no son deuda — ahora es 1 en vez de 3), **H13**
+(`qa/capturas/` crece sin poda), **H14** (`vite.config.ts` sin offset propio). De **H12** se
+arregló la mitad —el guion ya cuenta sus desenlaces en vez de decir «siete»— y sigue viva la otra:
+`dos-corridas.mjs` afirma «logs incluidos» mirando solo que la salida contenga `disco efímero: `.
+
+## Workarounds y limpieza de esta vuelta
+
+Mismo trato que la primera: todo instrumento, ninguno un apaño para ver la feature. Roturas a mano
+de `qa/lib/sesion.mjs`, `qa/run.mjs`, `start.sh` y `session-routes.ts` para los negativos, **todas
+restauradas** (`git status` limpio). Un script suelto en `qa/` para atacar H3 con el cliente real,
+**borrado**. El martillo de la carrera vivió en el scratchpad, fuera del repo, y está borrado.
+Señuelos propios arrancados y **retirados**; ningún puerto del catálogo queda ocupado por mí. No
+maté ningún proceso que no arrancara yo, y no ejercí `--parar-todo` en esta vuelta.
+
+**Sobre el vecino de `:3100`, dicho con precisión porque es la restricción del usuario**: lo
+comprobé vivo después de cada una de mis paradas, incluida la última (`15:47`, tras el
+`./start.sh --parar` de mi propio guion, donde salió enumerado como `⏭ AJENO, no se toca`). Al
+cerrar el informe (`15:50`) ya no escuchaba nadie en `:3100`, y el resto de procesos de
+`~/code/heroes` siguen arriba. Entre las dos comprobaciones solo corrí `npm test`, una rotura y
+restauración de `session-routes.ts` y las escrituras de este fichero: nada que toque un puerto —el
+banco solo **sondea** (abre y cierra una conexión) y `salir()` mata su propio grupo de procesos por
+PID—. Lo más probable es que lo parara su dueño. No puedo demostrar una negación; dejo dicho qué
+observé y cuándo, que es lo único honesto.
+
+---
+
+## Veredicto final
+
+**Apto.**
+
+La reserva de la primera vuelta está **cerrada y verificada en las dos direcciones**: `ultima`
+vuelve a moverse, el candado que lo sujeta se pone rojo si se deshace el arreglo, y la carrera que
+el informe solo razonaba la he provocado —80 000 intentos, ningún error fuera de `EEXIST`, estado
+final siempre válido—.
+
+El que cuesta dinero está **mejor de lo que estaba antes de que yo lo rompiera**: el guardarraíl ya
+no se limita a preguntar «¿con qué motor hablas?», ahora comprueba primero **a quién** se lo
+pregunta, y lo hace sin volverse un «niégate siempre» —lo confirmé en el camino normal, con
+`?bridge=` propio y, sobre todo, **con el bloque desplazado**, que es el escenario para el que
+existe la tanda—. La tercera vía la busqué y no está: la página no alcanza ningún backend fuera de
+`serviceUrl`, y los cuatro parámetros que mueven servicios están cubiertos.
+
+Lo que queda son **dos issues y una corrección de prosa**, ninguno bloqueante: el prólogo del
+guardarraíl que nadie exige (H2, medido: 7 peticiones a un backend que declara cobrar, una de ellas
+`POST /skin_sprite_sheet`); el rojo falso de `dos-corridas.mjs` tras un `--keep` (H15); y el `why`
+de `nadie-inventa-un-puerto`, que promete cazar los puertos del bloque «los escriba como los
+escriba» cuando la tabla que esta tanda borró vuelve a entrar sin que salte nada. Esa frase hay que
+bajarla a lo que el regex hace, porque es la que alguien citará como garantía.

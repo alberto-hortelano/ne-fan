@@ -264,6 +264,27 @@ async function main() {
       gatewayBridge: OTRO_GATEWAY,
       espera: true,
     },
+    {
+      // `localhost` y `127.0.0.1` son EL MISMO bridge. Compararlos como cadenas
+      // daba un falso negativo —negarse con un stack legítimo— justo en el
+      // camino que cuesta dinero. Un guardarraíl que se niega de más se acaba
+      // desactivando, que es la peor forma de perderlo.
+      titulo: "el mismo bridge escrito `localhost` y `127.0.0.1` → CORRE (no es otro bridge)",
+      cliente: falso.url,
+      state: stateApi.url,
+      motor: falso.url,
+      gatewayPagina: GATEWAY.replace("127.0.0.1", "localhost"),
+      gatewayBridge: GATEWAY,
+      espera: true,
+    },
+    {
+      titulo: "un gateway_url ilegible (no es una URL) → se niega",
+      cliente: falso.url,
+      state: stateApi.url,
+      motor: falso.url,
+      gatewayBridge: "no-soy-una-url",
+      espera: false,
+    },
   ];
 
   for (const c of casos) {
