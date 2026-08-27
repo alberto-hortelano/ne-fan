@@ -123,6 +123,43 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.ok(!narrative.hasTile(1, 0));
   });
 
+  it("un tile con un NPC que no cabe donde nace se rechaza ANTES de persistirse (#289)", async () => {
+    // El candado donde de verdad se para la clase: el bridge valida CADA tile
+    // que devuelve el motor y lanza si no es jugable, así que un NPC
+    // encerrado no llega ni al save ni al snapshot de mundo. (Los snapshots
+    // pre-generados no se versionan —`.gitignore`—, así que no hay fichero en
+    // el repo que auditar: lo que se puede candar es esto.)
+    //
+    // Dos props a 1,2 m dejan 2 celdas libres = 1,00 m: lo cruza el jugador
+    // (radio 0,4) y NUNCA un NPC (0,5). El vano de la posada es legal (w:4).
+    const posadaPinzada = () => ({
+      ...tileScene([caminoFila41(0)]),
+      volumes: [
+        { id: "posada", label: "posada", type: "building", rect: [52, 20, 24, 16], cutaway: true, doors: [{ edge: "s", at: 11, w: 4 }] },
+        { id: "barril_o", label: "barril", type: "prop", shape: "box", rect: [61, 34, 2, 3] },
+        { id: "barril_e", label: "barril", type: "prop", shape: "box", rect: [65, 34, 2, 3] },
+      ],
+      entities: [{ id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1], glyph: "n" }],
+    });
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: posadaPinzada() }) },
+    });
+    // El texto del validador viaja al `console.warn` del bridge (al jugador le
+    // llega traducido), así que el motivo se recoge de ahí.
+    const motivos: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => void motivos.push(args.map(String).join(" "));
+    seedTile00(narrative);
+    const { socket } = makeSocket();
+    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    assert.ok(!narrative.hasTile(1, 0), "el tile injugable NO se persiste");
+    // Y se rechaza POR ESTO, no por otra cosa: sin el motivo, el test seguiría
+    // verde el día que el tile empiece a fallar por una costura.
+    console.warn = warn;
+    assert.match(motivos.join(" | "), /no lo cruza un cuerpo|no es alcanzable desde el player/, motivos.join(" | "));
+  });
+
   it("el motor mudo en el ARRANQUE no le enseña la excepción al jugador (#180)", async () => {
     // El camino que da nombre a la tanda: primer tile, sin `destino` que
     // nombrar. La traducción vivía en un ternario que solo entraba si el viaje

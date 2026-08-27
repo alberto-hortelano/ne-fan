@@ -148,13 +148,6 @@ describe("el cuerpo mayor que transita el mundo", () => {
     assert.ok(NPC_RADIUS_M > PLAYER_RADIUS_M, "si dejan de diferir, el bug de la puerta de 1 m ya no existe");
   });
 
-  it("celdas libres = floor(2R/mpc)+1, que es el INVERSO de blocksCircle", () => {
-    // La celda de diferencia entre estos dos números ES el issue #289: por un
-    // hueco de 2 celdas (1 m) pasa el jugador y no pasa el NPC.
-    assert.equal(celdasLibresParaRadio(NPC_RADIUS_M, TILE_MPC), 3);
-    assert.equal(celdasLibresParaRadio(PLAYER_RADIUS_M, TILE_MPC), 2);
-  });
-
   it("y lo es EN EL BORDE: `n·mpc > 2R` estricto, no `>=`", () => {
     // Con `ceil` en vez de `floor` un hueco de exactamente 2R saldría
     // transitable, y no lo es: el AABB de blocksCircle se recorre con floor()
@@ -165,10 +158,11 @@ describe("el cuerpo mayor que transita el mundo", () => {
     assert.equal(celdasLibresParaRadio(0.5, 0.5), 3, "exactamente 1,00 m NO basta");
   });
 
-  it("y el collider real dice lo mismo: el hueco de n celdas admite el radio o no", () => {
-    // El candado que cierra el círculo: la fórmula no se compara con otra
-    // fórmula, sino con `blocksCircle` sobre un pasillo de verdad. Un pasillo
-    // de `n` celdas libres en un muro, y el cuerpo centrado en él.
+  it("celdas libres = floor(2R/mpc)+1, y el COLLIDER REAL dice lo mismo", () => {
+    // La fórmula no se compara con otra fórmula, sino con `blocksCircle`
+    // sobre un pasillo de verdad: `n` celdas libres en un muro, y el cuerpo
+    // centrado en él. La celda de diferencia entre los dos radios ES el issue
+    // #289: por un hueco de 2 celdas (1 m) pasa el jugador y no pasa el NPC.
     const pasillo = (n: number): TerrainGridData => ({
       grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
       cols: 8 + n,

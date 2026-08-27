@@ -683,10 +683,37 @@
         "distinct_building_heights": 0
       }
     },
-    "npc-inalcanzable": {
+    "npc-en-celda-solida": {
       "ok": false,
       "errors": [
-        "el NPC \"barkeep\" en [42, 92] no es alcanzable desde el player"
+        "el NPC \"barkeep\" nace en [41, 91], celda no transitable (muro, agua o huella de un volumen): no podría moverse de ahí"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16329,
+        "reachable_cells": 16329,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 2,
+        "volumes_total_cap": 200,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "npc-sin-sitio-para-el-cuerpo": {
+      "ok": false,
+      "errors": [
+        "el NPC \"barkeep\" nace en [42, 92], un hueco donde su cuerpo no cabe: hacen falta 3 celdas libres seguidas en cada eje y ahí no las hay, así que no podría moverse"
       ],
       "warnings": [],
       "stats": {
@@ -710,17 +737,17 @@
         "distinct_building_heights": 0
       }
     },
-    "npc-en-celda-solida": {
+    "npc-inalcanzable": {
       "ok": false,
       "errors": [
-        "el NPC \"barkeep\" nace en [41, 91], celda no transitable (muro, agua o huella de un volumen): no podría moverse de ahí"
+        "el NPC \"barkeep\" en [43, 93] no es alcanzable desde el player"
       ],
       "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16329,
-        "reachable_cells": 16329,
+        "walkable_cells": 16298,
+        "reachable_cells": 16289,
         "border_reachable": true,
         "doors_total": 3,
         "doors_reachable": 3,
@@ -815,8 +842,35 @@
     "ninguna-puerta-alcanzable": {
       "ok": false,
       "errors": [
-        "ninguna puerta de las structures es alcanzable desde el player",
+        "el vano de la puerta south de la structure [10, 70, 10, 7] no lo cruza un cuerpo: ninguna de sus 3 celda(s) es alcanzable desde la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
         "el NPC \"barkeep\" en [14, 73] no es alcanzable desde el player"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16298,
+        "reachable_cells": 9,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 0,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 2,
+        "volumes_total_cap": 200,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "entrada-sin-sitio-para-el-cuerpo": {
+      "ok": false,
+      "errors": [
+        "por la entrada del tile no cabe un cuerpo: hacen falta 3 celdas libres seguidas en cada eje y ninguno de sus arranques las tiene, así que nada del tile es alcanzable"
       ],
       "warnings": [],
       "stats": {
@@ -824,7 +878,7 @@
         "rows": 128,
         "walkable_cells": 16314,
         "reachable_cells": 0,
-        "border_reachable": true,
+        "border_reachable": false,
         "doors_total": 3,
         "doors_reachable": 0,
         "npcs_total": 1,

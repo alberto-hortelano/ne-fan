@@ -13,7 +13,7 @@
  *  visto fallar no es un candado. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
@@ -146,48 +146,34 @@ describe("fixtures de data/scenes — solo tiles", () => {
 /** BIEN FORMADA no es JUGABLE. `auditarEscenas` pasa el gate estructural
  *  (zod); esto pasa el validador de jugabilidad completo, que es lo que
  *  contesta la pregunta que le importa a quien juega: ¿se puede recorrer
- *  esto CON UN CUERPO?
+ *  esto CON UN CUERPO? (#289)
  *
  *  Nació con #289 y encontró trabajo el primer día: `zorder_test` tenía un
  *  NPC dentro del muro sur de la cabaña, y la clase de fallo llevaba semanas
  *  leyéndose como ambiente (#262/#284).
  *
- *  Las fixtures de `data/scenes/` son las tres que ofrece el selector «Room»
- *  del cliente: van commiteadas y se auditan SIEMPRE. Los snapshots de mundo
- *  (`data/games/<juego>/world/tile.json`) NO están versionados —`.gitignore` los
- *  deja fuera por regenerables desde el título—, así que se auditan los que
- *  haya en el árbol y el test dice cuáles vio. Que un clon limpio no tenga
- *  ninguno no es un verde falso de las fixtures: son dos listas distintas. */
-describe("data/scenes y los snapshots de mundo — jugables, no solo bien formados", () => {
-  const injugables = (escenas: Array<{ nombre: string; scene: Record<string, unknown> }>): string[] =>
-    escenas.flatMap(({ nombre, scene }) => {
-      const entities = Array.isArray(scene.entities) ? (scene.entities as Record<string, unknown>[]) : [];
-      const bootstrap = entities.some((e) => e?.kind === "player");
-      const r = validateScene(scene, { required_crossings: [], bootstrap });
-      return r.ok ? [] : [`${nombre}: ${r.errors.join(" · ")}`];
-    });
-
-  it("las 3 fixtures del selector «Room» se pueden recorrer con el cuerpo mayor", () => {
-    const escenas = escenasDe(SCENES).map((path) => ({
-      nombre: relative(SCENES, path),
-      scene: JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>,
-    }));
+ *  SOLO las fixtures de `data/scenes/`, que van commiteadas. Los snapshots de
+ *  mundo (`data/games/<juego>/world/tile.json`) NO se versionan —`.gitignore`
+ *  los deja fuera por regenerables desde el título—, así que un `it` que los
+ *  recorriera sería verde vacío en CI y en cualquier clon limpio: el
+ *  `readdirSync` no encuentra ninguno y el aserto compara dos listas vacías.
+ *  Un test que no puede ponerse rojo es peor que ninguno. Lo que SÍ se canda,
+ *  y en el sitio donde de verdad se para la clase, es que el bridge rechace un
+ *  tile así al generarlo —antes de que llegue a save o snapshot—:
+ *  `bridge-tile.test.ts`, «un tile con un NPC que no cabe donde nace». */
+describe("las fixtures de data/scenes son jugables, no solo bien formadas", () => {
+  it("las 3 del selector «Room» se pueden recorrer con el cuerpo mayor", () => {
+    const escenas = escenasDe(SCENES);
     assert.ok(escenas.length >= 3, `esperaba ≥3 fixtures, encontré ${escenas.length}`);
-    assert.deepEqual(injugables(escenas), []);
-  });
-
-  it("y los snapshots de mundo que haya en el árbol, también", () => {
-    const GAMES = fileURLToPath(new URL("../data/games", import.meta.url));
-    const escenas: Array<{ nombre: string; scene: Record<string, unknown> }> = [];
-    const juegos: string[] = [];
-    for (const juego of readdirSync(GAMES, { withFileTypes: true })) {
-      if (!juego.isDirectory()) continue;
-      const path = join(GAMES, juego.name, "world", "tile.json");
-      if (!existsSync(path)) continue;
-      juegos.push(juego.name);
-      const doc = JSON.parse(readFileSync(path, "utf-8")) as { scenes?: Record<string, Record<string, unknown>> };
-      for (const [id, scene] of Object.entries(doc.scenes ?? {})) escenas.push({ nombre: `${juego.name}/${id}`, scene });
-    }
-    assert.deepEqual(injugables(escenas), [], `snapshots auditados: ${juegos.join(", ") || "(ninguno en el árbol)"}`);
+    const injugables = escenas.flatMap((path) => {
+      const scene = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+      const entities = Array.isArray(scene.entities) ? (scene.entities as Record<string, unknown>[]) : [];
+      const r = validateScene(scene, {
+        required_crossings: [],
+        bootstrap: entities.some((e) => e?.kind === "player"),
+      });
+      return r.ok ? [] : [`${relative(SCENES, path)}: ${r.errors.join(" · ")}`];
+    });
+    assert.deepEqual(injugables, []);
   });
 });

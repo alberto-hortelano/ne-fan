@@ -34,12 +34,7 @@ import {
   type WalkableMap,
 } from "../src/scene/scene-validate.js";
 import type { TileEdges } from "../src/scene/tile-edges.js";
-import {
-  BODY_RADIUS_M,
-  celdasLibresParaRadio,
-  createTerrainCollider,
-  type TerrainCollider,
-} from "../src/scene/terrain-collision.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Tile de mentira desde un grid ASCII: "W" muro, "~" agua, lo demás pisable. */
@@ -195,10 +190,26 @@ describe("buildWalkableMap", () => {
         { id: "sin_celda", kind: "npc" },
       ],
     });
-    assert.deepEqual(map.player, [2, 0]);
-    assert.deepEqual(map.npcs, [{ id: "herrero", cell: [1, 0] }]);
+    assert.deepEqual(map.player, { id: "player", cell: [2, 0], declarada: [2, 0] });
+    assert.deepEqual(map.npcs, [{ id: "herrero", cell: [1, 0], declarada: [1, 0] }]);
     assert.equal(found.stats.npcs_total, 1);
     assert.equal(map.walkableCells, 3, "ni player ni NPC bloquean");
+  });
+
+  it("la celda se NORMALIZA aquí: `declarada` es lo que dijo el motor, `cell` dónde está de pie", () => {
+    // El zod admite fracción a propósito («media celda importa en el
+    // z-order»), así que `cell:[1.5, 0.5]` es legítimo. Usarla como índice
+    // daba `undefined` en la máscara, y en `checkPlayerSpawn` un THROW al
+    // leer `grid[r][c]` — en vez del error estructurado que el motor necesita.
+    const { map } = mapaDe(["ggg", "ggg"], {
+      entities: [
+        { id: "player", kind: "player", cell: [1.5, 0.5] },
+        { id: "herrero", kind: "npc", cell: [2.9, 1.9] },
+      ],
+    });
+    assert.deepEqual(map.player, { id: "player", cell: [1, 0], declarada: [1.5, 0.5] });
+    assert.deepEqual(map.npcs[0].cell, [2, 1]);
+    assert.equal(map.isWalkable(map.player!.cell), true, "y la celda normalizada SÍ indexa la máscara");
   });
 });
 
@@ -533,6 +544,10 @@ describe("checkSeams", () => {
 });
 
 describe("collectDoorCells", () => {
+  /** La geometría de los vanos, aplanada: el AGRUPADO por vano tiene su
+   *  propio caso abajo (es lo que consume el veredicto, no el orden). */
+  const celdasDe = (vanos: ReturnType<typeof collectDoorCells>): Cell[] => vanos.flatMap((v) => v.cells);
+
   it("los cuatro lados de una structure", () => {
     const view = vista(["gg"], {
       scene: {
@@ -545,7 +560,7 @@ describe("collectDoorCells", () => {
       },
     });
     const found = hallazgos(view);
-    assert.deepEqual(collectDoorCells(view, found), [[12, 20], [12, 23], [10, 21], [15, 21]]);
+    assert.deepEqual(celdasDe(collectDoorCells(view, found)), [[12, 20], [12, 23], [10, 21], [15, 21]]);
     assert.equal(found.stats.doors_total, 4);
   });
 
@@ -553,7 +568,7 @@ describe("collectDoorCells", () => {
     const view = vista(["gg"], {
       scene: { structures: [{ type: "room", rect: [0, 0, 8, 4], doors: [{ side: "north", at: 2, width: 3 }] }] },
     });
-    assert.deepEqual(collectDoorCells(view, hallazgos(view)), [[2, 0], [3, 0], [4, 0]]);
+    assert.deepEqual(celdasDe(collectDoorCells(view, hallazgos(view))), [[2, 0], [3, 0], [4, 0]]);
   });
 
   it("los cuatro lados de un building cutaway, con su ancho por defecto", () => {
@@ -567,7 +582,7 @@ describe("collectDoorCells", () => {
         ],
       },
     });
-    assert.deepEqual(collectDoorCells(view, hallazgos(view)), [[12, 20], [12, 25], [10, 21], [17, 21]]);
+    assert.deepEqual(celdasDe(collectDoorCells(view, hallazgos(view))), [[12, 20], [12, 25], [10, 21], [17, 21]]);
   });
 
   it("un vano ancho se extiende HACIA DELANTE desde su `at`, en los cuatro lados", () => {
@@ -581,7 +596,7 @@ describe("collectDoorCells", () => {
         ],
       },
     });
-    assert.deepEqual(collectDoorCells(view, hallazgos(view)), [
+    assert.deepEqual(celdasDe(collectDoorCells(view, hallazgos(view))), [
       [12, 20], [13, 20], [12, 25], [13, 25], [10, 21], [10, 22], [17, 21], [17, 22],
     ]);
   });
@@ -601,7 +616,7 @@ describe("collectDoorCells", () => {
       },
     });
     const found = hallazgos(view);
-    assert.deepEqual(collectDoorCells(view, found), []);
+    assert.deepEqual(celdasDe(collectDoorCells(view, found)), []);
     assert.equal(found.stats.doors_total, 0);
   });
 
@@ -616,7 +631,7 @@ describe("collectDoorCells", () => {
       },
     });
     const found = hallazgos(view);
-    assert.deepEqual(collectDoorCells(view, found), []);
+    assert.deepEqual(celdasDe(collectDoorCells(view, found)), []);
     assert.equal(found.stats.doors_total, 0);
   });
 });
@@ -765,47 +780,33 @@ describe("floodFill con cuerpo · la puerta de 1 m", () => {
   const IZQ: Cell = [0, 4];
   const DER: Cell = [8, 4];
 
-  for (const [hueco, metros, cabe] of [[2, "1,00", false], [3, "1,50", true]] as const) {
-    it(`un vano de ${hueco} celdas (${metros} m): el cuerpo mayor ${cabe ? "pasa" : "NO pasa"}`, () => {
+  /** La tabla del issue, de una vez: (vano, k) → ¿lo cruza el cuerpo?
+   *
+   *  La fila que decide la tanda es `k=2` sobre el vano de 1 m. Con la
+   *  erosión escrita como el AABB (`2R/mpc` = 2 celdas) el candado NACE VERDE
+   *  sobre el caso que dice impedir, porque el corredor de puerta contiene un
+   *  bloque 2×2 libre. Por eso la fila `k=2 → cruza` no es redundante: es el
+   *  aserto que más pesa de la tanda, y el que se pondría rojo si alguien
+   *  escribe `ceil` o reusa la constante del productor.
+   *
+   *  (Que el COLLIDER real diga lo mismo sobre este vano vive donde vive
+   *  `blocksCircle`: `terrain-collision.test.ts`.) */
+  const TABLA: Array<[hueco: number, k: number, cruza: boolean, por: string]> = [
+    [2, 1, true, "el flood de siempre (un punto sin dimensión) lo aprobaba"],
+    [2, 2, true, "EL AABB TAMBIÉN: aquí es donde el candado nacería verde"],
+    [2, 3, false, "floor(2R/mpc)+1 es el único que ve el vano de 1,00 m"],
+    [3, 3, true, "y a 1,50 m el cuerpo pasa: el candado no rechaza de más"],
+  ];
+  for (const [hueco, k, cruza, por] of TABLA) {
+    const metros = (hueco * TILE_MPC).toFixed(2).replace(".", ",");
+    it(`vano de ${hueco} celdas (${metros} m) con k=${k}: ${cruza ? "CRUZA" : "no cruza"} — ${por}`, () => {
       const { view, map } = mapaDe(conVano(hueco));
-      const k = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
-      assert.equal(k, 3, "la erosión del cuerpo mayor son 3 celdas, no el AABB");
-      assert.equal(floodFill(view, map, [IZQ], k).has(DER), cabe, "la sala del otro lado");
+      assert.equal(floodFill(view, map, [IZQ], k).has(DER), cruza);
     });
   }
 
-  it("EN NEGATIVO: con la erosión del AABB (k=2) el vano de 1 m PASA — el candado nacería verde", () => {
-    const { view, map } = mapaDe(conVano(2));
-    assert.equal(
-      floodFill(view, map, [IZQ], 2).has(DER),
-      true,
-      "k=2 aprueba el vano que el collider bloquea: ESTE es el error que hay que evitar",
-    );
-    assert.equal(
-      floodFill(view, map, [IZQ], 3).has(DER),
-      false,
-      "k=3 (floor(2R/mpc)+1) es el único que lo ve",
-    );
-    // Y el punto sin dimensión de siempre lo aprobaba igual que k=2.
-    assert.equal(floodFill(view, map, [IZQ], 1).has(DER), true, "k=1 = el flood de antes");
-  });
-
-  it("y el collider real dice lo mismo sobre ese vano, no solo el flood", () => {
-    // Cierra el círculo: la erosión no se compara con otra erosión, sino con
-    // `blocksCircle` sobre el mismo vano. El cuerpo centrado en el hueco de 2
-    // celdas choca; en el de 3, no.
-    const colisionador = (hueco: number): TerrainCollider =>
-      createTerrainCollider({
-        grid: conVano(hueco),
-        cols: 9,
-        rows: 9,
-        meters_per_cell: TILE_MPC,
-        origin: [0, 0],
-        solid_chars: ["W"],
-      })!;
-    const centroY = (hueco: number): number => (Math.floor((9 - hueco) / 2) + hueco / 2) * TILE_MPC;
-    assert.equal(colisionador(2).blocksCircle(4.5 * TILE_MPC, centroY(2), BODY_RADIUS_M), true, "1,00 m no");
-    assert.equal(colisionador(3).blocksCircle(4.5 * TILE_MPC, centroY(3), BODY_RADIUS_M), false, "1,50 m sí");
+  it("y el `k` que usa el validador sale del cuerpo mayor: 3 celdas, no el AABB", () => {
+    assert.equal(celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC), 3);
   });
 
   it("el cuerpo que no cabe en el grid entero no alcanza nada (no revienta)", () => {
@@ -862,60 +863,93 @@ describe("checkReachability", () => {
     assert.equal(found.stats.reachable_cells, 0, "el flood no llegó a correr");
   });
 
-  it("un cruce al otro lado de un muro es error, y lo dice con su nombre", () => {
-    const { view, map, found } = mapaDe(["gWg", "gWg"]);
-    checkReachability(view, map, {
-      startCells: [[0, 0]],
-      crossingTargets: [{ cell: [2, 0], label: "cruce path del borde east (celda 0)" }],
-    }, [], { required_crossings: [] }, found);
-    assert.deepEqual(found.errors, ["el cruce path del borde east (celda 0) no es alcanzable desde la entrada del tile"]);
-    assert.equal(found.stats.border_reachable, false);
-  });
-
   /** Dos mitades de 3 columnas separadas por un muro: la mínima que admite el
    *  cuerpo mayor a los dos lados (3 celdas = 1,5 m). Los grids de 2-3
    *  columnas de antes cabían para un punto sin dimensión y para nadie más. */
   const PARTIDO = ["gggWggg", "gggWggg", "gggWggg", "gggWggg", "gggWggg"];
 
-  it("ninguna puerta alcanzable es error; algunas, aviso", () => {
+  it("un cruce al otro lado de un muro es error, y lo dice con su nombre", () => {
     const { view, map, found } = mapaDe(PARTIDO);
-    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [[5, 0], [5, 1]], { required_crossings: [] }, found);
-    assert.deepEqual(found.errors, ["ninguna puerta de las structures es alcanzable desde el player"]);
-    assert.equal(found.stats.doors_total, 0, "contarlas es de la pasada de puertas, no de esta");
+    checkReachability(view, map, {
+      startCells: [[0, 0]],
+      crossingTargets: [{ cell: [6, 0], label: "cruce path del borde east (celda 0)" }],
+    }, [], { required_crossings: [] }, found);
+    assert.deepEqual(found.errors, ["el cruce path del borde east (celda 0) no es alcanzable desde la entrada del tile"]);
+    assert.equal(found.stats.border_reachable, false);
+  });
 
+  /** Un VANO con las celdas que ocupa, que es la unidad del veredicto. */
+  const vano = (label: string, ...cells: Cell[]) => ({ label, cells });
+
+  it("un vano que el cuerpo no cruza es ERROR y lo NOMBRA; una celda suelta sigue siendo aviso", () => {
+    // La severidad la decide la clase, no quién la encuentra: «el hueco no
+    // admite el cuerpo» es error lo descubra un NPC o una puerta. Antes esto
+    // era aviso, y los avisos no rechazan: un prop delante de una puerta
+    // dejaba pasar la escena entera.
+    const { view, map, found } = mapaDe(PARTIDO);
+    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] },
+      [vano("puerta este", [5, 0], [5, 1])], { required_crossings: [] }, found);
+    assert.deepEqual(found.errors, [
+      "el vano de la puerta este no lo cruza un cuerpo: ninguna de sus 2 celda(s) es alcanzable desde " +
+        "la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
+    ]);
+    assert.deepEqual(found.warnings, [], "no se dice DOS veces lo mismo: el vano entero ya se dijo");
+
+    // Un vano con parte de sus celdas fuera del flood es geometría normal (el
+    // cuerpo no se centra pegado a la jamba): aviso, no error.
     const b = mapaDe(PARTIDO);
-    checkReachability(b.view, b.map, { startCells: [[0, 0]], crossingTargets: [] }, [[1, 1], [5, 1]], { required_crossings: [] }, b.found);
+    checkReachability(b.view, b.map, { startCells: [[0, 0]], crossingTargets: [] },
+      [vano("puerta oeste", [1, 1], [5, 1])], { required_crossings: [] }, b.found);
     assert.deepEqual(b.found.errors, []);
     assert.deepEqual(b.found.warnings, ["1 celda(s) de puerta no alcanzables desde el player"]);
     assert.equal(b.found.stats.doors_reachable, 1);
   });
 
-  /** Sala abierta de 5×6, un nicho de UNA celda al que el cuerpo no entra
-   *  ([5,5]) y un tramo aislado de 2 columnas al este (donde el cuerpo no
-   *  cabe ni aunque llegara). */
+  /** Sala abierta de 5×6, un NICHO de una celda al que el cuerpo no entra
+   *  ([5,5]) y un tramo aislado de 3 columnas al este, donde el cuerpo SÍ
+   *  cabe pero no se llega. Los dos defectos son error y llevan mensajes
+   *  distintos porque son arreglos distintos: ensanchar vs. abrir un paso. */
   const CON_NICHO = [
-    "gggggWWgg",
-    "gggggWWgg",
-    "gggggWWgg",
-    "gggggWWgg",
-    "gggggWWgg",
-    "ggggggWgg",
+    "gggggWWggg",
+    "gggggWWggg",
+    "gggggWWggg",
+    "gggggWWggg",
+    "gggggWWggg",
+    "ggggggWggg",
   ];
 
-  it("un NPC vale con que se le llegue AL LADO, aunque el cuerpo no quepa en su celda", () => {
-    // El herrero está en un nicho de una celda: el flood con cuerpo no lo
-    // cubre, pero se le habla desde al lado y de ahí puede salir. Al ermitaño
-    // no se llega ni al lado.
+  it("un NPC en un NICHO de una celda es ERROR aunque se le llegue al lado", () => {
+    // EL AGUJERO QUE ESTA TANDA EXISTÍA PARA CERRAR. Hasta la revisión, el
+    // predicado era `isWalkable` —el punto sin dimensión— con ±1 celda de
+    // tolerancia encima: el herrero daba pisable, daba vecina alcanzable y
+    // PASABA, aunque su cuerpo no cupiera ahí y no pudiera moverse jamás. Es
+    // el caso literal de la crítica (dos props a 1,2 m) y es el bug que costó
+    // #247, #262 y #284.
     const { view, map, found } = mapaDe(CON_NICHO, {
       entities: [
         { id: "herrero", kind: "npc", cell: [5, 5] },
         { id: "ermitaño", kind: "npc", cell: [8, 0] },
       ],
     });
+    assert.equal(map.isWalkable([5, 5]), true, "el nicho es PISABLE: por eso colaba");
+    assert.equal(map.isWalkable([4, 5]), true, "y tiene vecina libre y alcanzable");
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
+    assert.equal(found.stats.npcs_reachable, 0);
+    assert.deepEqual(found.warnings, [], "un NPC que no puede moverse no es «jugable, pero revísalo»");
+    assert.deepEqual(found.errors, [
+      'el NPC "herrero" nace en [5, 5], un hueco donde su cuerpo no cabe: hacen falta 3 celdas libres ' +
+        "seguidas en cada eje y ahí no las hay, así que no podría moverse",
+      'el NPC "ermitaño" en [8, 0] no es alcanzable desde el player',
+    ]);
+  });
+
+  it("…y el mismo NPC en sitio con hueco para su cuerpo pasa (el candado no rechaza de más)", () => {
+    const { view, map, found } = mapaDe(CON_NICHO, {
+      entities: [{ id: "herrero", kind: "npc", cell: [2, 2] }],
+    });
+    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
+    assert.deepEqual(found.errors, []);
     assert.equal(found.stats.npcs_reachable, 1);
-    assert.deepEqual(found.warnings, [], "un NPC inalcanzable ya no es «jugable, pero revísalo»");
-    assert.deepEqual(found.errors, ['el NPC "ermitaño" en [8, 0] no es alcanzable desde el player']);
   });
 
   it("un NPC que nace en celda SÓLIDA es error aunque tenga vecina libre", () => {
@@ -948,14 +982,39 @@ describe("checkReachability", () => {
   });
 
   it("por debajo del 20% pisable, avisa de que el mapa es casi todo muro", () => {
-    const { view, map, found } = mapaDe(["gWWWW", "WWWWW", "WWWWW", "WWWWW"]);
+    // Se mide sobre lo PISABLE declarado, no sobre lo alcanzado: la pregunta
+    // es de composición («¿te has pasado de muro y agua?»). El arranque lleva
+    // hueco para un cuerpo a propósito, o el flood no correría y la medida no
+    // llegaría a hacerse.
+    const { view, map, found } = mapaDe([
+      "gggWWWWWWWWWWWWWWWWW",
+      "gggWWWWWWWWWWWWWWWWW",
+      "gggWWWWWWWWWWWWWWWWW",
+      "WWWWWWWWWWWWWWWWWWWW",
+    ]);
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
-    assert.deepEqual(found.warnings, ["solo el 5% del mapa es transitable — ¿demasiado muro/agua?"]);
+    assert.deepEqual(found.warnings, ["solo el 11% del mapa es transitable — ¿demasiado muro/agua?"]);
   });
 
   it("justo en el 20% NO avisa (el umbral es estricto)", () => {
-    const { view, map, found } = mapaDe(["ggWWW", "WWWWW"]);
+    const { view, map, found } = mapaDe(["gggWW", "gggWW", "gggWW", "WWWWW"]);
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
     assert.deepEqual(found.warnings, []);
+  });
+
+  it("un arranque PISABLE donde no cabe un cuerpo nombra la causa y NO lista media escena", () => {
+    // Sin esto el flood salía vacío y el informe era una avalancha —todos los
+    // cruces, todos los NPCs— sin decir nunca por qué.
+    const { view, map, found } = mapaDe(["WgW", "WgW", "WgW"], {
+      entities: [{ id: "herrero", kind: "npc", cell: [1, 1] }],
+    });
+    checkReachability(view, map, {
+      startCells: [[1, 0]],
+      crossingTargets: [{ cell: [1, 2], label: "cruce path del borde south (celda 1)" }],
+    }, [], { required_crossings: [] }, found);
+    assert.deepEqual(found.errors, [
+      "por la entrada del tile no cabe un cuerpo: hacen falta 3 celdas libres seguidas en cada eje y " +
+        "ninguno de sus arranques las tiene, así que nada del tile es alcanzable",
+    ]);
   });
 });

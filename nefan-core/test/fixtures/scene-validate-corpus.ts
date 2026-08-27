@@ -317,23 +317,12 @@ export function casosDeValidacion(): CasoValidacion[] {
         entry: { edge: "west", at: 41 },
       },
     },
-    {
-      name: "npc-inalcanzable",
-      cubre: "flood: NPC encerrado en una sala sin puertas → error",
-      // El «cuarto de 5×5» del issue #289: su interior deja UNA celda pisable
-      // (el anillo de muro del plan se come media celda por lado), así que el
-      // NPC está de pie en sitio legal y no puede ir a ninguna parte. Antes
-      // esta sala era 3×3, que bajo el plan no deja ni una celda pisable: ese
-      // caso pasó a ejercer la comprobación NUEVA (celda de nacimiento
-      // sólida) y tiene el suyo propio aquí abajo.
-      scene: () => {
-        const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
-        (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
-        return s;
-      },
-      ctx: BOOTSTRAP,
-    },
+    // Las TRES caras de «este NPC no puede estar ahí», que son tres arreglos
+    // distintos para el motor y por eso tres mensajes. La sala sellada sube de
+    // tamaño en cada una: bajo la máscara del plan, el anillo de muro se come
+    // media celda por lado, así que una 3×3 no deja NI UNA celda pisable, una
+    // 5×5 deja una (donde el cuerpo no cabe) y una 7×7 deja 3×3 (donde cabe,
+    // pero no conecta con nada).
     {
       name: "npc-en-celda-solida",
       cubre: "flood: NPC empotrado en un sólido → error, aunque tenga vecina libre",
@@ -344,6 +333,31 @@ export function casosDeValidacion(): CasoValidacion[] {
         const s = escenaBootstrap();
         (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 3, 3], doors: [] });
         (s.entities as Record<string, unknown>[])[0].cell = [41, 91];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "npc-sin-sitio-para-el-cuerpo",
+      cubre: "flood: NPC en una celda pisable donde su CUERPO no cabe → error",
+      // El nicho de UNA celda: `isWalkable` decía que sí y la tolerancia de
+      // ±1 celda encontraba vecina alcanzable, así que pasaba. Es el «cuarto
+      // de 5×5» del issue #289.
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+        (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "npc-inalcanzable",
+      cubre: "flood: NPC encerrado en una sala sin puertas (el cuerpo cabe, pero no conecta) → error",
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 7, 7], doors: [] });
+        (s.entities as Record<string, unknown>[])[0].cell = [43, 93];
         return s;
       },
       ctx: BOOTSTRAP,
@@ -406,7 +420,23 @@ export function casosDeValidacion(): CasoValidacion[] {
     },
     {
       name: "ninguna-puerta-alcanzable",
-      cubre: "puertas: el player arranca encerrado, ninguna puerta se alcanza",
+      cubre: "puertas: el player arranca encerrado (con sitio para su cuerpo), el vano de la posada no se cruza",
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({
+          type: "room", rect: [60, 60, 7, 7], wall_char: "W", floor_char: "o", doors: [],
+        });
+        (s.entities as Record<string, unknown>[])[1].cell = [63, 63];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "entrada-sin-sitio-para-el-cuerpo",
+      cubre: "flood: el arranque es pisable pero no admite un cuerpo → se nombra la causa, no se lista media escena",
+      // La misma sala de 5×5, con el PLAYER dentro: su única celda pisable no
+      // admite un cuerpo. Antes el flood salía vacío y el informe era una
+      // avalancha (todos los cruces, todos los NPCs) sin nombrar la causa.
       scene: () => {
         const s = escenaBootstrap();
         (s.structures as Record<string, unknown>[]).push({

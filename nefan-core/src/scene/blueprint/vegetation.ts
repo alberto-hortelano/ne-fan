@@ -33,7 +33,7 @@
 
 import { z } from "zod";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
-import { BODY_RADIUS_M } from "../terrain-collision.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "../terrain-collision.js";
 import { treeTrunkRadiusCells } from "./collision.js";
 
 /** Escala de los ejemplares que planta el scatter (rango del sorteo). Los
@@ -46,22 +46,23 @@ export const VEG_BUSH_S_MAX = 1.1;
 
 /** Celdas LIBRES que necesita el CUERPO MAYOR para pasar entre dos troncos.
  *
- *  Su AABB mide `2·BODY_RADIUS_M` (1,00 m = 2 celdas) y el collider bloquea
- *  por SOLAPE de celda, así que hacen falta 2 celdas libres enteras; la
- *  tercera es la que se come el redondeo del rasterizado (los bordes de la
- *  región marcada caen en aristas de celda, hasta media celda por lado).
+ *  La MISMA regla que usa el validador (`celdasLibresParaRadio`), y a
+ *  propósito: el productor y el verificador no pueden tener dos ideas de
+ *  cuánto hueco hace falta o el bosque se planta con una y se juzga con otra.
+ *  El collider bloquea por SOLAPE de celda, así que un hueco de n celdas
+ *  admite radio R solo si `n·mpc > 2R`.
  *
- *  Es la fórmula del PRODUCTOR y NO se reutiliza para verificar nada: lleva
- *  `ceil` porque además del hueco analítico se traga esa holgura de
- *  rasterizado. Quien verifique un hueco YA rasterizado usa
- *  `celdasLibresParaRadio` (`floor(2R/mpc)+1`), que es el inverso exacto del
- *  collider — con `ceil` un hueco de exactamente `2R` saldría transitable.
- *  A mpc 0,5 las dos dan 3, pero por razones distintas: cambiar una por la
- *  otra vuelve a abrir el agujero en cuanto se mueva el mpc o el radio.
+ *  Antes esto era `ceil(2R/mpc) + 1` y se derivaba solo de `PLAYER_RADIUS_M`.
+ *  Lo segundo era el agujero (#289): dos árboles podían dejar un paso que el
+ *  jugador cruzaba y un NPC no. Lo primero no era ni más laxo ni más estricto
+ *  —`ceil(x)+1 ≥ floor(x)+1` para todo x, así que nunca puede aprobar un
+ *  hueco que el collider bloquee—, solo era una segunda fórmula sin motivo. A
+ *  mpc 0,5 las dos dan 3; con una sola, no hay que comprobar cuál gana.
  *
- *  Antes se derivaba solo de `PLAYER_RADIUS_M` (2 celdas de hueco): dos
- *  árboles podían dejar un paso que el jugador cruzaba y el NPC no. */
-export const PASO_LIBRE_CELDAS = Math.ceil((2 * BODY_RADIUS_M) / TILE_MPC) + 1;
+ *  La holgura de rasterizado —la región marcada se redondea hasta media celda
+ *  por lado— NO vive aquí: la lleva el radio del tronco
+ *  (`treeTrunkRadiusCells`), que es lo que se rasteriza. */
+export const PASO_LIBRE_CELDAS = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
 
 /** Distancia mínima (celdas) entre los CENTROS de dos ejemplares para que el
  *  jugador quepa entre sus troncos. Un arbusto no colisiona (radio 0), así que

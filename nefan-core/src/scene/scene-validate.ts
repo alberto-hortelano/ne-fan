@@ -110,10 +110,19 @@ export interface TileView extends GridDims {
   solid: ReadonlySet<string>;
 }
 
-/** NPC colocado en el tile: objetivo de alcanzabilidad, no obstáculo. */
-interface PlacedNpc {
+/** Entity colocada en el tile, con su celda ya NORMALIZADA.
+ *
+ *  `cell` es la celda del grid donde la entity está de pie —entera, apta para
+ *  indexar la máscara— y `declarada` es lo que escribió el motor, que es lo
+ *  que hay que citarle de vuelta. El zod admite fracción a propósito
+ *  (`scene-schema.ts`: «media celda importa en el z-order»), así que un
+ *  `cell:[64.5, 70.5]` es legítimo; usarlo como índice daba `undefined` —o un
+ *  THROW al leer `grid[r][c]`— en vez del error estructurado que el motor
+ *  necesita para corregir. Se normaliza UNA vez, aquí. */
+interface PlacedEntity {
   id: string;
   cell: Cell;
+  declarada: Cell;
 }
 
 /** Dónde se puede pisar y qué entities hay que tener en cuenta después. */
@@ -124,8 +133,8 @@ export interface WalkableMap {
   /** Fuera del grid es «no transitable», no una excepción. */
   isWalkable(cell: Cell): boolean;
   /** El player DECLARADO por el motor, aún sin juzgar (lo hace `checkPlayerSpawn`). */
-  player: Cell | null;
-  npcs: PlacedNpc[];
+  player: PlacedEntity | null;
+  npcs: PlacedEntity[];
 }
 
 /** Celda a la que el jugador TIENE que poder llegar, con el nombre que verá
@@ -149,13 +158,55 @@ export interface Reach {
   has(cell: Cell): boolean;
 }
 
+/** CLASE de defecto → severidad. La severidad se decide AQUÍ y solo aquí.
+ *
+ *  Antes vivía repartida en diecisiete `push`, uno por sitio, y eso la hacía
+ *  irrevisable: «un hueco que no admite el cuerpo» salía error cuando lo
+ *  descubría un NPC y aviso cuando lo descubría una puerta, aunque es el
+ *  MISMO defecto — y los avisos no rechazan, así que el motor entregaba la
+ *  escena igual. La clase no depende de quién la encuentre ni de qué volumen
+ *  la produjo: `prop`, `rock`, `wall`, `prism` y una puerta declarada pinzan
+ *  un paso exactamente igual (#289).
+ *
+ *  `error` = injugable, el motor RE-RESPONDE (`ok:false` → el pre-flight MCP
+ *  devuelve isError). `aviso` = jugable pero revisable; viaja rotulado y la
+ *  escena se envía. */
+const SEVERIDAD = {
+  /** El plan no cabe / no se pudo componer: lo que el compositor ignoró. */
+  "plan-no-cabe": "error",
+  /** Terreno que nadie sabe pintar ni si se pisa. */
+  "chars-sin-declarar": "error",
+  "scatter-invalido": "error",
+  /** El player declarado no es el que corresponde al tile, o no existe. */
+  "player-mal-declarado": "error",
+  /** Una entity nace DENTRO de un sólido: de ahí no puede salir. */
+  "nace-en-solido": "error",
+  /** Una costura del vecino muere en nuestro borde. */
+  "costura-rota": "error",
+  /** EL HUECO NO ADMITE EL CUERPO — una sola clase para todas sus caras:
+   *  el NPC al que no se llega, el que nace donde su cuerpo no cabe, el vano
+   *  que no se cruza y la entrada del tile que no admite un cuerpo. */
+  "hueco-sin-cuerpo": "error",
+  /** No hay dónde pisar en el tile entero. */
+  "sin-terreno": "error",
+  /** No se pudo verificar (no es un defecto: es una medida que falta). */
+  "no-verificado": "aviso",
+  /** Telemetría sospechosa que el motor puede querer revisar. */
+  "sospechoso": "aviso",
+} as const;
+
+export type ClaseDeDefecto = keyof typeof SEVERIDAD;
+
 /** Sumidero de hallazgos del pipeline: lo que el motor recibirá de vuelta.
  *  Cada pasada escribe en el MISMO objeto y en su turno — el orden de los
- *  mensajes es contrato con el motor, no un detalle de implementación. */
+ *  mensajes es contrato con el motor, no un detalle de implementación, y por
+ *  eso `add` respeta el orden de llamada dentro de cada lista. */
 export interface Findings {
   errors: string[];
   warnings: string[];
   stats: SceneValidationResult["stats"];
+  /** Anota un hallazgo POR SU CLASE; la severidad la pone `SEVERIDAD`. */
+  add(clase: ClaseDeDefecto, mensaje: string): void;
 }
 
 /** Celda del grid sobre la línea del borde `edge` en la coordenada `at`. */
@@ -197,6 +248,9 @@ export const emptyFindings = (cols = 0, rows = 0): Findings => ({
   errors: [],
   warnings: [],
   stats: emptyStats(cols, rows),
+  add(clase, mensaje) {
+    (SEVERIDAD[clase] === "error" ? this.errors : this.warnings).push(mensaje);
+  },
 });
 
 // ═══ Pasada 0 · abrir el tile ═══════════════════════════════════════════════
@@ -301,7 +355,8 @@ export function checkDeclaredChars(view: TileView, found: Findings): void {
     }
   }
   if (undeclared.size > 0) {
-    found.errors.push(
+    found.add(
+      "chars-sin-declarar",
       `chars de terreno sin declarar en terrain_legend: ${[...undeclared].map((c) => `"${c}"`).join(", ")}`,
     );
   }
@@ -329,7 +384,7 @@ export interface PlanMask {
  *  re-responder, que es lo único que arregla un plan que no cabe. */
 export function composePlan(view: TileView, found: Findings): PlanMask {
   const { plan, warnings } = composeTilePlan(view.scene);
-  for (const w of warnings) found.errors.push(w);
+  for (const w of warnings) found.add("plan-no-cabe", w);
   found.stats.volumes_total = plan?.volumes.length ?? 0;
   const tile = view.scene.tile as { tx: number; ty: number };
   const grid = plan
@@ -360,13 +415,19 @@ export function buildWalkableMap(view: TileView, planMask: PlanMask, found: Find
     for (let c = 0; c < cols; c++) walkable[r * cols + c] = !view.solid.has(grid[r][c]) && !planMask.solid(c, r);
   }
   const entities = Array.isArray(view.scene.entities) ? (view.scene.entities as Record<string, unknown>[]) : [];
-  let player: Cell | null = null;
-  const npcs: PlacedNpc[] = [];
+  let player: PlacedEntity | null = null;
+  const npcs: PlacedEntity[] = [];
   for (const e of entities) {
     if (!e || !Array.isArray(e.cell)) continue;
-    const [c, r] = e.cell as Cell;
-    if (e.kind === "player") player = [c, r];
-    else if (e.kind === "npc") npcs.push({ id: String(e.id), cell: [c, r] });
+    const declarada = e.cell as Cell;
+    // La celda de PIE: entera, y por tanto indexable. Ver `PlacedEntity`.
+    const colocada: PlacedEntity = {
+      id: String(e.id),
+      cell: [Math.floor(declarada[0]), Math.floor(declarada[1])],
+      declarada,
+    };
+    if (e.kind === "player") player = colocada;
+    else if (e.kind === "npc") npcs.push(colocada);
   }
   found.stats.walkable_cells = walkable.filter(Boolean).length;
   found.stats.npcs_total = npcs.length;
@@ -388,7 +449,7 @@ export function checkScatter(view: TileView, found: Findings): void {
   const { scatter_generators: generators, scatter_zones: zones } = view.raw;
   if (generators === undefined && zones === undefined) return;
   const parsed = parseScatter(generators, zones);
-  if (!parsed.ok) found.errors.push(`scatter inválido: ${parsed.error}`);
+  if (!parsed.ok) found.add("scatter-invalido", `scatter inválido: ${parsed.error}`);
 }
 
 // ═══ Pasada 4 · spawn del jugador ═══════════════════════════════════════════
@@ -409,28 +470,31 @@ export function checkPlayerSpawn(
   const player = map.player;
   if (!tileContext?.bootstrap) {
     if (player) {
-      found.errors.push(
+      found.add(
+        "player-mal-declarado",
         "los tiles no llevan entity kind \"player\" (el jugador entra andando desde el tile vecino); solo el tile inicial de bootstrap la incluye",
       );
     }
     return null;
   }
   if (!player) {
-    found.errors.push('falta la entity kind "player" (spawn del jugador)');
+    found.add("player-mal-declarado", 'falta la entity kind "player" (spawn del jugador)');
     return null;
   }
-  const [c, r] = player;
+  const [c, r] = player.cell;
+  const [dc, dr] = player.declarada;
   if (c < 0 || r < 0 || c >= view.cols || r >= view.rows) {
-    found.errors.push(`el player está fuera del grid: [${c}, ${r}]`);
+    found.add("player-mal-declarado", `el player está fuera del grid: [${dc}, ${dr}]`);
     return null;
   }
-  if (!map.isWalkable(player)) {
-    found.errors.push(
-      `el spawn del player [${c}, ${r}] no es transitable (celda "${view.grid[r][c]}" u ocupada por un footprint)`,
+  if (!map.isWalkable(player.cell)) {
+    found.add(
+      "nace-en-solido",
+      `el spawn del player [${dc}, ${dr}] no es transitable (celda "${view.grid[r][c]}" u ocupada por un footprint)`,
     );
     return null;
   }
-  return player;
+  return player.cell;
 }
 
 // ═══ Pasada 5 · costuras del tile ═══════════════════════════════════════════
@@ -460,7 +524,8 @@ export function checkSeams(
     const actual = edges[edge].crossings;
     const { missing } = matchCrossings(reqs, actual);
     for (const m of missing) {
-      found.errors.push(
+      found.add(
+        "costura-rota",
         `el vecino ${edge} tiene un ${m.type} que muere en vuestra costura en la celda ${m.at}: ` +
           `tu tile debe continuarlo con celdas transitables compatibles en el borde ${edge}, celdas ${m.at - 2}..${m.at + 2}`,
       );
@@ -507,10 +572,21 @@ export function checkSeams(
 const sceneVolumes = (scene: Record<string, unknown>): Record<string, unknown>[] =>
   Array.isArray(scene.volumes) ? (scene.volumes as Record<string, unknown>[]) : [];
 
+/** Un VANO declarado y las celdas que ocupa. La unidad es el vano, no la
+ *  celda: con cuerpo, las celdas del BORDE de un hueco quedan siempre sin
+ *  cubrir —el cuerpo no se puede centrar pegado a la jamba— así que «alguna
+ *  celda de vano no alcanzable» es geometría normal y no dice nada. Lo que sí
+ *  dice algo es un vano ENTERO que el cuerpo no cruza. */
+interface Vano {
+  /** Cómo nombrárselo al motor: es lo que tiene que ir a arreglar. */
+  label: string;
+  cells: Cell[];
+}
+
 /** Huecos de las `structures` (el camino viejo: el expander ya talló el vano
  *  en el grid). */
-function structureDoorCells(scene: Record<string, unknown>): Cell[] {
-  const cells: Cell[] = [];
+function structureDoors(scene: Record<string, unknown>): Vano[] {
+  const vanos: Vano[] = [];
   const structures = Array.isArray(scene.structures) ? (scene.structures as Record<string, unknown>[]) : [];
   for (const s of structures) {
     const rect = s.rect as [number, number, number, number] | undefined;
@@ -519,15 +595,17 @@ function structureDoorCells(scene: Record<string, unknown>): Cell[] {
     const [c0, r0, w, h] = rect;
     for (const d of doors) {
       const dw = Math.max(1, d.width ?? 1);
+      const cells: Cell[] = [];
       for (let k = 0; k < dw; k++) {
         if (d.side === "north") cells.push([c0 + d.at + k, r0]);
         else if (d.side === "south") cells.push([c0 + d.at + k, r0 + h - 1]);
         else if (d.side === "west") cells.push([c0, r0 + d.at + k]);
         else if (d.side === "east") cells.push([c0 + w - 1, r0 + d.at + k]);
       }
+      if (cells.length > 0) vanos.push({ label: `puerta ${d.side} de la structure [${rect.join(", ")}]`, cells });
     }
   }
-  return cells;
+  return vanos;
 }
 
 /** Huecos de los buildings CUTAWAY declarados en `volumes` (el camino
@@ -536,8 +614,8 @@ function structureDoorCells(scene: Record<string, unknown>): Cell[] {
  *  el flood, los muros del volume no se estampan en walkable). Antes
  *  doors_total = 0 con un cutaway CON doors: stat engañoso (playtest
  *  2026-08-13). */
-function cutawayDoorCells(scene: Record<string, unknown>): Cell[] {
-  const cells: Cell[] = [];
+function cutawayDoors(scene: Record<string, unknown>): Vano[] {
+  const vanos: Vano[] = [];
   for (const v of sceneVolumes(scene)) {
     if (!v || v.type !== "building" || v.cutaway !== true) continue;
     const rect = v.rect as [number, number, number, number] | undefined;
@@ -547,22 +625,24 @@ function cutawayDoorCells(scene: Record<string, unknown>): Cell[] {
     for (const door of doors) {
       if (typeof door?.at !== "number") continue;
       const dw = Math.max(1, Math.round(door.w ?? 4));
+      const cells: Cell[] = [];
       for (let k = 0; k < dw; k++) {
         if (door.edge === "n") cells.push([Math.round(c0 + door.at) + k, Math.round(r0)]);
         else if (door.edge === "s") cells.push([Math.round(c0 + door.at) + k, Math.round(r0 + d) - 1]);
         else if (door.edge === "w") cells.push([Math.round(c0), Math.round(r0 + door.at) + k]);
         else if (door.edge === "e") cells.push([Math.round(c0 + w) - 1, Math.round(r0 + door.at) + k]);
       }
+      if (cells.length > 0) vanos.push({ label: `puerta "${door.edge}" de "${String(v.id)}"`, cells });
     }
   }
-  return cells;
+  return vanos;
 }
 
-/** Todas las celdas de vano del tile, vengan del camino viejo o del moderno. */
-export function collectDoorCells(view: TileView, found: Findings): Cell[] {
-  const cells = [...structureDoorCells(view.scene), ...cutawayDoorCells(view.scene)];
-  found.stats.doors_total = cells.length;
-  return cells;
+/** Todos los VANOS del tile, vengan del camino viejo o del moderno. */
+export function collectDoorCells(view: TileView, found: Findings): Vano[] {
+  const vanos = [...structureDoors(view.scene), ...cutawayDoors(view.scene)];
+  found.stats.doors_total = vanos.reduce((n, v) => n + v.cells.length, 0);
+  return vanos;
 }
 
 // ═══ Pasada 7 · utilización de los presupuestos del plan ════════════════════
@@ -590,28 +670,27 @@ export function reportPlanBudget(view: TileView, found: Findings): void {
 
 // ═══ Pasada 8 · alcanzabilidad ══════════════════════════════════════════════
 
-/** Máscara de ANCLAS de tamaño `k`: 1 donde el bloque k×k con esquina NO en
- *  (c, r) es enteramente pisable. Es la EROSIÓN de la máscara walkable, y con
- *  `k = 1` es la máscara walkable misma.
- *
- *  Dimensiones `(cols−k+1) × (rows−k+1)`: un ancla que se saliera del grid no
- *  existe, y el borde del tile no es transitable por definición (lo gobierna
- *  el soft-clamp del cliente). */
-function anchorMask({ cols, rows }: GridDims, walkable: boolean[], k: number): Uint8Array {
-  const aCols = cols - k + 1;
-  const anchors = new Uint8Array(Math.max(0, aCols) * Math.max(0, rows - k + 1));
-  for (let r = 0; r + k <= rows; r++) {
-    for (let c = 0; c + k <= cols; c++) {
-      let libre = true;
-      for (let dr = 0; dr < k && libre; dr++) {
-        for (let dc = 0; dc < k; dc++) {
-          if (!walkable[(r + dr) * cols + c + dc]) { libre = false; break; }
-        }
-      }
-      if (libre) anchors[r * aCols + c] = 1;
-    }
+/** ¿Cabe el cuerpo ENTERO en el bloque k×k con esquina NO en (c, r)?
+ *  Es la única definición de «aquí cabe el cuerpo» del validador: la usan el
+ *  flood y todos sus consumidores. Fuera del grid, no cabe — el borde del
+ *  tile no es transitable (lo gobierna el soft-clamp del cliente). */
+function bloqueLibre({ cols, rows }: GridDims, walkable: boolean[], k: number, c: number, r: number): boolean {
+  if (c < 0 || r < 0 || c + k > cols || r + k > rows) return false;
+  for (let dr = 0; dr < k; dr++) {
+    for (let dc = 0; dc < k; dc++) if (!walkable[(r + dr) * cols + c + dc]) return false;
   }
-  return anchors;
+  return true;
+}
+
+/** ¿Puede el cuerpo ocupar ALGUNA posición que cubra esta celda? Es la
+ *  pregunta «¿cabe aquí?» sin preguntar además «¿y se llega?»: separa el
+ *  nicho de una celda —donde el cuerpo no entra— del cuarto sellado —donde
+ *  entra pero no se llega—, que son dos arreglos distintos para el motor. */
+export function cuerpoCabeEn(dims: GridDims, map: WalkableMap, k: number, [c, r]: Cell): boolean {
+  for (let dr = 0; dr < k; dr++) {
+    for (let dc = 0; dc < k; dc++) if (bloqueLibre(dims, map.walkable, k, c - dc, r - dr)) return true;
+  }
+  return false;
 }
 
 /** Flood-fill 4-conexo CON CUERPO sobre la máscara walkable desde las
@@ -628,11 +707,12 @@ function anchorMask({ cols, rows }: GridDims, walkable: boolean[], k: number): U
  *  Lo que recorre no son celdas sino ANCLAS —posiciones donde el cuerpo cabe
  *  entero— y una celda queda alcanzada si alguna ancla del flood la cubre. Un
  *  corredor más estrecho que el cuerpo no tiene ni un ancla: no se cruza, que
- *  es justo lo que pasa en juego.
+ *  es justo lo que pasa en juego. Las anclas se evalúan PEREZOSAMENTE (`visto`
+ *  = ya evaluada, quepa o no): erosionar el tile entero por adelantado son
+ *  16.384 bloques para consultar los pocos que toca el BFS.
  *
  *  Una semilla que no sea pisable no siembra nada (antes se marcaba alcanzada
- *  por decreto): con cuerpo la pregunta es si CABE ahí, y las tres fuentes de
- *  arranque ya filtran por transitable antes de llegar aquí. */
+ *  por decreto): con cuerpo la pregunta es si CABE ahí. */
 export function floodFill(dims: GridDims, map: WalkableMap, starts: Cell[], k: number): Reach {
   const { cols, rows } = dims;
   const covered = new Uint8Array(cols * rows);
@@ -642,27 +722,16 @@ export function floodFill(dims: GridDims, map: WalkableMap, starts: Cell[], k: n
     // El cuerpo no cabe ni en el tile entero: nada es alcanzable.
     return { count: 0, has: () => false };
   }
-  const anchors = anchorMask(dims, map.walkable, k);
-  const seen = new Uint8Array(aCols * aRows);
-  const queue: number[] = [];
+  const visto = new Uint8Array(aCols * aRows);
+  const cola: number[] = [];
+  let count = 0;
   const sembrar = (c: number, r: number): void => {
     if (c < 0 || r < 0 || c >= aCols || r >= aRows) return;
     const idx = r * aCols + c;
-    if (seen[idx] || !anchors[idx]) return;
-    seen[idx] = 1;
-    queue.push(idx);
-  };
-  // El cuerpo puede estar plantado de cualquier forma sobre la semilla: vale
-  // cualquiera de las k×k anclas que la cubren.
-  for (const [c, r] of starts) {
-    for (let dr = 0; dr < k; dr++) for (let dc = 0; dc < k; dc++) sembrar(c - dc, r - dr);
-  }
-  let head = 0;
-  let count = 0;
-  while (head < queue.length) {
-    const idx = queue[head++];
-    const c = idx % aCols;
-    const r = (idx - c) / aCols;
+    if (visto[idx]) return;
+    visto[idx] = 1;
+    if (!bloqueLibre(dims, map.walkable, k, c, r)) return;
+    cola.push(idx);
     for (let dr = 0; dr < k; dr++) {
       for (let dc = 0; dc < k; dc++) {
         const ci = (r + dr) * cols + c + dc;
@@ -672,6 +741,16 @@ export function floodFill(dims: GridDims, map: WalkableMap, starts: Cell[], k: n
         }
       }
     }
+  };
+  // El cuerpo puede estar plantado de cualquier forma sobre la semilla: vale
+  // cualquiera de las k×k anclas que la cubren.
+  for (const [c, r] of starts) {
+    for (let dr = 0; dr < k; dr++) for (let dc = 0; dc < k; dc++) sembrar(c - dc, r - dr);
+  }
+  for (let head = 0; head < cola.length; head++) {
+    const idx = cola[head];
+    const c = idx % aCols;
+    const r = (idx - c) / aCols;
     sembrar(c + 1, r);
     sembrar(c - 1, r);
     sembrar(c, r + 1);
@@ -690,66 +769,99 @@ function checkCrossingsReachable(targets: ReachTarget[], reach: Reach, found: Fi
   for (const target of targets) {
     if (!reach.has(target.cell)) {
       all = false;
-      found.errors.push(`el ${target.label} no es alcanzable desde la entrada del tile`);
+      found.add("hueco-sin-cuerpo", `el ${target.label} no es alcanzable desde la entrada del tile`);
     }
   }
   found.stats.border_reachable = all;
 }
 
-/** Puertas alcanzables: la celda del hueco es walkable, así que basta con que
- *  el flood la toque. Ninguna alcanzable es injugable; algunas, sospechoso. */
-function checkDoorsReachable(doorCells: Cell[], reach: Reach, found: Findings): void {
-  const reachable = doorCells.filter((cell) => reach.has(cell)).length;
-  found.stats.doors_reachable = reachable;
-  if (doorCells.length > 0 && reachable === 0) {
-    found.errors.push("ninguna puerta de las structures es alcanzable desde el player");
-  } else if (reachable < doorCells.length) {
-    found.warnings.push(`${doorCells.length - reachable} celda(s) de puerta no alcanzables desde el player`);
+/** Vanos que el CUERPO cruza. La unidad del veredicto es el vano entero:
+ *  un vano sin NI UNA celda alcanzable es la misma clase de defecto que el
+ *  NPC encerrado —«el hueco no admite el cuerpo»— y por eso sale por la misma
+ *  puerta de la tabla de severidad. Antes era aviso, o sea que un prop
+ *  plantado delante de una puerta dejaba pasar la escena; el suelo del zod
+ *  tapaba solo la mitad del agujero, porque no todos los vanos se declaran
+ *  con `doors[].w` (un `deck` sobre agua es un vano con `rect`).
+ *
+ *  Que sobren CELDAS sueltas sin cubrir es normal y sigue siendo aviso: el
+ *  cuerpo no se centra pegado a la jamba, así que el borde de todo hueco
+ *  queda fuera del flood. Medido en `alta_fantasia`: 1 de 7 celdas de vano,
+ *  con la puerta perfectamente cruzable. */
+function checkDoorsReachable(vanos: Vano[], reach: Reach, found: Findings): void {
+  let alcanzables = 0;
+  let sueltas = 0;
+  for (const vano of vanos) {
+    const n = vano.cells.filter((cell) => reach.has(cell)).length;
+    alcanzables += n;
+    if (n === 0) {
+      found.add(
+        "hueco-sin-cuerpo",
+        `el vano de la ${vano.label} no lo cruza un cuerpo: ninguna de sus ${vano.cells.length} celda(s) ` +
+          "es alcanzable desde la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
+      );
+      continue; // ya se dijo entero: sus celdas no vuelven a contarse como ruido
+    }
+    sueltas += vano.cells.length - n;
+  }
+  found.stats.doors_reachable = alcanzables;
+  if (sueltas > 0) {
+    found.add("sospechoso", `${sueltas} celda(s) de puerta no alcanzables desde el player`);
   }
 }
 
-/** NPCs: primero que puedan estar donde nacen, después que se llegue a ellos.
+/** NPCs: UN SOLO predicado — `reach.has(celda)`, o sea «el cuerpo cabe donde
+ *  nació Y está conectado con la entrada». Todo lo demás sirve para elegir
+ *  QUÉ decirle al motor, no para decidir si pasa.
  *
- *  Las dos son ERROR, no aviso. Un NPC que no puede moverse de su celda no es
- *  «jugable, pero revísalo»: es el bug que se leyó durante semanas como
- *  ambiente —el tabernero de `alta_fantasia` nació dentro del prop
- *  `mostrador` y avanzó 0,72 m en 60 s, contaminando #247, #262 y #284—. Con
- *  severidad de aviso el motor entrega la escena igual (narrative-mcp los
- *  rotula «playable, but review»), así que el flood con cuerpo no cerraría
- *  nada. Como error, el pre-flight de `narrative_respond` devuelve isError y
- *  el motor RE-RESPONDE; no hace falta maquinaria nueva.
+ *  El predicado de antes era `isWalkable` —el punto sin dimensión que esta
+ *  tanda existía para retirar— con una tolerancia de ±1 celda encima: un NPC
+ *  nacido en un nicho de UNA celda (dos props a 1,2 m) daba pisable, daba
+ *  vecina alcanzable y PASABA, aunque su cuerpo no cupiera ahí y no pudiera
+ *  moverse jamás. Es exactamente el bug que costó #247, #262 y #284: el
+ *  tabernero de `alta_fantasia` avanzó 0,72 m en 60 s y se leyó durante
+ *  semanas como ambiente.
  *
- *  1. **Celda de nacimiento sólida** — `checkNpcsReachable` se conformaba con
- *     que una celda VECINA fuera transitable, así que un NPC empotrado en un
- *     prop daba el mismo veredicto que uno bien puesto (`ok:true`, «1/1
- *     alcanzables»). Se le habla desde al lado, sí, pero él no puede salir.
- *  2. **Alcanzable** — su celda o una adyacente en el flood CON CUERPO: se
- *     les habla desde al lado, y quien va a hablarles también tiene cuerpo.
+ *  Se le sigue hablando desde al lado, y eso ya no hace falta comprobarlo
+ *  aparte: si el cuerpo del NPC cabe en su celda y el flood la cubre, el
+ *  jugador —que tiene un cuerpo más pequeño— llega hasta allí por
+ *  construcción. La tolerancia de ±1 no medía eso; medía la ausencia de
+ *  cuerpo.
  *
- *  La celda se lee con `floor`: el contrato la declara entera
- *  (`generate_scene.json`) pero el zod admite fracción, y un índice
- *  fraccionario daba `undefined` en la máscara — o sea «inalcanzable» para un
- *  NPC plantado en mitad de un prado. Con severidad de error, esa mentira
- *  rechazaría el tile entero. */
-function checkNpcsReachable(npcs: PlacedNpc[], map: WalkableMap, reach: Reach, found: Findings): void {
-  let reachableNpcs = 0;
+ *  Tres diagnósticos, porque son tres arreglos distintos para el motor:
+ *  nacer DENTRO de un sólido (muévelo), nacer donde el cuerpo NO CABE
+ *  (ensancha o muévelo) y no estar CONECTADO (abre un paso). */
+function checkNpcsReachable(
+  npcs: PlacedEntity[],
+  view: TileView,
+  map: WalkableMap,
+  reach: Reach,
+  k: number,
+  found: Findings,
+): void {
+  let alcanzables = 0;
   for (const npc of npcs) {
-    const [c, r] = npc.cell;
-    const celda: Cell = [Math.floor(c), Math.floor(r)];
-    if (!map.isWalkable(celda)) {
-      found.errors.push(
+    if (reach.has(npc.cell)) {
+      alcanzables++;
+      continue;
+    }
+    const [c, r] = npc.declarada;
+    if (!map.isWalkable(npc.cell)) {
+      found.add(
+        "nace-en-solido",
         `el NPC "${npc.id}" nace en [${c}, ${r}], celda no transitable (muro, agua o huella de un ` +
           "volumen): no podría moverse de ahí",
       );
-      continue;
+    } else if (!cuerpoCabeEn(view, map, k, npc.cell)) {
+      found.add(
+        "hueco-sin-cuerpo",
+        `el NPC "${npc.id}" nace en [${c}, ${r}], un hueco donde su cuerpo no cabe: hacen falta ${k} ` +
+          "celdas libres seguidas en cada eje y ahí no las hay, así que no podría moverse",
+      );
+    } else {
+      found.add("hueco-sin-cuerpo", `el NPC "${npc.id}" en [${c}, ${r}] no es alcanzable desde el player`);
     }
-    const near = ([[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const).some(([dc, dr]) =>
-      reach.has([celda[0] + dc, celda[1] + dr]),
-    );
-    if (near) reachableNpcs++;
-    else found.errors.push(`el NPC "${npc.id}" en [${c}, ${r}] no es alcanzable desde el player`);
   }
-  found.stats.npcs_reachable = reachableNpcs;
+  found.stats.npcs_reachable = alcanzables;
 }
 
 /** ¿Se puede llegar a lo que importa desde donde entra el jugador?
@@ -762,42 +874,59 @@ export function checkReachability(
   view: TileView,
   map: WalkableMap,
   seams: Seams,
-  doorCells: Cell[],
+  vanos: Vano[],
   tileContext: TileValidationContext | undefined,
   found: Findings,
 ): void {
-  const starts = seams.startCells.filter((cell) => map.isWalkable(cell));
+  // El CUERPO MAYOR que el sim mueve, no un punto sin dimensión: una puerta de
+  // 1 m la cruza el jugador (radio 0,4) y NUNCA un NPC (0,5), y con el punto
+  // salía verde. `k` se deriva del radio y del mpc — no se escribe a mano, y
+  // no es el AABB (2 celdas), que haría nacer el candado verde sobre su caso.
+  const k = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
+  const pisables = seams.startCells.filter((cell) => map.isWalkable(cell));
   const hasNeighborLink = seams.crossingTargets.length > 0 || Boolean(tileContext?.entry);
   if (hasNeighborLink && map.walkableCells === 0) {
-    found.errors.push("tile sin terreno transitable: el jugador no podría moverse dentro (injugable)");
+    found.add("sin-terreno", "tile sin terreno transitable: el jugador no podría moverse dentro (injugable)");
   }
   if (seams.startCells.length === 0 && !hasNeighborLink) {
     // Tile aislado sin cruces requeridos ni entrada (p.ej. prefetch diagonal):
     // no hay punto de entrada que validar — se acepta con aviso.
-    found.warnings.push("tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada");
-  } else if (hasNeighborLink && starts.length === 0 && map.walkableCells > 0) {
+    found.add("no-verificado", "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada");
+  } else if (hasNeighborLink && pisables.length === 0 && map.walkableCells > 0) {
     // Hay terreno transitable pero ningún arranque declarado cae en él (p.ej.
     // la entrada casa con un río). ANTES el flood no corría y pasaba en
     // silencio; ahora al menos se avisa de que la alcanzabilidad no se verificó.
-    found.warnings.push("la entrada del tile no cae en terreno transitable: alcanzabilidad no verificada");
+    found.add("no-verificado", "la entrada del tile no cae en terreno transitable: alcanzabilidad no verificada");
   }
-  if (starts.length === 0) return;
+  if (pisables.length === 0) return;
 
-  // El flood recorre el tile con el CUERPO MAYOR que el sim mueve, no con un
-  // punto sin dimensión: una puerta de 1 m la cruza el jugador (radio 0,4) y
-  // NUNCA un NPC (0,5), y con el punto salía verde. `k` se deriva del radio y
-  // del mpc del tile — no se escribe a mano y no es el AABB (2 celdas), que
-  // haría nacer el candado verde sobre su propio caso.
-  const reach = floodFill(view, map, starts, celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC));
+  // La entrada se filtra con el MISMO predicado con el que siembra el flood.
+  // Si no: el flood sale vacío y el informe es una avalancha —todos los
+  // cruces, todos los NPCs— sin nombrar NUNCA la causa, que es que por la
+  // entrada del tile no cabe un cuerpo.
+  const starts = pisables.filter((cell) => cuerpoCabeEn(view, map, k, cell));
+  if (starts.length === 0) {
+    found.add(
+      "hueco-sin-cuerpo",
+      `por la entrada del tile no cabe un cuerpo: hacen falta ${k} celdas libres seguidas en cada eje ` +
+        "y ninguno de sus arranques las tiene, así que nada del tile es alcanzable",
+    );
+    return;
+  }
+
+  const reach = floodFill(view, map, starts, k);
   found.stats.reachable_cells = reach.count;
   checkCrossingsReachable(seams.crossingTargets, reach, found);
-  checkDoorsReachable(doorCells, reach, found);
-  checkNpcsReachable(map.npcs, map, reach, found);
+  checkDoorsReachable(vanos, reach, found);
+  checkNpcsReachable(map.npcs, view, map, reach, k, found);
 
-  // Proporción jugable del mapa.
+  // Proporción jugable del mapa. Se mide sobre lo DECLARADO (walkable) y no
+  // sobre lo alcanzado: la pregunta es «¿te has pasado de muro y agua?», que
+  // es de composición del tile. Lo que el cuerpo no alcanza ya lo dicen, con
+  // su nombre, los tres chequeos de arriba.
   const walkableRatio = map.walkableCells / (view.cols * view.rows);
   if (walkableRatio < 0.2) {
-    found.warnings.push(`solo el ${Math.round(walkableRatio * 100)}% del mapa es transitable — ¿demasiado muro/agua?`);
+    found.add("sospechoso", `solo el ${Math.round(walkableRatio * 100)}% del mapa es transitable — ¿demasiado muro/agua?`);
   }
 }
 

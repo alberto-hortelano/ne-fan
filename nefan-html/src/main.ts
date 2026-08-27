@@ -1458,8 +1458,12 @@ const AIM_RANGE_M = 12;
 /** Semiángulo del cono de puntería (≈9°: el ancho de un NPC a 6 m). Cerca
  *  manda el cuerpo (radiusM), no el cono. */
 const AIM_CONE_RAD = (9 * Math.PI) / 180;
-/** Media anchura de un personaje en metros: se apunta a su cuerpo. */
-const BODY_RADIUS_M = 0.6;
+/** Media anchura de un personaje en metros PARA APUNTAR: se apunta a su
+ *  cuerpo, y la silueta a la que se apunta es más ancha que el cilindro con el
+ *  que camina. NO es el radio de colisión (`NPC_RADIUS_M`/`BODY_RADIUS_M` de
+ *  `scene/terrain-collision`, 0,5): compartían nombre y no número, que es
+ *  cómo dos constantes que describen el mismo cuerpo acaban divergiendo. */
+const AIM_BODY_HALF_WIDTH_M = 0.6;
 /** Media ALTURA de un personaje: el cuerpo al que se apunta es un elipsoide
  *  de pie, no una bola. Con pitch la mirada le entra por las rodillas o por
  *  la cabeza tanto como por el pecho. */
@@ -1515,7 +1519,7 @@ function updateWorldLabels(): void {
       ...personajes.map((e) => ({
         id: e.id,
         pos: { x: e.pos.x, y: fps.groundYAt(e.pos.x, e.pos.z) + BODY_CENTER_Y_M, z: e.pos.z },
-        radiusM: BODY_RADIUS_M,
+        radiusM: AIM_BODY_HALF_WIDTH_M,
         halfHeightM: BODY_HALF_HEIGHT_M,
       })),
       // El bulto real del objeto, no su `radius` de dibujo (que en el 2D vale
@@ -1525,7 +1529,7 @@ function updateWorldLabels(): void {
         return {
           id: e.id,
           pos: { x: e.pos.x, y: fps.groundYAt(e.pos.x, e.pos.z) + alto / 2, z: e.pos.z },
-          radiusM: Math.min(2, Math.max(e.sizeXZ?.x ?? 0, e.sizeXZ?.z ?? 0) / 2 || BODY_RADIUS_M),
+          radiusM: Math.min(2, Math.max(e.sizeXZ?.x ?? 0, e.sizeXZ?.z ?? 0) / 2 || AIM_BODY_HALF_WIDTH_M),
           halfHeightM: alto / 2,
         };
       }),
