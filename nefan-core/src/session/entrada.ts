@@ -48,19 +48,41 @@ export interface Entrada {
  *  llegado las dos mitades, en el orden que sea, y solo con una sesión con
  *  identidad (`sessionId !== ""`): anunciar la entrada en una partida que no
  *  existe no significa nada. */
+/** Lo que se sabe de UNA sesión: qué mitades han llegado y si queda por
+ *  anunciar la entrada. */
+interface Mitades {
+  vestido: boolean;
+  mundo: boolean;
+  /** Positivo a propósito, no `anunciada` invertido: una sesión recién nacida
+   *  tiene que llevar algún hecho AFIRMATIVO, o es indistinguible del objeto
+   *  vacío —donde todo campo ausente es falsy— y entonces nada puede notar que
+   *  falta. Con `pendiente`, un `{}` no anuncia jamás y lo dicen seis tests. */
+  pendiente: boolean;
+}
+
+/** Una sesión de la que todavía no se sabe nada. Existe UNA vez y la usan los
+ *  dos sitios que necesitan ese estado —crear el hecho y cambiar de sesión—,
+ *  porque escribirlo dos veces es tener dos verdades que pueden divergir: la
+ *  copia del reset olvidando una mitad que la del arranque sí limpia es
+ *  literalmente #249. Además, así el estado inicial viaja por el camino
+ *  observable (el reset) y sus tests pueden ponerlo rojo; suelto en el
+ *  constructor era inmatable, porque con `sesionActual === ""` no hay ninguna
+ *  secuencia que lo distinga. */
+function sinMitades(): Mitades {
+  return { vestido: false, mundo: false, pendiente: true };
+}
+
 export function createEntrada(alEntrar: (sessionId: string) => void): Entrada {
   let sesionActual = "";
-  let hayVestido = false;
-  let hayMundo = false;
-  let anunciada = false;
+  let mitades = sinMitades();
 
   /** El único sitio donde se decide. Las dos mitades entran por aquí, así que
    *  no pueden divergir en qué comprueban ni en qué anuncian. */
   function comprobar(): void {
-    if (anunciada) return;
+    if (!mitades.pendiente) return;
     if (!sesionActual) return;
-    if (!hayVestido || !hayMundo) return;
-    anunciada = true;
+    if (!mitades.vestido || !mitades.mundo) return;
+    mitades.pendiente = false;
     alEntrar(sesionActual);
   }
 
@@ -70,16 +92,14 @@ export function createEntrada(alEntrar: (sessionId: string) => void): Entrada {
       // marcha no puede tirar a la basura una mitad que ya llegó.
       if (sessionId === sesionActual) return;
       sesionActual = sessionId;
-      hayVestido = false;
-      hayMundo = false;
-      anunciada = false;
+      mitades = sinMitades();
     },
     vestido(): void {
-      hayVestido = true;
+      mitades.vestido = true;
       comprobar();
     },
     mundoPintado(): void {
-      hayMundo = true;
+      mitades.mundo = true;
       comprobar();
     },
   };
