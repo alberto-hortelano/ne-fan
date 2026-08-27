@@ -142,6 +142,144 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
     );
     assert.ok(plan.volumes.some((v) => v.id.startsWith("derived_veg_")), "…y queda bosque, no cero");
   });
+
+  /** Los tres bloques de abajo leen el TEXTO del aviso, no solo que exista.
+   *
+   *  Hasta aquí el aviso del presupuesto se comprobaba con `match(/tope son 200/)`
+   *  y una regex floja para la densidad: se podían cambiar las CUATRO restas por
+   *  sumas, o vaciar el mensaje entero, sin que nada se pusiera rojo (19 mutantes
+   *  vivos, issue #303). Y ese texto no es cosmética: es el canal fail-loud hacia
+   *  el motor narrativo, que lo lee para decidir qué sacrifica y re-responder. Un
+   *  número mal en «se recortan N» es una instrucción falsa al modelo, y el tile
+   *  se compone igual con menos cosas de las que pidió. */
+  it("el aviso del recorte trae las CUATRO cuentas, y cuadran entre sí", () => {
+    const trastos = Array.from({ length: 100 }, (_, i) => ({
+      id: `trasto_${i}`,
+      kind: "prop",
+      name: "trasto",
+      cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
+      footprint: [1, 1],
+      glyph: "x",
+    }));
+    const { warnings } = composeTilePlan(
+      tile({
+        entities: trastos,
+        vegetation_zones: [{ type: "pino", area: "rest", density: MAX_VEG_DENSITY }],
+      }),
+    );
+    assert.equal(
+      warnings[0],
+      "el plan del tile pide 410 volúmenes y el tope son 200 " +
+        "(1 declarados de 160 + 97 derivados del esquema + 312 de vegetación de masa): " +
+        "se recortan 210, la vegetación primero. " +
+        "Baja la densidad de vegetation_zones a 0.02 ejemplares/m² o declara menos volumes",
+    );
+    // Y las cuentas cuadran: el desglose suma el total, y el recorte es la
+    // diferencia con el tope. Si una resta se vuelve suma, esto se cae aquí
+    // aunque alguien haya actualizado el literal de arriba sin pensar.
+    assert.equal(1 + 97 + 312, 410, "el desglose tiene que sumar lo pedido");
+    assert.equal(410 - MAX_TILE_VOLUMES, 210, "el recorte es lo pedido menos el tope");
+  });
+
+  it("sin zonas de vegetación el consejo cambia, porque bajar la densidad no arreglaría nada", () => {
+    const trastos = Array.from({ length: 400 }, (_, i) => ({
+      id: `trasto_${i}`,
+      kind: "prop",
+      name: "trasto",
+      cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
+      footprint: [1, 1],
+      glyph: "x",
+    }));
+    const { warnings } = composeTilePlan(tile({ entities: trastos }));
+    assert.equal(
+      warnings[0],
+      "el plan del tile pide 398 volúmenes y el tope son 200 " +
+        "(1 declarados de 160 + 397 derivados del esquema + 0 de vegetación de masa): " +
+        "se recortan 198, la vegetación primero. " +
+        "Declara menos volumes o menos entities estáticas",
+    );
+  });
+
+  it("con las zonas inválidas Y el presupuesto desbordado, los DOS avisos salen y el consejo es el correcto", () => {
+    // Dos canales fail-loud a la vez. Importa el orden y el consejo: con las
+    // zonas rechazadas no hay superficie plantada, así que «baja la densidad»
+    // sería un consejo imposible de seguir — el motor tiene que oír «declara
+    // menos volumes». Es el único caso que ejerce el fallback a lista vacía.
+    const trastos = Array.from({ length: 400 }, (_, i) => ({
+      id: `trasto_${i}`,
+      kind: "prop",
+      name: "trasto",
+      cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
+      footprint: [1, 1],
+      glyph: "x",
+    }));
+    const { warnings } = composeTilePlan(
+      tile({ entities: trastos, vegetation_zones: [{ type: "pino", area: "rest", density: 999 }] }),
+    );
+    assert.equal(warnings.length, 2, warnings.join(" | "));
+    assert.match(warnings[0], /la zona no se planta/);
+    assert.equal(
+      warnings[1],
+      "el plan del tile pide 398 volúmenes y el tope son 200 " +
+        "(1 declarados de 160 + 397 derivados del esquema + 0 de vegetación de masa): " +
+        "se recortan 198, la vegetación primero. " +
+        "Declara menos volumes o menos entities estáticas",
+    );
+  });
+
+  it("justo EN el tope no se avisa: el presupuesto es «más de», no «a partir de»", () => {
+    // 199 entities + la casa declarada = exactamente MAX_TILE_VOLUMES. Un `>=`
+    // en vez de `>` avisaría aquí de un recorte de cero.
+    const trastos = Array.from({ length: 199 }, (_, i) => ({
+      id: `trasto_${i}`,
+      kind: "prop",
+      name: "trasto",
+      cell: [(i % 20) * 6, 40 + Math.floor(i / 20) * 8],
+      footprint: [1, 1],
+      glyph: "x",
+    }));
+    const { plan, warnings } = composeTilePlan(tile({ entities: trastos }));
+    assert.ok(plan);
+    assert.equal(plan.volumes.length, MAX_TILE_VOLUMES, "el caso de borde exige el tope EXACTO");
+    assert.deepEqual(warnings, [], "en el tope no se recorta nada, así que no hay nada que decir");
+  });
+});
+
+describe("composeTilePlan · lo que el tile no declara no se inventa", () => {
+  it("con suelo y sin un solo volumen SÍ hay plan: el camino es geometría", () => {
+    const { plan } = composeTilePlan(tile({ volumes: [], entities: [] }));
+    assert.ok(plan, "un tile que solo tiene senda sigue teniendo algo que pintar");
+    assert.equal(plan.volumes.length, 0);
+    assert.equal(plan.ground.length, 1);
+  });
+
+  it("un biome que no es texto no viaja en el plan", () => {
+    const { plan } = composeTilePlan(tile({ biome: 42 }));
+    assert.ok(plan);
+    assert.equal(plan.biome, undefined, "el plan no propaga un biome que no es una cadena");
+  });
+
+  it("una scene_description que no es texto no viaja en el plan", () => {
+    const { plan } = composeTilePlan(tile({ scene_description: { texto: "no" } }));
+    assert.ok(plan);
+    assert.equal(plan.scene_description, undefined);
+  });
+
+  it("y las que SÍ son texto viajan tal cual, incluida la vacía", () => {
+    const { plan } = composeTilePlan(tile({ biome: "tundra", scene_description: "" }));
+    assert.ok(plan);
+    assert.equal(plan.biome, "tundra");
+    assert.equal(plan.scene_description, "", "cadena vacía es una descripción, no una ausencia");
+  });
+
+  it("sin `ground` ni `volumes` declarados no se avisa de nada: ausencia no es error", () => {
+    const { warnings } = composeTilePlan({
+      tile: { tx: 0, ty: 0 },
+      scene_id: "tile_0_0",
+      entities: [{ id: "roble", kind: "tree", name: "roble", cell: [80, 80], footprint: [4, 4], glyph: "t" }],
+    });
+    assert.deepEqual(warnings, [], "no declarar suelo no es lo mismo que declararlo mal");
+  });
 });
 
 describe("el plan viaja RESUELTO en la world scene", () => {
