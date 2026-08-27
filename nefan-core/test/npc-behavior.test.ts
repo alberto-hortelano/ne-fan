@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createAmbientNpcBehavior,
+  FLEE_EXTRA_DIST,
   type NpcBehaviorEvent,
   type NpcBehaviorSystem,
   type NpcTickContext,
@@ -145,17 +146,71 @@ describe("AmbientNpcBehavior", () => {
     });
     const events = runTicks(sys, 100, 0.016, fightCtx);
     assert.equal(events.filter((e) => e.type === "npc_fled_combat").length, 1);
-    const st = sys.states()[0];
+    let st = sys.states()[0];
     assert.equal(st.mode, "flee");
     assert.ok(st.run, "huir debe ser corriendo");
+
+    // LLEGA a su meta, que es la que declara el sim — no un número a mano.
+    // El aserto anterior era `> 3 m` a 1,6 s de huida: habría pasado igual con
+    // el tope puesto en 4 m, así que no protegía el comportamiento (#262).
+    //
+    // Se mide el INSTANTE de llegada, no la distancia a una hora fija: alcanzada
+    // la meta el NPC para, reanuda a los 4 s y el micro-wander lo trae de vuelta
+    // hacia la pelea (#298), así que una foto tardía lo pilla ya de regreso y
+    // lee menos de lo que llegó a alejarse.
+    const { run_speed, perception_radius } = NPC_ROLE_PRESETS.peasant;
+    const meta = perception_radius + FLEE_EXTRA_DIST;
+    // Cota derivada y generosa: el tiempo de recorrer la meta ENTERA a la
+    // velocidad de correr, más dos segundos. Arranca a 3 m, así que le sobra.
+    const topeS = meta / run_speed + 2;
+    let llegadaS: number | null = null;
+    for (let i = 100; i * 0.016 <= topeS && llegadaS === null; i++) {
+      sys.tick(0.016, fightCtx);
+      const p = sys.states()[0].pos;
+      if (distXZ({ x: p.x, z: p.z }, hotspot) >= meta) llegadaS = i * 0.016;
+    }
+    st = sys.states()[0];
     assert.ok(
-      distXZ({ x: st.pos.x, z: st.pos.z }, hotspot) > 3,
-      "debe haberse alejado del foco de la pelea",
+      llegadaS !== null,
+      `debe alcanzar su meta de huida (${meta} m) en menos de ${topeS.toFixed(1)} s; ` +
+        `se quedó a ${distXZ({ x: st.pos.x, z: st.pos.z }, hotspot).toFixed(2)} m`,
     );
     // Pelea terminada: 4+ s sin eventos → npc_resumed.
     const after = runTicks(sys, 300, 0.016, ctxWith());
     assert.equal(after.filter((e) => e.type === "npc_resumed").length, 1);
     assert.notEqual(sys.states()[0].mode, "flee");
+  });
+
+  /** El caso en negativo del aserto de arriba, y la forma EXACTA de #262: un
+   *  NPC que no puede moverse de su celda «huye» sin desplazarse, y durante
+   *  semanas eso se leyó como que la huida estaba rota. Reproducido midiendo el
+   *  sim con la colisión real: 0,72 m en 60 s, vibrando ±2 cm. Si este test se
+   *  pone verde, el de arriba ha dejado de comprobar nada. */
+  it("flee: un NPC que no puede moverse NO alcanza su meta — el aserto sabe ponerse rojo", () => {
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(5),
+      world: openWorld({ blocksMove: () => true, blocksCircle: () => true }),
+    });
+    sys.addNpc(makeRecord("npc1", [0, 0, 0], { role: "peasant" }));
+    const hotspot: Vec3 = { x: 3, y: 0, z: 0 };
+    const fightCtx = ctxWith({
+      combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+      combatantPositions: new Map([["bandit", hotspot]]),
+    });
+    const meta = NPC_ROLE_PRESETS.peasant.perception_radius + FLEE_EXTRA_DIST;
+
+    // 60 s simulados: casi trece veces lo que necesita en campo abierto (4,7 s).
+    let llegadaS: number | null = null;
+    for (let i = 1; i <= 3750 && llegadaS === null; i++) {
+      sys.tick(0.016, fightCtx);
+      const p = sys.states()[0].pos;
+      if (distXZ({ x: p.x, z: p.z }, hotspot) >= meta) llegadaS = i * 0.016;
+    }
+    const st = sys.states()[0];
+    assert.equal(llegadaS, null, "encerrado NO puede alcanzar la meta: el test positivo miente");
+    assert.equal(st.mode, "flee", "sigue queriendo huir: lo que falla es el desplazamiento");
+    const recorrido = distXZ({ x: st.pos.x, z: st.pos.z }, { x: 0, z: 0 });
+    assert.ok(recorrido < 1, `encerrado, no debe avanzar; avanzó ${recorrido.toFixed(2)} m`);
   });
 
   it("intervene: el guardia corre a la pelea, se planta y amenaza con quick", () => {
